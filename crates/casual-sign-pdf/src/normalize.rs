@@ -784,6 +784,49 @@ impl TreeFix<'_, '_> {
     }
 }
 
+/// Every object of the input's page tree (nodes and pages), as the reader walks it:
+/// the structure is cleaned, never removed, whatever keys it carries.
+fn page_tree_objects(
+    doc: &mut Document<'_>,
+    trailer: &Dictionary,
+    cancel: Cancel<'_>,
+) -> Result<BTreeSet<u32>, WriteError> {
+    let resolve = |doc: &mut Document<'_>, o: &Object| match doc.resolve(o, cancel) {
+        Ok(v) => Ok(Some(v)),
+        Err(e) if e.is_document_wide() => Err(WriteError::Read(e)),
+        Err(_) => Ok(None),
+    };
+    let mut found = BTreeSet::new();
+    let Some(root) = trailer.get(b"Root") else {
+        return Ok(found);
+    };
+    let pages = match resolve(doc, root)? {
+        Some(Object::Dictionary(c)) => c.get(b"Pages").cloned(),
+        _ => None,
+    };
+    let mut stack: Vec<Object> = pages.into_iter().collect();
+    while let Some(node) = stack.pop() {
+        if cancel() {
+            return Err(WriteError::Read(PdfError::Cancelled));
+        }
+        if let Object::Reference(r) = &node
+            && !found.insert(r.num)
+        {
+            continue;
+        }
+        let Some(Object::Dictionary(d)) = resolve(doc, &node)? else {
+            continue;
+        };
+        if is_node(&d)
+            && let Some(k) = d.get(b"Kids")
+            && let Some(Object::Array(kids)) = resolve(doc, k)?
+        {
+            stack.extend(kids);
+        }
+    }
+    Ok(found)
+}
+
 fn signed(report: &AdmissionReport) -> bool {
     !report.signatures.is_empty() || report.has_perms
 }
@@ -818,6 +861,7 @@ pub fn normalize(
             protected.insert(r.num);
         }
     }
+    protected.extend(page_tree_objects(doc, &trailer, cancel)?);
     let in_use: Vec<u32> = doc.object_numbers().collect();
     let mut n = Norm {
         doc,

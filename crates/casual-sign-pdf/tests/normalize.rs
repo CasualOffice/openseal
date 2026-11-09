@@ -690,3 +690,24 @@ fn unreadable_page_content_is_dropped_and_reported() {
     assert_eq!(out.page_count, 2);
     assert!(!out.has_code("CS-PDF-0102"));
 }
+
+#[test]
+fn page_tree_objects_carrying_active_keys_are_cleaned_not_dropped() {
+    // Found by the normalize fuzz target: a page with no /Type and an /EF key (the
+    // reader takes it for a page; normalization dropped it as an embedded file), and
+    // a node with an action's /S.
+    let bytes = classic(
+        &[
+            (1, b"<</Type/Catalog/Pages 2 0 R>>".to_vec()),
+            (2, b"<</Kids[3 0 R]/S/Launch/F(calc.exe)>>".to_vec()),
+            (3, b"<</EF[0 0 612 792]/MediaBox[0 0 200 200]>>".to_vec()),
+        ],
+        "",
+    );
+    let (n, out) = run(&bytes);
+    assert_eq!(out.page_count, 1);
+    assert_eq!(out.pages[0].media_box.urx, 200.0);
+    assert!(!removed(&n, "CS-PDF-0104", FindingKind::EmbeddedFile).is_empty());
+    assert!(!removed(&n, "CS-PDF-0103", FindingKind::Action(ActionKind::Launch)).is_empty());
+    assert_clean(&out);
+}
