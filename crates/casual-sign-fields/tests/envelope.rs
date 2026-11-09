@@ -1,7 +1,11 @@
 //! Envelope-level rules: visibility, cycles, groups, linking, formulas, client checks.
 
 // Tests may unwrap (CLAUDE.md): a failure here is the test failing.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 
 mod common;
 

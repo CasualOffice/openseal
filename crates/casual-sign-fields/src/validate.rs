@@ -10,11 +10,12 @@ use crate::error::{FieldError, Invalid};
 use crate::parse::{parse_date, parse_number};
 
 /// Most bytes a sender's pattern may compile to (the `regex` crate's `size_limit`).
-/// A decision of `T-1D`: 256 KiB holds any sensible validation pattern and bounds what
-/// one hostile pattern can make the server allocate.
-pub const REGEX_SIZE_LIMIT: usize = 256 * 1024;
+/// A decision of `T-1D`: 2 MiB admits `\w{30}` (Unicode classes are large) and refuses
+/// `\w{100}`, which the crate's own 10 MiB default would build; it bounds what one
+/// hostile pattern can make the server allocate.
+pub const REGEX_SIZE_LIMIT: usize = 2 * 1024 * 1024;
 /// Most bytes of lazy DFA cache per pattern (`dfa_size_limit`).
-pub const REGEX_DFA_LIMIT: usize = 256 * 1024;
+pub const REGEX_DFA_LIMIT: usize = 2 * 1024 * 1024;
 /// Deepest nesting of groups in a pattern (`nest_limit`).
 pub const REGEX_NEST_LIMIT: u32 = 32;
 
@@ -496,11 +497,18 @@ mod tests {
 
     #[test]
     fn regex_size_and_length_are_bounded() {
-        // Compiles to megabytes; refused by the size limit, not run.
+        // Compiles to megabytes; refused by our size limit, not run. The crate's own
+        // default (10 MiB) would build `\w{100}`, so this sees our limit, not theirs.
+        assert!(regex::Regex::new(r"\w{100}").is_ok());
+        assert_eq!(
+            check(regex(r"\w{100}"), "x"),
+            Err(Invalid::PatternTooBig.into())
+        );
         assert_eq!(
             check(regex(r"\w{1000}"), "x"),
             Err(Invalid::PatternTooBig.into())
         );
+        assert!(check(regex(r"\w{1,30}"), "word").is_ok());
         assert_eq!(
             check(
                 regex("(((((((((((((((((((((((((((((((((a)))))))))))))))))))))))))))))))))"),
