@@ -3,5 +3,20 @@
 version = 4
 
 [[package]]
+name = "casual-sign-crypto"
+version = "0.0.0"
+
+[[package]]
+name = "casual-sign-fields"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-model",
+]
+
+[[package]]
+name = "casual-sign-model"
+version = "0.0.0"
+
+[[package]]
 name = "casual-sign-pdf"
 version = "0.0.0"

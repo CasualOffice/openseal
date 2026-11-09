@@ -4,6 +4,9 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 
 ## 2026-11-10
 
+### Phase 1 opened
+- Owner instruction 7: private until the pre-release alpha; `tools/ci-local.sh` runs the CI list locally. Phase 1 opened under waiver `W-2`; skeleton crates `casual-sign-model`, `-crypto`, `-fields` for stages 1A, 1D and 1F.
+
 ### Phase 0 opened
 - EU DSS 6.5.1 validator image (`tools/eu-dss/`) added to the validator self-test and CI, rung 3 of the ladder (`F-006`).
 - Hostile PDF fixtures: generator and manifest covering every PDF limit in docs/21 (`F-005`).

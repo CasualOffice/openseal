@@ -60,7 +60,7 @@ Docs are true as of the Phase 0 foundation commit (2026-11-10). No product behav
 | --- | --- | --- |
 | D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
 | 0 Foundation | **Open** 2026-11-10 | Opened by instruction 6 (ADR-001 to ADR-009 Accepted). Built: workspace, gates, hooks, CI workflow, pyHanko validator harness. Left: in [14](14-EXECUTION-TRACKER.md) §Phase 0 |
-| 1 PDF and evidence core | Not opened | |
+| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Stages 1A (reader), 1D (field rules) and 1F (crypto structures) started in parallel |
 | 2 Envelope engine and server | Not opened | May open in parallel with Phase 1 stages 1C onward (`W-1` proposed) |
 | Slices 1–29 | Not opened | |
 
@@ -68,6 +68,7 @@ Docs are true as of the Phase 0 foundation commit (2026-11-10). No product behav
 
 | ID | Criterion not met | Risk | Accepted | If it fails |
 | --- | --- | --- | --- | --- |
+| W-2 | Phase 1 opens before Phase 0 closes: CI cannot run on GitHub while the repository is private (instruction 7), so "CI green on three platforms" is unmet | Platform-specific failures (Linux, Windows) found late; the local run is macOS only, with Linux only for the validators in Docker | Owner's "proceed", 2026-11-10, with instruction 7 | Phase 0 still closes only on a green GitHub run, at the latest when the repository goes public for the pre-release alpha (M3); failures found then are fixed first |
 | W-1 (proposed) | Phase 2 opens before Phase 1 closes, once stages 1A and 1B are closed | The model or API may need a change when sealing lands | Awaiting owner | Phase 2 work adapts; Phase 2 cannot close before Phase 1 |
 
 ## Phase D — Design
