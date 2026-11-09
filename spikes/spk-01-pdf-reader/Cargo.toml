@@ -1,0 +1,28 @@
+# SPK-01 spike: standalone, not part of the product workspace (it has its own [workspace]).
+# Throwaway measurement code; nothing here is product code. See docs/64-SPK-01-PDF-READER.md.
+[package]
+name = "spk01-pdf-reader"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[workspace]
+members = [".", "own", "wasm/wasm-lopdf", "wasm/wasm-pdf", "wasm/wasm-own"]
+
+[dependencies]
+lopdf = { version = "=0.47.0", default-features = false }
+pdf = { version = "=0.10.0", default-features = false, features = ["sync"] }
+spk01-own = { path = "own" }
+
+[profile.release]
+debug = false
+
+# Size measurement for item 4: `cargo build --profile wasm --target wasm32-unknown-unknown -p wasm-<x>`.
+[profile.wasm]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
