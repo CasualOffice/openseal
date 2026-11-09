@@ -1,0 +1,11 @@
+/target/
+**/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+node_modules/
+.DS_Store
+.env
+*.p12
+*.pfx
+*.key
+.claude/worktrees/
