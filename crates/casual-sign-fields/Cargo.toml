@@ -1,7 +1,7 @@
 [package]
 name = "casual-sign-fields"
 version = "0.0.0"
-description = "OpenSeal field rules: validation, conditions, groups, formulas (docs/30 §6)"
+description = "Field validation, conditional visibility, group rules and formulas for OpenSeal, identical natively and in WASM (docs/30 §6)"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -10,6 +10,17 @@ publish = false
 
 [dependencies]
 casual-sign-model = { path = "../casual-sign-model" }
+# A sender's validation pattern is untrusted: `regex` guarantees linear-time matching
+# and takes size limits, so no pattern can cause ReDoS. Unicode tables are kept so a
+# pattern behaves the same for every script.
+regex = { version = "1.10", default-features = false, features = ["std", "unicode", "perf"] }
+# Formulas are decimal, never float, so browser and server agree exactly (ADR-022).
+rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
+# Labels compare after NFC, so "café" typed two ways is one label (docs/19).
+unicode-normalization = { version = "0.1.24", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+proptest = { version = "1.5", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true
