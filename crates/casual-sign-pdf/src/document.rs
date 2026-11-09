@@ -28,6 +28,8 @@ struct ObjStm {
     data: Vec<u8>,
     first: usize,
     members: Vec<(u32, usize)>,
+    /// First offset of each object number, for entries whose index is wrong.
+    by_num: BTreeMap<u32, usize>,
 }
 
 #[derive(Debug, Default)]
@@ -336,6 +338,9 @@ impl<'a> Document<'a> {
                 };
                 if !candidate {
                     continue;
+                }
+                if cancel() {
+                    return Err(SectionError::Fatal(PdfError::Cancelled));
                 }
                 match self.section_at(p, cancel) {
                     Ok(s) => return Ok(Some((p, s))),
@@ -813,8 +818,8 @@ impl<'a> Document<'a> {
             .ok()
             .and_then(|i| stm.members.get(i))
             .filter(|(n, _)| *n == num)
-            .or_else(|| stm.members.iter().find(|(n, _)| *n == num))
-            .map(|(_, o)| *o);
+            .map(|(_, o)| *o)
+            .or_else(|| stm.by_num.get(&num).copied());
         let Some(rel) = at else {
             return Ok(Object::Null);
         };
@@ -923,6 +928,7 @@ impl<'a> Document<'a> {
             ObjStm {
                 data,
                 first,
+                by_num: members.iter().rev().map(|&(n, o)| (n, o)).collect(),
                 members,
             },
         );
