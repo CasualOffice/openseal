@@ -31,6 +31,9 @@ const MAX_GS_DEPTH: usize = 256;
 const MAX_OPERANDS: usize = 64;
 /// Decoded Form XObject bytes kept per page for reuse.
 const FORM_CACHE_BYTES: usize = 32 * 1024 * 1024;
+/// Fonts kept loaded across the pages of one extraction; beyond, a font is loaded
+/// again each time it is selected.
+const MAX_CACHED_FONTS: usize = 4_096;
 /// Operators between cancellation checks.
 const CANCEL_EVERY: u32 = 4_096;
 
@@ -362,7 +365,7 @@ struct Interp<'d, 'a, 'c> {
     glyphs: usize,
     runs: Vec<TextRun>,
     findings: Vec<TextFinding>,
-    fonts: BTreeMap<FontKey, Rc<Font>>,
+    fonts: FontCache,
     forms: BTreeMap<u32, Rc<Vec<u8>>>,
     form_bytes: usize,
     xobjects: Vec<u32>,
@@ -582,10 +585,16 @@ impl Interp<'_, '_, '_> {
             Some(r) => FontKey::Object(r.num),
             None => FontKey::Direct(owner, name.to_vec()),
         };
-        if let Some(f) = self.fonts.get(&key) {
-            return Ok(Rc::clone(f));
-        }
-        let f = font::load(self.doc, &obj, self.cancel)?;
+        let f = match self.fonts.get(&key) {
+            Some(f) => Rc::clone(f),
+            None => {
+                let f = Rc::new(font::load(self.doc, &obj, self.cancel)?);
+                if self.fonts.len() < MAX_CACHED_FONTS {
+                    self.fonts.insert(key, Rc::clone(&f));
+                }
+                f
+            }
+        };
         let obj_num = obj.as_ref().map(|r| r.num);
         if f.fallback_widths {
             self.finding("CS-PDF-0102", TextIssue::FallbackWidths, obj_num);
@@ -596,9 +605,6 @@ impl Interp<'_, '_, '_> {
         if f.vertical {
             self.finding("CS-PDF-0102", TextIssue::VerticalText, obj_num);
         }
-        let f = Rc::new(f);
-        // Fonts are few per page; the cache is bounded by the operator count anyway.
-        self.fonts.insert(key, Rc::clone(&f));
         Ok(f)
     }
 
@@ -815,6 +821,19 @@ pub fn extract_page(
     number: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Result<PageText, PdfError> {
+    extract_with(doc, page, number, cancel, &mut FontCache::new())
+}
+
+/// Fonts loaded so far, shared by the pages of one extraction.
+type FontCache = BTreeMap<FontKey, Rc<Font>>;
+
+fn extract_with(
+    doc: &mut Document<'_>,
+    page: &PageInfo,
+    number: u32,
+    cancel: &dyn Fn() -> bool,
+    cache: &mut FontCache,
+) -> Result<PageText, PdfError> {
     let geom = PageGeometry::from_page(page);
     let max_ops = doc.limits().max_content_ops;
     let mut it = Interp {
@@ -826,7 +845,7 @@ pub fn extract_page(
         glyphs: 0,
         runs: Vec::new(),
         findings: Vec::new(),
-        fonts: BTreeMap::new(),
+        fonts: core::mem::take(cache),
         forms: BTreeMap::new(),
         form_bytes: 0,
         xobjects: Vec::new(),
@@ -838,7 +857,7 @@ pub fn extract_page(
     };
     let page_obj = local(it.doc.object(page.object, cancel))?;
     let Some(pd) = page_obj.as_ref().and_then(Object::dict).cloned() else {
-        return Ok(it.into_page(number));
+        return Ok(it.into_page(number, cache));
     };
     let res = page_resources(it.doc, &pd, cancel)?;
     let contents: Vec<u32> = match pd.get(b"Contents") {
@@ -864,11 +883,12 @@ pub fn extract_page(
     }
     // A stop leaves what was read; only fatal errors propagate.
     let _ = it.run(&data, &res, page.object)?;
-    Ok(it.into_page(number))
+    Ok(it.into_page(number, cache))
 }
 
 impl Interp<'_, '_, '_> {
-    fn into_page(self, number: u32) -> PageText {
+    fn into_page(self, number: u32, cache: &mut FontCache) -> PageText {
+        *cache = self.fonts;
         PageText {
             page: number,
             geometry: self.geom,
@@ -890,9 +910,10 @@ pub fn extract_text(
     cancel: &dyn Fn() -> bool,
 ) -> Result<Vec<PageText>, PdfError> {
     let mut out = Vec::with_capacity(pages.len());
+    let mut cache = FontCache::new();
     for (i, p) in pages.iter().enumerate() {
         let n = u32::try_from(i).unwrap_or(u32::MAX).saturating_add(1);
-        out.push(extract_page(doc, p, n, cancel)?);
+        out.push(extract_with(doc, p, n, cancel, &mut cache)?);
     }
     Ok(out)
 }
