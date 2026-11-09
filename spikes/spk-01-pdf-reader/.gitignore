@@ -1,0 +1,7 @@
+/target/
+/out-append/
+# Generated fixtures over 1 MB; gen_fixtures.py recreates them.
+/fixtures/flate_bomb_content.pdf
+/fixtures/flate_bomb_objstm.pdf
+/fixtures/flate_bomb_many.pdf
+/fixtures/many_objects.pdf

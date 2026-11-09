@@ -1,0 +1,13 @@
+[package]
+name = "wasm-lopdf"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# getrandom 0.4 (via lopdf's rand) refuses wasm32-unknown-unknown without lopdf's `wasm_js` feature.
+lopdf = { version = "=0.47.0", default-features = false, features = ["wasm_js"] }
