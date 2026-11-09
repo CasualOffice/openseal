@@ -90,9 +90,42 @@ disagree. Tests cover all four rotations, non-zero crop origins and UserUnit ≠
   relative to it. Needs **text extraction with positions**: a content-stream interpreter for text operators only
   (`BT/ET`, `Tf`, `Tm`, `Td`, `TJ`, …), font metrics from the embedded font's widths, ToUnicode maps. Bounded; no
   rendering. Matching is on normalized text (NFKC, whitespace collapsed).
-- **Text tags** (SignNow-style): tags such as `{{s:signer1}}` or `[[t|1|req|name]]` in the document text become fields
-  at their position; the tag text is covered by a white box in the normalized document, or left if the tag is in white
+- **Text tags** (SignNow-style): tags such as `{{signature:client}}` in the document text become fields at their
+  position (only the `{{…}}` form is built; grammar below); the tag text is covered by a white box in the normalized document, or left if the tag is in white
   text. Grammar in `-fields`, documented with the API ([40](40-API-DESIGN.md) §Text tags).
+
+### As built (stage 1C)
+
+**Geometry:** `PageGeometry` converts between displayed page space and PDF user space (divide by UserUnit, undo the
+clockwise `/Rotate`, flip y inside the crop box, add the crop origin); tested for every rotation × crop origin ×
+UserUnit and round-trip within 1e-6 pt; placements round to 4 decimals. **Text:** a bounded text-only interpreter
+(text state and positioning operators, `q/Q/cm`, Form XObjects to depth 8, inline images skipped) with widths from
+`/Widths`, `/W` or the standard-14 AFM tables, and Unicode from ToUnicode, base encodings and `/Differences`;
+whitespace inferred from glyph geometry; positions asserted within 0.5 pt. Over the corpus: 422 files, no panic, 371
+with text, 15 ms mean; strings agree with pypdf on 296 of 387 admitted files and at 0.977 mean similarity on the rest,
+where LZW-encoded content (not decoded yet) is the main gap. **Anchors:** normalized (NFKC, whitespace collapsed)
+matching across runs, case and whole-word options, units points, inches, mm, cm and 96-dpi pixels; the field's
+top-left is the match's top-left plus the offsets.
+
+**Text-tag grammar:**
+
+```
+tag       = "{{" type ":" recipient [ ":" required ] [ ":" label ] [ ":" size ] "}}"
+type      = signature|s|initials|i|stamp|date_signed|name|first_name|last_name|email|company|
+            title|envelope_id|text|t|number|date|d|email_address|phone|ssn|zip|checkbox|c|
+            attachment|a|approve|decline        (ASCII case-insensitive)
+recipient = 1*64( ALPHA / DIGIT / "_" / "-" )
+required  = "req" / "required"
+label     = a data label (1–255 bytes), no ":" "{" "}"
+size      = number "x" number   (points, 0 < n <= 14,400)
+```
+
+Whitespace inside a tag is ignored; full-width braces count after NFKC. The field takes the tag's glyph box, or its
+top-left with the given size. Types that need options, a formula or a URL cannot be tagged.
+
+**AcroForm conversion:** one OpenSeal field per widget (text with `MaxLen` and required, checkbox, radio group as one
+field over its buttons, combo with custom entry, signature); push buttons, multi-page radio groups and off-page widgets
+are reported as skipped; multi-select is reported as lossy.
 
 ## 6. Field values and formulas
 

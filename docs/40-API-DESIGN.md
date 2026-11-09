@@ -110,7 +110,7 @@ clients that only know DocuSign's set treat it as `signed`. A mapping table is i
 ### Text tags
 
 Uploaded documents may carry tags parsed at send when `"text_tags": true`:
-`{{type:recipient_ref[:required][:label][:width x height]}}`, for example `{{signature:client}}`,
+`{{type:recipient_ref[:req][:label][:WxH]}}`, for example `{{signature:client}}`,
 `{{text:client:req:company_name}}`, `{{date_signed:ceo}}`. Grammar and limits in `casual-sign-fields`
 ([30](30-PDF-PIPELINE.md) §5).
 

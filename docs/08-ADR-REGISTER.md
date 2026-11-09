@@ -28,7 +28,7 @@ WASM bundle; a new dependency in the engine; a legal or evidence property.
 | ADR-016 | Webhooks signed per Standard Webhooks; at-least-once; no documents in payloads | Proposed | [40](40-API-DESIGN.md) §4 |
 | ADR-017 | Embedding through iframe views and custom elements wrapping them, not shadow-root mounting | Proposed | [40](40-API-DESIGN.md) §5 |
 | ADR-018 | Web app: vanilla ES modules, no framework or bundler, command registry, copied from the sisters | Proposed | [47](47-UX-AND-FEATURE-MAP.md) |
-| ADR-019 | Field geometry stored in displayed page space (points, top-left); one conversion function shared by WASM and native | Proposed | [30](30-PDF-PIPELINE.md) §4 |
+| ADR-019 | Field geometry stored in displayed page space (points, top-left); one conversion function shared by WASM and native | Accepted; built and tested in stage 1C | [30](30-PDF-PIPELINE.md) §4 |
 | ADR-020 | WYSIWYS: signers review engine-flattened output before finishing | Proposed | [02](02-HLD.md) §6 |
 | ADR-021 | Document conversion through a sandboxed `Converter` sidecar; sister engines first, LibreOffice container fallback | Proposed | [30](30-PDF-PIPELINE.md) §3 |
 | ADR-022 | Formulas: a small total expression language with decimal arithmetic, evaluated identically in browser and server | Accepted; built and tested in stage 1D (native = WASM over 225 cases) | [30](30-PDF-PIPELINE.md) §6 |

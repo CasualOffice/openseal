@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005` and `0020` to `0022` (stage 1D); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0002`, `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0002`, `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -49,7 +49,7 @@ XFA handling land.
 | CS-FLD-0004 | Field outside its page |
 | CS-FLD-0005 | Field references an unknown recipient, document, field id or data label, or two fields share an id |
 | CS-FLD-0006 | Signer has no signature field (and free-form is off) |
-| CS-FLD-0010 | Anchor text not found (and not ignorable) |
+| CS-FLD-0010 | Anchor text not found (and not ignorable), or more than 500 matches |
 | CS-FLD-0011 | Text tag malformed |
 | CS-FLD-0020 | Formula or condition cycle |
 | CS-FLD-0021 | Formula invalid or over its bounds |

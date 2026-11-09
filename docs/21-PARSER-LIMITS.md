@@ -58,7 +58,11 @@ Phase 1 gate.
 | Text field value | 4,000 bytes | CS-FLD-0002 |
 | Dropdown options | 500 | CS-FLD-0002 |
 | Formula length / depth / references | 1,024 chars / 32 / 100 | CS-FLD-0021 |
-| Anchor matches per string | 500 | CS-FLD-0010 |
+| Anchor matches per string | 500; more is an error, never a silent truncation | CS-FLD-0010 |
+| Anchor text | 256 characters | CS-FLD-0002 |
+| Text tag | 512 characters between the braces; 3,000 tags per document | CS-FLD-0011 |
+| Glyphs per page in text extraction | 500,000 | CS-PDF-0013 |
+| Form XObject nesting in text extraction | 8 (cycle-safe) | CS-PDF-0004 |
 | Subject / message | 255 / 10,000 characters | CS-API-0001 |
 | Custom fields per envelope | 100 | CS-API-0001 |
 | Field id | 1–64 bytes of `[A-Za-z0-9_-]` | CS-FLD-0005 |

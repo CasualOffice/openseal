@@ -102,7 +102,7 @@ one recorded in `envelope.completed`.
 | `id`, `envelope_id`, `document_id`, `recipient_id` | `recipient_id` null only on templates (bound to `role_id`) |
 | `type` | See table below |
 | `page`, `x`, `y`, `width`, `height` | **PDF user space of the page as displayed** (after `/Rotate` and crop box), points, origin top-left; `-fields` converts to PDF coordinates. Never pixels |
-| `anchor` | Optional: `{text, offset_x, offset_y, units, ignore_if_absent, match: first|all}` resolved at send |
+| `anchor` | Optional: `{text, offset_x, offset_y, units, ignore_if_absent, case_sensitive, whole_word, match: first|all}` resolved at send (the engine type is `AnchorSpec` in `-fields`; its API shape lands with Phase 2) |
 | `required`, `read_only`, `locked` | |
 | `label` (data label) | Unique per envelope for data fields; shared fields share a label |
 | `value`, `default` | Typed per `type`; bounded |
