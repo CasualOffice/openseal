@@ -67,5 +67,5 @@ Docs are true as of the Phase 0 foundation commit (2026-11-10).
 
 **Phases D (design) and 0 (foundation) are open; no product behaviour is built.** Phase 0 so far: a Cargo workspace with a `casual-sign-pdf` skeleton, repository gates and hooks copied from OpenPresent (`PROVENANCE.md`), a CI workflow not yet run on GitHub, and a pyHanko harness that proves it can tell a sealed PDF from a tampered one (`F-006`). The repository is initialized locally on `main`; the GitHub remote waits on the owner (`F-001`). The document set is drafted: PRD, HLD, research studies of DocuSign, SignNow and open-source
 competitors, pillar designs, threat model, 22 proposed ADRs, the roadmap (Phases D, 0, 1, 2, 29 slices and milestones M0–M7), the tracker
-and a 165-row feature fit-gap with 0 rows working. The product is named **OpenSeal** (`DEC-01`, 2026-11-10). Eleven owner decisions remain open in
+and a 165-row feature fit-gap with 0 rows working. The product is named **OpenSeal** (`DEC-01`, 2026-11-10). Twelve owner decisions remain open in
 [14](docs/14-EXECUTION-TRACKER.md); ADR-001 to ADR-009 are Accepted (instruction 6). What blocks Phase 0 now is the GitHub remote, which only the owner can create (`F-001`), so CI can run (`F-003`).

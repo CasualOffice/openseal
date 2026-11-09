@@ -23,6 +23,7 @@ Docs are true as of the Phase 0 foundation commit (2026-11-10).
 | DEC-10 | DocuSign-compatible API endpoint | Open | Defer to slice 25 and decide with counsel; the native API stays the primary contract | Migration value against trademark risk |
 | DEC-11 | Git workflow | Done | Owner, 2026-11-10 (instruction 5), as recommended: work lands on `main`, parallel workers on worktree branches merged by the main session; GitHub org `CasualOffice`, repo `openseal` | Needed for `F-001` |
 | DEC-12 | Default seal level | Open | PAdES B-T for every account; B-LT one switch away; B-LTA with renewal for archives (ADR-008) | Cost (TSA calls) against long-term verifiability |
+| DEC-14 | FIPS build profile | Open | Offer FIPS as a separate build (CMake and Go in its image) and allow the OpenSSL licence for `aws-lc-fips-sys` only; default builds stay non-FIPS | Some regulated buyers need FIPS 140-3 validated crypto; the licence and toolchain cost apply only to that build |
 | DEC-13 | Open Phase 2 early (waiver `W-1`) | Open | Yes, once stages 1A and 1B close | Shortens time to a usable product; model risk is small |
 
 ## Milestones
@@ -62,7 +63,10 @@ Defined in [06](06-ROADMAP-AND-DELIVERY.md) §Milestones. Only the owner declare
 | F-006 | Independent validators in CI (pyHanko, EU DSS container) | In progress | P0 | **pyHanko done:** `tools/verify-sealed.py --self-test` seals a hand-written PDF with a throwaway CA (pyHanko 0.38.1) and checks sealed → valid, flipped byte → invalid, content changed after signing → reported; each check seen failing under a mutation, 2026-11-10; CI job `validators`. **Left:** EU DSS container (rung 3); a run on GitHub | Known-good passes, known-tampered fails, in CI |
 | F-007 | Fuzz workspace | Open | P1 | `cargo-fuzz`, one target per byte entry point | Targets build and run 60 s in CI |
 | SPK-01 | Own PDF reader versus `lopdf`/`pdf-rs` | In progress | P0 | Measure robustness on the hostile set, recovery quality, incremental-write support, WASM size | Report; ADR-005 decided |
-| SPK-02 | Crypto stack: `aws-lc-rs` + RustCrypto on native; RustCrypto only on WASM; CMS build and verify interop with pyHanko | In progress | P0 | A sealed PDF from each path verified by pyHanko and EU DSS | Report; ADR-006 decided |
+| SPK-02 | Crypto stack: `aws-lc-rs` + RustCrypto on native; RustCrypto only on WASM; CMS build and verify interop with pyHanko | In progress | P0 | **Done by the spike, verified by the main session (2026-11-10):** P-256 and RSA-3072 PAdES B-B seals from aws-lc-rs keys and RustCrypto CMS validate in pyHanko 0.38.1 as `INTACT:TRUSTED,UNTOUCHED`; flipped ByteRange byte and corrupted signature value both `INVALID` (re-run by the main session); RustCrypto-only verifier builds for wasm32 (330/424 KB). ADR-006 confirmed with amendments ([66](66-SPK-02-CRYPTO-STACK.md)). **Left:** EU DSS (rung 3, `F-006`) on these outputs; Linux build | Report; ADR-006 decided |
+| DEP-02 | Record the RUSTSEC-2023-0071 ignore for `rsa` (verify-only, WASM) in `deny.toml` with its reason, when `-crypto` first depends on `rsa` | Open | P1 | ADR-006 | `cargo deny` and `cargo audit` pass with the entry; entry removed if `rsa` leaves |
+| DEP-03 | Move `cms`, `x509-tsp`, `x509-ocsp` from release candidates to stable releases | Open | P2 | Exact pins until then | Stable versions pinned; seals still validate |
+| SEAL-13 | Decide whether the verifier accepts BER CMS from third-party signers | Open | P2 | Measure how common BER is among signed PDFs in the corpus | Decision recorded in docs/31 |
 | PDF-REN-01 | Server-side page thumbnails: pdf.js headless versus `hayro` | Open | P2 | Fidelity on the corpus, speed, safety | Report; choice recorded |
 
 ## Phase 1 stages

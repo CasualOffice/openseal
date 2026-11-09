@@ -57,7 +57,7 @@ and revocation answers.
    with `CS-SEAL-0003`; it never truncates.
 3. Fill the ByteRange `[0, a, b, c]` covering every byte except the `/Contents` hex string, in place, keeping widths.
 4. Digest the covered bytes with SHA-256 (SHA-384 and SHA-512 supported).
-5. Build signed attributes; DER-encode; hand the digest of the attributes to `KeyProvider::sign`. The provider returns
+5. Build signed attributes; DER-encode them in DER order (`SET OF` sorted); hand **the encoded attributes** to `KeyProvider::sign`, which hashes and signs them in one FIPS-approved call (`SPK-02`: `sign_digest` is not FIPS-approved in `aws-lc-rs`). The provider returns
    the signature value and the certificate chain; it never sees the document.
 6. Send the signature value's digest to the TSA; embed the token as an unsigned attribute (B-T).
 7. Assemble CMS SignedData (detached), hex-encode, write into `/Contents`, zero-padded.
@@ -118,11 +118,25 @@ A seal is "verified" only when every rung below passes. **Our verifier alone is 
 
 ## 8. Algorithms and crate choices
 
-ADR-006 settles this: **`aws-lc-rs`** (ISC/Apache-2.0; FIPS 140-3 validated module available) for private-key
-operations and hashing in hosts, and **RustCrypto** (`der`, `spki`, `x509-cert`, `cms`, `x509-tsp`, `x509-ocsp`,
-`sha2`, `p256`, `p384`, `rsa` for verification only) for structures and for the WASM build, where `aws-lc-rs` does not
-compile. Engine crates depend on traits; the WASM verifier uses the pure-Rust verifiers. `cryptographic-message-syntax`
-(MPL-2.0) is not used. `rsa` private-key operations are never used (RUSTSEC-2023-0071, Marvin).
+ADR-006 settles this, confirmed by `SPK-02` ([66](66-SPK-02-CRYPTO-STACK.md)): **`aws-lc-rs`** (ISC, Apache-2.0, MIT,
+BSD-3-Clause, all allowed) for private-key operations, hashing and RSA verification in hosts; non-FIPS it builds with
+only a C compiler (about 13 s on an M4). **RustCrypto**, the `der` 0.8 generation (`der`, `spki`, `x509-cert`,
+`cms =0.3.0-rc.2`, `x509-tsp =0.2.0-rc.0`, `x509-ocsp =0.3.0-rc.1`, `sha2`, `p256`, `p384`), for structures and for
+the WASM verifier, which builds at 330 KB (ECDSA) or 424 KB (with RSA) and has no imports; `aws-lc-rs` cannot compile
+for `wasm32` and is never in that build. The release candidates are pinned exactly until stable (`DEP-03`). `rsa` is
+used **only for verification in WASM**, through a recorded ignore of RUSTSEC-2023-0071 (Marvin, a timing attack on
+private-key operations we never perform; `DEP-02`). `cryptographic-message-syntax` (MPL-2.0) is not used.
+
+Rules the spike found:
+
+- **Hash signed attributes exactly as received.** `der` re-sorts `SET OF` on decoding; a verifier that re-encodes would
+  reject a signer who wrote them out of order, where pyHanko accepts.
+- **ESS `signing-certificate-v2`** is our own type (RustCrypto has none); `hashAlgorithm` is omitted for SHA-256, as DER
+  requires for a DEFAULT.
+- `/Contents` is zero-padded after the CMS: decode exactly one TLV.
+- The verifier reads DER; BER from other signers needs a decision before stage 1H (`SEAL-13`).
+- **FIPS** (`aws-lc-fips-sys`) needs CMake and Go to build and carries the OpenSSL licence, which `deny.toml` does not
+  allow: a separate build profile, decided by `DEC-14`.
 
 ## 9. Failure modes
 

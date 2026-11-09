@@ -5,6 +5,7 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 ## 2026-11-10
 
 ### Phase 0 opened
+- `SPK-02`: crypto stack spike merged; ADR-006 confirmed with amendments; ADR-009 now signs DER signed attributes ([docs/66](docs/66-SPK-02-CRYPTO-STACK.md)).
 - ADR-001 to ADR-009 Accepted; Phase 0 opened (owner instruction 6).
 - Cargo workspace, `casual-sign-pdf` skeleton, toolchain pin, `deny.toml`, lints; repository gates, commit hooks and CI workflow copied from OpenPresent (`F-002`, `PROVENANCE.md`).
 - `tools/verify-sealed.py`: pyHanko validator harness with a self-test (`F-006`).
