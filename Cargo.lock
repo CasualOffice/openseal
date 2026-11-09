@@ -73,7 +73,6 @@ dependencies = [
  "proptest",
  "regex",
  "rust_decimal",
- "serde_json",
  "unicode-normalization",
 ]
 

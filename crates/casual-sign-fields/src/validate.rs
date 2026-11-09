@@ -168,7 +168,7 @@ fn check_rule(rule: &ValidationRule, text: &str, patterns: &mut Patterns) -> Res
         ValidationRule::Ssn => is_ssn(text).then_some(()).ok_or(Invalid::Ssn),
         ValidationRule::Phone => is_phone(text).then_some(()).ok_or(Invalid::Phone),
         ValidationRule::Length(r) => {
-            // Counting stops one past the maximum, so a long value costs no more than it.
+            // Characters, not bytes; a value is at most 4,000 bytes, so counting is cheap.
             let chars = text.chars().count();
             let chars = u32::try_from(chars).unwrap_or(u32::MAX);
             if r.min().is_some_and(|min| chars < min) {
