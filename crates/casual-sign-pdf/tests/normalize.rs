@@ -744,6 +744,35 @@ fn page_tree_references_to_bare_references_stay_unreadable() {
 }
 
 #[test]
+fn a_catalog_without_a_type_behind_a_reference_is_cleaned_not_dropped() {
+    let bytes = classic(
+        &[
+            (1, b"<</Pages 2 0 R/JS(app.alert\\(1\\))>>".to_vec()),
+            (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec()),
+            (
+                3,
+                b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>".to_vec(),
+            ),
+            (5, b"1 0 R".to_vec()),
+        ],
+        "",
+    )
+    .replace_root(5);
+    let (n, out) = run(&bytes);
+    assert_eq!(out.page_count, 1);
+    assert_eq!(
+        removed(
+            &n,
+            "CS-PDF-0103",
+            FindingKind::Action(ActionKind::JavaScript)
+        )[0]
+        .object,
+        Some(1)
+    );
+    assert_clean(&out);
+}
+
+#[test]
 fn direct_page_tree_dictionaries_carrying_active_keys_are_cleaned_not_dropped() {
     // Found by the normalize fuzz target: /Pages is a direct dictionary that the
     // reader takes for the one page, carrying /S /SubmitForm; and a direct kid typed

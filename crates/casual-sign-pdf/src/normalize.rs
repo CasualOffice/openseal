@@ -921,9 +921,21 @@ pub fn normalize(
     let trailer = doc.trailer().clone();
     // 0 stands for a direct dictionary in the trailer.
     let mut protected = BTreeSet::from([0]);
+    // The catalog and /Info, and every object on a chain of bare references to them.
+    let max_hops = doc.limits().max_ref_depth;
     for key in [&b"Root"[..], b"Info"] {
-        if let Some(r) = trailer.get(key).and_then(Object::as_ref) {
-            protected.insert(r.num);
+        let mut cur = trailer.get(key).and_then(Object::as_ref);
+        let mut hops: u16 = 0;
+        while let Some(r) = cur {
+            if !protected.insert(r.num) || hops >= max_hops {
+                break;
+            }
+            hops = hops.saturating_add(1);
+            cur = match doc.object(r.num, cancel) {
+                Ok(Object::Reference(next)) => Some(next),
+                Err(e) if e.is_document_wide() => return Err(e.into()),
+                _ => None,
+            };
         }
     }
     protected.extend(page_tree_objects(doc, &trailer, cancel)?);

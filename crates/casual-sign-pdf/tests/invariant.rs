@@ -9,7 +9,8 @@
 //! Run over the hostile fixtures' `open*` rows and, when it has been fetched
 //! (`python3 -I fixtures/corpus/fetch.py`), the real corpus in `fixtures/corpus/files`.
 //! Set `OPENSEAL_INV_OUT` to a folder to keep the normalized and appended outputs (for
-//! checking them with another validator).
+//! checking them with another validator), and `OPENSEAL_CORPUS_DIR` to read the
+//! corpus from another folder.
 // Test code: a panic is the failure report.
 #![allow(
     clippy::unwrap_used,
@@ -39,6 +40,11 @@ struct Counts {
     files: u32,
     refused: u32,
     signed: u32,
+    signed_appended: u32,
+    /// Signed, and refused for appending: xref needed repair (`CS-WRT-0003`).
+    signed_unsound: u32,
+    /// Signed, and refused for appending: DocMDP level 1 (`CS-WRT-0004`).
+    signed_docmdp: u32,
     checked: u32,
     strict_after: u32,
     content_kept: u32,
@@ -73,6 +79,46 @@ fn readmit(bytes: &[u8], original_strict: Option<&str>, what: &str) -> Admission
         (_, Ok(a)) => a.report,
         (_, Err(e)) => panic!("{what}: strict refused: {e}"),
     }
+}
+
+/// A signed file is not normalized (`CS-PDF-0014`); the update goes on it directly
+/// when it is sound and DocMDP allows filling and signing, and must keep every
+/// signature and page.
+fn check_signed_append(bytes: &[u8], report: &AdmissionReport, name: &str, counts: &mut Counts) {
+    let a = admit(bytes, &Limits::default(), &never).unwrap();
+    if let Err(e) = IncrementalUpdate::new(&a, Change::FillAndSign) {
+        assert!(
+            matches!(e.code(), "CS-WRT-0003" | "CS-WRT-0004"),
+            "{name}: {e}"
+        );
+        if e.code() == "CS-WRT-0003" {
+            counts.signed_unsound += 1;
+        } else {
+            counts.signed_docmdp += 1;
+        }
+        return;
+    }
+    let appended = append_info(bytes, name);
+    assert!(appended.starts_with(bytes), "{name}: prefix");
+    let after = match admit_strict(bytes, &Limits::default(), &never) {
+        Ok(_) => admit_strict(&appended, &Limits::default(), &never),
+        Err(_) => admit(&appended, &Limits::default(), &never),
+    }
+    .unwrap_or_else(|e| panic!("{name}: appended file refused: {e}"))
+    .report;
+    assert_eq!(after.page_count, report.page_count, "{name}: page count");
+    assert_eq!(media_boxes(&after), media_boxes(report), "{name}: MediaBox");
+    assert_eq!(
+        after.signatures.len(),
+        report.signatures.len(),
+        "{name}: signatures"
+    );
+    assert_eq!(
+        after.revisions.len(),
+        report.revisions.len() + 1,
+        "{name}: revisions"
+    );
+    counts.signed_appended += 1;
 }
 
 /// The trivial update: the old /Info entries and one new one.
@@ -112,6 +158,7 @@ fn check_file(path: &Path, out_dir: Option<&Path>, counts: &mut Counts) {
             Ok(n) => n,
             Err(e) if e.code() == "CS-PDF-0014" => {
                 counts.signed += 1;
+                check_signed_append(&bytes, &report, &name, counts);
                 return;
             }
             Err(e) => panic!("{what}: normalize failed: {e}"),
@@ -183,7 +230,11 @@ fn pdf_inv_01_hostile_fixtures() {
 
 #[test]
 fn pdf_inv_01_corpus() {
-    let dir = common::repo_root().join("fixtures/corpus/files");
+    // A worktree can point at a corpus fetched in another checkout.
+    let dir = std::env::var_os("OPENSEAL_CORPUS_DIR").map_or_else(
+        || common::repo_root().join("fixtures/corpus/files"),
+        PathBuf::from,
+    );
     if !dir.is_dir() {
         eprintln!(
             "SKIPPED: fixtures/corpus/files absent; fetch it with python3 -I fixtures/corpus/fetch.py"
@@ -198,8 +249,26 @@ fn pdf_inv_01_corpus() {
     files.sort();
     let out = out_dir("corpus");
     let mut counts = Counts::default();
+    // Every file is checked and every failure listed, not just the first.
+    let mut failures = Vec::new();
     for f in &files {
-        check_file(f, out.as_deref(), &mut counts);
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            check_file(f, out.as_deref(), &mut counts);
+        }));
+        if let Err(e) = r {
+            let msg = e
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string()))
+                .unwrap_or_default();
+            failures.push(msg);
+        }
     }
-    eprintln!("PDF-INV-01 fixtures/corpus/files: {counts:?}");
+    eprintln!("PDF-INV-01 corpus ({}): {counts:?}", dir.display());
+    assert!(
+        failures.is_empty(),
+        "{} failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
