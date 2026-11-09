@@ -1,0 +1,193 @@
+//! AcroForm conversion (docs/30 §3): each widget type, flags, options, max length, and
+//! what cannot be mapped.
+
+// Tests may unwrap, index and panic (CLAUDE.md): a failure here is the test failing.
+#![allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::panic
+)]
+
+mod pdf;
+
+use casual_sign_fields::{Unmapped, convert_acroform};
+use casual_sign_model::{FieldType, Id, LengthRule, ValidationRule};
+use casual_sign_pdf::{Limits, admit};
+use pdf::{dump, never, one_page};
+use rust_decimal::Decimal;
+
+fn form(page_extra: &str) -> Vec<u8> {
+    let w = "/Type/Annot/Subtype/Widget/P 3 0 R";
+    let extra = vec![
+        (
+            10,
+            format!("<</FT/Tx/T(Company Name)/Ff 2/MaxLen 40{w}/Rect[100 600 300 620]>>")
+                .into_bytes(),
+        ),
+        (
+            11,
+            format!("<</FT/Btn/T(agree)/Ff 1{w}/Rect[100 500 112 512]>>").into_bytes(),
+        ),
+        (
+            12,
+            b"<</FT/Btn/Ff 49152/T(choice)/Kids[16 0 R 17 0 R]>>".to_vec(),
+        ),
+        (
+            13,
+            format!(
+                "<</FT/Ch/Ff 393216/T(country)/Opt[(US)[(de)(Germany)](US)]{w}/Rect[100 400 200 420]>>"
+            )
+            .into_bytes(),
+        ),
+        (
+            14,
+            format!("<</FT/Sig/T(sig1){w}/Rect[300 100 500 150]>>").into_bytes(),
+        ),
+        (
+            15,
+            format!("<</FT/Btn/Ff 65536/T(btn){w}/Rect[10 10 50 30]>>").into_bytes(),
+        ),
+        (
+            16,
+            format!("<</Parent 12 0 R{w}/Rect[100 300 110 310]/AP<</N<</one 20 0 R/Off 20 0 R>>>>>>")
+                .into_bytes(),
+        ),
+        (
+            17,
+            format!("<</Parent 12 0 R{w}/Rect[150 300 160 310]/AP<</N<</two 20 0 R/Off 20 0 R>>>>>>")
+                .into_bytes(),
+        ),
+        (
+            18,
+            format!("<</FT/Tx/T(off page){w}/Rect[700 900 720 920]>>").into_bytes(),
+        ),
+        (20, pdf::stream("/Type/XObject/Subtype/Form/BBox[0 0 10 10]", b"")),
+    ];
+    one_page(
+        "/AcroForm<</Fields[10 0 R 11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 18 0 R]>>",
+        &format!("{page_extra}/Annots[10 0 R 11 0 R 13 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R]"),
+        "",
+        b"",
+        extra,
+    )
+}
+
+fn convert(bytes: &[u8]) -> casual_sign_fields::Conversion {
+    let mut a = admit(bytes, &Limits::default(), &never).unwrap();
+    let mut n = 0;
+    let mut next = || {
+        n += 1;
+        Id::new(format!("f{n}")).unwrap()
+    };
+    convert_acroform(
+        &mut a.document,
+        &a.report,
+        &Id::new("doc").unwrap(),
+        &mut next,
+        &never,
+    )
+    .unwrap()
+}
+
+fn d(n: i64) -> Decimal {
+    Decimal::from(n)
+}
+
+#[test]
+fn each_widget_type_maps_with_its_flags_and_rectangle() {
+    let bytes = form("");
+    dump("acroform.pdf", &bytes);
+    let c = convert(&bytes);
+    let kinds: Vec<FieldType> = c.fields.iter().map(|f| f.field.field_type).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            FieldType::Text,
+            FieldType::Checkbox,
+            FieldType::RadioGroup,
+            FieldType::Dropdown,
+            FieldType::Signature
+        ]
+    );
+    let text = &c.fields[0].field;
+    assert_eq!(text.id.as_str(), "f1");
+    assert_eq!(text.document_id.as_str(), "doc");
+    assert_eq!(text.label.as_ref().unwrap().as_str(), "Company Name");
+    assert!(text.required && !text.read_only);
+    assert_eq!(
+        text.validation.as_ref().unwrap().rule,
+        ValidationRule::Length(LengthRule::new(None, Some(40)).unwrap())
+    );
+    // Rect [100 600 300 620] on a 792-high page: top-left (100, 172), 200 × 20.
+    let p = text.placement;
+    assert_eq!(
+        (
+            p.page(),
+            p.x().get(),
+            p.y().get(),
+            p.width().get(),
+            p.height().get()
+        ),
+        (1, d(100), d(172), d(200), d(20))
+    );
+    assert_eq!(c.fields[0].object, Some(10));
+
+    let check = &c.fields[1].field;
+    assert!(check.read_only && !check.required);
+
+    let radio = &c.fields[2].field;
+    let opts: Vec<&str> = radio
+        .options
+        .as_slice()
+        .iter()
+        .map(|o| o.as_str())
+        .collect();
+    assert_eq!(opts, vec!["one", "two"]);
+    // The two buttons' bounding box: x 100–160, y 792-310 = 482 to 492.
+    assert_eq!(
+        (
+            radio.placement.x().get(),
+            radio.placement.y().get(),
+            radio.placement.width().get()
+        ),
+        (d(100), d(482), d(60))
+    );
+
+    let combo = &c.fields[3].field;
+    let opts: Vec<&str> = combo
+        .options
+        .as_slice()
+        .iter()
+        .map(|o| o.as_str())
+        .collect();
+    assert_eq!(opts, vec!["US", "Germany"]);
+    assert!(combo.allow_custom);
+
+    assert_eq!(c.fields[4].field.field_type, FieldType::Signature);
+}
+
+#[test]
+fn what_cannot_be_mapped_is_reported() {
+    let c = convert(&form(""));
+    let skipped: Vec<(Option<u32>, Unmapped)> =
+        c.skipped.iter().map(|s| (s.object, s.reason)).collect();
+    assert!(skipped.contains(&(Some(15), Unmapped::PushButton)));
+    assert!(skipped.contains(&(Some(18), Unmapped::NoArea)));
+    let lossy: Vec<(Option<u32>, Unmapped)> =
+        c.lossy.iter().map(|s| (s.object, s.reason)).collect();
+    assert_eq!(lossy, vec![(Some(13), Unmapped::Options)]);
+}
+
+#[test]
+fn widgets_on_rotated_pages_are_placed_in_displayed_space() {
+    let c = convert(&form("/Rotate 90"));
+    let p = c.fields[0].field.placement;
+    // Rotate 90 turns the page clockwise: displayed (x, y) = (user y, user x) here, so
+    // Rect [100 600 300 620] covers displayed x 600–620, y 100–300.
+    assert_eq!(
+        (p.x().get(), p.y().get(), p.width().get(), p.height().get()),
+        (d(600), d(100), d(20), d(200))
+    );
+}
