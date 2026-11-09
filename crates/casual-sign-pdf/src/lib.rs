@@ -1,66 +1,109 @@
-//! Bounded PDF reading and incremental writing for OpenSeal.
+//! Bounded PDF reading for OpenSeal (stage 1A, docs/30 §2).
 //!
-//! Every uploaded PDF is hostile (docs/07). This crate will admit a PDF within the
-//! limits of docs/21, classify what it contains, neutralize active content, and append
-//! incremental updates without ever rewriting earlier bytes (docs/30). It performs no
-//! I/O, reads no clock and holds no key: the host supplies bytes, limits and a
-//! cancellation predicate.
+//! Every uploaded PDF is hostile (docs/07). This crate admits a PDF within the limits
+//! of docs/21 and classifies what it contains into an [`AdmissionReport`]. It performs
+//! no I/O, reads no clock and holds no key: the host supplies bytes, [`Limits`] and a
+//! cancellation predicate, checked in every loop the file can lengthen
+//! (`CS-PDF-0013`).
 //!
-//! **Phase 0 skeleton.** The reader arrives with stage 1A (`T-1A` in docs/14), after
-//! `SPK-01` decides between our own reader and an existing crate (ADR-005). Until then
-//! this crate only fixes the limits' home, so the fuzz workspace and the dependency gate
-//! have a first consumer.
+//! Two entry points:
+//!
+//! - [`admit`] (the default) recovers what readers commonly recover: an xref rebuilt by
+//!   scanning, a `/Prev` loop broken, an over-long value dropped, a stream that cannot
+//!   be decoded within its caps skipped; each is a [`Finding`] in the report. Limits on
+//!   the document as a whole (size, objects, revisions, pages, nesting, the decode
+//!   budget, cancellation) refuse in both modes.
+//! - [`admit_strict`] refuses with the code instead of repairing. It still corrects
+//!   xref offsets that point a few bytes from the object or section they name, which
+//!   it reports as `CS-PDF-0101` (such a file is not structurally sound for appending).
+//!
+//! A signed document (signature values or `/Perms`) is never repaired: one that needs
+//! repair is refused with `CS-PDF-0014`. Encrypted documents are refused with
+//! `CS-PDF-0009` (`CS-PDF-0010` for the public-key handler); decryption with a
+//! host-supplied password arrives in a later stage.
+//!
+//! Nothing here is executed or followed: actions, JavaScript, embedded files and
+//! external streams are only reported.
 
-/// Hard limits on what a PDF may make the reader do (docs/21).
+mod classify;
+mod document;
+mod error;
+mod filters;
+mod lexer;
+mod limits;
+mod object;
+mod pages;
+mod parser;
+mod report;
+mod text;
+mod xref;
+
+pub use document::Document;
+pub use error::PdfError;
+pub use limits::Limits;
+pub use object::{Dictionary, ObjRef, Object, Stream};
+pub use report::{
+    ActionInfo, ActionKind, AdmissionReport, FieldType, Finding, FindingKind, FormField,
+    MAX_FINDINGS, PageInfo, PdfVersion, Rect, Revision, SignatureInfo, Widget,
+};
+pub use xref::XrefKind;
+
+/// The host's cancellation predicate: return `true` to stop the read (`CS-PDF-0013`).
+pub type Cancel<'a> = &'a dyn Fn() -> bool;
+
+/// An admitted document: the report, and the parsed document for later stages.
+#[derive(Debug)]
+pub struct Admitted<'a> {
+    /// What was found.
+    pub report: AdmissionReport,
+    /// The parsed document, for reading objects and streams after admission.
+    pub document: Document<'a>,
+}
+
+/// Admit a PDF, recovering from damage where readers commonly do (the default).
 ///
-/// Defaults are the proposed values in docs/21; a host may lower or raise them. No
-/// limit is ever taken from the file itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Limits {
-    /// Largest input accepted, in bytes (`CS-PDF-0001`).
-    pub max_input_bytes: u64,
-    /// Most indirect objects or cross-reference entries (`CS-PDF-0002`).
-    pub max_objects: u32,
-    /// Deepest nesting of arrays and dictionaries (`CS-PDF-0004`).
-    pub max_depth: u16,
-    /// Most revisions along a `/Prev` chain (`CS-PDF-0006`).
-    pub max_revisions: u16,
-    /// Most pages (`CS-PDF-0007`).
-    pub max_pages: u32,
-    /// Largest single decoded stream, in bytes (`CS-PDF-0003`).
-    pub max_stream_bytes: u64,
-    /// Largest total decoded across the document, in bytes (`CS-PDF-0003`).
-    pub max_total_decoded_bytes: u64,
+/// # Errors
+///
+/// A [`PdfError`] whose [`PdfError::code`] is the docs/20 code of the limit crossed or
+/// the reason the file cannot be read.
+pub fn admit<'a>(
+    bytes: &'a [u8],
+    limits: &Limits,
+    cancel: Cancel<'_>,
+) -> Result<Admitted<'a>, PdfError> {
+    run(bytes, limits, cancel, false)
 }
 
-impl Default for Limits {
-    fn default() -> Self {
-        const MIB: u64 = 1024 * 1024;
-        Self {
-            max_input_bytes: 50 * MIB,
-            max_objects: 1_000_000,
-            max_depth: 256,
-            max_revisions: 1_000,
-            max_pages: 5_000,
-            max_stream_bytes: 256 * MIB,
-            max_total_decoded_bytes: 1024 * MIB,
+/// Admit a PDF strictly: refuse with the code instead of repairing.
+///
+/// # Errors
+///
+/// As [`admit`], and also for any damage the default mode would repair.
+pub fn admit_strict<'a>(
+    bytes: &'a [u8],
+    limits: &Limits,
+    cancel: Cancel<'_>,
+) -> Result<Admitted<'a>, PdfError> {
+    run(bytes, limits, cancel, true)
+}
+
+fn run<'a>(
+    bytes: &'a [u8],
+    limits: &Limits,
+    cancel: Cancel<'_>,
+    strict: bool,
+) -> Result<Admitted<'a>, PdfError> {
+    let mut document = Document::open(bytes, limits, strict, cancel, false)?;
+    match classify::classify(&mut document, strict, cancel) {
+        Ok(report) => Ok(Admitted { report, document }),
+        // The xref read cleanly but does not lead to a catalog and pages: rebuild once.
+        Err(PdfError::NotPdf { .. } | PdfError::Malformed { .. })
+            if !strict && !document.is_repaired() =>
+        {
+            let mut document = Document::open(bytes, limits, strict, cancel, true)?;
+            let report = classify::classify(&mut document, strict, cancel)?;
+            Ok(Admitted { report, document })
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_limits_match_docs_21() {
-        let limits = Limits::default();
-        assert_eq!(limits.max_input_bytes, 52_428_800);
-        assert_eq!(limits.max_objects, 1_000_000);
-        assert_eq!(limits.max_depth, 256);
-        assert_eq!(limits.max_revisions, 1_000);
-        assert_eq!(limits.max_pages, 5_000);
-        assert_eq!(limits.max_stream_bytes, 268_435_456);
-        assert_eq!(limits.max_total_decoded_bytes, 1_073_741_824);
+        Err(e) => Err(e),
     }
 }
