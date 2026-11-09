@@ -654,3 +654,39 @@ fn page_tree_counts_are_rewritten_to_the_pages_present() {
     let lopdf = lopdf::Document::load_mem(&n.bytes).unwrap();
     assert_eq!(lopdf.get_pages().len(), 2);
 }
+
+#[test]
+fn unreadable_page_content_is_dropped_and_reported() {
+    // Found by the normalize fuzz target: page content that is a dictionary, not a
+    // stream (`stream` keyword missing), and a content array naming a number. The
+    // default reader reports both (CS-PDF-0102); the output must not carry them.
+    let bytes = classic(
+        &[
+            (1, b"<</Type/Catalog/Pages 2 0 R>>".to_vec()),
+            (2, b"<</Type/Pages/Kids[3 0 R 6 0 R]/Count 2>>".to_vec()),
+            (
+                3,
+                b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R>>".to_vec(),
+            ),
+            (4, b"<</Filter/FlateDecode/Length 43>>\nstr1".to_vec()),
+            (
+                6,
+                b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents[7 0 R 8 0 R]>>".to_vec(),
+            ),
+            (7, b"42".to_vec()),
+            (8, stream("", b"0 0 m 1 1 l S")),
+        ],
+        "",
+    );
+    assert!(admit_strict(&bytes, &Limits::default(), &never).is_err());
+    let before = admit(&bytes, &Limits::default(), &never).unwrap().report;
+    assert!(before.has_code("CS-PDF-0102"));
+    let (n, out) = run(&bytes);
+    let objects: Vec<_> = removed(&n, "CS-PDF-0102", FindingKind::ObjectUnreadable)
+        .iter()
+        .filter_map(|r| r.object)
+        .collect();
+    assert!(objects.contains(&4) && objects.contains(&7), "{objects:?}");
+    assert_eq!(out.page_count, 2);
+    assert!(!out.has_code("CS-PDF-0102"));
+}
