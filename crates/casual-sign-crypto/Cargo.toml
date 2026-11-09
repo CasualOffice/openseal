@@ -8,8 +8,31 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
-[dependencies]
+[features]
+default = []
+# RSA PKCS#1 v1.5 and PSS verification with the RustCrypto `rsa` crate, for the WASM
+# verifier. Verify only: no private-key operation is ever performed with it, which is why
+# RUSTSEC-2023-0071 (Marvin) is ignored in deny.toml (DEP-02, ADR-006).
+rsa = ["dep:rsa"]
 
+# ADR-006: the RustCrypto der-0.8 generation. Release candidates are pinned exactly (DEP-03).
+[dependencies]
+der = { version = "0.8.3", default-features = false, features = ["alloc", "derive", "oid"] }
+spki = { version = "0.8.1", default-features = false, features = ["alloc"] }
+x509-cert = { version = "0.3.0", default-features = false }
+cms = { version = "=0.3.0-rc.2", default-features = false }
+x509-tsp = { version = "=0.2.0-rc.0", default-features = false }
+x509-ocsp = { version = "=0.3.0-rc.1", default-features = false }
+sha2 = { version = "0.11.1", default-features = false, features = ["oid"] }
+p256 = { version = "0.14.0", default-features = false, features = ["ecdsa"] }
+p384 = { version = "0.14.0", default-features = false, features = ["ecdsa"] }
+rsa = { version = "0.10.0", default-features = false, features = ["encoding", "pkcs1v15"], optional = true }
+
+[dev-dependencies]
+# Test-only key provider and throwaway PKI (docs/66 §1). aws-lc-rs cannot build for
+# wasm32, so it is never a normal dependency of this engine crate (ADR-006).
+aws-lc-rs = "1.19.0"
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto"] }
 
 [lints]
 workspace = true
