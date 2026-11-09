@@ -21,6 +21,10 @@
 //! Optional content is kept as it is and reported, not flattened. A signed document
 //! is refused (`CS-PDF-0014`): rewriting it would break its signatures.
 //!
+//! The page tree is made to say what it holds: each node's `/Kids` keeps only
+//! dictionaries and its `/Count` is the number of pages actually under it, so a
+//! viewer that trusts `/Count` sees the pages this reader sees (SEC-P11).
+//!
 //! Stream data is copied as stored, with its filters; nothing is decoded except
 //! object streams the reader needs to load objects. A chain of objects whose values
 //! are bare references collapses to its target.
@@ -579,6 +583,123 @@ fn header(version: PdfVersion) -> Vec<u8> {
     h
 }
 
+/// Index in the output bodies of output object `num` (numbered from 1).
+fn body_index(num: u32) -> Option<usize> {
+    usize::try_from(num).ok()?.checked_sub(1)
+}
+
+/// As the reader's page walk decides: a node has `/Type /Pages`, or no `/Type /Page`
+/// and `/Kids`.
+fn is_node(d: &Dictionary) -> bool {
+    match d.name(b"Type") {
+        Some(b"Pages") => true,
+        Some(b"Page") => false,
+        _ => d.contains(b"Kids"),
+    }
+}
+
+/// Whether a kid is a node (`Some(true)`), a page (`Some(false)`) or not a
+/// dictionary at all (`None`).
+fn kid_kind(bodies: &[Body<'_>], kid: &Object) -> Option<bool> {
+    match kid {
+        Object::Reference(r) => match bodies.get(body_index(r.num)?)? {
+            Body::Value(Object::Dictionary(d)) => Some(is_node(d)),
+            _ => None,
+        },
+        Object::Dictionary(d) => Some(is_node(d)),
+        _ => None,
+    }
+}
+
+/// Deepest page tree walked when fixing counts; the reader refuses deeper trees.
+const MAX_TREE_DEPTH: usize = 4096;
+
+/// Rewrite one node's `/Kids` (dictionaries only, direct) and `/Count` (the pages
+/// actually under it), so every reader sees the pages ours does (SEC-P11).
+fn fix_node_dict(
+    bodies: &mut [Body<'_>],
+    d: &mut Dictionary,
+    visited: &mut BTreeSet<u32>,
+    depth: usize,
+) -> u64 {
+    let kids = match d.get(b"Kids") {
+        Some(Object::Array(a)) => a.clone(),
+        Some(Object::Reference(r)) => match body_index(r.num).and_then(|i| bodies.get(i)) {
+            Some(Body::Value(Object::Array(a))) => a.clone(),
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    };
+    let mut kept = Vec::with_capacity(kids.len());
+    let mut total: u64 = 0;
+    for kid in kids {
+        match (kid_kind(bodies, &kid), kid) {
+            (Some(true), Object::Reference(r)) => {
+                total = total.saturating_add(fix_node(bodies, r.num, visited, depth));
+                kept.push(Object::Reference(r));
+            }
+            (Some(true), Object::Dictionary(mut kd)) => {
+                if depth < MAX_TREE_DEPTH {
+                    let next = depth.saturating_add(1);
+                    total = total.saturating_add(fix_node_dict(bodies, &mut kd, visited, next));
+                }
+                kept.push(Object::Dictionary(kd));
+            }
+            (Some(_), kid) => {
+                total = total.saturating_add(1);
+                kept.push(kid);
+            }
+            (None, _) => {}
+        }
+    }
+    d.insert(b"Kids", Object::Array(kept));
+    d.insert(b"Count", int(total));
+    total
+}
+
+/// [`fix_node_dict`] for the indirect node `num`; its page count.
+fn fix_node(bodies: &mut [Body<'_>], num: u32, visited: &mut BTreeSet<u32>, depth: usize) -> u64 {
+    if depth >= MAX_TREE_DEPTH || !visited.insert(num) {
+        return 0;
+    }
+    let Some(i) = body_index(num) else {
+        return 0;
+    };
+    let mut d = match bodies.get_mut(i) {
+        Some(Body::Value(Object::Dictionary(d))) => core::mem::take(d),
+        _ => return 0,
+    };
+    let total = fix_node_dict(bodies, &mut d, visited, depth.saturating_add(1));
+    if let Some(Body::Value(Object::Dictionary(slot))) = bodies.get_mut(i) {
+        *slot = d;
+    }
+    total
+}
+
+/// Fix `/Kids` and `/Count` throughout the page tree under the catalog `root`.
+fn fix_page_tree(bodies: &mut [Body<'_>], root: u32) {
+    let Some(i) = body_index(root) else {
+        return;
+    };
+    let pages = match bodies.get(i) {
+        Some(Body::Value(Object::Dictionary(c))) => c.get(b"Pages").cloned(),
+        _ => None,
+    };
+    let mut visited = BTreeSet::new();
+    match pages {
+        Some(Object::Reference(r)) if kid_kind(bodies, &Object::Reference(r)) == Some(true) => {
+            fix_node(bodies, r.num, &mut visited, 0);
+        }
+        Some(Object::Dictionary(mut d)) if is_node(&d) => {
+            fix_node_dict(bodies, &mut d, &mut visited, 1);
+            if let Some(Body::Value(Object::Dictionary(c))) = bodies.get_mut(i) {
+                c.insert(b"Pages", Object::Dictionary(d));
+            }
+        }
+        _ => {}
+    }
+}
+
 fn signed(report: &AdmissionReport) -> bool {
     !report.signatures.is_empty() || report.has_perms
 }
@@ -636,6 +757,7 @@ pub fn normalize(
         let body = n.clean_top(old, obj)?;
         bodies.push(body);
     }
+    fix_page_tree(&mut bodies, root.num);
     // Active content in objects nothing reachable refers to went with them.
     for f in &input_findings {
         if matches!(f.code, "CS-PDF-0103" | "CS-PDF-0104" | "CS-PDF-0105")

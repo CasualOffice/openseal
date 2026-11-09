@@ -14,7 +14,7 @@ mod common;
 
 use casual_sign_pdf::{
     ActionKind, AdmissionReport, FindingKind, Limits, NormalizationReport, NormalizeOptions,
-    OutputXref, Removal, admit, admit_strict, normalize,
+    Object, OutputXref, Removal, admit, admit_strict, normalize,
 };
 use common::{classic, never, stream};
 
@@ -606,4 +606,51 @@ fn a_javascript_action_without_a_type_is_removed_whole() {
     assert!(n.report_has_old(10));
     assert!(!n.report_has_old(11), "the action object is not written");
     assert_clean(&out);
+}
+
+#[test]
+fn page_tree_counts_are_rewritten_to_the_pages_present() {
+    // /Count says 7; one kid is not a dictionary and one is missing: two pages remain.
+    let bytes = classic(
+        &[
+            (1, b"<</Type/Catalog/Pages 2 0 R>>".to_vec()),
+            (
+                2,
+                b"<</Type/Pages/Kids[3 0 R 5 0 R 6 0 R 9 0 R]/Count 7>>".to_vec(),
+            ),
+            (
+                3,
+                b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>".to_vec(),
+            ),
+            (5, b"42".to_vec()),
+            (
+                6,
+                b"<</Type/Pages/Parent 2 0 R/Kids[7 0 R]/Count 3>>".to_vec(),
+            ),
+            (
+                7,
+                b"<</Type/Page/Parent 6 0 R/MediaBox[0 0 100 100]>>".to_vec(),
+            ),
+        ],
+        "",
+    );
+    let before = admit(&bytes, &Limits::default(), &never).unwrap().report;
+    assert_eq!(before.page_count, 2);
+    let mut a = admit(&bytes, &Limits::default(), &never).unwrap();
+    let n = normalize(&mut a, &NormalizeOptions::default(), &never).unwrap();
+    let mut out = admit_strict(&n.bytes, &Limits::default(), &never).unwrap();
+    assert_eq!(out.report.page_count, 2);
+    let root = out.document.trailer().get(b"Root").cloned().unwrap();
+    let cat = out.document.resolve(&root, &never).unwrap();
+    let pages = out
+        .document
+        .resolve(cat.get(b"Pages").unwrap(), &never)
+        .unwrap();
+    assert_eq!(pages.get(b"Count"), Some(&Object::Integer(2)));
+    match pages.get(b"Kids") {
+        Some(Object::Array(k)) => assert_eq!(k.len(), 2),
+        other => panic!("{other:?}"),
+    }
+    let lopdf = lopdf::Document::load_mem(&n.bytes).unwrap();
+    assert_eq!(lopdf.get_pages().len(), 2);
 }
