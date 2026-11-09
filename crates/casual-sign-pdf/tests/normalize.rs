@@ -581,3 +581,29 @@ fn active_fixtures_are_cleaned() {
         assert_clean(&out);
     }
 }
+
+#[test]
+fn a_javascript_action_without_a_type_is_removed_whole() {
+    // `/JS` with no `/S`: still JavaScript to a viewer that runs it.
+    let bytes = doc(
+        "",
+        "/Annots[10 0 R]",
+        &[
+            (
+                10,
+                b"<</Type/Annot/Subtype/Link/Rect[0 0 10 10]/A 11 0 R>>".to_vec(),
+            ),
+            (11, b"<</JS(app.alert\\(1\\))>>".to_vec()),
+        ],
+    );
+    let (n, out) = run(&bytes);
+    let r = removed(
+        &n,
+        "CS-PDF-0103",
+        FindingKind::Action(ActionKind::JavaScript),
+    );
+    assert_eq!(r[0].object, Some(11));
+    assert!(n.report_has_old(10));
+    assert!(!n.report_has_old(11), "the action object is not written");
+    assert_clean(&out);
+}
