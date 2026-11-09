@@ -1,0 +1,24 @@
+[package]
+name = "spk02-verify"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "SPK-02: PAdES B-B verifier using RustCrypto only (builds for wasm32-unknown-unknown)."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# RSA PKCS#1 v1.5 verification; off by default so the size of the ECDSA-only build is visible.
+rsa = ["dep:rsa"]
+
+[dependencies]
+der.workspace = true
+spki.workspace = true
+x509-cert.workspace = true
+cms.workspace = true
+sha2.workspace = true
+p256.workspace = true
+rsa = { workspace = true, optional = true }
