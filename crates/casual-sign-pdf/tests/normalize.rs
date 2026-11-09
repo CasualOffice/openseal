@@ -711,3 +711,34 @@ fn page_tree_objects_carrying_active_keys_are_cleaned_not_dropped() {
     assert!(!removed(&n, "CS-PDF-0103", FindingKind::Action(ActionKind::Launch)).is_empty());
     assert_clean(&out);
 }
+
+#[test]
+fn direct_page_tree_dictionaries_carrying_active_keys_are_cleaned_not_dropped() {
+    // Found by the normalize fuzz target: /Pages is a direct dictionary that the
+    // reader takes for the one page, carrying /S /SubmitForm; and a direct kid typed
+    // as an embedded file.
+    let bytes = classic(
+        &[(
+            1,
+            b"<</Type/Catalog/Pages<</Kids[<</Type/EmbeddedFile/MediaBox[0 0 50 50]>>]\
+/S/SubmitForm/F(https://x.invalid/)>>>>"
+                .to_vec(),
+        )],
+        "",
+    );
+    let before = admit(&bytes, &Limits::default(), &never).unwrap().report;
+    assert_eq!(before.page_count, 1);
+    let (n, out) = run(&bytes);
+    assert_eq!(out.page_count, 1);
+    assert_eq!(out.pages[0].media_box.urx, 50.0);
+    assert!(
+        !removed(
+            &n,
+            "CS-PDF-0103",
+            FindingKind::Action(ActionKind::SubmitForm)
+        )
+        .is_empty()
+    );
+    assert!(!removed(&n, "CS-PDF-0104", FindingKind::EmbeddedFile).is_empty());
+    assert_clean(&out);
+}

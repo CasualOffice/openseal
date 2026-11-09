@@ -326,7 +326,14 @@ impl<'a> Norm<'_, 'a> {
     }
 
     /// Clean a dictionary's entries: one entry per key (the last), active keys removed.
-    fn clean_dict(&mut self, old: u32, d: Dictionary) -> Result<Dictionary, WriteError> {
+    /// `structure` marks the catalog, the page tree and `/Info`: never removed, so a
+    /// `/Type` or `/Subtype` that would remove another dictionary goes instead.
+    fn clean_dict(
+        &mut self,
+        old: u32,
+        d: Dictionary,
+        structure: bool,
+    ) -> Result<Dictionary, WriteError> {
         let entries = d.into_entries();
         let mut last: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
         for (i, (k, _)) in entries.iter().enumerate() {
@@ -356,6 +363,27 @@ impl<'a> Norm<'_, 'a> {
                 }
                 b"XFA" => {
                     self.record("CS-PDF-0103", FindingKind::Xfa, Some(old));
+                    continue;
+                }
+                b"Type" | b"Subtype" if structure => {
+                    let carrier = match v.as_name() {
+                        Some(b"EmbeddedFile" | b"FileAttachment") => {
+                            Some(FindingKind::EmbeddedFile)
+                        }
+                        Some(b"3D" | b"RichMedia" | b"RichMediaContent") => {
+                            Some(FindingKind::RichMedia)
+                        }
+                        _ => None,
+                    };
+                    if let Some(kind) = carrier {
+                        self.record("CS-PDF-0104", kind, Some(old));
+                        continue;
+                    }
+                }
+                b"Pages" | b"Kids" if structure => {
+                    if let Some(v) = self.clean_structure(old, v)? {
+                        out.push(k, v);
+                    }
                     continue;
                 }
                 b"S" => {
@@ -403,7 +431,8 @@ impl<'a> Norm<'_, 'a> {
                     self.record(code, kind, Some(old));
                     return Ok(None);
                 }
-                Some(Object::Dictionary(self.clean_dict(old, d)?))
+                let structure = structural(&d);
+                Some(Object::Dictionary(self.clean_dict(old, d, structure)?))
             }
             // A stream is never a direct value; the parser does not produce one.
             Object::Stream(_) => None,
@@ -411,11 +440,29 @@ impl<'a> Norm<'_, 'a> {
         })
     }
 
+    /// Clean the value of `/Pages` or `/Kids` in the structure: a direct dictionary
+    /// there is a page-tree node or page, cleaned but never removed.
+    fn clean_structure(&mut self, old: u32, value: Object) -> Result<Option<Object>, WriteError> {
+        match value {
+            Object::Array(a) => {
+                let mut out = Vec::with_capacity(a.len());
+                for e in a {
+                    if let Some(e) = self.clean_structure(old, e)? {
+                        out.push(e);
+                    }
+                }
+                Ok(Some(Object::Array(out)))
+            }
+            Object::Dictionary(d) => Ok(Some(Object::Dictionary(self.clean_dict(old, d, true)?))),
+            other => self.clean(old, other),
+        }
+    }
+
     /// Clean an object taken from the queue into the body to write.
     fn clean_top(&mut self, old: u32, obj: Object) -> Result<Body<'a>, WriteError> {
         match obj {
             Object::Stream(s) => {
-                let mut dict = self.clean_dict(old, s.dict)?;
+                let mut dict = self.clean_dict(old, s.dict, false)?;
                 dict.remove(b"Length");
                 let data: Cow<'a, [u8]> = if dict.contains(b"F") {
                     // External data is never fetched (SEC-P07): the stream stays, empty.
@@ -437,7 +484,12 @@ impl<'a> Norm<'_, 'a> {
                 };
                 Ok(Body::Stream { dict, data })
             }
-            Object::Dictionary(d) => Ok(Body::Value(Object::Dictionary(self.clean_dict(old, d)?))),
+            Object::Dictionary(d) => {
+                let structure = self.protected.contains(&old) || structural(&d);
+                Ok(Body::Value(Object::Dictionary(
+                    self.clean_dict(old, d, structure)?,
+                )))
+            }
             other => Ok(Body::Value(self.clean(old, other)?.unwrap_or(Object::Null))),
         }
     }
