@@ -1,0 +1,27 @@
+# cargo-fuzz workspace (F-007): one target per entry point that takes bytes. Kept out of
+# the product workspace (root Cargo.toml `exclude`) because libfuzzer-sys needs nightly.
+#
+#   cargo +nightly fuzz run admit -- -max_total_time=600 -dict=fuzz/pdf.dict
+[package]
+name = "casual-sign-pdf-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+casual-sign-pdf = { path = "../crates/casual-sign-pdf" }
+
+[[bin]]
+name = "admit"
+path = "fuzz_targets/admit.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
