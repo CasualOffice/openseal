@@ -111,6 +111,7 @@ cargo check --target wasm32-unknown-unknown --workspace --locked
 cargo +1.88.0 check --workspace --locked
 cargo deny check bans licenses sources && cargo audit --deny warnings
 python3 tools/check-repo.py
+python3 -I fixtures/tools/generate.py --check
 python3 tools/verify-sealed.py --self-test                 # pyHanko must tell sealed from tampered
 python3 tools/verify-sealed.py fixtures/sealed fixtures/tampered   # once Phase 1 writes sealed fixtures
 ```

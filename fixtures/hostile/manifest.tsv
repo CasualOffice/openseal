@@ -1,0 +1,33 @@
+file	limit	strict_code	default	note
+valid.pdf	control	-	open	Three pages, classic xref
+valid_xrefstream.pdf	control	-	open	Three pages, xref stream
+too_large.pdf	File size (UI upload); File size (API upload)	CS-PDF-0001	refuse	50 MiB + 1 byte; refused before parsing
+many_objects.pdf	Indirect objects	CS-PDF-0002	refuse	1,000,001 objects all reachable; 58 MB
+xref_size_2g_table.pdf	Xref entries declared (`/Size`) honoured for allocation	CS-PDF-0002	open+report	/Size 2^31 in a table: nothing allocated from it; xref rebuilt (CS-PDF-0101)
+xref_size_2g_stream.pdf	Xref entries declared (`/Size`) honoured for allocation	CS-PDF-0002	open+report	/Size and /Index 2^31 in an xref stream
+revisions_1001.pdf	Revisions (`/Prev` chain)	CS-PDF-0006	refuse	1,001 incremental updates
+prev_loop.pdf	Revisions (`/Prev` chain)	CS-PDF-0006	open+report	Two trailers whose /Prev point at each other; loop broken, CS-PDF-0101
+prev_self_loop.pdf	Revisions (`/Prev` chain)	CS-PDF-0006	open+report	A trailer whose /Prev points at itself
+nesting_257_arrays.pdf	Nesting depth (arrays and dictionaries)	CS-PDF-0004	refuse	One over the limit
+nesting_100k_arrays.pdf	Nesting depth (arrays and dictionaries)	CS-PDF-0004	refuse	10^5 arrays; lopdf returned 0 pages here (SPK-01)
+nesting_100k_dicts.pdf	Nesting depth (arrays and dictionaries)	CS-PDF-0004	refuse	10^5 dictionaries
+ref_chain_65.pdf	Reference resolution depth	CS-PDF-0004	open+report	65 chained indirect references from the catalog; value unresolved, rest opens
+flate_bomb_content.pdf	Single stream decoded	CS-PDF-0003	open+report	1 GiB of zeros in a page content stream; page content dropped
+flate_bomb_objstm.pdf	Single stream decoded	CS-PDF-0003	refuse	1 GiB object stream holding the only page
+flate_bomb_many.pdf	Total decoded per document	CS-PDF-0003	refuse	8 object streams of 250 MiB, each under the per-stream cap
+flate_double.pdf	Decode ratio per stream	CS-PDF-0003	open+report	Flate twice: 64 MiB from a few hundred bytes
+filter_chain_9.pdf	Filter chain length	CS-PDF-0011	open+report	Nine ASCIIHexDecode filters
+pages_5001.pdf	Pages	CS-PDF-0007	refuse	5,001 pages
+page_tree_cycle.pdf	Pages	CS-PDF-0007	refuse	Pages 2 -> 3 -> 2; lopdf returned 0 pages here (SPK-01)
+string_16mib_plus.pdf	String length	CS-PDF-0008	open+report	One literal string of 16 MiB + 1 byte
+name_128.pdf	Name length	CS-PDF-0008	open+report	A 128-byte name
+content_ops_2m.pdf	Content-stream operators interpreted for text extraction, per page	CS-PDF-0013	open+report	2,000,001 Tj operators; anchors on that page not found
+truncated.pdf	recovery	CS-PDF-0005	open+report	Cut at 60%; no xref or trailer; rebuilt by scanning
+broken_xref_offsets.pdf	recovery	-	open+report	Every offset shifted by 5; rebuilt, CS-PDF-0101
+broken_startxref.pdf	recovery	-	open+report	startxref points into an object; rebuilt, CS-PDF-0101
+objstm_self.pdf	recovery	CS-PDF-0004	refuse	An object stream that contains itself and holds the page tree root
+active_openaction_js.pdf	active	-	open+remove	JavaScript /OpenAction; removed, CS-PDF-0103 (SEC-P06)
+active_launch.pdf	active	-	open+remove	/Launch on open; removed, CS-PDF-0103 (SEC-P06)
+active_uri_on_open.pdf	active	-	open+remove	/URI on open; removed, CS-PDF-0105 (SEC-P07)
+active_submitform.pdf	active	-	open+remove	/SubmitForm in /AA; removed, CS-PDF-0103 (SEC-P06)
+active_embedded_file.pdf	active	-	open+remove	An embedded file; removed, CS-PDF-0104 (SEC-P08)

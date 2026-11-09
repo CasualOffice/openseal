@@ -28,6 +28,7 @@ jobs:
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
       - run: cargo check --target wasm32-unknown-unknown --workspace --locked
       - run: python3 tools/check-repo.py
+      - run: python3 -I fixtures/tools/generate.py --check
 
   # Conventional Commits over what this push or pull request adds (CLAUDE.md, Git).
   commit-messages:
