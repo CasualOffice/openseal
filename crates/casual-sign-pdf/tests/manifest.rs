@@ -49,26 +49,10 @@ const DEFAULT_FINDING: &[(&str, &str)] = &[
 ///   can only be refused for size (`CS-PDF-0001`). The test raises the size cap so the
 ///   object cap is what it exercises.
 fn input_for(file: &str) -> (Vec<u8>, Limits) {
-    let mut bytes = std::fs::read(common::hostile_dir().join(file)).unwrap();
-    let mut limits = Limits::default();
-    match file {
-        "too_large.pdf" if bytes.len() as u64 <= limits.max_input_bytes => {
-            eprintln!(
-                "fixture defect: too_large.pdf is {} bytes, not over the limit; appending 1 byte",
-                bytes.len()
-            );
-            bytes.push(b'\n');
-        }
-        "many_objects.pdf" if bytes.len() as u64 > limits.max_input_bytes => {
-            eprintln!(
-                "fixture defect: many_objects.pdf is {} bytes, over the size cap; raising it",
-                bytes.len()
-            );
-            limits.max_input_bytes = 64 << 20;
-        }
-        _ => {}
-    }
-    (bytes, limits)
+    // Default limits for every row: the fixtures cross exactly the limit their row names
+    // (fixtures/tools/generate.py; two defects there, found by T-1A, were fixed at source).
+    let bytes = std::fs::read(common::hostile_dir().join(file)).unwrap();
+    (bytes, Limits::default())
 }
 
 fn check_row(row: &[String; 5]) -> Result<(), String> {

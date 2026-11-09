@@ -21,16 +21,17 @@ Nothing is built; every row is Planned.
 
 | ID | Threat | Control | Status |
 | --- | --- | --- | --- |
-| SEC-P01 | Decompression bomb in a stream (Flate, LZW, chained filters) | Per-stream and per-document inflate caps and ratio caps; inflate is streamed and stops at the cap (`CS-PDF-0003`) | Planned 1A |
-| SEC-P02 | Object count, xref size or `/Size` sized allocation | No allocation from a file number; caps on objects and xref entries (`CS-PDF-0002`) | Planned 1A |
-| SEC-P03 | Deep nesting of arrays and dictionaries; reference cycles | Depth cap; cycle detection on resolution (`CS-PDF-0004`) | Planned 1A |
-| SEC-P04 | `/Prev` loops and thousands of revisions | Visited set; revision cap | Planned 1A |
-| SEC-P05 | Page tree cycles, huge page count | Visited set; page cap | Planned 1A |
+| SEC-P01 | Decompression bomb in a stream (Flate, LZW, chained filters) | Per-stream and per-document inflate caps and ratio caps; inflate is streamed and stops at the cap (`CS-PDF-0003`) ; **Built (stage 1A): per-stream 256 MiB, per-document 1 GiB, ratio 1 MiB + 1000× encoded, streamed `miniz_oxide`; peak 384 MiB on every bomb fixture; budget and ratio guards seen red when removed** | Tested |
+| SEC-P02 | Object count, xref size or `/Size` sized allocation | No allocation from a file number; caps on objects and xref entries (`CS-PDF-0002`) ; **Built (stage 1A): nothing allocated from `/Size`; object and xref-entry caps; `many_objects` peaks at 46 MB (lopdf: 485 MiB); guard seen red** | Tested |
+| SEC-P03 | Deep nesting of arrays and dictionaries; reference cycles | Depth cap; cycle detection on resolution (`CS-PDF-0004`) ; **Built (stage 1A): depth 256 (ceiling 4,096), reference depth 64, cycle detection; guard seen red** | Tested |
+| SEC-P04 | `/Prev` loops and thousands of revisions | Visited set; revision cap ; **Built (stage 1A): visited set and revision cap; guard seen red** | Tested |
+| SEC-P05 | Page tree cycles, huge page count | Visited set; page cap ; **Built (stage 1A): iterative walk, visited set, page cap; guard seen red by the worker and again by the main session** | Tested |
 | SEC-P06 | JavaScript, `/OpenAction`, `/AA`, `/Launch`, `/SubmitForm`, `/ImportData`, `/GoToR`, `/GoToE` | Never executed; removed on normalization; pdf.js with scripting disabled; reported | Planned 1B |
 | SEC-P07 | External references: remote fonts, external streams, URI on open | Never fetched; removed; reported | Planned 1B |
 | SEC-P08 | Embedded files and RichMedia (malware carriers) | Removed by default; if kept, admitted as attachments and never opened | Planned 1B |
 | SEC-P09 | Images used for signatures or stamps: decompression bombs, malformed PNG/JPEG | Dimension and pixel caps before decode; decode in a bounded decoder; re-encode | Planned 1E |
-| SEC-P10 | Slow parse within size budget | Host-supplied cancellation predicate checked in loops (sisters' `SEC-P10` pattern) | Planned 1A |
+| SEC-P10 | Slow parse within size budget | Host-supplied cancellation predicate checked in loops (sisters' `SEC-P10` pattern) ; **Built (stage 1A): host predicate checked in loops; guard seen red** | Tested |
+| SEC-P15 | Pathological files (thousands of headers or `trailer` keywords each followed by an unterminated string) make parsing quadratic in time | Memory stays bounded; the cancellation predicate is checked between objects and trailers; the host time budget is the control; 10-minute fuzz runs at `-timeout=10` found no slow unit (stage 1A). `PDF-PERF-01` measures the worst case | Partial |
 | SEC-P11 | Parser differential: what we parse differs from what readers render, so a sender shows one thing and the PDF says another | Normalization rewrites a fresh, unambiguous file before delivery; signers see pdf.js rendering of exactly the delivered bytes; fixtures of known differentials (duplicate object numbers, xref vs scanned objects) | Planned 1B |
 | SEC-P12 | Polyglot files (PDF + ZIP/HTML/JS) | Normalized output is a fresh file; served with `Content-Type: application/pdf`, `Content-Disposition: attachment` unless viewed inline in pdf.js, and `X-Content-Type-Options: nosniff` | Planned 1B |
 | SEC-P13 | Malicious Office upload exploiting the converter | Converter runs in a separate container: no network, read-only root, seccomp, CPU and memory limits, time limit, a fresh instance per job | Planned slice 6 |

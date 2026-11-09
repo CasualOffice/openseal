@@ -9,3 +9,5 @@ node_modules/
 *.pfx
 *.key
 .claude/worktrees/
+__pycache__/
+*.pyc

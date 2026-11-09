@@ -13,7 +13,7 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-PDF-0002 | Too many objects or xref entries |
 | CS-PDF-0003 | Stream expansion over cap or ratio |
 | CS-PDF-0004 | Nesting too deep, or reference cycle |
-| CS-PDF-0005 | Not a PDF: no header and nothing recoverable |
+| CS-PDF-0005 | Not a PDF: no header and nothing recoverable; under `strict`, also a malformed object |
 | CS-PDF-0006 | Too many revisions, or a `/Prev` loop |
 | CS-PDF-0007 | Too many pages, or a page tree cycle |
 | CS-PDF-0008 | String or name over length cap |
@@ -21,9 +21,9 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-PDF-0010 | Public-key security handler: not supported |
 | CS-PDF-0011 | Unsupported filter |
 | CS-PDF-0012 | Dynamic-only XFA form: no static content to sign |
-| CS-PDF-0013 | Read stopped by the host's time budget |
+| CS-PDF-0013 | Read stopped by the host's time budget, or a page's content-operator budget for text extraction |
 | CS-PDF-0014 | Signed document is damaged and cannot be kept without breaking its signatures |
-| CS-PDF-0101 | (report) Cross-reference rebuilt by scanning |
+| CS-PDF-0101 | (report) Cross-reference rebuilt by scanning, or offsets corrected |
 | CS-PDF-0102 | (report) Object unreadable; dropped |
 | CS-PDF-0103 | (report) Active content removed: JavaScript or action |
 | CS-PDF-0104 | (report) Embedded file removed |
@@ -31,6 +31,11 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-PDF-0106 | (report) Existing form fields found |
 | CS-PDF-0107 | (report) Existing signatures found |
 | CS-PDF-0108 | (report) Optional content flattened to default visibility |
+
+The recovering reader's findings also carry limit codes (`0002`, `0003`, `0004`, `0006`, `0008`, `0011`, `0013`) where a
+limit was crossed and the rest of the document still opened; `fixtures/hostile/manifest.tsv` lists which. **Issued by stage
+1A:** every `CS-PDF` code above except `0010` and `0012`, whose cases the reader reaches only after decryption and
+XFA handling land.
 
 ## Writing, fields, flattening
 

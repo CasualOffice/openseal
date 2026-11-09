@@ -32,6 +32,7 @@ MIB = 1 << 20
 NO_FIXTURE = {
     "Envelope total": "an envelope-level limit, tested by the server with several documents (Phase 2)",
     "Time budget": "a host-supplied predicate, tested by a test that cancels, not by a file",
+    "Values per parsed object": "built in memory by casual-sign-pdf's allocation test (a 40 MB array)",
 }
 
 
@@ -124,32 +125,36 @@ def builders():
 
     # File size: a valid file padded with a comment to 50 MiB + 1 byte.
     def too_large():
-        pad = 50 * MIB + 1 - len(valid) - 3
+        # The comment adds `%`, the padding and `\n`: 2 bytes besides the padding.
+        pad = 50 * MIB + 1 - len(valid) - 2
         return valid[: len(HEADER)] + b"%" + b"x" * pad + b"\n" + valid[len(HEADER):]
     b["too_large.pdf"] = too_large
 
-    # Indirect objects: 1,000,001, all reachable.
+    # Indirect objects: 1,000,001, all reachable, packed into object streams behind an xref
+    # stream so the file stays under the 50 MiB size cap and the object cap is what refuses it.
     def many_objects():
         n = 1_000_001
-        out = bytearray(HEADER)
-        offs = {}
-        for i in range(10, 10 + n):
-            offs[i] = len(out)
-            out += b"%d 0 obj %d endobj\n" % (i, i)
-        arr = 10 + n
-        offs[arr] = len(out)
-        out += b"%d 0 obj [" % arr + b" ".join(b"%d 0 R" % i for i in range(10, 10 + n)) + b"] endobj\n"
-        for num, body in [(1, b"<</Type/Catalog/Pages 2 0 R/Many %d 0 R>>" % arr),
-                          (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>"),
-                          (3, b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>")]:
-            offs[num] = len(out)
-            out += b"%d 0 obj\n" % num + body + b"\nendobj\n"
-        size = arr + 1
-        xp = len(out)
-        out += b"xref\n0 %d\n" % size
-        out += b"".join((b"%010d 00000 n \n" % offs[i]) if i in offs else b"0000000000 65535 f \n" for i in range(size))
-        out += b"trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n" % (size, xp)
-        return bytes(out)
+        first, per = 10, 1000
+        arr = first + n
+        stm_base = arr + 1
+        objs = [(1, b"<</Type/Catalog/Pages 2 0 R/Many %d 0 R>>" % arr),
+                (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>"),
+                (3, b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>"),
+                (arr, b"[" + b" ".join(b"%d 0 R" % i for i in range(first, first + n)) + b"]")]
+        compressed = {}
+        for k, start in enumerate(range(first, first + n, per)):
+            nums = list(range(start, min(start + per, first + n)))
+            bodies = [b"%d" % i for i in nums]
+            offs, pos = [], 0
+            for body in bodies:
+                offs.append(pos)
+                pos += len(body) + 1
+            hdr = b" ".join(b"%d %d" % (num, off) for num, off in zip(nums, offs)) + b" "
+            data = zlib.compress(hdr + b" ".join(bodies), 9)
+            objs.append((stm_base + k, stream_obj(b"/Type/ObjStm/N %d/First %d/Filter/FlateDecode" % (len(nums), len(hdr)), data)))
+            for idx, num in enumerate(nums):
+                compressed[num] = (stm_base + k, idx)
+        return xref_stream_file(objs, compressed=compressed)
     b["many_objects.pdf"] = many_objects
 
     # /Size far beyond anything present, in a table and in a stream.
@@ -212,15 +217,23 @@ def builders():
         return xref_stream_file(objs, compressed={3: (5, 0)})
     b["flate_bomb_objstm.pdf"] = flate_bomb_objstm
 
-    # Total decoded over 1 GiB: eight object streams of 250 MiB, each under the per-stream cap.
+    # Total decoded over 1 GiB: eight object streams of 250 MiB, each under the per-stream cap
+    # and each compressing well under 1000:1 (a 16 KiB pseudo-random block repeated: Deflate
+    # finds the repeats but cannot reach the ratio cap), so the per-document budget is what
+    # stops it, not the ratio (found by T-1A).
     def flate_bomb_many():
+        block = bytes((i * 2654435761 >> 13) & 0xFF for i in range(16 * 1024))
         objs = [(1, b"<</Type/Catalog/Pages 2 0 R>>"), (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>"),
                 (3, b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>")]
         compressed = {}
+        reps = 250 * MIB // len(block)
         for k in range(8):
             hdr = b"%d 0 " % (10 + k)
-            objs.append((20 + k, stream_obj(b"/Type/ObjStm/N 1/First %d/Filter/FlateDecode" % len(hdr),
-                                             zeros_deflate(hdr + b"null", 250 * MIB))))
+            c = zlib.compressobj(9)
+            parts = [c.compress(hdr + b"null ")]
+            parts += [c.compress(block) for _ in range(reps)]
+            parts.append(c.flush())
+            objs.append((20 + k, stream_obj(b"/Type/ObjStm/N 1/First %d/Filter/FlateDecode" % len(hdr), b"".join(parts))))
             compressed[10 + k] = (20 + k, 0)
         return xref_stream_file(objs, compressed=compressed)
     b["flate_bomb_many.pdf"] = flate_bomb_many

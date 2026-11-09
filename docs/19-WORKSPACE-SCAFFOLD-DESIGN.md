@@ -1,6 +1,6 @@
 # 19 — Workspace and layer division
 
-**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model` and `casual-sign-fields` (stage 1D, merged), `casual-sign-crypto` (stage 1F, merged), `casual-sign-pdf` (skeleton; stage 1A in progress). Edges: `-fields` → `-model`. `fuzz/` arrives with stage 1A.
+**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model` and `casual-sign-fields` (stage 1D, merged), `casual-sign-crypto` (stage 1F, merged), `casual-sign-pdf` (stage 1A, merged); `fuzz/` with an `admit` target. Edges: `-fields` → `-model`. 
 
 ## Layout
 
@@ -28,7 +28,7 @@ openseal/
 | Crate | Layer | Depends on (internal) | Key external dependencies | First consumer |
 | --- | --- | --- | --- | --- |
 | `casual-sign-model` | Engine | — | `serde`, `rust_decimal` | `-workflow`, `-fields` |
-| `casual-sign-pdf` | Engine | — | `zlib-rs` or `miniz_oxide` (decided with ADR-005) | `-fields`, `-flatten`, `-seal`, `-verify` |
+| `casual-sign-pdf` | Engine | — | `miniz_oxide` (streaming Flate); dev: `lopdf =0.47.0` (oracle, no default features), `peak_alloc` | `-fields`, `-flatten`, `-seal`, `-verify` |
 | `casual-sign-fields` | Engine | model (pdf joins with stage 1C) | `rust_decimal`, `regex` (linear-time matching), `unicode-normalization` | `-flatten`, `-wasm` |
 | `casual-sign-flatten` | Engine | pdf, fields, model | `subsetter`, `skrifa` (font subset and metrics), `png`, `zune-jpeg` | `-certificate`, `-sdk` |
 | `casual-sign-crypto` | Engine | — | `der`, `spki`, `x509-cert`, `cms =0.3.0-rc.2`, `x509-tsp =0.2.0-rc.0`, `x509-ocsp =0.3.0-rc.1`, `sha2`, `p256`, `p384`, `rsa` (verify only, feature `rsa`); dev: `aws-lc-rs` (test `KeyProvider`), `rcgen` | `-seal`, `-verify`, `-audit` |

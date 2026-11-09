@@ -71,7 +71,8 @@ fn peak_allocation_is_bounded_on_hostile_fixtures() {
         ("pages_5001.pdf", 16 * MIB),
         // A 16 MiB string is scanned, never stored past the cap.
         ("string_16mib_plus.pdf", 40 * MIB),
-        // Bombs stop at the 256 MiB per-stream cap: at most the cap plus one growth step.
+        // Bombs stop at the 256 MiB per-stream cap: at most the cap plus one growth step, and
+        // never two decoded object streams at once (the cache evicts before the next decode).
         ("flate_bomb_content.pdf", 512 * MIB + MIB),
         ("flate_bomb_objstm.pdf", 512 * MIB + MIB),
         ("flate_bomb_many.pdf", 512 * MIB + MIB),
@@ -79,15 +80,8 @@ fn peak_allocation_is_bounded_on_hostile_fixtures() {
     ];
     let mut report = Vec::new();
     for (file, bound) in cases {
-        let mut bytes = std::fs::read(common::hostile_dir().join(file)).unwrap();
-        let mut limits = Limits::default();
-        // See tests/manifest.rs `input_for`: two fixture defects worked around.
-        if *file == "too_large.pdf" && bytes.len() as u64 <= limits.max_input_bytes {
-            bytes.push(b'\n');
-        }
-        if *file == "many_objects.pdf" {
-            limits.max_input_bytes = 64 << 20;
-        }
+        let bytes = std::fs::read(common::hostile_dir().join(file)).unwrap();
+        let limits = Limits::default();
         let peak = peak_over_baseline(&bytes, &limits);
         report.push(format!("{file:26} peak {:>10} bytes (bound {bound})", peak));
         assert!(

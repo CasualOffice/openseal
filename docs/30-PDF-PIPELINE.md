@@ -42,6 +42,20 @@ named in docs/21, every failure a `CS-PDF-*` code.
 - **Admission report**: everything found and what was done, shown to the sender before sending and stored with the
   version ([22](22-DATA-MODEL.md) §4).
 
+### As built (stage 1A)
+
+`admit(bytes, &Limits, cancel)` recovers and `admit_strict` refuses; both return an `AdmissionReport` (version, pages
+with resolved geometry, revisions with their end offsets, fields, signatures, `/Perms`, actions and whether they run
+without a click, embedded files, RichMedia, external streams, XFA, optional content, findings with codes and object
+numbers). Every in-use object is parsed once, reachable or not, so hidden actions and bombs are seen; content streams
+are decoded once at admission. **Both modes refuse:** size, object count, revisions, nesting, page count and cycles, the
+document decode budget, an undecodable object stream, cancellation, encryption (decryption is a later row) and
+dynamic XFA. **Default mode reports instead:** reference depth, long strings and names (value dropped), a single
+content stream over its caps, ratio, unsupported filters (LZW among them for now), long filter chains and content
+operators. **Strict still corrects** xref offsets within ±1 KiB and a wrong `startxref` (`CS-PDF-0101`), and such a
+file is not structurally sound for appending. Signed or `/Perms` input that needed any repair is refused
+(`CS-PDF-0014`). If the xref reads but leads to no catalog or pages, the default reader rebuilds once.
+
 ## 3. Normalization
 
 | Found | Done |

@@ -851,6 +851,21 @@ impl<'a> Document<'a> {
         if self.cache.map.contains_key(&stream) {
             return Ok(());
         }
+        // A stream larger than the cache's cap is still kept after it is decoded (its
+        // members are needed now), so the cache can stand over its cap. Evict down to the cap
+        // before decoding another, or two such streams are alive at once: 640 MiB on
+        // `flate_bomb_many.pdf` where one should cost at most 384 MiB.
+        while self.cache.bytes > self.limits.objstm_cache_bytes {
+            let Some(old) = self.cache.order.pop_front() else {
+                break;
+            };
+            if let Some(o) = self.cache.map.remove(&old) {
+                self.cache.bytes = self
+                    .cache
+                    .bytes
+                    .saturating_sub(u64::try_from(o.data.len()).unwrap_or(0));
+            }
+        }
         match self.xref.get(&stream) {
             Some(Entry::Offset { .. }) => {}
             // An object stream inside an object stream (or inside itself) (§7.5.7).
