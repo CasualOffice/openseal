@@ -187,6 +187,8 @@ struct Norm<'d, 'a> {
     removed_seen: BTreeSet<Removal>,
     removed_dropped: u64,
     renumbered: Vec<(u32, u32)>,
+    /// Objects whose value is a bare reference (collapsed to their target).
+    aliases: BTreeSet<u32>,
 }
 
 impl<'a> Norm<'_, 'a> {
@@ -260,6 +262,7 @@ impl<'a> Norm<'_, 'a> {
             }
         };
         for c in chain {
+            self.aliases.insert(c);
             self.status.insert(c, result);
         }
         Ok(result)
@@ -380,7 +383,7 @@ impl<'a> Norm<'_, 'a> {
                         continue;
                     }
                 }
-                b"Pages" | b"Kids" if structure => {
+                b"Pages" | b"Kids" | b"Contents" if structure => {
                     if let Some(v) = self.clean_structure(old, v)? {
                         out.push(k, v);
                     }
@@ -440,10 +443,20 @@ impl<'a> Norm<'_, 'a> {
         })
     }
 
-    /// Clean the value of `/Pages` or `/Kids` in the structure: a direct dictionary
-    /// there is a page-tree node or page, cleaned but never removed.
+    /// Clean the value of `/Pages`, `/Kids` or `/Contents` in the structure: a direct
+    /// dictionary there is a page-tree node or page, cleaned but never removed. The
+    /// reader takes these references one hop only, so one to an object whose value is
+    /// itself a reference was unreadable to it and is dropped, not collapsed.
     fn clean_structure(&mut self, old: u32, value: Object) -> Result<Option<Object>, WriteError> {
         match value {
+            Object::Reference(r) => {
+                self.target(r.num)?;
+                if self.aliases.contains(&r.num) {
+                    self.record("CS-PDF-0102", FindingKind::ObjectUnreadable, Some(r.num));
+                    return Ok(None);
+                }
+                self.clean(old, Object::Reference(r))
+            }
             Object::Array(a) => {
                 let mut out = Vec::with_capacity(a.len());
                 for e in a {
@@ -926,6 +939,7 @@ pub fn normalize(
         removed_seen: BTreeSet::new(),
         removed_dropped: 0,
         renumbered: Vec::new(),
+        aliases: BTreeSet::new(),
     };
     let root = n
         .trailer_ref(trailer.get(b"Root").cloned())?

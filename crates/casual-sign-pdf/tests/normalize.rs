@@ -713,6 +713,37 @@ fn page_tree_objects_carrying_active_keys_are_cleaned_not_dropped() {
 }
 
 #[test]
+fn page_tree_references_to_bare_references_stay_unreadable() {
+    // Found by the normalize fuzz target: a kid whose object is `1 0 R` (the reader
+    // takes a kid one hop only, so it is no page) became the catalog itself once the
+    // chain collapsed, and the catalog counted as a second page. Content behind such a
+    // reference is unreadable to the reader too.
+    let bytes = classic(
+        &[
+            (1, b"<</Type/Catalog/Pages 2 0 R>>".to_vec()),
+            (2, b"<</Type/Pages/Kids[5 0 R 3 0 R]/Count 2>>".to_vec()),
+            (
+                3,
+                b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents[6 0 R 4 0 R]>>".to_vec(),
+            ),
+            (4, stream("", b"0 0 m 1 1 l S")),
+            (5, b"1 0 R".to_vec()),
+            (6, b"4 0 R".to_vec()),
+        ],
+        "",
+    );
+    let before = admit(&bytes, &Limits::default(), &never).unwrap().report;
+    assert_eq!(before.page_count, 1);
+    let (n, out) = run(&bytes);
+    assert_eq!(out.page_count, 1);
+    let objects: Vec<_> = removed(&n, "CS-PDF-0102", FindingKind::ObjectUnreadable)
+        .iter()
+        .filter_map(|r| r.object)
+        .collect();
+    assert!(objects.contains(&5) && objects.contains(&6), "{objects:?}");
+}
+
+#[test]
 fn direct_page_tree_dictionaries_carrying_active_keys_are_cleaned_not_dropped() {
     // Found by the normalize fuzz target: /Pages is a direct dictionary that the
     // reader takes for the one page, carrying /S /SubmitForm; and a direct kid typed
