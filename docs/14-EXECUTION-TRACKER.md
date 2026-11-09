@@ -71,8 +71,12 @@ Defined in [06](06-ROADMAP-AND-DELIVERY.md) §Milestones. Only the owner declare
 | PDF-REAL-01 | Two GPO-certified signed PDFs (`gi-cfr-1998-t21-p11`, `gi-cfr-2010-t21-p11`, iText, incremental) are refused as malformed (`CS-PDF-0005`) by both modes | Open | P0 | Find which object fails to parse; a signed file must be readable without repair so it can be verified and appended to | Both admitted; their signatures listed in the report |
 | PDF-REAL-02 | `irs-f1040-2009` (LiveCycle, Reader-extensions UR3 signature) needs a repair and is then refused as signed (`CS-PDF-0014`) | Open | P1 | Decide whether a usage-rights signature alone counts as signed for the repair rule (OpenSeal removes usage rights on normalization anyway); find what needed repair | Decision in docs/30 §2; file admitted or refused by that rule |
 | PDF-REAL-03 | `pysamples-unreadablemetadata` is refused (`CS-PDF-0005`) by the recovering reader | Open | P1 | Recover: unreadable metadata should be a finding, not a refusal (rule 3 in docs/04) | Admitted with a finding |
-| PDF-LZW-01 | Decode LZWDecode (with predictors and EarlyChange) in the reader; three corpus files lose text without it | Open | P2 | Bounded like Flate | Corpus text agreement with pypdf on those files |
+| PDF-LZW-01 | Decode LZWDecode (with predictors and EarlyChange) in the reader; three corpus files lose text without it | Open | P1 | Bounded like Flate | Corpus text agreement with pypdf on those files |
 | PDF-API-01 | Expose from `casual-sign-pdf` what stage 1C had to duplicate: the content-stream lexer, text-string decoding, inherited `/Resources`, field `/Ff`, `/MaxLen`, `/Opt` and appearance states | Open | P2 | One lexer and one decoder, not two | `-fields` uses the reader's; duplicates deleted |
+| XFA-01 | Dynamic XFA forms: lay out template and data into static pages (XFA 3.3), fill, flatten and seal; 26 corpus files carry XFA | Open | P1 | A bounded XFA layout engine in the engine; no XFA scripting executed | Dynamic XFA corpus files render, fill and seal; pages compared with the static rendering where one exists |
+| FILL-01 | Option to fill a PDF's own AcroForm fields in place (values and appearance streams) and keep them fillable, alongside flattening | Open | P1 | Stage 1E writes `/V` and `/AP` for each converted field when the envelope asks for it; the seal's DocMDP permits form filling afterwards | Output fillable in pypdf and Acrobat Reader with our values; seal valid |
+| TAG-02 | Text tags for every field type: options for dropdown and radio, formulas, hyperlinks, payment, drawing | Open | P2 | Extend the grammar in docs/30 §5 | Each type taggable, with tests |
+| ACRO-02 | AcroForm conversion without loss: push buttons (as notes or skipped with reason shown to the sender), radio groups across pages, multi-select lists | Open | P2 | Extend stage 1C conversion | Corpus forms convert with no lossy or skipped widget unexplained |
 | PDF-ENC-01 | Decrypt password-protected input (RC4, AES-128, AES-256; host-supplied password) with RustCrypto per ADR-006 | Open | P1 | Stage 1A refuses with `CS-PDF-0009` | Encrypted fixtures for each handler open with the password, refuse without |
 | PDF-PERF-01 | Measure the worst-case parse time on pathological files (SEC-P15) and bound it if the host budget is not enough | Open | P2 | Generate the quadratic cases; time them | A bound or a recorded acceptance |
 | SEAL-14 | SHA-1 for identifier matching only (ESSCertID v1 in timestamps, SHA-1 OCSP CertIDs), never for signing or digests of content | Open | P1 | Recommendation: allow SHA-1 strictly to match identifiers produced by real TSAs and OCSP responders, as an ADR-006 amendment; until then such inputs are refused with `CS-SEAL-0005` | ADR amended; tests for a v1 ESSCertID and a SHA-1 CertID |
@@ -144,6 +148,7 @@ Each slice's outcome is in [06](06-ROADMAP-AND-DELIVERY.md) §After Phase 2; non
 | VS-27 | Forms and clickwrap | Open | P2 |
 | VS-28 | Document generation | Open | P2 |
 | VS-29 | Advanced routing | Open | P2 |
+| VS-30 | Mobile apps (iOS, Android), offline signing | Open | P2 |
 
 `VS-25` is blocked on `DEC-10`.
 

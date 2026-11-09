@@ -63,7 +63,7 @@ file is not structurally sound for appending. Signed or `/Perms` input that need
 | JavaScript, actions that run or fetch, `/Launch`, `/SubmitForm`, `/ImportData` | Removed. Reported |
 | `/URI` link annotations | Kept, never followed automatically; the signer UI shows the target before opening it in a new tab |
 | Embedded files, RichMedia, 3D | Removed by default (account setting may keep embedded files as attachments, admitted separately). Reported |
-| XFA (dynamic forms) | Static rendering kept if present; XFA removed. Dynamic-only XFA refused (`CS-PDF-0012`) |
+| XFA (dynamic forms) | Today: static rendering kept if present and XFA removed; dynamic-only XFA refused (`CS-PDF-0012`). **Planned (`XFA-01`):** lay out dynamic XFA into static pages (template, data and layout per the XFA 3.3 specification), so the form renders, fills and signs; refusal is temporary, not a policy |
 | Existing AcroForm fields | Offered to the sender to **convert to OpenSeal fields** (name, type, rect, options mapped) or flatten as they are |
 | External streams, remote fonts | Removed. Reported |
 | Broken xref, damaged objects | Rebuilt; unreadable objects dropped and reported |

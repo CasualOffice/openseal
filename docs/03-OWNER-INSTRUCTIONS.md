@@ -16,6 +16,7 @@ by saying so.
 | 5 | 2026-11-10 | "Proceed ahead … create roadmap, phases, milestones" — taken as approving the recommended git workflow (`DEC-11`) | [06](06-ROADMAP-AND-DELIVERY.md) §Milestones, `DEC-11`, `F-001`, `MS-*` in [14](14-EXECUTION-TRACKER.md) |
 | 6 | 2026-11-10 | "Proceed" — taken as accepting ADR-001 to ADR-009 and opening Phase 0, as proposed | [08](08-ADR-REGISTER.md), [06](06-ROADMAP-AND-DELIVERY.md) Phase 0, `F-*` in [14](14-EXECUTION-TRACKER.md) |
 | 7 | 2026-11-10 | "Proceed … I will make it public when we have a viable demo, and it's pre-release alpha then." The repository stays private until then, so GitHub Actions does not run; the main session runs `tools/ci-local.sh` at every merge instead | `W-2` in [06](06-ROADMAP-AND-DELIVERY.md); [CLAUDE.md](../CLAUDE.md); `F-003`; Phase 1 opened |
+| 8 | 2026-11-10 | "It's not an MVP — don't judge this or remove things based on that assumption." Nothing is dropped, refused for good, or left "later" because a minimal product would not need it: every DocuSign and SignNow capability, every real-world PDF construct, and every option offered is planned, with a slice and a row. Order and severity may sequence work; they never remove it | [96](96-FEATURE-FIT-GAP.md) (no `Later` rows), [30](30-PDF-PIPELINE.md) §3, [06](06-ROADMAP-AND-DELIVERY.md) slice 30, `XFA-01`, `FILL-01`, `TAG-02`, `ACRO-02`; [04](04-MISTAKES-AND-RULES.md) rule 28 |
 
 ## Inherited working rules
 

@@ -4,11 +4,11 @@
 slice that delivers it, and its status. Sources: [48](48-DOCUSIGN-STUDY.md) (DS) and [49](49-SIGNNOW-STUDY.md) (SN).
 This is the parity measure: at every slice close, the count of `Build` and `Plugin` rows marked `Works` is reported.
 
-**Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. `Later` — wanted,
-after slice 29 or on demand. `Out` — not planned, with the decision. **Status:** `—` not started, `Designed`, `Works`
+**Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. `Out` — only
+where the owner has decided it (owner instruction 8: nothing is deferred on MVP reasoning; there is no `Later`). **Status:** `—` not started, `Designed`, `Works`
 (merged, tested, in a browser run where it has UI).
 
-**Today: 0 of 165 rows work** (154 are Build or Plugin; 9 Later; 2 Out; counted with `grep`). Docs are true as of the initial commit (2026-11-10).
+**Today: 0 of 167 rows work** (every row Build or Plugin except two awaiting owner decisions; counted with `grep`). Docs are true as of the initial commit (2026-11-10).
 
 ## Documents
 
@@ -21,12 +21,14 @@ after slice 29 or on demand. `Out` — not planned, with the decision. **Status:
 | FG-005 | Multiple documents per envelope; reorder | DS, SN (groups) | Build | 2 | Designed |
 | FG-006 | Size limits: 50 MB per file, 200 MB per envelope | DS | Build | 1 | Designed |
 | FG-007 | Neutralize JavaScript, actions, embedded files; report | — | Build | Phase 1 | Designed |
-| FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Designed |
+| FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Designed (engine built in stage 1C) |
+| FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | — |
+| FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | — |
 | FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
 | FG-010 | Document visibility per recipient | DS | Build | 6 | — |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
-| FG-012 | Template matching on upload | DS | Later | — | — |
-| FG-013 | Sign on paper (print, sign, upload) | DS | Later | — | — |
+| FG-012 | Template matching on upload | DS | Build | 3 | — |
+| FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | — |
 
 ## Recipients and routing
 
@@ -52,7 +54,7 @@ after slice 29 or on demand. `Out` — not planned, with the decision. **Status:
 | FG-037 | Free-form signer (places own signature) | SN | Build | 4 | Designed |
 | FG-038 | Per-recipient private message and language | DS | Build | 2 | Designed |
 | FG-039 | Delivery by SMS | DS | Plugin | 5 | — |
-| FG-040 | Delivery by WhatsApp | DS | Later | — | — |
+| FG-040 | Delivery by WhatsApp | DS | Plugin | 5 | — |
 | FG-041 | 100 recipients per envelope | DS | Build | 2 | Designed |
 
 ## Fields
@@ -89,7 +91,7 @@ after slice 29 or on demand. `Out` — not planned, with the decision. **Status:
 | FG-077 | Anchor text auto-place | DS | Build | 4 | Designed |
 | FG-078 | Text tags in documents | SN | Build | 4 | Designed |
 | FG-079 | Custom (saved) field presets | DS | Build | 4 | — |
-| FG-080 | Strike-through by editor | DS | Later | — | — |
+| FG-080 | Strike-through by editor | DS | Build | 6 | — |
 | FG-081 | Responsive signing (smart sections) | DS | Build | 23 | — |
 | FG-082 | 3,000 fields per envelope | DS | Build | 4 | Designed |
 
@@ -134,7 +136,7 @@ after slice 29 or on demand. `Out` — not planned, with the decision. **Status:
 | FG-124 | Accessible signing (WCAG 2.2 AA) | DS | Build | 1 | Designed |
 | FG-125 | Signer language choice | DS, SN | Build | 12 | — |
 | FG-126 | Comments during signing | DS | Build | 26 | — |
-| FG-127 | Account creation and saved signature for returning signers | DS | Later | — | — |
+| FG-127 | Account creation and saved signature for returning signers | DS | Build | 10 | — |
 
 ## Managing and reporting
 
@@ -151,7 +153,7 @@ after slice 29 or on demand. `Out` — not planned, with the decision. **Status:
 | FG-138 | History view | DS, SN | Build | 6 | Designed |
 | FG-139 | Envelope custom fields | DS | Build | 6 | Designed |
 | FG-140 | Reports and CSV export | DS | Build | 6 | — |
-| FG-141 | Insights dashboard | DS | Later | — | — |
+| FG-141 | Insights dashboard | DS | Build | 6 | — |
 
 ## Evidence and verification
 
@@ -207,9 +209,9 @@ after slice 29 or on demand. `Out` — not planned, with the decision. **Status:
 | FG-199 | SDKs (TS, Python, then Java, C#, Go, PHP, Ruby) | DS | Build | 8 | Designed |
 | FG-200 | Sandbox / demo environment | DS, SN | Build | 8 | — |
 | FG-201 | Rate limit headers | DS | Build | Phase 2 | Designed |
-| FG-202 | DocuSign-compatible API | — | Later (`DEC-10`) | 25 | — |
+| FG-202 | DocuSign-compatible API | — | Build, subject to counsel (`DEC-10`) | 25 | — |
 | FG-203 | MCP agent access | — (sisters) | Build | 22 | — |
-| FG-204 | Integrations: Salesforce, Microsoft 365, Google Workspace, HubSpot, Zapier | DS, SN | Later | 24 | — |
+| FG-204 | Integrations: Salesforce, Microsoft 365, Google Workspace, HubSpot, Zapier | DS, SN | Plugin | 24 | — |
 | FG-205 | Clickwrap | DS Click | Build | 27 | — |
 | FG-206 | Web forms | DS Web Forms | Build | 27 | — |
 
@@ -220,7 +222,7 @@ after slice 29 or on demand. `Out` — not planned, with the decision. **Status:
 | FG-210 | Self-hosting: Docker Compose | — | Build | Phase 2 | Designed |
 | FG-211 | Kubernetes Helm chart, HA | — | Build | 20 | — |
 | FG-212 | HSM and cloud KMS key custody | — | Build | Phase 2, 20 | Designed |
-| FG-213 | Mobile apps (iOS, Android) | DS, SN | Later | — | — |
+| FG-213 | Mobile apps (iOS, Android), with offline signing that syncs | DS, SN | Build | 30 | — |
 | FG-214 | Desktop app | — (sisters) | Build | 21 | — |
 | FG-215 | Payments through Stripe | DS, SN | Plugin | 13 | Designed |
 | FG-216 | CLM, Rooms, Maestro, Navigator | DS | Out (`DEC-08`) | — | — |
