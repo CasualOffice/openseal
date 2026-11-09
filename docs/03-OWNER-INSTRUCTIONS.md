@@ -29,3 +29,4 @@ the owner says so; where one matters, it is raised as a `DEC-*` row in [14](14-E
 | Date | What | Status |
 | --- | --- | --- |
 | 2026-11-10 | The folder is not a git repository; no remote exists | Partly resolved: local `git init` done 2026-11-10 on `main`; the GitHub remote `CasualOffice/openseal` is for the owner to create (`F-001`) |
+| 2026-11-10 | GitHub Actions starts no job on `CasualOffice/openseal`: private repository, and the organization's Actions billing is blocked. Owner informed; acknowledged | Open: make the repo public or fix billing (`F-003`) |
