@@ -4,6 +4,8 @@ resolver = "3"
 # first consumer, so this list grows with the phases. Hosts under server/ may depend on
 # crates/; nothing under crates/ may depend on them (tools/check-crate-deps.py).
 members = [
+    "crates/casual-sign-fields",
+    "crates/casual-sign-model",
     "crates/casual-sign-pdf",
 ]
 # The fuzz workspace is separate: cargo-fuzz needs nightly-only dependencies that must

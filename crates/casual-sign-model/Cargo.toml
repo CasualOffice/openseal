@@ -1,0 +1,21 @@
+[package]
+name = "casual-sign-model"
+version = "0.0.0"
+description = "OpenSeal's plain domain types with invariants checked by constructors (docs/22)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# Field geometry and number bounds are decimal, never float, so the browser and the
+# server agree to the last digit (ADR-022, docs/22 §6). Serialized as strings.
+rust_decimal = { version = "1.37", default-features = false, features = ["serde", "std"] }
+serde = { version = "1.0.200", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0.120"
+
+[lints]
+workspace = true
