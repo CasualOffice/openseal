@@ -219,3 +219,109 @@ impl Issue {
         self.error.code()
     }
 }
+
+/// What is wrong with a text tag (`CS-FLD-0011`). Never carries the tag's text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum TagProblem {
+    /// `{{` with no `}}` within the longest tag length, or another `{{` first.
+    Unterminated,
+    /// Fewer than two parts: a tag needs a type and a recipient.
+    MissingParts,
+    /// The type is not one a tag may create.
+    UnknownType,
+    /// The recipient reference is not 1 to 64 of `[A-Za-z0-9_-]`.
+    Recipient,
+    /// The label is empty or not a valid data label.
+    Label,
+    /// The size is not `W x H` with both above 0 and at most 14,400 points.
+    Size,
+    /// Parts after the size, or out of order.
+    TooManyParts,
+}
+
+/// Why an anchor or a text tag could not become a placed field (docs/30 §5). Carries
+/// indexes, pages and positions, never the document's text or the anchor string.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum PlaceError {
+    /// The anchor string is nowhere in the document and may not be ignored
+    /// (`CS-FLD-0010`).
+    AnchorNotFound {
+        /// Index of the anchor in the request.
+        anchor: usize,
+    },
+    /// The anchor string occurs more often than the cap (`CS-FLD-0010`, docs/21).
+    TooManyMatches {
+        /// Index of the anchor in the request.
+        anchor: usize,
+        /// Matches allowed.
+        limit: usize,
+    },
+    /// The anchor string is empty after normalization, or longer than
+    /// `MAX_ANCHOR_CHARS` (`CS-FLD-0002`).
+    AnchorText {
+        /// Index of the anchor in the request.
+        anchor: usize,
+    },
+    /// The placed field would fall outside its page (`CS-FLD-0004`).
+    OutsidePage {
+        /// 1-based page.
+        page: u32,
+    },
+    /// A text tag is malformed (`CS-FLD-0011`).
+    TagMalformed {
+        /// 1-based page.
+        page: u32,
+        /// Left of the tag's first glyph, displayed points.
+        x: f64,
+        /// Top of the tag's first glyph, displayed points.
+        y: f64,
+        /// What is wrong.
+        problem: TagProblem,
+    },
+    /// More text tags than one envelope may hold fields (`CS-FLD-0011`).
+    TooManyTags {
+        /// Tags allowed.
+        limit: usize,
+    },
+}
+
+impl PlaceError {
+    /// The stable code from docs/20.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::AnchorNotFound { .. } | Self::TooManyMatches { .. } => "CS-FLD-0010",
+            Self::AnchorText { .. } => "CS-FLD-0002",
+            Self::OutsidePage { .. } => "CS-FLD-0004",
+            Self::TagMalformed { .. } | Self::TooManyTags { .. } => "CS-FLD-0011",
+        }
+    }
+}
+
+impl fmt::Display for PlaceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let code = self.code();
+        match self {
+            Self::AnchorNotFound { anchor } => write!(f, "{code}: anchor {anchor} not found"),
+            Self::TooManyMatches { anchor, limit } => {
+                write!(f, "{code}: anchor {anchor} matches more than {limit} times")
+            }
+            Self::AnchorText { anchor } => write!(f, "{code}: anchor {anchor} text unusable"),
+            Self::OutsidePage { page } => write!(f, "{code}: field outside page {page}"),
+            Self::TagMalformed {
+                page,
+                x,
+                y,
+                problem,
+            } => write!(
+                f,
+                "{code}: malformed text tag on page {page} at ({x:.1}, {y:.1}): {problem:?}"
+            ),
+            Self::TooManyTags { limit } => write!(f, "{code}: more than {limit} text tags"),
+        }
+    }
+}
+
+impl std::error::Error for PlaceError {}

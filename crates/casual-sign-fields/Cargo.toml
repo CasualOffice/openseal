@@ -10,6 +10,9 @@ publish = false
 
 [dependencies]
 casual-sign-model = { path = "../casual-sign-model" }
+# Text with positions, anchors, tags and AcroForm conversion read the admitted PDF
+# (docs/19 plans this edge; docs/30 §4–5).
+casual-sign-pdf = { path = "../casual-sign-pdf" }
 # A sender's validation pattern is untrusted: `regex` guarantees linear-time matching
 # and takes size limits, so no pattern can cause ReDoS. Unicode tables are kept so a
 # pattern behaves the same for every script.
