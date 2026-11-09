@@ -118,10 +118,14 @@ fn page_tree_cycle_refuses_in_both_modes() {
         (5, b"<</Type/Page/MediaBox[0 0 10 10]>>".to_vec()),
     ];
     let bytes = classic(&objs, "");
-    assert_eq!(
-        code_both(&bytes, &Limits::default()),
-        ("CS-PDF-0007".into(), "CS-PDF-0007".into())
-    );
+    // The variant, not just the code: without the visited set the walk would still
+    // stop, later, on the depth or page cap.
+    for e in [
+        admit(&bytes, &Limits::default(), &never).unwrap_err(),
+        admit_strict(&bytes, &Limits::default(), &never).unwrap_err(),
+    ] {
+        assert_eq!(e, PdfError::PageTreeCycle { object: 2 });
+    }
 }
 
 #[test]

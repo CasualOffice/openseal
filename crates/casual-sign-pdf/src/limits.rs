@@ -14,7 +14,8 @@ pub struct Limits {
     /// Most distinct indirect objects, and most cross-reference entries read from any
     /// one section (`CS-PDF-0002`).
     pub max_objects: u32,
-    /// Deepest nesting of arrays and dictionaries (`CS-PDF-0004`).
+    /// Deepest nesting of arrays and dictionaries (`CS-PDF-0004`). Values above 4,096
+    /// are treated as 4,096: deeper values could overflow the stack when dropped.
     pub max_depth: u16,
     /// Most reference hops when resolving one value (`CS-PDF-0004`).
     pub max_ref_depth: u16,

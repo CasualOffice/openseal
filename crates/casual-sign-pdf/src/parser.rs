@@ -5,6 +5,12 @@ use crate::error::{PdfError, Result, off};
 use crate::lexer::{Lexer, Tok};
 use crate::object::{Dictionary, ObjRef, Object};
 
+/// The deepest nesting ever parsed, whatever the host asks for. Dropping, cloning and
+/// comparing objects recurse once per level, so a value nested 10^5 deep would
+/// overflow the stack on drop even though parsing it does not; 4,096 levels drop
+/// safely on a 2 MiB thread stack (tested below).
+pub(crate) const MAX_DEPTH_CEILING: usize = 4096;
+
 /// Most value-level warnings kept from one parse; the rest are counted only.
 const MAX_WARNINGS: usize = 64;
 
@@ -40,6 +46,7 @@ pub(crate) fn parse_object(
     max_depth: usize,
     warns: &mut Warnings,
 ) -> Result<Object> {
+    let max_depth = max_depth.min(MAX_DEPTH_CEILING);
     let mut stack: Vec<Frame> = Vec::new();
     loop {
         lx.skip_ws();
@@ -174,6 +181,19 @@ mod tests {
         let deep = [vec![b'['; 100_000], vec![b']'; 100_000]].concat();
         assert_eq!(
             parse(&deep, 256, false).0.unwrap_err().code(),
+            "CS-PDF-0004"
+        );
+    }
+
+    #[test]
+    fn depth_is_clamped_to_a_ceiling_that_drops_safely() {
+        let n = MAX_DEPTH_CEILING;
+        let ok = [vec![b'['; n], vec![b']'; n]].concat();
+        // Parsed and dropped on this test thread (2 MiB stack by default).
+        assert!(parse(&ok, usize::MAX, false).0.is_ok());
+        let over = [vec![b'['; n + 1], vec![b']'; n + 1]].concat();
+        assert_eq!(
+            parse(&over, usize::MAX, false).0.unwrap_err().code(),
             "CS-PDF-0004"
         );
     }
