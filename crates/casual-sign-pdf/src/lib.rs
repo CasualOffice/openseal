@@ -24,6 +24,15 @@
 //!
 //! Nothing here is executed or followed: actions, JavaScript, embedded files and
 //! external streams are only reported.
+//!
+//! Writing (stage 1B, docs/30 §3 and §9):
+//!
+//! - [`normalize`] writes an admitted, unsigned document as a fresh file: reachable
+//!   objects renumbered from 1, active content, embedded files, RichMedia, 3D, XFA
+//!   and external data removed, each listed in a [`NormalizationReport`].
+//! - [`IncrementalUpdate`] appends new and replaced objects to an admitted,
+//!   structurally sound document. The input is always a prefix of the output
+//!   (`CS-WRT-0001`).
 
 mod classify;
 mod document;
@@ -31,21 +40,28 @@ mod error;
 mod filters;
 mod lexer;
 mod limits;
+mod normalize;
 mod object;
 mod pages;
 mod parser;
 mod report;
+mod serialize;
 mod text;
+mod writer;
 mod xref;
 
 pub use document::Document;
 pub use error::PdfError;
 pub use limits::Limits;
+pub use normalize::{
+    NormalizationReport, NormalizeOptions, Normalized, OutputXref, Removal, normalize,
+};
 pub use object::{Dictionary, ObjRef, Object, Stream};
 pub use report::{
     ActionInfo, ActionKind, AdmissionReport, FieldType, Finding, FindingKind, FormField,
     MAX_FINDINGS, PageInfo, PdfVersion, Rect, Revision, SignatureInfo, Widget,
 };
+pub use writer::{Change, IncrementalUpdate, WriteError};
 pub use xref::XrefKind;
 
 /// The host's cancellation predicate: return `true` to stop the read (`CS-PDF-0013`).

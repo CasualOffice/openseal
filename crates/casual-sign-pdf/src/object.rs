@@ -72,6 +72,56 @@ impl Dictionary {
     pub(crate) fn push(&mut self, key: Vec<u8>, value: Object) {
         self.entries.push((key, value));
     }
+
+    /// The entries, in order, consuming the dictionary.
+    pub(crate) fn into_entries(self) -> Vec<(Vec<u8>, Object)> {
+        self.entries
+    }
+
+    /// Set `key` (a name without `/`) to `value`: every existing entry for the key is
+    /// replaced by one at the position of the first, or the entry is added at the end.
+    /// Entries keep the order given, so a writer's output is deterministic.
+    pub fn insert(&mut self, key: &[u8], value: Object) {
+        match self.entries.iter().position(|(k, _)| k == key) {
+            Some(first) => {
+                let mut index: usize = 0;
+                self.entries.retain(|(k, _)| {
+                    let keep = index == first || k != key;
+                    index = index.saturating_add(1);
+                    keep
+                });
+                if let Some(slot) = self.entries.get_mut(first) {
+                    slot.1 = value;
+                }
+            }
+            None => self.entries.push((key.to_vec(), value)),
+        }
+    }
+
+    /// Remove every entry for `key`; returns the value [`Dictionary::get`] would have
+    /// returned.
+    pub fn remove(&mut self, key: &[u8]) -> Option<Object> {
+        let mut last = None;
+        let mut kept = Vec::with_capacity(self.entries.len());
+        for (k, v) in core::mem::take(&mut self.entries) {
+            if k == key {
+                last = Some(v);
+            } else {
+                kept.push((k, v));
+            }
+        }
+        self.entries = kept;
+        last
+    }
+}
+
+impl FromIterator<(Vec<u8>, Object)> for Dictionary {
+    /// Entries in the order given; a repeated key keeps every entry, as read.
+    fn from_iter<I: IntoIterator<Item = (Vec<u8>, Object)>>(iter: I) -> Self {
+        Self {
+            entries: iter.into_iter().collect(),
+        }
+    }
 }
 
 /// A stream: its dictionary and where its encoded bytes lie in the file.

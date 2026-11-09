@@ -679,6 +679,16 @@ impl<'a> Document<'a> {
             .map(|(n, _)| *n)
     }
 
+    /// The generation of object `num` when it is in use; `None` when free or absent.
+    #[must_use]
+    pub fn generation(&self, num: u32) -> Option<u16> {
+        match self.xref.get(&num) {
+            Some(Entry::Offset { generation, .. }) => Some(*generation),
+            Some(Entry::Compressed { .. }) => Some(0),
+            Some(Entry::Free) | None => None,
+        }
+    }
+
     /// The highest object number in the xref.
     #[must_use]
     pub fn max_object_number(&self) -> u32 {

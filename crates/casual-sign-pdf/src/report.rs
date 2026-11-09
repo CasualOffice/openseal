@@ -66,6 +66,10 @@ pub enum ActionKind {
     ImportData,
     /// `/S /Rendition`, `/Movie`, `/Sound` and other multimedia actions.
     Multimedia,
+    /// Any other action (`/GoTo`, `/Named`, …) or a destination. Admission never
+    /// reports it; normalization reports it when it removes a whole `/OpenAction` or
+    /// `/AA` entry (docs/30 §3).
+    Other,
 }
 
 /// One thing the reader found or stepped over.

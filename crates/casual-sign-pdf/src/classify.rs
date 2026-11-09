@@ -30,7 +30,7 @@ struct Inventory {
     sig_values: BTreeSet<u32>,
 }
 
-fn action_kind(s: &[u8]) -> Option<ActionKind> {
+pub(crate) fn action_kind(s: &[u8]) -> Option<ActionKind> {
     Some(match s {
         b"JavaScript" => ActionKind::JavaScript,
         b"Launch" => ActionKind::Launch,
