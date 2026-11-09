@@ -160,13 +160,7 @@ pub fn parse_formula(text: &str) -> Result<Expression, FormulaError> {
 /// must send back.
 #[must_use]
 pub fn format_result(value: Decimal, precision: u8) -> String {
-    let places = u32::from(precision.min(MAX_PRECISION));
-    let rounded = value.round_dp_with_strategy(places, RoundingStrategy::MidpointAwayFromZero);
-    let rounded = if rounded.is_zero() {
-        Decimal::ZERO
-    } else {
-        rounded
-    };
+    let rounded = round_result(value, precision);
     // Not `format!("{rounded:.places$}")`: rust_decimal formats a precision into a
     // fixed-size buffer that a 29-digit value overflows, and that is a panic. Its plain
     // `Display` has room for every value; the zeros are padded here.
@@ -180,6 +174,20 @@ pub fn format_result(value: Decimal, precision: u8) -> String {
         text.push('0');
     }
     text
+}
+
+/// The value [`format_result`] shows, as a number: rounded half away from zero to
+/// `precision` places (at most 15), with negative zero made zero. Formulas that read a
+/// formula field read this, so they compute with what the signer sees.
+#[must_use]
+pub fn round_result(value: Decimal, precision: u8) -> Decimal {
+    let places = u32::from(precision.min(MAX_PRECISION));
+    let rounded = value.round_dp_with_strategy(places, RoundingStrategy::MidpointAwayFromZero);
+    if rounded.is_zero() {
+        Decimal::ZERO
+    } else {
+        rounded
+    }
 }
 
 // ---- lexer -------------------------------------------------------------------------

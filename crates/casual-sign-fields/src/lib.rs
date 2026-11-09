@@ -23,7 +23,7 @@ mod validate;
 
 pub use envelope::{Computed, Outcome, Values, check_client, check_for_send, evaluate_envelope};
 pub use error::{FieldError, FormulaError, Invalid, Issue};
-pub use formula::{Env, ErrorValue, Expression, format_result, parse_formula};
+pub use formula::{Env, ErrorValue, Expression, format_result, parse_formula, round_result};
 pub use validate::{REGEX_DFA_LIMIT, REGEX_NEST_LIMIT, REGEX_SIZE_LIMIT, validate};
 
 use unicode_normalization::UnicodeNormalization;

@@ -13,7 +13,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use casual_sign_fields::{
-    Env, ErrorValue, check_client, evaluate_envelope, parse_formula, validate,
+    Env, ErrorValue, check_client, evaluate_envelope, format_result, parse_formula, validate,
 };
 use casual_sign_model::{
     Condition, DateFormat, FieldType, FieldValue, GroupRule, LengthRule, NumberRule, Text,
@@ -112,7 +112,18 @@ proptest! {
         prop_assert_eq!(&first, &parse_formula(&text));
         if let Ok(expr) = first {
             prop_assert!(expr.references().len() <= 100);
-            prop_assert_eq!(expr.evaluate(&env), expr.evaluate(&env));
+            let value = expr.evaluate(&env);
+            prop_assert_eq!(value, expr.evaluate(&env));
+            if let Ok(d) = value {
+                for precision in [0, 2, 15] {
+                    let text = format_result(d, precision);
+                    prop_assert_eq!(&text, &format_result(d, precision));
+                    // What is shown parses back to the rounded value, when it fits.
+                    if let Ok(back) = text.parse::<Decimal>() {
+                        prop_assert_eq!(back, casual_sign_fields::round_result(d, precision));
+                    }
+                }
+            }
         }
     }
 

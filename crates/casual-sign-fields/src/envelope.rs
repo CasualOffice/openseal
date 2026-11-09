@@ -17,7 +17,7 @@ use casual_sign_model::{
 use rust_decimal::Decimal;
 
 use crate::error::{FieldError, FormulaError, Invalid, Issue};
-use crate::formula::{Env, ErrorValue, Expression, format_result, parse_formula};
+use crate::formula::{Env, ErrorValue, Expression, format_result, parse_formula, round_result};
 use crate::label_key;
 use crate::parse::{parse_date, parse_number};
 use crate::validate::{Patterns, date_format, validate_with};
@@ -178,17 +178,10 @@ pub fn evaluate_envelope(fields: &[Field], values: &Values) -> Outcome {
                 }
                 if let Some(Some(expr)) = plan.formulas.get(i) {
                     let precision = field.formula.as_ref().map_or(0, |f| f.precision());
-                    let result = expr.evaluate(&state).map(|d| format_result(d, precision));
-                    if let Ok(text) = &result {
-                        let number = text.parse::<Decimal>().map_err(|_| ErrorValue::NotANumber);
-                        state.set(
-                            i,
-                            Text::new(text.clone()).ok().map(FieldValue::Text),
-                            Some(number),
-                        );
-                    } else if let Err(e) = &result {
-                        state.set(i, None, Some(Err(*e)));
-                    }
+                    let number = expr.evaluate(&state).map(|d| round_result(d, precision));
+                    let result = number.map(|d| format_result(d, precision));
+                    let shown = result.as_ref().ok().and_then(|t| Text::new(t.clone()).ok());
+                    state.set(i, shown.map(FieldValue::Text), Some(number));
                     computed.insert(field.id.clone(), result);
                 } else {
                     state.set(i, eff.clone(), None);
