@@ -1,0 +1,3 @@
+# DER and message bytes are compared exactly (docs/04 rule 16).
+*.der binary
+*.bin binary
