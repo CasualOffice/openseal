@@ -38,7 +38,8 @@ milestone reached, as with phases ([05](05-PHASES-AND-TASKS.md)).
 | **M4 — Team beta** | A team replaces DocuSign Standard or SignNow Business for day-to-day work, and a developer embeds signing in their app | Slices 3 templates, 4 every field, 6 manage and correct, 8 API and webhooks, 9 embedding | Slice end points; [96](96-FEATURE-FIT-GAP.md) rows for those slices `Works`; API reference published; TypeScript and Python SDKs released as beta | XL |
 | **M5 — 1.0 GA** | An organization runs OpenSeal in production in place of DocuSign Business Pro: SSO, branding, bulk send, signing links, retention, HA operations | Slices 10 admin and SSO, 11 bulk and links, 12 brand and language, 15 data controls, 20 operations; release gates `PV-01`, `SEC-REV-01`, `SEC-ASVS-01`, `A11Y-01`, `LEG-01`, `LEG-02`, `UXR-01` | All listed slices closed; all release gates passed ([15](15-CI-AND-RELEASE-GATES.md)); upgrade test; signed images and SBOM | XL |
 | **M6 — Regulated** | Life sciences, finance and EU public sector adopt it: per-signer seals, archives, AES/QES through QTSPs, Part 11 | Slices 16 per-signer seals, 17 archive, 18 advanced and qualified, 19 Part 11 | Slice end points; EU DSS reports B-LTA and QES through a test QTSP; Part 11 validation pack | L |
-| **M7 — Ecosystem** | OpenSeal is everywhere agreements happen: payments, kiosks, desktop, mobile apps, AI agents, the CasualOffice suite, integrations, forms, document generation | Slices 13, 14, 21–30 (25 subject to counsel, `DEC-10`) | Each slice closes on its own; M7 is reached when the owner says the set is complete | XL |
+| **M7 — Ecosystem** | OpenSeal is everywhere agreements happen: payments, kiosks, desktop, mobile apps, AI agents, the CasualOffice suite, integrations, forms, document generation | Slices 13, 14, 21–30 (25 subject to counsel, `DEC-10`) |
+| **M8 — Agreement platform** | Notarization and the add-on modules: lifecycle management, rooms, workflow builder, agreement intelligence | Slices 31–35 | Each slice closes on its own; M7 is reached when the owner says the set is complete | XL |
 
 **Critical path:** Phase 0 → stages 1A, 1B → (W-1) Phase 2 → slice 1 → slices 2, 5, 7 → M3. Stages 1C–1J and the
 independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md) §Working in parallel).
@@ -62,7 +63,7 @@ Docs are true as of the Phase 0 foundation commit (2026-11-10). No product behav
 | 0 Foundation | **Open** 2026-11-10 | Opened by instruction 6 (ADR-001 to ADR-009 Accepted). Built: workspace, gates, hooks, CI workflow, pyHanko validator harness. Left: in [14](14-EXECUTION-TRACKER.md) §Phase 0 |
 | 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1D field rules, 1F crypto structures. In progress: 1B writer and normalizer, 1C geometry and anchors. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
 | 2 Envelope engine and server | Not opened | May open in parallel with Phase 1 stages 1C onward (`W-1` proposed) |
-| Slices 1–30 | Not opened | |
+| Slices 1–35 | Not opened | |
 
 ### Waivers
 
@@ -194,6 +195,11 @@ extraction are part of every UI slice's end point, not a later slice.
 | 27 | **Forms and clickwrap** | Web forms that create envelopes; clickwrap consent API | — |
 | 28 | **Document generation** | Merge data into DOCX templates, then send | OpenDoc engine |
 | 30 | **Mobile apps** | iOS and Android apps for senders and signers, with offline signing that syncs | Sister desktop shell patterns |
+| 31 | **Remote online notarization** | A notary recipient runs an audio-video session, keeps a journal and applies a notarial certificate and seal; commissioned notaries through licensed providers | — |
+| 32 | **Contract lifecycle module** | Clause library, drafting and redlining (with OpenDoc), approvals, repository and obligation dates, built on the public API | OpenDoc engine |
+| 33 | **Rooms module** | Shared transaction workspaces with participants, tasks, documents and envelopes | — |
+| 34 | **Workflow builder module** | No-code agreement workflows: forms, approvals, conditional steps, envelope sends and integrations, driven by the event stream | — |
+| 35 | **Agreement intelligence module** | Extraction of parties, dates and amounts, search across agreements, renewal alerts; models behind a host seam, off by default | OpenCalc's MCP agent access |
 | 29 | **Advanced routing** | Conditional routing, signing groups, scheduled sending, delayed routing, delegation and auto-delegate | — |
 
 **Release gates** (before any version is called 1.0): `PV-01` Acrobat verification; `SEC-REV-01` external security

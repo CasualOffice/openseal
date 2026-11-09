@@ -4,11 +4,11 @@
 slice that delivers it, and its status. Sources: [48](48-DOCUSIGN-STUDY.md) (DS) and [49](49-SIGNNOW-STUDY.md) (SN).
 This is the parity measure: at every slice close, the count of `Build` and `Plugin` rows marked `Works` is reported.
 
-**Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. `Out` — only
-where the owner has decided it (owner instruction 8: nothing is deferred on MVP reasoning; there is no `Later`). **Status:** `—` not started, `Designed`, `Works`
+**Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
+instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
 (merged, tested, in a browser run where it has UI).
 
-**Today: 0 of 167 rows work** (every row Build or Plugin except two awaiting owner decisions; counted with `grep`). Docs are true as of the initial commit (2026-11-10).
+**Today: 0 of 167 rows work** (every row Build or Plugin; counted with `grep`). Docs are true as of the initial commit (2026-11-10).
 
 ## Documents
 
@@ -43,7 +43,7 @@ where the owner has decided it (owner instruction 8: nothing is deferred on MVP 
 | FG-026 | Update recipients (intermediary) | DS | Build | 6 | Designed |
 | FG-027 | In-person signer | DS, SN | Build | 14 | Designed |
 | FG-028 | Witness | DS | Build | 16 | — |
-| FG-029 | Notary | DS, SN | Out (`DEC-09`) | — | — |
+| FG-029 | Notary (remote online notarization) | DS, SN | Build, with provider plugins | 31 | — |
 | FG-030 | Electronic seal recipient | DS | Plugin | 18 | — |
 | FG-031 | Sequential, parallel and mixed routing order | DS, SN | Build | 2 | Designed |
 | FG-032 | Conditional routing | DS | Build | 29 | Designed |
@@ -225,4 +225,4 @@ where the owner has decided it (owner instruction 8: nothing is deferred on MVP 
 | FG-213 | Mobile apps (iOS, Android), with offline signing that syncs | DS, SN | Build | 30 | — |
 | FG-214 | Desktop app | — (sisters) | Build | 21 | — |
 | FG-215 | Payments through Stripe | DS, SN | Plugin | 13 | Designed |
-| FG-216 | CLM, Rooms, Maestro, Navigator | DS | Out (`DEC-08`) | — | — |
+| FG-216 | CLM, Rooms, Maestro, Navigator equivalents | DS | Build, as add-on modules | 32–35 | — |

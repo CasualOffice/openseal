@@ -81,14 +81,14 @@ Only what the vendors own is replaced: names, logos, colours, illustrations, wor
 10. **Deployment**: single-node Docker Compose; Kubernetes Helm chart; HSM and cloud KMS key custody; desktop app for
     senders and offline verification.
 
-### Out of scope until the owner says otherwise
+### Add-on modules and integrations (owner instruction 9)
 
-- **Contract lifecycle management** (authoring, redlining, clause libraries, obligation tracking), DocuSign Rooms,
-  Maestro-style workflow builders, AI agreement analysis (`DEC-08`). The API, events and MCP access let these be built
-  outside the core.
-- **Notarization** (remote online notary) — jurisdiction-specific licensing (`DEC-09`).
-- **Being a trust service provider.** OpenSeal integrates QTSPs for QES; it does not become one.
-- **Operating a hosted SaaS.** The project ships software; a hosted offering is the owner's business decision.
+- **Remote online notarization** (slice 31): the notary workflow is OpenSeal's; commissioned notaries and per-state
+  compliance come through licensed provider integrations.
+- **Contract lifecycle management, transaction rooms, a workflow builder and agreement intelligence** (slices 32–35):
+  OpenSeal add-on modules built on the public API and event stream, so the signing core stays focused.
+- **OpenSeal does not become a trust service provider**: qualified signatures come through QTSPs (slice 18).
+- **Hosting a SaaS** is the owner's business decision; the project ships software that can be hosted.
 
 ## 6. Functional requirements (summary)
 

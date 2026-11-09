@@ -18,8 +18,8 @@ Docs are true as of the Phase 0 foundation commit (2026-11-10).
 | DEC-05 | Web and desktop | Open | Web first (signers are on the web); desktop as slice 21 for senders and offline verification | The sisters support both |
 | DEC-06 | Reference products | Open | DocuSign sets the feature bar, vocabulary and API concepts; SignNow's document-first editor is offered beside DocuSign's flow ([01](01-PRD.md) §3) | Decides every UX dispute |
 | DEC-07 | Legal reviews | Open | Trademark search on the chosen name; counsel review of legal claims and the default ERSD (`LEG-02`) before 1.0 | E-signature products carry legal exposure |
-| DEC-08 | CLM, Rooms, workflow builders, AI analysis | Open | Out of the core; API, events and MCP let them be built outside | Scope |
-| DEC-09 | Remote online notarization | Open | Out; jurisdiction-specific licensing | Scope |
+| DEC-08 | CLM, Rooms, workflow builders, AI analysis | Done | Owner, 2026-11-10 (instruction 9): built as OpenSeal add-on modules on the public API and event stream, not in the signing core (slices 32–35) | Keeps the engine and core server focused while delivering the full DocuSign surface |
+| DEC-09 | Remote online notarization | Done | Owner, 2026-11-10 (instruction 9): in, as slice 31: the notary workflow (notary recipient, journal, audio-video session record, notarial certificate and seal) in OpenSeal; commissioned notaries and state-specific compliance through licensed provider integrations | Notarization is regulated per US state and per country |
 | DEC-10 | DocuSign-compatible API endpoint | Open | Defer to slice 25 and decide with counsel; the native API stays the primary contract | Migration value against trademark risk |
 | DEC-11 | Git workflow | Done | Owner, 2026-11-10 (instruction 5), as recommended: work lands on `main`, parallel workers on worktree branches merged by the main session; GitHub org `CasualOffice`, repo `openseal` | Needed for `F-001` |
 | DEC-12 | Default seal level | Open | PAdES B-T for every account; B-LT one switch away; B-LTA with renewal for archives (ADR-008) | Cost (TSA calls) against long-term verifiability |
@@ -149,6 +149,11 @@ Each slice's outcome is in [06](06-ROADMAP-AND-DELIVERY.md) §After Phase 2; non
 | VS-28 | Document generation | Open | P2 |
 | VS-29 | Advanced routing | Open | P2 |
 | VS-30 | Mobile apps (iOS, Android), offline signing | Open | P2 |
+| VS-31 | Remote online notarization | Open | P2 |
+| VS-32 | Contract lifecycle management module | Open | P2 |
+| VS-33 | Transaction rooms module | Open | P2 |
+| VS-34 | Workflow builder module | Open | P2 |
+| VS-35 | Agreement intelligence module (AI extraction, search, renewals) | Open | P2 |
 
 `VS-25` is blocked on `DEC-10`.
 

@@ -67,7 +67,7 @@ From https://developers.docusign.com/docs/esign-rest-api/esign101/concepts/recip
 | `editors` | Allow to Edit | Sender-like rights; needs an account | `editor` | 6 |
 | `intermediaries` | Update Recipients | Adds or updates recipients at same or later levels | `intermediary` | 6 |
 | `witnesses` | Signs with Witness | Confirms a signer's signature | `witness` | 16 |
-| `notaries` | Signs with Notary | Remote online notarization | Not planned (`DEC-09`) | — |
+| `notaries` | Signs with Notary | Remote online notarization | `notary` | 31 |
 | `seals` | Electronic Seal | Legal-entity certificate seal | `seal` (via `RemoteSigner`) | 18 |
 
 OpenSeal adds `approver` (DocuSign does approval with an `approveTabs` button on a signer; Documenso and SignNow have
@@ -225,13 +225,13 @@ envelope or group. Envelope transfer when a user leaves; account-wide history.
 
 | Product | What | OpenSeal |
 | --- | --- | --- |
-| CLM | Authoring, redlining, clause library, repository | Out of scope (`DEC-08`) |
-| Rooms | Real-estate transaction rooms | Out of scope |
+| CLM | Authoring, redlining, clause library, repository | Add-on module, slice 32 |
+| Rooms | Real-estate transaction rooms | Add-on module, slice 33 |
 | Click | Clickwrap consent with audit | Slice 27 (small module) |
 | Web Forms | Forms that generate agreements; successor to PowerForms | Slice 27 |
-| Maestro | No-code workflow orchestration | Out of scope; webhooks and the API are the seam |
-| IAM / Navigator | AI agreement repository and extraction | Out of scope (`DEC-08`); MCP access lets an agent do it outside the core |
-| Notary, eWitness | Notarization; witnessing | Witness slice 16; notary not planned (`DEC-09`) |
+| Maestro | No-code workflow orchestration | Add-on module, slice 34 |
+| IAM / Navigator | AI agreement repository and extraction | Add-on module, slice 35 |
+| Notary, eWitness | Notarization; witnessing | Witness slice 16; notary slice 31 |
 | Payments, Document Generation | Add-ons | Slice 13, slice 28 |
 
 ## 11. Pricing and gating [?]

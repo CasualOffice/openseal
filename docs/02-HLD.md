@@ -223,6 +223,6 @@ underpinning is [09](09-LEGAL-AND-COMPLIANCE.md). The ones that shape the archit
 
 ## 12. What is out of the core
 
-Contract lifecycle management (clause libraries, negotiation, obligation tracking), AI agreement analysis, rooms for
-real estate, and notarization are **not** in the core; each is a candidate extension after the agreement workflow is
-complete ([01](01-PRD.md) §Out of scope). The API and event stream are designed so they can be built outside the core.
+Contract lifecycle management, transaction rooms, a workflow builder and AI agreement analysis are **add-on modules**
+(slices 32–35) built on the public API and event stream, not code inside the signing core; remote online notarization
+is a slice (31) with licensed provider integrations ([01](01-PRD.md) §5).
