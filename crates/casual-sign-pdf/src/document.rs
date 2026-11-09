@@ -54,7 +54,8 @@ pub struct Document<'a> {
     loading: Vec<u32>,
     endstream_memo: Option<(usize, usize)>,
     pub(crate) findings: Findings,
-    pub(crate) lengths_corrected: u32,
+    /// Streams whose `/Length` was wrong, found by `endstream` instead.
+    pub(crate) lengths_corrected: BTreeSet<u32>,
 }
 
 fn with_object(e: PdfError, num: u32) -> PdfError {
@@ -126,7 +127,7 @@ impl<'a> Document<'a> {
             loading: Vec::new(),
             endstream_memo: None,
             findings: Findings::default(),
-            lengths_corrected: 0,
+            lengths_corrected: BTreeSet::new(),
         };
         if rebuild {
             doc.rebuild(cancel)?;
@@ -763,7 +764,7 @@ impl<'a> Document<'a> {
         {
             Some(r) => r,
             None => {
-                self.lengths_corrected = self.lengths_corrected.saturating_add(1);
+                self.lengths_corrected.insert(num);
                 self.endstream_after(start).ok_or(malformed)?
             }
         };

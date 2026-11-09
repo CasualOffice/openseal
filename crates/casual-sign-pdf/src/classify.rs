@@ -638,7 +638,7 @@ pub(crate) fn classify(
         revisions: doc.revisions().to_vec(),
         object_count: u32::try_from(doc.object_numbers().count()).unwrap_or(u32::MAX),
         repaired: doc.is_repaired(),
-        stream_lengths_corrected: doc.lengths_corrected,
+        stream_lengths_corrected: u32::try_from(doc.lengths_corrected.len()).unwrap_or(u32::MAX),
         fields,
         signatures,
         has_perms,
