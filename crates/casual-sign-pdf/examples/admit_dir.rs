@@ -39,7 +39,12 @@ fn main() {
                 for f in &a.report.findings {
                     *codes.entry(f.code).or_default() += 1;
                 }
-                ("ok".to_string(), a.report.page_count, a.report.repaired, a.report.findings.len())
+                (
+                    "ok".to_string(),
+                    a.report.page_count,
+                    a.report.repaired,
+                    a.report.findings.len(),
+                )
             }
             Err(e) => (e.code().to_string(), 0, false, 0),
         };
