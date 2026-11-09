@@ -167,8 +167,19 @@ pub fn format_result(value: Decimal, precision: u8) -> String {
     } else {
         rounded
     };
+    // Not `format!("{rounded:.places$}")`: rust_decimal formats a precision into a
+    // fixed-size buffer that a 29-digit value overflows, and that is a panic. Its plain
+    // `Display` has room for every value; the zeros are padded here.
+    let mut text = rounded.to_string();
     let places = usize::from(precision.min(MAX_PRECISION));
-    format!("{rounded:.places$}")
+    let have = text.split_once('.').map_or(0, |(_, frac)| frac.len());
+    if places > 0 && have == 0 {
+        text.push('.');
+    }
+    for _ in have..places {
+        text.push('0');
+    }
+    text
 }
 
 // ---- lexer -------------------------------------------------------------------------
@@ -846,5 +857,17 @@ mod tests {
         assert_eq!(format_result(d("-0.001"), 2), "0.00");
         assert_eq!(format_result(d("0.1"), 15), "0.100000000000000");
         assert_eq!(format_result(d("1"), 99), format_result(d("1"), 15));
+    }
+
+    #[test]
+    fn large_results_format_without_panicking() {
+        // rust_decimal's `{:.15}` overflows a fixed buffer and panics on a 29-digit
+        // value; found by the parity table. Zeros are now padded by hand.
+        let max = format!("{}.{}", Decimal::MAX, "0".repeat(15));
+        assert_eq!(format_result(Decimal::MAX, 15), max);
+        assert_eq!(format_result(Decimal::MIN, 15), format!("-{max}"));
+        assert_eq!(format_result(Decimal::MAX, 0), Decimal::MAX.to_string());
+        assert_eq!(format_result(Decimal::new(1, 28), 15), "0.000000000000000");
+        assert_eq!(format_result(Decimal::new(-15, 1), 3), "-1.500");
     }
 }
