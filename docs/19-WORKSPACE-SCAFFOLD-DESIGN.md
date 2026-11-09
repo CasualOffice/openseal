@@ -1,6 +1,6 @@
 # 19 — Workspace and layer division
 
-**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model` and `casual-sign-fields` (stage 1D, merged), `casual-sign-pdf` and `casual-sign-crypto` (skeletons; stages 1A and 1F in progress). Edges: `-fields` → `-model`. `fuzz/` arrives with stage 1A.
+**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model` and `casual-sign-fields` (stage 1D, merged), `casual-sign-crypto` (stage 1F, merged), `casual-sign-pdf` (skeleton; stage 1A in progress). Edges: `-fields` → `-model`. `fuzz/` arrives with stage 1A.
 
 ## Layout
 
@@ -31,7 +31,7 @@ openseal/
 | `casual-sign-pdf` | Engine | — | `zlib-rs` or `miniz_oxide` (decided with ADR-005) | `-fields`, `-flatten`, `-seal`, `-verify` |
 | `casual-sign-fields` | Engine | model (pdf joins with stage 1C) | `rust_decimal`, `regex` (linear-time matching), `unicode-normalization` | `-flatten`, `-wasm` |
 | `casual-sign-flatten` | Engine | pdf, fields, model | `subsetter`, `skrifa` (font subset and metrics), `png`, `zune-jpeg` | `-certificate`, `-sdk` |
-| `casual-sign-crypto` | Engine | — | `der`, `spki`, `x509-cert`, `cms`, `x509-tsp`, `x509-ocsp`, `sha2`, `p256`, `p384`, `rsa` (verify only) | `-seal`, `-verify`, `-audit` |
+| `casual-sign-crypto` | Engine | — | `der`, `spki`, `x509-cert`, `cms =0.3.0-rc.2`, `x509-tsp =0.2.0-rc.0`, `x509-ocsp =0.3.0-rc.1`, `sha2`, `p256`, `p384`, `rsa` (verify only, feature `rsa`); dev: `aws-lc-rs` (test `KeyProvider`), `rcgen` | `-seal`, `-verify`, `-audit` |
 | `casual-sign-seal` | Engine | pdf, crypto | — | `-sdk` |
 | `casual-sign-verify` | Engine | pdf, crypto, audit | — | `-sdk`, `-wasm` |
 | `casual-sign-audit` | Engine | model, crypto | `serde_json`, `serde_json_canonicalizer` (JCS) | `-workflow`, `-certificate` |

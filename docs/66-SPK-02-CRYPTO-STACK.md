@@ -1,5 +1,10 @@
 # 66 — SPK-02: crypto stack spike report
 
+> **Corrections after stage 1F (2026-11-10).** RUSTSEC-2023-0071 is now listed as patched in `rsa` 0.10.0, so the
+> advisory ignore proposed in §7 is not needed (`DEP-02`). The claim that pyHanko accepts out-of-order signed
+> attributes holds in its PDF path, which this spike exercised, but not in its generic detached-CMS path, which reports
+> `valid=False` on the same attributes; `cryptography` verifies them over the bytes as written.
+
 **Status: spike report for ADR-006 (`SPK-02`).** What was built in `spikes/spk-02-crypto/`, what was measured,
 where, and what was not. Recommendation: **confirm ADR-006, with four amendments** (§7). Nothing here is product code;
 the spike is a standalone Cargo workspace, `publish = false`, outside the product workspace.

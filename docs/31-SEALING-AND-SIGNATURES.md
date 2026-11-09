@@ -124,8 +124,8 @@ only a C compiler (about 13 s on an M4). **RustCrypto**, the `der` 0.8 generatio
 `cms =0.3.0-rc.2`, `x509-tsp =0.2.0-rc.0`, `x509-ocsp =0.3.0-rc.1`, `sha2`, `p256`, `p384`), for structures and for
 the WASM verifier, which builds at 330 KB (ECDSA) or 424 KB (with RSA) and has no imports; `aws-lc-rs` cannot compile
 for `wasm32` and is never in that build. The release candidates are pinned exactly until stable (`DEP-03`). `rsa` is
-used **only for verification in WASM**, through a recorded ignore of RUSTSEC-2023-0071 (Marvin, a timing attack on
-private-key operations we never perform; `DEP-02`). `cryptographic-message-syntax` (MPL-2.0) is not used.
+used **only for verification in WASM**. RUSTSEC-2023-0071 (Marvin) is a timing attack on private-key operations we never
+perform; the advisory database of 2026-11-10 lists it as patched in `rsa` 0.10.0, so no ignore entry is needed (`DEP-02`). `cryptographic-message-syntax` (MPL-2.0) is not used.
 
 Rules the spike found:
 
@@ -135,6 +135,11 @@ Rules the spike found:
   requires for a DEFAULT.
 - `/Contents` is zero-padded after the CMS: decode exactly one TLV.
 - The verifier reads DER; BER from other signers needs a decision before stage 1H (`SEAL-13`).
+- Stage 1F (as built): every signed structure (signed attributes, OCSP `tbsResponseData`, CRL `tbsCertList`, a
+  delegated responder's certificate, the certificates ESS hashes) is verified over its bytes **as received**; CMS,
+  timestamp and OCSP inputs are capped at 1 MiB and CRLs at 32 MiB (docs/21); RSA keys of 2,048 to 8,192 bits are
+  accepted for verification. **SHA-1 is never used**, which refuses ESSCertID v1 timestamps and SHA-1 OCSP CertIDs that
+  many real TSAs and responders still produce: `SEAL-14` decides.
 - **FIPS** (`aws-lc-fips-sys`) needs CMake and Go to build and carries the OpenSSL licence, which `deny.toml` does not
   allow: a separate build profile, decided by `DEC-14`.
 

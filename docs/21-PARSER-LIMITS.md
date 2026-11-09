@@ -27,6 +27,17 @@ Phase 1 gate.
 | Content-stream operators interpreted for text extraction, per page | 2,000,000 | CS-PDF-0013 | `content_ops_2m` |
 | Time budget | Host-supplied predicate | CS-PDF-0013 | none: a test that cancels |
 
+## Cryptographic structures (`casual-sign-crypto`, stage 1F)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| CMS SignedData | 1 MiB; exactly one SignerInfo; DER only; trailing zero padding allowed, other trailing bytes refused | CS-VER-0003 |
+| RFC 3161 response or token | 1 MiB | CS-SEAL-0002, CS-VER-0006 |
+| Timestamp nonce | 32 bytes | CS-SEAL-0002 |
+| OCSP response | 1 MiB | CS-SEAL-0004 |
+| CRL | 32 MiB; critical issuing-distribution-point (indirect, delta, partitioned CRLs) refused | CS-SEAL-0004 |
+| RSA key size accepted for verification | 2,048–8,192 bits | CS-SEAL-0005 |
+
 ## Images (signatures, stamps, attachments shown inline)
 
 | Limit | Default | Code |

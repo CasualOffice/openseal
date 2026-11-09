@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005` and `0020` to `0022` (`casual-sign-model`, `casual-sign-fields`, stage 1D). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005` and `0020` to `0022` (stage 1D); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0002`, `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -60,12 +60,12 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-SEAL-0001 | Key provider failed or refused |
 | CS-SEAL-0002 | Timestamp authority failed or answered invalidly |
 | CS-SEAL-0003 | Signature larger than its placeholder |
-| CS-SEAL-0004 | Revocation data unavailable for the requested level |
-| CS-SEAL-0005 | Algorithm or key not allowed by policy |
-| CS-SEAL-0010 | Our own output failed verification (P0) |
+| CS-SEAL-0004 | Revocation data unavailable for the requested level, or OCSP/CRL data unusable |
+| CS-SEAL-0005 | Algorithm, curve or key not allowed by policy or not supported (build and verify), including SHA-1 identifiers |
+| CS-SEAL-0010 | Our own output failed verification, or our own DER could not be encoded (P0) |
 | CS-VER-0001 | ByteRange malformed or not covering the revision |
 | CS-VER-0002 | Digest mismatch |
-| CS-VER-0003 | CMS signature invalid |
+| CS-VER-0003 | CMS malformed or its signature invalid |
 | CS-VER-0004 | Chain does not build to a trusted anchor (indeterminate) |
 | CS-VER-0005 | Certificate revoked or expired at signing time |
 | CS-VER-0006 | Timestamp invalid |

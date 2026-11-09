@@ -47,8 +47,8 @@ Nothing is built; every row is Planned.
 | SEC-S05 | Misuse of the platform key (signing arbitrary digests) | `keyd` authenticates callers, logs every digest with envelope id, rate-limits; worker requests are tied to `completing` envelopes; reconciliation job compares `keyd`'s log with `document.sealed` events | Planned 2E |
 | SEC-S06 | Backdating | Trusted time from RFC 3161 TSA on every seal; server time only as a claim; anchoring of chain heads | Planned 1G |
 | SEC-S07 | Evidence rewrite by an insider | Hash chain; chain head inside the sealed PDF every party received; append-only DB grants and trigger; optional public anchoring | Planned 1I, slice 7 |
-| SEC-S08 | Weak algorithms | SHA-256+ only; RSA ≥ 3072 or ECDSA P-256/P-384 for new seals; verification of older algorithms reported as such | Planned 1F |
-| SEC-S09 | Timestamp response forgery or replay | Nonce, imprint, TSA chain and ESSCertIDv2 checked before embedding | Planned 1G |
+| SEC-S08 | Weak algorithms | SHA-256+ only, SHA-1 never (identifiers included, pending `SEAL-14`); RSA ≥ 3072 or ECDSA P-256/P-384 for new seals; RSA 2,048–8,192 bits accepted for verification | Partial: verification side built in stage 1F; sealing side in 1G |
+| SEC-S09 | Timestamp response forgery or replay | Nonce, imprint, TSA signature, ESSCertIDv2 and critical timeStamping EKU checked before embedding (`casual-sign-crypto`); nonce and imprint checks seen red when removed (stage 1F). **Left:** a guard test for the EKU check; chain to the TSA's trust anchor in stage 1H | Partial |
 
 ## Accounts, ceremony and API (`SEC-A*`)
 
@@ -64,6 +64,9 @@ Nothing is built; every row is Planned.
 | SEC-A08 | Embedded view token misuse | Single-use, 5-minute URLs bound to recipient and host client; `auth.asserted_by_host` recorded as such | Planned slice 9 |
 | SEC-A09 | Credential stuffing on staff login | SSO preferred; WebAuthn and TOTP; rate limits; breached-password check (k-anonymity, optional) | Planned 2C |
 | SEC-A10 | API key leakage | Prefixed keys for secret scanning, hashed at rest, scoped, expiring, last-used shown | Planned 2C |
+
+| SEC-S10 | Malformed DER in CMS, timestamps, OCSP or CRLs crashes or fools the verifier | Bounded DER parsing; signed bytes verified as received, never re-encoded; 10,000 deterministic mutations over every fixture with no panic (stage 1F); digest, signature, ESS, nonce, imprint, OCSP and CRL status and validity checks each seen red when removed (worker; digest re-run by the main session) | Tested |
+| SEC-S11 | Revocation answered by an unauthorized responder | OCSP accepted only from the issuer or a delegate with the OCSPSigning EKU signed by the issuer and valid at producedAt; CRL issuer, cRLSign, signature and period checked; unauthorized responder test seen red when removed (stage 1F) | Tested |
 
 ## Field input (`SEC-F*`)
 
