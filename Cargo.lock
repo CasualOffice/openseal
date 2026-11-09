@@ -233,6 +233,7 @@ name = "casual-sign-fields"
 version = "0.0.0"
 dependencies = [
  "casual-sign-model",
+ "casual-sign-pdf",
  "proptest",
  "regex",
  "rust_decimal",
