@@ -72,6 +72,8 @@ pub(crate) fn signed_attrs_as_received(content_info: &[u8]) -> Option<Vec<u8>> {
     Some(v)
 }
 
+// Tests may unwrap, index and panic (CLAUDE.md).
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 #[cfg(test)]
 mod tests {
     use super::*;

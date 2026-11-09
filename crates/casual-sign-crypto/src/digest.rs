@@ -175,6 +175,8 @@ impl DigestValue {
     }
 }
 
+// Tests may unwrap, index and panic (CLAUDE.md).
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,13 +193,13 @@ mod tests {
     #[test]
     fn range_outside_data_is_refused() {
         let err = DigestAlgorithm::Sha384
-            .digest_ranges(b"abc", &[0..4])
+            .digest_ranges(b"abc", &[0..1, 0..4])
             .unwrap_err();
         assert_eq!(err.code(), "CS-VER-0001");
         // A reversed range must be refused, not panic; clippy flags the literal on purpose.
         #[allow(clippy::reversed_empty_ranges)]
         let err = DigestAlgorithm::Sha512
-            .digest_ranges(b"abc", &[2..1])
+            .digest_ranges(b"abc", &[0..1, 2..1])
             .unwrap_err();
         assert_eq!(err, CryptoError::RangeOutOfBounds);
     }

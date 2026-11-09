@@ -3,6 +3,17 @@
 //! flipped byte in each is detected; our outputs are written to `target/crypto-interop`
 //! for `gen.py --verify`.
 
+// Tests may unwrap, index and panic (CLAUDE.md); the product lints target src/.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+// Without `rsa` the RSA-signed fixtures are skipped, leaving some helpers unused.
+#![cfg_attr(not(feature = "rsa"), allow(unused_imports, dead_code))]
+
 mod common;
 
 use core::time::Duration;

@@ -384,6 +384,8 @@ pub(crate) fn to_der<T: Encode>(value: &T) -> Result<Vec<u8>, CryptoError> {
     value.to_der().map_err(|_| CryptoError::Encoding)
 }
 
+// Tests may unwrap, index and panic (CLAUDE.md).
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -311,6 +311,8 @@ pub fn crl_status(
     })
 }
 
+// Tests may unwrap, index and panic (CLAUDE.md).
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 #[cfg(test)]
 mod tests {
     use super::*;
