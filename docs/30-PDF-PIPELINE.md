@@ -93,6 +93,14 @@ No loops, no user functions, no string building. Evaluation is bounded (expressi
 dependency graph is checked for cycles at send time (`CS-FLD-0020`). Division by zero is an error value shown to the
 signer, not a crash.
 
+As built in stage 1D (`casual-sign-fields`): precedence from loosest to tightest is comparison, `+ -`, `* /`,
+unary signs, and chained comparisons (`a<b<c`) are refused rather than guessed. Functions: `IF(cond, then, else)`
+evaluates only the branch taken; `SUM`, `MIN`, `MAX` take one or more arguments; `ROUND(x[, places])`; `ABS(x)`;
+`DAYS(end, start)` takes date-field labels only. Labels are bare identifiers or `[any label]`, compared after NFC
+normalization. Results round half away from zero at the formula's precision. An empty or hidden referenced field
+counts as 0. A runtime error (division by zero, overflow, not a number, not a date) is a value shown to the signer.
+A table of 225 cases gives byte-identical output natively and in `wasm32-unknown-unknown` (run under Node).
+
 ## 7. Flattening (`casual-sign-flatten`)
 
 For each document at completion, one incremental update that:

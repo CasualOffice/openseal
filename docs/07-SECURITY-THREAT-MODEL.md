@@ -65,6 +65,14 @@ Nothing is built; every row is Planned.
 | SEC-A09 | Credential stuffing on staff login | SSO preferred; WebAuthn and TOTP; rate limits; breached-password check (k-anonymity, optional) | Planned 2C |
 | SEC-A10 | API key leakage | Prefixed keys for secret scanning, hashed at rest, scoped, expiring, last-used shown | Planned 2C |
 
+## Field input (`SEC-F*`)
+
+| ID | Threat | Control | Status |
+| --- | --- | --- | --- |
+| SEC-F01 | A sender's validation regex causes catastrophic backtracking (ReDoS) when a signer types, on the server or in the browser | `regex` crate (finite automata, linear time); pattern length, nesting, compiled size and DFA cache bounded (docs/21); `(a+)+$` over 4,000 characters completes within the test bound; size and length guards seen red when removed | Tested |
+| SEC-F02 | Formula bombs: huge, deep or self-referencing formulas | Length refused before lexing, depth, reference count, cycle detection without recursion (3,000-field chain tested); property tests of random formulas never panic; length and depth guards seen red when removed (stage 1D, re-run by the main session) | Tested |
+| SEC-F03 | A client submits values or formula results different from the server's | `evaluate_envelope` re-runs every rule on the server; `check_client` reports `CS-FLD-0022`; locked and read-only fields keep the sender's value | Tested |
+
 ## Abuse and outbound (`SEC-W*`, `SEC-L*`, `SEC-M*`)
 
 | ID | Threat | Control | Status |

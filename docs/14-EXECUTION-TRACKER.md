@@ -80,7 +80,7 @@ Split into tasks when each stage opens.
 | T-1B | Incremental writer and normalizer | Open | P0 | [30](30-PDF-PIPELINE.md) §3, §9 | Stage gate; `PDF-INV-01` |
 | PDF-INV-01 | Delivered bytes are a prefix of the sealed file | Open | P0 | Corpus test | Seen red with a writer that rewrites |
 | T-1C | Geometry, text extraction, anchors, text tags, AcroForm conversion | Open | P0 | [30](30-PDF-PIPELINE.md) §4, §5 | Stage gate |
-| T-1D | Field validation, conditions, groups, formulas, native = WASM | In progress | P0 | [30](30-PDF-PIPELINE.md) §6 | Stage gate |
+| T-1D | Field validation, conditions, groups, formulas, native = WASM | In progress | P0 | **Built and merged (2026-11-10, `ad2276b`):** field types in `-model`; validation, visibility, groups, linked fields, formulas, `evaluate_envelope`, `check_client` in `-fields`; 72 tests incl. 5 property tests; 225-case table identical natively and in wasm32 (Node); 8 bounds each seen red with the guard removed (worker), length and depth re-run by the main session; found and fixed a panic formatting 29-digit results. **Left:** a cargo-fuzz target for `parse_formula` and the regex path once `fuzz/` exists (`F-007`); a committed WASM parity runner, which belongs in `casual-sign-wasm` | Stage gate |
 | T-1E | Flattening | Open | P0 | [30](30-PDF-PIPELINE.md) §7 | Stage gate |
 | T-1F | Crypto structures, KeyProvider, TSP, OCSP, CRL | In progress | P0 | [31](31-SEALING-AND-SIGNATURES.md) | Stage gate |
 | T-1G | Sealing B-B to B-LTA | Open | P0 | [31](31-SEALING-AND-SIGNATURES.md) §4 | Stage gate; ladder rungs 1–3 |

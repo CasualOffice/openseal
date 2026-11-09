@@ -6,7 +6,7 @@ Adapted from OpenPresent's `openslide-worker` skill.
 
 Parallelism is decided by invariants: two workers may run together only if they cannot touch the same invariant or file. Two tasks in one file are one worker, in sequence. Read-only audits can run freely.
 
-Commit a shared base first, with skeleton files for each worker, so they do not collide on `Cargo.toml`, `lib.rs` or a migration number.
+**A worktree may start from the last pushed commit, not local `main`:** every brief tells the worker to run `git merge --ff-only main` (or `git rebase main`) in its worktree before starting. Commit a shared base first, with skeleton files for each worker, so they do not collide on `Cargo.toml`, `lib.rs` or a migration number.
 
 Every brief says: read `docs/04-MISTAKES-AND-RULES.md`; use your own scratch subfolder; nothing that can pop up on the owner's desktop; no real personal data or real signed agreements in fixtures; commit each increment; keep the disk small; prefix cargo with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2`, use only `cargo test -p` on what you changed, never full gates or fuzz. Check `uptime` before spawning: above twice the core count, do not spawn.
 

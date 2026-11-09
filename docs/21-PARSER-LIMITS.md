@@ -48,6 +48,11 @@ Phase 1 gate.
 | Anchor matches per string | 500 | CS-FLD-0010 |
 | Subject / message | 255 / 10,000 characters | CS-API-0001 |
 | Custom fields per envelope | 100 | CS-API-0001 |
+| Field id | 1–64 bytes of `[A-Za-z0-9_-]` | CS-FLD-0005 |
+| Data label | 255 bytes, NFC-normalized | CS-FLD-0002 |
+| Field rectangle | 0–14,400 points per coordinate; page 1–5,000 | CS-FLD-0004 |
+| Sender regex pattern | 1,024 bytes; nesting 32; compiled program and DFA cache 2 MiB each; linear-time engine (no backtracking) | CS-FLD-0002 |
+| Numbers in values | 28 digits; no exponent, NaN or infinity | CS-FLD-0002 |
 | Signer attachment size | 25 MiB | CS-FLD-0002 |
 
 ## Bulk and links

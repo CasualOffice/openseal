@@ -106,12 +106,12 @@ one recorded in `envelope.completed`.
 | `required`, `read_only`, `locked` | |
 | `label` (data label) | Unique per envelope for data fields; shared fields share a label |
 | `value`, `default` | Typed per `type`; bounded |
-| `validation` | `{kind: email|number|date|zip|ssn|regex|length, pattern, message}` |
+| `validation` | `{kind, message}` where `kind` carries its own parameters: `email`, `number {min, max, currency, decimals}`, `date {format}`, `zip`, `ssn`, `phone`, `length {min, max}`, `regex {pattern}` (matches the whole value) |
 | `format` | Font family, size, colour, alignment, date format, masking |
 | `group` | Checkbox/radio group id and rule (`select_at_least`, `select_at_most`, `select_exactly`, `select_range`) |
 | `conditional` | `{parent_label, when: value|checked|unchecked|any}` |
 | `formula` | Expression over other labels ([`-fields` formula grammar](30-PDF-PIPELINE.md#formulas)) |
-| `options` | Dropdown and radio options |
+| `options`, `allow_custom` | Dropdown and radio options (500 at most, no repeats); `allow_custom` lets a signer type a value not in the list |
 | `tooltip`, `placeholder` | |
 
 | Type | Notes |
@@ -120,7 +120,8 @@ one recorded in `envelope.completed`.
 | `stamp` | Uploaded company stamp image |
 | `date_signed` | Filled by the server at the recipient's completion, in the account's format and the signer's time zone |
 | `name`, `first_name`, `last_name`, `email`, `company`, `title` | Auto-filled from the recipient, editable per policy |
-| `text`, `number`, `date`, `email_address`, `phone` | Data fields with validation |
+| `text`, `number`, `date`, `email_address`, `phone`, `ssn`, `zip` | Data fields with validation |
+| `envelope_id` | Read-only, the envelope id (DocuSign `envelopeIdTabs`) |
 | `checkbox`, `radio_group`, `dropdown` | |
 | `formula` | Read-only, computed |
 | `attachment` | Signer uploads a file; admitted like any upload |

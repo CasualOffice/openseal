@@ -1,7 +1,6 @@
 # 19 — Workspace and layer division
 
-**Status: Draft for owner. As built (2026-11-10):** the workspace with one member, `crates/casual-sign-pdf` (a skeleton holding `Limits`), no internal or external dependencies; `fuzz/` arrives with stage 1A. A lower layer never knows about a higher one. Changing a boundary here
-needs an ADR. A crate joins the workspace when it has a first consumer.
+**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model` and `casual-sign-fields` (stage 1D, merged), `casual-sign-pdf` and `casual-sign-crypto` (skeletons; stages 1A and 1F in progress). Edges: `-fields` → `-model`. `fuzz/` arrives with stage 1A.
 
 ## Layout
 
@@ -28,9 +27,9 @@ openseal/
 
 | Crate | Layer | Depends on (internal) | Key external dependencies | First consumer |
 | --- | --- | --- | --- | --- |
-| `casual-sign-model` | Engine | — | `serde` | `-workflow`, `-fields` |
+| `casual-sign-model` | Engine | — | `serde`, `rust_decimal` | `-workflow`, `-fields` |
 | `casual-sign-pdf` | Engine | — | `zlib-rs` or `miniz_oxide` (decided with ADR-005) | `-fields`, `-flatten`, `-seal`, `-verify` |
-| `casual-sign-fields` | Engine | model, pdf | `rust_decimal`, `unicode-normalization` | `-flatten`, `-wasm` |
+| `casual-sign-fields` | Engine | model (pdf joins with stage 1C) | `rust_decimal`, `regex` (linear-time matching), `unicode-normalization` | `-flatten`, `-wasm` |
 | `casual-sign-flatten` | Engine | pdf, fields, model | `subsetter`, `skrifa` (font subset and metrics), `png`, `zune-jpeg` | `-certificate`, `-sdk` |
 | `casual-sign-crypto` | Engine | — | `der`, `spki`, `x509-cert`, `cms`, `x509-tsp`, `x509-ocsp`, `sha2`, `p256`, `p384`, `rsa` (verify only) | `-seal`, `-verify`, `-audit` |
 | `casual-sign-seal` | Engine | pdf, crypto | — | `-sdk` |

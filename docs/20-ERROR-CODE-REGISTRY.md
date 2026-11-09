@@ -1,8 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use; **none is
-issued yet.** Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005` and `0020` to `0022` (`casual-sign-model`, `casual-sign-fields`, stage 1D). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -40,10 +39,10 @@ issued yet.** Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-F
 | CS-WRT-0001 | Incremental update would modify earlier bytes (invariant) |
 | CS-WRT-0002 | Object number space exhausted |
 | CS-FLD-0001 | Required field empty |
-| CS-FLD-0002 | Value fails validation |
+| CS-FLD-0002 | Value fails validation; also a sender rule that cannot be used (a regex that does not compile or is over its limits, inverted min and max) |
 | CS-FLD-0003 | Group rule not satisfied |
 | CS-FLD-0004 | Field outside its page |
-| CS-FLD-0005 | Field references an unknown recipient or document |
+| CS-FLD-0005 | Field references an unknown recipient, document, field id or data label, or two fields share an id |
 | CS-FLD-0006 | Signer has no signature field (and free-form is off) |
 | CS-FLD-0010 | Anchor text not found (and not ignorable) |
 | CS-FLD-0011 | Text tag malformed |
