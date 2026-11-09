@@ -29,6 +29,7 @@ jobs:
       - run: cargo check --target wasm32-unknown-unknown --workspace --locked
       - run: python3 tools/check-repo.py
       - run: python3 -I fixtures/tools/generate.py --check
+      - run: python3 -I fixtures/corpus/fetch.py --check
 
   # Conventional Commits over what this push or pull request adds (CLAUDE.md, Git).
   commit-messages:

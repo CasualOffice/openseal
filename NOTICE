@@ -17,3 +17,19 @@ Tools used only in CI, never shipped or linked:
                  6.5.1 from Maven Central, LGPL-2.1, European Commission. The
                  image is built in CI; no DSS code is in this repository.
   pyHanko        MIT, installed from PyPI in CI by tools/verify-sealed.py's job.
+
+Test fixtures referenced by URL and SHA-256, not included:
+  fixtures/corpus/manifest.tsv lists real-world PDFs that
+  fixtures/corpus/fetch.py downloads into a git-ignored folder; none of them is
+  in this repository. Each row records its licence, and its attribution
+  column gives the notice that any copy of that file must carry. Sources whose
+  licences ask for attribution:
+    arXiv papers           CC BY 3.0, CC BY 4.0 or CC BY-SA 4.0, as stated on
+                           each paper's arXiv page; authors named per row.
+    Wikimedia Commons      CC BY and CC BY-SA files; author and licence per row.
+    py-pdf/sample-files    CC BY-SA 4.0, py-pdf contributors.
+    PDF Association        pdf20examples, CC BY-SA 4.0, PDF Association.
+    pyHanko test data      MIT, Copyright (c) Matthias Valvekens.
+    qpdf test suite        Apache-2.0, Jay Berkenbilt and qpdf contributors.
+    Apache PDFBox, FOP     Apache-2.0, The Apache Software Foundation.
+  The rest are US federal government works (public domain) or CC0.
