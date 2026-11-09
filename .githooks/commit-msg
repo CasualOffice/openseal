@@ -1,0 +1,4 @@
+#!/bin/sh
+# Enable once per clone: git config core.hooksPath .githooks
+# Conventional Commits, as CLAUDE.md requires (docs/15).
+exec python3 tools/check-commits.py --message-file "$1"

@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+# Layer division: docs/19-WORKSPACE-SCAFFOLD-DESIGN.md. A crate joins when it has a
+# first consumer, so this list grows with the phases. Hosts under server/ may depend on
+# crates/; nothing under crates/ may depend on them (tools/check-crate-deps.py).
+members = [
+    "crates/casual-sign-pdf",
+]
+# The fuzz workspace is separate: cargo-fuzz needs nightly-only dependencies that must
+# stay out of the product dependency graph (as OpenCalc and OpenPresent).
+exclude = ["fuzz"]
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/CasualOffice/openseal"
+rust-version = "1.88.0"
+
+# Copied from OpenPresent's Cargo.toml (docs/19 §Provenance).
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+# Untrusted input never panics (CLAUDE.md): these make the slips a reviewer misses loud.
+unwrap_used = "warn"
+expect_used = "warn"
+indexing_slicing = "warn"
+arithmetic_side_effects = "warn"
+panic = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+# Arithmetic here runs on numbers from an untrusted file; inherited from the sisters.
+overflow-checks = true

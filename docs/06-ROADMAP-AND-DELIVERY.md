@@ -54,12 +54,12 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of the initial commit (2026-11-10); nothing is built.
+Docs are true as of the Phase 0 foundation commit (2026-11-10). No product behaviour is built yet.
 
 | Phase | State | Note |
 | --- | --- | --- |
 | D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
-| 0 Foundation | Not opened | `git init` done locally; opens when ADR-001 to ADR-009 are Accepted |
+| 0 Foundation | **Open** 2026-11-10 | Opened by instruction 6 (ADR-001 to ADR-009 Accepted). Built: workspace, gates, hooks, CI workflow, pyHanko validator harness. Left: in [14](14-EXECUTION-TRACKER.md) §Phase 0 |
 | 1 PDF and evidence core | Not opened | |
 | 2 Envelope engine and server | Not opened | May open in parallel with Phase 1 stages 1C onward (`W-1` proposed) |
 | Slices 1–29 | Not opened | |

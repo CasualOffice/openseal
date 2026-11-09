@@ -1,6 +1,6 @@
 # 19 — Workspace and layer division
 
-**Status: Draft for owner; nothing exists yet.** A lower layer never knows about a higher one. Changing a boundary here
+**Status: Draft for owner. As built (2026-11-10):** the workspace with one member, `crates/casual-sign-pdf` (a skeleton holding `Limits`), no internal or external dependencies; `fuzz/` arrives with stage 1A. A lower layer never knows about a higher one. Changing a boundary here
 needs an ADR. A crate joins the workspace when it has a first consumer.
 
 ## Layout

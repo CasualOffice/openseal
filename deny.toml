@@ -1,0 +1,30 @@
+# cargo-deny supply-chain policy. See docs/15-CI-AND-RELEASE-GATES.md and docs/19 §Licence policy.
+# Copied from OpenPresent's deny.toml; the ignore list starts empty here.
+
+[advisories]
+yanked = "deny"
+# Individually listed, each with a reason and a tracker row; never a category.
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Intra-workspace path dependencies have no version; that is not a real wildcard.
+allow-wildcard-paths = true
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "NCSA",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,6 @@
+# Copied from OpenPresent's rust-toolchain.toml (docs/19 §Provenance).
+[toolchain]
+channel = "1.96.0"              # dev toolchain
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

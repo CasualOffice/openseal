@@ -5,7 +5,7 @@ document plays the same role, so the siblings read alike, and are never reused.
 
 Read in this order: 03 → 01 → 02 → 05 → 06 → 14 → 07. Then the pillar you are working on.
 
-Docs are true as of the initial commit (2026-11-10); **nothing is built yet.** Outside `docs/`: [README](../README.md)
+Docs are true as of the Phase 0 foundation commit (2026-11-10); **no product behaviour is built yet.** Outside `docs/`: [README](../README.md)
 (what it is and its status), [AGENTS.md](../AGENTS.md) (the contract and current state), [CLAUDE.md](../CLAUDE.md)
 (working rules and engineering standards).
 
@@ -22,8 +22,8 @@ Docs are true as of the initial commit (2026-11-10); **nothing is built yet.** O
 | [09-LEGAL-AND-COMPLIANCE](09-LEGAL-AND-COMPLIANCE.md) | ESIGN, UETA, eIDAS, Part 11, privacy, AATL; requirement → mechanism. Not legal advice | Draft for owner |
 | [10-ENTERPRISE-REQUIREMENTS](10-ENTERPRISE-REQUIREMENTS.md) | The enterprise bar | Draft for owner |
 | [14-EXECUTION-TRACKER](14-EXECUTION-TRACKER.md) | **The only tracker**, with owner decisions | Live |
-| [15-CI-AND-RELEASE-GATES](15-CI-AND-RELEASE-GATES.md) | CI jobs, flake policy, release gates | Draft; nothing runs yet |
-| [19-WORKSPACE-SCAFFOLD-DESIGN](19-WORKSPACE-SCAFFOLD-DESIGN.md) | Crates, dependency DAG, provenance, licence policy | Draft; nothing exists yet |
+| [15-CI-AND-RELEASE-GATES](15-CI-AND-RELEASE-GATES.md) | CI jobs, flake policy, release gates | Phase 0, partly built; not yet run on GitHub |
+| [19-WORKSPACE-SCAFFOLD-DESIGN](19-WORKSPACE-SCAFFOLD-DESIGN.md) | Crates, dependency DAG, provenance, licence policy | Draft; workspace and one skeleton crate built |
 | [20-ERROR-CODE-REGISTRY](20-ERROR-CODE-REGISTRY.md) | Every diagnostic code, reserved | Live; none issued |
 | [21-PARSER-LIMITS](21-PARSER-LIMITS.md) | Every input limit, its default and code | Proposed defaults |
 | [22-DATA-MODEL](22-DATA-MODEL.md) | Entities, fields, persistence and tenancy rules | Draft for owner |

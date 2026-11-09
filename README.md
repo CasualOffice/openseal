@@ -34,9 +34,11 @@ it shares.
 
 ## Status
 
-Docs are true as of the initial commit (2026-11-10).
+Docs are true as of the Phase 0 foundation commit (2026-11-10).
 
-**Design phase. No code exists yet.** What exists is the design, the research and the plan:
+**Design done; foundation in progress. No product behaviour exists yet.** The repository has its workspace, gates and
+CI workflow, and a harness that checks independent validators can tell a sealed PDF from a tampered one. What else
+exists is the design, the research and the plan:
 
 | | Where |
 | --- | --- |
@@ -76,9 +78,9 @@ repository is legal advice ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md), then [CONTRIBUTING.md](CONTRIBUTING.md). Code from AGPL
+Read [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md), then [CONTRIBUTING.md](CONTRIBUTING.md). Enable the hooks once per clone: `git config core.hooksPath .githooks`. Code from AGPL
 projects (Documenso, DocuSeal, OpenSign Labs, LibreSign) must never be copied or adapted here.
 
 ## Licence
 
-[Apache-2.0](LICENSE). See [NOTICE](NOTICE).
+[Apache-2.0](LICENSE). See [NOTICE](NOTICE). What was copied from the sister repositories is in [PROVENANCE.md](PROVENANCE.md).

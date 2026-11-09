@@ -1,0 +1,14 @@
+[package]
+name = "casual-sign-pdf"
+version = "0.0.0"
+description = "Bounded PDF reader and incremental writer for OpenSeal (docs/30)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

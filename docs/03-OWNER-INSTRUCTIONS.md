@@ -14,6 +14,7 @@ by saying so.
 | 3 | 2026-11-10 | "Create PRD, HLD, technical documentation, CLAUDE.md, README, as well as other required roadmap trackers and all" | [01](01-PRD.md), [02](02-HLD.md), docs 19–40, [CLAUDE.md](../CLAUDE.md), [README](../README.md), [06](06-ROADMAP-AND-DELIVERY.md), [14](14-EXECUTION-TRACKER.md), [96](96-FEATURE-FIT-GAP.md) |
 | 4 | 2026-11-10 | "Let's name it OpenSeal" | `DEC-01`, every document, skills renamed `openseal-*` |
 | 5 | 2026-11-10 | "Proceed ahead … create roadmap, phases, milestones" — taken as approving the recommended git workflow (`DEC-11`) | [06](06-ROADMAP-AND-DELIVERY.md) §Milestones, `DEC-11`, `F-001`, `MS-*` in [14](14-EXECUTION-TRACKER.md) |
+| 6 | 2026-11-10 | "Proceed" — taken as accepting ADR-001 to ADR-009 and opening Phase 0, as proposed | [08](08-ADR-REGISTER.md), [06](06-ROADMAP-AND-DELIVERY.md) Phase 0, `F-*` in [14](14-EXECUTION-TRACKER.md) |
 
 ## Inherited working rules
 

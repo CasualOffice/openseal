@@ -1,6 +1,6 @@
 # 15 — CI and release gates
 
-**Status: Draft for owner; nothing runs yet (Phase 0 builds it).** Adapted from OpenPresent's docs/15. CI on GitHub is
+**Status: Phase 0, partly built.** `.github/workflows/ci.yml` holds `checks`, `commit-messages`, `test` (three OSes), `msrv`, `dependency-policy` and `validators` (pyHanko self-test); it has not run on GitHub yet (`F-003`). The rest of the table lands with the phases that need it. Adapted from OpenPresent's docs/15. CI on GitHub is
 the gate; sessions do not run the full list locally ([CLAUDE.md](../CLAUDE.md)).
 
 ## Jobs on every push to `main` and every pull request

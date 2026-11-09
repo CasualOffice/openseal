@@ -97,20 +97,22 @@ Industry-standard practice applies everywhere, with these specifics.
 
 **Git**
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope):`, `fix(scope):`, `docs:`, `chore:`, citing tracker ids. One coherent change per commit, with the reason in the message.
-- Branching follows the owner's instruction in docs/03; until one is given, the sisters' rule applies: work lands on `main`, parallel workers use worktree branches the main session verifies and merges. Never force-push `main`. Never skip hooks.
+- Branching (`DEC-11`, owner instruction 5): work lands on `main`, parallel workers use worktree branches the main session verifies and merges. Never force-push `main`. Never skip hooks; enable them with `git config core.hooksPath .githooks`.
 - Never commit build output, keys, certificates with private parts, real signed agreements, or personal data.
 
-**The list CI runs** (once Phase 0 lands it; sessions do not run it)
+**The list CI runs** (`.github/workflows/ci.yml`; sessions do not run it)
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
-cargo check --target wasm32-unknown-unknown -p casual-sign-wasm --locked
-cargo deny check
+cargo check --target wasm32-unknown-unknown --workspace --locked
+cargo +1.88.0 check --workspace --locked
+cargo deny check bans licenses sources && cargo audit --deny warnings
 python3 tools/check-repo.py
-python3 tools/verify-sealed.py fixtures/sealed     # independent validators over every sealed output
+python3 tools/verify-sealed.py --self-test                 # pyHanko must tell sealed from tampered
+python3 tools/verify-sealed.py fixtures/sealed fixtures/tampered   # once Phase 1 writes sealed fixtures
 ```
 
 ## Working in parallel
