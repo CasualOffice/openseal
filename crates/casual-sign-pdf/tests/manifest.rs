@@ -37,17 +37,16 @@ const DEFAULT_FINDING: &[(&str, &str)] = &[
     ("active_uri_on_open.pdf", "CS-PDF-0105"),
     ("active_submitform.pdf", "CS-PDF-0103"),
     ("active_embedded_file.pdf", "CS-PDF-0104"),
+    ("active_xfa.pdf", "CS-PDF-0103"),
+    ("active_richmedia.pdf", "CS-PDF-0104"),
+    ("active_3d.pdf", "CS-PDF-0104"),
+    ("active_external_stream.pdf", "CS-PDF-0105"),
+    ("active_gotor.pdf", "CS-PDF-0105"),
+    ("active_gotoe.pdf", "CS-PDF-0105"),
+    ("active_importdata.pdf", "CS-PDF-0103"),
+    ("active_js_nametree.pdf", "CS-PDF-0103"),
 ];
 
-/// Fixture defects (reported to the main session, `T-1A`), worked around here so the
-/// row still tests what its note says:
-///
-/// - `too_large.pdf` is generated at exactly 50 MiB, not 50 MiB + 1 byte as its note
-///   says (the generator pads 3 bytes short of 2 added), so it is at the limit, not
-///   over it. The test appends the missing byte.
-/// - `many_objects.pdf` is 58 MB, over the 50 MiB size cap, so under default limits it
-///   can only be refused for size (`CS-PDF-0001`). The test raises the size cap so the
-///   object cap is what it exercises.
 fn input_for(file: &str) -> (Vec<u8>, Limits) {
     // Default limits for every row: the fixtures cross exactly the limit their row names
     // (fixtures/tools/generate.py; two defects there, found by T-1A, were fixed at source).

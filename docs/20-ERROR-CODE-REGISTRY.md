@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0002`, `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0005` (stage 1B); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0002`, `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -22,9 +22,9 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-PDF-0011 | Unsupported filter |
 | CS-PDF-0012 | Dynamic-only XFA form: no static content to sign |
 | CS-PDF-0013 | Read stopped by the host's time budget, or a page's content-operator budget for text extraction |
-| CS-PDF-0014 | Signed document is damaged and cannot be kept without breaking its signatures |
+| CS-PDF-0014 | Signed document cannot be repaired or rewritten (normalized) without breaking its signatures |
 | CS-PDF-0101 | (report) Cross-reference rebuilt by scanning, or offsets corrected |
-| CS-PDF-0102 | (report) Object unreadable; dropped |
+| CS-PDF-0102 | (report) Object unreadable; dropped (also issued by normalization for page content it drops) |
 | CS-PDF-0103 | (report) Active content removed: JavaScript or action |
 | CS-PDF-0104 | (report) Embedded file removed |
 | CS-PDF-0105 | (report) External reference removed |
@@ -42,7 +42,10 @@ XFA handling land.
 | Code | Meaning |
 | --- | --- |
 | CS-WRT-0001 | Incremental update would modify earlier bytes (invariant) |
-| CS-WRT-0002 | Object number space exhausted |
+| CS-WRT-0002 | Object number space exhausted (above 8,388,607) |
+| CS-WRT-0003 | File not structurally sound for appending: its cross-reference was repaired or rebuilt |
+| CS-WRT-0004 | DocMDP of a certification signature forbids the change |
+| CS-WRT-0005 | Replacing an object the file does not have, or a stream whose data is not in the file |
 | CS-FLD-0001 | Required field empty |
 | CS-FLD-0002 | Value fails validation; also a sender rule that cannot be used (a regex that does not compile or is over its limits, inverted min and max) |
 | CS-FLD-0003 | Group rule not satisfied |

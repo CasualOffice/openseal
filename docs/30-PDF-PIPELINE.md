@@ -69,8 +69,24 @@ file is not structurally sound for appending. Signed or `/Perms` input that need
 | Broken xref, damaged objects | Rebuilt; unreadable objects dropped and reported |
 | Non-PDF upload | `Converter` seam: `.docx`, `.xlsx`, `.pptx` through the sister engines' PDF export when deployed, otherwise LibreOffice in a sandboxed container with no network; images (PNG, JPEG) wrapped as one page each |
 
-The normalized file is written fresh (not incrementally), linearization dropped, object streams kept, deterministic
-object order. Its SHA-256 is the document hash every later event cites.
+The normalized file is written fresh (not incrementally), linearization dropped, objects repacked into object streams,
+deterministic object order. Its SHA-256 is the document hash every later event cites.
+
+### As built (stage 1B)
+
+`normalize` writes a fresh file: reachable objects renumbered densely breadth-first from the trailer; by default an
+xref stream with every non-stream object repacked into object streams of 100 (a classic table on request); stream
+data copied as stored, with its filters, so a stream that crossed a content limit keeps its code on re-admission;
+the page tree always kept, `/Kids` rebuilt from dictionaries and `/Count` recomputed; bare reference chains collapsed;
+`/ID` carried when it is two strings. Removed, each listed with its code and input object number: `/OpenAction` and
+`/AA` whole, JavaScript actions and the JavaScript name tree, Launch, SubmitForm, ImportData, GoToR, GoToE, URI actions
+that run without a click (link URIs are kept), embedded files and FileAttachment annotations, RichMedia and 3D, XFA;
+external stream data emptied; optional content reported and kept. Signed input is refused (`CS-PDF-0014`); print to new
+and keeping embedded files as attachments are not built yet (`NORM-02`). `IncrementalUpdate` appends objects with an
+xref in the file's own form, checks DocMDP (`CS-WRT-0004`) and refuses repaired files (`CS-WRT-0003`). `PDF-INV-01`
+holds over the hostile set and the corpus: 315 corpus files normalized and appended; of 72 signed files, 42 appended
+with every signature, page and MediaBox kept and 30 refused for DocMDP P=1, as they must be. pyHanko reads every output
+strictly. A `normalize` fuzz target ran 1.4 million inputs without a crash after four fixed findings.
 
 ## 4. Geometry (`casual-sign-fields`)
 

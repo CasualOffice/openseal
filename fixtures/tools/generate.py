@@ -322,6 +322,30 @@ def builders():
                  (11, stream_obj(b"/Type/EmbeddedFile", b"MZ not really an executable"))]
         return classic(objs)[0]
     b["active_embedded_file.pdf"] = embedded_file
+
+    def with_page_entry(entry, extra):
+        """One page whose dictionary gains `entry`, plus extra objects from 10."""
+        objs = pages_objs(1)
+        objs[2] = (3, b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R" + entry + b">>")
+        return classic(objs + extra)[0]
+
+    xdp = b'<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/"><template/></xdp:xdp>'
+    b["active_xfa.pdf"] = lambda: classic(with_catalog_entry(b"/AcroForm<</Fields[]/XFA 10 0 R>>")
+                                          + [(10, stream_obj(b"", xdp))])[0]
+    b["active_richmedia.pdf"] = lambda: with_page_entry(b"/Annots[10 0 R]", [
+        (10, b"<</Type/Annot/Subtype/RichMedia/Rect[0 0 100 100]/RichMediaContent<<>>>>")])
+    b["active_3d.pdf"] = lambda: with_page_entry(b"/Annots[10 0 R]", [
+        (10, b"<</Type/Annot/Subtype/3D/Rect[0 0 100 100]/3DD 11 0 R>>"),
+        (11, stream_obj(b"/Type/3D/Subtype/U3D", b"not a real U3D stream"))])
+    b["active_external_stream.pdf"] = lambda: with_page_entry(b"/Resources<</XObject<</X 10 0 R>>>>", [
+        (10, b"<</Type/XObject/Subtype/Form/BBox[0 0 10 10]/Length 0/F(https://attacker.invalid/x)>>\nstream\n\nendstream")])
+    b["active_gotor.pdf"] = lambda: with_page_entry(b"/Annots[10 0 R]", [
+        (10, b"<</Type/Annot/Subtype/Link/Rect[0 0 10 10]/A<</S/GoToR/F(other.pdf)/D[0/Fit]>>>>")])
+    b["active_gotoe.pdf"] = lambda: with_page_entry(b"/Annots[10 0 R]", [
+        (10, b"<</Type/Annot/Subtype/Link/Rect[0 0 10 10]/A<</S/GoToE/T<</R/C/N(a.pdf)>>/D[0/Fit]>>>>")])
+    b["active_importdata.pdf"] = lambda: with_page_entry(b"/AA<</O<</S/ImportData/F(data.fdf)>>>>", [])
+    b["active_js_nametree.pdf"] = lambda: classic(with_catalog_entry(b"/Names<</JavaScript<</Names[(a) 10 0 R]>>>>")
+                                                  + [(10, b"<</S/JavaScript/JS(app.alert\\(1\\))>>")])[0]
     return b
 
 

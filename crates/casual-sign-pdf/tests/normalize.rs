@@ -567,6 +567,38 @@ fn active_fixtures_are_cleaned() {
             "CS-PDF-0104",
             FindingKind::EmbeddedFile,
         ),
+        ("active_xfa.pdf", "CS-PDF-0103", FindingKind::Xfa),
+        (
+            "active_richmedia.pdf",
+            "CS-PDF-0104",
+            FindingKind::RichMedia,
+        ),
+        ("active_3d.pdf", "CS-PDF-0104", FindingKind::RichMedia),
+        (
+            "active_external_stream.pdf",
+            "CS-PDF-0105",
+            FindingKind::ExternalStream,
+        ),
+        (
+            "active_gotor.pdf",
+            "CS-PDF-0105",
+            FindingKind::ExternalReference(ActionKind::GoToR),
+        ),
+        (
+            "active_gotoe.pdf",
+            "CS-PDF-0105",
+            FindingKind::ExternalReference(ActionKind::GoToE),
+        ),
+        (
+            "active_importdata.pdf",
+            "CS-PDF-0103",
+            FindingKind::Action(ActionKind::ImportData),
+        ),
+        (
+            "active_js_nametree.pdf",
+            "CS-PDF-0103",
+            FindingKind::Action(ActionKind::JavaScript),
+        ),
     ];
     for (file, code, kind) in cases {
         let bytes = std::fs::read(common::hostile_dir().join(file)).unwrap();
