@@ -60,7 +60,7 @@ Docs are true as of the Phase 0 foundation commit (2026-11-10). No product behav
 | --- | --- | --- |
 | D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
 | 0 Foundation | **Open** 2026-11-10 | Opened by instruction 6 (ADR-001 to ADR-009 Accepted). Built: workspace, gates, hooks, CI workflow, pyHanko validator harness. Left: in [14](14-EXECUTION-TRACKER.md) §Phase 0 |
-| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Stages 1A (reader), 1D (field rules) and 1F (crypto structures) started in parallel |
+| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1D field rules, 1F crypto structures. In progress: 1B writer and normalizer, 1C geometry and anchors. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
 | 2 Envelope engine and server | Not opened | May open in parallel with Phase 1 stages 1C onward (`W-1` proposed) |
 | Slices 1–29 | Not opened | |
 

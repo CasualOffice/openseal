@@ -5,6 +5,7 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 ## 2026-11-10
 
 ### Phase 1 opened
+- First corpus run of the reader: 422 real PDFs, no panic or hang, 387 admitted with page counts matching the manifest; four wrong refusals tracked as `PDF-REAL-01` to `03`.
 - Stage 1A merged: the bounded PDF reader and admission report, with a cargo-fuzz `admit` target (`T-1A`, `F-007`). Fixed after merge: three fixture defects and an object-stream cache that could hold two oversized streams at once.
 - Stage 1F merged: `KeyProvider`, CMS builder and verifier, RFC 3161, OCSP and CRL, cross-checked with `cryptography` and pyHanko both ways (`T-1F`).
 - Stage 1D merged: field types, validation (linear-time regex), conditional fields, groups, linked fields and a decimal formula language, identical natively and in WASM (`T-1D`).
