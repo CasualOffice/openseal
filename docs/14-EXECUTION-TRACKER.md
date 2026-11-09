@@ -96,7 +96,7 @@ Split into tasks when each stage opens.
 | T-1E | Flattening | Open | P0 | [30](30-PDF-PIPELINE.md) §7 | Stage gate |
 | T-1F | Crypto structures, KeyProvider, TSP, OCSP, CRL | In progress | P0 | **Built and merged (2026-11-10, `d44734f`):** `KeyProvider` signing DER signed attributes; CMS detached builder and verifier (attributes as received, ESS v2, DER only); RFC 3161 request and response/token verification; OCSP and CRL status at a time with responder authorization; 32 tests; interop both ways with `cryptography`/pyHanko (re-run by the main session: 6 of 6 of our outputs pass); 10,000 DER mutations without panic; 12 guards seen red (worker), message digest re-run by the main session. **Left:** a test for the TSA EKU check; the cargo-fuzz target (drafted in the worker's report) once `fuzz/` exists (`F-007`); `SEAL-14` | Stage gate |
 | T-1G | Sealing B-B to B-LTA | Open | P0 | [31](31-SEALING-AND-SIGNATURES.md) §4 | Stage gate; ladder rungs 1–3 |
-| T-1H | Verifier | Open | P0 | [31](31-SEALING-AND-SIGNATURES.md) §7 | Stage gate; tampering fixtures |
+| T-1H | Verifier | In progress | P0 | [31](31-SEALING-AND-SIGNATURES.md) §7 | Stage gate; tampering fixtures |
 | T-1I | Audit chain and certificate of completion | Open | P0 | [32](32-AUDIT-TRAIL-AND-EVIDENCE.md) | Stage gate |
 | T-1J | SDK facade and CLI | Open | P1 | [19](19-WORKSPACE-SCAFFOLD-DESIGN.md) | Stage gate |
 | SEAL-12 | Ed25519 seals once reader support exists | Open | P2 | Track Acrobat and EU DSS support | Decision recorded |
