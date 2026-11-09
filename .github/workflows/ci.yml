@@ -71,11 +71,13 @@ jobs:
       - run: cargo deny check bans licenses sources
       - run: cargo audit --deny warnings
 
-  # Rung 2 of the verification ladder (docs/31, F-006): pyHanko must tell a sealed PDF
-  # from a tampered one before it is trusted to judge ours. EU DSS (rung 3) joins here.
+  # Rungs 2 and 3 of the verification ladder (docs/31, F-006): pyHanko and EU DSS must
+  # each tell a sealed PDF from a tampered one before they are trusted to judge ours.
   validators:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
-      - run: /tmp/v/bin/python -I tools/verify-sealed.py --self-test
+      # Rung 3: EU DSS 6.5.1, built here, run with no network (LGPL; never linked).
+      - run: docker build -q -t openseal-eu-dss tools/eu-dss
+      - run: /tmp/v/bin/python -I tools/verify-sealed.py --self-test --dss openseal-eu-dss

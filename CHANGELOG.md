@@ -5,6 +5,7 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 ## 2026-11-10
 
 ### Phase 0 opened
+- EU DSS 6.5.1 validator image (`tools/eu-dss/`) added to the validator self-test and CI, rung 3 of the ladder (`F-006`).
 - Hostile PDF fixtures: generator and manifest covering every PDF limit in docs/21 (`F-005`).
 - `SPK-01`: PDF reader spike merged; ADR-005 confirmed (own bounded reader and writer; lopdf as test oracle) ([docs/64](docs/64-SPK-01-PDF-READER.md)); docs/21 and docs/30 corrected from its findings.
 - `SPK-02`: crypto stack spike merged; ADR-006 confirmed with amendments; ADR-009 now signs DER signed attributes ([docs/66](docs/66-SPK-02-CRYPTO-STACK.md)).

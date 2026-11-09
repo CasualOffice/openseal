@@ -11,3 +11,9 @@ same owner; each copied item records its source commit in a PROVENANCE.md.
 Third-party material (fonts, pdf.js, icons) will be listed here, each with its
 own licence, as it is added. No third-party material is in the repository yet.
 This inventory is not legal advice; LEG-01 reviews it before the first release.
+
+Tools used only in CI, never shipped or linked:
+  tools/eu-dss/  builds a validator on the EU Digital Signature Service (DSS)
+                 6.5.1 from Maven Central, LGPL-2.1, European Commission. The
+                 image is built in CI; no DSS code is in this repository.
+  pyHanko        MIT, installed from PyPI in CI by tools/verify-sealed.py's job.

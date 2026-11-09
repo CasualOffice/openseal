@@ -3,10 +3,12 @@
 
 Rung 2 of the ladder: pyHanko (MIT) validates every PDF in `fixtures/sealed/`, and every
 PDF in `fixtures/tampered/` must fail. Each directory has a `manifest.tsv` with columns
-`file`, `expect` (`intact` | `tampered`) and `why`. Rung 3 (EU DSS in a container) joins
-this script once its CI job lands (`F-006` mechanism).
+`file`, `expect` (`intact` | `tampered`) and `why`. Rung 3 is EU DSS, built from
+`tools/eu-dss/` into a container image (`docker build -t openseal-eu-dss tools/eu-dss`) and
+passed with `--dss IMAGE`; DSS is LGPL and runs only as that separate program.
 
     python3 tools/verify-sealed.py --self-test       # proves the validator can tell good from bad
+    python3 tools/verify-sealed.py --self-test --dss openseal-eu-dss   # and EU DSS too (rung 3)
     python3 tools/verify-sealed.py fixtures/sealed fixtures/tampered
 
 `--self-test` builds a one-page PDF, a throwaway CA and signing certificate, seals the
@@ -23,6 +25,7 @@ import datetime
 import io
 import logging
 import pathlib
+import subprocess
 import sys
 import tempfile
 
@@ -114,8 +117,11 @@ def seal(pdf, paths):
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     from pyhanko.sign import signers
 
+    from pyhanko.sign.fields import SigSeedSubFilter
+
     signer = signers.SimpleSigner.load(str(paths["key"]), str(paths["cert"]), ca_chain_files=(str(paths["ca"]),))
-    meta = signers.PdfSignatureMetadata(field_name="OpenSealTest", subfilter=None, md_algorithm="sha256")
+    # PAdES (ETSI.CAdES.detached), the only SubFilter OpenSeal writes (docs/31 §2).
+    meta = signers.PdfSignatureMetadata(field_name="OpenSealTest", subfilter=SigSeedSubFilter.PADES, md_algorithm="sha256")
     out = io.BytesIO()
     signers.sign_pdf(IncrementalPdfFileWriter(io.BytesIO(pdf), strict=False), meta, signer=signer, output=out)
     return out.getvalue()
@@ -137,7 +143,21 @@ def change_after_signing(sealed):
     return out.getvalue()
 
 
-def self_test():
+def dss(image, workdir, names):
+    """Run the EU DSS validator image over files in workdir. Returns {file: row dict}."""
+    done = subprocess.run(
+        ["docker", "run", "--rm", "--network", "none", "-v", f"{workdir}:/w:ro", image, "/w/ca.pem"]
+        + [f"/w/{n}" for n in names],
+        capture_output=True, text=True, check=False,
+    )
+    lines = done.stdout.strip().splitlines()
+    if not lines or not lines[0].startswith("file\t"):
+        sys.exit(f"verify-sealed: EU DSS gave no report (exit {done.returncode}): {done.stderr.strip()[-300:]}")
+    head = lines[0].split("\t")
+    return {row[0]: dict(zip(head, row)) for row in (ln.split("\t") for ln in lines[1:])}
+
+
+def self_test(dss_image=None):
     # pyHanko logs the diff it rejects; the verdict below is what counts.
     logging.getLogger("pyhanko").setLevel(logging.CRITICAL)
     need("pyhanko")
@@ -166,12 +186,31 @@ def self_test():
         if whole or level in ("NONE", "LTA_UPDATES"):
             failures.append(f"a content change after signing was not reported (whole file={whole}, level={level})")
 
+        if dss_image:
+            work = pathlib.Path(tmp)
+            for name, data in (("sealed.pdf", sealed), ("flipped.pdf", bytes(flipped)), ("modified.pdf", modified)):
+                (work / name).write_bytes(data)
+            rows = dss(dss_image, work, ["sealed.pdf", "flipped.pdf", "modified.pdf"])
+            good = rows.get("sealed.pdf", {})
+            if not (good.get("intact") == "true" and good.get("valid") == "true"
+                    and good.get("format") == "PAdES-BASELINE-B" and good.get("undefined_changes") == "0"
+                    and good.get("indication") != "TOTAL_FAILED"):
+                failures.append(f"EU DSS did not accept the sealed PDF as an intact PAdES B-B: {good}")
+            bad = rows.get("flipped.pdf", {})
+            if bad.get("intact") != "false" or bad.get("indication") != "TOTAL_FAILED":
+                failures.append(f"EU DSS did not fail the flipped byte: {bad}")
+            mod = rows.get("modified.pdf", {})
+            if mod.get("undefined_changes") in (None, "0", "-") and mod.get("indication") != "TOTAL_FAILED":
+                failures.append(f"EU DSS did not report the content change after signing: {mod}")
+            print("EU DSS:", {k: (v.get("indication"), v.get("subindication"), v.get("undefined_changes")) for k, v in rows.items()})
+
     if failures:
         print("verify-sealed self-test failed:", file=sys.stderr)
         for f in failures:
             print(f"  {f}", file=sys.stderr)
         return 1
-    print("verify-sealed self-test: sealed validates; flipped byte fails; later content change reported")
+    who = "pyHanko and EU DSS" if dss_image else "pyHanko"
+    print(f"verify-sealed self-test ({who}): sealed validates; flipped byte fails; later content change reported")
     return 0
 
 
@@ -209,6 +248,8 @@ def check_dirs(dirs):
 def main(argv):
     if argv[1:] == ["--self-test"]:
         return self_test()
+    if len(argv) == 4 and argv[1] == "--self-test" and argv[2] == "--dss":
+        return self_test(argv[3])
     if len(argv) > 1 and not argv[1].startswith("-"):
         return check_dirs(argv[1:])
     print(__doc__, file=sys.stderr)

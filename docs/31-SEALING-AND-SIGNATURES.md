@@ -112,7 +112,7 @@ A seal is "verified" only when every rung below passes. **Our verifier alone is 
 | --- | --- | --- |
 | 1 | `casual-sign-verify` | Every test, every seal in production |
 | 2 | pyHanko (MIT) `validate` with the test trust root | CI, over `fixtures/sealed` |
-| 3 | EU DSS (LGPL, separate container) validation report: PAdES baseline level detected and `TOTAL_PASSED` | CI, over `fixtures/sealed` |
+| 3 | EU DSS 6.5.1 (LGPL, our own small validator in a container built from `tools/eu-dss/`, run with no network): signature intact and valid, PAdES baseline level detected, no undefined changes after signing; `TOTAL_PASSED` once the test PKI supplies revocation data (`F-008`); until then a seal is `INDETERMINATE` (`CERTIFICATE_CHAIN_GENERAL_FAILURE`) offline | CI, over `fixtures/sealed` |
 | 4 | Adobe Acrobat Reader shows the signature valid with the test root trusted | Release gate `PV-01`, by hand or in a Windows CI container, never on the owner's desktop |
 | 5 | ETSI TS 119 144-4 conformance checks for the claimed baseline level | Release gate |
 
