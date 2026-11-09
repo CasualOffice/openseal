@@ -157,6 +157,7 @@ impl<'a> Document<'a> {
             max_string: usize::try_from(self.limits.max_string_bytes).unwrap_or(usize::MAX),
             max_name: usize::from(self.limits.max_name_bytes),
             lenient: self.lenient,
+            max_values: usize::try_from(self.limits.max_object_values).unwrap_or(usize::MAX),
             cancel,
         }
     }
@@ -169,6 +170,7 @@ impl<'a> Document<'a> {
             usize::from(self.limits.max_name_bytes),
             self.lenient,
         )
+        .with_max_values(usize::try_from(self.limits.max_object_values).unwrap_or(usize::MAX))
     }
 
     fn object_cap(&self) -> usize {
@@ -798,6 +800,7 @@ impl<'a> Document<'a> {
         let max_depth = usize::from(self.limits.max_depth);
         let max_string = usize::try_from(self.limits.max_string_bytes).unwrap_or(usize::MAX);
         let max_name = usize::from(self.limits.max_name_bytes);
+        let max_values = usize::try_from(self.limits.max_object_values).unwrap_or(usize::MAX);
         let lenient = self.lenient;
         let malformed = PdfError::Malformed {
             object: Some(num),
@@ -820,7 +823,8 @@ impl<'a> Document<'a> {
             .checked_add(rel)
             .filter(|p| *p <= stm.data.len())
             .ok_or(malformed)?;
-        let mut lx = Lexer::new(&stm.data, pos, max_string, max_name, lenient);
+        let mut lx =
+            Lexer::new(&stm.data, pos, max_string, max_name, lenient).with_max_values(max_values);
         let mut w = Warnings::default();
         let obj = parse_object(&mut lx, max_depth, &mut w);
         self.record_warnings(num, w);

@@ -22,6 +22,12 @@ pub enum PdfError {
         /// The limit in force.
         limit: u32,
     },
+    /// One object holds more values than `Limits::max_object_values`
+    /// (`CS-PDF-0002`).
+    TooManyValues {
+        /// Byte offset of the value that crossed the limit.
+        offset: u64,
+    },
     /// A `/Size` above 8,388,607 was declared; under strict reading this is refused
     /// (`CS-PDF-0002`).
     XrefSizeAbsurd {
@@ -147,7 +153,9 @@ impl PdfError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::TooLarge { .. } => "CS-PDF-0001",
-            Self::TooManyObjects { .. } | Self::XrefSizeAbsurd { .. } => "CS-PDF-0002",
+            Self::TooManyObjects { .. }
+            | Self::TooManyValues { .. }
+            | Self::XrefSizeAbsurd { .. } => "CS-PDF-0002",
             Self::StreamTooLarge { .. }
             | Self::DecodeRatio { .. }
             | Self::DecodeBudget { .. }
@@ -198,6 +206,10 @@ impl fmt::Display for PdfError {
                 write!(f, "{code}: input of {size} bytes exceeds {limit}")
             }
             Self::TooManyObjects { limit } => write!(f, "{code}: more than {limit} objects"),
+            Self::TooManyValues { offset } => write!(
+                f,
+                "{code}: too many values in one object at offset {offset}"
+            ),
             Self::XrefSizeAbsurd { offset } => {
                 write!(f, "{code}: /Size above 8388607 in xref at {offset}")
             }

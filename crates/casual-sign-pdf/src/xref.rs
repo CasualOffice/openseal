@@ -150,12 +150,14 @@ pub(crate) struct SectionCtx<'x> {
     pub(crate) max_string: usize,
     pub(crate) max_name: usize,
     pub(crate) lenient: bool,
+    pub(crate) max_values: usize,
     pub(crate) cancel: crate::Cancel<'x>,
 }
 
 impl SectionCtx<'_> {
     fn lexer<'a>(&self, b: &'a [u8], pos: usize) -> Lexer<'a> {
         Lexer::new(b, pos, self.max_string, self.max_name, self.lenient)
+            .with_max_values(self.max_values)
     }
 
     fn entry_cap(&self) -> usize {
@@ -503,6 +505,7 @@ mod tests {
             max_string: 64,
             max_name: 64,
             lenient: false,
+            max_values: 1000,
             cancel: &never,
         }
     }

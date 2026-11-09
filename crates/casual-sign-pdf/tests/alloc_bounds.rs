@@ -34,6 +34,24 @@ fn peak_over_baseline(bytes: &[u8], limits: &Limits) -> usize {
 
 #[test]
 fn peak_allocation_is_bounded_on_hostile_fixtures() {
+    // Built here, not a fixture: 20 million numbers in one array, a 40 MB file that
+    // would parse to well over 600 MB of objects without the per-object value cap.
+    let mut objs = common::pages(1);
+    let mut big = b"[".to_vec();
+    big.extend(std::iter::repeat_n(b"0 ".as_slice(), 20_000_000).flatten());
+    big.push(b']');
+    objs.push((9, big));
+    let wide = common::classic(&objs, "");
+    let peak = peak_over_baseline(&wide, &Limits::default());
+    println!(
+        "{:26} peak {:>10} bytes (bound {})",
+        "array_20m (built)",
+        peak,
+        96 * MIB
+    );
+    assert!(peak <= 96 * MIB, "array of 2*10^7 values: peak {peak}");
+    drop(wide);
+
     if !common::ensure_hostile() {
         return;
     }

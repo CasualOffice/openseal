@@ -63,6 +63,8 @@ pub(crate) struct Lexer<'a> {
     /// Over-long strings and names become [`Tok::LongStr`] / [`Tok::LongName`]
     /// instead of an error.
     pub(crate) lenient: bool,
+    /// Most values one parsed object may hold (read by the parser).
+    pub(crate) max_values: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -79,7 +81,14 @@ impl<'a> Lexer<'a> {
             max_string,
             max_name,
             lenient,
+            max_values: usize::MAX,
         }
+    }
+
+    /// Cap the values one parsed object may hold.
+    pub(crate) fn with_max_values(mut self, n: usize) -> Self {
+        self.max_values = n;
+        self
     }
 
     pub(crate) fn peek(&self) -> Option<u8> {

@@ -19,6 +19,10 @@ pub struct Limits {
     pub max_depth: u16,
     /// Most reference hops when resolving one value (`CS-PDF-0004`).
     pub max_ref_depth: u16,
+    /// Most values (array elements, dictionary keys and values) in one parsed object
+    /// (`CS-PDF-0002`). Bounds the memory one object costs: a value takes tens of bytes
+    /// in memory but two in the file.
+    pub max_object_values: u32,
     /// Most revisions along a `/Prev` chain (`CS-PDF-0006`).
     pub max_revisions: u16,
     /// Most pages (`CS-PDF-0007`).
@@ -55,6 +59,7 @@ impl Default for Limits {
             max_objects: 1_000_000,
             max_depth: 256,
             max_ref_depth: 64,
+            max_object_values: 1_000_000,
             max_revisions: 1_000,
             max_pages: 5_000,
             max_stream_bytes: 256 * MIB,
@@ -84,6 +89,7 @@ mod tests {
         assert_eq!(limits.max_objects, 1_000_000);
         assert_eq!(limits.max_depth, 256);
         assert_eq!(limits.max_ref_depth, 64);
+        assert_eq!(limits.max_object_values, 1_000_000);
         assert_eq!(limits.max_revisions, 1_000);
         assert_eq!(limits.max_pages, 5_000);
         assert_eq!(limits.max_stream_bytes, 268_435_456);

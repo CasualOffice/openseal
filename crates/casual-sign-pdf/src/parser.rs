@@ -48,6 +48,7 @@ pub(crate) fn parse_object(
 ) -> Result<Object> {
     let max_depth = max_depth.min(MAX_DEPTH_CEILING);
     let mut stack: Vec<Frame> = Vec::new();
+    let mut values: usize = 0;
     loop {
         lx.skip_ws();
         let at = lx.pos;
@@ -103,6 +104,10 @@ pub(crate) fn parse_object(
             Tok::Kw(_) | Tok::Stray(_) => return Err(malformed),
         };
         let Some(value) = value else { continue };
+        values = values.saturating_add(1);
+        if values > lx.max_values {
+            return Err(PdfError::TooManyValues { offset: off(at) });
+        }
         match stack.last_mut() {
             None => return Ok(value),
             Some(Frame::Array(a)) => a.push(value),

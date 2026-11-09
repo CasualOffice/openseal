@@ -441,6 +441,35 @@ fn content_operator_limit() {
 }
 
 #[test]
+fn values_per_object_cap() {
+    // Every completed value counts: elements, keys, and the container itself. The
+    // page dictionary is 13; an array of n numbers is n + 1.
+    let with_array = |n: usize| {
+        let mut objs = pages(1);
+        let nums: Vec<String> = (0..n).map(|i| i.to_string()).collect();
+        objs.push((9, format!("[{}]", nums.join(" ")).into_bytes()));
+        classic(&objs, "")
+    };
+    let at = Limits {
+        max_object_values: 20,
+        ..Limits::default()
+    };
+    assert!(admit_strict(&with_array(19), &at, &never).is_ok());
+    let over = with_array(20);
+    assert!(matches!(
+        admit_strict(&over, &at, &never).unwrap_err(),
+        PdfError::TooManyValues { .. }
+    ));
+    let a = admit(&over, &at, &never).unwrap();
+    assert!(
+        a.report
+            .findings
+            .iter()
+            .any(|f| f.code == "CS-PDF-0002" && f.object == Some(9))
+    );
+}
+
+#[test]
 fn string_and_name_caps() {
     let mut objs = pages(1);
     objs[0].1 = b"<</Type/Catalog/Pages 2 0 R/S (abcdefgh) /Nnnnnnnnnnnn 1>>".to_vec();
