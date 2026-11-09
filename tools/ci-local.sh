@@ -13,7 +13,7 @@ step "checks: clippy";     cargo clippy --workspace --all-targets --all-features
 step "checks: rustdoc";    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked -q
 step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --locked -q
 step "checks: repository"; python3 tools/check-repo.py
-step "checks: fixtures";   python3 -I fixtures/tools/generate.py --check
+step "checks: fixtures";   python3 -I fixtures/tools/generate.py --check && python3 -I fixtures/corpus/fetch.py --check
 step "commit messages";    python3 tools/check-commits.py --range "$(git rev-list --max-parents=0 HEAD | tail -1)..HEAD"
 step "test";               cargo test --workspace --all-features --locked --no-fail-fast -q
 step "msrv 1.88";          cargo +1.88.0 check --workspace --locked -q
