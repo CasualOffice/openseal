@@ -124,19 +124,20 @@ pub fn ocsp_status(
         tbs_raw,
         &basic.signature,
     );
-    match by_issuer {
-        Ok(()) => {}
-        Err(CryptoError::SignatureInvalid) => {
-            let delegated = responder_certs(basic_der).ok_or(bad)?;
-            let authorized = delegated.iter().any(|(cert, raw)| {
-                verify_with(cert, &basic.signature_algorithm, tbs_raw, &basic.signature).is_ok()
-                    && delegated_by(cert, raw, issuer, produced_at)
+    if let Err(issuer_err) = by_issuer {
+        // The issuer's key may not even fit the algorithm (an RSA responder under an EC
+        // CA), so any issuer failure falls through to the delegated responders.
+        let delegated = responder_certs(basic_der).ok_or(bad)?;
+        let authorized = delegated.iter().any(|(cert, raw)| {
+            verify_with(cert, &basic.signature_algorithm, tbs_raw, &basic.signature).is_ok()
+                && delegated_by(cert, raw, issuer, produced_at)
+        });
+        if !authorized {
+            return Err(match issuer_err {
+                CryptoError::UnsupportedAlgorithm if delegated.is_empty() => issuer_err,
+                _ => fail(RevocationFailure::UnauthorizedSigner),
             });
-            if !authorized {
-                return Err(fail(RevocationFailure::UnauthorizedSigner));
-            }
         }
-        Err(e) => return Err(e),
     }
 
     let issuer_name = to_der(issuer.tbs_certificate().subject())?;

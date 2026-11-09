@@ -263,6 +263,8 @@ fn assemble(
 pub struct ParsedCms {
     signed_data: SignedData,
     signed_attrs_raw: Vec<u8>,
+    /// Each certificate with its DER exactly as received (ESS hashes these bytes).
+    certs: Vec<(Certificate, Vec<u8>)>,
     digest_algorithm: DigestAlgorithm,
 }
 
@@ -306,9 +308,16 @@ impl ParsedCms {
         }
         let digest_algorithm = DigestAlgorithm::from_algorithm_identifier(&si.digest_alg)?;
         let signed_attrs_raw = der_walk::signed_attrs_as_received(tlv).ok_or(bad)?;
+        let certs = der_walk::certificates_as_received(tlv)
+            .ok_or(bad)?
+            .into_iter()
+            .map(|raw| Certificate::from_der(raw).map(|c| (c, raw.to_vec())))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| bad)?;
         Ok(Self {
             signed_data,
             signed_attrs_raw,
+            certs,
             digest_algorithm,
         })
     }
@@ -322,14 +331,7 @@ impl ParsedCms {
 
     /// Certificates carried in the structure.
     pub fn certificates(&self) -> impl Iterator<Item = &Certificate> {
-        self.signed_data
-            .certificates
-            .iter()
-            .flat_map(|s| s.0.iter())
-            .filter_map(|c| match c {
-                CertificateChoices::Certificate(c) => Some(c),
-                CertificateChoices::Other(_) => None,
-            })
+        self.certs.iter().map(|(c, _)| c)
     }
 
     fn signer_info(&self) -> Result<&SignerInfo, CryptoError> {
@@ -429,7 +431,7 @@ impl ParsedCms {
             return Err(CryptoError::DigestMismatch);
         }
 
-        let cert = self.find_signer(&si.sid)?;
+        let (cert, cert_der) = self.find_signer(&si.sid)?;
 
         if attrs.iter().any(|a| a.oid == ID_SIGNING_CERTIFICATE_V1)
             && !attrs
@@ -444,7 +446,7 @@ impl ParsedCms {
             oid::ID_SIGNING_CERTIFICATE_V2,
             SignedAttribute::SigningCertificateV2,
         )?;
-        ess.matches(cert)?;
+        ess.matches(cert, cert_der)?;
 
         let scheme = Scheme::from_algorithm_identifier(
             &si.signature_algorithm,
@@ -465,9 +467,10 @@ impl ParsedCms {
         })
     }
 
-    fn find_signer(&self, sid: &SignerIdentifier) -> Result<&Certificate, CryptoError> {
-        self.certificates()
-            .find(|c| {
+    fn find_signer(&self, sid: &SignerIdentifier) -> Result<(&Certificate, &[u8]), CryptoError> {
+        self.certs
+            .iter()
+            .find(|(c, _)| {
                 let tbs = c.tbs_certificate();
                 match sid {
                     SignerIdentifier::IssuerAndSerialNumber(isn) => {
@@ -478,6 +481,7 @@ impl ParsedCms {
                     }
                 }
             })
+            .map(|(c, raw)| (c, raw.as_slice()))
             .ok_or(CryptoError::SignerCertificateNotFound)
     }
 }

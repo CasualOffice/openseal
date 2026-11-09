@@ -64,7 +64,8 @@ impl SigningCertificateV2 {
     }
 
     /// Whether the first entry identifies `cert` (hash, and issuer/serial when present).
-    pub(crate) fn matches(&self, cert: &Certificate) -> Result<(), CryptoError> {
+    /// `cert_der` is the certificate exactly as received; it is what the signer hashed.
+    pub(crate) fn matches(&self, cert: &Certificate, cert_der: &[u8]) -> Result<(), CryptoError> {
         let first = self
             .certs
             .first()
@@ -73,9 +74,7 @@ impl SigningCertificateV2 {
             None => DigestAlgorithm::Sha256,
             Some(a) => DigestAlgorithm::from_algorithm_identifier(a)?,
         };
-        let cert_der =
-            to_der(cert).map_err(|_| CryptoError::Malformed(crate::Structure::Certificate))?;
-        if alg.digest(&cert_der).as_bytes() != first.cert_hash.as_bytes() {
+        if alg.digest(cert_der).as_bytes() != first.cert_hash.as_bytes() {
             return Err(CryptoError::SigningCertificateMismatch);
         }
         if let Some(is) = &first.issuer_serial {

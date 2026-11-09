@@ -46,6 +46,23 @@ pub(crate) fn first_child(tlv: &[u8]) -> Option<&[u8]> {
     children(tlv)?.first().copied()
 }
 
+/// The raw X.509 certificates in a CMS `ContentInfo`'s `[0] certificates`, as received
+/// (other `CertificateChoices` are skipped). Empty when the field is absent.
+pub(crate) fn certificates_as_received(content_info: &[u8]) -> Option<Vec<&[u8]>> {
+    let ci = children(content_info)?;
+    let signed_data = first_child(ci.get(1)?)?;
+    let sd_items = children(signed_data)?;
+    let Some(set) = sd_items.iter().find(|t| t.first() == Some(&0xA0)) else {
+        return Some(Vec::new());
+    };
+    Some(
+        children(set)?
+            .into_iter()
+            .filter(|c| c.first() == Some(&0x30))
+            .collect(),
+    )
+}
+
 /// The raw `[0] IMPLICIT SignedAttributes` of the only SignerInfo in a CMS
 /// `ContentInfo`, retagged as `SET OF` (0x31) as RFC 5652 §5.4 requires for hashing.
 /// `None` if the structure is not as expected or there are no signed attributes.
