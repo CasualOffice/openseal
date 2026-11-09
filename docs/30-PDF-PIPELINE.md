@@ -30,7 +30,7 @@ named in docs/21, every failure a `CS-PDF-*` code.
   record `CS-PDF-0101` in the report, and **normalize** into a clean file before delivery so signers and verifiers see
   one unambiguous structure.
 - **Signed input** (has `/Sig` fields with values, or `/Perms`): never repaired or rewritten. Options shown to the
-  sender: keep the existing signatures and append (only if the file is structurally sound and DocMDP permits), or
+  sender: keep the existing signatures and append (only if the file is **structurally sound**, meaning it was read without any `CS-PDF-0101` repair, and DocMDP permits; `SPK-01` saw a library write an update with no `/Prev` over a repaired file), or
   "print to new PDF" (flatten to a fresh file, existing signatures become pictures, recorded in the report).
 - **Encryption**: standard security handler RC4/AES-128/AES-256 with a host-supplied password; removed on
   normalization (the sealed output is not encrypted; confidentiality comes from access control and storage
@@ -126,8 +126,7 @@ the sealed file conforms to PDF/A-3b; conversion to PDF/A happens before sealing
 ## 9. The writer
 
 `casual-sign-pdf` writes incremental updates: new and changed objects, a new xref section in the same form as the
-file's last one (table or stream), and a trailer with `/Prev`. It never rewrites earlier bytes. Object numbers come
-from `/Size`; generation numbers are respected. Output is deterministic.
+file's last one (table or stream), and a trailer with `/Prev`. It never rewrites earlier bytes. New object numbers start at max(`/Size`, highest object number read + 1), a value from the file that is never used to allocate; above 8,388,607 the update is refused (`CS-WRT-0002`) (`SPK-01`); generation numbers are respected. Output is deterministic.
 
 ## 10. Rendering
 
