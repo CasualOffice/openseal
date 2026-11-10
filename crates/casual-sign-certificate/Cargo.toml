@@ -10,8 +10,19 @@ publish = false
 
 [dependencies]
 casual-sign-audit = { path = "../casual-sign-audit" }
+# Text layout, subset font embedding and signature art: the certificate's pages are
+# drawn by the flattener, never by a second text engine.
 casual-sign-flatten = { path = "../casual-sign-flatten" }
+casual-sign-model = { path = "../casual-sign-model" }
 casual-sign-pdf = { path = "../casual-sign-pdf" }
+# Field placements are decimal points (ADR-019, ADR-022). Already in the tree through
+# `casual-sign-model`, same features. MIT.
+rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
+# The embedded file's `/CheckSum`, which ISO 32000-2 §7.11.4.2 defines as MD5 of the
+# file. An integrity hint for PDF readers only, never a security control: the seal
+# covers the file, and the certificate prints its SHA-256. RustCrypto, already in the
+# tree (lopdf's test oracle). MIT OR Apache-2.0.
+md-5 = { version = "0.11", default-features = false }
 
 [lints]
 workspace = true

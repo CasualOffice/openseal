@@ -247,7 +247,10 @@ version = "0.0.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-flatten",
+ "casual-sign-model",
  "casual-sign-pdf",
+ "md-5",
+ "rust_decimal",
 ]
 
 [[package]]
