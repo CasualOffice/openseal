@@ -18,14 +18,17 @@
   color-scheme: light;
 
   /* ---- Colour (light) ---------------------------------------------------- */
+  /* Neutral slate scale (WEB-02 redesign): near-white canvas, white cards, hairline
+   * borders, slate text; the seal red only for primary actions and brand accents. */
   --os-bg: #ffffff;
-  --os-surface: #f5f6f8;
-  --os-surface-2: #eceef2;
+  --os-canvas: #f6f7f9;        /* the app's page background behind cards and tables */
+  --os-surface: #f3f4f6;
+  --os-surface-2: #e8ebef;
   --os-raised: #ffffff;
-  --os-stage: #e7e9ed;
-  --os-text: #1c1f24;
-  --os-muted: #565d68;
-  --os-border: #dde1e7;
+  --os-stage: #e9ebef;
+  --os-text: #111827;
+  --os-muted: #4b5563;
+  --os-border: #e5e7eb;
   --os-border-strong: #7a828e; /* ≥ 3:1 on bg and surface: control edges meet SC 1.4.11 */
   --os-accent: #b3141f;        /* the seal red, one step deeper than the logo's #c01622 for text */
   --os-accent-hover: #8e0b14;
@@ -37,8 +40,11 @@
   --os-warning: #8a5a00;
   --os-info: #1d5fbf;
   --os-focus: #1d5fbf;         /* focus ring: blue, distinct from the red accent and from errors */
-  --os-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
-  --os-shadow-pop: 0 12px 32px rgba(16, 24, 40, 0.18);
+  --os-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --os-shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+  --os-shadow-pop: 0 16px 40px -8px rgba(15, 23, 42, 0.20), 0 4px 12px -4px rgba(15, 23, 42, 0.08);
+  --os-tag: #fff4c2;           /* the signer's Start/Next guide tag */
+  --os-tag-edge: #8a5a00;
   --os-overlay: rgba(16, 20, 26, 0.45);
   --os-skeleton: #e6e9ee;
   --os-skeleton-hi: #f3f5f8;
@@ -103,7 +109,7 @@
   --os-dur-slow: 250ms;
 
   /* ---- Layout ----------------------------------------------------------- */
-  --os-topbar-h: 56px;
+  --os-topbar-h: 60px;
   --os-nav-w: 224px;
   --os-z-menu: 60;
   --os-z-toast: 900;
@@ -114,6 +120,7 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --os-bg: #111418;
+  --os-canvas: #0c0f13;
   --os-surface: #181c22;
   --os-surface-2: #20252d;
   --os-raised: #1b2027;
@@ -134,6 +141,9 @@
   --os-focus: #8ab4ff;
   --os-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   --os-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.6);
+  --os-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --os-tag: #4a3b00;
+  --os-tag-edge: #f2c14e;
   --os-overlay: rgba(0, 0, 0, 0.6);
   --os-skeleton: #222831;
   --os-skeleton-hi: #2b323c;
@@ -150,6 +160,7 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --os-bg: #111418;
+    --os-canvas: #0c0f13;
     --os-surface: #181c22;
     --os-surface-2: #20252d;
     --os-raised: #1b2027;
@@ -170,6 +181,9 @@
     --os-focus: #8ab4ff;
     --os-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
     --os-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.6);
+    --os-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+    --os-tag: #4a3b00;
+    --os-tag-edge: #f2c14e;
     --os-overlay: rgba(0, 0, 0, 0.6);
     --os-skeleton: #222831;
     --os-skeleton-hi: #2b323c;

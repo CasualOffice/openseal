@@ -21,7 +21,7 @@ for (const scheme of ["light", "dark"]) {
       await expect(page.getByTestId("empty-search")).toBeVisible();
       await expectAccessible(page, `agreements, no results (${scheme})`);
       if (!REAL) {
-        await page.goto(app("#/agreements?status=delivered"));
+        await page.goto(app("#/agreements?folder=expired"));
         await expect(page.getByTestId("empty-filter")).toBeVisible();
         await expectAccessible(page, `agreements, empty filter (${scheme})`);
         await page.goto(app("#/agreements"));

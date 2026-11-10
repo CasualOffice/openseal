@@ -6,7 +6,7 @@
 //   #/templates  #/templates/new  #/templates/{id}  #/admin[?tab=api]   (WEB-02)
 // Verify is its own page, verify.html, usable without an account.
 
-import { h, clear, isTyping } from "./dom.js";
+import { h, clear, isTyping, initials } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, ApiError, errorMessage } from "./api.js";
@@ -63,6 +63,7 @@ const ROUTES = [
   }, { nav: "templates", wide: true }],
   [/^#\/templates\/([^/?]+)$/, async () => ({ mount: (await import("./templates.js")).mountUse }), { nav: "templates" }],
   [/^#\/admin(?:\?.*)?$/, () => import("./admin.js"), { nav: "admin" }],
+  [/^#\/reports$/, () => import("./reports.js"), { nav: "reports" }],
 ];
 
 let cleanup = null;
@@ -105,6 +106,8 @@ async function route() {
   if (seq !== routeSeq) return;
   if (cleanup) { try { cleanup(); } catch { /* a screen's own teardown */ } cleanup = null; }
   ctx.contexts = ["global"];
+  ctx.onSearch = null;
+  if (!whoLoaded && ctx.session) { whoLoaded = true; loadWho(); }
   const opts = entry[2];
   document.body.classList.toggle("is-chromeless", opts.chrome === false);
   document.body.classList.toggle("is-wide", !!opts.wide);
@@ -139,8 +142,27 @@ function buildChrome() {
     a.prepend(icon(a.dataset.icon, { size: 20 }));
     if (mock && !a.getAttribute("href").startsWith("#")) a.href = `${a.getAttribute("href")}?mock=1`;
   }
-  const newBtn = document.getElementById("nav-new");
-  newBtn.replaceWith(button(t("nav.new"), { icon: "plus", variant: "primary", command: "envelope.new", onClick: () => ctx.navigate("#/prepare"), attrs: { id: "nav-new" } }));
+
+  // Start: DocuSign's place for beginning anything.
+  const start = document.getElementById("start-btn");
+  start.append(icon("plus", { size: 20 }), h("span", { text: t("start.label") }), icon("chevron-down", { size: 16 }));
+  menu(start, document.getElementById("start-menu"), () => [
+    [t("start.send"), "send", () => run("envelope.new")],
+    [t("start.template"), "layout-template", () => ctx.navigate("#/templates")],
+    [t("start.verify"), "shield-check", () => { location.href = mock ? "verify.html?mock=1" : "verify.html"; }],
+  ]);
+
+  // Search: on Agreements it filters as you type; elsewhere Enter opens Agreements with it.
+  const form = document.getElementById("top-search-form");
+  const search = document.getElementById("top-search");
+  form.prepend(icon("search", { size: 16 }));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = search.value.trim();
+    if (ctx.onSearch) ctx.onSearch(q);
+    else ctx.navigate(q ? `#/agreements?q=${encodeURIComponent(q)}` : "#/agreements");
+  });
+  search.addEventListener("input", () => ctx.onSearch?.(search.value.trim()));
 
   const themeBtn = document.getElementById("theme-btn");
   themeBtn.append(icon("sun"));
@@ -152,11 +174,75 @@ function buildChrome() {
   help.addEventListener("click", () => run("help.shortcuts"));
 
   const acct = document.getElementById("account-btn");
-  acct.append(icon("user"), icon("chevron-down", { size: 16 }));
-  acct.addEventListener("click", () => toggleAccountMenu());
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest?.("#account-menu, #account-btn")) closeAccountMenu();
+  acct.append(h("span", { class: "os-avatar", attrs: { "aria-hidden": "true" }, text: "" }), icon("chevron-down", { size: 16 }));
+  menu(acct, document.getElementById("account-menu"), () => [
+    h("div", { class: "os-menu__who" },
+      h("strong", { text: who.name || (ctx.mock ? t("mock.user") : t("account.signed-in")) }),
+      h("span", { class: "os-muted", text: who.email || ctx.session?.user_id || "" })),
+    [t("theme.light"), "sun", () => run("theme.light")],
+    [t("theme.dark"), "moon", () => run("theme.dark")],
+    [t("theme.system"), "monitor", () => run("theme.system")],
+    [t("help.shortcuts"), "keyboard", () => run("help.shortcuts")],
+    [t("account.signout"), "log-out", () => run("account.signout")],
+  ]);
+}
+
+/// Who is signed in, for the avatar: an admin can read their own member record; anyone
+/// else shows the account's initials.
+const who = { name: "", email: "" };
+let whoLoaded = false;
+async function loadWho() {
+  try {
+    if (ctx.session?.admin) {
+      const me = (await api.users.list()).items?.find((u) => u.id === ctx.session.user_id);
+      if (me) { who.name = me.name || ""; who.email = me.email || ""; }
+    }
+    if (!who.name) who.name = (await api.account())?.name || "";
+  } catch { /* the avatar falls back to a person icon */ }
+  const av = document.querySelector("#account-btn .os-avatar");
+  if (av) {
+    av.textContent = initials(who.name) || "";
+    // The name starts with what is shown (SC 2.5.3, label in name).
+    av.parentElement.setAttribute("aria-label", av.textContent ? `${av.textContent} ${t("account.menu")}` : t("account.menu"));
+  }
+}
+
+/// A menu button: `items()` gives `[label, icon, run]` entries or nodes. Arrow keys,
+/// Home, End, Escape and Tab as the ARIA menu pattern; a click outside closes it.
+const menus = [];
+function menu(btn, list, items) {
+  const close = (focus = false) => {
+    if (list.hidden) return;
+    list.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    if (focus) btn.focus();
+  };
+  menus.push(close);
+  btn.addEventListener("click", () => {
+    if (!list.hidden) return close();
+    for (const other of menus) if (other !== close) other();
+    clear(list);
+    for (const it of items()) {
+      if (!Array.isArray(it)) { list.append(it); continue; }
+      const [label, ic, act] = it;
+      const b = h("button", { type: "button", class: "os-menu__item", attrs: { role: "menuitem", tabindex: "-1" } }, icon(ic, { size: 16 }), h("span", { text: label }));
+      b.addEventListener("click", () => { close(); act(); });
+      list.append(b);
+    }
+    list.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    const entries = [...list.querySelectorAll('[role="menuitem"]')];
+    entries[0]?.focus();
+    list.onkeydown = (e) => {
+      const i = entries.indexOf(document.activeElement);
+      if (e.key === "ArrowDown") { e.preventDefault(); entries[(i + 1) % entries.length].focus(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); entries[(i - 1 + entries.length) % entries.length].focus(); }
+      else if (e.key === "Home") { e.preventDefault(); entries[0].focus(); }
+      else if (e.key === "End") { e.preventDefault(); entries[entries.length - 1].focus(); }
+      else if (e.key === "Escape" || e.key === "Tab") close(e.key === "Escape");
+    };
   });
+  document.addEventListener("click", (e) => { if (!btn.contains(e.target) && !list.contains(e.target)) close(); });
 }
 
 function closeNav() {
@@ -171,47 +257,6 @@ function syncThemeButton() {
   b.replaceChildren(icon(dark ? "moon" : "sun"));
   b.setAttribute("aria-label", t(dark ? "theme.to-light" : "theme.to-dark"));
   b.title = b.getAttribute("aria-label");
-}
-
-function toggleAccountMenu() {
-  const menu = document.getElementById("account-menu");
-  const btn = document.getElementById("account-btn");
-  if (!menu.hidden) return closeAccountMenu();
-  clear(menu);
-  const item = (label, ic, cmd) => {
-    const b = h("button", { type: "button", class: "os-menu__item", attrs: { role: "menuitem", tabindex: "-1" } }, icon(ic, { size: 16 }), h("span", { text: label }));
-    b.addEventListener("click", () => { closeAccountMenu(); run(cmd); });
-    return b;
-  };
-  menu.append(
-    h("div", { class: "os-menu__who" },
-      h("strong", { text: ctx.mock ? t("mock.user") : t("account.signed-in") }),
-      h("span", { class: "os-muted", text: ctx.session?.user_id || "" })),
-    item(t("theme.light"), "sun", "theme.light"),
-    item(t("theme.dark"), "moon", "theme.dark"),
-    item(t("theme.system"), "monitor", "theme.system"),
-    item(t("help.shortcuts"), "keyboard", "help.shortcuts"),
-    item(t("account.signout"), "log-out", "account.signout"),
-  );
-  menu.hidden = false;
-  btn.setAttribute("aria-expanded", "true");
-  const items = [...menu.querySelectorAll('[role="menuitem"]')];
-  items[0].focus();
-  menu.onkeydown = (e) => {
-    const i = items.indexOf(document.activeElement);
-    if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
-    else if (e.key === "Home") { e.preventDefault(); items[0].focus(); }
-    else if (e.key === "End") { e.preventDefault(); items[items.length - 1].focus(); }
-    else if (e.key === "Escape" || e.key === "Tab") { closeAccountMenu(); if (e.key === "Escape") btn.focus(); }
-  };
-}
-
-function closeAccountMenu() {
-  const menu = document.getElementById("account-menu");
-  if (!menu || menu.hidden) return;
-  menu.hidden = true;
-  document.getElementById("account-btn").setAttribute("aria-expanded", "false");
 }
 
 function shortcutsDialog() {

@@ -122,7 +122,7 @@ test("every bound command id is one the app registers", () => {
 test("every message key used in code and HTML has an English string", () => {
   const files = fs.readdirSync(WEBAPP).filter((f) => /\.(js|html)$/.test(f) && f !== "strings.en.js");
   const missing = [];
-  const prefixes = "a11y|account|action|adopt|admin|agreements|audit|cmd|empty|error|event|form|ftype|help|home|mock|nav|prepare|recipient|rtype|send|sign|signin|status|template|templates|theme|timeline|use|verify";
+  const prefixes = "a11y|account|action|adopt|admin|agreements|audit|cmd|empty|error|event|form|ftype|help|home|mock|nav|prepare|recipient|reports|rtype|send|sign|signin|start|status|template|templates|theme|timeline|top|use|verify";
   const commandIds = new Set(["envelope.new", "envelope.refresh", "envelope.save", "envelope.send", "envelope.edit", "envelope.resend", "envelope.void", "envelope.download", "envelope.certificate", "theme.toggle", "recipient.add", "recipient.select", "recipient.select-", "help.shortcuts", "document.add", "template.new", "verify.html", "verify.js"]);
   for (const f of files) {
     const text = fs.readFileSync(path.join(WEBAPP, f), "utf8");
@@ -168,7 +168,7 @@ test("text and control colours meet WCAG 2.2 AA in both themes", () => {
   const dark = tokens(css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf("@media (prefers-color-scheme: dark)")));
   const report = [];
   for (const [name, th] of [["light", light], ["dark", dark]]) {
-    for (const bg of ["os-bg", "os-surface", "os-raised"]) {
+    for (const bg of ["os-bg", "os-canvas", "os-surface", "os-raised"]) {
       for (const fg of ["os-text", "os-muted", "os-accent", "os-danger", "os-success", "os-info"]) {
         const r = ratio(th[fg], th[bg]);
         if (r < 4.5) report.push(`${name}: ${fg} on ${bg} ${r.toFixed(2)}`);

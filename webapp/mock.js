@@ -246,6 +246,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       ], []],
       async (env, recs) => {
         env.signing_options = { capture_location: true, allow_decline: true, allow_finish_later: true };
+        env.expires_at = iso(60 * 24 * 3);
         recs[0].token = MOCK.ceremonyToken;
         await send(env);
       });

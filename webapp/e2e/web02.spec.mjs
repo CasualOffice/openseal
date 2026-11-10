@@ -18,10 +18,11 @@ const mockOnly = () => test.skip(REAL, "needs the mock's seeded data");
 test("home shows counters, recent envelopes and where to start", async ({ page }, testInfo) => {
   mockOnly();
   await signIn(page, "home");
-  await expect(page.getByTestId("counter-drafts").locator(".os-counter__n")).toHaveText(/^\d+$/);
+  await expect(page.getByTestId("counter-waiting").locator(".os-counter__n")).toHaveText("2");
+  await expect(page.getByTestId("counter-expiring").locator(".os-counter__n")).toHaveText("1");
   await expect(page.getByTestId("counter-action").locator(".os-counter__n")).toHaveText("1");
   await expect(page.getByTestId("counter-completed").locator(".os-counter__n")).toHaveText("1");
-  await expect(page.locator(".os-recent__item")).toHaveCount(5);
+  await expect(page.locator(".os-recent__item")).toHaveCount(6);
   await expectAccessible(page, "home");
   await snap(page, testInfo, "web02-home");
   await page.getByTestId("counter-completed").click();
@@ -35,7 +36,7 @@ test("home with nothing sent shows its empty state", async ({ page }, testInfo) 
   await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); db.envelopes = []; sessionStorage.setItem(k, JSON.stringify(db)); });
   await page.reload();
   await expect(page.getByTestId("empty-home")).toBeVisible();
-  await expect(page.getByTestId("counter-drafts").locator(".os-counter__n")).toHaveText("0");
+  await expect(page.getByTestId("counter-completed").locator(".os-counter__n")).toHaveText("0");
   await snap(page, testInfo, "web02-home-empty");
 });
 

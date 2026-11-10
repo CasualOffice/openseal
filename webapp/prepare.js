@@ -29,6 +29,7 @@ import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot,
 import { errorMessage } from "./api.js";
 import { templateDocsUnsupported } from "./api-extra.js";
 import { rolesFrom } from "./templatemodel.js";
+import { takeFiles } from "./handoff.js";
 
 const FIELD_ICON = { signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", text: "text-cursor-input", checkbox: "square-check" };
 const MAX_UPLOAD = 50 * 1024 * 1024; // docs/21: 50 MiB decoded
@@ -884,6 +885,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
   }
   await renderStage();
+  const handed = !TPL && !S.id ? takeFiles() : null;
+  if (handed) await addFiles(handed);
   if (!S.id) subject.focus();
 
   return () => {

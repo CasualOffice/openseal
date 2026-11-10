@@ -25,20 +25,38 @@ test("the dashboard lists envelopes with their status and opens one", async ({ p
   await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();
 });
 
-test("a status filter narrows the list and search filters it by subject", async ({ page }) => {
+test("a folder narrows the list and search filters it by subject", async ({ page }) => {
   await signIn(page);
-  await page.getByRole("button", { name: "Draft", exact: true }).click();
-  await expect(page).toHaveURL(/status=draft/);
-  await expect(page.getByRole("button", { name: "Draft", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const folders = page.getByRole("navigation", { name: "Folders" });
+  await folders.getByRole("link", { name: /^Drafts/ }).click();
+  await expect(page).toHaveURL(/folder=drafts/);
+  await expect(folders.getByRole("link", { name: /^Drafts/ })).toHaveAttribute("aria-current", "page");
   await expect(page.locator("tbody tr").first()).toBeVisible();
   for (const badge of await page.locator("tbody .os-badge").allTextContents()) expect(badge).toContain("Draft");
-  await page.getByRole("button", { name: "All", exact: true }).click();
-  await expect(page.getByRole("button", { name: "All", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await folders.getByRole("link", { name: /^All envelopes/ }).click();
+  await expect(folders.getByRole("link", { name: /^All envelopes/ })).toHaveAttribute("aria-current", "page");
   await expect(page.locator("tbody tr").first()).toBeVisible();
   await page.getByRole("searchbox").fill("zzz-no-such-subject");
   await expect(page.getByTestId("empty-search")).toBeVisible();
   await page.getByRole("button", { name: "Clear search" }).click();
   await expect(page.locator("tbody tr").first()).toBeVisible();
+});
+
+test("rows can be selected for bulk actions, and each row has its own actions", async ({ page }) => {
+  test.skip(REAL, "needs the mock's seeded envelopes");
+  await signIn(page);
+  await page.getByRole("checkbox", { name: "Select Offer letter — Jordan Rivera" }).check();
+  const bulk = page.getByRole("region", { name: "Actions on the selected envelopes" });
+  await expect(bulk).toContainText("1 selected");
+  await bulk.getByRole("button", { name: "Resend (1)" }).click();
+  await expect(page.locator(".os-toast")).toContainText("Reminder sent");
+  await bulk.getByRole("button", { name: "Clear selection" }).click();
+  await expect(bulk).toBeHidden();
+  await page.getByRole("button", { name: "Actions for Mutual NDA — Acme and Globex" }).click();
+  const menu = page.getByRole("menu", { name: "Actions for Mutual NDA — Acme and Globex" });
+  await expect(menu.getByRole("menuitem", { name: "Download signed PDF" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
 });
 
 test("a completed envelope offers the signed PDF and certificate downloads", async ({ page }) => {

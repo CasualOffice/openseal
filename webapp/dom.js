@@ -65,6 +65,13 @@ export function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+/// A person's initials for an avatar: "Avery Chen" → "AC"; one word → its first letter.
+export function initials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "";
+  return ((parts[0][0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+
 /// A date for people: "11 Nov 2026, 14:05" in the browser's locale.
 export function fmtDate(iso) {
   if (!iso) return "";
