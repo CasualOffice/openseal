@@ -123,6 +123,12 @@ repository is legal advice ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
 Read [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md), then [CONTRIBUTING.md](CONTRIBUTING.md). Enable the hooks once per clone: `git config core.hooksPath .githooks`. Code from AGPL
 projects (Documenso, DocuSeal, OpenSign Labs, LibreSign) must never be copied or adapted here.
 
-## Licence
+## Licensing, Commercial Use & Attribution
 
-[Apache-2.0](LICENSE). See [NOTICE](NOTICE). What was copied from the sister repositories is in [PROVENANCE.md](PROVENANCE.md).
+OpenSeal is [Apache-2.0](LICENSE). You may use it in commercial and proprietary products, embed and integrate it,
+self-host it, fork it and sell what you build, with no royalties and no separate commercial license. The Apache 2.0
+conditions still apply when you redistribute it: keep the [LICENSE](LICENSE) and the notices in [NOTICE](NOTICE).
+
+"Powered by OpenSeal" is appreciated but never required. See [ATTRIBUTION.md](ATTRIBUTION.md) for what the license
+requires versus what we ask, and [BRANDING.md](BRANDING.md) for wording, logos and snippets. What was copied from the
+sister repositories is in [PROVENANCE.md](PROVENANCE.md).
