@@ -26,6 +26,8 @@ serde_json = "1.0.120"
 # Property tests over random command sequences (stage 2A gate). Already in the tree as
 # a dev-dependency of -audit and -fields. MIT OR Apache-2.0.
 proptest = { version = "1.5", default-features = false, features = ["std"] }
+# Field placements in test fixtures. Already a dependency of -model.
+rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true
