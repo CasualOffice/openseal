@@ -135,6 +135,9 @@ pub enum SdkError {
     Certificate(casual_sign_certificate::CertificateError),
     /// Sealing failed (`CS-SEAL-*`, or the read and write codes it met).
     Seal(SealError),
+    /// [`Engine::keep_signed`] was given an unsigned document, which
+    /// [`Engine::prepare`] normalizes instead (`CS-WRT-0007`, proposed).
+    Unsigned,
     /// A step's output did not start with its input (`CS-WRT-0001`): the invariant of
     /// docs/30 §1. Never expected; a P0 if seen.
     Prefix(Step),
@@ -151,6 +154,7 @@ impl SdkError {
             Self::Flatten(e) => e.code(),
             Self::Certificate(e) => e.code(),
             Self::Seal(e) => e.code(),
+            Self::Unsigned => "CS-WRT-0007",
             Self::Prefix(_) => "CS-WRT-0001",
         }
     }
@@ -171,6 +175,9 @@ impl fmt::Display for SdkError {
             Self::Flatten(e) => write!(f, "flatten: {e}"),
             Self::Certificate(e) => write!(f, "certificate: {e}"),
             Self::Seal(e) => write!(f, "seal: {e}"),
+            Self::Unsigned => f.write_str(
+                "CS-WRT-0007: the document is not signed; normalize it instead of keeping it",
+            ),
             Self::Prefix(step) => write!(
                 f,
                 "CS-WRT-0001: the {} output does not start with its input",
@@ -372,13 +379,13 @@ impl Engine {
     ///
     /// # Errors
     /// [`SdkError::Pdf`] when admission refuses; [`SdkError::Write`] with `CS-WRT-0003`
-    /// (repaired), `CS-WRT-0006` (encrypted), `CS-WRT-0004` (DocMDP P1), or `CS-PDF-0014`
-    /// reversed: an unsigned file, which [`Engine::prepare`] takes.
+    /// (repaired), `CS-WRT-0006` (encrypted) or `CS-WRT-0004` (DocMDP P1);
+    /// [`SdkError::Unsigned`] for an unsigned file, which [`Engine::prepare`] takes.
     pub fn keep_signed(&self, bytes: &[u8]) -> Result<Delivered, SdkError> {
         let admitted = self.open(bytes, &Credentials::default())?;
         let report = admitted.report;
         if !report.is_signed() {
-            return Err(SdkError::Write(WriteError::Signed));
+            return Err(SdkError::Unsigned);
         }
         if report.repaired {
             return Err(SdkError::Write(WriteError::NotSound));
@@ -646,6 +653,6 @@ mod tests {
         let e = Engine::new(Limits::default(), FontSet::new());
         let pdf = b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 10 10]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n";
         let err = e.keep_signed(pdf).unwrap_err();
-        assert_eq!(err.code(), "CS-PDF-0014");
+        assert_eq!(err.code(), "CS-WRT-0007");
     }
 }

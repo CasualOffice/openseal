@@ -268,7 +268,7 @@ def main(argv):
             failure = r["failure"]
             rule = next((v for k, v in EXCLUDED.items() if failure.startswith(k)), None)
             if rule:
-                outcome, cause = "excluded", f"{failure}: {rule}"
+                outcome, cause = "excluded", f"{failure}: {rule.split(':')[0]} (fixtures/corpus/pipeline/README.md, exclusion rules)"
             else:
                 outcome = "fail"
                 known = next((v for k, v in KNOWN.items() if failure.startswith(k)), None)

@@ -1,0 +1,9 @@
+class	outcome	files
+form	fail	2
+form	pass	77
+plain	pass	300
+refused	not-admitted	5
+signed	excluded	32
+signed	pass	6
+admitted	all	417
+gate	met=no	passed 383, excluded 32, failed 2
