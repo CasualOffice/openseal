@@ -96,7 +96,7 @@ pub(crate) fn check(
     if a != 0 {
         return Err(Problem::NotAtStart);
     }
-    let first_end = b;
+    let first_end = a.checked_add(b).ok_or(Problem::OutOfBounds)?;
     let end = c.checked_add(d).ok_or(Problem::OutOfBounds)?;
     if first_end == 0 || c <= first_end || end > bytes.len() {
         return Err(Problem::OutOfBounds);
@@ -138,7 +138,7 @@ pub(crate) fn check(
         .get(end..)
         .is_some_and(|rest| rest.iter().all(|&x| is_ws(x)));
     Ok(Checked {
-        ranges: [0..first_end, c..end],
+        ranges: [a..first_end, c..end],
         end,
         revision,
         whole_file,

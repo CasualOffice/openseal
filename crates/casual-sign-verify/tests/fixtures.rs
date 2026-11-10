@@ -253,6 +253,7 @@ fn disallowed_revision_classes() {
     assert!(deny("shadow-hide-xref.pdf").contains(&Disallowed::ObjectChanged(7)));
     assert!(deny("shadow-replace.pdf").contains(&Disallowed::ObjectChanged(4)));
     assert!(deny("shadow-hide-and-replace.pdf").contains(&Disallowed::CatalogChanged));
+    assert!(deny("shadow-hide-mediabox.pdf").contains(&Disallowed::PageChanged(3)));
     for f in [
         "fill-under-p1.pdf",
         "annot-under-p2.pdf",
@@ -261,6 +262,7 @@ fn disallowed_revision_classes() {
         "shadow-hide-xref.pdf",
         "shadow-replace.pdf",
         "shadow-hide-and-replace.pdf",
+        "shadow-hide-mediabox.pdf",
     ] {
         let s = first(&read(f));
         assert_eq!(sub(&s), Some(SubIndication::DisallowedModification), "{f}");

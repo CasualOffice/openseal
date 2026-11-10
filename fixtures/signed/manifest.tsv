@@ -26,4 +26,5 @@ shadow-signed.pdf	0	TOTAL_PASSED	intact	intact	the shadow document as signed (ov
 shadow-hide.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide: overlay XObject replaced by an empty one
 shadow-hide-xref.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide via xref only: obj 7 pointed at an unused body inside the signed bytes
 shadow-replace.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	replace: font override renders 1 as 9
+shadow-hide-mediabox.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide: page /MediaBox shrunk to cut the first line off
 shadow-hide-and-replace.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide-and-replace: catalog points at the shadow page tree

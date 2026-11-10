@@ -66,13 +66,14 @@ def make_pki(work):
         return x509.KeyUsage(**args)
 
     def cert(cn, key, issuer_name, issuer_key, serial, *, ca=False, eku=None, nocheck=False,
-             nb=NOT_BEFORE, na=NOT_AFTER, usage=None):
+             nb=NOT_BEFORE, na=NOT_AFTER, usage=None, key_ids=True):
         b = (x509.CertificateBuilder().subject_name(name(cn)).issuer_name(issuer_name)
              .public_key(key.public_key()).serial_number(serial)
              .not_valid_before(nb).not_valid_after(na)
-             .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True)
-             .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
-             .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()), critical=False))
+             .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True))
+        if key_ids:
+            b = (b.add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+                 .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()), critical=False))
         if ca:
             b = b.add_extension(ku(key_cert_sign=True, crl_sign=True), critical=True)
         else:
@@ -99,8 +100,11 @@ def make_pki(work):
                         nb=dt.datetime(2025, 1, 1, tzinfo=UTC), na=dt.datetime(2025, 12, 31, tzinfo=UTC))
     c["other_root"] = cert("T-1H Untrusted Root", k["other_root"], name("T-1H Untrusted Root"), k["other_root"], 1, ca=True)
     # Same name as the trusted root, another key: only the signature check tells them apart.
-    c["impostor_root"] = cert("T-1H Root", k["impostor_root"], name("T-1H Root"), k["impostor_root"], 1, ca=True)
-    c["impostor"] = cert("T-1H Impostor", k["impostor"], c["impostor_root"].subject, k["impostor_root"], 30)
+    # No key identifiers, so name matching cannot be short-cut by AKI/SKI.
+    c["impostor_root"] = cert("T-1H Root", k["impostor_root"], name("T-1H Root"), k["impostor_root"], 1, ca=True,
+                              key_ids=False)
+    c["impostor"] = cert("T-1H Impostor", k["impostor"], c["impostor_root"].subject, k["impostor_root"], 30,
+                         key_ids=False)
     c["stranger"] = cert("T-1H Stranger", k["stranger"], c["other_root"].subject, k["other_root"], 20)
 
     pem = serialization.Encoding.PEM
@@ -448,6 +452,11 @@ def build():
         font = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Differences [49 /nine] >> >>"
         put("shadow-replace.pdf", append_update(sh, {4: font}),
             [(0, MOD, "modified", "replace: font override renders 1 as 9")])
+        page = re.sub(rb"/MediaBox\s*\[\s*0 0 612 792\s*\]", b"/MediaBox [0 0 612 705]", current_body(sh, 3))
+        if b"705" not in page:
+            raise SystemExit("gen.py: MediaBox not found in the page")
+        put("shadow-hide-mediabox.pdf", append_update(sh, {3: page}),
+            [(0, MOD, "modified", "hide: page /MediaBox shrunk to cut the first line off")])
         cat = current_body(sh, 1).replace(b"/Pages 2 0 R", b"/Pages 9 0 R")
         put("shadow-hide-and-replace.pdf", append_update(sh, {1: cat}),
             [(0, MOD, "modified", "hide-and-replace: catalog points at the shadow page tree")])
