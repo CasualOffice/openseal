@@ -10,13 +10,13 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 0 of 167 rows work end to end; 23 have their engine built and tested** (counted with `grep`). Docs are true as of `7c4595a` (2026-11-10).
+**Today: 0 of 167 rows work end to end; 24 have their engine built and tested** (counted with `grep`). Docs are true as of `1a1b867` (2026-11-10).
 
 ## Documents
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-001 | Upload PDF | DS, SN | Build | 1 | Designed |
+| FG-001 | Upload PDF | DS, SN | Build | 1 | Engine |
 | FG-002 | Upload Word, Excel, PowerPoint, images (converted) | DS, SN | Build | 6 | Designed |
 | FG-003 | Import from URL | SN | Build | 8 | — |
 | FG-004 | Import from cloud storage (Drive, OneDrive, Dropbox, Box) | DS | Plugin | 24 | — |

@@ -5,7 +5,7 @@ document plays the same role, so the siblings read alike, and are never reused.
 
 Read in this order: 03 → 01 → 02 → 05 → 06 → 14 → 07. Then the pillar you are working on.
 
-Docs are true as of `7c4595a` (2026-11-10). **The engine's first half is built** (Phase 1 stages 1A–1D, 1F); no server or UI yet. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
+Docs are true as of `1a1b867` (2026-11-10). **The engine's first half is built** (Phase 1 stages 1A–1D, 1F); no server or UI yet. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
 (what it is and its status), [AGENTS.md](../AGENTS.md) (the contract and current state), [CLAUDE.md](../CLAUDE.md)
 (working rules and engineering standards).
 

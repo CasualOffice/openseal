@@ -23,7 +23,7 @@ Phase 1 gate.
 | Reference resolution depth | 64 | CS-PDF-0004 | `ref_chain_65` |
 | Single stream decoded | 256 MiB | CS-PDF-0003 | `flate_bomb_content`, `flate_bomb_objstm` |
 | Total decoded per document | 1 GiB | CS-PDF-0003 | `flate_bomb_many` |
-| Decode ratio per stream | 1:1000 after the first 1 MiB (plain Flate tops out near 1:1032, so this catches chained filters; the size caps above stop Flate bombs, `SPK-01`) | CS-PDF-0003 | `flate_double` |
+| Decode ratio per stream | 1:1000 after the first 1 MiB (plain Flate tops out near 1:1032, so this catches chained filters; the size caps above stop Flate bombs, `SPK-01`) | CS-PDF-0003 | `flate_double`, `lzw_bomb` |
 | Values per parsed object | 1,000,000 (memory amplification: a 40 MB array of numbers) | CS-PDF-0002 | none: the test builds one |
 | Object-stream cache | 64 MiB; one oversized stream at a time (evicted before the next decode) | — | `flate_bomb_many` |
 | Filter chain length | 8 | CS-PDF-0011 | `filter_chain_9` |
@@ -31,6 +31,10 @@ Phase 1 gate.
 | String length | 16 MiB | CS-PDF-0008 | `string_16mib_plus` |
 | Name length | 127 bytes (PDF 2.0 recommendation) | CS-PDF-0008 | `name_128` |
 | Content-stream operators interpreted for text extraction, per page | 2,000,000 | CS-PDF-0013 | `content_ops_2m` |
+| Host passwords tried | 16, after the empty one; never guessed | CS-PDF-0009 | `encrypted_wrong_password` |
+| Decryption | Charged to "Total decoded per document"; R6 hash rounds at most 320 | CS-PDF-0003 | `encrypted_flate_bomb` |
+| Content-stream operands | Nesting 32, 65,536 values per operand (`ContentLexer`) | CS-PDF-0004, CS-PDF-0002 | none: unit tests and the `content` fuzz target |
+| Field options and appearance states | 1,000 per field | CS-PDF-0002 | none: unit test |
 | Time budget | Host-supplied predicate | CS-PDF-0013 | none: a test that cancels |
 
 ## Cryptographic structures (`casual-sign-crypto`, stage 1F)

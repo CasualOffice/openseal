@@ -5,6 +5,7 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 ## 2026-11-10
 
 ### Phase 1 opened
+- Reader completion merged: password-protected PDFs (standard handler R2–R6), LZW, four wrongly refused real PDFs fixed, a public content lexer; 417 of 422 corpus PDFs open (`PDF-ENC-01`, `PDF-LZW-01`, `PDF-REAL-01..03`).
 - Stage 1E merged: flattening with subset fonts, drawn, uploaded and typed signatures, and fill-in-place forms (`T-1E`, `FILL-01`), checked by PDFium and pypdf.
 - Stage 1H merged: the verifier, with a whitelist revision classifier that catches shadow and incremental-saving attacks, cross-checked against pyHanko and EU DSS (`T-1H`).
 - Repository public; first GitHub CI run green on all 8 jobs. Independent doc audit (`DOC-002`): 26 findings fixed.

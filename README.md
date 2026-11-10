@@ -34,20 +34,20 @@ it shares.
 
 ## Status
 
-Docs are true as of `7c4595a` (2026-11-10).
+Docs are true as of `1a1b867` (2026-11-10).
 
 **Pre-alpha, engine under construction; the repository is private until the pre-release alpha.** No server or user
 interface exists yet. What is built is the headless engine's first half, in Rust, tested against 422 real-world PDFs:
 
 | Built and merged | What it does |
 | --- | --- |
-| PDF reader (`casual-sign-pdf`) | Opens any PDF within strict limits, repairs damaged files, reports active content; 387 of 422 real PDFs open with correct page counts, 31 encrypted ones wait on decryption, 4 wrong refusals are being fixed |
+| PDF reader (`casual-sign-pdf`) | Opens any PDF within strict limits, repairs damaged files, reports active content; 417 of 422 real PDFs open with correct page counts, password-protected ones included; the other 5 use certificate-based encryption or dynamic XFA, both planned |
 | Writer and normalizer | Appends signed revisions without touching earlier bytes; rewrites uploads clean of JavaScript, actions, embedded files, XFA |
 | Fields (`casual-sign-model`, `casual-sign-fields`) | Every DocuSign/SignNow field type, validation, conditions, groups, formulas; page geometry, text extraction, anchors, `{{…}}` text tags, conversion of existing PDF forms |
 | Crypto (`casual-sign-crypto`) | CMS signatures, RFC 3161 timestamps, OCSP and CRL, the key-provider seam; cross-checked with independent libraries |
 | Test assets | 40 hostile PDFs, a 422-file real-world corpus, pyHanko and EU DSS validators |
 
-Also built: the verifier (catches shadow and incremental-saving attacks) and flattening with fill-in-place forms. In progress: decryption and the remaining reader gaps. Then sealing, the
+Also built: the verifier (catches shadow and incremental-saving attacks) and flattening with fill-in-place forms. In progress: sealing, and the audit trail with the certificate of completion. Then sealing, the
 audit chain, the server and the web app. Exact state: [docs/14](docs/14-EXECUTION-TRACKER.md); phases and milestones:
 [docs/06](docs/06-ROADMAP-AND-DELIVERY.md).
 
@@ -61,7 +61,7 @@ The design, research and plan:
 | Research: DocuSign, SignNow, open-source competitors, law and standards | [docs/48](docs/48-DOCUSIGN-STUDY.md), [49](docs/49-SIGNNOW-STUDY.md), [52](docs/52-COMPETITOR-STUDY.md), [09](docs/09-LEGAL-AND-COMPLIANCE.md) |
 | Security | [docs/07](docs/07-SECURITY-THREAT-MODEL.md) |
 | Roadmap and tracker | [docs/06](docs/06-ROADMAP-AND-DELIVERY.md), [docs/14](docs/14-EXECUTION-TRACKER.md) |
-| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; none works end to end yet, 23 have their engine built |
+| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; none works end to end yet, 24 have their engine built |
 
 The plan: **Phase 0** sets up the repository, CI, a PDF corpus and independent validators; **Phase 1** builds the
 headless PDF and evidence engine (admit, fill, flatten, seal, verify, audit); **Phase 2** builds the envelope engine,

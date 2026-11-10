@@ -63,7 +63,7 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `7c4595a` (2026-11-10).
+Docs are true as of `1a1b867` (2026-11-10).
 
 **Phases D, 0 and 1 are open. Phase 1 runs under waiver `W-2`** (opened while the repository was private). The owner
 made `CasualOffice/openseal` public on 2026-11-10; GitHub CI now runs, and `tools/ci-local.sh` stays as the pre-push gate.
@@ -71,12 +71,12 @@ made `CasualOffice/openseal` public on 2026-11-10; GitHub CI now runs, and `tool
 - **Phase D** lacks Accepted ADRs for Phases 0–2 beyond ADR-009 (ADR-010 to ADR-023 are Proposed) and `DEC-02` to
   `DEC-07`; the independent doc audit (`DOC-002`) is done and its findings fixed. Also open: `DEC-10`, `DEC-12` to `DEC-14`.
 - **Phase 0** lacks seeded violations seen failing on GitHub's runners (`F-003`; the first GitHub run was all green),
-  ten more hostile fixtures (40 of 50, `F-005`) and the owner's sign-off. Corpus (422 PDFs, 40 producers), validators on
+  four more hostile fixtures (46 of 50, `F-005`) and the owner's sign-off. Corpus (422 PDFs, 40 producers), validators on
   GitHub, spikes and ADR-005/006 are done.
 - **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm
   conversion, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1H verifier (leftovers in their
-  rows). In progress in a parallel worker: reader completion (decryption, LZW, four wrongly refused corpus files).
-  Not started: 1G sealing, 1I audit chain and certificate, 1J SDK and CLI. The reader opens 387 of 422 real-world PDFs
+  rows). Reader completion is merged: decryption, LZW, the four wrongly refused corpus files. In progress in parallel workers: 1G sealing, 1I audit chain and certificate.
+  Not started: 1J SDK and CLI. The reader opens 387 of 422 real-world PDFs
   with page counts matching the manifest.
 - **No server, API or UI exists yet.** The roadmap has 35 slices and milestones M0–M8; the fit-gap has 167 rows, none
   working end to end yet.

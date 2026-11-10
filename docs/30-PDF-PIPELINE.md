@@ -32,9 +32,16 @@ named in docs/21, every failure a `CS-PDF-*` code.
 - **Signed input** (has `/Sig` fields with values, or `/Perms`): never repaired or rewritten. Options shown to the
   sender: keep the existing signatures and append (only if the file is **structurally sound**, meaning it was read without any `CS-PDF-0101` repair, and DocMDP permits; `SPK-01` saw a library write an update with no `/Prev` over a repaired file), or
   "print to new PDF" (flatten to a fresh file, existing signatures become pictures, recorded in the report).
-- **Encryption**: standard security handler RC4/AES-128/AES-256 with a host-supplied password; removed on
-  normalization (the sealed output is not encrypted; confidentiality comes from access control and storage
-  encryption). Public-key security handler: refused (`CS-PDF-0010`).
+- **Encryption** (built): standard security handler revisions 2–6 (RC4 40–128, AES-128, AES-256 with Algorithm 2.B),
+  V4/V5 crypt filters including `/Identity`, per-stream `/Crypt`, `EncryptMetadata false`. Passwords come from the host
+  through `Credentials` (`admit_with`); the empty user password is tried first, then each supplied one as user and owner;
+  passwords are wiped on drop and never logged; no guessing. Decryption is lazy and charged to the document budget.
+  Normalization writes the document decrypted and unencrypted (`CS-PDF-0109`); appending to an encrypted file is
+  refused (`CS-WRT-0006`). Public-key security handler: refused (`CS-PDF-0010`; `PDF-ENC-02` plans it).
+- **Signed** means a certification signature (`/Perms /DocMDP`) or any signature other than a usage-rights one. A
+  document whose only signatures are usage rights (`/Perms /UR3` or `/UR`, Reader extensions) is unsigned for the
+  repair rule: it may be repaired and normalized, because Reader extensions attest no content; normalization removes
+  `/Perms` and reports it (`CS-PDF-0107`).
 - **Classification**: page count and per-page geometry (`MediaBox`, `CropBox`, `Rotate`, `UserUnit`); existing
   AcroForm fields; signatures; JavaScript; actions (`/OpenAction`, `/AA`, `/Launch`, `/GoToR`, `/GoToE`, `/URI`,
   `/SubmitForm`, `/ImportData`); embedded files; XFA; RichMedia, 3D; external streams (`/F` on a stream); optional
@@ -54,7 +61,12 @@ dynamic XFA. **Default mode reports instead:** reference depth, long strings and
 content stream over its caps, ratio, unsupported filters (LZW among them for now), long filter chains and content
 operators. **Strict still corrects** xref offsets within ±1 KiB and a wrong `startxref` (`CS-PDF-0101`), and such a
 file is not structurally sound for appending. Signed or `/Perms` input that needed any repair is refused
-(`CS-PDF-0014`). If the xref reads but leads to no catalog or pages, the default reader rebuilds once.
+(`CS-PDF-0014`). If the catalog or page tree cannot be read, the default reader rebuilds the xref; if the tree's root
+is still unreadable, pages are recovered from the `/Type /Page` objects in file order (`CS-PDF-0101`, page tree
+rebuilt); unreadable `/Metadata` is a finding, never a refusal. Xref entries with a generation above 65,535 or an offset
+of 0 are read as free (iText and LiveCycle write them). LZW is decoded (EarlyChange, predictors), bounded like Flate.
+**Corpus:** 417 of 422 real PDFs open with page counts equal to the manifest; the 5 refused are 3 public-key handlers
+and 2 dynamic-only XFA forms (`XFA-01`). All 28 standard-handler files decrypt to the same page-1 content as pyHanko.
 
 ## 3. Normalization
 
@@ -119,7 +131,7 @@ UserUnit and round-trip within 1e-6 pt; placements round to 4 decimals. **Text:*
 `/Widths`, `/W` or the standard-14 AFM tables, and Unicode from ToUnicode, base encodings and `/Differences`;
 whitespace inferred from glyph geometry; positions asserted within 0.5 pt. Over the corpus: 422 files, no panic, 371
 with text, 15 ms mean; strings agree with pypdf on 296 of 387 admitted files and at 0.977 mean similarity on the rest,
-where LZW-encoded content (not decoded yet) is the main gap. **Anchors:** normalized (NFKC, whitespace collapsed)
+where LZW-encoded content was the main gap until LZW decoding landed (12 of 14 LZW files now identical to pypdf, 2 at 0.999). **Anchors:** normalized (NFKC, whitespace collapsed)
 matching across runs, case and whole-word options, units points, inches, mm, cm and 96-dpi pixels; the field's
 top-left is the match's top-left plus the offsets.
 

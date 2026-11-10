@@ -28,7 +28,7 @@ openseal/
 | Crate | Layer | Depends on (internal) | Key external dependencies | First consumer |
 | --- | --- | --- | --- | --- |
 | `casual-sign-model` | Engine | — | `serde`, `rust_decimal` | `-workflow`, `-fields` |
-| `casual-sign-pdf` | Engine | — | `miniz_oxide` (streaming Flate, inflate and deflate); dev: `lopdf =0.47.0` (oracle, no default features), `peak_alloc` | `-fields`, `-flatten`, `-seal`, `-verify` |
+| `casual-sign-pdf` | Engine | — | `miniz_oxide` (streaming Flate, inflate and deflate); `aes`, `cbc`, `rc4`, `md-5`, `sha2`, `stringprep`, `zeroize` (decrypting input); dev: `lopdf =0.47.0` (oracle, no default features), `peak_alloc` | `-fields`, `-flatten`, `-seal`, `-verify` |
 | `casual-sign-fields` | Engine | model, pdf | `rust_decimal`, `regex` (linear-time matching), `unicode-normalization` | `-flatten`, `-wasm` |
 | `casual-sign-flatten` | Engine | pdf, fields, model | `skrifa` (font metrics), `png`, `zune-jpeg`, `miniz_oxide`, `unicode-normalization`; TrueType subsetter copied from OpenPresent | `-certificate`, `-sdk` |
 | `casual-sign-crypto` | Engine | — | `der`, `spki`, `x509-cert`, `cms =0.3.0-rc.2`, `x509-tsp =0.2.0-rc.0`, `x509-ocsp =0.3.0-rc.1`, `sha2`, `p256`, `p384`, `rsa` (verify only, feature `rsa`); dev: `aws-lc-rs` (test `KeyProvider`), `rcgen` | `-seal`, `-verify`, `-audit` |
