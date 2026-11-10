@@ -241,6 +241,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-flatten"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-fields",
+ "casual-sign-model",
+ "casual-sign-pdf",
+]
+
+[[package]]
 name = "casual-sign-model"
 version = "0.0.0"
 dependencies = [

@@ -9,6 +9,7 @@ members = [
     "crates/casual-sign-crypto",
     "crates/casual-sign-fields",
     "crates/casual-sign-verify",
+    "crates/casual-sign-flatten",
 ]
 # The fuzz workspace is separate: cargo-fuzz needs nightly-only dependencies that must
 # stay out of the product dependency graph (as OpenCalc and OpenPresent).

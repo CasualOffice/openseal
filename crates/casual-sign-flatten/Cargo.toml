@@ -1,0 +1,17 @@
+[package]
+name = "casual-sign-flatten"
+version = "0.0.0"
+description = "OpenSeal flattening: field values and signatures drawn into PDF pages as an incremental update (docs/30 §7)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+casual-sign-pdf = { path = "../casual-sign-pdf" }
+casual-sign-model = { path = "../casual-sign-model" }
+casual-sign-fields = { path = "../casual-sign-fields" }
+
+[lints]
+workspace = true
