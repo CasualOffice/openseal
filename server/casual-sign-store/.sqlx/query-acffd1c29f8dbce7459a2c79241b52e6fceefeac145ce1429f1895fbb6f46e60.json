@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO envelope_states (account_id, envelope_id, state, revision, updated_at) VALUES ($1, $2, $3, 1, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "acffd1c29f8dbce7459a2c79241b52e6fceefeac145ce1429f1895fbb6f46e60"
+}

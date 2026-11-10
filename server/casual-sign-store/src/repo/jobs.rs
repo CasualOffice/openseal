@@ -121,6 +121,34 @@ impl Jobs<'_> {
         affected(done.rows_affected(), "job")
     }
 
+    /// Extend a claimed job's lease to `until` (a heartbeat), so a long job is not
+    /// claimed again while its worker lives.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when this account has no running job with that lease (it lapsed and
+    /// another worker took it, or it finished).
+    pub async fn heartbeat(
+        &mut self,
+        id: JobId,
+        lease_token: Uuid,
+        until: OffsetDateTime,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE jobs SET locked_until = $4 \
+             WHERE account_id = $1 AND id = $2 AND lease_token = $3 AND status = 'running'",
+            acct,
+            id.0,
+            lease_token,
+            until
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "job")
+    }
+
     /// Record a claimed job's failure: queued again for `retry_at`, or dead once its
     /// attempts are spent.
     ///

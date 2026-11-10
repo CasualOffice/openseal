@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO job_steps (account_id, job_id, step, detail, at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (account_id, job_id, step) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1ca24be06dd520dedae125bb52632a578265a53d0025599a24e0891a769954b"
+}
