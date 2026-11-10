@@ -398,6 +398,13 @@ fn references(o: &Object, out: &mut BTreeSet<u32>) {
     }
 }
 
+/// True when the integer flags in `new` are those of `old` plus some of `bits`.
+fn only_adds(old: Option<&Object>, new: Option<&Object>, bits: i64) -> bool {
+    let o = old.and_then(Object::as_i64).unwrap_or(0);
+    let n = new.and_then(Object::as_i64).unwrap_or(0);
+    n & o == o && (n & !o) & !bits == 0
+}
+
 fn structural(o: &Object) -> bool {
     matches!(
         o.get(b"Type").and_then(Object::as_name),
@@ -680,6 +687,19 @@ impl Comparison<'_, '_> {
                     }
                 }
                 b"AS" | b"AP" | b"MK" => self.fill(num, name),
+                // Signing a field may lock it: annotation flags Locked (128) and
+                // LockedContents (512), field flag ReadOnly (1), only ever added.
+                b"F" | b"Ff"
+                    if y.name(b"FT").or(x.name(b"FT")) == Some(b"Sig")
+                        && y.get(b"V").is_some()
+                        && only_adds(
+                            x.get(k),
+                            y.get(k),
+                            if k.as_slice() == b"F" { 128 | 512 } else { 1 },
+                        ) =>
+                {
+                    self.allow(ModificationClass::Signature);
+                }
                 _ => self.deny(Disallowed::FieldChanged(num)),
             }
         }

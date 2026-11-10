@@ -6,7 +6,7 @@ use core::time::Duration;
 use casual_sign_crypto::cms::ParsedCms;
 use casual_sign_crypto::tsp::{TimestampToken, verify_timestamp_token};
 use casual_sign_crypto::{CryptoError, DigestAlgorithm, SignedAttribute, TimestampFailure};
-use casual_sign_pdf::{Document, Limits, Object, Revision, SignatureInfo, admit};
+use casual_sign_pdf::{Dictionary, Document, Limits, Object, Revision, SignatureInfo, admit};
 
 use crate::byterange::{self, Checked, Problem};
 use crate::chain::{self, Cert, ChainFailure, Purpose};
@@ -59,25 +59,58 @@ fn resolve(doc: &mut Document<'_>, o: Option<&Object>) -> Object {
     }
 }
 
-fn candidate(
-    doc: &mut Document<'_>,
-    info: &SignatureInfo,
-    bytes: &[u8],
-    revisions: &[Revision],
-) -> Option<Candidate> {
+/// True when the CMS starts with an indefinite-length SEQUENCE (BER, not DER).
+fn is_ber(cms: &[u8]) -> bool {
+    matches!(cms, [0x30, 0x80, ..])
+}
+
+fn contents_of(dict: &Dictionary) -> &[u8] {
+    match dict.get(b"Contents") {
+        Some(Object::String(s)) => s,
+        _ => &[],
+    }
+}
+
+/// The signature dictionaries `info` names. The reader names the object that holds a
+/// signature dictionary; when that dictionary is direct (inside a catalog's `/Perms`, a
+/// field, or another container) it is found inside, without following references.
+fn signature_dicts(doc: &mut Document<'_>, info: &SignatureInfo) -> (Object, Vec<Dictionary>) {
     let field = match info.field {
         Some(n) => doc.object(n, &no_cancel).unwrap_or(Object::Null),
         None => Object::Null,
     };
     let value = match info.value {
         Some(n) => doc.object(n, &no_cancel).unwrap_or(Object::Null),
-        None => field.get(b"V").cloned().unwrap_or(Object::Null),
+        None => resolve(doc, field.get(b"V")),
     };
-    let dict = value.dict()?.clone();
-    let contents = match dict.get(b"Contents") {
-        Some(Object::String(s)) => s.clone(),
-        _ => Vec::new(),
-    };
+    let mut found = Vec::new();
+    let mut stack = vec![&value];
+    let mut visited = 0usize;
+    while let Some(o) = stack.pop() {
+        visited = visited.saturating_add(1);
+        if visited > MAX_DSS_ITEMS || found.len() >= 64 {
+            break;
+        }
+        match o {
+            Object::Dictionary(d) if d.contains(b"ByteRange") => found.push(d.clone()),
+            Object::Dictionary(d) => stack.extend(d.iter().map(|(_, v)| v)),
+            Object::Stream(st) => stack.extend(st.dict.iter().map(|(_, v)| v)),
+            Object::Array(a) => stack.extend(a.iter()),
+            _ => {}
+        }
+    }
+    (field, found)
+}
+
+fn candidate(
+    doc: &mut Document<'_>,
+    info: &SignatureInfo,
+    field: &Object,
+    dict: Dictionary,
+    bytes: &[u8],
+    revisions: &[Revision],
+) -> Option<Candidate> {
+    let contents = contents_of(&dict).to_vec();
     let raw = byterange::read(dict.get(b"ByteRange")).ok();
     let br = match raw {
         Some(r) => byterange::check(r, bytes, &contents, revisions),
@@ -264,6 +297,20 @@ fn changes(
     out
 }
 
+/// The revisions an incremental update can end: the reader's sections in `/Prev` order,
+/// keeping only those that end later than every section before them. A linearized file's
+/// first-page section (ISO 32000-2 Annex F) is reached last along the chain but lies at the
+/// start of the file; it is part of the first revision, not a revision of its own.
+fn boundaries(sections: &[Revision]) -> Vec<Revision> {
+    let mut out: Vec<Revision> = Vec::with_capacity(sections.len());
+    for s in sections {
+        if out.last().is_none_or(|l| s.end_offset > l.end_offset) {
+            out.push(*s);
+        }
+    }
+    out
+}
+
 /// Shared state for verifying each signature.
 struct Ctx<'a> {
     bytes: &'a [u8],
@@ -289,15 +336,27 @@ pub(crate) fn run(bytes: &[u8], trust: &TrustStore, options: &VerifyOptions) -> 
     };
     let report = admitted.report;
     let mut document = admitted.document;
-    let revisions = report.revisions.clone();
+    let revisions = boundaries(&report.revisions);
 
     let mut cands: Vec<Candidate> = Vec::new();
     for info in &report.signatures {
         if info.value.is_some() && cands.iter().any(|c| c.info.value == info.value) {
             continue;
         }
-        if let Some(c) = candidate(&mut document, info, bytes, &revisions) {
-            cands.push(c);
+        let (field, dicts) = signature_dicts(&mut document, info);
+        for dict in dicts {
+            if cands.iter().any(|c| {
+                c.raw.is_some()
+                    && dict
+                        .get(b"ByteRange")
+                        .is_some_and(|b| byterange::read(Some(b)).ok() == c.raw)
+                    && c.contents.as_slice() == contents_of(&dict)
+            }) {
+                continue;
+            }
+            if let Some(c) = candidate(&mut document, info, &field, dict, bytes, &revisions) {
+                cands.push(c);
+            }
         }
     }
     cands.sort_by_key(|c| c.order);
@@ -649,6 +708,14 @@ fn cms_signature(
         Ok(cms) => cms,
         Err(CryptoError::UnsupportedAlgorithm) => {
             checks.signature = v.unsure(reason(SubIndication::CryptoConstraintsFailure, ALGORITHM));
+            return;
+        }
+        Err(_) if is_ber(&c.contents) || c.sub_filter.as_deref() == Some("adbe.pkcs7.detached") => {
+            // BER (indefinite lengths), and legacy PKCS#7 without signed attributes, are
+            // valid CMS that casual-sign-crypto does not read yet (SEAL-13): not
+            // concluded, never failed. PAdES (`ETSI.CAdES.detached`) requires DER signed
+            // attributes, so there a parse failure is a format failure.
+            checks.signature = v.unsure(reason(SubIndication::FormatFailure, CMS));
             return;
         }
         Err(_) => {
