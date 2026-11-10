@@ -73,6 +73,6 @@ Docs are true as of `40b9429` (2026-11-11).
   audit chain and certificate (leftovers in their rows), and reader completion (decryption, LZW, the four wrongly
   refused corpus files), 1J SDK and `openseal` CLI. Exit item 2 met: every admitted corpus PDF passes fill, flatten,
   seal and verify in ours, pyHanko and EU DSS (`P1-GATE-01`); items 4 and 6 met (`VER-03`, `WASM-01`). Left for
-  the exit gate: 24 h fuzzing per target, every 6 h on GitHub (`FUZZ-01`), owner sign-off.
+  the exit gate: 24 h fuzzing per target, 12 parallel jobs × 4 workers on GitHub, about 3.5 h (`FUZZ-01`), owner sign-off.
 - **No server, API or UI exists yet.** The roadmap has 35 slices and milestones M0–M8; the fit-gap has 167 rows, none
   working end to end yet.

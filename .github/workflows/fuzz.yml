@@ -1,20 +1,21 @@
 name: fuzz
 
-# FUZZ-01 (Phase 1 exit item 1): 24 hours per target, cumulative. GitHub caps a job at
-# 6 hours, so each run gives every target 5.5 hours and the corpus carries over in the
-# cache; five clean runs make 27.5 hours. Runs every 6 hours, one at a time (the
-# concurrency group queues the next), so the 24 hours take about 30. Owner instruction 11.
+# FUZZ-01 (Phase 1 exit item 1): 24 hours per target, cumulative, counted as libFuzzer
+# worker-hours (as OSS-Fuzz counts). Each target runs as 2 jobs, each with 4 workers
+# (`-fork=4`, one per runner core), for 3 hours: 2 x 4 x 3 = 24 worker-hours per target in
+# one run of about 3.5 hours. Runs do not cancel each other. Nightly afterwards keeps it
+# going. Owner instruction 11.
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       seconds:
-        description: Seconds per target
-        default: "19800"
+        description: Seconds per job (each job runs 4 workers)
+        default: "10800"
 
 concurrency:
-  group: fuzz
+  group: fuzz-${{ github.run_id }}
   cancel-in-progress: false
 
 permissions:
@@ -29,6 +30,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        target: [admit, normalize, content, verify, verify_chain, seal]
+        shard: [1, 2]
+        # Seeds and dictionary per target (each entry extends both shards of its target).
         include:
           - { target: admit, seeds: "fixtures/hostile fixtures/signed", dict: pdf.dict }
           - { target: normalize, seeds: "fixtures/hostile fixtures/signed", dict: pdf.dict }
@@ -47,23 +51,23 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: fuzz/corpus/${{ matrix.target }}
-          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}-${{ matrix.shard }}
           restore-keys: fuzz-corpus-${{ matrix.target }}-
       - name: Fuzz
         run: |
           mkdir -p "fuzz/corpus/${{ matrix.target }}"
-          seconds="${{ github.event.inputs.seconds || '19800' }}"
+          seconds="${{ github.event.inputs.seconds || '10800' }}"
           start=$(date +%s)
           cargo +"$NIGHTLY" fuzz run "${{ matrix.target }}" "fuzz/corpus/${{ matrix.target }}" ${{ matrix.seeds }} -- \
-            -max_total_time="$seconds" -dict="fuzz/${{ matrix.dict }}" -print_final_stats=1
+            -fork=4 -max_total_time="$seconds" -dict="fuzz/${{ matrix.dict }}" -print_final_stats=1
           ran=$(( $(date +%s) - start ))
           {
-            echo "### ${{ matrix.target }}"
-            echo "Fuzzed ${ran} s with no crash; corpus $(ls "fuzz/corpus/${{ matrix.target }}" | wc -l) inputs at ${{ github.sha }}."
+            echo "### ${{ matrix.target }} shard ${{ matrix.shard }}"
+            echo "Fuzzed ${ran} s x 4 workers with no crash; corpus $(ls "fuzz/corpus/${{ matrix.target }}" | wc -l) inputs at ${{ github.sha }}."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Keep the crash
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: crash-${{ matrix.target }}
+          name: crash-${{ matrix.target }}-${{ matrix.shard }}
           path: fuzz/artifacts/${{ matrix.target }}
