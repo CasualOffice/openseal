@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018`, and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018`, and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-DB` persistence, `CS-BLOB` blob storage, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -22,7 +22,7 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-PDF-0011 | Unsupported filter, or a filter chain over its limit |
 | CS-PDF-0012 | Dynamic-only XFA form: no static content to sign |
 | CS-PDF-0013 | Read stopped by the host's time budget, or a page's content-operator budget for text extraction |
-| CS-PDF-0014 | Signed document cannot be repaired or rewritten (normalized) without breaking its signatures |
+| CS-PDF-0014 | Signed document cannot be repaired or rewritten (normalized) without breaking its signatures; print to new (`NORM-02`) makes a new, unsigned document of it instead |
 | CS-PDF-0101 | (report) Cross-reference rebuilt by scanning, offsets corrected, or the page tree rebuilt from the page objects |
 | CS-PDF-0102 | (report) Object unreadable; dropped (also issued by normalization for page content it drops) |
 | CS-PDF-0103 | (report) Active content removed: JavaScript or action |
@@ -32,6 +32,8 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-PDF-0107 | (report) Existing signatures found, including usage-rights (Reader extensions) signatures, which normalization removes |
 | CS-PDF-0109 | (report) Encrypted document decrypted with a supplied or empty password; normalized output is unencrypted |
 | CS-PDF-0108 | (report) Optional content present, kept as it is at admission; flattening takes it to its default visibility (`FLT-03`, SEC-S03, docs/30 §7) |
+| CS-PDF-0110 | (report) The catalog's `/Metadata` is not an XMP packet: not a stream, unreadable, over 4 MiB, not well-formed XML, a DOCTYPE, or another root element; normalization dropped it (an `rdf:RDF` root is wrapped in `x:xmpmeta` instead and reported as repaired) (`NORM-03`) |
+| CS-PDF-0111 | (report) Print to new: a signature value, `/Perms` or the DSS removed; the signature's field appearance is drawn into the page as static content (`NORM-02`) |
 
 The recovering reader's findings also carry limit codes (`0002`, `0003`, `0004`, `0006`, `0008`, `0011`, `0013`) where a
 limit was crossed and the rest of the document still opened; `fixtures/hostile/manifest.tsv` lists which. **Issued by stage

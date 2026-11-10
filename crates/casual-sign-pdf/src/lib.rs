@@ -49,6 +49,7 @@ mod filters;
 mod lexer;
 mod limits;
 mod normalize;
+mod normalize_xmp;
 mod object;
 mod pages;
 mod parser;
@@ -66,6 +67,7 @@ pub use document::Document;
 pub use error::PdfError;
 pub use limits::Limits;
 pub use normalize::{
+    Attachment, ConvertedSignature, MAX_ATTACHMENTS, MetadataFix, MetadataProblem, MetadataRepair,
     NormalizationReport, NormalizeOptions, Normalized, OutputXref, Removal, normalize,
 };
 pub use object::{Dictionary, ObjRef, Object, Stream};

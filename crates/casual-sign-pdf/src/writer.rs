@@ -48,7 +48,8 @@ pub enum WriteError {
         object: u32,
     },
     /// The document is signed: normalizing would break its signatures
-    /// (`CS-PDF-0014`). "Print to a new PDF" is not built yet.
+    /// (`CS-PDF-0014`). Print to new (`NormalizeOptions::print_to_new`, `NORM-02`)
+    /// makes a new, unsigned document of it instead.
     Signed,
     /// The document is encrypted: an update would have to be encrypted with its key,
     /// and OpenSeal never encrypts what it writes (ADR-006). Normalize it first, which

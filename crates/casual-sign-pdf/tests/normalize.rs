@@ -513,17 +513,7 @@ fn signed_input_is_refused() {
     let mut a = admit(&bytes, &Limits::default(), &never).unwrap();
     let e = normalize(&mut a, &NormalizeOptions::default(), &never).unwrap_err();
     assert_eq!(e.code(), "CS-PDF-0014");
-    let plain_bytes = doc("", "", &[]);
-    let mut plain = admit(&plain_bytes, &Limits::default(), &never).unwrap();
-    let opts = NormalizeOptions {
-        print_to_new: true,
-        ..NormalizeOptions::default()
-    };
-    assert_eq!(
-        normalize(&mut plain, &opts, &never).unwrap_err().code(),
-        "CS-PDF-0014",
-        "print to new PDF is not built yet"
-    );
+    // Print to new takes it (tests/normalize_print.rs, NORM-02).
 }
 
 #[test]

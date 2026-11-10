@@ -19,7 +19,14 @@
 //! - XFA (`CS-PDF-0103`); the AcroForm and its static fields stay.
 //!
 //! Optional content is kept as it is and reported, not flattened. A signed document
-//! is refused (`CS-PDF-0014`): rewriting it would break its signatures.
+//! is refused (`CS-PDF-0014`): rewriting it would break its signatures. With
+//! [`NormalizeOptions::print_to_new`] it is written as a new, unsigned document
+//! instead (`NORM-02`): signature values, `/Perms`, the DSS and `/SigFlags` go
+//! (`CS-PDF-0111`), the fields and their appearances stay for flattening.
+//!
+//! The catalog's `/Metadata` must be an XMP packet (`NORM-03`): one whose root is
+//! `rdf:RDF` is wrapped in `x:xmpmeta`; anything else is dropped (`CS-PDF-0110`).
+//! Embedded files can be extracted as [`Attachment`]s for separate admission.
 //!
 //! The page tree is made to say what it holds: each node's `/Kids` keeps only
 //! dictionaries and its `/Count` is the number of pages actually under it, so a
@@ -35,8 +42,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::classify::{action_kind, is_file_ef};
 use crate::document::{Document, strip_crypt_filter};
 use crate::error::PdfError;
+pub use crate::normalize_xmp::MetadataProblem;
+use crate::normalize_xmp::{self as xmp, Xmp};
 use crate::object::{Dictionary, ObjRef, Object};
-use crate::report::{ActionKind, FindingKind, MAX_FINDINGS, PdfVersion};
+use crate::report::{ActionKind, FindingKind, MAX_FINDINGS, PdfVersion, SignatureKind};
 use crate::serialize::{Body, write_indirect, write_value};
 use crate::writer::{MAX_OBJECT_NUMBER, WriteError, push_be, width, write_table, write_tail};
 use crate::{Admitted, Cancel};
@@ -60,9 +69,16 @@ pub enum OutputXref {
 pub struct NormalizeOptions {
     /// The cross-reference form of the output.
     pub xref: OutputXref,
-    /// Rewrite a signed document as a new PDF with its signatures as pictures
-    /// (docs/30 §2). Not built yet: a signed document is refused either way.
+    /// Print to new (docs/30 §2, `NORM-02`): accept a signed document and write it as
+    /// a new, unsigned one. Signature values, `/Perms` (DocMDP, usage rights), the DSS
+    /// and `/SigFlags` are removed; the signature fields stay, with their appearances,
+    /// for the caller to flatten into the pages (the SDK's `prepare_from_signed` does).
+    /// Each signature is listed in [`NormalizationReport::signatures_converted`].
     pub print_to_new: bool,
+    /// Extract embedded files as attachments ([`Normalized::attachments`]) for the host
+    /// to admit separately (docs/30 §3, an account setting, `NORM-02`). They are removed
+    /// from the document either way.
+    pub keep_attachments: bool,
 }
 
 impl NormalizeOptions {
@@ -71,7 +87,7 @@ impl NormalizeOptions {
     pub fn with_xref(xref: OutputXref) -> Self {
         Self {
             xref,
-            print_to_new: false,
+            ..Self::default()
         }
     }
 }
@@ -108,7 +124,71 @@ pub struct NormalizationReport {
     /// (input object number, output object number) for every object written, in
     /// output order.
     pub renumbered: Vec<(u32, u32)>,
+    /// The catalog's `/Metadata`, when it was not an XMP packet validators accept and
+    /// was wrapped or dropped (`CS-PDF-0110`, `NORM-03`).
+    pub metadata: Option<MetadataRepair>,
+    /// With [`NormalizeOptions::print_to_new`]: every signature the input carried, in
+    /// admission order, now no more than its field's appearance (`CS-PDF-0111`).
+    pub signatures_converted: Vec<ConvertedSignature>,
+    /// Embedded files found but not extracted, over [`MAX_ATTACHMENTS`] or unreadable,
+    /// with [`NormalizeOptions::keep_attachments`].
+    pub attachments_dropped: u32,
 }
+
+/// What was done to the catalog's `/Metadata` (`NORM-03`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum MetadataFix {
+    /// Its root was `rdf:RDF`: it was wrapped in `x:xmpmeta` and written unfiltered.
+    Wrapped,
+    /// It was removed from the catalog, for this reason.
+    Dropped(MetadataProblem),
+}
+
+/// The catalog's `/Metadata`, repaired or dropped (`CS-PDF-0110`, `NORM-03`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MetadataRepair {
+    /// The input metadata stream, when `/Metadata` was a reference.
+    pub object: Option<u32>,
+    /// What was done.
+    pub fix: MetadataFix,
+}
+
+/// A signature of the input that print to new turned into page content
+/// (`CS-PDF-0111`, `NORM-02`). Names and numbers only: no signer identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ConvertedSignature {
+    /// The signature field's object number in the input, when indirect.
+    pub field: Option<u32>,
+    /// The signature field's full name, when it has one.
+    pub field_name: Option<String>,
+    /// The signature dictionary's object number in the input, when indirect.
+    pub value: Option<u32>,
+    /// What it was.
+    pub kind: SignatureKind,
+    /// Its `/SubFilter`.
+    pub sub_filter: Option<String>,
+}
+
+/// An embedded file extracted with [`NormalizeOptions::keep_attachments`]: untrusted
+/// bytes, to be admitted on their own before use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Attachment {
+    /// The embedded file stream's object number in the input.
+    pub object: u32,
+    /// The file specification's `/UF` or `/F`, as text, when one names it. Untrusted:
+    /// never a path.
+    pub name: Option<String>,
+    /// The decoded file.
+    pub data: Vec<u8>,
+}
+
+/// Most embedded files extracted from one document (docs/21, `NORM-02`); more are
+/// counted in [`NormalizationReport::attachments_dropped`]. Their bytes are charged to
+/// the document's decode budget.
+pub const MAX_ATTACHMENTS: usize = 64;
 
 /// A normalized file and what was done to make it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +198,9 @@ pub struct Normalized {
     pub bytes: Vec<u8>,
     /// What was removed and renumbered.
     pub report: NormalizationReport,
+    /// Embedded files extracted with [`NormalizeOptions::keep_attachments`], in input
+    /// object order; empty otherwise.
+    pub attachments: Vec<Attachment>,
 }
 
 /// Where a reference to an input object goes in the output.
@@ -192,6 +275,21 @@ struct Norm<'d, 'a> {
     renumbered: Vec<(u32, u32)>,
     /// Objects whose value is a bare reference (collapsed to their target).
     aliases: BTreeSet<u32>,
+    /// Print to new: signature values, `/DSS` and `/SigFlags` go too.
+    print_to_new: bool,
+    /// The input catalog's object number (0 when direct in the trailer).
+    catalog: u32,
+    /// The catalog's `/Metadata` is removed (`NORM-03`).
+    drop_metadata: bool,
+    /// Streams written with new data and dictionary: the wrapped metadata.
+    replace: BTreeMap<u32, (Dictionary, Vec<u8>)>,
+}
+
+/// A signature dictionary: `/Type /Sig` or `/DocTimeStamp`, or one with `/ByteRange`
+/// and `/Contents` (the reader's own test, document.rs).
+fn is_sig_value(d: &Dictionary) -> bool {
+    matches!(d.name(b"Type"), Some(b"Sig" | b"DocTimeStamp"))
+        || (d.contains(b"ByteRange") && d.contains(b"Contents"))
 }
 
 impl<'a> Norm<'_, 'a> {
@@ -277,6 +375,16 @@ impl<'a> Norm<'_, 'a> {
             && matches!(s.dict.name(b"Type"), Some(b"XRef" | b"ObjStm"))
         {
             // File structure, not content: the output has its own.
+            self.status.insert(old, Slot::Drop);
+            return Ok(Slot::Drop);
+        }
+        if self.print_to_new
+            && let Some(d) = obj.dict()
+            && !self.protected.contains(&old)
+            && !structural(d)
+            && is_sig_value(d)
+        {
+            self.record("CS-PDF-0111", FindingKind::Signatures, Some(old));
             self.status.insert(old, Slot::Drop);
             return Ok(Slot::Drop);
         }
@@ -366,8 +474,23 @@ impl<'a> Norm<'_, 'a> {
                 // Only an unsigned document is normalized (docs/30 §2), so the catalog's
                 // `/Perms` holds usage rights alone: Reader extensions, whose signature
                 // the rewrite would break. They go, and are reported (`PDF-REAL-02`).
+                // Printed to new, `/Perms` may also hold the DocMDP certification: it
+                // goes with the signatures (`NORM-02`).
+                b"Perms" if structure && self.print_to_new => {
+                    self.record("CS-PDF-0111", FindingKind::Signatures, Some(old));
+                    continue;
+                }
                 b"Perms" if structure => {
                     self.record("CS-PDF-0107", FindingKind::UsageRights, Some(old));
+                    continue;
+                }
+                // The validation material of signatures that are no longer there.
+                b"DSS" if structure && self.print_to_new => {
+                    self.record("CS-PDF-0111", FindingKind::Signatures, Some(old));
+                    continue;
+                }
+                b"SigFlags" if self.print_to_new => continue,
+                b"Metadata" if structure && old == self.catalog && self.drop_metadata => {
                     continue;
                 }
                 b"EF" if !is_file_ef(&v) => {}
@@ -439,6 +562,10 @@ impl<'a> Norm<'_, 'a> {
                 Some(Object::Array(out))
             }
             Object::Dictionary(d) => {
+                if self.print_to_new && !structural(&d) && is_sig_value(&d) {
+                    self.record("CS-PDF-0111", FindingKind::Signatures, Some(old));
+                    return Ok(None);
+                }
                 if !structural(&d)
                     && let Some((code, kind)) = bad_dict(&d)
                 {
@@ -485,6 +612,13 @@ impl<'a> Norm<'_, 'a> {
     /// Clean an object taken from the queue into the body to write.
     fn clean_top(&mut self, old: u32, obj: Object) -> Result<Body<'a>, WriteError> {
         match obj {
+            Object::Stream(_) if self.replace.contains_key(&old) => {
+                let (dict, data) = self.replace.remove(&old).unwrap_or_default();
+                Ok(Body::Stream {
+                    dict,
+                    data: Cow::Owned(data),
+                })
+            }
             Object::Stream(s) => {
                 // Decrypted when the input is encrypted (the output is not); otherwise
                 // the bytes as stored. External data is never read.
@@ -964,21 +1098,195 @@ fn page_tree_objects(
     Ok(found)
 }
 
+/// An error local to one object is `None`; a document-wide one is returned.
+fn local<T>(r: Result<T, PdfError>) -> Result<Option<T>, WriteError> {
+    match r {
+        Ok(v) => Ok(Some(v)),
+        Err(e) if e.is_document_wide() => Err(e.into()),
+        Err(_) => Ok(None),
+    }
+}
+
+/// What to do with the catalog's `/Metadata` (`NORM-03`).
+#[derive(Debug, Default)]
+struct MetadataPlan {
+    repair: Option<MetadataRepair>,
+    drop: bool,
+    replace: Option<(u32, Dictionary, Vec<u8>)>,
+}
+
+/// Check the catalog's `/Metadata`: kept when it is an XMP packet, wrapped when its root
+/// is `rdf:RDF`, dropped otherwise.
+fn plan_metadata(
+    doc: &mut Document<'_>,
+    catalog: Option<&Dictionary>,
+    cancel: Cancel<'_>,
+) -> Result<MetadataPlan, WriteError> {
+    let Some(value) = catalog.and_then(|c| c.get(b"Metadata")) else {
+        return Ok(MetadataPlan::default());
+    };
+    let dropped = |object: Option<u32>, why: MetadataProblem| MetadataPlan {
+        repair: Some(MetadataRepair {
+            object,
+            fix: MetadataFix::Dropped(why),
+        }),
+        drop: true,
+        replace: None,
+    };
+    let Object::Reference(r) = value else {
+        return Ok(dropped(None, MetadataProblem::NotStream));
+    };
+    let num = r.num;
+    match local(doc.object(num, cancel))? {
+        Some(Object::Stream(_)) => {}
+        Some(_) => return Ok(dropped(Some(num), MetadataProblem::NotStream)),
+        None => return Ok(dropped(Some(num), MetadataProblem::Unreadable)),
+    }
+    let Some(data) = local(doc.decode_stream(num, cancel))? else {
+        return Ok(dropped(Some(num), MetadataProblem::Unreadable));
+    };
+    match xmp::check(&data) {
+        Ok(Xmp::Packet) => Ok(MetadataPlan::default()),
+        Ok(Xmp::RdfRoot { start, end }) => {
+            let rdf = xmp::without_bom(&data).get(start..end).unwrap_or_default();
+            let mut dict = Dictionary::new();
+            dict.insert(b"Type", Object::Name(b"Metadata".to_vec()));
+            dict.insert(b"Subtype", Object::Name(b"XML".to_vec()));
+            Ok(MetadataPlan {
+                repair: Some(MetadataRepair {
+                    object: Some(num),
+                    fix: MetadataFix::Wrapped,
+                }),
+                drop: false,
+                replace: Some((num, dict, xmp::wrap(rdf))),
+            })
+        }
+        Err(why) => Ok(dropped(Some(num), why)),
+    }
+}
+
+/// The embedded files of `objects` (admission's list: embedded file streams, and
+/// objects holding file specifications with `/EF`), decoded, with the name a file
+/// specification gives each; and how many were not extracted.
+fn extract_attachments(
+    doc: &mut Document<'_>,
+    objects: &[u32],
+    cancel: Cancel<'_>,
+) -> Result<(Vec<Attachment>, u32), WriteError> {
+    // Embedded file stream object -> name.
+    let mut files: BTreeMap<u32, Option<String>> = BTreeMap::new();
+    for &num in objects {
+        if cancel() {
+            return Err(WriteError::Read(PdfError::Cancelled));
+        }
+        let Some(obj) = local(doc.object(num, cancel))? else {
+            continue;
+        };
+        if let Object::Stream(s) = &obj {
+            if s.dict.name(b"Type") == Some(b"EmbeddedFile") {
+                files.entry(num).or_insert(None);
+            }
+            continue;
+        }
+        // File specifications in the object's value tree (already depth-capped).
+        let mut stack: Vec<&Object> = vec![&obj];
+        while let Some(v) = stack.pop() {
+            match v {
+                Object::Array(a) => stack.extend(a.iter()),
+                Object::Dictionary(d) => {
+                    let ef = match d.get(b"EF") {
+                        Some(Object::Reference(r)) => match local(doc.object(r.num, cancel))? {
+                            Some(Object::Dictionary(e)) => Some(e),
+                            _ => None,
+                        },
+                        Some(Object::Dictionary(e)) => Some(e.clone()),
+                        _ => None,
+                    };
+                    if let Some(ef) = ef {
+                        let stream = [&b"F"[..], b"UF"]
+                            .iter()
+                            .find_map(|k| ef.get(k).and_then(Object::as_ref));
+                        let name = [&b"UF"[..], b"F"].iter().find_map(|k| match d.get(k) {
+                            Some(Object::String(s)) => Some(crate::decode_text_string(s)),
+                            _ => None,
+                        });
+                        if let Some(r) = stream {
+                            let slot = files.entry(r.num).or_insert(None);
+                            if slot.is_none() {
+                                *slot = name;
+                            }
+                        }
+                    }
+                    stack.extend(d.iter().map(|(_, v)| v));
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut dropped: u32 = 0;
+    for (num, name) in files {
+        if out.len() >= MAX_ATTACHMENTS {
+            dropped = dropped.saturating_add(1);
+            continue;
+        }
+        match local(doc.decode_stream(num, cancel))? {
+            Some(data) => out.push(Attachment {
+                object: num,
+                name,
+                data,
+            }),
+            None => dropped = dropped.saturating_add(1),
+        }
+    }
+    Ok((out, dropped))
+}
+
+/// The signatures admission found, as print to new records them.
+fn converted_signatures(report: &crate::AdmissionReport) -> Vec<ConvertedSignature> {
+    report
+        .signatures
+        .iter()
+        .map(|s| ConvertedSignature {
+            field: s.field,
+            field_name: s.field.and_then(|f| {
+                report
+                    .fields
+                    .iter()
+                    .find(|x| x.object == Some(f))
+                    .map(|x| x.name.clone())
+            }),
+            value: s.value,
+            kind: s.kind,
+            sub_filter: s.sub_filter.clone(),
+        })
+        .collect()
+}
+
 /// Normalize an admitted document into a fresh file (docs/30 §3).
+///
+/// With [`NormalizeOptions::print_to_new`] a signed document is accepted and written
+/// without its signatures (`NORM-02`); without it, a signed document is refused.
 ///
 /// # Errors
 ///
-/// `CS-PDF-0014` for a signed document (or `print_to_new`, not built yet);
-/// `CS-PDF-0005` when the catalog cannot be reached; a reader's code when loading an
-/// object crosses a document-wide limit or `cancel` returns true.
+/// `CS-PDF-0014` for a signed document without `print_to_new`; `CS-PDF-0005` when the
+/// catalog cannot be reached; a reader's code when loading an object crosses a
+/// document-wide limit or `cancel` returns true.
 pub fn normalize(
     admitted: &mut Admitted<'_>,
     options: &NormalizeOptions,
     cancel: Cancel<'_>,
 ) -> Result<Normalized, WriteError> {
-    if admitted.report.is_signed() || options.print_to_new {
+    if admitted.report.is_signed() && !options.print_to_new {
         return Err(WriteError::Signed);
     }
+    let signatures_converted = if options.print_to_new {
+        converted_signatures(&admitted.report)
+    } else {
+        Vec::new()
+    };
+    let embedded = admitted.report.embedded_files.clone();
     let input_findings = admitted.report.findings.clone();
     // Pages admission took from the page objects because the tree was unreadable
     // (`PDF-REAL-03`): the output gets a new tree over them.
@@ -1019,6 +1327,31 @@ pub fn normalize(
     }
     protected.extend(page_tree_objects(doc, &trailer, cancel)?);
     protected.extend(recovered.iter().copied());
+    // The catalog: the end of the trailer's chain of references, 0 when direct.
+    let (catalog_num, catalog) = {
+        let mut num = 0;
+        let mut value = trailer.get(b"Root").cloned();
+        let mut hops: u16 = 0;
+        while let Some(Object::Reference(r)) = value {
+            if hops >= max_hops {
+                value = None;
+                break;
+            }
+            hops = hops.saturating_add(1);
+            num = r.num;
+            value = local(doc.object(r.num, cancel))?;
+        }
+        match value {
+            Some(Object::Dictionary(d)) => (num, Some(d)),
+            _ => (num, None),
+        }
+    };
+    let metadata = plan_metadata(doc, catalog.as_ref(), cancel)?;
+    let (attachments, attachments_dropped) = if options.keep_attachments {
+        extract_attachments(doc, &embedded, cancel)?
+    } else {
+        (Vec::new(), 0)
+    };
     let in_use: Vec<u32> = doc.object_numbers().collect();
     let mut n = Norm {
         doc,
@@ -1032,7 +1365,20 @@ pub fn normalize(
         removed_dropped: 0,
         renumbered: Vec::new(),
         aliases: BTreeSet::new(),
+        print_to_new: options.print_to_new,
+        catalog: catalog_num,
+        drop_metadata: metadata.drop,
+        replace: metadata
+            .replace
+            .map(|(num, dict, data)| (num, (dict, data)))
+            .into_iter()
+            .collect(),
     };
+    if let Some(r) = metadata.repair
+        && matches!(r.fix, MetadataFix::Dropped(_))
+    {
+        n.record("CS-PDF-0110", FindingKind::Metadata, r.object);
+    }
     let root = n
         .trailer_ref(trailer.get(b"Root").cloned())?
         .ok_or(WriteError::Read(PdfError::NotPdf { offset: None }))?;
@@ -1133,6 +1479,10 @@ pub fn normalize(
             unreachable_dropped: u32::try_from(unreachable).unwrap_or(u32::MAX),
             optional_content_kept: optional_content,
             renumbered: n.renumbered,
+            metadata: metadata.repair,
+            signatures_converted,
+            attachments_dropped,
         },
+        attachments,
     })
 }

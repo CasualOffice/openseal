@@ -56,6 +56,9 @@ pub enum FindingKind {
     /// The document was encrypted and has been decrypted with a password; its
     /// normalized form is not encrypted (`CS-PDF-0109`).
     Encrypted,
+    /// The catalog's `/Metadata` was not an XMP packet and normalization dropped it
+    /// (`CS-PDF-0110`, `NORM-03`).
+    Metadata,
 }
 
 /// The kind of an action found (ISO 32000-2 §12.6.4).

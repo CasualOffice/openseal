@@ -36,6 +36,8 @@ Phase 1 gate.
 | Content-stream operands | Nesting 32, 65,536 values per operand (`ContentLexer`) | CS-PDF-0004, CS-PDF-0002 | none: unit tests and the `content` fuzz target |
 | Field options and appearance states | 1,000 per field | CS-PDF-0002 | none: unit test |
 | Time budget | Host-supplied predicate | CS-PDF-0013 | none: a test that cancels |
+| Document metadata (`/Metadata`) checked as XMP (`NORM-03`) | 4 MiB decoded; element depth 256; 1,024 attributes per element; no DOCTYPE; larger, deeper or wider metadata is dropped, never a refusal | CS-PDF-0110 | none: unit tests in `normalize_xmp.rs`, `tests/normalize_metadata.rs` |
+| Attachments extracted when kept (`NORM-02`) | 64 embedded files per document; their bytes charged to "Total decoded per document"; more are counted, not extracted | — (`attachments_dropped`) | none: `tests/normalize_print.rs` |
 
 ## Cryptographic structures (`casual-sign-crypto`, stage 1F)
 
