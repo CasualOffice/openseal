@@ -401,6 +401,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-secrets"
+version = "0.0.0"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
 name = "casual-sign-store"
 version = "0.0.0"
 dependencies = [

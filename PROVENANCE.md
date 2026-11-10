@@ -20,3 +20,4 @@ in the folder `openslide/`; its commit at the time of copying was `e61277d`.
 | `.claude/skills/*` | OpenPresent `openslide-*` skills | Rewritten for OpenSeal |
 | `crates/casual-sign-flatten/src/subset.rs` | OpenPresent `crates/casual-slide-render/src/subset.rs` at `e61277d` | Every read and sum checked (no panics on untrusted fonts) |
 | `crates/casual-sign-flatten/fonts/` (Liberation Sans, Serif, Mono Regular) | OpenPresent `crates/casual-slide-text/fonts/liberation/` at `e61277d` | Regular faces only; details in that folder's PROVENANCE.md |
+| `server/casual-sign-secrets/` (`src/lib.rs`, `tests/secrets.rs`) | OpenCalc `server/casual-calc-secrets/` at `b23c67c` | `Secret` type (redacted `Debug`, zeroized on drop) returned instead of `String`; `code()` giving `CS-KEY-0005`; `OPENSEAL_` prefix; tests moved to `tests/` with a scratch dir under `target/` and a test that a secret never prints (T-2E) |

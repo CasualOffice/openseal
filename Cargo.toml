@@ -18,6 +18,7 @@ members = [
     "crates/casual-sign-wasm",
     "crates/casual-sign-workflow",
     "server/casual-sign-store",
+    "server/casual-sign-secrets",
     "server/casual-sign-keyd",
 ]
 # The fuzz workspace is separate: cargo-fuzz needs nightly-only dependencies that must
