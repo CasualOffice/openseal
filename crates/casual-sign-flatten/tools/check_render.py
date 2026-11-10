@@ -17,11 +17,15 @@ For fill-in-place entries ("fill": true) it also checks that pypdf reads each fi
 """
 
 import json
+import logging
 import sys
 from pathlib import Path
 
 import pypdf
 import pypdfium2 as pdfium
+
+# pypdf warns about fonts it cannot fully parse; the check reads only our text.
+logging.disable(logging.WARNING)
 
 SCALE = 2.0
 MARGIN = 3  # pixels of anti-aliasing allowed around a field
@@ -54,6 +58,18 @@ def changed(a, b):
     return out
 
 
+def dark(img, box):
+    """Pixels in `box` (inset by the margin) darker than light grey."""
+    w, h = img.size
+    px = img.load()
+    n = 0
+    for y in range(max(0, box[1] + MARGIN), min(h, box[3] - MARGIN + 1)):
+        for x in range(max(0, box[0] + MARGIN), min(w, box[2] - MARGIN + 1)):
+            if min(px[x, y]) < 160:
+                n += 1
+    return n
+
+
 def squash(s):
     return "".join(s.split())
 
@@ -77,7 +93,14 @@ def check(entry, base, png_dir):
             int((y + h) * sy) + MARGIN,
         )
         boxes.append(box)
-        inside = sum(1 for (px, py) in diff if box[0] <= px <= box[2] and box[1] <= py <= box[3])
+        if entry.get("corpus"):
+            # A real form may already show the value (a default): count the output's
+            # ink in the box rather than what changed.
+            inside = dark(b, box)
+        else:
+            inside = sum(1 for (px, py) in diff if box[0] <= px <= box[2] and box[1] <= py <= box[3])
+        if f["ink"] is None:
+            continue  # a removed widget: changes allowed, nothing asserted
         if f["ink"] and inside < MIN_INK:
             fails.append(f"{entry['name']}: field {f['id']} has no ink ({inside} px)")
         if not f["ink"] and inside:
@@ -119,8 +142,9 @@ def main():
         else:
             fails, n = result
         ink = sum(1 for f in entry["fields"] if f["ink"])
+        blank = sum(1 for f in entry["fields"] if f["ink"] is False)
         status = "ok" if not fails else "FAIL"
-        print(f"{status:4} {entry['name']}: {ink} fields with ink, {len(entry['fields']) - ink} blank, "
+        print(f"{status:4} {entry['name']}: {ink} fields with ink, {blank} blank, "
               f"{n} px changed, {len(entry.get('texts', []))} texts")
         all_fails.extend(fails)
     for f in all_fails:

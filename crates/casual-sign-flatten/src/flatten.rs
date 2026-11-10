@@ -167,13 +167,35 @@ pub fn flatten(
     let has_form = acroform_ref.is_some();
     let remove_form = has_form && options.mode == FormMode::Flatten;
 
+    // Which page holds each annotation: a widget without `/P` is found by the page whose
+    // `/Annots` lists it, as viewers find it.
+    let mut annot_page: BTreeMap<u32, u32> = BTreeMap::new();
+    if has_form {
+        for (index, info) in pages.iter().enumerate() {
+            let Some(page) = read::object_dict(doc, info.object, cancel)? else {
+                continue;
+            };
+            let Some(a) = page.get(b"Annots").cloned() else {
+                continue;
+            };
+            if let Some(Object::Array(items)) = read::local(doc.resolve(&a, cancel))? {
+                for r in items.iter().take(MAX_ANNOTS).filter_map(Object::as_ref) {
+                    if let Ok(i) = u32::try_from(index) {
+                        annot_page.entry(r.num).or_insert(i);
+                    }
+                }
+            }
+        }
+    }
+
     // Every widget of the form, read once.
     let mut widgets: Vec<FormWidget> = Vec::new();
     if has_form {
         for f in &pdf_fields {
             for w in &f.widgets {
                 let Some(obj) = w.object else { continue };
-                if let Some(info) = read::widget(doc, obj, w.rect, w.page, cancel)? {
+                let page = w.page.or_else(|| annot_page.get(&obj).copied());
+                if let Some(info) = read::widget(doc, obj, w.rect, page, cancel)? {
                     widgets.push(FormWidget {
                         field_object: f.object,
                         kind: f.field_type,
@@ -242,6 +264,33 @@ pub fn flatten(
                 continue;
             };
             let Some(stream) = read::current_appearance(&w.info) else {
+                // No appearance: keep the border and background a viewer draws from
+                // `/MK`, as for converted widgets.
+                let Some(g) = page_geometry(&pages, page) else {
+                    continue;
+                };
+                let r = g.rect_to_displayed(&w.info.rect);
+                let mut canvas = Canvas::default();
+                fill::draw_frame(
+                    &mut canvas,
+                    &w.info,
+                    r.width,
+                    r.height,
+                    w.kind == PdfFieldType::Radio,
+                );
+                if !canvas.ops.is_empty() {
+                    placed.push(Placed {
+                        page,
+                        w: r.width,
+                        h: r.height,
+                        matrix: field_matrix(&g, &r),
+                        drawing: Drawing {
+                            canvas,
+                            images: Vec::new(),
+                        },
+                    });
+                    report.appearances_kept = report.appearances_kept.saturating_add(1);
+                }
                 continue;
             };
             let Some((bbox, m)) = read::form_box(doc, stream, cancel)? else {

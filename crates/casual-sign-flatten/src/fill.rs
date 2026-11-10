@@ -308,11 +308,10 @@ pub(crate) fn plan_field(
             );
             plan.edits.insert(t.object, field);
             for w in t.widgets {
-                let state = w
-                    .on_states
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| first_on.clone());
+                // A box whose widgets have different on-states acts like a radio
+                // group: only the widgets with the chosen state turn on.
+                let state = first_on.clone();
+                let shows = w.on_states.is_empty() || w.on_states.contains(&state);
                 let mut wd = plan
                     .edits
                     .get(&w.object)
@@ -320,7 +319,11 @@ pub(crate) fn plan_field(
                     .unwrap_or_else(|| w.dict.clone());
                 wd.insert(
                     b"AS",
-                    Object::Name(if *on { state.clone() } else { b"Off".to_vec() }),
+                    Object::Name(if *on && shows {
+                        state.clone()
+                    } else {
+                        b"Off".to_vec()
+                    }),
                 );
                 plan.edits.insert(w.object, wd);
                 if w.on_states.is_empty() {
@@ -388,7 +391,9 @@ pub(crate) fn plan_field(
                 .find(|(_, d)| d == text)
                 .map_or_else(|| text_string(text), |(e, _)| e.clone());
             field.insert(b"V", Object::String(export));
+            // A list's selected indices and a rich-text value would contradict /V.
             field.remove(b"I");
+            field.remove(b"RV");
             plan.edits.insert(t.object, field);
             let da = parse_da(
                 attrs

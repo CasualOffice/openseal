@@ -259,3 +259,67 @@ fn a_converted_form_is_flattened_and_removed_or_filled_in_place() {
         );
     }
 }
+
+#[test]
+fn a_check_box_with_several_on_states_turns_on_only_the_chosen_one() {
+    let w = "/Type/Annot/Subtype/Widget/P 3 0 R/F 4";
+    let on = stream(
+        "/Type/XObject/Subtype/Form/BBox[0 0 12 12]",
+        b"0 g 2 2 8 8 re f",
+    );
+    let extra = vec![
+        (5, b"<</Fields[10 0 R]/DA(/Helv 0 Tf 0 g)>>".to_vec()),
+        (10, b"<</FT/Btn/T(group)/Kids[11 0 R 12 0 R]>>".to_vec()),
+        (
+            11,
+            format!("<</Parent 10 0 R{w}/Rect[100 600 112 612]/AS/Off/AP<</N<</A 20 0 R/Off 20 0 R>>>>>>")
+                .into_bytes(),
+        ),
+        (
+            12,
+            format!("<</Parent 10 0 R{w}/Rect[100 580 112 592]/AS/Off/AP<</N<</B 20 0 R/Off 20 0 R>>>>>>")
+                .into_bytes(),
+        ),
+        (20, on),
+    ];
+    let base = delivered(&page_pdf(
+        &cases()[0],
+        "/AcroForm 5 0 R",
+        "/Annots[11 0 R 12 0 R]",
+        extra,
+    ));
+    let mut a = admit(&base, &Limits::default(), &never).unwrap();
+    let report = a.report.clone();
+    let conv =
+        convert_acroform(&mut a.document, &report, &id("doc"), &mut minter(), &never).unwrap();
+    let (values, caps) = fill_all(&conv);
+    let fields: Vec<_> = conv.fields.iter().map(|c| c.field.clone()).collect();
+    let input = FlattenInput {
+        fields: &fields,
+        values: &values,
+        captures: &caps,
+        envelope_id: None,
+        acroform: Some(&conv),
+    };
+    let mut options = FlattenOptions::default();
+    options.mode = FormMode::FillInPlace;
+    let out = flatten(&mut a, &input, &FontSet::bundled(), &options, &never).unwrap();
+    let mut b = admit_strict(&out.bytes, &Limits::default(), &never).unwrap();
+    let widgets: Vec<u32> = b.report.fields[0]
+        .widgets
+        .iter()
+        .map(|w| w.object.unwrap())
+        .collect();
+    let states: Vec<Option<Vec<u8>>> = widgets
+        .iter()
+        .map(|n| {
+            b.document
+                .object(*n, &never)
+                .unwrap()
+                .dict()
+                .and_then(|d| d.name(b"AS"))
+                .map(<[u8]>::to_vec)
+        })
+        .collect();
+    assert_eq!(states, vec![Some(b"A".to_vec()), Some(b"Off".to_vec())]);
+}
