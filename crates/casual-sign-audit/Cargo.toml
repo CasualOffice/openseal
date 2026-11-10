@@ -10,7 +10,19 @@ publish = false
 
 [dependencies]
 casual-sign-model = { path = "../casual-sign-model" }
+# SHA-256 for event hashes and the anchoring tree (ADR-006, ADR-010): never hand-rolled.
 casual-sign-crypto = { path = "../casual-sign-crypto" }
+# The typed events' wire form (snake_case, docs/32 §2). Already in the tree through
+# `casual-sign-model`. MIT OR Apache-2.0.
+serde = { version = "1.0.200", features = ["derive"] }
+# Typed events to and from a JSON tree. The canonical form (RFC 8785) and the parser
+# verification uses are this crate's own (src/json.rs, src/jcs.rs): serde_json keeps the
+# last of duplicate keys silently, which an evidence parser must refuse. Already in the
+# tree as a dev-dependency of `casual-sign-model`. MIT OR Apache-2.0.
+serde_json = "1.0.120"
+
+[dev-dependencies]
+proptest = { version = "1.5", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

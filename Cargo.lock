@@ -236,6 +236,9 @@ version = "0.0.0"
 dependencies = [
  "casual-sign-crypto",
  "casual-sign-model",
+ "proptest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
