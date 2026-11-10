@@ -274,6 +274,57 @@ fn disallowed_revision_classes() {
     }
 }
 
+/// The code of a failed check, `None` when it did not fail.
+fn failed(c: Check) -> Option<&'static str> {
+    match c {
+        Check::Failed(r) => Some(r.code),
+        Check::NotRun | Check::Passed => None,
+    }
+}
+
+#[test]
+fn signature_wrapping_is_caught_by_the_check_it_targets() {
+    // VER-03 (Phase 1 exit item 4): each fixture keeps the signed bytes and a valid CMS
+    // somewhere, so a verifier that only hashes the ByteRange would pass it.
+    let deny = |f: &str| -> Vec<Disallowed> {
+        classes(f)
+            .into_iter()
+            .filter_map(|c| match c {
+                ModificationClass::Disallowed(d) => Some(d),
+                _ => None,
+            })
+            .collect()
+    };
+    // Second range moved to the end: the gap is more than /Contents (SEC-S02).
+    // A duplicated revision without /Prev: the signed bytes end no revision the reader knows.
+    for f in ["wrap-moved-range.pdf", "wrap-duplicate-revision.pdf"] {
+        let s = first(&read(f));
+        assert_eq!(sub(&s), Some(SubIndication::FormatFailure), "{f}");
+        assert_eq!(failed(s.checks.byte_range), Some("CS-VER-0001"), "{f}");
+        assert_eq!(s.checks.digest, Check::NotRun, "{f}");
+    }
+    // A moved signature dictionary: integrity holds, the later revision does not.
+    for f in ["wrap-moved-dict.pdf", "wrap-moved-dict-only.pdf"] {
+        let s = first(&read(f));
+        assert_eq!(sub(&s), Some(SubIndication::DisallowedModification), "{f}");
+        assert_eq!(s.checks.signature, Check::Passed, "{f}");
+        assert_eq!(failed(s.checks.modifications), Some("CS-VER-0007"), "{f}");
+    }
+    let sig_dict = first(&read("wrap-moved-dict-only.pdf")).value.unwrap();
+    assert_eq!(
+        deny("wrap-moved-dict-only.pdf"),
+        vec![Disallowed::SignatureChanged(sig_dict)]
+    );
+    assert!(deny("wrap-moved-dict.pdf").contains(&Disallowed::ObjectChanged(5)));
+    // An extra SignerInfo, or eContent present: the CMS is refused before any digest
+    // it carries is believed.
+    for f in ["wrap-cms-two-signers.pdf", "wrap-cms-econtent.pdf"] {
+        let s = first(&read(f));
+        assert_eq!(sub(&s), Some(SubIndication::FormatFailure), "{f}");
+        assert_eq!(failed(s.checks.signature), Some("CS-VER-0003"), "{f}");
+    }
+}
+
 #[test]
 fn unsigned_trailing_revision_leaves_document_uncovered() {
     let r = check(&read("isa-content.pdf"));

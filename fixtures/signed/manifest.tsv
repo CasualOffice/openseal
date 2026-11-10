@@ -28,3 +28,9 @@ shadow-hide-xref.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hi
 shadow-replace.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	replace: font override renders 1 as 9
 shadow-hide-mediabox.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide: page /MediaBox shrunk to cut the first line off
 shadow-hide-and-replace.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide-and-replace: catalog points at the shadow page tree
+wrap-moved-range.pdf	0	TOTAL_FAILED:FORMAT_FAILURE	invalid	modified	signature wrapping: second signed range moved to the end, gap holds a new page content; pyHanko finds the hash intact and reports coverage UNCLEAR, modification OTHER
+wrap-moved-dict.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	moved signature dictionary: redefined in a later revision with the page content
+wrap-moved-dict-only.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	moved signature dictionary alone: the redefined copy claims another signer name and time
+wrap-duplicate-revision.pdf	0	TOTAL_FAILED:FORMAT_FAILURE	invalid	modified	duplicated revision without /Prev: ByteRange covers the original, the reader shows the copy; pyHanko finds the hash intact and reports modification OTHER
+wrap-cms-two-signers.pdf	0	TOTAL_FAILED:FORMAT_FAILURE	invalid	invalid	CMS with a second SignerInfo (an untrusted signer) after the valid one
+wrap-cms-econtent.pdf	0	TOTAL_FAILED:FORMAT_FAILURE	invalid	invalid	CMS with eContent: an attached signature by the trusted signer over other bytes
