@@ -472,6 +472,12 @@ pub struct Env {
     /// Whether the seal's verification is tampered with (the trust store is emptied),
     /// to show the envelope stays `completing` without a verified seal.
     pub untrusted: AtomicBool,
+    /// A key to seal with instead of the seal tests' in-process one (keyd's).
+    pub key: Mutex<Option<SealKey>>,
+    /// More trust anchors (DER) for sealing and verification.
+    pub anchors: Mutex<Vec<Vec<u8>>>,
+    /// Whether the webhook SSRF policy allow-lists loopback (where the receiver is).
+    pub allow_loopback: AtomicBool,
     next: AtomicU64,
 }
 
@@ -534,6 +540,9 @@ impl Env {
             pages,
             captures: Mutex::new(BTreeMap::new()),
             untrusted: AtomicBool::new(false),
+            key: Mutex::new(None),
+            anchors: Mutex::new(Vec::new()),
+            allow_loopback: AtomicBool::new(true),
             next: AtomicU64::new(0),
         };
         env.blob_store().put(&env.delivered).await.unwrap();
@@ -552,9 +561,12 @@ impl Env {
     fn seal_services(&self) -> SealServices {
         let count = Arc::clone(&self.signatures);
         let clock = Arc::clone(&self.clock);
-        SealServices {
-            engine: self.engine.clone(),
-            key: SealKey::Local {
+        let key = self
+            .key
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| SealKey::Local {
                 provider: Arc::new(move || {
                     Box::new(CountingKey {
                         inner: pki::p256(),
@@ -562,14 +574,21 @@ impl Env {
                     })
                 }),
                 development: false,
-            },
+            });
+        let mut trust = pki::trust();
+        for a in self.anchors.lock().unwrap().iter() {
+            trust.add_anchor(a).unwrap();
+        }
+        SealServices {
+            engine: self.engine.clone(),
+            key,
             timestamps: Arc::new(move || {
                 Box::new(pki::TestTsa::new(Duration::from_millis(
                     u64::try_from(clock.ms()).unwrap() + 1000,
                 )))
             }),
             revocation: Arc::new(|| Box::new(NoRevocation)),
-            trust: pki::trust(),
+            trust,
             crls: Vec::new(),
             name: Some("OpenSeal test operator".into()),
             reason: Some("Sealed on completion".into()),
@@ -599,7 +618,11 @@ impl Env {
             })
             .unwrap();
         let policy = SsrfPolicy {
-            allow: vec![IpRange::parse("127.0.0.0/8").unwrap()],
+            allow: if self.allow_loopback.load(Ordering::SeqCst) {
+                vec![IpRange::parse("127.0.0.0/8").unwrap()]
+            } else {
+                Vec::new()
+            },
         };
         let mut seal = self.seal_services();
         if self.untrusted.load(Ordering::SeqCst) {

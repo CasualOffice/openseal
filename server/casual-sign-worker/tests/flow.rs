@@ -238,3 +238,32 @@ async fn a_refused_address_is_a_bounce() {
         serde_json::json!("auto_responded")
     );
 }
+
+/// SSRF (`SEC-W01`): a subscription whose URL reaches a loopback address, which is not
+/// allow-listed, is refused before any byte is sent; the job is dead-lettered and the
+/// delivery logged as failed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_webhook_to_a_private_address_is_refused() {
+    let Some(env) = Env::new("a_webhook_to_a_private_address").await else {
+        return;
+    };
+    env.allow_loopback.store(false, Ordering::SeqCst);
+    env.subscribe(&["envelope.sent"]).await;
+    let ids = env.draft(vec![]).await;
+    env.send(ids).await;
+    let out = env.run().await;
+    assert!(
+        out.iter()
+            .any(|(k, o)| k == "deliver_webhook" && *o == JobOutcome::Dead("CS-WRK-0008".into())),
+        "{out:?}"
+    );
+    assert!(
+        env.hook.requests().is_empty(),
+        "nothing reached the address"
+    );
+    let log: Vec<(String,)> = sqlx::query_as("SELECT status FROM webhook_deliveries")
+        .fetch_all(&env.db.admin)
+        .await
+        .unwrap();
+    assert_eq!(log, vec![("failed".to_owned(),)]);
+}
