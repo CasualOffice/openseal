@@ -1,0 +1,15 @@
+[package]
+name = "casual-sign-keyd"
+version = "0.0.0"
+description = "OpenSeal key daemon: signing keys behind PKCS#11 (file keys in development only), served over mTLS (stage 2E, docs/31 §5)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+casual-sign-crypto = { path = "../../crates/casual-sign-crypto" }
+
+[lints]
+workspace = true

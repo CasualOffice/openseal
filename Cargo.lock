@@ -326,6 +326,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-keyd"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-crypto",
+]
+
+[[package]]
 name = "casual-sign-model"
 version = "0.0.0"
 dependencies = [
@@ -394,6 +401,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-store"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-model",
+]
+
+[[package]]
 name = "casual-sign-verify"
 version = "0.0.0"
 dependencies = [
@@ -421,6 +435,13 @@ dependencies = [
  "serde_json",
  "sha2",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "casual-sign-workflow"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-model",
 ]
 
 [[package]]

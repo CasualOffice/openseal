@@ -41,6 +41,7 @@ openseal/
 | `casual-sign-cli` | Host | sdk | `serde_json`; native only: `aws-lc-rs` (file keys, TSA nonce), `der`, `x509-cert`, `pem-rfc7468`, `ureq` with `rustls` on aws-lc-rs and `rustls-native-certs` (TSA, OCSP, CRL over HTTP) | developers, `tools/pipeline-corpus.py` |
 | `casual-sign-wasm` | Binding | fields, verify, model, pdf (flatten and audit join with the signing UI) | `wasm-bindgen`, `serde_json`, `rust_decimal`; dev: `sha2` (parity harness) | `webapp/`, `tools/wasm-parity.sh` |
 | `casual-sign-secrets` | Host | — | — | server, worker, keyd (copied from OpenCalc's `casual-calc-secrets`) |
+| `casual-sign-store` | Host | model, audit | `sqlx` (Postgres, compile-time checked queries), `tokio`; blob store: filesystem and S3 (stage 2B) | server, worker |
 | `casual-sign-server` | Host | sdk, workflow, secrets | `axum`, `tokio`, `sqlx`, `tower-http`, `jsonwebtoken`, `openidconnect`, `samael` (SAML, reviewed in `DEP-01`), `aws-lc-rs` | — |
 | `casual-sign-worker` | Host | sdk, workflow, secrets | `tokio`, `sqlx`, `lettre`, `reqwest` (rustls) | — |
 | `casual-sign-keyd` | Host | crypto, secrets | `cryptoki` (PKCS#11), `aws-lc-rs`, cloud KMS SDKs behind features | worker |

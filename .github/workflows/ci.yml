@@ -26,7 +26,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
-      - run: cargo check --target wasm32-unknown-unknown --workspace --locked
+      # Engine crates only: hosts under server/ are native (docs/19).
+      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --locked
       - run: python3 tools/check-repo.py
       - run: python3 -I fixtures/tools/generate.py --check
       - run: python3 -I fixtures/corpus/fetch.py --check
