@@ -256,12 +256,22 @@ pub struct SealReport {
 }
 
 /// A sealed file and its report.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Sealed {
     /// The output: the input followed by the new revisions.
     pub bytes: Vec<u8>,
     /// What was done.
     pub report: SealReport,
+}
+
+impl core::fmt::Debug for Sealed {
+    /// The report and the output's length: never the document's bytes (CLAUDE.md).
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Sealed")
+            .field("bytes", &self.bytes.len())
+            .field("report", &self.report)
+            .finish()
+    }
 }
 
 /// Ask `source` for a timestamp over `imprint` and check the answer (docs/31 §6).

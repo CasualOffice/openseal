@@ -137,6 +137,10 @@ pub(crate) fn fill_byte_range(
     if slot != BR_PLACEHOLDER {
         return Err(SealError::Layout(LayoutProblem::Placeholder(0)));
     }
+    // The width is kept, so no offset after it moves.
+    if text.len() != slot.len() {
+        return Err(SealError::Layout(LayoutProblem::ByteRangeWidth));
+    }
     slot.copy_from_slice(&text);
     Ok(())
 }
