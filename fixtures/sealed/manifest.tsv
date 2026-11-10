@@ -8,6 +8,7 @@ rsa3072-approval-bt.pdf	intact	rsa3072 approval signature, invisible, B-T	B-T	IN
 rsa3072-approval-blt.pdf	intact	rsa3072 approval signature, invisible, B-LT	B-LT	TOTAL_PASSED
 rsa3072-approval-blta.pdf	intact	rsa3072 approval signature, invisible, B-LTA	B-LTA	TOTAL_PASSED
 p256-certified-p1-blt.pdf	intact	certification signature DocMDP P=1, B-LT	B-LT	TOTAL_PASSED
+rsa3072-certified-p1-blta.pdf	intact	certification signature DocMDP P=1, B-LTA	B-LTA	TOTAL_PASSED
 p256-certified-p2-blta.pdf	intact	certification signature DocMDP P=2, B-LTA	B-LTA	TOTAL_PASSED
 rsa3072-certified-p3-blt.pdf	intact	certification signature DocMDP P=3, B-LT	B-LT	TOTAL_PASSED
 two-signatures-blt.pdf	intact	certification P=2 (P-256) then approval (RSA-3072), each B-LT	B-LT	TOTAL_PASSED

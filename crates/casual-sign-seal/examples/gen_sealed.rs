@@ -168,6 +168,7 @@ fn main() {
     // Certification at each DocMDP level.
     for (docmdp, key, keyname, p) in [
         (DocMdp::P1, &keys[0].1, "p256", Profile::BaselineLt),
+        (DocMdp::P1, &keys[1].1, "rsa3072", Profile::BaselineLta),
         (DocMdp::P2, &keys[0].1, "p256", Profile::BaselineLta),
         (DocMdp::P3, &keys[1].1, "rsa3072", Profile::BaselineLt),
     ] {

@@ -75,6 +75,10 @@ fn b_b_is_intact_and_waits_for_revocation_data() {
     assert_eq!(count(&s.bytes, b"/M (D:20261101120000+00'00')"), 1);
     assert_eq!(count(&s.bytes, b"/SubFilter /ETSI.CAdES.detached"), 1);
     assert_eq!(count(&s.bytes, b"/Filter /Adobe.PPKLite"), 1);
+    // An invisible widget has no appearance stream: a new one reads as form filling,
+    // which DocMDP P=1 forbids (pyHanko).
+    assert_eq!(count(&s.bytes, b"/AP "), 0);
+    assert_eq!(count(&s.bytes, b"/Rect [0 0 0 0]"), 1);
 }
 
 #[test]

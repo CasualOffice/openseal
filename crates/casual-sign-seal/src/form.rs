@@ -321,7 +321,16 @@ pub(crate) fn apply(
             rect,
             appearance,
         } => {
-            let ap = appearance_stream(u, &rect, appearance.as_ref())?;
+            // An invisible widget (zero-size /Rect, no appearance asked for) carries no
+            // /AP (ISO 32000-2 §12.5.5 exempts it): a new appearance stream would read
+            // as form filling to validators, which DocMDP P=1 forbids (pyHanko 0.38.1
+            // does; found with a P=1 B-LTA fixture).
+            let invisible = appearance.is_none() && rect.urx <= rect.llx && rect.ury <= rect.lly;
+            let ap = if invisible {
+                None
+            } else {
+                Some(appearance_stream(u, &rect, appearance.as_ref())?)
+            };
             let mut f = Dictionary::new();
             f.insert(b"Type", name(b"Annot"));
             f.insert(b"Subtype", name(b"Widget"));
@@ -337,9 +346,11 @@ pub(crate) fn apply(
                     generation: 0,
                 }),
             );
-            let mut apd = Dictionary::new();
-            apd.insert(b"N", Object::Reference(ap));
-            f.insert(b"AP", Object::Dictionary(apd));
+            if let Some(ap) = ap {
+                let mut apd = Dictionary::new();
+                apd.insert(b"N", Object::Reference(ap));
+                f.insert(b"AP", Object::Dictionary(apd));
+            }
             let field_ref = u.add(Object::Dictionary(f))?;
             match annots {
                 Holder::Absent => {
