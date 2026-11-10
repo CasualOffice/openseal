@@ -71,7 +71,7 @@ made `CasualOffice/openseal` public on 2026-11-10; GitHub CI now runs, and `tool
 - **Phase D** lacks Accepted ADRs for Phases 0–2 beyond ADR-009 (ADR-010 to ADR-023 are Proposed) and `DEC-02` to
   `DEC-07`; the independent doc audit (`DOC-002`) is done and its findings fixed. Also open: `DEC-10`, `DEC-12` to `DEC-14`.
 - **Phase 0** lacks seeded violations seen failing on GitHub's runners (`F-003`; the first GitHub run was all green),
-  four more hostile fixtures (46 of 50, `F-005`) and the owner's sign-off. Corpus (422 PDFs, 40 producers), validators on
+  the owner's sign-off. 50 hostile fixtures, corpus (422 PDFs, 40 producers), validators on
   GitHub, spikes and ADR-005/006 are done.
 - **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm
   conversion, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I

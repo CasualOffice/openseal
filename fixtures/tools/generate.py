@@ -438,6 +438,36 @@ def builders():
         return classic(objs)[0]
     b["active_embedded_file.pdf"] = embedded_file
 
+    # An object stream claiming a billion members (/N): nothing may be sized from it.
+    def objstm_n_huge():
+        hdr = b"3 0 "
+        data = zlib.compress(hdr + b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>")
+        objs = [(1, b"<</Type/Catalog/Pages 2 0 R>>"), (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>"),
+                (5, stream_obj(b"/Type/ObjStm/N 1000000001/First %d/Filter/FlateDecode" % len(hdr), data))]
+        return xref_stream_file(objs, compressed={3: (5, 0)})
+    b["objstm_n_huge.pdf"] = objstm_n_huge
+
+    # An xref stream whose /W asks for 20-byte offsets: rows are read within the stream, never trusted.
+    def xref_w_huge():
+        good = xref_stream_file(pages_objs(1))
+        return good.replace(b"/W[1 4 2]", b"/W[1 20 2]", 1)
+    b["xref_w_huge.pdf"] = xref_w_huge
+
+    # A page tree whose /Count claims a million pages over one kid: the count is never used to allocate.
+    b["pages_count_lies.pdf"] = lambda: classic([
+        (1, b"<</Type/Catalog/Pages 2 0 R>>"),
+        (2, b"<</Type/Pages/Kids[3 0 R]/Count 1000000>>"),
+        (3, b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>")])[0]
+
+    # A Form XObject that draws itself (Do of its own name): a cycle for every content interpreter.
+    def xobject_self_cycle():
+        objs = pages_objs(1)
+        objs[2] = (3, b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</XObject<</X 10 0 R>>>>>>")
+        objs[3] = (4, stream_obj(b"", b"/X Do"))
+        objs.append((10, stream_obj(b"/Type/XObject/Subtype/Form/BBox[0 0 10 10]/Resources<</XObject<</X 10 0 R>>>>", b"/X Do")))
+        return classic(objs)[0]
+    b["xobject_self_cycle.pdf"] = xobject_self_cycle
+
     def with_page_entry(entry, extra):
         """One page whose dictionary gains `entry`, plus extra objects from 10."""
         objs = pages_objs(1)

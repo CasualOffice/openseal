@@ -37,6 +37,7 @@ const DEFAULT_FINDING: &[(&str, &str)] = &[
     ("active_uri_on_open.pdf", "CS-PDF-0105"),
     ("active_submitform.pdf", "CS-PDF-0103"),
     ("active_embedded_file.pdf", "CS-PDF-0104"),
+    ("xref_w_huge.pdf", "CS-PDF-0101"),
     ("active_xfa.pdf", "CS-PDF-0103"),
     ("active_richmedia.pdf", "CS-PDF-0104"),
     ("active_3d.pdf", "CS-PDF-0104"),

@@ -59,7 +59,7 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
 | Phase | State | Note |
 | --- | --- | --- |
 | D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
-| 0 Foundation | **Open** 2026-11-10 | 2 of the 4 non-sign-off exit items met (spikes and ADRs; validators on GitHub CI). Left: seeded violations seen failing on GitHub's runners (the first GitHub run, at `fd5e8f3`, was all green), 4 more hostile fixtures (46 of 50), owner sign-off |
+| 0 Foundation | **Open** 2026-11-10 | 3 of the 4 non-sign-off exit items met (corpus and fixtures; validators on GitHub CI; spikes and ADRs). Left: seeded violations seen failing on GitHub's runners, owner sign-off |
 | 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I audit and certificate (each with leftovers in its row); reader completion (417 of 422 corpus PDFs open). In progress, for the exit gate: 1J SDK and CLI with the corpus pipeline (`P1-GATE-01`), `WASM-01`, `VER-03`, `FUZZ-01`. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
 | 2 Envelope engine and server | Not opened | May open once stages 1A and 1B close (`W-1` proposed, `DEC-13`) |
 | Slices 1–35 | Not opened | Slice 1 needs Phases 1 and 2 |
@@ -98,7 +98,7 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
 - **Out:** product behaviour.
 - **Closes when:**
   - [ ] CI green on three platforms; a seeded violation seen failing each job on GitHub's runners. *(Green on all 8 jobs, Linux, macOS, Windows, at `fd5e8f3`, run 42825291522; seeded violations on GitHub not yet run, `F-003`.)*
-  - [ ] *(Corpus met: 422 PDFs, 40 producer families, `F-004`. Hostile: 46 of 50, `F-005`.)* Fixture corpus: ≥ 200 PDFs from ≥ 10 producers (Word, LibreOffice, Acrobat, Chrome print, macOS Quartz, Ghostscript output used only as a file, scanners, InDesign, LaTeX, Google Docs), each with provenance and licence; ≥ 50 hostile fixtures, one per limit in [21](21-PARSER-LIMITS.md).
+  - [x] Fixture corpus: ≥ 200 PDFs from ≥ 10 producers (Word, LibreOffice, Acrobat, Chrome print, macOS Quartz, Ghostscript output used only as a file, scanners, InDesign, LaTeX, Google Docs), each with provenance and licence; ≥ 50 hostile fixtures, one per limit in [21](21-PARSER-LIMITS.md). Evidence: `F-004` (422 PDFs, 40 producer families, licences recorded), `F-005` (50 hostile fixtures, manifest-checked).
   - [x] pyHanko and EU DSS run in CI over a known-good signed PDF and a known-tampered one, and disagree correctly. Evidence: GitHub run 42825291522, job `validators`, at `fd5e8f3` (2026-11-10); `F-006`.
   - [x] `SPK-01` (PDF reader: own versus `lopdf`) and `SPK-02` (crypto stack in WASM) reported; ADR-005 and ADR-006 settled. Evidence: [64](64-SPK-01-PDF-READER.md), [66](66-SPK-02-CRYPTO-STACK.md).
   - [ ] Owner sign-off.
@@ -129,6 +129,9 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
 - **Closes when:**
   - [ ] Every corpus PDF is admitted or refused with a coded reason; no panic, hang or unbounded allocation under fuzzing (24 h cumulative per target).
   - [ ] For every admitted corpus PDF, fill + flatten + seal (B-T) + verify passes rungs 1–3 of the verification ladder; `sealed.starts_with(delivered)` holds.
+    Owner ruling (2026-11-10, [03](03-OWNER-INSTRUCTIONS.md) instruction 11): a file certified DocMDP P1 (no changes
+    permitted) is out of this item by rule. It must be refused for filling with a stable code, since any fill would break
+    its certification; making such files fillable as a new document is `NORM-02`.
   - [x] B-LT and B-LTA outputs are detected at their level by EU DSS. Evidence: `fixtures/sealed`, `tools/verify-sealed.py fixtures/sealed --dss`, EU DSS 6.5.1 reports PAdES-BASELINE-LT and -LTA (stage 1G, re-run by the main session).
   - [ ] Tampering fixtures (byte flip in each revision, appended unsigned revision, shadow attacks: hide, replace, hide-and-replace; incremental saving attack; signature wrapping) are all detected by our verifier and agree with pyHanko and EU DSS.
   - [x] The audit chain verifier detects deletion, insertion, reordering and edit of any event in generated chains. Evidence: `casual-sign-audit` tamper tests and the every-mutation property (1,024 cases); the prev-link check seen red by the main session (stage 1I).

@@ -45,3 +45,7 @@ encrypted_wrong_password.pdf	Host passwords tried	CS-PDF-0009	refuse	RC4-128, re
 encrypted_flate_bomb.pdf	Single stream decoded; Decryption	CS-PDF-0003	open+report	RC4-encrypted page content that inflates to 1 GiB of zeros; decrypted, then stopped at the cap
 encrypted_malformed.pdf	encryption	CS-PDF-0005	refuse	Standard handler dictionary without /O and with a short /U
 encrypted_unknown_handler.pdf	encryption	CS-PDF-0010	refuse	A security handler other than the standard one (/FOPN_foweb)
+objstm_n_huge.pdf	Indirect objects	CS-PDF-0002	refuse	An object stream whose /N claims 1,000,000,001 members and which holds the only page; nothing sized from /N
+xref_w_huge.pdf	recovery	CS-PDF-0005	open+report	An xref stream with /W [1 20 2]; strict refuses, default rebuilds by scanning (CS-PDF-0101)
+pages_count_lies.pdf	Pages	-	open	/Count claims 1,000,000 pages over one kid; pages come from the tree, never from /Count
+xobject_self_cycle.pdf	Form XObject nesting in text extraction	-	open	A Form XObject that draws itself; admission opens it, text extraction stops at the cycle (stage 1C)

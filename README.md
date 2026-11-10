@@ -42,7 +42,7 @@ real-world PDFs; there is no server, API or web app yet. **No phase is closed** 
 | Phase | Exit gate | State |
 | --- | --- | --- |
 | D — Design | 3 of 5 items | All design docs and research done; independent doc audit done. Left: owner acceptance of ADR-010 to 024 and decisions `DEC-02`–`07`, owner sign-off |
-| 0 — Foundation | 2 of 4 items | CI green on GitHub (Linux, macOS, Windows), 422-PDF corpus, pyHanko and EU DSS validators, spikes. Left: seeded violations seen failing on GitHub, 4 more hostile fixtures (46 of 50), owner sign-off |
+| 0 — Foundation | 3 of 4 items | CI green on GitHub (Linux, macOS, Windows), 422-PDF corpus, 50 hostile fixtures, pyHanko and EU DSS validators, spikes. Left: seeded violations seen failing on GitHub, owner sign-off |
 | 1 — PDF and evidence core | 2 of 6 items; **9 of 10 stages built** | Left: the full pipeline over every corpus PDF through the SDK and CLI (`T-1J`, in progress), browser-build parity over the corpus (`WASM-01`, in progress), a signature-wrapping fixture (`VER-03`, in progress), 24 h of fuzzing per target (`FUZZ-01`), owner sign-off |
 | 2 — Envelope engine and server | — | Not started |
 | Slices 1–35, milestones M0–M8 | — | Not started; slice 1 needs Phases 1 and 2 |
@@ -51,7 +51,7 @@ real-world PDFs; there is no server, API or web app yet. **No phase is closed** 
 
 | Part | Crate | What it does | Evidence |
 | --- | --- | --- | --- |
-| Reader | `casual-sign-pdf` | Opens any PDF within strict limits, repairs damage, decrypts password-protected files, reports active content | 417 of 422 real PDFs open, every page count right; 46 hostile files each behave as their manifest says; fuzzed |
+| Reader | `casual-sign-pdf` | Opens any PDF within strict limits, repairs damage, decrypts password-protected files, reports active content | 417 of 422 real PDFs open, every page count right; 50 hostile files each behave as their manifest says; fuzzed |
 | Writer and cleaner | `casual-sign-pdf` | Appends without touching earlier bytes; rewrites uploads clean of JavaScript, actions, embedded files, XFA | The original is a prefix of every output across the corpus; pyHanko reads every output |
 | Fields | `casual-sign-model`, `casual-sign-fields` | Every DocuSign/SignNow field type, validation, conditions, groups, formulas; geometry, text extraction, anchors, `{{…}}` text tags, PDF form conversion | Identical results natively and in WebAssembly over 225 cases; text agrees with pypdf |
 | Flattening | `casual-sign-flatten` | Draws values, drawn/uploaded/typed signatures, stamps and checkmarks with embedded subset fonts; or fills the PDF's own form and keeps it fillable | PDFium renders ink only inside each field on every page geometry; 20 real government forms |
