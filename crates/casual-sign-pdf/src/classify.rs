@@ -44,6 +44,13 @@ pub(crate) fn action_kind(s: &[u8]) -> Option<ActionKind> {
     })
 }
 
+/// True when an `/EF` value is a file specification's embedded-file dictionary
+/// (§7.11.4). Usage-rights transform parameters also have an `/EF` key, an array of
+/// rights names (§12.8.2.3), which carries no file (`PDF-REAL-02`).
+pub(crate) fn is_file_ef(v: &Object) -> bool {
+    matches!(v, Object::Dictionary(_) | Object::Reference(_))
+}
+
 /// Inspect one object's value tree (already depth-capped by the parser).
 fn inspect(obj: &Object, num: u32, inv: &mut Inventory) {
     if let Object::Stream(s) = obj
@@ -89,7 +96,10 @@ fn inspect(obj: &Object, num: u32, inv: &mut Inventory) {
         }
         let ty = dict.name(b"Type");
         let subtype = dict.name(b"Subtype");
-        if ty == Some(b"EmbeddedFile") || dict.contains(b"EF") || dict.contains(b"EmbeddedFiles") {
+        if ty == Some(b"EmbeddedFile")
+            || dict.get(b"EF").is_some_and(is_file_ef)
+            || dict.contains(b"EmbeddedFiles")
+        {
             inv.embedded.insert(num);
         }
         if matches!(subtype, Some(b"RichMedia" | b"3D"))

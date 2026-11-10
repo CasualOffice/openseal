@@ -1,0 +1,134 @@
+//! Constructs found in real files that the reader once refused (`PDF-REAL-01` to `03`).
+//! Each test builds the construct in a small file, so it runs without the corpus.
+// Test code: a panic is the failure report.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::panic
+)]
+
+mod common;
+
+use casual_sign_pdf::{FindingKind, Limits, admit, admit_strict};
+use common::{classic, never, pages, zlib};
+
+/// One page, an AcroForm with a signed approval field.
+fn signed_objects() -> Vec<(u32, Vec<u8>)> {
+    let mut objs = pages(1);
+    objs[0].1 = b"<</Type/Catalog/Pages 2 0 R/AcroForm 10 0 R>>".to_vec();
+    objs.extend([
+        (10, b"<</Fields[11 0 R]/SigFlags 3>>".to_vec()),
+        (
+            11,
+            b"<</FT/Sig/T(sig)/V 12 0 R/Rect[0 0 0 0]/Subtype/Widget/P 3 0 R>>".to_vec(),
+        ),
+        (
+            12,
+            b"<</Type/Sig/SubFilter/adbe.pkcs7.detached/ByteRange[0 1 2 3]/Contents<00>>>".to_vec(),
+        ),
+    ]);
+    objs
+}
+
+/// `PDF-REAL-01`: iText writes `0000000000 65536 n` for object numbers it never used
+/// (the GPO certified CFR files). A generation above 65,535 names no object: the entry
+/// is free, and the signed file is read without repair.
+#[test]
+fn generation_65536_entries_are_free_not_damage() {
+    let mut objs = signed_objects();
+    // Numbers 5 to 9 are unused; write two of them as iText does.
+    let mut bytes = classic(&objs, "");
+    let free = b"0000000000 65535 f \n";
+    let xref = bytes.windows(6).rposition(|w| w == b"\nxref\n").unwrap();
+    let mut changed = 0;
+    let mut i = xref;
+    while changed < 3 && i + free.len() <= bytes.len() {
+        if &bytes[i..i + free.len()] == free {
+            // The first is object 0's entry, which stays.
+            if changed > 0 {
+                bytes[i..i + free.len()].copy_from_slice(b"0000000000 65536 n \n");
+            }
+            changed += 1;
+        }
+        i += 1;
+    }
+    assert_eq!(bytes.windows(7).filter(|w| w == b"65536 n").count(), 2);
+    for a in [
+        admit_strict(&bytes, &Limits::default(), &never).unwrap(),
+        admit(&bytes, &Limits::default(), &never).unwrap(),
+    ] {
+        assert!(!a.report.repaired, "read without repair");
+        assert_eq!(a.report.signatures.len(), 1);
+        assert_eq!(a.report.signatures[0].value, Some(12));
+        assert_eq!(a.report.page_count, 1);
+    }
+}
+
+/// `PDF-REAL-02`: LiveCycle's hybrid update lists its own xref stream at offset 0 in
+/// that stream (`irs-f1040-2009`). Offset 0 is the header, never an object: the entry
+/// is free, as a classic `n` entry at 0 is, and nothing needs repair.
+#[test]
+fn xref_stream_entry_at_offset_zero_is_free_not_damage() {
+    let base = classic(&signed_objects(), "");
+    let prev = {
+        let s = String::from_utf8_lossy(&base[base.len() - 30..]).into_owned();
+        s.rsplit("startxref")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_string()
+    };
+    let mut out = base.clone();
+    let stm_pos = out.len();
+    // One row for object 16 (the stream itself): type 1, offset 0, generation 0.
+    let rows = zlib(&[1, 0, 0, 0, 0]);
+    out.extend_from_slice(
+        format!(
+            "16 0 obj\n<</Type/XRef/Size 1/Index[16 1]/W[1 3 1]/Filter/FlateDecode/Length {}>>\nstream\n",
+            rows.len()
+        )
+        .as_bytes(),
+    );
+    out.extend_from_slice(&rows);
+    out.extend_from_slice(b"\nendstream\nendobj\n");
+    let xref = out.len();
+    out.extend_from_slice(
+        format!(
+            "xref\n0 0\ntrailer\n<</Size 17/Root 1 0 R/Prev {prev}/XRefStm {stm_pos}>>\nstartxref\n{xref}\n%%EOF\n"
+        )
+        .as_bytes(),
+    );
+    for a in [
+        admit_strict(&out, &Limits::default(), &never).unwrap(),
+        admit(&out, &Limits::default(), &never).unwrap(),
+    ] {
+        assert!(!a.report.repaired, "read without repair");
+        assert_eq!(a.report.revisions.len(), 2);
+        assert_eq!(a.report.signatures.len(), 1);
+    }
+}
+
+/// `PDF-REAL-02`: usage-rights transform parameters carry `/EF` as an array of rights
+/// names. That is not an embedded file.
+#[test]
+fn usage_rights_ef_array_is_not_an_embedded_file() {
+    let mut objs = pages(1);
+    objs[0].1 = b"<</Type/Catalog/Pages 2 0 R/Perms<</UR3 10 0 R>>>>".to_vec();
+    objs.push((
+        10,
+        b"<</Type/Sig/Filter/Adobe.PPKLite/SubFilter/adbe.pkcs7.detached/ByteRange[0 1 2 3]/Contents<00>/Reference[<</Type/SigRef/TransformMethod/UR3/TransformParams<</Type/TransformParams/V/2.2/EF[/Create/Delete]/Form[/FillIn]>>>>]>>".to_vec(),
+    ));
+    let bytes = classic(&objs, "");
+    let a = admit_strict(&bytes, &Limits::default(), &never).unwrap();
+    assert!(a.report.embedded_files.is_empty());
+    assert!(
+        !a.report
+            .findings
+            .iter()
+            .any(|f| f.kind == FindingKind::EmbeddedFile)
+    );
+}

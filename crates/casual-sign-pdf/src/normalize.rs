@@ -32,7 +32,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::classify::action_kind;
+use crate::classify::{action_kind, is_file_ef};
 use crate::document::Document;
 use crate::error::PdfError;
 use crate::object::{Dictionary, ObjRef, Object};
@@ -150,7 +150,10 @@ fn bad_dict(d: &Dictionary) -> Option<(&'static str, FindingKind)> {
     }
     let ty = d.name(b"Type");
     let subtype = d.name(b"Subtype");
-    if ty == Some(b"EmbeddedFile") || d.contains(b"EF") || subtype == Some(b"FileAttachment") {
+    if ty == Some(b"EmbeddedFile")
+        || d.get(b"EF").is_some_and(is_file_ef)
+        || subtype == Some(b"FileAttachment")
+    {
         return Some(("CS-PDF-0104", FindingKind::EmbeddedFile));
     }
     if matches!(subtype, Some(b"RichMedia" | b"3D"))
@@ -360,6 +363,7 @@ impl<'a> Norm<'_, 'a> {
                     );
                     continue;
                 }
+                b"EF" if !is_file_ef(&v) => {}
                 b"EmbeddedFiles" | b"EF" => {
                     self.record("CS-PDF-0104", FindingKind::EmbeddedFile, Some(old));
                     continue;
