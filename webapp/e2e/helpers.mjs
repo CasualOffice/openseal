@@ -49,9 +49,12 @@ export function pdfFile(name = "contract.pdf", title = "Services contract") {
 
 /// Zero serious or critical axe violations (WCAG 2.2 A and AA rules).
 export async function expectAccessible(page, what) {
+  // Let entrance transitions finish: axe measures colours as painted, and a view
+  // fading in is a view at partial opacity. Endless ones (shimmer, spinner) excepted.
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
   const bad = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  const summary = bad.map((v) => `${v.id} (${v.impact}): ${v.nodes.length} × ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(", ")}`);
+  const summary = bad.map((v) => `${v.id} (${v.impact}): ${v.nodes.length} × ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(", ")} — ${(v.nodes[0]?.any?.[0]?.message || v.nodes[0]?.failureSummary || "").slice(0, 160)}`);
   expect(summary, `axe on ${what}`).toEqual([]);
 }
 
@@ -65,10 +68,14 @@ export async function snap(target, testInfo, name) {
 }
 
 /// Press Tab until `locator` has focus (keyboard-only tests), at most `max` times.
+/// WebKit follows macOS: Tab alone skips buttons unless "Keyboard navigation" is on,
+/// and Option+Tab reaches every control, as a Safari keyboard user presses it.
 export async function tabTo(page, locator, max = 80, shift = false) {
+  const webkit = page.context().browser()?.browserType().name() === "webkit";
+  const key = `${shift ? "Shift+" : ""}${webkit ? "Alt+" : ""}Tab`;
   for (let i = 0; i < max; i++) {
     if (await locator.evaluate((el) => el === document.activeElement).catch(() => false)) return;
-    await page.keyboard.press(shift ? "Shift+Tab" : "Tab");
+    await page.keyboard.press(key);
   }
   throw new Error(`could not reach ${locator} with Tab`);
 }

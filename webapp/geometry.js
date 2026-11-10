@@ -73,8 +73,28 @@ export function placeAt(type, cx, cy, page) {
   return clampRect({ x: cx - s.width / 2, y: cy - s.height / 2, width: s.width, height: s.height }, page);
 }
 
+/// Whether two rectangles overlap, with `gap` points kept clear between them.
+export function overlaps(a, b, gap = 4) {
+  return a.x < b.x + b.width + gap && b.x < a.x + a.width + gap && a.y < b.y + b.height + gap && b.y < a.y + a.height + gap;
+}
+
+/// Where a field of `size` goes without covering `existing` fields on the page: from
+/// (cx, cy) as its centre, stepping down 4 points at a time, then across in columns;
+/// the starting spot if the page is full.
+export function freeSpot(existing, size, page, cx, cy) {
+  const start = clampRect({ x: cx - size.width / 2, y: cy - size.height / 2, ...size }, page);
+  const columns = [start.x, 36, page.width / 2, page.width - size.width - 36];
+  for (const x of columns) {
+    for (let y = start.y; y + size.height <= page.height; y += 4) {
+      const r = clampRect({ x, y, ...size }, page);
+      if (!existing.some((e) => overlaps(r, e))) return r;
+    }
+  }
+  return start;
+}
+
 /// Snap a value to a grid of `step` points when within `tolerance` of a line.
-export function snap(v, step = 4, tolerance = 2) {
+export function snap(v, step = 4, tolerance = 1.5) {
   const nearest = Math.round(v / step) * step;
   return Math.abs(nearest - v) <= tolerance ? nearest : v;
 }

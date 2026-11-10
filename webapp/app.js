@@ -10,7 +10,7 @@ import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, ApiError, errorMessage } from "./api.js";
 import { register, run, command } from "./commands.js";
 import { handle, bindings } from "./keys.js";
-import { button, openDialog, toast } from "./ui.js";
+import { button, openDialog, toast, errorState } from "./ui.js";
 import { initTheme, setTheme, getTheme, toggleTheme } from "./theme.js";
 
 const mock = isMockMode();
@@ -63,8 +63,16 @@ async function route() {
   if (!ctx.session && hash !== "#/signin") {
     try {
       ctx.session = await api.session();
-    } catch {
+    } catch (err) {
       ctx.session = null;
+      if (err?.code === "CS-NET-0001" || (err?.status >= 500)) {
+        // Not signed out: unreachable. Say so, with a retry, instead of a sign-in form.
+        clear(main);
+        const view = h("div", { class: "os-view" });
+        main.append(view);
+        errorState(view, err, route);
+        return;
+      }
       location.replace(`${location.pathname}${location.search}#/signin`);
       return;
     }

@@ -550,6 +550,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   }
 
   async function handle(input, init = {}) {
+    // Test hook: `sessionStorage["openseal.mock.offline"] = "1"` makes every call fail as
+    // a lost connection does (the e2e offline state).
+    let offline = false;
+    try { offline = store?.getItem("openseal.mock.offline") === "1"; } catch { offline = false; }
+    if (offline) throw new TypeError("Failed to fetch");
     await load();
     const url = new URL(typeof input === "string" ? input : input.url, "http://mock.invalid");
     const method = (init.method || "GET").toUpperCase();

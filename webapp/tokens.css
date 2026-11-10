@@ -8,11 +8,10 @@
  * 32/36/44, targets ≥ 24 (WCAG 2.2 SC 2.5.8) and ≥ 44 on the signing page and phones
  * (SC 2.5.5), focus ring 2 px with a 2 px offset, motion 150–250 ms.
  *
- * Contrast (WCAG 2.2 AA, measured with webapp/tests/contrast.test.mjs):
- *   light: text #1c1f24 on #ffffff 16.4:1; muted #565d68 6.6:1; accent #b3141f 7.4:1
- *          (white on accent fill 7.4:1); danger #b42318 6.5:1.
- *   dark:  text #e8ebf0 on #111418 15.6:1; muted #a2abb8 8.2:1; accent text #ff8a92 7.6:1;
- *          white on accent fill #b3141f 7.4:1.
+ * Contrast (WCAG 2.2 AA) is checked, not asserted here: webapp/tests/pure.test.mjs
+ * measures every text colour against every surface (≥ 4.5:1), control edges, the
+ * focus ring and recipient colours (≥ 3:1), and white on the accent fill, in both
+ * themes, and fails if the OS-preference dark block drifts from the explicit one.
  */
 
 :root {
@@ -27,14 +26,14 @@
   --os-text: #1c1f24;
   --os-muted: #565d68;
   --os-border: #dde1e7;
-  --os-border-strong: #8a929e; /* 3.4:1 on white: control edges meet SC 1.4.11 */
+  --os-border-strong: #7a828e; /* ≥ 3:1 on bg and surface: control edges meet SC 1.4.11 */
   --os-accent: #b3141f;        /* the seal red, one step deeper than the logo's #c01622 for text */
   --os-accent-hover: #8e0b14;
   --os-accent-fill: #b3141f;
   --os-on-accent: #ffffff;
   --os-accent-soft: rgba(192, 22, 34, 0.08);
   --os-danger: #b42318;
-  --os-success: #157f3b;
+  --os-success: #12703a;
   --os-warning: #8a5a00;
   --os-info: #1d5fbf;
   --os-focus: #1d5fbf;         /* focus ring: blue, distinct from the red accent and from errors */

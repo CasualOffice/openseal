@@ -18,7 +18,7 @@ import { t } from "./i18n.js";
 import { register, unregisterPrefix, run } from "./commands.js";
 import { button, busy, emptyState, toast, toastError, openDialog, confirmDialog } from "./ui.js";
 import { openPdf, fitScale } from "./pdfview.js";
-import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, snap, toWire, fromWire, takesInput } from "./geometry.js";
+import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, snap, toWire, fromWire, takesInput } from "./geometry.js";
 import { errorMessage } from "./api.js";
 
 const FIELD_ICON = { signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", text: "text-cursor-input", checkbox: "square-check" };
@@ -64,7 +64,7 @@ export async function mount(view, ctx, [rawId]) {
   const rcptPanel = h("section", { class: "os-panel", attrs: { "aria-labelledby": "rcpt-h" } });
   const palettePanel = h("section", { class: "os-panel", attrs: { "aria-labelledby": "pal-h" } });
   const left = h("aside", { class: "os-prepare__left", attrs: { "aria-label": t("prepare.setup") } }, docsPanel, rcptPanel, palettePanel);
-  const stage = h("div", { class: "os-stage", attrs: { "aria-label": t("prepare.pages"), role: "region", tabindex: "-1", id: "stage" } });
+  const stage = h("div", { class: "os-stage", attrs: { "aria-label": t("prepare.pages"), role: "region", tabindex: "0", id: "stage" } });
   const props = h("aside", { class: "os-prepare__right", attrs: { "aria-label": t("prepare.properties") } });
   const live = h("div", { class: "os-sr-only", attrs: { "aria-live": "polite" } });
   const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
@@ -147,8 +147,12 @@ export async function mount(view, ctx, [rawId]) {
         renderPalette(); renderFieldsOnly(); renderProps();
         if (k === "type") renderRecipients();
       };
-      name.addEventListener("change", () => commit("name", name.value.trim()));
-      email.addEventListener("change", () => commit("email", email.value.trim()));
+      // Typed values are kept as they are typed, so a re-render (a role change, a field
+      // placed) never loses them; the label refresh waits for the change event.
+      name.addEventListener("input", () => { r.name = name.value.trim(); S.dirty = true; });
+      email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; });
+      name.addEventListener("change", () => { renderPalette(); renderFieldsOnly(); renderProps(); });
+      email.addEventListener("change", () => { renderPalette(); });
       type.addEventListener("change", () => commit("type", type.value));
       const up = button(t("prepare.move-up"), { icon: "chevron-left", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, -1) });
       up.querySelector("svg").classList.add("os-rot90");
@@ -157,7 +161,7 @@ export async function mount(view, ctx, [rawId]) {
       // The access code is set when the recipient is created; the API has no way to
       // change it afterwards (RecipientPatch), so a saved recipient shows it read-only.
       const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code"), maxLength: 64, attrs: { "aria-label": t("prepare.access-code-for", { name: displayName(r, i) }), "data-testid": "recipient-access-code" } });
-      access.addEventListener("change", () => commit("accessCode", access.value.trim()));
+      access.addEventListener("input", () => { r.accessCode = access.value.trim(); S.dirty = true; });
       const li = h("li", { class: `os-rcpt os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key } },
         h("div", { class: "os-rcpt__head" },
           h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
@@ -191,33 +195,41 @@ export async function mount(view, ctx, [rawId]) {
   }
 
   // ---- Palette --------------------------------------------------------------------------
+  // The buttons are built once and never replaced: a re-render between a button's
+  // mousedown and its click (a name committed on blur) would swallow the click.
+  const palFor = h("div", { class: "os-palette__for" });
+  const palGrid = h("div", { class: "os-palette os-r1" });
+  for (const type of FIELD_TYPES) {
+    const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
+      icon(FIELD_ICON[type], { size: 20 }), h("span", { text: t(`ftype.${type}`) }));
+    b.addEventListener("click", () => addFieldInView(type));
+    b.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("application/x-openseal-field", type);
+      e.dataTransfer.effectAllowed = "copy";
+      stage.classList.add("is-dropping");
+    });
+    b.addEventListener("dragend", () => stage.classList.remove("is-dropping"));
+    palGrid.append(b);
+  }
+  palettePanel.append(
+    h("div", { class: "os-panel__head" }, h("h2", { id: "pal-h", class: "os-panel__title", text: t("prepare.fields") })),
+    palFor, palGrid, h("p", { class: "os-muted os-small", text: t("prepare.palette-hint") }));
+
   function renderPalette() {
-    clear(palettePanel);
     const active = recipient(S.active);
     const idx = S.recipients.indexOf(active);
-    palettePanel.append(h("div", { class: "os-panel__head" }, h("h2", { id: "pal-h", class: "os-panel__title", text: t("prepare.fields") })));
+    const focused = document.activeElement?.id === "pal-for";
+    clear(palFor);
     if (S.recipients.length > 1) {
       const sel = h("select", { id: "pal-for", class: "os-input os-input--sm" },
         ...S.recipients.map((r, i) => h("option", { value: r.key, selected: r.key === S.active, text: `${i + 1}. ${displayName(r, i)}` })));
       sel.addEventListener("change", () => { S.active = sel.value; markActive(); renderPalette(); });
-      palettePanel.append(h("label", { class: "os-label", attrs: { for: "pal-for" }, text: t("prepare.placing-for") }), sel);
+      palFor.append(h("label", { class: "os-label", attrs: { for: "pal-for" }, text: t("prepare.placing-for") }), sel);
+      if (focused) sel.focus();
     } else if (active) {
-      palettePanel.append(h("p", { class: "os-muted os-small", text: t("prepare.placing-for-name", { name: displayName(active, idx) }) }));
+      palFor.append(h("p", { class: "os-muted os-small", text: t("prepare.placing-for-name", { name: displayName(active, idx) }) }));
     }
-    const grid = h("div", { class: `os-palette os-r${active ? colourOf(active.key) : 1}` });
-    for (const type of FIELD_TYPES) {
-      const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
-        icon(FIELD_ICON[type], { size: 20 }), h("span", { text: t(`ftype.${type}`) }));
-      b.addEventListener("click", () => addFieldInView(type));
-      b.addEventListener("dragstart", (e) => {
-        e.dataTransfer.setData("application/x-openseal-field", type);
-        e.dataTransfer.effectAllowed = "copy";
-        stage.classList.add("is-dropping");
-      });
-      b.addEventListener("dragend", () => stage.classList.remove("is-dropping"));
-      grid.append(b);
-    }
-    palettePanel.append(grid, h("p", { class: "os-muted os-small", text: t("prepare.palette-hint") }));
+    palGrid.className = `os-palette os-r${active ? colourOf(active.key) : 1}`;
   }
 
   // ---- Documents ---------------------------------------------------------------------------
@@ -348,7 +360,7 @@ export async function mount(view, ctx, [rawId]) {
     const el = e.currentTarget;
     select(f.key, false);
     el.focus({ preventScroll: true });
-    el.setPointerCapture(e.pointerId);
+    try { el.setPointerCapture(e.pointerId); } catch { /* listeners are on window anyway */ }
     const start = { x: e.clientX, y: e.clientY, r: { x: f.x, y: f.y, width: f.width, height: f.height } };
     const before = snapshot();
     let moved = false;
@@ -367,9 +379,9 @@ export async function mount(view, ctx, [rawId]) {
       el.classList.toggle("is-snapped", r.x % 4 === 0 && r.y % 4 === 0);
     };
     const up = () => {
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       el.classList.remove("is-dragging", "is-snapped");
       if (moved) {
         S.undo.push(before); S.redo = []; S.dirty = true;
@@ -378,9 +390,9 @@ export async function mount(view, ctx, [rawId]) {
         renderProps();
       }
     };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
   function select(key, focus = true) {
@@ -427,9 +439,10 @@ export async function mount(view, ctx, [rawId]) {
     const doc = S.docs.find((d) => d.key === best.dataset.doc);
     const page = Number(best.dataset.page);
     const pg = doc.pages[page - 1];
-    const here = S.fields.filter((f) => f.docKey === doc.key && f.page === page).length;
+    const here = S.fields.filter((f) => f.docKey === doc.key && f.page === page);
     const size = DEFAULT_SIZE[type];
-    addField(type, doc, page, pg.width / 2, Math.min(pg.height / 3 + here * (size.height + 12), pg.height - size.height));
+    const spot = freeSpot(here, size, pg, pg.width / 2, pg.height / 3);
+    addField(type, doc, page, spot.x + size.width / 2, spot.y + size.height / 2);
   }
 
   // ---- Properties ------------------------------------------------------------------------

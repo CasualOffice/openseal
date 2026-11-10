@@ -264,10 +264,13 @@ function fieldNode(f, scale) {
   const req = f.required ? `, ${t("sign.required")}` : "";
   const label = f.label || t(`ftype.${f.type}`);
   if (f.type === "signature" || f.type === "initials") {
-    const b = h("button", { type: "button", class: "os-sfield__btn", attrs: { "aria-label": `${label}${req}` } });
+    const b = h("button", { type: "button", class: "os-sfield__btn" });
     const paint = () => {
       b.replaceChildren();
       const v = values.get(f.id);
+      // The accessible name starts with the words shown (SC 2.5.3, label in name).
+      const shown = v?.signature ? t("sign.signed") : t(f.type === "signature" ? "sign.sign-here" : "sign.initial-here");
+      b.setAttribute("aria-label", `${shown}: ${label}${req}`);
       const a = Object.values(adoptions).find((x) => x.id === v?.signature);
       if (a) b.append(h("img", { src: a.dataUrl, alt: t("sign.signed-alt", { what: label }) }));
       else if (v?.signature) b.append(icon("circle-check", { size: 16 }), h("span", { text: t("sign.signed") }));

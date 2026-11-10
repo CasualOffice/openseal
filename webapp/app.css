@@ -115,7 +115,7 @@ select.os-input { padding-right: var(--os-s6); }
 .os-check--lg input { width: 24px; height: 24px; margin: 0; }
 
 /* ---- Shell ------------------------------------------------------------------------- */
-.os-app { min-height: 100vh; display: grid; grid-template-rows: auto var(--os-topbar-h) 1fr; grid-template-columns: var(--os-nav-w) 1fr; }
+.os-app { min-height: 100vh; display: grid; grid-template-rows: auto var(--os-topbar-h) 1fr; grid-template-columns: var(--os-nav-w) minmax(0, 1fr); }
 .os-app > .os-skip { position: absolute; }
 .os-app > .os-mock-banner { grid-column: 1 / -1; }
 .os-topbar {
@@ -140,7 +140,7 @@ select.os-input { padding-right: var(--os-s6); }
 .os-nav__link[aria-current="page"] { background: var(--os-accent-soft); color: var(--os-accent); font-weight: 600; }
 .os-main { min-width: 0; padding: var(--os-s6) var(--os-s8); outline: none; }
 .is-chromeless .os-topbar, .is-chromeless .os-nav { display: none; }
-.is-chromeless.os-app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+.is-chromeless.os-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
 .is-wide .os-main { padding: 0; }
 .os-view { animation: os-enter var(--os-dur) var(--os-ease); }
 @keyframes os-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -229,7 +229,7 @@ select.os-input { padding-right: var(--os-s6); }
 .os-empty .os-illus { margin-bottom: var(--os-s2); }
 .os-empty__title { font-size: var(--os-fs-20); font-weight: 700; }
 .os-empty__text { color: var(--os-muted); max-width: 44ch; margin-bottom: var(--os-s3); }
-.os-panel .os-empty { padding: var(--os-s4) 0; }
+.os-panel .os-empty, .os-prepare__right .os-empty { padding: var(--os-s4) 0; animation: none; }
 .os-panel .os-empty .os-illus { width: 112px; height: 90px; }
 .os-panel .os-empty__title { font-size: var(--os-fs-16); }
 .il-line { stroke: var(--os-illus-line); stroke-width: 2; }
@@ -456,7 +456,7 @@ select.os-input { padding-right: var(--os-s6); }
 }
 @media (max-width: 760px) {
   :root { --os-fs-body: var(--os-fs-16); --os-btn: var(--os-btn-lg); --os-btn-sm: 40px; }
-  .os-app { grid-template-columns: 1fr; }
+  .os-app { grid-template-columns: minmax(0, 1fr); }
   .os-nav-toggle { display: inline-flex; }
   .os-nav { position: fixed; z-index: 70; top: var(--os-topbar-h); bottom: 0; left: 0; width: min(280px, 85vw); transform: translateX(-100%); transition: transform var(--os-dur) var(--os-ease); box-shadow: var(--os-shadow-pop); }
   .nav-open .os-nav { transform: none; }
