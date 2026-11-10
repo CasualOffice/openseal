@@ -1,0 +1,17 @@
+[package]
+name = "casual-sign-certificate"
+version = "0.0.0"
+description = "OpenSeal certificate of completion and embedded audit trail (docs/30 §8, docs/32 §6)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+casual-sign-audit = { path = "../casual-sign-audit" }
+casual-sign-flatten = { path = "../casual-sign-flatten" }
+casual-sign-pdf = { path = "../casual-sign-pdf" }
+
+[lints]
+workspace = true

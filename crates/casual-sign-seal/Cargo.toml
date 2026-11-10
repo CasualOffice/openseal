@@ -1,0 +1,16 @@
+[package]
+name = "casual-sign-seal"
+version = "0.0.0"
+description = "OpenSeal sealing: PAdES B-B, B-T, B-LT and B-LTA as incremental updates (docs/31)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+casual-sign-pdf = { path = "../casual-sign-pdf" }
+casual-sign-crypto = { path = "../casual-sign-crypto" }
+
+[lints]
+workspace = true

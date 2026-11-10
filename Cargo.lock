@@ -231,6 +231,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
+name = "casual-sign-audit"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-crypto",
+ "casual-sign-model",
+]
+
+[[package]]
+name = "casual-sign-certificate"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-audit",
+ "casual-sign-flatten",
+ "casual-sign-pdf",
+]
+
+[[package]]
 name = "casual-sign-crypto"
 version = "0.0.0"
 dependencies = [
@@ -291,6 +308,14 @@ dependencies = [
  "lopdf",
  "miniz_oxide 0.8.9",
  "peak_alloc",
+]
+
+[[package]]
+name = "casual-sign-seal"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-crypto",
+ "casual-sign-pdf",
 ]
 
 [[package]]
