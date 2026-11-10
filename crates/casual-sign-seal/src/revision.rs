@@ -18,7 +18,7 @@ use crate::form::{self, FieldSpec, never};
 const BR_PLACEHOLDER: &[u8] = b"[0 9999999999 9999999999 9999999999]";
 const BR_FILLER: i64 = 9_999_999_999;
 /// Largest value a ByteRange field of ten digits holds.
-const BR_MAX: usize = 9_999_999_999;
+const BR_MAX: u64 = 9_999_999_999;
 
 /// Bytes added to a measured DER length for the retry, and to a computed bound.
 pub(crate) const MARGIN: usize = 64;
@@ -120,7 +120,7 @@ fn find_once(hay: &[u8], needle: &[u8]) -> Result<usize, usize> {
 pub(crate) fn fill_byte_range(
     out: &mut [u8],
     at: usize,
-    values: [usize; 3],
+    values: [u64; 3],
 ) -> Result<(), SealError> {
     if values.iter().any(|&v| v > BR_MAX) {
         return Err(SealError::Layout(LayoutProblem::ByteRangeWidth));
@@ -192,7 +192,8 @@ fn write_once(
         .saturating_add(b"/Contents ".len());
     let b = a.saturating_add(hex_len).saturating_add(2);
     let c = out.len().saturating_sub(b);
-    fill_byte_range(&mut out, br_at, [a, b, c])?;
+    let to_u64 = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
+    fill_byte_range(&mut out, br_at, [to_u64(a), to_u64(b), to_u64(c)])?;
 
     let der = content(ToSign {
         bytes: &out,
@@ -211,7 +212,6 @@ fn write_once(
     slot.copy_from_slice(hex.as_bytes());
     let mut contents = der.clone();
     contents.resize(placeholder, 0);
-    let to_u64 = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
     Ok(Written {
         bytes: out,
         contents,
