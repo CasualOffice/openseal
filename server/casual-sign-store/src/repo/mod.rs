@@ -11,8 +11,10 @@ pub mod audit;
 pub mod documents;
 pub mod envelopes;
 pub mod fields;
+pub mod idempotency;
 pub mod jobs;
 pub mod recipients;
+pub mod sessions;
 pub mod templates;
 pub mod webhooks;
 
@@ -117,5 +119,15 @@ impl TenantTx {
     /// Webhook subscriptions and deliveries.
     pub fn webhooks(&mut self) -> webhooks::Webhooks<'_> {
         webhooks::Webhooks { tx: self }
+    }
+
+    /// Staff sessions.
+    pub fn sessions(&mut self) -> sessions::Sessions<'_> {
+        sessions::Sessions { tx: self }
+    }
+
+    /// Idempotency records of API requests.
+    pub fn idempotency(&mut self) -> idempotency::Idempotency<'_> {
+        idempotency::Idempotency { tx: self }
     }
 }

@@ -336,3 +336,159 @@ impl Recipients<'_> {
         Ok(done.rows_affected())
     }
 }
+
+/// A recipient token as stored (never the token itself).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenRecord {
+    /// The record's id.
+    pub id: RecipientTokenId,
+    /// The envelope.
+    pub envelope_id: EnvelopeId,
+    /// The recipient.
+    pub recipient_id: RecipientId,
+    /// What it is for.
+    pub purpose: TokenPurpose,
+    /// SHA-256 of the browser session it was bound to on first use, once bound.
+    pub session_sha256: Option<[u8; 32]>,
+    /// Expiry.
+    pub expires_at: OffsetDateTime,
+    /// Revocation, when revoked.
+    pub revoked_at: Option<OffsetDateTime>,
+}
+
+impl Recipients<'_> {
+    /// Write the server's projection of a recipient (migration 0008): update this
+    /// account's row of that envelope, or insert it.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` when the envelope is not this account's or a value is out of bounds;
+    /// `CS-DB-0006` when the id belongs to another envelope.
+    pub async fn upsert(
+        &mut self,
+        n: &NewRecipient,
+        status: RecipientStatus,
+        declined_reason: Option<&Personal<String>>,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE recipients SET routing_order = $4, type = $5, role_name = $6, name = $7, \
+               email = $8, phone = $9, delivery = $10, embedded_client_user_id = $11, \
+               language = $12, status = $13, declined_reason = $14 \
+             WHERE account_id = $1 AND id = $2 AND envelope_id = $3",
+            acct,
+            n.id.0,
+            n.envelope_id.0,
+            n.routing_order,
+            n.kind.as_str(),
+            n.role_name.as_deref(),
+            n.name.get(),
+            n.email.as_ref().map(|e| e.get().as_str()),
+            n.phone.as_ref().map(|p| p.get().as_str()),
+            n.delivery.as_str(),
+            n.embedded_client_user_id.as_deref(),
+            n.language.as_deref(),
+            status.as_str(),
+            declined_reason.map(|r| r.get().as_str())
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        if done.rows_affected() == 1 {
+            return Ok(());
+        }
+        self.insert(n).await?;
+        self.set_status(n.id, status, declined_reason).await
+    }
+
+    /// Delete this envelope's recipient rows not in `keep` that no token, recipient,
+    /// field or adoption references (a draft's removed recipients); returns how many
+    /// went. Rows still referenced stay: the engine's state, not the projection, says
+    /// who is a recipient.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn prune(&mut self, envelope: EnvelopeId, keep: &[RecipientId]) -> Result<u64> {
+        let acct = self.tx.acct();
+        let keep: Vec<Uuid> = keep.iter().map(|r| r.0).collect();
+        let done = sqlx::query!(
+            "DELETE FROM recipients AS r WHERE r.account_id = $1 AND r.envelope_id = $2 \
+               AND NOT (r.id = ANY($3)) \
+               AND NOT EXISTS (SELECT 1 FROM recipient_tokens t \
+                                WHERE t.account_id = r.account_id AND t.recipient_id = r.id) \
+               AND NOT EXISTS (SELECT 1 FROM recipients o \
+                                WHERE o.account_id = r.account_id AND o.reassigned_to = r.id) \
+               AND NOT EXISTS (SELECT 1 FROM fields f \
+                                WHERE f.account_id = r.account_id AND f.recipient_id = r.id) \
+               AND NOT EXISTS (SELECT 1 FROM signature_adoptions s \
+                                WHERE s.account_id = r.account_id AND s.recipient_id = r.id)",
+            acct,
+            envelope.0,
+            &keep
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(done.rows_affected())
+    }
+
+    /// The token record a token's hash names in this account, live or not.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn token(&mut self, token_sha256: &[u8; 32]) -> Result<Option<TokenRecord>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "SELECT id, envelope_id, recipient_id, purpose, session_sha256, expires_at, revoked_at \
+             FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
+            acct,
+            token_sha256.as_slice()
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        row.map(|r| {
+            Ok(TokenRecord {
+                id: RecipientTokenId(r.id),
+                envelope_id: EnvelopeId(r.envelope_id),
+                recipient_id: RecipientId(r.recipient_id),
+                purpose: TokenPurpose::parse(&r.purpose, "purpose")?,
+                session_sha256: super::opt_hash32(r.session_sha256, "session_sha256")?,
+                expires_at: r.expires_at,
+                revoked_at: r.revoked_at,
+            })
+        })
+        .transpose()
+    }
+
+    /// Bind an unbound token to a browser session's hash at its first use; returns
+    /// whether this call bound it (false when it was already bound or is not this
+    /// account's).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn bind_token(
+        &mut self,
+        token: RecipientTokenId,
+        session_sha256: &[u8; 32],
+        at: OffsetDateTime,
+    ) -> Result<bool> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE recipient_tokens SET session_sha256 = $3, \
+               first_used_at = COALESCE(first_used_at, $4) \
+             WHERE account_id = $1 AND id = $2 AND session_sha256 IS NULL",
+            acct,
+            token.0,
+            session_sha256.as_slice(),
+            at
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(done.rows_affected() == 1)
+    }
+}
