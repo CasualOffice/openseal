@@ -55,10 +55,13 @@ der = { version = "0.8.3", default-features = false, features = ["alloc"] }
 [dev-dependencies]
 tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres"] }
+# The store's test harness (tests/common, included by path) mints v7 ids.
+uuid = { version = "1.10", features = ["v4", "v7", "serde"] }
 # casual-sign-seal's throwaway PKI, key and in-process TSA (tests/common), and keyd's
 # (tests/common), included by path, as the SDK's tests do.
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
 cms = { version = "=0.3.0-rc.2", default-features = false }
+der = { version = "0.8.3", default-features = false, features = ["alloc", "derive", "oid"] }
 x509-ocsp = { version = "=0.3.0-rc.1", default-features = false }
 x509-tsp = { version = "=0.2.0-rc.0", default-features = false }
 rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
