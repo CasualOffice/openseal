@@ -427,13 +427,7 @@ fn chain_failure(v: &mut Verdict, f: ChainFailure, proven: bool) -> Check {
 }
 
 /// Revocation of every certificate but the anchor in `path` at `at`.
-fn revocation_check(
-    ctx: &Ctx<'_>,
-    v: &mut Verdict,
-    path: &[Cert],
-    at: Duration,
-    proven: bool,
-) -> Check {
+fn revocation_check(ctx: &Ctx<'_>, v: &mut Verdict, path: &[Cert], at: Duration) -> Check {
     for pair in path.windows(2) {
         let [cert, issuer] = pair else { continue };
         if cert.has_extension(chain::OCSP_NOCHECK) {
@@ -441,9 +435,9 @@ fn revocation_check(
         }
         match revocation::status(cert, issuer, at, &ctx.revocation) {
             State::Good => {}
-            State::Revoked(_) if proven => {
-                return v.fail(reason(SubIndication::Revoked, REVOKED_OR_EXPIRED));
-            }
+            // ETSI EN 319 102-1 §5.5.4: a certificate revoked before the best signature
+            // time stays INDETERMINATE/REVOKED_NO_POE (EU DSS agrees); a proof of existence
+            // before the revocation is what passes, and then the status asked is good.
             State::Revoked(_) => {
                 return v.unsure(reason(SubIndication::RevokedNoPoe, REVOKED_OR_EXPIRED));
             }
@@ -485,7 +479,7 @@ fn tsa_checks(
             return (chain_failure(v, f, false), Check::NotRun);
         }
     }
-    let rev = revocation_check(ctx, v, &path, tst.gen_time(), true);
+    let rev = revocation_check(ctx, v, &path, tst.gen_time());
     (Check::Passed, rev)
 }
 
@@ -548,7 +542,12 @@ fn verify_one(
     let mut own_poe = None;
     match (c.kind, c.sub_filter.as_deref()) {
         (SignatureKind::DocumentTimestamp, Some("ETSI.RFC3161") | None) => {
-            match verify_token(&c.contents, &[part0, part1]) {
+            // `/Contents` is zero-padded after the token: exactly one TLV, then zeros.
+            let token = chain::tlv_len(&c.contents)
+                .and_then(|n| c.contents.split_at_checked(n))
+                .filter(|(_, pad)| pad.iter().all(|&b| b == 0))
+                .map_or(&[][..], |(t, _)| t);
+            match verify_token(token, &[part0, part1]) {
                 Ok(tst) => {
                     checks.digest = Check::Passed;
                     checks.signature = Check::Passed;
@@ -769,7 +768,7 @@ fn cms_signature(
         None => chain_check = v.unsure(reason(SubIndication::NoCertificateChainFound, CHAIN)),
         Some(path) => match chain::validate(&path, at, Purpose::Signer) {
             Err(f) => chain_check = chain_failure(v, f, proven),
-            Ok(()) => rev_check = revocation_check(ctx, v, &path, at, proven),
+            Ok(()) => rev_check = revocation_check(ctx, v, &path, at),
         },
     }
     if let Some(t) = &tst {

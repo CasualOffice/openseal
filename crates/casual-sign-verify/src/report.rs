@@ -68,7 +68,8 @@ pub enum SubIndication {
     HashFailure,
     /// The signature value does not verify with the signer's key.
     SigCryptoFailure,
-    /// The signer certificate was revoked before the proven signing time.
+    /// ETSI vocabulary, not produced: a revocation before the best signature time is
+    /// [`SubIndication::RevokedNoPoe`] (EN 319 102-1 §5.5.4, as EU DSS reports it).
     Revoked,
     /// The proven signing time is before the signer certificate's validity.
     NotYetValid,

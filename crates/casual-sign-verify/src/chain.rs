@@ -140,7 +140,7 @@ fn first_child(der: &[u8]) -> Option<&[u8]> {
 }
 
 /// Length of the whole TLV at the start of `b` (definite DER lengths only).
-fn tlv_len(b: &[u8]) -> Option<usize> {
+pub(crate) fn tlv_len(b: &[u8]) -> Option<usize> {
     let first = *b.get(1)?;
     if first < 0x80 {
         return 2usize.checked_add(usize::from(first));
