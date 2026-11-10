@@ -190,7 +190,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     void access_code; void auth_passed; void token;
     return { ...rest, authenticated: r.auth.every((m) => r.auth_passed.includes(m)) };
   };
-  const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map(publicRecipient) });
+  const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
 
   // ---- Seed ------------------------------------------------------------------
   async function seed() {
@@ -423,7 +423,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         checkIfMatch(env, headers); draftOnly(env);
         if (body?.placement || body?.page) f.placement = placementOf(body);
         for (const k of ["required", "label", "type"]) if (body && k in body) { if (body[k] === null || body[k] === false || body[k] === "") delete f[k]; else f[k] = body[k]; }
-        if (body?.recipient) f.recipient_id = body.recipient;
+        if (body?.recipient_id) {
+          if (!env.recipients.some((r) => r.id === body.recipient_id)) fail(422, "CS-WF-0008", "Unknown recipient");
+          f.recipient_id = body.recipient_id;
+        }
         env.version++;
         return json(200, f);
       }

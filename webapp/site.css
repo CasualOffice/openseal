@@ -1,0 +1,8 @@
+/* The landing page (WEB-01): the sisters' site pages, reduced to one page until the
+ * docs, deploy and download pages have content of their own. */
+.os-site { min-height: 100vh; }
+.os-site__bar { display: flex; align-items: center; gap: var(--os-s3); padding: var(--os-s4) var(--os-s6); border-bottom: 1px solid var(--os-border); }
+.os-site__main { width: min(760px, 100%); margin: 0 auto; padding: var(--os-s12) var(--os-s4); display: grid; gap: var(--os-s4); }
+.os-site__title { font-size: var(--os-fs-32); }
+.os-site__lede { font-size: var(--os-fs-20); line-height: var(--os-lh-body); color: var(--os-text); }
+.os-site__note { color: var(--os-muted); }

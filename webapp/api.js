@@ -197,6 +197,14 @@ export function locationFrom(position) {
 
 /// Which backend: the in-memory fake with `?mock=1`, otherwise the server at the
 /// `<meta name="openseal-api-base">` origin (empty = this origin).
+///
+/// The fake exists only for development and the browser tests while the server is
+/// being integrated: it is honoured on a loopback host only, so a deployed OpenSeal
+/// can never be made to show fake agreements by a crafted link.
 export function isMockMode(loc = globalThis.location) {
-  try { return new URLSearchParams(loc?.search || "").get("mock") === "1"; } catch { return false; }
+  try {
+    const host = (loc?.hostname || "").replace(/^\[|\]$/g, "");
+    const loopback = host === "localhost" || host === "::1" || /^127\./.test(host);
+    return loopback && new URLSearchParams(loc?.search || "").get("mock") === "1";
+  } catch { return false; }
 }
