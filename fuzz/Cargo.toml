@@ -3,6 +3,7 @@
 #
 #   cargo +nightly fuzz run admit -- -max_total_time=600 -dict=fuzz/pdf.dict
 #   cargo +nightly fuzz run normalize -- -max_total_time=300 -dict=fuzz/pdf.dict
+#   cargo +nightly fuzz run seal fixtures/sealed fixtures/signed -- -max_total_time=300 -dict=fuzz/pdf.dict
 [package]
 name = "casual-sign-pdf-fuzz"
 version = "0.0.0"
@@ -17,6 +18,11 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4.13"
 casual-sign-pdf = { path = "../crates/casual-sign-pdf" }
 casual-sign-verify = { path = "../crates/casual-sign-verify" }
+casual-sign-seal = { path = "../crates/casual-sign-seal" }
+casual-sign-crypto = { path = "../crates/casual-sign-crypto" }
+der = { version = "0.8.3", default-features = false, features = ["alloc"] }
+# A throwaway signing key made at start (never written), for the `seal` target.
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto"] }
 
 [[bin]]
 name = "admit"
@@ -35,6 +41,13 @@ bench = false
 [[bin]]
 name = "verify"
 path = "fuzz_targets/verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "seal"
+path = "fuzz_targets/seal.rs"
 test = false
 doc = false
 bench = false
