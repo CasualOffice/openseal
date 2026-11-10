@@ -10,12 +10,19 @@ passed with `--dss IMAGE`; DSS is LGPL and runs only as that separate program.
     python3 tools/verify-sealed.py --self-test       # proves the validator can tell good from bad
     python3 tools/verify-sealed.py --self-test --dss openseal-eu-dss   # and EU DSS too (rung 3)
     python3 tools/verify-sealed.py fixtures/sealed fixtures/tampered
+    python3 tools/verify-sealed.py fixtures/sealed --dss openseal-eu-dss   # rung 3 over them too
 
 `--self-test` builds a one-page PDF, a throwaway CA and signing certificate, seals the
 PDF with pyHanko at PAdES B-B, and then checks three cases: the sealed file validates;
 a flipped byte inside the signed range fails; an incremental update that changes the
 page's content after signing is reported as a modification. A validator that passes
 all three can fail, so a later green run means something.
+
+A manifest with a `level` column (`fixtures/sealed`, OpenSeal's own seals) is held to
+more: every signature intact, valid and trusted; for B-LT and B-LTA the DSS alone must
+validate them with hard-fail revocation and hold pyHanko's VRI key for each; with
+`--dss`, EU DSS must detect the manifest's PAdES level with 0 undefined changes and say
+TOTAL_PASSED where revocation data is embedded.
 
 Needs `pyhanko` and `cryptography` (CI installs them; locally use a virtualenv). Exits
 non-zero and names each file that disagreed with its manifest.
@@ -214,8 +221,118 @@ def self_test(dss_image=None):
     return 0
 
 
-def check_dirs(dirs):
+def pyhanko_sealed(data, root, level):
+    """pyHanko over every signature of an OpenSeal output (`fixtures/sealed` manifests).
+
+    Each signature and document timestamp must be intact, valid and trusted, with no
+    change pyHanko calls OTHER after it and its DocMDP respected. For B-LT and B-LTA the
+    long-term material must suffice on its own: a validation context built only from the
+    document's DSS, with revocation checking `hard-fail` and no fetching, must validate
+    every signature and its signature timestamp (and every document timestamp but the
+    last, whose TSA's revocation data comes with the next renewal), and every signature
+    and earlier document timestamp must have a VRI entry under pyHanko's own key.
+    Returns (problems, summary)."""
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    from pyhanko.sign.validation import DocumentSecurityStore, validate_pdf_signature, validate_pdf_timestamp
+    from pyhanko_certvalidator import ValidationContext
+
+    problems, notes = [], []
+    reader = PdfFileReader(io.BytesIO(data), strict=False)
+    sigs = reader.embedded_signatures
+    if not sigs:
+        return ["no signature"], "-"
+    for i, sig in enumerate(sigs):
+        ctx = ValidationContext(trust_roots=[root], allow_fetching=False, revocation_mode="soft-fail")
+        doc_ts = sig.sig_object_type == "/DocTimeStamp"
+        st = validate_pdf_timestamp(sig, validation_context=ctx) if doc_ts else validate_pdf_signature(sig, ctx, ctx)
+        mod = st.modification_level.name if st.modification_level else "-"
+        notes.append(f"{'ts' if doc_ts else 'sig'}{i}:intact={st.intact},valid={st.valid},trusted={st.trusted},"
+                     f"cov={st.coverage.name},mod={mod}")
+        if not (st.intact and st.valid and st.trusted):
+            problems.append(f"signature {i}: intact={st.intact} valid={st.valid} trusted={st.trusted}")
+        if mod == "OTHER" or (not doc_ts and st.docmdp_ok is False):
+            problems.append(f"signature {i}: changes after it are {mod}, DocMDP ok={st.docmdp_ok}")
+        if i == len(sigs) - 1 and st.coverage.name != "ENTIRE_FILE" and level != "B-LT":
+            problems.append(f"signature {i}: the last signature covers {st.coverage.name}")
+    if level in ("B-LT", "B-LTA"):
+        try:
+            dss = DocumentSecurityStore.read_dss(reader)
+        except Exception as e:  # no DSS where one is required
+            return problems + [f"no DSS: {type(e).__name__}"], " ".join(notes)
+        vri = {str(k) for k in (dss.vri_entries or {})}
+        ltv = []
+        for i, sig in enumerate(sigs):
+            doc_ts = sig.sig_object_type == "/DocTimeStamp"
+            last_ts = doc_ts and i == len(sigs) - 1
+            if last_ts:
+                continue
+            key = str(DocumentSecurityStore.sig_content_identifier(sig.pkcs7_content))
+            if key not in vri:
+                problems.append(f"signature {i}: no VRI entry {key}")
+            kwargs = {"trust_roots": [root], "allow_fetching": False, "revocation_mode": "hard-fail"}
+            hard = dss.as_validation_context(kwargs)
+            hard_ts = dss.as_validation_context(kwargs)
+            st = (validate_pdf_timestamp(sig, validation_context=hard) if doc_ts
+                  else validate_pdf_signature(sig, hard, hard_ts))
+            ok = bool(st.intact and st.valid and st.trusted)
+            ltv.append(f"{i}:{'ok' if ok else 'FAIL'}")
+            if not ok:
+                problems.append(f"signature {i}: not valid from the DSS alone (hard-fail revocation)")
+        notes.append("ltv=" + ",".join(ltv) + f" vri={len(vri)}")
+    return problems, " ".join(notes)
+
+
+def dss_rows_by_file(image, d, names):
+    """EU DSS over files in directory d: {file: [row dict per signature]}."""
+    with tempfile.TemporaryDirectory() as tmp:
+        work = pathlib.Path(tmp)
+        (work / "ca.pem").write_bytes((d / "trust-root.pem").read_bytes())
+        for n in names:
+            (work / n).write_bytes((d / n).read_bytes())
+        done = subprocess.run(
+            ["docker", "run", "--rm", "--network", "none", "-v", f"{work}:/w:ro", image, "/w/ca.pem"]
+            + [f"/w/{n}" for n in names],
+            capture_output=True, text=True, check=False,
+        )
+    lines = done.stdout.strip().splitlines()
+    if not lines or not lines[0].startswith("file\t"):
+        sys.exit(f"verify-sealed: EU DSS gave no report (exit {done.returncode}): {done.stderr.strip()[-300:]}")
+    head = lines[0].split("\t")
+    out = {}
+    for row in (ln.split("\t") for ln in lines[1:]):
+        out.setdefault(row[0], []).append(dict(zip(head, row)))
+    return out
+
+
+def dss_judge(rows, level):
+    """EU DSS must find each signature intact and valid, at the manifest's PAdES level,
+    with no undefined changes; TOTAL_PASSED where revocation data is embedded (B-LT,
+    B-LTA), and never TOTAL_FAILED."""
+    want = "PAdES-BASELINE-" + level[2:]
+    problems = []
+    if not rows:
+        return ["EU DSS found no signature"]
+    for i, r in enumerate(rows):
+        if r.get("intact") != "true" or r.get("valid") != "true":
+            problems.append(f"EU DSS signature {i}: intact={r.get('intact')} valid={r.get('valid')}")
+        if r.get("format") != want:
+            problems.append(f"EU DSS signature {i}: level {r.get('format')}, manifest {want}")
+        if r.get("undefined_changes") != "0":
+            problems.append(f"EU DSS signature {i}: {r.get('undefined_changes')} undefined changes")
+        if level in ("B-LT", "B-LTA") and r.get("indication") != "TOTAL_PASSED":
+            problems.append(f"EU DSS signature {i}: {r.get('indication')}/{r.get('subindication')}")
+        if r.get("indication") == "TOTAL_FAILED":
+            problems.append(f"EU DSS signature {i}: TOTAL_FAILED/{r.get('subindication')}")
+    return problems
+
+
+def check_dirs(dirs, dss_image=None):
+    """Each directory's manifest.tsv names its PDFs. A manifest with a `level` column
+    (OpenSeal's own seals, `fixtures/sealed`) gets the full check of `pyhanko_sealed` and,
+    with an EU DSS image, `dss_judge`; otherwise the last signature must be intact and
+    cover the whole file exactly when the row says `intact`."""
     logging.getLogger("pyhanko").setLevel(logging.CRITICAL)
+    logging.getLogger("pyhanko_certvalidator").setLevel(logging.CRITICAL)
     need("pyhanko")
     from pyhanko.keys import load_cert_from_pemder
 
@@ -227,10 +344,30 @@ def check_dirs(dirs):
             continue
         root_pem = d / "trust-root.pem"
         root = load_cert_from_pemder(str(root_pem)) if root_pem.is_file() else None
-        for line in manifest.read_text(encoding="utf8").splitlines()[1:]:
-            if not line.strip():
-                continue
-            name, expect, _why = (line.split("\t") + ["", "", ""])[:3]
+        lines = [ln for ln in manifest.read_text(encoding="utf8").splitlines() if ln.strip()]
+        head = lines[0].split("\t")
+        rows = [dict(zip(head, ln.split("\t"))) for ln in lines[1:]]
+        if "level" in head:
+            dss = dss_rows_by_file(dss_image, d, [r["file"] for r in rows]) if dss_image else {}
+            print("file\tlevel\tpyHanko\tEU DSS")
+            for r in rows:
+                name, level = r["file"], r["level"]
+                found, summary = pyhanko_sealed((d / name).read_bytes(), root, level)
+                if dss_image:
+                    found += dss_judge(dss.get(name, []), level)
+                    dtext = "; ".join(f"{x.get('indication')}/{x.get('subindication')} {x.get('format')} "
+                                      f"intact={x.get('intact')} valid={x.get('valid')} "
+                                      f"undefined={x.get('undefined_changes')}"
+                                      for x in dss.get(name, []))
+                else:
+                    dtext = "-"
+                print(f"{name}\t{level}\t{summary}\t{dtext}")
+                checked += 1
+                if (r["expect"] == "intact") != (not found):
+                    problems += [f"{d / name}: {p}" for p in found] or [f"{d / name}: expected {r['expect']}"]
+            continue
+        for r in rows:
+            name, expect = r.get("file", ""), r.get("expect", "")
             intact, whole, level = validate((d / name).read_bytes(), root)
             ok = intact and whole
             checked += 1
@@ -241,7 +378,8 @@ def check_dirs(dirs):
         for p in problems:
             print(f"  {p}", file=sys.stderr)
         return 1
-    print(f"verify-sealed: {checked} PDFs agree with their manifests (pyHanko)")
+    who = "pyHanko and EU DSS" if dss_image else "pyHanko"
+    print(f"verify-sealed: {checked} PDFs agree with their manifests ({who})")
     return 0
 
 
@@ -251,7 +389,15 @@ def main(argv):
     if len(argv) == 4 and argv[1] == "--self-test" and argv[2] == "--dss":
         return self_test(argv[3])
     if len(argv) > 1 and not argv[1].startswith("-"):
-        return check_dirs(argv[1:])
+        args, image = argv[1:], None
+        if "--dss" in args:
+            at = args.index("--dss")
+            if at + 1 >= len(args):
+                print(__doc__, file=sys.stderr)
+                return 2
+            image = args[at + 1]
+            args = args[:at] + args[at + 2:]
+        return check_dirs(args, image)
     print(__doc__, file=sys.stderr)
     return 2
 

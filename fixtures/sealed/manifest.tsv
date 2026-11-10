@@ -1,0 +1,19 @@
+file	expect	why	level	ours
+p256-approval-bb.pdf	intact	p256 approval signature, invisible, B-B	B-B	INDETERMINATE:TRY_LATER
+p256-approval-bt.pdf	intact	p256 approval signature, invisible, B-T	B-T	INDETERMINATE:TRY_LATER
+p256-approval-blt.pdf	intact	p256 approval signature, invisible, B-LT	B-LT	TOTAL_PASSED
+p256-approval-blta.pdf	intact	p256 approval signature, invisible, B-LTA	B-LTA	TOTAL_PASSED
+rsa3072-approval-bb.pdf	intact	rsa3072 approval signature, invisible, B-B	B-B	INDETERMINATE:TRY_LATER
+rsa3072-approval-bt.pdf	intact	rsa3072 approval signature, invisible, B-T	B-T	INDETERMINATE:TRY_LATER
+rsa3072-approval-blt.pdf	intact	rsa3072 approval signature, invisible, B-LT	B-LT	TOTAL_PASSED
+rsa3072-approval-blta.pdf	intact	rsa3072 approval signature, invisible, B-LTA	B-LTA	TOTAL_PASSED
+p256-certified-p1-blt.pdf	intact	certification signature DocMDP P=1, B-LT	B-LT	TOTAL_PASSED
+p256-certified-p2-blta.pdf	intact	certification signature DocMDP P=2, B-LTA	B-LTA	TOTAL_PASSED
+rsa3072-certified-p3-blt.pdf	intact	certification signature DocMDP P=3, B-LT	B-LT	TOTAL_PASSED
+two-signatures-blt.pdf	intact	certification P=2 (P-256) then approval (RSA-3072), each B-LT	B-LT	TOTAL_PASSED
+p256-visible-blt.pdf	intact	visible approval signature (bordered widget on page 1), B-LT	B-LT	TOTAL_PASSED
+form-existing-field-blta.pdf	intact	the form's own empty signature field, visible, B-LTA	B-LTA	TOTAL_PASSED
+p256-augmented-bt-to-blta.pdf	intact	sealed at B-T, augmented to B-LTA later (docs/31 §9)	B-LTA	TOTAL_PASSED
+p256-renewed-blta.pdf	intact	B-LTA renewed: DSS for the first document timestamp, then a second	B-LTA	TOTAL_PASSED
+valid-normalized-blta.pdf	intact	fixtures/hostile/valid.pdf normalized (Table xref), B-LTA	B-LTA	TOTAL_PASSED
+valid-xrefstream-normalized-blt.pdf	intact	fixtures/hostile/valid_xrefstream.pdf normalized (Stream xref), B-LT	B-LT	TOTAL_PASSED
