@@ -70,6 +70,33 @@ impl core::fmt::Debug for SealKey {
     }
 }
 
+/// A key provider shared between seals (a development `FileKey` loaded once).
+#[derive(Clone)]
+pub struct Shared(pub Arc<dyn KeyProvider + Send + Sync>);
+
+impl core::fmt::Debug for Shared {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Shared").finish_non_exhaustive()
+    }
+}
+
+impl KeyProvider for Shared {
+    fn algorithm(&self) -> casual_sign_sdk::SignatureAlgorithm {
+        self.0.algorithm()
+    }
+
+    fn certificate_chain(&self) -> &[casual_sign_sdk::Certificate] {
+        self.0.certificate_chain()
+    }
+
+    fn sign(
+        &self,
+        signed_attrs_der: &[u8],
+    ) -> core::result::Result<casual_sign_sdk::Signature, casual_sign_sdk::KeyError> {
+        self.0.sign(signed_attrs_der)
+    }
+}
+
 /// Everything sealing needs besides the envelope.
 #[derive(Clone)]
 pub struct SealServices {
