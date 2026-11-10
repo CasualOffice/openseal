@@ -45,6 +45,36 @@ pub enum ShapeFault {
     Format,
 }
 
+/// What was wrong with a location (`CS-AUD-0011`, GEO-01). Names the member only, never
+/// its value: a location is personal data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LocationFault {
+    /// `source` is unknown, a member has the wrong JSON type, or the members do not match
+    /// the source (a device location with a reason or no accuracy, an IP location with an
+    /// accuracy or no reason).
+    Source,
+    /// Latitude not finite or outside −90 to 90.
+    Latitude,
+    /// Longitude not finite or outside −180 to 180.
+    Longitude,
+    /// Only one coordinate, or a device location without coordinates.
+    Coordinates,
+    /// A device coordinate with more than 4 decimal places.
+    Precision,
+    /// Device accuracy negative, not finite or over its bound.
+    Accuracy,
+    /// The GeoIP database name is empty, too long or has a control character, or an IP
+    /// location gives coordinates or a place without naming its database.
+    Database,
+    /// The country is not two upper-case ASCII letters.
+    Country,
+    /// The region is empty, too long or has a control character.
+    Region,
+    /// The city is empty, too long or has a control character.
+    City,
+}
+
 /// Every audit error. [`AuditError::code`] gives the docs/20 code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -105,6 +135,11 @@ pub enum AuditError {
     ProofInvalid,
     /// A tombstone cannot be made, or does not match the chain it names (`CS-AUD-0010`).
     Tombstone,
+    /// A signer's location is invalid or over its bounds (`CS-AUD-0011`, GEO-01).
+    Location {
+        /// What was wrong.
+        fault: LocationFault,
+    },
 }
 
 impl AuditError {
@@ -122,11 +157,16 @@ impl AuditError {
             Self::ChainInvalid { .. } => "CS-AUD-0008",
             Self::ProofInvalid => "CS-AUD-0009",
             Self::Tombstone => "CS-AUD-0010",
+            Self::Location { .. } => "CS-AUD-0011",
         }
     }
 
     pub(crate) fn shape(fault: ShapeFault) -> Self {
         Self::Shape { fault, index: None }
+    }
+
+    pub(crate) fn location(fault: LocationFault) -> Self {
+        Self::Location { fault }
     }
 }
 
@@ -163,6 +203,7 @@ impl fmt::Display for AuditError {
             }
             Self::ProofInvalid => write!(f, "{code}: inclusion proof does not verify"),
             Self::Tombstone => write!(f, "{code}: tombstone does not match its chain"),
+            Self::Location { fault } => write!(f, "{code}: invalid location ({fault:?})"),
         }
     }
 }

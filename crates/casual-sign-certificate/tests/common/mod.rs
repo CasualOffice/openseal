@@ -221,6 +221,7 @@ pub fn chain(n: usize) -> (Chain, Hash256) {
             user_agent: Some(Personal(user_agent(i))),
             auth: vec![AuthMethod::EmailLink, AuthMethod::SmsOtp],
             session: Some(Hash256::digest(format!("session-{i}").as_bytes())),
+            location: None,
         };
         push(
             &mut c,

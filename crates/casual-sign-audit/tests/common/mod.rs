@@ -61,6 +61,7 @@ fn recipient(r: &mut Rng) -> (Id, Actor, Context) {
         user_agent: Some(Personal("Mozilla/5.0 (X11; Linux x86_64)".into())),
         auth: vec![AuthMethod::EmailLink, AuthMethod::SmsOtp],
         session: Some(Hash256::digest(format!("s{n}").as_bytes())),
+        location: None,
     };
     (rid, actor, ctx)
 }

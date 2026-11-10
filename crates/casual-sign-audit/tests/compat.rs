@@ -25,7 +25,8 @@ use common::*;
 /// Head of `chain(2026, 300)` before GEO-01.
 const PINNED_HEAD: &str = "sha256:6d598bd045b28cd5a19fd04f3b8ffb3212545dbb8e7868d6be47e30d57eb2d93";
 /// SHA-256 of `audit-trail.json` for `chain(2026, 300)` before GEO-01.
-const PINNED_TRAIL: &str = "sha256:dffb8bcdad168f6d093aa5ff668fc59d60438769c05c236ba82642b298204be5";
+const PINNED_TRAIL: &str =
+    "sha256:dffb8bcdad168f6d093aa5ff668fc59d60438769c05c236ba82642b298204be5";
 /// The canonical text of a recipient event with a full context, before GEO-01.
 const PINNED_CANONICAL: &str = r#"{"actor":{"email":"ada@example.com","id":"r1","kind":"recipient","name":"Ada"},"at":"2026-11-10T09:14:03.512Z","context":{"auth":["email_link","sms_otp"],"ip":"203.0.113.7","session":"sha256:043a718774c572bd8a25adbeb1bfcd5c0256ae11cecf9f9c3f925d0e52beaf89","user_agent":"UA/1.0"},"data":{"documents":[{"document_id":"d1","hash":"sha256:139d544b821b13ebea14f1b0fe18577222e415c2966e3a3511c4196055232202"}],"field_value_hashes":{"f1":"sha256:4c94485e0c21ae6c41ce1dfe7b6bfaceea5ab68e40a2476f50208e526f506080"},"recipient_id":"r1"},"envelope_id":"0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b","prev":"sha256:61e516917f425d2eae239e9aa9c966e7669352b939828f765e8047ddc5600206","seq":1,"type":"recipient.signed","v":1}"#;
 
@@ -51,6 +52,7 @@ fn recipient_event() -> AuditEvent {
             user_agent: Some(Personal("UA/1.0".into())),
             auth: vec![AuthMethod::EmailLink, AuthMethod::SmsOtp],
             session: Some(Hash256::digest(b"s")),
+            location: None,
         },
         EventData::RecipientSigned {
             recipient_id: id("r1"),
@@ -72,4 +74,65 @@ fn events_without_a_location_hash_as_before() {
     assert_eq!(head, PINNED_HEAD);
     assert_eq!(trail, PINNED_TRAIL);
     assert_eq!(canonical, PINNED_CANONICAL);
+}
+
+#[test]
+fn a_chain_with_locations_round_trips_and_verifies() {
+    use casual_sign_audit::{
+        FallbackReason, Location, ProblemKind, VerifyOptions, verify_chain, verify_trail,
+    };
+    let mut c = chain(9, 10);
+    let locations = [
+        Location::device(-33.868_812, 151.209_31, 25.0).unwrap(),
+        Location::ip(
+            FallbackReason::Declined,
+            "GeoLite2-City 2026-11-04",
+            48.8566,
+            2.3522,
+        )
+        .unwrap()
+        .with_place(Some("FR"), None, Some("Paris"))
+        .unwrap(),
+        Location::ip_unresolved(FallbackReason::Unavailable, None).unwrap(),
+    ];
+    let last = c.events().last().unwrap().event.at;
+    for (i, l) in locations.into_iter().enumerate() {
+        let ctx = Context {
+            location: Some(Personal(l)),
+            ..Context::default()
+        };
+        let at =
+            Timestamp::from_unix_millis(last.unix_millis() + i64::try_from(i).unwrap()).unwrap();
+        let e = c.next(
+            at,
+            Actor::system(),
+            ctx,
+            EventData::RecipientDelivered {
+                recipient_id: id("rcp-1"),
+            },
+        );
+        c.append(e).unwrap();
+    }
+    let o = VerifyOptions {
+        expected_head: c.head(),
+        ..VerifyOptions::default()
+    };
+    let bytes = c.to_trail_json().unwrap();
+    assert!(verify_trail(&bytes, &o).is_valid());
+    let (back, _) = Chain::from_trail_json(&bytes, &o).unwrap();
+    assert_eq!(back.head(), c.head());
+    assert_eq!(back.to_trail_json().unwrap(), bytes);
+
+    // Editing a recorded location is caught as an edit.
+    let mut evs = events(&c);
+    let text = String::from_utf8(casual_sign_audit::jcs::to_vec(&evs[11]).unwrap()).unwrap();
+    assert!(text.contains("Paris"), "{text}");
+    let forged = text.replace("Paris", "Lyon");
+    evs[11] = casual_sign_audit::json::parse(forged.as_bytes(), 32).unwrap();
+    let kinds: Vec<ProblemKind> = verify_chain(&evs, &o)
+        .problems
+        .into_iter()
+        .map(|p| p.kind)
+        .collect();
+    assert!(kinds.contains(&ProblemKind::HashMismatch), "{kinds:?}");
 }
