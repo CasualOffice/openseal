@@ -8,7 +8,7 @@
 //! password hash, not protection of data.
 //!
 //! The host supplies passwords in [`Credentials`]; the empty user password is always
-//! tried first, and no other password is ever guessed (`SEC-P09`). Strings are
+//! tried first, and no other password is ever guessed (docs/30 §2). Strings are
 //! decrypted when their object is loaded and streams when they are decoded, each
 //! charged to the document's decode budget like any filter output.
 
