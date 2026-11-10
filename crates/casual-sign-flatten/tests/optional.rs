@@ -164,7 +164,8 @@ fn form(extra: &str, word: &str) -> Vec<u8> {
 }
 
 /// Words the layered document shows by default, and those it hides.
-const SHOWN: [&str; 10] = [
+const SHOWN: [&str; 11] = [
+    "FORMPLAIN",
     "INTENTSHOWN",
     "BASE",
     "ONTEXT",
@@ -227,6 +228,8 @@ fn layered() -> Vec<u8> {
     ));
     content.push_str("q 1 0 0 1 72 500 cm /FmOff Do Q\n");
     content.push_str("q 1 0 0 1 72 480 cm /FmOn Do Q\n");
+    // A visible form whose content does not change: it only loses its `/OC`.
+    content.push_str("q 1 0 0 1 72 460 cm /FmPlain Do Q\n");
     // Design-only group 13 is listed in OFF but its intent is not the configuration's.
     content.push_str(&format!(
         "/OC /IntentOff BDC\n{}EMC\n",
@@ -242,7 +245,7 @@ fn layered() -> Vec<u8> {
         (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec()),
         (
             3,
-            b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 5 0 R>>/Properties<</On 10 0 R/Off 11 0 R/AnyOffVis 20 0 R/AllOnHid 21 0 R/AllOnVis 22 0 R/AnyOffHid 23 0 R/VeHid 24 0 R/VeVis 25 0 R/IntentOff 13 0 R>>/XObject<</FmOff 30 0 R/FmOn 31 0 R>>>>/Contents 4 0 R/Annots[40 0 R 42 0 R 43 0 R 44 0 R 45 0 R 46 0 R 47 0 R 48 0 R]>>".to_vec(),
+            b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 5 0 R>>/Properties<</On 10 0 R/Off 11 0 R/AnyOffVis 20 0 R/AllOnHid 21 0 R/AllOnVis 22 0 R/AnyOffHid 23 0 R/VeHid 24 0 R/VeVis 25 0 R/IntentOff 13 0 R>>/XObject<</FmOff 30 0 R/FmOn 31 0 R/FmPlain 32 0 R>>>>/Contents 4 0 R/Annots[40 0 R 42 0 R 43 0 R 44 0 R 45 0 R 46 0 R 47 0 R 48 0 R]>>".to_vec(),
         ),
         (4, stream("", content.as_bytes())),
         (5, FONT.as_bytes().to_vec()),
@@ -265,6 +268,7 @@ fn layered() -> Vec<u8> {
                 .to_vec(),
         ),
         (30, form("/OC 11 0 R", "FORMOFF")),
+        (32, form("/OC 22 0 R", "FORMPLAIN")),
         (
             31,
             stream(
