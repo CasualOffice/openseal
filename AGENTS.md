@@ -77,7 +77,7 @@ made `CasualOffice/openseal` public on 2026-11-10; GitHub CI now runs, and `tool
   conversion, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I
   audit chain and certificate (leftovers in their rows), and reader completion (decryption, LZW, the four wrongly
   refused corpus files), 1J SDK and `openseal` CLI. Exit item 2 met: every admitted corpus PDF passes fill, flatten,
-  seal and verify in ours, pyHanko and EU DSS (`P1-GATE-01`). Left for the exit gate: WASM parity (`WASM-01`),
-  signature-wrapping fixtures (`VER-03`), 24 h fuzzing per target, nightly on GitHub (`FUZZ-01`), owner sign-off.
+  seal and verify in ours, pyHanko and EU DSS (`P1-GATE-01`); items 4 and 6 met (`VER-03`, `WASM-01`). Left for
+  the exit gate: 24 h fuzzing per target, nightly on GitHub (`FUZZ-01`), owner sign-off.
 - **No server, API or UI exists yet.** The roadmap has 35 slices and milestones M0–M8; the fit-gap has 167 rows, none
   working end to end yet.

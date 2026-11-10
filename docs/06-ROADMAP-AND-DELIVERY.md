@@ -133,9 +133,9 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
     permitted) is out of this item by rule. It must be refused for filling with a stable code, since any fill would break
     its certification; making such files fillable as a new document is `NORM-02`.
   - [x] B-LT and B-LTA outputs are detected at their level by EU DSS. Evidence: `fixtures/sealed`, `tools/verify-sealed.py fixtures/sealed --dss`, EU DSS 6.5.1 reports PAdES-BASELINE-LT and -LTA (stage 1G, re-run by the main session).
-  - [ ] Tampering fixtures (byte flip in each revision, appended unsigned revision, shadow attacks: hide, replace, hide-and-replace; incremental saving attack; signature wrapping) are all detected by our verifier and agree with pyHanko and EU DSS.
+  - [x] Tampering fixtures (byte flip in each revision, appended unsigned revision, shadow attacks: hide, replace, hide-and-replace; incremental saving attack; signature wrapping) are all detected by our verifier and agree with pyHanko and EU DSS. Evidence: `fixtures/signed` (35 rows), `gen.py --check --dss openseal-eu-dss` rerun by the main session 2026-11-11 (`VER-03`).
   - [x] The audit chain verifier detects deletion, insertion, reordering and edit of any event in generated chains. Evidence: `casual-sign-audit` tamper tests and the every-mutation property (1,024 cases); the prev-link check seen red by the main session (stage 1I).
-  - [ ] The WASM build of `-fields` and `-verify` gives byte-identical verdicts to native over the corpus.
+  - [x] The WASM build of `-fields` and `-verify` gives byte-identical verdicts to native over the corpus. Evidence: `tools/wasm-parity.sh`, 2,112 jobs identical, rerun by the main session 2026-11-11; a CI job (`WASM-01`).
   - [ ] Owner sign-off.
 
 ## Phase 2 — Envelope engine and server

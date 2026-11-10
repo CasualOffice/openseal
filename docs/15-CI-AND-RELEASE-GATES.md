@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `fmt-clippy` | `cargo fmt --check`; `cargo clippy -D warnings` | Linux |
 | `test` | `cargo test --workspace --locked` | Linux, macOS, Windows |
-| `wasm` | `cargo check --target wasm32-unknown-unknown -p casual-sign-wasm`; WASM vs native verdict parity over the corpus | Linux |
+| `wasm-parity` | `tools/wasm-parity.sh`: WASM vs native byte-identical JSON over the corpus (cached), signed and hostile fixtures (`WASM-01`); the wasm32 check is in `checks` | Linux |
 | `docs` | `cargo doc -D warnings` | Linux |
 | `deny` | `cargo deny check` (advisories, licences, bans, sources) | Linux |
 | `repo` | `tools/check-repo.py`: tracker ids unique and well-formed, doc references resolve, crate DAG, docs/00 lists every doc | Linux |

@@ -82,3 +82,20 @@ jobs:
       # Rung 3: EU DSS 6.5.1, built here, run with no network (LGPL; never linked).
       - run: docker build -q -t openseal-eu-dss tools/eu-dss
       - run: /tmp/v/bin/python -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
+
+  # Phase 1 exit item 6 (WASM-01): field rules and the verifier give byte-identical JSON
+  # native and in WebAssembly, over every corpus PDF, the signed and hostile fixtures.
+  wasm-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: cargo install wasm-pack --version 0.14.0 --locked
+      - name: Restore the corpus
+        id: corpus
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: fixtures/corpus/files
+          key: corpus-${{ hashFiles('fixtures/corpus/manifest.tsv') }}
+      - if: steps.corpus.outputs.cache-hit != 'true'
+        run: python3 -I fixtures/corpus/fetch.py
+      - run: tools/wasm-parity.sh

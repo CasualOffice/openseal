@@ -115,6 +115,7 @@ python3 -I fixtures/tools/generate.py --check
 python3 -I fixtures/corpus/fetch.py --check
 python3 tools/verify-sealed.py --self-test                 # pyHanko must tell sealed from tampered
 python3 tools/verify-sealed.py fixtures/sealed fixtures/tampered   # once Phase 1 writes sealed fixtures
+tools/wasm-parity.sh                       # native and WASM byte-identical over the corpus
 ```
 
 ## Working in parallel

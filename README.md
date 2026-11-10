@@ -43,7 +43,7 @@ real-world PDFs; there is no server, API or web app yet. **No phase is closed** 
 | --- | --- | --- |
 | D — Design | 3 of 5 items | All design docs and research done; independent doc audit done. Left: owner acceptance of ADR-010 to 024 and decisions `DEC-02`–`07`, owner sign-off |
 | 0 — Foundation | 3 of 4 items | CI green on GitHub (Linux, macOS, Windows), 422-PDF corpus, 50 hostile fixtures, pyHanko and EU DSS validators, spikes. Left: seeded violations seen failing on GitHub, owner sign-off |
-| 1 — PDF and evidence core | 3 of 7 items; **10 of 10 stages built** | Met: B-LT/LTA detected by EU DSS; audit-chain tamper detection; every admitted corpus PDF filled, flattened, sealed and verified by ours, pyHanko and EU DSS (385 pass, 32 certified-no-changes files refused by rule, 0 fail). Left: browser-build parity (`WASM-01`) and signature-wrapping fixtures (`VER-03`), both being merged; 24 h fuzzing per target (nightly on GitHub, `FUZZ-01`); owner sign-off |
+| 1 — PDF and evidence core | 5 of 7 items; **10 of 10 stages built** | Met: every admitted corpus PDF filled, flattened, sealed and verified by ours, pyHanko and EU DSS (385 pass, 32 certified-no-changes files refused by rule, 0 fail); B-LT/LTA detected by EU DSS; every tamper and signature-wrapping fixture detected by all three validators; audit-chain tamper detection; browser (WASM) build byte-identical to native over the corpus. Left: 24 h fuzzing per target (nightly on GitHub, `FUZZ-01`); owner sign-off |
 | 2 — Envelope engine and server | — | Not started |
 | Slices 1–35, milestones M0–M8 | — | Not started; slice 1 needs Phases 1 and 2 |
 

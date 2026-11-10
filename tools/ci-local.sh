@@ -23,4 +23,5 @@ VENV=target/tools-venv
 [ -x "$VENV/bin/python" ] || { ~/.local/bin/uv venv -q -p 3.12 "$VENV" && ~/.local/bin/uv pip install -q -p "$VENV/bin/python" "pyhanko==0.38.1" cryptography; }
 docker build -q -t openseal-eu-dss tools/eu-dss >/dev/null
 "$VENV/bin/python" -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
+step "wasm parity";       tools/wasm-parity.sh   # WASM-01: native and WASM byte-identical over the corpus
 printf '\nci-local: every job passed\n'
