@@ -97,8 +97,10 @@ jobs:
         with:
           path: fixtures/corpus/files
           key: corpus-${{ hashFiles('fixtures/corpus/manifest.tsv') }}
+      # A second pass picks up what archive.org refused the first time; files already
+      # present are only re-hashed.
       - if: steps.corpus.outputs.cache-hit != 'true'
-        run: python3 -I fixtures/corpus/fetch.py
+        run: python3 -I fixtures/corpus/fetch.py || { sleep 120; python3 -I fixtures/corpus/fetch.py; }
       - run: tools/wasm-parity.sh
 
   # Stage 2E (T-2E): seals through PKCS#11 (SoftHSM) and through keyd over mTLS, each
@@ -107,6 +109,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Install the pinned toolchain on its own, retried once: a runner image's rustup has
+      # failed here with "detected conflict: bin/cargo-clippy".
+      - run: rustup show active-toolchain || { sleep 15; rustup toolchain uninstall 1.96.0; rustup show active-toolchain; }
       - run: sudo apt-get update -q && sudo apt-get install -y -q softhsm2
       - run: test -f /usr/lib/softhsm/libsofthsm2.so
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography

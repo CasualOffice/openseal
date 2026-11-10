@@ -192,7 +192,8 @@ def download(row, dest):
     """Fetch row's URL into dest if size and hash match. Returns None or a problem."""
     expect = int(row["bytes"])
     last = None
-    for attempt in range(4):
+    # Archive.org refuses connections for a minute at a time: six tries, up to a minute apart.
+    for attempt in range(6):
         polite_wait(row["url"])
         try:
             req = urllib.request.Request(row["url"], headers={"User-Agent": UA})
@@ -223,7 +224,7 @@ def download(row, dest):
             time.sleep(min(int(retry), 60) if retry.isdigit() else 2 ** (attempt + 1))
         except (urllib.error.URLError, OSError) as e:
             last = str(getattr(e, "reason", e))
-            time.sleep(2 ** (attempt + 1))
+            time.sleep(min(2 ** (attempt + 2), 60))
     return f"{row['file']}: {row['url']}: {last}"
 
 
