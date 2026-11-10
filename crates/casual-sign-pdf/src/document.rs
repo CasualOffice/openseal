@@ -240,6 +240,10 @@ impl<'a> Document<'a> {
             let (pos, section) = match self.section_at(pos, cancel) {
                 Ok(s) => (pos, s),
                 Err(SectionError::Fatal(e)) => return Err(SectionError::Fatal(e)),
+                // Strict reading refuses what the default would correct (fuzz finding,
+                // `FUZZ-01`): a corrected xref is a repair, and a repaired signed file must
+                // never open in strict mode when the default refuses it.
+                Err(SectionError::Damage(e)) if strict => return Err(SectionError::Damage(e)),
                 Err(SectionError::Damage(e)) => match self.correct_section(pos, cancel)? {
                     Some((p, s)) => {
                         corrected = true;
@@ -269,7 +273,14 @@ impl<'a> Document<'a> {
             });
         }
         self.revisions.reverse();
-        corrected |= self.verify_entries(cancel)?;
+        let entries_corrected = self.verify_entries(cancel)?;
+        if strict && entries_corrected {
+            return Err(SectionError::Damage(PdfError::Malformed {
+                object: None,
+                offset: off(start),
+            }));
+        }
+        corrected |= entries_corrected;
         if corrected {
             self.findings.push(Finding::new(
                 "CS-PDF-0101",

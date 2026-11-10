@@ -59,8 +59,10 @@ are decoded once at admission. **Both modes refuse:** size, object count, revisi
 document decode budget, an undecodable object stream, cancellation, encryption (decryption is a later row) and
 dynamic XFA. **Default mode reports instead:** reference depth, long strings and names (value dropped), a single
 content stream over its caps, ratio, unsupported filters (LZW among them for now), long filter chains and content
-operators. **Strict still corrects** xref offsets within ±1 KiB and a wrong `startxref` (`CS-PDF-0101`), and such a
-file is not structurally sound for appending. Signed or `/Perms` input that needed any repair is refused
+operators. The default mode corrects xref offsets within ±1 KiB and a wrong `startxref` (`CS-PDF-0101`), and such a
+file is not structurally sound for appending. **Strict refuses them** (`CS-PDF-0005`; changed 2026-11-11 after fuzz
+run 42890029431: strict reading corrected a signed file's xref, missed the signature the default's rebuild found, and
+opened what the default refused). Signed or `/Perms` input that needed any repair is refused
 (`CS-PDF-0014`). If the catalog or page tree cannot be read, the default reader rebuilds the xref; if the tree's root
 is still unreadable, pages are recovered from the `/Type /Page` objects in file order (`CS-PDF-0101`, page tree
 rebuilt); unreadable `/Metadata` is a finding, never a refusal. Xref entries with a generation above 65,535 or an offset

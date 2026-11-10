@@ -752,21 +752,35 @@ fn unsupported_and_malformed_encryption() {
         b.splice(s..s + from.len(), to.bytes());
         b
     };
-    for (from, to, want) in [
-        ("/Filter/Standard", "/Filter/Adobe.PubSec", "CS-PDF-0010"),
-        ("/Filter/Standard", "/Filter/FOPN_fowe", "CS-PDF-0010"),
-        ("/R 3", "/R 9", "CS-PDF-0010"),
-        ("/O<", "/X<", "CS-PDF-0005"),
+    // A swap whose length change moves an object the xref points to: the default corrects
+    // the offset and reaches the handler; strict refuses the shifted xref first (docs/30 §2).
+    for (from, to, want, want_strict) in [
+        (
+            "/Filter/Standard",
+            "/Filter/Adobe.PubSec",
+            "CS-PDF-0010",
+            "CS-PDF-0005",
+        ),
+        (
+            "/Filter/Standard",
+            "/Filter/FOPN_fowe",
+            "CS-PDF-0010",
+            "CS-PDF-0010",
+        ),
+        ("/R 3", "/R 9", "CS-PDF-0010", "CS-PDF-0010"),
+        ("/O<", "/X<", "CS-PDF-0005", "CS-PDF-0005"),
     ] {
         let b = swap(from, to);
-        for strict in [false, true] {
-            let r = if strict {
-                admit_strict(&b, &Limits::default(), &never)
-            } else {
-                admit(&b, &Limits::default(), &never)
-            };
-            assert_eq!(code(r), want, "{from} -> {to}");
-        }
+        assert_eq!(
+            code(admit(&b, &Limits::default(), &never)),
+            want,
+            "{from} -> {to}"
+        );
+        assert_eq!(
+            code(admit_strict(&b, &Limits::default(), &never)),
+            want_strict,
+            "strict: {from} -> {to}"
+        );
     }
 }
 

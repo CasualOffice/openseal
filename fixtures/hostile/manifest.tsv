@@ -23,8 +23,8 @@ string_16mib_plus.pdf	String length	CS-PDF-0008	open+report	One literal string o
 name_128.pdf	Name length	CS-PDF-0008	open+report	A 128-byte name
 content_ops_2m.pdf	Content-stream operators interpreted for text extraction, per page	CS-PDF-0013	open+report	2,000,001 Tj operators; anchors on that page not found
 truncated.pdf	recovery	CS-PDF-0005	open+report	Cut at 60%; no xref or trailer; rebuilt by scanning
-broken_xref_offsets.pdf	recovery	-	open+report	Every offset shifted by 5; rebuilt, CS-PDF-0101
-broken_startxref.pdf	recovery	-	open+report	startxref points into an object; rebuilt, CS-PDF-0101
+broken_xref_offsets.pdf	recovery	CS-PDF-0005	open+report	Every offset shifted by 5; default corrects (CS-PDF-0101), strict refuses
+broken_startxref.pdf	recovery	CS-PDF-0005	open+report	startxref points into an object; default corrects (CS-PDF-0101), strict refuses
 objstm_self.pdf	recovery	CS-PDF-0004	refuse	An object stream that contains itself and holds the page tree root
 active_openaction_js.pdf	active	-	open+remove	JavaScript /OpenAction; removed, CS-PDF-0103 (SEC-P06)
 active_launch.pdf	active	-	open+remove	/Launch on open; removed, CS-PDF-0103 (SEC-P06)

@@ -133,7 +133,7 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
   - [x] Tampering fixtures (byte flip in each revision, appended unsigned revision, shadow attacks: hide, replace, hide-and-replace; incremental saving attack; signature wrapping) are all detected by our verifier and agree with pyHanko and EU DSS. Evidence: `fixtures/signed` (35 rows), `gen.py --check --dss openseal-eu-dss` rerun by the main session 2026-11-11 (`VER-03`).
   - [x] The audit chain verifier detects deletion, insertion, reordering and edit of any event in generated chains. Evidence: `casual-sign-audit` tamper tests and the every-mutation property (1,024 cases); the prev-link check seen red by the main session (stage 1I).
   - [x] The WASM build of `-fields` and `-verify` gives byte-identical verdicts to native over the corpus. Evidence: `tools/wasm-parity.sh`, 2,112 jobs identical, rerun by the main session 2026-11-11; a CI job (`WASM-01`).
-  - [x] Owner sign-off. **Phase 1 closed by the owner, 2026-11-11** (instruction 18), on condition that fuzz run 42890029431 (item 1) finishes with no crash; a crash reopens it.
+  - [ ] Owner sign-off. Given 2026-11-11 on condition that fuzz run 42890029431 finds no crash (instruction 18); **reopened**: the `admit` target found strict reading opening a signed file the default refused (fixed, regression test in `casual-sign-pdf/tests/fuzz_regressions.rs`); a new 24 h run must pass.
 
 ## Phase 2 — Envelope engine and server
 
