@@ -100,7 +100,7 @@ Industry-standard practice applies everywhere, with these specifics.
 - Branching (`DEC-11`, owner instruction 5): work lands on `main`, parallel workers use worktree branches the main session verifies and merges. Never force-push `main`. Never skip hooks; enable them with `git config core.hooksPath .githooks`.
 - Never commit build output, keys, certificates with private parts, real signed agreements, or personal data.
 
-**The list CI runs** (`.github/workflows/ci.yml`; sessions do not run it). **While the repository is private** (owner instruction 7), GitHub cannot run it; the main session runs `tools/ci-local.sh`, which mirrors it job for job, before every merge to `main`.
+**The list CI runs** (`.github/workflows/ci.yml`; sessions do not run it). **While the repository is private** (owner instruction 7), GitHub cannot run it; the main session runs `tools/ci-local.sh`, which mirrors it job for job, before every merge to `main`, as `tools/ci-local.sh > "$LOG" 2>&1 && git commit`, never piped (docs/04 rule 30).
 
 ```sh
 cargo fmt --all -- --check

@@ -41,7 +41,7 @@ active_importdata.pdf	active	-	open+remove	An ImportData page-open action; remov
 active_js_nametree.pdf	active	-	open+remove	A document-level JavaScript name tree; removed, CS-PDF-0103 (SEC-P06)
 lzw_bomb.pdf	Decode ratio per stream	CS-PDF-0003	open+report	LZW (EarlyChange 1): 64 MiB of zeros from about 50 KB; page content dropped
 encrypted_empty_password.pdf	encryption	-	open+report	RC4-128, revision 3, empty user password: opens with no password, reported (CS-PDF-0109)
-encrypted_wrong_password.pdf	encryption	CS-PDF-0009	refuse	RC4-128, revision 3, user password openseal-user: refused with no password or a wrong one; opens with it
-encrypted_flate_bomb.pdf	Single stream decoded	CS-PDF-0003	open+report	RC4-encrypted page content that inflates to 1 GiB of zeros; decrypted, then stopped at the cap
+encrypted_wrong_password.pdf	Host passwords tried	CS-PDF-0009	refuse	RC4-128, revision 3, user password openseal-user: refused with no password or a wrong one; opens with it
+encrypted_flate_bomb.pdf	Single stream decoded; Decryption	CS-PDF-0003	open+report	RC4-encrypted page content that inflates to 1 GiB of zeros; decrypted, then stopped at the cap
 encrypted_malformed.pdf	encryption	CS-PDF-0005	refuse	Standard handler dictionary without /O and with a short /U
 encrypted_unknown_handler.pdf	encryption	CS-PDF-0010	refuse	A security handler other than the standard one (/FOPN_foweb)

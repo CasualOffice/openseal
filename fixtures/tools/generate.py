@@ -34,6 +34,8 @@ NO_FIXTURE = {
     "Envelope total": "an envelope-level limit, tested by the server with several documents (Phase 2)",
     "Time budget": "a host-supplied predicate, tested by a test that cancels, not by a file",
     "Values per parsed object": "built in memory by casual-sign-pdf's allocation test (a 40 MB array)",
+    "Content-stream operands": "unit tests of ContentLexer and the `content` fuzz target build the cases in memory",
+    "Field options and appearance states": "a unit test builds a field with 1,001 options in memory",
 }
 
 
