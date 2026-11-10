@@ -333,6 +333,7 @@ dependencies = [
  "casual-sign-crypto",
  "casual-sign-seal",
  "casual-sign-secrets",
+ "casual-sign-verify",
  "cryptoki",
  "der",
  "rcgen",

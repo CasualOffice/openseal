@@ -424,13 +424,14 @@ fn connection(
         .and_then(|c| c.first())
         .map(|c| fingerprint(c.as_ref()))
         .ok_or(KeydError::NotAuthorized)?;
-    if let Err(e) = service.admit(&caller) {
-        let _ = write_frame(&mut s, &Response::Error(e.number()).encode()?);
-        s.conn.send_close_notify();
-        let _ = s.conn.complete_io(&mut s.sock);
-        return Err(e);
-    }
+    let admitted = service.admit(&caller);
     while let Some(body) = read_frame(&mut s)? {
+        // A caller off the allow-list gets its refusal as the answer to its first
+        // request (read first, so the refusal is not lost to a reset), and nothing else.
+        if let Err(e) = &admitted {
+            write_frame(&mut s, &Response::Error(e.number()).encode()?)?;
+            break;
+        }
         let response = match Request::decode(&body) {
             Ok(req) => service.answer(&caller, &req),
             Err(e) => Response::Error(e.number()),
@@ -439,5 +440,5 @@ fn connection(
     }
     s.conn.send_close_notify();
     let _ = s.conn.complete_io(&mut s.sock);
-    Ok(())
+    admitted
 }

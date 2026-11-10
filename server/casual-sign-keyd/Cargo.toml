@@ -31,6 +31,7 @@ x509-cert = { version = "0.3.0", default-features = false }
 # Throwaway PKI for the tests (as casual-sign-seal's tests; docs/66 §1).
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
 casual-sign-seal = { path = "../../crates/casual-sign-seal" }
+casual-sign-verify = { path = "../../crates/casual-sign-verify" }
 
 [lints]
 workspace = true
