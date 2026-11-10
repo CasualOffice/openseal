@@ -292,6 +292,33 @@ pub(crate) fn current_appearance(w: &WidgetInfo) -> Option<ObjRef> {
     }
 }
 
+/// The appearance stream an annotation shows now: its `/AP /N` stream, or the entry of
+/// its `/AP /N` state dictionary that `/AS` names.
+pub(crate) fn annotation_appearance(
+    doc: &mut Document<'_>,
+    d: &Dictionary,
+    cancel: Cancel<'_>,
+) -> Result<Option<ObjRef>, PdfError> {
+    let Some(ap) = d.get(b"AP").cloned() else {
+        return Ok(None);
+    };
+    let Some(n) = dict(doc, &ap, cancel)?.and_then(|ap| ap.get(b"N").cloned()) else {
+        return Ok(None);
+    };
+    let states = match &n {
+        Object::Reference(r) => match local(doc.object(r.num, cancel))? {
+            Some(Object::Stream(_)) => return Ok(Some(*r)),
+            Some(Object::Dictionary(states)) => states,
+            _ => return Ok(None),
+        },
+        Object::Dictionary(states) => states.clone(),
+        _ => return Ok(None),
+    };
+    Ok(d.name(b"AS")
+        .and_then(|s| states.get(s))
+        .and_then(Object::as_ref))
+}
+
 /// `/BBox` and `/Matrix` of a form XObject.
 pub(crate) fn form_box(
     doc: &mut Document<'_>,

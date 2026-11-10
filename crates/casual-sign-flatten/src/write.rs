@@ -278,6 +278,37 @@ pub(crate) fn content(u: &mut IncrementalUpdate<'_>, ops: &str) -> Result<ObjRef
     flate_stream(u, Dictionary::new(), ops.as_bytes())
 }
 
+/// A new content stream holding `data`: a page's content rewritten (`FLT-03`).
+pub(crate) fn content_bytes(
+    u: &mut IncrementalUpdate<'_>,
+    data: &[u8],
+) -> Result<ObjRef, WriteError> {
+    flate_stream(u, Dictionary::new(), data)
+}
+
+/// Replace stream `num` with `data`, keeping `dict` but for its encoding entries: a
+/// form XObject or pattern rewritten (`FLT-03`).
+pub(crate) fn replace_stream(
+    u: &mut IncrementalUpdate<'_>,
+    num: u32,
+    mut dict: Dictionary,
+    data: &[u8],
+) -> Result<(), WriteError> {
+    for key in [
+        &b"Filter"[..],
+        b"DecodeParms",
+        b"Length",
+        b"DL",
+        b"F",
+        b"FFilter",
+        b"FDecodeParms",
+    ] {
+        dict.remove(key);
+    }
+    dict.insert(b"Filter", name(b"FlateDecode"));
+    u.replace_stream(num, dict, deflate(data))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

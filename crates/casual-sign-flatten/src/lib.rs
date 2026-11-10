@@ -21,13 +21,20 @@
 //! - **Signatures, initials, stamps and drawings**: pad strokes as smoothed paths, PNG
 //!   and JPEG images re-encoded after a bounded decode, typed text in a script face;
 //!   optionally a "Signed by" caption with the envelope id and a signing reason.
-//! - **Checkboxes and radio buttons** as vector marks; dropdowns and every other value
-//!   as text; `date_signed` in the field's date format.
+//! - **Checkboxes and radio buttons** converted from the document's form as their own
+//!   on-state appearance (a vector checkmark or dot when they have none, `FLT-04`);
+//!   other checkboxes as a checkmark; dropdowns and every other value as text;
+//!   `date_signed` in the field's date format.
 //! - The document's AcroForm is removed in the same update (fields and widgets gone,
 //!   `/AcroForm` dropped from the catalog): widgets of converted fields keep their
 //!   border and background, other widgets keep their appearance, drawn into the page.
 //!   With [`FormMode::FillInPlace`] the form stays: converted fields get `/V` and new
 //!   appearance streams instead (`FILL-01`).
+//! - **What the signer sees is what is sealed** (`FLT-03`, SEC-S03): optional content
+//!   is flattened to the default configuration's visibility and `/OCProperties`
+//!   removed; non-widget annotations with an appearance are drawn into the page and
+//!   removed, those hidden from the screen (`/F` Hidden or NoView, or hidden optional
+//!   content) are removed, links and annotations without an appearance stay.
 //!
 //! Output is deterministic: no clock, no randomness, fixed object order. The crate
 //! performs no I/O and builds for `wasm32-unknown-unknown`; faces are supplied as bytes
@@ -41,6 +48,7 @@ mod flatten;
 mod fonts;
 mod image;
 mod ink;
+mod optional;
 mod read;
 mod subset;
 mod text;
@@ -71,6 +79,12 @@ pub mod limits {
     /// Most fields on one page. A decision of `T-1E`, equal to docs/21's fields per
     /// envelope (`CS-FLT-0004`, proposed).
     pub const MAX_FIELDS_PER_PAGE: usize = 3_000;
+    /// Deepest nesting of an optional content visibility expression (`/VE`). A
+    /// decision of `FLT-03` (docs/21, `CS-FLT-0006`).
+    pub const MAX_VE_DEPTH: usize = 32;
+    /// Most terms read in one visibility expression, so an expression whose arrays are
+    /// shared by reference cannot multiply its work (docs/21, `CS-FLT-0006`).
+    pub const MAX_VE_TERMS: usize = 4_096;
 }
 
 /// A point of a drawn signature, in the pad's coordinates: origin top-left, y down.
@@ -220,6 +234,23 @@ pub struct FlattenReport {
     pub widgets_removed: usize,
     /// Widgets of unconverted fields whose appearance was drawn into the page.
     pub appearances_kept: usize,
+    /// Non-widget annotations drawn into the page from their appearance and removed
+    /// (`FLT-03`).
+    pub annotations_flattened: usize,
+    /// Annotations removed because the signer could not see them: hidden by `/F`
+    /// (Hidden, NoView) or by optional content, and the pop-ups of flattened ones.
+    pub annotations_removed: usize,
+    /// Non-widget annotations left as they are: links, and annotations without an
+    /// appearance to draw.
+    pub annotations_kept: usize,
+    /// Whether the document had optional content, now flattened to its default
+    /// visibility with `/OCProperties` removed (`FLT-03`).
+    pub optional_content_flattened: bool,
+    /// Hidden marked-content sequences removed from content streams.
+    pub hidden_sections: usize,
+    /// Content operators dropped or neutralized as hidden (painting in hidden
+    /// sections, and invocations of hidden XObjects).
+    pub hidden_operators: usize,
     /// Faces embedded.
     pub fonts: Vec<EmbeddedFont>,
     /// Images embedded.

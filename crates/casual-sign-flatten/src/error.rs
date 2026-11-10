@@ -76,6 +76,20 @@ pub enum FlattenError {
         /// Index of the face in the [`crate::FontSet`].
         face: usize,
     },
+    /// An optional content visibility expression (`/VE`) is nested deeper than 32 or
+    /// has more than 4,096 terms (`CS-FLT-0006`, docs/21).
+    OptionalContentTooComplex {
+        /// The membership dictionary's object number, when indirect.
+        object: Option<u32>,
+    },
+    /// A content stream being cleared of hidden optional content crosses a tokenizer
+    /// limit (its `CS-PDF-*` code: `0002`, `0004` or `0008`).
+    Content {
+        /// The page or stream's object number.
+        object: u32,
+        /// The tokenizer's code.
+        code: &'static str,
+    },
     /// The document could not be read (its `CS-PDF-*` code).
     Read(PdfError),
     /// The update could not be written (its `CS-WRT-*` code).
@@ -97,6 +111,8 @@ impl FlattenError {
             Self::OffPage { .. } => "CS-FLD-0004",
             Self::TooManyFields { .. } => "CS-FLT-0004",
             Self::FontUnreadable { .. } => "CS-FLT-0005",
+            Self::OptionalContentTooComplex { .. } => "CS-FLT-0006",
+            Self::Content { code, .. } => code,
             Self::Read(e) => e.code(),
             Self::Write(e) => e.code(),
         }
@@ -157,6 +173,17 @@ impl fmt::Display for FlattenError {
                 write!(f, "{code}: page {page} has {fields} fields")
             }
             Self::FontUnreadable { face } => write!(f, "{code}: face {face} is not readable"),
+            Self::OptionalContentTooComplex { object } => match object {
+                Some(n) => write!(
+                    f,
+                    "{code}: visibility expression of object {n} is over its bounds"
+                ),
+                None => write!(f, "{code}: a visibility expression is over its bounds"),
+            },
+            Self::Content { object, .. } => write!(
+                f,
+                "{code}: content of object {object} crosses a tokenizer limit"
+            ),
             Self::Read(e) => write!(f, "{e}"),
             Self::Write(e) => write!(f, "{e}"),
         }

@@ -16,6 +16,7 @@ use crate::error::FlattenError;
 use crate::fill::{self, FillPlan, FillValue, Target};
 use crate::fonts::FontSet;
 use crate::limits::MAX_FIELDS_PER_PAGE;
+use crate::optional::{self, OptionalContent, Pass};
 use crate::read::{self, MAX_ANNOTS, WidgetInfo};
 use crate::write;
 use crate::{FlattenInput, FlattenOptions, FlattenReport, Flattened, FormMode, NotDrawn};
@@ -109,6 +110,110 @@ fn page_geometry(pages: &[PageInfo], index: usize) -> Option<PageGeometry> {
     pages.get(index).map(PageGeometry::from_page)
 }
 
+/// `first` then `then`, as PDF concatenates matrices (row vectors).
+fn concat(first: [f64; 6], then: [f64; 6]) -> [f64; 6] {
+    let [a, b, c, d, e, f] = first;
+    let [a2, b2, c2, d2, e2, f2] = then;
+    [
+        a * a2 + b * c2,
+        a * b2 + b * d2,
+        c * a2 + d * c2,
+        c * b2 + d * d2,
+        e * a2 + f * c2 + e2,
+        e * b2 + f * d2 + f2,
+    ]
+}
+
+/// Where an annotation's appearance goes on the page (ISO 32000-2 §12.5.5): onto its
+/// rectangle; with NoRotate (`/F` bit 5) on a rotated page, upright on screen with
+/// the rectangle's upper-left corner fixed, as viewers show it (§12.5.3). NoZoom needs
+/// nothing: at 100 % the annotation is its own size.
+fn annotation_matrix(
+    g: &PageGeometry,
+    bbox: &Rect,
+    m: [f64; 6],
+    rect: &Rect,
+    no_rotate: bool,
+) -> Option<[f64; 6]> {
+    if !no_rotate || g.rotate() == 0 {
+        return appearance_matrix(bbox, m, rect);
+    }
+    let shown = g.rect_to_displayed(rect);
+    let (w, h) = if g.rotate().is_multiple_of(180) {
+        (shown.width, shown.height)
+    } else {
+        (shown.height, shown.width)
+    };
+    let corner = g.to_displayed(Point::new(rect.llx, rect.ury));
+    let upright = DisplayRect {
+        x: corner.x,
+        y: corner.y,
+        width: w,
+        height: h,
+    };
+    let unit = g.user_unit();
+    let local = Rect {
+        llx: 0.0,
+        lly: 0.0,
+        urx: w / unit,
+        ury: h / unit,
+    };
+    let inner = appearance_matrix(bbox, m, &local)?;
+    // The field matrix maps display points; `local` is in user units.
+    let scale = [unit, 0.0, 0.0, unit, 0.0, 0.0];
+    Some(concat(concat(inner, scale), field_matrix(g, &upright)))
+}
+
+/// The on-state appearance of the widget a converted checkbox came from: among the
+/// field's widgets on `page`, the one nearest the field's box (the sender may have
+/// moved it), its first normal-appearance state other than `/Off`.
+fn own_on_appearance(
+    widgets: &[&FormWidget],
+    page: usize,
+    g: &PageGeometry,
+    rect: &DisplayRect,
+) -> Option<ObjRef> {
+    let centre = |r: &DisplayRect| (r.x + r.width / 2.0, r.y + r.height / 2.0);
+    let (cx, cy) = centre(rect);
+    let w = widgets
+        .iter()
+        .filter(|w| w.info.page.and_then(|p| usize::try_from(p).ok()) == Some(page))
+        .map(|w| {
+            let (x, y) = centre(&g.rect_to_displayed(&w.info.rect));
+            ((x - cx).hypot(y - cy), w)
+        })
+        .filter(|(d, _)| d.is_finite())
+        .min_by(|a, b| a.0.total_cmp(&b.0))?
+        .1;
+    let Some(Object::Dictionary(states)) = &w.info.ap_n else {
+        return None;
+    };
+    w.info
+        .on_states
+        .iter()
+        .find_map(|s| states.get(s).and_then(Object::as_ref))
+}
+
+/// Whether `d`'s `/OC` is hidden under the default configuration.
+fn oc_hidden(
+    doc: &mut casual_sign_pdf::Document<'_>,
+    oc: &mut Option<OptionalContent>,
+    d: &Dictionary,
+    cancel: Cancel<'_>,
+) -> Result<bool, FlattenError> {
+    match (oc.as_mut(), d.get(b"OC")) {
+        (Some(oc), Some(v)) => Ok(!oc.visible(doc, v, cancel)?),
+        _ => Ok(false),
+    }
+}
+
+/// `/F` bits that keep an annotation off the screen: Hidden (2) and NoView (6). The
+/// sealed page shows what the signer saw on screen, so these decide and Print does
+/// not (docs/30 §7).
+const OFF_SCREEN: i64 = (1 << 1) | (1 << 5);
+/// `/F` NoRotate (bit 5).
+const NO_ROTATE: i64 = 1 << 4;
+
 /// Flatten `input` into the admitted, normalized document.
 ///
 /// The document is read through `admitted` (hence `&mut`: reading objects updates its
@@ -166,6 +271,11 @@ pub fn flatten(
         .and_then(|(_, c)| c.get(b"AcroForm").cloned());
     let has_form = acroform_ref.is_some();
     let remove_form = has_form && options.mode == FormMode::Flatten;
+    // The default configuration of optional content, when the document has any.
+    let mut oc = match &catalog {
+        Some((_, c)) => OptionalContent::read(doc, c, cancel)?,
+        None => None,
+    };
 
     // Which page holds each annotation: a widget without `/P` is found by the page whose
     // `/Annots` lists it, as viewers find it.
@@ -195,7 +305,11 @@ pub fn flatten(
             for w in &f.widgets {
                 let Some(obj) = w.object else { continue };
                 let page = w.page.or_else(|| annot_page.get(&obj).copied());
-                if let Some(info) = read::widget(doc, obj, w.rect, page, cancel)? {
+                if let Some(mut info) = read::widget(doc, obj, w.rect, page, cancel)? {
+                    // A widget in hidden optional content is not seen either.
+                    if oc_hidden(doc, &mut oc, &info.dict, cancel)? {
+                        info.hidden = true;
+                    }
                     widgets.push(FormWidget {
                         field_object: f.object,
                         kind: f.field_type,
@@ -462,6 +576,25 @@ pub fn flatten(
             continue;
         }
 
+        // A converted checkbox, checked: its widget's own on appearance (a cross, a
+        // filled square, a styled check) in the field's box, as the document draws it
+        // on; our checkmark only when it has none (FLT-04).
+        if field.field_type == FieldType::Checkbox
+            && matches!(value, FieldValue::Checked(true))
+            && let Some(obj) = src
+            && let Some(stream) = own_on_appearance(&widgets_of(obj), page, &g, &rect)
+            && let Some((bbox, m)) = read::form_box(doc, stream, cancel)?
+            && let Some(matrix) = appearance_matrix(&bbox, m, &g.rect_to_user(&rect))
+        {
+            kept.push(Kept {
+                page,
+                stream,
+                matrix,
+            });
+            report.drawn.push(field.id.clone());
+            continue;
+        }
+
         match draw::field(&mut ctx, field, value, rect.width, rect.height)? {
             Drawn::Skip(why) => report.not_drawn.push((field.id.clone(), why)),
             Drawn::Marks(drawing, fit) => {
@@ -481,6 +614,136 @@ pub fn flatten(
                 });
             }
         }
+    }
+
+    // Annotations, page by page (FLT-03): widgets go with the form; non-widget
+    // annotations the signer could not see go; those with an appearance are drawn into
+    // the page and go, with their pop-ups; links and annotations without an appearance
+    // stay. `appearances` collects the streams of whatever stays, for the optional
+    // content pass.
+    let mut new_annots: BTreeMap<usize, Vec<Object>> = BTreeMap::new();
+    let mut appearances: Vec<u32> = Vec::new();
+    let mut hide: Vec<u32> = Vec::new();
+    let mut page_dicts: Vec<(usize, u32, Dictionary)> = Vec::with_capacity(pages.len());
+    for (index, info) in pages.iter().enumerate() {
+        let Some(page_dict) = read::object_dict(doc, info.object, cancel)? else {
+            continue;
+        };
+        page_dicts.push((index, info.object, page_dict.clone()));
+        let Some(a) = page_dict.get(b"Annots").cloned() else {
+            continue;
+        };
+        let Some(Object::Array(items)) = read::local(doc.resolve(&a, cancel))? else {
+            continue;
+        };
+        let g = page_geometry(&pages, index);
+        let mut changed = false;
+        // (item, the parent it pops up for)
+        let mut out: Vec<(Object, Option<u32>)> = Vec::with_capacity(items.len());
+        let mut gone: BTreeSet<u32> = BTreeSet::new();
+        for (i, item) in items.into_iter().enumerate() {
+            if i >= MAX_ANNOTS {
+                out.push((item, None));
+                continue;
+            }
+            let Some(d) = read::dict(doc, &item, cancel)? else {
+                out.push((item, None));
+                continue;
+            };
+            let num = item.as_ref().map(|r| r.num);
+            match d.name(b"Subtype") {
+                Some(b"Widget") => {
+                    if remove_form {
+                        report.widgets_removed = report.widgets_removed.saturating_add(1);
+                        changed = true;
+                        continue;
+                    }
+                    if let Some(n) = num
+                        && oc_hidden(doc, &mut oc, &d, cancel)?
+                    {
+                        hide.push(n);
+                    }
+                    appearances.extend(optional::appearance_streams(doc, &d, cancel)?);
+                    out.push((item, None));
+                    continue;
+                }
+                Some(b"Popup") => {
+                    let parent = d.get(b"Parent").and_then(Object::as_ref).map(|r| r.num);
+                    out.push((item, parent));
+                    continue;
+                }
+                _ => {}
+            }
+            let flags = d.get(b"F").and_then(Object::as_i64).unwrap_or(0);
+            if flags & OFF_SCREEN != 0 || oc_hidden(doc, &mut oc, &d, cancel)? {
+                report.annotations_removed = report.annotations_removed.saturating_add(1);
+                changed = true;
+                gone.extend(num);
+                continue;
+            }
+            let drawn = if d.name(b"Subtype") == Some(b"Link") {
+                None
+            } else {
+                match (
+                    read::annotation_appearance(doc, &d, cancel)?,
+                    read::rect(d.get(b"Rect")),
+                    g.as_ref(),
+                ) {
+                    (Some(stream), Some(rect), Some(g)) => read::form_box(doc, stream, cancel)?
+                        .and_then(|(bbox, m)| {
+                            annotation_matrix(g, &bbox, m, &rect, flags & NO_ROTATE != 0)
+                        })
+                        .map(|matrix| Kept {
+                            page: index,
+                            stream,
+                            matrix,
+                        }),
+                    _ => None,
+                }
+            };
+            match drawn {
+                Some(k) => {
+                    kept.push(k);
+                    report.annotations_flattened = report.annotations_flattened.saturating_add(1);
+                    changed = true;
+                    gone.extend(num);
+                }
+                None => {
+                    report.annotations_kept = report.annotations_kept.saturating_add(1);
+                    appearances.extend(optional::appearance_streams(doc, &d, cancel)?);
+                    out.push((item, None));
+                }
+            }
+        }
+        // A pop-up goes with the annotation it belongs to.
+        let before = out.len();
+        out.retain(|(_, parent)| !parent.is_some_and(|p| gone.contains(&p)));
+        let popped = before.saturating_sub(out.len());
+        if popped > 0 {
+            report.annotations_removed = report.annotations_removed.saturating_add(popped);
+            changed = true;
+        }
+        if changed {
+            new_annots.insert(index, out.into_iter().map(|(o, _)| o).collect());
+        }
+    }
+
+    // Optional content (FLT-03): what the default configuration hides is not drawn by
+    // anything kept, and is removed from every content stream that stays.
+    let mut pass = Pass::default();
+    if let Some(oc) = oc.as_mut() {
+        let mut visible = Vec::with_capacity(kept.len());
+        for k in kept.drain(..) {
+            if !pass.stream_hidden(doc, oc, k.stream.num, cancel)? {
+                visible.push(k);
+            }
+        }
+        kept = visible;
+        appearances.extend(kept.iter().map(|k| k.stream.num));
+        pass.run(doc, oc, &page_dicts, &appearances, cancel)?;
+        report.optional_content_flattened = true;
+        report.hidden_sections = pass.stats.sections;
+        report.hidden_operators = pass.stats.operators;
     }
 
     // Plan the fills.
@@ -528,25 +791,39 @@ pub fn flatten(
         }
     }
 
-    // Pages to rewrite: those drawn on, and every page with widgets when the form goes.
-    let mut touched: BTreeSet<usize> = placed.iter().map(|p| p.page).collect();
-    touched.extend(kept.iter().map(|k| k.page));
-    if remove_form {
-        touched.extend(0..pages.len());
+    // Widgets in hidden optional content that stay (the form kept): marked Hidden, as
+    // the signer did not see them and no configuration will show them any more.
+    for n in hide {
+        let d = match plan.edits.remove(&n) {
+            Some(d) => Some(d),
+            None => read::object_dict(doc, n, cancel)?,
+        };
+        if let Some(mut d) = d {
+            let flags = d.get(b"F").and_then(Object::as_i64).unwrap_or(0);
+            d.insert(b"F", Object::Integer(flags | (1 << 1)));
+            d.remove(b"OC");
+            plan.edits.insert(n, d);
+        }
     }
+
+    // Pages to rewrite: those drawn on, those whose annotations changed, and those
+    // whose content held hidden optional content.
+    let drawn_pages: BTreeSet<usize> = placed
+        .iter()
+        .map(|p| p.page)
+        .chain(kept.iter().map(|k| k.page))
+        .collect();
+    let mut touched = drawn_pages.clone();
+    touched.extend(new_annots.keys().copied());
+    touched.extend(pass.pages.keys().copied());
     struct PageEdit {
         object: u32,
         dict: Dictionary,
         resources: Dictionary,
         contents: Vec<Object>,
         draws: bool,
-        annots_changed: bool,
+        rewritten: Option<Vec<u8>>,
     }
-    let drawn_pages: BTreeSet<usize> = placed
-        .iter()
-        .map(|p| p.page)
-        .chain(kept.iter().map(|k| k.page))
-        .collect();
     let mut edits: BTreeMap<usize, PageEdit> = BTreeMap::new();
     for &index in &touched {
         let Some(info) = pages.get(index) else {
@@ -555,47 +832,20 @@ pub fn flatten(
         let Some(mut dict) = read::object_dict(doc, info.object, cancel)? else {
             continue;
         };
+        if let Some(items) = new_annots.remove(&index) {
+            if items.is_empty() {
+                dict.remove(b"Annots");
+            } else {
+                dict.insert(b"Annots", Object::Array(items));
+            }
+        }
         let draws = drawn_pages.contains(&index);
-        let mut annots_changed = false;
-        if remove_form && let Some(a) = dict.get(b"Annots").cloned() {
-            let items = match read::local(doc.resolve(&a, cancel))? {
-                Some(Object::Array(items)) => items,
-                _ => Vec::new(),
-            };
-            let mut kept_items = Vec::with_capacity(items.len());
-            for (i, item) in items.into_iter().enumerate() {
-                if i >= MAX_ANNOTS {
-                    kept_items.push(item);
-                    continue;
-                }
-                let is_widget = read::dict(doc, &item, cancel)?
-                    .is_some_and(|d| d.name(b"Subtype") == Some(b"Widget"));
-                if is_widget {
-                    report.widgets_removed = report.widgets_removed.saturating_add(1);
-                    annots_changed = true;
-                } else {
-                    kept_items.push(item);
-                }
-            }
-            if annots_changed {
-                if kept_items.is_empty() {
-                    dict.remove(b"Annots");
-                } else {
-                    dict.insert(b"Annots", Object::Array(kept_items));
-                }
-            }
-        }
-        if !draws && !annots_changed {
-            continue;
-        }
-        let (resources, contents) = if draws {
-            (
-                read::resources(doc, &dict, cancel)?,
-                read::contents(doc, &dict, cancel)?,
-            )
+        let resources = if draws {
+            read::resources(doc, &dict, cancel)?
         } else {
-            (Dictionary::new(), Vec::new())
+            Dictionary::new()
         };
+        let contents = read::contents(doc, &dict, cancel)?;
         edits.insert(
             index,
             PageEdit {
@@ -604,17 +854,19 @@ pub fn flatten(
                 resources,
                 contents,
                 draws,
-                annots_changed,
+                rewritten: pass.pages.remove(&index),
             },
         );
     }
 
     // ---- write ----------------------------------------------------------------------
-    let change = if placed.is_empty() && kept.is_empty() && !remove_form {
-        Change::FillAndSign
-    } else {
-        Change::Other
-    };
+    let change =
+        if placed.is_empty() && kept.is_empty() && !remove_form && oc.is_none() && edits.is_empty()
+        {
+            Change::FillAndSign
+        } else {
+            Change::Other
+        };
     let admitted_ref: &Admitted<'_> = admitted;
     let mut u = IncrementalUpdate::new(admitted_ref, change)?;
     let font_refs = write::fonts(&mut u, fonts, &uses, &mut report.fonts)?;
@@ -654,6 +906,12 @@ pub fn flatten(
     };
     for (index, edit) in &mut edits {
         let mut dict = edit.dict.clone();
+        // Content cleared of hidden optional content replaces the page's streams.
+        if let Some(data) = edit.rewritten.take() {
+            let r = write::content_bytes(&mut u, &data)?;
+            edit.contents = vec![Object::Reference(r)];
+            dict.insert(b"Contents", Object::Array(edit.contents.clone()));
+        }
         if edit.draws
             && let Some(list) = invocations.get(index)
         {
@@ -689,10 +947,12 @@ pub fn flatten(
             contents.push(Object::Reference(closer));
             dict.insert(b"Contents", Object::Array(contents));
             dict.insert(b"Resources", Object::Dictionary(resources));
-        } else if !edit.annots_changed {
-            continue;
         }
         u.replace(edit.object, Object::Dictionary(dict))?;
+    }
+    // Forms and patterns cleared of hidden optional content, in place.
+    for s in &pass.streams {
+        write::replace_stream(&mut u, s.num, s.dict.clone(), &s.data)?;
     }
 
     // Fills: appearance streams, then the changed dictionaries.
@@ -725,20 +985,29 @@ pub fn flatten(
         u.replace(*num, Object::Dictionary(d.clone()))?;
     }
 
-    // The catalog: the form removed, or told to use our appearances.
+    // The catalog: the form removed, or told to use our appearances; optional content
+    // gone, so every viewer draws what remains.
     if let Some((root, mut cat)) = catalog {
+        let mut changed = false;
+        if oc.is_some() {
+            cat.remove(b"OCProperties");
+            changed = true;
+        }
         if remove_form {
             cat.remove(b"AcroForm");
-            u.replace(root, Object::Dictionary(cat))?;
+            changed = true;
             report.acroform_removed = true;
         } else if let Some((num, form)) = acroform_edit {
             match num {
                 Some(n) => u.replace(n, Object::Dictionary(form))?,
                 None => {
                     cat.insert(b"AcroForm", Object::Dictionary(form));
-                    u.replace(root, Object::Dictionary(cat))?;
+                    changed = true;
                 }
             }
+        }
+        if changed {
+            u.replace(root, Object::Dictionary(cat))?;
         }
     }
     let bytes = u.finish()?;
@@ -807,5 +1076,52 @@ mod tests {
         let m = appearance_matrix(&bbox, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], &rect).unwrap_or_default();
         assert_eq!(m, [2.0, 0.0, 0.0, 2.0, 100.0, 200.0]);
         assert!(appearance_matrix(&bbox, [0.0; 6], &rect).is_none());
+    }
+
+    #[test]
+    fn a_no_rotate_annotation_stays_upright_at_its_upper_left_corner() {
+        let bbox = Rect {
+            llx: 0.0,
+            lly: 0.0,
+            urx: 40.0,
+            ury: 10.0,
+        };
+        let rect = Rect {
+            llx: 50.0,
+            lly: 100.0,
+            urx: 90.0,
+            ury: 110.0,
+        };
+        let id = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        for rot in [0, 90, 180, 270] {
+            for uu in [1.0, 2.0] {
+                let g = geom(rot);
+                let g = PageGeometry::new(g.crop_box(), rot, uu);
+                let m = annotation_matrix(&g, &bbox, id, &rect, true).unwrap_or_default();
+                let shown = |x: f64, y: f64| {
+                    let (ux, uy) = (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]);
+                    g.to_displayed(Point::new(ux, uy))
+                };
+                // The appearance's top-left is the rectangle's upper-left corner as
+                // displayed, and its width runs right, its height down, unscaled.
+                let corner = g.to_displayed(Point::new(rect.llx, rect.ury));
+                let tl = shown(0.0, 10.0);
+                let tr = shown(40.0, 10.0);
+                let bl = shown(0.0, 0.0);
+                let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
+                assert!(near(tl.x, corner.x) && near(tl.y, corner.y), "{rot} {uu}");
+                assert!(
+                    near(tr.x - tl.x, 40.0 * uu) && near(tr.y, tl.y),
+                    "{rot} {uu}"
+                );
+                assert!(
+                    near(bl.y - tl.y, 10.0 * uu) && near(bl.x, tl.x),
+                    "{rot} {uu}"
+                );
+                if rot == 0 {
+                    assert_eq!(Some(m), appearance_matrix(&bbox, id, &rect));
+                }
+            }
+        }
     }
 }
