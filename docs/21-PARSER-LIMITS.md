@@ -66,6 +66,20 @@ Phase 1 gate.
 | Certificate: text value; disclosure | 4,000 bytes; 256 KiB | CS-AUD-0020 |
 | Certificate pages; objects copied when appending | 500; 200,000 | CS-AUD-0021, CS-AUD-0023 |
 
+## Key daemon (`casual-sign-keyd`, stage 2E)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| Request or response frame | 1 MiB | CS-KEY-0007 |
+| One certificate in a chain | 64 KiB | CS-KEY-0007 |
+| Certificates in a chain | 8 | CS-KEY-0006 |
+| Key alias, envelope id | 64 bytes, `[A-Za-z0-9._-]` | CS-KEY-0007 |
+| Digest | 64 bytes, and the algorithm's length | CS-KEY-0007 |
+| Signature returned | 1,024 bytes | CS-KEY-0007 |
+| Concurrent connections | 64 | — (refused at accept) |
+| Connection idle timeout | 30 s | CS-KEY-0011 |
+| Signatures per caller per minute | 600 | CS-KEY-0008 |
+
 ## Images (signatures, stamps, attachments shown inline)
 
 | Limit | Default | Code |

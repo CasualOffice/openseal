@@ -134,7 +134,11 @@ Split into tasks when each stage opens.
 | T-2B | Persistence, tenancy, audit immutability, blob store | In progress | P0 | Started 2026-11-11: skeleton `server/casual-sign-store` (new crate, docs/19), migrations under `migrations/`; worker on it; [22](22-DATA-MODEL.md) §9 | Cross-tenant tests; audit trigger tests |
 | T-2C | Server, auth, OpenAPI, rate limits | Open | P0 | [40](40-API-DESIGN.md) | Contract tests |
 | T-2D | Worker, job queue, email, webhooks | Open | P0 | [24](24-ENVELOPE-LIFECYCLE-AND-ROUTING.md) §1 | Crash tests |
-| T-2E | keyd with PKCS#11 | In progress | P0 | Started 2026-11-11: skeleton `server/casual-sign-keyd`; worker on it; [31](31-SEALING-AND-SIGNATURES.md) §5 | SoftHSM in CI; seal verified |
+| T-2E | keyd with PKCS#11 | Done | P0 | **Built and merged 2026-11-11 (`543267b`):** `casual-sign-keyd` (PKCS#11 via `cryptoki`, ECDSA P-256/P-384, RSA PKCS#1 v1.5 and PSS; key checked against its certificate at start; development file key behind explicit consent; TLS 1.3 mTLS daemon with a client allow-list, rate limits, a hash-chained operation log; remote `KeyProvider`) and `casual-sign-secrets` (copied from OpenCalc). Main session: tests pass; 8 seals through SoftHSM and through keyd accepted by pyHanko; allow-list bypass seen red. CI job `keyd-softhsm` | SoftHSM in CI; seal verified |
+| KEYD-01 | Cloud KMS backends for keyd: AWS KMS, GCP KMS/Cloud HSM, Azure Key Vault, HashiCorp Vault Transit, each a `DigestSigner` behind a feature | Open | P1 | Found by `T-2E` | Each seals a PDF that pyHanko accepts, against the provider's emulator or a test account |
+| KEYD-02 | keyd signs only for envelopes in `completing` (the worker presents a signed job token, SEC-S05) | Open | P1 | Needs `T-2D` | A digest for an envelope not completing is refused |
+| KEYD-03 | Reconciliation job: keyd's operation log against `document.sealed` events (SEC-S05) | Open | P1 | Needs `T-2D` | A signature with no matching event is reported |
+| KEYD-04 | keyd: Unix-socket transport with peer credentials; several keys from a config file; a smoke test of the daemon binary; log rotation and streaming verification; client identity by CA and subject; the start-up probe signature in the log | Open | P2 | Found by `T-2E` | Each with a test |
 | T-2F | Single-node Compose deployment | Open | P1 | [65](65-RUNNING-IT.md) | End-to-end API test on Compose in CI |
 | DEP-01 | Review SAML library choice (`samael` or alternative) | Open | P1 | Security history, maintenance, XML signature handling | Decision recorded |
 

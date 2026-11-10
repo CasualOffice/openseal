@@ -100,3 +100,17 @@ jobs:
       - if: steps.corpus.outputs.cache-hit != 'true'
         run: python3 -I fixtures/corpus/fetch.py
       - run: tools/wasm-parity.sh
+
+  # Stage 2E (T-2E): seals through PKCS#11 (SoftHSM) and through keyd over mTLS, each
+  # accepted by pyHanko. The module path is checked first so the test cannot skip.
+  keyd-softhsm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q softhsm2
+      - run: test -f /usr/lib/softhsm/libsofthsm2.so
+      - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
+      - run: cargo test -p casual-sign-keyd -p casual-sign-secrets --locked -- --nocapture
+        env:
+          SOFTHSM2_MODULE: /usr/lib/softhsm/libsofthsm2.so
+          OPENSEAL_VERIFY_PYTHON: /tmp/v/bin/python
