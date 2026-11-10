@@ -30,7 +30,7 @@ export async function mount(view, ctx) {
     try {
       await busy(submit, () => ctx.api.login(email.value.trim(), password.value));
       ctx.session = await ctx.api.session();
-      ctx.navigate("#/agreements");
+      ctx.navigate("#/home");
     } catch (err) {
       error.textContent = err.code === "CS-AUTH-0007" ? t("signin.invalid") : errorMessage(err);
       password.value = "";

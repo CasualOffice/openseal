@@ -201,10 +201,33 @@ export function locationFrom(position) {
 /// The fake exists only for development and the browser tests while the server is
 /// being integrated: it is honoured on a loopback host only, so a deployed OpenSeal
 /// can never be made to show fake agreements by a crafted link.
-export function isMockMode(loc = globalThis.location) {
+///
+/// Once `?mock=1` is seen on a loopback host, the tab remembers it (sessionStorage,
+/// `openseal.mock`), so links that drop the query stay in mock mode; `?mock=0` forgets.
+export function isMockMode(loc = globalThis.location, store = safeSessionStorage()) {
   try {
-    const host = (loc?.hostname || "").replace(/^\[|\]$/g, "");
-    const loopback = host === "localhost" || host === "::1" || /^127\./.test(host);
-    return loopback && new URLSearchParams(loc?.search || "").get("mock") === "1";
+    if (!isLoopback(loc)) return false;
+    const q = new URLSearchParams(loc?.search || "").get("mock");
+    if (q === "1" || q === "0") {
+      try { if (q === "1") store?.setItem("openseal.mock", "1"); else store?.removeItem("openseal.mock"); } catch { /* storage off */ }
+      return q === "1";
+    }
+    try { return store?.getItem("openseal.mock") === "1"; } catch { return false; }
   } catch { return false; }
+}
+
+/// Whether the page is served from this machine (development and tests).
+export function isLoopback(loc = globalThis.location) {
+  const host = (loc?.hostname || "").replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "::1" || /^127\./.test(host);
+}
+
+/// On loopback without mock mode, an error that means "no OpenSeal server here": the
+/// dev server answers API paths with 404 or 501, or nothing answers at all.
+export function isNoServer(err, loc = globalThis.location) {
+  return isLoopback(loc) && !!err && (err.code === "CS-NET-0001" || err.code === "HTTP-404" || err.code === "HTTP-501");
+}
+
+function safeSessionStorage() {
+  try { return globalThis.sessionStorage || null; } catch { return null; }
 }

@@ -43,6 +43,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ".pfb": "application/octet-stream",
         ".bcmap": "application/octet-stream",
         ".json": "application/json",
+        ".wasm": "application/wasm",
     }
 
     def __init__(self, *args, **kwargs):
@@ -50,7 +51,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Security-Policy", CSP)
+        # verify.html runs the WASM verifier, which needs 'wasm-unsafe-eval' (docs/47).
+        verify = self.path.split("?", 1)[0] == "/verify.html"
+        self.send_header("Content-Security-Policy", CSP.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'") if verify else CSP)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "geolocation=(self), camera=(), microphone=()")

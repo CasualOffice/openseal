@@ -80,6 +80,28 @@ const DRAW = {
     g.append(s("path", { d: "M104 58l20 36H84z" }, "il-paper il-accent-line"));
     g.append(s("path", { d: "M104 70v10M104 86v1" }, "il-accent"));
   },
+  templates(g) {
+    g.append(s("ellipse", { cx: 80, cy: 112, rx: 56, ry: 8 }, "il-fill"));
+    g.append(s("rect", { x: 34, y: 26, width: 64, height: 80, rx: 6 }, "il-paper il-line"));
+    g.append(s("rect", { x: 46, y: 40, width: 40, height: 10, rx: 2 }, "il-accent-dash"));
+    g.append(s("rect", { x: 46, y: 58, width: 40, height: 10, rx: 2 }, "il-accent-dash"));
+    g.append(s("path", { d: "M46 82h24" }, "il-line il-thin"));
+    g.append(s("rect", { x: 66, y: 14, width: 64, height: 80, rx: 6 }, "il-paper il-line"));
+    g.append(s("path", { d: "M78 32h40M78 42h40M78 52h28" }, "il-line il-thin"));
+    g.append(s("path", { d: "M80 74c4-6 6 2 10-3s5 4 9 0" }, "il-accent"));
+  },
+  keys(g) {
+    g.append(s("ellipse", { cx: 80, cy: 112, rx: 56, ry: 8 }, "il-fill"));
+    g.append(s("circle", { cx: 58, cy: 56, r: 22 }, "il-paper il-line"));
+    g.append(s("circle", { cx: 58, cy: 56, r: 7 }, "il-accent-fill"));
+    g.append(s("path", { d: "M74 72l34 34M96 94l8-8M104 102l8-8" }, "il-line il-thick"));
+  },
+  verify(g) {
+    g.append(s("ellipse", { cx: 80, cy: 112, rx: 56, ry: 8 }, "il-fill"));
+    sheet(g, 36, 16, 5);
+    g.append(s("path", { d: "M108 46l22 8v18c0 16-10 26-22 30-12-4-22-14-22-30V54z" }, "il-paper il-accent-line"));
+    g.append(s("path", { d: "M99 74l6 6 12-13" }, "il-accent"));
+  },
   offline(g) {
     g.append(s("ellipse", { cx: 80, cy: 112, rx: 56, ry: 8 }, "il-fill"));
     g.append(s("path", { d: "M40 60a56 56 0 0 1 80 0M52 74a38 38 0 0 1 56 0M66 88a18 18 0 0 1 28 0" }, "il-line il-thick"));

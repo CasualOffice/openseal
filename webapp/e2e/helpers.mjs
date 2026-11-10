@@ -29,13 +29,18 @@ export const tokens = REAL
 export const app = (hash = "#/agreements") => `/app.html${q}${hash}`;
 export const signPage = (token) => `/s/${encodeURIComponent(token)}${q}`;
 
-export async function signIn(page) {
+export async function signIn(page, land = "agreements") {
   if (REAL && !creds.email) throw new Error("OPENSEAL_E2E_EMAIL and OPENSEAL_E2E_PASSWORD are needed against a real server");
   await page.goto(app("#/signin"));
   await page.getByLabel("Email").fill(creds.email);
   await page.getByLabel("Password").fill(creds.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+  // Sign-in lands on Home (WEB-02); most specs start from the agreements list.
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+  if (land === "agreements") {
+    await page.goto(app("#/agreements"));
+    await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+  }
 }
 
 /// A small PDF made on the spot (two pages), as a file for `setInputFiles`.

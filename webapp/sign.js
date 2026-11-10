@@ -10,8 +10,8 @@
 import { h, clear, reducedMotion } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
-import { createClient, isMockMode, errorMessage, locationFrom, ApiError } from "./api.js";
-import { button, busy, emptyState, toast, toastError, openDialog, reasonDialog } from "./ui.js";
+import { createClient, isMockMode, isNoServer, errorMessage, locationFrom, ApiError } from "./api.js";
+import { button, busy, emptyState, toast, toastError, openDialog, reasonDialog, noServerState } from "./ui.js";
 import { openPdf, fitScale } from "./pdfview.js";
 import { fromWire, takesInput } from "./geometry.js";
 import { adoptDialog } from "./signature.js";
@@ -64,6 +64,11 @@ function message({ illus, title, text, action = null, testId }) {
 }
 
 function fail(err) {
+  if (!mock && isNoServer(err)) {
+    guide.hidden = true;
+    moreBtn.hidden = true;
+    return noServerState(screen(), start);
+  }
   if (err instanceof ApiError && err.code === "CS-API-0002") {
     return message({ illus: "error", title: t("sign.not-found.title"), text: t("sign.not-found.text"), testId: "sign-not-found" });
   }

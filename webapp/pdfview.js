@@ -68,6 +68,24 @@ export async function openPdf(bytes) {
   };
 }
 
+/// The bytes of the file attached to a PDF as `name` (an embedded file, read by pdf.js
+/// in its worker), or null when there is none or it is larger than `maxBytes`. Used by
+/// the Verify page for `audit-trail.json` (docs/32). Nothing attached is ever opened
+/// or run; the bytes go to a bounded JSON reader (trail.js).
+export async function readAttachment(bytes, name, maxBytes) {
+  const p = await pdfjs();
+  // A copy: pdf.js transfers the buffer it is given to its worker.
+  const task = p.getDocument({ data: new Uint8Array(bytes).slice(), isEvalSupported: false, enableXfa: false, disableAutoFetch: true, disableStream: true, useSystemFonts: false });
+  const doc = await task.promise;
+  try {
+    const all = (await doc.getAttachments()) || {};
+    for (const a of Object.values(all)) {
+      if (a?.filename === name && a.content instanceof Uint8Array) return a.content.length <= maxBytes ? a.content : null;
+    }
+    return null;
+  } finally { doc.destroy(); }
+}
+
 /// The scale that fits a page `width` points into `available` CSS px, between 0.4 and 2.
 export function fitScale(width, available) {
   return Math.max(0.4, Math.min(2, (available - 2) / width));

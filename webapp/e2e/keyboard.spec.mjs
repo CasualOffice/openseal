@@ -11,7 +11,7 @@ test("place a field and send with the keyboard alone", async ({ page }) => {
   await page.keyboard.press("Tab");
   await page.keyboard.type(creds.password);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
 
   await page.locator("body").press("n"); // N: new envelope (keys.js)
   await expect(page.getByTestId("empty-documents")).toBeVisible();
@@ -58,7 +58,7 @@ test("the shortcut list opens with ? and closes with Escape, returning focus", a
   await page.keyboard.press("Tab");
   await page.keyboard.type(creds.password);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
   await page.locator("body").press("Shift+?");
   const dlg = page.getByRole("dialog", { name: "Keyboard shortcuts" });
   await expect(dlg).toBeVisible();

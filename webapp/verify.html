@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- docs/47 §As built: CSP, plus 'wasm-unsafe-eval' on this page only: the verifier is
+       casual-sign-verify compiled to WebAssembly, and a browser compiles WebAssembly only
+       when the policy allows it. No JavaScript eval is allowed. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="referrer" content="no-referrer">
+  <title>Verify a signed PDF · OpenSeal</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="verify.js"></script>
+</head>
+<body class="os-verify">
+  <a class="os-skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
+  <header class="os-topbar">
+    <a class="os-brand" href="app.html" data-i18n-attr="aria-label:nav.home">
+      <img class="os-logo--light" src="assets/logo.svg" alt="" width="133" height="26">
+      <img class="os-logo--dark" src="assets/logo-dark.svg" alt="" width="133" height="26">
+    </a>
+    <span class="os-spacer"></span>
+    <button type="button" id="theme-btn" class="os-btn os-btn--ghost os-btn--md os-btn--icon"></button>
+  </header>
+  <main id="main" class="os-verify__main" tabindex="-1"></main>
+</body>
+</html>

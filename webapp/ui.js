@@ -202,6 +202,22 @@ export function statusBadge(status) {
   return h("span", { class: `os-badge os-badge--${status}` }, icon(STATUS_ICON[status] || "info", { size: 16 }), h("span", { text: t(`status.${status}`) }));
 }
 
+/// Replace `container`'s content with "no OpenSeal server here" (loopback only, no
+/// mock): a retry, and a link to the same page in demo mode.
+export function noServerState(container, retry = null) {
+  clear(container);
+  const q = new URLSearchParams(location.search);
+  q.set("mock", "1");
+  const demo = h("a", { class: "os-btn os-btn--secondary os-btn--md", href: `${location.pathname}?${q}${location.hash}`, attrs: { "data-testid": "open-demo" } }, icon("eye", { size: 20 }), h("span", { text: t("empty.no-server.demo") }));
+  container.append(emptyState({
+    illus: "offline",
+    title: t("empty.no-server.title"),
+    text: t("empty.no-server.text"),
+    action: h("div", { class: "os-actions" }, retry ? button(t("action.retry"), { icon: "refresh-cw", variant: "primary", onClick: retry }) : null, demo),
+    testId: "empty-no-server",
+  }));
+}
+
 /// Replace `container`'s content with an error state for `err` and a retry button.
 export function errorState(container, err, retry) {
   clear(container);

@@ -69,13 +69,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (store) {
       try {
         const s = store.getItem(KEY);
-        if (s) { db = JSON.parse(s); return; }
+        if (s) { db = JSON.parse(s); db.templates ||= []; db.users ||= []; db.apiClients ||= []; return; }
       } catch { db = null; }
     }
-    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {} };
+    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [] };
     await seed();
     save();
   }
+  const flag = (name) => { try { return store?.getItem(`openseal.mock.${name}`) === "1"; } catch { return false; } };
 
   const iso = (offsetMin = 0) => new Date(now().getTime() + offsetMin * 60000).toISOString();
 
@@ -266,6 +267,23 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         env.status = "declined"; env.ended_at = iso(-60 * 24); env.version++;
         await audit(env, "recipient_declined", { recipient_id: recs[0].id, reason: recs[0].declined_reason });
       });
+
+    // Templates (WEB-02): one with a document and fields, one with roles only.
+    const nda = newTemplate({ name: "Mutual NDA", email_subject: "Mutual NDA for signature", email_message: "Please review and sign this NDA.", roles: [{ name: "Company", type: "signer", routing_order: 1 }, { name: "Counterparty", type: "signer", routing_order: 2 }, { name: "Legal", type: "cc", routing_order: 3 }] }, iso(-60 * 24 * 10));
+    const ndaBytes = doc("Mutual non-disclosure agreement");
+    const ndaDoc = { id: uid(), name: "mutual-nda.pdf", pages: 2, bytes: ndaBytes.length };
+    db.blobs[ndaDoc.id] = b64(ndaBytes);
+    nda.documents.push(ndaDoc);
+    for (const [role, y] of [["Company", 560], ["Counterparty", 640]]) {
+      for (const f of sigFields(y)) nda.fields.push({ id: uid(), document_id: ndaDoc.id, role, type: f.type, placement: placementOf(f), ...(f.required ? { required: true } : {}) });
+    }
+    newTemplate({ name: "Contractor onboarding", email_subject: "Welcome aboard: documents to sign", roles: [{ name: "Contractor", type: "signer", routing_order: 1 }] }, iso(-60 * 24 * 4));
+
+    db.users.push(
+      { id: "user-demo", email: MOCK.email, name: "Demo Admin", login_kind: "local", permission_profile_id: "profile-admin", disabled: false },
+      { id: uid(), email: "sender@openseal.test", name: "Robin Sender", login_kind: "local", permission_profile_id: "profile-sender", disabled: false },
+    );
+    db.apiClients.push({ id: uid(), kind: "api_key", name: "CRM integration", owner_user_id: "user-demo", key_prefix: "osk_3f9a12c0", scopes: ["envelopes:read", "envelopes:write", "envelopes:send"], expires_at: null, revoked: false });
   }
 
   // ---- HTTP plumbing ---------------------------------------------------------
@@ -294,10 +312,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
     const [, , , res, id, sub, subId, subSub] = parts; // "", api, v1, res, …
     if (res === "auth" && id === "session" && method === "GET") {
-      return json(200, { account_id: "acct-demo", user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send"], admin: true });
+      return json(200, { account_id: "acct-demo", user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true });
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
     if (res === "accounts" && id === "me") return json(200, { id: "acct-demo", name: "Demo account", settings: {}, data_region: null, created_at: iso(-60 * 24 * 30) });
+    if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
+    if (res === "users") return users(method, id, body);
+    if (res === "api-clients") return apiClients(method, id, body);
     if (res !== "envelopes") fail(404, "CS-API-0002", "Not found");
 
     if (!id) {
@@ -437,6 +458,142 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return json(204, null);
       }
     }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+
+  // ---- Templates (WEB-02) ------------------------------------------------------
+  // `GET/POST /templates`, `GET/PATCH /templates/{id}` as api/openapi.yaml. Documents
+  // and fields of a template are docs/40's slice-3 design ("as envelopes"), ahead of
+  // the server: `sessionStorage["openseal.mock.no-template-docs"] = "1"` turns them
+  // off, so the browser tests also cover today's server, which keeps roles only.
+  const templateDocs = () => !flag("no-template-docs");
+  function publicTemplate(tp) {
+    // The server's shape (server/…/api/templates.rs): no creation time; the list
+    // carries no roles.
+    const { documents, fields, created_at: _c, ...rest } = tp;
+    return templateDocs() ? { ...rest, documents, fields } : rest;
+  }
+  function checkRoles(roles) {
+    if (roles == null) return [];
+    if (!Array.isArray(roles)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/roles", code: "type" }]);
+    return roles.map((r, i) => {
+      if (!r || typeof r.name !== "string" || !r.name.trim()) fail(400, "CS-API-0001", "Role name required", [{ pointer: `/roles/${i}/name`, code: "required" }]);
+      if (!["signer", "cc", "approver", "viewer", "in_person_signer"].includes(r.type)) fail(400, "CS-API-0001", "Unknown recipient type", [{ pointer: `/roles/${i}/type`, code: "enum" }]);
+      return { id: uid(), name: r.name.trim().slice(0, 255), type: r.type, routing_order: Number.isInteger(r.routing_order) ? r.routing_order : 1 };
+    });
+  }
+  function newTemplate(b, createdAt) {
+    if (!b || typeof b.name !== "string" || !b.name.trim()) fail(400, "CS-API-0001", "Template name required", [{ pointer: "/name", code: "required" }]);
+    for (const k of Object.keys(b)) if (!["name", "email_subject", "email_message", "roles"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+    const tp = { id: uid(), owner_user_id: "user-demo", name: b.name.trim().slice(0, 255), version: 1, email_subject: b.email_subject || "", email_message: b.email_message || "", roles: checkRoles(b.roles), documents: [], fields: [], created_at: createdAt || iso() };
+    db.templates.push(tp);
+    return tp;
+  }
+  function templates(method, id, sub, subId, subSub, headers, body) {
+    if (!id) {
+      if (method === "GET") {
+        const items = [...db.templates].sort((a, b) => b.created_at.localeCompare(a.created_at))
+          .map((tp) => ({ id: tp.id, owner_user_id: tp.owner_user_id, name: tp.name, email_subject: tp.email_subject, email_message: tp.email_message, version: tp.version, roles: [] }));
+        return json(200, { items });
+      }
+      if (method === "POST") { const tp = newTemplate(body); return json(201, publicTemplate(tp), { ETag: `"v${tp.version}"` }); }
+    }
+    const tp = db.templates.find((x) => x.id === id);
+    if (!tp) fail(404, "CS-API-0002", "Not found");
+    if (!sub) {
+      if (method === "GET") return json(200, publicTemplate(tp), { ETag: `"v${tp.version}"` });
+      if (method === "PATCH") {
+        const v = headers["if-match"];
+        if (!v) fail(428, "CS-API-0008", "Precondition required");
+        if (v !== `"v${tp.version}"`) fail(412, "CS-WF-0002", "Stale version");
+        if (!body || typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Template name required", [{ pointer: "/name", code: "required" }]);
+        tp.name = body.name.trim().slice(0, 255);
+        tp.version++;
+        return json(200, publicTemplate(tp), { ETag: `"v${tp.version}"` });
+      }
+    }
+    if (!templateDocs()) fail(404, "CS-API-0002", "Not found");
+    if (sub === "documents") {
+      if (!subId && method === "POST") {
+        const bytes = unb64(body?.content_base64 || "");
+        if (bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") fail(422, "CS-PDF-0001", "Not a PDF");
+        const d = { id: uid(), name: String(body?.name || "document.pdf").slice(0, 255), pages: countPages(bytes), bytes: bytes.length };
+        db.blobs[d.id] = b64(bytes);
+        tp.documents.push(d);
+        tp.version++;
+        return json(201, d);
+      }
+      const d = tp.documents.find((x) => x.id === subId);
+      if (!d) fail(404, "CS-API-0002", "Not found");
+      if (subSub === "content" && method === "GET") return pdf(unb64(db.blobs[d.id]));
+    }
+    if (sub === "fields" && !subId && method === "POST") {
+      const items = body?.items || [body];
+      const out = items.map((f, i) => {
+        if (!tp.roles.some((r) => r.name === f?.role)) fail(422, "CS-WF-0008", "Unknown role", [{ pointer: `/items/${i}/role`, code: "unknown" }]);
+        if (!tp.documents.some((d) => d.id === f.document_id)) fail(422, "CS-WF-0008", "Unknown document", [{ pointer: `/items/${i}/document_id`, code: "unknown" }]);
+        const field = { id: uid(), document_id: f.document_id, role: f.role, type: String(f.type || "text"), placement: placementOf(f.placement || f) };
+        if (f.required) field.required = true;
+        if (f.label) field.label = String(f.label);
+        tp.fields.push(field);
+        return field;
+      });
+      tp.version++;
+      return json(201, { items: out });
+    }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+
+  // ---- Users and API clients (WEB-02 Admin) ------------------------------------------
+  function users(method, id, body) {
+    if (!id) {
+      if (method === "GET") return json(200, { items: db.users });
+      if (method === "POST") {
+        if (!body || typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
+        if (typeof body.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
+        if (!["admin", "sender", "viewer"].includes(body.profile)) fail(400, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "enum" }]);
+        if (body.password != null && (typeof body.password !== "string" || body.password.length < 12)) fail(400, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
+        const u = { id: uid(), email: body.email, name: body.name.trim(), login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false };
+        db.users.push(u);
+        return json(201, u);
+      }
+    }
+    const u = db.users.find((x) => x.id === id);
+    if (!u) fail(404, "CS-API-0002", "Not found");
+    if (method === "GET") return json(200, u);
+    if (method === "PATCH") {
+      if (body?.name != null) {
+        if (!String(body.name).trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
+        u.name = String(body.name).trim();
+      }
+      return json(200, u);
+    }
+    if (method === "DELETE") {
+      if (u.id === "user-demo") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/id", code: "self" }]);
+      db.users = db.users.filter((x) => x !== u);
+      return json(204, null);
+    }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+  function apiClients(method, id, body) {
+    if (!id) {
+      if (method === "GET") return json(200, { items: db.apiClients });
+      if (method === "POST") {
+        if (!body || typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
+        if (!["api_key", "oauth_app"].includes(body.kind)) fail(400, "CS-API-0001", "Unknown kind", [{ pointer: "/kind", code: "enum" }]);
+        if (!Array.isArray(body.scopes) || !body.scopes.length) fail(400, "CS-API-0001", "Scopes required", [{ pointer: "/scopes", code: "required" }]);
+        const days = Number.isInteger(body.expires_in_days) ? body.expires_in_days : null;
+        const secret = uid().replace(/-/g, "");
+        const c = { id: uid(), kind: body.kind, name: body.name.trim(), owner_user_id: body.owner_user_id || null, key_prefix: body.kind === "api_key" ? `osk_${secret.slice(0, 8)}` : null, scopes: body.scopes, expires_at: days ? iso(days * 24 * 60) : null, revoked: false };
+        db.apiClients.push(c);
+        const shown = body.kind === "api_key" ? { key: `${c.key_prefix}_${secret}` } : { client_id: `osc_${c.id.slice(0, 8)}`, client_secret: secret };
+        return json(201, { ...c, ...shown });
+      }
+    }
+    const c = db.apiClients.find((x) => x.id === id);
+    if (!c) fail(404, "CS-API-0002", "Not found");
+    if (method === "GET") return json(200, c);
+    if (method === "DELETE") { c.revoked = true; return json(204, null); }
     fail(405, "CS-API-0012", "Method not allowed");
   }
 

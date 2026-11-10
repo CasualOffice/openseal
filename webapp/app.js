@@ -2,15 +2,18 @@
 // shortcuts. Screens are modules with `mount(container, ctx, params) → cleanup`.
 //
 // Routes (hash, so a static server needs no rewrites):
-//   #/signin  #/agreements[?status=…]  #/envelopes/{id}  #/prepare  #/prepare/{id}
+//   #/signin  #/home  #/agreements[?status=…]  #/envelopes/{id}  #/prepare  #/prepare/{id}
+//   #/templates  #/templates/new  #/templates/{id}  #/admin[?tab=api]   (WEB-02)
+// Verify is its own page, verify.html, usable without an account.
 
 import { h, clear, isTyping } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
-import { createClient, isMockMode, ApiError, errorMessage } from "./api.js";
+import { createClient, isMockMode, isNoServer, ApiError, errorMessage } from "./api.js";
+import { extend } from "./api-extra.js";
 import { register, run, command } from "./commands.js";
 import { handle, bindings } from "./keys.js";
-import { button, openDialog, toast, errorState } from "./ui.js";
+import { button, openDialog, toast, errorState, noServerState } from "./ui.js";
 import { initTheme, setTheme, getTheme, toggleTheme } from "./theme.js";
 
 const mock = isMockMode();
@@ -22,6 +25,7 @@ if (mock) {
   const base = document.querySelector('meta[name="openseal-api-base"]')?.content || "";
   api = createClient({ baseUrl: base, store: safeSession() });
 }
+extend(api);
 
 function safeSession() {
   try { return globalThis.sessionStorage; } catch { return null; }
@@ -48,9 +52,17 @@ const ctx = {
 
 const ROUTES = [
   [/^#\/signin$/, () => import("./signin.js"), { chrome: false }],
+  [/^#\/home$/, () => import("./home.js"), { nav: "home" }],
   [/^#\/agreements(?:\?.*)?$/, () => import("./dashboard.js"), { nav: "agreements" }],
   [/^#\/envelopes\/([^/?]+)$/, () => import("./envelope.js"), { nav: "agreements" }],
   [/^#\/prepare(?:\/([^/?]+))?$/, () => import("./prepare.js"), { nav: "send", wide: true }],
+  [/^#\/templates$/, () => import("./templates.js"), { nav: "templates" }],
+  [/^#\/templates\/new$/, async () => {
+    const prepare = await import("./prepare.js");
+    return { mount: (view, c, _m, params) => prepare.mount(view, c, [], params, { template: true }) };
+  }, { nav: "templates", wide: true }],
+  [/^#\/templates\/([^/?]+)$/, async () => ({ mount: (await import("./templates.js")).mountUse }), { nav: "templates" }],
+  [/^#\/admin(?:\?.*)?$/, () => import("./admin.js"), { nav: "admin" }],
 ];
 
 let cleanup = null;
@@ -58,13 +70,14 @@ let routeSeq = 0;
 
 async function route() {
   const seq = ++routeSeq;
-  const hash = location.hash || "#/agreements";
+  const hash = location.hash || "#/home";
   const main = document.getElementById("main");
   if (!ctx.session && hash !== "#/signin") {
     try {
       ctx.session = await api.session();
     } catch (err) {
       ctx.session = null;
+      if (!mock && isNoServer(err)) { clear(main); const v = h("div", { class: "os-view" }); main.append(v); noServerState(v, route); return; }
       if (err?.code === "CS-NET-0001" || (err?.status >= 500)) {
         // Not signed out: unreachable. Say so, with a retry, instead of a sign-in form.
         clear(main);
@@ -83,8 +96,11 @@ async function route() {
     match = hash.match(r[0]);
     if (match) { entry = r; break; }
   }
-  if (!entry) { ctx.navigate("#/agreements"); return; }
-  if (hash === "#/signin" && ctx.session) { ctx.navigate("#/agreements"); return; }
+  // Admin is shown to account admins only; the server enforces it on every call.
+  const adminLink = document.getElementById("nav-admin");
+  if (adminLink) adminLink.hidden = !ctx.session?.admin;
+  if (!entry) { ctx.navigate("#/home"); return; }
+  if (hash === "#/signin" && ctx.session) { ctx.navigate("#/home"); return; }
   const mod = await entry[1]();
   if (seq !== routeSeq) return;
   if (cleanup) { try { cleanup(); } catch { /* a screen's own teardown */ } cleanup = null; }
@@ -121,7 +137,7 @@ function buildChrome() {
   });
   for (const a of document.querySelectorAll(".os-nav__link")) {
     a.prepend(icon(a.dataset.icon, { size: 20 }));
-    if (mock) a.href = a.getAttribute("href");
+    if (mock && !a.getAttribute("href").startsWith("#")) a.href = `${a.getAttribute("href")}?mock=1`;
   }
   const newBtn = document.getElementById("nav-new");
   newBtn.replaceWith(button(t("nav.new"), { icon: "plus", variant: "primary", command: "envelope.new", onClick: () => ctx.navigate("#/prepare"), attrs: { id: "nav-new" } }));

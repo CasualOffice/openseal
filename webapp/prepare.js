@@ -11,6 +11,13 @@
 // Geometry is ADR-019's: points in the page's displayed space, top-left origin
 // (geometry.js). The server is the source of truth: after each save the editor
 // reloads the envelope and rebuilds its state from it.
+//
+// Template mode (WEB-02, `#/templates/new`, `opts.template`): the same editor with
+// roles ("Client", "Witness") where an envelope has people: no emails or access codes,
+// a template name instead of a subject, "Save template" instead of Send. Saving is
+// `POST /api/v1/templates` (name, email subject and message, roles), then the
+// documents and fields on docs/40's slice-3 template endpoints (api-extra.js); a
+// server without those keeps the roles and the editor says so.
 
 import { h, clear, reducedMotion } from "./dom.js";
 import { icon } from "./icons.js";
@@ -20,6 +27,8 @@ import { button, busy, emptyState, toast, toastError, openDialog, confirmDialog 
 import { openPdf, fitScale } from "./pdfview.js";
 import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, snap, toWire, fromWire, takesInput } from "./geometry.js";
 import { errorMessage } from "./api.js";
+import { templateDocsUnsupported } from "./api-extra.js";
+import { rolesFrom } from "./templatemodel.js";
 
 const FIELD_ICON = { signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", text: "text-cursor-input", checkbox: "square-check" };
 const MAX_UPLOAD = 50 * 1024 * 1024; // docs/21: 50 MiB decoded
@@ -29,11 +38,13 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 let keySeq = 0;
 const newKey = (p) => `${p}${++keySeq}`;
 
-export async function mount(view, ctx, [rawId]) {
+export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) {
+  const TPL = !!opts.template;
   const S = {
-    id: rawId ? decodeURIComponent(rawId) : null,
+    id: rawId && !TPL ? decodeURIComponent(rawId) : null,
     subject: "",
     message: "",
+    emailSubject: "",
     captureLocation: false,
     routing: "sequential",
     docs: [],
@@ -51,13 +62,16 @@ export async function mount(view, ctx, [rawId]) {
   let scale = 1;
 
   // ---- Layout ----------------------------------------------------------------------
-  const subject = h("input", { id: "env-subject", class: "os-input os-input--title", placeholder: t("prepare.subject-placeholder"), maxLength: 255, attrs: { "aria-label": t("prepare.subject") } });
+  const subject = h("input", { id: "env-subject", class: "os-input os-input--title", placeholder: t(TPL ? "template.name-placeholder" : "prepare.subject-placeholder"), maxLength: 255, attrs: { "aria-label": t(TPL ? "template.name" : "prepare.subject") } });
   subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; });
-  const saveBtn = button(t("prepare.save"), { icon: "save", command: "envelope.save", onClick: () => run("envelope.save") });
-  const sendBtn = button(t("prepare.send"), { icon: "send", variant: "primary", command: "envelope.send", onClick: () => run("envelope.send") });
+  const saveBtn = TPL
+    ? button(t("template.save"), { icon: "save", variant: "primary", command: "template.save", onClick: () => run("template.save") })
+    : button(t("prepare.save"), { icon: "save", command: "envelope.save", onClick: () => run("envelope.save") });
+  const sendBtn = TPL ? null : button(t("prepare.send"), { icon: "send", variant: "primary", command: "envelope.send", onClick: () => run("envelope.send") });
   const bar = h("div", { class: "os-prepare__bar" },
-    h("a", { href: "#/agreements", class: "os-btn os-btn--ghost os-btn--md os-btn--icon", attrs: { "aria-label": t("prepare.back"), title: t("prepare.back") } }, icon("chevron-left")),
-    h("h1", { class: "os-sr-only", text: t("prepare.title") }),
+    h("a", { href: TPL ? "#/templates" : "#/agreements", class: "os-btn os-btn--ghost os-btn--md os-btn--icon", attrs: { "aria-label": t(TPL ? "template.back" : "prepare.back"), title: t(TPL ? "template.back" : "prepare.back") } }, icon("chevron-left")),
+    h("h1", { class: "os-sr-only", text: t(TPL ? "template.new-title" : "prepare.title") }),
+    TPL ? h("span", { class: "os-badge os-badge--template" }, icon("layout-template", { size: 16 }), h("span", { text: t("template.badge") })) : null,
     subject, h("span", { class: "os-prepare__status os-muted", attrs: { "aria-live": "polite", id: "save-status" } }), saveBtn, sendBtn);
 
   const docsPanel = h("section", { class: "os-panel", attrs: { "aria-labelledby": "docs-h" } });
@@ -98,7 +112,7 @@ export async function mount(view, ctx, [rawId]) {
   const colourOf = (rk) => (S.recipients.findIndex((r) => r.key === rk) % COLOURS) + 1;
   const recipient = (rk) => S.recipients.find((r) => r.key === rk);
   const signers = () => S.recipients.filter((r) => r.type === "signer");
-  const displayName = (r, i) => r?.name?.trim() || t("prepare.recipient-n", { n: i + 1 });
+  const displayName = (r, i) => r?.name?.trim() || t(TPL ? "template.role-n" : "prepare.recipient-n", { n: i + 1 });
   function orderOf(r) {
     const sg = signers();
     if (r.type !== "signer") return S.routing === "parallel" ? 2 : sg.length + 1;
@@ -113,11 +127,14 @@ export async function mount(view, ctx, [rawId]) {
 
   function renderRecipients() {
     clear(rcptPanel);
+    const addLabel = t(TPL ? "template.add-role" : "prepare.add-recipient");
     rcptPanel.append(h("div", { class: "os-panel__head" },
-      h("h2", { id: "rcpt-h", class: "os-panel__title", text: t("prepare.recipients") }),
-      button(t("prepare.add-recipient"), { icon: "user-plus", size: "sm", command: "recipient.add", onClick: () => addRecipient() })));
+      h("h2", { id: "rcpt-h", class: "os-panel__title", text: t(TPL ? "template.roles" : "prepare.recipients") }),
+      button(addLabel, { icon: "user-plus", size: "sm", command: "recipient.add", onClick: () => addRecipient() })));
     if (!S.recipients.length) {
-      rcptPanel.append(emptyState({ illus: "recipients", title: t("empty.recipients.title"), text: t("empty.prepare-recipients.text"), action: button(t("prepare.add-recipient"), { icon: "user-plus", variant: "primary", onClick: () => addRecipient() }), testId: "empty-recipients" }));
+      rcptPanel.append(TPL
+        ? emptyState({ illus: "recipients", title: t("empty.roles.title"), text: t("empty.roles.text"), action: button(addLabel, { icon: "user-plus", variant: "primary", onClick: () => addRecipient() }), testId: "empty-roles" })
+        : emptyState({ illus: "recipients", title: t("empty.recipients.title"), text: t("empty.prepare-recipients.text"), action: button(addLabel, { icon: "user-plus", variant: "primary", onClick: () => addRecipient() }), testId: "empty-recipients" }));
       return;
     }
     const routing = h("fieldset", { class: "os-segmented" },
@@ -135,7 +152,7 @@ export async function mount(view, ctx, [rawId]) {
       const nameId = `rn-${r.key}`;
       const mailId = `re-${r.key}`;
       const typeId = `rt-${r.key}`;
-      const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t("prepare.name"), maxLength: 255, attrs: { "data-testid": "recipient-name" } });
+      const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t(TPL ? "template.role-placeholder" : "prepare.name"), maxLength: 255, attrs: { "data-testid": TPL ? "role-name" : "recipient-name" } });
       const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "off", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email" } });
       const type = h("select", { id: typeId, class: "os-input os-input--sm", attrs: { "data-testid": "recipient-type" } },
         h("option", { value: "signer", text: t("rtype.signer"), selected: r.type === "signer" }),
@@ -168,9 +185,9 @@ export async function mount(view, ctx, [rawId]) {
           h("span", { class: "os-order", attrs: { title: t("prepare.routing-order") }, text: String(orderOf(r)) }),
           h("label", { class: "os-sr-only", attrs: { for: typeId }, text: t("prepare.role-for", { name: displayName(r, i) }) }), type,
           h("span", { class: "os-spacer" }), up, del),
-        h("label", { class: "os-sr-only", attrs: { for: nameId }, text: t("prepare.name-of", { n: i + 1 }) }), name,
-        h("label", { class: "os-sr-only", attrs: { for: mailId }, text: t("prepare.email-of", { n: i + 1 }) }), email,
-        r.type === "signer" ? access : null);
+        h("label", { class: "os-sr-only", attrs: { for: nameId }, text: t(TPL ? "template.role-name-of" : "prepare.name-of", { n: i + 1 }) }), name,
+        TPL ? null : [h("label", { class: "os-sr-only", attrs: { for: mailId }, text: t("prepare.email-of", { n: i + 1 }) }), email],
+        r.type === "signer" && !TPL ? access : null);
       li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
       list.append(li);
     });
@@ -270,7 +287,9 @@ export async function mount(view, ctx, [rawId]) {
         pdfs.set(d.key, pdf);
         S.docs.push(d);
         S.dirty = true;
-        if (!S.subject) { S.subject = t("prepare.default-subject", { name: file.name.replace(/\.pdf$/i, "") }).slice(0, 255); subject.value = S.subject; }
+        const base = file.name.replace(/\.pdf$/i, "");
+        if (!S.subject) { S.subject = (TPL ? base : t("prepare.default-subject", { name: base })).slice(0, 255); subject.value = S.subject; }
+        if (TPL && !S.emailSubject) S.emailSubject = t("prepare.default-subject", { name: base }).slice(0, 255);
         say(t("prepare.doc-added", { name: d.name, n: d.pages.length }));
       } catch {
         toast(t("prepare.unreadable", { name: file.name }), "error");
@@ -450,15 +469,24 @@ export async function mount(view, ctx, [rawId]) {
     clear(props);
     const f = S.fields.find((x) => x.key === S.selected);
     if (!f) {
-      props.append(h("h2", { class: "os-panel__title", text: t("prepare.settings") }));
+      props.append(h("h2", { class: "os-panel__title", text: t(TPL ? "template.settings" : "prepare.settings") }));
       const msg = h("textarea", { id: "env-message", class: "os-input os-textarea", rows: 4, maxLength: 10000, value: S.message, placeholder: t("prepare.message-placeholder") });
       msg.addEventListener("change", () => { S.message = msg.value; S.dirty = true; });
-      const loc = h("input", { id: "env-location", type: "checkbox", checked: S.captureLocation });
-      loc.addEventListener("change", () => { S.captureLocation = loc.checked; S.dirty = true; });
-      props.append(
-        h("label", { class: "os-label", attrs: { for: "env-message" }, text: t("prepare.message") }), msg,
-        h("label", { class: "os-check", attrs: { for: "env-location" } }, loc, h("span", { text: t("prepare.capture-location") })),
-        h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") }));
+      if (TPL) {
+        const es = h("input", { id: "tpl-email-subject", class: "os-input", maxLength: 255, value: S.emailSubject, placeholder: t("prepare.message-placeholder") });
+        es.addEventListener("change", () => { S.emailSubject = es.value; S.dirty = true; });
+        props.append(
+          h("label", { class: "os-label", attrs: { for: "tpl-email-subject" }, text: t("template.email-subject") }), es,
+          h("label", { class: "os-label", attrs: { for: "env-message" }, text: t("prepare.message") }), msg,
+          h("p", { class: "os-muted os-small", text: t("template.roles-help") }));
+      } else {
+        const loc = h("input", { id: "env-location", type: "checkbox", checked: S.captureLocation });
+        loc.addEventListener("change", () => { S.captureLocation = loc.checked; S.dirty = true; });
+        props.append(
+          h("label", { class: "os-label", attrs: { for: "env-message" }, text: t("prepare.message") }), msg,
+          h("label", { class: "os-check", attrs: { for: "env-location" } }, loc, h("span", { text: t("prepare.capture-location") })),
+          h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") }));
+      }
       if (S.docs.length && !S.fields.length) {
         props.append(emptyState({ illus: "fields", title: t("empty.fields.title"), text: t("empty.fields.text"), action: button(t("prepare.add-field", { type: t("ftype.signature") }), { icon: "signature", variant: "primary", onClick: () => addFieldInView("signature") }), testId: "empty-fields" }));
       } else if (S.fields.length) {
@@ -475,7 +503,7 @@ export async function mount(view, ctx, [rawId]) {
     props.append(h("h2", { class: "os-panel__title", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }) }));
     const rsel = h("select", { id: "fp-recipient", class: "os-input" }, ...S.recipients.map((r, i) => h("option", { value: r.key, selected: r.key === f.recipientKey, text: `${i + 1}. ${displayName(r, i)}` })));
     rsel.addEventListener("change", () => set("recipientKey", rsel.value));
-    props.append(h("label", { class: "os-label", attrs: { for: "fp-recipient" }, text: t("prepare.assigned-to") }), rsel);
+    props.append(h("label", { class: "os-label", attrs: { for: "fp-recipient" }, text: t(TPL ? "template.assigned-to" : "prepare.assigned-to") }), rsel);
     if (takesInput(f.type)) {
       const req = h("input", { id: "fp-required", type: "checkbox", checked: !!f.required });
       req.addEventListener("change", () => set("required", req.checked));
@@ -674,6 +702,70 @@ export async function mount(view, ctx, [rawId]) {
     toast(extra.length ? `${errorMessage(err)} — ${extra.slice(0, 3).join("; ")}` : errorMessage(err), "error");
   }
 
+  // ---- Template mode: save ---------------------------------------------------------------
+  function templateProblems() {
+    const out = [];
+    if (!S.subject.trim()) out.push(t("template.need-name"));
+    if (!S.recipients.length) out.push(t("template.need-role"));
+    else if (!signers().length) out.push(t("send.need-signer"));
+    return out;
+  }
+
+  async function saveTemplate() {
+    const list = templateProblems();
+    if (list.length) {
+      await openDialog({
+        title: t("template.problems-title"),
+        description: t("send.problems-text"),
+        build(body) { body.append(h("ul", { class: "os-problems" }, ...list.map((p) => h("li", {}, icon("triangle-alert", { size: 16 }), h("span", { text: p }))))); },
+        actions: [{ label: t("action.ok"), variant: "primary", value: null }],
+      });
+      return;
+    }
+    await busy(saveBtn, async () => {
+      const status = document.getElementById("save-status");
+      status.textContent = t("prepare.saving");
+      const roles = rolesFrom(S.recipients, S.routing);
+      let tpl;
+      try {
+        tpl = await ctx.api.templates.create({
+          name: S.subject.trim(),
+          ...(S.emailSubject.trim() ? { email_subject: S.emailSubject.trim() } : {}),
+          ...(S.message ? { email_message: S.message } : {}),
+          roles,
+        });
+      } catch (err) {
+        if (!ctx.failed(err)) showSaveError(err);
+        return;
+      }
+      // Documents and fields: docs/40 slice 3. A server without them keeps the roles.
+      let partial = false;
+      try {
+        const docIds = new Map();
+        for (const d of S.docs) docIds.set(d.key, (await ctx.api.templates.addDocument(tpl.id, d.name, d.bytes)).id);
+        const roleOf = new Map(S.recipients.map((r, i) => [r.key, roles[i].name]));
+        if (S.fields.length) {
+          await ctx.api.templates.addFields(tpl.id, S.fields.map((f) => {
+            const body = { document_id: docIds.get(f.docKey), role: roleOf.get(f.recipientKey), type: f.type, placement: toWire(f.page, f) };
+            if (f.required && takesInput(f.type)) body.required = true;
+            if (f.label) body.label = f.label;
+            return body;
+          }));
+        }
+      } catch (err) {
+        if (!templateDocsUnsupported(err)) {
+          if (!ctx.failed(err)) showSaveError(err);
+          return;
+        }
+        partial = S.docs.length > 0;
+      }
+      S.dirty = false;
+      status.textContent = t("prepare.saved");
+      toast(partial ? t("template.saved-roles-only") : t("template.saved"), partial ? "info" : "success");
+      ctx.navigate("#/templates");
+    });
+  }
+
   async function celebrate() {
     const node = h("div", { class: "os-celebrate", attrs: { role: "status", "data-testid": "sent-celebration" } },
       h("img", { class: "os-celebrate__seal", src: "assets/mark.svg", alt: "", width: 96, height: 96 }),
@@ -741,11 +833,17 @@ export async function mount(view, ctx, [rawId]) {
   reg("field.deselect", t("cmd.field.deselect"), () => { const f = sel(); select(null); if (f) stage.focus(); });
   reg("edit.undo", t("cmd.edit.undo"), () => { const s = S.undo.pop(); if (!s) return; S.redo.push(snapshot()); restore(s); }, () => S.undo.length > 0);
   reg("edit.redo", t("cmd.edit.redo"), () => { const s = S.redo.pop(); if (!s) return; S.undo.push(snapshot()); restore(s); }, () => S.redo.length > 0);
-  reg("envelope.save", t("prepare.save"), () => busy(saveBtn, async () => {
-    try { await save(); toast(t("prepare.saved"), "success"); } catch (err) { if (!ctx.failed(err)) showSaveError(err); }
-  }), () => true);
-  reg("envelope.send", t("prepare.send"), send, () => true);
-  reg("recipient.add", t("prepare.add-recipient"), () => addRecipient(), () => true);
+  if (TPL) {
+    // Ctrl/Cmd+S (bound to envelope.save in the editor table) saves the template here.
+    reg("template.save", t("template.save"), () => saveTemplate(), () => true);
+    reg("envelope.save", t("template.save"), () => saveTemplate(), () => true);
+  } else {
+    reg("envelope.save", t("prepare.save"), () => busy(saveBtn, async () => {
+      try { await save(); toast(t("prepare.saved"), "success"); } catch (err) { if (!ctx.failed(err)) showSaveError(err); }
+    }), () => true);
+    reg("envelope.send", t("prepare.send"), send, () => true);
+  }
+  reg("recipient.add", t(TPL ? "template.add-role" : "prepare.add-recipient"), () => addRecipient(), () => true);
   reg("document.add", t("prepare.add-pdf"), () => fileInput.click(), () => true);
   for (const type of FIELD_TYPES) reg(`field.add-${type}`, t("prepare.add-field", { type: t(`ftype.${type}`) }), () => addFieldInView(type), () => true);
   for (let n = 1; n <= 9; n++) {
@@ -795,6 +893,7 @@ export async function mount(view, ctx, [rawId]) {
     unregisterPrefix("edit.");
     unregisterPrefix("envelope.save");
     unregisterPrefix("envelope.send");
+    unregisterPrefix("template.");
     unregisterPrefix("recipient.");
     unregisterPrefix("document.");
     for (const p of pdfs.values()) p.destroy();
