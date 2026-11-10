@@ -1,0 +1,206 @@
+/* OpenSeal design tokens (WEB-01; docs/47 §As built: design system).
+ *
+ * The one tokens file. Colour structure follows OpenPresent's `editor.css` token block
+ * (`--op-*`, light, dark by attribute and by OS preference; copied at `e61277d`, see
+ * PROVENANCE.md) renamed `--os-*`, with OpenSeal's brand: the logo's seal red
+ * #c01622 → #8e0b14. Sizes are the owner's industry-standard scale (2026-11-11):
+ * icons 16/20/24, type 12/14/16/20/24/32, a 4 px spacing grid, radii 6/8/12, buttons
+ * 32/36/44, targets ≥ 24 (WCAG 2.2 SC 2.5.8) and ≥ 44 on the signing page and phones
+ * (SC 2.5.5), focus ring 2 px with a 2 px offset, motion 150–250 ms.
+ *
+ * Contrast (WCAG 2.2 AA) is checked, not asserted here: webapp/tests/pure.test.mjs
+ * measures every text colour against every surface (≥ 4.5:1), control edges, the
+ * focus ring and recipient colours (≥ 3:1), and white on the accent fill, in both
+ * themes, and fails if the OS-preference dark block drifts from the explicit one.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Colour (light) ---------------------------------------------------- */
+  --os-bg: #ffffff;
+  --os-surface: #f5f6f8;
+  --os-surface-2: #eceef2;
+  --os-raised: #ffffff;
+  --os-stage: #e7e9ed;
+  --os-text: #1c1f24;
+  --os-muted: #565d68;
+  --os-border: #dde1e7;
+  --os-border-strong: #7a828e; /* ≥ 3:1 on bg and surface: control edges meet SC 1.4.11 */
+  --os-accent: #b3141f;        /* the seal red, one step deeper than the logo's #c01622 for text */
+  --os-accent-hover: #8e0b14;
+  --os-accent-fill: #b3141f;
+  --os-on-accent: #ffffff;
+  --os-accent-soft: rgba(192, 22, 34, 0.08);
+  --os-danger: #b42318;
+  --os-success: #12703a;
+  --os-warning: #8a5a00;
+  --os-info: #1d5fbf;
+  --os-focus: #1d5fbf;         /* focus ring: blue, distinct from the red accent and from errors */
+  --os-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --os-shadow-pop: 0 12px 32px rgba(16, 24, 40, 0.18);
+  --os-overlay: rgba(16, 20, 26, 0.45);
+  --os-skeleton: #e6e9ee;
+  --os-skeleton-hi: #f3f5f8;
+  --os-illus-line: #8a929e;
+  --os-illus-fill: #eef0f3;
+
+  /* Recipient colours: 3:1 or better against white as outlines (SC 1.4.11). */
+  --os-r1: #1d5fbf;
+  --os-r2: #157f3b;
+  --os-r3: #7a3fc4;
+  --os-r4: #b24a00;
+  --os-r5: #0e7490;
+  --os-r6: #b0306f;
+
+  /* ---- Type ------------------------------------------------------------- */
+  --os-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --os-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --os-font-script-1: "OpenSeal Great Vibes", cursive;
+  --os-font-script-2: "OpenSeal Allura", cursive;
+  --os-fs-12: 12px;
+  --os-fs-14: 14px;
+  --os-fs-16: 16px;
+  --os-fs-20: 20px;
+  --os-fs-24: 24px;
+  --os-fs-32: 32px;
+  --os-fs-body: var(--os-fs-14);
+  --os-lh-body: 1.5;
+  --os-lh-heading: 1.25;
+
+  /* ---- Space: a 4 px grid ---------------------------------------------- */
+  --os-s1: 4px;
+  --os-s2: 8px;
+  --os-s3: 12px;
+  --os-s4: 16px;
+  --os-s6: 24px;
+  --os-s8: 32px;
+  --os-s12: 48px;
+
+  /* ---- Shape ------------------------------------------------------------ */
+  --os-radius-sm: 6px;
+  --os-radius: 8px;
+  --os-radius-lg: 12px;
+
+  /* ---- Icons ------------------------------------------------------------ */
+  --os-icon-sm: 16px;  /* dense tables, menus */
+  --os-icon: 20px;     /* default UI */
+  --os-icon-lg: 24px;  /* toolbars, empty states */
+
+  /* ---- Controls --------------------------------------------------------- */
+  --os-btn-sm: 32px;
+  --os-btn: 36px;
+  --os-btn-lg: 44px;
+  --os-target-min: 24px;   /* WCAG 2.2 SC 2.5.8 */
+  --os-target-touch: 44px; /* SC 2.5.5: signing page, phones */
+  --os-focus-width: 2px;
+  --os-focus-offset: 2px;
+
+  /* ---- Motion ----------------------------------------------------------- */
+  --os-ease: cubic-bezier(.2, 0, 0, 1);
+  --os-dur-fast: 150ms;
+  --os-dur: 200ms;
+  --os-dur-slow: 250ms;
+
+  /* ---- Layout ----------------------------------------------------------- */
+  --os-topbar-h: 56px;
+  --os-nav-w: 224px;
+  --os-z-menu: 60;
+  --os-z-toast: 900;
+  --os-z-dialog: 1000;
+}
+
+/* Dark: by explicit choice, and by OS preference unless the user chose light. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --os-bg: #111418;
+  --os-surface: #181c22;
+  --os-surface-2: #20252d;
+  --os-raised: #1b2027;
+  --os-stage: #0b0d10;
+  --os-text: #e8ebf0;
+  --os-muted: #a2abb8;
+  --os-border: #2b313a;
+  --os-border-strong: #6b7584;
+  --os-accent: #ff8a92;
+  --os-accent-hover: #ffb3b8;
+  --os-accent-fill: #b3141f;
+  --os-on-accent: #ffffff;
+  --os-accent-soft: rgba(255, 138, 146, 0.12);
+  --os-danger: #ff8b80;
+  --os-success: #5fd38d;
+  --os-warning: #f2c14e;
+  --os-info: #8ab4ff;
+  --os-focus: #8ab4ff;
+  --os-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --os-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.6);
+  --os-overlay: rgba(0, 0, 0, 0.6);
+  --os-skeleton: #222831;
+  --os-skeleton-hi: #2b323c;
+  --os-illus-line: #7d8796;
+  --os-illus-fill: #1f242c;
+  --os-r1: #8ab4ff;
+  --os-r2: #5fd38d;
+  --os-r3: #c9a2ff;
+  --os-r4: #ffad6b;
+  --os-r5: #5fd0e6;
+  --os-r6: #ff8fc8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --os-bg: #111418;
+    --os-surface: #181c22;
+    --os-surface-2: #20252d;
+    --os-raised: #1b2027;
+    --os-stage: #0b0d10;
+    --os-text: #e8ebf0;
+    --os-muted: #a2abb8;
+    --os-border: #2b313a;
+    --os-border-strong: #6b7584;
+    --os-accent: #ff8a92;
+    --os-accent-hover: #ffb3b8;
+    --os-accent-fill: #b3141f;
+    --os-on-accent: #ffffff;
+    --os-accent-soft: rgba(255, 138, 146, 0.12);
+    --os-danger: #ff8b80;
+    --os-success: #5fd38d;
+    --os-warning: #f2c14e;
+    --os-info: #8ab4ff;
+    --os-focus: #8ab4ff;
+    --os-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --os-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.6);
+    --os-overlay: rgba(0, 0, 0, 0.6);
+    --os-skeleton: #222831;
+    --os-skeleton-hi: #2b323c;
+    --os-illus-line: #7d8796;
+    --os-illus-fill: #1f242c;
+    --os-r1: #8ab4ff;
+    --os-r2: #5fd38d;
+    --os-r3: #c9a2ff;
+    --os-r4: #ffad6b;
+    --os-r5: #5fd0e6;
+    --os-r6: #ff8fc8;
+  }
+}
+
+/* Reduced motion: every duration collapses; transitions still end in the same state. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --os-dur-fast: 0ms;
+    --os-dur: 0ms;
+    --os-dur-slow: 0ms;
+  }
+}
+
+/* The bundled signature fonts (OFL; fonts/script/, the same files the flattener embeds). */
+@font-face {
+  font-family: "OpenSeal Great Vibes";
+  src: url("fonts/script/GreatVibes-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "OpenSeal Allura";
+  src: url("fonts/script/Allura-Regular.ttf") format("truetype");
+  font-display: swap;
+}
