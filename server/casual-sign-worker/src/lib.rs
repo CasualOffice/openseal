@@ -2,7 +2,7 @@
 //! engine's effects as idempotent jobs from the PostgreSQL queue and feeds their
 //! results back through the engine.
 //!
-//! - [`apply`]: decide a command and record the decision (state, chained audit events,
+//! - [`apply()`]: decide a command and record the decision (state, chained audit events,
 //!   relational rows, jobs) in one transaction.
 //! - [`Worker`]: claim due jobs with `SKIP LOCKED`, keep leases alive with heartbeats,
 //!   retry with exponential back-off and jitter, dead-letter with an operator alert.

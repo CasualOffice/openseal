@@ -120,6 +120,23 @@ Phase 1 gate.
 | Numbers in values | 28 digits; no exponent, NaN or infinity | CS-FLD-0002 |
 | Signer attachment size | 25 MiB | CS-FLD-0002 |
 
+## Worker (stage 2D, built)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| Email address | 320 bytes, printable ASCII, one `@`, no quotes, brackets, commas or semicolons | CS-WRK-0005 |
+| Display name or subject before encoding | 998 bytes | CS-WRK-0005 |
+| Email body before encoding | 256 KiB | CS-WRK-0005 |
+| Webhook URL | 2,048 bytes, `https://` only, no user information | CS-WRK-0008 |
+| Webhook exchange | 10 s for the whole request; redirects not followed; 64 KiB of the answer read | CS-WRK-0009 |
+| Webhook attempts | 15 over about three days (back-off from 30 s doubling, capped at 12 h, equal jitter) | CS-WRK-0009 |
+| Job attempts | 15 (timers, alerts, token revocation: 20) | — |
+| Job lease | 300 s, renewed every 100 s while the job runs | CS-WRK-0015 |
+| Capture document | 1 MiB; 1,000 strokes; 100,000 points; finite numbers only | CS-WRK-0016 |
+| Typed signature | 1,000 bytes, no control characters | CS-WRK-0016 |
+| Uploaded signature image read by the seal job | 5 MiB | CS-WRK-0016 |
+| TSA or OCSP answer / CRL | 1 MiB / 32 MiB (as the CLI) | CS-SEAL-0002 |
+
 ## Bulk and links
 
 | Limit | Default | Code |

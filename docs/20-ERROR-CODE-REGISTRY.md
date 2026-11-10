@@ -175,3 +175,28 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002` and `CS-DB-0
 | CS-BLOB-0003 | Bytes stored under a key do not hash to it |
 | CS-BLOB-0004 | Blob over the store's size cap (256 MiB by default) |
 | CS-BLOB-0005 | Key is not 64 lower-case hexadecimal digits |
+
+## Worker (`casual-sign-worker`, stage 2D)
+
+Messages carry codes, ids, counts and HTTP statuses, never an address, a name, a subject, a URL, a token or document
+content. The store's, the engine's, the SDK's and keyd's codes pass through unchanged. A job failing with a code
+marked *final* is dead-lettered at once with an operator alert; the others are retried with back-off.
+
+| Code | Meaning |
+| --- | --- |
+| CS-WRK-0001 | A worker setting is missing or invalid (named, never its value). *Final* |
+| CS-WRK-0002 | A stored engine state does not read back as an `EnvelopeState`. *Final* |
+| CS-WRK-0003 | An engine id the database keys by UUID is not a canonical UUID. *Final* |
+| CS-WRK-0004 | A job's payload is malformed or its kind unknown. *Final* |
+| CS-WRK-0005 | An email address or header value refused (`SEC-M02`): not an address, CR/LF, quotes, over its length. *Final* |
+| CS-WRK-0006 | The SMTP server unreachable or refusing for now (4xx) |
+| CS-WRK-0007 | The SMTP server refused the recipient permanently (5xx): reported to the engine as a bounce |
+| CS-WRK-0008 | A webhook URL refused (`SEC-W01`): not `https://`, user information, or a host resolving to a private, loopback, link-local, metadata, CGNAT, documentation, multicast or reserved address not allow-listed. *Final* |
+| CS-WRK-0009 | A webhook delivery failed: timeout, connection or TLS failure, or a status other than 2xx |
+| CS-WRK-0010 | A webhook secret reference does not resolve, or is not `whsec_` and base64 of 16 bytes or more |
+| CS-WRK-0011 | A seal input missing or unusable: a delivered document's blob, a capture, the sender's row |
+| CS-WRK-0012 | A sealed document failed the worker's independent verification of the stored bytes (the envelope stays `completing`) |
+| CS-WRK-0013 | No provider for the channel (SMS, WhatsApp; slice 12). *Final* |
+| CS-WRK-0014 | No payment gateway configured (slice 13). *Final* |
+| CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job |
+| CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |
