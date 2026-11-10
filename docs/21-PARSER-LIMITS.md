@@ -98,6 +98,10 @@ Phase 1 gate.
 | --- | ---: | --- |
 | Recipients per envelope | 100 | CS-WF-0004 |
 | Fields per envelope | 3,000 | CS-WF-0004 |
+| Documents per envelope | 100 (built, stage 2A; an account may set fewer) | CS-WF-0004 |
+| Pages per document | 5,000 (built, stage 2A) | CS-WF-0004 |
+| Changes in one draft edit | 5,000 (built, stage 2A) | CS-WF-0004 |
+| Commands applied per envelope (the idempotency record) | 100,000 (built, stage 2A) | CS-WF-0011 |
 | Text field value | 4,000 bytes | CS-FLD-0002 |
 | Dropdown options | 500 | CS-FLD-0002 |
 | Formula length / depth / references | 1,024 chars / 32 / 100 | CS-FLD-0021 |
