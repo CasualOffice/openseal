@@ -1,0 +1,33 @@
+[package]
+name = "casual-sign-xfa"
+version = "0.0.0"
+description = "Bounded XFA reader and layout engine: dynamic XFA forms to static PDF pages for OpenSeal (docs/30 §3)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# Glyph ids, advances and face metrics from supplied font bytes; the same parser and
+# version casual-sign-flatten uses (ADR-024), so the dependency graph does not grow.
+# MIT OR Apache-2.0.
+skrifa = "0.46"
+# Deterministic zlib for content streams, font programs and images; the version
+# casual-sign-pdf and casual-sign-flatten use (ADR-023). MIT OR Zlib OR Apache-2.0.
+miniz_oxide = "0.8.9"
+
+[features]
+default = ["bundled-fonts"]
+# `Faces::bundled()`: the Liberation Sans, Serif and Mono faces casual-sign-flatten
+# bundles (SIL OFL 1.1, crates/casual-sign-flatten/fonts/PROVENANCE.md), compiled in from
+# that crate's folder so the repository holds one copy. Without it the host supplies
+# every face's bytes.
+bundled-fonts = []
+
+[dev-dependencies]
+# Tests read XFA packets out of corpus and hostile PDFs with our own reader.
+casual-sign-pdf = { path = "../casual-sign-pdf" }
+
+[lints]
+workspace = true

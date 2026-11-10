@@ -520,6 +520,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-xfa"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-pdf",
+ "miniz_oxide 0.8.9",
+ "skrifa",
+]
+
+[[package]]
 name = "cbc"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
