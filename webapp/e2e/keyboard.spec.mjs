@@ -53,6 +53,7 @@ test("place a field and send with the keyboard alone", async ({ page }) => {
 
 test("the shortcut list opens with ? and closes with Escape, returning focus", async ({ page }) => {
   await page.goto(app("#/signin"));
+  await expect(page.getByLabel("Email")).toBeFocused();
   await page.keyboard.type(creds.email);
   await page.keyboard.press("Tab");
   await page.keyboard.type(creds.password);

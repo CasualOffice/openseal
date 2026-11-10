@@ -208,6 +208,9 @@ async function documents() {
   }, { threshold: 0.5 }) : null;
 
   const width = Math.min(main.clientWidth || 360, 900) - 16;
+  const skeleton = h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } });
+  pagesWrap.append(skeleton);
+  pagesWrap.setAttribute("aria-busy", "true");
   for (const d of docs) {
     let pdf;
     try {
@@ -215,6 +218,7 @@ async function documents() {
       pdf = await openPdf(new Uint8Array(await blob.arrayBuffer()));
     } catch (err) { return fail(err); }
     pdfHandles.push(pdf);
+    skeleton.remove();
     pdf.pages.forEach((pg, i) => {
       const scale = fitScale(pg.width, width);
       const canvas = h("canvas", { attrs: { "aria-hidden": "true" } });
@@ -229,6 +233,7 @@ async function documents() {
       for (const f of mine) overlay.append(fieldNode(f, scale));
     });
   }
+  pagesWrap.removeAttribute("aria-busy");
   updateGuide();
 }
 

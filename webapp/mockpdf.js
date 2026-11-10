@@ -5,7 +5,7 @@
 const enc = new TextEncoder();
 
 function esc(s) {
-  return String(s).replace(/[^\x20-\x7e]/g, "?").replace(/[\\()]/g, "\\$&");
+  return String(s).replace(/[—–]/g, "-").replace(/[^\x20-\x7e]/g, "?").replace(/[\\()]/g, "\\$&");
 }
 
 /// A PDF with one page per entry: `{title, lines, width = 612, height = 792}`.

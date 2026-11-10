@@ -25,6 +25,7 @@ for (const scheme of ["light", "dark"]) {
 
     await page.goto(app("#/prepare"));
     await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+    await expect(page.locator(".os-page:not(.os-skeleton-page)").first()).toBeVisible();
     await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
     await page.getByRole("button", { name: "Add recipient" }).first().click();
     await page.getByTestId("recipient-name").fill("Avery Chen");
@@ -49,6 +50,7 @@ for (const scheme of ["light", "dark"]) {
     await snap(page, testInfo, `${scheme}-5-sign-consent-390`);
     await page.getByLabel("I agree to use electronic records and signatures.").check();
     await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.locator(".os-sign__pages:not([aria-busy]) .os-page").first()).toBeVisible();
     await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
     await page.getByRole("button", { name: "Start" }).click();
     await snap(page, testInfo, `${scheme}-6-sign-document-390`);

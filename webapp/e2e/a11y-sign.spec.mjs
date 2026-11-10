@@ -21,6 +21,7 @@ for (const scheme of ["light", "dark"]) {
     await page.getByLabel("I agree to use electronic records and signatures.").check();
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.locator("#guide-progress")).toBeVisible();
+    await expect(page.locator(".os-sign__pages:not([aria-busy]) .os-page").first()).toBeVisible();
     await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
     await expectAccessible(page, `documents (${scheme})`);
     await page.getByRole("button", { name: /Signature, required/ }).click();
