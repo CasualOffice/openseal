@@ -284,6 +284,10 @@ pub(crate) struct Rewritten {
     pub sections: usize,
     /// Operators dropped or replaced.
     pub operators: usize,
+    /// `/OC … BDC` markers made plain `/OC BMC`, so no viewer evaluates them again
+    /// without a configuration (PDFium evaluates a membership dictionary with every
+    /// group on when `/OCProperties` is gone).
+    pub markers: usize,
 }
 
 /// Operators that paint a path: replaced by `n` in hidden content, which ends the path
@@ -294,8 +298,9 @@ fn operand_text(o: &Operand) -> String {
     o.as_f64().map_or_else(|| "0".to_owned(), num_fine)
 }
 
-/// The content stream `data` without what the default configuration hides, or `None`
-/// when nothing is hidden. `hidden` answers for names; it may read the document.
+/// The content stream `data` without what the default configuration hides and with
+/// its optional content markers made plain, or `None` when it has neither. `hidden`
+/// answers for names; it may read the document.
 ///
 /// # Errors
 ///
@@ -337,16 +342,20 @@ pub(crate) fn rewrite(
                 }
                 b"BDC" => {
                     depth = depth.saturating_add(1);
-                    if hidden_from.is_none()
-                        && let [.., tag, props] = operands.as_slice()
-                        && tag.as_name() == Some(b"OC")
-                        && let Some(name) = props.as_name()
-                        && hidden(Query::Property(name))?
-                    {
-                        hidden_from = Some(depth);
-                        stats.sections = stats.sections.saturating_add(1);
+                    match operands.as_slice() {
+                        [.., tag, props] if tag.as_name() == Some(b"OC") => {
+                            if hidden_from.is_none()
+                                && let Some(name) = props.as_name()
+                                && hidden(Query::Property(name))?
+                            {
+                                hidden_from = Some(depth);
+                                stats.sections = stats.sections.saturating_add(1);
+                            }
+                            stats.markers = stats.markers.saturating_add(1);
+                            Some(b"/OC BMC".to_vec())
+                        }
+                        _ => None,
                     }
-                    None
                 }
                 b"EMC" => {
                     if hidden_from == Some(depth) {
@@ -379,7 +388,9 @@ pub(crate) fn rewrite(
         match replacement {
             None => out.extend_from_slice(span),
             Some(r) => {
-                stats.operators = stats.operators.saturating_add(1);
+                if r != b"/OC BMC" {
+                    stats.operators = stats.operators.saturating_add(1);
+                }
                 out.push(b'\n');
                 out.extend_from_slice(&r);
                 out.push(b'\n');
@@ -388,7 +399,7 @@ pub(crate) fn rewrite(
         start = end;
     }
     out.extend_from_slice(data.get(start..).unwrap_or_default());
-    Ok((stats.operators > 0).then_some((out, stats)))
+    Ok((stats.operators > 0 || stats.markers > 0).then_some((out, stats)))
 }
 
 /// A form XObject or pattern whose content changed.
@@ -404,14 +415,20 @@ pub(crate) struct StreamEdit {
 pub(crate) struct Pass {
     /// New decoded content of pages (by index) that had hidden content.
     pub pages: BTreeMap<usize, Vec<u8>>,
-    /// Form XObjects and tiling patterns with hidden content, rewritten.
+    /// Form XObjects and tiling patterns with hidden content or markers, rewritten
+    /// (without `/OC`).
     pub streams: Vec<StreamEdit>,
+    /// Visible XObjects whose only change is losing their `/OC`, as read (their data is
+    /// copied as it is).
+    pub stripped: Vec<(u32, Object)>,
     /// Totals over everything rewritten.
     pub stats: Rewritten,
     /// Whether each XObject read has a hidden `/OC`, by object number.
     hidden_xobjects: BTreeMap<u32, bool>,
     /// Streams queued once for reading.
     queued: BTreeSet<u32>,
+    /// Visible XObjects that carry `/OC`.
+    strip: BTreeSet<u32>,
 }
 
 /// A resource subdictionary, resolved.
@@ -485,9 +502,13 @@ impl Pass {
             if self.queued.contains(&r.num) || self.stream_hidden(doc, oc, r.num, cancel)? {
                 continue;
             }
-            if read::object_dict(doc, r.num, cancel)?
-                .is_some_and(|d| d.name(b"Subtype") == Some(b"Form"))
-            {
+            let Some(d) = read::object_dict(doc, r.num, cancel)? else {
+                continue;
+            };
+            if d.contains(b"OC") {
+                self.strip.insert(r.num);
+            }
+            if d.name(b"Subtype") == Some(b"Form") {
                 self.queued.insert(r.num);
                 queue.push((r.num, Rc::clone(res)));
             }
@@ -506,6 +527,7 @@ impl Pass {
         Ok(out.map(|(bytes, s)| {
             self.stats.sections = self.stats.sections.saturating_add(s.sections);
             self.stats.operators = self.stats.operators.saturating_add(s.operators);
+            self.stats.markers = self.stats.markers.saturating_add(s.markers);
             bytes
         }))
     }
@@ -548,6 +570,18 @@ impl Pass {
             let Some(Object::Stream(s)) = read::local(doc.object(num, cancel))? else {
                 continue;
             };
+            // An appearance of something that stays, hidden by its own `/OC`: emptied,
+            // as no configuration will hide it any more.
+            if pass.stream_hidden(doc, oc, num, cancel)? {
+                let mut dict = s.dict.clone();
+                dict.remove(b"OC");
+                pass.streams.push(StreamEdit {
+                    num,
+                    dict,
+                    data: Vec::new(),
+                });
+                continue;
+            }
             let Some(data) = read::local(doc.decode_stream(num, cancel))? else {
                 continue;
             };
@@ -555,12 +589,25 @@ impl Pass {
                 Some(v) => Rc::new(read::dict(doc, &v, cancel)?.unwrap_or_default()),
                 None => inherited,
             };
+            let mut dict = s.dict.clone();
+            dict.remove(b"OC");
             if let Some(new) = pass.one(doc, oc, &data, num, &res, &mut queue, cancel)? {
                 pass.streams.push(StreamEdit {
                     num,
-                    dict: s.dict.clone(),
+                    dict,
                     data: new,
                 });
+                pass.strip.remove(&num);
+            } else if s.dict.contains(b"OC") {
+                pass.strip.insert(num);
+            }
+        }
+        // Visible XObjects (images, unchanged forms, appearances) lose `/OC`: with no
+        // configuration left, no viewer may decide on it again.
+        for num in std::mem::take(&mut pass.strip) {
+            if let Some(Object::Stream(mut s)) = read::local(doc.object(num, cancel))? {
+                s.dict.remove(b"OC");
+                pass.stripped.push((num, Object::Stream(s)));
             }
         }
         Ok(())
@@ -643,9 +690,16 @@ mod tests {
     }
 
     #[test]
-    fn visible_content_is_left_byte_for_byte() {
-        let src = b"/OC /on BDC (a) Tj EMC /X Do";
-        assert_eq!(run(src, &[]).0, String::from_utf8_lossy(src));
+    fn visible_content_is_left_byte_for_byte_but_for_its_markers() {
+        let src = b"/Span <</MCID 0>> BDC (a) Tj EMC /X Do";
+        let mut ask = |_: Query<'_>| -> Result<bool, FlattenError> { Ok(false) };
+        assert_eq!(
+            rewrite(src, &Limits::default(), 1, &mut ask).ok(),
+            Some(None)
+        );
+        let (out, s) = run(b"/OC /on BDC (a) Tj EMC /X Do", &[]);
+        assert_eq!(out, "\n/OC BMC\n (a) Tj EMC /X Do");
+        assert_eq!((s.markers, s.operators, s.sections), (1, 0, 0));
     }
 
     #[test]

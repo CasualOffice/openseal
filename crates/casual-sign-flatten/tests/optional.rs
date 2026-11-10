@@ -28,11 +28,13 @@ use casual_sign_model::FieldValue;
 use casual_sign_pdf::{ContentLexer, ContentToken, Document, Limits, Object, Operand, admit};
 use common::*;
 
-/// Strings drawn by `data` and, through `Do`, by the forms in `res`.
+/// Strings drawn by `data` and, through `Do`, by the forms in `res`. `strict`: no
+/// optional content marker may be left either.
 fn strings(
     doc: &mut Document<'_>,
     data: &[u8],
     res: &casual_sign_pdf::Dictionary,
+    strict: bool,
     seen: &mut BTreeSet<u32>,
     out: &mut Vec<String>,
 ) {
@@ -69,14 +71,28 @@ fn strings(
                             let Object::Stream(s) = doc.object(r.num, &never).unwrap() else {
                                 panic!("not a stream")
                             };
+                            // With no configuration left, a viewer would decide on its
+                            // own (PDFium takes every group as on).
+                            assert!(
+                                !strict || s.dict.get(b"OC").is_none(),
+                                "XObject {} keeps /OC",
+                                r.num
+                            );
                             let inner = match s.dict.get(b"Resources") {
                                 Some(v) => doc.resolve(v, &never).unwrap().dict().cloned().unwrap(),
                                 None => res.clone(),
                             };
                             let bytes = doc.decode_stream(r.num, &never).unwrap();
-                            strings(doc, &bytes, &inner, seen, out);
+                            strings(doc, &bytes, &inner, strict, seen, out);
                             seen.remove(&r.num);
                         }
+                    }
+                    b"BDC" => {
+                        let tag = last.iter().rev().nth(1).and_then(Operand::as_name);
+                        assert!(
+                            !strict || tag != Some(&b"OC"[..]),
+                            "an /OC marker with properties left"
+                        );
                     }
                     _ => {}
                 }
@@ -90,6 +106,11 @@ fn strings(
 /// Every string the first page of `bytes` draws, and its annotations' object
 /// numbers. Optional content must be gone, so nothing drawn is conditional.
 fn shown(bytes: &[u8]) -> (Vec<String>, Vec<u32>) {
+    shown_with(bytes, true)
+}
+
+/// As [`shown`]; `strict` also requires every optional content marker gone.
+fn shown_with(bytes: &[u8], strict: bool) -> (Vec<String>, Vec<u32>) {
     let mut a = admit(bytes, &Limits::default(), &never).unwrap();
     let doc = &mut a.document;
     let root = doc.trailer().get(b"Root").unwrap().as_ref().unwrap();
@@ -114,7 +135,7 @@ fn shown(bytes: &[u8]) -> (Vec<String>, Vec<u32>) {
         data.push(b'\n');
     }
     let mut out = Vec::new();
-    strings(doc, &data, &res, &mut BTreeSet::new(), &mut out);
+    strings(doc, &data, &res, strict, &mut BTreeSet::new(), &mut out);
     let annots = match page.get(b"Annots") {
         Some(v) => match doc.resolve(v, &never).unwrap() {
             Object::Array(a) => a.iter().filter_map(Object::as_ref).map(|r| r.num).collect(),
@@ -155,7 +176,9 @@ const SHOWN: [&str; 10] = [
     "ANNOTSHOWN",
     "STAMPON",
 ];
-const HIDDEN: [&str; 11] = [
+const HIDDEN: [&str; 13] = [
+    "SPANINNER",
+    "SPANAFTER",
     "OFFTEXT",
     "ALLONHID",
     "ANYOFFHID",
@@ -195,6 +218,12 @@ fn layered() -> Vec<u8> {
         "/OC /On BDC\n/OC /Off BDC\n{}EMC\n{}EMC\n",
         line(560, "NESTEDOFF"),
         line(540, "NESTEDON")
+    ));
+    // Marked content inside a hidden section does not end it.
+    content.push_str(&format!(
+        "/OC /Off BDC\n/Span <</ActualText (x)>> BDC\n{}EMC\n{}EMC\n",
+        line(400, "SPANINNER"),
+        line(380, "SPANAFTER")
     ));
     content.push_str("q 1 0 0 1 72 500 cm /FmOff Do Q\n");
     content.push_str("q 1 0 0 1 72 480 cm /FmOn Do Q\n");
@@ -344,8 +373,8 @@ fn optional_content_is_flattened_to_its_default_visibility() {
     }
     // A group whose intent is not the configuration's has no effect.
     assert!(words.iter().any(|s| s == "INTENTSHOWN"), "{words:?}");
-    // Six hidden sections: off, AllOnHid, AnyOffHid, VeHid, nested, the form's inner one.
-    assert_eq!(out.report.hidden_sections, 6, "{:?}", out.report);
+    // Seven hidden sections: off, AllOnHid, AnyOffHid, VeHid, nested, span, the form's.
+    assert_eq!(out.report.hidden_sections, 7, "{:?}", out.report);
     // Everything the layered page shows, and nothing else (annotations included).
     for w in SHOWN {
         assert!(words.iter().any(|s| s == w), "{w} should show: {words:?}");
@@ -356,9 +385,11 @@ fn optional_content_is_flattened_to_its_default_visibility() {
     if dump_dir().is_some() {
         let list = |l: &[&str]| l.iter().map(|w| js(w)).collect::<Vec<_>>().join(",");
         dump(
-            "manifest-layers.json",
+            "layers.json",
             format!(
-                "[{{\"in\":\"layers.in.pdf\",\"out\":\"layers.out.pdf\",\"shown\":[{}],\"hidden\":[{}]}},\n\
+                // PDFium draws an annotation whatever its `/OC` says (the square of
+                // object 48), so its rendering of the input is not compared there.
+                "[{{\"in\":\"layers.in.pdf\",\"out\":\"layers.out.pdf\",\"shown\":[{}],\"hidden\":[{}],\"ignore\":[[300,160,500,180]]}},\n\
                  {{\"in\":\"layers-base-off.in.pdf\",\"out\":\"layers-base-off.out.pdf\",\"shown\":[\"TURNEDON\"],\"hidden\":[\"BASEOFF\"]}}]\n",
                 list(&SHOWN),
                 list(&HIDDEN)
@@ -424,7 +455,7 @@ fn a_document_without_optional_content_keeps_its_markers_untouched() {
     let base = delivered(&classic(&objs));
     let out = flatten_plain(&base, &FlattenOptions::default()).unwrap();
     assert!(!out.report.optional_content_flattened);
-    let (words, _) = shown(&out.bytes);
+    let (words, _) = shown_with(&out.bytes, false);
     assert_eq!(words, vec!["STAYS".to_owned()]);
 }
 
@@ -505,8 +536,10 @@ fn a_visibility_expression_over_its_depth_is_refused() {
     assert_eq!(shown(&out.bytes).0, vec!["DEEP".to_owned()]);
     // One more: refused with its code.
     let over = expression_doc(&nots(MAX_VE_DEPTH + 1), Vec::new());
-    let e = flatten_plain(&over, &FlattenOptions::default()).unwrap_err();
-    assert_eq!(e.code(), "CS-FLT-0006", "{e}");
+    let code = flatten_plain(&over, &FlattenOptions::default())
+        .err()
+        .map(|e| e.code());
+    assert_eq!(code, Some("CS-FLT-0006"));
 }
 
 #[test]
@@ -522,15 +555,25 @@ fn a_visibility_expression_sharing_arrays_is_bounded_by_its_terms() {
     }
     extra.push((100 + levels, b"[/Or 10 0 R]".to_vec()));
     let doc = expression_doc("100 0 R", extra);
-    let e = flatten_plain(&doc, &FlattenOptions::default()).unwrap_err();
-    assert_eq!(e.code(), "CS-FLT-0006", "{e}");
+    let code = flatten_plain(&doc, &FlattenOptions::default())
+        .err()
+        .map(|e| e.code());
+    assert_eq!(code, Some("CS-FLT-0006"));
     assert!(2usize.pow(levels) > MAX_VE_TERMS);
 }
 
 #[test]
 fn a_malformed_expression_falls_back_to_the_policy() {
-    // `/Not` with two operands is malformed: `/P` (AnyOn over an on group) decides.
+    // `/Not` with two operands is malformed: `/P` decides. AnyOn (the default) over an
+    // on group shows; AllOff hides.
     let doc = expression_doc("[/Not 10 0 R 10 0 R]", Vec::new());
+    let out = flatten_plain(&doc, &FlattenOptions::default()).unwrap();
+    assert_eq!(shown(&out.bytes).0, vec!["DEEP".to_owned()]);
+    let doc = expression_doc("[/Not 10 0 R 10 0 R]/P/AllOff", Vec::new());
+    let out = flatten_plain(&doc, &FlattenOptions::default()).unwrap();
+    assert!(shown(&out.bytes).0.is_empty());
+    // A well-formed expression wins over that policy: [/Not [/Not on]] shows.
+    let doc = expression_doc("[/Not [/Not 10 0 R]]/P/AllOff", Vec::new());
     let out = flatten_plain(&doc, &FlattenOptions::default()).unwrap();
     assert_eq!(shown(&out.bytes).0, vec!["DEEP".to_owned()]);
 }
@@ -598,6 +641,10 @@ fn a_checkbox_flattens_with_its_own_on_appearance() {
     assert_eq!(out.report.drawn.len(), 2);
     dump("checkbox-cross.in.pdf", &base);
     dump("checkbox-cross.out.pdf", &out.bytes);
+    dump(
+        "checkbox.json",
+        b"[{\"out\":\"checkbox-cross.out.pdf\",\"rect\":[100,600,112,612]}]\n",
+    );
     // The page invokes the box's own cross; the plain box gets one new form (ours).
     let mut b = admit(&out.bytes, &Limits::default(), &never).unwrap();
     let page = b.report.pages[0].object;

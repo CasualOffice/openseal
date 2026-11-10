@@ -623,7 +623,8 @@ pub fn flatten(
     // content pass.
     let mut new_annots: BTreeMap<usize, Vec<Object>> = BTreeMap::new();
     let mut appearances: Vec<u32> = Vec::new();
-    let mut hide: Vec<u32> = Vec::new();
+    // Annotations that stay and carry `/OC`, and whether it hides them.
+    let mut hide: Vec<(u32, bool)> = Vec::new();
     let mut page_dicts: Vec<(usize, u32, Dictionary)> = Vec::with_capacity(pages.len());
     for (index, info) in pages.iter().enumerate() {
         let Some(page_dict) = read::object_dict(doc, info.object, cancel)? else {
@@ -658,10 +659,11 @@ pub fn flatten(
                         changed = true;
                         continue;
                     }
-                    if let Some(n) = num
-                        && oc_hidden(doc, &mut oc, &d, cancel)?
+                    if oc.is_some()
+                        && d.contains(b"OC")
+                        && let Some(n) = num
                     {
-                        hide.push(n);
+                        hide.push((n, oc_hidden(doc, &mut oc, &d, cancel)?));
                     }
                     appearances.extend(optional::appearance_streams(doc, &d, cancel)?);
                     out.push((item, None));
@@ -711,6 +713,18 @@ pub fn flatten(
                 None => {
                     report.annotations_kept = report.annotations_kept.saturating_add(1);
                     appearances.extend(optional::appearance_streams(doc, &d, cancel)?);
+                    if oc.is_some() && d.contains(b"OC") {
+                        match num {
+                            Some(n) => hide.push((n, false)),
+                            None => {
+                                let mut d = d.clone();
+                                d.remove(b"OC");
+                                out.push((Object::Dictionary(d), None));
+                                changed = true;
+                                continue;
+                            }
+                        }
+                    }
                     out.push((item, None));
                 }
             }
@@ -791,16 +805,19 @@ pub fn flatten(
         }
     }
 
-    // Widgets in hidden optional content that stay (the form kept): marked Hidden, as
-    // the signer did not see them and no configuration will show them any more.
-    for n in hide {
+    // Annotations that stay lose `/OC`, since no configuration is left to read it;
+    // those it hid (widgets of a kept form) are marked Hidden instead, as the signer
+    // did not see them.
+    for (n, hidden) in hide {
         let d = match plan.edits.remove(&n) {
             Some(d) => Some(d),
             None => read::object_dict(doc, n, cancel)?,
         };
         if let Some(mut d) = d {
-            let flags = d.get(b"F").and_then(Object::as_i64).unwrap_or(0);
-            d.insert(b"F", Object::Integer(flags | (1 << 1)));
+            if hidden {
+                let flags = d.get(b"F").and_then(Object::as_i64).unwrap_or(0);
+                d.insert(b"F", Object::Integer(flags | (1 << 1)));
+            }
             d.remove(b"OC");
             plan.edits.insert(n, d);
         }
@@ -953,6 +970,9 @@ pub fn flatten(
     // Forms and patterns cleared of hidden optional content, in place.
     for s in &pass.streams {
         write::replace_stream(&mut u, s.num, s.dict.clone(), &s.data)?;
+    }
+    for (num, stream) in &pass.stripped {
+        u.replace(*num, stream.clone())?;
     }
 
     // Fills: appearance streams, then the changed dictionaries.
