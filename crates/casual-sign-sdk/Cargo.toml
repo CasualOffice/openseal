@@ -9,7 +9,30 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+casual-sign-audit = { path = "../casual-sign-audit" }
+casual-sign-certificate = { path = "../casual-sign-certificate" }
+casual-sign-crypto = { path = "../casual-sign-crypto" }
+casual-sign-fields = { path = "../casual-sign-fields" }
+# Default features: `FontSet::bundled()` (Liberation and two script faces) is what a
+# host without its own faces passes to `Engine::new`.
+casual-sign-flatten = { path = "../casual-sign-flatten" }
+casual-sign-model = { path = "../casual-sign-model" }
 casual-sign-pdf = { path = "../casual-sign-pdf" }
+casual-sign-seal = { path = "../casual-sign-seal" }
+casual-sign-verify = { path = "../casual-sign-verify" }
+
+[dev-dependencies]
+# The throwaway test PKI, TSA and OCSP responder of casual-sign-seal's tests
+# (`tests/common`, included by path), for the facade's end-to-end tests and the corpus
+# gate run (`examples/pipeline_corpus.rs`, P1-GATE-01). Test-only, as in -seal (ADR-006).
+aws-lc-rs = "1.19.0"
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto"] }
+cms = { version = "=0.3.0-rc.2", default-features = false }
+der = { version = "0.8.3", default-features = false, features = ["alloc", "derive", "oid"] }
+x509-cert = { version = "0.3.0", default-features = false }
+x509-ocsp = { version = "=0.3.0-rc.1", default-features = false }
+x509-tsp = { version = "=0.2.0-rc.0", default-features = false }
+rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

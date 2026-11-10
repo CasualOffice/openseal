@@ -1,0 +1,53 @@
+[package]
+name = "casual-sign-cli"
+version = "0.0.0"
+description = "openseal: the OpenSeal engine on the command line (admit, normalize, fill, seal, verify, audit verify)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "openseal"
+path = "src/main.rs"
+
+[dependencies]
+casual-sign-sdk = { path = "../casual-sign-sdk" }
+# JSON output and the `fill --values` file. Already in the tree (casual-sign-audit).
+serde_json = "1.0.120"
+
+# The CLI is a host (docs/19): it reads files, the clock and the network, and signs with
+# a development file key. None of that builds for wasm32, where the binary only says so;
+# tools/ci-local.sh's wasm32 step still checks the workspace with it (see src/main.rs).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Private-key operations and the TSA nonce in hosts (ADR-006, docs/31 §8). ISC/Apache/MIT.
+aws-lc-rs = "1.19.0"
+# Certificates and their AIA and CRL distribution point extensions: the RustCrypto der-0.8
+# generation casual-sign-crypto pins (ADR-006), so the graph does not grow.
+der = { version = "0.8.3", default-features = false, features = ["alloc", "derive", "oid"] }
+x509-cert = { version = "0.3.0", default-features = false }
+# PEM keys and certificate chains (RFC 7468). Already in the tree through `der`. MIT OR Apache-2.0.
+pem-rfc7468 = { version = "1.0.0", default-features = false, features = ["alloc"] }
+# HTTP for the TSA (RFC 3161 over HTTP) and OCSP and CRL fetching (docs/31 §6, §9). Blocking,
+# small, MIT OR Apache-2.0; TLS by rustls on aws-lc-rs, roots from the platform's store
+# (no webpki-roots: its CDLA licence is not in deny.toml).
+ureq = { version = "3.5.1", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+rustls-native-certs = "0.8.5"
+
+[dev-dependencies]
+# The integration tests build a throwaway PKI and serve an RFC 3161 TSA over HTTP on
+# 127.0.0.1 from casual-sign-seal's test helpers (tests/common, included by path).
+casual-sign-crypto = { path = "../casual-sign-crypto" }
+casual-sign-seal = { path = "../casual-sign-seal" }
+aws-lc-rs = "1.19.0"
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
+cms = { version = "=0.3.0-rc.2", default-features = false }
+der = { version = "0.8.3", default-features = false, features = ["alloc", "derive", "oid"] }
+x509-cert = { version = "0.3.0", default-features = false }
+x509-ocsp = { version = "=0.3.0-rc.1", default-features = false }
+x509-tsp = { version = "=0.2.0-rc.0", default-features = false }
+
+[lints]
+workspace = true
