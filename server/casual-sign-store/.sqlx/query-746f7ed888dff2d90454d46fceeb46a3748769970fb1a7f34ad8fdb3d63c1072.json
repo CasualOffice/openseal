@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT engine_state AS \"engine_state!\", version, host_client_id FROM envelopes\n                WHERE account_id = $1 AND id = $2 AND engine_state IS NOT NULL FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "engine_state!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "engine_state"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "host_client_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "host_client_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "746f7ed888dff2d90454d46fceeb46a3748769970fb1a7f34ad8fdb3d63c1072"
+}

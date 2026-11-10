@@ -1,0 +1,53 @@
+[package]
+name = "casual-sign-server"
+version = "0.0.0"
+description = "OpenSeal API server: the /api/v1 REST surface, staff and API authentication, and the recipient ceremony endpoints over the workflow engine and the store (stage 2C, docs/40)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+casual-sign-audit = { path = "../../crates/casual-sign-audit" }
+casual-sign-model = { path = "../../crates/casual-sign-model" }
+# Admission and normalization of uploads (docs/30 §2, §3).
+casual-sign-sdk = { path = "../../crates/casual-sign-sdk" }
+casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
+casual-sign-store = { path = "../casual-sign-store" }
+# The JWT signing key and other secrets, from the environment or a file it names.
+casual-sign-secrets = { path = "../casual-sign-secrets" }
+# HTTP (ADR-014; the sisters' stack, OpenCalc's casual-calc-host). MIT.
+axum = { version = "0.8.4", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path", "original-uri"] }
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+tower = { version = "0.5.2", default-features = false, features = ["util"] }
+# Body size limits. MIT.
+tower-http = { version = "0.6.6", default-features = false, features = ["limit"] }
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.120"
+uuid = { version = "1.10", features = ["v7", "serde"] }
+time = { version = "0.3.36", features = ["formatting", "parsing"] }
+base64 = "0.22.1"
+# Staff passwords and recipient access codes (SEC-A03, SEC-A09): Argon2id, RustCrypto.
+# MIT OR Apache-2.0.
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "password-hash", "std"] }
+# Randomness, SHA-256 and ES256 signatures for access tokens (ADR-006: aws-lc-rs in hosts).
+aws-lc-rs = "1.19.0"
+# Access tokens: JWT, ES256 only (docs/40 §2). MIT.
+jsonwebtoken = { version = "10.2.0", default-features = false, features = ["aws_lc_rs"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.19", default-features = false, features = ["fmt", "env-filter", "ansi"] }
+# GeoIP approximation of a signer's location from their address (row GEO-01), from an
+# operator-supplied .mmdb file. ISC.
+maxminddb = { version = "0.27", default-features = false }
+rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tower = { version = "0.5.2", default-features = false, features = ["util"] }
+http-body-util = "0.1.2"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres"] }
+# Reading api/openapi.yaml in the contract tests. MIT OR Apache-2.0.
+serde_norway = "0.9.42"
+
+[lints]
+workspace = true

@@ -35,4 +35,6 @@ pub mod repo;
 pub use error::{Result, StoreError};
 pub use ids::*;
 pub use migrate::{MIGRATIONS, Migration, MigrationReport, migrate};
-pub use store::{ClaimedJob, EntryPoints, RecipientTokenTarget, Store, Tenant, TenantTx};
+pub use store::{
+    ClaimedJob, EntryPoints, RecipientTokenTarget, StaffSessionTarget, Store, Tenant, TenantTx,
+};

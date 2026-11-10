@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recipients SET routing_order = $4, type = $5, role_name = $6, name = $7, email = $8, phone = $9, delivery = $10, embedded_client_user_id = $11, language = $12, status = $13, declined_reason = $14 WHERE account_id = $1 AND id = $2 AND envelope_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03b0e3b726d82b118d412972f5126e5ddc03250a0f544510445d2c442319673a"
+}

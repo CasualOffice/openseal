@@ -44,6 +44,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(6, "0006_links_and_webhooks.sql"),
     migration!(7, "0007_jobs_and_entry_points.sql"),
     migration!(8, "0008_workflow_state_and_job_steps.sql"),
+    migration!(9, "0009_api_server.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.

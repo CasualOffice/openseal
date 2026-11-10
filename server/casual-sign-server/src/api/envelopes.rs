@@ -1,0 +1,1398 @@
+//! Envelopes and everything inside one (docs/40 §3): documents, recipients, fields,
+//! send, correct, void, resend, status, audit events, downloads and the embedded
+//! signing view. Every change is a workflow command (docs/24 §1) run by
+//! the command pipeline (`apply`).
+
+use std::collections::BTreeMap;
+
+use axum::body::Bytes;
+use axum::extract::{Path, Query};
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+use casual_sign_audit::{Hash256, Personal};
+use casual_sign_model::{EnvelopeStatus as MStatus, Id};
+use casual_sign_sdk::{AdmissionReport, Credentials, NormalizationReport};
+use casual_sign_store::repo::documents::{Document, NewVersion, VersionKind};
+use casual_sign_store::repo::envelopes::{Cursor, EnvelopeStatus};
+use casual_sign_store::repo::recipients::{NewToken, TokenPurpose};
+use casual_sign_store::{
+    DocumentId, DocumentVersionId, EnvelopeId, RecipientId, RecipientTokenId, TenantTx, UserId,
+};
+use casual_sign_workflow::{
+    Access, Change, Command, DocumentSpec, EnvelopeState, Principal as WfPrincipal,
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use time::OffsetDateTime;
+use uuid::Uuid;
+
+use super::{envelope as find, json, json_tagged, path_id, same_id, staff};
+use crate::apply::{Commands, Loaded, create as create_env, eid, run, uid};
+use crate::call::Call;
+use crate::crypto::{hash_password, random_secret, sha256};
+use crate::dto::{self, DocumentIn, EnvelopeCreate, EnvelopePatch, RecipientIn, parse};
+use crate::error::ApiError;
+use crate::http::SecretBearing;
+use crate::state::AppState;
+
+// Helpers -------------------------------------------------------------------------------
+
+/// The expected version from `If-Match`; `required` answers `428` when absent.
+fn expected(c: &Call, required: bool) -> Result<Option<u64>, ApiError> {
+    match dto::if_match(&c.headers) {
+        Some(v) => v.map(Some),
+        None if required => Err(ApiError::precondition_required()),
+        None => Ok(None),
+    }
+}
+
+/// Run one staff command on a loaded envelope.
+async fn command(
+    c: &Call,
+    tx: &mut TenantTx,
+    cmds: &mut Commands,
+    l: &mut Loaded,
+    cmd: Command,
+    expected: Option<u64>,
+) -> Result<(), ApiError> {
+    let ctx = cmds.ctx(staff(&c.p, &l.state)?, expected)?;
+    run(tx, l, &cmd, &ctx, cmds.now).await?;
+    Ok(())
+}
+
+/// Edit a draft, or correct a sent envelope, with `changes`.
+async fn change(
+    c: &Call,
+    tx: &mut TenantTx,
+    l: &mut Loaded,
+    changes: Vec<Change>,
+    expected: Option<u64>,
+) -> Result<(), ApiError> {
+    let mut cmds = c.commands(tx).await?;
+    let cmd = if l.state.status == MStatus::Draft {
+        Command::Edit { changes }
+    } else {
+        Command::Correct { changes }
+    };
+    command(c, tx, &mut cmds, l, cmd, expected).await
+}
+
+fn envelope_response(status: StatusCode, s: &EnvelopeState) -> Response {
+    json_tagged(status, &dto::envelope(s), &dto::etag(s))
+}
+
+fn new_id() -> Result<Id, ApiError> {
+    eid(Uuid::now_v7())
+}
+
+/// Bytes from base64, at most `max` decoded.
+fn base64(s: &str, max: usize, at: &str) -> Result<Vec<u8>, ApiError> {
+    if s.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
+        return Err(ApiError::too_large());
+    }
+    let b = STANDARD.decode(s).map_err(|_| ApiError::invalid(at))?;
+    if b.len() > max {
+        return Err(ApiError::too_large());
+    }
+    Ok(b)
+}
+
+fn admission_json(a: &AdmissionReport, n: Option<&NormalizationReport>) -> (Value, u32) {
+    let removed: Vec<&str> = n
+        .map(|n| n.removed.iter().map(|r| r.code).collect())
+        .unwrap_or_default();
+    let findings = u32::try_from(removed.len()).unwrap_or(u32::MAX);
+    (
+        json!({
+            "page_count": a.page_count,
+            "repaired": a.repaired,
+            "signed": a.is_signed(),
+            "docmdp": a.docmdp,
+            "actions": a.actions.len(),
+            "embedded_files": a.embedded_files.len(),
+            "rich_media": a.rich_media.len(),
+            "external_streams": a.external_streams.len(),
+            "xfa": a.has_xfa,
+            "optional_content": a.has_optional_content,
+            "encrypted": a.encryption.is_some(),
+            "form_fields": a.fields.len(),
+            "removed": removed,
+            "normalized": n.is_some(),
+        }),
+        findings,
+    )
+}
+
+fn pages_json(a: &AdmissionReport) -> Value {
+    Value::Array(
+        a.pages
+            .iter()
+            .map(|p| {
+                json!({
+                    "width": p.crop_box.urx - p.crop_box.llx,
+                    "height": p.crop_box.ury - p.crop_box.lly,
+                    "rotate": p.rotate,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Admit and normalize an upload (docs/30 §2, §3), store the original and the
+/// delivered bytes, and record the document's rows. Signed input is kept as it is.
+async fn add_document(
+    st: &AppState,
+    tx: &mut TenantTx,
+    env: EnvelopeId,
+    name: &str,
+    bytes: Vec<u8>,
+) -> Result<DocumentSpec, ApiError> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 255 {
+        return Err(ApiError::invalid("/name"));
+    }
+    if bytes.len() > st.config().max_document_bytes {
+        return Err(ApiError::too_large());
+    }
+    let engine = st.0.engine.clone();
+    let (original, delivered) = tokio::task::spawn_blocking(move || {
+        let delivered = match engine.prepare(&bytes, &Credentials::default()) {
+            Err(e) if e.code() == "CS-PDF-0014" => engine.keep_signed(&bytes),
+            other => other,
+        };
+        (bytes, delivered)
+    })
+    .await
+    .map_err(|_| ApiError::internal("admission"))?;
+    let delivered = delivered?;
+    let pages = delivered.admission.page_count;
+    if pages == 0 || pages > casual_sign_workflow::limits::MAX_PAGES {
+        return Err(ApiError::invalid("/content"));
+    }
+    let original_key = st.0.blobs.put(&original).await?;
+    let delivered_key = st.0.blobs.put(&delivered.bytes).await?;
+    let (report, findings) = admission_json(&delivered.admission, delivered.normalization.as_ref());
+    let report_hash = Hash256::digest(&serde_json::to_vec(&report).unwrap_or_default());
+    let doc = DocumentId(Uuid::now_v7());
+    let ord = tx
+        .documents()
+        .list(env)
+        .await?
+        .iter()
+        .map(|d| d.ord)
+        .max()
+        .map_or(0, |m| m.saturating_add(1));
+    tx.documents()
+        .insert(&Document {
+            id: doc,
+            envelope_id: env,
+            ord,
+            name: name.to_owned(),
+        })
+        .await?;
+    let geometry = pages_json(&delivered.admission);
+    let page_count = i32::try_from(pages).unwrap_or(i32::MAX);
+    for (kind, key, len, admission) in [
+        (VersionKind::Original, original_key, original.len(), None),
+        (
+            VersionKind::Normalized,
+            delivered_key,
+            delivered.bytes.len(),
+            Some(report.clone()),
+        ),
+    ] {
+        tx.documents()
+            .add_version(&NewVersion {
+                id: DocumentVersionId(Uuid::now_v7()),
+                document_id: doc,
+                kind,
+                sha256: key.0,
+                byte_len: i64::try_from(len).unwrap_or(i64::MAX),
+                page_count,
+                admission_report: admission,
+                pages: geometry.clone(),
+            })
+            .await?;
+    }
+    Ok(DocumentSpec {
+        id: eid(doc.0)?,
+        name: Personal(casual_sign_model::Text::new(name).map_err(|_| ApiError::invalid("/name"))?),
+        upload_hash: Hash256(original_key.0),
+        bytes: u64::try_from(original.len()).unwrap_or(u64::MAX),
+        delivered_hash: delivered.hash,
+        pages,
+        admission: Some((report_hash, findings)),
+    })
+}
+
+/// Recipients of a request, as changes, with their access codes stored.
+async fn recipients_in(
+    tx: &mut TenantTx,
+    list: &[RecipientIn],
+    at: &str,
+) -> Result<
+    (
+        Vec<Change>,
+        BTreeMap<String, Id>,
+        Vec<(RecipientId, String)>,
+    ),
+    ApiError,
+> {
+    let mut changes = Vec::new();
+    let mut refs = BTreeMap::new();
+    let mut codes = Vec::new();
+    let _ = tx;
+    for (i, r) in list.iter().enumerate() {
+        let id = new_id()?;
+        let spec = r.spec(id.clone(), &format!("{at}/{i}"))?;
+        if let Some(reference) = &r.reference {
+            refs.insert(reference.clone(), id.clone());
+        }
+        if let Some(code) = r.access_code.as_ref().filter(|c| !c.is_empty()) {
+            codes.push((RecipientId(uid(&id)?), code.clone()));
+        }
+        changes.push(Change::AddRecipient { recipient: spec });
+    }
+    Ok((changes, refs, codes))
+}
+
+async fn store_codes(tx: &mut TenantTx, codes: Vec<(RecipientId, String)>) -> Result<(), ApiError> {
+    for (r, code) in codes {
+        let phc = tokio::task::spawn_blocking(move || hash_password(&code))
+            .await
+            .map_err(|_| ApiError::internal("argon2"))??;
+        tx.recipients()
+            .set_access_code(r, Uuid::now_v7(), &Personal(phc))
+            .await?;
+    }
+    Ok(())
+}
+
+fn days_from(now: OffsetDateTime, days: u32) -> Result<casual_sign_audit::Timestamp, ApiError> {
+    crate::apply::ts(crate::state::plus(
+        now,
+        time::Duration::days(i64::from(days)),
+    )?)
+}
+
+// Envelopes -----------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ListQuery {
+    cursor: Option<String>,
+    limit: Option<u32>,
+    status: Option<String>,
+}
+
+fn parse_status(s: &str) -> Option<EnvelopeStatus> {
+    Some(match s {
+        "draft" => EnvelopeStatus::Draft,
+        "sent" => EnvelopeStatus::Sent,
+        "delivered" => EnvelopeStatus::Delivered,
+        "completing" => EnvelopeStatus::Completing,
+        "completed" => EnvelopeStatus::Completed,
+        "declined" => EnvelopeStatus::Declined,
+        "voided" => EnvelopeStatus::Voided,
+        "expired" => EnvelopeStatus::Expired,
+        _ => return None,
+    })
+}
+
+fn encode_cursor(c: Cursor) -> String {
+    let raw = format!("{}.{}", c.created_at.unix_timestamp_nanos(), c.id);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+}
+
+fn decode_cursor(s: &str) -> Option<Cursor> {
+    let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(s)
+        .ok()?;
+    let raw = String::from_utf8(raw).ok()?;
+    let (t, id) = raw.split_once('.')?;
+    Some(Cursor {
+        created_at: OffsetDateTime::from_unix_timestamp_nanos(t.parse().ok()?).ok()?,
+        id: EnvelopeId(Uuid::parse_str(id).ok()?),
+    })
+}
+
+/// `GET /envelopes`: a page, newest first, of the envelopes the principal may see.
+pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response, ApiError> {
+    let limit = q.limit.unwrap_or(50);
+    if !(1..=200).contains(&limit) {
+        return Err(ApiError::invalid("/query/limit"));
+    }
+    let after = q
+        .cursor
+        .as_deref()
+        .map(|s| decode_cursor(s).ok_or_else(|| ApiError::invalid("/query/cursor")))
+        .transpose()?;
+    let status = q
+        .status
+        .as_deref()
+        .map(|s| parse_status(s).ok_or_else(|| ApiError::invalid("/query/status")))
+        .transpose()?;
+    let sender = (!(c.p.admin || c.p.view_all)).then_some(c.p.user);
+    let mut tx = c.tx().await?;
+    let page = tx.envelopes().page(after, status, sender, limit).await?;
+    let next = (page.len() == usize::try_from(limit).unwrap_or(usize::MAX))
+        .then(|| page.last())
+        .flatten()
+        .map(|e| {
+            encode_cursor(Cursor {
+                created_at: e.created_at,
+                id: e.id,
+            })
+        });
+    let items: Vec<Value> = page
+        .iter()
+        .map(|e| {
+            json!({
+                "id": e.id.to_string(),
+                "status": e.status.as_str(),
+                "subject": e.subject.get(),
+                "sender_user_id": e.sender_user_id.to_string(),
+                "created_at": rfc3339(e.created_at),
+                "sent_at": e.sent_at.map(rfc3339),
+                "completed_at": e.completed_at.map(rfc3339),
+            })
+        })
+        .collect();
+    Ok(json(
+        StatusCode::OK,
+        &json!({ "items": items, "next_cursor": next }),
+    ))
+}
+
+pub(crate) fn rfc3339(t: OffsetDateTime) -> String {
+    t.format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default()
+}
+
+/// `POST /envelopes`: create a draft, or create and send in one call (docs/40 §3).
+pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let req: EnvelopeCreate = parse(&body)?;
+    let send = match req.status.as_deref() {
+        None | Some("draft") => false,
+        Some("sent") => {
+            c.p.require("envelopes:send")?;
+            true
+        }
+        Some(_) => return Err(ApiError::invalid("/status")),
+    };
+    let subject = dto::subject(&req.subject)?;
+    let message = dto::message(&req.message)?;
+    let mut decoded = Vec::with_capacity(req.documents.len());
+    let mut total = 0usize;
+    for (i, d) in req.documents.iter().enumerate() {
+        let b = base64(
+            &d.content_base64,
+            c.st.config().max_document_bytes,
+            &format!("/documents/{i}/content_base64"),
+        )?;
+        total = total.saturating_add(b.len());
+        decoded.push((d.name.clone(), b));
+    }
+    if total > 200 * 1024 * 1024 {
+        return Err(ApiError::too_large());
+    }
+    let mut tx = c.tx().await?;
+    let mut cmds = c.commands(&mut tx).await?;
+    let env = EnvelopeId(Uuid::now_v7());
+    let me = eid(c.p.user.0)?;
+    let principal = WfPrincipal::Sender {
+        user_id: me.clone(),
+    };
+    let create = Command::Create {
+        envelope_id: eid(env.0)?,
+        account_id: eid(c.p.account.0)?,
+        sender_user_id: me,
+        subject,
+        message,
+    };
+    let ctx = cmds.ctx(principal, None)?;
+    let mut l = create_env(
+        &mut tx,
+        c.p.account,
+        env,
+        &create,
+        &ctx,
+        c.p.client(),
+        cmds.now,
+    )
+    .await?;
+    let mut changes = Vec::new();
+    let mut doc_ids = Vec::new();
+    for (name, bytes) in decoded {
+        let spec = add_document(&c.st, &mut tx, env, &name, bytes).await?;
+        doc_ids.push(spec.id.clone());
+        changes.push(Change::AddDocument { document: spec });
+    }
+    let (rchanges, refs, codes) = recipients_in(&mut tx, &req.recipients, "/recipients").await?;
+    changes.extend(rchanges);
+    for (i, f) in req.fields.iter().enumerate() {
+        let field = dto::field_from(
+            f,
+            new_id()?,
+            |r| refs.get(r).cloned().or_else(|| Id::new(r).ok()),
+            |d| match d {
+                Value::Number(n) => n
+                    .as_u64()
+                    .and_then(|i| doc_ids.get(usize::try_from(i).ok()?).cloned()),
+                Value::String(s) => Id::new(s.as_str()).ok(),
+                _ => None,
+            },
+            &format!("/fields/{i}"),
+        )?;
+        changes.push(Change::AddField {
+            field: Personal(field),
+        });
+    }
+    if let Some(r) = req.reminders {
+        changes.push(Change::SetReminders { reminders: r });
+    }
+    if let Some(d) = req.expires_in_days {
+        changes.push(Change::SetExpiry {
+            expires_at: Some(days_from(cmds.now, d)?),
+        });
+    }
+    if let Some(o) = req.signing_options {
+        changes.push(Change::SetSigningOptions { options: o });
+    }
+    if let Some(s) = req.seal_profile {
+        changes.push(Change::SetSealProfile { profile: s });
+    }
+    if !changes.is_empty() {
+        command(
+            &c,
+            &mut tx,
+            &mut cmds,
+            &mut l,
+            Command::Edit { changes },
+            None,
+        )
+        .await?;
+    }
+    store_codes(&mut tx, codes).await?;
+    if send {
+        command(&c, &mut tx, &mut cmds, &mut l, Command::Send, None).await?;
+    }
+    tx.commit().await?;
+    let mut r = envelope_response(StatusCode::CREATED, &l.state);
+    if let Ok(v) = HeaderValue::from_str(&format!("/api/v1/envelopes/{env}")) {
+        r.headers_mut().insert(header::LOCATION, v);
+    }
+    Ok(r)
+}
+
+/// `GET /envelopes/{id}`.
+pub(crate) async fn get(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+/// `GET /envelopes/{id}/status`: the envelope's and each recipient's status.
+pub(crate) async fn status(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let s = &l.state;
+    Ok(json_tagged(
+        StatusCode::OK,
+        &json!({
+            "id": s.id, "status": s.status, "version": s.version,
+            "recipients": s.recipients.iter().map(|r| json!({"id": r.id(), "status": r.status})).collect::<Vec<_>>(),
+        }),
+        &dto::etag(s),
+    ))
+}
+
+/// `PATCH /envelopes/{id}`: subject, message, reminders, expiry, options, profile.
+pub(crate) async fn patch(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, true)?;
+    let req: EnvelopePatch = parse(&body)?;
+    let mut changes = Vec::new();
+    if let Some(s) = &req.subject {
+        changes.push(Change::SetSubject {
+            subject: dto::subject(s)?,
+        });
+    }
+    if let Some(m) = &req.message {
+        changes.push(Change::SetMessage {
+            message: dto::message(m)?,
+        });
+    }
+    if let Some(r) = req.reminders {
+        changes.push(Change::SetReminders { reminders: r });
+    }
+    if let Some(d) = req.expires_in_days {
+        let at = d.map(|d| days_from(c.st.now(), d)).transpose()?;
+        changes.push(Change::SetExpiry { expires_at: at });
+    }
+    if let Some(o) = req.signing_options {
+        changes.push(Change::SetSigningOptions { options: o });
+    }
+    if let Some(p) = req.seal_profile {
+        changes.push(Change::SetSealProfile { profile: p });
+    }
+    if changes.is_empty() {
+        return Err(ApiError::invalid(""));
+    }
+    change(&c, &mut tx, &mut l, changes, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+/// `DELETE /envelopes/{id}`: delete a draft (recorded, docs/24 As built).
+pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, true)?;
+    let mut cmds = c.commands(&mut tx).await?;
+    command(&c, &mut tx, &mut cmds, &mut l, Command::DeleteDraft, v).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `POST /envelopes/{id}/send`.
+pub(crate) async fn send(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let mut cmds = c.commands(&mut tx).await?;
+    command(&c, &mut tx, &mut cmds, &mut l, Command::Send, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VoidIn {
+    reason: String,
+}
+
+/// `POST /envelopes/{id}/void {reason}`.
+pub(crate) async fn void(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let req: VoidIn = parse(&body)?;
+    if req.reason.trim().is_empty() {
+        return Err(ApiError::invalid("/reason"));
+    }
+    let reason = dto::message(&req.reason)?;
+    let mut cmds = c.commands(&mut tx).await?;
+    command(&c, &mut tx, &mut cmds, &mut l, Command::Void { reason }, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CorrectIn {
+    changes: Vec<Change>,
+}
+
+/// `POST /envelopes/{id}/correct {changes}`: one correction, all or none (docs/24 §6
+/// as built). The changes are the engine's change list.
+pub(crate) async fn correct(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, true)?;
+    let req: CorrectIn = parse(&body)?;
+    if req.changes.iter().any(|ch| {
+        matches!(
+            ch,
+            Change::AddDocument { .. } | Change::ReplaceDocument { .. }
+        )
+    }) {
+        // Documents arrive through the documents endpoint, which admits them.
+        return Err(ApiError::invalid("/changes"));
+    }
+    let mut cmds = c.commands(&mut tx).await?;
+    command(
+        &c,
+        &mut tx,
+        &mut cmds,
+        &mut l,
+        Command::Correct {
+            changes: req.changes,
+        },
+        v,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResendIn {
+    #[serde(default)]
+    recipient_ids: Vec<String>,
+}
+
+/// `POST /envelopes/{id}/resend {recipient_ids?}`.
+pub(crate) async fn resend(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let req: ResendIn = parse(&body)?;
+    let recipients = req
+        .recipient_ids
+        .iter()
+        .map(|r| Id::new(r.as_str()).map_err(|_| ApiError::invalid("/recipient_ids")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut cmds = c.commands(&mut tx).await?;
+    command(
+        &c,
+        &mut tx,
+        &mut cmds,
+        &mut l,
+        Command::Resend { recipients },
+        None,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+/// `GET /envelopes/{id}/audit`: the hash-chained events, re-verified on read.
+pub(crate) async fn audit(
+    c: Call,
+    Path(id): Path<String>,
+    Query(q): Query<BTreeMap<String, String>>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    if q.get("format").is_some_and(|f| f != "json") {
+        return Err(ApiError::not_available(
+            "the PDF audit report is built with the certificate (stage 2D)",
+        ));
+    }
+    // `chain` re-verifies every link; a broken chain is an error, never served.
+    let _ = tx.audit().chain(l.id).await?;
+    let events = tx.audit().events(l.id).await?;
+    let items: Vec<Value> = events
+        .iter()
+        .map(|e| {
+            json!({
+                "seq": e.seq,
+                "type": e.event_type,
+                "at": rfc3339(e.at),
+                "hash": Hash256(e.hash),
+                "prev": e.prev.map(Hash256),
+                "event": serde_json::from_slice::<Value>(&e.canonical).unwrap_or(Value::Null),
+            })
+        })
+        .collect();
+    Ok(json(
+        StatusCode::OK,
+        &json!({ "items": items, "chain_head": items.last().map(|e| e["hash"].clone()) }),
+    ))
+}
+
+// Documents -----------------------------------------------------------------------------
+
+/// `GET /envelopes/{id}/documents`.
+pub(crate) async fn documents(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let items: Vec<Value> = l.state.documents.iter().map(dto::document).collect();
+    Ok(json_tagged(
+        StatusCode::OK,
+        &json!({ "items": items }),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `POST /envelopes/{id}/documents`: JSON `{name, content_base64}`, or the PDF itself
+/// as `application/pdf` with `?name=`.
+pub(crate) async fn add_document_route(
+    c: Call,
+    Path(id): Path<String>,
+    Query(q): Query<BTreeMap<String, String>>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let pdf = c
+        .headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|t| t.starts_with("application/pdf"));
+    let (name, bytes) = if pdf {
+        let name = q
+            .get("name")
+            .cloned()
+            .ok_or_else(|| ApiError::invalid("/query/name"))?;
+        (name, body.to_vec())
+    } else {
+        let d: DocumentIn = parse(&body)?;
+        let b = base64(
+            &d.content_base64,
+            c.st.config().max_document_bytes,
+            "/content_base64",
+        )?;
+        (d.name, b)
+    };
+    let spec = add_document(&c.st, &mut tx, l.id, &name, bytes).await?;
+    let doc_id = spec.id.clone();
+    change(
+        &c,
+        &mut tx,
+        &mut l,
+        vec![Change::AddDocument { document: spec }],
+        v,
+    )
+    .await?;
+    tx.commit().await?;
+    let d = l
+        .state
+        .document(&doc_id)
+        .ok_or_else(|| ApiError::internal("document"))?;
+    Ok(json_tagged(
+        StatusCode::CREATED,
+        &dto::document(d),
+        &dto::etag(&l.state),
+    ))
+}
+
+fn doc_in<'a>(
+    s: &'a EnvelopeState,
+    doc: &str,
+) -> Result<&'a casual_sign_workflow::DocumentState, ApiError> {
+    s.documents
+        .iter()
+        .find(|d| same_id(d.id(), doc))
+        .ok_or_else(ApiError::not_found)
+}
+
+/// `GET /envelopes/{id}/documents/{doc}`.
+pub(crate) async fn document(
+    c: Call,
+    Path((id, doc)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let d = doc_in(&l.state, &doc)?;
+    Ok(json_tagged(
+        StatusCode::OK,
+        &dto::document(d),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `DELETE /envelopes/{id}/documents/{doc}`.
+pub(crate) async fn delete_document(
+    c: Call,
+    Path((id, doc)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let d = doc_in(&l.state, &doc)?.id().clone();
+    let v = expected(&c, true)?;
+    change(
+        &c,
+        &mut tx,
+        &mut l,
+        vec![Change::RemoveDocument { id: d }],
+        v,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `GET /envelopes/{id}/documents/{doc}/content?version=original|normalized|sealed`.
+/// A download from a sent envelope is recorded in its chain (docs/32 §3 Access).
+pub(crate) async fn content(
+    c: Call,
+    Path((id, doc)): Path<(String, String)>,
+    Query(q): Query<BTreeMap<String, String>>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let d = doc_in(&l.state, &doc)?.id().clone();
+    let kind = match q.get("version").map(String::as_str) {
+        None | Some("normalized") => VersionKind::Normalized,
+        Some("original") => VersionKind::Original,
+        Some("sealed") => VersionKind::Sealed,
+        Some(_) => return Err(ApiError::invalid("/query/version")),
+    };
+    let versions = tx.documents().versions(DocumentId(uid(&d)?)).await?;
+    let Some(v) = versions.iter().rev().find(|v| v.version.kind == kind) else {
+        return Err(if kind == VersionKind::Sealed {
+            ApiError::not_available("sealed when the envelope completes")
+        } else {
+            ApiError::not_found()
+        });
+    };
+    let bytes =
+        c.st.0
+            .blobs
+            .get(&casual_sign_store::blob::BlobKey(v.version.sha256))
+            .await?;
+    if l.state.status != MStatus::Draft && kind != VersionKind::Original {
+        let mut cmds = c.commands(&mut tx).await?;
+        let access = Access::DocumentDownloaded {
+            document: d,
+            hash: Hash256(v.version.sha256),
+        };
+        command(
+            &c,
+            &mut tx,
+            &mut cmds,
+            &mut l,
+            Command::RecordAccess { access },
+            None,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    let mut r = (StatusCode::OK, bytes).into_response();
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/pdf"),
+    );
+    r.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment"),
+    );
+    Ok(r)
+}
+
+/// `GET /envelopes/{id}/certificate` and `/documents/combined`: produced by the seal
+/// job (stage 2D) when the envelope completes.
+pub(crate) async fn certificate(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let _l = find(&mut tx, &c.p, &id).await?;
+    Err(ApiError::not_available(
+        "the certificate is made by the seal job when the envelope completes",
+    ))
+}
+
+// Recipients ----------------------------------------------------------------------------
+
+fn rec_in<'a>(
+    s: &'a EnvelopeState,
+    r: &str,
+) -> Result<&'a casual_sign_workflow::RecipientState, ApiError> {
+    s.recipients
+        .iter()
+        .find(|x| same_id(x.id(), r))
+        .ok_or_else(ApiError::not_found)
+}
+
+/// `GET /envelopes/{id}/recipients`.
+pub(crate) async fn recipients(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let items: Vec<Value> = l.state.recipients.iter().map(dto::recipient).collect();
+    Ok(json_tagged(
+        StatusCode::OK,
+        &json!({ "items": items }),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `POST /envelopes/{id}/recipients`: one recipient, or `{"items": [...]}`.
+pub(crate) async fn add_recipients(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let raw: Value = parse(&body)?;
+    let list: Vec<RecipientIn> = match raw.get("items") {
+        Some(items) => {
+            serde_json::from_value(items.clone()).map_err(|_| ApiError::invalid("/items"))?
+        }
+        None => vec![serde_json::from_value(raw).map_err(|_| ApiError::invalid(""))?],
+    };
+    let (changes, _, codes) = recipients_in(&mut tx, &list, "/items").await?;
+    let ids: Vec<Id> = changes
+        .iter()
+        .filter_map(|ch| match ch {
+            Change::AddRecipient { recipient } => Some(recipient.id.clone()),
+            _ => None,
+        })
+        .collect();
+    change(&c, &mut tx, &mut l, changes, v).await?;
+    store_codes(&mut tx, codes).await?;
+    tx.commit().await?;
+    let items: Vec<Value> = ids
+        .iter()
+        .filter_map(|i| l.state.recipient(i))
+        .map(dto::recipient)
+        .collect();
+    Ok(json_tagged(
+        StatusCode::CREATED,
+        &json!({ "items": items }),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `GET /envelopes/{id}/recipients/{r}`.
+pub(crate) async fn recipient(
+    c: Call,
+    Path((id, r)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let x = rec_in(&l.state, &r)?;
+    Ok(json_tagged(
+        StatusCode::OK,
+        &dto::recipient(x),
+        &dto::etag(&l.state),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecipientPatch {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    routing_order: Option<u32>,
+    #[serde(default)]
+    auth: Option<Vec<casual_sign_audit::AuthMethod>>,
+}
+
+/// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, authentication.
+pub(crate) async fn patch_recipient(
+    c: Call,
+    Path((id, r)): Path<(String, String)>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let mut spec = rec_in(&l.state, &r)?.spec.clone();
+    let v = expected(&c, true)?;
+    let req: RecipientPatch = parse(&body)?;
+    if let Some(n) = &req.name {
+        if n.trim().is_empty() || n.chars().count() > 255 {
+            return Err(ApiError::invalid("/name"));
+        }
+        spec.name = Personal(
+            casual_sign_model::Text::new(n.trim()).map_err(|_| ApiError::invalid("/name"))?,
+        );
+    }
+    if let Some(e) = &req.email {
+        if e.len() < 3 || e.len() > 320 || !e.contains('@') {
+            return Err(ApiError::invalid("/email"));
+        }
+        spec.email = Personal(
+            casual_sign_model::Text::new(e.as_str()).map_err(|_| ApiError::invalid("/email"))?,
+        );
+    }
+    if let Some(o) = req.routing_order {
+        spec.routing_order = casual_sign_model::RoutingOrder::new(o)
+            .map_err(|_| ApiError::invalid("/routing_order"))?;
+    }
+    if let Some(a) = req.auth {
+        if a.contains(&casual_sign_audit::AuthMethod::AccessCode) {
+            // A new access code goes with the recipient's creation (the code is a secret).
+            return Err(ApiError::invalid("/auth"));
+        }
+        spec.auth = a;
+    }
+    let rid = spec.id.clone();
+    change(
+        &c,
+        &mut tx,
+        &mut l,
+        vec![Change::UpdateRecipient { recipient: spec }],
+        v,
+    )
+    .await?;
+    tx.commit().await?;
+    let x = l.state.recipient(&rid).ok_or_else(ApiError::not_found)?;
+    Ok(json_tagged(
+        StatusCode::OK,
+        &dto::recipient(x),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `DELETE /envelopes/{id}/recipients/{r}`.
+pub(crate) async fn delete_recipient(
+    c: Call,
+    Path((id, r)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let rid = rec_in(&l.state, &r)?.id().clone();
+    let v = expected(&c, true)?;
+    change(
+        &c,
+        &mut tx,
+        &mut l,
+        vec![Change::RemoveRecipient { id: rid }],
+        v,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+// Fields --------------------------------------------------------------------------------
+
+fn field_in<'a>(s: &'a EnvelopeState, f: &str) -> Result<&'a casual_sign_model::Field, ApiError> {
+    s.fields
+        .0
+        .iter()
+        .find(|x| same_id(&x.id, f))
+        .ok_or_else(ApiError::not_found)
+}
+
+/// `GET /envelopes/{id}/fields?recipient_id=&document_id=`.
+pub(crate) async fn fields(
+    c: Call,
+    Path(id): Path<String>,
+    Query(q): Query<BTreeMap<String, String>>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let items: Vec<Value> = l
+        .state
+        .fields
+        .0
+        .iter()
+        .filter(|f| {
+            q.get("recipient_id")
+                .is_none_or(|r| f.recipient_id.as_ref().is_some_and(|x| x.as_str() == r))
+        })
+        .filter(|f| {
+            q.get("document_id")
+                .is_none_or(|d| f.document_id.as_str() == d)
+        })
+        .map(dto::field)
+        .collect();
+    Ok(json_tagged(
+        StatusCode::OK,
+        &json!({ "items": items }),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `POST /envelopes/{id}/fields`: one field, or `{"items": [...]}` (a batch).
+pub(crate) async fn add_fields(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let raw: Value = parse(&body)?;
+    let list: Vec<Value> = match raw.get("items") {
+        Some(Value::Array(items)) => items.clone(),
+        Some(_) => return Err(ApiError::invalid("/items")),
+        None => vec![raw],
+    };
+    let mut changes = Vec::new();
+    let mut ids = Vec::new();
+    for (i, f) in list.iter().enumerate() {
+        let fid = new_id()?;
+        let field = dto::field_from(
+            f,
+            fid.clone(),
+            |r| Id::new(r).ok(),
+            |d| d.as_str().and_then(|s| Id::new(s).ok()),
+            &format!("/items/{i}"),
+        )?;
+        ids.push(fid);
+        changes.push(Change::AddField {
+            field: Personal(field),
+        });
+    }
+    change(&c, &mut tx, &mut l, changes, v).await?;
+    tx.commit().await?;
+    let items: Vec<Value> = l
+        .state
+        .fields
+        .0
+        .iter()
+        .filter(|f| ids.contains(&f.id))
+        .map(dto::field)
+        .collect();
+    Ok(json_tagged(
+        StatusCode::CREATED,
+        &json!({ "items": items }),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `GET /envelopes/{id}/fields/{f}`.
+pub(crate) async fn field(
+    c: Call,
+    Path((id, f)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let x = field_in(&l.state, &f)?;
+    Ok(json_tagged(
+        StatusCode::OK,
+        &dto::field(x),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `PATCH /envelopes/{id}/fields/{f}`: a JSON merge of the field's wire form (its
+/// id, document and recipient stay unless named).
+pub(crate) async fn patch_field(
+    c: Call,
+    Path((id, f)): Path<(String, String)>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let current = field_in(&l.state, &f)?.clone();
+    let v = expected(&c, true)?;
+    let patch: Value = parse(&body)?;
+    let Value::Object(patch) = patch else {
+        return Err(ApiError::invalid(""));
+    };
+    let mut merged = dto::field(&current);
+    if let Value::Object(m) = &mut merged {
+        m.remove("id");
+        for (k, val) in patch {
+            if k == "id" {
+                return Err(ApiError::invalid("/id"));
+            }
+            if val.is_null() {
+                m.remove(&k);
+            } else {
+                m.insert(k, val);
+            }
+        }
+    }
+    let field = dto::field_from(
+        &merged,
+        current.id.clone(),
+        |r| Id::new(r).ok(),
+        |d| d.as_str().and_then(|s| Id::new(s).ok()),
+        "",
+    )?;
+    change(
+        &c,
+        &mut tx,
+        &mut l,
+        vec![Change::UpdateField {
+            field: Personal(field),
+        }],
+        v,
+    )
+    .await?;
+    tx.commit().await?;
+    let x = field_in(&l.state, &f)?;
+    Ok(json_tagged(
+        StatusCode::OK,
+        &dto::field(x),
+        &dto::etag(&l.state),
+    ))
+}
+
+/// `DELETE /envelopes/{id}/fields/{f}`.
+pub(crate) async fn delete_field(
+    c: Call,
+    Path((id, f)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let fid = field_in(&l.state, &f)?.id.clone();
+    let v = expected(&c, true)?;
+    change(
+        &c,
+        &mut tx,
+        &mut l,
+        vec![Change::RemoveField { id: fid }],
+        v,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `GET /envelopes/{id}/form-data`: every labelled field's value by its data label.
+pub(crate) async fn form_data(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let mut out = serde_json::Map::new();
+    for f in &l.state.fields.0 {
+        if let (Some(label), Some(value)) = (&f.label, &f.value) {
+            out.insert(
+                label.as_str().to_owned(),
+                serde_json::to_value(value).unwrap_or(Value::Null),
+            );
+        }
+    }
+    Ok(json(StatusCode::OK, &Value::Object(out)))
+}
+
+// Embedded signing ----------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ViewIn {
+    recipient_id: String,
+    #[serde(default)]
+    auth_asserted: Option<String>,
+}
+
+/// `POST /envelopes/{id}/views/signing`: a single-use, five-minute ceremony link for
+/// an embedded recipient (docs/40 §5). Only the API client that created the envelope
+/// may ask (row WF-05, `CS-AUTH-0010`); its assertion of how it authenticated the
+/// signer is recorded as `auth.asserted_by_host`.
+pub(crate) async fn view_signing(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let req: ViewIn = parse(&body)?;
+    let client = c.p.client().ok_or_else(ApiError::not_embedding_owner)?;
+    if l.host_client != Some(client) {
+        return Err(ApiError::not_embedding_owner());
+    }
+    let r = rec_in(&l.state, &req.recipient_id).map_err(|_| ApiError::invalid("/recipient_id"))?;
+    if r.spec.embedded_client_user_id.is_none() {
+        return Err(ApiError::invalid("/recipient_id"));
+    }
+    let rid = r.id().clone();
+    if let Some(claim) = &req.auth_asserted {
+        let mut cmds = c.commands(&mut tx).await?;
+        let ctx = cmds.ctx(
+            WfPrincipal::Host {
+                client_id: eid(client.0)?,
+            },
+            None,
+        )?;
+        let claim = dto::message(claim)?;
+        // The assertion needs the recipient to have opened: the host opening its view
+        // for them is that opening (recorded with the host as actor).
+        if l.state
+            .recipient(&rid)
+            .is_some_and(|r| r.status == casual_sign_model::RecipientStatus::Sent)
+        {
+            run(
+                &mut tx,
+                &mut l,
+                &Command::OpenLink {
+                    recipient: rid.clone(),
+                },
+                &ctx,
+                cmds.now,
+            )
+            .await?;
+        }
+        let ctx = cmds.ctx(
+            WfPrincipal::Host {
+                client_id: eid(client.0)?,
+            },
+            None,
+        )?;
+        run(
+            &mut tx,
+            &mut l,
+            &Command::HostAssertAuth {
+                recipient: rid.clone(),
+                claim,
+            },
+            &ctx,
+            cmds.now,
+        )
+        .await?;
+    }
+    let token = random_secret()?;
+    let expires = crate::state::plus_std(c.st.now(), c.st.config().view_ttl)?;
+    tx.recipients()
+        .issue_token(&NewToken {
+            id: RecipientTokenId(Uuid::now_v7()),
+            envelope_id: l.id,
+            recipient_id: RecipientId(uid(&rid)?),
+            token_sha256: sha256(token.as_bytes()),
+            purpose: TokenPurpose::Embedded,
+            expires_at: expires,
+        })
+        .await?;
+    tx.commit().await?;
+    let url = format!("{}/s/{token}", c.st.config().public_url);
+    let mut r = json(
+        StatusCode::CREATED,
+        &json!({ "url": url, "expires_at": rfc3339(expires) }),
+    );
+    r.extensions_mut().insert(SecretBearing);
+    Ok(r)
+}
+
+/// For tests and the worker's own use: issue an invitation token for a recipient of
+/// an envelope (the worker mints the invitation's token when it sends the email,
+/// stage 2D). Returns the token.
+///
+/// # Errors
+///
+/// Store errors.
+pub async fn issue_invitation_token(
+    st: &AppState,
+    account: casual_sign_store::AccountId,
+    envelope: EnvelopeId,
+    recipient: RecipientId,
+    ttl: std::time::Duration,
+) -> Result<String, ApiError> {
+    let token = random_secret()?;
+    let mut tx = st.store().for_account(account).begin().await?;
+    tx.recipients()
+        .issue_token(&NewToken {
+            id: RecipientTokenId(Uuid::now_v7()),
+            envelope_id: envelope,
+            recipient_id: recipient,
+            token_sha256: sha256(token.as_bytes()),
+            purpose: TokenPurpose::Invitation,
+            expires_at: crate::state::plus_std(st.now(), ttl)?,
+        })
+        .await?;
+    tx.commit().await?;
+    Ok(token)
+}
+
+#[allow(dead_code)]
+fn _unused(_: UserId, _: &str) {
+    let _ = path_id;
+}

@@ -21,6 +21,7 @@ members = [
     "server/casual-sign-secrets",
     "server/casual-sign-keyd",
     "server/casual-sign-worker",
+    "server/casual-sign-server",
 ]
 # The fuzz workspace is separate: cargo-fuzz needs nightly-only dependencies that must
 # stay out of the product dependency graph (as OpenCalc and OpenPresent).

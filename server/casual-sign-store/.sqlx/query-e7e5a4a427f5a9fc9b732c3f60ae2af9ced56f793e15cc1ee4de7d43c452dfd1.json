@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recipient_tokens SET session_sha256 = $3, first_used_at = COALESCE(first_used_at, $4) WHERE account_id = $1 AND id = $2 AND session_sha256 IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7e5a4a427f5a9fc9b732c3f60ae2af9ced56f793e15cc1ee4de7d43c452dfd1"
+}

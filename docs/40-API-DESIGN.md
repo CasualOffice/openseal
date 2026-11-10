@@ -207,3 +207,78 @@ endpoints are rate-limited per token and per IP and audited on every state chang
 A DocuSign-shaped compatibility endpoint (`/compat/docusign/v2.1/…`, envelopes, recipients, tabs, views, Connect
 payloads) would make migration a configuration change for integrators. It is attractive and has trademark and legal
 questions; `DEC-10` decides, and nothing is built before the owner answers.
+
+## As built (stage 2C, `casual-sign-server`)
+
+The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 68 operations, each with its `x-permission`
+(the scope it needs, SEC-A05). The router is built from one table (`routes::table`), and a contract test keeps the
+table and the document equal in both directions, scope by scope.
+
+**Built.** Every row of §3 below is served, with these differences:
+
+| §3 resource | As built |
+| --- | --- |
+| `/accounts/me` | `GET`; `PATCH {settings}` merges (the account's `workflow_policy` is validated as the engine's `Policy`) |
+| `/envelopes` … `/form-data` | All, plus `GET /envelopes/{id}/status`. `/correct` is one call with the engine's change list (docs/24 As built); `…/commit` is not needed. Documents enter through `/documents` (JSON base64 or raw `application/pdf`), admitted and normalized by `casual-sign-sdk`; signed PDFs are kept as uploaded |
+| `/documents/{doc}` `PATCH` | **Not built**: the engine has no rename change (row proposed) |
+| `/documents/{doc}/pages/{n}.png` | **Not built** (thumbnails are rendered by pdf.js in the browser, ADR-007; a server thumbnail needs a renderer) |
+| `/certificate`, `/documents/combined`, `/audit?format=pdf`, `content?version=sealed` | Answer `409 CS-API-0009` until the seal job (stage 2D) stores them; `GET /audit` (JSON) re-verifies the chain on every read |
+| `/views/signing` | Built; only the API client that created the envelope may ask (WF-05, `CS-AUTH-0010`); `auth_asserted` records the host's opening and `auth.asserted_by_host` |
+| `/views/prepare`, `/views/correct` | **Not built** (slice 9) |
+| `/templates` | `GET`, `POST` (with roles), `GET /{id}`, `PATCH /{id}` (rename, `If-Match`); template documents, fields and `/templates/{id}/envelopes` are slice 3 |
+| `/bulk-sends`, `/signing-links`, `/groups`, `/permission-profiles`, `/brands`, `/ersd-versions`, `/retention-policies`, `/verify` | **Not built** (their slices) |
+| `/webhooks` | `GET`, `POST`, `GET /{id}`, `DELETE /{id}` (disable), `GET /{id}/deliveries`; `secret_refs` name secrets the operator provisioned. `…/test` and `…/redeliver` need the worker (2D) |
+| `/users`, `/api-clients` | `GET`, `POST`, `GET /{id}`, `PATCH /users/{id}`, `DELETE` (remove member; revoke client) |
+| §6 ceremony | `GET /s/{token}`, `POST …/session`, `…/consent`, `…/authenticate` (access code), `GET …/documents/{doc}/content`, `POST …/documents/{doc}/viewed`, `…/adopt`, `PUT …/fields/{field}`, `POST …/finish`, `…/approve`, `…/decline`, `…/finish-later`, `…/reassign` |
+
+**Authentication (§2).** Local login (`POST /auth/login`, Argon2id, an unknown email costs a wrong password's time)
+gives an `HttpOnly`, `Secure`, `SameSite=Lax` session cookie (8 h) and a CSRF token every changing request echoes in
+`X-CSRF-Token`; `POST /auth/logout`; `GET /auth/session`. API keys are `osk_` + 256 random bits, stored as SHA-256,
+scoped and optionally expiring. OAuth clients use the client-credentials grant at `POST /oauth/token` (form or
+JSON, HTTP Basic or body credentials, RFC 6749 errors) and get a one-hour ES256 JWT (`iss` the public URL, `aud`
+`openseal-api`), verified by `GET /.well-known/jwks.json`; the signing key comes from the secrets crate
+(`OPENSEAL_JWT_SIGNING_KEY`). Every request re-checks the credential: a revoked key or client, an expired token, a
+removed member or a disabled user is refused on its next request. A credential acts as a member and holds at most the
+scopes of that member's permission profile, narrowed by its own. **Not built:** OIDC and SAML login, WebAuthn
+(`webauthn-rs` is MPL-2.0, outside `deny.toml`), OAuth authorization code with PKCE, the JWT bearer grant.
+
+**Requests.** RFC 9457 problems with `code`, `request_id` (also `X-Request-Id`) and JSON-pointer `errors`; the
+router's own refusals (no route, wrong method, too large) are problems too. `Idempotency-Key` on any guarded `POST`:
+the first response is stored in the same account (a response holding a secret is not stored, and its replay answers
+`409 CS-API-0009`), a replay answers it with `Idempotency-Replayed: true`, a different body is `CS-API-0004`, a
+request still running is `CS-API-0011`, and engine command ids derive from the key so a replayed command is the
+engine's replay too. `ETag: "v<version>"` on envelopes; `If-Match` is required on `PATCH` and `DELETE` of envelopes,
+recipients, fields and documents, and on `/correct` (`428 CS-API-0008` without, `412 CS-WF-0002` stale). Cursor
+pagination on `GET /envelopes` (stable under inserts). Rate limits per principal, per ceremony token, per client
+address and per login name, with `RateLimit`, `RateLimit-Policy` and `Retry-After`. Every response carries a strict
+CSP (`default-src 'none'; frame-ancestors 'none'`), `nosniff`, `no-referrer`, HSTS, `X-Frame-Options: DENY` and
+`Cache-Control: no-store`. Body limits per route (docs/21 §API).
+
+**Evidence.** Every command's events carry the client address (the socket peer; `Forwarded` / `X-Forwarded-For`
+only from configured trusted proxies, right-most untrusted hop), the user agent (512 bytes), the authentication
+method (`email_link` for the ceremony plus methods passed; `account_login` for staff credentials, as the audit
+vocabulary has no API-key or OAuth-client method yet) and a SHA-256 naming the session, token record or client.
+Downloads by staff record `document.downloaded`. Logs carry the request id, method, route template, status and
+duration only. Signer location (GEO-01): ceremony bodies accept `location` (`{latitude, longitude, accuracy_m}` or
+`{declined: true}`) and an operator-supplied GeoIP database (`OPENSEAL_GEOIP_DB`) approximates it from the address;
+recording waits for the audit context's `location` field (another worker's merge).
+
+**Persistence.** Each request's commands run in one transaction (`casual_sign_store`): the engine's state is stored
+as the envelope's authority (migration 0008, `envelopes.engine_state`, row-locked), the envelope and recipient rows
+are its projection, events are appended through `PendingEvent::into_audit`, and every effect becomes a job
+(`kind` = the effect's kind, `idempotency_key` = `<envelope>:<command>:<index>`, `payload` = `{envelope_id,
+effect}`, `run_at` = its due time). `RevokeTokens` is performed in the transaction instead of queued. Invitation
+tokens are minted by whoever delivers the invitation (the worker, 2D; `issue_invitation_token` for it and the tests);
+embedded view tokens by `/views/signing`.
+
+**Ceremony.** The first `POST /s/{token}/session` binds the link to the browser (a second secret, SHA-256 at rest, in
+an `HttpOnly`, `SameSite=Strict` cookie); any other browser is `403 CS-AUTH-0009`. Changing calls must be
+`application/json`. Access codes are Argon2id (SEC-A03); one-time codes by email or SMS answer `CS-API-0014` until
+slice 5.
+
+**Tests** (`server/casual-sign-server/tests/`, PostgreSQL 17 through `OPENSEAL_TEST_DATABASE_URL`): the document and
+the table agree; one scenario calls every operation and drives a two-signer sequential envelope through the ceremony
+to `completing` with its `seal_envelope` job enqueued; tenant isolation generated from the document, every operation
+with an id called by another account (and with another envelope's sub-ids), `404 CS-API-0002`, with RLS on and
+disabled; authentication and authorization refusals; evidence capture and trusted-proxy handling; no address, user
+agent or token in the logs. Each guard named in the T-2C report was removed once and its test seen red.

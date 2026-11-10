@@ -11,8 +11,10 @@ pub mod audit;
 pub mod documents;
 pub mod envelopes;
 pub mod fields;
+pub mod idempotency;
 pub mod jobs;
 pub mod recipients;
+pub mod sessions;
 pub mod templates;
 pub mod webhooks;
 pub mod workflow;
@@ -128,5 +130,15 @@ impl TenantTx {
     /// The worker's per-job step ledger.
     pub fn job_steps(&mut self) -> workflow::JobSteps<'_> {
         workflow::JobSteps { tx: self }
+    }
+
+    /// Staff sessions.
+    pub fn sessions(&mut self) -> sessions::Sessions<'_> {
+        sessions::Sessions { tx: self }
+    }
+
+    /// Idempotency records of API requests.
+    pub fn idempotency(&mut self) -> idempotency::Idempotency<'_> {
+        idempotency::Idempotency { tx: self }
     }
 }

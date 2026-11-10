@@ -1,0 +1,1825 @@
+# OpenSeal public API, version 1 (docs/40). The contract: the server's route table
+# (server/casual-sign-server/src/routes.rs) and this document are kept equal by the
+# contract tests (server/casual-sign-server/tests/contract.rs), operation by operation,
+# with each operation's `x-permission` (the scope it needs, SEC-A05).
+openapi: 3.1.0
+info:
+  title: OpenSeal API
+  version: 1.0.0-alpha
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: |
+    Envelope-centric REST API (docs/40). Errors are RFC 9457 problem details with a
+    stable `code` (docs/20) and a `request_id`. Every POST accepts `Idempotency-Key`;
+    replays within 24 hours return the first response. Envelopes carry an `ETag`
+    (`"v<version>"`); edits of drafts and corrections need `If-Match`. Lists page with
+    `cursor` and `limit`. Times are RFC 3339 UTC; ids are UUIDv7. Objects of another
+    account answer exactly as missing ones: `404 CS-API-0002`.
+    The `/s/{token}` endpoints are the recipient ceremony, not public API (docs/40 §6).
+servers:
+  - url: /
+security:
+  - bearer: []
+  - session: []
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: A personal API key (`osk_…`) or an access token from `/api/v1/oauth/token` (ES256 JWT, one hour).
+    session:
+      type: apiKey
+      in: cookie
+      name: os_session
+      description: Staff session from `/api/v1/auth/login`; changing requests also send `X-CSRF-Token`.
+  parameters:
+    ifMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The envelope's `ETag` as read (`"v<version>"`); a stale one is `412 CS-WF-0002`, none is `428 CS-API-0008`.
+      schema: {type: string}
+    idempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Up to 255 printable ASCII characters; a replay within 24 hours returns the first response.
+      schema: {type: string, maxLength: 255}
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: {type: string}
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+    status:
+      name: status
+      in: query
+      required: false
+      schema: {$ref: '#/components/schemas/EnvelopeStatus'}
+    version:
+      name: version
+      in: query
+      required: false
+      schema: {type: string, enum: [original, normalized, sealed], default: normalized}
+    recipientId:
+      name: recipient_id
+      in: query
+      required: false
+      schema: {type: string}
+    documentId:
+      name: document_id
+      in: query
+      required: false
+      schema: {type: string}
+  responses:
+    Problem:
+      description: RFC 9457 problem details
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        code: {type: string, pattern: '^CS-[A-Z]+-[0-9]{4}$'}
+        detail: {type: string}
+        request_id: {type: string}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              pointer: {type: string}
+              code: {type: string}
+    Object:
+      type: object
+      additionalProperties: true
+    EnvelopeStatus:
+      type: string
+      enum: [draft, sent, delivered, completing, completed, declined, voided, expired]
+    RecipientType:
+      type: string
+      enum: [signer, in_person_signer, approver, viewer, cc, editor, intermediary, agent, witness, seal, notary]
+    AuthMethod:
+      type: string
+      enum: [email_link, access_code, sms_otp, voice_otp, kba, id_verification, sso, account_login, host_asserted]
+    DeviceLocation:
+      description: The browser's Geolocation fix, or a decline (row GEO-01).
+      oneOf:
+        - type: object
+          required: [latitude, longitude, accuracy_m]
+          properties:
+            latitude: {type: number, minimum: -90, maximum: 90}
+            longitude: {type: number, minimum: -180, maximum: 180}
+            accuracy_m: {type: number, minimum: 0}
+        - type: object
+          required: [declined]
+          properties:
+            declined: {type: boolean}
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: {type: string}
+        password: {type: string}
+        account_id: {type: string}
+    LoginResponse:
+      type: object
+      properties:
+        account_id: {type: string}
+        user_id: {type: string}
+        csrf_token: {type: string}
+        expires_at: {type: string, format: date-time}
+    SessionInfo:
+      type: object
+      properties:
+        account_id: {type: string}
+        user_id: {type: string}
+        credential: {type: string, enum: [session, api_key, access_token]}
+        client_id: {type: [string, 'null']}
+        scopes: {type: array, items: {type: string}}
+        admin: {type: boolean}
+    TokenRequest:
+      type: object
+      required: [grant_type]
+      description: Also accepted as application/x-www-form-urlencoded; client authentication by HTTP Basic or in the body.
+      properties:
+        grant_type: {type: string, const: client_credentials}
+        client_id: {type: string}
+        client_secret: {type: string}
+        scope: {type: string}
+    TokenResponse:
+      type: object
+      properties:
+        access_token: {type: string}
+        token_type: {type: string, const: Bearer}
+        expires_in: {type: integer}
+        scope: {type: string}
+    Jwks:
+      type: object
+      properties:
+        keys: {type: array, items: {type: object}}
+    Account:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        settings: {type: object}
+        data_region: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+    AccountPatch:
+      type: object
+      required: [settings]
+      additionalProperties: false
+      properties:
+        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy.'}
+    User:
+      type: object
+      properties:
+        id: {type: string}
+        email: {type: string}
+        name: {type: string}
+        login_kind: {type: string}
+        permission_profile_id: {type: string}
+        disabled: {type: boolean}
+    UserList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/User'}}
+    UserCreate:
+      type: object
+      required: [email, name, profile]
+      additionalProperties: false
+      properties:
+        email: {type: string}
+        name: {type: string, maxLength: 255}
+        profile: {type: string, description: '`admin`, `sender`, `viewer`, or a permission profile id'}
+        password: {type: string, minLength: 12, maxLength: 256}
+    UserPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        password: {type: string, minLength: 12, maxLength: 256}
+    ApiClient:
+      type: object
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [api_key, oauth_app, jwt_integration]}
+        name: {type: string}
+        owner_user_id: {type: [string, 'null']}
+        key_prefix: {type: [string, 'null']}
+        scopes: {type: array, items: {type: string}}
+        expires_at: {type: [string, 'null'], format: date-time}
+        revoked: {type: boolean}
+    ApiClientList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ApiClient'}}
+    ApiClientCreate:
+      type: object
+      required: [name, kind, scopes]
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        kind: {type: string, enum: [api_key, oauth_app]}
+        scopes: {type: array, items: {type: string}}
+        owner_user_id: {type: string}
+        expires_in_days: {type: integer, minimum: 1, maximum: 3650}
+    ApiClientCreated:
+      allOf:
+        - $ref: '#/components/schemas/ApiClient'
+        - type: object
+          properties:
+            key: {type: string, description: 'API key, shown once'}
+            client_id: {type: string}
+            client_secret: {type: string, description: 'Shown once'}
+    Recipient:
+      type: object
+      properties:
+        id: {type: string}
+        type: {$ref: '#/components/schemas/RecipientType'}
+        routing_order: {type: integer}
+        name: {type: string}
+        email: {type: string}
+        status: {type: string}
+        delivery: {type: string, enum: [email, sms, none]}
+        auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}}
+        embedded_client_user_id: {type: [string, 'null']}
+    RecipientList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Recipient'}}
+    RecipientIn:
+      type: object
+      required: [type, name]
+      additionalProperties: false
+      properties:
+        ref: {type: string, description: 'Name for fields in the same request'}
+        type: {$ref: '#/components/schemas/RecipientType'}
+        name: {type: string, maxLength: 255}
+        email: {type: string}
+        phone: {type: string}
+        routing_order: {type: integer, minimum: 1, maximum: 999, default: 1}
+        delivery: {type: string, enum: [email, sms, none]}
+        auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}}
+        access_code: {type: string, description: 'With `auth: [access_code]`; stored as Argon2id only'}
+        embedded_client_user_id: {type: string}
+        time_zone_offset_minutes: {type: integer}
+        date_format: {type: string}
+    RecipientCreate:
+      oneOf:
+        - $ref: '#/components/schemas/RecipientIn'
+        - type: object
+          required: [items]
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/RecipientIn'}}
+    RecipientPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        email: {type: string}
+        routing_order: {type: integer}
+        auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}}
+    Field:
+      type: object
+      description: The model's field (docs/22 §6); `placement` in displayed page points, origin top-left.
+      additionalProperties: true
+      properties:
+        id: {type: string}
+        document_id: {type: string}
+        recipient_id: {type: string}
+        type: {type: string}
+        placement:
+          type: object
+          properties:
+            page: {type: integer}
+            x: {type: string}
+            y: {type: string}
+            width: {type: string}
+            height: {type: string}
+    FieldIn:
+      type: object
+      description: 'A field without ids: `recipient` (id or ref), `document` (id, or index in the same request), `type`, and `page`, `x`, `y`, `width`, `height` flat or as `placement`.'
+      additionalProperties: true
+    FieldList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Field'}}
+    FieldCreate:
+      oneOf:
+        - $ref: '#/components/schemas/FieldIn'
+        - type: object
+          required: [items]
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/FieldIn'}}
+    Document:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        pages: {type: integer}
+        bytes: {type: integer}
+        upload_sha256: {type: string}
+        delivered_sha256: {type: string}
+        admission_findings: {type: integer}
+        fixed: {type: boolean}
+    DocumentList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Document'}}
+    DocumentIn:
+      type: object
+      required: [name, content_base64]
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        content_base64: {type: string, contentEncoding: base64, description: 'At most 50 MiB decoded (docs/21)'}
+    DocumentUpload:
+      description: 'JSON, or the PDF itself as `application/pdf` with `?name=`.'
+      $ref: '#/components/schemas/DocumentIn'
+    Envelope:
+      type: object
+      properties:
+        id: {type: string}
+        status: {$ref: '#/components/schemas/EnvelopeStatus'}
+        version: {type: integer}
+        sender_user_id: {type: string}
+        subject: {type: string}
+        message: {type: string}
+        created_at: {type: string, format: date-time}
+        sent_at: {type: [string, 'null'], format: date-time}
+        ended_at: {type: [string, 'null'], format: date-time}
+        expires_at: {type: [string, 'null'], format: date-time}
+        reminders: {type: object}
+        signing_options: {type: object}
+        seal_profile: {type: string, enum: [pades-b-t, pades-b-lt, pades-b-lta]}
+        documents: {type: array, items: {$ref: '#/components/schemas/Document'}}
+        recipients: {type: array, items: {$ref: '#/components/schemas/Recipient'}}
+        fields: {type: array, items: {$ref: '#/components/schemas/Field'}}
+    EnvelopeSummary:
+      type: object
+      properties:
+        id: {type: string}
+        status: {$ref: '#/components/schemas/EnvelopeStatus'}
+        subject: {type: string}
+        sender_user_id: {type: string}
+        created_at: {type: string, format: date-time}
+    EnvelopePage:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/EnvelopeSummary'}}
+        next_cursor: {type: [string, 'null']}
+    EnvelopeCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        subject: {type: string, maxLength: 255}
+        message: {type: string, maxLength: 10000}
+        status: {type: string, enum: [draft, sent], default: draft}
+        documents: {type: array, items: {$ref: '#/components/schemas/DocumentIn'}}
+        recipients: {type: array, items: {$ref: '#/components/schemas/RecipientIn'}}
+        fields: {type: array, items: {$ref: '#/components/schemas/FieldIn'}}
+        reminders:
+          type: object
+          properties:
+            first_after_days: {type: integer, maximum: 999}
+            then_every_days: {type: integer, maximum: 999}
+        expires_in_days: {type: integer}
+        signing_options: {type: object}
+        seal_profile: {type: string, enum: [pades-b-t, pades-b-lt, pades-b-lta]}
+    EnvelopePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        subject: {type: string}
+        message: {type: string}
+        reminders: {type: object}
+        expires_in_days: {type: [integer, 'null']}
+        signing_options: {type: object}
+        seal_profile: {type: string}
+    EnvelopeStatusInfo:
+      type: object
+      properties:
+        id: {type: string}
+        status: {$ref: '#/components/schemas/EnvelopeStatus'}
+        version: {type: integer}
+        recipients: {type: array, items: {type: object}}
+    VoidRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason: {type: string, maxLength: 10000}
+    CorrectRequest:
+      type: object
+      required: [changes]
+      additionalProperties: false
+      properties:
+        changes: {type: array, items: {type: object, description: 'The engine change list (casual-sign-workflow `Change`), tagged by `op`'}}
+    ResendRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        recipient_ids: {type: array, items: {type: string}}
+    AuditEvents:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              seq: {type: integer}
+              type: {type: string}
+              at: {type: string, format: date-time}
+              hash: {type: string}
+              prev: {type: [string, 'null']}
+              event: {type: object, description: 'The event as chained (RFC 8785); its `context` holds the client address and user agent'}
+        chain_head: {type: [string, 'null']}
+    SigningViewRequest:
+      type: object
+      required: [recipient_id]
+      additionalProperties: false
+      properties:
+        recipient_id: {type: string}
+        auth_asserted: {type: string, description: "The host's statement of how it authenticated the signer"}
+    SigningView:
+      type: object
+      properties:
+        url: {type: string}
+        expires_at: {type: string, format: date-time}
+    Template:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        version: {type: integer}
+        roles: {type: array, items: {type: object}}
+    TemplateList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Template'}}
+    TemplateCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        email_subject: {type: string}
+        email_message: {type: string}
+        roles:
+          type: array
+          items:
+            type: object
+            required: [name, type]
+            properties:
+              name: {type: string}
+              routing_order: {type: integer}
+              type: {$ref: '#/components/schemas/RecipientType'}
+    TemplatePatch:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string}
+    Webhook:
+      type: object
+      properties:
+        id: {type: string}
+        envelope_id: {type: [string, 'null']}
+        url: {type: string}
+        event_types: {type: array, items: {type: string}}
+        secret_refs: {type: array, items: {type: string}}
+        active: {type: boolean}
+    WebhookList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Webhook'}}
+    WebhookCreate:
+      type: object
+      required: [url, event_types, secret_refs]
+      additionalProperties: false
+      properties:
+        url: {type: string, description: 'https:// to a public address (SEC-W01)'}
+        event_types: {type: array, items: {type: string}}
+        secret_refs: {type: array, minItems: 1, maxItems: 4, items: {type: string}}
+        envelope_id: {type: string}
+    CeremonyView:
+      type: object
+      properties:
+        envelope: {type: object}
+        recipient: {$ref: '#/components/schemas/Recipient'}
+        fields: {type: array, items: {$ref: '#/components/schemas/Field'}}
+        consent_required: {type: [object, 'null']}
+        auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
+    ConsentRequest:
+      type: object
+      required: [ersd_version]
+      properties:
+        ersd_version: {type: string}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
+    AuthenticateRequest:
+      type: object
+      required: [method, code]
+      properties:
+        method: {$ref: '#/components/schemas/AuthMethod'}
+        code: {type: string}
+    ViewedRequest:
+      type: object
+      required: [pages_seen]
+      properties:
+        pages_seen: {type: array, items: {type: integer, minimum: 1}}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
+    AdoptRequest:
+      type: object
+      required: [mark, method, image_base64]
+      properties:
+        mark: {type: string, enum: [signature, initials]}
+        method: {type: string, enum: [draw, type, upload]}
+        image_base64: {type: string, description: 'PNG or JPEG, at most 5 MiB'}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
+    FieldValue:
+      type: object
+      description: 'Externally tagged: {"text": "…"}, {"checked": true}, {"choice": "…"}, {"signature": "<id>"}, {"attachment": "<id>"}'
+    FillRequest:
+      type: object
+      required: [value]
+      properties:
+        value: {$ref: '#/components/schemas/FieldValue'}
+    FinishRequest:
+      type: object
+      properties:
+        values:
+          type: array
+          items:
+            type: object
+            required: [field, value]
+            properties:
+              field: {type: string}
+              value: {$ref: '#/components/schemas/FieldValue'}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
+    DeclineRequest:
+      type: object
+      properties:
+        reason: {type: string}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
+    ReassignRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name: {type: string}
+        email: {type: string}
+        reason: {type: string}
+
+paths:
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      summary: "Local password login: session cookie and CSRF token"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LoginResponse'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      summary: "End the current staff session"
+      x-permission: ""
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/session:
+    get:
+      operationId: getSession
+      summary: "Who the credential is"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SessionInfo'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/oauth/token:
+    post:
+      operationId: token
+      summary: "OAuth 2.1 client-credentials grant"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TokenRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TokenResponse'}
+        default: {$ref: '#/components/responses/Problem'}
+  /.well-known/jwks.json:
+    get:
+      operationId: jwks
+      summary: "Keys that verify access tokens"
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Jwks'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/accounts/me:
+    get:
+      operationId: getAccount
+      summary: "The caller's account"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Account'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchAccount
+      summary: "Merge into the account's settings"
+      x-permission: "admin:account"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AccountPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users:
+    get:
+      operationId: listUsers
+      summary: "Members of the account"
+      x-permission: "admin:users"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createUser
+      summary: "Add a local member"
+      x-permission: "admin:users"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getUser
+      summary: "A member"
+      x-permission: "admin:users"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchUser
+      summary: "Rename a member or set their password"
+      x-permission: "admin:users"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteUser
+      summary: "Remove a member from the account"
+      x-permission: "admin:users"
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/api-clients:
+    get:
+      operationId: listApiClients
+      summary: "API keys and OAuth clients"
+      x-permission: "admin:account"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiClientList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createApiClient
+      summary: "New API key or OAuth client; the secret is shown once"
+      x-permission: "admin:account"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ApiClientCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiClientCreated'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/api-clients/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getApiClient
+      summary: "An API client"
+      x-permission: "admin:account"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiClient'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: revokeApiClient
+      summary: "Revoke an API client"
+      x-permission: "admin:account"
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes:
+    get:
+      operationId: listEnvelopes
+      summary: "Envelopes, newest first, cursor-paginated"
+      x-permission: "envelopes:read"
+      parameters:
+        - $ref: '#/components/parameters/cursor'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/status'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopePage'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createEnvelope
+      summary: "Create a draft, or create and send in one call"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnvelopeCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getEnvelope
+      summary: "An envelope with its documents, recipients and fields"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchEnvelope
+      summary: "Change a draft's or a correction's settings (If-Match required)"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnvelopePatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteEnvelope
+      summary: "Delete a draft (If-Match required)"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getEnvelopeStatus
+      summary: "Envelope and recipient statuses"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeStatusInfo'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/send:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: sendEnvelope
+      summary: "Send a draft"
+      x-permission: "envelopes:send"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/void:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: voidEnvelope
+      summary: "Void with a reason"
+      x-permission: "envelopes:send"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VoidRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/correct:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: correctEnvelope
+      summary: "Correct a sent envelope, all changes or none (If-Match required)"
+      x-permission: "envelopes:send"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CorrectRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/resend:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: resendEnvelope
+      summary: "Re-send invitations"
+      x-permission: "envelopes:send"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResendRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/audit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getAudit
+      summary: "Hash-chained audit events, re-verified on read"
+      x-permission: "audit:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuditEvents'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/certificate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getCertificate
+      summary: "Certificate of completion PDF (made by the seal job)"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/documents/combined:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getCombined
+      summary: "Sealed documents and certificate as one PDF (made by the seal job)"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/documents:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: listDocuments
+      summary: "Documents in order"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DocumentList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: addDocument
+      summary: "Upload a document: admitted and normalized"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DocumentUpload'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Document'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/documents/{doc}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+      - name: doc
+        in: path
+        required: true
+        description: Document id
+        schema: {type: string}
+    get:
+      operationId: getDocument
+      summary: "A document's metadata"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Document'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteDocument
+      summary: "Remove a document (If-Match required)"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/documents/{doc}/content:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+      - name: doc
+        in: path
+        required: true
+        description: Document id
+        schema: {type: string}
+    get:
+      operationId: getDocumentContent
+      summary: "Document bytes: original, normalized or sealed"
+      x-permission: "envelopes:read"
+      parameters:
+        - $ref: '#/components/parameters/version'
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/recipients:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: listRecipients
+      summary: "Recipients"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecipientList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: addRecipients
+      summary: "Add one recipient, or {items: [...]}"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecipientCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecipientList'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/recipients/{r}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+      - name: r
+        in: path
+        required: true
+        description: Recipient id
+        schema: {type: string}
+    get:
+      operationId: getRecipient
+      summary: "A recipient"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Recipient'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchRecipient
+      summary: "Change a recipient (If-Match required)"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecipientPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Recipient'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteRecipient
+      summary: "Remove a recipient (If-Match required)"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/fields:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: listFields
+      summary: "Fields, optionally of one recipient or document"
+      x-permission: "envelopes:read"
+      parameters:
+        - $ref: '#/components/parameters/recipientId'
+        - $ref: '#/components/parameters/documentId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FieldList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: addFields
+      summary: "Add one field, or {items: [...]}"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FieldCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FieldList'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/fields/{f}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+      - name: f
+        in: path
+        required: true
+        description: Field id
+        schema: {type: string}
+    get:
+      operationId: getField
+      summary: "A field"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Field'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchField
+      summary: "Merge into a field (If-Match required)"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Field'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteField
+      summary: "Remove a field (If-Match required)"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/form-data:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getFormData
+      summary: "Every labelled field's value by data label"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/views/signing:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: createSigningView
+      summary: "Five-minute embedded signing link (the creating API client only)"
+      x-permission: "envelopes:send"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SigningViewRequest'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates:
+    get:
+      operationId: listTemplates
+      summary: "Templates"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createTemplate
+      summary: "Create a template with roles"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TemplateCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getTemplate
+      summary: "A template and its roles"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchTemplate
+      summary: "Rename a template (If-Match required)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TemplatePatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/webhooks:
+    get:
+      operationId: listWebhooks
+      summary: "Webhook subscriptions"
+      x-permission: "webhooks:manage"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebhookList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createWebhook
+      summary: "Subscribe (public HTTPS URLs only)"
+      x-permission: "webhooks:manage"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WebhookCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Webhook'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/webhooks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getWebhook
+      summary: "A subscription"
+      x-permission: "webhooks:manage"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Webhook'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteWebhook
+      summary: "Disable a subscription"
+      x-permission: "webhooks:manage"
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/webhooks/{id}/deliveries:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: listDeliveries
+      summary: "A subscription's deliveries"
+      x-permission: "webhooks:manage"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyView
+      summary: "Recipient's view (ceremony; not public API)"
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/session:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonySession
+      summary: "Bind the link to this browser and record the opening"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/consent:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyConsent
+      summary: "Accept the electronic record disclosure"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConsentRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/authenticate:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyAuthenticate
+      summary: "Access code"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthenticateRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/documents/{doc}/content:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+      - name: doc
+        in: path
+        required: true
+        description: Document id
+        schema: {type: string}
+    get:
+      operationId: ceremonyDocument
+      summary: "The document as delivered"
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/documents/{doc}/viewed:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+      - name: doc
+        in: path
+        required: true
+        description: Document id
+        schema: {type: string}
+    post:
+      operationId: ceremonyViewed
+      summary: "Pages viewed"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ViewedRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/adopt:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyAdopt
+      summary: "Adopt a signature or initials"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdoptRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/fields/{field}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+      - name: field
+        in: path
+        required: true
+        description: Field id
+        schema: {type: string}
+    put:
+      operationId: ceremonyFill
+      summary: "Set a field's value"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FillRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/finish:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyFinish
+      summary: "Sign or complete"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FinishRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/approve:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyApprove
+      summary: "Approve"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/decline:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyDecline
+      summary: "Decline"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeclineRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/finish-later:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyFinishLater
+      summary: "Finish later"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/reassign:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyReassign
+      summary: "Hand the part to someone else"
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReassignRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}

@@ -16,7 +16,9 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::error::{Result, StoreError, db};
-use crate::ids::{AccountId, ApiClientId, EnvelopeId, JobId, RecipientId, SigningLinkId, UserId};
+use crate::ids::{
+    AccountId, ApiClientId, EnvelopeId, JobId, RecipientId, SigningLinkId, StaffSessionId, UserId,
+};
 use crate::migrate::{MigrationReport, migrate};
 
 /// A PostgreSQL-backed store. Cheap to clone (a pool handle).
@@ -185,6 +187,19 @@ pub struct RecipientTokenTarget {
     pub recipient_id: RecipientId,
 }
 
+/// A live staff session a cookie names (migration 0008).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StaffSessionTarget {
+    /// The account it is for.
+    pub account_id: AccountId,
+    /// The session.
+    pub session_id: StaffSessionId,
+    /// The member.
+    pub user_id: UserId,
+    /// SHA-256 of its CSRF token.
+    pub csrf_sha256: [u8; 32],
+}
+
 /// A job handed to a worker. Finish it with `TenantTx::jobs().complete` or `fail` in its
 /// own account, using the same lease token.
 #[derive(Debug, Clone, PartialEq)]
@@ -259,6 +274,38 @@ impl EntryPoints<'_> {
         .await
         .map_err(db)?;
         Ok(row.map(|r| (AccountId(r.account_id), ApiClientId(r.api_client_id))))
+    }
+
+    /// The live session a staff cookie's hash names, while its user is enabled and
+    /// still a member (docs/40 §2).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0010` for an unreadable row.
+    pub async fn resolve_staff_session(
+        &self,
+        token_sha256: &[u8; 32],
+        now: OffsetDateTime,
+    ) -> Result<Option<StaffSessionTarget>> {
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!", session_id AS "session_id!",
+                      user_id AS "user_id!", csrf_sha256 AS "csrf_sha256!"
+                 FROM openseal_resolve_staff_session($1, $2)"#,
+            token_sha256.as_slice(),
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        row.map(|r| {
+            Ok(StaffSessionTarget {
+                account_id: AccountId(r.account_id),
+                session_id: StaffSessionId(r.session_id),
+                user_id: UserId(r.user_id),
+                csrf_sha256: crate::repo::hash32(r.csrf_sha256, "csrf_sha256")?,
+            })
+        })
+        .transpose()
     }
 
     /// The signing link an active link token's hash names (docs/24 §9).

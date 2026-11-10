@@ -96,7 +96,8 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     .map(|r| r.get(0))
     .collect();
     // Pinned: a new table must be looked at here, not just pass by default. 0008 added
-    // `envelope_states` and `job_steps` (stage 2D), both tenant tables.
+    // `envelope_states` and `job_steps` (stage 2D), both tenant tables; 0009 added
+    // `idempotency_keys` and `staff_sessions` (stage 2C).
     assert_eq!(tables.len(), 38, "{tables:?}");
     let mut problems = Vec::new();
     for t in &tables {
