@@ -2,7 +2,10 @@
 //! summary. The evidence for Phase 1's first exit item (docs/06): every corpus PDF is
 //! admitted or refused with a coded reason, with no panic or hang.
 //!
-//!     cargo run --release -p casual-sign-pdf --example admit_dir -- fixtures/corpus/files
+//!     cargo run --release -p casual-sign-pdf --example admit_dir -- fixtures/corpus/files [PASSWORD ...]
+//!
+//! Passwords after the folder are offered for every encrypted file (with the empty user
+//! password, always tried first), as a host would pass the ones a sender typed.
 #![allow(
     // A command-line tool over files we fetched, not the product's input path.
     clippy::unwrap_used,
@@ -12,12 +15,17 @@
     clippy::panic
 )]
 
-use casual_sign_pdf::{Limits, admit, admit_strict};
+use casual_sign_pdf::{Credentials, Limits, admit_strict_with, admit_with};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
 fn main() {
-    let dir = std::env::args().nth(1).expect("usage: admit_dir <folder>");
+    let dir = std::env::args()
+        .nth(1)
+        .expect("usage: admit_dir <folder> [password ...]");
+    let credentials = std::env::args()
+        .skip(2)
+        .fold(Credentials::new(), |c, p| c.with_password(&p));
     let mut files: Vec<_> = std::fs::read_dir(&dir)
         .expect("readable folder")
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -34,21 +42,22 @@ fn main() {
         let bytes = std::fs::read(path).unwrap();
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let t = Instant::now();
-        let (default, pages, repaired, findings) = match admit(&bytes, &limits, &never) {
-            Ok(a) => {
-                for f in &a.report.findings {
-                    *codes.entry(f.code).or_default() += 1;
+        let (default, pages, repaired, findings) =
+            match admit_with(&bytes, &limits, &credentials, &never) {
+                Ok(a) => {
+                    for f in &a.report.findings {
+                        *codes.entry(f.code).or_default() += 1;
+                    }
+                    (
+                        "ok".to_string(),
+                        a.report.page_count,
+                        a.report.repaired,
+                        a.report.findings.len(),
+                    )
                 }
-                (
-                    "ok".to_string(),
-                    a.report.page_count,
-                    a.report.repaired,
-                    a.report.findings.len(),
-                )
-            }
-            Err(e) => (e.code().to_string(), 0, false, 0),
-        };
-        let strict = match admit_strict(&bytes, &limits, &never) {
+                Err(e) => (e.code().to_string(), 0, false, 0),
+            };
+        let strict = match admit_strict_with(&bytes, &limits, &credentials, &never) {
             Ok(_) => "ok".to_string(),
             Err(e) => e.code().to_string(),
         };
