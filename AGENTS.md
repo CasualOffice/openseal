@@ -63,16 +63,13 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `1163eca` (2026-11-10).
+Docs are true as of `40b9429` (2026-11-11).
 
-**Phases D, 0 and 1 are open. Phase 1 runs under waiver `W-2`** (opened while the repository was private). The owner
-made `CasualOffice/openseal` public on 2026-11-10; GitHub CI now runs, and `tools/ci-local.sh` stays as the pre-push gate.
+**Phase 0 is closed** (owner, 2026-11-11). **Phases D and 1 are open; Phase 2 is open early under waiver `W-1`**
+(`DEC-13`). `W-2` is retired. The repository is public; GitHub CI runs, and `tools/ci-local.sh` stays the pre-push gate.
 
-- **Phase D** lacks Accepted ADRs for Phases 0–2 beyond ADR-009 (ADR-010 to ADR-023 are Proposed) and `DEC-02` to
-  `DEC-07`; the independent doc audit (`DOC-002`) is done and its findings fixed. Also open: `DEC-10`, `DEC-12` to `DEC-14`.
-- **Phase 0** lacks seeded violations seen failing on GitHub's runners (`F-003`; the first GitHub run was all green),
-  the owner's sign-off. 50 hostile fixtures, corpus (422 PDFs, 40 producers), validators on
-  GitHub, spikes and ADR-005/006 are done.
+- **Phase D** lacks only the owner's sign-off: ADR-001 to ADR-024 are Accepted and `DEC-01` to `DEC-14` answered
+  (instruction 12); the doc audit (`DOC-002`) is fixed.
 - **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm
   conversion, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I
   audit chain and certificate (leftovers in their rows), and reader completion (decryption, LZW, the four wrongly

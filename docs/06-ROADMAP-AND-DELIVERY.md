@@ -68,8 +68,8 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
 
 | ID | Criterion not met | Risk | Accepted | If it fails |
 | --- | --- | --- | --- | --- |
-| W-2 | Phase 1 opens before Phase 0 closes: CI cannot run on GitHub while the repository is private (instruction 7), so "CI green on three platforms" is unmet | Platform-specific failures (Linux, Windows) found late; the local run is macOS only, with Linux only for the validators in Docker | Owner's "proceed", 2026-11-10, with instruction 7 | Phase 0 still closes only on a green GitHub run, at the latest when the repository goes public for the pre-release alpha (M3); failures found then are fixed first |
-| W-1 (proposed) | Phase 2 opens before Phase 1 closes, once stages 1A and 1B are closed | The model or API may need a change when sealing lands | Awaiting owner | Phase 2 work adapts; Phase 2 cannot close before Phase 1 |
+| W-2 (retired 2026-11-11: Phase 0 closed) | Phase 1 opens before Phase 0 closes: CI cannot run on GitHub while the repository is private (instruction 7), so "CI green on three platforms" is unmet | Platform-specific failures (Linux, Windows) found late; the local run is macOS only, with Linux only for the validators in Docker | Owner's "proceed", 2026-11-10, with instruction 7 | Phase 0 still closes only on a green GitHub run, at the latest when the repository goes public for the pre-release alpha (M3); failures found then are fixed first |
+| W-1 | Phase 2 opens before Phase 1 closes, once stages 1A and 1B are closed | The model or API may need a change when sealing lands | Owner, 2026-11-11 (instruction 12, `DEC-13`); Phase 2 open | Phase 2 work adapts; Phase 2 cannot close before Phase 1 |
 
 ## Phase D — Design
 
@@ -81,9 +81,9 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
 - **Closes when:**
   - [x] PRD, HLD and pillar documents drafted ([00](00-README.md)).
   - [x] DocuSign, SignNow and open-source studies recorded ([48](48-DOCUSIGN-STUDY.md), [49](49-SIGNNOW-STUDY.md), [52](52-COMPETITOR-STUDY.md)).
-  - [ ] Every ADR needed by Phases 0–2 is Accepted or has a named spike deciding it ([08](08-ADR-REGISTER.md)).
-  - [ ] `DEC-01` to `DEC-07` answered, or marked not blocking with the phase that needs them.
-  - [ ] An independent doc audit's P0 and P1 findings are fixed (`DOC-002`).
+  - [x] Every ADR needed by Phases 0–2 is Accepted or has a named spike deciding it ([08](08-ADR-REGISTER.md)). Evidence: ADR-001 to ADR-024 Accepted (owner, 2026-11-11, instruction 12).
+  - [x] `DEC-01` to `DEC-07` answered, or marked not blocking with the phase that needs them. Evidence: all answered by the owner (instructions 4 and 12).
+  - [x] An independent doc audit's P0 and P1 findings are fixed (`DOC-002`). Evidence: `DOC-002` Done (26 findings fixed).
   - [ ] Owner sign-off.
 
 ## Phase 0 — Foundation
@@ -97,11 +97,11 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
   in Phase 2, when the server is its first consumer: no crate without a consumer.)
 - **Out:** product behaviour.
 - **Closes when:**
-  - [ ] CI green on three platforms; a seeded violation seen failing each job on GitHub's runners. *(Green on all 8 jobs, Linux, macOS, Windows, at `fd5e8f3`, run 42825291522; seeded violations on GitHub not yet run, `F-003`.)*
+  - [x] CI green on three platforms; a seeded violation seen failing each job on GitHub's runners. Evidence: green on all 8 jobs at `fd5e8f3` (run 42825291522); every job red on its seeded violation in draft PR #1 (run 42872019361), `F-003`.
   - [x] Fixture corpus: ≥ 200 PDFs from ≥ 10 producers (Word, LibreOffice, Acrobat, Chrome print, macOS Quartz, Ghostscript output used only as a file, scanners, InDesign, LaTeX, Google Docs), each with provenance and licence; ≥ 50 hostile fixtures, one per limit in [21](21-PARSER-LIMITS.md). Evidence: `F-004` (422 PDFs, 40 producer families, licences recorded), `F-005` (50 hostile fixtures, manifest-checked).
   - [x] pyHanko and EU DSS run in CI over a known-good signed PDF and a known-tampered one, and disagree correctly. Evidence: GitHub run 42825291522, job `validators`, at `fd5e8f3` (2026-11-10); `F-006`.
   - [x] `SPK-01` (PDF reader: own versus `lopdf`) and `SPK-02` (crypto stack in WASM) reported; ADR-005 and ADR-006 settled. Evidence: [64](64-SPK-01-PDF-READER.md), [66](66-SPK-02-CRYPTO-STACK.md).
-  - [ ] Owner sign-off.
+  - [x] Owner sign-off. **Phase 0 closed by the owner, 2026-11-11** (instruction 12).
 
 ## Phase 1 — PDF and evidence core
 
