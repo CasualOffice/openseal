@@ -7,11 +7,38 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 publish = false
+# The bundled faces are OFL-1.1 font data, not code: fonts/PROVENANCE.md, NOTICE.
+include = ["src/**", "fonts/**", "Cargo.toml"]
 
 [dependencies]
 casual-sign-pdf = { path = "../casual-sign-pdf" }
 casual-sign-model = { path = "../casual-sign-model" }
 casual-sign-fields = { path = "../casual-sign-fields" }
+# Glyph ids, advances and face metrics from supplied font bytes; no system font is
+# ever looked up. The same parser OpenPresent's PDF export uses (`casual-slide-render`),
+# whose subsetter is copied here (src/subset.rs). MIT OR Apache-2.0.
+skrifa = "0.46"
+# Deterministic zlib for content, font programs and images; already in the tree through
+# `casual-sign-pdf`, same version. MIT OR Zlib OR Apache-2.0.
+miniz_oxide = "0.8.9"
+# PNG decoding with the dimension check before any pixel buffer exists (docs/21,
+# SEC-P09). MIT OR Apache-2.0.
+png = "0.18"
+# A JPEG is checked by decoding it in a bounded decoder before its DCT data passes
+# through (SEC-P09). MIT OR Apache-2.0 OR Zlib.
+zune-jpeg = "0.5"
+# Text is set after NFC, so a decomposed accent draws as one glyph. Already in the
+# tree through `casual-sign-fields`.
+unicode-normalization = { version = "0.1.24", default-features = false, features = ["std"] }
+
+[features]
+default = ["bundled-fonts"]
+# `FontSet::bundled()`: Liberation Sans, Serif and Mono and two script faces compiled
+# into the crate. Without it the host supplies every face's bytes.
+bundled-fonts = []
+
+[dev-dependencies]
+rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true
