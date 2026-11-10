@@ -84,6 +84,44 @@ support exists (`SEAL-12`).
 Why separate: a compromise of the web tier must not yield the signing key, and the audit of what was signed must not
 depend on the web tier's logs.
 
+### As built (stage 2E)
+
+`server/casual-sign-keyd`, with `server/casual-sign-secrets` (copied from OpenCalc). Every key implements the engine's
+`KeyProvider` and keyd's `DigestSigner` (sign a digest the caller computed over the CMS signed attributes, so no
+document byte or signed attribute reaches keyd).
+
+- **PKCS#11** through `cryptoki`'s safe API: the private key is found by `CKA_LABEL` and/or `CKA_ID` and must be unique;
+  the chain is configured, or the signer certificate is read from the token (the `CKO_CERTIFICATE` with the key's
+  `CKA_ID`). ECDSA P-256/P-384 with `CKM_ECDSA` (raw `r || s` re-encoded as DER), RSA 3072 to 8192 bits with
+  `CKM_RSA_PKCS` over a `DigestInfo` or `CKM_RSA_PKCS_PSS` (hash, MGF1 with the same hash, salt of the digest length).
+  The PIN comes from `OPENSEAL_KEYD_PKCS11_PIN` or `_PIN_FILE` (never both) as a `Secret` whose `Debug` is redacted. One
+  session per key; a failed operation reopens it and logs in once.
+- **Before any key is served, a probe signature is verified** against the certificate's public key with aws-lc-rs, so a
+  key that is not its certificate's is refused at start (`CS-KEY-0006`), not per seal.
+- **File key, development only**: refused unless `OPENSEAL_DEV_INSECURE_KEY=1` exactly (`CS-KEY-0004`). keyd reports
+  it as a development key on get-certificate-chain, so the caller writes `/Reason (Development key — not for
+  production)`.
+- **The daemon**: rustls, TLS 1.3 only, a client certificate is mandatory and must chain to the configured client CA;
+  the caller is then identified by the SHA-256 fingerprint of its certificate, which must be on the allow-list
+  (`CS-KEY-0001`, recorded). Operations: get-certificate-chain and sign-digest, in length-prefixed binary frames
+  with every field bounded (frame 1 MiB, identifiers `[A-Za-z0-9._-]{1,64}`, digest 64 bytes); a digest of the wrong
+  length or for another algorithm is refused (`CS-KEY-0007`). Per-caller rate limit (default 600 signatures a
+  minute, `CS-KEY-0008`), at most 64 connections, 30 s timeouts. Configured by `OPENSEAL_KEYD_*` variables (the
+  binary's documentation lists them).
+- **Operation log**: one tab-separated line per request (sequence, time, caller fingerprint, operation, alias,
+  algorithm, digest, envelope id, outcome), hash-chained with SHA-256, opened for append only and synced before a
+  signature is released; a write failure releases nothing (`CS-KEY-0009`); keyd refuses to start on a log whose chain
+  does not verify.
+- **`RemoteKey`**: the caller's `KeyProvider` over keyd (one mTLS connection per signature, envelope id attached).
+
+Checked: keys generated in SoftHSM 2.7 (P-256 with its certificate in the token, P-384, RSA-3072 PKCS#1 v1.5 and PSS)
+seal a PDF at B-B in process and through keyd; all eight pass our verifier (integrity, signature and chain;
+`TRY_LATER` for revocation at B-B) and pyHanko (`intact, valid, trusted`, whole file). A file key sealed through
+keyd passes both too. A client without a certificate, with a certificate from another CA, and with one not on the
+allow-list are refused. Not yet built: cloud KMS backends (AWS KMS, GCP KMS, Azure Key Vault, Vault Transit), a Unix
+socket transport with peer credentials, several keys per daemon from a configuration file, and the reconciliation of
+keyd's log with `document.sealed` (`SEC-S05`).
+
 ## 6. Timestamps
 
 `TimestampSource` is a list of TSAs with failover. Requests carry a nonce and `certReq=true`; the response is checked

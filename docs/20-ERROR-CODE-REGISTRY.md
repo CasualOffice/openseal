@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-FLT-0001` to `0005` (stage 1E); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-FLT-0001` to `0005` (stage 1E); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -120,9 +120,17 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-AUTH-0003 | Recipient authentication failed |
 | CS-AUTH-0004 | Recipient locked after too many attempts |
 | CS-AUTH-0005 | Consent required |
-| CS-KEY-0001 | Caller not authorized by keyd |
+| CS-KEY-0001 | Caller not authorized by keyd: no client certificate, an untrusted one, or one not on the allow-list |
 | CS-KEY-0002 | Unknown key alias |
-| CS-KEY-0003 | HSM or KMS unavailable |
-| CS-KEY-0004 | Insecure development key refused |
+| CS-KEY-0003 | HSM or KMS unavailable, PIN refused, or a backend operation failed |
+| CS-KEY-0004 | Insecure development key refused (`OPENSEAL_DEV_INSECURE_KEY` is not `1`) |
+| CS-KEY-0005 | Secret unreadable: `NAME` and `NAME_FILE` both set, or the file unreadable or empty (`casual-sign-secrets`) |
+| CS-KEY-0006 | Key configuration: no or unparsable certificate, key not found or ambiguous in the token, key not the certificate's, unsupported key type, size or scheme |
+| CS-KEY-0007 | keyd request or response malformed: frame, identifier, digest length, or algorithm not the key's |
+| CS-KEY-0008 | keyd rate limit exceeded for this caller |
+| CS-KEY-0009 | keyd operation log cannot be opened, written or synced, or its hash chain does not verify; no signature is released |
+| CS-KEY-0010 | keyd TLS certificates, keys or allow-list do not load |
+| CS-KEY-0011 | keyd unreachable, or the TLS connection failed (a refused handshake included) |
+| CS-KEY-0012 | keyd setting missing or invalid |
 | CS-CNV-0001 | Conversion failed or timed out |
 | CS-CNV-0002 | Format not supported |

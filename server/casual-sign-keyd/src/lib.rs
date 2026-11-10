@@ -10,7 +10,7 @@
 //! - [`Keyd`]: the daemon. mTLS (rustls, TLS 1.3, client certificate required and on an
 //!   [`AllowList`]), get-certificate-chain and sign-digest, a per-caller rate limit, and
 //!   an append-only hash-chained [`OpLog`] written before any signature is released.
-//! - [`RemoteKey`]: the caller's [`KeyProvider`] over keyd, so the worker seals
+//! - [`RemoteKey`]: the caller's [`casual_sign_crypto::KeyProvider`] over keyd, so the worker seals
 //!   remotely.
 //!
 //! Every key implements [`casual_sign_crypto::KeyProvider`] and [`DigestSigner`]. keyd
