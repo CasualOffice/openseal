@@ -216,3 +216,60 @@ Tested by `tests/transitions.rs` (one test per transition) and `tests/properties
 60 random commands each, every invariant checked after every accepted command and the chain verified; a second
 property drives every valid envelope to `completed`; a seeded run shows the sequences reach every status). Each
 invariant was seen to fail with its guard removed.
+
+## As built: effects (stage 2D, `T-2D`)
+
+`server/casual-sign-worker` runs the effects. **Decide and record** is `casual_sign_worker::apply_in(tx, envelope,
+command, context)`: in one `TenantTx` it locks the envelope's stored engine state (`envelope_states`, migration
+0008, the `EnvelopeState` as the engine serializes it, with a row revision), calls `decide`, appends the events to
+the chain (re-verified as read), writes the state, brings the relational rows into line (the envelope's status, a
+draft's subject and message, missing recipient and document rows, recipient statuses), and enqueues one job per
+effect with idempotency key `effect:<envelope>:<command id>:<index>`. The API is expected to call the same function
+(`T-2C`).
+
+| Effect | Job | What the worker does | Result fed back |
+| --- | --- | --- | --- |
+| `SendInvitation` | `send_invitation` | Email (act or copy template) with a fresh link token (256 random bits, base64url; its SHA-256 stored, `SEC-A01`); `link` delivery sends nothing | `InvitationDispatched`, or `InvitationBounced` when the SMTP server refuses the address permanently |
+| `SendReminder` | `send_reminder` | Reminder email with a fresh link | `ReminderDispatched` |
+| `SendExpiryWarning` | `send_expiry_warning` | Warning email with a fresh link | — |
+| `NotifySender` | `notify_sender` | Email to the sender's address (voided, declined, expired, completed, locked, bounced, corrected) | — |
+| `NotifyRecipients` | `notify_recipients` | Email to each recipient named | — |
+| `SendCompletionCopies` | `send_completion_copies` | Email to each, with a `completed_copy` link | — |
+| `Schedule` | `timer` | Due at its time | `TimerDue` (a timer no longer pending is the engine's no-op) |
+| `SealEnvelope` | `seal_envelope` | Only while `completing` with this job pending: fill and flatten each delivered document (from the blob store, its hash checked), certificate of completion with the stored chain as `audit-trail.json`, seal at the envelope's profile through keyd (`RemoteKey`, the development `/Reason` when keyd says its key is one) with the configured TSAs, store the sealed bytes as a `sealed` document version, read them back and verify them (docs/31 rung 1, independent of the seal's self-check) | `SealSucceeded` with `verified: true`, or `SealFailed` with the code (the engine alerts and schedules a new job) |
+| `RevokeTokens` | `revoke_tokens` | Every live token of the recipient | — |
+| `DeliverWebhook` | `deliver_webhook` | docs/40 §4 as built | — |
+| `ChargePayment` | `charge_payment` | Through `PaymentGateway`; the only one built refuses (`CS-WRK-0014`, dead-lettered with an alert) until slice 13 | — |
+| `AlertOperator` | `alert_operator` | To the operator's `AlertSink` (a log line by default) | — |
+| `PurgeData`, `DeleteDraft` | `purge_data`, `delete_draft` | Revoke every token of the envelope; blobs stay (write-once, no delete: slice 15) | — |
+| `Cancel` | none | The engine's own guards: a cancelled timer's `TimerDue` is a no-op, a cancelled seal job is not run (checked before sealing) and its result refused | — |
+
+**Idempotency and crashes.** The claim is the store's `SKIP LOCKED` entry point under a 300 s lease, renewed every
+100 s; a lapsed lease is claimed again. A job's external act (an email accepted, a webhook answered, documents sealed
+and stored) is recorded as a job step (`job_steps`, insert-only) in its own transaction the moment it happens; the
+result command and `complete` then commit together. The result command's id is `job-<job uuid>`, so a second
+application is `replayed`. A crash leaves: before the act, nothing (the job reruns); after the act and its record, the
+act skipped on rerun; between the act and its record, the act once more on rerun, the **at-least-once window**, with
+the same `Message-ID` (derived from the job and recipient) or `webhook-id`, which receivers collapse. A seal crashed
+after keyd signed and before the sealed bytes were recorded is sealed again on rerun (keyd's log shows two
+signatures; `KEYD-03` reconciles); one crashed after the record is not. A result command the engine refuses because
+the envelope moved on (voided meanwhile) is recorded as a step and the job finishes. Failures retry with exponential
+back-off and equal jitter (30 s doubling, capped at 12 h) up to 15 attempts; a *final* code (docs/20 `CS-WRK-*`)
+dead-letters the job at once; a dead job raises an operator alert.
+
+**Tested** (PostgreSQL 17, an in-process SMTP sink, an HTTPS receiver; `server/casual-sign-worker/tests`): a
+two-signer envelope driven through the engine and store to `completed`, its sealed PDF accepted by our verifier and
+pyHanko; crash tests stopping the worker dead at every boundary (after claim, after the SMTP server accepted, after
+the record, mid-webhook, after keyd signed, with the result applied but uncommitted) and restarting; an unverified
+seal leaving the envelope `completing` with an alert; a bounce; a reminder timer; back-off; dead-lettering; SSRF
+refusal; the seal through keyd with the development reason. Seen red: the email step check removed (two emails after
+a crash past the record), the stored-seal verification removed (the envelope completed on a seal that does not
+verify), the development reason dropped, both SSRF checks removed.
+
+**Decisions taken here** (recorded for the owner): the engine state is stored whole beside the relational rows
+(migration 0008), because `decide` needs its bookkeeping and no table holds it; engine ids of envelopes, recipients,
+documents and users are canonical UUID strings; a signature capture is a JSON blob whose SHA-256 is both the adoption's
+`image_hash` and the `FieldValue::Signature` id (`casual_sign_worker::capture`); a link token's stored hash is the
+SHA-256 of its base64url text; the worker decides under the operator's default `Policy` (per-account settings are the
+API's); emails are written by the worker, not `lettre`'s builder (licence, docs/19); webhooks and TSAs use `ureq`,
+not `reqwest`.

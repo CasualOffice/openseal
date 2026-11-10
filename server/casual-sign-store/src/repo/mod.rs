@@ -15,6 +15,7 @@ pub mod jobs;
 pub mod recipients;
 pub mod templates;
 pub mod webhooks;
+pub mod workflow;
 
 /// `CS-DB-0003` for `entity` when a statement touched no row.
 pub(crate) fn affected(rows: u64, entity: &'static str) -> Result<()> {
@@ -117,5 +118,15 @@ impl TenantTx {
     /// Webhook subscriptions and deliveries.
     pub fn webhooks(&mut self) -> webhooks::Webhooks<'_> {
         webhooks::Webhooks { tx: self }
+    }
+
+    /// The workflow engine's envelope states.
+    pub fn workflow_states(&mut self) -> workflow::WorkflowStates<'_> {
+        workflow::WorkflowStates { tx: self }
+    }
+
+    /// The worker's per-job step ledger.
+    pub fn job_steps(&mut self) -> workflow::JobSteps<'_> {
+        workflow::JobSteps { tx: self }
     }
 }

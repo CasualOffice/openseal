@@ -137,6 +137,36 @@ Uploaded documents may carry tags parsed at send when `"text_tags": true`:
 - **SSRF**: webhook URLs must be HTTPS to public addresses; private, loopback, link-local and metadata ranges are refused
   at registration **and** at connect time (DNS rebinding) ([07](07-SECURITY-THREAT-MODEL.md) `SEC-W*`).
 
+**As built (stage 2D, `T-2D`, delivery side; registration is the API's, `T-2C`).** `casual-sign-worker` delivers one
+`deliver_webhook` job per `DeliverWebhook` effect to every active subscription of the account whose event types name
+the event (or `*`) and whose envelope, if set, is this one.
+
+- **Headers**: `webhook-id` is the job's id, the same on every attempt and every subscription, so receivers dedupe on
+  it; `webhook-timestamp` is the attempt's Unix time; `webhook-signature` is `v1,<base64 HMAC-SHA256>` over
+  `id.timestamp.body` for each of the subscription's secrets, space-separated (checked against the Standard Webhooks
+  specification's published example). A secret is `whsec_` and base64 of at least 16 bytes, found by the reference
+  the subscription stores (an environment variable or `_FILE`; `CS-WRK-0010`).
+- **Body**: `{"id", "type", "created_at", "account_id", "data": {"envelope_id", "status", "version",
+  "recipient_id"?}}`. `created_at`, `status` and `version` are the decision's, fixed when the effect was enqueued, so
+  every attempt sends the same bytes. No names, addresses, subjects, values or documents.
+- **Event types** are the engine's topics with the first underscore made a dot (`envelope.completed`), except
+  `recipient.auth_failed` (the engine's lock topic) and `recipient.bounced` (its `auto_responded`) as listed above.
+  The engine also emits `envelope.completing`, delivered under that name. Not emitted yet: `recipient.finish_later`,
+  `template.*`, `bulk_send.completed` (no engine topic; rows proposed).
+- **Delivery**: 10 s for the whole exchange, no redirects, 64 KiB of the answer read; 2xx is delivered. A failure is
+  retried with exponential back-off (30 s doubling, capped at 12 h, equal jitter) for 15 attempts, about three days;
+  each attempt is in `webhook_deliveries` (`pending`, then `delivered` or `failed` with the last status). A
+  subscription delivered to is recorded as a job step, so a retry or a re-run after a crash skips it; the window
+  between a receiver's answer and that record is the at-least-once repeat, with the same `webhook-id` and body.
+- **SSRF**: only `https://` without user information; the host is resolved and every address checked before the
+  request, and again by the HTTP client's resolver at connect time. Refused: private, loopback, link-local (the metadata
+  address included), CGNAT, documentation, benchmarking, multicast, reserved, unspecified, IPv4-mapped and NAT64 IPv6
+  of any of those, ULA and site-local IPv6, unless the operator allow-lists a range (`OPENSEAL_WEBHOOK_ALLOW`). A
+  refused URL dead-letters the job (`CS-WRK-0008`) and logs the delivery `failed`; no byte reaches the address
+  (integration test seen red only with both checks removed).
+- **Not built here**: manual redeliver and disabling a subscription after five failing days (the API's, `T-2C`);
+  sender and template filters (the subscription repository does not expose them yet); optional mTLS to receivers.
+
 ## 5. Embedding
 
 **Views** return a single-use URL valid for 5 minutes that opens a session:
