@@ -293,7 +293,9 @@ version. Each answers `409 CS-API-0009` until the seal is stored; `combined` als
 documents, which needs a PDF merge the engine does not have (proposed row). `GET /audit?format=pdf` is not built.
 
 **Ceremony.** The first `POST /s/{token}/session` binds the link to the browser (a second secret, SHA-256 at rest, in
-an `HttpOnly`, `SameSite=Strict` cookie); any other browser is `403 CS-AUTH-0009`. Changing calls must be
+an `HttpOnly`, `SameSite=Strict`, `Secure` cookie, `Secure` dropped only with the staff cookie's development
+setting `OPENSEAL_DEV_INSECURE_KEY=1`, since WebKit keeps no `Secure` cookie over `http://localhost`); any other
+browser is `403 CS-AUTH-0009`. Changing calls must be
 `application/json`. Access codes are Argon2id (SEC-A03); one-time codes by email or SMS answer `CS-API-0014` until
 slice 5. `POST /s/{token}/adopt` stores the image, then the capture document the seal job reads
 (`{"kind":"image","image":"<hex>"}`), and answers its hash as `adoption_id`; a signature or initials value must name
@@ -313,4 +315,6 @@ agent or token in the logs. Each guard named in the T-2C report was removed once
 `..`), the signing page for a browser and JSON for the API at `/s/{token}`; `q` search on subject, names and emails,
 wildcards literal (seen red without the escaping), never another account's (RLS on and disabled; seen red with RLS
 disabled and the account condition removed); the access code patched on a draft and in a correction, refused once
-voided, the link taking the new code and not the old.
+voided, the link taking the new code and not the old; the ceremony cookie `Secure` unless the server is plain-HTTP
+development (seen red when it was always `Secure`, which broke signing in WebKit on the Compose stack). The server
+binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised by the Compose stack (docs/65).

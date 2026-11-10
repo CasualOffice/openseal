@@ -41,5 +41,23 @@ OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-stor
 docker stop openseal-ci-pg >/dev/null
 trap - EXIT
 unset OPENSEAL_TEST_DATABASE_URL SQLX_OFFLINE SQLX_CLI_BIN
+step "compose e2e"   # T-2F, E2E-01: as ci.yml's compose-e2e job, on its own project and ports so a dev stack is untouched
+export COMPOSE_PROJECT_NAME=openseal-ci OPENSEAL_HTTP_PORT=18080 OPENSEAL_MAIL_PORT=18025
+export OPENSEAL_E2E_BASE_URL=http://localhost:18080 OPENSEAL_E2E_MAIL_URL=http://127.0.0.1:18025 OPENSEAL_E2E_EMAIL=e2e@openseal.test OPENSEAL_E2E_PASSWORD=e2e-only-passphrase
+export OPENSEAL_E2E_CHROMIUM_CHANNEL="${OPENSEAL_E2E_CHROMIUM_CHANNEL:-chromium}"   # the new headless; the old shell can crash on macOS
+# The stack and its volumes go however this step ends; one check per line (docs/04 rule 31).
+trap 'docker compose down -v >/dev/null 2>&1 || true' EXIT
+docker compose down -v >/dev/null 2>&1 || true
+docker compose up -d --build --wait --quiet-pull
+docker compose exec -T -e OPENSEAL_ADMIN_PASSWORD="$OPENSEAL_E2E_PASSWORD" server casual-sign-server bootstrap "E2E" "$OPENSEAL_E2E_EMAIL" "E2E Admin"
+npm --prefix webapp/e2e ci --no-audit --no-fund --silent
+webapp/e2e/node_modules/.bin/playwright install chromium webkit
+rm -rf target/e2e-sealed
+webapp/e2e/node_modules/.bin/playwright test -c webapp/e2e/playwright.config.mjs --project=chromium --project=webkit
+docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
+"$VENV/bin/python" -I tools/verify-sealed.py target/e2e-sealed
+docker compose down -v >/dev/null
+trap - EXIT
+unset COMPOSE_PROJECT_NAME OPENSEAL_HTTP_PORT OPENSEAL_MAIL_PORT OPENSEAL_E2E_BASE_URL OPENSEAL_E2E_MAIL_URL OPENSEAL_E2E_EMAIL OPENSEAL_E2E_PASSWORD
 step "wasm parity";       tools/wasm-parity.sh   # WASM-01: native and WASM byte-identical over the corpus
 printf '\nci-local: every job passed\n'

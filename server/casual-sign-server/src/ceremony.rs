@@ -51,6 +51,9 @@ pub(crate) struct Open {
     geoip: Option<std::sync::Arc<crate::geo::GeoIp>>,
     /// The capture this request adopted, answered as `adoption_id`.
     adoption: Option<String>,
+    /// Whether the cookie says `Secure` (the server's `secure_cookies`, as the staff
+    /// session's: off only for plain-HTTP development on localhost).
+    secure: bool,
 }
 
 fn json_body(method: &Method, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -166,6 +169,7 @@ async fn open(
             ip,
             geoip: st.0.geoip.get().cloned(),
             adoption: None,
+            secure: st.config().secure_cookies,
         })
     };
     inner.await.map_err(IntoResponse::into_response)
@@ -273,7 +277,8 @@ impl Open {
         let mut r = json_resp(status, &body);
         if let Some(secret) = cookie
             && let Ok(v) = HeaderValue::from_str(&format!(
-                "{CEREMONY_COOKIE}={secret}; Path=/s/; HttpOnly; SameSite=Strict; Secure"
+                "{CEREMONY_COOKIE}={secret}; Path=/s/; HttpOnly; SameSite=Strict{}",
+                if self.secure { "; Secure" } else { "" }
             ))
         {
             r.headers_mut().insert(header::SET_COOKIE, v);

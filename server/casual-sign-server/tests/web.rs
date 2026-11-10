@@ -469,3 +469,54 @@ async fn an_access_code_is_patchable_on_a_draft_and_in_a_correction_and_refused_
     .unwrap();
     assert_eq!(third, after);
 }
+
+/// The ceremony cookie follows `secure_cookies` as the staff session does: `Secure`
+/// unless the operator turned it off for plain-HTTP development, where a browser that
+/// refuses `Secure` cookies over `http://localhost` (WebKit) could not keep the link
+/// bound and every later call would be `CS-AUTH-0009`.
+#[tokio::test]
+async fn the_ceremony_cookie_is_secure_unless_the_server_is_plain_http_development() {
+    for secure in [true, false] {
+        let Some(api) = Api::with("web_ceremony_cookie", Rls::On, |c| {
+            c.secure_cookies = secure
+        })
+        .await
+        else {
+            return;
+        };
+        let a = api.tenant("alpha").await;
+        let id = draft(&api, &a, "Cookie", &[("Cy Cookie", "cy@example.test")]).await;
+        let base = format!("/api/v1/envelopes/{id}");
+        let sent = api
+            .call("POST", &format!("{base}/send"), &a.auth, None, &[])
+            .await;
+        assert_eq!(sent.status, StatusCode::OK);
+        let env = api.call("GET", &base, &a.auth, None, &[]).await.json();
+        let rec = env["recipients"][0]["id"].as_str().unwrap().to_owned();
+        let token = casual_sign_server::issue_invitation_token(
+            &api.st,
+            a.boot.account,
+            casual_sign_store::EnvelopeId(id.parse().unwrap()),
+            casual_sign_store::RecipientId(rec.parse().unwrap()),
+            std::time::Duration::from_secs(86_400),
+        )
+        .await
+        .unwrap();
+        let open = api
+            .call(
+                "POST",
+                &format!("/s/{token}/session"),
+                &Auth::None,
+                Some(json!({})),
+                &[],
+            )
+            .await;
+        assert_eq!(open.status, StatusCode::OK);
+        let set = header(&open, "set-cookie");
+        assert!(
+            set.contains("HttpOnly") && set.contains("SameSite=Strict"),
+            "{set}"
+        );
+        assert_eq!(set.contains("Secure"), secure, "{set}");
+    }
+}

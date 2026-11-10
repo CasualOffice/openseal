@@ -27,6 +27,7 @@ for (const scheme of ["light", "dark"]) {
         await page.goto(app("#/agreements"));
         await page.getByRole("link", { name: "Offer letter — Jordan Rivera" }).click();
       } else {
+        await page.getByRole("button", { name: "Clear search" }).click();
         await page.locator("tbody tr a").first().click();
       }
       await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();

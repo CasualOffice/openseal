@@ -148,6 +148,16 @@ colour falls under 4.5:1 or a control edge, focus ring or recipient colour under
   both themes; empty states with screenshots; on Chromium, WebKit, an iPhone viewport and reduced motion. The same
   specs run against a real server with `OPENSEAL_E2E_BASE_URL` (signing tokens from `OPENSEAL_E2E_SIGN_TOKEN` and
   `OPENSEAL_E2E_DECLINE_TOKEN`, since the server emails them).
+- **On the Compose deployment** (`E2E-01`, `T-2F`; CI job `compose-e2e`, docs/65): every spec in Chromium and WebKit with mock
+  off. `real-stack.spec.mjs` runs only there: sign in, upload, two signers in order, send; each signer opens the link
+  the worker emailed (read from Mailpit's API) and signs; the sender sees Completed and downloads the sealed PDF and
+  the certificate into `target/e2e-sealed/`, which pyHanko then validates against the stack's root
+  (`tools/verify-sealed.py`). Against a real server the first sign-in seeds a draft and a sent envelope through the
+  API and later sign-ins reuse its session (the server allows ten sign-ins a minute); specs that need a seeded
+  mock envelope or an emailed token skip, saying so. Found and fixed by this run: the signing page took
+  `completing` (the server sealing) for "others still to sign", and showed an error rather than "this link does not
+  work" for the server's `CS-AUTH-0002` (an unknown, expired or revoked link, answered alike); and the server's
+  ceremony cookie was always `Secure`, which WebKit drops over `http://localhost` (docs/40 §As built).
 
 ### Not yet
 

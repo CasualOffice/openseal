@@ -29,13 +29,69 @@ export const tokens = REAL
 export const app = (hash = "#/agreements") => `/app.html${q}${hash}`;
 export const signPage = (token) => `/s/${encodeURIComponent(token)}${q}`;
 
+/// Against a real server: the session the first sign-in made, reused by later ones.
+/// The server allows ten sign-ins a minute per account and per address (docs/40 §2),
+/// and a run signs in more often than that; the form itself is still used by the first
+/// sign-in of each worker and by the specs about signing in.
+let realSession = null;
+
 export async function signIn(page) {
   if (REAL && !creds.email) throw new Error("OPENSEAL_E2E_EMAIL and OPENSEAL_E2E_PASSWORD are needed against a real server");
+  const agreements = page.getByRole("heading", { name: "Agreements" });
+  if (REAL && realSession) {
+    await page.context().addCookies(realSession.cookies);
+    // Still signed in? (A spec may have signed this session out.) Asked of the API, not
+    // the page, which shows its sign-in form for a moment while it checks.
+    const alive = await page.request.get("/api/v1/auth/session");
+    if (alive.ok()) {
+      await page.addInitScript((csrf) => sessionStorage.setItem("openseal.csrf", csrf), realSession.csrf);
+      await page.goto(app("#/agreements"));
+      await expect(agreements).toBeVisible();
+      return;
+    }
+    realSession = null;
+    await page.context().clearCookies();
+  }
   await page.goto(app("#/signin"));
   await page.getByLabel("Email").fill(creds.email);
   await page.getByLabel("Password").fill(creds.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+  await expect(agreements).toBeVisible();
+  if (REAL) {
+    realSession = {
+      cookies: await page.context().cookies(),
+      csrf: await page.evaluate(() => sessionStorage.getItem("openseal.csrf")),
+    };
+    if (await seedReal(page)) await page.reload();
+    await expect(agreements).toBeVisible();
+  }
+}
+
+/// A real account needs something to list: a draft and a sent envelope, made through
+/// the API once (the mock seeds its own). Answers whether it made any.
+async function seedReal(page) {
+  const headers = { "X-CSRF-Token": realSession.csrf };
+  const list = await page.request.get("/api/v1/envelopes?limit=200", { headers });
+  expect(list.ok(), `list envelopes: ${list.status()}`).toBeTruthy();
+  const have = new Set((await list.json()).items.map((e) => e.status));
+  const pdf = Buffer.from(makePdf([{ title: "Seeded agreement", lines: ["Made by the e2e suite."] }])).toString("base64");
+  let made = false;
+  for (const status of ["draft", "sent"]) {
+    if (have.has(status)) continue;
+    const res = await page.request.post("/api/v1/envelopes", {
+      headers: { ...headers, "Idempotency-Key": `seed-${status}-${Date.now()}` },
+      data: {
+        subject: `Seeded ${status} envelope`,
+        status,
+        documents: [{ name: "seeded.pdf", content_base64: pdf }],
+        recipients: [{ ref: "s", type: "signer", name: "Sam Seed", email: "sam.seed@example.com" }],
+        fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 180, height: 40, required: true }],
+      },
+    });
+    expect(res.ok(), `seed a ${status} envelope: ${res.status()} ${await res.text()}`).toBeTruthy();
+    made = true;
+  }
+  return made;
 }
 
 /// A small PDF made on the spot (two pages), as a file for `setInputFiles`.
