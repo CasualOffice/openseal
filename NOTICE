@@ -8,8 +8,8 @@ Parts of this repository will be copied from OpenCalc
 (https://github.com/CasualOffice/openpresent), also Apache-2.0 and under the
 same owner; each copied item records its source commit in a PROVENANCE.md.
 
-Third-party material (fonts, pdf.js, icons) will be listed here, each with its
-own licence, as it is added. No third-party material is in the repository yet.
+Third-party material (fonts, pdf.js, icons) is listed here, each with its own
+licence, as it is added.
 This inventory is not legal advice; LEG-01 reviews it before the first release.
 
 Tools used only in CI, never shipped or linked:
@@ -44,3 +44,15 @@ pypdf, BSD-3-Clause; no code from either is included):
   - A subset of the Adobe Glyph List, Copyright 2002-2019 Adobe
     (https://github.com/adobe-type-tools/agl-aglfn), BSD-3-Clause.
   - The base encodings of ISO 32000-2 Annex D (facts from the standard).
+
+Fonts in crates/casual-sign-flatten/fonts/, embedded (as subsets) into flattened
+documents; each licence text is in fonts/LICENSES/ and the sources and SHA-256
+sums are in fonts/PROVENANCE.md. All are SIL Open Font License 1.1:
+  Liberation Sans, Serif and Mono (regular)
+      Digitized data copyright (c) 2010 Google Corporation, with Reserved Font
+      Arimo, Tinos and Cousine; copyright (c) 2012 Red Hat, Inc., with Reserved
+      Font Name Liberation. Copied from OpenPresent, which copied OpenCalc.
+  Great Vibes   Copyright 2015 The Great Vibes Pro Project Authors
+                (https://github.com/googlefonts/great-vibes).
+  Allura        Copyright 2010 The Allura Project Authors
+                (https://github.com/googlefonts/allura).
