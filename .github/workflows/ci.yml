@@ -173,3 +173,22 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
       - run: cargo test -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server --locked
+
+  # WEB-01, E2E-01: web app unit tests, then Playwright in Chromium, WebKit and a phone
+  # viewport (mock mode until the Compose deployment, 2F), with axe on every screen.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - working-directory: webapp
+        run: npm test
+      - working-directory: webapp/e2e
+        run: npm ci && npx playwright install --with-deps chromium webkit
+      - working-directory: webapp/e2e
+        run: npx playwright test
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-results
+          path: target/e2e-results
+          retention-days: 7
