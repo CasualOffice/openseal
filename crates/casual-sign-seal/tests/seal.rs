@@ -518,3 +518,40 @@ fn vri_key_names_the_signature_contents() {
     assert_eq!(s.report.vri_key.as_deref(), Some(key.as_str()));
     assert_eq!(count(&s.bytes, format!("/{key} <<").as_bytes()), 1);
 }
+
+/// docs/30 §1 (`PDF-INV-01`): the delivered bytes are a prefix of every sealed output,
+/// for both cross-reference forms, every profile, and a renewal.
+#[test]
+fn the_input_is_a_prefix_of_every_output() {
+    use casual_sign_pdf::{NormalizeOptions, OutputXref, admit, normalize};
+    let never = || false;
+    let raw = one_page("Agreement");
+    for xref in [OutputXref::Table, OutputXref::Stream] {
+        let mut a = admit(&raw, &Limits::default(), &never).unwrap();
+        let input = normalize(&mut a, &NormalizeOptions::with_xref(xref), &never)
+            .unwrap()
+            .bytes;
+        let tsa = TestTsa::new(SIGNING_TIME);
+        let rev = TestRevocation::default();
+        let mut last = Vec::new();
+        for profile in [
+            Profile::BaselineB,
+            Profile::BaselineT,
+            Profile::BaselineLt,
+            Profile::BaselineLta,
+        ] {
+            let s = seal(&input, &request(profile), &p256(), &tsa, &rev).unwrap();
+            assert!(s.bytes.starts_with(&input), "{xref:?} {profile:?}");
+            assert!(s.bytes.len() > input.len());
+            last = s.bytes;
+        }
+        let options = ArchiveOptions {
+            time: SIGNING_TIME,
+            trust: trust(),
+            limits: Limits::default(),
+        };
+        let renewed = renew_lta(&last, &options, &tsa, &rev).unwrap();
+        assert!(renewed.bytes.starts_with(&last));
+        assert!(renewed.bytes.starts_with(&input));
+    }
+}
