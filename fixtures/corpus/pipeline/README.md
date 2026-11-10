@@ -5,11 +5,10 @@ flatten + seal (B-T) + verify passes rungs 1–3 of the verification ladder
 ([docs/31](../../../docs/31-SEALING-AND-SIGNATURES.md) §7), and `sealed.starts_with(delivered)` holds.
 
 [results.tsv](results.tsv) has one row per corpus file; [summary.tsv](summary.tsv) the counts by class and outcome.
-**Last run 2026-11-10** (macOS, EU DSS in Docker), after `FLD-RADIO-NAME` and `FLD-RADIO-NOOPT`: 422 files, 417
-admitted; **385 pass all three rungs** with the prefix holding (79 `form`, 300 `plain`, 6 `signed`); 32 `signed`
-excluded by the rule below, each refused with `CS-WRT-0004`; 0 fail; 5 not admitted; 0 panics. Ours, pyHanko and EU
-DSS agree on every passing row. **Gate met** (Phase 1 exit item 2); the owner accepted the exclusion rule on 2026-11-10
-([docs/03](../../../docs/03-OWNER-INSTRUCTIONS.md) instruction 11).
+**Last run 2026-11-11** (macOS, EU DSS 6.5.1 in Docker on Java 21.0.12.1, pinned by digest), with `--print-to-new`:
+422 files, 417 admitted; **417 pass all three rungs** with the prefix holding (86 `form`, 293 `plain`, 32 `printed`,
+6 `signed`); 0 excluded; 0 fail; 5 not admitted, each with a code; 0 panics. **Gate met** (Phase 1 exit item 2). The
+32 files certified DocMDP P1 are printed to new documents (`NORM-02`) and pass like any other.
 
 No PDF is committed. Reproduce with the corpus fetched and the EU DSS image built:
 
@@ -48,7 +47,7 @@ time 2026-11-01T12:00:00Z, validation time 2026-12-01.
 | `ms` | Our side's time for the file |
 | `outcome` | `pass`, `excluded` (by a rule below), `fail` (a named cause), `not-admitted` |
 
-## Exclusion rules (accepted by the owner, 2026-11-10)
+## Exclusion rules (no longer used: the gate runs with `--print-to-new`)
 
 | Cause | Rule | Removed by |
 | --- | --- | --- |
