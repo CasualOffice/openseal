@@ -84,7 +84,7 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
   - [x] Every ADR needed by Phases 0–2 is Accepted or has a named spike deciding it ([08](08-ADR-REGISTER.md)). Evidence: ADR-001 to ADR-024 Accepted (owner, 2026-11-11, instruction 12).
   - [x] `DEC-01` to `DEC-07` answered, or marked not blocking with the phase that needs them. Evidence: all answered by the owner (instructions 4 and 12).
   - [x] An independent doc audit's P0 and P1 findings are fixed (`DOC-002`). Evidence: `DOC-002` Done (26 findings fixed).
-  - [ ] Owner sign-off.
+  - [x] Owner sign-off. **Phase D closed by the owner, 2026-11-11** (instruction 13).
 
 ## Phase 0 — Foundation
 

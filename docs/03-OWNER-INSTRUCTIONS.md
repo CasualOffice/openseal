@@ -21,6 +21,7 @@ by saying so.
 | 10 | 2026-11-10 | "If some decisions are pending on me, just ask me with options; I can choose." Pending owner decisions are put as a multiple-choice question when they arise, never left in a status note | [04](04-MISTAKES-AND-RULES.md) |
 | 11 | 2026-11-10 | Chose: Phase 1 gate P1-GATE-01 excludes DocMDP P1-certified files by a recorded rule (refused with a stable code), rather than building NORM-02 first; a seeded-violation draft PR on the public repository proves each CI job fails (Phase 0); FUZZ-01's 24 h per target runs on GitHub Actions on a schedule | `P1-GATE-01`, `F-003`, `FUZZ-01` in [14](14-EXECUTION-TRACKER.md); [06](06-ROADMAP-AND-DELIVERY.md) Phase 0 and 1 |
 | 12 | 2026-11-11 | Chose, from options: accept ADR-010 to ADR-024 as proposed; accept the recommendations for `DEC-02` to `DEC-07`, `DEC-10`, `DEC-12`, `DEC-13` (Phase 2 opens early under `W-1`) and `DEC-14`; sign off Phase 0 as closed | [08](08-ADR-REGISTER.md), Owner decisions in [14](14-EXECUTION-TRACKER.md), [06](06-ROADMAP-AND-DELIVERY.md) Phase D, Phase 0, `W-1`, `W-2` |
+| 13 | 2026-11-11 | Chose, from options: sign off Phase D as closed | [06](06-ROADMAP-AND-DELIVERY.md) Phase D, [README](../README.md), [AGENTS](../AGENTS.md) |
 
 ## Inherited working rules
 

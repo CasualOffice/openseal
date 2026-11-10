@@ -65,11 +65,9 @@ Every task, none of it optional:
 
 Docs are true as of `40b9429` (2026-11-11).
 
-**Phase 0 is closed** (owner, 2026-11-11). **Phases D and 1 are open; Phase 2 is open early under waiver `W-1`**
+**Phases D and 0 are closed** (owner, 2026-11-11). **Phase 1 is open; Phase 2 is open early under waiver `W-1`**
 (`DEC-13`). `W-2` is retired. The repository is public; GitHub CI runs, and `tools/ci-local.sh` stays the pre-push gate.
 
-- **Phase D** lacks only the owner's sign-off: ADR-001 to ADR-024 are Accepted and `DEC-01` to `DEC-14` answered
-  (instruction 12); the doc audit (`DOC-002`) is fixed.
 - **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm
   conversion, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I
   audit chain and certificate (leftovers in their rows), and reader completion (decryption, LZW, the four wrongly
