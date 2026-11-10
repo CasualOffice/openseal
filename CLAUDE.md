@@ -10,7 +10,7 @@ Sister repos `../opencalc` and `../openslide` (OpenPresent) are the architecture
 ## Do not repeat these mistakes
 
 **Read [docs/04](docs/04-MISTAKES-AND-RULES.md) before starting work; its rules bind every session.** The ones that cost most, inherited from the sisters:
-- Until Phase 1 closes, work only on the PDF and evidence core: bounded PDF reading, incremental writing, field flattening, sealing, audit chain, verification. No UI, no server, no email.
+- Build for Release 1 (docs/06): engine, server and web app proceed in parallel (owner instructions 19, 21). The PDF and evidence core still comes first when they compete.
 - Biggest remaining work starts first. Independent stages all start at once.
 - Every status update gives the phase percentage, from the tracker, merged only. Short, plain language.
 - Say "stopped", "done" or "tested" only after checking by running. Read gate output before committing.
