@@ -1,0 +1,713 @@
+[
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "p",
+        "label": "price",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "number"
+      },
+      {
+        "document_id": "doc",
+        "id": "q",
+        "label": "qty",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "number"
+      },
+      {
+        "document_id": "doc",
+        "id": "x",
+        "label": "express",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      },
+      {
+        "conditional": {
+          "parent_label": "express",
+          "when": "checked"
+        },
+        "document_id": "doc",
+        "id": "f",
+        "label": "fee",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "number"
+      },
+      {
+        "document_id": "doc",
+        "formula": {
+          "expression": "price*qty+fee",
+          "precision": 2
+        },
+        "id": "t",
+        "label": "total",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "formula"
+      },
+      {
+        "document_id": "doc",
+        "formula": {
+          "expression": "ROUND(total*0.2,2)",
+          "precision": 2
+        },
+        "id": "v",
+        "label": "vat",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "formula"
+      }
+    ],
+    "name": "invoice",
+    "values": {
+      "f": {
+        "text": "4.5"
+      },
+      "p": {
+        "text": "19.99"
+      },
+      "q": {
+        "text": "3"
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "p",
+        "label": "price",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "number"
+      },
+      {
+        "document_id": "doc",
+        "id": "q",
+        "label": "qty",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "number"
+      },
+      {
+        "document_id": "doc",
+        "id": "x",
+        "label": "express",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      },
+      {
+        "conditional": {
+          "parent_label": "express",
+          "when": "checked"
+        },
+        "document_id": "doc",
+        "id": "f",
+        "label": "fee",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "number"
+      },
+      {
+        "document_id": "doc",
+        "formula": {
+          "expression": "price*qty+fee",
+          "precision": 2
+        },
+        "id": "t",
+        "label": "total",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "formula"
+      }
+    ],
+    "name": "invoice-express",
+    "values": {
+      "f": {
+        "text": "4.5"
+      },
+      "p": {
+        "text": "19.99"
+      },
+      "q": {
+        "text": "3"
+      },
+      "x": {
+        "checked": true
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "formula": {
+          "expression": "B+1",
+          "precision": 0
+        },
+        "id": "a",
+        "label": "A",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "formula"
+      },
+      {
+        "document_id": "doc",
+        "formula": {
+          "expression": "A+1",
+          "precision": 0
+        },
+        "id": "b",
+        "label": "B",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "formula"
+      },
+      {
+        "conditional": {
+          "parent_label": "A",
+          "when": "any"
+        },
+        "document_id": "doc",
+        "id": "c",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "text"
+      }
+    ],
+    "name": "cycle",
+    "values": {}
+  },
+  {
+    "fields": [
+      {
+        "conditional": {
+          "parent_label": "B",
+          "when": "checked"
+        },
+        "document_id": "doc",
+        "id": "a",
+        "label": "A",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      },
+      {
+        "conditional": {
+          "parent_label": "A",
+          "when": "unchecked"
+        },
+        "document_id": "doc",
+        "id": "b",
+        "label": "B",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      }
+    ],
+    "name": "cond-cycle",
+    "values": {}
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "group": {
+          "id": "g",
+          "rule": {
+            "max": 2,
+            "min": 1,
+            "rule": "select_range"
+          }
+        },
+        "id": "g1",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      },
+      {
+        "document_id": "doc",
+        "group": {
+          "id": "g",
+          "rule": {
+            "max": 2,
+            "min": 1,
+            "rule": "select_range"
+          }
+        },
+        "id": "g2",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      }
+    ],
+    "name": "group-ok",
+    "values": {
+      "g1": {
+        "checked": true
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "group": {
+          "id": "g",
+          "rule": {
+            "count": 2,
+            "rule": "select_exactly"
+          }
+        },
+        "id": "g1",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      },
+      {
+        "document_id": "doc",
+        "group": {
+          "id": "g",
+          "rule": {
+            "count": 2,
+            "rule": "select_exactly"
+          }
+        },
+        "id": "g2",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      }
+    ],
+    "name": "group-bad",
+    "values": {
+      "g1": {
+        "checked": true
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "req",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "required": true,
+        "type": "text"
+      }
+    ],
+    "name": "required",
+    "values": {}
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "req",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "required": true,
+        "type": "text"
+      }
+    ],
+    "name": "required-ok",
+    "values": {
+      "req": {
+        "text": "x"
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "radio",
+        "options": [
+          "yes",
+          "no"
+        ],
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "required": true,
+        "type": "radio_group"
+      }
+    ],
+    "name": "radio-none",
+    "values": {}
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "radio",
+        "options": [
+          "yes",
+          "no"
+        ],
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "required": true,
+        "type": "radio_group"
+      }
+    ],
+    "name": "radio-bad",
+    "values": {
+      "radio": {
+        "choice": "maybe"
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "a",
+        "label": "nm",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "text"
+      },
+      {
+        "document_id": "doc",
+        "id": "b",
+        "label": "nm",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "text"
+      }
+    ],
+    "name": "linked",
+    "values": {
+      "b": {
+        "text": "Ada"
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "a",
+        "label": "nm",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "text"
+      },
+      {
+        "document_id": "doc",
+        "id": "b",
+        "label": "nm",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "text"
+      }
+    ],
+    "name": "linked-lie",
+    "values": {
+      "a": {
+        "text": "Ada"
+      },
+      "b": {
+        "text": "Eve"
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "a",
+        "label": "a",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "number"
+      },
+      {
+        "document_id": "doc",
+        "formula": {
+          "expression": "100/a",
+          "precision": 2
+        },
+        "id": "t",
+        "label": "t",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "formula"
+      }
+    ],
+    "name": "div0",
+    "values": {
+      "a": {
+        "text": "0"
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "s",
+        "label": "s",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "date"
+      },
+      {
+        "document_id": "doc",
+        "id": "e",
+        "label": "e",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "date"
+      },
+      {
+        "document_id": "doc",
+        "formula": {
+          "expression": "DAYS(e,s)",
+          "precision": 0
+        },
+        "id": "d",
+        "label": "d",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "formula"
+      }
+    ],
+    "name": "dates",
+    "values": {
+      "e": {
+        "text": "2025-03-01"
+      },
+      "s": {
+        "text": "2024-02-28"
+      }
+    }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "a",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "text"
+      }
+    ],
+    "name": "unknown",
+    "values": {
+      "zz": {
+        "text": "x"
+      }
+    }
+  }
+]

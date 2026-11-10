@@ -11,9 +11,39 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# wasm-pack runs wasm-opt by default; as OpenCalc and OpenPresent, skip it, so the
+# module measured and compared is exactly what rustc produced (WASM-01).
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[features]
+default = []
+# Adds `parity_cases()`, the 225-case field-rule table of casual-sign-fields
+# (`tests/parity/cases.rs`), for `tools/wasm-parity.mjs`. Off in the shipped module.
+parity = []
+
 [dependencies]
 casual-sign-fields = { path = "../casual-sign-fields" }
+casual-sign-model = { path = "../casual-sign-model" }
+casual-sign-pdf = { path = "../casual-sign-pdf" }
 casual-sign-verify = { path = "../casual-sign-verify" }
+# Anchor offsets are decimal, as the field model's (ADR-022); already in the tree.
+rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
+# JSON in and out (the model's serde names are the API, docs/40); already in the tree
+# through casual-sign-model's tests. Output is written canonically by `json.rs`.
+serde_json = "1.0.120"
+# The browser transport, as OpenCalc and OpenPresent (MIT or Apache-2.0). It writes
+# the `unsafe` ABI glue itself, so this crate keeps `unsafe_code = "forbid"`.
+wasm-bindgen = "0.2.100"
+
+[dev-dependencies]
+# The native parity harness hashes each verdict to compare with the WASM one.
+sha2 = { version = "0.11.1", default-features = false }
 
 [lints]
 workspace = true
+
+# The native half of tools/wasm-parity.mjs; it runs the case table too.
+[[example]]
+name = "native_parity"
+required-features = ["parity"]

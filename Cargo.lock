@@ -414,7 +414,13 @@ name = "casual-sign-wasm"
 version = "0.0.0"
 dependencies = [
  "casual-sign-fields",
+ "casual-sign-model",
+ "casual-sign-pdf",
  "casual-sign-verify",
+ "rust_decimal",
+ "serde_json",
+ "sha2",
+ "wasm-bindgen",
 ]
 
 [[package]]
