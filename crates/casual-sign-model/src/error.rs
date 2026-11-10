@@ -59,6 +59,13 @@ pub enum ModelError {
     InvalidCurrency,
     /// A colour is not `#rrggbb` (`CS-FLD-0002`).
     InvalidColor,
+    /// A routing order is 0 or over 999 (`CS-WF-0004`).
+    RoutingOrderOutOfRange {
+        /// The order supplied.
+        order: u32,
+    },
+    /// A reminder step is over 999 days (`CS-WF-0004`).
+    ReminderOutOfRange,
 }
 
 impl ModelError {
@@ -77,6 +84,7 @@ impl ModelError {
             Self::PlacementOutOfRange => "CS-FLD-0004",
             Self::InvalidId { .. } => "CS-FLD-0005",
             Self::FormulaTooLong { .. } | Self::PrecisionOutOfRange { .. } => "CS-FLD-0021",
+            Self::RoutingOrderOutOfRange { .. } | Self::ReminderOutOfRange => "CS-WF-0004",
         }
     }
 }
@@ -114,6 +122,10 @@ impl fmt::Display for ModelError {
             Self::InvalidGroupRule => write!(f, "{code}: group rule bounds are not valid"),
             Self::InvalidCurrency => write!(f, "{code}: currency is not an ISO 4217 code"),
             Self::InvalidColor => write!(f, "{code}: colour is not #rrggbb"),
+            Self::RoutingOrderOutOfRange { order } => {
+                write!(f, "{code}: routing order {order} outside 1 to 999")
+            }
+            Self::ReminderOutOfRange => write!(f, "{code}: reminder step over 999 days"),
         }
     }
 }

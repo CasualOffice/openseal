@@ -459,7 +459,12 @@ dependencies = [
 name = "casual-sign-workflow"
 version = "0.0.0"
 dependencies = [
+ "casual-sign-audit",
+ "casual-sign-fields",
  "casual-sign-model",
+ "proptest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

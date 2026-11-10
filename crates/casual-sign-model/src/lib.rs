@@ -9,12 +9,19 @@
 //! crate performs no I/O, reads no clock and draws no randomness; ids are minted by the
 //! host and supplied.
 //!
-//! **Stage 1D** (`T-1D`): only the field-related types exist so far.
+//! **Stage 1D** (`T-1D`): the field-related types. **Stage 2A** (`T-2A`): the envelope and
+//! recipient vocabulary ([`EnvelopeStatus`], [`RecipientType`], [`RoutingOrder`], ...) the
+//! workflow engine moves through its state machines.
 
+mod envelope;
 mod error;
 mod field;
 mod text;
 
+pub use envelope::{
+    Delivery, EnvelopeStatus, RecipientStatus, RecipientType, ReminderPolicy, RoutingOrder,
+    SealProfile, SigningOptions,
+};
 pub use error::ModelError;
 pub use field::{
     Align, Condition, Conditional, CurrencyCode, DateFormat, Field, FieldOptions, FieldType,
