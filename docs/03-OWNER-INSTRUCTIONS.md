@@ -25,6 +25,7 @@ by saying so.
 | 14 | 2026-11-11 | Chose, from options: move to sqlx 0.9 and raise the MSRV from 1.88 to 1.94 (not ignoring the two advisories sqlx 0.8 brings into the lockfile); keep ADR-014's compile-time checked queries, with a committed offline query cache so builds need no database | `Cargo.toml` `rust-version`, `ci.yml` and `tools/ci-local.sh` msrv jobs, [08](08-ADR-REGISTER.md) ADR-014, `T-2B` |
 | 15 | 2026-11-11 | Chose, from options: ignore RUSTSEC-2026-0459 only, with its reason and a tracker row (sqlx 0.9's macros list a SQLite driver that is never compiled, and no sqlx release allows the fixed `libsqlite3-sys` yet) | `.cargo/audit.toml`, `DEP-04` |
 | 16 | 2026-11-11 | Chose, from options: accept the `multi_select` field type and `Choices` value as ADR-025 | [08](08-ADR-REGISTER.md) ADR-025, `ACRO-02` |
+| 17 | 2026-11-11 | "Yes, opt-in per document, and if not approved, even then approximate from his IP; we can use a geo-IP library." Record the signer's location: a per-envelope setting asks the signer's browser for its location; if the signer declines (or the browser cannot), the location is approximated from the request IP with a GeoIP database, and the event records which source it came from | `GEO-01`, [32](32-AUDIT-TRAIL-AND-EVIDENCE.md), [09](09-LEGAL-AND-COMPLIANCE.md) |
 
 ## Inherited working rules
 
