@@ -74,6 +74,14 @@ the operator a processor. Mechanisms: data classification and minimization ([07]
 retention and purge with an audit event, export of a subject's data, data region tagging, a sub-processor list for the
 hosted service, and a DPA template (operator).
 
+**Signer location (GEO-01), as a fact of the design, not a legal claim.** A location is recorded only when the
+account turns on `capture_location` for the envelope. The signer's device location is taken only after the signer is
+asked and agrees (the browser's own permission prompt); a refusal does not stop signing, and the event records the
+refusal. Otherwise the location is an approximation from the IP address, by a GeoIP database named with its build
+date: it is approximate, can be wrong by a city or a country (VPNs, mobile carriers, proxies), and the certificate
+says "approximate from IP". Whether recording location is appropriate, and what notice the signer needs, is for the
+controller to decide under the law that applies to them; the product records only what the account's setting asks.
+
 Note the tension: **evidence must persist, and data subjects may ask for erasure.** Signed agreements are generally
 retained under a legal obligation or legitimate interest; the product lets the controller decide per account, and
 never deletes evidence silently.

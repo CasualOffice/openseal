@@ -70,6 +70,15 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - Editors (allowed to edit) may change later recipients and fields before signing.
 - Agents (specify recipients) supply the name and email of later recipients.
 - In-person signers are hosted by a staff user who authenticates first; the event records both.
+- **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
+  signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
+  `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context
+  ([32](32-AUDIT-TRAIL-AND-EVIDENCE.md) §2). **A refusal never blocks signing:** if the signer declines or the device
+  gives nothing, the server supplies an approximation from the IP address with the reason (`declined`,
+  `unavailable`), and that satisfies the engine. Only an action with no location at all is refused (`CS-WF-0019`),
+  which the server prevents by always supplying the fallback. A location that contradicts the setting (the signer
+  asked although it is off; `not_requested` although it is on) is `CS-WF-0020`. With the setting off nothing is
+  required; the host may still record an IP approximation flagged `not_requested`.
 
 ## 4. Routing
 
@@ -166,6 +175,11 @@ objects concerned, never their content.
 - **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says.
 - **A signer with no signature field** must still adopt a signature before finishing (free-form signing, intent).
 - **Sending needs a recipient with a required action**; an envelope of carbon copies only is `CS-WF-0004`.
+- **Location (GEO-01)** is checked after the command is decided, against the setting as it stood before the command,
+  over the events the request produced: the five recipient-action types must carry `ctx.request.location` when
+  `capture_location` is on. Checking last means every other refusal (permission, state, turn) keeps its own code.
+  Events the platform records as a consequence (`envelope.completing`, routing) carry no request context, so no
+  location. Tested by `tests/location.rs`.
 
 | docs/24 item | Built |
 | --- | --- |
@@ -192,6 +206,7 @@ objects concerned, never their content.
 | `completing` → `completed` only on a verified seal; seal failure retried | Built |
 | Purge (terminal only; personal data scrubbed, hashes kept) | Built |
 | Access events (sender viewed, document and certificate downloaded) | Built |
+| Signer location on recipient actions when `capture_location` is on; refusal recorded, never blocking (GEO-01) | Built (engine); the server's capture and GeoIP lookup are 2C's |
 | Routing: sequential, parallel, mixed; carbon copies complete when reached | Built |
 | Conditional routing, signing groups (§4, slice 29) | **Not built**: no event type or status for a skipped recipient or a group member's act (rows proposed) |
 | Bulk send (§8), signing links (§9) | **Not in the engine**: host jobs that issue `Create`/`Edit`/`Send` |

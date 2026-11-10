@@ -50,7 +50,7 @@ Account (tenant) ─┬─ User ── membership(role, permission profile) ─�
 | `routing_mode` | enum | `sequential`, `parallel`, `mixed` (by routing order number) |
 | `expires_at` | timestamptz? | |
 | `reminder_policy` | json | First after N days, then every M days |
-| `signing_options` | json | Allow reassign, allow decline, allow finish-later, signer attachments, in-person, language |
+| `signing_options` | json | Allow reassign, allow decline, allow finish-later, `capture_location` (GEO-01: record each recipient's location on every action; off by default, absent from the JSON when off; per envelope, see below), signer attachments, in-person, language |
 | `seal_profile` | enum | `pades-b-t` default, `pades-b-lt`, `pades-b-lta` |
 | `completion_delivery` | json | Attach documents to completion email, combine with certificate |
 | `brand_id` | uuid? | |
@@ -60,6 +60,12 @@ Account (tenant) ─┬─ User ── membership(role, permission profile) ─�
 | `version` | int | Optimistic concurrency for drafts and corrections |
 | `sent_at`, `completed_at`, `voided_at`, `void_reason` | | |
 | `chain_head` | bytea | Hash of the last audit event (docs/32) |
+
+**`capture_location` is per envelope** (GEO-01; the owner asked for it "per document"). One envelope is one signing
+ceremony: a recipient's `recipient.signed` event covers every document of the envelope at once, so a per-document
+setting could not say whether that one event needs a location. An envelope with one document is the per-document case.
+It sits in `signing_options` (no new column) and may be changed while a draft or by a correction like the other
+options; each event states for itself how its location was obtained, so the record stays true across a change.
 
 **Invariant:** after `sent`, the set of documents and the content of each document version are frozen. A **correction**
 creates new document versions and records `envelope.corrected`; recipients who already signed re-sign if any document

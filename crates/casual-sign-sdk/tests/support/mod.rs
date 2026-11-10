@@ -279,6 +279,7 @@ pub fn certificate_input<'a>(
             auth: Vec::new(),
             ip: Some("203.0.113.7".into()),
             user_agent: Some("openseal-gate".into()),
+            location: None,
             signature: Some(Mark {
                 art: Art::Drawn(ink()),
                 method: AdoptionMethod::Draw,

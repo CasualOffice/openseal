@@ -176,6 +176,76 @@ fn input_errors_carry_codes() {
     );
 }
 
+#[test]
+fn locations_at_their_longest_fit_the_layout() {
+    use casual_sign_audit::{FallbackReason, Location, MAX_DATABASE_BYTES, MAX_PLACE_BYTES};
+    let fonts = FontSet::bundled();
+    let (chain, delivered) = chain(3);
+    let mut long = input(&chain, delivered, 3);
+    let place = |c: char| c.to_string().repeat(MAX_PLACE_BYTES);
+    let words = "Llanfairpwllgwyngyll ".repeat(MAX_PLACE_BYTES / 21);
+    let db = "GeoIP2-City-Enterprise ".repeat(MAX_DATABASE_BYTES / 23);
+    long.recipients[0].location = Some(
+        Location::device(-89.999_95, -179.999_95, 20_037_509.0)
+            .unwrap()
+            .with_place(Some("GB"), Some(&words), Some(&place('W')))
+            .unwrap(),
+    );
+    long.recipients[1].location = Some(
+        Location::ip(
+            FallbackReason::Unavailable,
+            db.trim_end(),
+            89.123_456_789,
+            179.987_654_321,
+        )
+        .unwrap()
+        .with_place(Some("NZ"), Some(&place('m')), Some(words.trim_end()))
+        .unwrap(),
+    );
+    long.recipients[2].location =
+        Some(Location::ip_unresolved(FallbackReason::Declined, Some(db.trim_end())).unwrap());
+    let r = render_certificate(&long, &fonts, &CertificateOptions::default()).unwrap();
+    assert_eq!(
+        r.lines_shrunk, 0,
+        "line breaking measures the location rows"
+    );
+    let a = admit_strict(&r.bytes, &Limits::default(), &never).unwrap();
+    assert_eq!(a.report.page_count as usize, r.pages);
+    // More rows than without locations, never fewer pages.
+    let mut bare = input(&chain, delivered, 3);
+    for rec in &mut bare.recipients {
+        rec.location = None;
+    }
+    let b = render_certificate(&bare, &fonts, &CertificateOptions::default()).unwrap();
+    assert!(r.pages >= b.pages);
+    assert!(r.bytes != b.bytes, "the location rows are drawn");
+    std::fs::write(
+        out_dir("standalone").join("certificate-long-locations.pdf"),
+        &r.bytes,
+    )
+    .unwrap();
+
+    // A place in a script no bundled face has fails like a name does, until FLT-01.
+    let mut cjk = input(&chain, delivered, 1);
+    cjk.recipients[0].location = Some(
+        Location::ip(
+            FallbackReason::Declined,
+            "GeoLite2-City 2026-11-04",
+            35.68,
+            139.69,
+        )
+        .unwrap()
+        .with_place(Some("JP"), None, Some("東京"))
+        .unwrap(),
+    );
+    assert_eq!(
+        render_certificate(&cjk, &fonts, &CertificateOptions::default())
+            .unwrap_err()
+            .code(),
+        "CS-FLT-0001"
+    );
+}
+
 /// Corpus files to append to: unsigned, unencrypted, without embedded files.
 fn corpus() -> Option<(PathBuf, Vec<&'static str>)> {
     let dir = std::env::var_os("OPENSEAL_CORPUS_DIR")
