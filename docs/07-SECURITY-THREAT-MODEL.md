@@ -93,7 +93,7 @@ The PDF, field and cryptographic rows built in Phase 1 are Tested or Partial; se
 | Class | Examples | Rules |
 | --- | --- | --- |
 | **Evidence** | Sealed PDFs, audit events, certificates | Immutable; retained per policy; never in logs |
-| **Personal** | Names, emails, phones, IPs, user agents, signature images, ID evidence | Encrypted at rest; minimized; masked in admin views where possible; never in logs (ids only); export and purge supported |
+| **Personal** | Names, emails, phones, IPs, user agents, signer locations (device coordinates and IP approximations, GEO-01), signature images, ID evidence | Encrypted at rest; minimized; masked in admin views where possible; never in logs (ids only); export and purge supported. A location is retained and purged exactly as the IP address it sits beside (`context.location` in the audit crate's personal members); device coordinates are rounded to about 11 m before recording, and are collected only when the envelope's `capture_location` is on and the signer agrees |
 | **Secret** | Keys, OTPs, access codes, tokens, webhook secrets | Hashed or in KMS; never logged; never returned after creation |
 | **Document content** | Uploaded documents, field values | Never in logs, errors or metrics; field values hashed in audit events |
 

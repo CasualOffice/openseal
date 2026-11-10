@@ -65,6 +65,9 @@ Phase 1 gate.
 | Certificate: recipients, documents, copies | 100 each | CS-AUD-0020 |
 | Certificate: text value; disclosure | 4,000 bytes; 256 KiB | CS-AUD-0020 |
 | Certificate pages; objects copied when appending | 500; 200,000 | CS-AUD-0021, CS-AUD-0023 |
+| Signer location: latitude; longitude (GEO-01) | −90 to 90; −180 to 180, finite | CS-AUD-0011 |
+| Signer location: device coordinate precision; device accuracy | 4 decimal places (rounded on capture, refused on decoding); 20,037,509 m | CS-AUD-0011 |
+| Signer location: `region`, `city`; GeoIP `database` name; `country` | 1 to 128 bytes each, no control characters; 1 to 128 bytes; two upper-case ASCII letters | CS-AUD-0011 |
 
 ## Key daemon (`casual-sign-keyd`, stage 2E)
 
