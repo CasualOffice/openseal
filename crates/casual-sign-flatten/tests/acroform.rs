@@ -77,7 +77,7 @@ fn form_pdf(case: &PageCase) -> Vec<u8> {
         ),
         (
             19,
-            format!("<</FT/Tx/T(notes)/Ff 4096/DA(/TiRo 0 Tf 0 g){w}/Rect[300 400 500 470]>>")
+            format!("<</FT/Tx/T(notes)/Ff 4096/DA(/TiRo 0 Tf 0 g){w}/Rect[300 400 500 470]/MK<</R 90/BC[1 0 0]>>>>")
                 .into_bytes(),
         ),
         (20, ap_on),
