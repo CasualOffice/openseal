@@ -392,6 +392,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
             auth,
             ip: acted_context.and_then(|c| c.ip.as_ref().map(|v| v.get().clone())),
             user_agent: acted_context.and_then(|c| c.user_agent.as_ref().map(|v| v.get().clone())),
+            location: acted_context.and_then(|c| c.location.as_ref().map(|v| v.get().clone())),
             signature: marks.remove("signature"),
             initials: marks.remove("initials"),
             sent,
