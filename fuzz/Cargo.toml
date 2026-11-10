@@ -4,6 +4,7 @@
 #   cargo +nightly fuzz run admit -- -max_total_time=600 -dict=fuzz/pdf.dict
 #   cargo +nightly fuzz run normalize -- -max_total_time=300 -dict=fuzz/pdf.dict
 #   cargo +nightly fuzz run content -- -max_total_time=120 -dict=fuzz/pdf.dict
+#   cargo +nightly fuzz run verify_chain fuzz/seeds/verify_chain -- -max_total_time=300 -dict=fuzz/json.dict
 [package]
 name = "casual-sign-pdf-fuzz"
 version = "0.0.0"
@@ -18,6 +19,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4.13"
 casual-sign-pdf = { path = "../crates/casual-sign-pdf" }
 casual-sign-verify = { path = "../crates/casual-sign-verify" }
+casual-sign-audit = { path = "../crates/casual-sign-audit" }
 
 [[bin]]
 name = "admit"
@@ -36,6 +38,13 @@ bench = false
 [[bin]]
 name = "verify"
 path = "fuzz_targets/verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify_chain"
+path = "fuzz_targets/verify_chain.rs"
 test = false
 doc = false
 bench = false
