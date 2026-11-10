@@ -5,6 +5,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::crypt::EncryptionInfo;
 use crate::error::PdfError;
 use crate::xref::XrefKind;
 
@@ -52,6 +53,9 @@ pub enum FindingKind {
     UsageRights,
     /// Optional content (`CS-PDF-0108`).
     OptionalContent,
+    /// The document was encrypted and has been decrypted with a password; its
+    /// normalized form is not encrypted (`CS-PDF-0109`).
+    Encrypted,
 }
 
 /// The kind of an action found (ISO 32000-2 §12.6.4).
@@ -331,6 +335,9 @@ pub struct AdmissionReport {
     pub has_xfa: bool,
     /// The catalog has `/OCProperties`.
     pub has_optional_content: bool,
+    /// How the document was encrypted and which password opened it; `None` when it
+    /// is not encrypted.
+    pub encryption: Option<EncryptionInfo>,
     /// Total bytes decoded during admission (charged to the document budget).
     pub decoded_bytes: u64,
     /// Findings, in discovery order.

@@ -33,7 +33,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::classify::{action_kind, is_file_ef};
-use crate::document::Document;
+use crate::document::{Document, strip_crypt_filter};
 use crate::error::PdfError;
 use crate::object::{Dictionary, ObjRef, Object};
 use crate::report::{ActionKind, FindingKind, MAX_FINDINGS, PdfVersion};
@@ -486,6 +486,20 @@ impl<'a> Norm<'_, 'a> {
     fn clean_top(&mut self, old: u32, obj: Object) -> Result<Body<'a>, WriteError> {
         match obj {
             Object::Stream(s) => {
+                // Decrypted when the input is encrypted (the output is not); otherwise
+                // the bytes as stored. External data is never read.
+                let stored = if s.dict.contains(b"F") {
+                    None
+                } else {
+                    match self.doc.stored_stream(old, &s, self.cancel) {
+                        Ok(v) => Some(v),
+                        Err(e) if e.is_document_wide() => return Err(e.into()),
+                        Err(_) => {
+                            self.record("CS-PDF-0102", FindingKind::ObjectUnreadable, Some(old));
+                            Some(Cow::Borrowed(&[][..]))
+                        }
+                    }
+                };
                 let mut dict = self.clean_dict(old, s.dict, false)?;
                 dict.remove(b"Length");
                 let data: Cow<'a, [u8]> = if dict.contains(b"F") {
@@ -503,8 +517,9 @@ impl<'a> Norm<'_, 'a> {
                     self.record("CS-PDF-0105", FindingKind::ExternalStream, Some(old));
                     Cow::Borrowed(&[])
                 } else {
-                    let bytes: &'a [u8] = self.doc.bytes();
-                    Cow::Borrowed(bytes.get(s.data).unwrap_or_default())
+                    // The data is decrypted: a /Crypt filter no longer applies.
+                    strip_crypt_filter(&mut dict);
+                    stored.unwrap_or_default()
                 };
                 Ok(Body::Stream { dict, data })
             }
@@ -981,6 +996,7 @@ pub fn normalize(
         .version
         .unwrap_or(PdfVersion { major: 1, minor: 4 });
     let doc = &mut admitted.document;
+    let encrypted = doc.encryption().is_some();
     let trailer = doc.trailer().clone();
     // 0 stands for a direct dictionary in the trailer.
     let mut protected = BTreeSet::from([0]);
@@ -1021,6 +1037,15 @@ pub fn normalize(
         .trailer_ref(trailer.get(b"Root").cloned())?
         .ok_or(WriteError::Read(PdfError::NotPdf { offset: None }))?;
     let info = n.trailer_ref(trailer.get(b"Info").cloned())?;
+    if encrypted {
+        // The output is written in clear (docs/30 §2): the trailer's /Encrypt and its
+        // dictionary are not carried.
+        let object = trailer
+            .get(b"Encrypt")
+            .and_then(Object::as_ref)
+            .map(|r| r.num);
+        n.record("CS-PDF-0109", FindingKind::Encrypted, object);
+    }
     let mut kids: Vec<u32> = Vec::new();
     for &page in &recovered {
         if let Slot::Keep(new) = n.target(page)? {

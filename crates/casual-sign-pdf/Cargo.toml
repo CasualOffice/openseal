@@ -9,8 +9,15 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+aes = { version = "0.9.2", default-features = false }
+cbc = { version = "0.2.1", default-features = false }
+md-5 = { version = "0.11.0", default-features = false }
 # Streaming inflate, so a Flate bomb stops at the cap (docs/21, SEC-P01). MIT/Zlib/Apache-2.0.
 miniz_oxide = "0.8.9"
+rc4 = { version = "0.2.0", default-features = false }
+sha2 = { version = "0.11.1", default-features = false }
+stringprep = { version = "0.1.5", default-features = false }
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 # Test oracle only (ADR-005): page counts and MediaBox must agree on valid fixtures.

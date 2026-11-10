@@ -111,6 +111,19 @@ impl<'s, 'x> Sink<'s, 'x> {
     }
 }
 
+/// Charge `n` bytes produced outside a filter (decryption) to the document budget.
+pub(crate) fn charge(budget: &mut Budget, limits: &Limits, object: u32, n: u64) -> Result<()> {
+    let used = budget.used.saturating_add(n);
+    if used > limits.max_total_decoded_bytes {
+        return Err(PdfError::DecodeBudget {
+            object,
+            limit: limits.max_total_decoded_bytes,
+        });
+    }
+    budget.used = used;
+    Ok(())
+}
+
 /// Canonical filter names, with the inline-image abbreviations.
 fn canonical(name: &[u8]) -> &[u8] {
     match name {

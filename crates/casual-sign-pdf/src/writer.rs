@@ -50,6 +50,10 @@ pub enum WriteError {
     /// The document is signed: normalizing would break its signatures
     /// (`CS-PDF-0014`). "Print to a new PDF" is not built yet.
     Signed,
+    /// The document is encrypted: an update would have to be encrypted with its key,
+    /// and OpenSeal never encrypts what it writes (ADR-006). Normalize it first, which
+    /// writes it unencrypted (`CS-WRT-0006`, proposed).
+    Encrypted,
     /// Reading an object of the input failed (that error's `CS-PDF-*` code).
     Read(PdfError),
 }
@@ -65,6 +69,7 @@ impl WriteError {
             Self::ChangeForbidden { .. } => "CS-WRT-0004",
             Self::InvalidObject { .. } => "CS-WRT-0005",
             Self::Signed => "CS-PDF-0014",
+            Self::Encrypted => "CS-WRT-0006",
             Self::Read(e) => e.code(),
         }
     }
@@ -89,6 +94,10 @@ impl fmt::Display for WriteError {
                 write!(f, "{code}: object {object} is not in the file")
             }
             Self::Signed => write!(f, "{code}: signed document cannot be rewritten"),
+            Self::Encrypted => write!(
+                f,
+                "{code}: encrypted document; normalize it before appending"
+            ),
             Self::Read(e) => write!(f, "{e}"),
         }
     }
@@ -242,6 +251,9 @@ impl<'d> IncrementalUpdate<'d> {
     /// `CS-WRT-0002` when no object number is left.
     pub fn new(admitted: &'d Admitted<'d>, change: Change) -> Result<Self, WriteError> {
         let doc = &admitted.document;
+        if doc.encryption().is_some() {
+            return Err(WriteError::Encrypted);
+        }
         check_appendable(&admitted.report, doc, change)?;
         let last = doc.revisions().last().ok_or(WriteError::NotSound)?;
         let prev = last.xref_offset.ok_or(WriteError::NotSound)?;

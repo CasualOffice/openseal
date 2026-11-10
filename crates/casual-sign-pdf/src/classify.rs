@@ -724,6 +724,15 @@ pub(crate) fn classify(
             ));
         }
     }
+    if doc.encryption().is_some() {
+        let object = doc
+            .trailer()
+            .get(b"Encrypt")
+            .and_then(Object::as_ref)
+            .map(|r| r.num);
+        doc.findings
+            .push(Finding::new("CS-PDF-0109", FindingKind::Encrypted, object));
+    }
     if has_optional_content {
         doc.findings.push(Finding::new(
             "CS-PDF-0108",
@@ -755,6 +764,7 @@ pub(crate) fn classify(
         external_streams: inv.external_streams.into_iter().collect(),
         has_xfa,
         has_optional_content,
+        encryption: doc.encryption(),
         decoded_bytes: doc.decoded_bytes(),
         findings: doc.findings.list.clone(),
         findings_dropped: doc.findings.dropped,
