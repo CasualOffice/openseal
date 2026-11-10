@@ -1,0 +1,173 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, template_id, template_document_id, role_id, type AS kind, page, x, y,\n                      width, height, required, label, spec\n                 FROM template_fields WHERE account_id = $1 AND template_id = $2\n                ORDER BY template_document_id, page, y, x, id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "template_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "template_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "template_document_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "template_document_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "role_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "role_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "page",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "page"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "x",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "x"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "y",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "y"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "width",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "height",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "required",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "required"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "label"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "spec",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "template_fields",
+            "name": "spec"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "416d3d8016d59f8a63b4c24e57773d7e99c2c3c18a5f9d196582e67cf2cc30bd"
+}

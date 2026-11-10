@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO api_clients (id, account_id, kind, name, owner_user_id, key_prefix, secret_sha256, scopes, expires_at) VALUES ($2, $1, $3, $4, $5, $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Bytea",
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36d1a54fb67e3577b9373b77f446328b6e09121f8300f64a4a0168b165b393cf"
+}

@@ -475,26 +475,28 @@ async fn row_level_security_alone_isolates_every_tenant_table() {
             }
             _ => format!("SELECT count(*) FROM {t} WHERE account_id = $1"),
         };
-        let truth: i64 = sqlx::query_scalar(&truth_sql)
+        let truth: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(truth_sql))
             .bind(b.account.0)
             .fetch_one(&db.admin)
             .await
             .unwrap();
         let mut conn = db.app.begin().await.unwrap();
-        let unset: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {t}"))
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
+        let unset: i64 =
+            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM {t}")))
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
         assert_eq!(unset, 0, "{t}: rows visible with no account set");
         sqlx::query("SELECT set_config('openseal.account_id', $1, true)")
             .bind(b.account.0.to_string())
             .execute(&mut *conn)
             .await
             .unwrap();
-        let seen: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {t}"))
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
+        let seen: i64 =
+            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM {t}")))
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
         assert_eq!(
             seen, truth,
             "{t}: RLS shows {seen} rows, account B has {truth}"

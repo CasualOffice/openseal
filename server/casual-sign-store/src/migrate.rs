@@ -5,11 +5,11 @@
 //! changed is refused (`CS-DB-0002`), as is a database carrying a migration this build
 //! does not know (`CS-DB-0011`). A session advisory lock serializes concurrent migrators.
 //!
-//! sqlx's own migrator needs its `migrate` macro feature; this runner is forty lines and
-//! keeps the macro crates out of the build (docs/22 §As built).
+//! This runner, rather than sqlx's `migrate` feature, records each file's SHA-256 and
+//! refuses an edited or unknown migration (docs/22 §As built).
 
 use casual_sign_audit::Hash256;
-use sqlx::{Connection, PgPool, Row};
+use sqlx::{Connection, PgPool};
 
 use crate::error::{Result, StoreError, db};
 
@@ -45,6 +45,13 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(7, "0007_jobs_and_entry_points.sql"),
 ];
 
+/// The migration ledger. Also the first statement of migration 0001.
+const LEDGER: &str = "CREATE TABLE IF NOT EXISTS openseal_schema_migrations (
+    version     bigint PRIMARY KEY,
+    name        text NOT NULL,
+    sha256      bytea NOT NULL,
+    applied_at  timestamptz NOT NULL DEFAULT now())";
+
 /// `pg_advisory_lock` key: "OSEALMIG" read as an integer.
 const LOCK_KEY: i64 = 0x4F53_4541_4C4D_4947;
 
@@ -66,15 +73,13 @@ pub struct MigrationReport {
 /// database is ahead of this build; `CS-DB-0001` the database is unreachable.
 pub async fn migrate(pool: &PgPool) -> Result<MigrationReport> {
     let mut conn = pool.acquire().await.map_err(db)?;
-    sqlx::query("SELECT pg_advisory_lock($1)")
-        .bind(LOCK_KEY)
+    sqlx::query!("SELECT pg_advisory_lock($1)", LOCK_KEY)
         .execute(&mut *conn)
         .await
         .map_err(db)?;
     let outcome = run(&mut conn).await;
-    let unlocked = sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(LOCK_KEY)
-        .execute(&mut *conn)
+    let unlocked = sqlx::query!("SELECT pg_advisory_unlock($1)", LOCK_KEY)
+        .fetch_one(&mut *conn)
         .await
         .map_err(db);
     let report = outcome?;
@@ -83,27 +88,21 @@ pub async fn migrate(pool: &PgPool) -> Result<MigrationReport> {
 }
 
 async fn run(conn: &mut sqlx::PgConnection) -> Result<MigrationReport> {
-    sqlx::raw_sql(
-        "CREATE TABLE IF NOT EXISTS openseal_schema_migrations (
-            version     bigint PRIMARY KEY,
-            name        text NOT NULL,
-            sha256      bytea NOT NULL,
-            applied_at  timestamptz NOT NULL DEFAULT now())",
-    )
-    .execute(&mut *conn)
-    .await
-    .map_err(db)?;
-    let rows =
-        sqlx::query("SELECT version, sha256 FROM openseal_schema_migrations ORDER BY version")
+    // DDL is not a checkable query; the same statement opens migration 0001, so the
+    // ledger exists in every migrated database (and in the one the offline cache is
+    // prepared against).
+    sqlx::raw_sql(LEDGER)
+        .execute(&mut *conn)
+        .await
+        .map_err(db)?;
+    let applied: Vec<(i64, Vec<u8>)> =
+        sqlx::query!("SELECT version, sha256 FROM openseal_schema_migrations ORDER BY version")
             .fetch_all(&mut *conn)
             .await
-            .map_err(db)?;
-    let mut applied = Vec::with_capacity(rows.len());
-    for row in rows {
-        let version: i64 = row.try_get("version").map_err(db)?;
-        let sha: Vec<u8> = row.try_get("sha256").map_err(db)?;
-        applied.push((version, sha));
-    }
+            .map_err(db)?
+            .into_iter()
+            .map(|r| (r.version, r.sha256))
+            .collect();
     let mut report = MigrationReport::default();
     for (version, sha) in &applied {
         let Some(m) = MIGRATIONS.iter().find(|m| m.version == *version) else {
@@ -124,12 +123,13 @@ async fn run(conn: &mut sqlx::PgConnection) -> Result<MigrationReport> {
             .execute(&mut *tx)
             .await
             .map_err(failed)?;
-        sqlx::query(
+        let sha = Hash256::digest(m.sql.as_bytes());
+        sqlx::query!(
             "INSERT INTO openseal_schema_migrations (version, name, sha256) VALUES ($1, $2, $3)",
+            m.version,
+            m.name,
+            sha.as_bytes().as_slice(),
         )
-        .bind(m.version)
-        .bind(m.name)
-        .bind(Hash256::digest(m.sql.as_bytes()).as_bytes().as_slice())
         .execute(&mut *tx)
         .await
         .map_err(failed)?;

@@ -125,7 +125,7 @@ async fn secrets_resolve_to_their_own_account_and_dead_ones_to_nothing() {
     // Signing links (no repository yet; written by the owner here).
     let link = id();
     db.admin
-        .execute(
+        .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(
             format!(
                 "INSERT INTO signing_links (id, account_id, template_id, owner_user_id, token_sha256, role_id, max_uses, use_count) \
                  VALUES ('{link}', '{}', '{}', '{}', '\\x{}', '{}', 1, 0)",
@@ -134,8 +134,7 @@ async fn secrets_resolve_to_their_own_account_and_dead_ones_to_nothing() {
                 a.user,
                 casual_sign_audit::Hash256(world::hash("link")).hex(),
                 a.role
-            )
-            .as_str(),
+            )))
         )
         .await
         .unwrap();
@@ -145,7 +144,9 @@ async fn secrets_resolve_to_their_own_account_and_dead_ones_to_nothing() {
         .unwrap();
     assert_eq!(got, Some((a.account, SigningLinkId(link))));
     db.admin
-        .execute(format!("UPDATE signing_links SET use_count = 1 WHERE id = '{link}'").as_str())
+        .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "UPDATE signing_links SET use_count = 1 WHERE id = '{link}'"
+        ))))
         .await
         .unwrap();
     assert!(

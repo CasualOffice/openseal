@@ -5,6 +5,15 @@
 -- or through a LOGIN role granted membership). It owns nothing, so row-level security
 -- applies to it; the migrator role owns every table.
 
+-- The migration ledger, as `casual_sign_store::migrate` creates it before running this
+-- file. Declared here too so that a database migrated by any runner (the offline query
+-- cache is prepared against one migrated by `sqlx migrate run`) has the same schema.
+CREATE TABLE IF NOT EXISTS openseal_schema_migrations (
+    version     bigint PRIMARY KEY,
+    name        text NOT NULL,
+    sha256      bytea NOT NULL,
+    applied_at  timestamptz NOT NULL DEFAULT now());
+
 DO $$
 BEGIN
     CREATE ROLE openseal_app NOLOGIN;

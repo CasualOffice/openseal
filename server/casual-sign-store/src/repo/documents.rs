@@ -1,10 +1,10 @@
 //! Documents and their immutable versions (docs/22 §4). A version's bytes live in the blob
 //! store under their SHA-256; the row is the reference.
 
-use sqlx::postgres::PgRow;
 use time::OffsetDateTime;
+use uuid::Uuid;
 
-use super::{col, hash_col, text_enum};
+use super::{affected, hash32, text_enum};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{DocumentId, DocumentVersionId, EnvelopeId};
 use crate::store::TenantTx;
@@ -72,34 +72,37 @@ pub struct Documents<'t> {
     pub(crate) tx: &'t mut TenantTx,
 }
 
-fn document(r: &PgRow) -> Result<Document> {
-    Ok(Document {
-        id: DocumentId(col(r, "id")?),
-        envelope_id: EnvelopeId(col(r, "envelope_id")?),
-        ord: col(r, "ord")?,
-        name: col(r, "name")?,
-    })
+/// A version row as selected.
+struct VersionRow {
+    id: Uuid,
+    document_id: Uuid,
+    kind: String,
+    sha256: Vec<u8>,
+    byte_len: i64,
+    page_count: i32,
+    admission_report: Option<serde_json::Value>,
+    pages: serde_json::Value,
+    created_at: OffsetDateTime,
 }
 
-fn version(r: &PgRow) -> Result<Version> {
-    let kind: String = col(r, "kind")?;
-    Ok(Version {
-        version: NewVersion {
-            id: DocumentVersionId(col(r, "id")?),
-            document_id: DocumentId(col(r, "document_id")?),
-            kind: VersionKind::parse(&kind, "kind")?,
-            sha256: hash_col(r, "sha256")?,
-            byte_len: col(r, "byte_len")?,
-            page_count: col(r, "page_count")?,
-            admission_report: col(r, "admission_report")?,
-            pages: col(r, "pages")?,
-        },
-        created_at: col(r, "created_at")?,
-    })
+impl TryFrom<VersionRow> for Version {
+    type Error = StoreError;
+    fn try_from(r: VersionRow) -> Result<Self> {
+        Ok(Self {
+            version: NewVersion {
+                id: DocumentVersionId(r.id),
+                document_id: DocumentId(r.document_id),
+                kind: VersionKind::parse(&r.kind, "kind")?,
+                sha256: hash32(r.sha256, "sha256")?,
+                byte_len: r.byte_len,
+                page_count: r.page_count,
+                admission_report: r.admission_report,
+                pages: r.pages,
+            },
+            created_at: r.created_at,
+        })
+    }
 }
-
-const VERSION_SELECT: &str = "SELECT id, document_id, kind, sha256, byte_len, page_count, \
-     admission_report, pages, created_at FROM document_versions WHERE account_id = $1";
 
 impl Documents<'_> {
     /// Add a document to an envelope of this account.
@@ -110,14 +113,14 @@ impl Documents<'_> {
     /// position.
     pub async fn insert(&mut self, d: &Document) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO documents (id, account_id, envelope_id, ord, name) VALUES ($2, $1, $3, $4, $5)",
+            acct,
+            d.id.0,
+            d.envelope_id.0,
+            d.ord,
+            d.name
         )
-        .bind(acct)
-        .bind(d.id.0)
-        .bind(d.envelope_id.0)
-        .bind(d.ord)
-        .bind(&d.name)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -128,37 +131,50 @@ impl Documents<'_> {
     ///
     /// # Errors
     ///
-    /// `CS-DB-0010` for an unreadable row.
+    /// `CS-DB-0001`.
     pub async fn get(&mut self, id: DocumentId) -> Result<Option<Document>> {
         let acct = self.tx.acct();
-        let row = sqlx::query(
+        let row = sqlx::query!(
             "SELECT id, envelope_id, ord, name FROM documents WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
         )
-        .bind(acct)
-        .bind(id.0)
         .fetch_optional(self.tx.conn())
         .await
         .map_err(db)?;
-        row.as_ref().map(document).transpose()
+        Ok(row.map(|r| Document {
+            id: DocumentId(r.id),
+            envelope_id: EnvelopeId(r.envelope_id),
+            ord: r.ord,
+            name: r.name,
+        }))
     }
 
     /// An envelope's documents, in order.
     ///
     /// # Errors
     ///
-    /// `CS-DB-0010` for an unreadable row.
+    /// `CS-DB-0001`.
     pub async fn list(&mut self, envelope: EnvelopeId) -> Result<Vec<Document>> {
         let acct = self.tx.acct();
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             "SELECT id, envelope_id, ord, name FROM documents \
              WHERE account_id = $1 AND envelope_id = $2 ORDER BY ord",
+            acct,
+            envelope.0
         )
-        .bind(acct)
-        .bind(envelope.0)
         .fetch_all(self.tx.conn())
         .await
         .map_err(db)?;
-        rows.iter().map(document).collect()
+        Ok(rows
+            .into_iter()
+            .map(|r| Document {
+                id: DocumentId(r.id),
+                envelope_id: EnvelopeId(r.envelope_id),
+                ord: r.ord,
+                name: r.name,
+            })
+            .collect())
     }
 
     /// Remove a document from an envelope that is still a draft.
@@ -169,20 +185,17 @@ impl Documents<'_> {
     /// `CS-DB-0008` while versions or fields still reference it.
     pub async fn delete_from_draft(&mut self, id: DocumentId) -> Result<()> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "DELETE FROM documents d USING envelopes e \
              WHERE d.account_id = $1 AND d.id = $2 AND e.account_id = $1 \
                AND e.id = d.envelope_id AND e.status = 'draft'",
+            acct,
+            id.0
         )
-        .bind(acct)
-        .bind(id.0)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound { entity: "document" });
-        }
-        Ok(())
+        affected(done.rows_affected(), "document")
     }
 
     /// Record a new version of a document of this account. Versions are never changed.
@@ -192,19 +205,19 @@ impl Documents<'_> {
     /// `CS-DB-0008` when the document is not this account's.
     pub async fn add_version(&mut self, v: &NewVersion) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO document_versions (id, account_id, document_id, kind, sha256, byte_len, \
              page_count, admission_report, pages) VALUES ($2, $1, $3, $4, $5, $6, $7, $8, $9)",
+            acct,
+            v.id.0,
+            v.document_id.0,
+            v.kind.as_str(),
+            v.sha256.as_slice(),
+            v.byte_len,
+            v.page_count,
+            v.admission_report.as_ref(),
+            &v.pages
         )
-        .bind(acct)
-        .bind(v.id.0)
-        .bind(v.document_id.0)
-        .bind(v.kind.as_str())
-        .bind(v.sha256.as_slice())
-        .bind(v.byte_len)
-        .bind(v.page_count)
-        .bind(&v.admission_report)
-        .bind(&v.pages)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -218,14 +231,17 @@ impl Documents<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn version(&mut self, id: DocumentVersionId) -> Result<Option<Version>> {
         let acct = self.tx.acct();
-        let sql = format!("{VERSION_SELECT} AND id = $2");
-        let row = sqlx::query(&sql)
-            .bind(acct)
-            .bind(id.0)
-            .fetch_optional(self.tx.conn())
-            .await
-            .map_err(db)?;
-        row.as_ref().map(version).transpose()
+        let row = sqlx::query_as!(
+            VersionRow,
+            "SELECT id, document_id, kind, sha256, byte_len, page_count, admission_report, pages, \
+             created_at FROM document_versions WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        row.map(Version::try_from).transpose()
     }
 
     /// A document's versions, oldest first.
@@ -235,13 +251,17 @@ impl Documents<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn versions(&mut self, document: DocumentId) -> Result<Vec<Version>> {
         let acct = self.tx.acct();
-        let sql = format!("{VERSION_SELECT} AND document_id = $2 ORDER BY created_at, id");
-        let rows = sqlx::query(&sql)
-            .bind(acct)
-            .bind(document.0)
-            .fetch_all(self.tx.conn())
-            .await
-            .map_err(db)?;
-        rows.iter().map(version).collect()
+        let rows = sqlx::query_as!(
+            VersionRow,
+            "SELECT id, document_id, kind, sha256, byte_len, page_count, admission_report, pages, \
+             created_at FROM document_versions WHERE account_id = $1 AND document_id = $2 \
+             ORDER BY created_at, id",
+            acct,
+            document.0
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter().map(Version::try_from).collect()
     }
 }

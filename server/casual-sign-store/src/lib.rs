@@ -16,9 +16,10 @@
 //! `TRUNCATE` for every role; and an insert trigger recomputes each event's SHA-256 from
 //! its canonical bytes and refuses one that does not extend its envelope's chain.
 //!
-//! **Queries.** Runtime-checked `sqlx::query` with bound parameters only; never string
-//! interpolation of a value. Compile-time `query!` would need a live database or a
-//! committed offline cache at build time (docs/22 §As built).
+//! **Queries.** Compile-time checked `sqlx::query!` / `query_as!` with bound parameters
+//! only (ADR-014). The offline cache in `.sqlx/` lets `SQLX_OFFLINE=true` builds check
+//! every statement without a database; `sqlx-prepare.sh --check` proves the cache still
+//! matches the migrations. Only the migration files themselves run as unchecked DDL.
 //!
 //! **Errors** are [`StoreError`] with `CS-DB-*` and `CS-BLOB-*` codes (docs/20); no
 //! message carries a database error's text, which can quote personal data.

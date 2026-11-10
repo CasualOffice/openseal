@@ -3,11 +3,11 @@
 
 use casual_sign_audit::Personal;
 use casual_sign_model::FieldType;
-use sqlx::postgres::PgRow;
+use uuid::Uuid;
 
 use super::fields::{Rect, field_type_parse, field_type_text};
+use super::hash32;
 use super::recipients::RecipientType;
-use super::{col, hash_col};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{TemplateDocumentId, TemplateFieldId, TemplateId, TemplateRoleId, UserId};
 use crate::store::TenantTx;
@@ -100,21 +100,32 @@ pub struct Templates<'t> {
     pub(crate) tx: &'t mut TenantTx,
 }
 
-fn template(r: &PgRow) -> Result<Template> {
-    Ok(Template {
-        id: TemplateId(col(r, "id")?),
-        owner_user_id: UserId(col(r, "owner_user_id")?),
-        name: col(r, "name")?,
-        email_subject: col::<Option<String>>(r, "email_subject")?.map(Personal),
-        email_message: col::<Option<String>>(r, "email_message")?.map(Personal),
-        settings: col(r, "settings")?,
-        matching_rules: col(r, "matching_rules")?,
-        version: col(r, "version")?,
-    })
+/// A template row as selected.
+struct TemplateRow {
+    id: Uuid,
+    owner_user_id: Uuid,
+    name: String,
+    email_subject: Option<String>,
+    email_message: Option<String>,
+    settings: serde_json::Value,
+    matching_rules: serde_json::Value,
+    version: i32,
 }
 
-const SELECT: &str = "SELECT id, owner_user_id, name, email_subject, email_message, settings, \
-     matching_rules, version FROM templates WHERE account_id = $1";
+impl From<TemplateRow> for Template {
+    fn from(r: TemplateRow) -> Self {
+        Self {
+            id: TemplateId(r.id),
+            owner_user_id: UserId(r.owner_user_id),
+            name: r.name,
+            email_subject: r.email_subject.map(Personal),
+            email_message: r.email_message.map(Personal),
+            settings: r.settings,
+            matching_rules: r.matching_rules,
+            version: r.version,
+        }
+    }
+}
 
 impl Templates<'_> {
     /// Create a template.
@@ -124,19 +135,19 @@ impl Templates<'_> {
     /// `CS-DB-0008` an owner who is not a member of this account.
     pub async fn insert(&mut self, t: &Template) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO templates (id, account_id, owner_user_id, name, email_subject, email_message, \
              settings, matching_rules, version) VALUES ($2, $1, $3, $4, $5, $6, $7, $8, $9)",
+            acct,
+            t.id.0,
+            t.owner_user_id.0,
+            t.name,
+            t.email_subject.as_ref().map(|s| s.get().as_str()),
+            t.email_message.as_ref().map(|s| s.get().as_str()),
+            &t.settings,
+            &t.matching_rules,
+            t.version
         )
-        .bind(acct)
-        .bind(t.id.0)
-        .bind(t.owner_user_id.0)
-        .bind(&t.name)
-        .bind(t.email_subject.as_ref().map(|s| s.get().as_str()))
-        .bind(t.email_message.as_ref().map(|s| s.get().as_str()))
-        .bind(&t.settings)
-        .bind(&t.matching_rules)
-        .bind(t.version)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -147,33 +158,39 @@ impl Templates<'_> {
     ///
     /// # Errors
     ///
-    /// `CS-DB-0010` for an unreadable row.
+    /// `CS-DB-0001`.
     pub async fn get(&mut self, id: TemplateId) -> Result<Option<Template>> {
         let acct = self.tx.acct();
-        let sql = format!("{SELECT} AND id = $2");
-        let row = sqlx::query(&sql)
-            .bind(acct)
-            .bind(id.0)
-            .fetch_optional(self.tx.conn())
-            .await
-            .map_err(db)?;
-        row.as_ref().map(template).transpose()
+        let row = sqlx::query_as!(
+            TemplateRow,
+            "SELECT id, owner_user_id, name, email_subject, email_message, settings, matching_rules, \
+             version FROM templates WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(Template::from))
     }
 
     /// This account's templates by name.
     ///
     /// # Errors
     ///
-    /// `CS-DB-0010` for an unreadable row.
+    /// `CS-DB-0001`.
     pub async fn list(&mut self) -> Result<Vec<Template>> {
         let acct = self.tx.acct();
-        let sql = format!("{SELECT} ORDER BY name, id");
-        let rows = sqlx::query(&sql)
-            .bind(acct)
-            .fetch_all(self.tx.conn())
-            .await
-            .map_err(db)?;
-        rows.iter().map(template).collect()
+        let rows = sqlx::query_as!(
+            TemplateRow,
+            "SELECT id, owner_user_id, name, email_subject, email_message, settings, matching_rules, \
+             version FROM templates WHERE account_id = $1 ORDER BY name, id",
+            acct
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(Template::from).collect())
     }
 
     /// Rename a template at `version`; returns the new version.
@@ -183,19 +200,19 @@ impl Templates<'_> {
     /// `CS-DB-0007` stale version; `CS-DB-0003` no such template.
     pub async fn rename(&mut self, id: TemplateId, version: i32, name: &str) -> Result<i32> {
         let acct = self.tx.acct();
-        let row = sqlx::query(
+        let new = sqlx::query_scalar!(
             "UPDATE templates SET name = $4, version = version + 1, updated_at = now() \
              WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
+            acct,
+            id.0,
+            version,
+            name
         )
-        .bind(acct)
-        .bind(id.0)
-        .bind(version)
-        .bind(name)
         .fetch_optional(self.tx.conn())
         .await
         .map_err(db)?;
-        if let Some(r) = row {
-            return col(&r, "version");
+        if let Some(v) = new {
+            return Ok(v);
         }
         if self.get(id).await?.is_some() {
             Err(StoreError::StaleVersion { entity: "template" })
@@ -211,17 +228,17 @@ impl Templates<'_> {
     /// `CS-DB-0008` when the template is not this account's.
     pub async fn add_role(&mut self, r: &TemplateRole) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO template_roles (id, account_id, template_id, name, routing_order, \
              recipient_type, default_auth) VALUES ($2, $1, $3, $4, $5, $6, $7)",
+            acct,
+            r.id.0,
+            r.template_id.0,
+            r.name,
+            r.routing_order,
+            r.kind.as_str(),
+            &r.default_auth
         )
-        .bind(acct)
-        .bind(r.id.0)
-        .bind(r.template_id.0)
-        .bind(&r.name)
-        .bind(r.routing_order)
-        .bind(r.kind.as_str())
-        .bind(&r.default_auth)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -235,25 +252,24 @@ impl Templates<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn roles(&mut self, template: TemplateId) -> Result<Vec<TemplateRole>> {
         let acct = self.tx.acct();
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             "SELECT id, template_id, name, routing_order, recipient_type, default_auth \
              FROM template_roles WHERE account_id = $1 AND template_id = $2 ORDER BY routing_order, name",
+            acct,
+            template.0
         )
-        .bind(acct)
-        .bind(template.0)
         .fetch_all(self.tx.conn())
         .await
         .map_err(db)?;
-        rows.iter()
+        rows.into_iter()
             .map(|r| {
-                let kind: String = col(r, "recipient_type")?;
                 Ok(TemplateRole {
-                    id: TemplateRoleId(col(r, "id")?),
-                    template_id: TemplateId(col(r, "template_id")?),
-                    name: col(r, "name")?,
-                    routing_order: col(r, "routing_order")?,
-                    kind: RecipientType::parse(&kind, "recipient_type")?,
-                    default_auth: col(r, "default_auth")?,
+                    id: TemplateRoleId(r.id),
+                    template_id: TemplateId(r.template_id),
+                    name: r.name,
+                    routing_order: r.routing_order,
+                    kind: RecipientType::parse(&r.recipient_type, "recipient_type")?,
+                    default_auth: r.default_auth,
                 })
             })
             .collect()
@@ -266,19 +282,19 @@ impl Templates<'_> {
     /// `CS-DB-0008` when the template is not this account's.
     pub async fn add_document(&mut self, d: &TemplateDocument) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO template_documents (id, account_id, template_id, ord, name, sha256, byte_len, \
              page_count, pages) VALUES ($2, $1, $3, $4, $5, $6, $7, $8, $9)",
+            acct,
+            d.id.0,
+            d.template_id.0,
+            d.ord,
+            d.name,
+            d.sha256.as_slice(),
+            d.byte_len,
+            d.page_count,
+            &d.pages
         )
-        .bind(acct)
-        .bind(d.id.0)
-        .bind(d.template_id.0)
-        .bind(d.ord)
-        .bind(&d.name)
-        .bind(d.sha256.as_slice())
-        .bind(d.byte_len)
-        .bind(d.page_count)
-        .bind(&d.pages)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -292,26 +308,26 @@ impl Templates<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn documents(&mut self, template: TemplateId) -> Result<Vec<TemplateDocument>> {
         let acct = self.tx.acct();
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             "SELECT id, template_id, ord, name, sha256, byte_len, page_count, pages \
              FROM template_documents WHERE account_id = $1 AND template_id = $2 ORDER BY ord",
+            acct,
+            template.0
         )
-        .bind(acct)
-        .bind(template.0)
         .fetch_all(self.tx.conn())
         .await
         .map_err(db)?;
-        rows.iter()
+        rows.into_iter()
             .map(|r| {
                 Ok(TemplateDocument {
-                    id: TemplateDocumentId(col(r, "id")?),
-                    template_id: TemplateId(col(r, "template_id")?),
-                    ord: col(r, "ord")?,
-                    name: col(r, "name")?,
-                    sha256: hash_col(r, "sha256")?,
-                    byte_len: col(r, "byte_len")?,
-                    page_count: col(r, "page_count")?,
-                    pages: col(r, "pages")?,
+                    id: TemplateDocumentId(r.id),
+                    template_id: TemplateId(r.template_id),
+                    ord: r.ord,
+                    name: r.name,
+                    sha256: hash32(r.sha256, "sha256")?,
+                    byte_len: r.byte_len,
+                    page_count: r.page_count,
+                    pages: r.pages,
                 })
             })
             .collect()
@@ -324,25 +340,25 @@ impl Templates<'_> {
     /// `CS-DB-0008` when the template, document or role is not this account's.
     pub async fn add_field(&mut self, f: &TemplateField) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO template_fields (id, account_id, template_id, template_document_id, role_id, \
              type, page, x, y, width, height, required, label, spec) \
              VALUES ($2, $1, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+            acct,
+            f.id.0,
+            f.template_id.0,
+            f.template_document_id.0,
+            f.role_id.0,
+            field_type_text(f.kind)?,
+            f.rect.page,
+            f.rect.x,
+            f.rect.y,
+            f.rect.width,
+            f.rect.height,
+            f.required,
+            f.label.as_deref(),
+            f.spec.get()
         )
-        .bind(acct)
-        .bind(f.id.0)
-        .bind(f.template_id.0)
-        .bind(f.template_document_id.0)
-        .bind(f.role_id.0)
-        .bind(field_type_text(f.kind)?)
-        .bind(f.rect.page)
-        .bind(f.rect.x)
-        .bind(f.rect.y)
-        .bind(f.rect.width)
-        .bind(f.rect.height)
-        .bind(f.required)
-        .bind(&f.label)
-        .bind(f.spec.get())
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -356,34 +372,35 @@ impl Templates<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn fields(&mut self, template: TemplateId) -> Result<Vec<TemplateField>> {
         let acct = self.tx.acct();
-        let rows = sqlx::query(
-            "SELECT id, template_id, template_document_id, role_id, type, page, x, y, width, height, \
-             required, label, spec FROM template_fields WHERE account_id = $1 AND template_id = $2 \
-             ORDER BY template_document_id, page, y, x, id",
+        let rows = sqlx::query!(
+            r#"SELECT id, template_id, template_document_id, role_id, type AS kind, page, x, y,
+                      width, height, required, label, spec
+                 FROM template_fields WHERE account_id = $1 AND template_id = $2
+                ORDER BY template_document_id, page, y, x, id"#,
+            acct,
+            template.0
         )
-        .bind(acct)
-        .bind(template.0)
         .fetch_all(self.tx.conn())
         .await
         .map_err(db)?;
-        rows.iter()
+        rows.into_iter()
             .map(|r| {
                 Ok(TemplateField {
-                    id: TemplateFieldId(col(r, "id")?),
-                    template_id: TemplateId(col(r, "template_id")?),
-                    template_document_id: TemplateDocumentId(col(r, "template_document_id")?),
-                    role_id: TemplateRoleId(col(r, "role_id")?),
-                    kind: field_type_parse(col(r, "type")?)?,
+                    id: TemplateFieldId(r.id),
+                    template_id: TemplateId(r.template_id),
+                    template_document_id: TemplateDocumentId(r.template_document_id),
+                    role_id: TemplateRoleId(r.role_id),
+                    kind: field_type_parse(r.kind)?,
                     rect: Rect {
-                        page: col(r, "page")?,
-                        x: col(r, "x")?,
-                        y: col(r, "y")?,
-                        width: col(r, "width")?,
-                        height: col(r, "height")?,
+                        page: r.page,
+                        x: r.x,
+                        y: r.y,
+                        width: r.width,
+                        height: r.height,
                     },
-                    required: col(r, "required")?,
-                    label: col(r, "label")?,
-                    spec: Personal(col(r, "spec")?),
+                    required: r.required,
+                    label: r.label,
+                    spec: Personal(r.spec),
                 })
             })
             .collect()

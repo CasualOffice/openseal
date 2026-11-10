@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET name = $3 WHERE id = $2 AND EXISTS (SELECT 1 FROM account_memberships m WHERE m.account_id = $1 AND m.user_id = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5696af93ac47765ee82d5b5f7b9e7d967ec5557f955fd4601f91eb941beb6ec7"
+}

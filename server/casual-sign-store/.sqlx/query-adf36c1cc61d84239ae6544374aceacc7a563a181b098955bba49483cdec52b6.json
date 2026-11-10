@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO template_roles (id, account_id, template_id, name, routing_order, recipient_type, default_auth) VALUES ($2, $1, $3, $4, $5, $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "adf36c1cc61d84239ae6544374aceacc7a563a181b098955bba49483cdec52b6"
+}

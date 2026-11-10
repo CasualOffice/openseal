@@ -5,8 +5,8 @@
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use super::col;
-use crate::error::{Result, StoreError, db};
+use super::affected;
+use crate::error::{Result, db};
 use crate::ids::{EnvelopeId, JobId};
 use crate::store::TenantTx;
 
@@ -57,19 +57,19 @@ impl Jobs<'_> {
     /// `CS-DB-0008` an envelope of another account or a malformed kind.
     pub async fn enqueue(&mut self, j: &NewJob) -> Result<bool> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "INSERT INTO jobs (id, account_id, envelope_id, kind, idempotency_key, payload, run_at, \
              max_attempts) VALUES ($2, $1, $3, $4, $5, $6, $7, $8) \
              ON CONFLICT (account_id, idempotency_key) DO NOTHING",
+            acct,
+            j.id.0,
+            j.envelope_id.map(|e| e.0),
+            j.kind,
+            j.idempotency_key,
+            &j.payload,
+            j.run_at,
+            j.max_attempts
         )
-        .bind(acct)
-        .bind(j.id.0)
-        .bind(j.envelope_id.map(|e| e.0))
-        .bind(&j.kind)
-        .bind(&j.idempotency_key)
-        .bind(&j.payload)
-        .bind(j.run_at)
-        .bind(j.max_attempts)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -80,26 +80,19 @@ impl Jobs<'_> {
     ///
     /// # Errors
     ///
-    /// `CS-DB-0010` for an unreadable row.
+    /// `CS-DB-0001`.
     pub async fn get(&mut self, id: JobId) -> Result<Option<JobState>> {
         let acct = self.tx.acct();
-        let row = sqlx::query(
+        let row = sqlx::query_as!(
+            JobState,
             "SELECT status, attempts, run_at, last_error_code FROM jobs WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
         )
-        .bind(acct)
-        .bind(id.0)
         .fetch_optional(self.tx.conn())
         .await
         .map_err(db)?;
-        row.map(|r| {
-            Ok(JobState {
-                status: col(&r, "status")?,
-                attempts: col(&r, "attempts")?,
-                run_at: col(&r, "run_at")?,
-                last_error_code: col(&r, "last_error_code")?,
-            })
-        })
-        .transpose()
+        Ok(row)
     }
 
     /// Mark a claimed job done.
@@ -114,21 +107,18 @@ impl Jobs<'_> {
         now: OffsetDateTime,
     ) -> Result<()> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "UPDATE jobs SET status = 'done', finished_at = $4, lease_token = NULL, locked_until = NULL \
              WHERE account_id = $1 AND id = $2 AND lease_token = $3 AND status = 'running'",
+            acct,
+            id.0,
+            lease_token,
+            now
         )
-        .bind(acct)
-        .bind(id.0)
-        .bind(lease_token)
-        .bind(now)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound { entity: "job" });
-        }
-        Ok(())
+        affected(done.rows_affected(), "job")
     }
 
     /// Record a claimed job's failure: queued again for `retry_at`, or dead once its
@@ -145,22 +135,19 @@ impl Jobs<'_> {
         error_code: &str,
     ) -> Result<()> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "UPDATE jobs SET status = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'queued' END, \
                run_at = $4, last_error_code = $5, lease_token = NULL, locked_until = NULL \
              WHERE account_id = $1 AND id = $2 AND lease_token = $3 AND status = 'running'",
+            acct,
+            id.0,
+            lease_token,
+            retry_at,
+            error_code
         )
-        .bind(acct)
-        .bind(id.0)
-        .bind(lease_token)
-        .bind(retry_at)
-        .bind(error_code)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound { entity: "job" });
-        }
-        Ok(())
+        affected(done.rows_affected(), "job")
     }
 }

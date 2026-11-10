@@ -2,10 +2,9 @@
 //! (docs/22 §8).
 
 use casual_sign_audit::Personal;
-use sqlx::postgres::PgRow;
 use time::OffsetDateTime;
 
-use super::{col, text_enum};
+use super::{affected, text_enum};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{AccountId, PermissionProfileId, UserId};
 use crate::store::TenantTx;
@@ -39,20 +38,20 @@ impl Accounts<'_> {
     /// `CS-DB-0003` when the account does not exist.
     pub async fn get(&mut self) -> Result<Account> {
         let acct = self.tx.acct();
-        let row = sqlx::query(
+        let r = sqlx::query!(
             "SELECT id, name, settings, data_region, created_at FROM accounts WHERE id = $1",
+            acct
         )
-        .bind(acct)
         .fetch_optional(self.tx.conn())
         .await
         .map_err(db)?
         .ok_or(StoreError::NotFound { entity: "account" })?;
         Ok(Account {
-            id: AccountId(col(&row, "id")?),
-            name: col(&row, "name")?,
-            settings: col(&row, "settings")?,
-            data_region: col(&row, "data_region")?,
-            created_at: col(&row, "created_at")?,
+            id: AccountId(r.id),
+            name: r.name,
+            settings: r.settings,
+            data_region: r.data_region,
+            created_at: r.created_at,
         })
     }
 
@@ -63,16 +62,15 @@ impl Accounts<'_> {
     /// `CS-DB-0003` when the account does not exist; `CS-DB-0008` when not an object.
     pub async fn set_settings(&mut self, settings: &serde_json::Value) -> Result<()> {
         let acct = self.tx.acct();
-        let done = sqlx::query("UPDATE accounts SET settings = $2 WHERE id = $1")
-            .bind(acct)
-            .bind(settings)
-            .execute(self.tx.conn())
-            .await
-            .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound { entity: "account" });
-        }
-        Ok(())
+        let done = sqlx::query!(
+            "UPDATE accounts SET settings = $2 WHERE id = $1",
+            acct,
+            settings
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "account")
     }
 }
 
@@ -156,21 +154,19 @@ pub struct Users<'t> {
     pub(crate) tx: &'t mut TenantTx,
 }
 
-fn member(row: &PgRow) -> Result<Member> {
-    let kind: String = col(row, "login_kind")?;
-    Ok(Member {
-        user_id: UserId(col(row, "id")?),
-        email: Personal(col(row, "email")?),
-        name: Personal(col(row, "name")?),
-        login_kind: LoginKind::parse(&kind, "login_kind")?,
-        permission_profile_id: PermissionProfileId(col(row, "permission_profile_id")?),
-        disabled_at: col(row, "disabled_at")?,
-    })
+macro_rules! member {
+    ($r:expr) => {{
+        let r = $r;
+        Ok::<_, StoreError>(Member {
+            user_id: UserId(r.id),
+            email: Personal(r.email),
+            name: Personal(r.name),
+            login_kind: LoginKind::parse(&r.login_kind, "login_kind")?,
+            permission_profile_id: PermissionProfileId(r.permission_profile_id),
+            disabled_at: r.disabled_at,
+        })
+    }};
 }
-
-const MEMBER_SELECT: &str = "SELECT u.id, u.email, u.name, u.login_kind, u.disabled_at, \
-     m.permission_profile_id FROM account_memberships m JOIN users u ON u.id = m.user_id \
-     WHERE m.account_id = $1";
 
 impl Users<'_> {
     /// Create a permission profile.
@@ -180,15 +176,15 @@ impl Users<'_> {
     /// `CS-DB-0006` for a duplicate id or name.
     pub async fn create_profile(&mut self, profile: &PermissionProfile) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO permission_profiles (id, account_id, name, kind, permissions) \
              VALUES ($2, $1, $3, $4, $5)",
+            acct,
+            profile.id.0,
+            profile.name,
+            profile.kind.as_str(),
+            &profile.permissions
         )
-        .bind(acct)
-        .bind(profile.id.0)
-        .bind(&profile.name)
-        .bind(profile.kind.as_str())
-        .bind(&profile.permissions)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -202,22 +198,21 @@ impl Users<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn profile(&mut self, id: PermissionProfileId) -> Result<Option<PermissionProfile>> {
         let acct = self.tx.acct();
-        let row = sqlx::query(
+        let row = sqlx::query!(
             "SELECT id, name, kind, permissions FROM permission_profiles \
              WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
         )
-        .bind(acct)
-        .bind(id.0)
         .fetch_optional(self.tx.conn())
         .await
         .map_err(db)?;
         row.map(|r| {
-            let kind: String = col(&r, "kind")?;
             Ok(PermissionProfile {
-                id: PermissionProfileId(col(&r, "id")?),
-                name: col(&r, "name")?,
-                kind: ProfileKind::parse(&kind, "kind")?,
-                permissions: col(&r, "permissions")?,
+                id: PermissionProfileId(r.id),
+                name: r.name,
+                kind: ProfileKind::parse(&r.kind, "kind")?,
+                permissions: r.permissions,
             })
         })
         .transpose()
@@ -239,21 +234,32 @@ impl Users<'_> {
             Some((i, s)) => (Some(i.as_str()), Some(s.as_str())),
             None => (None, None),
         };
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO users (id, email, email_normalized, name, login_kind, idp_issuer, idp_subject) \
              VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            user.id.0,
+            user.email.get(),
+            user.email_normalized.get(),
+            user.name.get(),
+            user.login_kind.as_str(),
+            issuer,
+            subject
         )
-        .bind(user.id.0)
-        .bind(user.email.get())
-        .bind(user.email_normalized.get())
-        .bind(user.name.get())
-        .bind(user.login_kind.as_str())
-        .bind(issuer)
-        .bind(subject)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        self.add_member(user.id, profile).await
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "INSERT INTO account_memberships (account_id, user_id, permission_profile_id) \
+             VALUES ($1, $2, $3)",
+            acct,
+            user.id.0,
+            profile.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
     }
 
     /// Make an existing user, of another account, a member of this one. The caller must
@@ -271,33 +277,20 @@ impl Users<'_> {
         email_normalized: &Personal<String>,
         profile: PermissionProfileId,
     ) -> Result<()> {
-        let added: bool = sqlx::query_scalar("SELECT openseal_add_existing_member($1, $2, $3)")
-            .bind(user.0)
-            .bind(email_normalized.get())
-            .bind(profile.0)
-            .fetch_one(self.tx.conn())
-            .await
-            .map_err(db)?;
+        let added = sqlx::query_scalar!(
+            r#"SELECT openseal_add_existing_member($1, $2, $3) AS "added!""#,
+            user.0,
+            email_normalized.get(),
+            profile.0
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
         if added {
             Ok(())
         } else {
             Err(StoreError::NotFound { entity: "user" })
         }
-    }
-
-    async fn add_member(&mut self, user: UserId, profile: PermissionProfileId) -> Result<()> {
-        let acct = self.tx.acct();
-        sqlx::query(
-            "INSERT INTO account_memberships (account_id, user_id, permission_profile_id) \
-             VALUES ($1, $2, $3)",
-        )
-        .bind(acct)
-        .bind(user.0)
-        .bind(profile.0)
-        .execute(self.tx.conn())
-        .await
-        .map_err(db)?;
-        Ok(())
     }
 
     /// A member of this account.
@@ -307,14 +300,17 @@ impl Users<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn get(&mut self, user: UserId) -> Result<Option<Member>> {
         let acct = self.tx.acct();
-        let sql = format!("{MEMBER_SELECT} AND m.user_id = $2");
-        let row = sqlx::query(&sql)
-            .bind(acct)
-            .bind(user.0)
-            .fetch_optional(self.tx.conn())
-            .await
-            .map_err(db)?;
-        row.as_ref().map(member).transpose()
+        let row = sqlx::query!(
+            "SELECT u.id, u.email, u.name, u.login_kind, u.disabled_at, m.permission_profile_id \
+             FROM account_memberships m JOIN users u ON u.id = m.user_id \
+             WHERE m.account_id = $1 AND m.user_id = $2",
+            acct,
+            user.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        row.map(|r| member!(r)).transpose()
     }
 
     /// Every member of this account, by name.
@@ -324,13 +320,16 @@ impl Users<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn list(&mut self) -> Result<Vec<Member>> {
         let acct = self.tx.acct();
-        let sql = format!("{MEMBER_SELECT} ORDER BY u.name, u.id");
-        let rows = sqlx::query(&sql)
-            .bind(acct)
-            .fetch_all(self.tx.conn())
-            .await
-            .map_err(db)?;
-        rows.iter().map(member).collect()
+        let rows = sqlx::query!(
+            "SELECT u.id, u.email, u.name, u.login_kind, u.disabled_at, m.permission_profile_id \
+             FROM account_memberships m JOIN users u ON u.id = m.user_id \
+             WHERE m.account_id = $1 ORDER BY u.name, u.id",
+            acct
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter().map(|r| member!(r)).collect()
     }
 
     /// Change a member's name. Only a member of this account can be changed.
@@ -340,20 +339,17 @@ impl Users<'_> {
     /// `CS-DB-0003` when not a member.
     pub async fn rename(&mut self, user: UserId, name: &Personal<String>) -> Result<()> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "UPDATE users SET name = $3 WHERE id = $2 AND EXISTS (\
              SELECT 1 FROM account_memberships m WHERE m.account_id = $1 AND m.user_id = $2)",
+            acct,
+            user.0,
+            name.get()
         )
-        .bind(acct)
-        .bind(user.0)
-        .bind(name.get())
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound { entity: "user" });
-        }
-        Ok(())
+        affected(done.rows_affected(), "user")
     }
 
     /// Remove a member from this account (the user remains for their other accounts).
@@ -363,16 +359,14 @@ impl Users<'_> {
     /// `CS-DB-0003` when not a member; `CS-DB-0008` when rows still reference them.
     pub async fn remove_member(&mut self, user: UserId) -> Result<()> {
         let acct = self.tx.acct();
-        let done =
-            sqlx::query("DELETE FROM account_memberships WHERE account_id = $1 AND user_id = $2")
-                .bind(acct)
-                .bind(user.0)
-                .execute(self.tx.conn())
-                .await
-                .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound { entity: "user" });
-        }
-        Ok(())
+        let done = sqlx::query!(
+            "DELETE FROM account_memberships WHERE account_id = $1 AND user_id = $2",
+            acct,
+            user.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "user")
     }
 }

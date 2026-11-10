@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE envelopes SET status = $4, version = version + 1, sent_at = CASE WHEN $4 = 'sent' THEN $5 ELSE sent_at END, completed_at = CASE WHEN $4 = 'completed' THEN $5 ELSE completed_at END, voided_at = CASE WHEN $4 = 'voided' THEN $5 ELSE voided_at END, void_reason = CASE WHEN $4 = 'voided' THEN $6 ELSE void_reason END WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Text",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "63721393a66db552d9336fb323315b7bbb213d695235ff03d8bed1824a0a4fbb"
+}

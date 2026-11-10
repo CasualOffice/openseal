@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -75,12 +75,14 @@ impl Store {
     /// `CS-DB-0006` when the id exists; `CS-DB-0008` for an empty or overlong name.
     pub async fn create_account(&self, id: AccountId, name: &str) -> Result<()> {
         let mut tx = self.for_account(id).begin().await?;
-        sqlx::query("INSERT INTO accounts (id, name) VALUES ($1, $2)")
-            .bind(id.0)
-            .bind(name)
-            .execute(tx.conn())
-            .await
-            .map_err(db)?;
+        sqlx::query!(
+            "INSERT INTO accounts (id, name) VALUES ($1, $2)",
+            id.0,
+            name
+        )
+        .execute(tx.conn())
+        .await
+        .map_err(db)?;
         tx.commit().await
     }
 
@@ -114,11 +116,13 @@ impl Tenant<'_> {
     /// `CS-DB-0001` when no connection is available.
     pub async fn begin(&self) -> Result<TenantTx> {
         let mut tx = self.store.pool.begin().await.map_err(db)?;
-        sqlx::query("SELECT set_config('openseal.account_id', $1, true)")
-            .bind(self.account.0.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(db)?;
+        sqlx::query!(
+            "SELECT set_config('openseal.account_id', $1, true)",
+            self.account.0.to_string()
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?;
         Ok(TenantTx {
             tx,
             account: self.account,
@@ -218,20 +222,21 @@ impl EntryPoints<'_> {
         token_sha256: &[u8; 32],
         now: OffsetDateTime,
     ) -> Result<Option<RecipientTokenTarget>> {
-        let row = sqlx::query("SELECT * FROM openseal_resolve_recipient_token($1, $2)")
-            .bind(token_sha256.as_slice())
-            .bind(now)
-            .fetch_optional(&self.store.pool)
-            .await
-            .map_err(db)?;
-        row.map(|r| {
-            Ok(RecipientTokenTarget {
-                account_id: AccountId(r.try_get("account_id").map_err(db)?),
-                envelope_id: EnvelopeId(r.try_get("envelope_id").map_err(db)?),
-                recipient_id: RecipientId(r.try_get("recipient_id").map_err(db)?),
-            })
-        })
-        .transpose()
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!", envelope_id AS "envelope_id!",
+                      recipient_id AS "recipient_id!"
+                 FROM openseal_resolve_recipient_token($1, $2)"#,
+            token_sha256.as_slice(),
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| RecipientTokenTarget {
+            account_id: AccountId(r.account_id),
+            envelope_id: EnvelopeId(r.envelope_id),
+            recipient_id: RecipientId(r.recipient_id),
+        }))
     }
 
     /// The API client an unexpired, unrevoked key's hash names (SEC-A10).
@@ -244,19 +249,16 @@ impl EntryPoints<'_> {
         secret_sha256: &[u8; 32],
         now: OffsetDateTime,
     ) -> Result<Option<(AccountId, ApiClientId)>> {
-        let row = sqlx::query("SELECT * FROM openseal_resolve_api_key($1, $2)")
-            .bind(secret_sha256.as_slice())
-            .bind(now)
-            .fetch_optional(&self.store.pool)
-            .await
-            .map_err(db)?;
-        row.map(|r| {
-            Ok((
-                AccountId(r.try_get("account_id").map_err(db)?),
-                ApiClientId(r.try_get("api_client_id").map_err(db)?),
-            ))
-        })
-        .transpose()
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!", api_client_id AS "api_client_id!"
+                 FROM openseal_resolve_api_key($1, $2)"#,
+            secret_sha256.as_slice(),
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| (AccountId(r.account_id), ApiClientId(r.api_client_id))))
     }
 
     /// The signing link an active link token's hash names (docs/24 §9).
@@ -269,19 +271,16 @@ impl EntryPoints<'_> {
         token_sha256: &[u8; 32],
         now: OffsetDateTime,
     ) -> Result<Option<(AccountId, SigningLinkId)>> {
-        let row = sqlx::query("SELECT * FROM openseal_resolve_signing_link($1, $2)")
-            .bind(token_sha256.as_slice())
-            .bind(now)
-            .fetch_optional(&self.store.pool)
-            .await
-            .map_err(db)?;
-        row.map(|r| {
-            Ok((
-                AccountId(r.try_get("account_id").map_err(db)?),
-                SigningLinkId(r.try_get("signing_link_id").map_err(db)?),
-            ))
-        })
-        .transpose()
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!", signing_link_id AS "signing_link_id!"
+                 FROM openseal_resolve_signing_link($1, $2)"#,
+            token_sha256.as_slice(),
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| (AccountId(r.account_id), SigningLinkId(r.signing_link_id))))
     }
 
     /// The enabled user a normalized email, or an identity provider's issuer and subject,
@@ -295,21 +294,20 @@ impl EntryPoints<'_> {
         email_normalized: Option<&str>,
         idp: Option<(&str, &str)>,
     ) -> Result<Vec<(UserId, AccountId)>> {
-        let rows = sqlx::query("SELECT * FROM openseal_resolve_user_login($1, $2, $3)")
-            .bind(email_normalized)
-            .bind(idp.map(|(i, _)| i))
-            .bind(idp.map(|(_, s)| s))
-            .fetch_all(&self.store.pool)
-            .await
-            .map_err(db)?;
-        rows.into_iter()
-            .map(|r| {
-                Ok((
-                    UserId(r.try_get("user_id").map_err(db)?),
-                    AccountId(r.try_get("account_id").map_err(db)?),
-                ))
-            })
-            .collect()
+        let rows = sqlx::query!(
+            r#"SELECT user_id AS "user_id!", account_id AS "account_id!"
+                 FROM openseal_resolve_user_login($1, $2, $3)"#,
+            email_normalized,
+            idp.map(|(i, _)| i),
+            idp.map(|(_, s)| s)
+        )
+        .fetch_all(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (UserId(r.user_id), AccountId(r.account_id)))
+            .collect())
     }
 
     /// Claim up to `max` due jobs of `kinds` under a lease of `lease` from `now`. A job
@@ -328,30 +326,31 @@ impl EntryPoints<'_> {
         lease: Duration,
         lease_token: Uuid,
     ) -> Result<Vec<ClaimedJob>> {
-        let rows = sqlx::query("SELECT * FROM openseal_claim_jobs($1, $2, $3, $4, $5, $6)")
-            .bind(worker)
-            .bind(kinds)
-            .bind(i32::try_from(max).unwrap_or(i32::MAX))
-            .bind(now)
-            .bind(i32::try_from(lease.as_secs()).unwrap_or(i32::MAX))
-            .bind(lease_token)
-            .fetch_all(&self.store.pool)
-            .await
-            .map_err(db)?;
-        rows.into_iter()
-            .map(|r| {
-                Ok(ClaimedJob {
-                    id: JobId(r.try_get("id").map_err(db)?),
-                    account_id: AccountId(r.try_get("account_id").map_err(db)?),
-                    envelope_id: r
-                        .try_get::<Option<Uuid>, _>("envelope_id")
-                        .map_err(db)?
-                        .map(EnvelopeId),
-                    kind: r.try_get("kind").map_err(db)?,
-                    payload: r.try_get("payload").map_err(db)?,
-                    attempts: r.try_get("attempts").map_err(db)?,
-                })
+        let kinds: Vec<String> = kinds.iter().map(|k| (*k).to_owned()).collect();
+        let rows = sqlx::query!(
+            r#"SELECT id AS "id!", account_id AS "account_id!", envelope_id, kind AS "kind!",
+                      payload AS "payload!", attempts AS "attempts!"
+                 FROM openseal_claim_jobs($1, $2, $3, $4, $5, $6)"#,
+            worker,
+            &kinds,
+            i32::try_from(max).unwrap_or(i32::MAX),
+            now,
+            i32::try_from(lease.as_secs()).unwrap_or(i32::MAX),
+            lease_token
+        )
+        .fetch_all(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| ClaimedJob {
+                id: JobId(r.id),
+                account_id: AccountId(r.account_id),
+                envelope_id: r.envelope_id.map(EnvelopeId),
+                kind: r.kind,
+                payload: r.payload,
+                attempts: r.attempts,
             })
-            .collect()
+            .collect())
     }
 }

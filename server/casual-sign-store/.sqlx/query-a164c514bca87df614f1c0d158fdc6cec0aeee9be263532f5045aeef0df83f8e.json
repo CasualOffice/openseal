@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE jobs SET status = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'queued' END, run_at = $4, last_error_code = $5, lease_token = NULL, locked_until = NULL WHERE account_id = $1 AND id = $2 AND lease_token = $3 AND status = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a164c514bca87df614f1c0d158fdc6cec0aeee9be263532f5045aeef0df83f8e"
+}

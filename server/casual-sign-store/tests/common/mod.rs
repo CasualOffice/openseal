@@ -72,7 +72,10 @@ pub async fn fresh(test: &str, rls: Rls) -> Option<TestDb> {
         "DO $$ BEGIN CREATE ROLE {APP_LOGIN} LOGIN PASSWORD '{APP_PASSWORD}' IN ROLE openseal_app; \
          EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$"
     );
-    db.admin.execute(create.as_str()).await.unwrap();
+    db.admin
+        .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(create)))
+        .await
+        .unwrap();
     if rls == Rls::Off {
         disable_rls(&db.admin).await;
     }
@@ -90,7 +93,9 @@ pub async fn empty(url: &str) -> TestDb {
         .unwrap();
     let name = format!("openseal_t_{}", uuid::Uuid::new_v4().simple());
     maint
-        .execute(format!("CREATE DATABASE {name}").as_str())
+        .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "CREATE DATABASE {name}"
+        ))))
         .await
         .unwrap();
     maint.close().await;
@@ -126,7 +131,9 @@ pub async fn disable_rls(admin: &PgPool) {
     );
     for t in tables {
         admin
-            .execute(format!("ALTER TABLE {t} DISABLE ROW LEVEL SECURITY").as_str())
+            .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "ALTER TABLE {t} DISABLE ROW LEVEL SECURITY"
+            ))))
             .await
             .unwrap();
     }
@@ -157,7 +164,10 @@ impl TestDb {
             .await
             .unwrap();
         maint
-            .execute(format!("DROP DATABASE IF EXISTS {} WITH (FORCE)", self.name).as_str())
+            .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "DROP DATABASE IF EXISTS {} WITH (FORCE)",
+                self.name
+            ))))
             .await
             .unwrap();
         maint.close().await;

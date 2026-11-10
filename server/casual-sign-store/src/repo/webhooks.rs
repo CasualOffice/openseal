@@ -1,12 +1,11 @@
 //! Webhook subscriptions and deliveries (docs/40 §4, ADR-016). Secrets are references
 //! into the secrets store, never the secrets.
 
-use sqlx::postgres::PgRow;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use super::col;
-use crate::error::{Result, StoreError, db};
+use super::affected;
+use crate::error::{Result, db};
 use crate::ids::{EnvelopeId, WebhookDeliveryId, WebhookSubscriptionId};
 use crate::store::TenantTx;
 
@@ -54,35 +53,28 @@ pub struct Webhooks<'t> {
     pub(crate) tx: &'t mut TenantTx,
 }
 
-fn subscription(r: &PgRow) -> Result<Subscription> {
-    let status: String = col(r, "status")?;
-    Ok(Subscription {
-        id: WebhookSubscriptionId(col(r, "id")?),
-        envelope_id: col::<Option<Uuid>>(r, "envelope_id")?.map(EnvelopeId),
-        url: col(r, "url")?,
-        event_types: col(r, "event_types")?,
-        secret_refs: col(r, "secret_refs")?,
-        active: status == "active",
-    })
+/// A subscription row as selected.
+struct SubscriptionRow {
+    id: Uuid,
+    envelope_id: Option<Uuid>,
+    url: String,
+    event_types: Vec<String>,
+    secret_refs: Vec<String>,
+    status: String,
 }
 
-fn delivery(r: &PgRow) -> Result<Delivery> {
-    Ok(Delivery {
-        id: WebhookDeliveryId(col(r, "id")?),
-        subscription_id: WebhookSubscriptionId(col(r, "subscription_id")?),
-        event_id: col(r, "event_id")?,
-        event_type: col(r, "event_type")?,
-        payload: col(r, "payload")?,
-        status: col(r, "status")?,
-        attempts: col(r, "attempts")?,
-        last_status_code: col(r, "last_status_code")?,
-    })
+impl From<SubscriptionRow> for Subscription {
+    fn from(r: SubscriptionRow) -> Self {
+        Self {
+            id: WebhookSubscriptionId(r.id),
+            envelope_id: r.envelope_id.map(EnvelopeId),
+            url: r.url,
+            event_types: r.event_types,
+            secret_refs: r.secret_refs,
+            active: r.status == "active",
+        }
+    }
 }
-
-const SUB_SELECT: &str = "SELECT id, envelope_id, url, event_types, secret_refs, status \
-     FROM webhook_subscriptions WHERE account_id = $1";
-const DEL_SELECT: &str = "SELECT id, subscription_id, event_id, event_type, payload, status, \
-     attempts, last_status_code FROM webhook_deliveries WHERE account_id = $1";
 
 impl Webhooks<'_> {
     /// Subscribe.
@@ -92,17 +84,17 @@ impl Webhooks<'_> {
     /// `CS-DB-0008` a non-HTTPS URL, no event types, or an envelope of another account.
     pub async fn subscribe(&mut self, s: &Subscription) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO webhook_subscriptions (id, account_id, envelope_id, url, event_types, \
              secret_refs, status) VALUES ($2, $1, $3, $4, $5, $6, $7)",
+            acct,
+            s.id.0,
+            s.envelope_id.map(|e| e.0),
+            s.url,
+            &s.event_types,
+            &s.secret_refs,
+            if s.active { "active" } else { "disabled" }
         )
-        .bind(acct)
-        .bind(s.id.0)
-        .bind(s.envelope_id.map(|e| e.0))
-        .bind(&s.url)
-        .bind(&s.event_types)
-        .bind(&s.secret_refs)
-        .bind(if s.active { "active" } else { "disabled" })
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -113,33 +105,39 @@ impl Webhooks<'_> {
     ///
     /// # Errors
     ///
-    /// `CS-DB-0010` for an unreadable row.
+    /// `CS-DB-0001`.
     pub async fn get(&mut self, id: WebhookSubscriptionId) -> Result<Option<Subscription>> {
         let acct = self.tx.acct();
-        let sql = format!("{SUB_SELECT} AND id = $2");
-        let row = sqlx::query(&sql)
-            .bind(acct)
-            .bind(id.0)
-            .fetch_optional(self.tx.conn())
-            .await
-            .map_err(db)?;
-        row.as_ref().map(subscription).transpose()
+        let row = sqlx::query_as!(
+            SubscriptionRow,
+            "SELECT id, envelope_id, url, event_types, secret_refs, status \
+             FROM webhook_subscriptions WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(Subscription::from))
     }
 
     /// This account's subscriptions.
     ///
     /// # Errors
     ///
-    /// `CS-DB-0010` for an unreadable row.
+    /// `CS-DB-0001`.
     pub async fn list(&mut self) -> Result<Vec<Subscription>> {
         let acct = self.tx.acct();
-        let sql = format!("{SUB_SELECT} ORDER BY created_at, id");
-        let rows = sqlx::query(&sql)
-            .bind(acct)
-            .fetch_all(self.tx.conn())
-            .await
-            .map_err(db)?;
-        rows.iter().map(subscription).collect()
+        let rows = sqlx::query_as!(
+            SubscriptionRow,
+            "SELECT id, envelope_id, url, event_types, secret_refs, status \
+             FROM webhook_subscriptions WHERE account_id = $1 ORDER BY created_at, id",
+            acct
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(Subscription::from).collect())
     }
 
     /// Disable a subscription.
@@ -149,20 +147,15 @@ impl Webhooks<'_> {
     /// `CS-DB-0003` when this account has no such subscription.
     pub async fn disable(&mut self, id: WebhookSubscriptionId) -> Result<()> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "UPDATE webhook_subscriptions SET status = 'disabled' WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
         )
-        .bind(acct)
-        .bind(id.0)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound {
-                entity: "webhook subscription",
-            });
-        }
-        Ok(())
+        affected(done.rows_affected(), "webhook subscription")
     }
 
     /// Record a pending delivery.
@@ -173,16 +166,16 @@ impl Webhooks<'_> {
     /// event was already recorded for it.
     pub async fn record_delivery(&mut self, d: &Delivery) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO webhook_deliveries (id, account_id, subscription_id, event_id, event_type, \
              payload) VALUES ($2, $1, $3, $4, $5, $6)",
+            acct,
+            d.id.0,
+            d.subscription_id.0,
+            d.event_id,
+            d.event_type,
+            &d.payload
         )
-        .bind(acct)
-        .bind(d.id.0)
-        .bind(d.subscription_id.0)
-        .bind(d.event_id)
-        .bind(&d.event_type)
-        .bind(&d.payload)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -203,51 +196,59 @@ impl Webhooks<'_> {
         now: OffsetDateTime,
     ) -> Result<()> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "UPDATE webhook_deliveries SET attempts = attempts + 1, last_status_code = $3, \
                status = CASE WHEN $4 THEN 'delivered' WHEN $5::timestamptz IS NULL THEN 'failed' \
                              ELSE 'pending' END, \
                next_attempt_at = $5, delivered_at = CASE WHEN $4 THEN $6 ELSE delivered_at END \
              WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0,
+            status_code,
+            delivered,
+            next_attempt_at,
+            now
         )
-        .bind(acct)
-        .bind(id.0)
-        .bind(status_code)
-        .bind(delivered)
-        .bind(next_attempt_at)
-        .bind(now)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound {
-                entity: "webhook delivery",
-            });
-        }
-        Ok(())
+        affected(done.rows_affected(), "webhook delivery")
     }
 
     /// A subscription's deliveries, newest first, at most `limit` (capped at 1,000).
     ///
     /// # Errors
     ///
-    /// `CS-DB-0010` for an unreadable row.
+    /// `CS-DB-0001`.
     pub async fn deliveries(
         &mut self,
         subscription: WebhookSubscriptionId,
         limit: u32,
     ) -> Result<Vec<Delivery>> {
         let acct = self.tx.acct();
-        let sql = format!(
-            "{DEL_SELECT} AND subscription_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3"
-        );
-        let rows = sqlx::query(&sql)
-            .bind(acct)
-            .bind(subscription.0)
-            .bind(i64::from(limit.min(1000)))
-            .fetch_all(self.tx.conn())
-            .await
-            .map_err(db)?;
-        rows.iter().map(delivery).collect()
+        let rows = sqlx::query!(
+            "SELECT id, subscription_id, event_id, event_type, payload, status, attempts, \
+             last_status_code FROM webhook_deliveries WHERE account_id = $1 AND subscription_id = $2 \
+             ORDER BY created_at DESC, id DESC LIMIT $3",
+            acct,
+            subscription.0,
+            i64::from(limit.min(1000))
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Delivery {
+                id: WebhookDeliveryId(r.id),
+                subscription_id: WebhookSubscriptionId(r.subscription_id),
+                event_id: r.event_id,
+                event_type: r.event_type,
+                payload: r.payload,
+                status: r.status,
+                attempts: r.attempts,
+                last_status_code: r.last_status_code,
+            })
+            .collect())
     }
 }

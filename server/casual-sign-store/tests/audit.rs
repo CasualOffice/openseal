@@ -32,7 +32,10 @@ async fn as_app(app: &PgPool, account: uuid::Uuid, sql: &str) -> Result<u64, sql
         .bind(account.to_string())
         .execute(&mut *tx)
         .await?;
-    let n = tx.execute(sql).await?.rows_affected();
+    let n = tx
+        .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(sql.to_owned())))
+        .await?
+        .rows_affected();
     tx.commit().await?;
     Ok(n)
 }
@@ -133,15 +136,14 @@ async fn update_delete_and_truncate_of_audit_events_are_refused_for_owner_and_ap
         };
         let w = world::seed(&db.store, "alpha").await;
         db.admin
-            .execute(
+            .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(
                 format!(
                     "INSERT INTO envelope_tombstones (account_id, envelope_id, chain_head, event_count, purged_at, policy) \
                      VALUES ('{}', '{}', '\\x{}', 2, now(), 'test')",
                     w.account,
                     world::id(),
                     "22".repeat(32)
-                )
-                .as_str(),
+                )))
             )
             .await
             .unwrap();
@@ -152,7 +154,11 @@ async fn update_delete_and_truncate_of_audit_events_are_refused_for_owner_and_ap
                 format!("TRUNCATE {table}"),
                 format!("TRUNCATE {table} CASCADE"),
             ] {
-                let owner = db.admin.execute(sql.as_str()).await.unwrap_err();
+                let owner = db
+                    .admin
+                    .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(sql.clone())))
+                    .await
+                    .unwrap_err();
                 assert_eq!(
                     sqlstate(&owner).as_deref(),
                     Some("OS001"),
@@ -169,7 +175,7 @@ async fn update_delete_and_truncate_of_audit_events_are_refused_for_owner_and_ap
         }
         // A cascade from the tables evidence references reaches the trigger too.
         for sql in ["TRUNCATE envelopes CASCADE", "TRUNCATE accounts CASCADE"] {
-            let owner = db.admin.execute(sql).await.unwrap_err();
+            let owner = db.admin.execute(sqlx::raw_sql(sql)).await.unwrap_err();
             assert_eq!(
                 sqlstate(&owner).as_deref(),
                 Some("OS001"),
@@ -179,7 +185,10 @@ async fn update_delete_and_truncate_of_audit_events_are_refused_for_owner_and_ap
         // Deleting the envelope that owns evidence is refused by the reference.
         let err = db
             .admin
-            .execute(format!("DELETE FROM envelopes WHERE id = '{}'", w.envelope).as_str())
+            .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "DELETE FROM envelopes WHERE id = '{}'",
+                w.envelope
+            ))))
             .await
             .unwrap_err();
         assert_eq!(sqlstate(&err).as_deref(), Some("23503"), "{err}");

@@ -1,0 +1,173 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, envelope_id, routing_order, type AS kind, role_name, name, email, phone,\n                      status, delivery, embedded_client_user_id, language, declined_reason\n                 FROM recipients WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "envelope_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "envelope_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "routing_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "routing_order"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "role_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "role_name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "phone",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "phone"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "delivery",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "delivery"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "embedded_client_user_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "embedded_client_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "declined_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "declined_reason"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e6821b408a5474c92312bd9171211ecd9d062cb5f91d5de46cb534aed9c5f08b"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO template_documents (id, account_id, template_id, ord, name, sha256, byte_len, page_count, pages) VALUES ($2, $1, $3, $4, $5, $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Text",
+        "Bytea",
+        "Int8",
+        "Int4",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af861948c6e5b78a471ab6afc9fe315a2eb6f81e47330fa3908d7aa88e48d3d2"
+}

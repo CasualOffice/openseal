@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO envelopes (id, account_id, sender_user_id, status, subject, message, routing_mode, expires_at, reminder_policy, signing_options, seal_profile, completion_delivery, template_ids) VALUES ($2, $1, $3, 'draft', $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Jsonb",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b2a8cdb3125afd1d949de521076b08612d889c52df46451a36b87e55dc285c52"
+}

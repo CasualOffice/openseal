@@ -1,0 +1,125 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, document_id, kind, sha256, byte_len, page_count, admission_report, pages, created_at FROM document_versions WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "document_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "document_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sha256",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "byte_len",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "byte_len"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "page_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "page_count"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "admission_report",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "admission_report"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "pages",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "pages"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "document_versions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e27b53854ced1002b0b3eb1d7e6701184c8dca11ab49cb2b901a42b3e6a93a17"
+}

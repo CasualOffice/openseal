@@ -12,11 +12,12 @@ publish = false
 casual-sign-model = { path = "../../crates/casual-sign-model" }
 # Audit events' canonical bytes and hash, and chain re-verification on read (docs/32).
 casual-sign-audit = { path = "../../crates/casual-sign-audit" }
-# PostgreSQL (ADR-014). Runtime-checked queries with bound parameters; no `macros`
-# feature, so no build-time database. TLS by rustls on ring with the platform's roots
+# PostgreSQL (ADR-014, owner instruction 14): compile-time checked `query!` and
+# `query_as!` against the committed offline cache in `.sqlx/` (`SQLX_OFFLINE=true` builds
+# need no database). TLS by rustls on ring with the platform's roots
 # (`tls-rustls-aws-lc-rs` pulls webpki-roots, CDLA-Permissive-2.0, not in deny.toml).
-# MIT OR Apache-2.0. 0.8.6 is the newest that builds on MSRV 1.88 (0.9 needs 1.94).
-sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "uuid", "time", "json", "rust_decimal"] }
+# MIT OR Apache-2.0. 0.9's lockfile no longer carries the MySQL and SQLite drivers.
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "macros", "uuid", "time", "json", "rust_decimal"] }
 # sqlx's runtime; blocking blob I/O goes to `spawn_blocking`. MIT.
 tokio = { version = "1.40", default-features = false, features = ["rt"] }
 uuid = "1.10"
@@ -24,9 +25,9 @@ time = "0.3.36"
 serde_json = "1.0.120"
 # Field geometry is decimal points (ADR-019), as in `casual-sign-model`.
 rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
-# S3: SigV4 presigning, sans-IO, BSD-2-Clause; 0.10 is the newest on MSRV 1.88. Signing on
+# S3: SigV4 presigning, sans-IO, BSD-2-Clause. Signing on
 # aws-lc-rs (already in the tree); the HTTP is ureq over rustls, as `casual-sign-cli`.
-rusty-s3 = { version = "0.10.2", default-features = false, features = ["aws-lc-rs"] }
+rusty-s3 = { version = "0.11.0", default-features = false, features = ["aws-lc-rs"] }
 ureq = { version = "3.5.1", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 rustls-native-certs = "0.8.5"

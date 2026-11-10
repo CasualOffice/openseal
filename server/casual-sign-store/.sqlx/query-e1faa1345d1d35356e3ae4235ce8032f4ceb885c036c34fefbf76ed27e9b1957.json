@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE jobs SET status = 'done', finished_at = $4, lease_token = NULL, locked_until = NULL WHERE account_id = $1 AND id = $2 AND lease_token = $3 AND status = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e1faa1345d1d35356e3ae4235ce8032f4ceb885c036c34fefbf76ed27e9b1957"
+}

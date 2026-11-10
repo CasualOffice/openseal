@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO audit_events (account_id, envelope_id, seq, prev_hash, hash, event_type, at, canonical) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Text",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e434edf682218025f3d09a738e9d5b0774c92828d7a0674caaa4db822ee2a049"
+}

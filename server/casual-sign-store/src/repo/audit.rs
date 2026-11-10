@@ -10,7 +10,7 @@ use casual_sign_audit::{AuditEvent, Chain, Hash256, json};
 use casual_sign_model::Id;
 use time::OffsetDateTime;
 
-use super::{col, hash_col, opt_hash_col};
+use super::{hash32, opt_hash32};
 use crate::error::{Result, StoreError};
 use crate::ids::EnvelopeId;
 use crate::store::TenantTx;
@@ -73,18 +73,18 @@ impl Audit<'_> {
         .map_err(|_| broken.clone())?;
         let seq_db = i64::try_from(seq).map_err(|_| broken)?;
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO audit_events (account_id, envelope_id, seq, prev_hash, hash, event_type, \
              at, canonical) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            acct,
+            envelope.0,
+            seq_db,
+            event.prev.as_ref().map(|h| h.as_bytes().as_slice()),
+            hash.as_bytes().as_slice(),
+            event_type,
+            at,
+            canonical
         )
-        .bind(acct)
-        .bind(envelope.0)
-        .bind(seq_db)
-        .bind(event.prev.as_ref().map(|h| h.as_bytes().as_slice()))
-        .bind(hash.as_bytes().as_slice())
-        .bind(&event_type)
-        .bind(at)
-        .bind(&canonical)
         .execute(self.tx.conn())
         .await
         .map_err(chain_broken(seq))?;
@@ -98,25 +98,24 @@ impl Audit<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn events(&mut self, envelope: EnvelopeId) -> Result<Vec<StoredEvent>> {
         let acct = self.tx.acct();
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             "SELECT seq, prev_hash, hash, event_type, at, canonical FROM audit_events \
              WHERE account_id = $1 AND envelope_id = $2 ORDER BY seq",
+            acct,
+            envelope.0
         )
-        .bind(acct)
-        .bind(envelope.0)
         .fetch_all(self.tx.conn())
         .await
         .map_err(crate::error::db)?;
-        rows.iter()
+        rows.into_iter()
             .map(|r| {
-                let seq: i64 = col(r, "seq")?;
                 Ok(StoredEvent {
-                    seq: u64::try_from(seq).map_err(|_| StoreError::Corrupt { column: "seq" })?,
-                    prev: opt_hash_col(r, "prev_hash")?,
-                    hash: hash_col(r, "hash")?,
-                    event_type: col(r, "event_type")?,
-                    at: col(r, "at")?,
-                    canonical: col(r, "canonical")?,
+                    seq: u64::try_from(r.seq).map_err(|_| StoreError::Corrupt { column: "seq" })?,
+                    prev: opt_hash32(r.prev_hash, "prev_hash")?,
+                    hash: hash32(r.hash, "hash")?,
+                    event_type: r.event_type,
+                    at: r.at,
+                    canonical: r.canonical,
                 })
             })
             .collect()
@@ -129,20 +128,19 @@ impl Audit<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn head(&mut self, envelope: EnvelopeId) -> Result<Option<(u64, Hash256)>> {
         let acct = self.tx.acct();
-        let row = sqlx::query(
+        let row = sqlx::query!(
             "SELECT seq, hash FROM audit_events WHERE account_id = $1 AND envelope_id = $2 \
              ORDER BY seq DESC LIMIT 1",
+            acct,
+            envelope.0
         )
-        .bind(acct)
-        .bind(envelope.0)
         .fetch_optional(self.tx.conn())
         .await
         .map_err(crate::error::db)?;
         row.map(|r| {
-            let seq: i64 = col(&r, "seq")?;
             Ok((
-                u64::try_from(seq).map_err(|_| StoreError::Corrupt { column: "seq" })?,
-                Hash256(hash_col(&r, "hash")?),
+                u64::try_from(r.seq).map_err(|_| StoreError::Corrupt { column: "seq" })?,
+                Hash256(hash32(r.hash, "hash")?),
             ))
         })
         .transpose()

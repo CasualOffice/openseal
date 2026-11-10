@@ -219,9 +219,12 @@ ways. `FsBlobStore` writes a `create_new` temporary file, syncs it, makes it rea
 MinIO image could not be pulled on the build machine). Bucket object lock or a role without `DeleteObject` is the
 operator's second line, recorded for the deployment guide (slice 20).
 
-**Queries.** Runtime-checked `sqlx::query` with bound parameters only. ADR-014 names compile-time checked queries;
-`query!` needs a live database or a committed `.sqlx` cache at build time, and every query here is exercised by the
-database tests instead. Amending ADR-014 is the owner's call.
+**Queries.** Every statement is a compile-time checked `sqlx::query!` or `query_as!` with bound parameters (ADR-014,
+owner instruction 14), checked against the committed offline cache `server/casual-sign-store/.sqlx/`, so
+`SQLX_OFFLINE=true` builds need no database. `server/casual-sign-store/sqlx-prepare.sh` creates a scratch database,
+applies every migration, and regenerates the cache, or with `--check` fails when a query or migration changed without
+regenerating it. Only the migration files themselves run as unchecked DDL; migration 0001 also declares the
+migration ledger so any runner yields the same schema.
 
 **Tests.** `OPENSEAL_TEST_DATABASE_URL` (a superuser URL) gives each test a fresh database, migrated as owner and
 exercised as a login role in `openseal_app`; unset, the database tests print `SKIPPED` and pass. Every repository

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE envelopes SET subject = $4, message = $5, version = version + 1 WHERE account_id = $1 AND id = $2 AND version = $3 AND status = 'draft' RETURNING version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3124a07712c3e468de5dc46c4a159346f0e1c7f2e8f541ae1aee5e85c66d2a03"
+}

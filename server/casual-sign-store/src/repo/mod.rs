@@ -2,9 +2,6 @@
 //! `$1` of every statement; none takes an account id from its caller, and none has an
 //! unscoped variant.
 
-use sqlx::postgres::PgRow;
-use sqlx::{Decode, Postgres, Row, Type};
-
 use crate::error::{Result, StoreError};
 use crate::store::TenantTx;
 
@@ -19,26 +16,23 @@ pub mod recipients;
 pub mod templates;
 pub mod webhooks;
 
-/// Read a column, or `CS-DB-0010` naming it.
-pub(crate) fn col<'r, T>(row: &'r PgRow, column: &'static str) -> Result<T>
-where
-    T: Decode<'r, Postgres> + Type<Postgres>,
-{
-    row.try_get(column)
-        .map_err(|_| StoreError::Corrupt { column })
+/// `CS-DB-0003` for `entity` when a statement touched no row.
+pub(crate) fn affected(rows: u64, entity: &'static str) -> Result<()> {
+    if rows == 0 {
+        Err(StoreError::NotFound { entity })
+    } else {
+        Ok(())
+    }
 }
 
-/// Read a 32-byte hash column.
-pub(crate) fn hash_col(row: &PgRow, column: &'static str) -> Result<[u8; 32]> {
-    let v: Vec<u8> = col(row, column)?;
+/// A 32-byte hash read back, or `CS-DB-0010` naming its column.
+pub(crate) fn hash32(v: Vec<u8>, column: &'static str) -> Result<[u8; 32]> {
     <[u8; 32]>::try_from(v.as_slice()).map_err(|_| StoreError::Corrupt { column })
 }
 
-/// Read an optional 32-byte hash column.
-pub(crate) fn opt_hash_col(row: &PgRow, column: &'static str) -> Result<Option<[u8; 32]>> {
-    let v: Option<Vec<u8>> = col(row, column)?;
-    v.map(|v| <[u8; 32]>::try_from(v.as_slice()).map_err(|_| StoreError::Corrupt { column }))
-        .transpose()
+/// An optional 32-byte hash read back.
+pub(crate) fn opt_hash32(v: Option<Vec<u8>>, column: &'static str) -> Result<Option<[u8; 32]>> {
+    v.map(|v| hash32(v, column)).transpose()
 }
 
 /// A text column restricted by a CHECK constraint, as a Rust enum.

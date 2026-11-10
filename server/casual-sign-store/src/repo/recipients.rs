@@ -1,10 +1,10 @@
 //! Recipients (docs/22 §5, docs/24 §3) and their invitation tokens (docs/22 §2, SEC-A01).
 
 use casual_sign_audit::Personal;
-use sqlx::postgres::PgRow;
 use time::OffsetDateTime;
+use uuid::Uuid;
 
-use super::{col, text_enum};
+use super::{affected, text_enum};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{EnvelopeId, RecipientId, RecipientTokenId};
 use crate::store::TenantTx;
@@ -140,31 +140,44 @@ pub struct NewToken {
     pub expires_at: OffsetDateTime,
 }
 
-const SELECT: &str = "SELECT id, envelope_id, routing_order, type, role_name, name, email, phone, \
-     status, delivery, embedded_client_user_id, language, declined_reason FROM recipients \
-     WHERE account_id = $1";
+/// A row as selected.
+struct RecipientRow {
+    id: Uuid,
+    envelope_id: Uuid,
+    routing_order: i32,
+    kind: String,
+    role_name: Option<String>,
+    name: String,
+    email: Option<String>,
+    phone: Option<String>,
+    status: String,
+    delivery: String,
+    embedded_client_user_id: Option<String>,
+    language: Option<String>,
+    declined_reason: Option<String>,
+}
 
-fn recipient(r: &PgRow) -> Result<Recipient> {
-    let kind: String = col(r, "type")?;
-    let status: String = col(r, "status")?;
-    let delivery: String = col(r, "delivery")?;
-    Ok(Recipient {
-        recipient: NewRecipient {
-            id: RecipientId(col(r, "id")?),
-            envelope_id: EnvelopeId(col(r, "envelope_id")?),
-            routing_order: col(r, "routing_order")?,
-            kind: RecipientType::parse(&kind, "type")?,
-            role_name: col(r, "role_name")?,
-            name: Personal(col(r, "name")?),
-            email: col::<Option<String>>(r, "email")?.map(Personal),
-            phone: col::<Option<String>>(r, "phone")?.map(Personal),
-            delivery: Delivery::parse(&delivery, "delivery")?,
-            embedded_client_user_id: col(r, "embedded_client_user_id")?,
-            language: col(r, "language")?,
-        },
-        status: RecipientStatus::parse(&status, "status")?,
-        declined_reason: col::<Option<String>>(r, "declined_reason")?.map(Personal),
-    })
+impl TryFrom<RecipientRow> for Recipient {
+    type Error = StoreError;
+    fn try_from(r: RecipientRow) -> Result<Self> {
+        Ok(Self {
+            recipient: NewRecipient {
+                id: RecipientId(r.id),
+                envelope_id: EnvelopeId(r.envelope_id),
+                routing_order: r.routing_order,
+                kind: RecipientType::parse(&r.kind, "type")?,
+                role_name: r.role_name,
+                name: Personal(r.name),
+                email: r.email.map(Personal),
+                phone: r.phone.map(Personal),
+                delivery: Delivery::parse(&r.delivery, "delivery")?,
+                embedded_client_user_id: r.embedded_client_user_id,
+                language: r.language,
+            },
+            status: RecipientStatus::parse(&r.status, "status")?,
+            declined_reason: r.declined_reason.map(Personal),
+        })
+    }
 }
 
 /// Recipients of this account. Reached through `TenantTx::recipients`.
@@ -181,23 +194,23 @@ impl Recipients<'_> {
     /// `CS-DB-0008` when the envelope is not this account's, or a value is out of bounds.
     pub async fn insert(&mut self, n: &NewRecipient) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO recipients (id, account_id, envelope_id, routing_order, type, role_name, \
              name, email, phone, delivery, embedded_client_user_id, language) \
              VALUES ($2, $1, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+            acct,
+            n.id.0,
+            n.envelope_id.0,
+            n.routing_order,
+            n.kind.as_str(),
+            n.role_name.as_deref(),
+            n.name.get(),
+            n.email.as_ref().map(|e| e.get().as_str()),
+            n.phone.as_ref().map(|p| p.get().as_str()),
+            n.delivery.as_str(),
+            n.embedded_client_user_id.as_deref(),
+            n.language.as_deref()
         )
-        .bind(acct)
-        .bind(n.id.0)
-        .bind(n.envelope_id.0)
-        .bind(n.routing_order)
-        .bind(n.kind.as_str())
-        .bind(&n.role_name)
-        .bind(n.name.get())
-        .bind(n.email.as_ref().map(|e| e.get().as_str()))
-        .bind(n.phone.as_ref().map(|p| p.get().as_str()))
-        .bind(n.delivery.as_str())
-        .bind(&n.embedded_client_user_id)
-        .bind(&n.language)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -211,14 +224,18 @@ impl Recipients<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn get(&mut self, id: RecipientId) -> Result<Option<Recipient>> {
         let acct = self.tx.acct();
-        let sql = format!("{SELECT} AND id = $2");
-        let row = sqlx::query(&sql)
-            .bind(acct)
-            .bind(id.0)
-            .fetch_optional(self.tx.conn())
-            .await
-            .map_err(db)?;
-        row.as_ref().map(recipient).transpose()
+        let row = sqlx::query_as!(
+            RecipientRow,
+            r#"SELECT id, envelope_id, routing_order, type AS kind, role_name, name, email, phone,
+                      status, delivery, embedded_client_user_id, language, declined_reason
+                 FROM recipients WHERE account_id = $1 AND id = $2"#,
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        row.map(Recipient::try_from).transpose()
     }
 
     /// An envelope's recipients in routing order.
@@ -228,14 +245,19 @@ impl Recipients<'_> {
     /// `CS-DB-0010` for an unreadable row.
     pub async fn list(&mut self, envelope: EnvelopeId) -> Result<Vec<Recipient>> {
         let acct = self.tx.acct();
-        let sql = format!("{SELECT} AND envelope_id = $2 ORDER BY routing_order, created_at, id");
-        let rows = sqlx::query(&sql)
-            .bind(acct)
-            .bind(envelope.0)
-            .fetch_all(self.tx.conn())
-            .await
-            .map_err(db)?;
-        rows.iter().map(recipient).collect()
+        let rows = sqlx::query_as!(
+            RecipientRow,
+            r#"SELECT id, envelope_id, routing_order, type AS kind, role_name, name, email, phone,
+                      status, delivery, embedded_client_user_id, language, declined_reason
+                 FROM recipients WHERE account_id = $1 AND envelope_id = $2
+                ORDER BY routing_order, created_at, id"#,
+            acct,
+            envelope.0
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter().map(Recipient::try_from).collect()
     }
 
     /// Record a recipient's new state (decided by the workflow engine).
@@ -250,23 +272,18 @@ impl Recipients<'_> {
         declined_reason: Option<&Personal<String>>,
     ) -> Result<()> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "UPDATE recipients SET status = $3, declined_reason = COALESCE($4, declined_reason) \
              WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0,
+            status.as_str(),
+            declined_reason.map(|r| r.get().as_str())
         )
-        .bind(acct)
-        .bind(id.0)
-        .bind(status.as_str())
-        .bind(declined_reason.map(|r| r.get().as_str()))
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound {
-                entity: "recipient",
-            });
-        }
-        Ok(())
+        affected(done.rows_affected(), "recipient")
     }
 
     /// Store a new invitation token's hash.
@@ -277,17 +294,17 @@ impl Recipients<'_> {
     /// for a hash already stored.
     pub async fn issue_token(&mut self, t: &NewToken) -> Result<()> {
         let acct = self.tx.acct();
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO recipient_tokens (id, account_id, envelope_id, recipient_id, token_sha256, \
              purpose, expires_at) VALUES ($2, $1, $3, $4, $5, $6, $7)",
+            acct,
+            t.id.0,
+            t.envelope_id.0,
+            t.recipient_id.0,
+            t.token_sha256.as_slice(),
+            t.purpose.as_str(),
+            t.expires_at
         )
-        .bind(acct)
-        .bind(t.id.0)
-        .bind(t.envelope_id.0)
-        .bind(t.recipient_id.0)
-        .bind(t.token_sha256.as_slice())
-        .bind(t.purpose.as_str())
-        .bind(t.expires_at)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
@@ -306,13 +323,13 @@ impl Recipients<'_> {
         at: OffsetDateTime,
     ) -> Result<u64> {
         let acct = self.tx.acct();
-        let done = sqlx::query(
+        let done = sqlx::query!(
             "UPDATE recipient_tokens SET revoked_at = $3 \
              WHERE account_id = $1 AND recipient_id = $2 AND revoked_at IS NULL",
+            acct,
+            recipient.0,
+            at
         )
-        .bind(acct)
-        .bind(recipient.0)
-        .bind(at)
         .execute(self.tx.conn())
         .await
         .map_err(db)?;

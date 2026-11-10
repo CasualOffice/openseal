@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recipients SET status = $3, declined_reason = COALESCE($4, declined_reason) WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "91f7c2aecfdd9c04a84d5601e8700d8f235a62546841dcffef0438af837fc935"
+}
