@@ -10,7 +10,9 @@ use casual_sign_model::{Align, FontFamily};
 use casual_sign_pdf::{Cancel, Dictionary, Document, FieldType as PdfFieldType, Object, PdfError};
 
 use crate::canvas::{Canvas, Color, GlyphUse, num};
-use crate::draw::checkmark;
+use casual_sign_fields::RadioChoice;
+
+use crate::draw::{checkmark, dot};
 use crate::error::FlattenError;
 use crate::fonts::FontSet;
 use crate::read::{self, FieldAttrs, WidgetInfo};
@@ -239,21 +241,10 @@ fn options(
     Ok(out)
 }
 
-/// A PDF text string to Rust (UTF-16BE, UTF-8 with BOM, else Latin-1).
+/// A PDF text string to Rust (UTF-16BE, UTF-8 with BOM, else PDFDocEncoding), exactly
+/// as conversion decodes option texts, so a chosen text finds its export value.
 pub(crate) fn decode_text(b: &[u8]) -> String {
-    if let Some(rest) = b.strip_prefix(&[0xFE, 0xFF]) {
-        let units = rest.chunks(2).map(|c| match c {
-            [h, l] => u16::from_be_bytes([*h, *l]),
-            _ => 0xFFFD,
-        });
-        return char::decode_utf16(units)
-            .map(|r| r.unwrap_or('\u{FFFD}'))
-            .collect();
-    }
-    if let Some(rest) = b.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return String::from_utf8_lossy(rest).into_owned();
-    }
-    b.iter().map(|&c| char::from(c)).collect()
+    casual_sign_pdf::decode_text_string(b)
 }
 
 /// Inputs to filling one PDF field.
@@ -263,6 +254,8 @@ pub(crate) struct Target<'a> {
     pub kind: PdfFieldType,
     pub value: &'a FillValue,
     pub widgets: &'a [WidgetInfo],
+    /// A radio group's choices ([`casual_sign_fields::radio_choices`]); empty otherwise.
+    pub choices: &'a [RadioChoice],
     pub field_id: &'a casual_sign_model::Id,
 }
 
@@ -351,25 +344,46 @@ pub(crate) fn plan_field(
             let (FillValue::Choice(state) | FillValue::Text(state)) = t.value else {
                 return Err(mismatch());
             };
-            let name = state.as_bytes().to_vec();
-            if !t.widgets.iter().any(|w| w.on_states.contains(&name)) {
+            // The chosen option's state, in the document's own bytes (FLD-RADIO-NAME).
+            let Some(choice) = t.choices.iter().find(|c| c.text == *state) else {
                 return Err(mismatch());
-            }
+            };
+            let Some(name) = choice.widgets.first().map(|w| w.state.clone()) else {
+                return Err(mismatch());
+            };
             field.insert(b"V", Object::Name(name.clone()));
             plan.edits.insert(t.object, field);
+            let color = parse_da(attrs.da.as_deref().or(default_da).unwrap_or(b"")).color;
             for w in t.widgets {
                 let mut wd = plan
                     .edits
                     .get(&w.object)
                     .cloned()
                     .unwrap_or_else(|| w.dict.clone());
-                let s = if w.on_states.contains(&name) {
+                let on = choice.widgets.iter().find(|c| c.widget == w.object);
+                let s = if on.is_some() {
                     name.clone()
                 } else {
                     b"Off".to_vec()
                 };
                 wd.insert(b"AS", Object::Name(s));
                 plan.edits.insert(w.object, wd);
+                // A button with no appearance for its state (FLD-RADIO-NOOPT): draw
+                // the standard radio mark, a dot, as its `/N /<state>`.
+                if on.is_some_and(|c| !c.has_appearance) {
+                    let (bw, bh, matrix) = widget_box(w);
+                    let mut canvas = Canvas::default();
+                    draw_frame(&mut canvas, w, bw, bh, true);
+                    dot(&mut canvas, bw, bh, color);
+                    plan.appearances.push(Appearance {
+                        widget: w.object,
+                        canvas,
+                        w: bw,
+                        h: bh,
+                        matrix,
+                        on_state: Some(name.clone()),
+                    });
+                }
             }
         }
         PdfFieldType::Text | PdfFieldType::Choice => {

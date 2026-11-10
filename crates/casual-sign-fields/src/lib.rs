@@ -21,7 +21,9 @@
 //! - [`extract_text`], [`extract_page`]: text with positions, from a bounded
 //!   interpreter of the text operators ([`text`]).
 //! - [`place_anchor`]: anchor text to placed fields; [`scan_tags`]: text tags to fields.
-//! - [`convert_acroform`]: existing AcroForm fields to OpenSeal fields.
+//! - [`convert_acroform`]: existing AcroForm fields to OpenSeal fields;
+//!   [`radio_choices`]: a radio group's options and the states they write, shared with
+//!   flattening.
 
 mod acroform;
 mod anchor;
@@ -38,7 +40,10 @@ mod tags;
 pub mod text;
 mod validate;
 
-pub use acroform::{Conversion, Converted, Skipped, Unmapped, convert_acroform};
+pub use acroform::{
+    Conversion, Converted, RadioChoice, RadioWidget, Skipped, Unmapped, convert_acroform,
+    name_text, radio_choices,
+};
 pub use anchor::{
     AnchorMatch, AnchorPlacement, AnchorSpec, AnchorUnits, MAX_ANCHOR_CHARS, MAX_ANCHOR_MATCHES,
     place_anchor,

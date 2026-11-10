@@ -11,7 +11,9 @@
 use casual_sign_model::{
     DataLabel, Field, FieldOptions, FieldType, Id, LengthRule, Text, Validation, ValidationRule,
 };
-use casual_sign_pdf::{AdmissionReport, Document, FieldType as PdfFieldType, Object, PdfError};
+use casual_sign_pdf::{
+    AdmissionReport, Document, FieldType as PdfFieldType, Object, PdfError, decode_text_string,
+};
 
 use crate::font::local;
 use crate::geometry::{DisplayRect, PageGeometry};
@@ -137,25 +139,6 @@ fn attrs(
     Ok(out)
 }
 
-/// A PDF text string (ISO 32000-2 §7.9.2.2), as `casual-sign-pdf` decodes field names:
-/// UTF-16BE or UTF-8 with a byte-order mark, else PDFDocEncoding (Latin-1 for the
-/// characters that matter in option lists).
-fn text_string(b: &[u8]) -> String {
-    if let Some(rest) = b.strip_prefix(&[0xFE, 0xFF]) {
-        let units = rest.chunks(2).map(|c| match c {
-            [h, l] => u16::from_be_bytes([*h, *l]),
-            _ => 0xFFFD,
-        });
-        return char::decode_utf16(units)
-            .map(|r| r.unwrap_or('\u{FFFD}'))
-            .collect();
-    }
-    if let Some(rest) = b.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return String::from_utf8_lossy(rest).into_owned();
-    }
-    b.iter().map(|&c| char::from(c)).collect()
-}
-
 /// The option texts: a string, or the display text of an `[export display]` pair.
 fn option_texts(
     doc: &mut Document<'_>,
@@ -174,7 +157,7 @@ fn option_texts(
             _ => None,
         };
         if let Some(s) = s {
-            out.push(text_string(&s));
+            out.push(decode_text_string(&s));
         }
     }
     Ok(out)
@@ -200,34 +183,163 @@ fn to_options(texts: Vec<String>) -> (FieldOptions, bool) {
     (FieldOptions::new(kept).unwrap_or_default(), lost)
 }
 
-/// Radio export names: each widget's `/AP /N` keys other than `/Off`.
-fn radio_states(
+/// The text of a PDF name (ISO 32000-2 §7.3.5): its bytes as UTF-8 when they are,
+/// else as PDFDocEncoding, the encoding Acrobat writes non-ASCII state names in
+/// (`/First#20bachelor#90s#20degree` is "First bachelor’s degree").
+#[must_use]
+pub fn name_text(name: &[u8]) -> String {
+    match std::str::from_utf8(name) {
+        Ok(s) => s.to_owned(),
+        Err(_) => decode_text_string(name),
+    }
+}
+
+/// One widget of a radio group, as a choice turns it on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RadioWidget {
+    /// The widget annotation's object number.
+    pub widget: u32,
+    /// The on-state name written to `/V` and `/AS`, as its bytes.
+    pub state: Vec<u8>,
+    /// Whether `/AP /N` has an appearance for the state. When it has not (a button
+    /// with no on appearance, or a state minted here), whoever turns the widget on
+    /// draws one.
+    pub has_appearance: bool,
+}
+
+/// One choice of a radio group: the option text a signer picks and the widgets it
+/// turns on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RadioChoice {
+    /// The option's text: the first widget's `/Opt` entry when the field has one, else
+    /// its on-state name as text ([`name_text`]). Unique within the group.
+    pub text: String,
+    /// The widgets turned on, all with the same state.
+    pub widgets: Vec<RadioWidget>,
+}
+
+/// Most widgets read for one radio group.
+const MAX_RADIO_WIDGETS: usize = 1_000;
+
+/// A widget's on-state: the first `/AP /N` key other than `/Off` (flag true), else the
+/// first such `/AP /D` key, else a `/AS` other than `/Off` (flag false).
+fn widget_state(
     doc: &mut Document<'_>,
-    widget: Option<u32>,
+    widget: u32,
     cancel: &dyn Fn() -> bool,
-) -> Result<Vec<String>, PdfError> {
-    let Some(w) = widget else {
-        return Ok(Vec::new());
+) -> Result<Option<(Vec<u8>, bool)>, PdfError> {
+    let Some(wd) = local(doc.object(widget, cancel))? else {
+        return Ok(None);
     };
-    let Some(wd) = local(doc.object(w, cancel))? else {
-        return Ok(Vec::new());
+    let ap = match wd.get(b"AP").cloned() {
+        Some(ap) => local(doc.resolve(&ap, cancel))?,
+        None => None,
     };
-    let Some(ap) = wd.get(b"AP").cloned() else {
-        return Ok(Vec::new());
-    };
-    let Some(ap) = local(doc.resolve(&ap, cancel))? else {
-        return Ok(Vec::new());
-    };
-    let Some(n) = ap.get(b"N").cloned() else {
-        return Ok(Vec::new());
-    };
-    let Some(Object::Dictionary(n)) = local(doc.resolve(&n, cancel))? else {
-        return Ok(Vec::new());
-    };
-    Ok(n.iter()
-        .filter(|(k, _)| *k != b"Off")
-        .map(|(k, _)| String::from_utf8_lossy(k).into_owned())
-        .collect())
+    for (key, normal) in [(&b"N"[..], true), (b"D", false)] {
+        let Some(states) = ap.as_ref().and_then(|a| a.get(key)).cloned() else {
+            continue;
+        };
+        let Some(Object::Dictionary(states)) = local(doc.resolve(&states, cancel))? else {
+            continue;
+        };
+        if let Some((k, _)) = states.iter().find(|(k, _)| *k != b"Off") {
+            return Ok(Some((k.to_vec(), normal)));
+        }
+    }
+    Ok(wd
+        .dict()
+        .and_then(|d| d.name(b"AS"))
+        .filter(|s| *s != b"Off")
+        .map(|s| (s.to_vec(), false)))
+}
+
+/// The choices of a radio group (ISO 32000-2 §12.7.5.2.4), in widget order.
+///
+/// A widget's on-state is the name of its `/AP /N` appearance other than `/Off` (then
+/// `/AP /D`, then `/AS`). A widget with none at all (no `/AP`, or an `/N` holding only
+/// `/Off`) can never be turned on as written; it gets a minted state, its position
+/// among the widgets as a decimal number (as `/Opt` groups name theirs), made unique,
+/// and whoever turns it on draws its appearance. Widgets with the same state are one
+/// choice: `/V` names a state, so they turn on together. A choice's text is the first
+/// widget's `/Opt` entry, else the state as text, else "Option n"; a text already taken
+/// gets " (2)", " (3)" … so each choice is distinct.
+///
+/// [`convert_acroform`] makes a radio group's options from these texts, and flattening
+/// and filling in place map the chosen text back through this same function, so the
+/// state written is the document's own bytes, whatever their encoding.
+///
+/// # Errors
+///
+/// Only what ends the whole document: the decode budget, memory and cancellation.
+pub fn radio_choices(
+    doc: &mut Document<'_>,
+    field: &casual_sign_pdf::FormField,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Vec<RadioChoice>, PdfError> {
+    let opt = attrs(doc, field.object, cancel)?
+        .options
+        .unwrap_or_default();
+    // (position, widget, state if any, `/Opt` text)
+    let mut read = Vec::new();
+    for (i, w) in field.widgets.iter().enumerate().take(MAX_RADIO_WIDGETS) {
+        let Some(obj) = w.object else { continue };
+        let state = widget_state(doc, obj, cancel)?;
+        let opt_text = match opt.get(i) {
+            Some(o) => match local(doc.resolve(o, cancel))? {
+                Some(Object::String(s)) => Some(decode_text_string(&s)),
+                _ => None,
+            },
+            None => None,
+        };
+        read.push((i, obj, state, opt_text));
+    }
+    let mut taken: Vec<Vec<u8>> = read
+        .iter()
+        .filter_map(|(_, _, s, _)| s.as_ref().map(|(n, _)| n.clone()))
+        .collect();
+    let mut choices: Vec<RadioChoice> = Vec::new();
+    for (i, obj, state, opt_text) in read {
+        let (state, has_appearance) = match state {
+            Some(s) => s,
+            None => {
+                let mut k = i;
+                let mut name = k.to_string().into_bytes();
+                while taken.contains(&name) {
+                    k = k.saturating_add(1);
+                    name = k.to_string().into_bytes();
+                }
+                taken.push(name.clone());
+                (name, false)
+            }
+        };
+        let rw = RadioWidget {
+            widget: obj,
+            state: state.clone(),
+            has_appearance,
+        };
+        if let Some(c) = choices
+            .iter_mut()
+            .find(|c| c.widgets.first().is_some_and(|w| w.state == state))
+        {
+            c.widgets.push(rw);
+            continue;
+        }
+        let base = opt_text
+            .filter(|t| !t.trim().is_empty())
+            .or_else(|| Some(name_text(&state)).filter(|t| !t.trim().is_empty()))
+            .unwrap_or_else(|| format!("Option {}", i.saturating_add(1)));
+        let mut text = base.clone();
+        let mut n: usize = 1;
+        while choices.iter().any(|c| c.text == text) {
+            n = n.saturating_add(1);
+            text = format!("{base} ({n})");
+        }
+        choices.push(RadioChoice {
+            text,
+            widgets: vec![rw],
+        });
+    }
+    Ok(choices)
 }
 
 /// The widget's rectangle on its page, clipped to the page; `None` when nothing is left.
@@ -353,13 +465,15 @@ pub fn convert_acroform(
                 continue;
             }
             let mut rect: Option<DisplayRect> = None;
-            let mut states = Vec::new();
             for w in &f.widgets {
                 if let Some(r) = place(report, page, &w.rect) {
                     rect = Some(rect.map_or(r, |o| o.union(&r)));
                 }
-                states.extend(radio_states(doc, w.object, cancel)?);
             }
+            let states: Vec<String> = radio_choices(doc, f, cancel)?
+                .into_iter()
+                .map(|c| c.text)
+                .collect();
             let Some(rect) = rect else {
                 out.skipped.push(skip(Unmapped::NoArea, None));
                 continue;

@@ -191,3 +191,120 @@ fn widgets_on_rotated_pages_are_placed_in_displayed_space() {
         (d(600), d(100), d(20), d(200))
     );
 }
+
+/// One radio group (object 12) whose kids (16, 17, …) carry the given `/AP` entries,
+/// with `group_extra` (an `/Opt`, say) on the field.
+fn radio_group(group_extra: &str, kids_ap: &[&str]) -> Vec<u8> {
+    let w = "/Type/Annot/Subtype/Widget/P 3 0 R";
+    let kids: Vec<String> = (0..kids_ap.len())
+        .map(|i| format!("{} 0 R", 16 + i))
+        .collect();
+    let mut extra = vec![
+        (
+            12,
+            format!(
+                "<</FT/Btn/Ff 49152/T(choice){group_extra}/Kids[{}]>>",
+                kids.join(" ")
+            )
+            .into_bytes(),
+        ),
+        (
+            20,
+            pdf::stream("/Type/XObject/Subtype/Form/BBox[0 0 10 10]", b""),
+        ),
+    ];
+    for (i, ap) in kids_ap.iter().enumerate() {
+        let x = 100 + 20 * i;
+        extra.push((
+            u32::try_from(16 + i).unwrap(),
+            format!(
+                "<</Parent 12 0 R{w}/Rect[{x} 300 {} 310]/AS/Off{ap}>>",
+                x + 10
+            )
+            .into_bytes(),
+        ));
+    }
+    one_page(
+        "/AcroForm<</Fields[12 0 R]>>",
+        &format!("/Annots[{}]", kids.join(" ")),
+        "",
+        b"",
+        extra,
+    )
+}
+
+fn radio_options(bytes: &[u8]) -> Vec<String> {
+    let c = convert(bytes);
+    assert_eq!(c.fields.len(), 1, "{c:?}");
+    c.fields[0]
+        .field
+        .options
+        .as_slice()
+        .iter()
+        .map(|o| o.as_str().to_owned())
+        .collect()
+}
+
+#[test]
+fn radio_state_names_in_pdfdocencoding_or_utf8_become_their_characters() {
+    // FLD-RADIO-NAME: ed-fafsa-2324 names a state `First bachelor` 0x90 `s degree`;
+    // 0x90 is U+2019 in PDFDocEncoding. A UTF-8 name stays UTF-8.
+    let bytes = radio_group(
+        "",
+        &[
+            "/AP<</N<</First#20bachelor#90s#20degree 20 0 R/Off 20 0 R>>>>",
+            "/AP<</N<</Caf#e9 20 0 R/Off 20 0 R>>>>",
+            "/AP<</N<</Gr#c3#bc#c3#9fe 20 0 R/Off 20 0 R>>>>",
+        ],
+    );
+    assert_eq!(
+        radio_options(&bytes),
+        vec![
+            "First bachelor\u{2019}s degree",
+            "Caf\u{e9}",
+            "Gr\u{fc}\u{df}e"
+        ]
+    );
+}
+
+#[test]
+fn a_radio_button_with_no_on_state_still_has_an_option() {
+    // FLD-RADIO-NOOPT: ed-fafsa-2425 has buttons whose `/AP /N` is `<<>>` and `/D`
+    // holds only `/Off`, and no `/Opt`. Each still needs a state to be chosen.
+    let bytes = radio_group(
+        "",
+        &[
+            "/AP<</N<</Yes 20 0 R>>>>",
+            "/AP<</N<<>>/D<</Off 20 0 R>>>>",
+            "",
+        ],
+    );
+    assert_eq!(radio_options(&bytes), vec!["Yes", "1", "2"]);
+}
+
+#[test]
+fn radio_options_come_from_opt_and_shared_states_are_one_option() {
+    // `/Opt` gives each kid's export value, kids named by index (§12.7.5.2.4).
+    let bytes = radio_group(
+        "/Opt[(Married)(Single)(Single)]",
+        &[
+            "/AP<</N<</0 20 0 R/Off 20 0 R>>>>",
+            "/AP<</N<</1 20 0 R/Off 20 0 R>>>>",
+            "/AP<</N<</2 20 0 R/Off 20 0 R>>>>",
+        ],
+    );
+    assert_eq!(
+        radio_options(&bytes),
+        vec!["Married", "Single", "Single (2)"]
+    );
+    // Kids sharing a state turn on together: one option.
+    let bytes = radio_group(
+        "",
+        &[
+            "/AP<</N<</Yes 20 0 R/Off 20 0 R>>>>",
+            "/AP<</N<</Yes 20 0 R/Off 20 0 R>>>>",
+            "/AP<</N<</No 20 0 R/Off 20 0 R>>>>",
+        ],
+    );
+    assert_eq!(radio_options(&bytes), vec!["Yes", "No"]);
+}

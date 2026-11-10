@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use casual_sign_fields::{DisplayRect, PageGeometry, Point};
+use casual_sign_fields::{DisplayRect, PageGeometry, Point, RadioChoice, radio_choices};
 use casual_sign_model::{FieldType, FieldValue, Id, Text};
 use casual_sign_pdf::{
     Admitted, Cancel, Change, Dictionary, FieldType as PdfFieldType, IncrementalUpdate, ObjRef,
@@ -205,6 +205,18 @@ pub fn flatten(
             }
         }
     }
+    // Each radio group's choices: the option texts conversion offered and the states
+    // they write, in the document's own bytes (FLD-RADIO-NAME, FLD-RADIO-NOOPT).
+    let mut radio: BTreeMap<u32, Vec<RadioChoice>> = BTreeMap::new();
+    if has_form {
+        for f in &pdf_fields {
+            if f.field_type == PdfFieldType::Radio
+                && let Some(obj) = f.object
+            {
+                radio.insert(obj, radio_choices(doc, f, cancel)?);
+            }
+        }
+    }
     let widgets_of = |obj: u32| -> Vec<&FormWidget> {
         widgets
             .iter()
@@ -380,46 +392,74 @@ pub fn flatten(
             });
         }
 
-        // A converted radio group: the dot goes in the chosen button's own box.
+        // A converted radio group: the chosen buttons as the document draws them on (their
+        // own on appearance), or a dot in their box when they have none. Never the
+        // option's text: a group's value is a button, not words.
         if field.field_type == FieldType::RadioGroup
             && let Some(obj) = src
+            && let Some(choices) = radio.get(&obj)
             && let FieldValue::Choice(chosen) | FieldValue::Text(chosen) = value
         {
-            let state = chosen.as_str().as_bytes().to_vec();
-            let buttons: Vec<&FormWidget> = widgets_of(obj)
-                .into_iter()
-                .filter(|w| w.info.on_states.contains(&state))
-                .collect();
-            if !buttons.is_empty() {
-                let color = field
-                    .format
-                    .as_ref()
-                    .and_then(|f| f.color)
-                    .map_or(Color::BLACK, |c| Color::from_rgb(c.0));
-                for b in buttons {
-                    let Some(bp) = b.info.page.and_then(|p| usize::try_from(p).ok()) else {
-                        continue;
-                    };
-                    let Some(bg) = page_geometry(&pages, bp) else {
-                        continue;
-                    };
-                    let r = bg.rect_to_displayed(&b.info.rect);
-                    let mut canvas = Canvas::default();
-                    draw::dot(&mut canvas, r.width, r.height, color);
-                    placed.push(Placed {
-                        page: bp,
-                        w: r.width,
-                        h: r.height,
-                        matrix: field_matrix(&bg, &r),
-                        drawing: Drawing {
-                            canvas,
-                            images: Vec::new(),
-                        },
-                    });
-                }
-                report.drawn.push(field.id.clone());
+            if chosen.is_empty() {
+                report.not_drawn.push((field.id.clone(), NotDrawn::NoValue));
                 continue;
             }
+            let Some(choice) = choices.iter().find(|c| c.text == chosen.as_str()) else {
+                return Err(FlattenError::ValueMismatch {
+                    field: field.id.clone(),
+                });
+            };
+            let color = field
+                .format
+                .as_ref()
+                .and_then(|f| f.color)
+                .map_or(Color::BLACK, |c| Color::from_rgb(c.0));
+            for rw in &choice.widgets {
+                let Some(b) = widgets_of(obj)
+                    .into_iter()
+                    .find(|w| w.info.object == rw.widget)
+                else {
+                    continue;
+                };
+                let Some(bp) = b.info.page.and_then(|p| usize::try_from(p).ok()) else {
+                    continue;
+                };
+                let own = match (&b.info.ap_n, rw.has_appearance) {
+                    (Some(Object::Dictionary(states)), true) => {
+                        states.get(&rw.state).and_then(Object::as_ref)
+                    }
+                    _ => None,
+                };
+                if let Some(stream) = own
+                    && let Some((bbox, m)) = read::form_box(doc, stream, cancel)?
+                    && let Some(matrix) = appearance_matrix(&bbox, m, &b.info.rect)
+                {
+                    kept.push(Kept {
+                        page: bp,
+                        stream,
+                        matrix,
+                    });
+                    continue;
+                }
+                let Some(bg) = page_geometry(&pages, bp) else {
+                    continue;
+                };
+                let r = bg.rect_to_displayed(&b.info.rect);
+                let mut canvas = Canvas::default();
+                draw::dot(&mut canvas, r.width, r.height, color);
+                placed.push(Placed {
+                    page: bp,
+                    w: r.width,
+                    h: r.height,
+                    matrix: field_matrix(&bg, &r),
+                    drawing: Drawing {
+                        canvas,
+                        images: Vec::new(),
+                    },
+                });
+            }
+            report.drawn.push(field.id.clone());
+            continue;
         }
 
         match draw::field(&mut ctx, field, value, rect.width, rect.height)? {
@@ -475,6 +515,7 @@ pub fn flatten(
                     kind,
                     value,
                     widgets: &infos,
+                    choices: radio.get(obj).map_or(&[], Vec::as_slice),
                     field_id: first,
                 },
                 cancel,

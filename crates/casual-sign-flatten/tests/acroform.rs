@@ -323,3 +323,208 @@ fn a_check_box_with_several_on_states_turns_on_only_the_chosen_one() {
         .collect();
     assert_eq!(states, vec![Some(b"A".to_vec()), Some(b"Off".to_vec())]);
 }
+
+/// A radio group (object 10) with `group_extra` on the field and kids 11, 12, … with
+/// the given `/AP` entries, delivered.
+fn radio_doc(group_extra: &str, kids_ap: &[&str]) -> Vec<u8> {
+    let w = "/Type/Annot/Subtype/Widget/P 3 0 R/F 4";
+    let kids: Vec<String> = (0..kids_ap.len())
+        .map(|i| format!("{} 0 R", 11 + i))
+        .collect();
+    let on = stream(
+        "/Type/XObject/Subtype/Form/BBox[0 0 12 12]",
+        b"0 g 2 2 8 8 re f",
+    );
+    let mut extra = vec![
+        (5, b"<</Fields[10 0 R]/DA(/Helv 0 Tf 0 g)>>".to_vec()),
+        (
+            10,
+            format!(
+                "<</FT/Btn/Ff 49152/T(group){group_extra}/Kids[{}]>>",
+                kids.join(" ")
+            )
+            .into_bytes(),
+        ),
+        (30, on),
+    ];
+    for (i, ap) in kids_ap.iter().enumerate() {
+        let y = 600 - 20 * i;
+        extra.push((
+            u32::try_from(11 + i).unwrap(),
+            format!(
+                "<</Parent 10 0 R{w}/Rect[100 {y} 112 {}]/AS/Off{ap}>>",
+                y + 12
+            )
+            .into_bytes(),
+        ));
+    }
+    delivered(&page_pdf(
+        &cases()[0],
+        "/AcroForm 5 0 R",
+        &format!("/Annots[{}]", kids.join(" ")),
+        extra,
+    ))
+}
+
+/// Fill the group in place with each of its options in turn, and flatten with each:
+/// returns, per option, `/V` and every widget's `/AS` and normal-appearance keys.
+#[allow(clippy::type_complexity)] // A table of what each fill wrote.
+fn radio_fills(base: &[u8]) -> Vec<(String, Vec<u8>, Vec<(Vec<u8>, Vec<Vec<u8>>)>)> {
+    let mut out = Vec::new();
+    let mut a = admit(base, &Limits::default(), &never).unwrap();
+    let report = a.report.clone();
+    let conv =
+        convert_acroform(&mut a.document, &report, &id("doc"), &mut minter(), &never).unwrap();
+    let fields: Vec<_> = conv.fields.iter().map(|c| c.field.clone()).collect();
+    assert_eq!(fields.len(), 1);
+    let caps = std::collections::BTreeMap::new();
+    for option in fields[0].options.as_slice() {
+        let values = std::collections::BTreeMap::from([(
+            fields[0].id.clone(),
+            casual_sign_model::FieldValue::Choice(option.clone()),
+        )]);
+        let input = FlattenInput {
+            fields: &fields,
+            values: &values,
+            captures: &caps,
+            envelope_id: None,
+            acroform: Some(&conv),
+        };
+        let mut a = admit(base, &Limits::default(), &never).unwrap();
+        let flat = flatten(
+            &mut a,
+            &input,
+            &FontSet::bundled(),
+            &FlattenOptions::default(),
+            &never,
+        )
+        .unwrap_or_else(|e| panic!("flatten {}: {e}", option.as_str()));
+        assert_eq!(flat.report.drawn, vec![fields[0].id.clone()]);
+        // The button is drawn, not the option's text: no face is embedded.
+        assert!(
+            flat.report.fonts.is_empty(),
+            "flatten {} drew text",
+            option.as_str()
+        );
+        let mut a = admit(base, &Limits::default(), &never).unwrap();
+        let mut options = FlattenOptions::default();
+        options.mode = FormMode::FillInPlace;
+        let filled = flatten(&mut a, &input, &FontSet::bundled(), &options, &never)
+            .unwrap_or_else(|e| panic!("fill {}: {e}", option.as_str()));
+        let mut b = admit_strict(&filled.bytes, &Limits::default(), &never).unwrap();
+        let f = b.report.fields[0].clone();
+        let v = b
+            .document
+            .object(f.object.unwrap(), &never)
+            .unwrap()
+            .dict()
+            .and_then(|d| d.name(b"V"))
+            .map(<[u8]>::to_vec)
+            .unwrap_or_default();
+        let mut widgets = Vec::new();
+        for w in &f.widgets {
+            let d = b.document.object(w.object.unwrap(), &never).unwrap();
+            let d = d.dict().unwrap().clone();
+            let state = d.name(b"AS").map(<[u8]>::to_vec).unwrap_or_default();
+            let ap = b.document.resolve(d.get(b"AP").unwrap(), &never).unwrap();
+            let n = b.document.resolve(ap.get(b"N").unwrap(), &never).unwrap();
+            let keys = match n {
+                Object::Dictionary(n) => n.iter().map(|(k, _)| k.to_vec()).collect(),
+                _ => Vec::new(),
+            };
+            widgets.push((state, keys));
+        }
+        out.push((option.as_str().to_owned(), v, widgets));
+    }
+    out
+}
+
+#[test]
+fn radio_states_named_in_pdfdocencoding_fill_and_flatten_with_their_own_bytes() {
+    // FLD-RADIO-NAME (ed-fafsa-2324): the state `First bachelor` 0x90 `s degree` is
+    // offered as "First bachelor’s degree" and written back as its own bytes; flattening
+    // draws the button, not the option's text.
+    let base = radio_doc(
+        "",
+        &[
+            "/AP<</N<</First#20bachelor#90s#20degree 30 0 R/Off 30 0 R>>>>",
+            "/AP<</N<</Caf#e9 30 0 R>>>>",
+        ],
+    );
+    let name = b"First bachelor\x90s degree".to_vec();
+    let off = b"Off".to_vec();
+    let rows = radio_fills(&base);
+    assert_eq!(
+        rows,
+        vec![
+            (
+                "First bachelor\u{2019}s degree".to_owned(),
+                name.clone(),
+                vec![
+                    (name.clone(), vec![name.clone(), off.clone()]),
+                    (off.clone(), vec![b"Caf\xe9".to_vec()]),
+                ]
+            ),
+            (
+                "Caf\u{e9}".to_owned(),
+                b"Caf\xe9".to_vec(),
+                vec![
+                    (off.clone(), vec![name.clone(), off.clone()]),
+                    (b"Caf\xe9".to_vec(), vec![b"Caf\xe9".to_vec()]),
+                ]
+            ),
+        ]
+    );
+}
+
+#[test]
+fn radio_buttons_without_an_on_state_or_with_opt_fill_and_flatten() {
+    // FLD-RADIO-NOOPT (ed-fafsa-2425): a button whose `/AP /N` is empty gets a minted
+    // state, its position, and an appearance drawn for it when chosen.
+    let base = radio_doc(
+        "",
+        &[
+            "/AP<</N<</Yes 30 0 R/Off 30 0 R>>>>",
+            "/AP<</N<<>>/D<</Off 30 0 R>>>>",
+        ],
+    );
+    let (yes, one, off) = (b"Yes".to_vec(), b"1".to_vec(), b"Off".to_vec());
+    assert_eq!(
+        radio_fills(&base),
+        vec![
+            (
+                "Yes".to_owned(),
+                yes.clone(),
+                vec![
+                    (yes.clone(), vec![yes.clone(), off.clone()]),
+                    (off.clone(), vec![]),
+                ]
+            ),
+            (
+                "1".to_owned(),
+                one.clone(),
+                vec![
+                    (off.clone(), vec![yes.clone(), off.clone()]),
+                    (one.clone(), vec![one.clone(), off.clone()]),
+                ]
+            ),
+        ]
+    );
+    // `/Opt`: the export values are offered; the kids' index states are written.
+    let base = radio_doc(
+        "/Opt[(Married)(Single)]",
+        &[
+            "/AP<</N<</0 30 0 R/Off 30 0 R>>>>",
+            "/AP<</N<</1 30 0 R/Off 30 0 R>>>>",
+        ],
+    );
+    let rows = radio_fills(&base);
+    let written: Vec<(String, Vec<u8>)> = rows.into_iter().map(|(o, v, _)| (o, v)).collect();
+    assert_eq!(
+        written,
+        vec![
+            ("Married".to_owned(), b"0".to_vec()),
+            ("Single".to_owned(), b"1".to_vec())
+        ]
+    );
+}
