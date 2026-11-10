@@ -27,6 +27,8 @@ by saying so.
 | 16 | 2026-11-11 | Chose, from options: accept the `multi_select` field type and `Choices` value as ADR-025 | [08](08-ADR-REGISTER.md) ADR-025, `ACRO-02` |
 | 17 | 2026-11-11 | "Yes, opt-in per document, and if not approved, even then approximate from his IP; we can use a geo-IP library." Record the signer's location: a per-envelope setting asks the signer's browser for its location; if the signer declines (or the browser cannot), the location is approximated from the request IP with a GeoIP database, and the event records which source it came from | `GEO-01`, [32](32-AUDIT-TRAIL-AND-EVIDENCE.md), [09](09-LEGAL-AND-COMPLIANCE.md) |
 | 18 | 2026-11-11 | Chose, from options: sign off Phase 1 now, on condition that the running fuzz run (GitHub run 42890029431, 24 worker-hours per target) finishes with no crash; any crash reopens Phase 1 and its fix is P0 | [06](06-ROADMAP-AND-DELIVERY.md) Phase 1, `FUZZ-01` |
+| 19 | 2026-11-11 | "Instead of building all at once, build it first for the most common use case and then extend it horizontally with features: target 50–70% of use cases for the first release, then scale." Chose the core send-and-sign scope for Release 1. Sequencing only: instruction 8 still holds, nothing leaves the roadmap | [06](06-ROADMAP-AND-DELIVERY.md) §Release 1 |
+| 20 | 2026-11-11 | OpenSeal stays Apache-2.0, free to use, embed and commercialize; "Powered by OpenSeal" is a voluntary request, never a license condition; no CLA, no commercial license, no trademark license | [ATTRIBUTION.md](../ATTRIBUTION.md), [BRANDING.md](../BRANDING.md) |
 
 ## Inherited working rules
 

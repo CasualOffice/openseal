@@ -71,6 +71,21 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
 | W-2 (retired 2026-11-11: Phase 0 closed) | Phase 1 opens before Phase 0 closes: CI cannot run on GitHub while the repository is private (instruction 7), so "CI green on three platforms" is unmet | Platform-specific failures (Linux, Windows) found late; the local run is macOS only, with Linux only for the validators in Docker | Owner's "proceed", 2026-11-10, with instruction 7 | Phase 0 still closes only on a green GitHub run, at the latest when the repository goes public for the pre-release alpha (M3); failures found then are fixed first |
 | W-1 | Phase 2 opens before Phase 1 closes, once stages 1A and 1B are closed | The model or API may need a change when sealing lands | Owner, 2026-11-11 (instruction 12, `DEC-13`); Phase 2 open | Phase 2 work adapts; Phase 2 cannot close before Phase 1 |
 
+## Release 1 — the common case first (owner instruction 19)
+
+Release 1 covers the common 60–70% of use; everything else follows as slices, in order, after it. Nothing is removed.
+
+- **In:** upload PDF (and Word through the converter); place signature, initials, date, text and checkbox fields;
+  sequential and parallel signers and carbon copies; email invitations and reminders; decline and void; email link,
+  access code and email one-time code; signing on phone and desktop; sealed PDF with certificate of completion and
+  audit trail, downloadable and verifiable; simple templates; the sender's dashboard; the API and webhooks; single-node
+  Docker deployment (Phase 2F).
+- **After Release 1, in slice order:** SSO (OIDC, SAML), WebAuthn, SMS and phone authentication, bulk send and signing
+  links, advanced fields and formulas in the editor, XFA editing, payments, brands and languages, archive and B-LTA
+  renewal, qualified signatures, notary, desktop and mobile apps, and the rest of the slice table.
+- **Work order:** finish Phase 2 to what Release 1 needs (integrate 2C and 2D, 2F Compose, the end-to-end test), then
+  slice 1's web app for senders and signers, then the Release 1 gate.
+
 ## Phase D — Design
 
 - **Gives:** an agreed design, so later phases need no do-over.
