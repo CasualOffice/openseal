@@ -30,6 +30,8 @@ pub(crate) enum FillValue {
     Checked(bool),
     /// A radio state or a choice's display text.
     Choice(String),
+    /// A multi-select list's chosen display texts (ACRO-02).
+    Choices(Vec<String>),
 }
 
 /// A new appearance stream for a widget.
@@ -386,6 +388,14 @@ pub(crate) fn plan_field(
                 }
             }
         }
+        PdfFieldType::Choice if matches!(t.value, FillValue::Choices(_)) => {
+            let FillValue::Choices(chosen) = t.value else {
+                return Err(mismatch());
+            };
+            plan_multi(
+                doc, plan, uses, fonts, default_da, t, field, &attrs, chosen, cancel,
+            )?;
+        }
         PdfFieldType::Text | PdfFieldType::Choice => {
             let (FillValue::Text(text) | FillValue::Choice(text)) = t.value else {
                 return Err(mismatch());
@@ -462,7 +472,7 @@ pub(crate) fn plan_field(
                         uses,
                         fonts,
                         &opts,
-                        text,
+                        &[text.as_str()],
                         bw,
                         bh,
                         &setting(false, None),
@@ -504,14 +514,142 @@ pub(crate) fn plan_field(
     Ok(())
 }
 
-/// A list box: options from the top, the chosen one highlighted.
+/// A multi-select list box filled in place (ACRO-02): `/V` the chosen options' export
+/// values in `/Opt` order (one string for one, an array for several, absent for none),
+/// `/I` their indices, and an appearance with each highlighted.
+#[allow(clippy::too_many_arguments)] // Each argument is a distinct input of the plan.
+fn plan_multi(
+    doc: &mut Document<'_>,
+    plan: &mut FillPlan,
+    uses: &mut GlyphUse,
+    fonts: &FontSet,
+    default_da: Option<&[u8]>,
+    t: &Target<'_>,
+    mut field: Dictionary,
+    attrs: &FieldAttrs,
+    chosen: &[String],
+    cancel: Cancel<'_>,
+) -> Result<(), FlattenError> {
+    let total: usize = chosen.iter().map(String::len).sum();
+    if total > crate::limits::MAX_TEXT_BYTES {
+        return Err(FlattenError::TextTooLong {
+            field: t.field_id.clone(),
+            bytes: total,
+        });
+    }
+    let opts = match &attrs.opt {
+        Some(o) => options(doc, o, cancel)?,
+        None => Vec::new(),
+    };
+    let mut exports: Vec<Object> = Vec::new();
+    let mut indices: Vec<Object> = Vec::new();
+    for (i, (export, display)) in opts.iter().enumerate() {
+        if chosen.iter().any(|c| c == display) {
+            exports.push(Object::String(export.clone()));
+            indices.push(Object::Integer(i64::try_from(i).unwrap_or(i64::MAX)));
+        }
+    }
+    // A choice the document does not list (validation refuses these) keeps its text.
+    for c in chosen {
+        if !opts.iter().any(|(_, d)| d == c) {
+            exports.push(Object::String(text_string(c)));
+        }
+    }
+    match exports.len() {
+        0 => {
+            field.remove(b"V");
+        }
+        1 => {
+            if let Some(v) = exports.pop() {
+                field.insert(b"V", v);
+            }
+        }
+        _ => {
+            field.insert(b"V", Object::Array(exports));
+        }
+    }
+    if indices.is_empty() {
+        field.remove(b"I");
+    } else {
+        field.insert(b"I", Object::Array(indices));
+    }
+    field.remove(b"RV");
+    plan.edits.insert(t.object, field);
+    let da = parse_da(
+        attrs
+            .da
+            .as_deref()
+            .or(default_da)
+            .unwrap_or(b"/Helv 0 Tf 0 g"),
+    );
+    let face = fonts
+        .for_family(family_of(&da.font))
+        .ok_or_else(|| FlattenError::MissingGlyph {
+            field: t.field_id.clone(),
+        })?;
+    let chosen: Vec<&str> = chosen.iter().map(String::as_str).collect();
+    for w in t.widgets {
+        plan.edits.entry(w.object).or_insert_with(|| w.dict.clone());
+        let (bw, bh, matrix) = widget_box(w);
+        let (border, _, _) = frame(w);
+        let mut canvas = Canvas::default();
+        draw_frame(&mut canvas, w, bw, bh, false);
+        canvas.line("/Tx BMC");
+        canvas.line("q");
+        canvas.rect(
+            border,
+            border,
+            (bw - 2.0 * border).max(0.0),
+            (bh - 2.0 * border).max(0.0),
+            "W n",
+        );
+        let setting = Setting {
+            face,
+            size: (da.size > 0.0).then_some(da.size),
+            shrink: da.size <= 0.0,
+            wrap: false,
+            align: match attrs.q {
+                Some(1) => Align::Center,
+                Some(2) => Align::Right,
+                _ => Align::Left,
+            },
+            color: da.color,
+            padding: 2.0 + border,
+            comb: None,
+        };
+        list(
+            &mut canvas,
+            uses,
+            fonts,
+            &opts,
+            &chosen,
+            bw,
+            bh,
+            &setting,
+            t,
+        )?;
+        canvas.line("Q");
+        canvas.line("EMC");
+        plan.appearances.push(Appearance {
+            widget: w.object,
+            canvas,
+            w: bw,
+            h: bh,
+            matrix,
+            on_state: None,
+        });
+    }
+    Ok(())
+}
+
+/// A list box: options from the top, the chosen ones highlighted.
 #[allow(clippy::too_many_arguments)] // The setting is shared with the caller's text path.
 fn list(
     canvas: &mut Canvas,
     uses: &mut GlyphUse,
     fonts: &FontSet,
     opts: &[(Vec<u8>, String)],
-    chosen: &str,
+    chosen: &[&str],
     w: f64,
     h: f64,
     s: &Setting,
@@ -525,7 +663,7 @@ fn list(
             break;
         }
         let y = h - row * (i as f64 + 1.0);
-        if display == chosen {
+        if chosen.contains(&display.as_str()) {
             canvas.fill_color(Color([0.6, 0.75, 0.9]));
             canvas.rect(0.0, y, w, row, "f");
         }

@@ -5,8 +5,8 @@
 //! Input is the admission report's inventory and the document it came from; output is
 //! one [`Field`] per widget (one per page for a radio group), placed in displayed page
 //! space through [`crate::geometry`]. What cannot be mapped is listed with a reason;
-//! what maps with a loss (a dropped label, options cut or merged, multi-select) is
-//! listed too. Nothing is executed and the document is not changed.
+//! what maps with a loss (a dropped label, options cut or merged, a radio group across
+//! pages with no label) is listed too. Nothing is executed and the document is not changed.
 
 use std::collections::BTreeMap;
 
@@ -64,7 +64,8 @@ pub enum Unmapped {
     Label,
     /// Options over 500, repeated or over 4,000 bytes were dropped.
     Options,
-    /// A multi-select list became a single-choice dropdown.
+    /// No longer reported: a multi-select list converts to a multi-select field
+    /// (`ACRO-02`). Kept so the variant's meaning stays stable for callers that match it.
     MultiSelect,
     /// A choice field with no usable options became a text field.
     NoOptions,
@@ -586,9 +587,12 @@ pub fn convert_acroform(
                 out.lossy.push(skip(Unmapped::NoOptions, None));
             }
             options = opts;
-            allow_custom = a.flags & FF_COMBO != 0 && a.flags & FF_EDIT != 0;
-            if a.flags & FF_MULTI_SELECT != 0 {
-                out.lossy.push(skip(Unmapped::MultiSelect, None));
+            let combo = a.flags & FF_COMBO != 0;
+            allow_custom = combo && a.flags & FF_EDIT != 0;
+            // A list box that takes several choices is a multi-select field (ACRO-02);
+            // the flag means nothing on a combo box (ISO 32000-2 Table 231).
+            if !combo && a.flags & FF_MULTI_SELECT != 0 && field_type == FieldType::Dropdown {
+                field_type = FieldType::MultiSelect;
             }
         }
         let validation = match (field_type, a.max_len) {

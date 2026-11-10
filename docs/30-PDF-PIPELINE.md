@@ -155,8 +155,15 @@ top-left with the given size. Types that need options, a formula or a URL cannot
 place it: `/P` is optional and forms written before PDF 1.3 never carry it (irs-f1040-1997, irs-f1120-1997 and
 irs-fss4-1998 converted no field before this, `PDF-WID-01`). The `/Annots` index is read once per document and only when
 a widget lacks `/P`, at most 10,000 entries a page (docs/21). One OpenSeal field per widget (text with `MaxLen` and required, checkbox, radio group as one
-field over its buttons, combo with custom entry, signature); push buttons and off-page widgets
-are reported as skipped; multi-select is reported as lossy.
+field over its buttons, combo with custom entry, list box, multi-select list box, signature); push buttons and
+off-page widgets are reported as skipped.
+
+**A multi-select list box (`ACRO-02`)**, `/Ch` with `/Ff` bit 22 and not a combo box, converts to a `multi_select`
+field (docs/22 §6) with the list's display texts as options; its value is the set of options chosen (at most 500, none
+repeated, each one of the field's options; `CS-FLD-0002` otherwise) and a condition on a value holds while that option is
+among them. Flattened, the chosen options are drawn one a line in the field's option order; filled in place, `/V` holds
+their export values in `/Opt` order (a string for one, an array for several, absent for none), `/I` their indices, and
+the new appearance highlights each (ISO 32000-2 §12.7.5.4).
 
 **A radio group across pages (`ACRO-02`)** is one group: a field on each page holding its buttons, over that page's
 buttons, each offering every choice of the group and all carrying the group's name as their data label, so they are

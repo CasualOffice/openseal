@@ -532,3 +532,39 @@ fn bad_regex_is_refused_at_send() {
         FieldError::Invalid(casual_sign_fields::Invalid::PatternTooBig)
     );
 }
+
+#[test]
+fn a_multi_select_is_required_by_one_choice_and_a_condition_sees_each_choice() {
+    // ACRO-02: an empty selection is no value; a condition on a value holds when that
+    // option is among those chosen; an option not offered is invalid.
+    let set = |l: &[&str]| {
+        FieldValue::Choices(
+            casual_sign_model::FieldOptions::new(
+                l.iter().map(|o| Text::new(*o).unwrap()).collect(),
+            )
+            .unwrap(),
+        )
+    };
+    let mut colours = with_options(
+        labelled("a", FieldType::MultiSelect, "colours"),
+        &["Red", "Green", "Blue"],
+    );
+    colours.required = true;
+    let fields = vec![
+        colours,
+        when(
+            field("b", FieldType::Text),
+            "colours",
+            Condition::Value(Text::new("Green").unwrap()),
+        ),
+    ];
+    let out = evaluate_envelope(&fields, &values(&[("a", set(&[]))]));
+    assert_eq!(codes(&out.issues), vec![("a".to_owned(), "CS-FLD-0001")]);
+    assert_eq!(out.hidden, vec![id("b")]);
+    let out = evaluate_envelope(&fields, &values(&[("a", set(&["Blue", "Green"]))]));
+    assert!(out.is_complete(), "{:?}", out.issues);
+    assert!(out.hidden.is_empty());
+    assert_eq!(out.values.get(&id("a")), Some(&set(&["Blue", "Green"])));
+    let out = evaluate_envelope(&fields, &values(&[("a", set(&["Pink"]))]));
+    assert_eq!(codes(&out.issues), vec![("a".to_owned(), "CS-FLD-0002")]);
+}

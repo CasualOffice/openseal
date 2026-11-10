@@ -101,6 +101,9 @@ fn fill_value(v: &FieldValue) -> Option<FillValue> {
     match v {
         FieldValue::Text(t) => Some(FillValue::Text(t.as_str().to_owned())),
         FieldValue::Choice(t) => Some(FillValue::Choice(t.as_str().to_owned())),
+        FieldValue::Choices(c) => Some(FillValue::Choices(
+            c.as_slice().iter().map(|t| t.as_str().to_owned()).collect(),
+        )),
         FieldValue::Checked(c) => Some(FillValue::Checked(*c)),
         _ => None,
     }
@@ -494,7 +497,9 @@ pub fn flatten(
             let entry = targets
                 .entry(obj)
                 .or_insert_with(|| (v.clone(), Vec::new()));
-            if matches!(&entry.0, FillValue::Text(t) | FillValue::Choice(t) if t.is_empty()) {
+            if matches!(&entry.0, FillValue::Text(t) | FillValue::Choice(t) if t.is_empty())
+                || matches!(&entry.0, FillValue::Choices(c) if c.is_empty())
+            {
                 entry.0 = v;
             }
             entry.1.push(field.id.clone());

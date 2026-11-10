@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use casual_sign_model::{Align, DateFormat, Field, FieldType, FieldValue, FontFamily, Id};
+use casual_sign_model::{Align, DateFormat, Field, FieldType, FieldValue, FontFamily, Id, Text};
 
 use crate::canvas::{Canvas, Color, GlyphUse, num, num_fine};
 use crate::error::FlattenError;
@@ -490,6 +490,26 @@ pub(crate) fn field(
                     .unwrap_or_default();
                 let shown = format_date(t.as_str(), format);
                 text(ctx, field, &shown, w, h)
+            }
+            _ => Err(mismatch()),
+        },
+        // The chosen options, one a line, in the field's order whatever order they were
+        // chosen in (ACRO-02).
+        FieldType::MultiSelect => match value {
+            FieldValue::Choices(chosen) => {
+                let offered = field.options.as_slice();
+                let lines: Vec<&str> = offered
+                    .iter()
+                    .filter(|o| chosen.contains(o.as_str()))
+                    .chain(
+                        chosen
+                            .as_slice()
+                            .iter()
+                            .filter(|c| !field.options.contains(c.as_str())),
+                    )
+                    .map(Text::as_str)
+                    .collect();
+                text(ctx, field, &lines.join("\n"), w, h)
             }
             _ => Err(mismatch()),
         },

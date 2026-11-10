@@ -453,7 +453,7 @@ impl<'f> Plan<'f> {
 
             if matches!(
                 field.field_type,
-                FieldType::RadioGroup | FieldType::Dropdown
+                FieldType::RadioGroup | FieldType::Dropdown | FieldType::MultiSelect
             ) && field.options.is_empty()
             {
                 say(Invalid::NoOptions.into());
@@ -646,9 +646,13 @@ impl State<'_, '_> {
             Condition::Checked => matches!(value, Some(FieldValue::Checked(true))),
             Condition::Unchecked => !matches!(value, Some(FieldValue::Checked(true))),
             Condition::Any => value.is_some_and(|v| !v.is_empty()),
-            Condition::Value(want) => {
-                matches!(value, Some(FieldValue::Text(t) | FieldValue::Choice(t)) if t == want)
-            }
+            Condition::Value(want) => match value {
+                Some(FieldValue::Text(t) | FieldValue::Choice(t)) => t == want,
+                // A multi-select shows its dependants while the option is among those
+                // chosen (ACRO-02).
+                Some(FieldValue::Choices(c)) => c.contains(want.as_str()),
+                _ => false,
+            },
         }
     }
 

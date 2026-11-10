@@ -53,6 +53,9 @@ pub enum FieldType {
     RadioGroup,
     /// A choice from a list.
     Dropdown,
+    /// Any number of choices from a list (a PDF multi-select list box, `ACRO-02`); its
+    /// value is [`FieldValue::Choices`].
+    MultiSelect,
     /// Read-only, computed from a formula.
     Formula,
     /// A file the signer uploads.
@@ -235,6 +238,9 @@ pub enum FieldValue {
     Checked(bool),
     /// The chosen option of a radio group or dropdown.
     Choice(Text),
+    /// The chosen options of a multi-select field: at most 500, none repeated (the
+    /// bounds of [`FieldOptions`], which carries them). Empty means none chosen.
+    Choices(FieldOptions),
     /// An uploaded file, by the host's id.
     Attachment(Id),
     /// A captured signature, initials or stamp, by the host's id.
@@ -248,13 +254,15 @@ impl FieldValue {
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Text(t) | Self::Choice(t) => t.is_empty(),
+            Self::Choices(c) => c.is_empty(),
             Self::Checked(c) => !c,
             Self::Attachment(_) | Self::Signature(_) => false,
         }
     }
 }
 
-/// The options of a dropdown or radio group: at most 500, no two alike (docs/21).
+/// The options of a dropdown, radio group or multi-select, or the options chosen in a
+/// multi-select: at most 500, no two alike (docs/21).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(try_from = "Vec<Text>", into = "Vec<Text>")]
 pub struct FieldOptions(Vec<Text>);
@@ -863,7 +871,7 @@ pub struct Field {
     /// The expression of a formula field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula: Option<Formula>,
-    /// Options of a dropdown or radio group.
+    /// Options of a dropdown, radio group or multi-select.
     #[serde(default, skip_serializing_if = "FieldOptions::is_empty")]
     pub options: FieldOptions,
     /// A dropdown accepts a value outside its options (SignNow's custom-defined options).
@@ -1075,6 +1083,35 @@ mod tests {
         assert!(!GroupRule::SelectExactly { count: 1 }.admits(0));
         assert!(GroupRule::SelectRange { min: 1, max: 3 }.admits(3));
         assert!(!GroupRule::SelectRange { min: 1, max: 3 }.admits(4));
+    }
+
+    #[test]
+    fn a_multi_select_holds_a_bounded_set_of_choices() {
+        // ACRO-02: a PDF multi-select list box converts to a field of its own kind
+        // whose value is the chosen options, at most 500, none repeated.
+        let mut f = sample();
+        f.field_type = FieldType::MultiSelect;
+        f.validation = None;
+        let opts = |l: &[&str]| {
+            FieldOptions::new(l.iter().map(|o| Text::new(*o).unwrap()).collect()).unwrap()
+        };
+        f.options = opts(&["Red", "Green", "Blue"]);
+        f.value = Some(FieldValue::Choices(opts(&["Red", "Blue"])));
+        let json = serde_json::to_string(&f).unwrap();
+        assert!(json.contains(r#""type":"multi_select""#), "{json}");
+        assert!(
+            json.contains(r#""value":{"choices":["Red","Blue"]}"#),
+            "{json}"
+        );
+        assert_eq!(serde_json::from_str::<Field>(&json).unwrap(), f);
+        assert!(FieldType::MultiSelect.takes_input());
+        assert!(FieldValue::Choices(FieldOptions::default()).is_empty());
+        assert!(!FieldValue::Choices(opts(&["Red"])).is_empty());
+        // Repeats and more than 500 are refused when read.
+        assert!(serde_json::from_str::<FieldValue>(r#"{"choices":["a","a"]}"#).is_err());
+        let many: Vec<String> = (0..501).map(|i| format!("o{i}")).collect();
+        let json = serde_json::json!({ "choices": many }).to_string();
+        assert!(serde_json::from_str::<FieldValue>(&json).is_err());
     }
 
     #[test]

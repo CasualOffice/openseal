@@ -636,3 +636,123 @@ fn a_radio_group_across_pages_is_chosen_once_and_drawn_on_the_chosen_page() {
     // Delivery renumbers objects; what counts is one invocation, on page 2.
     assert_eq!(invoked, vec![0, 1]);
 }
+
+/// A multi-select list box `colours` (object 10) with an export/display pair, and a
+/// single-choice list `size` (11), delivered.
+fn multi_select_doc() -> Vec<u8> {
+    let w = "/Type/Annot/Subtype/Widget/P 3 0 R/F 4";
+    delivered(&page_pdf(
+        &cases()[0],
+        "/AcroForm 5 0 R",
+        "/Annots[10 0 R 11 0 R]",
+        vec![
+            (
+                5,
+                b"<</Fields[10 0 R 11 0 R]/DA(/Helv 0 Tf 0 g)/DR<</Font<</Helv 30 0 R>>>>>>"
+                    .to_vec(),
+            ),
+            (
+                10,
+                format!(
+                    "<</FT/Ch/Ff 2097152/T(colours)/Opt[(Red)[(g)(Green)](Blue)]/V(Blue)/I[2]/DA(/Helv 10 Tf 0 g){w}/Rect[100 500 250 560]>>"
+                )
+                .into_bytes(),
+            ),
+            (
+                11,
+                format!("<</FT/Ch/T(size)/Opt[(S)(M)]/DA(/Helv 10 Tf 0 g){w}/Rect[300 500 400 560]>>")
+                    .into_bytes(),
+            ),
+            (
+                30,
+                b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>"
+                    .to_vec(),
+            ),
+        ],
+    ))
+}
+
+#[test]
+fn a_multi_select_flattens_its_choices_and_fills_v_and_i_in_place() {
+    // ACRO-02: the chosen options, in the field's order, are drawn when flattened; filled
+    // in place, `/V` holds their export values and `/I` their indices, sorted.
+    let base = multi_select_doc();
+    let mut a = admit(&base, &Limits::default(), &never).unwrap();
+    let report = a.report.clone();
+    let conv =
+        convert_acroform(&mut a.document, &report, &id("doc"), &mut minter(), &never).unwrap();
+    let fields: Vec<_> = conv.fields.iter().map(|c| c.field.clone()).collect();
+    assert_eq!(
+        fields[0].field_type,
+        casual_sign_model::FieldType::MultiSelect
+    );
+    let set = |l: &[&str]| casual_sign_model::FieldValue::Choices(options(l));
+    let values = std::collections::BTreeMap::from([
+        (fields[0].id.clone(), set(&["Green", "Red"])),
+        (fields[1].id.clone(), choice("M")),
+    ]);
+    let outcome = casual_sign_fields::evaluate_envelope(&fields, &values);
+    assert!(outcome.is_complete(), "{:?}", outcome.issues);
+    let caps = std::collections::BTreeMap::new();
+    let input = FlattenInput {
+        fields: &fields,
+        values: &values,
+        captures: &caps,
+        envelope_id: None,
+        acroform: Some(&conv),
+    };
+    let flat = flatten(
+        &mut a,
+        &input,
+        &FontSet::bundled(),
+        &FlattenOptions::default(),
+        &never,
+    )
+    .unwrap();
+    dump("multi-select-flat.out.pdf", &flat.bytes);
+    assert_eq!(flat.report.drawn.len(), 2, "{:?}", flat.report.not_drawn);
+    let mut b = admit_strict(&flat.bytes, &Limits::default(), &never).unwrap();
+    let pages = b.report.pages.clone();
+    let text: String = casual_sign_fields::extract_text(&mut b.document, &pages, &never)
+        .unwrap()
+        .iter()
+        .flat_map(|p| p.runs.iter().map(|r| r.text.clone()))
+        .collect::<Vec<_>>()
+        .join("|");
+    assert_eq!(text, "Red|Green|M", "{text}");
+
+    let mut a = admit(&base, &Limits::default(), &never).unwrap();
+    let mut opts = FlattenOptions::default();
+    opts.mode = FormMode::FillInPlace;
+    let filled = flatten(&mut a, &input, &FontSet::bundled(), &opts, &never).unwrap();
+    dump("multi-select-fill.out.pdf", &filled.bytes);
+    assert_eq!(filled.report.filled.len(), 2, "{:?}", filled.report);
+    let mut b = admit_strict(&filled.bytes, &Limits::default(), &never).unwrap();
+    let f = b
+        .report
+        .fields
+        .iter()
+        .find(|f| f.name == "colours")
+        .unwrap()
+        .clone();
+    let d = b.document.object(f.object.unwrap(), &never).unwrap();
+    let d = d.dict().unwrap().clone();
+    let strings = |o: Option<&Object>| -> Vec<Vec<u8>> {
+        match o {
+            Some(Object::Array(a)) => a
+                .iter()
+                .filter_map(|o| match o {
+                    Object::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    };
+    assert_eq!(strings(d.get(b"V")), vec![b"Red".to_vec(), b"g".to_vec()]);
+    let indices: Vec<i64> = match d.get(b"I") {
+        Some(Object::Array(a)) => a.iter().filter_map(Object::as_i64).collect(),
+        _ => Vec::new(),
+    };
+    assert_eq!(indices, vec![0, 1]);
+}

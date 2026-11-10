@@ -506,3 +506,43 @@ fn a_push_button_is_skipped_with_what_it_would_have_done() {
         ]
     );
 }
+
+#[test]
+fn a_multi_select_list_box_converts_to_a_multi_select_field() {
+    // ACRO-02: `/Ff` bit 22 on a list box (not a combo) lets any number of options be
+    // chosen; it converts without loss. A single-choice list stays a dropdown.
+    let w = "/Type/Annot/Subtype/Widget/P 3 0 R";
+    let bytes = one_page(
+        "/AcroForm<</Fields[10 0 R 11 0 R]>>",
+        "/Annots[10 0 R 11 0 R]",
+        "",
+        b"",
+        vec![
+            (
+                10,
+                format!(
+                    "<</FT/Ch/Ff 2097154/T(colours)/Opt[(Red)[(g)(Green)](Blue)]{w}/Rect[100 400 200 460]>>"
+                )
+                .into_bytes(),
+            ),
+            (
+                11,
+                format!("<</FT/Ch/T(size)/Opt[(S)(M)]{w}/Rect[300 400 400 460]>>").into_bytes(),
+            ),
+        ],
+    );
+    dump("multi-select.pdf", &bytes);
+    let c = convert(&bytes);
+    assert!(c.skipped.is_empty() && c.lossy.is_empty(), "{c:?}");
+    let multi = &c.fields[0].field;
+    assert_eq!(multi.field_type, FieldType::MultiSelect);
+    assert!(multi.required && !multi.allow_custom);
+    let opts: Vec<&str> = multi
+        .options
+        .as_slice()
+        .iter()
+        .map(|o| o.as_str())
+        .collect();
+    assert_eq!(opts, vec!["Red", "Green", "Blue"]);
+    assert_eq!(c.fields[1].field.field_type, FieldType::Dropdown);
+}

@@ -97,6 +97,22 @@ pub(crate) fn validate_with(
                 Err(Invalid::NotAnOption.into())
             }
         }
+        // A multi-select's choices are each one of its options; its value is a set, so
+        // `allow_custom` (typing a value) has no meaning here and is not honoured.
+        (FieldType::MultiSelect, FieldValue::Choices(chosen)) => {
+            if field.options.is_empty() {
+                return Err(Invalid::NoOptions.into());
+            }
+            if chosen
+                .as_slice()
+                .iter()
+                .all(|c| field.options.contains(c.as_str()))
+            {
+                Ok(())
+            } else {
+                Err(Invalid::NotAnOption.into())
+            }
+        }
         (
             FieldType::Checkbox
             | FieldType::Approve
@@ -107,13 +123,15 @@ pub(crate) fn validate_with(
             | FieldType::Drawing
             | FieldType::Attachment
             | FieldType::RadioGroup
-            | FieldType::Dropdown,
+            | FieldType::Dropdown
+            | FieldType::MultiSelect,
             _,
         )
         | (
             _,
             FieldValue::Checked(_)
             | FieldValue::Choice(_)
+            | FieldValue::Choices(_)
             | FieldValue::Signature(_)
             | FieldValue::Attachment(_),
         ) => Err(Invalid::WrongKind.into()),
@@ -565,5 +583,40 @@ mod tests {
         assert!(validate(&f, &choice("c")).is_ok());
         f.field_type = FieldType::RadioGroup;
         assert_eq!(validate(&f, &choice("c")), Err(Invalid::NotAnOption.into()));
+    }
+
+    #[test]
+    fn a_multi_select_takes_any_number_of_its_options_and_nothing_else() {
+        // ACRO-02: every chosen option must be one of the field's; none chosen is empty,
+        // which `required` judges. A single choice or text is the wrong kind, and a
+        // multi-select value suits no other field.
+        let set = |l: &[&str]| {
+            FieldValue::Choices(
+                FieldOptions::new(l.iter().map(|o| Text::new(*o).unwrap()).collect()).unwrap(),
+            )
+        };
+        let mut f = field(FieldType::MultiSelect, None);
+        assert_eq!(validate(&f, &set(&["a"])), Err(Invalid::NoOptions.into()));
+        f.options =
+            FieldOptions::new(["a", "b", "c"].map(|o| Text::new(o).unwrap()).to_vec()).unwrap();
+        assert!(validate(&f, &set(&[])).is_ok());
+        assert!(validate(&f, &set(&["c", "a"])).is_ok());
+        assert!(validate(&f, &set(&["a", "b", "c"])).is_ok());
+        assert_eq!(
+            validate(&f, &set(&["a", "z"])),
+            Err(Invalid::NotAnOption.into())
+        );
+        f.allow_custom = true;
+        assert_eq!(validate(&f, &set(&["z"])), Err(Invalid::NotAnOption.into()));
+        assert_eq!(
+            validate(&f, &FieldValue::Choice(Text::new("a").unwrap())),
+            Err(Invalid::WrongKind.into())
+        );
+        assert_eq!(validate(&f, &text("a")), Err(Invalid::WrongKind.into()));
+        for ty in [FieldType::Dropdown, FieldType::Text, FieldType::RadioGroup] {
+            let mut g = field(ty, None);
+            g.options = f.options.clone();
+            assert_eq!(validate(&g, &set(&["a"])), Err(Invalid::WrongKind.into()));
+        }
     }
 }

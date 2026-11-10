@@ -105,13 +105,13 @@ one recorded in `envelope.completed`.
 | `anchor` | Optional: `{text, offset_x, offset_y, units, ignore_if_absent, case_sensitive, whole_word, match: first|all}` resolved at send (the engine type is `AnchorSpec` in `-fields`; its API shape lands with Phase 2) |
 | `required`, `read_only`, `locked` | |
 | `label` (data label) | Unique per envelope for data fields; shared fields share a label |
-| `value`, `default` | Typed per `type`; bounded |
+| `value`, `default` | Typed per `type`; bounded. A `multi_select` value is `{"choices": [...]}`: at most 500 options, none repeated (`ACRO-02`) |
 | `validation` | `{kind, message}` where `kind` carries its own parameters: `email`, `number {min, max, currency, decimals}`, `date {format}`, `zip`, `ssn`, `phone`, `length {min, max}`, `regex {pattern}` (matches the whole value) |
 | `format` | Font family, size, colour, alignment, date format, masking |
 | `group` | Checkbox/radio group id and rule (`select_at_least`, `select_at_most`, `select_exactly`, `select_range`) |
 | `conditional` | `{parent_label, when: value|checked|unchecked|any}` |
 | `formula` | Expression over other labels ([`-fields` formula grammar](30-PDF-PIPELINE.md#formulas)) |
-| `options`, `allow_custom` | Dropdown and radio options (500 at most, no repeats); `allow_custom` lets a signer type a value not in the list |
+| `options`, `allow_custom` | Dropdown, radio and multi-select options (500 at most, no repeats); `allow_custom` lets a signer type a value not in a dropdown's list (it does not apply to a multi-select) |
 | `tooltip`, `placeholder` | |
 
 | Type | Notes |
@@ -122,7 +122,8 @@ one recorded in `envelope.completed`.
 | `name`, `first_name`, `last_name`, `email`, `company`, `title` | Auto-filled from the recipient, editable per policy |
 | `text`, `number`, `date`, `email_address`, `phone`, `ssn`, `zip` | Data fields with validation |
 | `envelope_id` | Read-only, the envelope id (DocuSign `envelopeIdTabs`) |
-| `checkbox`, `radio_group`, `dropdown` | |
+| `checkbox`, `radio_group`, `dropdown` | A radio group converted from a PDF whose buttons are on several pages is a `radio_group` field on each page sharing one label, so one value (`ACRO-02`) |
+| `multi_select` | Any number of options chosen from a list; converted from a PDF multi-select list box (`ACRO-02`) |
 | `formula` | Read-only, computed |
 | `attachment` | Signer uploads a file; admitted like any upload |
 | `note` | Read-only text shown to the recipient |
