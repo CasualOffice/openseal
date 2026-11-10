@@ -42,6 +42,10 @@ RETURNS TABLE (id uuid, account_id uuid, envelope_id uuid, kind text, payload js
     LANGUAGE sql SECURITY DEFINER
     SET search_path = public, pg_catalog
 AS $$
+    -- A job whose last allowed attempt's worker died is dead, not running forever.
+    UPDATE jobs SET status = 'dead', lease_token = NULL, locked_until = NULL, finished_at = p_now
+     WHERE status = 'running' AND locked_until < p_now AND attempts >= max_attempts
+       AND kind = ANY (p_kinds);
     UPDATE jobs AS j
        SET status = 'running',
            attempts = j.attempts + 1,
@@ -103,6 +107,33 @@ AS $$
          OR (p_idp_issuer IS NOT NULL AND u.idp_issuer = p_idp_issuer AND u.idp_subject = p_idp_subject))
 $$;
 
+-- Add an existing user (of another account) to the current account. A user id alone is
+-- not enough: the caller must also present the user's normalized email, as an accepted
+-- invitation does, so an account cannot enrol (and then read) a stranger by guessing or
+-- learning their id.
+CREATE FUNCTION openseal_add_existing_member(p_user_id uuid, p_email_normalized text, p_profile_id uuid)
+RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = public, pg_catalog
+AS $$
+DECLARE
+    acct uuid := openseal_current_account();
+BEGIN
+    IF acct IS NULL THEN
+        RETURN false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM users u WHERE u.id = p_user_id
+                   AND u.email_normalized = p_email_normalized AND u.disabled_at IS NULL) THEN
+        RETURN false;
+    END IF;
+    INSERT INTO account_memberships (account_id, user_id, permission_profile_id)
+        VALUES (acct, p_user_id, p_profile_id);
+    RETURN true;
+END
+$$;
+
+REVOKE ALL ON FUNCTION openseal_add_existing_member(uuid, text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION openseal_add_existing_member(uuid, text, uuid) TO openseal_app;
 REVOKE ALL ON FUNCTION openseal_claim_jobs(text, text[], integer, timestamptz, integer, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION openseal_resolve_recipient_token(bytea, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION openseal_resolve_api_key(bytea, timestamptz) FROM PUBLIC;

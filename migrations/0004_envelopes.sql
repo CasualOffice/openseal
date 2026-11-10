@@ -69,7 +69,7 @@ CREATE TABLE bulk_send_rows (
     envelope_id   uuid,
     error_code    text,
     UNIQUE (account_id, id),
-    UNIQUE (bulk_send_id, row_index),
+    UNIQUE (account_id, bulk_send_id, row_index),
     FOREIGN KEY (account_id, bulk_send_id) REFERENCES bulk_sends (account_id, id),
     FOREIGN KEY (account_id, envelope_id) REFERENCES envelopes (account_id, id)
 );
@@ -84,7 +84,7 @@ CREATE TABLE documents (
     name          text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 255),
     created_at    timestamptz NOT NULL DEFAULT now(),
     UNIQUE (account_id, id),
-    UNIQUE (envelope_id, ord) DEFERRABLE INITIALLY IMMEDIATE,
+    UNIQUE (account_id, envelope_id, ord) DEFERRABLE INITIALLY IMMEDIATE,
     FOREIGN KEY (account_id, envelope_id) REFERENCES envelopes (account_id, id)
 );
 CREATE INDEX documents_account_envelope ON documents (account_id, envelope_id);
@@ -226,14 +226,14 @@ SELECT openseal_tenant_table('fields', true);
 -- The value a recipient (or the server, for `date_signed` and formulas) gave a field.
 -- Document content: never logged. The audit chain records only `value_sha256`.
 CREATE TABLE field_values (
-    field_id       uuid PRIMARY KEY,
+    field_id       uuid NOT NULL,
     account_id     uuid NOT NULL REFERENCES accounts (id),
     envelope_id    uuid NOT NULL,
     recipient_id   uuid NOT NULL,
     value          jsonb NOT NULL,
     value_sha256   bytea NOT NULL CHECK (octet_length(value_sha256) = 32),
     set_at         timestamptz NOT NULL,
-    UNIQUE (account_id, field_id),
+    PRIMARY KEY (account_id, field_id),
     FOREIGN KEY (account_id, field_id) REFERENCES fields (account_id, id),
     FOREIGN KEY (account_id, envelope_id) REFERENCES envelopes (account_id, id),
     FOREIGN KEY (account_id, recipient_id) REFERENCES recipients (account_id, id)

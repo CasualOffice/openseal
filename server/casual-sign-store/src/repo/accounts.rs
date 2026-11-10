@@ -256,13 +256,36 @@ impl Users<'_> {
         self.add_member(user.id, profile).await
     }
 
-    /// Make an existing user (found through login resolution) a member of this account.
+    /// Make an existing user, of another account, a member of this one. The caller must
+    /// present the user's normalized email as well as their id (an accepted invitation
+    /// carries both), so an account cannot enrol a stranger by id alone and then read
+    /// their row.
     ///
     /// # Errors
     ///
-    /// `CS-DB-0006` when already a member; `CS-DB-0008` for an unknown user or a profile
-    /// of another account.
-    pub async fn add_member(&mut self, user: UserId, profile: PermissionProfileId) -> Result<()> {
+    /// `CS-DB-0003` when no enabled user has that id and email; `CS-DB-0006` when already
+    /// a member; `CS-DB-0008` for a profile of another account.
+    pub async fn add_existing_member(
+        &mut self,
+        user: UserId,
+        email_normalized: &Personal<String>,
+        profile: PermissionProfileId,
+    ) -> Result<()> {
+        let added: bool = sqlx::query_scalar("SELECT openseal_add_existing_member($1, $2, $3)")
+            .bind(user.0)
+            .bind(email_normalized.get())
+            .bind(profile.0)
+            .fetch_one(self.tx.conn())
+            .await
+            .map_err(db)?;
+        if added {
+            Ok(())
+        } else {
+            Err(StoreError::NotFound { entity: "user" })
+        }
+    }
+
+    async fn add_member(&mut self, user: UserId, profile: PermissionProfileId) -> Result<()> {
         let acct = self.tx.acct();
         sqlx::query(
             "INSERT INTO account_memberships (account_id, user_id, permission_profile_id) \

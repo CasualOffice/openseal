@@ -18,8 +18,9 @@ CREATE TABLE audit_events (
     -- RFC 8785 canonical JSON of the event without `hash`: exactly the bytes hashed.
     canonical     bytea NOT NULL CHECK (octet_length(canonical) BETWEEN 2 AND 1048576),
     recorded_at   timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (envelope_id, seq),
-    UNIQUE (account_id, envelope_id, seq),
+    -- Keys lead with the account, so a cross-tenant insert fails on the reference, never
+    -- on a uniqueness collision that would reveal another account's row exists.
+    PRIMARY KEY (account_id, envelope_id, seq),
     CHECK ((seq = 0) = (prev_hash IS NULL)),
     -- No ON DELETE action: an envelope with evidence cannot be deleted (docs/32 §7 purge
     -- keeps a tombstone instead).
@@ -62,7 +63,8 @@ BEGIN
     SELECT chain_head INTO head FROM envelopes
         WHERE account_id = NEW.account_id AND id = NEW.envelope_id FOR UPDATE;
     SELECT seq INTO head_seq FROM audit_events
-        WHERE envelope_id = NEW.envelope_id ORDER BY seq DESC LIMIT 1;
+        WHERE account_id = NEW.account_id AND envelope_id = NEW.envelope_id
+        ORDER BY seq DESC LIMIT 1;
     IF NEW.seq <> COALESCE(head_seq + 1, 0) THEN
         RAISE EXCEPTION 'CS-DB-0005 audit event seq % is not the next (%)', NEW.seq, COALESCE(head_seq + 1, 0)
             USING ERRCODE = 'OS002';
@@ -85,13 +87,13 @@ CREATE TRIGGER audit_events_extend_chain
 -- policy, no personal data. Append-only like the chain.
 CREATE TABLE envelope_tombstones (
     account_id     uuid NOT NULL REFERENCES accounts (id),
-    envelope_id    uuid PRIMARY KEY,
+    envelope_id    uuid NOT NULL,
     chain_head     bytea NOT NULL CHECK (octet_length(chain_head) = 32),
     event_count    bigint NOT NULL CHECK (event_count > 0),
     sealed_sha256  bytea CHECK (sealed_sha256 IS NULL OR octet_length(sealed_sha256) = 32),
     purged_at      timestamptz NOT NULL,
     policy         text NOT NULL CHECK (char_length(policy) BETWEEN 1 AND 255),
-    UNIQUE (account_id, envelope_id)
+    PRIMARY KEY (account_id, envelope_id)
 );
 SELECT openseal_tenant_table('envelope_tombstones', false);
 CREATE TRIGGER envelope_tombstones_no_update_delete

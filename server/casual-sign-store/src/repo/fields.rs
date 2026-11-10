@@ -234,7 +234,7 @@ impl Fields<'_> {
              value_sha256, set_at) \
              SELECT f.id, f.account_id, f.envelope_id, f.recipient_id, $5, $6, $7 FROM fields f \
              WHERE f.account_id = $1 AND f.id = $2 AND f.envelope_id = $3 AND f.recipient_id = $4 \
-             ON CONFLICT (field_id) DO UPDATE SET value = EXCLUDED.value, \
+             ON CONFLICT (account_id, field_id) DO UPDATE SET value = EXCLUDED.value, \
                value_sha256 = EXCLUDED.value_sha256, set_at = EXCLUDED.set_at \
              WHERE field_values.account_id = $1",
         )

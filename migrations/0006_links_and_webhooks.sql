@@ -61,7 +61,7 @@ CREATE TABLE webhook_deliveries (
     created_at       timestamptz NOT NULL DEFAULT now(),
     delivered_at     timestamptz,
     UNIQUE (account_id, id),
-    UNIQUE (subscription_id, event_id),
+    UNIQUE (account_id, subscription_id, event_id),
     FOREIGN KEY (account_id, subscription_id) REFERENCES webhook_subscriptions (account_id, id)
 );
 CREATE INDEX webhook_deliveries_account_subscription ON webhook_deliveries (account_id, subscription_id, created_at DESC);

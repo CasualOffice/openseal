@@ -75,7 +75,7 @@ CREATE TABLE template_roles (
     -- Default authentication requirements, as `recipient_auth_requirements`.
     default_auth    jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(default_auth) = 'array'),
     UNIQUE (account_id, id),
-    UNIQUE (template_id, name),
+    UNIQUE (account_id, template_id, name),
     FOREIGN KEY (account_id, template_id) REFERENCES templates (account_id, id)
 );
 SELECT openseal_tenant_table('template_roles', true);
@@ -93,7 +93,7 @@ CREATE TABLE template_documents (
     page_count    integer NOT NULL CHECK (page_count > 0),
     pages         jsonb NOT NULL CHECK (jsonb_typeof(pages) = 'array'),
     UNIQUE (account_id, id),
-    UNIQUE (template_id, ord),
+    UNIQUE (account_id, template_id, ord),
     FOREIGN KEY (account_id, template_id) REFERENCES templates (account_id, id)
 );
 SELECT openseal_tenant_table('template_documents', true);
