@@ -1,8 +1,8 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-WF-0001` to `0018`, and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
-`CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018`, and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+`CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-DB` persistence, `CS-BLOB` blob storage, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
 ## Reading (`casual-sign-pdf`)
@@ -148,3 +148,30 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-KEY-0012 | keyd setting missing or invalid |
 | CS-CNV-0001 | Conversion failed or timed out |
 | CS-CNV-0002 | Format not supported |
+
+## Persistence and blobs (`casual-sign-store`, stage 2B)
+
+Messages carry the code, a SQLSTATE, a constraint name, an entity name or a count, never a database error's text,
+which can quote the offending value (an email in a unique violation). Cross-tenant calls answer `CS-DB-0003`,
+`CS-DB-0008` or `CS-DB-0009`, never `CS-DB-0006`: keys lead with `account_id`, so no answer reveals that another
+account's row exists. The server maps `CS-DB-0003` to `CS-API-0002` and `CS-DB-0007` to `CS-WF-0002`.
+
+| Code | Meaning |
+| --- | --- |
+| CS-DB-0001 | Database unreachable, connection failed, or pool exhausted |
+| CS-DB-0002 | A migration failed, or an applied migration's text changed (migrations are forward-only) |
+| CS-DB-0003 | Not found in this account (another account's object answers the same) |
+| CS-DB-0004 | Update, delete or truncate of the audit chain or a tombstone refused (SQLSTATE `OS001`) |
+| CS-DB-0005 | Audit event does not extend its envelope's chain: hash, `seq` or `prev` (SQLSTATE `OS002`) |
+| CS-DB-0006 | Already exists (a unique constraint, named) |
+| CS-DB-0007 | Stale version: the object changed since it was read |
+| CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object |
+| CS-DB-0009 | Refused by the database: missing privilege, or a row row-level security does not admit |
+| CS-DB-0010 | A stored value could not be read back as its type |
+| CS-DB-0011 | The database has a migration this build does not know |
+| CS-DB-0012 | Any other database error, by SQLSTATE |
+| CS-BLOB-0001 | Blob store failed (I/O, network, unexpected status) |
+| CS-BLOB-0002 | No blob under that key |
+| CS-BLOB-0003 | Bytes stored under a key do not hash to it |
+| CS-BLOB-0004 | Blob over the store's size cap (256 MiB by default) |
+| CS-BLOB-0005 | Key is not 64 lower-case hexadecimal digits |

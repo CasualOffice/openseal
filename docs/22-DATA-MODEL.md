@@ -163,6 +163,81 @@ have owners, sharing (user, group, account), folders and versions.
 - Soft deletes are not used for evidence; "deleted" envelopes are moved to a recycle folder, and purged only by the
   retention policy, with an audit event.
 
+### As built (stage 2B, `casual-sign-store`)
+
+Migrations `migrations/0001` to `0007`, applied by the crate's own runner (`casual_sign_store::migrate`): each in its
+own transaction, recorded with the SHA-256 of its text in `openseal_schema_migrations`; a second run applies nothing;
+an applied migration whose text changed is `CS-DB-0002`; a database with an unknown later version is `CS-DB-0011`; an
+advisory lock serializes migrators. Thirty-six tables:
+
+| docs/22 entity | Table(s) | Repository |
+| --- | --- | --- |
+| Account | `accounts` (RLS on `id`) | `TenantTx::account` |
+| User, membership, permission profile | `users`, `account_memberships`, `permission_profiles` | `TenantTx::users` |
+| Group | `groups`, `group_members` | schema only |
+| Brand, Settings, ERSD versions | `brands`, `accounts.settings`, `ersd_versions` | settings only |
+| Template, TemplateDocument, Role, role-bound Field, sharing | `templates`, `template_documents`, `template_roles`, `template_fields`, `template_shares` | `TenantTx::templates` (not shares) |
+| Envelope, folders and recycle folder | `envelopes`, `folders` | `TenantTx::envelopes` |
+| Document, DocumentVersion | `documents`, `document_versions` | `TenantTx::documents` |
+| Recipient, AuthRequirement, invitation tokens, SignatureAdoption | `recipients`, `recipient_auth_requirements`, `recipient_tokens`, `signature_adoptions` | `TenantTx::recipients` (recipients, tokens) |
+| Field and its value | `fields`, `field_values` | `TenantTx::fields` |
+| RoutingRule, CustomField, Comment | `routing_rules`, `envelope_custom_fields`, `comments` | schema only |
+| AuditEvent, purge tombstone | `audit_events`, `envelope_tombstones` | `TenantTx::audit` (append, read, verify) |
+| BulkSend, BulkSendRow | `bulk_sends`, `bulk_send_rows` | schema only |
+| SigningLink | `signing_links` | resolution only |
+| WebhookSubscription, WebhookDelivery | `webhook_subscriptions`, `webhook_deliveries` | `TenantTx::webhooks` |
+| ApiClient | `api_clients` | `TenantTx::api_clients` |
+| RetentionPolicy | `retention_policies` | schema only |
+| Jobs (ADR-012) | `jobs` | `TenantTx::jobs`; claim through `EntryPoints` |
+
+**Tenancy as built.** Every table but `accounts` and `users` has `account_id uuid NOT NULL`, `UNIQUE (account_id, id)`
+and is declared through `openseal_tenant_table()`, which enables RLS with one policy for every command and grants the
+`openseal_app` role. Children reference parents through `(account_id, parent_id)` composite foreign keys, so the
+database itself refuses a row pointing at another account's row. Primary keys and unique constraints other than `id`
+lead with `account_id`, so a cross-tenant write fails on the reference and never on a collision that would reveal the
+other account's row exists. `users` is the one table without `account_id`: a user may belong to several accounts, and
+the row is visible only through a membership of the current account; enrolling an existing user needs their
+normalized email as well as their id (`add_existing_member`). Repositories are reached only through
+`Store::for_account(id)` → `Tenant::begin()` → `TenantTx`, which binds the account into every statement and sets
+`openseal.account_id` for the transaction. The only cross-account paths are `SECURITY DEFINER` functions, executable by
+the application role alone, that take a secret's hash (recipient token, API key, signing link), a login identity, or a
+supplied lease token (job claim) and return ids. The migrator owns every table; `openseal_app` owns nothing, has no
+`BYPASSRLS`, no `TRUNCATE` anywhere, and only `SELECT`, `INSERT` on `audit_events` and `envelope_tombstones`.
+
+**Audit as built.** An event is stored as its RFC 8785 canonical bytes, exactly what its hash covers; an insert
+trigger recomputes `sha256(canonical)`, refuses a `seq` that is not the next or a `prev` that is not the head
+(`CS-DB-0005`), and updates `envelopes.chain_head`. Triggers refuse `UPDATE`, `DELETE` and `TRUNCATE` (including a
+`TRUNCATE ... CASCADE` from a parent) for every role (`CS-DB-0004`); the application role also lacks the privileges.
+A superuser can still disable triggers: that is the operator boundary `SEC-S07` names, and the chain head in every
+sealed document is what detects it. `TenantTx::audit().chain()` rebuilds the chain through `casual-sign-audit`'s
+`Chain::append`, re-verifying every link on read. An envelope with events cannot be deleted (the reference).
+
+**Blobs as built.** `BlobStore` keys are the SHA-256 of the bytes, computed by the store; `put` of present bytes is a
+no-op; nothing replaces or deletes a blob; `get` re-hashes and refuses a mismatch (`CS-BLOB-0003`); 256 MiB cap both
+ways. `FsBlobStore` writes a `create_new` temporary file, syncs it, makes it read-only, and hard-links it into place
+(`link` never replaces). `S3BlobStore` presigns with SigV4 and sends `If-None-Match: *`; tested against SeaweedFS (the
+MinIO image could not be pulled on the build machine). Bucket object lock or a role without `DeleteObject` is the
+operator's second line, recorded for the deployment guide (slice 20).
+
+**Queries.** Runtime-checked `sqlx::query` with bound parameters only. ADR-014 names compile-time checked queries;
+`query!` needs a live database or a committed `.sqlx` cache at build time, and every query here is exercised by the
+database tests instead. Amending ADR-014 is the owner's call.
+
+**Tests.** `OPENSEAL_TEST_DATABASE_URL` (a superuser URL) gives each test a fresh database, migrated as owner and
+exercised as a login role in `openseal_app`; unset, the database tests print `SKIPPED` and pass. Every repository
+method is called with another account's ids, with RLS on and with RLS disabled on every table; raw SQL through the
+application role, bypassing the repository, sees only its account on every RLS table and nothing when none is set.
+
+**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
+that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
+
+**Corrections to the text above.** The setting is `openseal.account_id`, read as
+`NULLIF(current_setting('openseal.account_id', true), '')::uuid`, so an unset setting matches no row. Envelope
+`custom_fields` is the table `envelope_custom_fields`, searchable by name. A field's value is the table `field_values`
+(value, its SHA-256, time), not a column of `fields`; the field properties other than type, geometry, flags and label
+are one `spec` JSON object as the model serializes them. "Forgetting the filter does not compile" holds in the sense
+that no other door exists; the isolation tests, not the compiler, prove each method filters.
+
 ## 10. Engine types versus rows
 
 `casual-sign-model` defines the types above as plain Rust values with invariants checked by constructors
