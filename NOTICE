@@ -45,6 +45,22 @@ pypdf, BSD-3-Clause; no code from either is included):
     (https://github.com/adobe-type-tools/agl-aglfn), BSD-3-Clause.
   - The base encodings of ISO 32000-2 Annex D (facts from the standard).
 
+Web app (webapp/), shipped to browsers:
+  pdf.js 4.10.38 (webapp/vendor/pdfjs/)   Apache-2.0, Copyright Mozilla
+      Foundation; its LICENSE is beside it. Its standard_fonts/ carry their own
+      licences there: Foxit fonts (BSD-style, LICENSE_FOXIT) and Liberation Sans
+      (SIL OFL 1.1, LICENSE_LIBERATION).
+  Lucide icons 1.62.0 (webapp/vendor/lucide/)   ISC, Copyright (c) Lucide Icons
+      and Contributors; parts derived from Feather (MIT, Copyright (c) 2013-2023
+      Cole Bemis). LICENSE beside them.
+  Great Vibes and Allura (webapp/fonts/script/)   SIL OFL 1.1, as listed below
+      for crates/casual-sign-flatten/fonts/; licence texts beside them.
+
+Test tools for the web app, never shipped (webapp/e2e/, installed by npm):
+  Playwright 1.64.1   Apache-2.0, Microsoft Corporation.
+  axe-core 4.14.0 and @axe-core/playwright 4.14.0   MPL-2.0, Deque Systems;
+                      used only to test, like EU DSS above; not distributed.
+
 Fonts in crates/casual-sign-flatten/fonts/, embedded (as subsets) into flattened
 documents; each licence text is in fonts/LICENSES/ and the sources and SHA-256
 sums are in fonts/PROVENANCE.md. All are SIL Open Font License 1.1:

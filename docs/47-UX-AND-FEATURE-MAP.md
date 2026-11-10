@@ -71,3 +71,85 @@ remove field, arrows nudge (Shift ×10), `Ctrl/Cmd+D` duplicate, `Ctrl/Cmd+C/V` 
 
 Time to send for first-time senders; signer completion time on mobile; error rate on required fields; screen-reader
 completion (`UXR-01`, `A11Y-01`).
+
+## As built (WEB-01, 2026-11-11)
+
+Slice 1's web app, in `webapp/`: plain ES modules, no framework or bundler (ADR-018), served as static files.
+
+| Screen | Where | Calls |
+| --- | --- | --- |
+| Sign-in | `app.html#/signin` (`signin.js`) | `POST /api/v1/auth/login`, `GET /api/v1/auth/session`, `POST /api/v1/auth/logout` |
+| Agreements | `app.html#/agreements[?status=]` (`dashboard.js`) | `GET /api/v1/envelopes?status=&cursor=&limit=`; search filters the loaded rows (no text query in the API yet) |
+| Envelope detail | `app.html#/envelopes/{id}` (`envelope.js`) | `GET …/{id}`, `GET …/audit`, `POST …/resend`, `POST …/void`, `GET …/documents/{doc}/content?version=sealed`, `GET …/certificate` |
+| Prepare | `app.html#/prepare[/{id}]` (`prepare.js`) | `POST /api/v1/envelopes` (documents, recipients, fields in one call); for a saved draft `POST …/documents`, `POST/PATCH/DELETE …/recipients`, `POST/PATCH/DELETE …/fields` with `If-Match`, `PATCH …/{id}`; `POST …/send` |
+| Signing | `/s/{token}` → `sign.html` (`sign.js`, `signature.js`) | `POST /s/{t}/session`, `/authenticate`, `/consent`, `GET /s/{t}/documents/{doc}/content`, `POST …/viewed`, `/adopt`, `PUT /fields/{f}`, `/finish`, `/decline`, `/finish-later`; `location` (GEO-01) on consent, viewed, adopt, finish and decline when the envelope sets `signing_options.capture_location` |
+| Site | `index.html` | — |
+
+- **Client** (`api.js`): CSRF header on changing staff calls, a fresh `Idempotency-Key` on every POST, `If-Match` from
+  the envelope's ETag, problem details (RFC 9457) surfaced as `ApiError` with the docs/20 code and request id, and a
+  sentence per code in `strings.en.js`. The API origin is `<meta name="openseal-api-base">` (empty: same origin).
+- **Mock mode** (`mock.js`, `?mock=1`): an in-memory fake of exactly these endpoints, for development and the browser
+  tests until the server is integrated. Honoured on a loopback host only, so a deployment cannot be made to show fake
+  agreements; it shows a "Demo mode" banner and is never evidence of anything.
+- **PDF pages** (`pdfview.js`): vendored pdf.js 4.10.38 in its worker, `isEvalSupported: false`, no scripting sandbox,
+  no annotation or text layer (links and forms are not live), XFA off, CMaps and standard fonts from the vendored copy.
+- **Geometry** (`geometry.js`): ADR-019 — points in displayed page space, top-left; screen ↔ points is one scale
+  factor; coordinates go on the wire as decimal strings with at most two places.
+- **Every verb is a command** (`commands.js`, copied from the sisters); keys (`keys.js`) are tables per context
+  (editor, global). Editor keys as §Keyboard, plus Alt+arrows to resize, Ctrl/Cmd+S save, Ctrl/Cmd+Enter send, N new
+  envelope, / search.
+
+### Content Security Policy
+
+Each page carries this as a meta tag; the server sends it as a header too, adding `frame-ancestors 'none'` (which a
+meta tag cannot carry), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
+`Permissions-Policy: geolocation=(self), camera=(), microphone=()`. `tools/serve-webapp.py` sends the same headers.
+
+```
+default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self';
+connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'
+```
+
+No inline script or style, no `eval` (pdf.js runs with `isEvalSupported: false`), nothing from another origin. `data:`
+images are the adopted signature previews. An embedding host (`EMB-*`) relaxes `frame-ancestors` per account, and a
+separate API origin is added to `connect-src` by the server that serves the page.
+
+### Design system
+
+One tokens file, `webapp/tokens.css`; components in `webapp/app.css`. Light and dark by `data-theme` or the OS.
+
+| Token family | Values |
+| --- | --- |
+| Brand | seal red: accent text `#b3141f` (light) / `#ff8a92` (dark); fill `#b3141f` with white text; logo gradient `#c01622 → #8e0b14`. Focus ring blue, distinct from the accent and from errors |
+| Type | system UI stack; 12 / 14 / 16 / 20 / 24 / 32 px; body 14 px in the app, 16 px on the signing page and below 760 px; line height 1.5 body, 1.25 headings |
+| Space | 4 px grid: 4, 8, 12, 16, 24, 32, 48 |
+| Radius | 6, 8, 12 |
+| Icons | Lucide (ISC), inlined by `icon(name, {size, label})`: 16 dense, 20 default, 24 toolbars and empty states; stroke 2 (1.75 at 24); `aria-hidden` unless labelled |
+| Controls | buttons 32 / 36 / 44 px; targets ≥ 24 px (SC 2.5.8), ≥ 44 px on the signing page and phones (SC 2.5.5); focus ring 2 px, offset 2 px |
+| Motion | 150 / 200 / 250 ms, `cubic-bezier(.2,0,0,1)`; all zero under `prefers-reduced-motion: reduce` |
+| Recipients | six colours, each ≥ 3:1 against the page as an outline |
+
+Rules: status is never colour alone (badge = icon + word); every list and first-run screen has an empty state
+(illustration, one-line title, one sentence, the primary action; illustrations are original line drawings in
+`illustrations.js`, `aria-hidden`); lists and pages show skeletons while loading; dialogs and toasts enter and leave
+in 150–200 ms; a sent envelope and a finished signing show the seal stamping in once; no looping animation except
+loading shimmer and spinners. Contrast is measured, not asserted: `webapp/tests/pure.test.mjs` fails if any text
+colour falls under 4.5:1 or a control edge, focus ring or recipient colour under 3:1 in either theme.
+
+### Tests
+
+- `cd webapp && npm test`: Node's own runner over the API client, mock server, geometry, registry, keys, i18n
+  coverage and token contrast.
+- `webapp/e2e/` (Playwright 1.64.1, axe-core 4.14.0, both test-only): sign-in and agreements; create and send (two
+  sequential signers and a CC, fields for each, drag and keyboard placement, drafts); the ceremony at 390 px (access
+  code, location, consent, guide, drawn and typed signatures, finish); decline; keyboard only; axe on every screen in
+  both themes; empty states with screenshots; on Chromium, WebKit, an iPhone viewport and reduced motion. The same
+  specs run against a real server with `OPENSEAL_E2E_BASE_URL` (signing tokens from `OPENSEAL_E2E_SIGN_TOKEN` and
+  `OPENSEAL_E2E_DECLINE_TOKEN`, since the server emails them).
+
+### Not yet
+
+Home counters, Templates, Reports, Admin, Verify; a field list view as an alternative to the page; fields enlarging
+on focus on phones; pinch zoom; page thumbnails; auto-place by text; preview as recipient; the flattened review step
+of ADR-020 (the review dialog lists values; it does not show engine-flattened pages yet); two of the four script
+fonts; languages beyond English.
