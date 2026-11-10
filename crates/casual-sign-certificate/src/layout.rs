@@ -3,7 +3,7 @@
 //!
 //! The result is a plan: per page, vector rules and boxes as content-stream operators,
 //! text runs (one line each) and signature pictures, all in points from the page's top
-//! left. [`crate::draw`] turns runs and pictures into fields the flattener draws, so the
+//! left. `pdf::draw` turns runs and pictures into fields the flattener draws, so the
 //! certificate's text and signatures go through the same layout, font subsetting and
 //! image checks as every signed document.
 

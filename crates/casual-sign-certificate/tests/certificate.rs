@@ -244,6 +244,51 @@ fn appended_to_corpus_documents() {
     assert_eq!(done, 10);
 }
 
+/// A one-page file whose page tree root carries inheritable `/Rotate`, `/CropBox`,
+/// `/MediaBox` and `/Resources`.
+fn inheriting_pdf() -> Vec<u8> {
+    let objs: [&[u8]; 4] = [
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1/Rotate 90/MediaBox[0 0 400 500]/CropBox[10 10 200 200]/Resources<</Font<</F1 5 0 R>>>>>>",
+        b"<</Type/Page/Parent 2 0 R/Contents 4 0 R>>",
+        b"<</Length 0>>\nstream\n\nendstream",
+    ];
+    let mut out = b"%PDF-1.7\n".to_vec();
+    let mut offs = Vec::new();
+    for (i, body) in objs.iter().enumerate() {
+        offs.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+        out.extend_from_slice(body);
+        out.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = out.len();
+    out.extend_from_slice(b"xref\n0 5\n0000000000 65535 f \n");
+    for o in offs {
+        out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(format!("trailer\n<</Size 5/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n").as_bytes());
+    out
+}
+
+#[test]
+fn appended_pages_inherit_nothing_from_the_document() {
+    let fonts = FontSet::bundled();
+    let (chain, delivered) = chain(1);
+    let input = input(&chain, delivered, 1);
+    let bytes = inheriting_pdf();
+    let mut a = admit(&bytes, &Limits::default(), &never).unwrap();
+    assert_eq!(a.report.pages[0].rotate, 90);
+    let r = append_certificate(&mut a, &input, &fonts, &CertificateOptions::default()).unwrap();
+    let b = admit_strict(&r.bytes, &Limits::default(), &never).unwrap();
+    assert_eq!(b.report.page_count, 1 + r.pages_added as u32);
+    for p in &b.report.pages[1..] {
+        assert_eq!(p.rotate, 0);
+        assert_eq!((p.media_box.urx, p.media_box.ury), (595.28, 841.89));
+        assert_eq!(p.crop_box, p.media_box);
+    }
+    std::fs::write(out_dir("appended-inherit").join("inherit.pdf"), &r.bytes).unwrap();
+}
+
 #[test]
 fn appending_twice_is_refused() {
     let fonts = FontSet::bundled();
