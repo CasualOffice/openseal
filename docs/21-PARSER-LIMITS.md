@@ -120,6 +120,26 @@ Phase 1 gate.
 | Numbers in values | 28 digits; no exponent, NaN or infinity | CS-FLD-0002 |
 | Signer attachment size | 25 MiB | CS-FLD-0002 |
 
+## API (built, stage 2C)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| JSON request body | 1 MiB | CS-API-0006 |
+| Document upload request (base64 of 50 MiB, or the raw PDF) | 70 MiB body; 50 MiB decoded | CS-API-0006, CS-PDF-0001 |
+| One-call envelope create | 270 MiB body; 200 MiB of documents decoded | CS-API-0006 |
+| Adopted signature image (PNG or JPEG) | 5 MiB | CS-API-0006 |
+| Requests per authenticated principal | 1,200 per minute | CS-API-0003 |
+| Ceremony requests per token / per client address | 300 / 1,200 per minute | CS-API-0003 |
+| Login and token attempts per login name or client / per address | 10 / 100 per minute | CS-API-0003 |
+| Idempotency key | 1–255 printable ASCII; replays answered for 24 hours | CS-API-0001, CS-API-0004 |
+| Page size of lists | 1–200, default 50 | CS-API-0001 |
+| User agent recorded in events | 512 bytes (cut at a character boundary) | — |
+| Ceremony token | 128 characters | CS-AUTH-0002 |
+| Staff password | 12–256 characters | CS-API-0001 |
+| Staff session / access token / embedded view link | 8 hours / 1 hour / 5 minutes | CS-AUTH-0002 |
+| API client expiry | 1–3,650 days | CS-API-0001 |
+| Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
+
 ## Bulk and links
 
 | Limit | Default | Code |
