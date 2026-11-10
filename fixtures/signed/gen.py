@@ -84,7 +84,8 @@ def make_pki(work):
         return b.sign(issuer_key, hashes.SHA256())
 
     k = {n: ec.generate_private_key(ec.SECP256R1()) for n in
-         ("root", "inter", "signer", "tsa", "ocsp", "revoked", "expired", "other_root", "stranger")}
+         ("root", "inter", "signer", "tsa", "ocsp", "revoked", "expired", "other_root", "stranger",
+          "impostor_root", "impostor")}
     c = {}
     c["root"] = cert("T-1H Root", k["root"], name("T-1H Root"), k["root"], 1, ca=True)
     c["inter"] = cert("T-1H Intermediate", k["inter"], c["root"].subject, k["root"], 2, ca=True)
@@ -97,6 +98,9 @@ def make_pki(work):
     c["expired"] = cert("T-1H Expired Signer", k["expired"], c["inter"].subject, k["inter"], 14,
                         nb=dt.datetime(2025, 1, 1, tzinfo=UTC), na=dt.datetime(2025, 12, 31, tzinfo=UTC))
     c["other_root"] = cert("T-1H Untrusted Root", k["other_root"], name("T-1H Untrusted Root"), k["other_root"], 1, ca=True)
+    # Same name as the trusted root, another key: only the signature check tells them apart.
+    c["impostor_root"] = cert("T-1H Root", k["impostor_root"], name("T-1H Root"), k["impostor_root"], 1, ca=True)
+    c["impostor"] = cert("T-1H Impostor", k["impostor"], c["impostor_root"].subject, k["impostor_root"], 30)
     c["stranger"] = cert("T-1H Stranger", k["stranger"], c["other_root"].subject, k["other_root"], 20)
 
     pem = serialization.Encoding.PEM
@@ -418,6 +422,9 @@ def build():
             [(0, "INDETERMINATE:OUT_OF_BOUNDS_NO_POE", "intact", "signer expired, no proof of existence")])
         put("untrusted.pdf", sign(plain, work, "stranger", chain=("other_root",)),
             [(0, NOCHAIN, "intact", "signer under a root not in the trust store")])
+
+        put("impostor.pdf", sign(plain, work, "impostor", chain=("impostor_root",)),
+            [(0, NOCHAIN, "intact", "signer under a root named like the trusted one, other key")])
 
         # Tampering of the B-LT file.
         m, (a, b, cc, d) = byte_range(bt)

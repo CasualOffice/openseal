@@ -16,6 +16,7 @@ two-approvals.pdf	1	TOTAL_PASSED	intact	intact	second approval signature
 revoked.pdf	0	INDETERMINATE:REVOKED_NO_POE	intact	intact	signer revoked before its signature timestamp (ETSI EN 319 102-1 5.5.4)
 expired.pdf	0	INDETERMINATE:OUT_OF_BOUNDS_NO_POE	intact	intact	signer expired, no proof of existence
 untrusted.pdf	0	INDETERMINATE:NO_CERTIFICATE_CHAIN_FOUND	intact	intact	signer under a root not in the trust store
+impostor.pdf	0	INDETERMINATE:NO_CERTIFICATE_CHAIN_FOUND	intact	intact	signer under a root named like the trusted one, other key
 flip-range1.pdf	0	TOTAL_FAILED:HASH_FAILURE	invalid	invalid	byte flipped in the first range
 flip-range2.pdf	0	TOTAL_FAILED:HASH_FAILURE	invalid	invalid	byte flipped in the second range
 br-not-zero.pdf	0	TOTAL_FAILED:FORMAT_FAILURE	invalid	invalid	ByteRange does not start at 0
