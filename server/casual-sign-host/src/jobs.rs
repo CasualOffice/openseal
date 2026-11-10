@@ -1,5 +1,5 @@
 //! The job contract (docs/24 §1, ADR-011, ADR-012): one job per effect, written by
-//! [`crate::apply`] and run by the worker.
+//! [`mod@crate::apply`] and run by the worker.
 //!
 //! - **kind**: the effect's kind in snake case ([`KINDS`]; `Schedule` is `timer`).
 //! - **idempotency key**: `effect:<envelope>:<command id>:<index>`, the effect's id, so

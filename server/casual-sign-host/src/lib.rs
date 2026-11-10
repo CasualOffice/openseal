@@ -2,7 +2,7 @@
 //! decides a command and records the decision, and the contract of the jobs it
 //! enqueues.
 //!
-//! - [`apply`]: load the envelope's engine state (locked), call
+//! - [`mod@apply`]: load the envelope's engine state (locked), call
 //!   [`casual_sign_workflow::decide`], then in the caller's one transaction write the
 //!   state at the revision read, append the events to the hash chain
 //!   (`PendingEvent::into_audit`, ADR-010), bring the relational rows the API lists into

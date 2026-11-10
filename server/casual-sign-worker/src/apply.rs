@@ -1,5 +1,5 @@
 //! Decide and record in one transaction: the worker's face of
-//! [`casual_sign_host::apply`], the one path the API server uses too (docs/24 §1).
+//! [`mod@casual_sign_host::apply`], the one path the API server uses too (docs/24 §1).
 //!
 //! The worker feeds its results back through here (`InvitationDispatched`, `TimerDue`,
 //! `SealSucceeded`, ...) with command ids derived from the job (`job-<uuid>`), so a job

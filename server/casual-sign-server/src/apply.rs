@@ -1,5 +1,5 @@
 //! The command pipeline (docs/24 §1, ADR-011): the server's face of
-//! [`casual_sign_host::apply`], the one decide-and-record path the worker uses too.
+//! [`mod@casual_sign_host::apply`], the one decide-and-record path the worker uses too.
 //! Load the envelope's state (locked), run `casual_sign_workflow::decide`, and in the
 //! caller's one transaction write the new state and its projection, append the events
 //! to the hash chain (`PendingEvent::into_audit`, ADR-010), revoke the tokens the
