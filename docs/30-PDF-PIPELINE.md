@@ -83,6 +83,11 @@ removed; optional content taken to its default visibility, as in §7), and norma
 delivered file is one revision with no `/AcroForm`, `/Perms` or DocMDP. `Delivered::printed` carries the SHA-256 of the
 original upload and the converted signatures, for the audit trail. The CLI is `openseal normalize IN OUT
 --print-to-new`. The original's signatures are not verified or carried: the new document attests nothing about them.
+**Corpus (2026-11-11):** the 32 DocMDP P1 files the gate excludes all print to new, then fill, flatten, certificate
+and seal at B-T and at B-LT with ours, pyHanko and EU DSS passing; rendered by PDFium 159 with forms drawn, every page
+of every printed file is pixel-identical to the signed original. The 21 corpus files whose metadata is not an XMP
+packet (19 with an `rdf:RDF` root) seal at B-LT with pyHanko passing; without `NORM-03` pyHanko calls the DSS update
+`OTHER`.
 
 ## 3. Normalization
 
