@@ -5,6 +5,7 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 ## 2026-11-10
 
 ### Phase 1 opened
+- Stage 1G merged: PAdES B-B to B-LTA sealing, self-verified, agreeing with pyHanko and EU DSS (`T-1G`). Stage 1I merged: hash-chained audit trail, RFC 8785, Merkle anchoring, certificate of completion with the trail embedded (`T-1I`).
 - Reader completion merged: password-protected PDFs (standard handler R2–R6), LZW, four wrongly refused real PDFs fixed, a public content lexer; 417 of 422 corpus PDFs open (`PDF-ENC-01`, `PDF-LZW-01`, `PDF-REAL-01..03`).
 - Stage 1E merged: flattening with subset fonts, drawn, uploaded and typed signatures, and fill-in-place forms (`T-1E`, `FILL-01`), checked by PDFium and pypdf.
 - Stage 1H merged: the verifier, with a whitelist revision classifier that catches shadow and incremental-saving attacks, cross-checked against pyHanko and EU DSS (`T-1H`).

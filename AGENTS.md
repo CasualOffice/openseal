@@ -63,7 +63,7 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `1a1b867` (2026-11-10).
+Docs are true as of `1163eca` (2026-11-10).
 
 **Phases D, 0 and 1 are open. Phase 1 runs under waiver `W-2`** (opened while the repository was private). The owner
 made `CasualOffice/openseal` public on 2026-11-10; GitHub CI now runs, and `tools/ci-local.sh` stays as the pre-push gate.
@@ -74,9 +74,11 @@ made `CasualOffice/openseal` public on 2026-11-10; GitHub CI now runs, and `tool
   four more hostile fixtures (46 of 50, `F-005`) and the owner's sign-off. Corpus (422 PDFs, 40 producers), validators on
   GitHub, spikes and ADR-005/006 are done.
 - **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm
-  conversion, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1H verifier (leftovers in their
-  rows). Reader completion is merged: decryption, LZW, the four wrongly refused corpus files. In progress in parallel workers: 1G sealing, 1I audit chain and certificate.
-  Not started: 1J SDK and CLI. The reader opens 387 of 422 real-world PDFs
+  conversion, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I
+  audit chain and certificate (leftovers in their rows), and reader completion (decryption, LZW, the four wrongly
+  refused corpus files). In progress, to close the Phase 1 exit gate: 1J SDK and CLI with the corpus pipeline run
+  (`P1-GATE-01`), WASM parity (`WASM-01`), signature-wrapping fixtures (`VER-03`), 24 h fuzzing (`FUZZ-01`).
+   The reader opens 387 of 422 real-world PDFs
   with page counts matching the manifest.
 - **No server, API or UI exists yet.** The roadmap has 35 slices and milestones M0–M8; the fit-gap has 167 rows, none
   working end to end yet.

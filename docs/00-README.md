@@ -5,7 +5,7 @@ document plays the same role, so the siblings read alike, and are never reused.
 
 Read in this order: 03 → 01 → 02 → 05 → 06 → 14 → 07. Then the pillar you are working on.
 
-Docs are true as of `1a1b867` (2026-11-10). **The engine's first half is built** (Phase 1 stages 1A–1D, 1F); no server or UI yet. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
+Docs are true as of `1163eca` (2026-11-10). **The engine's first half is built** (Phase 1 stages 1A–1D, 1F); no server or UI yet. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
 (what it is and its status), [AGENTS.md](../AGENTS.md) (the contract and current state), [CLAUDE.md](../CLAUDE.md)
 (working rules and engineering standards).
 
@@ -23,7 +23,7 @@ Docs are true as of `1a1b867` (2026-11-10). **The engine's first half is built**
 | [10-ENTERPRISE-REQUIREMENTS](10-ENTERPRISE-REQUIREMENTS.md) | The enterprise bar | Draft for owner |
 | [14-EXECUTION-TRACKER](14-EXECUTION-TRACKER.md) | **The only tracker**, with owner decisions | Live |
 | [15-CI-AND-RELEASE-GATES](15-CI-AND-RELEASE-GATES.md) | CI jobs, flake policy, release gates | Workflow written; runs locally (`tools/ci-local.sh`) until the repository is public |
-| [19-WORKSPACE-SCAFFOLD-DESIGN](19-WORKSPACE-SCAFFOLD-DESIGN.md) | Crates, dependency DAG, provenance, licence policy | Live; six crates, all built (`-pdf`, `-model`, `-fields`, `-crypto`, `-verify`, `-flatten`) |
+| [19-WORKSPACE-SCAFFOLD-DESIGN](19-WORKSPACE-SCAFFOLD-DESIGN.md) | Crates, dependency DAG, provenance, licence policy | Live; eleven crates: nine built, `-sdk` and `-wasm` in progress |
 | [20-ERROR-CODE-REGISTRY](20-ERROR-CODE-REGISTRY.md) | Every diagnostic code | Live; PDF, writer, field, seal and verify codes issued |
 | [21-PARSER-LIMITS](21-PARSER-LIMITS.md) | Every input limit, its default and code | Live: PDF and crypto limits built; field limits partly built (marked per row) |
 | [22-DATA-MODEL](22-DATA-MODEL.md) | Entities, fields, persistence and tenancy rules | Draft for owner |

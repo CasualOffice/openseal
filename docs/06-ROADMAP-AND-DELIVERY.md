@@ -54,13 +54,13 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of `1a1b867` (2026-11-10). The engine's first half is built; no server or UI.
+Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no server or UI.
 
 | Phase | State | Note |
 | --- | --- | --- |
 | D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
 | 0 Foundation | **Open** 2026-11-10 | 2 of the 4 non-sign-off exit items met (spikes and ADRs; validators on GitHub CI). Left: seeded violations seen failing on GitHub's runners (the first GitHub run, at `fd5e8f3`, was all green), 4 more hostile fixtures (46 of 50), owner sign-off |
-| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1H verifier (each with leftovers in its row). Reader completion merged (decryption, LZW, four corpus refusals fixed; 417 of 422 corpus PDFs open). In progress: 1G sealing, 1I audit chain and certificate. Not started: 1G, 1I, 1J. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
+| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I audit and certificate (each with leftovers in its row); reader completion (417 of 422 corpus PDFs open). In progress, for the exit gate: 1J SDK and CLI with the corpus pipeline (`P1-GATE-01`), `WASM-01`, `VER-03`, `FUZZ-01`. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
 | 2 Envelope engine and server | Not opened | May open once stages 1A and 1B close (`W-1` proposed, `DEC-13`) |
 | Slices 1–35 | Not opened | Slice 1 needs Phases 1 and 2 |
 
@@ -129,9 +129,9 @@ Docs are true as of `1a1b867` (2026-11-10). The engine's first half is built; no
 - **Closes when:**
   - [ ] Every corpus PDF is admitted or refused with a coded reason; no panic, hang or unbounded allocation under fuzzing (24 h cumulative per target).
   - [ ] For every admitted corpus PDF, fill + flatten + seal (B-T) + verify passes rungs 1–3 of the verification ladder; `sealed.starts_with(delivered)` holds.
-  - [ ] B-LT and B-LTA outputs are detected at their level by EU DSS.
+  - [x] B-LT and B-LTA outputs are detected at their level by EU DSS. Evidence: `fixtures/sealed`, `tools/verify-sealed.py fixtures/sealed --dss`, EU DSS 6.5.1 reports PAdES-BASELINE-LT and -LTA (stage 1G, re-run by the main session).
   - [ ] Tampering fixtures (byte flip in each revision, appended unsigned revision, shadow attacks: hide, replace, hide-and-replace; incremental saving attack; signature wrapping) are all detected by our verifier and agree with pyHanko and EU DSS.
-  - [ ] The audit chain verifier detects deletion, insertion, reordering and edit of any event in generated chains.
+  - [x] The audit chain verifier detects deletion, insertion, reordering and edit of any event in generated chains. Evidence: `casual-sign-audit` tamper tests and the every-mutation property (1,024 cases); the prev-link check seen red by the main session (stage 1I).
   - [ ] The WASM build of `-fields` and `-verify` gives byte-identical verdicts to native over the corpus.
   - [ ] Owner sign-off.
 

@@ -1,6 +1,6 @@
 # 19 — Workspace and layer division
 
-**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model`, `-fields`, `-pdf`, `-crypto`, `-verify` and `-flatten` (built); `fuzz/` with targets `admit`, `normalize` and `verify`. Edges: `-fields` → `-model`, `-pdf`; `-verify` → `-pdf`, `-crypto`; `-flatten` → `-pdf`, `-model`, `-fields`. The **Key external dependencies** column is the target; a crate not yet built does not have them.
+**Status: Draft for owner. As built (2026-11-10):** eleven members: `-model`, `-fields`, `-pdf`, `-crypto`, `-verify`, `-flatten`, `-seal`, `-audit`, `-certificate` (built), `-sdk` and `-wasm` (skeletons, in progress). `fuzz/` targets: `admit`, `normalize`, `content`, `verify`, `verify_chain`, `seal`. The **Key external dependencies** column is the target; a crate not yet built does not have them.
 
 ## Layout
 
@@ -32,10 +32,10 @@ openseal/
 | `casual-sign-fields` | Engine | model, pdf | `rust_decimal`, `regex` (linear-time matching), `unicode-normalization` | `-flatten`, `-wasm` |
 | `casual-sign-flatten` | Engine | pdf, fields, model | `skrifa` (font metrics), `png`, `zune-jpeg`, `miniz_oxide`, `unicode-normalization`; TrueType subsetter copied from OpenPresent | `-certificate`, `-sdk` |
 | `casual-sign-crypto` | Engine | — | `der`, `spki`, `x509-cert`, `cms =0.3.0-rc.2`, `x509-tsp =0.2.0-rc.0`, `x509-ocsp =0.3.0-rc.1`, `sha2`, `p256`, `p384`, `rsa` (verify only, feature `rsa`); dev: `aws-lc-rs` (test `KeyProvider`), `rcgen` | `-seal`, `-verify`, `-audit` |
-| `casual-sign-seal` | Engine | pdf, crypto | — | `-sdk` |
+| `casual-sign-seal` | Engine | pdf, crypto, verify (self-check, docs/31 §4 step 8) | `sha1` (PAdES `/VRI` identifiers only) | `-sdk` |
 | `casual-sign-verify` | Engine | pdf, crypto (audit joins with stage 1I) | `der`, `spki`, `x509-cert`, `x509-ocsp`, `sha2`, `p256`, `p384`, `rsa` (verify only, default feature) | `-sdk`, `-wasm` |
-| `casual-sign-audit` | Engine | model, crypto | `serde_json`, `serde_json_canonicalizer` (JCS) | `-workflow`, `-certificate` |
-| `casual-sign-certificate` | Engine | audit, flatten, pdf | — | `-sdk` |
+| `casual-sign-audit` | Engine | model, crypto | `serde`, `serde_json`; RFC 8785 and a bounded JSON parser are our own | `-workflow`, `-certificate` |
+| `casual-sign-certificate` | Engine | audit, flatten, pdf, model, crypto | `rust_decimal`, `md-5` (the `/CheckSum` ISO 32000-2 defines) | `-sdk` |
 | `casual-sign-workflow` | Engine | model, audit, fields | — | server |
 | `casual-sign-sdk` | Engine facade | all of the above | — | server, CLI, desktop |
 | `casual-sign-wasm` | Binding | fields, verify, flatten, audit | `wasm-bindgen` | `webapp/` |

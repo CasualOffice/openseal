@@ -56,6 +56,16 @@ Phase 1 gate.
 | Certification path length | 8 certificates | CS-VER-0004 |
 | Issuer candidates tried while building a path | 256 | CS-VER-0004 |
 
+## Audit and certificate (`casual-sign-audit`, `casual-sign-certificate`, stage 1I)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| Audit trail size; events; JSON depth | 64 MiB; 100,000; 32 | CS-AUD-0002 |
+| Event time going backwards | 1 s tolerance (host-supplied) | CS-AUD-0007 |
+| Certificate: recipients, documents, copies | 100 each | CS-AUD-0020 |
+| Certificate: text value; disclosure | 4,000 bytes; 256 KiB | CS-AUD-0020 |
+| Certificate pages; objects copied when appending | 500; 200,000 | CS-AUD-0021, CS-AUD-0023 |
+
 ## Images (signatures, stamps, attachments shown inline)
 
 | Limit | Default | Code |

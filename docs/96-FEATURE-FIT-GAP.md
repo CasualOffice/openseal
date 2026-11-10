@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 0 of 167 rows work end to end; 24 have their engine built and tested** (counted with `grep`). Docs are true as of `1a1b867` (2026-11-10).
+**Today: 0 of 167 rows work end to end; 32 have their engine built and tested** (counted with `grep`). Docs are true as of `1163eca` (2026-11-10).
 
 ## Documents
 
@@ -161,16 +161,16 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Designed |
-| FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Designed |
-| FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Designed |
-| FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Designed |
-| FG-154 | Long-term validation (B-LT, B-LTA) | — | Build | 7, 17 | Designed |
-| FG-155 | Audit trail embedded in the PDF | — (ours) | Build | 1 | Designed |
-| FG-156 | Hash-chained audit events | — (ours) | Build | Phase 1 | Designed |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Engine |
+| FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Engine |
+| FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Engine |
+| FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Engine |
+| FG-154 | Long-term validation (B-LT, B-LTA) | — | Build | 7, 17 | Engine |
+| FG-155 | Audit trail embedded in the PDF | — (ours) | Build | 1 | Engine |
+| FG-156 | Hash-chained audit events | — (ours) | Build | Phase 1 | Engine |
 | FG-157 | Offline verification page and CLI | — (ours) | Build | 7 | Engine |
 | FG-158 | Public anchoring of chain heads | — (ours) | Build | 7 | Designed |
-| FG-159 | Per-signer seals; certification signature | — | Build | 16 | Designed |
+| FG-159 | Per-signer seals; certification signature | — | Build | 16 | Engine |
 | FG-160 | PDF/A-3 output | — | Build | 17 | Designed |
 | FG-161 | AES / QES via QTSP (CSC API) | DS (EU Advanced, Qualified) | Plugin | 18 | Designed |
 | FG-162 | 21 CFR Part 11 mode | DS | Build | 19 | Designed |

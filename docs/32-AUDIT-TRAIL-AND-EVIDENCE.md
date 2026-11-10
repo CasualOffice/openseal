@@ -46,6 +46,21 @@ Crate: `casual-sign-audit`. Legal mapping is [09](09-LEGAL-AND-COMPLIANCE.md).
 | Access | `envelope.viewed_by_sender`, `document.downloaded` (by whom), `certificate.downloaded` |
 | Integration | `auth.asserted_by_host` (embedded host claims it authenticated the signer), `webhook.delivered` is **not** in the chain (operational log only) |
 
+### As built (stage 1I)
+
+`prev` is `null` exactly on the first event. The trail file embedded in the PDF is canonical JSON
+`{format: "openseal.audit-trail", v: 1, envelope_id, head, events: [...]}`, each event carrying its hash. Personal data
+is wrapped so `Debug` never prints it. Unknown event types are listed and do not fail the chain. A chain cut short or
+rewritten whole is caught only against an externally known head or count: that head is what the certificate prints
+and the seal protects.
+
+**Certificate and seal order:** the certificate prints each document's delivered hash, the chain head as of
+`envelope.completing` and the trail file's SHA-256; the seal then covers the certificate pages and the embedded trail;
+`document.sealed` and `envelope.completed` extend the chain afterwards, so the embedded trail is a prefix of the full
+chain. A certificate issued after sealing may print sealed hashes and the seal's certificate (`SealInfo::Applied`).
+Hashed events cannot be redacted in place; purge keeps a tombstone without personal data. Merkle inclusion proofs take
+the tree size from the trusted side.
+
 ## 4. Chain verification
 
 Anyone with the audit JSON can recompute every hash and check `prev` links and `seq` density. The sealed PDF's

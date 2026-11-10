@@ -103,6 +103,17 @@ later revision is classified** (DSS addition, document timestamp, form fill perm
 disallowed change). The verdict is structured: per signature `valid`, `invalid` (why), or `indeterminate` (why: no
 trust anchor, no revocation data, unsupported algorithm), in the vocabulary of ETSI EN 319 102-1.
 
+### As built (stage 1G)
+
+`seal(input, &SealRequest, &dyn KeyProvider, &dyn TimestampSource, &dyn RevocationSource)`, `augment` (B-T to B-LT or
+B-LTA later) and `renew_lta`. The placeholder is `max_der_len` plus 64 bytes, retried once with the measured size;
+ByteRange is a fixed-width placeholder filled in place. Certification adds `/Reference` with a DocMDP transform and
+`/Perms /DocMDP`. Invisible widgets carry no appearance stream (a zero-size Rect needs none), which keeps P=1 documents
+able to take B-LTA. `/VRI` keys are the upper-case hex SHA-1 of the whole decoded `/Contents`, as PAdES defines (an
+identifier only). Revocation: OCSP first (RFC 6960 request with a SHA-256 CertID), then CRL; responder certificates and
+missing issuers go into `/Certs`. Every output is verified by `casual-sign-verify` before it is returned. Checked: ours,
+pyHanko (LTV from the DSS alone, hard-fail) and EU DSS agree on 19 fixtures and on 30 corpus PDFs sealed at B-LT.
+
 ### As built (stage 1H)
 
 Verdicts follow ETSI EN 319 102-1: `TOTAL_PASSED`; `TOTAL_FAILED` with `HASH_FAILURE`, `FORMAT_FAILURE` (a malformed

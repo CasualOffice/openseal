@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion); `CS-FLT-0001` to `0005` (stage 1E); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion); `CS-FLT-0001` to `0005` (stage 1E); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -70,9 +70,10 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | --- | --- |
 | CS-SEAL-0001 | Key provider failed or refused |
 | CS-SEAL-0002 | Timestamp authority failed or answered invalidly |
-| CS-SEAL-0003 | Signature larger than its placeholder |
+| CS-SEAL-0003 | Signature larger than its placeholder after one retry with the measured size |
 | CS-SEAL-0004 | Revocation data unavailable for the requested level, or OCSP/CRL data unusable |
 | CS-SEAL-0005 | Algorithm, curve or key not allowed by policy or not supported (build and verify), including SHA-1 identifiers |
+| CS-SEAL-0006 | Seal request does not fit the document: certification after an existing signature, a field that is not a signature field or is already signed, a bad field name, a page out of range |
 | CS-SEAL-0010 | Our own output failed verification, or our own DER could not be encoded (P0) |
 | CS-VER-0001 | ByteRange malformed or not covering the revision |
 | CS-VER-0002 | Digest mismatch |
@@ -88,6 +89,21 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 
 | Code | Meaning |
 | --- | --- |
+| CS-AUD-0001 | Malformed JSON: syntax, duplicate key, lone surrogate, number out of range, non-finite, trailing data |
+| CS-AUD-0002 | Audit limit crossed |
+| CS-AUD-0003 | Event or trail has the wrong shape |
+| CS-AUD-0004 | Append refused: another envelope |
+| CS-AUD-0005 | Append refused: sequence is not the next |
+| CS-AUD-0006 | Append refused: previous hash is not the head |
+| CS-AUD-0007 | Append refused: time goes backwards beyond the tolerance |
+| CS-AUD-0008 | Chain failed verification |
+| CS-AUD-0009 | Merkle inclusion proof invalid |
+| CS-AUD-0010 | Tombstone does not match its chain |
+| CS-AUD-0020 | Certificate input invalid or over its bounds |
+| CS-AUD-0021 | Certificate over 500 pages |
+| CS-AUD-0022 | Document already has `/AF` or embedded files |
+| CS-AUD-0023 | Catalog or page tree unusable for appending a certificate |
+| CS-AUD-0024 | Certificate text did not fit (refused rather than clipped) |
 | CS-WF-0001 | Command not allowed in the current state |
 | CS-WF-0002 | Stale version (optimistic concurrency) |
 | CS-WF-0003 | Actor not permitted to perform the command |

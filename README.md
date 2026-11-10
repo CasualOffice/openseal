@@ -1,5 +1,6 @@
 # OpenSeal
 
+[![CI](https://github.com/CasualOffice/openseal/actions/workflows/ci.yml/badge.svg)](https://github.com/CasualOffice/openseal/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#status)
 
@@ -24,7 +25,8 @@ it shares.
   embedding and webhooks are all in the open core.
 - **Evidence first.** Every completed agreement will carry a PAdES seal with trusted time (long-term validation
   optional), a certificate of completion, and a hash-chained audit trail embedded in the PDF. Every seal will be
-  checked by our verifier and by independent validators before release (the verifier and validators exist today).
+  checked by our verifier and by independent validators before release (sealing, the verifier and both validators
+  exist today).
 - **Verify without us.** A completed PDF will be verifiable in the browser, offline, or from the command line, with no
   account and no server.
 - **Keys where you want them.** Signing keys will live in your HSM or cloud KMS, behind a separate signing service that
@@ -34,22 +36,43 @@ it shares.
 
 ## Status
 
-Docs are true as of `1a1b867` (2026-11-10).
+Docs are true as of `1163eca` (2026-11-10). **Pre-alpha.** The headless engine is nearly complete and tested against 422
+real-world PDFs; there is no server, API or web app yet. **No phase is closed** (only the owner closes one).
 
-**Pre-alpha, engine under construction; the repository is private until the pre-release alpha.** No server or user
-interface exists yet. What is built is the headless engine's first half, in Rust, tested against 422 real-world PDFs:
+| Phase | Exit gate | State |
+| --- | --- | --- |
+| D — Design | 3 of 5 items | All design docs and research done; independent doc audit done. Left: owner acceptance of ADR-010 to 024 and decisions `DEC-02`–`07`, owner sign-off |
+| 0 — Foundation | 2 of 4 items | CI green on GitHub (Linux, macOS, Windows), 422-PDF corpus, pyHanko and EU DSS validators, spikes. Left: seeded violations seen failing on GitHub, 4 more hostile fixtures (46 of 50), owner sign-off |
+| 1 — PDF and evidence core | 2 of 6 items; **9 of 10 stages built** | Left: the full pipeline over every corpus PDF through the SDK and CLI (`T-1J`, in progress), browser-build parity over the corpus (`WASM-01`, in progress), a signature-wrapping fixture (`VER-03`, in progress), 24 h of fuzzing per target (`FUZZ-01`), owner sign-off |
+| 2 — Envelope engine and server | — | Not started |
+| Slices 1–35, milestones M0–M8 | — | Not started; slice 1 needs Phases 1 and 2 |
 
-| Built and merged | What it does |
-| --- | --- |
-| PDF reader (`casual-sign-pdf`) | Opens any PDF within strict limits, repairs damaged files, reports active content; 417 of 422 real PDFs open with correct page counts, password-protected ones included; the other 5 use certificate-based encryption or dynamic XFA, both planned |
-| Writer and normalizer | Appends signed revisions without touching earlier bytes; rewrites uploads clean of JavaScript, actions, embedded files, XFA |
-| Fields (`casual-sign-model`, `casual-sign-fields`) | Every DocuSign/SignNow field type, validation, conditions, groups, formulas; page geometry, text extraction, anchors, `{{…}}` text tags, conversion of existing PDF forms |
-| Crypto (`casual-sign-crypto`) | CMS signatures, RFC 3161 timestamps, OCSP and CRL, the key-provider seam; cross-checked with independent libraries |
-| Test assets | 40 hostile PDFs, a 422-file real-world corpus, pyHanko and EU DSS validators |
+**What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):
 
-Also built: the verifier (catches shadow and incremental-saving attacks) and flattening with fill-in-place forms. In progress: sealing, and the audit trail with the certificate of completion. Then sealing, the
-audit chain, the server and the web app. Exact state: [docs/14](docs/14-EXECUTION-TRACKER.md); phases and milestones:
-[docs/06](docs/06-ROADMAP-AND-DELIVERY.md).
+| Part | Crate | What it does | Evidence |
+| --- | --- | --- | --- |
+| Reader | `casual-sign-pdf` | Opens any PDF within strict limits, repairs damage, decrypts password-protected files, reports active content | 417 of 422 real PDFs open, every page count right; 46 hostile files each behave as their manifest says; fuzzed |
+| Writer and cleaner | `casual-sign-pdf` | Appends without touching earlier bytes; rewrites uploads clean of JavaScript, actions, embedded files, XFA | The original is a prefix of every output across the corpus; pyHanko reads every output |
+| Fields | `casual-sign-model`, `casual-sign-fields` | Every DocuSign/SignNow field type, validation, conditions, groups, formulas; geometry, text extraction, anchors, `{{…}}` text tags, PDF form conversion | Identical results natively and in WebAssembly over 225 cases; text agrees with pypdf |
+| Flattening | `casual-sign-flatten` | Draws values, drawn/uploaded/typed signatures, stamps and checkmarks with embedded subset fonts; or fills the PDF's own form and keeps it fillable | PDFium renders ink only inside each field on every page geometry; 20 real government forms |
+| Crypto | `casual-sign-crypto` | CMS signatures, RFC 3161 timestamps, OCSP, CRL, the key-provider seam | Cross-verified both ways with `cryptography` and pyHanko |
+| Sealing | `casual-sign-seal` | PAdES B-B, B-T, B-LT, B-LTA as incremental updates, upgrade and archive renewal; every seal self-verified | Ours, pyHanko and EU DSS agree on 19 fixtures and 30 real PDFs sealed at B-LT |
+| Verifier | `casual-sign-verify` | Verifies any signed PDF; a whitelist of allowed later changes catches shadow and incremental-saving attacks | 29 signed and tampered fixtures; pyHanko agrees on every one |
+| Audit and certificate | `casual-sign-audit`, `casual-sign-certificate` | Hash-chained audit events (RFC 8785 canonical JSON), Merkle anchoring, certificate of completion with the audit trail embedded | Every one of 1,024 random tamperings detected; JSON byte-identical to Node; certificates checked with pypdf and PDFium |
+
+**Try it** (Rust 1.96, Python 3.12 with `uv`, Docker for EU DSS):
+
+```sh
+git config core.hooksPath .githooks          # once per clone
+cargo test --workspace                       # every crate's tests
+python3 -I fixtures/tools/generate.py        # the hostile PDF set
+python3 -I fixtures/corpus/fetch.py          # the 422-file real-world corpus (~700 MB)
+cargo run --release -p casual-sign-pdf --example admit_dir -- fixtures/corpus/files
+tools/ci-local.sh                            # everything CI runs, locally
+```
+
+A command-line tool (`openseal admit | fill | seal | verify`) arrives with `T-1J`. Exact state per item:
+[docs/14](docs/14-EXECUTION-TRACKER.md); phases and milestones: [docs/06](docs/06-ROADMAP-AND-DELIVERY.md).
 
 The design, research and plan:
 
@@ -61,13 +84,12 @@ The design, research and plan:
 | Research: DocuSign, SignNow, open-source competitors, law and standards | [docs/48](docs/48-DOCUSIGN-STUDY.md), [49](docs/49-SIGNNOW-STUDY.md), [52](docs/52-COMPETITOR-STUDY.md), [09](docs/09-LEGAL-AND-COMPLIANCE.md) |
 | Security | [docs/07](docs/07-SECURITY-THREAT-MODEL.md) |
 | Roadmap and tracker | [docs/06](docs/06-ROADMAP-AND-DELIVERY.md), [docs/14](docs/14-EXECUTION-TRACKER.md) |
-| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; none works end to end yet, 24 have their engine built |
+| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; none works end to end yet (no server or UI), 32 have their engine built |
 
-The plan: **Phase 0** sets up the repository, CI, a PDF corpus and independent validators; **Phase 1** builds the
-headless PDF and evidence engine (admit, fill, flatten, seal, verify, audit); **Phase 2** builds the envelope engine,
-server and API; then **35 vertical slices** deliver user-visible features, starting with send-and-sign. Slices are
-grouped into milestones: M0 ready to build, M1 engine alpha, M2 service alpha, M3 first signature, M4 team beta,
-**M5 1.0 GA**, then M6 regulated industries, M7 ecosystem and M8 agreement platform ([roadmap](docs/06-ROADMAP-AND-DELIVERY.md#milestones)).
+The plan: **Phase 1** finishes the headless engine; **Phase 2** builds the envelope engine, server and API; then
+**35 vertical slices** deliver user-visible features, starting with send-and-sign. Milestones: M0 ready to build, M1
+engine alpha, M2 service alpha, M3 first signature (private preview), M4 team beta, **M5 1.0 GA**, M6 regulated
+industries, M7 ecosystem, M8 agreement platform ([roadmap](docs/06-ROADMAP-AND-DELIVERY.md#milestones)).
 
 ## How it will fit together
 
