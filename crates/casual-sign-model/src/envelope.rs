@@ -225,7 +225,8 @@ impl SealProfile {
     }
 }
 
-/// What recipients may do besides finishing (docs/22 §3 `signing_options`).
+/// What recipients may do besides finishing, and how their signing is recorded (docs/22
+/// §3 `signing_options`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SigningOptions {
@@ -238,10 +239,21 @@ pub struct SigningOptions {
     /// A recipient may stop and finish later.
     #[serde(default = "yes")]
     pub allow_finish_later: bool,
+    /// Ask each recipient for their device's location and record it, or an approximation
+    /// from their IP address, on every recipient action (GEO-01, docs/24 §3). Off by
+    /// default. Absent from the wire when off, so options written before it existed
+    /// serialize, and hash, as they did.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub capture_location: bool,
 }
 
 fn yes() -> bool {
     true
+}
+
+// Takes a reference because serde's `skip_serializing_if` passes one.
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Default for SigningOptions {
@@ -250,6 +262,7 @@ impl Default for SigningOptions {
             allow_reassign: true,
             allow_decline: true,
             allow_finish_later: true,
+            capture_location: false,
         }
     }
 }
@@ -376,5 +389,22 @@ mod tests {
         let o: SigningOptions = serde_json::from_str("{}").unwrap();
         assert_eq!(o, SigningOptions::default());
         assert!(o.allow_decline && o.allow_reassign && o.allow_finish_later);
+        assert!(!o.capture_location);
+    }
+
+    #[test]
+    fn capture_location_is_off_by_default_and_absent_when_off() {
+        let off = SigningOptions::default();
+        assert_eq!(
+            serde_json::to_string(&off).unwrap(),
+            r#"{"allow_reassign":true,"allow_decline":true,"allow_finish_later":true}"#
+        );
+        let on = SigningOptions {
+            capture_location: true,
+            ..off
+        };
+        let s = serde_json::to_string(&on).unwrap();
+        assert!(s.ends_with(r#""capture_location":true}"#), "{s}");
+        assert_eq!(serde_json::from_str::<SigningOptions>(&s).unwrap(), on);
     }
 }

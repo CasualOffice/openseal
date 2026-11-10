@@ -132,6 +132,8 @@ pub struct Harness {
     pub accepted: Vec<(Command, Context)>,
     /// Events appended, by type name.
     pub event_types: Vec<String>,
+    /// The request context every command carries (IP, location, ...).
+    pub request: casual_sign_audit::Context,
 }
 
 impl Default for Harness {
@@ -150,6 +152,7 @@ impl Harness {
             chain: Chain::new(id("env-1")),
             accepted: Vec::new(),
             event_types: Vec::new(),
+            request: casual_sign_audit::Context::default(),
         }
     }
 
@@ -171,7 +174,7 @@ impl Harness {
             command_id: id(&format!("cmd-{}", self.next_command)),
             now: t(self.now),
             principal,
-            request: casual_sign_audit::Context::default(),
+            request: self.request.clone(),
             expected_version: None,
             policy: self.policy.clone(),
         }
