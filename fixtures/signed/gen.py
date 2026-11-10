@@ -490,8 +490,11 @@ def wrap_two_signers(data, other):
 
     ci, extra = cms_of(data), cms_of(other)
     sd, xd = ci["content"], extra["content"]
-    sd["signer_infos"] = cms.SignerInfos([sd["signer_infos"][0], xd["signer_infos"][0]])
-    sd["certificates"] = cms.CertificateSet(list(sd["certificates"]) + list(xd["certificates"]))
+    # In DER order (a SET OF is sorted by encoding), so the file is well-formed and only
+    # the exactly-one-SignerInfo rule can refuse it, not a strict decoder.
+    infos = sorted([sd["signer_infos"][0], xd["signer_infos"][0]], key=lambda i: i.dump())
+    sd["signer_infos"] = cms.SignerInfos(infos)
+    sd["certificates"] = cms.CertificateSet(sorted(list(sd["certificates"]) + list(xd["certificates"]), key=lambda c: c.dump()))
     return replace_cms(data, ci.dump(force=True))
 
 

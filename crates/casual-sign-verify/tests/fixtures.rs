@@ -366,3 +366,22 @@ fn hostile_inputs_do_not_panic() {
     let _ = check(b"");
     let _ = check(b"%PDF-1.7\n");
 }
+
+/// VER-03: a well-formed CMS (both SET OFs in DER order) with a second SignerInfo is
+/// refused by the exactly-one-SignerInfo rule itself, not by a stricter decoding step,
+/// so a verifier that checked only one signer would be caught here.
+#[test]
+fn second_signer_info_is_refused_by_the_signer_count_rule() {
+    let bytes = read("wrap-cms-two-signers.pdf");
+    let (start, end) = contents_hex(&bytes);
+    let hex = &bytes[start..end];
+    let cms: Vec<u8> = hex
+        .chunks(2)
+        .map(|p| u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap())
+        .collect();
+    let err = casual_sign_crypto::cms::ParsedCms::parse(&cms).unwrap_err();
+    assert!(
+        matches!(err, casual_sign_crypto::CryptoError::SignerCount),
+        "refused for another reason: {err:?}"
+    );
+}
