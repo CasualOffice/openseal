@@ -12,7 +12,7 @@ use crate::object::{Dictionary, Object};
 use crate::pages::{self, Page};
 use crate::report::{
     ActionInfo, ActionKind, AdmissionReport, FieldType, Finding, FindingKind, FormField,
-    PdfVersion, SignatureInfo, Widget,
+    PdfVersion, SignatureInfo, SignatureKind, Widget, counts_as_signed,
 };
 use crate::text;
 use crate::xref::find;
@@ -410,17 +410,20 @@ fn form_fields(
             && let Some(v) = dict.get(b"V")
         {
             let value = v.as_ref().map(|r| r.num);
-            let sub_filter = match doc.resolve(v, cancel) {
-                Ok(Object::Dictionary(d)) => d
-                    .name(b"SubFilter")
-                    .map(|s| String::from_utf8_lossy(s).into_owned()),
-                _ => None,
+            let (sub_filter, kind) = match doc.resolve(v, cancel) {
+                Ok(Object::Dictionary(d)) => (
+                    d.name(b"SubFilter")
+                        .map(|s| String::from_utf8_lossy(s).into_owned()),
+                    value_kind(&d),
+                ),
+                _ => (None, SignatureKind::Approval),
             };
             if *v != Object::Null {
                 sigs.push(SignatureInfo {
                     field: num,
                     value,
                     sub_filter,
+                    kind,
                 });
             }
         }
@@ -455,6 +458,16 @@ fn widget(
         .and_then(Object::as_ref)
         .and_then(|p| page_index.get(&p.num).copied());
     Ok(Some(Widget { object, rect, page }))
+}
+
+/// Approval or document timestamp, from a signature dictionary's `/Type`; whether
+/// it is a certification or usage-rights signature is decided by `/Perms`.
+fn value_kind(d: &Dictionary) -> SignatureKind {
+    if d.name(b"Type") == Some(b"DocTimeStamp") {
+        SignatureKind::DocTimeStamp
+    } else {
+        SignatureKind::Approval
+    }
 }
 
 /// DocMDP level from `/Perms /DocMDP` (§12.8.2.2), default 2 when unstated.
@@ -543,24 +556,6 @@ pub(crate) fn classify(
         Some(a) => form_fields(doc, a, &page_index, strict, cancel)?,
         None => (Vec::new(), Vec::new()),
     };
-    // Signature dictionaries no field points at still count as signatures.
-    let in_fields: BTreeSet<u32> = signatures.iter().filter_map(|s| s.value).collect();
-    for v in &inv.sig_values {
-        if !in_fields.contains(v) {
-            let sub_filter = match doc.object(*v, cancel) {
-                Ok(o) => o
-                    .get(b"SubFilter")
-                    .and_then(Object::as_name)
-                    .map(|s| String::from_utf8_lossy(s).into_owned()),
-                Err(_) => None,
-            };
-            signatures.push(SignatureInfo {
-                field: None,
-                value: Some(*v),
-                sub_filter,
-            });
-        }
-    }
     let perms = match catalog.get(b"Perms").map(|p| doc.resolve(p, cancel)) {
         Some(Ok(Object::Dictionary(d))) => Some(d),
         _ => None,
@@ -570,10 +565,70 @@ pub(crate) fn classify(
         Some(p) => docmdp(doc, p, cancel),
         None => None,
     };
+    // Which signature dictionaries `/Perms` names (§12.8.4): the certification and the
+    // usage-rights signatures.
+    let perm_ref = |key: &[u8]| {
+        perms
+            .as_ref()
+            .and_then(|p| p.get(key))
+            .and_then(Object::as_ref)
+            .map(|r| r.num)
+    };
+    let certification = perm_ref(b"DocMDP");
+    let usage_rights: BTreeSet<u32> = [perm_ref(b"UR3"), perm_ref(b"UR")]
+        .into_iter()
+        .flatten()
+        .collect();
+    let catalog_num = root.as_ref().map(|r| r.num);
+    // Signature dictionaries no field points at still count as signatures.
+    let in_fields: BTreeSet<u32> = signatures.iter().filter_map(|s| s.value).collect();
+    for v in &inv.sig_values {
+        // A usage-rights signature written directly in `/Perms` is inside the catalog;
+        // it is listed below, not the catalog itself.
+        if in_fields.contains(v) || Some(*v) == catalog_num {
+            continue;
+        }
+        let (sub_filter, kind) = match doc.object(*v, cancel) {
+            Ok(Object::Dictionary(d)) => (
+                d.name(b"SubFilter")
+                    .map(|s| String::from_utf8_lossy(s).into_owned()),
+                value_kind(&d),
+            ),
+            _ => (None, SignatureKind::Approval),
+        };
+        signatures.push(SignatureInfo {
+            field: None,
+            value: Some(*v),
+            sub_filter,
+            kind,
+        });
+    }
+    for key in [&b"UR3"[..], b"UR"] {
+        if let Some(Object::Dictionary(d)) = perms.as_ref().and_then(|p| p.get(key))
+            && matches!(d.name(b"Type"), Some(b"Sig"))
+        {
+            signatures.push(SignatureInfo {
+                field: None,
+                value: None,
+                sub_filter: d
+                    .name(b"SubFilter")
+                    .map(|s| String::from_utf8_lossy(s).into_owned()),
+                kind: SignatureKind::UsageRights,
+            });
+        }
+    }
+    for s in &mut signatures {
+        if s.value.is_some_and(|v| usage_rights.contains(&v)) {
+            s.kind = SignatureKind::UsageRights;
+        } else if s.value.is_some() && s.value == certification {
+            s.kind = SignatureKind::Certification;
+        }
+    }
     let has_optional_content = catalog.contains(b"OCProperties");
 
-    // A signed document must not need repair (docs/30 §2, `CS-PDF-0014`).
-    if (!signatures.is_empty() || has_perms) && doc.is_repaired() {
+    // A signed document must not need repair (docs/30 §2, `CS-PDF-0014`). Usage-rights
+    // signatures alone do not make it signed (`PDF-REAL-02`).
+    if counts_as_signed(docmdp, &signatures) && doc.is_repaired() {
         return Err(PdfError::DamagedSigned);
     }
 
@@ -624,9 +679,18 @@ pub(crate) fn classify(
         doc.findings
             .push(Finding::new("CS-PDF-0106", FindingKind::FormFields, None));
     }
-    if !signatures.is_empty() || has_perms {
+    if counts_as_signed(docmdp, &signatures) {
         doc.findings
             .push(Finding::new("CS-PDF-0107", FindingKind::Signatures, None));
+    }
+    for s in &signatures {
+        if s.kind == SignatureKind::UsageRights {
+            doc.findings.push(Finding::new(
+                "CS-PDF-0107",
+                FindingKind::UsageRights,
+                s.value.or(catalog_num),
+            ));
+        }
     }
     if has_optional_content {
         doc.findings.push(Finding::new(

@@ -36,7 +36,7 @@ use crate::classify::{action_kind, is_file_ef};
 use crate::document::Document;
 use crate::error::PdfError;
 use crate::object::{Dictionary, ObjRef, Object};
-use crate::report::{ActionKind, AdmissionReport, FindingKind, MAX_FINDINGS, PdfVersion};
+use crate::report::{ActionKind, FindingKind, MAX_FINDINGS, PdfVersion};
 use crate::serialize::{Body, write_indirect, write_value};
 use crate::writer::{MAX_OBJECT_NUMBER, WriteError, push_be, width, write_table, write_tail};
 use crate::{Admitted, Cancel};
@@ -361,6 +361,13 @@ impl<'a> Norm<'_, 'a> {
                         FindingKind::Action(ActionKind::JavaScript),
                         Some(old),
                     );
+                    continue;
+                }
+                // Only an unsigned document is normalized (docs/30 §2), so the catalog's
+                // `/Perms` holds usage rights alone: Reader extensions, whose signature
+                // the rewrite would break. They go, and are reported (`PDF-REAL-02`).
+                b"Perms" if structure => {
+                    self.record("CS-PDF-0107", FindingKind::UsageRights, Some(old));
                     continue;
                 }
                 b"EF" if !is_file_ef(&v) => {}
@@ -896,10 +903,6 @@ fn page_tree_objects(
     Ok(found)
 }
 
-fn signed(report: &AdmissionReport) -> bool {
-    !report.signatures.is_empty() || report.has_perms
-}
-
 /// Normalize an admitted document into a fresh file (docs/30 §3).
 ///
 /// # Errors
@@ -912,7 +915,7 @@ pub fn normalize(
     options: &NormalizeOptions,
     cancel: Cancel<'_>,
 ) -> Result<Normalized, WriteError> {
-    if signed(&admitted.report) || options.print_to_new {
+    if admitted.report.is_signed() || options.print_to_new {
         return Err(WriteError::Signed);
     }
     let input_findings = admitted.report.findings.clone();

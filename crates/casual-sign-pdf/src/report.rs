@@ -42,6 +42,10 @@ pub enum FindingKind {
     FormFields,
     /// Existing signatures, `/Perms` or DocMDP (`CS-PDF-0107`).
     Signatures,
+    /// A usage-rights signature (`/Perms /UR3` or `/UR`, Adobe Reader extensions)
+    /// (`CS-PDF-0107`). It attests no content and does not make a document signed for
+    /// the repair rule (docs/30 §2); normalization removes it.
+    UsageRights,
     /// Optional content (`CS-PDF-0108`).
     OptionalContent,
 }
@@ -236,8 +240,24 @@ pub struct FormField {
     pub widgets: Vec<Widget>,
 }
 
+/// What an existing signature is (ISO 32000-2 §12.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum SignatureKind {
+    /// An approval signature: a signature field's value.
+    Approval,
+    /// A certification signature: the value of `/Perms /DocMDP`.
+    Certification,
+    /// A usage-rights signature: the value of `/Perms /UR3` (or `/UR`), which grants
+    /// Adobe Reader features and attests no content.
+    UsageRights,
+    /// A document timestamp (`/Type /DocTimeStamp`).
+    DocTimeStamp,
+}
+
 /// An existing signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SignatureInfo {
     /// The signature field's object number, when indirect.
     pub field: Option<u32>,
@@ -245,6 +265,8 @@ pub struct SignatureInfo {
     pub value: Option<u32>,
     /// `/SubFilter` (a name from the specification, e.g. `ETSI.CAdES.detached`).
     pub sub_filter: Option<String>,
+    /// What the signature is.
+    pub kind: SignatureKind,
 }
 
 /// One action found, and how it is triggered.
@@ -256,6 +278,14 @@ pub struct ActionInfo {
     pub kind: ActionKind,
     /// True when it runs without a click: from `/OpenAction` or an `/AA` dictionary.
     pub automatic: bool,
+}
+
+/// The rule behind [`AdmissionReport::is_signed`] (docs/30 §2, `PDF-REAL-02`).
+pub(crate) fn counts_as_signed(docmdp: Option<u8>, signatures: &[SignatureInfo]) -> bool {
+    docmdp.is_some()
+        || signatures
+            .iter()
+            .any(|s| s.kind != SignatureKind::UsageRights)
 }
 
 /// Everything admission found in a document.
@@ -306,6 +336,16 @@ pub struct AdmissionReport {
 }
 
 impl AdmissionReport {
+    /// True when the document counts as signed (docs/30 §2): it has a certification
+    /// (`/Perms /DocMDP`), or any signature other than a usage-rights one. A document
+    /// whose only signatures are usage rights is not signed: Reader extensions attest
+    /// no content, and normalization removes them. A signed document is never
+    /// repaired (`CS-PDF-0014`) or normalized.
+    #[must_use]
+    pub fn is_signed(&self) -> bool {
+        counts_as_signed(self.docmdp, &self.signatures)
+    }
+
     /// True when any finding carries `code`.
     #[must_use]
     pub fn has_code(&self, code: &str) -> bool {

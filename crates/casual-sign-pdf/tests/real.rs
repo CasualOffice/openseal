@@ -11,7 +11,9 @@
 
 mod common;
 
-use casual_sign_pdf::{FindingKind, Limits, admit, admit_strict};
+use casual_sign_pdf::{
+    FindingKind, Limits, NormalizeOptions, SignatureKind, admit, admit_strict, normalize,
+};
 use common::{classic, never, pages, zlib};
 
 /// One page, an AcroForm with a signed approval field.
@@ -131,4 +133,117 @@ fn usage_rights_ef_array_is_not_an_embedded_file() {
             .iter()
             .any(|f| f.kind == FindingKind::EmbeddedFile)
     );
+}
+
+/// A one-page file whose only signature is a usage-rights one (`/Perms /UR3`), plus
+/// `extra` objects and catalog entries.
+fn usage_rights_only(catalog_extra: &str, extra: &[(u32, Vec<u8>)]) -> Vec<u8> {
+    let mut objs = pages(1);
+    objs[0].1 =
+        format!("<</Type/Catalog/Pages 2 0 R/Perms<</UR3 10 0 R>>{catalog_extra}>>").into_bytes();
+    objs.push((
+        10,
+        b"<</Type/Sig/Filter/Adobe.PPKLite/SubFilter/adbe.pkcs7.detached/ByteRange[0 1 2 3]/Contents<00>/Reference[<</Type/SigRef/TransformMethod/UR3/TransformParams<</Type/TransformParams/V/2.2/Form[/FillIn]>>>>]>>".to_vec(),
+    ));
+    objs.extend_from_slice(extra);
+    classic(&objs, "")
+}
+
+fn break_xref(bytes: &[u8]) -> Vec<u8> {
+    [&bytes[..bytes.len() - 25], b"garbage\n"].concat()
+}
+
+/// `PDF-REAL-02` decision (docs/30 §2): usage-rights signatures alone do not make a
+/// document signed, so a damaged one is repaired, not refused; the report still lists
+/// the usage-rights signature, under its own finding.
+#[test]
+fn usage_rights_alone_do_not_make_a_document_signed() {
+    let bytes = usage_rights_only("", &[]);
+    let whole = admit_strict(&bytes, &Limits::default(), &never)
+        .unwrap()
+        .report;
+    assert!(!whole.is_signed());
+    assert!(whole.has_perms);
+    assert_eq!(whole.signatures.len(), 1);
+    assert_eq!(whole.signatures[0].kind, SignatureKind::UsageRights);
+    assert_eq!(whole.signatures[0].value, Some(10));
+    assert!(
+        whole
+            .findings
+            .iter()
+            .any(|f| f.kind == FindingKind::UsageRights
+                && f.code == "CS-PDF-0107"
+                && f.object == Some(10))
+    );
+    assert!(
+        !whole
+            .findings
+            .iter()
+            .any(|f| f.kind == FindingKind::Signatures)
+    );
+
+    let broken = break_xref(&bytes);
+    let repaired = admit(&broken, &Limits::default(), &never)
+        .expect("a usage-rights-only file is repaired, not refused")
+        .report;
+    assert!(repaired.repaired);
+    assert_eq!(repaired.signatures.len(), 1);
+    assert_eq!(repaired.signatures[0].kind, SignatureKind::UsageRights);
+    assert_ne!(
+        admit_strict(&broken, &Limits::default(), &never)
+            .unwrap_err()
+            .code(),
+        "CS-PDF-0014"
+    );
+}
+
+/// The same file with an approval signature as well is signed, and refused when
+/// damaged (`CS-PDF-0014`).
+#[test]
+fn usage_rights_with_an_approval_signature_are_signed() {
+    let bytes = usage_rights_only(
+        "/AcroForm 11 0 R",
+        &[
+            (11, b"<</Fields[12 0 R]>>".to_vec()),
+            (12, b"<</FT/Sig/T(s)/V 13 0 R/Rect[0 0 0 0]>>".to_vec()),
+            (
+                13,
+                b"<</Type/Sig/SubFilter/ETSI.CAdES.detached/ByteRange[0 1 2 3]/Contents<00>>>"
+                    .to_vec(),
+            ),
+        ],
+    );
+    let r = admit_strict(&bytes, &Limits::default(), &never)
+        .unwrap()
+        .report;
+    assert!(r.is_signed());
+    let kinds: Vec<SignatureKind> = r.signatures.iter().map(|s| s.kind).collect();
+    assert!(kinds.contains(&SignatureKind::Approval));
+    assert!(kinds.contains(&SignatureKind::UsageRights));
+    assert_eq!(
+        admit(&break_xref(&bytes), &Limits::default(), &never)
+            .unwrap_err()
+            .code(),
+        "CS-PDF-0014"
+    );
+}
+
+/// Normalization removes usage rights and says so (docs/30 §3).
+#[test]
+fn normalization_removes_usage_rights() {
+    let bytes = usage_rights_only("", &[]);
+    let mut a = admit(&bytes, &Limits::default(), &never).unwrap();
+    let n = normalize(&mut a, &NormalizeOptions::default(), &never).unwrap();
+    assert!(
+        n.report
+            .removed
+            .iter()
+            .any(|r| r.kind == FindingKind::UsageRights && r.code == "CS-PDF-0107")
+    );
+    let out = admit_strict(&n.bytes, &Limits::default(), &never)
+        .unwrap()
+        .report;
+    assert!(!out.has_perms);
+    assert!(out.signatures.is_empty());
+    assert!(!out.has_code("CS-PDF-0107"));
 }

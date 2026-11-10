@@ -59,7 +59,7 @@ pub use normalize::{
 pub use object::{Dictionary, ObjRef, Object, Stream};
 pub use report::{
     ActionInfo, ActionKind, AdmissionReport, FieldType, Finding, FindingKind, FormField,
-    MAX_FINDINGS, PageInfo, PdfVersion, Rect, Revision, SignatureInfo, Widget,
+    MAX_FINDINGS, PageInfo, PdfVersion, Rect, Revision, SignatureInfo, SignatureKind, Widget,
 };
 pub use writer::{Change, IncrementalUpdate, WriteError};
 pub use xref::XrefKind;
