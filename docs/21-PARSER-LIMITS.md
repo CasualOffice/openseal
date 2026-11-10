@@ -111,6 +111,7 @@ Phase 1 gate.
 | Text tag | 512 characters between the braces; 3,000 tags per document | CS-FLD-0011 |
 | Glyphs per page in text extraction | 500,000 | CS-PDF-0013 |
 | Form XObject nesting in text extraction | 8 (cycle-safe) | CS-PDF-0004 |
+| `/Annots` entries read per page to find the page of a widget without `/P` (AcroForm conversion) | 10,000 (built, `PDF-WID-01`); later entries are not indexed and their widgets are reported `NoPage`, not an error | — |
 | Subject / message | 255 / 10,000 characters | CS-API-0001 |
 | Custom fields per envelope | 100 | CS-API-0001 |
 | Field id | 1–64 bytes of `[A-Za-z0-9_-]` | CS-FLD-0005 |

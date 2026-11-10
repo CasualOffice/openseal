@@ -23,7 +23,7 @@
 //! - [`place_anchor`]: anchor text to placed fields; [`scan_tags`]: text tags to fields.
 //! - [`convert_acroform`]: existing AcroForm fields to OpenSeal fields;
 //!   [`radio_choices`]: a radio group's options and the states they write, shared with
-//!   flattening.
+//!   flattening; [`annotation_pages`]: the page of a widget without `/P`.
 
 mod acroform;
 mod anchor;
@@ -41,8 +41,8 @@ pub mod text;
 mod validate;
 
 pub use acroform::{
-    Conversion, Converted, RadioChoice, RadioWidget, Skipped, Unmapped, convert_acroform,
-    name_text, radio_choices,
+    Conversion, Converted, MAX_ANNOTS_INDEXED, RadioChoice, RadioWidget, Skipped, Unmapped,
+    annotation_pages, convert_acroform, name_text, radio_choices,
 };
 pub use anchor::{
     AnchorMatch, AnchorPlacement, AnchorSpec, AnchorUnits, MAX_ANCHOR_CHARS, MAX_ANCHOR_MATCHES,

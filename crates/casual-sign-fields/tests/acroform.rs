@@ -308,3 +308,62 @@ fn radio_options_come_from_opt_and_shared_states_are_one_option() {
     );
     assert_eq!(radio_options(&bytes), vec!["Yes", "No"]);
 }
+
+/// Two pages: catalog 1 (with `catalog_extra`), pages 2, page 3 (`/Annots` from
+/// `annots1`), page 5 (`/Annots` from `annots2`), contents 4; `extra` from 10.
+fn two_pages(
+    catalog_extra: &str,
+    annots1: &str,
+    annots2: &str,
+    extra: Vec<(u32, Vec<u8>)>,
+) -> Vec<u8> {
+    let page = |annots: &str| {
+        format!(
+            "<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Annots[{annots}]/Resources<<>>/Contents 4 0 R>>"
+        )
+        .into_bytes()
+    };
+    let mut objs = vec![
+        (
+            1,
+            format!("<</Type/Catalog/Pages 2 0 R{catalog_extra}>>").into_bytes(),
+        ),
+        (2, b"<</Type/Pages/Kids[3 0 R 5 0 R]/Count 2>>".to_vec()),
+        (3, page(annots1)),
+        (4, pdf::stream("", b"")),
+        (5, page(annots2)),
+    ];
+    objs.extend(extra);
+    pdf::classic(&objs)
+}
+
+#[test]
+fn a_widget_without_p_is_on_the_page_whose_annots_lists_it() {
+    // PDF-WID-01: 1997-era forms (irs-f1040-1997) give widgets no `/P`; viewers find
+    // the page by its `/Annots`. One field on each page, neither with `/P`.
+    let w = "/Type/Annot/Subtype/Widget";
+    let bytes = two_pages(
+        "/AcroForm<</Fields[10 0 R 11 0 R]>>",
+        "10 0 R",
+        "11 0 R",
+        vec![
+            (
+                10,
+                format!("<</FT/Tx/T(first){w}/Rect[100 600 300 620]>>").into_bytes(),
+            ),
+            (
+                11,
+                format!("<</FT/Btn/T(second){w}/Rect[100 500 112 512]>>").into_bytes(),
+            ),
+        ],
+    );
+    dump("acroform-no-p.pdf", &bytes);
+    let c = convert(&bytes);
+    assert!(c.skipped.is_empty(), "{:?}", c.skipped);
+    let pages: Vec<(FieldType, u32)> = c
+        .fields
+        .iter()
+        .map(|f| (f.field.field_type, f.field.placement.page()))
+        .collect();
+    assert_eq!(pages, vec![(FieldType::Text, 1), (FieldType::Checkbox, 2)]);
+}

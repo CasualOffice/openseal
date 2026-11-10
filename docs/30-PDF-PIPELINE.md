@@ -151,7 +151,10 @@ size      = number "x" number   (points, 0 < n <= 14,400)
 Whitespace inside a tag is ignored; full-width braces count after NFKC. The field takes the tag's glyph box, or its
 top-left with the given size. Types that need options, a formula or a URL cannot be tagged.
 
-**AcroForm conversion:** one OpenSeal field per widget (text with `MaxLen` and required, checkbox, radio group as one
+**AcroForm conversion:** a widget's page is the one its `/P` names, else the page whose `/Annots` lists it, as viewers
+place it: `/P` is optional and forms written before PDF 1.3 never carry it (irs-f1040-1997, irs-f1120-1997 and
+irs-fss4-1998 converted no field before this, `PDF-WID-01`). The `/Annots` index is read once per document and only when
+a widget lacks `/P`, at most 10,000 entries a page (docs/21). One OpenSeal field per widget (text with `MaxLen` and required, checkbox, radio group as one
 field over its buttons, combo with custom entry, signature); push buttons, multi-page radio groups and off-page widgets
 are reported as skipped; multi-select is reported as lossy. A radio group's choices come from each widget's on-state
 (the first non-`/Off` key of `/AP /N`, else of `/D`, else `/AS`), with text from `/Opt`, else the state name as UTF-8 or,

@@ -8,6 +8,8 @@
 //! what maps with a loss (a dropped label, options cut or merged, multi-select) is
 //! listed too. Nothing is executed and the document is not changed.
 
+use std::collections::BTreeMap;
+
 use casual_sign_model::{
     DataLabel, Field, FieldOptions, FieldType, Id, LengthRule, Text, Validation, ValidationRule,
 };
@@ -342,6 +344,86 @@ pub fn radio_choices(
     Ok(choices)
 }
 
+/// Most `/Annots` entries read per page to find a widget's page (docs/21); further
+/// entries are not indexed, and a widget only they list is reported `NoPage`.
+pub const MAX_ANNOTS_INDEXED: usize = 10_000;
+
+/// Which page lists each annotation in its `/Annots`, by annotation object number:
+/// zero-based page index, the first page when several list one (`PDF-WID-01`).
+///
+/// A widget's `/P` is optional (ISO 32000-2 Table 166) and forms written before PDF 1.3
+/// (irs-f1040-1997) never carry it; viewers place such a widget on the page whose
+/// `/Annots` holds it, and so does conversion. Read once per document, at most
+/// [`MAX_ANNOTS_INDEXED`] entries a page; a page or array that cannot be read
+/// contributes nothing.
+///
+/// # Errors
+///
+/// Only what ends the whole document: the decode budget, memory and cancellation.
+pub fn annotation_pages(
+    doc: &mut Document<'_>,
+    report: &AdmissionReport,
+    cancel: &dyn Fn() -> bool,
+) -> Result<BTreeMap<u32, u32>, PdfError> {
+    let mut out = BTreeMap::new();
+    for (index, info) in report.pages.iter().enumerate() {
+        let Ok(index) = u32::try_from(index) else {
+            break;
+        };
+        let Some(page) = local(doc.object(info.object, cancel))? else {
+            continue;
+        };
+        let Some(annots) = page.dict().and_then(|d| d.get(b"Annots")).cloned() else {
+            continue;
+        };
+        let Some(Object::Array(items)) = local(doc.resolve(&annots, cancel))? else {
+            continue;
+        };
+        for r in items
+            .iter()
+            .take(MAX_ANNOTS_INDEXED)
+            .filter_map(Object::as_ref)
+        {
+            out.entry(r.num).or_insert(index);
+        }
+    }
+    Ok(out)
+}
+
+/// Each widget's page: its `/P` when that names a page, else the page whose `/Annots`
+/// lists it (`PDF-WID-01`).
+struct WidgetPages {
+    by_annots: Option<BTreeMap<u32, u32>>,
+}
+
+impl WidgetPages {
+    /// The index is read only when some widget lacks a page from `/P`.
+    fn new(
+        doc: &mut Document<'_>,
+        report: &AdmissionReport,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<Self, PdfError> {
+        let needed = report
+            .fields
+            .iter()
+            .flat_map(|f| &f.widgets)
+            .any(|w| w.page.is_none() && w.object.is_some());
+        let by_annots = if needed {
+            Some(annotation_pages(doc, report, cancel)?)
+        } else {
+            None
+        };
+        Ok(Self { by_annots })
+    }
+
+    fn page(&self, w: &casual_sign_pdf::Widget) -> Option<u32> {
+        w.page.or_else(|| {
+            let obj = w.object?;
+            self.by_annots.as_ref()?.get(&obj).copied()
+        })
+    }
+}
+
 /// The widget's rectangle on its page, clipped to the page; `None` when nothing is left.
 fn place(report: &AdmissionReport, page: u32, rect: &casual_sign_pdf::Rect) -> Option<DisplayRect> {
     let info = report.pages.get(usize::try_from(page).ok()?)?;
@@ -376,6 +458,7 @@ pub fn convert_acroform(
     cancel: &dyn Fn() -> bool,
 ) -> Result<Conversion, PdfError> {
     let mut out = Conversion::default();
+    let widget_pages = WidgetPages::new(doc, report, cancel)?;
     for f in &report.fields {
         let skip = |reason, widget| Skipped {
             object: f.object,
@@ -455,7 +538,7 @@ pub fn convert_acroform(
 
         if field_type == FieldType::RadioGroup {
             // One field for the group: the buttons' bounding box, their states as options.
-            let pages: Vec<Option<u32>> = f.widgets.iter().map(|w| w.page).collect();
+            let pages: Vec<Option<u32>> = f.widgets.iter().map(|w| widget_pages.page(w)).collect();
             let Some(Some(page)) = pages.first().copied() else {
                 out.skipped.push(skip(Unmapped::NoPage, None));
                 continue;
@@ -491,7 +574,7 @@ pub fn convert_acroform(
         }
 
         for w in &f.widgets {
-            let Some(page) = w.page else {
+            let Some(page) = widget_pages.page(w) else {
                 out.skipped.push(skip(Unmapped::NoPage, w.object));
                 continue;
             };
