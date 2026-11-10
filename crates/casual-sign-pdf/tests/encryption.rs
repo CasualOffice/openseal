@@ -363,6 +363,14 @@ fn file(enc: &Enc, objs: &[(u32, Obj)]) -> Vec<u8> {
     out
 }
 
+/// The refusal code, or `None` when the file opened (a short failure message).
+fn code(r: Result<casual_sign_pdf::Admitted<'_>, casual_sign_pdf::PdfError>) -> &'static str {
+    match r {
+        Ok(_) => "opened",
+        Err(e) => e.code(),
+    }
+}
+
 const CONTENT: &[u8] = b"BT /F1 12 Tf 72 720 Td (Encrypted page) Tj ET";
 
 /// One page with a Flate content stream, an /Info title, a text field with a value,
@@ -445,16 +453,12 @@ fn each_handler_opens_with_the_user_or_owner_password_and_refuses_without() {
             Credentials::new().with_password("wrong"),
         ] {
             assert_eq!(
-                admit_with(&bytes, &limits, &creds, &never)
-                    .unwrap_err()
-                    .code(),
+                code(admit_with(&bytes, &limits, &creds, &never)),
                 "CS-PDF-0009",
                 "{scheme:?}"
             );
             assert_eq!(
-                admit_strict_with(&bytes, &limits, &creds, &never)
-                    .unwrap_err()
-                    .code(),
+                code(admit_strict_with(&bytes, &limits, &creds, &never)),
                 "CS-PDF-0009"
             );
         }
@@ -696,10 +700,7 @@ fn decryption_is_charged_to_the_document_budget() {
         max_total_decoded_bytes: 1 << 20,
         ..Limits::default()
     };
-    assert_eq!(
-        admit(&bytes, &small, &never).unwrap_err().code(),
-        "CS-PDF-0003"
-    );
+    assert_eq!(code(admit(&bytes, &small, &never)), "CS-PDF-0003");
     assert!(admit(&bytes, &Limits::default(), &never).is_ok());
 
     // Streams: decrypting is charged as well as decoding. A 600 KiB unfiltered stream
@@ -727,10 +728,7 @@ fn decryption_is_charged_to_the_document_budget() {
         ]
     };
     let bytes = file(&enc, &objs(true));
-    assert_eq!(
-        admit_strict(&bytes, &small, &never).unwrap_err().code(),
-        "CS-PDF-0003"
-    );
+    assert_eq!(code(admit_strict(&bytes, &small, &never)), "CS-PDF-0003");
     // The same stream under the /Identity stream filter is not decrypted.
     let mut clear = setup(Scheme::Aes128, b"", b"o");
     clear.dict = clear.dict.replace("/StmF/StdCF", "/StmF/Identity");
@@ -754,7 +752,7 @@ fn unsupported_and_malformed_encryption() {
         b.splice(s..s + from.len(), to.bytes());
         b
     };
-    for (from, to, code) in [
+    for (from, to, want) in [
         ("/Filter/Standard", "/Filter/Adobe.PubSec", "CS-PDF-0010"),
         ("/Filter/Standard", "/Filter/FOPN_fowe", "CS-PDF-0010"),
         ("/R 3", "/R 9", "CS-PDF-0010"),
@@ -767,7 +765,7 @@ fn unsupported_and_malformed_encryption() {
             } else {
                 admit(&b, &Limits::default(), &never)
             };
-            assert_eq!(r.unwrap_err().code(), code, "{from} -> {to}");
+            assert_eq!(code(r), want, "{from} -> {to}");
         }
     }
 }

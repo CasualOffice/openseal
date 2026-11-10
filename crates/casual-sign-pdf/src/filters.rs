@@ -894,7 +894,9 @@ mod tests {
     fn lzw_bomb_stops_at_the_ratio_and_stream_caps() {
         let bomb = lzw_encode(&vec![0u8; 16 << 20], true);
         // Default limits: the ratio cap (1:1000 after 1 MiB) stops it.
-        let e = decode_with(&bomb, lzw_filter(None, None), &Limits::default()).unwrap_err();
+        let e = decode_with(&bomb, lzw_filter(None, None), &Limits::default())
+            .map(|v| v.len())
+            .unwrap_err();
         assert!(matches!(e, PdfError::DecodeRatio { .. }), "{e:?}");
         // With the ratio out of the way, the per-stream cap does.
         let l = Limits {
@@ -902,7 +904,9 @@ mod tests {
             ratio_grace_bytes: 1 << 30,
             ..Limits::default()
         };
-        let e = decode_with(&bomb, lzw_filter(None, None), &l).unwrap_err();
+        let e = decode_with(&bomb, lzw_filter(None, None), &l)
+            .map(|v| v.len())
+            .unwrap_err();
         assert!(matches!(e, PdfError::StreamTooLarge { .. }), "{e:?}");
         // And the document budget.
         let l = Limits {
@@ -910,7 +914,9 @@ mod tests {
             ratio_grace_bytes: 1 << 30,
             ..Limits::default()
         };
-        let e = decode_with(&bomb, lzw_filter(None, None), &l).unwrap_err();
+        let e = decode_with(&bomb, lzw_filter(None, None), &l)
+            .map(|v| v.len())
+            .unwrap_err();
         assert!(matches!(e, PdfError::DecodeBudget { .. }), "{e:?}");
     }
 
