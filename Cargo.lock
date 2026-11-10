@@ -273,6 +273,14 @@ version = "0.0.0"
 dependencies = [
  "casual-sign-crypto",
  "casual-sign-pdf",
+ "der",
+ "p256",
+ "p384",
+ "rsa",
+ "sha2",
+ "spki",
+ "x509-cert",
+ "x509-ocsp",
 ]
 
 [[package]]

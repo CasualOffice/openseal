@@ -1,0 +1,30 @@
+file	sig	ours	integrity	pyhanko	why
+b-b.pdf	0	INDETERMINATE:TRY_LATER	intact	intact	PAdES B-B, no revocation data
+b-t.pdf	0	INDETERMINATE:TRY_LATER	intact	intact	PAdES B-T, no revocation data
+b-lt.pdf	0	TOTAL_PASSED	intact	intact	PAdES B-LT: DSS with OCSP and CRLs
+b-lta.pdf	0	TOTAL_PASSED	intact	intact	PAdES B-LTA: signature
+b-lta.pdf	1	TOTAL_PASSED	intact	intact	PAdES B-LTA: document timestamp
+certified-p1.pdf	0	TOTAL_PASSED	intact	intact	certification DocMDP P=1, then DSS
+fill-under-p1.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	form fill under P=1
+certified-p2.pdf	0	TOTAL_PASSED	intact	intact	certification DocMDP P=2, then DSS
+fill-under-p2.pdf	0	TOTAL_PASSED	intact	intact	form fill permitted by P=2
+annot-under-p2.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	annotation added under P=2
+certified-p3.pdf	0	TOTAL_PASSED	intact	intact	certification DocMDP P=3, then DSS
+annot-under-p3.pdf	0	TOTAL_PASSED	intact	modified	annotation permitted by P=3; pyHanko 0.38.1 has no diff rule for annotations and reports OTHER
+two-approvals.pdf	0	TOTAL_PASSED	intact	intact	first approval signature
+two-approvals.pdf	1	TOTAL_PASSED	intact	intact	second approval signature
+revoked.pdf	0	INDETERMINATE:REVOKED_NO_POE	intact	intact	signer revoked before its signature timestamp (ETSI EN 319 102-1 5.5.4)
+expired.pdf	0	INDETERMINATE:OUT_OF_BOUNDS_NO_POE	intact	intact	signer expired, no proof of existence
+untrusted.pdf	0	INDETERMINATE:NO_CERTIFICATE_CHAIN_FOUND	intact	intact	signer under a root not in the trust store
+impostor.pdf	0	INDETERMINATE:NO_CERTIFICATE_CHAIN_FOUND	intact	intact	signer under a root named like the trusted one, other key
+flip-range1.pdf	0	TOTAL_FAILED:HASH_FAILURE	invalid	invalid	byte flipped in the first range
+flip-range2.pdf	0	TOTAL_FAILED:HASH_FAILURE	invalid	invalid	byte flipped in the second range
+br-not-zero.pdf	0	TOTAL_FAILED:FORMAT_FAILURE	invalid	invalid	ByteRange does not start at 0
+br-gap.pdf	0	TOTAL_FAILED:FORMAT_FAILURE	invalid	invalid	ByteRange leaves a gap beyond /Contents
+isa-content.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	incremental saving attack: page content replaced
+shadow-signed.pdf	0	TOTAL_PASSED	intact	intact	the shadow document as signed (overlay in place)
+shadow-hide.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide: overlay XObject replaced by an empty one
+shadow-hide-xref.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide via xref only: obj 7 pointed at an unused body inside the signed bytes
+shadow-replace.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	replace: font override renders 1 as 9
+shadow-hide-mediabox.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide: page /MediaBox shrunk to cut the first line off
+shadow-hide-and-replace.pdf	0	TOTAL_FAILED:DISALLOWED_MODIFICATION	modified	modified	hide-and-replace: catalog points at the shadow page tree

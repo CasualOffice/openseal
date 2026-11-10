@@ -16,6 +16,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.13"
 casual-sign-pdf = { path = "../crates/casual-sign-pdf" }
+casual-sign-verify = { path = "../crates/casual-sign-verify" }
 
 [[bin]]
 name = "admit"
@@ -27,6 +28,13 @@ bench = false
 [[bin]]
 name = "normalize"
 path = "fuzz_targets/normalize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify"
+path = "fuzz_targets/verify.rs"
 test = false
 doc = false
 bench = false
