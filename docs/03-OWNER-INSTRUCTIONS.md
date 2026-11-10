@@ -26,6 +26,7 @@ by saying so.
 | 15 | 2026-11-11 | Chose, from options: ignore RUSTSEC-2026-0459 only, with its reason and a tracker row (sqlx 0.9's macros list a SQLite driver that is never compiled, and no sqlx release allows the fixed `libsqlite3-sys` yet) | `.cargo/audit.toml`, `DEP-04` |
 | 16 | 2026-11-11 | Chose, from options: accept the `multi_select` field type and `Choices` value as ADR-025 | [08](08-ADR-REGISTER.md) ADR-025, `ACRO-02` |
 | 17 | 2026-11-11 | "Yes, opt-in per document, and if not approved, even then approximate from his IP; we can use a geo-IP library." Record the signer's location: a per-envelope setting asks the signer's browser for its location; if the signer declines (or the browser cannot), the location is approximated from the request IP with a GeoIP database, and the event records which source it came from | `GEO-01`, [32](32-AUDIT-TRAIL-AND-EVIDENCE.md), [09](09-LEGAL-AND-COMPLIANCE.md) |
+| 18 | 2026-11-11 | Chose, from options: sign off Phase 1 now, on condition that the running fuzz run (GitHub run 42890029431, 24 worker-hours per target) finishes with no crash; any crash reopens Phase 1 and its fix is P0 | [06](06-ROADMAP-AND-DELIVERY.md) Phase 1, `FUZZ-01` |
 
 ## Inherited working rules
 

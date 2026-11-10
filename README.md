@@ -44,13 +44,13 @@ it shares.
 ## Status
 
 Docs are true as of `1163eca` (2026-11-10). **Pre-alpha.** The headless engine is nearly complete and tested against 422
-real-world PDFs; there is no server, API or web app yet. **Phases D and 0 are closed** (by the owner, 2026-11-11); Phase 1 is open, and Phase 2 is open early under waiver `W-1`.
+real-world PDFs; there is no server, API or web app yet. **Phases D, 0 and 1 are closed** (by the owner, 2026-11-11; Phase 1 on condition that the running 24 h fuzz run finds no crash); and Phase 2 is open early under waiver `W-1`.
 
 | Phase | Exit gate | State |
 | --- | --- | --- |
 | D — Design | **Closed** (6 of 6) | All design docs and research; doc audit fixed; ADR-001 to 024 Accepted; owner decisions `DEC-01` to `14` answered. Signed off 2026-11-11 |
 | 0 — Foundation | **Closed** (4 of 4) | CI green on GitHub (Linux, macOS, Windows), every CI job seen failing on a seeded violation (PR #1), 422-PDF corpus, 50 hostile fixtures, pyHanko and EU DSS validators, spikes. Signed off 2026-11-11 |
-| 1 — PDF and evidence core | 5 of 7 items; **10 of 10 stages built** | Met: every admitted corpus PDF filled, flattened, sealed and verified by ours, pyHanko and EU DSS (417 of 417 pass, nothing excluded: certified files are printed to new documents first); B-LT/LTA detected by EU DSS; every tamper and signature-wrapping fixture detected by all three validators; audit-chain tamper detection; browser (WASM) build byte-identical to native over the corpus. Left: 24 h fuzzing per target (12 parallel jobs × 4 workers on GitHub, about 3.5 h, `FUZZ-01`); owner sign-off |
+| 1 — PDF and evidence core | **Closed** (owner, 2026-11-11), conditional on the running fuzz run | Every admitted corpus PDF (417 of 417) filled, flattened, sealed and verified by ours, pyHanko and EU DSS; B-LT/LTA detected by EU DSS; every tamper and signature-wrapping fixture detected by all three; audit-chain tamper detection; WASM byte-identical to native. Fuzzing: 24 worker-hours per target on GitHub, run 42890029431, ends ~23:05 UTC; a crash reopens the phase |
 | 2 — Envelope engine and server | 0 of its items | Open early under waiver `W-1` (owner, 2026-11-11); not started |
 | Slices 1–35, milestones M0–M8 | — | Not started; slice 1 needs Phases 1 and 2 |
 
