@@ -23,7 +23,7 @@ Only the newest commit on `main` runs: a new push cancels older runs in every wo
 
 | Job | Cadence |
 | --- | --- |
-| Fuzz, 1 hour per target, corpus kept as an artifact | Nightly |
+| Fuzz (`fuzz.yml`), 5.5 hours per target, corpus carried in the cache, crashes kept as artifacts; five clean runs meet Phase 1 exit item 1 (`FUZZ-01`) | Nightly, and on demand |
 | TSA and OCSP live check against public endpoints (never a merge gate) | Nightly |
 | Dependency audit | Daily |
 
