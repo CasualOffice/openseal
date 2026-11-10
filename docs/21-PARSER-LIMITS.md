@@ -91,6 +91,7 @@ Phase 1 gate.
 | Typed signature and signer-name text | 4,000 bytes (built) | CS-FLD-0002 |
 | Fields drawn per page | 3,000 (built) | CS-FLT-0004 |
 | Annotations read per page while flattening | 10,000 (built) | CS-FLT-0004 |
+| Optional content visibility expression (`/VE`): depth; terms read | 32; 4,096 (built, `FLT-03`) | CS-FLT-0006 |
 
 ## Fields and envelopes
 

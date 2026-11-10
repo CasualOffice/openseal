@@ -192,7 +192,9 @@ For each document at completion, one incremental update that:
 - Signatures and initials: drawn signatures stored as vector paths (from the pad's strokes) and written as PDF paths;
   uploaded images as image XObjects (PNG and JPEG only, re-encoded after decoding with bounded dimensions); typed
   signatures in a bundled script font (OFL).
-- Radio buttons from their own on-state appearance (a dot when they have none); checkboxes as vector marks (`FLT-04`); dropdowns as text.
+- Radio buttons and checkboxes from their own on-state appearance (a dot or a vector checkmark when they have none, `FLT-04`); dropdowns as text.
+- Optional content flattened to its default visibility and non-widget annotations drawn or removed as the signer saw
+  them on screen (`FLT-03`, SEC-S03), so the sealed page renders the same in every viewer.
 - A small "signed by" line under each signature when the account enables it (DocuSign's "DocuSigned by" with an
   envelope id) and the Part 11 meaning when required.
 - The original AcroForm, if converted, is removed in the same update so no live field remains.
@@ -214,8 +216,41 @@ with the envelope id and a signing-reason line are optional. Converted AcroForms
 honoured), `NeedAppearances false`, the form kept fillable. Checked independently: PDFium renders ink inside every
 field's rectangle and none outside across every geometry and field type (32 documents; a shifted rectangle fails the
 check), pypdf extracts every value and reads back `/V`; 20 real corpus forms (up to 6,197 fields) flatten and fill with
-no failure. Not yet: text shaping and CJK or RTL faces (`FLT-01`), optional content and non-widget annotations
-(SEC-S03, `FLT-03`).
+no failure. Not yet: text shaping and CJK or RTL faces (`FLT-01`).
+
+**Checkboxes (`FLT-04`):** a converted checkbox, checked, draws its widget's own on-state appearance (a cross, a filled
+square) in the field's box, the widget nearest the box when the sender moved it; our checkmark only when it has none.
+
+**Optional content (`FLT-03`, SEC-S03):** visibility comes from `/OCProperties /D`: `/BaseState` (`/Unchanged` counts as
+on), then `/OFF` or `/ON`; a group whose `/Intent` the configuration does not consider has no effect (on). A membership
+dictionary uses its `/VE` when it is readable (`/And`, `/Or`, `/Not` over groups and nested expressions), else `/P`
+(`AnyOn` by default, `AllOn`, `AnyOff`, `AllOff`) over its `/OCGs`; one with no group has no effect. A `/VE` deeper
+than 32 or over 4,096 terms is refused (`CS-FLT-0006`, docs/21); a malformed one falls back to `/P`. Every page's
+content (its streams read as one), every form and tiling pattern it reaches and every appearance that stays is
+rewritten: inside a hidden `/OC … BDC` sequence the painting operators go (a path is ended with `n`, so a pending clip
+still applies; `'` and `"` keep their line move and spacing) and the graphics state stays, as a viewer processes it
+(ISO 32000-2 §8.11.3.2); `Do` of an XObject whose `/OC` is hidden goes anywhere. Then nothing optional is left for a
+viewer to decide on: `/OCProperties` is removed, visible `/OC … BDC` markers become plain `/OC BMC`, `/OC` is removed
+from visible XObjects and from annotations that stay (a widget of a kept form that it hid is marked Hidden), and an
+appearance hidden by its own `/OC` is emptied. PDFium showed why: without a configuration it still evaluates `/OC`,
+taking every group as on, so a visible `AnyOff` membership disappeared. Not applied: the configuration's `/AS`
+automatic states (usage-driven, viewer-dependent); and a hidden string's text advance is not kept, so a visible
+string in the same text object placed only by that advance moves (`FLT-06`, proposed).
+
+**Annotations (`FLT-03`):** what the signer saw on screen decides, not print: an annotation with Hidden or NoView in
+`/F`, or in hidden optional content, is removed; Print and its absence change nothing. Every other non-widget annotation
+with a normal appearance (its `/AS` state when `/N` holds states) is drawn into the page through the appearance
+algorithm (§12.5.5), upright at its upper-left corner when NoRotate is set on a rotated page (NoZoom needs nothing at
+100 %), and removed with its pop-up. Links stay (navigation, no appearance in practice), as do annotations without an
+appearance, which viewers draw in their own way (`FLT-07`, proposed). A certified document filled in place keeps its
+optional content and annotations as certified (its DocMDP permits no new page content; reported as
+`layers_kept_as_certified`); flattening it is refused by the writer. Checked independently
+(`tools/check_layers.py`): PDFium renders every synthetic input and its output alike, and PDFium and pypdf find every
+visible word and no hidden one; PDFium does not honour `/OC` on annotations, so it draws one the standard hides. The
+corpus sweep (`tests/corpus_layers.rs`, `OPENSEAL_CORPUS_SWEEP=1`): of 371 files that admit, 16 have optional content
+and 164 non-widget annotations (150 drawn, 4 removed, 27,620 kept, nearly all links); all flatten and fill in place
+with no failure, and PDFium draws the 24 changed files' first three pages as it drew the inputs (within two
+anti-aliased pixels per annotation drawn).
 
 ## 8. Certificate of completion (`casual-sign-certificate`)
 
