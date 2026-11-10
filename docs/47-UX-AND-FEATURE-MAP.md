@@ -79,7 +79,7 @@ Slice 1's web app, in `webapp/`: plain ES modules, no framework or bundler (ADR-
 | Screen | Where | Calls |
 | --- | --- | --- |
 | Sign-in | `app.html#/signin` (`signin.js`) | `POST /api/v1/auth/login`, `GET /api/v1/auth/session`, `POST /api/v1/auth/logout` |
-| Agreements | `app.html#/agreements[?status=]` (`dashboard.js`) | `GET /api/v1/envelopes?status=&cursor=&limit=`; search filters the loaded rows (no text query in the API yet) |
+| Agreements | `app.html#/agreements[?status=]` (`dashboard.js`) | `GET /api/v1/envelopes?status=&cursor=&limit=`; search filters the loaded rows (the API's `q`, `WEB-04`, is in `api.js` for the screen to use) |
 | Envelope detail | `app.html#/envelopes/{id}` (`envelope.js`) | `GET …/{id}`, `GET …/audit`, `POST …/resend`, `POST …/void`, `GET …/documents/{doc}/content?version=sealed`, `GET …/certificate` |
 | Prepare | `app.html#/prepare[/{id}]` (`prepare.js`) | `POST /api/v1/envelopes` (documents, recipients, fields in one call); for a saved draft `POST …/documents`, `POST/PATCH/DELETE …/recipients`, `POST/PATCH/DELETE …/fields` with `If-Match`, `PATCH …/{id}`; `POST …/send` |
 | Signing | `/s/{token}` → `sign.html` (`sign.js`, `signature.js`) | `POST /s/{t}/session`, `/authenticate`, `/consent`, `GET /s/{t}/documents/{doc}/content`, `POST …/viewed`, `/adopt`, `PUT /fields/{f}`, `/finish`, `/decline`, `/finish-later`; `location` (GEO-01) on consent, viewed, adopt, finish and decline when the envelope sets `signing_options.capture_location` |
@@ -103,7 +103,9 @@ Slice 1's web app, in `webapp/`: plain ES modules, no framework or bundler (ADR-
 
 Each page carries this as a meta tag; the server sends it as a header too, adding `frame-ancestors 'none'` (which a
 meta tag cannot carry), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
-`Permissions-Policy: geolocation=(self), camera=(), microphone=()`. `tools/serve-webapp.py` sends the same headers.
+`Permissions-Policy: geolocation=(self), camera=(), microphone=()`. `tools/serve-webapp.py` sends the same headers,
+and so does `casual-sign-server`, which serves `webapp/` at `/` and `sign.html` at `/s/{token}` for a browser
+(`OPENSEAL_WEBAPP_DIR`, `WEB-04`, docs/40 §As built); its other files keep the API's `default-src 'none'`.
 
 ```
 default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self';

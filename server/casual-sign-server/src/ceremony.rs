@@ -351,6 +351,25 @@ pub(crate) async fn session(
     })
 }
 
+/// `GET /s/{token}`: for a browser navigating to a signing link (`Accept: text/html`)
+/// the web app's signing page, which then asks for the view below as JSON (row
+/// WEB-04); otherwise the recipient's view. The page carries nothing of the envelope,
+/// so serving it checks no token and records nothing.
+pub(crate) async fn view_or_page(
+    st: State<AppState>,
+    ip: axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    token: Path<String>,
+) -> Response {
+    if crate::web::wants_page(&headers)
+        && let Some(app) = st.webapp()
+    {
+        return crate::web::sign_page(app);
+    }
+    view(st, ip, method, headers, token).await
+}
+
 /// `GET /s/{token}`: the recipient's view.
 pub(crate) async fn view(
     State(st): State<AppState>,

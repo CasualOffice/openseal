@@ -42,6 +42,21 @@ test("the list filters by status and pages by cursor", async () => {
   assert.notEqual(p2.items[0].id, p1.items[0].id);
 });
 
+test("the list searches subject and recipients with q (WEB-04)", async () => {
+  const c = await signedIn();
+  const all = await c.listEnvelopes({ limit: 200 });
+  const one = all.items[0];
+  const bySubject = await c.listEnvelopes({ q: one.subject.toUpperCase(), limit: 200 });
+  assert.ok(bySubject.items.some((e) => e.id === one.id));
+  assert.ok(bySubject.items.length < all.items.length);
+  const none = await c.listEnvelopes({ q: "no envelope says this" });
+  assert.equal(none.items.length, 0);
+  const seen = [];
+  const fake = async (url) => { seen.push(url); return new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200 }); };
+  await createClient({ fetch: fake }).listEnvelopes({ q: "a&b c" });
+  assert.equal(seen[0], "/api/v1/envelopes?limit=25&q=a%26b+c");
+});
+
 test("create, edit with If-Match, send; a stale ETag is CS-WF-0002 and none is CS-API-0008", async () => {
   const c = await signedIn();
   const pdf = makePdf([{ title: "T", lines: ["a"] }]);

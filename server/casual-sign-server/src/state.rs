@@ -225,6 +225,7 @@ pub(crate) struct Inner {
     pub limiter: RateLimiter,
     pub dummy_phc: String,
     pub geoip: std::sync::OnceLock<Arc<crate::geo::GeoIp>>,
+    pub webapp: std::sync::OnceLock<Arc<crate::web::WebApp>>,
 }
 
 impl AppState {
@@ -250,6 +251,7 @@ impl AppState {
             limiter: RateLimiter::default(),
             dummy_phc: crate::crypto::dummy_phc()?,
             geoip: std::sync::OnceLock::new(),
+            webapp: std::sync::OnceLock::new(),
         })))
     }
 
@@ -257,6 +259,16 @@ impl AppState {
     /// call is ignored.
     pub fn set_geoip(&self, geoip: crate::geo::GeoIp) {
         let _ = self.0.geoip.set(Arc::new(geoip));
+    }
+
+    /// Serve `webapp` at `/` and its signing page at `/s/{token}` for a browser (row
+    /// WEB-04). Set once; a second call is ignored.
+    pub fn set_webapp(&self, webapp: crate::web::WebApp) {
+        let _ = self.0.webapp.set(Arc::new(webapp));
+    }
+
+    pub(crate) fn webapp(&self) -> Option<&Arc<crate::web::WebApp>> {
+        self.0.webapp.get()
     }
 
     pub(crate) fn now(&self) -> OffsetDateTime {

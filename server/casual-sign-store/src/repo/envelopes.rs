@@ -535,8 +535,13 @@ impl Envelopes<'_> {
     }
 
     /// A page of this account's envelopes, newest first, after `after`, optionally of
-    /// one status and one sender, at most `limit` (capped at 1,000). Stable under
-    /// inserts: new envelopes sort before every cursor already handed out.
+    /// one status and one sender, and matching `search`, at most `limit` (capped at
+    /// 1,000). Stable under inserts: new envelopes sort before every cursor already
+    /// handed out.
+    ///
+    /// `search` is a text the subject, or a recipient's name or email, contains,
+    /// ignoring case (row WEB-04); `%`, `_` and `\` in it are matched as themselves.
+    /// Recipients are this account's only, like everything else here.
     ///
     /// # Errors
     ///
@@ -546,9 +551,11 @@ impl Envelopes<'_> {
         after: Option<Cursor>,
         status: Option<EnvelopeStatus>,
         sender: Option<UserId>,
+        search: Option<&str>,
         limit: u32,
     ) -> Result<Vec<Envelope>> {
         let acct = self.tx.acct();
+        let pattern = search.map(like_contains);
         let rows = sqlx::query_as!(
             EnvelopeRow,
             "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, \
@@ -560,17 +567,38 @@ impl Envelopes<'_> {
                AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid)) \
                AND ($4::text IS NULL OR status = $4) \
                AND ($5::uuid IS NULL OR sender_user_id = $5) \
+               AND ($7::text IS NULL OR subject ILIKE $7 ESCAPE '\\' \
+                    OR EXISTS (SELECT 1 FROM recipients AS r \
+                               WHERE r.account_id = e.account_id AND r.envelope_id = e.id \
+                                 AND (r.name ILIKE $7 ESCAPE '\\' \
+                                      OR r.email ILIKE $7 ESCAPE '\\'))) \
              ORDER BY created_at DESC, id DESC LIMIT $6",
             acct,
             after.map(|c| c.created_at),
             after.map(|c| c.id.0),
             status.map(EnvelopeStatus::as_str),
             sender.map(|s| s.0),
-            i64::from(limit.min(1000))
+            i64::from(limit.min(1000)),
+            pattern
         )
         .fetch_all(self.tx.conn())
         .await
         .map_err(db)?;
         rows.into_iter().map(Envelope::try_from).collect()
     }
+}
+
+/// A `LIKE` pattern matching any text that contains `s`, with `\`, `%` and `_` in `s`
+/// escaped (the query names `\` as the escape character).
+fn like_contains(s: &str) -> String {
+    let mut p = String::with_capacity(s.len().saturating_add(2));
+    p.push('%');
+    for c in s.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            p.push('\\');
+        }
+        p.push(c);
+    }
+    p.push('%');
+    p
 }

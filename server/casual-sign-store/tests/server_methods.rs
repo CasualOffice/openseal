@@ -131,7 +131,11 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
         "CS-DB-0003"
     );
     assert!(tx.envelopes().certificate(a_env).await.unwrap().is_none());
-    let page = tx.envelopes().page(None, None, None, 100).await.unwrap();
+    let page = tx
+        .envelopes()
+        .page(None, None, None, None, 100)
+        .await
+        .unwrap();
     assert!(
         page.iter().all(|e| e.id != a_env),
         "A's envelope listed for B"
@@ -145,6 +149,7 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
             }),
             None,
             Some(a.user),
+            None,
             100,
         )
         .await
@@ -428,7 +433,11 @@ async fn engine_state_tokens_and_sessions_behave() {
     assert_eq!(e.status, EnvelopeStatus::Voided);
     assert_eq!(e.subject.get(), "Changed");
     // The page lists only envelopes with engine state (the seeded one has none).
-    let page = tx.envelopes().page(None, None, None, 10).await.unwrap();
+    let page = tx
+        .envelopes()
+        .page(None, None, None, None, 10)
+        .await
+        .unwrap();
     assert_eq!(page.len(), 1);
     assert_eq!(page[0].id, env);
     let after = tx
@@ -438,6 +447,7 @@ async fn engine_state_tokens_and_sessions_behave() {
                 created_at: page[0].created_at,
                 id: page[0].id,
             }),
+            None,
             None,
             None,
             10,

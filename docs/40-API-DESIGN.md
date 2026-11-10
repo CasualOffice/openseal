@@ -219,7 +219,7 @@ table and the document equal in both directions, scope by scope.
 | §3 resource | As built |
 | --- | --- |
 | `/accounts/me` | `GET`; `PATCH {settings}` merges (the account's `workflow_policy` is validated as the engine's `Policy`) |
-| `/envelopes` … `/form-data` | All, plus `GET /envelopes/{id}/status`. `/correct` is one call with the engine's change list (docs/24 As built); `…/commit` is not needed. Documents enter through `/documents` (JSON base64 or raw `application/pdf`), admitted and normalized by `casual-sign-sdk`; signed PDFs are kept as uploaded |
+| `/envelopes` … `/form-data` | All, plus `GET /envelopes/{id}/status`. `GET /envelopes?q=` (`WEB-04`) finds envelopes whose subject, or a recipient's name or email, contains the text (any case; `%`, `_`, `\` literal; at most 200 characters), within the caller's account and, without `view_all`, their own. `PATCH …/recipients/{r}` takes `access_code` (Argon2id at rest, never returned): needed when `auth` gains `access_code`, refused when the resulting `auth` lacks it, deleted when `access_code` leaves `auth`; allowed while the engine allows the change (a draft, or a correction while sent; never once voided or completed). `/correct` is one call with the engine's change list (docs/24 As built); `…/commit` is not needed. Documents enter through `/documents` (JSON base64 or raw `application/pdf`), admitted and normalized by `casual-sign-sdk`; signed PDFs are kept as uploaded |
 | `/documents/{doc}` `PATCH` | **Not built**: the engine has no rename change (row proposed) |
 | `/documents/{doc}/pages/{n}.png` | **Not built** (thumbnails are rendered by pdf.js in the browser, ADR-007; a server thumbnail needs a renderer) |
 | `/certificate`, `/documents/combined`, `/audit?format=pdf`, `content?version=sealed` | Answer `409 CS-API-0009` until the seal job (stage 2D) stores them; `GET /audit` (JSON) re-verifies the chain on every read |
@@ -229,7 +229,7 @@ table and the document equal in both directions, scope by scope.
 | `/bulk-sends`, `/signing-links`, `/groups`, `/permission-profiles`, `/brands`, `/ersd-versions`, `/retention-policies`, `/verify` | **Not built** (their slices) |
 | `/webhooks` | `GET`, `POST`, `GET /{id}`, `DELETE /{id}` (disable), `GET /{id}/deliveries`; `secret_refs` name secrets the operator provisioned. `…/test` and `…/redeliver` need the worker (2D) |
 | `/users`, `/api-clients` | `GET`, `POST`, `GET /{id}`, `PATCH /users/{id}`, `DELETE` (remove member; revoke client) |
-| §6 ceremony | `GET /s/{token}`, `POST …/session`, `…/consent`, `…/authenticate` (access code), `GET …/documents/{doc}/content`, `POST …/documents/{doc}/viewed`, `…/adopt`, `PUT …/fields/{field}`, `POST …/finish`, `…/approve`, `…/decline`, `…/finish-later`, `…/reassign` |
+| §6 ceremony | `GET /s/{token}` (JSON; with `Accept: text/html` and not `application/json`, the web app's `sign.html`, which reads nothing and records nothing, `WEB-04`), `POST …/session`, `…/consent`, `…/authenticate` (access code), `GET …/documents/{doc}/content`, `POST …/documents/{doc}/viewed`, `…/adopt`, `PUT …/fields/{field}`, `POST …/finish`, `…/approve`, `…/decline`, `…/finish-later`, `…/reassign` |
 
 **Authentication (§2).** Local login (`POST /auth/login`, Argon2id, an unknown email costs a wrong password's time)
 gives an `HttpOnly`, `Secure`, `SameSite=Lax` session cookie (8 h) and a CSRF token every changing request echoes in
@@ -253,6 +253,14 @@ pagination on `GET /envelopes` (stable under inserts). Rate limits per principal
 address and per login name, with `RateLimit`, `RateLimit-Policy` and `Retry-After`. Every response carries a strict
 CSP (`default-src 'none'; frame-ancestors 'none'`), `nosniff`, `no-referrer`, HSTS, `X-Frame-Options: DENY` and
 `Cache-Control: no-store`. Body limits per route (docs/21 §API).
+
+**The web app (`WEB-04`).** With `OPENSEAL_WEBAPP_DIR` set, the server reads `webapp/` once at start into memory
+(only the web app's file kinds by extension; `e2e/`, `tests/`, Node manifests and symlinks skipped; at most 4,096
+files and 64 MiB) and answers any `GET` no route matched from it, `/` being `index.html`; a request can name only a
+file read then, so no request path reaches the file system. Pages carry docs/47's Content Security Policy with
+`frame-ancestors 'none'` and `Permissions-Policy: geolocation=(self)`; other files keep the strict API policy.
+`vendor/` and `fonts/` are `Cache-Control: public, max-age=31536000, immutable`; the rest `no-cache`; `sign.html`
+`no-store`. Without the setting the server is API-only, as before.
 
 **Evidence.** Every command's events carry the client address (the socket peer; `Forwarded` / `X-Forwarded-For`
 only from configured trusted proxies, right-most untrusted hop), the user agent (512 bytes), the authentication
@@ -301,3 +309,8 @@ the worker to `completed` and verifies the sealed PDF and the certificate with o
 with an id called by another account (and with another envelope's sub-ids), `404 CS-API-0002`, with RLS on and
 disabled; authentication and authorization refusals; evidence capture and trusted-proxy handling; no address, user
 agent or token in the logs. Each guard named in the T-2C report was removed once and its test seen red.
+`tests/web.rs` (`WEB-04`): the web app's files, types, cache and CSP headers, nothing outside it (tests, manifests,
+`..`), the signing page for a browser and JSON for the API at `/s/{token}`; `q` search on subject, names and emails,
+wildcards literal (seen red without the escaping), never another account's (RLS on and disabled; seen red with RLS
+disabled and the account condition removed); the access code patched on a draft and in a correction, refused once
+voided, the link taking the new code and not the old.

@@ -7,7 +7,12 @@
 //! | --- | --- |
 //! | `OPENSEAL_DATABASE_URL` (secret) | PostgreSQL URL of the application role |
 //! | `OPENSEAL_JWT_SIGNING_KEY` (secret) | P-256 PKCS#8 private key, base64 DER or PEM |
-//! | `OPENSEAL_BLOB_DIR` | Directory of the file blob store |
+//! | `OPENSEAL_BLOB_DIR` | Directory of the file blob store, or: |
+//! | `OPENSEAL_S3_ENDPOINT`, `OPENSEAL_S3_BUCKET` | An S3-compatible bucket instead (created at start when missing) |
+//! | `OPENSEAL_S3_REGION` | Its region (default `us-east-1`) |
+//! | `OPENSEAL_S3_ACCESS_KEY`, `OPENSEAL_S3_SECRET_KEY` (secret) | Its credentials |
+//! | `OPENSEAL_S3_VIRTUAL_HOST=1` | Virtual-host URLs (AWS) rather than path style (MinIO, SeaweedFS) |
+//! | `OPENSEAL_WEBAPP_DIR` | The web app's folder (`webapp/`), served at `/` (row WEB-04); none: API only |
 //! | `OPENSEAL_PUBLIC_URL` | Public base URL (links, token issuer) |
 //! | `OPENSEAL_LISTEN` | Address to listen on (default `127.0.0.1:8080`) |
 //! | `OPENSEAL_TRUSTED_PROXIES` | Comma-separated CIDRs whose forwarding headers count |
@@ -26,7 +31,7 @@ use casual_sign_secrets::env_secret;
 use casual_sign_server::net::{Cidr, ClientIp};
 use casual_sign_server::{AppState, Blobs, Config, JwtKeys, SystemClock, app, bootstrap};
 use casual_sign_store::Store;
-use casual_sign_store::blob::FsBlobStore;
+use casual_sign_store::blob::{FsBlobStore, S3BlobStore, S3Config};
 
 fn fail(what: &str) -> ExitCode {
     eprintln!("casual-sign-server: {what}");
@@ -58,6 +63,47 @@ fn jwt_key() -> Result<JwtKeys, String> {
         }
         None => Err("OPENSEAL_JWT_SIGNING_KEY is not set".into()),
     }
+}
+
+/// The S3 bucket named by `OPENSEAL_S3_*`, when `OPENSEAL_S3_ENDPOINT` is set.
+fn s3_config() -> Result<Option<S3Config>, String> {
+    let Some(endpoint) = std::env::var("OPENSEAL_S3_ENDPOINT")
+        .ok()
+        .filter(|v| !v.is_empty())
+    else {
+        return Ok(None);
+    };
+    let need = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| format!("{name} is not set"))
+    };
+    Ok(Some(S3Config {
+        endpoint,
+        bucket: need("OPENSEAL_S3_BUCKET")?,
+        region: std::env::var("OPENSEAL_S3_REGION").unwrap_or_else(|_| "us-east-1".into()),
+        access_key: need("OPENSEAL_S3_ACCESS_KEY")?,
+        secret_key: secret("OPENSEAL_S3_SECRET_KEY")?
+            .ok_or_else(|| "OPENSEAL_S3_SECRET_KEY is not set".to_owned())?,
+        path_style: std::env::var("OPENSEAL_S3_VIRTUAL_HOST").as_deref() != Ok("1"),
+    }))
+}
+
+async fn blob_store() -> Result<Blobs, String> {
+    if let Some(config) = s3_config()? {
+        let s3 =
+            S3BlobStore::new(&config).map_err(|e| format!("OPENSEAL_S3_ENDPOINT: {}", e.code()))?;
+        s3.create_bucket()
+            .await
+            .map_err(|e| format!("OPENSEAL_S3_BUCKET: {}", e.code()))?;
+        return Ok(Blobs::S3(Arc::new(s3)));
+    }
+    let dir = std::env::var("OPENSEAL_BLOB_DIR")
+        .map_err(|_| "OPENSEAL_BLOB_DIR or OPENSEAL_S3_ENDPOINT is not set".to_owned())?;
+    FsBlobStore::new(&dir)
+        .map(|b| Blobs::Fs(Arc::new(b)))
+        .map_err(|e| format!("OPENSEAL_BLOB_DIR: {}", e.code()))
 }
 
 #[tokio::main]
@@ -100,12 +146,9 @@ async fn main() -> ExitCode {
         Ok(k) => k,
         Err(e) => return fail(&e),
     };
-    let Ok(dir) = std::env::var("OPENSEAL_BLOB_DIR") else {
-        return fail("OPENSEAL_BLOB_DIR is not set");
-    };
-    let blobs = match FsBlobStore::new(&dir) {
-        Ok(b) => Blobs::Fs(Arc::new(b)),
-        Err(e) => return fail(e.code()),
+    let blobs = match blob_store().await {
+        Ok(b) => b,
+        Err(e) => return fail(&e),
     };
     let mut config = Config::default();
     if let Ok(u) = std::env::var("OPENSEAL_PUBLIC_URL") {
@@ -128,6 +171,12 @@ async fn main() -> ExitCode {
         match casual_sign_server::geo::GeoIp::open(std::path::Path::new(&path)) {
             Ok(g) => state.set_geoip(g),
             Err(e) => return fail(&format!("OPENSEAL_GEOIP_DB: {e}")),
+        }
+    }
+    if let Ok(dir) = std::env::var("OPENSEAL_WEBAPP_DIR") {
+        match casual_sign_server::web::WebApp::load(std::path::Path::new(&dir)) {
+            Ok(w) => state.set_webapp(w),
+            Err(e) => return fail(&format!("OPENSEAL_WEBAPP_DIR: {e}")),
         }
     }
     let listen = std::env::var("OPENSEAL_LISTEN").unwrap_or_else(|_| "127.0.0.1:8080".into());
