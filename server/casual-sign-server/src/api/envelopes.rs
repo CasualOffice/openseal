@@ -1305,6 +1305,29 @@ pub(crate) async fn view_signing(
             None,
         )?;
         let claim = dto::message(claim)?;
+        // The assertion needs the recipient to have opened: the host opening its view
+        // for them is that opening (recorded with the host as actor).
+        if l.state
+            .recipient(&rid)
+            .is_some_and(|r| r.status == casual_sign_model::RecipientStatus::Sent)
+        {
+            run(
+                &mut tx,
+                &mut l,
+                &Command::OpenLink {
+                    recipient: rid.clone(),
+                },
+                &ctx,
+                cmds.now,
+            )
+            .await?;
+        }
+        let ctx = cmds.ctx(
+            WfPrincipal::Host {
+                client_id: eid(client.0)?,
+            },
+            None,
+        )?;
         run(
             &mut tx,
             &mut l,
