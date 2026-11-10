@@ -153,7 +153,12 @@ top-left with the given size. Types that need options, a formula or a URL cannot
 
 **AcroForm conversion:** one OpenSeal field per widget (text with `MaxLen` and required, checkbox, radio group as one
 field over its buttons, combo with custom entry, signature); push buttons, multi-page radio groups and off-page widgets
-are reported as skipped; multi-select is reported as lossy.
+are reported as skipped; multi-select is reported as lossy. A radio group's choices come from each widget's on-state
+(the first non-`/Off` key of `/AP /N`, else of `/D`, else `/AS`), with text from `/Opt`, else the state name as UTF-8 or,
+failing that, PDFDocEncoding; widgets sharing a state are one choice. A widget with no on-state anywhere gets one named
+after its position (`"0"`, `"1"`, as `/Opt` groups name theirs, ISO 32000-2 §12.7.5.2.4) and, filled in place, a dot
+appearance under it. Filling and flattening map a choice back to the document's own name bytes, never to decoded text
+(`FLD-RADIO-NAME`, `FLD-RADIO-NOOPT`).
 
 ## 6. Field values and formulas
 
@@ -187,7 +192,7 @@ For each document at completion, one incremental update that:
 - Signatures and initials: drawn signatures stored as vector paths (from the pad's strokes) and written as PDF paths;
   uploaded images as image XObjects (PNG and JPEG only, re-encoded after decoding with bounded dimensions); typed
   signatures in a bundled script font (OFL).
-- Checkboxes and radio buttons as vector marks; dropdowns as text.
+- Radio buttons from their own on-state appearance (a dot when they have none); checkboxes as vector marks (`FLT-04`); dropdowns as text.
 - A small "signed by" line under each signature when the account enables it (DocuSign's "DocuSigned by" with an
   envelope id) and the Part 11 meaning when required.
 - The original AcroForm, if converted, is removed in the same update so no live field remains.

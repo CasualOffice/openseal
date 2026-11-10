@@ -128,7 +128,7 @@ Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no
   entry point, run 1 hour in CI without a finding; acceptance tests seen red; docs/96 rows updated.
 - **Closes when:**
   - [ ] Every corpus PDF is admitted or refused with a coded reason; no panic, hang or unbounded allocation under fuzzing (24 h cumulative per target).
-  - [ ] For every admitted corpus PDF, fill + flatten + seal (B-T) + verify passes rungs 1–3 of the verification ladder; `sealed.starts_with(delivered)` holds.
+  - [x] For every admitted corpus PDF, fill + flatten + seal (B-T) + verify passes rungs 1–3 of the verification ladder; `sealed.starts_with(delivered)` holds. Evidence: `fixtures/corpus/pipeline/` (2026-11-10, main session): 385 pass, 32 excluded by the ruling below, 0 fail (`P1-GATE-01`).
     Owner ruling (2026-11-10, [03](03-OWNER-INSTRUCTIONS.md) instruction 11): a file certified DocMDP P1 (no changes
     permitted) is out of this item by rule. It must be refused for filling with a stable code, since any fill would break
     its certification; making such files fillable as a new document is `NORM-02`.

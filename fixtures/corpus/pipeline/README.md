@@ -5,10 +5,11 @@ flatten + seal (B-T) + verify passes rungs 1–3 of the verification ladder
 ([docs/31](../../../docs/31-SEALING-AND-SIGNATURES.md) §7), and `sealed.starts_with(delivered)` holds.
 
 [results.tsv](results.tsv) has one row per corpus file; [summary.tsv](summary.tsv) the counts by class and outcome.
-**Last run 2026-11-10** (macOS, EU DSS in Docker): 422 files, 417 admitted; 383 pass all three rungs with the
-prefix holding (77 `form`, 300 `plain`, 6 `signed`), 32 `signed` excluded by the rule below, 2 `form` fail with
-the causes below; 5 not admitted; 0 panics. Ours, pyHanko and EU DSS agree on every passing row. **Gate not met**
-until the two open failures are fixed (rows below) and the owner accepts the exclusion rule.
+**Last run 2026-11-10** (macOS, EU DSS in Docker), after `FLD-RADIO-NAME` and `FLD-RADIO-NOOPT`: 422 files, 417
+admitted; **385 pass all three rungs** with the prefix holding (79 `form`, 300 `plain`, 6 `signed`); 32 `signed`
+excluded by the rule below, each refused with `CS-WRT-0004`; 0 fail; 5 not admitted; 0 panics. Ours, pyHanko and EU
+DSS agree on every passing row. **Gate met** (Phase 1 exit item 2); the owner accepted the exclusion rule on 2026-11-10
+([docs/03](../../../docs/03-OWNER-INSTRUCTIONS.md) instruction 11).
 
 No PDF is committed. Reproduce with the corpus fetched and the EU DSS image built:
 
@@ -47,15 +48,15 @@ time 2026-11-01T12:00:00Z, validation time 2026-12-01.
 | `ms` | Our side's time for the file |
 | `outcome` | `pass`, `excluded` (by a rule below), `fail` (a named cause), `not-admitted` |
 
-## Exclusion rules (for owner review)
+## Exclusion rules (accepted by the owner, 2026-11-10)
 
 | Cause | Rule | Removed by |
 | --- | --- | --- |
 | `keep-signed CS-WRT-0004` | A certification signature with DocMDP P1 permits no change at all, another signature included (ISO 32000-2 §12.8.2.2.2). Appending a seal would invalidate it; normalizing would break it (`CS-PDF-0014`) | `NORM-02` (print to new PDF, existing signatures as pictures) |
 
-## Open failures
+## Fixed failures
 
 | File | Cause | Row |
 | --- | --- | --- |
-| `ed-fafsa-2324.pdf` | A radio button's on-state name is not UTF-8 (`First bachelor` + byte 0x92 + `s degree`, Windows-1252); `convert_acroform` decodes it lossily to U+FFFD, so flattening finds no button with that state, falls back to drawing the option as text, and no face draws U+FFFD (`CS-FLT-0001`). Filling in place would write a wrong `/V` | `FLD-RADIO-NAME` (proposed) |
-| `ed-fafsa-2425.pdf` | Four radio groups whose widgets have no on-state appearance convert to a `radio_group` with no options, which completion refuses as a field (`CS-FLD-0002`, `NoOptions`) | `FLD-RADIO-NOOPT` (proposed) |
+| `ed-fafsa-2324.pdf` | A radio on-state name holds byte 0x90 (PDFDocEncoding U+2019, `First bachelor’s degree`); it was decoded lossily to U+FFFD, so flattening found no button and drew the option as text, which no face draws (`CS-FLT-0001`) | `FLD-RADIO-NAME`, Done |
+| `ed-fafsa-2425.pdf` | Four radio buttons (`f336`, `f337`, `f406`, `f407`) with no on-state anywhere converted to groups with no options (`CS-FLD-0002`) | `FLD-RADIO-NOOPT`, Done |
