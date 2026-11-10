@@ -1470,6 +1470,34 @@ fn reaching_cc_without_acting_recipients_is_refused_at_send() {
     let mut hx = Harness::new();
     hx.draft(&[recipient("cc", Cc, 1)]);
     assert_eq!(code(hx.run(sender(), Command::Send)), "CS-WF-0004");
-    // Statuses used.
-    let _ = (Editor, Agent);
+}
+
+#[test]
+fn approving_reruns_the_approvers_own_field_rules() {
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("ap", Approver, 1)]);
+    hx.ok(
+        sender(),
+        Command::Edit {
+            changes: vec![add_field(field("po", "doc-1", "ap", FieldType::Text, true))],
+        },
+    );
+    hx.send();
+    hx.get_ready("ap");
+    let approve = Command::Approve {
+        recipient: id("ap"),
+    };
+    assert_eq!(
+        code(hx.run(as_recipient("ap"), approve.clone())),
+        "CS-FLD-0001"
+    );
+    hx.ok(
+        as_recipient("ap"),
+        Command::CompleteField {
+            recipient: id("ap"),
+            entry: entry("po", txt("PO-7")),
+        },
+    );
+    hx.ok(as_recipient("ap"), approve);
+    assert_eq!(hx.status(), EnvelopeStatus::Completing);
 }

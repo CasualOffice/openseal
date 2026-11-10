@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 65f0ed62782e3613dbd645d01cde27216dbe343e3f212f8ded8008a5ea33040c # shrinks to c = Config { recipients: [RSpec { rtype: 0, order: 1, auth: false }], documents: 1, expiry_days: None, reminders: (0, 0), ersd: false, max_auth_attempts: 1 }, acts = [Sign(0), SealOk, Void]
+cc 27280b0c4982d37ffe4caf10fde15801cb3ab404ed17e4f2a4f138b69863a82c # shrinks to c = Config { recipients: [RSpec { rtype: 173, order: 1, auth: false }], documents: 1, expiry_days: None, reminders: (0, 0), ersd: false, max_auth_attempts: 1 }, acts = [Approve(0), SealBad(75)]
+cc f59e39c299d12bdb4fc1c9788d859b3afde05eb9722cf8675b85ba9e66449857 # shrinks to c = Config { recipients: [RSpec { rtype: 0, order: 1, auth: false }], documents: 1, expiry_days: None, reminders: (1, 0), ersd: false, max_auth_attempts: 1 }, acts = [Decline(0)]
+cc a72a32614c57dfa890a2e08ae5cb4b281d4905c080f005d3d8ffffb27712e515 # shrinks to c = Config { recipients: [RSpec { rtype: 29, order: 1, auth: false }, RSpec { rtype: 119, order: 1, auth: false }], documents: 1, expiry_days: None, reminders: (0, 0), ersd: false, max_auth_attempts: 1 }, acts = [Open(0), Sign(5), FinishLater(0)]

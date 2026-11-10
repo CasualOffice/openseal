@@ -615,6 +615,10 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             if r.spec.rtype != RecipientType::Approver {
                 return Err(recipient_refused(cmd, r));
             }
+            // An approver's own data fields obey their rules too. `recipient.approved`
+            // has no member for value hashes; each value's hash is in its
+            // `recipient.field_completed` event.
+            check_own_fields(s, recipient)?;
             let documents: Vec<DocumentHash> = s.documents.iter().map(|d| d.hash()).collect();
             out.event(EventData::RecipientApproved {
                 recipient_id: recipient.clone(),
@@ -1544,12 +1548,42 @@ fn sign(
         });
     }
 
+    let field_value_hashes = check_own_fields(s, &rid)?;
+    let payments: Vec<Id> = s
+        .fields
+        .0
+        .iter()
+        .filter(|f| f.field_type == FieldType::Payment && field_value_hashes.contains_key(&f.id))
+        .map(|f| f.id.clone())
+        .collect();
+    let documents: Vec<DocumentHash> = s.documents.iter().map(|d| d.hash()).collect();
+    out.event(EventData::RecipientSigned {
+        recipient_id: rid.clone(),
+        documents: documents.clone(),
+        field_value_hashes,
+    });
+    for field in payments {
+        out.effect(EffectKind::ChargePayment {
+            recipient: rid.clone(),
+            field,
+        });
+    }
+    complete_recipient(s, i, documents, out)
+}
+
+/// Re-runs every field rule on the server (docs/24 §5) and keeps the issues on the
+/// recipient's own fields; drops the values of their hidden fields; returns the hash of
+/// each of their values.
+fn check_own_fields(
+    s: &mut EnvelopeState,
+    rid: &Id,
+) -> Result<std::collections::BTreeMap<Id, Hash256>, WorkflowError> {
     let outcome = evaluate_envelope(&s.fields.0, &Values::new());
     let mine: BTreeSet<Id> = s
         .fields
         .0
         .iter()
-        .filter(|f| f.recipient_id.as_ref() == Some(&rid))
+        .filter(|f| f.recipient_id.as_ref() == Some(rid))
         .map(|f| f.id.clone())
         .collect();
     let issues: Vec<Issue> = outcome
@@ -1566,29 +1600,13 @@ fn sign(
             f.value = None;
         }
     }
-    let mut field_value_hashes = std::collections::BTreeMap::new();
-    let mut payments = Vec::new();
+    let mut hashes = std::collections::BTreeMap::new();
     for f in s.fields.0.iter().filter(|f| mine.contains(&f.id)) {
         if let Some(v) = &f.value {
-            field_value_hashes.insert(f.id.clone(), canonical_hash(v)?);
-            if f.field_type == FieldType::Payment {
-                payments.push(f.id.clone());
-            }
+            hashes.insert(f.id.clone(), canonical_hash(v)?);
         }
     }
-    let documents: Vec<DocumentHash> = s.documents.iter().map(|d| d.hash()).collect();
-    out.event(EventData::RecipientSigned {
-        recipient_id: rid.clone(),
-        documents: documents.clone(),
-        field_value_hashes,
-    });
-    for field in payments {
-        out.effect(EffectKind::ChargePayment {
-            recipient: rid.clone(),
-            field,
-        });
-    }
-    complete_recipient(s, i, documents, out)
+    Ok(hashes)
 }
 
 fn complete_recipient(
