@@ -3,7 +3,12 @@
 //! manifest test); its packets, read with `xfa_packets`, are refused by the layout
 //! with the code below, or laid out for the control.
 // Test code: a panic is the failure report (CLAUDE.md).
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 
 use std::path::PathBuf;
 use std::process::Command;
