@@ -16,7 +16,8 @@ use casual_sign_xfa::{Faces, XfaLimits, lay_out};
 const EXPECT: &[(&str, Option<&str>)] = &[
     ("xfa_valid.pdf", None),
     ("xfa_too_large.pdf", Some("CS-XFA-0001")),
-    ("xfa_depth_257.pdf", Some("CS-XFA-0002")),
+    ("xfa_depth_65.pdf", Some("CS-XFA-0002")),
+    ("xfa_nesting_33.pdf", Some("CS-XFA-0002")),
     ("xfa_nodes_4m.pdf", Some("CS-XFA-0003")),
     ("xfa_attributes_257.pdf", Some("CS-XFA-0003")),
     ("xfa_billion_laughs.pdf", Some("CS-XFA-0005")),
@@ -140,4 +141,40 @@ fn cancellation_stops_the_layout() {
     .unwrap();
     let e = lay_out(&packets, &Faces::bundled(), &XfaLimits::default(), &|| true).unwrap_err();
     assert_eq!(e.code(), "CS-XFA-0009");
+}
+
+/// A template nested to the container limit lays out on a 1 MiB stack (wasm32's
+/// default), in debug builds too: merging and layout recurse once per container level,
+/// so `max_nesting` bounds their stack. One level more is refused (`CS-XFA-0002`).
+#[test]
+fn nesting_at_the_limit_fits_a_one_mebibyte_stack() {
+    fn template(subforms: usize) -> String {
+        let mut body = String::new();
+        for i in 0..subforms {
+            let layout = ["tb", "position", "lr-tb", "rl-tb"][i % 4];
+            body.push_str(&format!(r#"<subform name="s" layout="{layout}">"#));
+        }
+        body.push_str(r#"<field name="f" w="1in" h="0.25in"/>"#);
+        body.push_str(&"</subform>".repeat(subforms));
+        format!(
+            r#"<xdp><template><subform name="form1" layout="tb"><pageSet><pageArea name="P"><contentArea w="8in" h="10in"/></pageArea></pageSet>{body}</subform></template></xdp>"#
+        )
+    }
+    let limit = XfaLimits::default().max_nesting;
+    // The field is one level; the root subform is laid out outside the count.
+    let at = template(limit - 1);
+    let over = template(limit);
+    let run = move || {
+        let faces = Faces::bundled();
+        let laid = lay_out(at.as_bytes(), &faces, &XfaLimits::default(), &|| false).unwrap();
+        assert_eq!(laid.report.widgets, 1);
+        let e = lay_out(over.as_bytes(), &faces, &XfaLimits::default(), &|| false).unwrap_err();
+        assert_eq!(e.code(), "CS-XFA-0002");
+    };
+    std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(run)
+        .unwrap()
+        .join()
+        .unwrap();
 }

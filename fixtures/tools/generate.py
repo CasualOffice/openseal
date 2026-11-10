@@ -555,7 +555,11 @@ def builders():
     b["xfa_valid.pdf"] = lambda: dynamic_xfa(xfa_xdp(
         b'<field name="name" w="3in" h="0.3in"><ui><textEdit/></ui><caption reserve="1in"><value><text>Name</text></value></caption></field>'))
     b["xfa_too_large.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"", before=xfa_padding(64 * MIB + 1)))
-    b["xfa_depth_257.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"<subform>" * 254 + b"</subform>" * 254))
+    b["xfa_depth_65.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b'<draw name="d"><value><exData contentType="text/html"><body>' + b"<span>" * 58 + b"x" + b"</span>" * 58
+        + b"</body></exData></value></draw>"))
+    b["xfa_nesting_33.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b'<subform layout="tb">' * 33 + b'<field name="f" w="1in" h="0.25in"/>' + b"</subform>" * 33))
     b["xfa_nodes_4m.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"<draw/>" * 4_000_001))
     b["xfa_attributes_257.pdf"] = lambda: dynamic_xfa(xfa_xdp(
         b"<draw " + b" ".join(b'a%d="1"' % i for i in range(257)) + b"/>"))
@@ -566,7 +570,7 @@ def builders():
         b'<draw name="d"><value><text>&xxe;</text></value></draw>',
         before=b'<!DOCTYPE x [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'))
     b["xfa_undefined_entity.pdf"] = lambda: dynamic_xfa(xfa_xdp(b'<draw name="d"><value><text>&xxe;</text></value></draw>'))
-    b["xfa_unbalanced.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"<subform><draw></subform>"))
+    b["xfa_unbalanced.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"<subform><draw></subform></draw>"))
     b["xfa_no_template.pdf"] = lambda: dynamic_xfa(b'<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/"><config/></xdp:xdp>')
     b["xfa_instances_200k.pdf"] = lambda: dynamic_xfa(xfa_xdp(
         b'<subform name="r" layout="tb" w="1in"><occur min="200001" max="-1"/></subform>'))

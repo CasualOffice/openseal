@@ -40,7 +40,7 @@ pub(crate) struct Node {
 
 impl Node {
     pub(crate) fn is_text(&self) -> bool {
-        self.name.is_empty()
+        self.name.is_empty() && self.parent.is_some()
     }
 }
 
@@ -465,4 +465,108 @@ pub(crate) fn parse(
         return Err(XfaError::Malformed { offset: s.len() });
     }
     Ok(p.dom)
+}
+
+#[cfg(test)]
+mod tests {
+    // Test code: a panic is the failure report (CLAUDE.md).
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+    use super::*;
+
+    const LIM: XmlLimits = XmlLimits {
+        max_depth: 8,
+        max_nodes: 100,
+        max_attributes: 4,
+    };
+
+    fn p(s: &str) -> Result<Dom, XfaError> {
+        parse(s.as_bytes(), LIM, &|| false)
+    }
+
+    #[test]
+    fn elements_attributes_text_and_references_are_read() {
+        let d = p(r#"<?xml version="1.0"?><!-- c --><a:x xmlns:a="u" a:k='v&amp;w'><y>1 &lt; 2 &#x41;&#66;<![CDATA[<raw>]]></y><?pi x?><z/></a:x>"#).unwrap();
+        let x = d.elements(0).next().unwrap();
+        assert_eq!(d.name(x), "x");
+        assert_eq!(d.attr(x, "k"), Some("v&w"));
+        assert_eq!(d.node(x).attrs.len(), 1, "xmlns is dropped");
+        let y = d.child(x, "y").unwrap();
+        assert_eq!(d.text(y), "1 < 2 AB<raw>");
+        assert!(d.child(x, "z").is_some());
+    }
+
+    #[test]
+    fn latin1_declared_input_is_decoded_as_latin1() {
+        let d = parse(
+            b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a>\xe9</a>",
+            LIM,
+            &|| false,
+        )
+        .unwrap();
+        assert_eq!(d.text(0), "\u{e9}");
+    }
+
+    #[test]
+    fn malformed_input_is_refused_with_its_offset() {
+        for bad in [
+            "<a>",
+            "<a></b>",
+            "<a><b></a></b>",
+            "<a x=1/>",
+            "<a x='1' x='2'/>",
+            "<a>&nope;</a>",
+            "<a>&#0;</a>",
+            "<a>&#xD800;</a>",
+            "<a/><b/>",
+            "text<a/>",
+            "<a><!x></a>",
+            "<a x='<'/>",
+            "",
+        ] {
+            assert!(
+                matches!(p(bad), Err(XfaError::Malformed { .. })),
+                "{bad}: {:?}",
+                p(bad).map(|_| ())
+            );
+        }
+    }
+
+    #[test]
+    fn doctype_and_entity_declarations_are_refused() {
+        assert_eq!(
+            p("<!DOCTYPE a [<!ENTITY e SYSTEM \"file:///etc/passwd\">]><a>&e;</a>").unwrap_err(),
+            XfaError::Dtd { offset: 0 }
+        );
+        assert!(matches!(
+            p("<a><!ENTITY e \"x\"></a>"),
+            Err(XfaError::Dtd { .. })
+        ));
+    }
+
+    #[test]
+    fn depth_nodes_and_attributes_are_limited() {
+        let deep = "<a>".repeat(8) + &"</a>".repeat(8);
+        assert!(p(&deep).is_ok());
+        let deeper = "<a>".repeat(9) + &"</a>".repeat(9);
+        assert!(matches!(p(&deeper), Err(XfaError::TooDeep { .. })));
+        let wide = "<a>".to_owned() + &"<b/>".repeat(98) + "</a>";
+        assert!(p(&wide).is_ok());
+        let wider = "<a>".to_owned() + &"<b/>".repeat(99) + "</a>";
+        assert!(matches!(p(&wider), Err(XfaError::TooManyNodes { .. })));
+        assert!(p("<a q='1' r='1' s='1' t='1'/>").is_ok());
+        assert!(matches!(
+            p("<a q='1' r='1' s='1' t='1' u='1'/>"),
+            Err(XfaError::TooManyNodes { .. })
+        ));
+    }
+
+    #[test]
+    fn truncations_of_a_document_never_panic() {
+        let doc = r#"<a k="v"><b>t &amp; u</b><![CDATA[x]]><!-- c --><?p?></a>"#;
+        for n in 0..doc.len() {
+            if let Some(s) = doc.get(..n) {
+                let _ = p(s);
+            }
+        }
+    }
 }

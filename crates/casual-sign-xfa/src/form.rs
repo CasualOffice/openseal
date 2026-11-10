@@ -50,6 +50,9 @@ pub(crate) struct Merge<'d> {
     bound: BTreeSet<NodeId>,
     pub nodes: usize,
     pub max_nodes: usize,
+    /// Current and deepest container nesting.
+    depth: usize,
+    pub max_depth: usize,
     pub cancel: &'d dyn Fn() -> bool,
 }
 
@@ -149,6 +152,8 @@ impl<'d> Merge<'d> {
             bound: BTreeSet::new(),
             nodes: 0,
             max_nodes,
+            depth: 0,
+            max_depth: 32,
             cancel,
         }
     }
@@ -270,6 +275,10 @@ impl<'d> Merge<'d> {
         let mut out = Vec::new();
         // Iterative over siblings; recursion follows template nesting, which the XML
         // reader bounds (docs/21 XFA element depth).
+        self.depth = self.depth.saturating_add(1);
+        if self.depth > self.max_depth {
+            return Err(XfaError::TooDeep { offset: 0 });
+        }
         let kids: Vec<NodeId> = self.tpl.elements(parent).collect();
         for c in kids {
             let Some(kind) = container_kind(self.tpl.name(c)) else {
@@ -371,6 +380,7 @@ impl<'d> Merge<'d> {
                 }
             }
         }
+        self.depth = self.depth.saturating_sub(1);
         Ok(out)
     }
 }
@@ -465,5 +475,25 @@ mod tests {
             m.children(root, None).unwrap_err(),
             XfaError::TooManyItems { limit: 500 }
         );
+    }
+
+    #[test]
+    fn the_nesting_limit_stops_the_merge_recursion() {
+        let t = parse(
+            br#"<subform name="f"><subform><subform><subform/></subform></subform></subform>"#,
+            LIM,
+            &|| false,
+        )
+        .unwrap();
+        let root = t.find(0, "subform").unwrap();
+        let mut m = Merge::new(&t, None, None, 500, &|| false);
+        m.max_depth = 3;
+        assert_eq!(
+            m.children(root, None).unwrap_err(),
+            XfaError::TooDeep { offset: 0 }
+        );
+        let mut m = Merge::new(&t, None, None, 500, &|| false);
+        m.max_depth = 4;
+        assert!(m.children(root, None).is_ok());
     }
 }

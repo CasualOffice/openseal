@@ -232,6 +232,7 @@ struct Ctx<'a, 'f> {
     report: XfaReport,
     images: Vec<ImageData>,
     items: usize,
+    depth: usize,
 }
 
 /// Geometry attributes of a container.
@@ -468,8 +469,13 @@ impl Ctx<'_, '_> {
         force_h: Option<f64>,
     ) -> Result<Option<LBox>, XfaError> {
         self.tick()?;
+        self.depth = self.depth.saturating_add(1);
+        if self.depth > self.limits.max_nesting {
+            return Err(XfaError::TooDeep { offset: 0 });
+        }
         let presence = self.presence(n.tpl);
         if presence == Presence::Hidden {
+            self.depth = self.depth.saturating_sub(1);
             return Ok(None);
         }
         self.report.scripts_ignored = self
@@ -500,6 +506,7 @@ impl Ctx<'_, '_> {
                 b = rotate(b, angle);
             }
         }
+        self.depth = self.depth.saturating_sub(1);
         Ok(Some(b))
     }
 
@@ -676,6 +683,7 @@ impl Ctx<'_, '_> {
         Ok(out)
     }
 
+    #[inline(never)] // A leaf of the recursion: its locals stay off the recursive path.
     fn table_row(
         &mut self,
         row: &FNode,
@@ -763,6 +771,7 @@ impl Ctx<'_, '_> {
     }
 
     /// A field: caption, widget border and the widget.
+    #[inline(never)] // A leaf of the recursion: its locals stay off the recursive path.
     fn field(
         &mut self,
         n: &FNode,
@@ -1117,6 +1126,7 @@ impl Ctx<'_, '_> {
     }
 
     /// A draw: text, a line, a rectangle, an arc or an image.
+    #[inline(never)] // A leaf of the recursion: its locals stay off the recursive path.
     fn draw(&mut self, n: &FNode, force_w: Option<f64>, force_h: Option<f64>) -> LBox {
         let dom = self.dom;
         let t = n.tpl;
@@ -1819,6 +1829,7 @@ pub(crate) fn run(
 ) -> Result<Doc, XfaError> {
     let (root, data_root) = packets(dom).ok_or(XfaError::NoTemplate)?;
     let mut merge = Merge::new(dom, Some(dom), data_root, limits.max_form_nodes, cancel);
+    merge.max_depth = limits.max_nesting;
     let children = merge.children(root, data_root)?;
     let form = FNode {
         tpl: root,
@@ -1850,6 +1861,7 @@ pub(crate) fn run(
         report: XfaReport::default(),
         images: Vec::new(),
         items: merge.nodes,
+        depth: 0,
     };
     let root_seg = format!(
         "{}[0]",
@@ -1967,6 +1979,7 @@ fn merge_master(
 ) -> Result<Vec<FNode>, XfaError> {
     let data_root = packets(dom).and_then(|(_, d)| d);
     let mut m = Merge::new(dom, Some(dom), data_root, limits.max_form_nodes, cancel);
+    m.max_depth = limits.max_nesting;
     m.children(area, None)
 }
 

@@ -46,6 +46,10 @@ pub struct XfaLimits {
     pub max_nodes: usize,
     /// Most attributes on one element (`CS-XFA-0003`).
     pub max_attributes: usize,
+    /// Deepest nesting of containers (subforms, areas, exclusion groups, fields, draws)
+    /// that merging and layout follow (`CS-XFA-0002`). They recurse once per level, so
+    /// this bounds their stack: 32 levels fit a 1 MiB stack in a debug build.
+    pub max_nesting: usize,
     /// Most merged form nodes, counting every instance (`CS-XFA-0007`).
     pub max_form_nodes: usize,
     /// Most pages laid out (`CS-XFA-0008`).
@@ -61,9 +65,10 @@ impl Default for XfaLimits {
     fn default() -> Self {
         Self {
             max_xml_bytes: 64 * 1024 * 1024,
-            max_depth: 256,
+            max_depth: 64,
             max_nodes: 4_000_000,
             max_attributes: 256,
+            max_nesting: 32,
             max_form_nodes: 200_000,
             max_pages: 2_000,
             max_image_bytes: 16 * 1024 * 1024,
