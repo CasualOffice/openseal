@@ -23,6 +23,7 @@ by saying so.
 | 12 | 2026-11-11 | Chose, from options: accept ADR-010 to ADR-024 as proposed; accept the recommendations for `DEC-02` to `DEC-07`, `DEC-10`, `DEC-12`, `DEC-13` (Phase 2 opens early under `W-1`) and `DEC-14`; sign off Phase 0 as closed | [08](08-ADR-REGISTER.md), Owner decisions in [14](14-EXECUTION-TRACKER.md), [06](06-ROADMAP-AND-DELIVERY.md) Phase D, Phase 0, `W-1`, `W-2` |
 | 13 | 2026-11-11 | Chose, from options: sign off Phase D as closed | [06](06-ROADMAP-AND-DELIVERY.md) Phase D, [README](../README.md), [AGENTS](../AGENTS.md) |
 | 14 | 2026-11-11 | Chose, from options: move to sqlx 0.9 and raise the MSRV from 1.88 to 1.94 (not ignoring the two advisories sqlx 0.8 brings into the lockfile); keep ADR-014's compile-time checked queries, with a committed offline query cache so builds need no database | `Cargo.toml` `rust-version`, `ci.yml` and `tools/ci-local.sh` msrv jobs, [08](08-ADR-REGISTER.md) ADR-014, `T-2B` |
+| 15 | 2026-11-11 | Chose, from options: ignore RUSTSEC-2026-0459 only, with its reason and a tracker row (sqlx 0.9's macros list a SQLite driver that is never compiled, and no sqlx release allows the fixed `libsqlite3-sys` yet) | `.cargo/audit.toml`, `DEP-04` |
 
 ## Inherited working rules
 

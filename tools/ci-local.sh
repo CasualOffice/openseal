@@ -24,5 +24,16 @@ VENV=target/tools-venv
 docker build -q -t openseal-eu-dss tools/eu-dss >/dev/null
 "$VENV/bin/python" -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
 step "keyd softhsm";      OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-keyd --test softhsm --locked
+step "store db"   # Postgres 17 in Docker, as ci.yml's store-db job (S3 tests skip without an endpoint)
+[ -x target/sqlx-cli/bin/sqlx ] || cargo install -q sqlx-cli --version 0.9.0 --no-default-features --features postgres,rustls --locked --root target/sqlx-cli
+docker rm -f openseal-ci-pg >/dev/null 2>&1 || true
+docker run -d --rm --name openseal-ci-pg -e POSTGRES_PASSWORD=ci-only -p 127.0.0.1:55433:5432 postgres:17-alpine >/dev/null
+until docker exec openseal-ci-pg pg_isready -U postgres -q 2>/dev/null; do sleep 1; done
+if OPENSEAL_TEST_DATABASE_URL=postgres://postgres:ci-only@127.0.0.1:55433/postgres SQLX_OFFLINE=true SQLX_CLI_BIN="$PWD/target/sqlx-cli/bin" \
+    sh -c 'server/casual-sign-store/sqlx-prepare.sh --check && cargo test -q -p casual-sign-store --locked'; then
+    docker stop openseal-ci-pg >/dev/null
+else
+    docker stop openseal-ci-pg >/dev/null; exit 1
+fi
 step "wasm parity";       tools/wasm-parity.sh   # WASM-01: native and WASM byte-identical over the corpus
 printf '\nci-local: every job passed\n'

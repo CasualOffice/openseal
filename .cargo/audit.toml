@@ -1,0 +1,10 @@
+# cargo-audit configuration (docs/15). Each ignore names its reason and tracker row.
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0459 (libsqlite3-sys < 0.39): sqlx 0.9's `macros` feature (ADR-014,
+    # compile-time checked queries) lists sqlx-sqlite in Cargo.lock, and sqlx-sqlite 0.9.0
+    # caps libsqlite3-sys below 0.38. Nothing compiles it: `cargo tree --workspace
+    # --all-features -e all -i libsqlite3-sys` prints nothing. Owner instruction 15;
+    # removed under DEP-04 once sqlx allows the fixed version.
+    "RUSTSEC-2026-0459",
+]
