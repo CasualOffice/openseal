@@ -13,6 +13,8 @@ members = [
     "crates/casual-sign-seal",
     "crates/casual-sign-audit",
     "crates/casual-sign-certificate",
+    "crates/casual-sign-sdk",
+    "crates/casual-sign-wasm",
 ]
 # The fuzz workspace is separate: cargo-fuzz needs nightly-only dependencies that must
 # stay out of the product dependency graph (as OpenCalc and OpenPresent).

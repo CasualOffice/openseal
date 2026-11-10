@@ -324,6 +324,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-sdk"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-pdf",
+]
+
+[[package]]
 name = "casual-sign-seal"
 version = "0.0.0"
 dependencies = [
@@ -357,6 +364,14 @@ dependencies = [
  "spki",
  "x509-cert",
  "x509-ocsp",
+]
+
+[[package]]
+name = "casual-sign-wasm"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-fields",
+ "casual-sign-verify",
 ]
 
 [[package]]

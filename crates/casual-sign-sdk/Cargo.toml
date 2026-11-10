@@ -1,0 +1,15 @@
+[package]
+name = "casual-sign-sdk"
+version = "0.0.0"
+description = "OpenSeal SDK: one facade over admit, normalize, fill, flatten, certificate, seal and verify (docs/19)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+casual-sign-pdf = { path = "../casual-sign-pdf" }
+
+[lints]
+workspace = true
