@@ -1,7 +1,14 @@
 //! The verifier over `fixtures/signed/` (made by `gen.py`, cross-checked there with pyHanko
 //! and EU DSS): every manifest row's verdict, each check's failure on its own mutation,
 //! and the revision classes (docs/31 §7, SEC-S01, SEC-S02).
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)] // Tests (CLAUDE.md).
+// Tests may unwrap, index, panic and do plain arithmetic on their own fixtures (CLAUDE.md).
+#![allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation
+)]
 
 use std::path::PathBuf;
 use std::time::Duration;
