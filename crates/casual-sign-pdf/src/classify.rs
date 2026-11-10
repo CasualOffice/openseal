@@ -524,14 +524,46 @@ pub(crate) fn classify(
         Object::Dictionary(d) => d,
         _ => return Err(PdfError::NotPdf { offset: None }),
     };
-    let pages_root = catalog
-        .get(b"Pages")
-        .cloned()
-        .ok_or(PdfError::NotPdf { offset: None })?;
-    let pages = pages::walk(doc, &pages_root, strict, cancel)?;
-    if pages.is_empty() {
-        return Err(PdfError::NotPdf { offset: None });
+    // Document metadata (XMP) that cannot be read is reported, never a refusal
+    // (`PDF-REAL-03`).
+    if let Some(Object::Reference(m)) = catalog.get(b"Metadata") {
+        match doc.object(m.num, cancel) {
+            Ok(Object::Stream(_)) => {}
+            Err(e) if e.is_document_wide() => return Err(e),
+            Err(e) if strict => return Err(e),
+            _ => doc.findings.push(Finding::new(
+                "CS-PDF-0102",
+                FindingKind::ObjectUnreadable,
+                Some(m.num),
+            )),
+        }
     }
+    let pages_root = catalog.get(b"Pages").cloned();
+    let walked = match &pages_root {
+        Some(r) => pages::walk(doc, r, strict, cancel),
+        None => Err(PdfError::NotPdf { offset: None }),
+    };
+    let pages = match walked {
+        Ok(p) if !p.is_empty() => p,
+        Err(e) if strict || e.is_document_wide() => return Err(e),
+        // The tree's root is unreadable or holds no page. Once the xref has been rebuilt
+        // (the first attempt returns the error, and the caller rebuilds), the pages are
+        // taken from the page objects themselves, as common readers do (`PDF-REAL-03`).
+        other if !strict && doc.is_rebuilt() => {
+            let found = pages::orphans(doc, cancel)?;
+            if found.is_empty() {
+                return Err(other.err().unwrap_or(PdfError::NotPdf { offset: None }));
+            }
+            doc.findings.push(Finding::new(
+                "CS-PDF-0101",
+                FindingKind::PageTreeRebuilt,
+                pages_root.as_ref().and_then(Object::as_ref).map(|r| r.num),
+            ));
+            found
+        }
+        Ok(_) => return Err(PdfError::NotPdf { offset: None }),
+        Err(e) => return Err(e),
+    };
     content_pass(doc, &pages, strict, cancel)?;
     let page_index: BTreeMap<u32, u32> = pages
         .iter()

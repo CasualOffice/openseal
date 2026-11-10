@@ -21,6 +21,10 @@ pub enum FindingKind {
     /// Xref offsets or `startxref` were wrong and corrected to the object or section
     /// found nearby (`CS-PDF-0101`).
     XrefCorrected,
+    /// The page tree's root was unreadable or held no page, so the pages were taken from
+    /// the page objects found, in file order (`CS-PDF-0101`). Only after the xref was
+    /// rebuilt; the document is repaired and is normalized with a new tree.
+    PageTreeRebuilt,
     /// An object could not be read and was dropped (`CS-PDF-0102`).
     ObjectUnreadable,
     /// A limit was crossed by one value or stream, which was dropped; the code is the

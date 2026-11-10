@@ -665,6 +665,11 @@ impl<'a> Document<'a> {
         self.repaired || self.findings.has(FindingKind::XrefCorrected)
     }
 
+    /// True when the xref was rebuilt by scanning the whole file (not only corrected).
+    pub(crate) fn is_rebuilt(&self) -> bool {
+        self.repaired
+    }
+
     /// The version in the file header, if any.
     #[must_use]
     pub fn header_version(&self) -> Option<PdfVersion> {
@@ -686,6 +691,19 @@ impl<'a> Document<'a> {
             Some(Entry::Offset { generation, .. }) => Some(*generation),
             Some(Entry::Compressed { .. }) => Some(0),
             Some(Entry::Free) | None => None,
+        }
+    }
+
+    /// Where object `num` lies in the file, for ordering: its offset, or its object
+    /// stream's offset and its index there.
+    pub(crate) fn file_order(&self, num: u32) -> (usize, u32) {
+        match self.xref.get(&num) {
+            Some(Entry::Offset { offset, .. }) => (*offset, 0),
+            Some(Entry::Compressed { stream, index }) => match self.xref.get(stream) {
+                Some(Entry::Offset { offset, .. }) => (*offset, index.saturating_add(1)),
+                _ => (usize::MAX, *index),
+            },
+            Some(Entry::Free) | None => (usize::MAX, 0),
         }
     }
 

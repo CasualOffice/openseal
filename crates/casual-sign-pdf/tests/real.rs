@@ -39,7 +39,7 @@ fn signed_objects() -> Vec<(u32, Vec<u8>)> {
 /// is free, and the signed file is read without repair.
 #[test]
 fn generation_65536_entries_are_free_not_damage() {
-    let mut objs = signed_objects();
+    let objs = signed_objects();
     // Numbers 5 to 9 are unused; write two of them as iText does.
     let mut bytes = classic(&objs, "");
     let free = b"0000000000 65535 f \n";
@@ -246,4 +246,61 @@ fn normalization_removes_usage_rights() {
     assert!(!out.has_perms);
     assert!(out.signatures.is_empty());
     assert!(!out.has_code("CS-PDF-0107"));
+}
+
+/// `PDF-REAL-03` (`pysamples-unreadablemetadata`): the second half of the file is
+/// zeroed, taking the page tree's root and the XMP metadata with it. The recovering
+/// reader takes the pages from the page objects, reports the lost tree and metadata,
+/// and normalization writes a new tree over the same pages. Strict reading refuses.
+#[test]
+fn unreadable_page_tree_root_and_metadata_are_recovered() {
+    let mut objs = pages(3);
+    objs[0].1 = b"<</Type/Catalog/Pages 2 0 R/Metadata 20 0 R>>".to_vec();
+    // Page sizes differ so order and geometry are checked.
+    for (i, w) in [(2usize, 300), (4, 400), (6, 500)] {
+        objs[i].1 = format!(
+            "<</Type/Page/Parent 2 0 R/MediaBox[0 0 {w} 792]/Contents {} 0 R>>",
+            objs[i].0 + 1
+        )
+        .into_bytes();
+    }
+    objs.push((20, common::stream("/Type/Metadata/Subtype/XML", b"<x/>")));
+    let mut bytes = classic(&objs, "");
+    // Zero the tree root (object 2) and the metadata (object 20), as the file has.
+    for num in [2u32, 20] {
+        let head = format!("\n{num} 0 obj");
+        let at = bytes
+            .windows(head.len())
+            .position(|w| w == head.as_bytes())
+            .unwrap()
+            + 1;
+        let end = at + bytes[at..].windows(6).position(|w| w == b"endobj").unwrap() + 6;
+        bytes[at..end].fill(0);
+    }
+    assert!(admit_strict(&bytes, &Limits::default(), &never).is_err());
+    let mut a = admit(&bytes, &Limits::default(), &never).unwrap();
+    let r = a.report.clone();
+    assert_eq!(r.page_count, 3);
+    let widths: Vec<f64> = r.pages.iter().map(|p| p.media_box.urx).collect();
+    assert_eq!(widths, vec![300.0, 400.0, 500.0]);
+    assert!(r.repaired);
+    assert!(
+        r.findings
+            .iter()
+            .any(|f| f.kind == FindingKind::PageTreeRebuilt && f.code == "CS-PDF-0101")
+    );
+    assert!(
+        r.findings
+            .iter()
+            .any(|f| f.kind == FindingKind::ObjectUnreadable
+                && f.code == "CS-PDF-0102"
+                && f.object == Some(20))
+    );
+    let n = normalize(&mut a, &NormalizeOptions::default(), &never).unwrap();
+    let out = admit_strict(&n.bytes, &Limits::default(), &never)
+        .unwrap()
+        .report;
+    assert!(!out.repaired);
+    let widths: Vec<f64> = out.pages.iter().map(|p| p.media_box.urx).collect();
+    assert_eq!(widths, vec![300.0, 400.0, 500.0]);
 }

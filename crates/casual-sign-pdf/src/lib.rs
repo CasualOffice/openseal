@@ -114,7 +114,7 @@ fn run<'a>(
         Ok(report) => Ok(Admitted { report, document }),
         // The xref read cleanly but does not lead to a catalog and pages: rebuild once.
         Err(PdfError::NotPdf { .. } | PdfError::Malformed { .. })
-            if !strict && !document.is_repaired() =>
+            if !strict && !document.is_rebuilt() =>
         {
             let mut document = Document::open(bytes, limits, strict, cancel, true)?;
             let report = classify::classify(&mut document, strict, cancel)?;

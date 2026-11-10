@@ -659,6 +659,52 @@ fn header(version: PdfVersion) -> Vec<u8> {
     h
 }
 
+/// Add a page tree root `node` (the next output number) over the output pages `kids`,
+/// in order, and point the catalog `root` and each page at it (`PDF-REAL-03`).
+fn new_page_tree(
+    bodies: &mut Vec<Body<'_>>,
+    root: u32,
+    kids: &[u32],
+    node: u32,
+) -> Result<(), WriteError> {
+    if node > MAX_OBJECT_NUMBER {
+        return Err(WriteError::ObjectNumbersExhausted);
+    }
+    // Output numbers are body positions plus one; the new node takes the next.
+    if body_index(node) != Some(bodies.len()) {
+        return Err(WriteError::InvalidObject { object: node });
+    }
+    let node_ref = Object::Reference(ObjRef {
+        num: node,
+        generation: 0,
+    });
+    let mut d = Dictionary::new();
+    d.insert(b"Type", Object::Name(b"Pages".to_vec()));
+    d.insert(
+        b"Kids",
+        Object::Array(
+            kids.iter()
+                .map(|&num| Object::Reference(ObjRef { num, generation: 0 }))
+                .collect(),
+        ),
+    );
+    d.insert(b"Count", int(kids.len()));
+    bodies.push(Body::Value(Object::Dictionary(d)));
+    for &k in kids {
+        if let Some(Body::Value(Object::Dictionary(p))) =
+            body_index(k).and_then(|i| bodies.get_mut(i))
+        {
+            p.insert(b"Parent", node_ref.clone());
+        }
+    }
+    if let Some(Body::Value(Object::Dictionary(c))) =
+        body_index(root).and_then(|i| bodies.get_mut(i))
+    {
+        c.insert(b"Pages", node_ref);
+    }
+    Ok(())
+}
+
 /// Index in the output bodies of output object `num` (numbered from 1).
 fn body_index(num: u32) -> Option<usize> {
     usize::try_from(num).ok()?.checked_sub(1)
@@ -919,6 +965,16 @@ pub fn normalize(
         return Err(WriteError::Signed);
     }
     let input_findings = admitted.report.findings.clone();
+    // Pages admission took from the page objects because the tree was unreadable
+    // (`PDF-REAL-03`): the output gets a new tree over them.
+    let recovered: Vec<u32> = if input_findings
+        .iter()
+        .any(|f| f.kind == FindingKind::PageTreeRebuilt)
+    {
+        admitted.report.pages.iter().map(|p| p.object).collect()
+    } else {
+        Vec::new()
+    };
     let optional_content = admitted.report.has_optional_content;
     let version = admitted
         .report
@@ -946,6 +1002,7 @@ pub fn normalize(
         }
     }
     protected.extend(page_tree_objects(doc, &trailer, cancel)?);
+    protected.extend(recovered.iter().copied());
     let in_use: Vec<u32> = doc.object_numbers().collect();
     let mut n = Norm {
         doc,
@@ -964,11 +1021,21 @@ pub fn normalize(
         .trailer_ref(trailer.get(b"Root").cloned())?
         .ok_or(WriteError::Read(PdfError::NotPdf { offset: None }))?;
     let info = n.trailer_ref(trailer.get(b"Info").cloned())?;
+    let mut kids: Vec<u32> = Vec::new();
+    for &page in &recovered {
+        if let Slot::Keep(new) = n.target(page)? {
+            kids.push(new);
+        }
+    }
     let mut bodies: Vec<Body<'_>> = Vec::new();
     while let Some((old, obj)) = n.queue.pop_front() {
         n.check_cancel()?;
         let body = n.clean_top(old, obj)?;
         bodies.push(body);
+    }
+    if !kids.is_empty() {
+        new_page_tree(&mut bodies, root.num, &kids, n.next)?;
+        n.next = n.next.saturating_add(1);
     }
     // Content streams admission could not read (`CS-PDF-0102` on a page) are dropped
     // from the pages that use them.
