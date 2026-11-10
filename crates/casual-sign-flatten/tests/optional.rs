@@ -704,3 +704,45 @@ fn filling_in_place_keeps_hidden_widgets_hidden() {
     assert_eq!(d.get(b"F").and_then(Object::as_i64), Some(6));
     assert!(d.get(b"OC").is_none());
 }
+
+#[test]
+fn a_certified_document_filled_in_place_keeps_its_layers_and_annotations() {
+    // DocMDP 2 permits filling and signing only: flattening a layer or an annotation
+    // would break the certification, so both stay as certified.
+    let objs = vec![
+        (
+            1,
+            b"<</Type/Catalog/Pages 2 0 R/Perms<</DocMDP 10 0 R>>/OCProperties<</OCGs[11 0 R]/D<</OFF[11 0 R]>>>>>>".to_vec(),
+        ),
+        (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec()),
+        (
+            3,
+            b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 5 0 R>>/Properties<</Off 11 0 R>>>>/Contents 4 0 R/Annots[40 0 R]>>".to_vec(),
+        ),
+        (
+            4,
+            stream("", format!("/OC /Off BDC\n{}EMC\n", line(700, "LAYER")).as_bytes()),
+        ),
+        (5, FONT.as_bytes().to_vec()),
+        (
+            10,
+            b"<</Type/Sig/Filter/Adobe.PPKLite/SubFilter/ETSI.CAdES.detached/ByteRange[0 1 2 3]/Contents<00>/Reference[<</Type/SigRef/TransformMethod/DocMDP/TransformParams<</P 2/V/1.2>>>>]>>".to_vec(),
+        ),
+        (11, b"<</Type/OCG/Name(off)>>".to_vec()),
+        (
+            40,
+            b"<</Type/Annot/Subtype/Square/Rect[300 300 500 320]/AP<</N 41 0 R>>>>".to_vec(),
+        ),
+        (41, form("", "SQUARE")),
+    ];
+    let base = classic(&objs);
+    let mut options = FlattenOptions::default();
+    options.mode = FormMode::FillInPlace;
+    let out = flatten_plain(&base, &options).unwrap();
+    assert!(out.report.layers_kept_as_certified);
+    assert!(!out.report.optional_content_flattened);
+    assert_eq!(out.report.annotations_flattened, 0);
+    // Flattening it is refused by the writer, as before (CS-WRT, DocMDP).
+    let e = flatten_plain(&base, &FlattenOptions::default()).err();
+    assert!(e.is_some_and(|e| e.code().starts_with("CS-WRT")));
+}

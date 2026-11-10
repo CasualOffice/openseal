@@ -251,6 +251,13 @@ pub fn flatten(
 
     let pages = admitted.report.pages.clone();
     let pdf_fields = admitted.report.fields.clone();
+    // A certified document filled in place keeps its certification: its DocMDP permits
+    // filling and signing at most, never new page content, so its optional content and
+    // annotations are left as the certifier signed them (the review renders them with
+    // the default configuration). Flattening such a document is refused by the writer.
+    let keep_as_certified =
+        admitted.report.docmdp.is_some() && options.mode == FormMode::FillInPlace;
+    report.layers_kept_as_certified = keep_as_certified;
     let doc = &mut admitted.document;
 
     // The fields the conversion made, by id, and the PDF fields they came from.
@@ -273,8 +280,8 @@ pub fn flatten(
     let remove_form = has_form && options.mode == FormMode::Flatten;
     // The default configuration of optional content, when the document has any.
     let mut oc = match &catalog {
-        Some((_, c)) => OptionalContent::read(doc, c, cancel)?,
-        None => None,
+        Some((_, c)) if !keep_as_certified => OptionalContent::read(doc, c, cancel)?,
+        _ => None,
     };
 
     // Which page holds each annotation: a widget without `/P` is found by the page whose
@@ -675,6 +682,10 @@ pub fn flatten(
                     continue;
                 }
                 _ => {}
+            }
+            if keep_as_certified {
+                out.push((item, None));
+                continue;
             }
             let flags = d.get(b"F").and_then(Object::as_i64).unwrap_or(0);
             if flags & OFF_SCREEN != 0 || oc_hidden(doc, &mut oc, &d, cancel)? {

@@ -251,6 +251,9 @@ pub struct FlattenReport {
     /// Content operators dropped or neutralized as hidden (painting in hidden
     /// sections, and invocations of hidden XObjects).
     pub hidden_operators: usize,
+    /// A certified document filled in place: its optional content and annotations
+    /// were left as certified, since its DocMDP permits no new page content.
+    pub layers_kept_as_certified: bool,
     /// Faces embedded.
     pub fonts: Vec<EmbeddedFont>,
     /// Images embedded.
