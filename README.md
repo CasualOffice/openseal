@@ -44,8 +44,8 @@ it shares.
 ## Status
 
 Docs are true as of 2026-11-11. **Pre-alpha.** The headless engine is complete and tested against 422 real-world PDFs.
-The workflow engine, persistence and the key service are built and merged; the API server and the job worker are
-built and being integrated; there is no web app yet. **Phases D and 0 are closed** (owner, 2026-11-11). **Phase 1** reopened when
+The workflow engine, persistence, key service, API server and job worker are built and merged; the web app is being
+built. **Phases D and 0 are closed** (owner, 2026-11-11). **Phase 1** reopened when
 fuzzing found a reader bug, now fixed; a clean 24 h fuzz run closes it. **Phase 2** is open early under waiver `W-1`.
 **Release 1** (the common send-and-sign case, [docs/06](docs/06-ROADMAP-AND-DELIVERY.md)) comes next.
 
@@ -54,7 +54,7 @@ fuzzing found a reader bug, now fixed; a clean 24 h fuzz run closes it. **Phase 
 | D — Design | **Closed** (6 of 6) | All design docs and research; doc audit fixed; ADR-001 to 024 Accepted; owner decisions `DEC-01` to `14` answered. Signed off 2026-11-11 |
 | 0 — Foundation | **Closed** (4 of 4) | CI green on GitHub (Linux, macOS, Windows), every CI job seen failing on a seeded violation (PR #1), 422-PDF corpus, 50 hostile fixtures, pyHanko and EU DSS validators, spikes. Signed off 2026-11-11 |
 | 1 — PDF and evidence core | 6 of 7 items; reopened | Every admitted corpus PDF (417 of 417) filled, flattened, sealed and verified by ours, pyHanko and EU DSS; B-LT/LTA detected by EU DSS; every tamper and signature-wrapping fixture detected by all three; audit-chain tamper detection; WASM byte-identical to native. Left: a clean 24 h fuzz run after the fix for the `admit` finding |
-| 2 — Envelope engine and server | 3 of 6 stages built and merged; exit items not yet met | Built: 2A workflow engine (state machines, routing, every lifecycle command, property-tested), 2B persistence (Postgres schema, tenant isolation with RLS, append-only audit table, blob stores), 2E keyd (PKCS#11 signing over mTLS). Built, being integrated: 2C API server (REST API, signing ceremony, auth, tenant-isolation tests) and 2D job worker (email, reminders, seal job, webhooks, crash tests). Left: 2F Docker deployment, the end-to-end test on it |
+| 2 — Envelope engine and server | 5 of 6 stages built and merged; exit items not yet met | Built: 2A workflow engine, 2B persistence (Postgres, tenant isolation, append-only audit), 2C API server (REST API, signing ceremony, auth, isolation tests), 2D job worker (email, reminders, seal job, webhooks, crash tests), 2E keyd (PKCS#11 over mTLS). An end-to-end test drives a two-signer envelope through the API and worker to a sealed PDF accepted by pyHanko. Left: 2F Docker deployment and the end-to-end test on it |
 | Release 1 and slices 1–35 | — | Release 1 scope set (owner, 2026-11-11): slice 1 send and sign with routing, templates, API and webhooks; the rest follows slice by slice |
 
 **What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):
