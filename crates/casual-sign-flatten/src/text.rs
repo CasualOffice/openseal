@@ -86,8 +86,9 @@ fn trim_end(mut glyphs: Vec<Glyph>) -> Line {
 }
 
 /// Break into lines no wider than `max` (thousandths of an em). With `wrap` false,
-/// hard breaks still break and nothing else does.
-pub(crate) fn lines(mapped: &Mapped, max: f64, wrap: bool) -> Vec<Line> {
+/// hard breaks still break and nothing else does. With `break_words` false, a word
+/// wider than the line stays whole (and the line overflows).
+pub(crate) fn lines(mapped: &Mapped, max: f64, wrap: bool, break_words: bool) -> Vec<Line> {
     let mut out = Vec::new();
     for para in mapped.items.split(Option::is_none) {
         let glyphs: Vec<Glyph> = para.iter().flatten().copied().collect();
@@ -112,7 +113,7 @@ pub(crate) fn lines(mapped: &Mapped, max: f64, wrap: bool) -> Vec<Line> {
             if !line.is_empty() && width(&line) + width(word) > max {
                 out.push(trim_end(core::mem::take(&mut line)));
             }
-            if width(word) > max {
+            if break_words && width(word) > max {
                 // Hard-break a word wider than the line.
                 for g in word {
                     if !line.is_empty() && width(&line) + g.adv > max {
@@ -181,20 +182,28 @@ pub(crate) fn set(
         None => AUTO_SIZE.min(ah / line_em).max(MIN_SIZE),
     };
     let can_shrink = s.size.is_none() || s.shrink;
-    let fits = |size: f64| -> (Vec<Line>, bool) {
+    let fits = |size: f64, break_words: bool| -> (Vec<Line>, bool) {
         let max = aw / size * 1000.0;
-        let ls = lines(mapped, max, s.wrap);
+        let ls = lines(mapped, max, s.wrap, break_words);
         let tall = ls.len() as f64 * line_em * size;
         let ok = tall <= ah + 1e-6 && ls.iter().all(|l| l.width <= max + 1e-6);
         (ls, ok)
     };
+    // Shrink keeping words whole first; break words only when even the smallest size
+    // cannot hold them.
+    let shrinkable = s.comb.is_none() && can_shrink;
     let mut size = start;
-    let (mut ls, mut ok) = fits(size);
-    if s.comb.is_none() && can_shrink {
+    let (mut ls, mut ok) = fits(size, !shrinkable);
+    for break_words in [false, true] {
+        if !shrinkable || ok {
+            break;
+        }
+        size = start;
+        (ls, ok) = fits(size, break_words);
         let mut steps = 0;
         while !ok && size > MIN_SIZE && steps < SHRINK_STEPS {
             size = (size * 0.92).max(MIN_SIZE);
-            (ls, ok) = fits(size);
+            (ls, ok) = fits(size, break_words);
             steps = steps.saturating_add(1);
         }
     }
@@ -286,7 +295,7 @@ mod tests {
     fn wraps_at_spaces_and_hard_breaks_long_words() {
         // Liberation Mono: every advance is 600.
         let m = mapped("aaa bbb cccccccc");
-        let ls = lines(&m, 600.0 * 4.0, true);
+        let ls = lines(&m, 600.0 * 4.0, true, true);
         let text: Vec<String> = ls
             .iter()
             .map(|l| l.glyphs.iter().map(|g| g.ch).collect())
@@ -297,7 +306,7 @@ mod tests {
     #[test]
     fn hard_breaks_split_even_without_wrapping() {
         let m = mapped("a\r\nb\nc");
-        assert_eq!(lines(&m, 1.0, false).len(), 3);
+        assert_eq!(lines(&m, 1.0, false, true).len(), 3);
     }
 
     #[test]

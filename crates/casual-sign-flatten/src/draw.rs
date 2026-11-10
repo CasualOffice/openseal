@@ -317,8 +317,9 @@ fn capture(
         })?;
     let mut d = Drawing::default();
     let mut fit = Fit::default();
-    let captioned = ctx.options.signed_by_line
-        && matches!(field.field_type, FieldType::Signature | FieldType::Initials);
+    // Captions belong to signatures and initials, not to stamps or drawings.
+    let signs = matches!(field.field_type, FieldType::Signature | FieldType::Initials);
+    let captioned = ctx.options.signed_by_line && signs;
     let mut caption: Vec<String> = Vec::new();
     if captioned {
         let by = match &cap.signed_by {
@@ -330,7 +331,7 @@ fn capture(
             caption.push(bounded(field, env)?.to_owned());
         }
     }
-    if let Some(reason) = &cap.reason {
+    if signs && let Some(reason) = &cap.reason {
         caption.push(format!("Reason: {}", bounded(field, reason)?));
     }
     let band = if caption.is_empty() {
