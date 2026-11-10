@@ -100,11 +100,13 @@ pub(crate) async fn request_context(
 /// The router's own refusals (no route, wrong method, body over the limit, wrong
 /// media type) as problem details.
 fn normalize(resp: Response) -> Response {
-    let is_problem = resp
+    // Handlers answer JSON (problems, or RFC 6749 errors from the token endpoint); the
+    // router's own refusals are plain text or empty.
+    let ours = resp
         .headers()
         .get(header::CONTENT_TYPE)
-        .is_some_and(|v| v.as_bytes().starts_with(b"application/problem+json"));
-    if is_problem || resp.status().is_success() {
+        .is_some_and(|v| v.as_bytes().starts_with(b"application/"));
+    if ours || resp.status().is_success() {
         return resp;
     }
     match resp.status() {

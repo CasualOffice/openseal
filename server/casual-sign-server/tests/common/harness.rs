@@ -3,7 +3,7 @@
 //! every route template called (so a test can show every operation of
 //! `api/openapi.yaml` was exercised).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -328,4 +328,26 @@ pub fn ceremony_path(url: &str) -> String {
 pub fn ceremony_cookie(resp: &Resp) -> String {
     let set = resp.headers["set-cookie"].to_str().unwrap();
     set.split(';').next().unwrap().to_owned()
+}
+
+pub const OPENAPI: &str = include_str!("../../../../api/openapi.yaml");
+
+/// `(METHOD, path) -> x-permission` from the OpenAPI document.
+pub fn openapi_operations() -> BTreeMap<(String, String), String> {
+    let doc: Value = serde_norway::from_str(OPENAPI).unwrap();
+    assert_eq!(doc["openapi"], "3.1.0");
+    let mut out = BTreeMap::new();
+    for (path, item) in doc["paths"].as_object().unwrap() {
+        for (method, op) in item.as_object().unwrap() {
+            if method == "parameters" {
+                continue;
+            }
+            let perm = op["x-permission"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{method} {path} has no x-permission"))
+                .to_owned();
+            out.insert((method.to_uppercase(), path.clone()), perm);
+        }
+    }
+    out
 }

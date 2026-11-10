@@ -22,31 +22,11 @@ use axum::http::StatusCode;
 use base64::Engine as _;
 use casual_sign_server::{Access, table};
 use common::Rls;
-use common::harness::{Api, Auth, ceremony_cookie, ceremony_path, pdf, png, session_of};
+use common::harness::{
+    Api, Auth, OPENAPI, ceremony_cookie, ceremony_path, openapi_operations, pdf, png, session_of,
+};
 use serde_json::{Value, json};
 use sqlx::Row;
-
-const OPENAPI: &str = include_str!("../../../api/openapi.yaml");
-
-/// `(METHOD, path) -> x-permission` from the OpenAPI document.
-pub fn openapi_operations() -> BTreeMap<(String, String), String> {
-    let doc: Value = serde_norway::from_str(OPENAPI).unwrap();
-    assert_eq!(doc["openapi"], "3.1.0");
-    let mut out = BTreeMap::new();
-    for (path, item) in doc["paths"].as_object().unwrap() {
-        for (method, op) in item.as_object().unwrap() {
-            if method == "parameters" {
-                continue;
-            }
-            let perm = op["x-permission"]
-                .as_str()
-                .unwrap_or_else(|| panic!("{method} {path} has no x-permission"))
-                .to_owned();
-            out.insert((method.to_uppercase(), path.clone()), perm);
-        }
-    }
-    out
-}
 
 #[test]
 fn openapi_and_route_table_name_the_same_operations_and_scopes() {
