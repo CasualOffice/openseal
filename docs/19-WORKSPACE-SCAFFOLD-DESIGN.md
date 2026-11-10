@@ -1,6 +1,6 @@
 # 19 — Workspace and layer division
 
-**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model`, `-fields`, `-pdf`, `-crypto`, `-verify` (built) and `-flatten` (skeleton, stage 1E in progress); `fuzz/` with targets `admit`, `normalize` and `verify`. Edges: `-fields` → `-model`, `-pdf`; `-verify` → `-pdf`, `-crypto`; `-flatten` → `-pdf`, `-model`, `-fields`. The **Key external dependencies** column is the target; a crate not yet built does not have them.
+**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model`, `-fields`, `-pdf`, `-crypto`, `-verify` and `-flatten` (built); `fuzz/` with targets `admit`, `normalize` and `verify`. Edges: `-fields` → `-model`, `-pdf`; `-verify` → `-pdf`, `-crypto`; `-flatten` → `-pdf`, `-model`, `-fields`. The **Key external dependencies** column is the target; a crate not yet built does not have them.
 
 ## Layout
 
@@ -30,7 +30,7 @@ openseal/
 | `casual-sign-model` | Engine | — | `serde`, `rust_decimal` | `-workflow`, `-fields` |
 | `casual-sign-pdf` | Engine | — | `miniz_oxide` (streaming Flate, inflate and deflate); dev: `lopdf =0.47.0` (oracle, no default features), `peak_alloc` | `-fields`, `-flatten`, `-seal`, `-verify` |
 | `casual-sign-fields` | Engine | model, pdf | `rust_decimal`, `regex` (linear-time matching), `unicode-normalization` | `-flatten`, `-wasm` |
-| `casual-sign-flatten` | Engine | pdf, fields, model | `subsetter`, `skrifa` (font subset and metrics), `png`, `zune-jpeg` | `-certificate`, `-sdk` |
+| `casual-sign-flatten` | Engine | pdf, fields, model | `skrifa` (font metrics), `png`, `zune-jpeg`, `miniz_oxide`, `unicode-normalization`; TrueType subsetter copied from OpenPresent | `-certificate`, `-sdk` |
 | `casual-sign-crypto` | Engine | — | `der`, `spki`, `x509-cert`, `cms =0.3.0-rc.2`, `x509-tsp =0.2.0-rc.0`, `x509-ocsp =0.3.0-rc.1`, `sha2`, `p256`, `p384`, `rsa` (verify only, feature `rsa`); dev: `aws-lc-rs` (test `KeyProvider`), `rcgen` | `-seal`, `-verify`, `-audit` |
 | `casual-sign-seal` | Engine | pdf, crypto | — | `-sdk` |
 | `casual-sign-verify` | Engine | pdf, crypto (audit joins with stage 1I) | `der`, `spki`, `x509-cert`, `x509-ocsp`, `sha2`, `p256`, `p384`, `rsa` (verify only, default feature) | `-sdk`, `-wasm` |

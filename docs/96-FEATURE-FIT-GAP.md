@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 0 of 167 rows work end to end; 17 have their engine built and tested** (counted with `grep`). Docs are true as of `b7dce7b` (2026-11-10).
+**Today: 0 of 167 rows work end to end; 23 have their engine built and tested** (counted with `grep`). Docs are true as of `7c4595a` (2026-11-10).
 
 ## Documents
 
@@ -25,7 +25,7 @@ instructions 8 and 9).
 | FG-007 | Neutralize JavaScript, actions, embedded files; report | — | Build | Phase 1 | Engine |
 | FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Engine |
 | FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | — |
-| FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | — |
+| FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | Engine |
 | FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
 | FG-010 | Document visibility per recipient | DS | Build | 6 | — |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
@@ -63,11 +63,11 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-050 | Signature (draw, type, upload) | DS, SN | Build | 1 | Designed |
-| FG-051 | Initials | DS, SN | Build | 1 | Designed |
+| FG-050 | Signature (draw, type, upload) | DS, SN | Build | 1 | Engine |
+| FG-051 | Initials | DS, SN | Build | 1 | Engine |
 | FG-052 | Optional signature | DS | Build | 4 | Designed |
-| FG-053 | Stamp | DS, SN | Build | 4 | Designed |
-| FG-054 | Date signed | DS | Build | 1 | Designed |
+| FG-053 | Stamp | DS, SN | Build | 4 | Engine |
+| FG-054 | Date signed | DS | Build | 1 | Engine |
 | FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Designed |
 | FG-056 | Envelope id field | DS | Build | 4 | Designed |
 | FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Engine |
@@ -89,7 +89,7 @@ instructions 8 and 9).
 | FG-073 | Data labels; linked fields (same label mirrors) | DS | Build | 4 | Engine |
 | FG-074 | Shared fields across signers | DS | Build | 4 | — |
 | FG-075 | Conditional fields | DS, SN | Build | 4 | Engine |
-| FG-076 | Font, size, colour, alignment | DS, SN | Build | 4 | Designed |
+| FG-076 | Font, size, colour, alignment | DS, SN | Build | 4 | Engine |
 | FG-077 | Anchor text auto-place | DS | Build | 4 | Engine |
 | FG-078 | Text tags in documents | SN | Build | 4 | Engine |
 | FG-079 | Custom (saved) field presets | DS | Build | 4 | — |

@@ -54,13 +54,13 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of `b7dce7b` (2026-11-10). The engine's first half is built; no server or UI.
+Docs are true as of `7c4595a` (2026-11-10). The engine's first half is built; no server or UI.
 
 | Phase | State | Note |
 | --- | --- | --- |
 | D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
 | 0 Foundation | **Open** 2026-11-10 | 2 of the 4 non-sign-off exit items met (spikes and ADRs; validators on GitHub CI). Left: seeded violations seen failing on GitHub's runners (the first GitHub run, at `fd5e8f3`, was all green), 10 more hostile fixtures (40 of 50), owner sign-off |
-| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1F crypto structures, 1H verifier (each with leftovers in its row). In progress: 1E flattening and fill-in-place; reader completion (decryption, LZW, four corpus refusals). Not started: 1G, 1I, 1J. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
+| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1H verifier (each with leftovers in its row). In progress: reader completion (decryption, LZW, four corpus refusals). Not started: 1G, 1I, 1J. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
 | 2 Envelope engine and server | Not opened | May open once stages 1A and 1B close (`W-1` proposed, `DEC-13`) |
 | Slices 1–35 | Not opened | Slice 1 needs Phases 1 and 2 |
 

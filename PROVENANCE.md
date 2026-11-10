@@ -18,3 +18,5 @@ in the folder `openslide/`; its commit at the time of copying was `e61277d`.
 | `CODE_OF_CONDUCT.md` | OpenPresent | Reporting link |
 | `GOVERNANCE.md` | OpenPresent | Roles and protected areas for e-signature |
 | `.claude/skills/*` | OpenPresent `openslide-*` skills | Rewritten for OpenSeal |
+| `crates/casual-sign-flatten/src/subset.rs` | OpenPresent `crates/casual-slide-render/src/subset.rs` at `e61277d` | Every read and sum checked (no panics on untrusted fonts) |
+| `crates/casual-sign-flatten/fonts/` (Liberation Sans, Serif, Mono Regular) | OpenPresent `crates/casual-slide-text/fonts/liberation/` at `e61277d` | Regular faces only; details in that folder's PROVENANCE.md |
