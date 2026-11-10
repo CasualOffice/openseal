@@ -492,3 +492,63 @@ impl Recipients<'_> {
         Ok(done.rows_affected() == 1)
     }
 }
+
+impl Recipients<'_> {
+    /// Set a recipient's access code requirement (SEC-A03): `phc` is the code's Argon2id
+    /// PHC string, computed by the caller; any earlier code of the recipient is replaced.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` when the recipient is not this account's.
+    pub async fn set_access_code(
+        &mut self,
+        recipient: RecipientId,
+        requirement: Uuid,
+        phc: &Personal<String>,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "DELETE FROM recipient_auth_requirements \
+             WHERE account_id = $1 AND recipient_id = $2 AND kind = 'access_code'",
+            acct,
+            recipient.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        sqlx::query!(
+            "INSERT INTO recipient_auth_requirements (id, account_id, recipient_id, kind, \
+             access_code_hash) VALUES ($3, $1, $2, 'access_code', $4)",
+            acct,
+            recipient.0,
+            requirement,
+            phc.get()
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    /// The Argon2id PHC string of a recipient's access code, when one is set.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn access_code(
+        &mut self,
+        recipient: RecipientId,
+    ) -> Result<Option<Personal<String>>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query_scalar!(
+            "SELECT access_code_hash FROM recipient_auth_requirements \
+             WHERE account_id = $1 AND recipient_id = $2 AND kind = 'access_code'",
+            acct,
+            recipient.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.flatten().map(Personal))
+    }
+}

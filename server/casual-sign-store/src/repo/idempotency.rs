@@ -99,3 +99,34 @@ impl Idempotency<'_> {
         Ok(done.rows_affected() == 1)
     }
 }
+
+impl Idempotency<'_> {
+    /// Replace the in-progress record of `principal`'s `key` with the response the
+    /// request produced.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when this account has no such record.
+    pub async fn finish(
+        &mut self,
+        principal: &str,
+        key: &str,
+        status: i32,
+        body: Option<&[u8]>,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE idempotency_keys SET status = $4, body = $5 \
+             WHERE account_id = $1 AND principal = $2 AND key = $3",
+            acct,
+            principal,
+            key,
+            status,
+            body
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "idempotency key")
+    }
+}

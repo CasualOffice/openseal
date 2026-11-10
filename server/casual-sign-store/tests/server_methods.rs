@@ -75,6 +75,10 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
             .set_password_hash(a.user, &Personal("$argon2id$a".into()))
             .await
             .unwrap();
+        tx.recipients()
+            .set_access_code(a.recipient, id(), &Personal("$argon2id$code-a".into()))
+            .await
+            .unwrap();
         assert!(
             tx.idempotency()
                 .put(
@@ -223,6 +227,34 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
     );
     drop(tx);
 
+    // Access codes and finishing an idempotency record.
+    let mut tx = db.store.for_account(b.account).begin().await.unwrap();
+    assert!(
+        tx.recipients()
+            .access_code(a.recipient)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        tx.idempotency()
+            .finish("user:a", "k1", 500, None)
+            .await
+            .unwrap_err()
+            .code(),
+        "CS-DB-0003"
+    );
+    let err = tx
+        .recipients()
+        .set_access_code(a.recipient, id(), &Personal("$argon2id$code-b".into()))
+        .await
+        .unwrap_err();
+    assert!(
+        ["CS-DB-0008", "CS-DB-0009"].contains(&err.code()),
+        "{err:?}"
+    );
+    drop(tx);
+
     // B's idempotency record under A's principal and key is B's own, not A's.
     let mut tx = db.store.for_account(b.account).begin().await.unwrap();
     assert!(
@@ -273,6 +305,16 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
         .unwrap()
         .unwrap();
     assert_eq!(rec.request_sha256, hash("req"));
+    assert_eq!(rec.status, 201);
+    assert_eq!(
+        tx.recipients()
+            .access_code(a.recipient)
+            .await
+            .unwrap()
+            .unwrap()
+            .get(),
+        "$argon2id$code-a"
+    );
     drop(tx);
     let live = db
         .store
