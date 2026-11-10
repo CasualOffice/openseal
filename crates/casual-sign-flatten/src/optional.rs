@@ -103,9 +103,15 @@ impl OptionalContent {
         let base_on = config.name(b"BaseState") != Some(b"OFF");
         let on = refs(doc, config.get(b"ON"), cancel)?.into_iter().collect();
         let off = refs(doc, config.get(b"OFF"), cancel)?.into_iter().collect();
+        // No readable intent is the default, View.
         let intents = match config.get(b"Intent").cloned() {
             Some(v) => names(doc, &v, cancel)?,
-            None => vec![b"View".to_vec()],
+            None => Vec::new(),
+        };
+        let intents = if intents.is_empty() {
+            vec![b"View".to_vec()]
+        } else {
+            intents
         };
         let intents = (!intents.iter().any(|n| n == b"All")).then_some(intents);
         Ok(Some(Self {
@@ -134,9 +140,13 @@ impl OptionalContent {
             Some(config) => {
                 let own = match d.get(b"Intent").cloned() {
                     Some(v) => names(doc, &v, cancel)?,
-                    None => vec![b"View".to_vec()],
+                    None => Vec::new(),
                 };
-                own.iter().any(|i| i == b"All" || config.contains(i))
+                if own.is_empty() {
+                    config.iter().any(|i| i == b"View")
+                } else {
+                    own.iter().any(|i| i == b"All" || config.contains(i))
+                }
             }
         };
         let on = !considered

@@ -706,6 +706,37 @@ fn filling_in_place_keeps_hidden_widgets_hidden() {
 }
 
 #[test]
+fn a_group_or_configuration_with_no_readable_intent_takes_view() {
+    for (config, group) in [
+        ("", "/Intent[]"),
+        ("/Intent[]", ""),
+        ("/Intent 7", "/Intent/View"),
+    ] {
+        let objs = vec![
+            (
+                1,
+                format!("<</Type/Catalog/Pages 2 0 R/OCProperties<</OCGs[11 0 R]/D<</OFF[11 0 R]{config}>>>>>>")
+                    .into_bytes(),
+            ),
+            (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec()),
+            (
+                3,
+                b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 5 0 R>>/Properties<</Off 11 0 R>>>>/Contents 4 0 R>>".to_vec(),
+            ),
+            (
+                4,
+                stream("", format!("/OC /Off BDC\n{}EMC\n", line(700, "OFF")).as_bytes()),
+            ),
+            (5, FONT.as_bytes().to_vec()),
+            (11, format!("<</Type/OCG/Name(off){group}>>").into_bytes()),
+        ];
+        let base = delivered(&classic(&objs));
+        let out = flatten_plain(&base, &FlattenOptions::default()).unwrap();
+        assert!(shown(&out.bytes).0.is_empty(), "{config} {group}");
+    }
+}
+
+#[test]
 fn a_certified_document_filled_in_place_keeps_its_layers_and_annotations() {
     // DocMDP 2 permits filling and signing only: flattening a layer or an annotation
     // would break the certification, so both stay as certified.
