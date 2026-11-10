@@ -1,0 +1,25 @@
+[package]
+name = "casual-sign-host"
+version = "0.0.0"
+description = "OpenSeal host core shared by the API server and the worker: the one decide-and-record path (engine state, chained audit events, relational projection, effects as jobs, in one transaction) and the job contract (docs/24 §1)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+casual-sign-audit = { path = "../../crates/casual-sign-audit" }
+casual-sign-model = { path = "../../crates/casual-sign-model" }
+# The engine whose decisions this records (ADR-011).
+casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
+# State, events, projection and the job queue, in the caller's transaction (ADR-012).
+casual-sign-store = { path = "../casual-sign-store" }
+# Ids, times and JSON as the store takes them; all already in the tree.
+uuid = { version = "1.10", features = ["v4", "serde"] }
+time = "0.3.36"
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.120"
+
+[lints]
+workspace = true

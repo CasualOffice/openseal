@@ -221,6 +221,7 @@ pub fn chain(n: usize) -> (Chain, Hash256) {
             user_agent: Some(Personal(user_agent(i))),
             auth: vec![AuthMethod::EmailLink, AuthMethod::SmsOtp],
             session: Some(Hash256::digest(format!("session-{i}").as_bytes())),
+            location: None,
         };
         push(
             &mut c,
@@ -313,6 +314,33 @@ pub fn chain(n: usize) -> (Chain, Hash256) {
     (c, delivered)
 }
 
+/// Recipient `i`'s location: from the device, approximated from the IP after a refusal,
+/// or none, in turn.
+pub fn location(i: usize) -> Option<casual_sign_audit::Location> {
+    use casual_sign_audit::{FallbackReason, Location};
+    let k = i as f64;
+    match i % 3 {
+        0 => Some(
+            Location::device(48.856_6 + k / 100.0, 2.352_2 - k / 100.0, 12.0 + k)
+                .unwrap()
+                .with_place(Some("FR"), Some("Île-de-France"), Some("Paris"))
+                .unwrap(),
+        ),
+        1 => Some(
+            Location::ip(
+                FallbackReason::Declined,
+                "GeoLite2-City 2026-11-04",
+                -33.87,
+                151.21,
+            )
+            .unwrap()
+            .with_place(Some("AU"), Some("New South Wales"), Some("Sydney"))
+            .unwrap(),
+        ),
+        _ => None,
+    }
+}
+
 pub fn user_agent(i: usize) -> String {
     format!(
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_{i}) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.{i} Safari/605.1.15"
@@ -350,6 +378,7 @@ pub fn input(chain: &Chain, delivered: Hash256, n: usize) -> CertificateInput<'_
                 ],
                 ip: Some(format!("203.0.113.{}", i + 1)),
                 user_agent: Some(user_agent(i)),
+                location: location(i),
                 signature: Some(signature),
                 initials: Some(initials),
                 sent: Some(t(base + 1_250)),

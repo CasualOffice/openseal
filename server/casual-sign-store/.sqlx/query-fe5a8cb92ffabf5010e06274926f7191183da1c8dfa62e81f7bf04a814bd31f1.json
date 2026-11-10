@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE envelopes SET certificate_sha256 = $3 WHERE account_id = $1 AND id = $2 AND (certificate_sha256 IS NULL OR certificate_sha256 = $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fe5a8cb92ffabf5010e06274926f7191183da1c8dfa62e81f7bf04a814bd31f1"
+}

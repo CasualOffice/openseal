@@ -146,3 +146,36 @@ impl ApiClients<'_> {
         affected(done.rows_affected(), "api client")
     }
 }
+
+impl ApiClients<'_> {
+    /// Every client of this account, newest first.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn list(&mut self) -> Result<Vec<ApiClient>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query!(
+            "SELECT id, kind, name, owner_user_id, key_prefix, scopes, expires_at, revoked_at \
+             FROM api_clients WHERE account_id = $1 ORDER BY created_at DESC, id DESC",
+            acct
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                Ok(ApiClient {
+                    id: ApiClientId(r.id),
+                    kind: ApiClientKind::parse(&r.kind, "kind")?,
+                    name: r.name,
+                    owner_user_id: r.owner_user_id.map(UserId),
+                    key_prefix: r.key_prefix,
+                    scopes: r.scopes,
+                    expires_at: r.expires_at,
+                    revoked_at: r.revoked_at,
+                })
+            })
+            .collect()
+    }
+}

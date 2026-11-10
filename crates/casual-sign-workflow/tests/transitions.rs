@@ -763,6 +763,7 @@ fn signing_options_can_turn_off_decline_reassign_and_finish_later() {
                     allow_reassign: false,
                     allow_decline: false,
                     allow_finish_later: false,
+                    capture_location: false,
                 },
             }],
         },

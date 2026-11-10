@@ -11,7 +11,7 @@ step() { printf '\n== %s\n' "$1"; }
 step "checks: fmt";        cargo fmt --all -- --check
 step "checks: clippy";     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 step "checks: rustdoc";    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked -q
-step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-secrets --locked -q   # hosts under server/ are native only
+step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-secrets --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --locked -q   # hosts under server/ are native only
 step "checks: repository"; python3 tools/check-repo.py
 # One command per line: under `set -e`, a failure on the left of `&&` does not stop the
 # script (docs/04 rule 31).
@@ -28,16 +28,18 @@ VENV=target/tools-venv
 docker build -q -t openseal-eu-dss tools/eu-dss >/dev/null
 "$VENV/bin/python" -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
 step "keyd softhsm";      OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-keyd --test softhsm --locked
-step "store db"   # Postgres 17 in Docker, as ci.yml's store-db job (S3 tests skip without an endpoint)
+step "store db and server db"   # Postgres 17 in Docker, as ci.yml's store-db and server-db jobs (S3 tests skip without an endpoint)
 [ -x target/sqlx-cli/bin/sqlx ] || cargo install -q sqlx-cli --version 0.9.0 --no-default-features --features postgres,rustls --locked --root target/sqlx-cli
 docker rm -f openseal-ci-pg >/dev/null 2>&1 || true
 docker run -d --rm --name openseal-ci-pg -e POSTGRES_PASSWORD=ci-only -p 127.0.0.1:55433:5432 postgres:17-alpine >/dev/null
+# The container stops however this step ends; one check per line (docs/04 rule 31).
+trap 'docker stop openseal-ci-pg >/dev/null 2>&1 || true' EXIT
 until docker exec openseal-ci-pg pg_isready -U postgres -q 2>/dev/null; do sleep 1; done
-if OPENSEAL_TEST_DATABASE_URL=postgres://postgres:ci-only@127.0.0.1:55433/postgres SQLX_OFFLINE=true SQLX_CLI_BIN="$PWD/target/sqlx-cli/bin" \
-    sh -ec 'server/casual-sign-store/sqlx-prepare.sh --check; cargo test -q -p casual-sign-store --locked'; then
-    docker stop openseal-ci-pg >/dev/null
-else
-    docker stop openseal-ci-pg >/dev/null; exit 1
-fi
+export OPENSEAL_TEST_DATABASE_URL=postgres://postgres:ci-only@127.0.0.1:55433/postgres SQLX_OFFLINE=true SQLX_CLI_BIN="$PWD/target/sqlx-cli/bin"
+server/casual-sign-store/sqlx-prepare.sh --check
+OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server --locked
+docker stop openseal-ci-pg >/dev/null
+trap - EXIT
+unset OPENSEAL_TEST_DATABASE_URL SQLX_OFFLINE SQLX_CLI_BIN
 step "wasm parity";       tools/wasm-parity.sh   # WASM-01: native and WASM byte-identical over the corpus
 printf '\nci-local: every job passed\n'

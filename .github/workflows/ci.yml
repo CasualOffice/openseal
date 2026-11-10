@@ -27,7 +27,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
       # Engine crates only: hosts under server/ are native (docs/19).
-      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-secrets --locked
+      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-secrets --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --locked
       - run: python3 tools/check-repo.py
       - run: python3 -I fixtures/tools/generate.py --check
       - run: python3 -I fixtures/corpus/fetch.py --check
@@ -150,3 +150,26 @@ jobs:
       - name: Offline query cache matches the migrations
         run: SQLX_CLI_BIN="$RUNNER_TEMP/sqlx-cli/bin" server/casual-sign-store/sqlx-prepare.sh --check
       - run: cargo test -p casual-sign-store --locked
+
+  # Stages 2C and 2D (T-2C, T-2D, GEO-01): the shared decide-and-record path, the API
+  # server's contract, isolation, auth, evidence and location tests, the worker's jobs,
+  # crash tests and seal, and the end-to-end test (API and worker to `completed`, the
+  # sealed PDF and certificate checked by ours and pyHanko), against Postgres 17.
+  server-db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_PASSWORD: ci-only }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    env:
+      OPENSEAL_TEST_DATABASE_URL: postgres://postgres:ci-only@127.0.0.1:5432/postgres
+      OPENSEAL_VERIFY_PYTHON: /tmp/v/bin/python
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
+      - run: cargo test -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server --locked

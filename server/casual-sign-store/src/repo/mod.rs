@@ -11,10 +11,13 @@ pub mod audit;
 pub mod documents;
 pub mod envelopes;
 pub mod fields;
+pub mod idempotency;
 pub mod jobs;
 pub mod recipients;
+pub mod sessions;
 pub mod templates;
 pub mod webhooks;
+pub mod workflow;
 
 /// `CS-DB-0003` for `entity` when a statement touched no row.
 pub(crate) fn affected(rows: u64, entity: &'static str) -> Result<()> {
@@ -117,5 +120,25 @@ impl TenantTx {
     /// Webhook subscriptions and deliveries.
     pub fn webhooks(&mut self) -> webhooks::Webhooks<'_> {
         webhooks::Webhooks { tx: self }
+    }
+
+    /// The workflow engine's envelope states.
+    pub fn workflow_states(&mut self) -> workflow::WorkflowStates<'_> {
+        workflow::WorkflowStates { tx: self }
+    }
+
+    /// The worker's per-job step ledger.
+    pub fn job_steps(&mut self) -> workflow::JobSteps<'_> {
+        workflow::JobSteps { tx: self }
+    }
+
+    /// Staff sessions.
+    pub fn sessions(&mut self) -> sessions::Sessions<'_> {
+        sessions::Sessions { tx: self }
+    }
+
+    /// Idempotency records of API requests.
+    pub fn idempotency(&mut self) -> idempotency::Idempotency<'_> {
+        idempotency::Idempotency { tx: self }
     }
 }

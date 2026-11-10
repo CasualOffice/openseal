@@ -370,3 +370,45 @@ impl Users<'_> {
         affected(done.rows_affected(), "user")
     }
 }
+
+impl Users<'_> {
+    /// A member's Argon2id PHC string, for checking a local login. Only this method
+    /// reads it, and only for an enabled member of this account.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn password_hash(&mut self, user: UserId) -> Result<Option<Personal<String>>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query_scalar!(
+            "SELECT u.password_hash FROM users u JOIN account_memberships m ON m.user_id = u.id \
+             WHERE m.account_id = $1 AND u.id = $2 AND u.disabled_at IS NULL",
+            acct,
+            user.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.flatten().map(Personal))
+    }
+
+    /// Set a member's Argon2id PHC string (computed by the caller; never a password).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when not a member.
+    pub async fn set_password_hash(&mut self, user: UserId, phc: &Personal<String>) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE users SET password_hash = $3 WHERE id = $2 AND EXISTS (\
+             SELECT 1 FROM account_memberships m WHERE m.account_id = $1 AND m.user_id = $2)",
+            acct,
+            user.0,
+            phc.get()
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "user")
+    }
+}

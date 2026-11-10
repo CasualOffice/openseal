@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM recipient_auth_requirements WHERE account_id = $1 AND recipient_id = $2 AND kind = 'access_code'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "81c6e57a516c6fc84deb55b223cefab1f42d872d1ad97729cb5b9baea172ceed"
+}

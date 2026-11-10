@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO recipient_auth_requirements (id, account_id, recipient_id, kind, access_code_hash) VALUES ($3, $1, $2, 'access_code', $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "58410428ba249c2db0ec6f9d53e17d49b07c82f8032540f539639a474a3fbbe0"
+}

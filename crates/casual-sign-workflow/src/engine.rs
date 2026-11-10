@@ -3,8 +3,8 @@
 use std::collections::BTreeSet;
 
 use casual_sign_audit::{
-    Actor, ActorKind, AuthMethod, Channel, DocumentHash, EventData, Hash256, MarkKind, Personal,
-    Timestamp,
+    Actor, ActorKind, AuthMethod, Channel, DocumentHash, EventData, FallbackReason, Hash256,
+    LocationSource, MarkKind, Personal, Timestamp,
 };
 use casual_sign_fields::{Issue, Values, evaluate_envelope, validate};
 use casual_sign_model::{
@@ -142,6 +142,7 @@ pub fn decide(
     if next.status.is_in_flight() {
         advance(&mut next, &mut out)?;
     }
+    check_location(state, ctx, &out.events)?;
     if next.observable() != state.observable() {
         next.version = state.version.saturating_add(1);
     }
@@ -154,6 +155,52 @@ pub fn decide(
         effects: out.effects,
         replayed: false,
     })
+}
+
+/// The recipient whose action `data` records, for the events that must carry a location
+/// when the envelope captures it: delivered, viewed, signed, approved, declined.
+fn action_recipient(data: &EventData) -> Option<&Id> {
+    match data {
+        EventData::RecipientDelivered { recipient_id }
+        | EventData::RecipientViewedDocument { recipient_id, .. }
+        | EventData::RecipientSigned { recipient_id, .. }
+        | EventData::RecipientApproved { recipient_id, .. }
+        | EventData::RecipientDeclined { recipient_id, .. } => Some(recipient_id),
+        _ => None,
+    }
+}
+
+/// GEO-01: the request's location fits the envelope's `capture_location`, and every
+/// recipient action carries one when it is on. A missing device location never blocks
+/// signing: the server then supplies an IP approximation with the reason (declined,
+/// unavailable), and that satisfies this check (docs/24 §3).
+fn check_location(
+    state: &EnvelopeState,
+    ctx: &Context,
+    events: &[PendingEvent],
+) -> Result<(), WorkflowError> {
+    let capture_location = state.options.capture_location;
+    let Some(location) = ctx.request.location.as_ref().map(Personal::get) else {
+        if capture_location
+            && let Some(recipient) = events.iter().find_map(|e| action_recipient(&e.data))
+        {
+            return Err(WorkflowError::LocationRequired {
+                recipient: recipient.clone(),
+            });
+        }
+        return Ok(());
+    };
+    let fits = match location.source() {
+        LocationSource::Device { .. } => capture_location,
+        LocationSource::Ip { reason, .. } => {
+            (*reason == FallbackReason::NotRequested) != capture_location
+        }
+    };
+    if fits {
+        Ok(())
+    } else {
+        Err(WorkflowError::LocationInconsistent { capture_location })
+    }
 }
 
 /// SHA-256 of the command's canonical JSON (RFC 8785).

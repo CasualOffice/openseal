@@ -7,7 +7,9 @@
 //! certificate's text and signatures go through the same layout, font subsetting and
 //! image checks as every signed document.
 
-use casual_sign_audit::{AdoptionMethod, AuthMethod, Chain, Hash256};
+use casual_sign_audit::{
+    AdoptionMethod, AuthMethod, Chain, FallbackReason, Hash256, Location, LocationSource,
+};
 use casual_sign_flatten::Art;
 use casual_sign_model::{Align, Rgb};
 
@@ -674,6 +676,46 @@ pub(crate) fn plan(
     }
 }
 
+/// The location row (GEO-01): place, coordinates, then how it was obtained, e.g.
+/// `London, England, GB · 51.5074, -0.1278 · device (±14 m)` or
+/// `Paris, FR · 48.8566, 2.3522 · declined — approximate from IP (database …)`.
+pub(crate) fn location_text(l: Option<&Location>) -> String {
+    let Some(l) = l else {
+        return "\u{2014}".to_owned();
+    };
+    let mut parts: Vec<String> = Vec::new();
+    let place: Vec<&str> = [l.city(), l.region(), l.country()]
+        .into_iter()
+        .flatten()
+        .collect();
+    if !place.is_empty() {
+        parts.push(place.join(", "));
+    }
+    if let Some(c) = l.coordinates() {
+        // `Display` of a double never uses an exponent, and gives the shortest text that
+        // reads back as the recorded value.
+        parts.push(format!("{}, {}", c.latitude(), c.longitude()));
+    }
+    let located = !parts.is_empty();
+    parts.push(match l.source() {
+        LocationSource::Device { accuracy_m } => format!("device (\u{b1}{accuracy_m} m)"),
+        LocationSource::Ip { reason, database } => {
+            let why = match reason {
+                FallbackReason::Declined => "declined \u{2014} ",
+                FallbackReason::Unavailable => "device location unavailable \u{2014} ",
+                _ => "",
+            };
+            let how = match (located, database) {
+                (true, Some(d)) => format!("approximate from IP (database {d})"),
+                (_, Some(d)) => format!("IP address not located (database {d})"),
+                (_, None) => "IP address not located".to_owned(),
+            };
+            format!("{why}{how}")
+        }
+    });
+    parts.join(" \u{b7} ")
+}
+
 fn mark_caption(label: &str, m: Option<&Mark>) -> String {
     match m {
         Some(m) => format!("{label} \u{b7} {}", adoption(m.method)),
@@ -738,6 +780,10 @@ fn recipient(wr: &mut Writer, r: &crate::input::RecipientRow, o: &CertificateOpt
         (
             "User agent".into(),
             Value::plain(r.user_agent.clone().unwrap_or_else(|| "\u{2014}".into())),
+        ),
+        (
+            "Location".into(),
+            Value::plain(location_text(r.location.as_ref())),
         ),
         ("Sent".into(), Value::plain(maybe(r.sent, o))),
         ("Viewed".into(), Value::plain(maybe(r.viewed, o))),
@@ -845,6 +891,49 @@ fn recipient(wr: &mut Writer, r: &crate::input::RecipientRow, o: &CertificateOpt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn location_rows_say_where_and_how() {
+        use casual_sign_audit::{FallbackReason, Location};
+        let db = "GeoLite2-City 2026-11-04";
+        assert_eq!(location_text(None), "\u{2014}");
+        let device = Location::device(51.507_412, -0.127_758, 13.2)
+            .unwrap()
+            .with_place(Some("GB"), Some("England"), Some("London"))
+            .unwrap();
+        assert_eq!(
+            location_text(Some(&device)),
+            "London, England, GB \u{b7} 51.5074, -0.1278 \u{b7} device (\u{b1}14 m)"
+        );
+        let declined = Location::ip(FallbackReason::Declined, db, 48.8566, 2.3522)
+            .unwrap()
+            .with_place(Some("FR"), None, Some("Paris"))
+            .unwrap();
+        assert_eq!(
+            location_text(Some(&declined)),
+            "Paris, FR \u{b7} 48.8566, 2.3522 \u{b7} declined \u{2014} approximate from IP (database GeoLite2-City 2026-11-04)"
+        );
+        let unavailable = Location::ip(FallbackReason::Unavailable, db, -33.87, 151.21).unwrap();
+        assert_eq!(
+            location_text(Some(&unavailable)),
+            "-33.87, 151.21 \u{b7} device location unavailable \u{2014} approximate from IP (database GeoLite2-City 2026-11-04)"
+        );
+        let not_requested = Location::ip(FallbackReason::NotRequested, db, 1e-4, -1e-4).unwrap();
+        assert_eq!(
+            location_text(Some(&not_requested)),
+            "0.0001, -0.0001 \u{b7} approximate from IP (database GeoLite2-City 2026-11-04)"
+        );
+        let unresolved = Location::ip_unresolved(FallbackReason::Declined, None).unwrap();
+        assert_eq!(
+            location_text(Some(&unresolved)),
+            "declined \u{2014} IP address not located"
+        );
+        let missed = Location::ip_unresolved(FallbackReason::Unavailable, Some(db)).unwrap();
+        assert_eq!(
+            location_text(Some(&missed)),
+            "device location unavailable \u{2014} IP address not located (database GeoLite2-City 2026-11-04)"
+        );
+    }
 
     #[test]
     fn numbers_in_operators_have_no_exponent() {

@@ -367,3 +367,210 @@ impl Envelopes<'_> {
         Ok(row.is_some())
     }
 }
+
+/// The columns of `envelopes` the server projects from the workflow engine's state
+/// (migration 0008, docs/22 §10). The state is the authority; these let the account
+/// list, filter and page envelopes without decoding it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Projection {
+    /// The state's status.
+    pub status: EnvelopeStatus,
+    /// Email subject.
+    pub subject: Personal<String>,
+    /// Email message.
+    pub message: Personal<String>,
+    /// Expiry.
+    pub expires_at: Option<OffsetDateTime>,
+    /// Reminder policy as the engine serializes it.
+    pub reminder_policy: serde_json::Value,
+    /// Signing options as the engine serializes them.
+    pub signing_options: serde_json::Value,
+    /// PAdES level.
+    pub seal_profile: SealProfile,
+    /// When it was sent.
+    pub sent_at: Option<OffsetDateTime>,
+    /// When it completed.
+    pub completed_at: Option<OffsetDateTime>,
+    /// When it was voided (set exactly when the status is `voided`).
+    pub voided_at: Option<OffsetDateTime>,
+    /// Why it was voided.
+    pub void_reason: Option<Personal<String>>,
+}
+
+/// Where a page of envelopes resumes: after this creation time and id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cursor {
+    /// Creation time of the last envelope returned.
+    pub created_at: OffsetDateTime,
+    /// Its id.
+    pub id: EnvelopeId,
+}
+
+impl Envelopes<'_> {
+    /// Record the API client that created an envelope (tracker row WF-05): an embedding
+    /// host may act only for the envelopes it created.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such envelope; `CS-DB-0008`/`CS-DB-0009` a client of another
+    /// account.
+    pub async fn set_host_client(
+        &mut self,
+        id: EnvelopeId,
+        client: crate::ids::ApiClientId,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE envelopes SET host_client_id = $3 WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0,
+            client.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "envelope")
+    }
+
+    /// The API client that created an envelope of this account, if one did; `None`
+    /// also when the account has no such envelope.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn host_client(&mut self, id: EnvelopeId) -> Result<Option<crate::ids::ApiClientId>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query_scalar!(
+            "SELECT host_client_id FROM envelopes WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.flatten().map(crate::ids::ApiClientId))
+    }
+
+    /// Record the sealed certificate of completion's blob. Written once: recording the
+    /// same hash again changes nothing (a seal job re-run), a different one is refused.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such envelope, or one whose certificate is already another.
+    pub async fn set_certificate(&mut self, id: EnvelopeId, sha256: &[u8; 32]) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE envelopes SET certificate_sha256 = $3 WHERE account_id = $1 AND id = $2 \
+               AND (certificate_sha256 IS NULL OR certificate_sha256 = $3)",
+            acct,
+            id.0,
+            sha256.as_slice()
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "envelope")
+    }
+
+    /// The sealed certificate of completion's blob, once the seal job stored it; `None`
+    /// before, and when the account has no such envelope.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0010` for a stored hash that is not 32 bytes.
+    pub async fn certificate(&mut self, id: EnvelopeId) -> Result<Option<[u8; 32]>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query_scalar!(
+            "SELECT certificate_sha256 FROM envelopes WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        opt_hash32(row.flatten(), "envelopes.certificate_sha256")
+    }
+
+    /// Write the projection of the engine's state (docs/22 §10) onto the envelope's
+    /// columns, if the row is still at `row_version`; returns the new row version. The
+    /// engine state itself lives in `envelope_states`, whose row the caller holds
+    /// locked.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0007` stale; `CS-DB-0003` no such envelope; `CS-DB-0008` a projection the
+    /// table's checks refuse (an overlong subject, voided without a time).
+    pub async fn project(
+        &mut self,
+        id: EnvelopeId,
+        row_version: i32,
+        p: &Projection,
+    ) -> Result<i32> {
+        let acct = self.tx.acct();
+        let new = sqlx::query_scalar!(
+            "UPDATE envelopes SET version = version + 1, status = $4, \
+               subject = $5, message = $6, expires_at = $7, reminder_policy = $8, \
+               signing_options = $9, seal_profile = $10, sent_at = $11, completed_at = $12, \
+               voided_at = $13, void_reason = $14 \
+             WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
+            acct,
+            id.0,
+            row_version,
+            p.status.as_str(),
+            p.subject.get(),
+            p.message.get(),
+            p.expires_at,
+            &p.reminder_policy,
+            &p.signing_options,
+            p.seal_profile.as_str(),
+            p.sent_at,
+            p.completed_at,
+            p.voided_at,
+            p.void_reason.as_ref().map(|r| r.get().as_str())
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        self.versioned(id, new).await
+    }
+
+    /// A page of this account's envelopes, newest first, after `after`, optionally of
+    /// one status and one sender, at most `limit` (capped at 1,000). Stable under
+    /// inserts: new envelopes sort before every cursor already handed out.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn page(
+        &mut self,
+        after: Option<Cursor>,
+        status: Option<EnvelopeStatus>,
+        sender: Option<UserId>,
+        limit: u32,
+    ) -> Result<Vec<Envelope>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query_as!(
+            EnvelopeRow,
+            "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, \
+             reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, \
+             version, chain_head, created_at, sent_at, completed_at, voided_at \
+             FROM envelopes AS e WHERE account_id = $1 \
+               AND EXISTS (SELECT 1 FROM envelope_states AS s \
+                            WHERE s.account_id = e.account_id AND s.envelope_id = e.id) \
+               AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid)) \
+               AND ($4::text IS NULL OR status = $4) \
+               AND ($5::uuid IS NULL OR sender_user_id = $5) \
+             ORDER BY created_at DESC, id DESC LIMIT $6",
+            acct,
+            after.map(|c| c.created_at),
+            after.map(|c| c.id.0),
+            status.map(EnvelopeStatus::as_str),
+            sender.map(|s| s.0),
+            i64::from(limit.min(1000))
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter().map(Envelope::try_from).collect()
+    }
+}

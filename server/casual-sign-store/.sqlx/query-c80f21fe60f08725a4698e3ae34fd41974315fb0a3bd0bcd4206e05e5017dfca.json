@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT access_code_hash FROM recipient_auth_requirements WHERE account_id = $1 AND recipient_id = $2 AND kind = 'access_code'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "access_code_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipient_auth_requirements",
+            "name": "access_code_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "c80f21fe60f08725a4698e3ae34fd41974315fb0a3bd0bcd4206e05e5017dfca"
+}

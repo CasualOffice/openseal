@@ -68,4 +68,6 @@ id_type!(
     ApiClientId,
     /// A signing link (PowerForm).
     SigningLinkId,
+    /// A staff user's session.
+    StaffSessionId,
 );

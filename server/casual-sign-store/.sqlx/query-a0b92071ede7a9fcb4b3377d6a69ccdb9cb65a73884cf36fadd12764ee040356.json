@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT certificate_sha256 FROM envelopes WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "certificate_sha256",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "certificate_sha256"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a0b92071ede7a9fcb4b3377d6a69ccdb9cb65a73884cf36fadd12764ee040356"
+}

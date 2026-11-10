@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE staff_sessions SET revoked_at = $3 WHERE account_id = $1 AND user_id = $2 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "05bd074c97aa373f72423b7d87a77b62240f13fb723f07bdc527b63def08ee7f"
+}

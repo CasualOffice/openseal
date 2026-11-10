@@ -1,0 +1,91 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT principal, key, request_sha256, status, body, created_at FROM idempotency_keys WHERE account_id = $1 AND principal = $2 AND key = $3 AND created_at >= $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "principal",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "principal"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "key"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "request_sha256",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "request_sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "body",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b5b2ffab6d73ab4482b863b7d7f85c5c79adf0a8a275386bb63fd3c89c20443d"
+}

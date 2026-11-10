@@ -67,6 +67,9 @@ Phase 1 gate.
 | Certificate: recipients, documents, copies | 100 each | CS-AUD-0020 |
 | Certificate: text value; disclosure | 4,000 bytes; 256 KiB | CS-AUD-0020 |
 | Certificate pages; objects copied when appending | 500; 200,000 | CS-AUD-0021, CS-AUD-0023 |
+| Signer location: latitude; longitude (GEO-01) | −90 to 90; −180 to 180, finite | CS-AUD-0011 |
+| Signer location: device coordinate precision; device accuracy | 4 decimal places (rounded on capture, refused on decoding); 20,037,509 m | CS-AUD-0011 |
+| Signer location: `region`, `city`; GeoIP `database` name; `country` | 1 to 128 bytes each, no control characters; 1 to 128 bytes; two upper-case ASCII letters | CS-AUD-0011 |
 
 ## Key daemon (`casual-sign-keyd`, stage 2E)
 
@@ -123,6 +126,43 @@ Phase 1 gate.
 | Sender regex pattern | 1,024 bytes; nesting 32; compiled program and DFA cache 2 MiB each; linear-time engine (no backtracking) | CS-FLD-0002 |
 | Numbers in values | 28 digits; no exponent, NaN or infinity | CS-FLD-0002 |
 | Signer attachment size | 25 MiB | CS-FLD-0002 |
+
+## Worker (stage 2D, built)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| Email address | 320 bytes, printable ASCII, one `@`, no quotes, brackets, commas or semicolons | CS-WRK-0005 |
+| Display name or subject before encoding | 998 bytes | CS-WRK-0005 |
+| Email body before encoding | 256 KiB | CS-WRK-0005 |
+| Webhook URL | 2,048 bytes, `https://` only, no user information | CS-WRK-0008 |
+| Webhook exchange | 10 s for the whole request; redirects not followed; 64 KiB of the answer read | CS-WRK-0009 |
+| Webhook attempts | 15 over about three days (back-off from 30 s doubling, capped at 12 h, equal jitter) | CS-WRK-0009 |
+| Job attempts | 15 (timers, alerts, token revocation: 20) | — |
+| Job lease | 300 s, renewed every 100 s while the job runs | CS-WRK-0015 |
+| Capture document | 1 MiB; 1,000 strokes; 100,000 points; finite numbers only | CS-WRK-0016 |
+| Typed signature | 1,000 bytes, no control characters | CS-WRK-0016 |
+| Uploaded signature image read by the seal job | 5 MiB | CS-WRK-0016 |
+| TSA or OCSP answer / CRL | 1 MiB / 32 MiB (as the CLI) | CS-SEAL-0002 |
+
+## API (built, stage 2C)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| JSON request body | 1 MiB | CS-API-0006 |
+| Document upload request (base64 of 50 MiB, or the raw PDF) | 70 MiB body; 50 MiB decoded | CS-API-0006, CS-PDF-0001 |
+| One-call envelope create | 270 MiB body; 200 MiB of documents decoded | CS-API-0006 |
+| Adopted signature image (PNG or JPEG) | 5 MiB | CS-API-0006 |
+| Requests per authenticated principal | 1,200 per minute | CS-API-0003 |
+| Ceremony requests per token / per client address | 300 / 1,200 per minute | CS-API-0003 |
+| Login and token attempts per login name or client / per address | 10 / 100 per minute | CS-API-0003 |
+| Idempotency key | 1–255 printable ASCII; replays answered for 24 hours | CS-API-0001, CS-API-0004 |
+| Page size of lists | 1–200, default 50 | CS-API-0001 |
+| User agent recorded in events | 512 bytes (cut at a character boundary) | — |
+| Ceremony token | 128 characters | CS-AUTH-0002 |
+| Staff password | 12–256 characters | CS-API-0001 |
+| Staff session / access token / embedded view link | 8 hours / 1 hour / 5 minutes | CS-AUTH-0002 |
+| API client expiry | 1–3,650 days | CS-API-0001 |
+| Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 
 ## Bulk and links
 

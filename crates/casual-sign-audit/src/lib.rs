@@ -14,6 +14,8 @@
 //! - [`merkle`]: RFC 6962 tree hashing over chain heads for anchoring (docs/32 §5), with
 //!   inclusion proofs and their verifier.
 //! - [`Tombstone`]: what a purge keeps (docs/32 §7).
+//! - [`Location`]: where a signer was when they acted, from the device or approximated
+//!   from the IP address, in `context.location` (GEO-01, personal data).
 //!
 //! The crate performs no I/O, reads no clock and draws no randomness (times are
 //! supplied), and builds for `wasm32-unknown-unknown`. Every error is an [`AuditError`]
@@ -26,18 +28,23 @@ mod event;
 mod hash;
 pub mod jcs;
 pub mod json;
+mod location;
 pub mod merkle;
 mod time;
 mod tombstone;
 mod verify;
 
 pub use chain::{Chain, ChainedEvent, TRAIL_FILE_NAME, TRAIL_FORMAT, TRAIL_VERSION};
-pub use error::{AuditError, JsonFault, ShapeFault};
+pub use error::{AuditError, JsonFault, LocationFault, ShapeFault};
 pub use event::{
     Actor, ActorKind, AdoptionMethod, AuditEvent, AuthMethod, Channel, Context, DocumentHash,
     EVENT_VERSION, EventData, MarkKind, PERSONAL_MEMBERS, Personal,
 };
 pub use hash::Hash256;
+pub use location::{
+    Coordinates, FallbackReason, Location, LocationSource, MAX_ACCURACY_M, MAX_DATABASE_BYTES,
+    MAX_PLACE_BYTES,
+};
 pub use time::{Civil, Timestamp};
 pub use tombstone::Tombstone;
 pub use verify::{

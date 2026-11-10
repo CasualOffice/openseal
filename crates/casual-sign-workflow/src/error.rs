@@ -222,6 +222,20 @@ pub enum WorkflowError {
     TimeOutOfRange,
     /// A value could not be put in canonical form for hashing (`CS-WF-0018`).
     Encoding,
+    /// The envelope captures location and a recipient action came without one: the
+    /// server supplies the device's location or, failing that, an IP approximation with
+    /// its reason (`CS-WF-0019`, GEO-01).
+    LocationRequired {
+        /// The recipient who acted.
+        recipient: Id,
+    },
+    /// The request's location contradicts the envelope's setting: a device location, or
+    /// a reason saying the signer was asked, when the envelope does not capture
+    /// location; or `not_requested` when it does (`CS-WF-0020`, GEO-01).
+    LocationInconsistent {
+        /// The envelope's `capture_location`.
+        capture_location: bool,
+    },
     /// The recipient has not passed every authentication requirement (`CS-AUTH-0003`).
     AuthRequired {
         /// The recipient.
@@ -269,6 +283,8 @@ impl WorkflowError {
             Self::FieldNotEditable { .. } => "CS-WF-0016",
             Self::TimeOutOfRange => "CS-WF-0017",
             Self::Encoding => "CS-WF-0018",
+            Self::LocationRequired { .. } => "CS-WF-0019",
+            Self::LocationInconsistent { .. } => "CS-WF-0020",
             Self::AuthRequired { .. } => "CS-AUTH-0003",
             Self::AuthLocked { .. } => "CS-AUTH-0004",
             Self::ConsentRequired { .. } => "CS-AUTH-0005",
@@ -336,6 +352,13 @@ impl fmt::Display for WorkflowError {
             Self::FieldNotEditable { field } => write!(f, "{code}: field {field} not editable"),
             Self::TimeOutOfRange => write!(f, "{code}: time out of range"),
             Self::Encoding => write!(f, "{code}: value could not be encoded"),
+            Self::LocationRequired { recipient } => {
+                write!(f, "{code}: recipient {recipient} acted without a location")
+            }
+            Self::LocationInconsistent { capture_location } => write!(
+                f,
+                "{code}: location does not match capture_location = {capture_location}"
+            ),
             Self::AuthRequired { recipient } => {
                 write!(f, "{code}: recipient {recipient} not authenticated")
             }

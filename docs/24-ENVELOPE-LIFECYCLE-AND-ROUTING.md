@@ -70,6 +70,15 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - Editors (allowed to edit) may change later recipients and fields before signing.
 - Agents (specify recipients) supply the name and email of later recipients.
 - In-person signers are hosted by a staff user who authenticates first; the event records both.
+- **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
+  signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
+  `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context
+  ([32](32-AUDIT-TRAIL-AND-EVIDENCE.md) §2). **A refusal never blocks signing:** if the signer declines or the device
+  gives nothing, the server supplies an approximation from the IP address with the reason (`declined`,
+  `unavailable`), and that satisfies the engine. Only an action with no location at all is refused (`CS-WF-0019`),
+  which the server prevents by always supplying the fallback. A location that contradicts the setting (the signer
+  asked although it is off; `not_requested` although it is on) is `CS-WF-0020`. With the setting off nothing is
+  required; the host may still record an IP approximation flagged `not_requested`.
 
 ## 4. Routing
 
@@ -166,6 +175,11 @@ objects concerned, never their content.
 - **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says.
 - **A signer with no signature field** must still adopt a signature before finishing (free-form signing, intent).
 - **Sending needs a recipient with a required action**; an envelope of carbon copies only is `CS-WF-0004`.
+- **Location (GEO-01)** is checked after the command is decided, against the setting as it stood before the command,
+  over the events the request produced: the five recipient-action types must carry `ctx.request.location` when
+  `capture_location` is on. Checking last means every other refusal (permission, state, turn) keeps its own code.
+  Events the platform records as a consequence (`envelope.completing`, routing) carry no request context, so no
+  location. Tested by `tests/location.rs`.
 
 | docs/24 item | Built |
 | --- | --- |
@@ -192,6 +206,7 @@ objects concerned, never their content.
 | `completing` → `completed` only on a verified seal; seal failure retried | Built |
 | Purge (terminal only; personal data scrubbed, hashes kept) | Built |
 | Access events (sender viewed, document and certificate downloaded) | Built |
+| Signer location on recipient actions when `capture_location` is on; refusal recorded, never blocking (GEO-01) | Built (engine, and the server's capture and GeoIP fallback, docs/40 §As built) |
 | Routing: sequential, parallel, mixed; carbon copies complete when reached | Built |
 | Conditional routing, signing groups (§4, slice 29) | **Not built**: no event type or status for a skipped recipient or a group member's act (rows proposed) |
 | Bulk send (§8), signing links (§9) | **Not in the engine**: host jobs that issue `Create`/`Edit`/`Send` |
@@ -201,3 +216,76 @@ Tested by `tests/transitions.rs` (one test per transition) and `tests/properties
 60 random commands each, every invariant checked after every accepted command and the chain verified; a second
 property drives every valid envelope to `completed`; a seeded run shows the sequences reach every status). Each
 invariant was seen to fail with its guard removed.
+
+## As built: effects (stage 2D, `T-2D`)
+
+`server/casual-sign-worker` runs the effects. **Decide and record** is one path, `casual_sign_host::apply_in(tx,
+envelope, command, context)` (`server/casual-sign-host`, which the API server and the worker both use; neither depends
+on the other): in one `TenantTx` it locks the envelope's stored engine state (`envelope_states`, migration 0008, the
+`EnvelopeState` as the engine serializes it, with a row revision; the only place the state lives), calls `decide`,
+appends the events to the chain (`PendingEvent::into_audit`, re-verified as read), writes the state at the revision
+read, brings the relational rows into line (every projected column of the envelope, each recipient's row and status,
+a draft's removed recipients pruned, missing document rows; a document removed from a draft keeps its row, whose
+versions are write-once), revokes the tokens of a `RevokeTokens` effect in that transaction, and enqueues one job per
+other effect. The server calls `apply_loaded` on a state it locked with `load_for_update` at the start of the request.
+
+**The job contract** (`casual_sign_host::jobs`): `kind` is the effect's kind in snake case (the table below;
+`Schedule` is `timer`); `idempotency_key` is `effect:<envelope>:<command id>:<index>`, the effect's id, so a decision
+recorded again names the same job and the queue keeps one; `payload` is `{envelope_id, effect, decided_at, version,
+status}` (ids and parameters only); `run_at` is a `Schedule`'s time, a `SealEnvelope`'s `not_before`, else the
+decision's time. `Cancel` and `RevokeTokens` enqueue nothing. Invitation tokens are minted by the worker as it sends.
+
+| Effect | Job | What the worker does | Result fed back |
+| --- | --- | --- | --- |
+| `SendInvitation` | `send_invitation` | Email (act or copy template) with a fresh link token (256 random bits, base64url; its SHA-256 stored, `SEC-A01`); `link` delivery sends nothing | `InvitationDispatched`, or `InvitationBounced` when the SMTP server refuses the address permanently |
+| `SendReminder` | `send_reminder` | Reminder email with a fresh link | `ReminderDispatched` |
+| `SendExpiryWarning` | `send_expiry_warning` | Warning email with a fresh link | — |
+| `NotifySender` | `notify_sender` | Email to the sender's address (voided, declined, expired, completed, locked, bounced, corrected) | — |
+| `NotifyRecipients` | `notify_recipients` | Email to each recipient named | — |
+| `SendCompletionCopies` | `send_completion_copies` | Email to each, with a `completed_copy` link | — |
+| `Schedule` | `timer` | Due at its time | `TimerDue` (a timer no longer pending is the engine's no-op) |
+| `SealEnvelope` | `seal_envelope` | Only while `completing` with this job pending: fill and flatten each delivered document (from the blob store, its hash checked), certificate of completion with the stored chain as `audit-trail.json`, seal at the envelope's profile through keyd (`RemoteKey`, the development `/Reason` when keyd says its key is one) with the configured TSAs, store the sealed bytes as a `sealed` document version, read them back and verify them (docs/31 rung 1, independent of the seal's self-check); the certificate of completion is also rendered on its own with the trail embedded, sealed, verified as stored and recorded as `envelopes.certificate_sha256` (migration 0009) in the same transaction | `SealSucceeded` with `verified: true`, or `SealFailed` with the code (the engine alerts and schedules a new job) |
+| `RevokeTokens` | none | Performed inside the deciding transaction (`casual_sign_host::apply`), so a revoked link stops working when the answer is given | — |
+| `DeliverWebhook` | `deliver_webhook` | docs/40 §4 as built | — |
+| `ChargePayment` | `charge_payment` | Through `PaymentGateway`; the only one built refuses (`CS-WRK-0014`, dead-lettered with an alert) until slice 13 | — |
+| `AlertOperator` | `alert_operator` | To the operator's `AlertSink` (a log line by default) | — |
+| `PurgeData`, `DeleteDraft` | `purge_data`, `delete_draft` | Revoke every token of the envelope; blobs stay (write-once, no delete: slice 15) | — |
+| `Cancel` | none | The engine's own guards: a cancelled timer's `TimerDue` is a no-op, a cancelled seal job is not run (checked before sealing) and its result refused | — |
+
+**Idempotency and crashes.** The claim is the store's `SKIP LOCKED` entry point under a 300 s lease, renewed every
+100 s; a lapsed lease is claimed again. A job's external act (an email accepted, a webhook answered, documents sealed
+and stored) is recorded as a job step (`job_steps`, insert-only) in its own transaction the moment it happens; the
+result command and `complete` then commit together. The result command's id is `job-<job uuid>`, so a second
+application is `replayed`. A crash leaves: before the act, nothing (the job reruns); after the act and its record, the
+act skipped on rerun; between the act and its record, the act once more on rerun, the **at-least-once window**, with
+the same `Message-ID` (derived from the job and recipient) or `webhook-id`, which receivers collapse. A seal crashed
+after keyd signed and before the sealed bytes were recorded is sealed again on rerun (keyd's log shows two
+signatures; `KEYD-03` reconciles); one crashed after the record is not. A result command the engine refuses because
+the envelope moved on (voided meanwhile) is recorded as a step and the job finishes. Failures retry with exponential
+back-off and equal jitter (30 s doubling, capped at 12 h) up to 15 attempts; a *final* code (docs/20 `CS-WRK-*`)
+dead-letters the job at once; a dead job raises an operator alert.
+
+**Tested** (PostgreSQL 17, an in-process SMTP sink, an HTTPS receiver; `server/casual-sign-worker/tests`): a
+two-signer envelope driven through the engine and store to `completed`, its sealed PDF accepted by our verifier and
+pyHanko; crash tests stopping the worker dead at every boundary (after claim, after the SMTP server accepted, after
+the record, mid-webhook, after keyd signed, with the result applied but uncommitted) and restarting; an unverified
+seal leaving the envelope `completing` with an alert; a bounce; a reminder timer; back-off; dead-lettering; SSRF
+refusal; the seal through keyd with the development reason. Seen red: the email step check removed (two emails after
+a crash past the record), the stored-seal verification removed (the envelope completed on a seal that does not
+verify), the development reason dropped, both SSRF checks removed.
+
+**Integration (T-2C with T-2D, GEO-01).** `tests/end_to_end.rs` drives a two-signer envelope through the API
+server's router (in process, same database, blob store and clock) and the worker to `completed`, signing through the
+ceremony with the links from the worker's emails, then downloads the sealed PDF, the certificate and the combined
+PDF through the API; the sealed PDF and the certificate pass our verifier and pyHanko. Seen red: the stored-seal
+verification removed with a tampered seal stored (the envelope completed, and the downloaded PDF failed both
+verifiers).
+
+**Decisions taken here** (recorded for the owner): the engine state is stored whole beside the relational rows
+(migration 0008, `envelope_states` only: the API server's earlier `envelopes.engine_state` column was dropped at the
+integration), because `decide` needs its bookkeeping and no table holds it; engine ids of envelopes, recipients,
+documents and users are canonical UUID strings; a signature capture is a JSON blob whose SHA-256 is both the adoption's
+`image_hash` and the `FieldValue::Signature` id (`casual_sign_worker::capture`); a link token's stored hash is the
+SHA-256 of its base64url text; the worker decides under the operator's default `Policy` (per-account settings are the
+API's); emails are written by the worker, not `lettre`'s builder (licence, docs/19); webhooks and TSAs use `ureq`,
+not `reqwest`.

@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018`, and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014` and `CS-AUTH-0001`, `0002`, `0006` to `0010` (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-DB` persistence, `CS-BLOB` blob storage, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -103,6 +103,7 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-AUD-0008 | Chain failed verification |
 | CS-AUD-0009 | Merkle inclusion proof invalid |
 | CS-AUD-0010 | Tombstone does not match its chain |
+| CS-AUD-0011 | Signer location invalid or over its bounds (coordinate out of range or too precise, accuracy, country, region, city or database name; names the member, never the value) |
 | CS-AUD-0020 | Certificate input invalid or over its bounds |
 | CS-AUD-0021 | Certificate over 500 pages |
 | CS-AUD-0022 | Document already has `/AF` or embedded files |
@@ -126,16 +127,32 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-WF-0016 | Field not editable by this recipient: another's, read-only, locked, or takes no input |
 | CS-WF-0017 | A computed time (timer, date stamp) falls outside years 0000 to 9999 |
 | CS-WF-0018 | A value could not be put in canonical form for hashing |
+| CS-WF-0019 | The envelope captures location and a recipient action (delivered, viewed, signed, approved, declined) came without one; the server always supplies at least the IP approximation |
+| CS-WF-0020 | The request's location contradicts the envelope's `capture_location`: a device location or a `declined`/`unavailable` reason when off, `not_requested` when on |
 | CS-API-0001 | Malformed request |
 | CS-API-0002 | Not found (also returned for objects of another tenant) |
 | CS-API-0003 | Rate limited |
 | CS-API-0004 | Idempotency key reused with a different body |
-| CS-API-0005 | Precondition failed (`If-Match`) |
+| CS-API-0005 | Precondition failed (`If-Match` unreadable); a stale version is `CS-WF-0002` |
+| CS-API-0006 | Request body too large (413) |
+| CS-API-0007 | Unsupported media type (415); ceremony calls that change state must be `application/json` |
+| CS-API-0008 | Precondition required: `If-Match` absent where it is required (428) |
+| CS-API-0009 | Not available in the object's state (409): a sealed document, certificate or PDF audit report before the seal job made it |
+| CS-API-0010 | Internal error (500); the detail names the failing step, never data |
+| CS-API-0011 | A request with this idempotency key is still in progress (409) |
+| CS-API-0012 | Method not allowed (405) |
+| CS-API-0013 | Webhook URL refused: not HTTPS to a public address (SEC-W01) |
+| CS-API-0014 | Recipient authentication method not available on this server (one-time codes until slice 5) |
 | CS-AUTH-0001 | Not authenticated |
 | CS-AUTH-0002 | Token expired or revoked |
 | CS-AUTH-0003 | Recipient authentication failed |
 | CS-AUTH-0004 | Recipient locked after too many attempts |
 | CS-AUTH-0005 | Consent required |
+| CS-AUTH-0006 | Credential lacks the scope or permission (403) |
+| CS-AUTH-0007 | Invalid credentials: login or OAuth client (401) |
+| CS-AUTH-0008 | CSRF token missing or wrong on a session request that changes something (403) |
+| CS-AUTH-0009 | Ceremony link bound to another browser, or not yet opened in this one (403) |
+| CS-AUTH-0010 | The API client does not own the embedding it acts for (row WF-05) (403) |
 | CS-KEY-0001 | Caller not authorized by keyd: no client certificate, an untrusted one, or one not on the allow-list |
 | CS-KEY-0002 | Unknown key alias |
 | CS-KEY-0003 | HSM or KMS unavailable, PIN refused, or a backend operation failed |
@@ -177,3 +194,28 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002` and `CS-DB-0
 | CS-BLOB-0003 | Bytes stored under a key do not hash to it |
 | CS-BLOB-0004 | Blob over the store's size cap (256 MiB by default) |
 | CS-BLOB-0005 | Key is not 64 lower-case hexadecimal digits |
+
+## Worker (`casual-sign-worker`, stage 2D)
+
+Messages carry codes, ids, counts and HTTP statuses, never an address, a name, a subject, a URL, a token or document
+content. The store's, the engine's, the SDK's and keyd's codes pass through unchanged. A job failing with a code
+marked *final* is dead-lettered at once with an operator alert; the others are retried with back-off.
+
+| Code | Meaning |
+| --- | --- |
+| CS-WRK-0001 | A worker setting is missing or invalid (named, never its value). *Final* |
+| CS-WRK-0002 | A stored engine state does not read back as an `EnvelopeState`. *Final* |
+| CS-WRK-0003 | An engine id the database keys by UUID is not a canonical UUID. *Final* |
+| CS-WRK-0004 | A job's payload is malformed or its kind unknown. *Final* |
+| CS-WRK-0005 | An email address or header value refused (`SEC-M02`): not an address, CR/LF, quotes, over its length. *Final* |
+| CS-WRK-0006 | The SMTP server unreachable or refusing for now (4xx) |
+| CS-WRK-0007 | The SMTP server refused the recipient permanently (5xx): reported to the engine as a bounce |
+| CS-WRK-0008 | A webhook URL refused (`SEC-W01`): not `https://`, user information, or a host resolving to a private, loopback, link-local, metadata, CGNAT, documentation, multicast or reserved address not allow-listed. *Final* |
+| CS-WRK-0009 | A webhook delivery failed: timeout, connection or TLS failure, or a status other than 2xx |
+| CS-WRK-0010 | A webhook secret reference does not resolve, or is not `whsec_` and base64 of 16 bytes or more |
+| CS-WRK-0011 | A seal input missing or unusable: a delivered document's blob, a capture, the sender's row |
+| CS-WRK-0012 | A sealed document failed the worker's independent verification of the stored bytes (the envelope stays `completing`) |
+| CS-WRK-0013 | No provider for the channel (SMS, WhatsApp; slice 12). *Final* |
+| CS-WRK-0014 | No payment gateway configured (slice 13). *Final* |
+| CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job |
+| CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |

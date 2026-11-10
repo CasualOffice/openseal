@@ -5,7 +5,7 @@
 //! audit chain was written from. The chain itself is passed alongside: the certificate
 //! prints its head and embeds it whole.
 
-use casual_sign_audit::{AdoptionMethod, AuthMethod, Chain, Hash256, Timestamp};
+use casual_sign_audit::{AdoptionMethod, AuthMethod, Chain, Hash256, Location, Timestamp};
 use casual_sign_flatten::Art;
 use casual_sign_model::DateFormat;
 
@@ -135,6 +135,9 @@ pub struct RecipientRow {
     pub ip: Option<String>,
     /// The user agent.
     pub user_agent: Option<String>,
+    /// Where the recipient was when they signed, approved or declined: the location
+    /// recorded in that event's context (GEO-01). Bounded by construction (docs/21).
+    pub location: Option<Location>,
     /// The adopted signature.
     pub signature: Option<Mark>,
     /// The adopted initials.

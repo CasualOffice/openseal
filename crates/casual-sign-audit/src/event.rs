@@ -19,6 +19,7 @@ use crate::error::{AuditError, ShapeFault};
 use crate::hash::Hash256;
 use crate::jcs;
 use crate::json::{MAX_SAFE_INTEGER, Value};
+use crate::location::{Location, location_from_serde};
 use crate::time::Timestamp;
 
 /// The event schema version this build writes and reads.
@@ -31,6 +32,7 @@ pub const PERSONAL_MEMBERS: &[&str] = &[
     "actor.email",
     "context.ip",
     "context.user_agent",
+    "context.location",
     "data.reason",
     "data.host_claim",
 ];
@@ -125,7 +127,10 @@ pub enum AuthMethod {
     HostAsserted,
 }
 
-/// Request context. IP and user agent are personal data.
+/// Request context. IP, user agent and location are personal data.
+///
+/// Every member is absent from the wire when unset, so an event without a location
+/// hashes exactly as it did before `location` existed (GEO-01; `tests/compat.rs`).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Context {
     /// The client's IP address as the server saw it.
@@ -140,6 +145,11 @@ pub struct Context {
     /// A hash naming the session (never the session secret).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<Hash256>,
+    /// Where the signer was: from their device, or approximated from the IP address with
+    /// the reason the device was not used (GEO-01). Recorded on recipient actions when
+    /// the envelope captures location (docs/24 §3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<Personal<Location>>,
 }
 
 /// How a message reached a recipient.
@@ -733,7 +743,13 @@ impl AuditEvent {
             .map_err(|_| AuditError::shape(ShapeFault::Data))?;
         let actor: Actor = serde_json::from_value(to_serde(get("actor")?))
             .map_err(|_| AuditError::shape(ShapeFault::Member("actor")))?;
-        let context: Context = serde_json::from_value(to_serde(get("context")?))
+        let context_value = get("context")?;
+        // A location's own fault is named (`CS-AUD-0011`) when it is the location that
+        // is wrong.
+        if let Some(l) = context_value.get("location") {
+            location_from_serde(to_serde(l))?;
+        }
+        let context: Context = serde_json::from_value(to_serde(context_value))
             .map_err(|_| AuditError::shape(ShapeFault::Member("context")))?;
         Ok(Self {
             v: version,
@@ -753,6 +769,7 @@ impl AuditEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::location::FallbackReason;
 
     fn id(s: &str) -> Id {
         Id::new(s).unwrap()
@@ -793,6 +810,7 @@ mod tests {
                 user_agent: Some(Personal("UA/1.0".into())),
                 auth: vec![AuthMethod::EmailLink, AuthMethod::SmsOtp],
                 session: Some(Hash256::digest(b"s")),
+                location: None,
             },
             data: EventData::RecipientSigned {
                 recipient_id: id("r1"),
@@ -852,5 +870,95 @@ mod tests {
         assert!(e.to_value().is_ok());
         e.seq = 1;
         assert_eq!(e.to_value().unwrap_err().code(), "CS-AUD-0003");
+    }
+
+    fn located(location: Location) -> AuditEvent {
+        AuditEvent {
+            v: 1,
+            envelope_id: id("e"),
+            seq: 0,
+            prev: None,
+            at: Timestamp::from_unix_millis(0).unwrap(),
+            actor: Actor::system(),
+            context: Context {
+                ip: Some(Personal("203.0.113.7".into())),
+                location: Some(Personal(location)),
+                ..Context::default()
+            },
+            data: EventData::RecipientDelivered {
+                recipient_id: id("r1"),
+            },
+        }
+    }
+
+    #[test]
+    fn a_location_is_in_the_canonical_form_and_round_trips() {
+        let e = located(
+            Location::device(51.507_412, -0.127_758, 9.5)
+                .unwrap()
+                .with_place(Some("GB"), Some("England"), Some("London"))
+                .unwrap(),
+        );
+        let v = e.to_value().unwrap();
+        let text = String::from_utf8(jcs::to_vec(&v).unwrap()).unwrap();
+        assert!(
+            text.contains(r#""context":{"ip":"203.0.113.7","location":{"accuracy_m":10,"city":"London","country":"GB","latitude":51.5074,"longitude":-0.1278,"region":"England","source":"device"}}"#),
+            "{text}"
+        );
+        assert_eq!(AuditEvent::from_value(&v).unwrap(), e);
+        // Every coordinate the device rounding can give survives JCS and back.
+        for (lat, lon) in [
+            (-89.99995, 179.99995),
+            (0.00005, -0.00005),
+            (-33.8688, 151.2093),
+        ] {
+            let e = located(Location::device(lat, lon, 1.0).unwrap());
+            let v = jcs::to_vec(&e.to_value().unwrap()).unwrap();
+            let back = AuditEvent::from_value(&crate::json::parse(&v, 32).unwrap()).unwrap();
+            assert_eq!(back, e);
+            assert_eq!(back.hash().unwrap(), e.hash().unwrap());
+        }
+        // An IP approximation that states a refusal.
+        let e = located(Location::ip_unresolved(FallbackReason::Declined, None).unwrap());
+        let text = String::from_utf8(e.canonical().unwrap()).unwrap();
+        assert!(
+            text.contains(r#""location":{"reason":"declined","source":"ip"}"#),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_bad_location_in_a_stored_event_is_named() {
+        let e = located(Location::device(1.0, 2.0, 3.0).unwrap());
+        let mut v = e.to_value().unwrap();
+        let Value::Object(members) = &mut v else {
+            panic!()
+        };
+        let ctx = &mut members.iter_mut().find(|(k, _)| k == "context").unwrap().1;
+        let Value::Object(cm) = ctx else { panic!() };
+        let loc = &mut cm.iter_mut().find(|(k, _)| k == "location").unwrap().1;
+        let Value::Object(lm) = loc else { panic!() };
+        lm.iter_mut().find(|(k, _)| k == "latitude").unwrap().1 = Value::Number(1.000_01);
+        let err = AuditEvent::from_value(&v).unwrap_err();
+        assert_eq!(
+            err,
+            AuditError::Location {
+                fault: crate::error::LocationFault::Precision
+            }
+        );
+        assert_eq!(err.code(), "CS-AUD-0011");
+    }
+
+    #[test]
+    fn a_location_never_prints_in_debug() {
+        let e = located(
+            Location::device(51.5074, -0.1278, 9.0)
+                .unwrap()
+                .with_place(Some("GB"), None, Some("London"))
+                .unwrap(),
+        );
+        let d = format!("{e:?}");
+        assert!(!d.contains("51.5") && !d.contains("London"), "{d}");
+        assert!(PERSONAL_MEMBERS.contains(&"context.location"));
     }
 }
