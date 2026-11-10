@@ -238,6 +238,15 @@ exercised as a login role in `openseal_app`; unset, the database tests print `SK
 method is called with another account's ids, with RLS on and with RLS disabled on every table; raw SQL through the
 application role, bypassing the repository, sees only its account on every RLS table and nothing when none is set.
 
+**As built (stages 2C and 2D, integrated).** Migration `0008_workflow_state_and_job_steps.sql` adds
+`envelope_states` (the engine's `EnvelopeState` as JSON with a row revision: the envelope's authority, the only place
+it is stored) and `job_steps` (the worker's insert-only record of acts done outside the database). Migration
+`0009_api_server.sql` adds `envelopes.host_client_id` (the API client that created an envelope, WF-05),
+`envelopes.certificate_sha256` (the sealed certificate of completion's blob, written once by the seal job),
+`recipient_tokens.session_sha256` (a link's browser binding), `idempotency_keys`, `staff_sessions` and
+`openseal_resolve_staff_session`. Forty tables. The relational rows of an envelope are the projection
+`casual_sign_host::apply` writes from the engine state in the deciding transaction (§10).
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 

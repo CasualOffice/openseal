@@ -258,27 +258,46 @@ CSP (`default-src 'none'; frame-ancestors 'none'`), `nosniff`, `no-referrer`, HS
 only from configured trusted proxies, right-most untrusted hop), the user agent (512 bytes), the authentication
 method (`email_link` for the ceremony plus methods passed; `account_login` for staff credentials, as the audit
 vocabulary has no API-key or OAuth-client method yet) and a SHA-256 naming the session, token record or client.
-Downloads by staff record `document.downloaded`. Logs carry the request id, method, route template, status and
-duration only. Signer location (GEO-01): ceremony bodies accept `location` (`{latitude, longitude, accuracy_m}` or
-`{declined: true}`) and an operator-supplied GeoIP database (`OPENSEAL_GEOIP_DB`) approximates it from the address;
-recording waits for the audit context's `location` field (another worker's merge).
+Downloads by staff record `document.downloaded` (`certificate.downloaded` for the certificate). Logs carry the
+request id, method, route template, status and duration only. **Signer location (GEO-01).** The envelope's
+`signing_options.capture_location` (absent when off) is part of the envelope API. The ceremony view answers
+`capture_location`, and the page asks the device only when it is true. With it on, the session, consent, viewed,
+adopt, finish, approve, decline and withdraw-consent requests record `context.location` (docs/32 §2): the device's
+fix from the body's `location` (`{latitude, longitude, accuracy_m}`); else the approximation of the client address
+in the operator-supplied GeoIP database (`OPENSEAL_GEOIP_DB`, named by its type and build date) with the reason,
+`declined` when the body says `{declined: true}` and `unavailable` otherwise (the opening, before the page knows the
+setting, is `unavailable`); else, with no database, no address or no record, the reason alone. Never omitted, so a
+refusal never blocks signing. With it off nothing is recorded, whatever the body says.
 
-**Persistence.** Each request's commands run in one transaction (`casual_sign_store`): the engine's state is stored
-as the envelope's authority (migration 0008, `envelopes.engine_state`, row-locked), the envelope and recipient rows
-are its projection, events are appended through `PendingEvent::into_audit`, and every effect becomes a job
-(`kind` = the effect's kind, `idempotency_key` = `<envelope>:<command>:<index>`, `payload` = `{envelope_id,
-effect}`, `run_at` = its due time). `RevokeTokens` is performed in the transaction instead of queued. Invitation
-tokens are minted by whoever delivers the invitation (the worker, 2D; `issue_invitation_token` for it and the tests);
-embedded view tokens by `/views/signing`.
+**Persistence.** Each request's commands run in one transaction through the one decide-and-record path the worker
+uses too, `casual_sign_host` (docs/24 §As built: effects): the engine's state is the envelope's authority
+(`envelope_states`, migration 0008, row-locked for the request), the envelope, recipient and document rows are its
+projection, events are appended through `PendingEvent::into_audit`, `RevokeTokens` is performed in the transaction,
+and every other effect becomes a job under the job contract of docs/24 (`kind`, `idempotency_key`
+`effect:<envelope>:<command>:<index>`, `payload` `{envelope_id, effect, decided_at, version, status}`, `run_at`).
+Migration 0009 adds the API's own tables and columns. Invitation tokens are minted by the worker as it sends
+(`issue_invitation_token` remains for tests); embedded view tokens by `/views/signing`.
+
+**Sealed outputs.** `GET /certificate` serves the certificate of completion the seal job rendered on its own (trail
+embedded) and sealed (`envelopes.certificate_sha256`); `GET /documents/combined` serves, for an envelope of one
+document, its sealed version (the certificate is appended before sealing); `content?version=sealed` the sealed
+version. Each answers `409 CS-API-0009` until the seal is stored; `combined` also for an envelope of several
+documents, which needs a PDF merge the engine does not have (proposed row). `GET /audit?format=pdf` is not built.
 
 **Ceremony.** The first `POST /s/{token}/session` binds the link to the browser (a second secret, SHA-256 at rest, in
 an `HttpOnly`, `SameSite=Strict` cookie); any other browser is `403 CS-AUTH-0009`. Changing calls must be
 `application/json`. Access codes are Argon2id (SEC-A03); one-time codes by email or SMS answer `CS-API-0014` until
-slice 5.
+slice 5. `POST /s/{token}/adopt` stores the image, then the capture document the seal job reads
+(`{"kind":"image","image":"<hex>"}`), and answers its hash as `adoption_id`; a signature or initials value must name
+a capture this recipient adopted (`422 CS-API-0001` otherwise), so no value can draw another person's capture.
+`POST /s/{token}/withdraw-consent` withdraws consent to electronic records (declining a required action).
 
 **Tests** (`server/casual-sign-server/tests/`, PostgreSQL 17 through `OPENSEAL_TEST_DATABASE_URL`): the document and
 the table agree; one scenario calls every operation and drives a two-signer sequential envelope through the ceremony
-to `completing` with its `seal_envelope` job enqueued; tenant isolation generated from the document, every operation
+to `completing` with its `seal_envelope` job enqueued, and withdraws consent on another; `tests/location.rs` records
+location on, off, declined, unavailable, with and without a GeoIP database (built in the test), seen red with the
+capture removed (`CS-WF-0019`); the worker's `tests/end_to_end.rs` takes a two-signer envelope through this API and
+the worker to `completed` and verifies the sealed PDF and the certificate with ours and pyHanko; tenant isolation generated from the document, every operation
 with an id called by another account (and with another envelope's sub-ids), `404 CS-API-0002`, with RLS on and
 disabled; authentication and authorization refusals; evidence capture and trusted-proxy handling; no address, user
 agent or token in the logs. Each guard named in the T-2C report was removed once and its test seen red.

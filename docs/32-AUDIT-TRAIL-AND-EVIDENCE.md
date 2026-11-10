@@ -69,6 +69,12 @@ recipient action (`recipient.delivered`, `recipient.viewed_document`, `recipient
 - **The lookup is the host's.** The engine holds no GeoIP database and does no I/O: the server resolves the IP,
   builds the `Location` with the database's name and build date, and puts it in the request context. No lookup trait
   is defined in the engine.
+- **As built in the server** (`casual_sign_server::geo::evidence`, docs/40 §As built): with the setting on, every
+  ceremony request that records a recipient action (session, consent, viewed, adopt, finish, approve, decline,
+  withdraw-consent) carries a location; the database is named `<type> <build date>` from its metadata (for example
+  `GeoLite2-City 2026-11-04`); the country is recorded when the database names one in the ISO shape; the opening is
+  `unavailable` (the page learns the setting from it). With the setting off the server records nothing, so
+  `not_requested` is never written by this server. Tested by `server/casual-sign-server/tests/location.rs`.
 
 ## 3. Event types
 

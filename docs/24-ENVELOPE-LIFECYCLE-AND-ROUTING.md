@@ -206,7 +206,7 @@ objects concerned, never their content.
 | `completing` → `completed` only on a verified seal; seal failure retried | Built |
 | Purge (terminal only; personal data scrubbed, hashes kept) | Built |
 | Access events (sender viewed, document and certificate downloaded) | Built |
-| Signer location on recipient actions when `capture_location` is on; refusal recorded, never blocking (GEO-01) | Built (engine); the server's capture and GeoIP lookup are 2C's |
+| Signer location on recipient actions when `capture_location` is on; refusal recorded, never blocking (GEO-01) | Built (engine, and the server's capture and GeoIP fallback, docs/40 §As built) |
 | Routing: sequential, parallel, mixed; carbon copies complete when reached | Built |
 | Conditional routing, signing groups (§4, slice 29) | **Not built**: no event type or status for a skipped recipient or a group member's act (rows proposed) |
 | Bulk send (§8), signing links (§9) | **Not in the engine**: host jobs that issue `Create`/`Edit`/`Send` |
@@ -219,13 +219,21 @@ invariant was seen to fail with its guard removed.
 
 ## As built: effects (stage 2D, `T-2D`)
 
-`server/casual-sign-worker` runs the effects. **Decide and record** is `casual_sign_worker::apply_in(tx, envelope,
-command, context)`: in one `TenantTx` it locks the envelope's stored engine state (`envelope_states`, migration
-0008, the `EnvelopeState` as the engine serializes it, with a row revision), calls `decide`, appends the events to
-the chain (re-verified as read), writes the state, brings the relational rows into line (the envelope's status, a
-draft's subject and message, missing recipient and document rows, recipient statuses), and enqueues one job per
-effect with idempotency key `effect:<envelope>:<command id>:<index>`. The API is expected to call the same function
-(`T-2C`).
+`server/casual-sign-worker` runs the effects. **Decide and record** is one path, `casual_sign_host::apply_in(tx,
+envelope, command, context)` (`server/casual-sign-host`, which the API server and the worker both use; neither depends
+on the other): in one `TenantTx` it locks the envelope's stored engine state (`envelope_states`, migration 0008, the
+`EnvelopeState` as the engine serializes it, with a row revision; the only place the state lives), calls `decide`,
+appends the events to the chain (`PendingEvent::into_audit`, re-verified as read), writes the state at the revision
+read, brings the relational rows into line (every projected column of the envelope, each recipient's row and status,
+a draft's removed recipients pruned, missing document rows; a document removed from a draft keeps its row, whose
+versions are write-once), revokes the tokens of a `RevokeTokens` effect in that transaction, and enqueues one job per
+other effect. The server calls `apply_loaded` on a state it locked with `load_for_update` at the start of the request.
+
+**The job contract** (`casual_sign_host::jobs`): `kind` is the effect's kind in snake case (the table below;
+`Schedule` is `timer`); `idempotency_key` is `effect:<envelope>:<command id>:<index>`, the effect's id, so a decision
+recorded again names the same job and the queue keeps one; `payload` is `{envelope_id, effect, decided_at, version,
+status}` (ids and parameters only); `run_at` is a `Schedule`'s time, a `SealEnvelope`'s `not_before`, else the
+decision's time. `Cancel` and `RevokeTokens` enqueue nothing. Invitation tokens are minted by the worker as it sends.
 
 | Effect | Job | What the worker does | Result fed back |
 | --- | --- | --- | --- |
@@ -236,8 +244,8 @@ effect with idempotency key `effect:<envelope>:<command id>:<index>`. The API is
 | `NotifyRecipients` | `notify_recipients` | Email to each recipient named | — |
 | `SendCompletionCopies` | `send_completion_copies` | Email to each, with a `completed_copy` link | — |
 | `Schedule` | `timer` | Due at its time | `TimerDue` (a timer no longer pending is the engine's no-op) |
-| `SealEnvelope` | `seal_envelope` | Only while `completing` with this job pending: fill and flatten each delivered document (from the blob store, its hash checked), certificate of completion with the stored chain as `audit-trail.json`, seal at the envelope's profile through keyd (`RemoteKey`, the development `/Reason` when keyd says its key is one) with the configured TSAs, store the sealed bytes as a `sealed` document version, read them back and verify them (docs/31 rung 1, independent of the seal's self-check) | `SealSucceeded` with `verified: true`, or `SealFailed` with the code (the engine alerts and schedules a new job) |
-| `RevokeTokens` | `revoke_tokens` | Every live token of the recipient | — |
+| `SealEnvelope` | `seal_envelope` | Only while `completing` with this job pending: fill and flatten each delivered document (from the blob store, its hash checked), certificate of completion with the stored chain as `audit-trail.json`, seal at the envelope's profile through keyd (`RemoteKey`, the development `/Reason` when keyd says its key is one) with the configured TSAs, store the sealed bytes as a `sealed` document version, read them back and verify them (docs/31 rung 1, independent of the seal's self-check); the certificate of completion is also rendered on its own with the trail embedded, sealed, verified as stored and recorded as `envelopes.certificate_sha256` (migration 0009) in the same transaction | `SealSucceeded` with `verified: true`, or `SealFailed` with the code (the engine alerts and schedules a new job) |
+| `RevokeTokens` | none | Performed inside the deciding transaction (`casual_sign_host::apply`), so a revoked link stops working when the answer is given | — |
 | `DeliverWebhook` | `deliver_webhook` | docs/40 §4 as built | — |
 | `ChargePayment` | `charge_payment` | Through `PaymentGateway`; the only one built refuses (`CS-WRK-0014`, dead-lettered with an alert) until slice 13 | — |
 | `AlertOperator` | `alert_operator` | To the operator's `AlertSink` (a log line by default) | — |
@@ -266,8 +274,16 @@ refusal; the seal through keyd with the development reason. Seen red: the email 
 a crash past the record), the stored-seal verification removed (the envelope completed on a seal that does not
 verify), the development reason dropped, both SSRF checks removed.
 
+**Integration (T-2C with T-2D, GEO-01).** `tests/end_to_end.rs` drives a two-signer envelope through the API
+server's router (in process, same database, blob store and clock) and the worker to `completed`, signing through the
+ceremony with the links from the worker's emails, then downloads the sealed PDF, the certificate and the combined
+PDF through the API; the sealed PDF and the certificate pass our verifier and pyHanko. Seen red: the stored-seal
+verification removed with a tampered seal stored (the envelope completed, and the downloaded PDF failed both
+verifiers).
+
 **Decisions taken here** (recorded for the owner): the engine state is stored whole beside the relational rows
-(migration 0008), because `decide` needs its bookkeeping and no table holds it; engine ids of envelopes, recipients,
+(migration 0008, `envelope_states` only: the API server's earlier `envelopes.engine_state` column was dropped at the
+integration), because `decide` needs its bookkeeping and no table holds it; engine ids of envelopes, recipients,
 documents and users are canonical UUID strings; a signature capture is a JSON blob whose SHA-256 is both the adoption's
 `image_hash` and the `FieldValue::Signature` id (`casual_sign_worker::capture`); a link token's stored hash is the
 SHA-256 of its base64url text; the worker decides under the operator's default `Policy` (per-account settings are the
