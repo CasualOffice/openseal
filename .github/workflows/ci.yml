@@ -62,8 +62,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: rustup toolchain install 1.88.0 --profile minimal
-      - run: cargo +1.88.0 check --workspace --locked
+      - run: rustup toolchain install 1.94.0 --profile minimal
+      - run: cargo +1.94.0 check --workspace --locked
 
   dependency-policy:
     runs-on: ubuntu-latest

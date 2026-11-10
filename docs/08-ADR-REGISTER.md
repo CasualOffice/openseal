@@ -23,7 +23,7 @@ WASM bundle; a new dependency in the engine; a legal or evidence property.
 | ADR-011 | Workflow as a pure command function returning state, events and effects; effects run as idempotent jobs | Accepted (owner, 2026-11-11, instruction 12) | [24](24-ENVELOPE-LIFECYCLE-AND-ROUTING.md) §1 |
 | ADR-012 | PostgreSQL as the only required stateful service besides the object store; job queue in Postgres; Redis optional | Accepted (owner, 2026-11-11, instruction 12) | [02](02-HLD.md) §9 |
 | ADR-013 | Tenancy: `account_id` on every row, scoped repository, RLS as second line | Accepted (owner, 2026-11-11, instruction 12) | [22](22-DATA-MODEL.md) §9 |
-| ADR-014 | Server stack: `axum`, `tokio`, `sqlx` (compile-time checked queries), `tower`; copied conventions from OpenCalc's servers | Accepted (owner, 2026-11-11, instruction 12) | [19](19-WORKSPACE-SCAFFOLD-DESIGN.md) |
+| ADR-014 | Server stack: `axum`, `tokio`, `sqlx` 0.9 (compile-time checked queries with a committed offline cache, `SQLX_OFFLINE`; instruction 14), `tower`; copied conventions from OpenCalc's servers | Accepted (owner, 2026-11-11, instruction 12) | [19](19-WORKSPACE-SCAFFOLD-DESIGN.md) |
 | ADR-015 | Public API: envelope-centric REST `/api/v1`, OpenAPI 3.1, RFC 9457 errors, idempotency keys, cursor pagination | Accepted (owner, 2026-11-11, instruction 12) | [40](40-API-DESIGN.md) |
 | ADR-016 | Webhooks signed per Standard Webhooks; at-least-once; no documents in payloads | Accepted (owner, 2026-11-11, instruction 12) | [40](40-API-DESIGN.md) §4 |
 | ADR-017 | Embedding through iframe views and custom elements wrapping them, not shadow-root mounting | Accepted (owner, 2026-11-11, instruction 12) | [40](40-API-DESIGN.md) §5 |
