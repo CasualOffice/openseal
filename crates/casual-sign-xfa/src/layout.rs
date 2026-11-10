@@ -1942,6 +1942,11 @@ pub(crate) fn run(
     }
     let mut report = ctx.report;
     report.pages = pages.len();
+    report.widgets = pages
+        .iter()
+        .flat_map(|p| &p.marks)
+        .filter(|m| matches!(m, Mark::Widget(_)))
+        .count();
     report.overflowed = pager.overflowed;
     report.unsupported = count_unsupported(dom, root);
     let images = ctx.images;

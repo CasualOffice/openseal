@@ -59,6 +59,7 @@ pub use casual_sign_seal::{
 pub use casual_sign_verify::{
     Indication, SignatureReport, VerificationReport, VerifyOptions, verify as verify_bytes,
 };
+pub use casual_sign_xfa::{Faces as XfaFaces, XfaError, XfaLimits, XfaReport};
 
 /// The field model the facade takes: fields, values and identifiers (docs/22 §6).
 pub mod model {
@@ -145,6 +146,8 @@ pub enum SdkError {
     /// A step's output did not start with its input (`CS-WRT-0001`): the invariant of
     /// docs/30 §1. Never expected; a P0 if seen.
     Prefix(Step),
+    /// A dynamic XFA form could not be laid out (`CS-XFA-*`, `XFA-01`).
+    Xfa(casual_sign_xfa::XfaError),
 }
 
 impl SdkError {
@@ -160,6 +163,7 @@ impl SdkError {
             Self::Seal(e) => e.code(),
             Self::Unsigned => "CS-WRT-0007",
             Self::Prefix(_) => "CS-WRT-0001",
+            Self::Xfa(e) => e.code(),
         }
     }
 }
@@ -182,6 +186,7 @@ impl fmt::Display for SdkError {
             Self::Unsigned => f.write_str(
                 "CS-WRT-0007: the document is not signed; normalize it instead of keeping it",
             ),
+            Self::Xfa(e) => write!(f, "xfa layout: {e}"),
             Self::Prefix(step) => write!(
                 f,
                 "CS-WRT-0001: the {} output does not start with its input",
@@ -229,6 +234,9 @@ pub struct Delivered {
     pub attachments: Vec<KeptAttachment>,
     /// Embedded files found but not extracted (over the limit or unreadable).
     pub attachments_dropped: u32,
+    /// For a dynamic-only XFA form: what laying it out into static pages did (`XFA-01`).
+    /// [`Delivered::admission`] is then the admission of the laid-out PDF.
+    pub xfa: Option<XfaReport>,
 }
 
 /// How [`Engine::prepare_with`] prepares a document (docs/30 §2–3).
@@ -358,6 +366,9 @@ pub struct Completed {
 pub struct Engine {
     limits: Limits,
     fonts: Arc<FontSet>,
+    /// Faces for laying out dynamic XFA forms (`XFA-01`): the bundled Liberation faces
+    /// unless the host supplies others ([`Engine::with_xfa_faces`]).
+    xfa_faces: Arc<XfaFaces>,
     cancel: Option<CancelFn>,
 }
 
@@ -383,8 +394,16 @@ impl Engine {
         Self {
             limits,
             fonts: Arc::new(fonts),
+            xfa_faces: Arc::new(XfaFaces::bundled()),
             cancel: None,
         }
+    }
+
+    /// The same engine, laying out dynamic XFA forms with `faces` (`XFA-01`).
+    #[must_use]
+    pub fn with_xfa_faces(mut self, faces: XfaFaces) -> Self {
+        self.xfa_faces = Arc::new(faces);
+        self
     }
 
     /// The same engine, stopping a step when `cancel` returns true (`CS-PDF-0013`).
@@ -468,7 +487,12 @@ impl Engine {
         credentials: &Credentials,
         options: &PrepareOptions,
     ) -> Result<Delivered, SdkError> {
-        let mut admitted = self.open(bytes, credentials)?;
+        let mut admitted = match self.open(bytes, credentials) {
+            Err(SdkError::Pdf(PdfError::DynamicXfa)) => {
+                return self.prepare_xfa(bytes, credentials);
+            }
+            other => other?,
+        };
         let admission = admitted.report.clone();
         let cancel = || self.cancelled();
         let mut first_options = NormalizeOptions::with_xref(OutputXref::Stream);
@@ -514,6 +538,7 @@ impl Engine {
             normalization: Some(first.report),
             printed,
             attachments,
+            xfa: None,
         })
     }
 
@@ -553,6 +578,36 @@ impl Engine {
         Ok((out.bytes, flat.report))
     }
 
+    /// A dynamic-only XFA form (`CS-PDF-0012` at admission): its packets laid out into a
+    /// new static PDF with `casual-sign-xfa` (no script runs), which is then admitted and
+    /// normalized like any upload (`XFA-01`, docs/30 §3).
+    fn prepare_xfa(&self, bytes: &[u8], credentials: &Credentials) -> Result<Delivered, SdkError> {
+        let cancel = || self.cancelled();
+        let packets = casual_sign_pdf::xfa_packets(bytes, &self.limits, credentials, &cancel)?
+            .ok_or(SdkError::Pdf(PdfError::DynamicXfa))?;
+        let laid =
+            casual_sign_xfa::lay_out(&packets, &self.xfa_faces, &XfaLimits::default(), &cancel)
+                .map_err(SdkError::Xfa)?;
+        let mut admitted = admit_with(&laid.pdf, &self.limits, &Credentials::default(), &cancel)?;
+        let admission = admitted.report.clone();
+        let normalized = normalize(
+            &mut admitted,
+            &NormalizeOptions::with_xref(OutputXref::Stream),
+            &cancel,
+        )?;
+        let hash = Hash256::digest(&normalized.bytes);
+        Ok(Delivered {
+            bytes: normalized.bytes,
+            hash,
+            admission,
+            normalization: Some(normalized.report),
+            printed: None,
+            attachments: Vec::new(),
+            attachments_dropped: 0,
+            xfa: Some(laid.report),
+        })
+    }
+
     /// Accept signed input as delivered, unchanged, so a seal can be appended after its
     /// signatures (docs/30 §2, "keep the existing signatures and append").
     ///
@@ -589,6 +644,7 @@ impl Engine {
             printed: None,
             attachments: Vec::new(),
             attachments_dropped: 0,
+            xfa: None,
         })
     }
 

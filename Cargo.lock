@@ -421,6 +421,7 @@ dependencies = [
  "casual-sign-pdf",
  "casual-sign-seal",
  "casual-sign-verify",
+ "casual-sign-xfa",
  "cms",
  "der",
  "rcgen",
