@@ -470,6 +470,13 @@ pub fn table() -> Vec<Route> {
         ),
         r(
             "POST",
+            "/s/{token}/withdraw-consent",
+            Public,
+            JSON,
+            ceremony::withdraw_consent,
+        ),
+        r(
+            "POST",
             "/s/{token}/finish-later",
             Public,
             JSON,

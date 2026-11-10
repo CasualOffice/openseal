@@ -125,6 +125,25 @@ components:
           required: [declined]
           properties:
             declined: {type: boolean}
+    SigningOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        allow_reassign: {type: boolean, default: true}
+        allow_decline: {type: boolean, default: true}
+        allow_finish_later: {type: boolean, default: true}
+        capture_location:
+          type: boolean
+          default: false
+          description: >-
+            Record where each recipient was on every recipient action (row GEO-01, docs/32 §2):
+            the device's location when the signer agrees, else an approximation from the
+            request's IP address with the reason. Absent when off.
+    LocationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        location: {$ref: '#/components/schemas/DeviceLocation'}
     LoginRequest:
       type: object
       required: [email, password]
@@ -363,7 +382,7 @@ components:
         ended_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
         reminders: {type: object}
-        signing_options: {type: object}
+        signing_options: {$ref: '#/components/schemas/SigningOptions'}
         seal_profile: {type: string, enum: [pades-b-t, pades-b-lt, pades-b-lta]}
         documents: {type: array, items: {$ref: '#/components/schemas/Document'}}
         recipients: {type: array, items: {$ref: '#/components/schemas/Recipient'}}
@@ -397,7 +416,7 @@ components:
             first_after_days: {type: integer, maximum: 999}
             then_every_days: {type: integer, maximum: 999}
         expires_in_days: {type: integer}
-        signing_options: {type: object}
+        signing_options: {$ref: '#/components/schemas/SigningOptions'}
         seal_profile: {type: string, enum: [pades-b-t, pades-b-lt, pades-b-lta]}
     EnvelopePatch:
       type: object
@@ -407,7 +426,7 @@ components:
         message: {type: string}
         reminders: {type: object}
         expires_in_days: {type: [integer, 'null']}
-        signing_options: {type: object}
+        signing_options: {$ref: '#/components/schemas/SigningOptions'}
         seal_profile: {type: string}
     EnvelopeStatusInfo:
       type: object
@@ -522,6 +541,7 @@ components:
         envelope: {type: object}
         recipient: {$ref: '#/components/schemas/Recipient'}
         fields: {type: array, items: {$ref: '#/components/schemas/Field'}}
+        capture_location: {type: boolean, description: 'Whether the page asks the device for its location (GEO-01)'}
         consent_required: {type: [object, 'null']}
         auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
     ConsentRequest:
@@ -1538,10 +1558,10 @@ paths:
       security: []
       x-permission: public
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/Object'}
+            schema: {$ref: '#/components/schemas/LocationRequest'}
       responses:
         '200':
           description: OK
@@ -1740,10 +1760,10 @@ paths:
       security: []
       x-permission: public
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/Object'}
+            schema: {$ref: '#/components/schemas/LocationRequest'}
       responses:
         '200':
           description: OK
@@ -1768,6 +1788,30 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/DeclineRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/withdraw-consent:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyWithdrawConsent
+      summary: "Withdraw consent to electronic records (declines a required action)"
+      security: []
+      x-permission: public
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LocationRequest'}
       responses:
         '200':
           description: OK

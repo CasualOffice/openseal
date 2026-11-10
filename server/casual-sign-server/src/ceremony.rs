@@ -180,11 +180,15 @@ impl Open {
         Ok(())
     }
 
-    /// The location evidence for this request: the device's fix, or (when the envelope
-    /// captures location, a setting GEO-01 adds) the GeoIP approximation.
-    fn location(&self, device: Option<&DeviceLocation>) -> Option<crate::geo::Located> {
-        let capture = false;
-        crate::geo::resolve(device, capture, self.ip.0, self.geoip.as_deref())
+    /// Record where the signer was on this request's commands (GEO-01, docs/32 §2):
+    /// when the envelope captures location (the setting before the command), the
+    /// device's fix, else the IP approximation with the reason, else the reason alone;
+    /// when it does not, nothing, whatever the request says.
+    fn locate(&mut self, device: Option<&DeviceLocation>) {
+        let capture = self.l.state.options.capture_location;
+        self.cmds.request.location =
+            crate::geo::evidence(device, capture, self.ip.0, self.geoip.as_deref())
+                .map(casual_sign_audit::Personal);
     }
 
     fn view(&self) -> Value {
@@ -200,6 +204,9 @@ impl Open {
             "fields": s.fields.0.iter()
                 .filter(|f| f.recipient_id.as_ref() == Some(&self.recipient))
                 .map(dto::field).collect::<Vec<_>>(),
+            // Whether the page asks the device for its location (GEO-01); when false it
+            // never asks.
+            "capture_location": s.options.capture_location,
             "consent_required": self.cmds.policy.ersd.as_ref().map(|e| json!({"version": e.version, "sha256": e.hash})),
             "auth_required": me.map(|r| r.spec.auth.iter().filter(|m| !r.auth_passed.contains(m)).copied().collect::<Vec<_>>()),
         })
@@ -246,16 +253,38 @@ type Ex = (
     HeaderMap,
 );
 
+/// A request body that may be empty and may carry the device's location.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocationIn {
+    #[serde(default)]
+    location: Option<DeviceLocation>,
+}
+
+fn location_in(body: &Bytes) -> Result<LocationIn, ApiError> {
+    if body.iter().all(u8::is_ascii_whitespace) {
+        Ok(LocationIn::default())
+    } else {
+        parse(body)
+    }
+}
+
 /// `POST /s/{token}/session`: first use binds the link to this browser and records the
-/// opening (`recipient.delivered`); later calls from the bound browser just answer.
+/// opening (`recipient.delivered`); later calls from the bound browser just answer. The
+/// page cannot have asked the device yet (it learns the setting from this answer), so
+/// with location capture on the opening records the IP approximation as `unavailable`
+/// unless the body carries a location.
 pub(crate) async fn session(
     State(st): State<AppState>,
     axum::Extension(ip): axum::Extension<ClientIp>,
     method: Method,
     headers: HeaderMap,
     Path(token): Path<String>,
+    body: Bytes,
 ) -> Response {
     ceremony!(st, token, headers, ip, method, true, |o| {
+        let req = location_in(&body)?;
+        o.locate(req.location.as_ref());
         let opened =
             o.l.state
                 .recipient(&o.recipient)
@@ -301,8 +330,7 @@ pub(crate) async fn consent(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: ConsentIn = parse(&body)?;
-        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
-        let _location = o.location(req.location.as_ref());
+        o.locate(req.location.as_ref());
         let ersd = o
             .cmds
             .policy
@@ -439,8 +467,7 @@ pub(crate) async fn viewed(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: ViewedIn = parse(&body)?;
-        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
-        let _location = o.location(req.location.as_ref());
+        o.locate(req.location.as_ref());
         if req.pages_seen.len() > 5_000 {
             return Err(ApiError::invalid("/pages_seen"));
         }
@@ -488,8 +515,7 @@ pub(crate) async fn adopt(
     let max = st.config().max_image_bytes;
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: AdoptIn = parse(&body)?;
-        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
-        let _location = o.location(req.location.as_ref());
+        o.locate(req.location.as_ref());
         if req.image_base64.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
             return Err(ApiError::too_large());
         }
@@ -579,8 +605,7 @@ pub(crate) async fn finish(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: FinishIn = parse(&body)?;
-        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
-        let _location = o.location(req.location.as_ref());
+        o.locate(req.location.as_ref());
         let mut values = Vec::with_capacity(req.values.len());
         for (i, v) in req.values.into_iter().enumerate() {
             let f =
@@ -607,10 +632,32 @@ pub(crate) async fn approve(
     method: Method,
     headers: HeaderMap,
     Path(token): Path<String>,
+    body: Bytes,
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
+        let req = location_in(&body)?;
+        o.locate(req.location.as_ref());
         let r = o.recipient.clone();
         o.run(Command::Approve { recipient: r }).await?;
+        Ok(StatusCode::OK)
+    })
+}
+
+/// `POST /s/{token}/withdraw-consent`: withdraw consent to electronic records; for a
+/// recipient with a required action this declines (docs/24 §3).
+pub(crate) async fn withdraw_consent(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Response {
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let req = location_in(&body)?;
+        o.locate(req.location.as_ref());
+        let r = o.recipient.clone();
+        o.run(Command::WithdrawConsent { recipient: r }).await?;
         Ok(StatusCode::OK)
     })
 }
@@ -635,8 +682,7 @@ pub(crate) async fn decline(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: DeclineIn = parse(&body)?;
-        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
-        let _location = o.location(req.location.as_ref());
+        o.locate(req.location.as_ref());
         let reason = req.reason.as_deref().map(dto::message).transpose()?;
         let r = o.recipient.clone();
         o.run(Command::Decline {

@@ -1101,6 +1101,62 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     )
     .await;
 
+    // Withdrawing consent declines a signer's required action (docs/24 §3).
+    let wc = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            k,
+            Some(mk(
+                json!([
+        {"ref": "w", "type": "signer", "name": "With Drawer", "email": "w@example.test"}]),
+                sig("w"),
+                "sent",
+            )),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "withdraw env",
+    )
+    .await;
+    let twc = invite(
+        &api,
+        &a,
+        wc["id"].as_str().unwrap(),
+        wc["recipients"][0]["id"].as_str().unwrap(),
+    )
+    .await;
+    let (_, hwc) = open(&api, &format!("/s/{twc}")).await;
+    let hwc: Vec<(&str, &str)> = hwc.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{twc}/consent"),
+            &Auth::None,
+            Some(json!({"ersd_version": "2026-1"})),
+            &hwc,
+        )
+        .await,
+        StatusCode::OK,
+        "consent w",
+    )
+    .await;
+    let w = ok(
+        api.call(
+            "POST",
+            &format!("/s/{twc}/withdraw-consent"),
+            &Auth::None,
+            Some(json!({})),
+            &hwc,
+        )
+        .await,
+        StatusCode::OK,
+        "withdraw consent",
+    )
+    .await;
+    assert_eq!(w["envelope"]["status"], "declined", "{w}");
+
     let re = ok(
         api.call(
             "POST",

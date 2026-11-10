@@ -6,14 +6,19 @@
 //! `OPENSEAL_GEOIP_DB`). Coordinates and addresses are personal data: they go into audit
 //! events only, never into logs.
 //!
-//! **Wiring left for the merge with GEO-01's audit types:** the ceremony parses the
-//! device location of its state-changing requests and resolves it with [`resolve`];
-//! recording the result needs `casual_sign_audit::Context::location` and the envelope's
-//! `capture_location` setting, which another worker is adding.
+//! **Evidence** ([`evidence`], docs/32 §2): when the envelope's
+//! `signing_options.capture_location` is on, every ceremony request that records a
+//! recipient action carries a location: the device's fix; else an approximation of the
+//! client address with the reason (`declined` when the signer refused, `unavailable`
+//! when the device gave nothing or was not asked yet) and the database's name and build
+//! date; else, when there is no database, no address or no record, the reason alone
+//! (`ip_unresolved`). Never omitted, so a refusal never blocks signing. When the
+//! setting is off nothing is recorded, whatever the request says.
 
 use std::net::IpAddr;
 use std::path::Path;
 
+use casual_sign_audit::{FallbackReason, Location};
 use serde::Deserialize;
 
 /// What a ceremony request says about the device's location.
@@ -166,29 +171,69 @@ impl GeoIp {
     }
 }
 
-/// The location to record: the device's fix when it gave one; otherwise, when the
-/// envelope captures location, the GeoIP approximation of the client address; else
-/// none.
+impl GeoIp {
+    /// The database as events name it: its type and build date, for example
+    /// `GeoLite2-City 2026-11-04` (at most 128 bytes, no control characters).
+    #[must_use]
+    pub fn name(&self) -> String {
+        let m = &self.reader.metadata;
+        let date = i64::try_from(m.build_epoch)
+            .ok()
+            .and_then(|e| time::OffsetDateTime::from_unix_timestamp(e).ok())
+            .map(|t| t.date().to_string())
+            .unwrap_or_else(|| "unknown".to_owned());
+        let kind: String = m
+            .database_type
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(100)
+            .collect();
+        let kind = if kind.trim().is_empty() {
+            "GeoIP".to_owned()
+        } else {
+            kind
+        };
+        format!("{kind} {date}")
+    }
+}
+
+/// The location a ceremony request records (GEO-01): `None` exactly when the envelope
+/// does not capture location; otherwise the device's fix, else the IP approximation
+/// with its reason, else the reason alone.
 #[must_use]
-pub fn resolve(
+pub fn evidence(
     device: Option<&DeviceLocation>,
     capture: bool,
     ip: Option<IpAddr>,
     geoip: Option<&GeoIp>,
-) -> Option<Located> {
-    if let Some((latitude, longitude, accuracy_m)) = device.and_then(DeviceLocation::fix) {
-        return Some(Located {
-            latitude,
-            longitude,
-            accuracy_m,
-            country: None,
-            source: Source::Device,
-        });
-    }
+) -> Option<Location> {
     if !capture {
         return None;
     }
-    geoip?.locate(ip?)
+    if let Some((latitude, longitude, accuracy_m)) = device.and_then(DeviceLocation::fix)
+        && let Ok(l) = Location::device(latitude, longitude, accuracy_m)
+    {
+        return Some(l);
+    }
+    let reason = match device {
+        Some(DeviceLocation::Declined { declined: true }) => FallbackReason::Declined,
+        _ => FallbackReason::Unavailable,
+    };
+    let name = geoip.map(GeoIp::name);
+    let approx = geoip.zip(ip).and_then(|(g, ip)| g.locate(ip));
+    if let (Some(a), Some(n)) = (approx, name.as_deref())
+        && let Ok(l) = Location::ip(reason, n, a.latitude, a.longitude)
+    {
+        // A country the database names in another shape is left out, not fatal.
+        return Some(
+            l.clone()
+                .with_place(a.country.as_deref(), None, None)
+                .unwrap_or(l),
+        );
+    }
+    Location::ip_unresolved(reason, name.as_deref())
+        .or_else(|_| Location::ip_unresolved(reason, None))
+        .ok()
 }
 
 #[cfg(test)]
@@ -315,20 +360,66 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_device_wins_and_geoip_fills_in_only_when_capturing() {
+    fn evidence_is_the_device_else_the_ip_with_its_reason_and_never_absent_when_on() {
+        use casual_sign_audit::LocationSource;
         let g = GeoIp::from_bytes(test_mmdb()).unwrap();
+        assert_eq!(g.name(), "OpenSeal-Test-City 2026-11-06");
         let ip = Some("1.2.3.4".parse().unwrap());
         let fix: DeviceLocation =
             serde_json::from_str(r#"{"latitude":48.85,"longitude":2.35,"accuracy_m":15}"#).unwrap();
         let declined: DeviceLocation = serde_json::from_str(r#"{"declined":true}"#).unwrap();
+        // Off: nothing, whatever the request says.
+        assert!(evidence(Some(&fix), false, ip, Some(&g)).is_none());
+        assert!(evidence(None, false, ip, Some(&g)).is_none());
+        // The device wins.
+        let d = evidence(Some(&fix), true, ip, Some(&g)).unwrap();
+        assert!(matches!(
+            d.source(),
+            LocationSource::Device { accuracy_m: 15 }
+        ));
+        // Declined: the approximation, the reason and the database.
+        let a = evidence(Some(&declined), true, ip, Some(&g)).unwrap();
         assert_eq!(
-            resolve(Some(&fix), false, ip, Some(&g)).unwrap().source,
-            Source::Device
+            a.source(),
+            &LocationSource::Ip {
+                reason: FallbackReason::Declined,
+                database: Some("OpenSeal-Test-City 2026-11-06".into())
+            }
         );
-        assert!(resolve(Some(&declined), false, ip, Some(&g)).is_none());
-        let approx = resolve(Some(&declined), true, ip, Some(&g)).unwrap();
-        assert!(matches!(approx.source, Source::GeoIp { .. }));
-        assert!(resolve(None, true, ip, None).is_none(), "no database");
-        assert!(resolve(None, true, None, Some(&g)).is_none(), "no address");
+        assert!(a.coordinates().is_some());
+        assert_eq!(a.country(), Some("GB"));
+        // Nothing from the device: unavailable.
+        let u = evidence(None, true, ip, Some(&g)).unwrap();
+        assert!(matches!(
+            u.source(),
+            LocationSource::Ip {
+                reason: FallbackReason::Unavailable,
+                ..
+            }
+        ));
+        // No record, no database, no address: the reason alone.
+        let miss = evidence(None, true, Some("200.1.1.1".parse().unwrap()), Some(&g)).unwrap();
+        assert!(miss.coordinates().is_none());
+        assert!(matches!(
+            miss.source(),
+            LocationSource::Ip {
+                database: Some(_),
+                ..
+            }
+        ));
+        let none = evidence(Some(&declined), true, ip, None).unwrap();
+        assert_eq!(
+            none.source(),
+            &LocationSource::Ip {
+                reason: FallbackReason::Declined,
+                database: None
+            }
+        );
+        assert!(
+            evidence(None, true, None, Some(&g))
+                .unwrap()
+                .coordinates()
+                .is_none()
+        );
     }
 }
