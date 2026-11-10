@@ -1,0 +1,177 @@
+//! keyd's errors, each with a stable docs/20 `CS-KEY-*` code. Messages carry counts,
+//! aliases and PKCS#11 return values, never a PIN, key bytes or document content.
+
+use core::fmt;
+
+/// Why a key operation failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum KeydError {
+    /// `CS-KEY-0001`: the caller presented no certificate, an untrusted one, or one that
+    /// is not on the allow-list.
+    NotAuthorized,
+    /// `CS-KEY-0002`: no key has this alias.
+    UnknownAlias,
+    /// `CS-KEY-0003`: the HSM or KMS could not be reached, refused the login, or failed
+    /// an operation. `what` names the step and the module's return value.
+    Backend {
+        /// The step and the PKCS#11 return value (`C_Sign: CKR_DEVICE_ERROR`, say).
+        what: String,
+    },
+    /// `CS-KEY-0004`: a file key was offered without `OPENSEAL_DEV_INSECURE_KEY=1`.
+    InsecureKeyRefused,
+    /// `CS-KEY-0005`: a secret (the PIN) could not be read.
+    Secret(String),
+    /// `CS-KEY-0006`: the key or its certificates do not form a usable signer.
+    KeyConfig(KeyConfigProblem),
+    /// `CS-KEY-0007`: a request or a response does not follow the protocol.
+    Malformed(&'static str),
+    /// `CS-KEY-0008`: the caller exceeded its rate.
+    RateLimited,
+    /// `CS-KEY-0009`: the operation log cannot be opened, read back or written; no
+    /// signature is released without its record.
+    OperationLog(String),
+    /// `CS-KEY-0010`: the TLS certificates or keys do not load.
+    TlsConfig(String),
+    /// `CS-KEY-0011`: keyd could not be reached, or the connection failed.
+    Transport(String),
+    /// `CS-KEY-0012`: a daemon setting is missing or invalid (named).
+    Setting(&'static str),
+}
+
+/// What is wrong with a key's configuration (`CS-KEY-0006`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum KeyConfigProblem {
+    /// No certificate was supplied or found.
+    NoCertificate,
+    /// A certificate or a PEM block does not parse.
+    BadCertificate,
+    /// The key file holds no usable private key (or an encrypted one).
+    BadKeyFile,
+    /// The token has no slot with this label.
+    NoToken,
+    /// Neither a label nor an id names the key.
+    NoSelector,
+    /// No private key matches the selector.
+    KeyNotFound,
+    /// More than one private key matches the selector.
+    KeyAmbiguous(usize),
+    /// The key is not the signer certificate's.
+    KeyCertificateMismatch,
+    /// The key type, curve or the requested scheme is not one the seal supports.
+    UnsupportedAlgorithm,
+}
+
+impl KeydError {
+    /// The stable docs/20 code.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::NotAuthorized => "CS-KEY-0001",
+            Self::UnknownAlias => "CS-KEY-0002",
+            Self::Backend { .. } => "CS-KEY-0003",
+            Self::InsecureKeyRefused => "CS-KEY-0004",
+            Self::Secret(_) => "CS-KEY-0005",
+            Self::KeyConfig(_) => "CS-KEY-0006",
+            Self::Malformed(_) => "CS-KEY-0007",
+            Self::RateLimited => "CS-KEY-0008",
+            Self::OperationLog(_) => "CS-KEY-0009",
+            Self::TlsConfig(_) => "CS-KEY-0010",
+            Self::Transport(_) => "CS-KEY-0011",
+            Self::Setting(_) => "CS-KEY-0012",
+        }
+    }
+
+    /// The code's number, as the wire protocol carries it.
+    #[must_use]
+    pub(crate) const fn number(&self) -> u16 {
+        match self {
+            Self::NotAuthorized => 1,
+            Self::UnknownAlias => 2,
+            Self::Backend { .. } => 3,
+            Self::InsecureKeyRefused => 4,
+            Self::Secret(_) => 5,
+            Self::KeyConfig(_) => 6,
+            Self::Malformed(_) => 7,
+            Self::RateLimited => 8,
+            Self::OperationLog(_) => 9,
+            Self::TlsConfig(_) => 10,
+            Self::Transport(_) => 11,
+            Self::Setting(_) => 12,
+        }
+    }
+
+    /// The error a remote keyd reported by number. Detail stays on the server, in its
+    /// own log; the caller learns only the code.
+    pub(crate) fn from_number(n: u16) -> Self {
+        match n {
+            1 => Self::NotAuthorized,
+            2 => Self::UnknownAlias,
+            3 => Self::Backend {
+                what: "reported by keyd".into(),
+            },
+            4 => Self::InsecureKeyRefused,
+            6 => Self::KeyConfig(KeyConfigProblem::UnsupportedAlgorithm),
+            7 => Self::Malformed("refused by keyd"),
+            8 => Self::RateLimited,
+            9 => Self::OperationLog("reported by keyd".into()),
+            _ => Self::Transport(format!("keyd answered with unknown error {n}")),
+        }
+    }
+
+    /// The backend failed: `step` and the library's error.
+    pub(crate) fn backend(step: &str, e: impl fmt::Display) -> Self {
+        Self::Backend {
+            what: format!("{step}: {e}"),
+        }
+    }
+}
+
+impl fmt::Display for KeyConfigProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoCertificate => f.write_str("no signer certificate"),
+            Self::BadCertificate => f.write_str("a certificate does not parse"),
+            Self::BadKeyFile => f.write_str("the key file holds no usable unencrypted private key"),
+            Self::NoToken => f.write_str("no token has the configured label"),
+            Self::NoSelector => f.write_str("neither a key label nor a key id is configured"),
+            Self::KeyNotFound => f.write_str("no private key matches the label or id"),
+            Self::KeyAmbiguous(n) => write!(f, "{n} private keys match the label or id"),
+            Self::KeyCertificateMismatch => f.write_str("the key is not the certificate's"),
+            Self::UnsupportedAlgorithm => f.write_str(
+                "the key is not ECDSA P-256/P-384 or RSA 2048-8192 with a supported scheme",
+            ),
+        }
+    }
+}
+
+impl fmt::Display for KeydError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: ", self.code())?;
+        match self {
+            Self::NotAuthorized => f.write_str("caller not authorized"),
+            Self::UnknownAlias => f.write_str("unknown key alias"),
+            Self::Backend { what } => write!(f, "key backend failed ({what})"),
+            Self::InsecureKeyRefused => f.write_str(
+                "a file key is for development only; set OPENSEAL_DEV_INSECURE_KEY=1 to use one",
+            ),
+            Self::Secret(why) => write!(f, "secret unreadable: {why}"),
+            Self::KeyConfig(p) => write!(f, "key configuration: {p}"),
+            Self::Malformed(why) => write!(f, "malformed message: {why}"),
+            Self::RateLimited => f.write_str("rate limited"),
+            Self::OperationLog(why) => write!(f, "operation log: {why}"),
+            Self::TlsConfig(why) => write!(f, "TLS configuration: {why}"),
+            Self::Transport(why) => write!(f, "keyd unreachable: {why}"),
+            Self::Setting(name) => write!(f, "setting {name} is missing or invalid"),
+        }
+    }
+}
+
+impl std::error::Error for KeydError {}
+
+impl From<casual_sign_secrets::SecretError> for KeydError {
+    fn from(e: casual_sign_secrets::SecretError) -> Self {
+        Self::Secret(e.to_string())
+    }
+}

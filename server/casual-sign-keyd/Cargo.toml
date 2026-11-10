@@ -10,6 +10,27 @@ publish = false
 
 [dependencies]
 casual-sign-crypto = { path = "../../crates/casual-sign-crypto" }
+casual-sign-secrets = { path = "../casual-sign-secrets" }
+# PKCS#11 (docs/19, ADR-006): a safe wrapper over the module's C API, Apache-2.0. Its
+# own `unsafe` is behind its API; this crate stays `unsafe_code = "forbid"`.
+cryptoki = "0.12.1"
+# Hashing, the development file key, and the TLS provider (ADR-006: private-key
+# operations in hosts use aws-lc-rs).
+aws-lc-rs = "1.19.0"
+# mTLS between keyd and its callers. Already in the graph through the CLI's `ureq`;
+# TLS 1.3 only, with the aws-lc-rs provider and no process-wide default.
+rustls = { version = "0.23.46", default-features = false, features = ["std", "aws_lc_rs", "logging"] }
+rustls-pki-types = { version = "1.15.1", features = ["std"] }
+# Certificates and the DER of an ECDSA signature value and an RSA DigestInfo, with the
+# der-0.8 generation casual-sign-crypto pins (ADR-006).
+der = { version = "0.8.3", default-features = false, features = ["alloc", "derive", "oid"] }
+spki = { version = "0.8.1", default-features = false, features = ["alloc"] }
+x509-cert = { version = "0.3.0", default-features = false }
+
+[dev-dependencies]
+# Throwaway PKI for the tests (as casual-sign-seal's tests; docs/66 §1).
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
+casual-sign-seal = { path = "../../crates/casual-sign-seal" }
 
 [lints]
 workspace = true
