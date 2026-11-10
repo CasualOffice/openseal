@@ -163,7 +163,15 @@ buttons, each offering every choice of the group and all carrying the group's na
 linked fields holding one value (docs/22 §6) and the group stays exclusive across pages. A choice turns on its buttons
 wherever they are; flattening draws them once, filling writes `/V` once. A group whose name is not a valid label has
 nothing to link by: it becomes one field on its first page with every choice (its other buttons still turn on when
-chosen), reported as lossy (`RadioAcrossPages`). A radio group's choices come from each widget's on-state
+chosen), reported as lossy (`RadioAcrossPages`).
+
+**Push buttons (`ACRO-02`) are skipped, with what they would have done.** A push button holds no value (ISO 32000-2
+§12.7.5.2.2), so no field type can carry it, and what it is for is an action OpenSeal never performs: a script, a form
+submission to an address, a reset, an import (docs/07). Converting one to a note or an attachment field would invent
+content or a duty the document did not ask of the signer. Its look is kept: flattening draws an unconverted widget's
+appearance into the page. The reason names the action, read from `/A` on the field or a widget, else a script among
+its `/AA` triggers: `SubmitButton`, `ResetButton`, `ImportButton`, `ScriptButton` (printing, an image picker), or
+`PushButton` (no action, or another kind), so a sender is not surprised that "Submit" does nothing. A radio group's choices come from each widget's on-state
 (the first non-`/Off` key of `/AP /N`, else of `/D`, else `/AS`), with text from `/Opt`, else the state name as UTF-8 or,
 failing that, PDFDocEncoding; widgets sharing a state are one choice. A widget with no on-state anywhere gets one named
 after its position (`"0"`, `"1"`, as `/Opt` groups name theirs, ISO 32000-2 §12.7.5.2.4) and, filled in place, a dot

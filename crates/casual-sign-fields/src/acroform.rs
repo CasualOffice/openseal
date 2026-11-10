@@ -33,8 +33,21 @@ const MAX_PARENT_HOPS: usize = 32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Unmapped {
-    /// A push button: it holds no value.
+    /// A push button: it holds no value, and any action it carries is never run
+    /// (docs/07). This one has no action, or one not named below (`/Named`, `/URI`, …).
+    /// When flattening, its appearance is kept, so the page looks the same.
     PushButton,
+    /// A push button that submits the form to an address (`/SubmitForm`). OpenSeal
+    /// never submits a document's form anywhere; the agreement's data travels by the
+    /// envelope.
+    SubmitButton,
+    /// A push button that clears the form (`/ResetForm`).
+    ResetButton,
+    /// A push button that runs a script (`/JavaScript`, as its action or one of its
+    /// `/AA` triggers): printing, an image picker, a calculation. Scripts never run.
+    ScriptButton,
+    /// A push button that imports field values from a file (`/ImportData`).
+    ImportButton,
     /// No `/FT`, or one we do not know.
     UnknownType,
     /// The field has no widgets.
@@ -346,6 +359,70 @@ pub fn radio_choices(
     Ok(choices)
 }
 
+/// Most widgets, and `/AA` triggers per dictionary, read to name a push button's action.
+const MAX_BUTTON_READS: usize = 16;
+
+/// The action type (`/S`) of an action dictionary or reference to one.
+fn action_type(
+    doc: &mut Document<'_>,
+    action: &Object,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Option<Vec<u8>>, PdfError> {
+    Ok(local(doc.resolve(action, cancel))?
+        .as_ref()
+        .and_then(Object::dict)
+        .and_then(|d| d.name(b"S"))
+        .map(<[u8]>::to_vec))
+}
+
+/// Why a push button is not converted, by what it would do when pressed: its `/A`
+/// action (on the field or a widget), else a script among its `/AA` triggers. Nothing
+/// is run; the actions are only named, for the sender.
+fn push_button_reason(
+    doc: &mut Document<'_>,
+    f: &casual_sign_pdf::FormField,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Unmapped, PdfError> {
+    let objects: Vec<u32> = f
+        .object
+        .into_iter()
+        .chain(f.widgets.iter().filter_map(|w| w.object))
+        .take(MAX_BUTTON_READS)
+        .collect();
+    let mut script = false;
+    for n in objects {
+        let Some(d) = local(doc.object(n, cancel))? else {
+            continue;
+        };
+        let Some(d) = d.dict().cloned() else { continue };
+        if let Some(a) = d.get(b"A") {
+            match action_type(doc, a, cancel)?.as_deref() {
+                Some(b"SubmitForm") => return Ok(Unmapped::SubmitButton),
+                Some(b"ResetForm") => return Ok(Unmapped::ResetButton),
+                Some(b"ImportData") => return Ok(Unmapped::ImportButton),
+                Some(b"JavaScript") => script = true,
+                _ => {}
+            }
+        }
+        if !script
+            && let Some(aa) = d.get(b"AA")
+            && let Some(Object::Dictionary(aa)) = local(doc.resolve(aa, cancel))?
+        {
+            for (_, a) in aa.iter().take(MAX_BUTTON_READS) {
+                if action_type(doc, a, cancel)?.as_deref() == Some(b"JavaScript") {
+                    script = true;
+                    break;
+                }
+            }
+        }
+    }
+    Ok(if script {
+        Unmapped::ScriptButton
+    } else {
+        Unmapped::PushButton
+    })
+}
+
 /// Most `/Annots` entries read per page to find a widget's page (docs/21); further
 /// entries are not indexed, and a widget only they list is reported `NoPage`.
 pub const MAX_ANNOTS_INDEXED: usize = 10_000;
@@ -474,7 +551,8 @@ pub fn convert_acroform(
             PdfFieldType::Choice => FieldType::Dropdown,
             PdfFieldType::Signature => FieldType::Signature,
             PdfFieldType::PushButton => {
-                out.skipped.push(skip(Unmapped::PushButton, None));
+                let reason = push_button_reason(doc, f, cancel)?;
+                out.skipped.push(skip(reason, None));
                 continue;
             }
             _ => {

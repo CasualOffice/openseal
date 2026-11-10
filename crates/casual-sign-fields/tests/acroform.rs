@@ -456,3 +456,53 @@ fn a_radio_group_across_pages_without_a_label_is_placed_on_its_first_page() {
     let lossy: Vec<Unmapped> = c.lossy.iter().map(|s| s.reason).collect();
     assert!(lossy.contains(&Unmapped::RadioAcrossPages), "{lossy:?}");
 }
+
+#[test]
+fn a_push_button_is_skipped_with_what_it_would_have_done() {
+    // ACRO-02: a push button holds no value and its actions are never run (docs/07);
+    // the sender is told what it was for, so a missing "Submit" is not a surprise.
+    let w = "/Type/Annot/Subtype/Widget/P 3 0 R";
+    let buttons = [
+        (10, "/A<</S/SubmitForm/F(https://example.invalid/)>>"),
+        (11, "/A<</S/ResetForm>>"),
+        (12, "/A 30 0 R"),
+        (13, "/AA<</U<</S/JavaScript/JS(print\\(\\))>>>>"),
+        (14, "/A<</S/ImportData/F(data.fdf)>>"),
+        (15, "/A<</S/Named/N/Print>>"),
+        (16, ""),
+    ];
+    let mut extra: Vec<(u32, Vec<u8>)> = buttons
+        .iter()
+        .map(|(n, a)| {
+            (
+                *n,
+                format!("<</FT/Btn/Ff 65536/T(b{n}){a}{w}/Rect[10 10 50 30]>>").into_bytes(),
+            )
+        })
+        .collect();
+    extra.push((30, b"<</S/JavaScript/JS(1)>>".to_vec()));
+    let refs: Vec<String> = buttons.iter().map(|(n, _)| format!("{n} 0 R")).collect();
+    let bytes = one_page(
+        &format!("/AcroForm<</Fields[{}]>>", refs.join(" ")),
+        &format!("/Annots[{}]", refs.join(" ")),
+        "",
+        b"",
+        extra,
+    );
+    let c = convert(&bytes);
+    assert!(c.fields.is_empty());
+    let reasons: Vec<(Option<u32>, Unmapped)> =
+        c.skipped.iter().map(|s| (s.object, s.reason)).collect();
+    assert_eq!(
+        reasons,
+        vec![
+            (Some(10), Unmapped::SubmitButton),
+            (Some(11), Unmapped::ResetButton),
+            (Some(12), Unmapped::ScriptButton),
+            (Some(13), Unmapped::ScriptButton),
+            (Some(14), Unmapped::ImportButton),
+            (Some(15), Unmapped::PushButton),
+            (Some(16), Unmapped::PushButton),
+        ]
+    );
+}
