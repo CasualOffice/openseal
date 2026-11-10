@@ -63,9 +63,20 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of the Phase 0 foundation commit (2026-11-10).
+Docs are true as of `f34a2ef` (2026-11-10).
 
-**Phases D, 0 and 1 are open (Phase 1 under waiver `W-2`); no product behaviour is built yet.** The repository is private until the pre-release alpha (owner instruction 7), so CI runs locally through `tools/ci-local.sh`. Phase 0 so far: a Cargo workspace with a `casual-sign-pdf` skeleton, repository gates and hooks copied from OpenPresent (`PROVENANCE.md`), a CI workflow not yet run on GitHub, and a pyHanko harness that proves it can tell a sealed PDF from a tampered one (`F-006`). The repository is initialized locally on `main`; the GitHub remote waits on the owner (`F-001`). The document set is drafted: PRD, HLD, research studies of DocuSign, SignNow and open-source
-competitors, pillar designs, threat model, 22 proposed ADRs, the roadmap (Phases D, 0, 1, 2, 29 slices and milestones M0–M7), the tracker
-and a 165-row feature fit-gap with 0 rows working. The product is named **OpenSeal** (`DEC-01`, 2026-11-10). Twelve owner decisions remain open in
-[14](docs/14-EXECUTION-TRACKER.md); ADR-001 to ADR-009 are Accepted (instruction 6). What blocks Phase 0 now is the GitHub remote, which only the owner can create (`F-001`), so CI can run (`F-003`).
+**Phases D, 0 and 1 are open. Phase 1 runs under waiver `W-2`**, because CI cannot run on GitHub while the repository
+(`CasualOffice/openseal`, private until the pre-release alpha, owner instruction 7) is private; `tools/ci-local.sh`
+mirrors the CI list and gates every merge.
+
+- **Phase D** lacks the independent doc audit (`DOC-002`, in progress), Accepted ADRs beyond ADR-009 for Phases 0–2,
+  and `DEC-02` to `DEC-07`, `DEC-10` to `DEC-14`.
+- **Phase 0** lacks a green GitHub run (`F-003`), ten more hostile fixtures (40 of 50, `F-005`), the EU DSS
+  `TOTAL_PASSED` path (`F-008`) and the owner's sign-off. Corpus (422 PDFs, 40 producers), spikes and ADR-005/006 are done.
+- **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm
+  conversion, 1D field rules, 1F crypto structures (leftovers in their rows). In progress in parallel workers: 1E
+  flattening with fill-in-place, 1H verifier, and reader completion (decryption, LZW, four wrongly refused corpus files).
+  Not started: 1G sealing, 1I audit chain and certificate, 1J SDK and CLI. The reader opens 387 of 422 real-world PDFs
+  with page counts matching the manifest.
+- **No server, API or UI exists yet.** The roadmap has 35 slices and milestones M0–M8; the fit-gap has 167 rows, none
+  working end to end yet.

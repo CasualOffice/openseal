@@ -4,11 +4,14 @@
 slice that delivers it, and its status. Sources: [48](48-DOCUSIGN-STUDY.md) (DS) and [49](49-SIGNNOW-STUDY.md) (SN).
 This is the parity measure: at every slice close, the count of `Build` and `Plugin` rows marked `Works` is reported.
 
+**Status values:** `—` not started, `Designed`, `Engine` (engine built and tested, no UI or API yet), `Works`
+(merged, tested, in a browser run where it has UI).
+
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
 (merged, tested, in a browser run where it has UI).
 
-**Today: 0 of 167 rows work** (every row Build or Plugin; counted with `grep`). Docs are true as of the initial commit (2026-11-10).
+**Today: 0 of 167 rows work end to end; 28 have their engine built and tested** (counted with `grep`). Docs are true as of `f34a2ef` (2026-11-10).
 
 ## Documents
 
@@ -20,8 +23,8 @@ instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
 | FG-004 | Import from cloud storage (Drive, OneDrive, Dropbox, Box) | DS | Plugin | 24 | — |
 | FG-005 | Multiple documents per envelope; reorder | DS, SN (groups) | Build | 2 | Designed |
 | FG-006 | Size limits: 50 MB per file, 200 MB per envelope | DS | Build | 1 | Designed |
-| FG-007 | Neutralize JavaScript, actions, embedded files; report | — | Build | Phase 1 | Designed |
-| FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Designed (engine built in stage 1C) |
+| FG-007 | Neutralize JavaScript, actions, embedded files; report | — | Build | Phase 1 | Engine |
+| FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Engine |
 | FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | — |
 | FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | — |
 | FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
@@ -61,39 +64,39 @@ instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-050 | Signature (draw, type, upload) | DS, SN | Build | 1 | Designed |
-| FG-051 | Initials | DS, SN | Build | 1 | Designed |
-| FG-052 | Optional signature | DS | Build | 4 | Designed |
-| FG-053 | Stamp | DS, SN | Build | 4 | Designed |
-| FG-054 | Date signed | DS | Build | 1 | Designed |
-| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Designed |
-| FG-056 | Envelope id field | DS | Build | 4 | — |
-| FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Designed |
-| FG-058 | Number with locale, currency, min, max | DS, SN | Build | 4 | Designed |
-| FG-059 | Date with format | DS, SN | Build | 4 | Designed |
-| FG-060 | Email, phone, SSN, ZIP validations; regex | DS, SN | Build | 4 | Designed |
-| FG-061 | Checkbox; checkbox group rules | DS, SN | Build | 4 | Designed |
-| FG-062 | Radio group | DS, SN | Build | 4 | Designed |
-| FG-063 | Dropdown (with custom entry) | DS, SN | Build | 4 | Designed |
-| FG-064 | Formula / calculated field | DS, SN | Build | 4 | Designed |
-| FG-065 | Signer attachment | DS, SN | Build | 4 | Designed |
-| FG-066 | Note | DS | Build | 4 | Designed |
-| FG-067 | Approve and decline buttons | DS | Build | 4 | Designed |
-| FG-068 | Hyperlink | SN | Build | 4 | Designed |
+| FG-050 | Signature (draw, type, upload) | DS, SN | Build | 1 | Engine |
+| FG-051 | Initials | DS, SN | Build | 1 | Engine |
+| FG-052 | Optional signature | DS | Build | 4 | Engine |
+| FG-053 | Stamp | DS, SN | Build | 4 | Engine |
+| FG-054 | Date signed | DS | Build | 1 | Engine |
+| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Engine |
+| FG-056 | Envelope id field | DS | Build | 4 | Engine |
+| FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Engine |
+| FG-058 | Number with locale, currency, min, max | DS, SN | Build | 4 | Engine |
+| FG-059 | Date with format | DS, SN | Build | 4 | Engine |
+| FG-060 | Email, phone, SSN, ZIP validations; regex | DS, SN | Build | 4 | Engine |
+| FG-061 | Checkbox; checkbox group rules | DS, SN | Build | 4 | Engine |
+| FG-062 | Radio group | DS, SN | Build | 4 | Engine |
+| FG-063 | Dropdown (with custom entry) | DS, SN | Build | 4 | Engine |
+| FG-064 | Formula / calculated field | DS, SN | Build | 4 | Engine |
+| FG-065 | Signer attachment | DS, SN | Build | 4 | Engine |
+| FG-066 | Note | DS | Build | 4 | Engine |
+| FG-067 | Approve and decline buttons | DS | Build | 4 | Engine |
+| FG-068 | Hyperlink | SN | Build | 4 | Engine |
 | FG-069 | Drawing area | DS | Build | 4 | — |
 | FG-070 | Payment field | DS, SN | Plugin | 13 | Designed |
-| FG-071 | Prefill (sender-filled) fields | DS, SN | Build | 4 | Designed |
-| FG-072 | Required, read-only, locked | DS, SN | Build | 1 | Designed |
-| FG-073 | Data labels; linked fields (same label mirrors) | DS | Build | 4 | Designed |
+| FG-071 | Prefill (sender-filled) fields | DS, SN | Build | 4 | Engine |
+| FG-072 | Required, read-only, locked | DS, SN | Build | 1 | Engine |
+| FG-073 | Data labels; linked fields (same label mirrors) | DS | Build | 4 | Engine |
 | FG-074 | Shared fields across signers | DS | Build | 4 | — |
-| FG-075 | Conditional fields | DS, SN | Build | 4 | Designed |
+| FG-075 | Conditional fields | DS, SN | Build | 4 | Engine |
 | FG-076 | Font, size, colour, alignment | DS, SN | Build | 4 | Designed |
-| FG-077 | Anchor text auto-place | DS | Build | 4 | Designed |
-| FG-078 | Text tags in documents | SN | Build | 4 | Designed |
+| FG-077 | Anchor text auto-place | DS | Build | 4 | Engine |
+| FG-078 | Text tags in documents | SN | Build | 4 | Engine |
 | FG-079 | Custom (saved) field presets | DS | Build | 4 | — |
 | FG-080 | Strike-through by editor | DS | Build | 6 | — |
 | FG-081 | Responsive signing (smart sections) | DS | Build | 23 | — |
-| FG-082 | 3,000 fields per envelope | DS | Build | 4 | Designed |
+| FG-082 | 3,000 fields per envelope | DS | Build | 4 | Engine |
 
 ## Sending
 

@@ -34,11 +34,24 @@ it shares.
 
 ## Status
 
-Docs are true as of the Phase 0 foundation commit (2026-11-10).
+Docs are true as of `f34a2ef` (2026-11-10).
 
-**Design done; foundation in progress. No product behaviour exists yet.** The repository has its workspace, gates and
-CI workflow, and a harness that checks independent validators can tell a sealed PDF from a tampered one. What else
-exists is the design, the research and the plan:
+**Pre-alpha, engine under construction; the repository is private until the pre-release alpha.** No server or user
+interface exists yet. What is built is the headless engine's first half, in Rust, tested against 422 real-world PDFs:
+
+| Built and merged | What it does |
+| --- | --- |
+| PDF reader (`casual-sign-pdf`) | Opens any PDF within strict limits, repairs damaged files, reports active content; 387 of 422 real PDFs open with correct page counts, 31 encrypted ones wait on decryption, 4 wrong refusals are being fixed |
+| Writer and normalizer | Appends signed revisions without touching earlier bytes; rewrites uploads clean of JavaScript, actions, embedded files, XFA |
+| Fields (`casual-sign-model`, `casual-sign-fields`) | Every DocuSign/SignNow field type, validation, conditions, groups, formulas; page geometry, text extraction, anchors, `{{…}}` text tags, conversion of existing PDF forms |
+| Crypto (`casual-sign-crypto`) | CMS signatures, RFC 3161 timestamps, OCSP and CRL, the key-provider seam; cross-checked with independent libraries |
+| Test assets | 40 hostile PDFs, a 422-file real-world corpus, pyHanko and EU DSS validators |
+
+In progress: the verifier, flattening and fill-in-place, decryption and the remaining reader gaps. Then sealing, the
+audit chain, the server and the web app. Exact state: [docs/14](docs/14-EXECUTION-TRACKER.md); phases and milestones:
+[docs/06](docs/06-ROADMAP-AND-DELIVERY.md).
+
+The design, research and plan:
 
 | | Where |
 | --- | --- |

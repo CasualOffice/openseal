@@ -55,15 +55,15 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of the Phase 0 foundation commit (2026-11-10). No product behaviour is built yet.
+Docs are true as of `f34a2ef` (2026-11-10). The engine's first half is built; no server or UI.
 
 | Phase | State | Note |
 | --- | --- | --- |
 | D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
-| 0 Foundation | **Open** 2026-11-10 | Opened by instruction 6 (ADR-001 to ADR-009 Accepted). Built: workspace, gates, hooks, CI workflow, pyHanko validator harness. Left: in [14](14-EXECUTION-TRACKER.md) §Phase 0 |
+| 0 Foundation | **Open** 2026-11-10 | 1 of 4 exit items met (spikes and ADRs); corpus met but hostile fixtures 40 of 50; validators met locally only; left: a green GitHub run (blocked while private, `W-2`), 10 hostile fixtures, owner sign-off |
 | 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1F crypto structures. In progress: 1H verifier. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
 | 2 Envelope engine and server | Not opened | May open in parallel with Phase 1 stages 1C onward (`W-1` proposed) |
-| Slices 1–35 | Not opened | |
+| Slices 1–35 | Not opened | Slice 1 needs Phases 1 and 2 |
 
 ### Waivers
 
@@ -94,14 +94,14 @@ Docs are true as of the Phase 0 foundation commit (2026-11-10). No product behav
 - **In:** `git init` and remote; Cargo workspace with empty crates that have a first consumer planned; `deny.toml`,
   toolchain pin, lints copied from the sisters; CI on Linux, macOS, Windows; `tools/check-repo.py` (tracker ids,
   doc references, crate DAG) copied and adapted; PDF fixture corpus with provenance (generated, producer-written,
-  hostile); fuzz workspace; the independent validators (pyHanko, EU DSS) in a CI container; `casual-sign-secrets`
-  copied from OpenCalc.
+  hostile); fuzz workspace; the independent validators (pyHanko, EU DSS) in a CI container. (`casual-sign-secrets` is copied
+  in Phase 2, when the server is its first consumer: no crate without a consumer.)
 - **Out:** product behaviour.
 - **Closes when:**
   - [ ] CI green on three platforms; a seeded violation seen failing each job on GitHub's runners.
-  - [ ] Fixture corpus: ≥ 200 PDFs from ≥ 10 producers (Word, LibreOffice, Acrobat, Chrome print, macOS Quartz, Ghostscript output used only as a file, scanners, InDesign, LaTeX, Google Docs), each with provenance and licence; ≥ 50 hostile fixtures, one per limit in [21](21-PARSER-LIMITS.md).
-  - [ ] pyHanko and EU DSS run in CI over a known-good signed PDF and a known-tampered one, and disagree correctly.
-  - [ ] `SPK-01` (PDF reader: own versus `lopdf`) and `SPK-02` (crypto stack in WASM) reported; ADR-005 and ADR-006 settled.
+  - [ ] *(Corpus met: 422 PDFs, 40 producer families, `F-004`. Hostile: 40 of 50, `F-005`.)* Fixture corpus: ≥ 200 PDFs from ≥ 10 producers (Word, LibreOffice, Acrobat, Chrome print, macOS Quartz, Ghostscript output used only as a file, scanners, InDesign, LaTeX, Google Docs), each with provenance and licence; ≥ 50 hostile fixtures, one per limit in [21](21-PARSER-LIMITS.md).
+  - [ ] pyHanko and EU DSS run in CI over a known-good signed PDF and a known-tampered one, and disagree correctly. *(Met in `tools/ci-local.sh`; not yet on GitHub, `F-006`.)*
+  - [x] `SPK-01` (PDF reader: own versus `lopdf`) and `SPK-02` (crypto stack in WASM) reported; ADR-005 and ADR-006 settled. Evidence: [64](64-SPK-01-PDF-READER.md), [66](66-SPK-02-CRYPTO-STACK.md).
   - [ ] Owner sign-off.
 
 ## Phase 1 — PDF and evidence core
