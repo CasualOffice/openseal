@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE envelopes SET engine_state = $4, version = version + 1, status = $5, subject = $6, message = $7, expires_at = $8, reminder_policy = $9, signing_options = $10, seal_profile = $11, sent_at = $12, completed_at = $13, voided_at = $14, void_reason = $15 WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
+  "query": "UPDATE envelopes SET version = version + 1, status = $4, subject = $5, message = $6, expires_at = $7, reminder_policy = $8, signing_options = $9, seal_profile = $10, sent_at = $11, completed_at = $12, voided_at = $13, void_reason = $14 WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,6 @@
         "Uuid",
         "Uuid",
         "Int4",
-        "Jsonb",
         "Text",
         "Text",
         "Text",
@@ -38,5 +37,5 @@
       false
     ]
   },
-  "hash": "22e768b109073d28c1a2798a561a83381358c36aba9a6e0e0ae7ce8443d25b6a"
+  "hash": "637680c10ebfdcadce9e4c63083eac32ce0db17cfcaac5d9cc5062c224ef32f8"
 }

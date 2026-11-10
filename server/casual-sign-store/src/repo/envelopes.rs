@@ -397,17 +397,6 @@ pub struct Projection {
     pub void_reason: Option<Personal<String>>,
 }
 
-/// An envelope's engine state as stored, locked for the rest of the transaction.
-#[derive(Debug, Clone, PartialEq)]
-pub struct StoredState {
-    /// The engine's aggregate (`casual_sign_workflow::EnvelopeState`) as JSON.
-    pub state: serde_json::Value,
-    /// The row's version, which [`Envelopes::save_state`] must be given back.
-    pub row_version: i32,
-    /// The API client that created the envelope, when one did (tracker row WF-05).
-    pub host_client_id: Option<crate::ids::ApiClientId>,
-}
-
 /// Where a page of envelopes resumes: after this creation time and id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cursor {
@@ -418,28 +407,24 @@ pub struct Cursor {
 }
 
 impl Envelopes<'_> {
-    /// Insert a draft together with the engine's state for it, recording the API client
-    /// that created it, if one did.
+    /// Record the API client that created an envelope (tracker row WF-05): an embedding
+    /// host may act only for the envelopes it created.
     ///
     /// # Errors
     ///
-    /// As [`Envelopes::insert`]; `CS-DB-0008` also for a client of another account or a
-    /// state that is not a JSON object.
-    pub async fn insert_with_state(
+    /// `CS-DB-0003` no such envelope; `CS-DB-0008`/`CS-DB-0009` a client of another
+    /// account.
+    pub async fn set_host_client(
         &mut self,
-        e: &NewEnvelope,
-        host_client: Option<crate::ids::ApiClientId>,
-        state: &serde_json::Value,
+        id: EnvelopeId,
+        client: crate::ids::ApiClientId,
     ) -> Result<()> {
-        self.insert(e).await?;
         let acct = self.tx.acct();
         let done = sqlx::query!(
-            "UPDATE envelopes SET engine_state = $3, host_client_id = $4 \
-             WHERE account_id = $1 AND id = $2",
+            "UPDATE envelopes SET host_client_id = $3 WHERE account_id = $1 AND id = $2",
             acct,
-            e.id.0,
-            state,
-            host_client.map(|c| c.0)
+            id.0,
+            client.0
         )
         .execute(self.tx.conn())
         .await
@@ -447,56 +432,50 @@ impl Envelopes<'_> {
         super::affected(done.rows_affected(), "envelope")
     }
 
-    /// The engine state of an envelope of this account, locking its row until the
-    /// transaction ends so that two commands on one envelope run one after the other.
-    /// `None` when the account has no such envelope or it has no engine state.
+    /// The API client that created an envelope of this account, if one did; `None`
+    /// also when the account has no such envelope.
     ///
     /// # Errors
     ///
     /// `CS-DB-0001`.
-    pub async fn load_state(&mut self, id: EnvelopeId) -> Result<Option<StoredState>> {
+    pub async fn host_client(&mut self, id: EnvelopeId) -> Result<Option<crate::ids::ApiClientId>> {
         let acct = self.tx.acct();
-        let row = sqlx::query!(
-            r#"SELECT engine_state AS "engine_state!", version, host_client_id FROM envelopes
-                WHERE account_id = $1 AND id = $2 AND engine_state IS NOT NULL FOR UPDATE"#,
+        let row = sqlx::query_scalar!(
+            "SELECT host_client_id FROM envelopes WHERE account_id = $1 AND id = $2",
             acct,
             id.0
         )
         .fetch_optional(self.tx.conn())
         .await
         .map_err(db)?;
-        Ok(row.map(|r| StoredState {
-            state: r.engine_state,
-            row_version: r.version,
-            host_client_id: r.host_client_id.map(crate::ids::ApiClientId),
-        }))
+        Ok(row.flatten().map(crate::ids::ApiClientId))
     }
 
-    /// Write a new engine state and its projection, if the row is still at
-    /// `row_version`; returns the new row version.
+    /// Write the projection of the engine's state (docs/22 §10) onto the envelope's
+    /// columns, if the row is still at `row_version`; returns the new row version. The
+    /// engine state itself lives in `envelope_states`, whose row the caller holds
+    /// locked.
     ///
     /// # Errors
     ///
     /// `CS-DB-0007` stale; `CS-DB-0003` no such envelope; `CS-DB-0008` a projection the
     /// table's checks refuse (an overlong subject, voided without a time).
-    pub async fn save_state(
+    pub async fn project(
         &mut self,
         id: EnvelopeId,
         row_version: i32,
         p: &Projection,
-        state: &serde_json::Value,
     ) -> Result<i32> {
         let acct = self.tx.acct();
         let new = sqlx::query_scalar!(
-            "UPDATE envelopes SET engine_state = $4, version = version + 1, status = $5, \
-               subject = $6, message = $7, expires_at = $8, reminder_policy = $9, \
-               signing_options = $10, seal_profile = $11, sent_at = $12, completed_at = $13, \
-               voided_at = $14, void_reason = $15 \
+            "UPDATE envelopes SET version = version + 1, status = $4, \
+               subject = $5, message = $6, expires_at = $7, reminder_policy = $8, \
+               signing_options = $9, seal_profile = $10, sent_at = $11, completed_at = $12, \
+               voided_at = $13, void_reason = $14 \
              WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
             acct,
             id.0,
             row_version,
-            state,
             p.status.as_str(),
             p.subject.get(),
             p.message.get(),
@@ -535,7 +514,9 @@ impl Envelopes<'_> {
             "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, \
              reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, \
              version, chain_head, created_at, sent_at, completed_at, voided_at \
-             FROM envelopes WHERE account_id = $1 AND engine_state IS NOT NULL \
+             FROM envelopes AS e WHERE account_id = $1 \
+               AND EXISTS (SELECT 1 FROM envelope_states AS s \
+                            WHERE s.account_id = e.account_id AND s.envelope_id = e.id) \
                AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid)) \
                AND ($4::text IS NULL OR status = $4) \
                AND ($5::uuid IS NULL OR sender_user_id = $5) \

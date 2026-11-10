@@ -453,6 +453,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-host"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-audit",
+ "casual-sign-model",
+ "casual-sign-store",
+ "casual-sign-workflow",
+ "serde",
+ "serde_json",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "casual-sign-keyd"
 version = "0.0.0"
 dependencies = [
@@ -554,6 +568,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "casual-sign-audit",
+ "casual-sign-host",
  "casual-sign-model",
  "casual-sign-sdk",
  "casual-sign-secrets",
@@ -633,6 +648,7 @@ dependencies = [
  "base64 0.22.1",
  "casual-sign-audit",
  "casual-sign-crypto",
+ "casual-sign-host",
  "casual-sign-keyd",
  "casual-sign-model",
  "casual-sign-sdk",

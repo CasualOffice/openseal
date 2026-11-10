@@ -330,6 +330,19 @@ impl From<WorkflowError> for ApiError {
     }
 }
 
+impl From<casual_sign_host::HostError> for ApiError {
+    fn from(e: casual_sign_host::HostError) -> Self {
+        use casual_sign_host::HostError as H;
+        match e {
+            H::Workflow(w) => w.into(),
+            H::Store(s) => s.into(),
+            // An unreadable state, a non-UUID id, a clock out of range, a chain that
+            // does not append: the server's fault, named by code only.
+            other => Self::new(StatusCode::INTERNAL_SERVER_ERROR, other.code()),
+        }
+    }
+}
+
 impl From<casual_sign_sdk::SdkError> for ApiError {
     fn from(e: casual_sign_sdk::SdkError) -> Self {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, e.code())

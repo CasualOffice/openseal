@@ -15,6 +15,8 @@ casual-sign-model = { path = "../../crates/casual-sign-model" }
 casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
 # fill → flatten → certificate → seal → verify (docs/30 §1).
 casual-sign-sdk = { path = "../../crates/casual-sign-sdk" }
+# The one decide-and-record path and the job contract, shared with the API server.
+casual-sign-host = { path = "../casual-sign-host" }
 # The queue, the engine state, the audit chain and the blobs (ADR-012, ADR-013).
 casual-sign-store = { path = "../casual-sign-store" }
 # `RemoteKey` (the platform key over mTLS) and, in development only, `FileKey` (docs/31 §5).

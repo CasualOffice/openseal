@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, version, chain_head, created_at, sent_at, completed_at, voided_at FROM envelopes WHERE account_id = $1 AND engine_state IS NOT NULL AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid)) AND ($4::text IS NULL OR status = $4) AND ($5::uuid IS NULL OR sender_user_id = $5) ORDER BY created_at DESC, id DESC LIMIT $6",
+  "query": "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, version, chain_head, created_at, sent_at, completed_at, voided_at FROM envelopes AS e WHERE account_id = $1 AND EXISTS (SELECT 1 FROM envelope_states AS s WHERE s.account_id = e.account_id AND s.envelope_id = e.id) AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid)) AND ($4::text IS NULL OR status = $4) AND ($5::uuid IS NULL OR sender_user_id = $5) ORDER BY created_at DESC, id DESC LIMIT $6",
   "describe": {
     "columns": [
       {
@@ -233,5 +233,5 @@
       true
     ]
   },
-  "hash": "b71fbe8dd4d57ddab315f15de8b2ec2e1fdb1ee69ddb3245ec35efd8959906d9"
+  "hash": "51a4abfb72df8b8c5c55fafd3ad6f5025eb60266696a20eb5747d923d6616269"
 }

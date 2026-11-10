@@ -1,168 +1,28 @@
-//! Effects as jobs (ADR-011, ADR-012): kinds, idempotency keys, due times, attempt
-//! budgets, and the retry back-off with jitter.
+//! Effects as jobs (ADR-011, ADR-012). The contract (kinds, idempotency keys, payload,
+//! due times, attempt budgets) is [`casual_sign_host::jobs`], shared with the API
+//! server; this adds what only the runner needs: the retry back-off with jitter, lease
+//! and delivery ids.
 
 use std::time::Duration;
 
-use casual_sign_audit::Timestamp;
-use casual_sign_store::repo::jobs::NewJob;
-use casual_sign_store::{EnvelopeId, JobId};
-use casual_sign_workflow::{Effect, EffectKind, EnvelopeState};
 use uuid::Uuid;
 
-use crate::apply::{EffectJob, odt};
-use crate::error::{Result, WorkerError};
+pub use casual_sign_host::jobs::{
+    ALERT_OPERATOR, CHARGE_PAYMENT, DELETE_DRAFT, DELIVER_WEBHOOK, EffectJob, KINDS,
+    NOTIFY_RECIPIENTS, NOTIFY_SENDER, PURGE_DATA, SEAL_ENVELOPE, SEND_COMPLETION_COPIES,
+    SEND_EXPIRY_WARNING, SEND_INVITATION, SEND_REMINDER, TIMER, idempotency_key, job_for, kind_of,
+    max_attempts,
+};
 
-/// Every job kind the worker runs, one per effect kind (`Cancel` enqueues nothing).
-pub const KINDS: &[&str] = &[
-    SEND_INVITATION,
-    SEND_REMINDER,
-    SEND_EXPIRY_WARNING,
-    NOTIFY_SENDER,
-    NOTIFY_RECIPIENTS,
-    SEND_COMPLETION_COPIES,
-    TIMER,
-    SEAL_ENVELOPE,
-    REVOKE_TOKENS,
-    DELIVER_WEBHOOK,
-    CHARGE_PAYMENT,
-    ALERT_OPERATOR,
-    PURGE_DATA,
-    DELETE_DRAFT,
-];
+use crate::error::Result;
 
-/// `SendInvitation`.
-pub const SEND_INVITATION: &str = "send_invitation";
-/// `SendReminder`.
-pub const SEND_REMINDER: &str = "send_reminder";
-/// `SendExpiryWarning`.
-pub const SEND_EXPIRY_WARNING: &str = "send_expiry_warning";
-/// `NotifySender`.
-pub const NOTIFY_SENDER: &str = "notify_sender";
-/// `NotifyRecipients`.
-pub const NOTIFY_RECIPIENTS: &str = "notify_recipients";
-/// `SendCompletionCopies`.
-pub const SEND_COMPLETION_COPIES: &str = "send_completion_copies";
-/// `Schedule`: fires `TimerDue` when due.
-pub const TIMER: &str = "timer";
-/// `SealEnvelope`.
-pub const SEAL_ENVELOPE: &str = "seal_envelope";
-/// `RevokeTokens`.
-pub const REVOKE_TOKENS: &str = "revoke_tokens";
-/// `DeliverWebhook`.
-pub const DELIVER_WEBHOOK: &str = "deliver_webhook";
-/// `ChargePayment`.
-pub const CHARGE_PAYMENT: &str = "charge_payment";
-/// `AlertOperator`.
-pub const ALERT_OPERATOR: &str = "alert_operator";
-/// `PurgeData`.
-pub const PURGE_DATA: &str = "purge_data";
-/// `DeleteDraft`.
-pub const DELETE_DRAFT: &str = "delete_draft";
-
-/// The job kind of an effect, or `None` for `Cancel`.
-#[must_use]
-pub fn kind_of(effect: &EffectKind) -> Option<&'static str> {
-    Some(match effect {
-        EffectKind::SendInvitation { .. } => SEND_INVITATION,
-        EffectKind::SendReminder { .. } => SEND_REMINDER,
-        EffectKind::SendExpiryWarning { .. } => SEND_EXPIRY_WARNING,
-        EffectKind::NotifySender { .. } => NOTIFY_SENDER,
-        EffectKind::NotifyRecipients { .. } => NOTIFY_RECIPIENTS,
-        EffectKind::SendCompletionCopies { .. } => SEND_COMPLETION_COPIES,
-        EffectKind::Schedule { .. } => TIMER,
-        EffectKind::SealEnvelope { .. } => SEAL_ENVELOPE,
-        EffectKind::RevokeTokens { .. } => REVOKE_TOKENS,
-        EffectKind::DeliverWebhook { .. } => DELIVER_WEBHOOK,
-        EffectKind::ChargePayment { .. } => CHARGE_PAYMENT,
-        EffectKind::AlertOperator { .. } => ALERT_OPERATOR,
-        EffectKind::PurgeData { .. } => PURGE_DATA,
-        EffectKind::DeleteDraft => DELETE_DRAFT,
-        // `Cancel`, and any effect a newer engine adds: nothing to enqueue until the
-        // worker learns it (the engine guards cancelled timers and seal jobs itself).
-        _ => return None,
-    })
-}
-
-/// Attempts before a job of `kind` is dead. Webhooks get about three days of
-/// back-off (docs/40 §4: ≈ 15 attempts); the rest as many, so a transient outage of a
-/// day is ridden out.
-#[must_use]
-pub fn max_attempts(kind: &str) -> i32 {
-    match kind {
-        ALERT_OPERATOR | REVOKE_TOKENS | TIMER => 20,
-        _ => 15,
-    }
-}
-
-/// The idempotency key of an effect: `effect:<envelope>:<command>:<index>`, unique per
-/// account (docs/24 §1).
-#[must_use]
-pub fn idempotency_key(envelope: EnvelopeId, effect: &Effect) -> String {
-    format!(
-        "effect:{}:{}:{}",
-        envelope.0.hyphenated(),
-        effect.id.command.as_str(),
-        effect.id.index
-    )
-}
-
-/// The job that performs `effect`, or `None` for `Cancel`. Due now, at a timer's time,
-/// or at a seal retry's `not_before`.
-///
-/// # Errors
-///
-/// `CS-WRK-0001` for a time outside the database's range.
-pub fn job_for(
-    envelope: EnvelopeId,
-    effect: &Effect,
-    state: &EnvelopeState,
-    now: Timestamp,
-) -> Result<Option<NewJob>> {
-    let Some(kind) = kind_of(&effect.kind) else {
-        return Ok(None);
-    };
-    let run_at = match &effect.kind {
-        EffectKind::Schedule { at, .. } => *at,
-        EffectKind::SealEnvelope {
-            not_before: Some(t),
-        } => *t,
-        _ => now,
-    };
-    let payload = EffectJob {
-        envelope_id: envelope.0,
-        effect: effect.clone(),
-        decided_at: now.unix_millis(),
-        version: state.version,
-        status: state.status,
-    };
-    let payload = serde_json::to_value(&payload).map_err(|_| WorkerError::BadJob {
-        kind: kind.to_owned(),
-    })?;
-    Ok(Some(NewJob {
-        id: JobId(Uuid::new_v4()),
-        envelope_id: Some(envelope),
-        kind: kind.to_owned(),
-        idempotency_key: idempotency_key(envelope, effect),
-        payload,
-        run_at: odt(run_at)?,
-        max_attempts: max_attempts(kind),
-    }))
-}
-
-/// A claimed job's payload.
+/// A claimed job's payload ([`casual_sign_host::jobs::parse`]).
 ///
 /// # Errors
 ///
 /// `CS-WRK-0004` when it does not read back, or its effect is not of its kind.
 pub fn parse(kind: &str, payload: &serde_json::Value) -> Result<EffectJob> {
-    let bad = || WorkerError::BadJob {
-        kind: kind.chars().take(64).collect(),
-    };
-    let job: EffectJob = serde_json::from_value(payload.clone()).map_err(|_| bad())?;
-    if kind_of(&job.effect.kind) != Some(kind) {
-        return Err(bad());
-    }
-    Ok(job)
+    Ok(casual_sign_host::jobs::parse(kind, payload)?)
 }
 
 /// The delay before attempt `attempt + 1` after `attempt` failed: exponential from 30

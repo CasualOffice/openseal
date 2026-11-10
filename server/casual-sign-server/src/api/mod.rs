@@ -62,6 +62,8 @@ pub(crate) fn request_context(
         user_agent: crate::net::user_agent(headers).map(Personal),
         auth,
         session,
+        // Set per ceremony request when the envelope captures location (GEO-01).
+        location: None,
     }
 }
 

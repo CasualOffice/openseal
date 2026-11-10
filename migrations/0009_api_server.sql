@@ -1,18 +1,17 @@
--- 0008: what the API server (stage 2C, docs/40) needs beyond 0001 to 0007.
+-- 0009: what the API server (stage 2C, docs/40) needs beyond 0001 to 0008.
 --
--- 1. The workflow engine's aggregate (`casual_sign_workflow::EnvelopeState`) as the
---    authority for an envelope; the columns of `envelopes`, and the `recipients` rows,
---    are projections the server writes from it in the same transaction (docs/22 §10).
--- 2. The API client that created an envelope: an embedding host may act only for the
+-- The workflow engine's aggregate is the authority for an envelope and lives only in
+-- `envelope_states` (0008); the columns of `envelopes` and the `recipients` rows are
+-- projections written from it in the same transaction (docs/22 §10).
+--
+-- 1. The API client that created an envelope: an embedding host may act only for the
 --    envelopes it created (tracker row WF-05).
--- 3. A recipient token's browser binding (docs/40 §6: exchanged on first use for a
+-- 2. A recipient token's browser binding (docs/40 §6: exchanged on first use for a
 --    session bound to the browser).
--- 4. Idempotency records (docs/40 §1: replays within 24 h return the first response).
--- 5. Staff sessions (docs/40 §2: session cookie and CSRF token), hashed at rest.
+-- 3. Idempotency records (docs/40 §1: replays within 24 h return the first response).
+-- 4. Staff sessions (docs/40 §2: session cookie and CSRF token), hashed at rest.
 
 ALTER TABLE envelopes
-    ADD COLUMN engine_state jsonb
-        CHECK (engine_state IS NULL OR jsonb_typeof(engine_state) = 'object'),
     ADD COLUMN host_client_id uuid,
     ADD FOREIGN KEY (account_id, host_client_id) REFERENCES api_clients (account_id, id);
 -- Cursor pagination over every envelope of an account, newest first.

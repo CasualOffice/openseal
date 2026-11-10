@@ -58,7 +58,7 @@ async fn command(
     expected: Option<u64>,
 ) -> Result<(), ApiError> {
     let ctx = cmds.ctx(staff(&c.p, &l.state)?, expected)?;
-    run(tx, l, &cmd, &ctx, cmds.now).await?;
+    run(tx, l, &cmd, &ctx).await?;
     Ok(())
 }
 
@@ -413,16 +413,7 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
         message,
     };
     let ctx = cmds.ctx(principal, None)?;
-    let mut l = create_env(
-        &mut tx,
-        c.p.account,
-        env,
-        &create,
-        &ctx,
-        c.p.client(),
-        cmds.now,
-    )
-    .await?;
+    let mut l = create_env(&mut tx, c.p.account, env, &create, &ctx, c.p.client()).await?;
     let mut changes = Vec::new();
     let mut doc_ids = Vec::new();
     for (name, bytes) in decoded {
@@ -1318,7 +1309,6 @@ pub(crate) async fn view_signing(
                     recipient: rid.clone(),
                 },
                 &ctx,
-                cmds.now,
             )
             .await?;
         }
@@ -1336,7 +1326,6 @@ pub(crate) async fn view_signing(
                 claim,
             },
             &ctx,
-            cmds.now,
         )
         .await?;
     }

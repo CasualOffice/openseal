@@ -1,4 +1,4 @@
-//! The repository methods migration 0008 added for the API server (stage 2C), called
+//! The repository methods migration 0009 added for the API server (stage 2C), called
 //! with another account's ids, with row-level security on and disabled: each must
 //! refuse, find nothing, or change nothing, exactly as `isolation.rs` requires of the
 //! others.
@@ -52,11 +52,15 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
     {
         let mut tx = db.store.for_account(a.account).begin().await.unwrap();
         tx.envelopes()
-            .insert_with_state(
-                &world::new_envelope(a_env, a.user),
-                Some(a.api_client),
-                &serde_json::json!({"engine": "a"}),
-            )
+            .insert(&world::new_envelope(a_env, a.user))
+            .await
+            .unwrap();
+        tx.workflow_states()
+            .insert(a_env, &serde_json::json!({"engine": "a"}), now())
+            .await
+            .unwrap();
+        tx.envelopes()
+            .set_host_client(a_env, a.api_client)
             .await
             .unwrap();
         tx.sessions()
@@ -100,10 +104,18 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
 
     let mut tx = db.store.for_account(b.account).begin().await.unwrap();
     // Envelope state: invisible, unwritable, and a B envelope cannot name A's client.
-    assert!(tx.envelopes().load_state(a_env).await.unwrap().is_none());
+    assert!(tx.envelopes().host_client(a_env).await.unwrap().is_none());
     assert_eq!(
         tx.envelopes()
-            .save_state(a_env, 1, &projection("x"), &serde_json::json!({}))
+            .project(a_env, 1, &projection("x"))
+            .await
+            .unwrap_err()
+            .code(),
+        "CS-DB-0003"
+    );
+    assert_eq!(
+        tx.envelopes()
+            .set_host_client(a_env, b.api_client)
             .await
             .unwrap_err()
             .code(),
@@ -130,13 +142,14 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
     assert!(page.is_empty());
     drop(tx);
     let mut tx = db.store.for_account(b.account).begin().await.unwrap();
+    let b_env = EnvelopeId(id());
+    tx.envelopes()
+        .insert(&world::new_envelope(b_env, b.user))
+        .await
+        .unwrap();
     let err = tx
         .envelopes()
-        .insert_with_state(
-            &world::new_envelope(EnvelopeId(id()), b.user),
-            Some(a.api_client),
-            &serde_json::json!({}),
-        )
+        .set_host_client(b_env, a.api_client)
         .await
         .unwrap_err();
     assert!(
@@ -277,9 +290,12 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
 
     // A is untouched.
     let mut tx = db.store.for_account(a.account).begin().await.unwrap();
-    let s = tx.envelopes().load_state(a_env).await.unwrap().unwrap();
+    let s = tx.workflow_states().get(a_env).await.unwrap().unwrap();
     assert_eq!(s.state, serde_json::json!({"engine": "a"}));
-    assert_eq!(s.host_client_id, Some(a.api_client));
+    assert_eq!(
+        tx.envelopes().host_client(a_env).await.unwrap(),
+        Some(a.api_client)
+    );
     let r = tx.recipients().get(a.recipient).await.unwrap().unwrap();
     assert_ne!(r.recipient.name.get(), "Mallory");
     let t = tx
@@ -351,27 +367,24 @@ async fn engine_state_tokens_and_sessions_behave() {
     let env = EnvelopeId(id());
     let mut tx = db.store.for_account(a.account).begin().await.unwrap();
     tx.envelopes()
-        .insert_with_state(
-            &world::new_envelope(env, a.user),
-            None,
-            &serde_json::json!({"v": 0}),
-        )
+        .insert(&world::new_envelope(env, a.user))
         .await
         .unwrap();
-    let s = tx.envelopes().load_state(env).await.unwrap().unwrap();
+    tx.workflow_states()
+        .insert(env, &serde_json::json!({"v": 0}), now())
+        .await
+        .unwrap();
+    assert_eq!(tx.envelopes().host_client(env).await.unwrap(), None);
+    let row_version = tx.envelopes().get(env).await.unwrap().unwrap().version;
     let mut p = projection("Changed");
     p.status = EnvelopeStatus::Voided;
     p.voided_at = Some(now());
     p.void_reason = Some(Personal("why".into()));
-    let v = tx
-        .envelopes()
-        .save_state(env, s.row_version, &p, &serde_json::json!({"v": 1}))
-        .await
-        .unwrap();
-    assert_eq!(v, s.row_version + 1);
+    let v = tx.envelopes().project(env, row_version, &p).await.unwrap();
+    assert_eq!(v, row_version + 1);
     assert_eq!(
         tx.envelopes()
-            .save_state(env, s.row_version, &p, &serde_json::json!({"v": 2}))
+            .project(env, row_version, &p)
             .await
             .unwrap_err()
             .code(),

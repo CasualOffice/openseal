@@ -20,6 +20,7 @@ members = [
     "server/casual-sign-store",
     "server/casual-sign-secrets",
     "server/casual-sign-keyd",
+    "server/casual-sign-host",
     "server/casual-sign-worker",
     "server/casual-sign-server",
 ]

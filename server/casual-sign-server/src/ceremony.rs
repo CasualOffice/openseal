@@ -176,7 +176,7 @@ impl Open {
             },
             None,
         )?;
-        run(&mut self.tx, &mut self.l, &cmd, &ctx, self.cmds.now).await?;
+        run(&mut self.tx, &mut self.l, &cmd, &ctx).await?;
         Ok(())
     }
 

@@ -177,6 +177,21 @@ impl From<StoreError> for WorkerError {
     }
 }
 
+impl From<casual_sign_host::HostError> for WorkerError {
+    fn from(e: casual_sign_host::HostError) -> Self {
+        use casual_sign_host::HostError as H;
+        match e {
+            H::Clock => Self::Config { setting: "clock" },
+            H::StateUnreadable => Self::StateUnreadable,
+            H::NotUuid { what } => Self::NotUuid { what },
+            H::BadJob { kind } => Self::BadJob { kind },
+            H::Workflow(w) => Self::Workflow { code: w.code() },
+            H::Store(s) => Self::Store(s),
+            other => Self::Pipeline { code: other.code() },
+        }
+    }
+}
+
 impl From<WorkflowError> for WorkerError {
     fn from(e: WorkflowError) -> Self {
         Self::Workflow { code: e.code() }
