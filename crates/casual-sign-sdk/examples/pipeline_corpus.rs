@@ -2,8 +2,14 @@
 //!
 //! ```sh
 //! cargo run --release -p casual-sign-sdk --example pipeline_corpus -- \
-//!     <corpus files dir> fixtures/corpus/manifest.tsv <out dir> [file ...]
+//!     <corpus files dir> fixtures/corpus/manifest.tsv <out dir> [--print-to-new]
+//!     [--level B-T|B-LT] [file ...]
 //! ```
+//!
+//! `--print-to-new` prints signed input certified at DocMDP P1 to a new document
+//! (`NORM-02`) and runs it as unsigned input (class `printed`) instead of refusing to
+//! keep it; `--level B-LT` seals at B-LT (a DSS revision after the seal, `NORM-03`).
+//! Both are off by default: the gate run is B-T with the exclusion rule.
 //!
 //! For every file of the manifest (or those named), through the facade: admit with the
 //! corpus's published passwords; normalize (signed input is kept as it is); convert the
@@ -39,7 +45,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::time::Instant;
 
-use casual_sign_sdk::{Engine, FontSet, Limits, VerificationReport};
+use casual_sign_sdk::{Engine, FontSet, Limits, Profile, VerificationReport};
 
 fn verdict(r: Option<&VerificationReport>) -> String {
     let Some(r) = r else { return "-".into() };
@@ -57,7 +63,27 @@ fn verdict(r: Option<&VerificationReport>) -> String {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut opts = support::Options::default();
+    let mut args: Vec<String> = Vec::new();
+    let mut it = std::env::args().skip(1);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--print-to-new" => opts.print_to_new = true,
+            "--level" => {
+                opts.profile = match it.next().as_deref() {
+                    Some("B-T") => Profile::BaselineT,
+                    Some("B-LT") => Profile::BaselineLt,
+                    other => panic!("--level B-T or B-LT, not {other:?}"),
+                }
+            }
+            _ => args.push(a),
+        }
+    }
+    let level = if opts.profile == Profile::BaselineLt {
+        "B-LT"
+    } else {
+        "B-T"
+    };
     let (files, manifest, out) = (
         PathBuf::from(&args[0]),
         PathBuf::from(&args[1]),
@@ -85,7 +111,9 @@ fn main() {
             continue;
         };
         let start = Instant::now();
-        let r = catch_unwind(AssertUnwindSafe(|| support::run(&engine, name, &bytes)));
+        let r = catch_unwind(AssertUnwindSafe(|| {
+            support::run_with(&engine, name, &bytes, opts)
+        }));
         let ms = start.elapsed().as_millis();
         let Ok(r) = r else {
             panics += 1;
@@ -108,7 +136,7 @@ fn main() {
             std::fs::write(out.join(name), b).unwrap();
             let _ = writeln!(
                 sealed_manifest,
-                "{name}\tintact\tP1-GATE-01 {class}\tB-T\t{class}"
+                "{name}\tintact\tP1-GATE-01 {class}\t{level}\t{class}"
             );
         }
         let line = format!(

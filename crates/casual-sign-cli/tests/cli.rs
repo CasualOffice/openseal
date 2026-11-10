@@ -359,6 +359,47 @@ fn seal_refuses_a_key_file_without_the_flag() {
 }
 
 #[test]
+fn normalize_prints_a_certified_document_to_new() {
+    let f = files();
+    let input = normalized("p2n");
+    let certified = path("p2n.certified.pdf");
+    let mut a = seal_args(&input, &certified, f);
+    a.extend([
+        "--profile",
+        "b-b",
+        "--certify",
+        "p1",
+        "--field",
+        "Certifier",
+    ]);
+    let o = run(&a);
+    assert_eq!(code(&o), 0, "{}", stderr(&o));
+    let out = path("p2n.printed.pdf");
+    let o = run(&["normalize", &certified, &out, "--json"]);
+    assert_eq!(code(&o), 3, "signed input is refused without the flag");
+    assert_eq!(json(&o)["error"]["code"], "CS-PDF-0014");
+    let o = run(&["normalize", &certified, &out, "--print-to-new", "--json"]);
+    assert_eq!(code(&o), 0, "{}", stderr(&o));
+    let v = json(&o);
+    assert_eq!(v["printed"]["docmdp"], 1);
+    assert_eq!(v["printed"]["signatures"][0]["field_name"], "Certifier");
+    assert_eq!(v["printed"]["signatures"][0]["kind"], "certification");
+    assert_eq!(v["printed"]["original_sha256"].as_str().unwrap().len(), 64);
+    let o = run(&["admit", &out, "--json"]);
+    assert_eq!(code(&o), 0, "{}", stderr(&o));
+    let v = json(&o);
+    assert_eq!(v["signed"], false);
+    assert_eq!(v["fields"], 0);
+    assert_eq!(v["revisions"], 1);
+    // The new document seals like any other.
+    let sealed = path("p2n.sealed.pdf");
+    let mut a = seal_args(&out, &sealed, f);
+    a.extend(["--profile", "b-b"]);
+    let o = run(&a);
+    assert_eq!(code(&o), 0, "{}", stderr(&o));
+}
+
+#[test]
 fn seal_b_b_then_verify_indeterminate_without_revocation() {
     let f = files();
     let input = normalized("bb");

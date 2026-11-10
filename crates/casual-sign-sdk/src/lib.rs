@@ -25,6 +25,9 @@
 //! [`Engine::prepare`] refuses it with `CS-PDF-0014`. [`Engine::keep_signed`] accepts it
 //! as delivered, unchanged, when it is structurally sound, unencrypted and its DocMDP
 //! permits another signature; [`Engine::seal`] then appends a second signature.
+//! [`Engine::prepare_from_signed`] prints it to a new, unsigned document instead
+//! (`NORM-02`), whose signatures are pictures: it is then filled, flattened and sealed
+//! like any other.
 //!
 //! Every error is an [`SdkError`] whose [`SdkError::code`] is the docs/20 code of the
 //! stage that failed.
@@ -44,8 +47,9 @@ pub use casual_sign_flatten::{
     Art, Capture, FlattenOptions, FlattenReport, FontSet, FormMode, Ink, InkPoint, NotDrawn,
 };
 pub use casual_sign_pdf::{
-    AdmissionReport, Credentials, FieldType as PdfFieldType, FormField, Limits,
-    NormalizationReport, PdfError,
+    AdmissionReport, ConvertedSignature, Credentials, FieldType as PdfFieldType, FormField, Limits,
+    MetadataFix, MetadataProblem, MetadataRepair, NormalizationReport, PdfError,
+    SignatureKind as PdfSignatureKind,
 };
 pub use casual_sign_seal::{
     ArchiveOptions, CrlQuery, DocMdp, NoRevocation, NoTimestamps, OcspQuery, Profile,
@@ -214,8 +218,87 @@ pub struct Delivered {
     /// What admission of the uploaded bytes found.
     pub admission: AdmissionReport,
     /// What normalization removed and renumbered; `None` for signed input kept as it is
-    /// ([`Engine::keep_signed`]).
+    /// ([`Engine::keep_signed`]). For print to new, the first pass's report: what was
+    /// removed from the upload (its `renumbered` maps to the intermediate file).
     pub normalization: Option<NormalizationReport>,
+    /// Print to new ([`Engine::prepare_from_signed`]): what the delivered document was
+    /// made from, for the audit trail. `None` otherwise.
+    pub printed: Option<PrintedToNew>,
+    /// Embedded files kept as attachments ([`PrepareOptions::keep_attachments`]), each
+    /// admitted and normalized on its own; empty otherwise.
+    pub attachments: Vec<KeptAttachment>,
+    /// Embedded files found but not extracted (over the limit or unreadable).
+    pub attachments_dropped: u32,
+}
+
+/// How [`Engine::prepare_with`] prepares a document (docs/30 §2–3).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PrepareOptions {
+    /// Print to new (`NORM-02`): accept signed input and deliver a new, unsigned
+    /// document whose pages look as the signed one is displayed.
+    pub print_to_new: bool,
+    /// Keep embedded files as separately admitted attachments (an account setting;
+    /// off by default, when they are only removed).
+    pub keep_attachments: bool,
+}
+
+impl PrepareOptions {
+    /// Print to new, attachments as `keep_attachments` says.
+    #[must_use]
+    pub fn print_to_new(keep_attachments: bool) -> Self {
+        Self {
+            print_to_new: true,
+            keep_attachments,
+        }
+    }
+
+    /// Normalize only, attachments as `keep_attachments` says.
+    #[must_use]
+    pub fn normalize(keep_attachments: bool) -> Self {
+        Self {
+            print_to_new: false,
+            keep_attachments,
+        }
+    }
+}
+
+/// What a printed-to-new document was made from (`NORM-02`): the record the audit
+/// trail notes beside `document.fixed`. Names, numbers and hashes only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PrintedToNew {
+    /// SHA-256 of the uploaded, signed bytes.
+    pub original: Hash256,
+    /// The upload's DocMDP level, when certified.
+    pub docmdp: Option<u8>,
+    /// Every signature the upload carried, now only its appearance on the page.
+    pub signatures: Vec<ConvertedSignature>,
+    /// Widget appearances drawn into the pages (signature appearances among them).
+    pub appearances_drawn: usize,
+    /// Other annotations drawn into the pages from their appearance.
+    pub annotations_flattened: usize,
+    /// Annotations removed as not visible (hidden, or in hidden optional content).
+    pub annotations_removed: usize,
+    /// Whether optional content was taken to its default visibility.
+    pub optional_content_flattened: bool,
+}
+
+/// An embedded file kept as an attachment (docs/30 §3, `NORM-02`).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct KeptAttachment {
+    /// The embedded file stream's object number in the upload.
+    pub object: u32,
+    /// The name its file specification gives. Untrusted text: never a path.
+    pub name: Option<String>,
+    /// SHA-256 of the extracted bytes.
+    pub sha256: Hash256,
+    /// Size of the extracted bytes.
+    pub size: usize,
+    /// The attachment admitted and normalized on its own, or the code it was refused
+    /// with (a non-PDF attachment is `CS-PDF-0005`; a signed one `CS-PDF-0014`).
+    pub outcome: Result<Box<Delivered>, &'static str>,
 }
 
 /// What [`Engine::fill_and_flatten`] draws: the document's fields (placed by geometry,
@@ -351,21 +434,123 @@ impl Engine {
     /// [`SdkError::Pdf`] when admission refuses; [`SdkError::Write`] with `CS-PDF-0014`
     /// for signed input (use [`Engine::keep_signed`]) or the writer's code.
     pub fn prepare(&self, bytes: &[u8], credentials: &Credentials) -> Result<Delivered, SdkError> {
+        self.prepare_with(bytes, credentials, &PrepareOptions::default())
+    }
+
+    /// Print signed input to a new document (docs/30 §2, `NORM-02`): a new, unsigned
+    /// file whose pages look as the signed one is displayed, its signatures and form
+    /// fields drawn as static content, with no `/AcroForm`, `/Perms` or DocMDP.
+    /// [`Delivered::printed`] records the upload's SHA-256 and every signature
+    /// converted, for the audit trail. The original signatures are neither verified
+    /// nor carried: the new document attests nothing about them.
+    ///
+    /// # Errors
+    /// As [`Engine::prepare_with`].
+    pub fn prepare_from_signed(
+        &self,
+        bytes: &[u8],
+        credentials: &Credentials,
+    ) -> Result<Delivered, SdkError> {
+        self.prepare_with(bytes, credentials, &PrepareOptions::print_to_new(false))
+    }
+
+    /// [`Engine::prepare`] with options: print to new for signed input, and embedded
+    /// files kept as attachments, each admitted and normalized on its own (never
+    /// recursively: an attachment's own attachments are removed).
+    ///
+    /// # Errors
+    /// [`SdkError::Pdf`] when admission refuses; [`SdkError::Write`] with `CS-PDF-0014`
+    /// for signed input without print to new, or the writer's code;
+    /// [`SdkError::Flatten`] when print to new cannot draw the appearances.
+    pub fn prepare_with(
+        &self,
+        bytes: &[u8],
+        credentials: &Credentials,
+        options: &PrepareOptions,
+    ) -> Result<Delivered, SdkError> {
         let mut admitted = self.open(bytes, credentials)?;
         let admission = admitted.report.clone();
         let cancel = || self.cancelled();
-        let normalized = normalize(
-            &mut admitted,
+        let mut first_options = NormalizeOptions::with_xref(OutputXref::Stream);
+        first_options.print_to_new = options.print_to_new;
+        first_options.keep_attachments = options.keep_attachments;
+        let first = normalize(&mut admitted, &first_options, &cancel)?;
+        drop(admitted);
+        let (bytes_out, printed) = if options.print_to_new {
+            let (out, flat) = self.print(&first.bytes)?;
+            let printed = PrintedToNew {
+                original: Hash256::digest(bytes),
+                docmdp: admission.docmdp,
+                signatures: first.report.signatures_converted.clone(),
+                appearances_drawn: flat.appearances_kept,
+                annotations_flattened: flat.annotations_flattened,
+                annotations_removed: flat.annotations_removed,
+                optional_content_flattened: flat.optional_content_flattened,
+            };
+            (out, Some(printed))
+        } else {
+            (first.bytes, None)
+        };
+        let mut attachments = Vec::with_capacity(first.attachments.len());
+        for a in first.attachments {
+            let outcome = self
+                .prepare_with(&a.data, &Credentials::default(), &PrepareOptions::default())
+                .map(Box::new)
+                .map_err(|e| e.code());
+            attachments.push(KeptAttachment {
+                object: a.object,
+                name: a.name,
+                sha256: Hash256::digest(&a.data),
+                size: a.data.len(),
+                outcome,
+            });
+        }
+        let hash = Hash256::digest(&bytes_out);
+        Ok(Delivered {
+            bytes: bytes_out,
+            hash,
+            admission,
+            attachments_dropped: first.report.attachments_dropped,
+            normalization: Some(first.report),
+            printed,
+            attachments,
+        })
+    }
+
+    /// Print to new, second half: draw every visible field and annotation appearance of
+    /// the unsigned rewrite into its pages, removing the form, then write the result
+    /// fresh as one revision.
+    fn print(&self, unsigned: &[u8]) -> Result<(Vec<u8>, FlattenReport), SdkError> {
+        let cancel = || self.cancelled();
+        let mut admitted = self.open(unsigned, &Credentials::default())?;
+        if admitted.report.is_signed() {
+            // Never expected: the rewrite removed every signature.
+            return Err(SdkError::Write(WriteError::Signed));
+        }
+        let none_values = BTreeMap::new();
+        let none_captures = BTreeMap::new();
+        let input = casual_sign_flatten::FlattenInput {
+            fields: &[],
+            values: &none_values,
+            captures: &none_captures,
+            envelope_id: None,
+            acroform: None,
+        };
+        let mut options = FlattenOptions::default();
+        options.mode = FormMode::Flatten;
+        options.keep_unconverted_appearances = true;
+        options.signed_by_line = false;
+        let flat =
+            casual_sign_flatten::flatten(&mut admitted, &input, &self.fonts, &options, &cancel)
+                .map_err(SdkError::Flatten)?;
+        drop(admitted);
+        let mut again = self.open(&flat.bytes, &Credentials::default())?;
+        let out = normalize(
+            &mut again,
             &NormalizeOptions::with_xref(OutputXref::Stream),
             &cancel,
         )?;
-        let hash = Hash256::digest(&normalized.bytes);
-        Ok(Delivered {
-            bytes: normalized.bytes,
-            hash,
-            admission,
-            normalization: Some(normalized.report),
-        })
+        Ok((out.bytes, flat.report))
     }
 
     /// Accept signed input as delivered, unchanged, so a seal can be appended after its
@@ -401,6 +586,9 @@ impl Engine {
             hash: Hash256::digest(bytes),
             admission: report,
             normalization: None,
+            printed: None,
+            attachments: Vec::new(),
+            attachments_dropped: 0,
         })
     }
 

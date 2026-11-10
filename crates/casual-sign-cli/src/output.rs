@@ -3,8 +3,8 @@
 
 use casual_sign_sdk::verify::{Check, ModificationClass, SignatureKind, TimeSource};
 use casual_sign_sdk::{
-    AdmissionReport, ChainReport, Indication, NormalizationReport, SignatureReport,
-    VerificationReport,
+    AdmissionReport, ChainReport, Delivered, Indication, MetadataFix, MetadataProblem,
+    MetadataRepair, NormalizationReport, PdfSignatureKind, SignatureReport, VerificationReport,
 };
 use serde_json::{Value, json};
 
@@ -158,8 +158,79 @@ pub(crate) fn admission(file: &str, r: &AdmissionReport) -> Value {
     })
 }
 
-/// `openseal normalize --json`.
-pub(crate) fn normalization(out: &str, sha256: &str, r: &NormalizationReport) -> Value {
+fn metadata(m: Option<&MetadataRepair>) -> Value {
+    let Some(m) = m else { return Value::Null };
+    let fix = match m.fix {
+        MetadataFix::Wrapped => "wrapped".to_owned(),
+        MetadataFix::Dropped(why) => format!("dropped:{}", problem(why)),
+        _ => "other".to_owned(),
+    };
+    json!({ "object": m.object, "fix": fix })
+}
+
+fn problem(p: MetadataProblem) -> &'static str {
+    match p {
+        MetadataProblem::NotStream => "not_stream",
+        MetadataProblem::Unreadable => "unreadable",
+        MetadataProblem::TooLarge => "too_large",
+        MetadataProblem::NotXml => "not_xml",
+        MetadataProblem::Doctype => "doctype",
+        MetadataProblem::NotXmp => "not_xmp",
+        _ => "other",
+    }
+}
+
+fn pdf_signature_kind(k: PdfSignatureKind) -> &'static str {
+    match k {
+        PdfSignatureKind::Approval => "approval",
+        PdfSignatureKind::Certification => "certification",
+        PdfSignatureKind::UsageRights => "usage_rights",
+        PdfSignatureKind::DocTimeStamp => "document_timestamp",
+        _ => "other",
+    }
+}
+
+/// `openseal normalize --json`. `written` is, per attachment, the file it was written
+/// to. Attachment names are document text and are not printed.
+pub(crate) fn normalization(
+    out: &str,
+    sha256: &str,
+    r: &NormalizationReport,
+    d: &Delivered,
+    written: &[Option<String>],
+) -> Value {
+    let printed = d.printed.as_ref().map_or(Value::Null, |p| {
+        json!({
+            "original_sha256": p.original.hex(),
+            "docmdp": p.docmdp,
+            "signatures": p.signatures.iter().map(|s| json!({
+                "field": s.field,
+                "field_name": s.field_name,
+                "value": s.value,
+                "kind": pdf_signature_kind(s.kind),
+                "sub_filter": s.sub_filter,
+            })).collect::<Vec<_>>(),
+            "appearances_drawn": p.appearances_drawn,
+            "annotations_flattened": p.annotations_flattened,
+            "annotations_removed": p.annotations_removed,
+            "optional_content_flattened": p.optional_content_flattened,
+        })
+    });
+    let attachments: Vec<Value> = d
+        .attachments
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            json!({
+                "object": a.object,
+                "sha256": a.sha256.hex(),
+                "size": a.size,
+                "admitted": a.outcome.is_ok(),
+                "code": a.outcome.as_ref().err(),
+                "output": written.get(i).cloned().flatten(),
+            })
+        })
+        .collect();
     json!({
         "output": out,
         "sha256": sha256,
@@ -167,6 +238,10 @@ pub(crate) fn normalization(out: &str, sha256: &str, r: &NormalizationReport) ->
         "unreachable_dropped": r.unreachable_dropped,
         "removed": r.removed.iter().map(|x| json!({ "code": x.code, "object": x.object })).collect::<Vec<_>>(),
         "optional_content_kept": r.optional_content_kept,
+        "metadata": metadata(r.metadata.as_ref()),
+        "printed": printed,
+        "attachments": attachments,
+        "attachments_dropped": d.attachments_dropped,
     })
 }
 

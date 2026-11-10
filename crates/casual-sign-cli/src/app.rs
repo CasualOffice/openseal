@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use casual_sign_sdk::model::{Field, FieldType, FieldValue, Id, Text};
 use casual_sign_sdk::{
     Art, Capture, Credentials, DocMdp, Engine, Fill, FlattenOptions, FontSet, FormMode, Hash256,
-    Indication, Limits, NoRevocation, NoTimestamps, Profile, SdkError, SealKind, TrailOptions,
-    TrustStore,
+    Indication, Limits, NoRevocation, NoTimestamps, PrepareOptions, Profile, SdkError, SealKind,
+    TrailOptions, TrustStore,
 };
 use serde_json::Value;
 
@@ -38,10 +38,15 @@ USAGE
   openseal admit FILE [--password P]... [--json]
       Admit FILE within docs/21's limits and print what it contains. Passwords open an
       encrypted file (each is tried as user and owner password).
-  openseal normalize IN OUT [--password P]... [--json]
+  openseal normalize IN OUT [--password P]... [--print-to-new] [--attachments DIR]
+                [--json]
       Write IN as the document delivered to signers: a fresh, unencrypted file with active
       content, embedded files and external references removed. Prints its SHA-256.
-      Signed input is refused (CS-PDF-0014): seal it as it is.
+      Signed input is refused (CS-PDF-0014): seal it as it is, or --print-to-new makes a
+      new, unsigned document of it whose signatures and fields are drawn as page content
+      (the original's SHA-256 and each signature's field are printed). --attachments
+      keeps embedded files: each is admitted and normalized on its own and written to
+      DIR as attachment-N.pdf; one that is refused is listed with its code.
   openseal fill IN OUT --values values.json [--fields fields.json] [--in-place]
                 [--require-complete] [--envelope-id ID] [--json]
       Convert IN's AcroForm fields, give them the values in values.json, and flatten them
@@ -87,7 +92,12 @@ JSON (--json, one object on stdout)
               xfa, findings:[CS-PDF codes], findings_count}; refused: {file, admitted:false,
               code, message}
   normalize: {output, sha256, objects_written, unreachable_dropped,
-              removed:[{code, object}], optional_content_kept}
+              removed:[{code, object}], optional_content_kept, metadata:null|{object,
+              fix}, printed:null|{original_sha256, docmdp, signatures:[{field,
+              field_name, value, kind, sub_filter}], appearances_drawn,
+              annotations_flattened, annotations_removed, optional_content_flattened},
+              attachments:[{object, sha256, size, admitted, code, output}],
+              attachments_dropped}
   fill:      {output, converted, placed, filled_in_place, drawn, not_drawn, issues:[{field,
               code}], sha256}
   seal:      {output, profile, field, byte_range, signature_timestamp, revisions_added,
@@ -234,26 +244,78 @@ fn admit(argv: &[String]) -> Result<u8, u8> {
 }
 
 fn normalize(argv: &[String]) -> Result<u8, u8> {
-    let p = parse(argv, &["password"], &["json"])?;
+    let p = parse(
+        argv,
+        &["password", "attachments"],
+        &["json", "print-to-new"],
+    )?;
     let [input, out] = p.exactly(2, "IN OUT").map_err(|e| usage(&e))? else {
         return Err(USAGE);
     };
+    let attachments_dir = p.one("attachments").map_err(|e| usage(&e))?;
+    if let Some(dir) = attachments_dir
+        && !Path::new(dir).is_dir()
+    {
+        return Err(usage(&format!("--attachments {dir}: not a directory")));
+    }
     let bytes = read(input)?;
-    let delivered = match engine().prepare(&bytes, &credentials(&p)) {
+    let options = if p.has("print-to-new") {
+        PrepareOptions::print_to_new(attachments_dir.is_some())
+    } else {
+        PrepareOptions::normalize(attachments_dir.is_some())
+    };
+    let delivered = match engine().prepare_with(&bytes, &credentials(&p), &options) {
         Ok(d) => d,
         Err(e) => return Ok(refused(p.has("json"), &e)),
     };
     write(out, &delivered.bytes)?;
+    // Attachments are written under names of our own: the PDF's are untrusted.
+    let mut written = Vec::new();
+    if let Some(dir) = attachments_dir {
+        for (i, a) in delivered.attachments.iter().enumerate() {
+            if let Ok(d) = &a.outcome {
+                let path = Path::new(dir).join(format!("attachment-{}.pdf", i.saturating_add(1)));
+                let path = path.to_string_lossy().into_owned();
+                write(&path, &d.bytes)?;
+                written.push(Some(path));
+            } else {
+                written.push(None);
+            }
+        }
+    }
     let sha = hex(&delivered.hash);
     if let Some(r) = &delivered.normalization {
         if p.has("json") {
-            println!("{}", output::normalization(out, &sha, r));
-        } else {
             println!(
-                "{out}: normalized, sha256 {sha}, {} object(s), {} removed",
+                "{}",
+                output::normalization(out, &sha, r, &delivered, &written)
+            );
+        } else {
+            let verb = if delivered.printed.is_some() {
+                "printed to new"
+            } else {
+                "normalized"
+            };
+            println!(
+                "{out}: {verb}, sha256 {sha}, {} object(s), {} removed",
                 r.objects_written,
                 r.removed.len()
             );
+            if let Some(pr) = &delivered.printed {
+                println!(
+                    "  from sha256 {}: {} signature(s) now pictures, {} appearance(s) drawn",
+                    hex(&pr.original),
+                    pr.signatures.len(),
+                    pr.appearances_drawn
+                );
+            }
+            for (a, path) in delivered.attachments.iter().zip(&written) {
+                match (&a.outcome, path) {
+                    (Ok(_), Some(path)) => println!("  attachment {}: {path}", a.object),
+                    (Err(code), _) => println!("  attachment {}: refused {code}", a.object),
+                    _ => {}
+                }
+            }
         }
     }
     Ok(OK)

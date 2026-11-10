@@ -68,6 +68,22 @@ of 0 are read as free (iText and LiveCycle write them). LZW is decoded (EarlyCha
 **Corpus:** 417 of 422 real PDFs open with page counts equal to the manifest; the 5 refused are 3 public-key handlers
 and 2 dynamic-only XFA forms (`XFA-01`). All 28 standard-handler files decrypt to the same page-1 content as pyHanko.
 
+### Print to new (`NORM-02`)
+
+For signed input whose signatures cannot be kept (a DocMDP P1 certification forbids any later signature), the sender
+can make a **new, unsigned document that looks as the signed one is displayed**. `normalize` with `print_to_new`
+accepts the signed file and writes it fresh without its signatures: every signature dictionary, the catalog's
+`/Perms` (DocMDP, usage rights), the `/DSS` and `/SigFlags` are removed (`CS-PDF-0111`); signature fields keep their
+widgets and appearances. The report's `signatures_converted` lists each signature: field object and full name,
+signature object, kind (approval, certification, usage rights, document timestamp) and `/SubFilter`; no signer
+identity. The SDK's `Engine::prepare_from_signed` (or `prepare_with` and `PrepareOptions::print_to_new`) then flattens
+that file with no field values (`casual-sign-flatten`, the form removed: every visible widget's appearance, the
+signature appearances among them, drawn into its page; annotations with an appearance drawn and removed, hidden ones
+removed; optional content taken to its default visibility, as in §7), and normalizes the result once more, so the
+delivered file is one revision with no `/AcroForm`, `/Perms` or DocMDP. `Delivered::printed` carries the SHA-256 of the
+original upload and the converted signatures, for the audit trail. The CLI is `openseal normalize IN OUT
+--print-to-new`. The original's signatures are not verified or carried: the new document attests nothing about them.
+
 ## 3. Normalization
 
 | Found | Done |
@@ -93,8 +109,18 @@ the page tree always kept, `/Kids` rebuilt from dictionaries and `/Count` recomp
 `/ID` carried when it is two strings. Removed, each listed with its code and input object number: `/OpenAction` and
 `/AA` whole, JavaScript actions and the JavaScript name tree, Launch, SubmitForm, ImportData, GoToR, GoToE, URI actions
 that run without a click (link URIs are kept), embedded files and FileAttachment annotations, RichMedia and 3D, XFA;
-external stream data emptied; optional content reported and kept. Signed input is refused (`CS-PDF-0014`); print to new
-and keeping embedded files as attachments are not built yet (`NORM-02`). `IncrementalUpdate` appends objects with an
+external stream data emptied; optional content reported and kept. Signed input is refused (`CS-PDF-0014`) unless
+`print_to_new` is asked (`NORM-02`, below). **Document metadata (`NORM-03`):** the catalog's `/Metadata` must be an XMP
+packet, well-formed XML whose root is `x:xmpmeta`, because validators check it whenever a later revision touches the
+catalog (pyHanko calls a B-LT seal's DSS update a suspicious change otherwise). A bounded, non-recursive scan (UTF-8 of
+XML characters, matched tags, unique quoted attributes, the five predefined entities and character references, declared
+namespace prefixes, no DOCTYPE; 4 MiB, depth 256, docs/21) decides: a packet is kept as stored; one whose root is
+`rdf:RDF` (legal XMP, written by Distiller 3–5 and older tools) is wrapped in `x:xmpmeta` and written unfiltered; anything
+else (not a stream, unreadable, not XML, a DOCTYPE, another root) is removed from the catalog (`CS-PDF-0110`). The
+report's `metadata` says which. **Embedded files as attachments (`NORM-02`):** with `keep_attachments` (an account
+setting, off by default) each embedded file stream (at most 64, charged to the decode budget) is extracted with the name
+its file specification gives, still removed from the document; the SDK admits and normalizes each one on its own.
+`IncrementalUpdate` appends objects with an
 xref in the file's own form, checks DocMDP (`CS-WRT-0004`) and refuses repaired files (`CS-WRT-0003`). `PDF-INV-01`
 holds over the hostile set and the corpus: 315 corpus files normalized and appended; of 72 signed files, 42 appended
 with every signature, page and MediaBox kept and 30 refused for DocMDP P=1, as they must be. pyHanko reads every output

@@ -11,6 +11,14 @@ sealed file with the checks of `tools/verify-sealed.py`, and writes one row per 
 
     python3 -I tools/pipeline-corpus.py --work DIR --dss openseal-eu-dss \\
         [--corpus fixtures/corpus/files] [--python VENV_PYTHON] [--no-build] [--batch 40]
+        [--print-to-new] [--level B-T|B-LT] [--present-only] [--results DIR]
+
+Options off by default, so the gate's own run does not change: `--print-to-new` prints
+signed input certified at DocMDP P1 to a new document (`NORM-02`) and judges it as
+unsigned input (class `printed`) instead of excluding it; `--level B-LT` seals at B-LT,
+so pyHanko and EU DSS also judge the DSS revision after the seal (`NORM-03`);
+`--present-only` runs only the manifest's files present in `--corpus` (a subset), not
+counting the others as missing.
 
 `--work` holds the sealed files while they are judged (about 650 MB at most; each DSS
 batch is deleted once judged). pyHanko runs in `--python` (a virtualenv with
@@ -19,7 +27,8 @@ nothing beyond the standard library. EU DSS is the image built from tools/eu-dss
 
 How each row is judged:
 
-* `form` and `plain` (unsigned input, normalized): ours with the test PKI's CRLs
+* `form`, `plain` and `printed` (unsigned input, normalized; or signed input printed to
+  new): ours with the test PKI's CRLs
   supplied must say TOTAL_PASSED for the seal with the whole file covered; offline
   (no revocation data) ours says INDETERMINATE/TRY_LATER, as DSS does offline. pyHanko:
   `pyhanko_sealed(.., "B-T")` (intact, valid, trusted, no change it calls OTHER, the
@@ -105,7 +114,7 @@ for line in sys.stdin:
         res = {"before": each(open(job["input"], "rb").read()), "after": each(data)}
     else:
         try:
-            problems, summary = vs.pyhanko_sealed(data, root, "B-T")
+            problems, summary = vs.pyhanko_sealed(data, root, job["level"])
         except Exception as e:
             problems, summary = [f"pyHanko raised {type(e).__name__}"], "-"
         res = {"problems": problems, "summary": summary}
@@ -198,15 +207,24 @@ def main(argv):
     p.add_argument("--no-build", action="store_true", help="reuse the work dir's run of our side")
     p.add_argument("--batch", type=int, default=40)
     p.add_argument("--results", type=pathlib.Path, default=OUT_DIR)
+    p.add_argument("--print-to-new", action="store_true",
+                   help="print DocMDP P1 signed input to new (NORM-02) instead of excluding it")
+    p.add_argument("--level", choices=["B-T", "B-LT"], default="B-T")
+    p.add_argument("--present-only", action="store_true",
+                   help="run only the manifest's files present in --corpus")
     args = p.parse_args(argv[1:])
 
     out = args.work / "out"
     if not args.no_build:
         if out.exists():
             shutil.rmtree(out)
+        extra = ["--level", args.level] + (["--print-to-new"] if args.print_to_new else [])
+        if args.present_only:
+            listed = [r["file"] for r in read_tsv(ROOT / "fixtures/corpus/manifest.tsv")]
+            extra += [n for n in listed if (args.corpus / n).is_file()]
         done = subprocess.run(
             ["cargo", "run", "--release", "-q", "-p", "casual-sign-sdk", "--example", "pipeline_corpus", "--",
-             str(args.corpus), str(ROOT / "fixtures/corpus/manifest.tsv"), str(out)],
+             str(args.corpus), str(ROOT / "fixtures/corpus/manifest.tsv"), str(out)] + extra,
             cwd=ROOT, check=False, capture_output=True, text=True)
         print(done.stdout.strip().splitlines()[-1] if done.stdout.strip() else done.stderr[-500:])
         if done.returncode != 0:
@@ -236,7 +254,8 @@ def main(argv):
             dss = vs.dss_rows_by_file(args.dss, work, names)
             for r in batch:
                 name = r["file"]
-                job = {"sealed": str(work / name), "class": r["class"], "input": str(args.corpus / name)}
+                job = {"sealed": str(work / name), "class": r["class"], "input": str(args.corpus / name),
+                       "level": args.level}
                 child.stdin.write(json.dumps(job) + "\n")
                 child.stdin.flush()
                 ph = json.loads(child.stdout.readline())
@@ -246,7 +265,7 @@ def main(argv):
                     d_problems = judge_dss_signed(dss.get("input-" + name, []), dss.get(name, []))
                 else:
                     ph_problems, ph_text = ph["problems"], ph["summary"]
-                    d_problems = vs.dss_judge(dss.get(name, []), "B-T")
+                    d_problems = vs.dss_judge(dss.get(name, []), args.level)
                 results[name] = (ph_problems, ph_text, d_problems, dss_text(dss.get(name, [])))
         print(f"judged {min(start + args.batch, len(sealed))}/{len(sealed)}", flush=True)
     child.stdin.close()
@@ -285,7 +304,7 @@ def main(argv):
     args.results.mkdir(parents=True, exist_ok=True)
     (args.results / "results.tsv").write_text("\n".join(rows) + "\n", encoding="utf8")
     summary = ["class\toutcome\tfiles"] + [f"{c}\t{o}\t{n}" for (c, o), n in sorted(counts.items())]
-    admitted = sum(n for (c, _), n in counts.items() if c in ("form", "plain", "signed"))
+    admitted = sum(n for (c, _), n in counts.items() if c in ("form", "plain", "signed", "printed"))
     passed = sum(n for (c, o), n in counts.items() if o == "pass")
     excluded = sum(n for (c, o), n in counts.items() if o == "excluded")
     failed = sum(n for (c, o), n in counts.items() if o == "fail")

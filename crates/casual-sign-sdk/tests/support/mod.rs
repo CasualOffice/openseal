@@ -33,11 +33,11 @@ use casual_sign_sdk::model::{
 use casual_sign_sdk::{
     AdmissionReport, Art, Capture, CertificateInput, CertificateOptions, Conversion, Credentials,
     Delivered, Engine, Fill, FlattenOptions, Hash256, Indication, Ink, InkPoint, NoRevocation,
-    Profile, TrailOptions, TrustStore, VerificationReport,
+    Profile, RevocationSource, TrailOptions, TrustStore, VerificationReport,
 };
 use rust_decimal::Decimal;
 
-use crate::common::{SIGNING_TIME, TestTsa, VALIDATION_TIME, p256, pki, trust};
+use crate::common::{SIGNING_TIME, TestRevocation, TestTsa, VALIDATION_TIME, p256, pki, trust};
 
 /// The passwords the corpus's encrypted files publish (fixtures/corpus/README.md).
 pub const PASSWORDS: [&str; 5] = ["user", "usersecret", "openpassword", "view", " "];
@@ -307,6 +307,9 @@ pub enum Class {
     Plain,
     /// Signed input: kept as it is, sealed by appending a second signature.
     Signed,
+    /// Signed input printed to a new, unsigned document (`NORM-02`), then filled,
+    /// flattened, completed and sealed as a new document.
+    Printed,
 }
 
 impl Class {
@@ -315,6 +318,7 @@ impl Class {
             Self::Form => "form",
             Self::Plain => "plain",
             Self::Signed => "signed",
+            Self::Printed => "printed",
         }
     }
 }
@@ -345,6 +349,21 @@ pub struct Run {
 /// covers the whole file, and no revision is a disallowed change.
 pub fn passes(report: &VerificationReport) -> bool {
     report.all_passed()
+}
+
+/// B-LT and above end with an unsigned DSS revision (B-LTA with a document timestamp):
+/// every signature passed and every revision after the last one is an allowed change.
+pub fn passes_lt(report: &VerificationReport) -> bool {
+    report.error.is_none()
+        && !report.signatures.is_empty()
+        && report
+            .signatures
+            .iter()
+            .all(|s| s.indication == Indication::TotalPassed)
+        && report
+            .signatures
+            .iter()
+            .all(|s| s.modifications_after.iter().all(|m| m.allowed()))
 }
 
 /// For signed input: our new (last) signature passed; earlier ones are judged only on
@@ -387,9 +406,34 @@ pub fn trust_store() -> TrustStore {
     trust()
 }
 
-/// Run the pipeline over one file. Never panics on a refusal: each step's failure is
-/// recorded with its code.
+/// How the gate runs a file.
+#[derive(Debug, Clone, Copy)]
+pub struct Options {
+    /// Print signed input certified at DocMDP P1 to a new document (`NORM-02`) instead
+    /// of refusing to keep it (`CS-WRT-0004`).
+    pub print_to_new: bool,
+    /// The seal's level: B-T (the gate) or B-LT, which adds a DSS revision after the
+    /// seal (`NORM-03`: validators then read the catalog's `/Metadata`).
+    pub profile: Profile,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            print_to_new: false,
+            profile: Profile::BaselineT,
+        }
+    }
+}
+
+/// Run the pipeline over one file as the gate does. Never panics on a refusal: each
+/// step's failure is recorded with its code.
 pub fn run(engine: &Engine, name: &str, bytes: &[u8]) -> Run {
+    run_with(engine, name, bytes, Options::default())
+}
+
+/// [`run`] with options.
+pub fn run_with(engine: &Engine, name: &str, bytes: &[u8], opts: Options) -> Run {
     let mut r = Run {
         prefix: true,
         ..Run::default()
@@ -402,18 +446,26 @@ pub fn run(engine: &Engine, name: &str, bytes: &[u8]) -> Run {
         }
     };
     r.steps.push("admit");
-    if admission.is_signed() {
+    let printed = opts.print_to_new && admission.is_signed() && admission.docmdp == Some(1);
+    if admission.is_signed() && !printed {
         r.class = Some(Class::Signed);
-        return run_signed(engine, bytes, r);
+        return run_signed(engine, bytes, r, opts);
     }
-    let delivered = match engine.prepare(bytes, &credentials()) {
+    let prepared = if printed {
+        engine.prepare_from_signed(bytes, &credentials())
+    } else {
+        engine.prepare(bytes, &credentials())
+    };
+    let delivered = match prepared {
         Ok(d) => d,
         Err(e) => {
-            r.failure = Some(format!("normalize {}", e.code()));
+            let step = if printed { "print-to-new" } else { "normalize" };
+            r.failure = Some(format!("{step} {}", e.code()));
             return r;
         }
     };
-    r.steps.push("normalize");
+    r.steps
+        .push(if printed { "print-to-new" } else { "normalize" });
     r.delivered = delivered.bytes.clone();
     let mut n = 0u32;
     let mut next = || {
@@ -428,7 +480,10 @@ pub fn run(engine: &Engine, name: &str, bytes: &[u8]) -> Run {
         }
     };
     let fields: Vec<Field> = conversion.fields.iter().map(|c| c.field.clone()).collect();
-    let (fields, acroform): (Vec<Field>, Option<&Conversion>) = if fields.is_empty() {
+    let (fields, acroform): (Vec<Field>, Option<&Conversion>) = if printed {
+        r.class = Some(Class::Printed);
+        (vec![geometry_field(&delivered.admission)], None)
+    } else if fields.is_empty() {
         r.class = Some(Class::Plain);
         (vec![geometry_field(&delivered.admission)], None)
     } else {
@@ -476,10 +531,10 @@ pub fn run(engine: &Engine, name: &str, bytes: &[u8]) -> Run {
         return r;
     }
     r.steps.push("certificate");
-    seal_and_verify(engine, &completed.bytes, &delivered, None, r)
+    seal_and_verify(engine, &completed.bytes, &delivered, None, r, opts)
 }
 
-fn run_signed(engine: &Engine, bytes: &[u8], mut r: Run) -> Run {
+fn run_signed(engine: &Engine, bytes: &[u8], mut r: Run, opts: Options) -> Run {
     let delivered = match engine.keep_signed(bytes) {
         Ok(d) => d,
         Err(e) => {
@@ -490,7 +545,7 @@ fn run_signed(engine: &Engine, bytes: &[u8], mut r: Run) -> Run {
     r.steps.push("keep");
     r.delivered = delivered.bytes.clone();
     let before = engine.verify(bytes, &trust(), &with_crls(engine));
-    seal_and_verify(engine, bytes, &delivered, Some(before), r)
+    seal_and_verify(engine, bytes, &delivered, Some(before), r, opts)
 }
 
 fn with_crls(engine: &Engine) -> casual_sign_sdk::VerifyOptions {
@@ -505,6 +560,7 @@ fn seal_and_verify(
     delivered: &Delivered,
     before: Option<VerificationReport>,
     mut r: Run,
+    opts: Options,
 ) -> Run {
     let field = match engine.free_field_name(input, "OpenSealGate") {
         Ok(f) => f,
@@ -513,11 +569,14 @@ fn seal_and_verify(
             return r;
         }
     };
-    let mut request = engine.seal_request(Profile::BaselineT, &field, SIGNING_TIME);
+    let mut request = engine.seal_request(opts.profile, &field, SIGNING_TIME);
     request.reason = Some("Phase 1 gate run".into());
     request.trust = trust();
     let tsa = TestTsa::new(SIGNING_TIME + Duration::from_secs(1));
-    let sealed = match engine.seal(input, &request, &p256(), &tsa, &NoRevocation) {
+    let lt = !matches!(opts.profile, Profile::BaselineB | Profile::BaselineT);
+    let revocation = TestRevocation::default();
+    let source: &dyn RevocationSource = if lt { &revocation } else { &NoRevocation };
+    let sealed = match engine.seal(input, &request, &p256(), &tsa, source) {
         Ok(s) => s,
         Err(e) => {
             r.failure = Some(format!("seal {}", e.code()));
@@ -534,6 +593,7 @@ fn seal_and_verify(
     let online = engine.verify(&sealed.bytes, &trust(), &with_crls(engine));
     let ok = match &before {
         Some(b) => passes_appended(b, &online),
+        None if lt => passes_lt(&online),
         None => passes(&online),
     };
     if ok {
