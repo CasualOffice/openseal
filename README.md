@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo.svg" alt="OpenSeal" width="420">
+  </picture>
+</p>
+
 # OpenSeal
 
 [![CI](https://github.com/CasualOffice/openseal/actions/workflows/ci.yml/badge.svg)](https://github.com/CasualOffice/openseal/actions/workflows/ci.yml)

@@ -56,3 +56,8 @@ sums are in fonts/PROVENANCE.md. All are SIL Open Font License 1.1:
                 (https://github.com/googlefonts/great-vibes).
   Allura        Copyright 2010 The Allura Project Authors
                 (https://github.com/googlefonts/allura).
+
+The OpenSeal logo (docs/assets/*.svg, made by tools/logo/make.py) draws its
+wordmark as outlines of Lexend SemiBold, Copyright 2018 The Lexend Project
+Authors (https://github.com/googlefonts/lexend), SIL Open Font License 1.1.
+The font itself is not distributed.
