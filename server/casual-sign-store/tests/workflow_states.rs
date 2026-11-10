@@ -186,6 +186,28 @@ async fn heartbeat_extends_only_the_holders_lease() {
         .await
         .unwrap();
     assert!(again.is_empty());
+    // Dead-lettering needs the lease too.
+    let mut tx = t.begin().await.unwrap();
+    assert_eq!(
+        tx.jobs()
+            .bury(w.job, uuid::Uuid::new_v4(), now(), "CS-WRK-0005")
+            .await
+            .unwrap_err()
+            .code(),
+        "CS-DB-0003"
+    );
+    drop(tx);
+    let mut tx = t.begin().await.unwrap();
+    tx.jobs()
+        .bury(w.job, lease, now(), "CS-WRK-0005")
+        .await
+        .unwrap();
+    let st = tx.jobs().get(w.job).await.unwrap().unwrap();
+    assert_eq!(
+        (st.status.as_str(), st.last_error_code.as_deref()),
+        ("dead", Some("CS-WRK-0005"))
+    );
+    tx.commit().await.unwrap();
 }
 
 async fn new_methods_refuse_another_accounts_ids(rls: Rls) {
@@ -239,7 +261,7 @@ async fn new_methods_refuse_another_accounts_ids(rls: Rls) {
     );
     assert!(tx.job_steps().list(a.job).await.unwrap().is_empty());
     tx.commit().await.unwrap();
-    for what in ["insert", "update", "record", "heartbeat"] {
+    for what in ["insert", "update", "record", "heartbeat", "bury"] {
         let mut tx = tb.begin().await.unwrap();
         let r = match what {
             "insert" => tx
@@ -257,7 +279,12 @@ async fn new_methods_refuse_another_accounts_ids(rls: Rls) {
                 .record(a.job, "webhook.sent", &serde_json::json!({}), now())
                 .await
                 .map(i64::from),
-            _ => tx.jobs().heartbeat(a.job, lease, now()).await.map(|()| 0),
+            "heartbeat" => tx.jobs().heartbeat(a.job, lease, now()).await.map(|()| 0),
+            _ => tx
+                .jobs()
+                .bury(a.job, lease, now(), "CS-WRK-0004")
+                .await
+                .map(|()| 0),
         };
         let e = r.expect_err(what);
         assert!(
