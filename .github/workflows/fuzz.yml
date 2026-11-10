@@ -1,11 +1,12 @@
 name: fuzz
 
 # FUZZ-01 (Phase 1 exit item 1): 24 hours per target, cumulative. GitHub caps a job at
-# 6 hours, so each nightly run gives every target 5.5 hours and the corpus carries over
-# in the cache; five clean runs make 27.5 hours. Owner instruction 11 (docs/03).
+# 6 hours, so each run gives every target 5.5 hours and the corpus carries over in the
+# cache; five clean runs make 27.5 hours. Runs every 6 hours, one at a time (the
+# concurrency group queues the next), so the 24 hours take about 30. Owner instruction 11.
 on:
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       seconds:
