@@ -12,8 +12,8 @@
 
 mod pdf;
 
-use casual_sign_fields::{Unmapped, convert_acroform};
-use casual_sign_model::{FieldType, Id, LengthRule, ValidationRule};
+use casual_sign_fields::{Unmapped, convert_acroform, evaluate_envelope};
+use casual_sign_model::{FieldType, FieldValue, Id, LengthRule, Text, ValidationRule};
 use casual_sign_pdf::{Limits, admit};
 use pdf::{dump, never, one_page};
 use rust_decimal::Decimal;
@@ -366,4 +366,93 @@ fn a_widget_without_p_is_on_the_page_whose_annots_lists_it() {
         .map(|f| (f.field.field_type, f.field.placement.page()))
         .collect();
     assert_eq!(pages, vec![(FieldType::Text, 1), (FieldType::Checkbox, 2)]);
+}
+
+/// A radio group `name` (object 12) with one button on each of two pages: 16 on page
+/// 1 (state `one`), 17 on page 2 (state `two`), placed by `/Annots` only.
+fn radio_over_two_pages(name: &str) -> Vec<u8> {
+    let w = "/Type/Annot/Subtype/Widget";
+    two_pages(
+        "/AcroForm<</Fields[12 0 R]>>",
+        "16 0 R",
+        "17 0 R",
+        vec![
+            (
+                12,
+                format!("<</FT/Btn/Ff 49152/T({name})/Kids[16 0 R 17 0 R]>>").into_bytes(),
+            ),
+            (
+                16,
+                format!(
+                    "<</Parent 12 0 R{w}/Rect[100 300 110 310]/AS/Off/AP<</N<</one 20 0 R/Off 20 0 R>>>>>>"
+                )
+                .into_bytes(),
+            ),
+            (
+                17,
+                format!(
+                    "<</Parent 12 0 R{w}/Rect[150 600 160 610]/AS/Off/AP<</N<</two 20 0 R/Off 20 0 R>>>>>>"
+                )
+                .into_bytes(),
+            ),
+            (
+                20,
+                pdf::stream("/Type/XObject/Subtype/Form/BBox[0 0 10 10]", b""),
+            ),
+        ],
+    )
+}
+
+#[test]
+fn a_radio_group_across_pages_is_one_group_with_a_field_on_each_page() {
+    // ACRO-02: one field per page over that page's buttons, every choice on each, all
+    // sharing the group's label, so they hold one value (linked fields, docs/22 §6).
+    let bytes = radio_over_two_pages("marital");
+    dump("radio-two-pages.pdf", &bytes);
+    let c = convert(&bytes);
+    assert!(c.skipped.is_empty() && c.lossy.is_empty(), "{c:?}");
+    assert_eq!(c.fields.len(), 2);
+    for (cf, page) in c.fields.iter().zip([1, 2]) {
+        let f = &cf.field;
+        assert_eq!(f.field_type, FieldType::RadioGroup);
+        assert_eq!(f.placement.page(), page);
+        assert_eq!(f.label.as_ref().unwrap().as_str(), "marital");
+        let opts: Vec<&str> = f.options.as_slice().iter().map(|o| o.as_str()).collect();
+        assert_eq!(opts, vec!["one", "two"]);
+        assert_eq!(cf.object, Some(12));
+    }
+    // Each page's field covers only that page's button: 10 × 10.
+    assert_eq!(
+        (
+            c.fields[0].field.placement.x().get(),
+            c.fields[0].field.placement.width().get(),
+            c.fields[1].field.placement.x().get()
+        ),
+        (d(100), d(10), d(150))
+    );
+    // Choosing on one page chooses for the group.
+    let fields: Vec<_> = c.fields.iter().map(|c| c.field.clone()).collect();
+    let values = std::collections::BTreeMap::from([(
+        fields[0].id.clone(),
+        FieldValue::Choice(Text::new("two").unwrap()),
+    )]);
+    let outcome = evaluate_envelope(&fields, &values);
+    assert!(outcome.is_complete(), "{:?}", outcome.issues);
+    assert_eq!(
+        outcome.values.get(&fields[1].id),
+        Some(&FieldValue::Choice(Text::new("two").unwrap()))
+    );
+}
+
+#[test]
+fn a_radio_group_across_pages_without_a_label_is_placed_on_its_first_page() {
+    // No label to link fields by: one field, on the first page, every choice; the
+    // buttons on other pages still turn on when chosen. Reported as a loss.
+    let c = convert(&radio_over_two_pages(""));
+    assert_eq!(c.fields.len(), 1, "{c:?}");
+    let f = &c.fields[0].field;
+    assert_eq!(f.placement.page(), 1);
+    assert_eq!(f.options.as_slice().len(), 2);
+    let lossy: Vec<Unmapped> = c.lossy.iter().map(|s| s.reason).collect();
+    assert!(lossy.contains(&Unmapped::RadioAcrossPages), "{lossy:?}");
 }

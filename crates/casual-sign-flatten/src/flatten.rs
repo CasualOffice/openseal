@@ -462,6 +462,8 @@ pub fn flatten(
         .envelope_id
         .and_then(|e| Text::new(e).ok())
         .map(FieldValue::Text);
+    // Radio groups whose chosen buttons are drawn.
+    let mut radio_drawn: BTreeSet<u32> = BTreeSet::new();
     let mut ctx = Ctx {
         fonts,
         uses: &mut uses,
@@ -530,6 +532,12 @@ pub fn flatten(
                     field: field.id.clone(),
                 });
             };
+            // A group across pages is a linked field on each page (ACRO-02): its
+            // buttons are drawn once, by the first of them.
+            if !radio_drawn.insert(obj) {
+                report.drawn.push(field.id.clone());
+                continue;
+            }
             let color = field
                 .format
                 .as_ref()

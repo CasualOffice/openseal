@@ -528,3 +528,111 @@ fn radio_buttons_without_an_on_state_or_with_opt_fill_and_flatten() {
         ]
     );
 }
+
+/// A radio group (object 10) with one button on each of two pages (11 on page 1, state
+/// `one`; 12 on page 2, state `two`, its on appearance object 30), delivered.
+fn radio_two_pages() -> Vec<u8> {
+    let w = "/Type/Annot/Subtype/Widget/F 4";
+    let page = |annots: &str| {
+        format!(
+            "<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Annots[{annots}]/Resources<<>>/Contents 4 0 R>>"
+        )
+        .into_bytes()
+    };
+    let on = |n: &str| {
+        stream(
+            "/Type/XObject/Subtype/Form/BBox[0 0 12 12]",
+            format!("0 g 2 2 {n} 8 re f").as_bytes(),
+        )
+    };
+    delivered(&classic(&[
+        (
+            1,
+            b"<</Type/Catalog/Pages 2 0 R/AcroForm<</Fields[10 0 R]>>>>".to_vec(),
+        ),
+        (2, b"<</Type/Pages/Kids[3 0 R 6 0 R]/Count 2>>".to_vec()),
+        (3, page("11 0 R")),
+        (4, stream("", b"")),
+        (6, page("12 0 R")),
+        (
+            10,
+            b"<</FT/Btn/Ff 49152/T(group)/Kids[11 0 R 12 0 R]>>".to_vec(),
+        ),
+        (
+            11,
+            format!("<</Parent 10 0 R{w}/P 3 0 R/Rect[100 600 112 612]/AS/Off/AP<</N<</one 29 0 R/Off 31 0 R>>>>>>")
+                .into_bytes(),
+        ),
+        (
+            12,
+            format!("<</Parent 10 0 R{w}/P 6 0 R/Rect[100 300 112 312]/AS/Off/AP<</N<</two 30 0 R/Off 31 0 R>>>>>>")
+                .into_bytes(),
+        ),
+        (29, on("7")),
+        (30, on("8")),
+        (31, stream("/Type/XObject/Subtype/Form/BBox[0 0 12 12]", b"")),
+    ]))
+}
+
+#[test]
+fn a_radio_group_across_pages_is_chosen_once_and_drawn_on_the_chosen_page() {
+    // ACRO-02: the group is a field on each page, linked by label; choosing `two` on
+    // page 1's field turns on page 2's button, drawn once, and fills `/V` once.
+    let base = radio_two_pages();
+    let mut a = admit(&base, &Limits::default(), &never).unwrap();
+    let report = a.report.clone();
+    let conv =
+        convert_acroform(&mut a.document, &report, &id("doc"), &mut minter(), &never).unwrap();
+    let fields: Vec<_> = conv.fields.iter().map(|c| c.field.clone()).collect();
+    assert_eq!(
+        fields
+            .iter()
+            .map(|f| f.placement.page())
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    // What completion hands flattening: the linked value on both fields.
+    let chosen = std::collections::BTreeMap::from([(fields[0].id.clone(), choice("two"))]);
+    let values = casual_sign_fields::evaluate_envelope(&fields, &chosen).values;
+    assert_eq!(values.len(), 2);
+    let caps = std::collections::BTreeMap::new();
+    let input = FlattenInput {
+        fields: &fields,
+        values: &values,
+        captures: &caps,
+        envelope_id: None,
+        acroform: Some(&conv),
+    };
+    let flat = flatten(
+        &mut a,
+        &input,
+        &FontSet::bundled(),
+        &FlattenOptions::default(),
+        &never,
+    )
+    .unwrap();
+    dump("radio-two-pages.out.pdf", &flat.bytes);
+    assert_eq!(flat.report.drawn.len(), 2);
+    let mut b = admit_strict(&flat.bytes, &Limits::default(), &never).unwrap();
+    // Which appearance objects each page now invokes.
+    let mut invoked = Vec::new();
+    for p in b.report.pages.clone() {
+        let page = b.document.object(p.object, &never).unwrap();
+        let res = b
+            .document
+            .resolve(page.get(b"Resources").unwrap(), &never)
+            .unwrap();
+        let mut refs: Vec<u32> = Vec::new();
+        if let Some(x) = res.get(b"XObject")
+            && let Object::Dictionary(x) = b.document.resolve(x, &never).unwrap()
+        {
+            refs = x
+                .iter()
+                .filter_map(|(_, v)| v.as_ref().map(|r| r.num))
+                .collect();
+        }
+        invoked.push(refs.len());
+    }
+    // Delivery renumbers objects; what counts is one invocation, on page 2.
+    assert_eq!(invoked, vec![0, 1]);
+}

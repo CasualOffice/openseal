@@ -3,7 +3,7 @@
 //! `transformPdfFields`, docs/48 §5).
 //!
 //! Input is the admission report's inventory and the document it came from; output is
-//! one [`Field`] per widget (one per group for radio buttons), placed in displayed page
+//! one [`Field`] per widget (one per page for a radio group), placed in displayed page
 //! space through [`crate::geometry`]. What cannot be mapped is listed with a reason;
 //! what maps with a loss (a dropped label, options cut or merged, multi-select) is
 //! listed too. Nothing is executed and the document is not changed.
@@ -43,7 +43,9 @@ pub enum Unmapped {
     NoPage,
     /// The widget's rectangle is empty or entirely off its page.
     NoArea,
-    /// A radio group whose buttons are on several pages.
+    /// A radio group whose buttons are on several pages, with no label to link a field
+    /// on each page by: it became one field on its first page (its other buttons still
+    /// turn on when chosen).
     RadioAcrossPages,
     /// The field name is not a valid data label; the field has no label.
     Label,
@@ -537,39 +539,50 @@ pub fn convert_acroform(
         };
 
         if field_type == FieldType::RadioGroup {
-            // One field for the group: the buttons' bounding box, their states as options.
-            let pages: Vec<Option<u32>> = f.widgets.iter().map(|w| widget_pages.page(w)).collect();
-            let Some(Some(page)) = pages.first().copied() else {
-                out.skipped.push(skip(Unmapped::NoPage, None));
-                continue;
-            };
-            if pages.iter().any(|p| *p != Some(page)) {
-                out.skipped.push(skip(Unmapped::RadioAcrossPages, None));
+            // One group: on each page holding its buttons, a field over that page's
+            // buttons with every choice as options. The fields share the group's label,
+            // so they hold one value (linked fields, docs/22 §6) and the group stays
+            // exclusive across pages; a choice turns on its buttons wherever they are.
+            let mut per_page: BTreeMap<u32, Option<DisplayRect>> = BTreeMap::new();
+            for w in &f.widgets {
+                let Some(page) = widget_pages.page(w) else {
+                    out.skipped.push(skip(Unmapped::NoPage, w.object));
+                    continue;
+                };
+                let slot = per_page.entry(page).or_insert(None);
+                if let Some(r) = place(report, page, &w.rect) {
+                    *slot = Some(slot.map_or(r, |o| o.union(&r)));
+                }
+            }
+            if per_page.is_empty() {
                 continue;
             }
-            let mut rect: Option<DisplayRect> = None;
-            for w in &f.widgets {
-                if let Some(r) = place(report, page, &w.rect) {
-                    rect = Some(rect.map_or(r, |o| o.union(&r)));
+            let mut placements = Vec::new();
+            for (page, rect) in per_page {
+                if let Some(p) = rect.and_then(|r| r.to_placement(page.saturating_add(1)).ok()) {
+                    placements.push(p);
                 }
+            }
+            if placements.is_empty() {
+                out.skipped.push(skip(Unmapped::NoArea, None));
+                continue;
+            }
+            // Without a label nothing links the fields: one field, on the first page.
+            if label.is_none() && placements.len() > 1 {
+                placements.truncate(1);
+                out.lossy.push(skip(Unmapped::RadioAcrossPages, None));
             }
             let states: Vec<String> = radio_choices(doc, f, cancel)?
                 .into_iter()
                 .map(|c| c.text)
                 .collect();
-            let Some(rect) = rect else {
-                out.skipped.push(skip(Unmapped::NoArea, None));
-                continue;
-            };
-            let Ok(placement) = rect.to_placement(page.saturating_add(1)) else {
-                out.skipped.push(skip(Unmapped::NoArea, None));
-                continue;
-            };
             let (opts, lost) = to_options(states);
             if lost {
                 out.lossy.push(skip(Unmapped::Options, None));
             }
-            out.fields.push(make(placement, opts, next_id));
+            for placement in placements {
+                out.fields.push(make(placement, opts.clone(), next_id));
+            }
             continue;
         }
 

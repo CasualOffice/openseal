@@ -155,8 +155,15 @@ top-left with the given size. Types that need options, a formula or a URL cannot
 place it: `/P` is optional and forms written before PDF 1.3 never carry it (irs-f1040-1997, irs-f1120-1997 and
 irs-fss4-1998 converted no field before this, `PDF-WID-01`). The `/Annots` index is read once per document and only when
 a widget lacks `/P`, at most 10,000 entries a page (docs/21). One OpenSeal field per widget (text with `MaxLen` and required, checkbox, radio group as one
-field over its buttons, combo with custom entry, signature); push buttons, multi-page radio groups and off-page widgets
-are reported as skipped; multi-select is reported as lossy. A radio group's choices come from each widget's on-state
+field over its buttons, combo with custom entry, signature); push buttons and off-page widgets
+are reported as skipped; multi-select is reported as lossy.
+
+**A radio group across pages (`ACRO-02`)** is one group: a field on each page holding its buttons, over that page's
+buttons, each offering every choice of the group and all carrying the group's name as their data label, so they are
+linked fields holding one value (docs/22 §6) and the group stays exclusive across pages. A choice turns on its buttons
+wherever they are; flattening draws them once, filling writes `/V` once. A group whose name is not a valid label has
+nothing to link by: it becomes one field on its first page with every choice (its other buttons still turn on when
+chosen), reported as lossy (`RadioAcrossPages`). A radio group's choices come from each widget's on-state
 (the first non-`/Off` key of `/AP /N`, else of `/D`, else `/AS`), with text from `/Opt`, else the state name as UTF-8 or,
 failing that, PDFDocEncoding; widgets sharing a state are one choice. A widget with no on-state anywhere gets one named
 after its position (`"0"`, `"1"`, as `/Opt` groups name theirs, ISO 32000-2 §12.7.5.2.4) and, filled in place, a dot
