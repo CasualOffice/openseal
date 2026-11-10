@@ -37,7 +37,8 @@ openseal/
 | `casual-sign-audit` | Engine | model, crypto | `serde`, `serde_json`; RFC 8785 and a bounded JSON parser are our own | `-workflow`, `-certificate` |
 | `casual-sign-certificate` | Engine | audit, flatten, pdf, model, crypto | `rust_decimal`, `md-5` (the `/CheckSum` ISO 32000-2 defines) | `-sdk` |
 | `casual-sign-workflow` | Engine | model, audit, fields | — | server |
-| `casual-sign-sdk` | Engine facade | all of the above | — | server, CLI, desktop |
+| `casual-sign-sdk` | Engine facade | model, pdf, fields, flatten, crypto, seal, verify, audit, certificate | —; dev: `aws-lc-rs`, `rcgen` and the RustCrypto PKI crates (test TSA and OCSP, as `-seal`) | server, `-cli`, desktop |
+| `casual-sign-cli` | Host | sdk | `serde_json`; native only: `aws-lc-rs` (file keys, TSA nonce), `der`, `x509-cert`, `pem-rfc7468`, `ureq` with `rustls` on aws-lc-rs and `rustls-native-certs` (TSA, OCSP, CRL over HTTP) | developers, `tools/pipeline-corpus.py` |
 | `casual-sign-wasm` | Binding | fields, verify, flatten, audit | `wasm-bindgen` | `webapp/` |
 | `casual-sign-secrets` | Host | — | — | server, worker, keyd (copied from OpenCalc's `casual-calc-secrets`) |
 | `casual-sign-server` | Host | sdk, workflow, secrets | `axum`, `tokio`, `sqlx`, `tower-http`, `jsonwebtoken`, `openidconnect`, `samael` (SAML, reviewed in `DEP-01`), `aws-lc-rs` | — |

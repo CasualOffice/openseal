@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion); `CS-FLT-0001` to `0005` (stage 1E); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-FLT-0001` to `0005` (stage 1E); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -47,6 +47,7 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-WRT-0004 | DocMDP of a certification signature forbids the change |
 | CS-WRT-0005 | Replacing an object the file does not have, or a stream whose data is not in the file |
 | CS-WRT-0006 | Appending to an encrypted file is refused (an update would have to be encrypted); normalize first |
+| CS-WRT-0007 | Keeping a document as signed when it carries no signature; normalize it instead |
 | CS-FLD-0001 | Required field empty |
 | CS-FLD-0002 | Value fails validation; also a sender rule that cannot be used (a regex that does not compile or is over its limits, inverted min and max) |
 | CS-FLD-0003 | Group rule not satisfied |
