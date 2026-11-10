@@ -127,6 +127,40 @@ fn geometry(
     })
 }
 
+/// The pages of a document whose tree cannot be walked (`PDF-REAL-03`): every in-use
+/// object that is a `/Type /Page` dictionary, in file order, each with its own
+/// attributes only (what it would inherit is in the lost tree). At most
+/// `Limits::max_pages` (`CS-PDF-0007`).
+pub(crate) fn orphans(doc: &mut Document<'_>, cancel: Cancel<'_>) -> Result<Vec<Page>> {
+    let limits_pages = usize::try_from(doc.limits().max_pages).unwrap_or(usize::MAX);
+    let mut nums: Vec<u32> = doc.object_numbers().collect();
+    nums.sort_by_key(|n| doc.file_order(*n));
+    let mut pages = Vec::new();
+    for num in nums {
+        if cancel() {
+            return Err(PdfError::Cancelled);
+        }
+        let dict = match doc.object(num, cancel) {
+            Ok(Object::Dictionary(d)) if d.name(b"Type") == Some(b"Page") => d,
+            Err(e) if e.is_document_wide() => return Err(e),
+            _ => continue,
+        };
+        if pages.len() >= limits_pages {
+            return Err(PdfError::TooManyPages {
+                limit: doc.limits().max_pages,
+            });
+        }
+        let mut inh = Inherited::default();
+        own_attrs(doc, &dict, &mut inh, cancel)?;
+        let info = geometry(doc, num, &dict, &inh, cancel)?;
+        pages.push(Page {
+            info,
+            contents: dict.get(b"Contents").cloned(),
+        });
+    }
+    Ok(pages)
+}
+
 /// Walk the tree under `root` (the catalog's `/Pages`). Errors on the root itself
 /// always propagate; errors on a kid are findings in lenient mode.
 pub(crate) fn walk(

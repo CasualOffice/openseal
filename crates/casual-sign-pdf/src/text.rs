@@ -2,7 +2,7 @@
 //! otherwise PDFDocEncoding.
 
 /// PDFDocEncoding code points that differ from Latin-1 (Annex D.3).
-fn pdfdoc(b: u8) -> char {
+pub(crate) fn pdfdoc(b: u8) -> char {
     let cp: u32 = match b {
         0x18 => 0x02D8,
         0x19 => 0x02C7,

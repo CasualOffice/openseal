@@ -113,11 +113,14 @@ pub enum PdfError {
         /// Byte offset of the name.
         offset: u64,
     },
-    /// The document is encrypted. Decryption is not implemented yet; a later stage
-    /// adds the standard security handler with a host-supplied password (`CS-PDF-0009`).
+    /// The document is encrypted and neither the empty user password nor any password
+    /// in the host's `Credentials` opens it (`CS-PDF-0009`).
     Encrypted,
     /// Public-key security handler: not supported (`CS-PDF-0010`).
     PublicKeySecurity,
+    /// A security handler other than the standard one, or a version, revision or crypt
+    /// filter method it does not define (`CS-PDF-0010`).
+    UnsupportedSecurity,
     /// A filter this reader does not decode, where decoding was required
     /// (`CS-PDF-0011`).
     UnsupportedFilter {
@@ -168,7 +171,7 @@ impl PdfError {
             Self::TooManyPages { .. } | Self::PageTreeCycle { .. } => "CS-PDF-0007",
             Self::StringTooLong { .. } | Self::NameTooLong { .. } => "CS-PDF-0008",
             Self::Encrypted => "CS-PDF-0009",
-            Self::PublicKeySecurity => "CS-PDF-0010",
+            Self::PublicKeySecurity | Self::UnsupportedSecurity => "CS-PDF-0010",
             Self::UnsupportedFilter { .. } | Self::FilterChainTooLong { .. } => "CS-PDF-0011",
             Self::DynamicXfa => "CS-PDF-0012",
             Self::Cancelled | Self::TooManyContentOps { .. } => "CS-PDF-0013",
@@ -190,6 +193,7 @@ impl PdfError {
                 | Self::PageTreeCycle { .. }
                 | Self::Encrypted
                 | Self::PublicKeySecurity
+                | Self::UnsupportedSecurity
                 | Self::DynamicXfa
                 | Self::Cancelled
                 | Self::DamagedSigned
@@ -259,7 +263,10 @@ impl fmt::Display for PdfError {
                 write!(f, "{code}: string too long at offset {offset}")
             }
             Self::NameTooLong { offset } => write!(f, "{code}: name too long at offset {offset}"),
-            Self::Encrypted => write!(f, "{code}: encrypted document"),
+            Self::Encrypted => write!(f, "{code}: encrypted, and no password supplied opens it"),
+            Self::UnsupportedSecurity => {
+                write!(f, "{code}: security handler or revision not supported")
+            }
             Self::PublicKeySecurity => {
                 write!(f, "{code}: public-key security handler not supported")
             }

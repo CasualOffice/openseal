@@ -32,11 +32,11 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::classify::action_kind;
-use crate::document::Document;
+use crate::classify::{action_kind, is_file_ef};
+use crate::document::{Document, strip_crypt_filter};
 use crate::error::PdfError;
 use crate::object::{Dictionary, ObjRef, Object};
-use crate::report::{ActionKind, AdmissionReport, FindingKind, MAX_FINDINGS, PdfVersion};
+use crate::report::{ActionKind, FindingKind, MAX_FINDINGS, PdfVersion};
 use crate::serialize::{Body, write_indirect, write_value};
 use crate::writer::{MAX_OBJECT_NUMBER, WriteError, push_be, width, write_table, write_tail};
 use crate::{Admitted, Cancel};
@@ -150,7 +150,10 @@ fn bad_dict(d: &Dictionary) -> Option<(&'static str, FindingKind)> {
     }
     let ty = d.name(b"Type");
     let subtype = d.name(b"Subtype");
-    if ty == Some(b"EmbeddedFile") || d.contains(b"EF") || subtype == Some(b"FileAttachment") {
+    if ty == Some(b"EmbeddedFile")
+        || d.get(b"EF").is_some_and(is_file_ef)
+        || subtype == Some(b"FileAttachment")
+    {
         return Some(("CS-PDF-0104", FindingKind::EmbeddedFile));
     }
     if matches!(subtype, Some(b"RichMedia" | b"3D"))
@@ -360,6 +363,14 @@ impl<'a> Norm<'_, 'a> {
                     );
                     continue;
                 }
+                // Only an unsigned document is normalized (docs/30 §2), so the catalog's
+                // `/Perms` holds usage rights alone: Reader extensions, whose signature
+                // the rewrite would break. They go, and are reported (`PDF-REAL-02`).
+                b"Perms" if structure => {
+                    self.record("CS-PDF-0107", FindingKind::UsageRights, Some(old));
+                    continue;
+                }
+                b"EF" if !is_file_ef(&v) => {}
                 b"EmbeddedFiles" | b"EF" => {
                     self.record("CS-PDF-0104", FindingKind::EmbeddedFile, Some(old));
                     continue;
@@ -475,6 +486,20 @@ impl<'a> Norm<'_, 'a> {
     fn clean_top(&mut self, old: u32, obj: Object) -> Result<Body<'a>, WriteError> {
         match obj {
             Object::Stream(s) => {
+                // Decrypted when the input is encrypted (the output is not); otherwise
+                // the bytes as stored. External data is never read.
+                let stored = if s.dict.contains(b"F") {
+                    None
+                } else {
+                    match self.doc.stored_stream(old, &s, self.cancel) {
+                        Ok(v) => Some(v),
+                        Err(e) if e.is_document_wide() => return Err(e.into()),
+                        Err(_) => {
+                            self.record("CS-PDF-0102", FindingKind::ObjectUnreadable, Some(old));
+                            Some(Cow::Borrowed(&[][..]))
+                        }
+                    }
+                };
                 let mut dict = self.clean_dict(old, s.dict, false)?;
                 dict.remove(b"Length");
                 let data: Cow<'a, [u8]> = if dict.contains(b"F") {
@@ -492,8 +517,9 @@ impl<'a> Norm<'_, 'a> {
                     self.record("CS-PDF-0105", FindingKind::ExternalStream, Some(old));
                     Cow::Borrowed(&[])
                 } else {
-                    let bytes: &'a [u8] = self.doc.bytes();
-                    Cow::Borrowed(bytes.get(s.data).unwrap_or_default())
+                    // The data is decrypted: a /Crypt filter no longer applies.
+                    strip_crypt_filter(&mut dict);
+                    stored.unwrap_or_default()
                 };
                 Ok(Body::Stream { dict, data })
             }
@@ -646,6 +672,52 @@ fn header(version: PdfVersion) -> Vec<u8> {
     let mut h = format!("%PDF-{}.{}\n", version.major, version.minor).into_bytes();
     h.extend_from_slice(b"%\xE2\xE3\xCF\xD3\n");
     h
+}
+
+/// Add a page tree root `node` (the next output number) over the output pages `kids`,
+/// in order, and point the catalog `root` and each page at it (`PDF-REAL-03`).
+fn new_page_tree(
+    bodies: &mut Vec<Body<'_>>,
+    root: u32,
+    kids: &[u32],
+    node: u32,
+) -> Result<(), WriteError> {
+    if node > MAX_OBJECT_NUMBER {
+        return Err(WriteError::ObjectNumbersExhausted);
+    }
+    // Output numbers are body positions plus one; the new node takes the next.
+    if body_index(node) != Some(bodies.len()) {
+        return Err(WriteError::InvalidObject { object: node });
+    }
+    let node_ref = Object::Reference(ObjRef {
+        num: node,
+        generation: 0,
+    });
+    let mut d = Dictionary::new();
+    d.insert(b"Type", Object::Name(b"Pages".to_vec()));
+    d.insert(
+        b"Kids",
+        Object::Array(
+            kids.iter()
+                .map(|&num| Object::Reference(ObjRef { num, generation: 0 }))
+                .collect(),
+        ),
+    );
+    d.insert(b"Count", int(kids.len()));
+    bodies.push(Body::Value(Object::Dictionary(d)));
+    for &k in kids {
+        if let Some(Body::Value(Object::Dictionary(p))) =
+            body_index(k).and_then(|i| bodies.get_mut(i))
+        {
+            p.insert(b"Parent", node_ref.clone());
+        }
+    }
+    if let Some(Body::Value(Object::Dictionary(c))) =
+        body_index(root).and_then(|i| bodies.get_mut(i))
+    {
+        c.insert(b"Pages", node_ref);
+    }
+    Ok(())
 }
 
 /// Index in the output bodies of output object `num` (numbered from 1).
@@ -892,10 +964,6 @@ fn page_tree_objects(
     Ok(found)
 }
 
-fn signed(report: &AdmissionReport) -> bool {
-    !report.signatures.is_empty() || report.has_perms
-}
-
 /// Normalize an admitted document into a fresh file (docs/30 §3).
 ///
 /// # Errors
@@ -908,16 +976,27 @@ pub fn normalize(
     options: &NormalizeOptions,
     cancel: Cancel<'_>,
 ) -> Result<Normalized, WriteError> {
-    if signed(&admitted.report) || options.print_to_new {
+    if admitted.report.is_signed() || options.print_to_new {
         return Err(WriteError::Signed);
     }
     let input_findings = admitted.report.findings.clone();
+    // Pages admission took from the page objects because the tree was unreadable
+    // (`PDF-REAL-03`): the output gets a new tree over them.
+    let recovered: Vec<u32> = if input_findings
+        .iter()
+        .any(|f| f.kind == FindingKind::PageTreeRebuilt)
+    {
+        admitted.report.pages.iter().map(|p| p.object).collect()
+    } else {
+        Vec::new()
+    };
     let optional_content = admitted.report.has_optional_content;
     let version = admitted
         .report
         .version
         .unwrap_or(PdfVersion { major: 1, minor: 4 });
     let doc = &mut admitted.document;
+    let encrypted = doc.encryption().is_some();
     let trailer = doc.trailer().clone();
     // 0 stands for a direct dictionary in the trailer.
     let mut protected = BTreeSet::from([0]);
@@ -939,6 +1018,7 @@ pub fn normalize(
         }
     }
     protected.extend(page_tree_objects(doc, &trailer, cancel)?);
+    protected.extend(recovered.iter().copied());
     let in_use: Vec<u32> = doc.object_numbers().collect();
     let mut n = Norm {
         doc,
@@ -957,11 +1037,30 @@ pub fn normalize(
         .trailer_ref(trailer.get(b"Root").cloned())?
         .ok_or(WriteError::Read(PdfError::NotPdf { offset: None }))?;
     let info = n.trailer_ref(trailer.get(b"Info").cloned())?;
+    if encrypted {
+        // The output is written in clear (docs/30 §2): the trailer's /Encrypt and its
+        // dictionary are not carried.
+        let object = trailer
+            .get(b"Encrypt")
+            .and_then(Object::as_ref)
+            .map(|r| r.num);
+        n.record("CS-PDF-0109", FindingKind::Encrypted, object);
+    }
+    let mut kids: Vec<u32> = Vec::new();
+    for &page in &recovered {
+        if let Slot::Keep(new) = n.target(page)? {
+            kids.push(new);
+        }
+    }
     let mut bodies: Vec<Body<'_>> = Vec::new();
     while let Some((old, obj)) = n.queue.pop_front() {
         n.check_cancel()?;
         let body = n.clean_top(old, obj)?;
         bodies.push(body);
+    }
+    if !kids.is_empty() {
+        new_page_tree(&mut bodies, root.num, &kids, n.next)?;
+        n.next = n.next.saturating_add(1);
     }
     // Content streams admission could not read (`CS-PDF-0102` on a page) are dropped
     // from the pages that use them.

@@ -732,7 +732,9 @@ fn page_tree_objects_carrying_active_keys_are_cleaned_not_dropped() {
         &[
             (1, b"<</Type/Catalog/Pages 2 0 R>>".to_vec()),
             (2, b"<</Kids[3 0 R]/S/Launch/F(calc.exe)>>".to_vec()),
-            (3, b"<</EF[0 0 612 792]/MediaBox[0 0 200 200]>>".to_vec()),
+            // An /EF array is a usage-rights name list, not a file (`PDF-REAL-02`); the
+            // fuzz input's /EF is kept as a dictionary so the page still carries one.
+            (3, b"<</EF<</F 0 0 R>>/MediaBox[0 0 200 200]>>".to_vec()),
         ],
         "",
     );

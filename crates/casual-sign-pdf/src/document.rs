@@ -1,9 +1,11 @@
 //! A parsed document: the merged xref of every revision, the trailer, and lazy access
 //! to objects, object streams and decoded stream data under the document's budgets.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::Cancel;
+use crate::crypt::{Credentials, Crypt, EncryptionInfo};
 use crate::error::{PdfError, Result, off};
 use crate::filters::{self, Budget, Filter};
 use crate::lexer::Lexer;
@@ -58,6 +60,11 @@ pub struct Document<'a> {
     pub(crate) findings: Findings,
     /// Streams whose `/Length` was wrong, found by `endstream` instead.
     pub(crate) lengths_corrected: BTreeSet<u32>,
+    /// The authenticated security handler of an encrypted document.
+    crypt: Option<Crypt>,
+    /// True once `/Encrypt` has been looked at (it is, before any object stream is
+    /// decoded).
+    crypt_checked: bool,
 }
 
 fn with_object(e: PdfError, num: u32) -> PdfError {
@@ -96,13 +103,15 @@ fn header_version(b: &[u8]) -> Option<PdfVersion> {
 }
 
 impl<'a> Document<'a> {
-    /// Read the structure: header, xref chain (or a rebuild), trailer, encryption check.
+    /// Read the structure: header, xref chain (or a rebuild), trailer, and for an
+    /// encrypted document the security handler, authenticated with `credentials`.
     pub(crate) fn open(
         bytes: &'a [u8],
         limits: &Limits,
         strict: bool,
         cancel: Cancel<'_>,
         rebuild: bool,
+        credentials: &Credentials,
     ) -> Result<Self> {
         let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
         if size > limits.max_input_bytes {
@@ -130,9 +139,11 @@ impl<'a> Document<'a> {
             endstream_memo: None,
             findings: Findings::default(),
             lengths_corrected: BTreeSet::new(),
+            crypt: None,
+            crypt_checked: false,
         };
         if rebuild {
-            doc.rebuild(cancel)?;
+            doc.rebuild(cancel, credentials)?;
         } else {
             match doc.read_chain(strict, cancel) {
                 Ok(()) => {}
@@ -144,11 +155,13 @@ impl<'a> Document<'a> {
                     if !matches!(e, PdfError::NotPdf { .. } | PdfError::Malformed { .. }) {
                         doc.findings.push(Finding::limit(&e, None, None));
                     }
-                    doc.rebuild(cancel)?;
+                    doc.rebuild(cancel, credentials)?;
                 }
             }
         }
-        doc.check_encryption(cancel)?;
+        if !doc.crypt_checked {
+            doc.open_crypt(credentials, cancel)?;
+        }
         Ok(doc)
     }
 
@@ -446,11 +459,13 @@ impl<'a> Document<'a> {
     // ----- rebuild ----------------------------------------------------------------
 
     /// Rebuild the xref by scanning for `n g obj`, as every reader does (`CS-PDF-0101`).
-    fn rebuild(&mut self, cancel: Cancel<'_>) -> Result<()> {
+    fn rebuild(&mut self, cancel: Cancel<'_>, credentials: &Credentials) -> Result<()> {
         let b = self.bytes;
         self.xref.clear();
         self.trailer = Dictionary::new();
         self.cache = ObjStmCache::default();
+        self.crypt = None;
+        self.crypt_checked = false;
         self.repaired = true;
         self.revisions = vec![Revision {
             xref_offset: None,
@@ -534,6 +549,11 @@ impl<'a> Document<'a> {
                 objstms.push(num);
             }
         }
+        if let Some((_, d)) = best {
+            self.trailer = d;
+        }
+        // An encrypted file's object streams are encrypted: open the handler first.
+        self.open_crypt(credentials, cancel)?;
         for s in objstms {
             match self.objstm_members(s, cancel) {
                 Ok(members) => {
@@ -558,9 +578,6 @@ impl<'a> Document<'a> {
                 Err(e) if e.is_document_wide() => return Err(e),
                 Err(e) => self.findings.push(Finding::limit(&e, Some(s), None)),
             }
-        }
-        if let Some((_, d)) = best {
-            self.trailer = d;
         }
         let root_ok = match self.trailer.get(b"Root").cloned() {
             Some(r) => matches!(self.resolve(&r, cancel), Ok(Object::Dictionary(_))),
@@ -609,27 +626,161 @@ impl<'a> Document<'a> {
 
     // ----- encryption -------------------------------------------------------------
 
-    fn check_encryption(&mut self, cancel: Cancel<'_>) -> Result<()> {
+    /// Open the security handler named by the trailer's `/Encrypt`, if any (ISO
+    /// 32000-2 §7.6): `CS-PDF-0009` when no password opens it, `CS-PDF-0010` for a
+    /// handler that is not the standard one, `CS-PDF-0005` for a damaged dictionary.
+    fn open_crypt(&mut self, credentials: &Credentials, cancel: Cancel<'_>) -> Result<()> {
+        self.crypt_checked = true;
+        self.crypt = None;
         let Some(enc) = self.trailer.get(b"Encrypt").cloned() else {
             return Ok(());
         };
         if enc == Object::Null {
             return Ok(());
         }
-        let public_key = match self.resolve(&enc, cancel) {
-            Ok(Object::Dictionary(d)) => {
-                d.name(b"Filter") == Some(b"Adobe.PubSec")
-                    || d.name(b"SubFilter")
-                        .is_some_and(|s| s.starts_with(b"adbe.pkcs7"))
-            }
+        let dict_object = enc.as_ref().map(|r| r.num);
+        let dict = match self.resolve(&enc, cancel) {
+            Ok(Object::Dictionary(d)) => d,
             Err(e) if e.is_document_wide() => return Err(e),
-            _ => false,
+            _ => {
+                return Err(PdfError::Malformed {
+                    object: dict_object,
+                    offset: 0,
+                });
+            }
         };
-        Err(if public_key {
-            PdfError::PublicKeySecurity
-        } else {
-            PdfError::Encrypted
-        })
+        // The first file identifier; an empty one when absent (§7.6.4.3.2, step d).
+        let id0 = match self.trailer.get(b"ID") {
+            Some(Object::Array(a)) => match a.first() {
+                Some(Object::String(s)) => s.clone(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        self.crypt = Some(Crypt::open(&dict, dict_object, &id0, credentials)?);
+        Ok(())
+    }
+
+    /// How the document was encrypted and opened; `None` when it is not encrypted.
+    #[must_use]
+    pub fn encryption(&self) -> Option<EncryptionInfo> {
+        self.crypt.as_ref().map(|c| c.info)
+    }
+
+    /// Decrypt every string in an object loaded from the file (not from an object
+    /// stream, whose strings are not encrypted on their own). The `/Encrypt`
+    /// dictionary, an xref stream's dictionary and a signature's `/Contents` are not
+    /// encrypted (§7.6.2). Charged to the decode budget.
+    fn decrypt_strings(&mut self, num: u32, generation: u16, obj: &mut Object) -> Result<()> {
+        let Some(crypt) = &self.crypt else {
+            return Ok(());
+        };
+        if crypt.dict_object == Some(num) || !crypt.strings_encrypted() {
+            return Ok(());
+        }
+        if let Object::Stream(s) = obj
+            && s.dict.name(b"Type") == Some(b"XRef")
+        {
+            return Ok(());
+        }
+        let mut total: u64 = 0;
+        let mut damaged = false;
+        let mut stack: Vec<&mut Object> = vec![obj];
+        while let Some(o) = stack.pop() {
+            let dict = match o {
+                Object::String(s) => {
+                    let plain = crypt.string(num, generation, s);
+                    total = total.saturating_add(u64::try_from(s.len()).unwrap_or(u64::MAX));
+                    damaged |= plain.damaged;
+                    *s = plain.bytes;
+                    continue;
+                }
+                Object::Array(a) => {
+                    stack.extend(a.iter_mut());
+                    continue;
+                }
+                Object::Dictionary(d) => d,
+                Object::Stream(s) => &mut s.dict,
+                _ => continue,
+            };
+            let signature = matches!(dict.name(b"Type"), Some(b"Sig" | b"DocTimeStamp"))
+                || (dict.contains(b"ByteRange") && dict.contains(b"Contents"));
+            for (k, v) in dict.iter_mut() {
+                if !(signature && k == b"Contents") {
+                    stack.push(v);
+                }
+            }
+        }
+        filters::charge(&mut self.budget, &self.limits, num, total)?;
+        if damaged {
+            let e = PdfError::Malformed {
+                object: Some(num),
+                offset: 0,
+            };
+            if !self.lenient {
+                return Err(e);
+            }
+            self.findings.push(Finding::limit(&e, Some(num), None));
+        }
+        Ok(())
+    }
+
+    /// The stored (still filtered) data of stream object `num`, decrypted, with the
+    /// `/Crypt` filter it named. Charged to the decode budget when decrypted.
+    fn plain_data(
+        &mut self,
+        num: u32,
+        dict: &Dictionary,
+        raw: &'a [u8],
+        crypt_name: Option<&[u8]>,
+        cancel: Cancel<'_>,
+    ) -> Result<Cow<'a, [u8]>> {
+        let Some(crypt) = &self.crypt else {
+            // A /Crypt filter in an unencrypted file can only be the identity.
+            return match crypt_name {
+                None | Some(b"Identity") => Ok(Cow::Borrowed(raw)),
+                Some(_) => Err(PdfError::UnsupportedFilter { object: num }),
+            };
+        };
+        check(cancel)?;
+        let generation = self.generation(num).unwrap_or(0);
+        let Some(plain) = crypt
+            .stream(num, generation, dict, crypt_name, raw)
+            .map_err(|_| PdfError::UnsupportedFilter { object: num })?
+        else {
+            return Ok(Cow::Borrowed(raw));
+        };
+        let len = u64::try_from(plain.bytes.len()).unwrap_or(u64::MAX);
+        filters::charge(&mut self.budget, &self.limits, num, len)?;
+        if plain.damaged {
+            let e = PdfError::Malformed {
+                object: Some(num),
+                offset: 0,
+            };
+            if !self.lenient {
+                return Err(e);
+            }
+            self.findings.push(Finding::limit(&e, Some(num), None));
+        }
+        Ok(Cow::Owned(plain.bytes))
+    }
+
+    /// The data of stream `s` (object `num`) as stored, but decrypted: what a writer
+    /// copies into an unencrypted file, whose dictionary then drops the `/Crypt`
+    /// filter ([`strip_crypt_filter`]).
+    pub(crate) fn stored_stream(
+        &mut self,
+        num: u32,
+        s: &Stream,
+        cancel: Cancel<'_>,
+    ) -> Result<Cow<'a, [u8]>> {
+        let raw = self.bytes.get(s.data.clone()).unwrap_or_default();
+        let mut dict = s.dict.clone();
+        let crypt_name = strip_crypt_filter(&mut dict);
+        if self.crypt.is_none() && crypt_name.is_none() {
+            return Ok(Cow::Borrowed(raw));
+        }
+        self.plain_data(num, &s.dict, raw, crypt_name.as_deref(), cancel)
     }
 
     // ----- objects ----------------------------------------------------------------
@@ -665,6 +816,11 @@ impl<'a> Document<'a> {
         self.repaired || self.findings.has(FindingKind::XrefCorrected)
     }
 
+    /// True when the xref was rebuilt by scanning the whole file (not only corrected).
+    pub(crate) fn is_rebuilt(&self) -> bool {
+        self.repaired
+    }
+
     /// The version in the file header, if any.
     #[must_use]
     pub fn header_version(&self) -> Option<PdfVersion> {
@@ -686,6 +842,19 @@ impl<'a> Document<'a> {
             Some(Entry::Offset { generation, .. }) => Some(*generation),
             Some(Entry::Compressed { .. }) => Some(0),
             Some(Entry::Free) | None => None,
+        }
+    }
+
+    /// Where object `num` lies in the file, for ordering: its offset, or its object
+    /// stream's offset and its index there.
+    pub(crate) fn file_order(&self, num: u32) -> (usize, u32) {
+        match self.xref.get(&num) {
+            Some(Entry::Offset { offset, .. }) => (*offset, 0),
+            Some(Entry::Compressed { stream, index }) => match self.xref.get(stream) {
+                Some(Entry::Offset { offset, .. }) => (*offset, index.saturating_add(1)),
+                _ => (usize::MAX, *index),
+            },
+            Some(Entry::Free) | None => (usize::MAX, 0),
         }
     }
 
@@ -714,7 +883,7 @@ impl<'a> Document<'a> {
         self.loading.push(num);
         let r = match entry {
             Entry::Free => Ok(Object::Null),
-            Entry::Offset { offset, .. } => self.parse_at(num, offset, cancel),
+            Entry::Offset { offset, generation } => self.parse_at(num, generation, offset, cancel),
             Entry::Compressed { stream, index } => self.load_compressed(num, stream, index, cancel),
         };
         self.loading.pop();
@@ -745,7 +914,13 @@ impl<'a> Document<'a> {
         }
     }
 
-    fn parse_at(&mut self, num: u32, offset: usize, cancel: Cancel<'_>) -> Result<Object> {
+    fn parse_at(
+        &mut self,
+        num: u32,
+        generation: u16,
+        offset: usize,
+        cancel: Cancel<'_>,
+    ) -> Result<Object> {
         let b = self.bytes;
         let malformed = PdfError::Malformed {
             object: Some(num),
@@ -757,13 +932,16 @@ impl<'a> Document<'a> {
         }
         let mut lx = self.lexer(b, after);
         let mut w = Warnings::default();
-        let obj = parse_object(&mut lx, usize::from(self.limits.max_depth), &mut w)?;
+        let mut obj = parse_object(&mut lx, usize::from(self.limits.max_depth), &mut w)?;
         self.record_warnings(num, w);
         let Object::Dictionary(dict) = obj else {
+            self.decrypt_strings(num, generation, &mut obj)?;
             return Ok(obj);
         };
         if !lx.keyword(b"stream") {
-            return Ok(Object::Dictionary(dict));
+            let mut obj = Object::Dictionary(dict);
+            self.decrypt_strings(num, generation, &mut obj)?;
+            return Ok(obj);
         }
         let start = stream_data_start(b, lx.pos);
         let length = match dict.get(b"Length") {
@@ -785,7 +963,9 @@ impl<'a> Document<'a> {
                 self.endstream_after(start).ok_or(malformed)?
             }
         };
-        Ok(Object::Stream(Stream { dict, data: range }))
+        let mut obj = Object::Stream(Stream { dict, data: range });
+        self.decrypt_strings(num, generation, &mut obj)?;
+        Ok(obj)
     }
 
     /// `endstream` search with a one-entry memo, so many streams with wrong lengths
@@ -1012,10 +1192,28 @@ impl<'a> Document<'a> {
             // The data is in an external file, which is never fetched (SEC-P07).
             return Err(PdfError::UnsupportedFilter { object: num });
         }
-        let filters = self
+        let mut filters = self
             .filters_of(&s.dict, cancel)
             .map_err(|e| with_object(e, num))?;
+        // A /Crypt filter comes first (§7.4.10): it is applied as the decryption.
+        let crypt_name = match filters.first() {
+            Some(f) if f.name == b"Crypt" => {
+                let name = f
+                    .parms
+                    .as_ref()
+                    .and_then(|p| p.name(b"Name"))
+                    .unwrap_or(b"Identity")
+                    .to_vec();
+                filters.remove(0);
+                Some(name)
+            }
+            _ => None,
+        };
+        if filters.iter().any(|f| f.name == b"Crypt") {
+            return Err(PdfError::UnsupportedFilter { object: num });
+        }
         let raw = self.bytes.get(s.data.clone()).unwrap_or_default();
+        let plain = self.plain_data(num, &s.dict, raw, crypt_name.as_deref(), cancel)?;
         let limits = self.limits;
         let mut ctx = filters::Ctx {
             limits: &limits,
@@ -1023,7 +1221,63 @@ impl<'a> Document<'a> {
             cancel,
             object: num,
         };
-        filters::decode(raw, &filters, &mut ctx)
+        filters::decode(&plain, &filters, &mut ctx)
+    }
+
+    /// The value of an inheritable page attribute (§7.7.3.4: `/Resources`,
+    /// `/MediaBox`, `/CropBox`, `/Rotate`) for the page object `page`: its own, else
+    /// the nearest ancestor's through `/Parent`, resolved. `None` when no node has it,
+    /// or the chain is broken; at most `Limits::max_depth` ancestors, each once.
+    ///
+    /// # Errors
+    ///
+    /// Only an error that ends the whole read (the decode budget, cancellation).
+    pub fn inherited_page_attribute(
+        &mut self,
+        page: u32,
+        key: &[u8],
+        cancel: Cancel<'_>,
+    ) -> Result<Option<Object>> {
+        let mut seen: BTreeSet<u32> = BTreeSet::new();
+        let mut cur = page;
+        for _ in 0..=usize::from(self.limits.max_depth) {
+            if !seen.insert(cur) {
+                break;
+            }
+            let dict = match self.object(cur, cancel) {
+                Ok(Object::Dictionary(d)) => d,
+                Err(e) if e.is_document_wide() => return Err(e),
+                _ => break,
+            };
+            if let Some(v) = dict.get(key) {
+                return match self.resolve(v, cancel) {
+                    Ok(Object::Null) => Ok(None),
+                    Ok(v) => Ok(Some(v)),
+                    Err(e) if e.is_document_wide() => Err(e),
+                    Err(_) => Ok(None),
+                };
+            }
+            match dict.get(b"Parent").and_then(Object::as_ref) {
+                Some(p) => cur = p.num,
+                None => break,
+            }
+        }
+        Ok(None)
+    }
+
+    /// The `/Resources` of the page object `page`, inherited (§7.7.3.4); empty when
+    /// absent or not a dictionary.
+    ///
+    /// # Errors
+    ///
+    /// As [`Document::inherited_page_attribute`].
+    pub fn page_resources(&mut self, page: u32, cancel: Cancel<'_>) -> Result<Dictionary> {
+        Ok(
+            match self.inherited_page_attribute(page, b"Resources", cancel)? {
+                Some(Object::Dictionary(d)) => d,
+                _ => Dictionary::new(),
+            },
+        )
     }
 
     /// Decode the stream object `num` through its filters, charged to the budgets.
@@ -1035,6 +1289,44 @@ impl<'a> Document<'a> {
                 offset: 0,
             }),
         }
+    }
+}
+
+/// Remove a leading `/Crypt` filter (and its parameters) from a stream dictionary;
+/// its `/Name`, `Identity` by default, when there was one (§7.4.10).
+pub(crate) fn strip_crypt_filter(dict: &mut Dictionary) -> Option<Vec<u8>> {
+    let is_crypt = |o: &Object| o.as_name() == Some(b"Crypt".as_slice());
+    let name_of = |p: Option<&Object>| -> Vec<u8> {
+        match p {
+            Some(Object::Dictionary(d)) => d.name(b"Name").unwrap_or(b"Identity").to_vec(),
+            _ => b"Identity".to_vec(),
+        }
+    };
+    match dict.get(b"Filter").cloned() {
+        Some(f) if is_crypt(&f) => {
+            let name = name_of(dict.get(b"DecodeParms"));
+            dict.remove(b"Filter");
+            dict.remove(b"DecodeParms");
+            Some(name)
+        }
+        Some(Object::Array(mut a)) if a.first().is_some_and(is_crypt) => {
+            a.remove(0);
+            let name = match dict.get(b"DecodeParms").cloned() {
+                Some(Object::Array(mut p)) => {
+                    let first = if p.is_empty() {
+                        None
+                    } else {
+                        Some(p.remove(0))
+                    };
+                    dict.insert(b"DecodeParms", Object::Array(p));
+                    name_of(first.as_ref())
+                }
+                other => name_of(other.as_ref()),
+            };
+            dict.insert(b"Filter", Object::Array(a));
+            Some(name)
+        }
+        _ => None,
     }
 }
 

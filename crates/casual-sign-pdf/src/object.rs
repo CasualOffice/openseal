@@ -57,6 +57,11 @@ impl Dictionary {
         self.entries.iter().map(|(k, v)| (k.as_slice(), v))
     }
 
+    /// Entries in file order, values mutable.
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (&[u8], &mut Object)> {
+        self.entries.iter_mut().map(|(k, v)| (k.as_slice(), v))
+    }
+
     /// Number of entries.
     #[must_use]
     pub fn len(&self) -> usize {

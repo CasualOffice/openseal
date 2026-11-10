@@ -226,13 +226,17 @@ pub(crate) fn table_at(b: &[u8], pos: usize, cx: &SectionCtx<'_>) -> SectionResu
                 .checked_add(k)
                 .and_then(|n| u32::try_from(n).ok())
                 .ok_or_else(|| damage(at))?;
-            let generation = u16::try_from(generation).map_err(|_| damage(at))?;
-            let entry = match kind {
-                Some(b'n') if offset > 0 => Entry::Offset {
+            // A generation above 65,535 cannot name an object (§7.5.4). iText writes
+            // `0000000000 65536 n` for numbers it never used (`PDF-REAL-01`, the GPO
+            // certified files): such an entry is a free one, not damage.
+            let generation = u16::try_from(generation).ok();
+            let entry = match (kind, generation) {
+                (Some(b'n' | b'f'), None) => Entry::Free,
+                (Some(b'n'), Some(generation)) if offset > 0 => Entry::Offset {
                     offset: usize::try_from(offset).map_err(|_| damage(at))?,
                     generation,
                 },
-                Some(b'n' | b'f') => Entry::Free,
+                (Some(b'n' | b'f'), Some(_)) => Entry::Free,
                 _ => return Err(damage(at)),
             };
             if entries.len() >= cx.entry_cap() {
@@ -395,6 +399,10 @@ pub(crate) fn xref_stream_entries(
                 .ok_or_else(|| damage(pos))?;
             let entry = match kind {
                 0 => Entry::Free,
+                // Offset 0 is the file header, never an object: LiveCycle's hybrid
+                // updates list their own xref stream there (`PDF-REAL-02`). A classic
+                // `n` entry at 0 is read the same way.
+                1 if be(f1) == 0 => Entry::Free,
                 1 => Entry::Offset {
                     offset: usize::try_from(be(f1)).map_err(|_| damage(pos))?,
                     generation: u16::try_from(be(f2)).unwrap_or(u16::MAX),

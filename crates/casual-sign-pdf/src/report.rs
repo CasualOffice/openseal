@@ -5,6 +5,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::crypt::EncryptionInfo;
 use crate::error::PdfError;
 use crate::xref::XrefKind;
 
@@ -21,6 +22,10 @@ pub enum FindingKind {
     /// Xref offsets or `startxref` were wrong and corrected to the object or section
     /// found nearby (`CS-PDF-0101`).
     XrefCorrected,
+    /// The page tree's root was unreadable or held no page, so the pages were taken from
+    /// the page objects found, in file order (`CS-PDF-0101`). Only after the xref was
+    /// rebuilt; the document is repaired and is normalized with a new tree.
+    PageTreeRebuilt,
     /// An object could not be read and was dropped (`CS-PDF-0102`).
     ObjectUnreadable,
     /// A limit was crossed by one value or stream, which was dropped; the code is the
@@ -42,8 +47,15 @@ pub enum FindingKind {
     FormFields,
     /// Existing signatures, `/Perms` or DocMDP (`CS-PDF-0107`).
     Signatures,
+    /// A usage-rights signature (`/Perms /UR3` or `/UR`, Adobe Reader extensions)
+    /// (`CS-PDF-0107`). It attests no content and does not make a document signed for
+    /// the repair rule (docs/30 §2); normalization removes it.
+    UsageRights,
     /// Optional content (`CS-PDF-0108`).
     OptionalContent,
+    /// The document was encrypted and has been decrypted with a password; its
+    /// normalized form is not encrypted (`CS-PDF-0109`).
+    Encrypted,
 }
 
 /// The kind of an action found (ISO 32000-2 §12.6.4).
@@ -212,8 +224,12 @@ pub enum FieldType {
     Unknown,
 }
 
+/// Most options or appearance states kept per field or widget.
+pub const MAX_FIELD_OPTIONS: usize = 1_000;
+
 /// A widget of a form field: where it is drawn.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Widget {
     /// The widget annotation's object number, when it is indirect.
     pub object: Option<u32>,
@@ -221,10 +237,23 @@ pub struct Widget {
     pub rect: Rect,
     /// Zero-based page index from `/P`, when it names a page of the document.
     pub page: Option<u32>,
+    /// The names of its normal appearances other than `/Off` (`/AP /N`): a check
+    /// box's or radio button's on state, as written (at most [`MAX_FIELD_OPTIONS`]).
+    pub appearance_states: Vec<String>,
+}
+
+/// One option of a choice field (`/Opt`, ISO 32000-2 §12.7.5.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChoiceOption {
+    /// The export value (the string itself when the entry is not a pair).
+    pub export: String,
+    /// The text shown (the export value when the entry is not a pair).
+    pub display: String,
 }
 
 /// An existing AcroForm field (a terminal field).
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct FormField {
     /// The field object's number, when indirect.
     pub object: Option<u32>,
@@ -234,10 +263,35 @@ pub struct FormField {
     pub field_type: FieldType,
     /// Widgets, with their rectangles.
     pub widgets: Vec<Widget>,
+    /// `/Ff`, the field flags, inherited (ISO 32000-2 Tables 226, 227, 229, 231):
+    /// bit 1 read-only, 2 required, 13 multiline, 16 radio, 17 push button, 18 combo,
+    /// 19 edit, 22 multi-select (bit n is `1 << (n - 1)`).
+    pub flags: u32,
+    /// `/MaxLen` of a text field, inherited, when positive.
+    pub max_len: Option<u32>,
+    /// `/Opt` of a choice field (or a check box or radio group's export values),
+    /// inherited, decoded from PDF text (at most [`MAX_FIELD_OPTIONS`]).
+    pub options: Vec<ChoiceOption>,
+}
+
+/// What an existing signature is (ISO 32000-2 §12.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum SignatureKind {
+    /// An approval signature: a signature field's value.
+    Approval,
+    /// A certification signature: the value of `/Perms /DocMDP`.
+    Certification,
+    /// A usage-rights signature: the value of `/Perms /UR3` (or `/UR`), which grants
+    /// Adobe Reader features and attests no content.
+    UsageRights,
+    /// A document timestamp (`/Type /DocTimeStamp`).
+    DocTimeStamp,
 }
 
 /// An existing signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SignatureInfo {
     /// The signature field's object number, when indirect.
     pub field: Option<u32>,
@@ -245,6 +299,8 @@ pub struct SignatureInfo {
     pub value: Option<u32>,
     /// `/SubFilter` (a name from the specification, e.g. `ETSI.CAdES.detached`).
     pub sub_filter: Option<String>,
+    /// What the signature is.
+    pub kind: SignatureKind,
 }
 
 /// One action found, and how it is triggered.
@@ -256,6 +312,14 @@ pub struct ActionInfo {
     pub kind: ActionKind,
     /// True when it runs without a click: from `/OpenAction` or an `/AA` dictionary.
     pub automatic: bool,
+}
+
+/// The rule behind [`AdmissionReport::is_signed`] (docs/30 §2, `PDF-REAL-02`).
+pub(crate) fn counts_as_signed(docmdp: Option<u8>, signatures: &[SignatureInfo]) -> bool {
+    docmdp.is_some()
+        || signatures
+            .iter()
+            .any(|s| s.kind != SignatureKind::UsageRights)
 }
 
 /// Everything admission found in a document.
@@ -297,6 +361,9 @@ pub struct AdmissionReport {
     pub has_xfa: bool,
     /// The catalog has `/OCProperties`.
     pub has_optional_content: bool,
+    /// How the document was encrypted and which password opened it; `None` when it
+    /// is not encrypted.
+    pub encryption: Option<EncryptionInfo>,
     /// Total bytes decoded during admission (charged to the document budget).
     pub decoded_bytes: u64,
     /// Findings, in discovery order.
@@ -306,6 +373,16 @@ pub struct AdmissionReport {
 }
 
 impl AdmissionReport {
+    /// True when the document counts as signed (docs/30 §2): it has a certification
+    /// (`/Perms /DocMDP`), or any signature other than a usage-rights one. A document
+    /// whose only signatures are usage rights is not signed: Reader extensions attest
+    /// no content, and normalization removes them. A signed document is never
+    /// repaired (`CS-PDF-0014`) or normalized.
+    #[must_use]
+    pub fn is_signed(&self) -> bool {
+        counts_as_signed(self.docmdp, &self.signatures)
+    }
+
     /// True when any finding carries `code`.
     #[must_use]
     pub fn has_code(&self, code: &str) -> bool {

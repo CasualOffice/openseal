@@ -352,8 +352,17 @@ fn hex(b: &[u8]) -> String {
 
 #[test]
 fn unsupported_filter_is_reported_not_decoded() {
+    // LZW is decoded (`PDF-LZW-01`): the specification's example stream.
     let mut objs = pages(1);
     objs[3].1 = stream("/Filter/LZWDecode", b"\x80\x0b\x60\x50\x22\x0c\x0c\x85\x01");
+    let lzw = classic(&objs, "");
+    let mut a = admit_strict(&lzw, &Limits::default(), &never).unwrap();
+    assert_eq!(a.document.decode_stream(4, &never).unwrap(), b"-----A---B");
+    // A filter the reader does not decode is reported (default) or refused (strict).
+    objs[3].1 = stream(
+        "/Filter/JBIG2Decode",
+        b"\x80\x0b\x60\x50\x22\x0c\x0c\x85\x01",
+    );
     let bytes = classic(&objs, "");
     assert_eq!(
         admit_strict(&bytes, &Limits::default(), &never)
@@ -812,9 +821,11 @@ fn encryption_and_dynamic_xfa_are_refused() {
         .concat(),
         "/Encrypt 9 0 R",
     );
+    // A standard-handler dictionary without /O, /U and /P cannot be opened with any
+    // password: malformed, in both modes (tests/encryption.rs covers CS-PDF-0009).
     assert_eq!(
         code_both(&enc, &Limits::default()),
-        ("CS-PDF-0009".into(), "CS-PDF-0009".into())
+        ("CS-PDF-0005".into(), "CS-PDF-0005".into())
     );
     let pk = classic(
         &[

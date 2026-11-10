@@ -111,6 +111,19 @@ impl<'s, 'x> Sink<'s, 'x> {
     }
 }
 
+/// Charge `n` bytes produced outside a filter (decryption) to the document budget.
+pub(crate) fn charge(budget: &mut Budget, limits: &Limits, object: u32, n: u64) -> Result<()> {
+    let used = budget.used.saturating_add(n);
+    if used > limits.max_total_decoded_bytes {
+        return Err(PdfError::DecodeBudget {
+            object,
+            limit: limits.max_total_decoded_bytes,
+        });
+    }
+    budget.used = used;
+    Ok(())
+}
+
 /// Canonical filter names, with the inline-image abbreviations.
 fn canonical(name: &[u8]) -> &[u8] {
     match name {
@@ -118,6 +131,7 @@ fn canonical(name: &[u8]) -> &[u8] {
         b"AHx" => b"ASCIIHexDecode",
         b"A85" => b"ASCII85Decode",
         b"RL" => b"RunLengthDecode",
+        b"LZW" => b"LZWDecode",
         other => other,
     }
 }
@@ -126,7 +140,7 @@ fn canonical(name: &[u8]) -> &[u8] {
 pub(crate) fn supported(name: &[u8]) -> bool {
     matches!(
         canonical(name),
-        b"FlateDecode" | b"ASCIIHexDecode" | b"ASCII85Decode" | b"RunLengthDecode"
+        b"FlateDecode" | b"LZWDecode" | b"ASCIIHexDecode" | b"ASCII85Decode" | b"RunLengthDecode"
     )
 }
 
@@ -147,6 +161,17 @@ pub(crate) fn decode(raw: &[u8], filters: &[Filter], ctx: &mut Ctx<'_>) -> Resul
         match canonical(&f.name) {
             b"FlateDecode" => {
                 flate(input, &mut sink)?;
+                let out = predict(core::mem::take(&mut sink.out), f.parms.as_ref(), object)?;
+                sink.out = out;
+            }
+            b"LZWDecode" => {
+                let early = f
+                    .parms
+                    .as_ref()
+                    .and_then(|p| p.get(b"EarlyChange"))
+                    .and_then(Object::as_i64)
+                    .unwrap_or(1);
+                lzw(input, early != 0, &mut sink)?;
                 let out = predict(core::mem::take(&mut sink.out), f.parms.as_ref(), object)?;
                 sink.out = out;
             }
@@ -202,6 +227,142 @@ fn inflate_with(input: &[u8], sink: &mut Sink<'_, '_>, format: DataFormat) -> Re
             Err(_) => return Ok(produced),
         }
     }
+}
+
+/// LZW codes (ISO 32000-2 §7.4.4.2): 9 to 12 bits, most significant bit first.
+const LZW_CLEAR: u16 = 256;
+const LZW_EOD: u16 = 257;
+const LZW_FIRST: u16 = 258;
+const LZW_TABLE: usize = 4096;
+
+/// One LZW table entry: the entry it extends, its last byte, its first byte and its
+/// length. Strings are rebuilt by walking `prefix` back, never stored.
+#[derive(Clone, Copy, Default)]
+struct LzwEntry {
+    prefix: u16,
+    last: u8,
+    first: u8,
+    len: u16,
+}
+
+/// Decode LZW into the sink (ISO 32000-2 §7.4.4). The table is fixed at 4,096 entries
+/// whatever the data says; every string goes through the sink's caps, so a bomb stops
+/// there (each code can stand for up to 4,094 bytes, a ratio the per-stream ratio cap
+/// catches). Damage after some output keeps the output so far, as with Flate.
+fn lzw(input: &[u8], early_change: bool, sink: &mut Sink<'_, '_>) -> Result<()> {
+    let mut table = [LzwEntry::default(); LZW_TABLE];
+    for (i, e) in table.iter_mut().enumerate().take(256) {
+        let b = u8::try_from(i).unwrap_or(0);
+        *e = LzwEntry {
+            prefix: 0,
+            last: b,
+            first: b,
+            len: 1,
+        };
+    }
+    let early = u16::from(early_change);
+    let mut next: u16 = LZW_FIRST;
+    let mut width: u32 = 9;
+    let mut prev: Option<u16> = None;
+    let mut acc: u32 = 0;
+    let mut bits: u32 = 0;
+    let mut bytes = input.iter();
+    let mut scratch = [0u8; LZW_TABLE];
+    let mut codes: u32 = 0;
+    loop {
+        while bits < width {
+            let Some(&b) = bytes.next() else {
+                return Ok(());
+            };
+            acc = (acc << 8) | u32::from(b);
+            bits = bits.saturating_add(8);
+        }
+        bits = bits.saturating_sub(width);
+        let code =
+            u16::try_from((acc >> bits) & ((1u32 << width).saturating_sub(1))).unwrap_or(LZW_EOD);
+        acc &= (1u32 << bits).saturating_sub(1);
+        codes = codes.wrapping_add(1);
+        if codes.is_multiple_of(65_536) {
+            sink.check_cancel()?;
+        }
+        if code == LZW_CLEAR {
+            next = LZW_FIRST;
+            width = 9;
+            prev = None;
+            continue;
+        }
+        if code == LZW_EOD {
+            return Ok(());
+        }
+        let known = code < next && !(LZW_CLEAR..LZW_FIRST).contains(&code);
+        let Some(p) = prev else {
+            // The first code after a clear must name a single byte.
+            if code >= LZW_CLEAR {
+                return Ok(());
+            }
+            sink.push(u8::try_from(code).unwrap_or(0))?;
+            prev = Some(code);
+            continue;
+        };
+        let (Some(pe), current) = (table.get(usize::from(p)).copied(), code) else {
+            return Ok(());
+        };
+        let first = if known {
+            table.get(usize::from(current)).map_or(0, |e| e.first)
+        } else if current == next {
+            pe.first
+        } else {
+            // A code beyond the next free one: damage.
+            return Ok(());
+        };
+        // Add prev + first byte of current, unless the table is full.
+        if usize::from(next) < LZW_TABLE {
+            if let Some(slot) = table.get_mut(usize::from(next)) {
+                *slot = LzwEntry {
+                    prefix: p,
+                    last: first,
+                    first: pe.first,
+                    len: pe.len.saturating_add(1),
+                };
+            }
+            next = next.saturating_add(1);
+            if width < 12 && u32::from(next.saturating_add(early)) >= (1u32 << width) {
+                width = width.saturating_add(1);
+            }
+        }
+        lzw_emit(&table, current, &mut scratch, sink)?;
+        prev = Some(current);
+    }
+}
+
+/// Write the string of `code` through the sink.
+fn lzw_emit(
+    table: &[LzwEntry; LZW_TABLE],
+    code: u16,
+    scratch: &mut [u8; LZW_TABLE],
+    sink: &mut Sink<'_, '_>,
+) -> Result<()> {
+    let Some(e) = table.get(usize::from(code)) else {
+        return Ok(());
+    };
+    let len = usize::from(e.len).min(LZW_TABLE);
+    let mut at = len;
+    let mut cur = code;
+    // Every entry's prefix is an older, shorter entry, so this ends within `len` steps.
+    while at > 0 {
+        let Some(e) = table.get(usize::from(cur)) else {
+            break;
+        };
+        at = at.saturating_sub(1);
+        if let Some(slot) = scratch.get_mut(at) {
+            *slot = e.last;
+        }
+        if e.len <= 1 {
+            break;
+        }
+        cur = e.prefix;
+    }
+    sink.extend(scratch.get(at..len).unwrap_or_default())
 }
 
 /// Undo a PNG or TIFF predictor (ISO 32000-2 §7.4.4.4).
@@ -421,7 +582,12 @@ fn run_length(input: &[u8], sink: &mut Sink<'_, '_>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     // Tests index and unwrap freely: a panic is the failure report.
-    #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::arithmetic_side_effects
+    )]
     use super::*;
 
     fn never() -> bool {
@@ -560,9 +726,215 @@ mod tests {
             Err(PdfError::FilterChainTooLong { .. })
         ));
         assert!(matches!(
-            run(b"", &[b"LZWDecode"], &l, &mut Budget::default()),
+            run(b"", &[b"JBIG2Decode"], &l, &mut Budget::default()),
             Err(PdfError::UnsupportedFilter { .. })
         ));
+    }
+
+    /// A test LZW encoder (ISO 32000-2 §7.4.4.2), with a clear code before the table
+    /// fills. The code width follows the decoder's table, which lags the encoder's by
+    /// one entry.
+    pub(crate) fn lzw_encode(data: &[u8], early: bool) -> Vec<u8> {
+        use std::collections::HashMap;
+        struct Bits {
+            out: Vec<u8>,
+            acc: u64,
+            n: u32,
+            width: u32,
+            dec_next: u32,
+            first: bool,
+            early: u32,
+        }
+        impl Bits {
+            fn put(&mut self, code: u32) {
+                self.acc = (self.acc << self.width) | u64::from(code);
+                self.n += self.width;
+                while self.n >= 8 {
+                    self.n -= 8;
+                    self.out.push((self.acc >> self.n) as u8);
+                }
+            }
+            /// A data code: the decoder adds an entry after reading it (not after the
+            /// first code following a clear) and may widen.
+            fn code(&mut self, code: u32) {
+                self.put(code);
+                if !self.first && self.dec_next < 4096 {
+                    self.dec_next += 1;
+                    if self.dec_next + self.early >= (1 << self.width) && self.width < 12 {
+                        self.width += 1;
+                    }
+                }
+                self.first = false;
+            }
+            fn clear(&mut self) {
+                self.put(256);
+                self.width = 9;
+                self.dec_next = 258;
+                self.first = true;
+            }
+        }
+        let mut b = Bits {
+            out: Vec::new(),
+            acc: 0,
+            n: 0,
+            width: 9,
+            dec_next: 258,
+            first: true,
+            early: u32::from(early),
+        };
+        b.clear();
+        // Keyed by (code of the prefix, next byte): linear time.
+        let mut dict: HashMap<(u32, u8), u32> = HashMap::new();
+        let mut next = 258u32;
+        let mut w: Option<u32> = None;
+        for &c in data {
+            let Some(cur) = w else {
+                w = Some(u32::from(c));
+                continue;
+            };
+            if let Some(&code) = dict.get(&(cur, c)) {
+                w = Some(code);
+                continue;
+            }
+            b.code(cur);
+            dict.insert((cur, c), next);
+            next += 1;
+            w = Some(u32::from(c));
+            if next >= 4000 {
+                b.code(u32::from(c));
+                b.clear();
+                dict.clear();
+                next = 258;
+                w = None;
+            }
+        }
+        if let Some(cur) = w {
+            b.code(cur);
+        }
+        b.put(257);
+        if b.n > 0 {
+            b.out.push((b.acc << (8 - b.n)) as u8);
+        }
+        b.out
+    }
+
+    fn lzw_filter(early: Option<i64>, predictor: Option<(i64, i64)>) -> Filter {
+        let mut d = Dictionary::new();
+        if let Some(e) = early {
+            d.push(b"EarlyChange".to_vec(), Object::Integer(e));
+        }
+        if let Some((p, c)) = predictor {
+            d.push(b"Predictor".to_vec(), Object::Integer(p));
+            d.push(b"Columns".to_vec(), Object::Integer(c));
+        }
+        Filter {
+            name: b"LZWDecode".to_vec(),
+            parms: Some(d),
+        }
+    }
+
+    fn decode_with(raw: &[u8], f: Filter, limits: &Limits) -> Result<Vec<u8>> {
+        let mut b = Budget::default();
+        let mut ctx = Ctx {
+            limits,
+            budget: &mut b,
+            cancel: &never,
+            object: 9,
+        };
+        decode(raw, &[f], &mut ctx)
+    }
+
+    #[test]
+    fn lzw_decodes_the_specification_example() {
+        // ISO 32000-2 §7.4.4.2: "-----A---B" is the codes 256 45 258 258 65 259 66 257.
+        let raw = [0x80, 0x0B, 0x60, 0x50, 0x22, 0x0C, 0x0C, 0x85, 0x01];
+        let l = Limits::default();
+        assert_eq!(
+            run(&raw, &[b"LZWDecode"], &l, &mut Budget::default()).unwrap(),
+            b"-----A---B"
+        );
+        assert_eq!(
+            run(&raw, &[b"LZW"], &l, &mut Budget::default()).unwrap(),
+            b"-----A---B"
+        );
+    }
+
+    #[test]
+    fn lzw_round_trips_across_every_code_width_and_both_early_change_values() {
+        // Enough varied data to pass 512, 1024 and 2048 entries and fill the table.
+        let mut data = Vec::new();
+        let mut x: u32 = 7;
+        for i in 0..200_000u32 {
+            x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            data.push(if i % 3 == 0 {
+                (x >> 16) as u8
+            } else {
+                b'a' + (i % 7) as u8
+            });
+        }
+        let l = Limits::default();
+        for early in [true, false] {
+            let raw = lzw_encode(&data, early);
+            let parm = if early { None } else { Some(0) };
+            let out = decode_with(&raw, lzw_filter(parm, None), &l).unwrap();
+            assert_eq!(out.len(), data.len(), "early {early}");
+            assert!(out == data, "early {early}");
+        }
+    }
+
+    #[test]
+    fn lzw_with_png_predictor() {
+        let rows = [2u8, 1, 2, 3, 2, 1, 1, 1];
+        let raw = lzw_encode(&rows, true);
+        let out = decode_with(&raw, lzw_filter(None, Some((12, 3))), &Limits::default());
+        assert_eq!(out.unwrap(), vec![1, 2, 3, 2, 3, 4]);
+    }
+
+    #[test]
+    fn lzw_bomb_stops_at_the_ratio_and_stream_caps() {
+        let bomb = lzw_encode(&vec![0u8; 16 << 20], true);
+        // Default limits: the ratio cap (1:1000 after 1 MiB) stops it.
+        let e = decode_with(&bomb, lzw_filter(None, None), &Limits::default())
+            .map(|v| v.len())
+            .unwrap_err();
+        assert!(matches!(e, PdfError::DecodeRatio { .. }), "{e:?}");
+        // With the ratio out of the way, the per-stream cap does.
+        let l = Limits {
+            max_stream_bytes: 1 << 20,
+            ratio_grace_bytes: 1 << 30,
+            ..Limits::default()
+        };
+        let e = decode_with(&bomb, lzw_filter(None, None), &l)
+            .map(|v| v.len())
+            .unwrap_err();
+        assert!(matches!(e, PdfError::StreamTooLarge { .. }), "{e:?}");
+        // And the document budget.
+        let l = Limits {
+            max_total_decoded_bytes: 1 << 20,
+            ratio_grace_bytes: 1 << 30,
+            ..Limits::default()
+        };
+        let e = decode_with(&bomb, lzw_filter(None, None), &l)
+            .map(|v| v.len())
+            .unwrap_err();
+        assert!(matches!(e, PdfError::DecodeBudget { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn lzw_damage_keeps_what_was_decoded() {
+        // A code beyond the next free entry after "ab": decoding stops there.
+        let mut raw = lzw_encode(b"ab", true);
+        raw.truncate(2);
+        assert!(decode_with(&raw, lzw_filter(None, None), &Limits::default()).is_ok());
+        assert_eq!(
+            decode_with(
+                &[0xFF, 0xFF, 0xFF],
+                lzw_filter(None, None),
+                &Limits::default()
+            )
+            .unwrap(),
+            b""
+        );
     }
 
     #[test]

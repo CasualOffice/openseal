@@ -7,15 +7,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::Cancel;
 use crate::document::Document;
 use crate::error::{PdfError, Result};
-use crate::lexer::{Lexer, Tok, is_ws};
+use crate::lexer::{Lexer, Tok};
 use crate::object::{Dictionary, Object};
 use crate::pages::{self, Page};
 use crate::report::{
-    ActionInfo, ActionKind, AdmissionReport, FieldType, Finding, FindingKind, FormField,
-    PdfVersion, SignatureInfo, Widget,
+    ActionInfo, ActionKind, AdmissionReport, ChoiceOption, FieldType, Finding, FindingKind,
+    FormField, MAX_FIELD_OPTIONS, PdfVersion, SignatureInfo, SignatureKind, Widget,
+    counts_as_signed,
 };
 use crate::text;
-use crate::xref::find;
 
 /// What the object pass collects.
 #[derive(Debug, Default)]
@@ -42,6 +42,13 @@ pub(crate) fn action_kind(s: &[u8]) -> Option<ActionKind> {
         b"Rendition" | b"Movie" | b"Sound" | b"RichMediaExecute" => ActionKind::Multimedia,
         _ => return None,
     })
+}
+
+/// True when an `/EF` value is a file specification's embedded-file dictionary
+/// (§7.11.4). Usage-rights transform parameters also have an `/EF` key, an array of
+/// rights names (§12.8.2.3), which carries no file (`PDF-REAL-02`).
+pub(crate) fn is_file_ef(v: &Object) -> bool {
+    matches!(v, Object::Dictionary(_) | Object::Reference(_))
 }
 
 /// Inspect one object's value tree (already depth-capped by the parser).
@@ -89,7 +96,10 @@ fn inspect(obj: &Object, num: u32, inv: &mut Inventory) {
         }
         let ty = dict.name(b"Type");
         let subtype = dict.name(b"Subtype");
-        if ty == Some(b"EmbeddedFile") || dict.contains(b"EF") || dict.contains(b"EmbeddedFiles") {
+        if ty == Some(b"EmbeddedFile")
+            || dict.get(b"EF").is_some_and(is_file_ef)
+            || dict.contains(b"EmbeddedFiles")
+        {
             inv.embedded.insert(num);
         }
         if matches!(subtype, Some(b"RichMedia" | b"3D"))
@@ -195,26 +205,9 @@ fn count_ops(data: &[u8], limit: u32, max_string: usize, cancel: Cancel<'_>) -> 
     Ok(ops)
 }
 
-/// After `ID`: skip to the `EI` that ends the image (white space, `EI`, then a
-/// delimiter, white space or the end).
+/// After `ID`: skip to the `EI` that ends the image, as [`crate::ContentLexer`] does.
 fn skip_inline_image(lx: &mut Lexer<'_>) {
-    let b = lx.b;
-    let mut from = lx.pos.saturating_add(1);
-    while let Some(p) = find(b, b"EI", from) {
-        let before = p
-            .checked_sub(1)
-            .and_then(|i| b.get(i))
-            .is_some_and(|&c| is_ws(c));
-        let after = b
-            .get(p.saturating_add(2))
-            .is_none_or(|&c| !crate::lexer::is_regular(c));
-        if before && after {
-            lx.pos = p.saturating_add(2);
-            return;
-        }
-        from = p.saturating_add(2);
-    }
-    lx.pos = b.len();
+    lx.pos = crate::content::inline_image_end(lx.b, lx.pos.saturating_add(1)).1;
 }
 
 /// Operator counts per page; each content stream decoded once.
@@ -277,7 +270,56 @@ fn content_pass(
 
 /// A field still to visit: the field, its parent's full name, the inherited `/FT` and
 /// `/Ff`, and its depth.
-type FieldFrame = (Object, String, Option<Vec<u8>>, i64, usize);
+type FieldFrame = (Object, String, Inherit, usize);
+
+/// What a field inherits from its ancestors (ISO 32000-2 §12.7.4.1).
+#[derive(Debug, Clone, Default)]
+struct Inherit {
+    ft: Option<Vec<u8>>,
+    ff: i64,
+    max_len: Option<u32>,
+    opt: Option<Vec<Object>>,
+}
+
+/// A choice field's `/Opt` entries: a text string, or an `[export display]` pair. At
+/// most [`MAX_FIELD_OPTIONS`].
+fn choice_options(
+    doc: &mut Document<'_>,
+    opt: &[Object],
+    cancel: Cancel<'_>,
+) -> Result<Vec<ChoiceOption>> {
+    let mut out = Vec::new();
+    for o in opt.iter().take(MAX_FIELD_OPTIONS) {
+        let o = match doc.resolve(o, cancel) {
+            Ok(o) => o,
+            Err(e) if e.is_document_wide() => return Err(e),
+            Err(_) => continue,
+        };
+        let text = |doc: &mut Document<'_>, v: Option<&Object>| -> Result<Option<String>> {
+            Ok(match v.map(|v| doc.resolve(v, cancel)) {
+                Some(Ok(Object::String(s))) => Some(text::decode(&s)),
+                Some(Err(e)) if e.is_document_wide() => return Err(e),
+                _ => None,
+            })
+        };
+        let pair = match &o {
+            Object::String(s) => {
+                let t = text::decode(s);
+                Some((t.clone(), t))
+            }
+            Object::Array(p) => match (text(doc, p.first())?, text(doc, p.get(1))?) {
+                (Some(e), Some(d)) => Some((e, d)),
+                (Some(e), None) => Some((e.clone(), e)),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((export, display)) = pair {
+            out.push(ChoiceOption { export, display });
+        }
+    }
+    Ok(out)
+}
 
 /// Fields under the AcroForm, terminal fields only.
 fn form_fields(
@@ -305,9 +347,9 @@ fn form_fields(
     let mut stack: Vec<FieldFrame> = roots
         .into_iter()
         .rev()
-        .map(|o| (o, String::new(), None, 0, 0))
+        .map(|o| (o, String::new(), Inherit::default(), 0))
         .collect();
-    while let Some((node, parent, ft, ff, depth)) = stack.pop() {
+    while let Some((node, parent, inherit, depth)) = stack.pop() {
         if cancel() {
             return Err(PdfError::Cancelled);
         }
@@ -340,14 +382,20 @@ fn form_fields(
             }
             _ => parent.clone(),
         };
-        let ft = dict.name(b"FT").map(<[u8]>::to_vec).or(ft);
-        let ff = match dict.get(b"Ff") {
-            Some(v) => doc
-                .resolve(v, cancel)
-                .ok()
+        let ft = dict.name(b"FT").map(<[u8]>::to_vec).or(inherit.ft);
+        let int = |doc: &mut Document<'_>, key: &[u8]| {
+            dict.get(key)
+                .and_then(|v| doc.resolve(v, cancel).ok())
                 .and_then(|o| o.as_i64())
-                .unwrap_or(ff),
-            None => ff,
+        };
+        let ff = int(doc, b"Ff").unwrap_or(inherit.ff);
+        let max_len = int(doc, b"MaxLen")
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v > 0)
+            .or(inherit.max_len);
+        let opt = match dict.get(b"Opt").map(|o| doc.resolve(o, cancel)) {
+            Some(Ok(Object::Array(a))) => Some(a),
+            _ => inherit.opt,
         };
         let kids = match dict.get(b"Kids") {
             Some(k) => match doc.resolve(k, cancel) {
@@ -377,8 +425,14 @@ fn form_fields(
         }
         if !child_fields.is_empty() {
             let next = depth.saturating_add(1);
+            let inherit = Inherit {
+                ft,
+                ff,
+                max_len,
+                opt,
+            };
             for k in child_fields.into_iter().rev() {
-                stack.push((k, name.clone(), ft.clone(), ff, next));
+                stack.push((k, name.clone(), inherit.clone(), next));
             }
             continue;
         }
@@ -400,25 +454,35 @@ fn form_fields(
             && let Some(v) = dict.get(b"V")
         {
             let value = v.as_ref().map(|r| r.num);
-            let sub_filter = match doc.resolve(v, cancel) {
-                Ok(Object::Dictionary(d)) => d
-                    .name(b"SubFilter")
-                    .map(|s| String::from_utf8_lossy(s).into_owned()),
-                _ => None,
+            let (sub_filter, kind) = match doc.resolve(v, cancel) {
+                Ok(Object::Dictionary(d)) => (
+                    d.name(b"SubFilter")
+                        .map(|s| String::from_utf8_lossy(s).into_owned()),
+                    value_kind(&d),
+                ),
+                _ => (None, SignatureKind::Approval),
             };
             if *v != Object::Null {
                 sigs.push(SignatureInfo {
                     field: num,
                     value,
                     sub_filter,
+                    kind,
                 });
             }
         }
+        let options = match &opt {
+            Some(o) => choice_options(doc, o, cancel)?,
+            None => Vec::new(),
+        };
         fields.push(FormField {
             object: num,
             name,
             field_type,
             widgets,
+            flags: u32::try_from(ff & 0xFFFF_FFFF).unwrap_or(0),
+            max_len,
+            options,
         });
     }
     Ok((fields, sigs))
@@ -444,7 +508,51 @@ fn widget(
         .get(b"P")
         .and_then(Object::as_ref)
         .and_then(|p| page_index.get(&p.num).copied());
-    Ok(Some(Widget { object, rect, page }))
+    let appearance_states = appearance_states(doc, d, cancel)?;
+    Ok(Some(Widget {
+        object,
+        rect,
+        page,
+        appearance_states,
+    }))
+}
+
+/// The names of a widget's normal appearances other than `/Off` (`/AP /N`, ISO
+/// 32000-2 §12.5.5): a check box's or radio button's on state. At most
+/// [`MAX_FIELD_OPTIONS`].
+fn appearance_states(
+    doc: &mut Document<'_>,
+    widget: &Dictionary,
+    cancel: Cancel<'_>,
+) -> Result<Vec<String>> {
+    let resolve = |doc: &mut Document<'_>, o: Option<&Object>| -> Result<Option<Object>> {
+        match o.map(|o| doc.resolve(o, cancel)) {
+            Some(Ok(v)) => Ok(Some(v)),
+            Some(Err(e)) if e.is_document_wide() => Err(e),
+            _ => Ok(None),
+        }
+    };
+    let Some(ap) = resolve(doc, widget.get(b"AP"))? else {
+        return Ok(Vec::new());
+    };
+    let Some(Object::Dictionary(n)) = resolve(doc, ap.get(b"N"))? else {
+        return Ok(Vec::new());
+    };
+    Ok(n.iter()
+        .filter(|(k, _)| *k != b"Off")
+        .take(MAX_FIELD_OPTIONS)
+        .map(|(k, _)| String::from_utf8_lossy(k).into_owned())
+        .collect())
+}
+
+/// Approval or document timestamp, from a signature dictionary's `/Type`; whether
+/// it is a certification or usage-rights signature is decided by `/Perms`.
+fn value_kind(d: &Dictionary) -> SignatureKind {
+    if d.name(b"Type") == Some(b"DocTimeStamp") {
+        SignatureKind::DocTimeStamp
+    } else {
+        SignatureKind::Approval
+    }
 }
 
 /// DocMDP level from `/Perms /DocMDP` (§12.8.2.2), default 2 when unstated.
@@ -501,14 +609,46 @@ pub(crate) fn classify(
         Object::Dictionary(d) => d,
         _ => return Err(PdfError::NotPdf { offset: None }),
     };
-    let pages_root = catalog
-        .get(b"Pages")
-        .cloned()
-        .ok_or(PdfError::NotPdf { offset: None })?;
-    let pages = pages::walk(doc, &pages_root, strict, cancel)?;
-    if pages.is_empty() {
-        return Err(PdfError::NotPdf { offset: None });
+    // Document metadata (XMP) that cannot be read is reported, never a refusal
+    // (`PDF-REAL-03`).
+    if let Some(Object::Reference(m)) = catalog.get(b"Metadata") {
+        match doc.object(m.num, cancel) {
+            Ok(Object::Stream(_)) => {}
+            Err(e) if e.is_document_wide() => return Err(e),
+            Err(e) if strict => return Err(e),
+            _ => doc.findings.push(Finding::new(
+                "CS-PDF-0102",
+                FindingKind::ObjectUnreadable,
+                Some(m.num),
+            )),
+        }
     }
+    let pages_root = catalog.get(b"Pages").cloned();
+    let walked = match &pages_root {
+        Some(r) => pages::walk(doc, r, strict, cancel),
+        None => Err(PdfError::NotPdf { offset: None }),
+    };
+    let pages = match walked {
+        Ok(p) if !p.is_empty() => p,
+        Err(e) if strict || e.is_document_wide() => return Err(e),
+        // The tree's root is unreadable or holds no page. Once the xref has been rebuilt
+        // (the first attempt returns the error, and the caller rebuilds), the pages are
+        // taken from the page objects themselves, as common readers do (`PDF-REAL-03`).
+        other if !strict && doc.is_rebuilt() => {
+            let found = pages::orphans(doc, cancel)?;
+            if found.is_empty() {
+                return Err(other.err().unwrap_or(PdfError::NotPdf { offset: None }));
+            }
+            doc.findings.push(Finding::new(
+                "CS-PDF-0101",
+                FindingKind::PageTreeRebuilt,
+                pages_root.as_ref().and_then(Object::as_ref).map(|r| r.num),
+            ));
+            found
+        }
+        Ok(_) => return Err(PdfError::NotPdf { offset: None }),
+        Err(e) => return Err(e),
+    };
     content_pass(doc, &pages, strict, cancel)?;
     let page_index: BTreeMap<u32, u32> = pages
         .iter()
@@ -533,24 +673,6 @@ pub(crate) fn classify(
         Some(a) => form_fields(doc, a, &page_index, strict, cancel)?,
         None => (Vec::new(), Vec::new()),
     };
-    // Signature dictionaries no field points at still count as signatures.
-    let in_fields: BTreeSet<u32> = signatures.iter().filter_map(|s| s.value).collect();
-    for v in &inv.sig_values {
-        if !in_fields.contains(v) {
-            let sub_filter = match doc.object(*v, cancel) {
-                Ok(o) => o
-                    .get(b"SubFilter")
-                    .and_then(Object::as_name)
-                    .map(|s| String::from_utf8_lossy(s).into_owned()),
-                Err(_) => None,
-            };
-            signatures.push(SignatureInfo {
-                field: None,
-                value: Some(*v),
-                sub_filter,
-            });
-        }
-    }
     let perms = match catalog.get(b"Perms").map(|p| doc.resolve(p, cancel)) {
         Some(Ok(Object::Dictionary(d))) => Some(d),
         _ => None,
@@ -560,10 +682,70 @@ pub(crate) fn classify(
         Some(p) => docmdp(doc, p, cancel),
         None => None,
     };
+    // Which signature dictionaries `/Perms` names (§12.8.4): the certification and the
+    // usage-rights signatures.
+    let perm_ref = |key: &[u8]| {
+        perms
+            .as_ref()
+            .and_then(|p| p.get(key))
+            .and_then(Object::as_ref)
+            .map(|r| r.num)
+    };
+    let certification = perm_ref(b"DocMDP");
+    let usage_rights: BTreeSet<u32> = [perm_ref(b"UR3"), perm_ref(b"UR")]
+        .into_iter()
+        .flatten()
+        .collect();
+    let catalog_num = root.as_ref().map(|r| r.num);
+    // Signature dictionaries no field points at still count as signatures.
+    let in_fields: BTreeSet<u32> = signatures.iter().filter_map(|s| s.value).collect();
+    for v in &inv.sig_values {
+        // A usage-rights signature written directly in `/Perms` is inside the catalog;
+        // it is listed below, not the catalog itself.
+        if in_fields.contains(v) || Some(*v) == catalog_num {
+            continue;
+        }
+        let (sub_filter, kind) = match doc.object(*v, cancel) {
+            Ok(Object::Dictionary(d)) => (
+                d.name(b"SubFilter")
+                    .map(|s| String::from_utf8_lossy(s).into_owned()),
+                value_kind(&d),
+            ),
+            _ => (None, SignatureKind::Approval),
+        };
+        signatures.push(SignatureInfo {
+            field: None,
+            value: Some(*v),
+            sub_filter,
+            kind,
+        });
+    }
+    for key in [&b"UR3"[..], b"UR"] {
+        if let Some(Object::Dictionary(d)) = perms.as_ref().and_then(|p| p.get(key))
+            && matches!(d.name(b"Type"), Some(b"Sig"))
+        {
+            signatures.push(SignatureInfo {
+                field: None,
+                value: None,
+                sub_filter: d
+                    .name(b"SubFilter")
+                    .map(|s| String::from_utf8_lossy(s).into_owned()),
+                kind: SignatureKind::UsageRights,
+            });
+        }
+    }
+    for s in &mut signatures {
+        if s.value.is_some_and(|v| usage_rights.contains(&v)) {
+            s.kind = SignatureKind::UsageRights;
+        } else if s.value.is_some() && s.value == certification {
+            s.kind = SignatureKind::Certification;
+        }
+    }
     let has_optional_content = catalog.contains(b"OCProperties");
 
-    // A signed document must not need repair (docs/30 §2, `CS-PDF-0014`).
-    if (!signatures.is_empty() || has_perms) && doc.is_repaired() {
+    // A signed document must not need repair (docs/30 §2, `CS-PDF-0014`). Usage-rights
+    // signatures alone do not make it signed (`PDF-REAL-02`).
+    if counts_as_signed(docmdp, &signatures) && doc.is_repaired() {
         return Err(PdfError::DamagedSigned);
     }
 
@@ -614,9 +796,27 @@ pub(crate) fn classify(
         doc.findings
             .push(Finding::new("CS-PDF-0106", FindingKind::FormFields, None));
     }
-    if !signatures.is_empty() || has_perms {
+    if counts_as_signed(docmdp, &signatures) {
         doc.findings
             .push(Finding::new("CS-PDF-0107", FindingKind::Signatures, None));
+    }
+    for s in &signatures {
+        if s.kind == SignatureKind::UsageRights {
+            doc.findings.push(Finding::new(
+                "CS-PDF-0107",
+                FindingKind::UsageRights,
+                s.value.or(catalog_num),
+            ));
+        }
+    }
+    if doc.encryption().is_some() {
+        let object = doc
+            .trailer()
+            .get(b"Encrypt")
+            .and_then(Object::as_ref)
+            .map(|r| r.num);
+        doc.findings
+            .push(Finding::new("CS-PDF-0109", FindingKind::Encrypted, object));
     }
     if has_optional_content {
         doc.findings.push(Finding::new(
@@ -649,6 +849,7 @@ pub(crate) fn classify(
         external_streams: inv.external_streams.into_iter().collect(),
         has_xfa,
         has_optional_content,
+        encryption: doc.encryption(),
         decoded_bytes: doc.decoded_bytes(),
         findings: doc.findings.list.clone(),
         findings_dropped: doc.findings.dropped,

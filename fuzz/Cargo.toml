@@ -3,6 +3,7 @@
 #
 #   cargo +nightly fuzz run admit -- -max_total_time=600 -dict=fuzz/pdf.dict
 #   cargo +nightly fuzz run normalize -- -max_total_time=300 -dict=fuzz/pdf.dict
+#   cargo +nightly fuzz run content -- -max_total_time=120 -dict=fuzz/pdf.dict
 [package]
 name = "casual-sign-pdf-fuzz"
 version = "0.0.0"
@@ -41,3 +42,10 @@ bench = false
 
 [workspace]
 members = ["."]
+
+[[bin]]
+name = "content"
+path = "fuzz_targets/content.rs"
+test = false
+doc = false
+bench = false
