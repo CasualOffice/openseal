@@ -224,8 +224,12 @@ pub enum FieldType {
     Unknown,
 }
 
+/// Most options or appearance states kept per field or widget.
+pub const MAX_FIELD_OPTIONS: usize = 1_000;
+
 /// A widget of a form field: where it is drawn.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Widget {
     /// The widget annotation's object number, when it is indirect.
     pub object: Option<u32>,
@@ -233,10 +237,23 @@ pub struct Widget {
     pub rect: Rect,
     /// Zero-based page index from `/P`, when it names a page of the document.
     pub page: Option<u32>,
+    /// The names of its normal appearances other than `/Off` (`/AP /N`): a check
+    /// box's or radio button's on state, as written (at most [`MAX_FIELD_OPTIONS`]).
+    pub appearance_states: Vec<String>,
+}
+
+/// One option of a choice field (`/Opt`, ISO 32000-2 §12.7.5.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChoiceOption {
+    /// The export value (the string itself when the entry is not a pair).
+    pub export: String,
+    /// The text shown (the export value when the entry is not a pair).
+    pub display: String,
 }
 
 /// An existing AcroForm field (a terminal field).
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct FormField {
     /// The field object's number, when indirect.
     pub object: Option<u32>,
@@ -246,6 +263,15 @@ pub struct FormField {
     pub field_type: FieldType,
     /// Widgets, with their rectangles.
     pub widgets: Vec<Widget>,
+    /// `/Ff`, the field flags, inherited (ISO 32000-2 Tables 226, 227, 229, 231):
+    /// bit 1 read-only, 2 required, 13 multiline, 16 radio, 17 push button, 18 combo,
+    /// 19 edit, 22 multi-select (bit n is `1 << (n - 1)`).
+    pub flags: u32,
+    /// `/MaxLen` of a text field, inherited, when positive.
+    pub max_len: Option<u32>,
+    /// `/Opt` of a choice field (or a check box or radio group's export values),
+    /// inherited, decoded from PDF text (at most [`MAX_FIELD_OPTIONS`]).
+    pub options: Vec<ChoiceOption>,
 }
 
 /// What an existing signature is (ISO 32000-2 §12.8).

@@ -41,6 +41,7 @@
 //!   (`CS-WRT-0001`).
 
 mod classify;
+mod content;
 mod crypt;
 mod document;
 mod error;
@@ -57,6 +58,9 @@ mod text;
 mod writer;
 mod xref;
 
+pub use content::{
+    ContentError, ContentLexer, ContentToken, MAX_CONTENT_NESTING, MAX_OPERAND_VALUES, Operand,
+};
 pub use crypt::{Cipher, Credentials, EncryptionInfo, MAX_PASSWORDS, PasswordKind};
 pub use document::Document;
 pub use error::PdfError;
@@ -66,11 +70,20 @@ pub use normalize::{
 };
 pub use object::{Dictionary, ObjRef, Object, Stream};
 pub use report::{
-    ActionInfo, ActionKind, AdmissionReport, FieldType, Finding, FindingKind, FormField,
-    MAX_FINDINGS, PageInfo, PdfVersion, Rect, Revision, SignatureInfo, SignatureKind, Widget,
+    ActionInfo, ActionKind, AdmissionReport, ChoiceOption, FieldType, Finding, FindingKind,
+    FormField, MAX_FIELD_OPTIONS, MAX_FINDINGS, PageInfo, PdfVersion, Rect, Revision,
+    SignatureInfo, SignatureKind, Widget,
 };
 pub use writer::{Change, IncrementalUpdate, WriteError};
 pub use xref::XrefKind;
+
+/// Decode a PDF text string (ISO 32000-2 §7.9.2.2): UTF-16BE or UTF-8 with a
+/// byte-order mark, otherwise PDFDocEncoding. Invalid sequences become U+FFFD. Field
+/// names, option texts and document information are text strings.
+#[must_use]
+pub fn decode_text_string(bytes: &[u8]) -> String {
+    text::decode(bytes)
+}
 
 /// The host's cancellation predicate: return `true` to stop the read (`CS-PDF-0013`).
 pub type Cancel<'a> = &'a dyn Fn() -> bool;

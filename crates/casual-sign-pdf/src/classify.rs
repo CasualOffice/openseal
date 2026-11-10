@@ -7,15 +7,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::Cancel;
 use crate::document::Document;
 use crate::error::{PdfError, Result};
-use crate::lexer::{Lexer, Tok, is_ws};
+use crate::lexer::{Lexer, Tok};
 use crate::object::{Dictionary, Object};
 use crate::pages::{self, Page};
 use crate::report::{
-    ActionInfo, ActionKind, AdmissionReport, FieldType, Finding, FindingKind, FormField,
-    PdfVersion, SignatureInfo, SignatureKind, Widget, counts_as_signed,
+    ActionInfo, ActionKind, AdmissionReport, ChoiceOption, FieldType, Finding, FindingKind,
+    FormField, MAX_FIELD_OPTIONS, PdfVersion, SignatureInfo, SignatureKind, Widget,
+    counts_as_signed,
 };
 use crate::text;
-use crate::xref::find;
 
 /// What the object pass collects.
 #[derive(Debug, Default)]
@@ -205,26 +205,9 @@ fn count_ops(data: &[u8], limit: u32, max_string: usize, cancel: Cancel<'_>) -> 
     Ok(ops)
 }
 
-/// After `ID`: skip to the `EI` that ends the image (white space, `EI`, then a
-/// delimiter, white space or the end).
+/// After `ID`: skip to the `EI` that ends the image, as [`crate::ContentLexer`] does.
 fn skip_inline_image(lx: &mut Lexer<'_>) {
-    let b = lx.b;
-    let mut from = lx.pos.saturating_add(1);
-    while let Some(p) = find(b, b"EI", from) {
-        let before = p
-            .checked_sub(1)
-            .and_then(|i| b.get(i))
-            .is_some_and(|&c| is_ws(c));
-        let after = b
-            .get(p.saturating_add(2))
-            .is_none_or(|&c| !crate::lexer::is_regular(c));
-        if before && after {
-            lx.pos = p.saturating_add(2);
-            return;
-        }
-        from = p.saturating_add(2);
-    }
-    lx.pos = b.len();
+    lx.pos = crate::content::inline_image_end(lx.b, lx.pos.saturating_add(1)).1;
 }
 
 /// Operator counts per page; each content stream decoded once.
@@ -287,7 +270,56 @@ fn content_pass(
 
 /// A field still to visit: the field, its parent's full name, the inherited `/FT` and
 /// `/Ff`, and its depth.
-type FieldFrame = (Object, String, Option<Vec<u8>>, i64, usize);
+type FieldFrame = (Object, String, Inherit, usize);
+
+/// What a field inherits from its ancestors (ISO 32000-2 §12.7.4.1).
+#[derive(Debug, Clone, Default)]
+struct Inherit {
+    ft: Option<Vec<u8>>,
+    ff: i64,
+    max_len: Option<u32>,
+    opt: Option<Vec<Object>>,
+}
+
+/// A choice field's `/Opt` entries: a text string, or an `[export display]` pair. At
+/// most [`MAX_FIELD_OPTIONS`].
+fn choice_options(
+    doc: &mut Document<'_>,
+    opt: &[Object],
+    cancel: Cancel<'_>,
+) -> Result<Vec<ChoiceOption>> {
+    let mut out = Vec::new();
+    for o in opt.iter().take(MAX_FIELD_OPTIONS) {
+        let o = match doc.resolve(o, cancel) {
+            Ok(o) => o,
+            Err(e) if e.is_document_wide() => return Err(e),
+            Err(_) => continue,
+        };
+        let text = |doc: &mut Document<'_>, v: Option<&Object>| -> Result<Option<String>> {
+            Ok(match v.map(|v| doc.resolve(v, cancel)) {
+                Some(Ok(Object::String(s))) => Some(text::decode(&s)),
+                Some(Err(e)) if e.is_document_wide() => return Err(e),
+                _ => None,
+            })
+        };
+        let pair = match &o {
+            Object::String(s) => {
+                let t = text::decode(s);
+                Some((t.clone(), t))
+            }
+            Object::Array(p) => match (text(doc, p.first())?, text(doc, p.get(1))?) {
+                (Some(e), Some(d)) => Some((e, d)),
+                (Some(e), None) => Some((e.clone(), e)),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((export, display)) = pair {
+            out.push(ChoiceOption { export, display });
+        }
+    }
+    Ok(out)
+}
 
 /// Fields under the AcroForm, terminal fields only.
 fn form_fields(
@@ -315,9 +347,9 @@ fn form_fields(
     let mut stack: Vec<FieldFrame> = roots
         .into_iter()
         .rev()
-        .map(|o| (o, String::new(), None, 0, 0))
+        .map(|o| (o, String::new(), Inherit::default(), 0))
         .collect();
-    while let Some((node, parent, ft, ff, depth)) = stack.pop() {
+    while let Some((node, parent, inherit, depth)) = stack.pop() {
         if cancel() {
             return Err(PdfError::Cancelled);
         }
@@ -350,14 +382,20 @@ fn form_fields(
             }
             _ => parent.clone(),
         };
-        let ft = dict.name(b"FT").map(<[u8]>::to_vec).or(ft);
-        let ff = match dict.get(b"Ff") {
-            Some(v) => doc
-                .resolve(v, cancel)
-                .ok()
+        let ft = dict.name(b"FT").map(<[u8]>::to_vec).or(inherit.ft);
+        let int = |doc: &mut Document<'_>, key: &[u8]| {
+            dict.get(key)
+                .and_then(|v| doc.resolve(v, cancel).ok())
                 .and_then(|o| o.as_i64())
-                .unwrap_or(ff),
-            None => ff,
+        };
+        let ff = int(doc, b"Ff").unwrap_or(inherit.ff);
+        let max_len = int(doc, b"MaxLen")
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v > 0)
+            .or(inherit.max_len);
+        let opt = match dict.get(b"Opt").map(|o| doc.resolve(o, cancel)) {
+            Some(Ok(Object::Array(a))) => Some(a),
+            _ => inherit.opt,
         };
         let kids = match dict.get(b"Kids") {
             Some(k) => match doc.resolve(k, cancel) {
@@ -387,8 +425,14 @@ fn form_fields(
         }
         if !child_fields.is_empty() {
             let next = depth.saturating_add(1);
+            let inherit = Inherit {
+                ft,
+                ff,
+                max_len,
+                opt,
+            };
             for k in child_fields.into_iter().rev() {
-                stack.push((k, name.clone(), ft.clone(), ff, next));
+                stack.push((k, name.clone(), inherit.clone(), next));
             }
             continue;
         }
@@ -427,11 +471,18 @@ fn form_fields(
                 });
             }
         }
+        let options = match &opt {
+            Some(o) => choice_options(doc, o, cancel)?,
+            None => Vec::new(),
+        };
         fields.push(FormField {
             object: num,
             name,
             field_type,
             widgets,
+            flags: u32::try_from(ff & 0xFFFF_FFFF).unwrap_or(0),
+            max_len,
+            options,
         });
     }
     Ok((fields, sigs))
@@ -457,7 +508,41 @@ fn widget(
         .get(b"P")
         .and_then(Object::as_ref)
         .and_then(|p| page_index.get(&p.num).copied());
-    Ok(Some(Widget { object, rect, page }))
+    let appearance_states = appearance_states(doc, d, cancel)?;
+    Ok(Some(Widget {
+        object,
+        rect,
+        page,
+        appearance_states,
+    }))
+}
+
+/// The names of a widget's normal appearances other than `/Off` (`/AP /N`, ISO
+/// 32000-2 §12.5.5): a check box's or radio button's on state. At most
+/// [`MAX_FIELD_OPTIONS`].
+fn appearance_states(
+    doc: &mut Document<'_>,
+    widget: &Dictionary,
+    cancel: Cancel<'_>,
+) -> Result<Vec<String>> {
+    let resolve = |doc: &mut Document<'_>, o: Option<&Object>| -> Result<Option<Object>> {
+        match o.map(|o| doc.resolve(o, cancel)) {
+            Some(Ok(v)) => Ok(Some(v)),
+            Some(Err(e)) if e.is_document_wide() => Err(e),
+            _ => Ok(None),
+        }
+    };
+    let Some(ap) = resolve(doc, widget.get(b"AP"))? else {
+        return Ok(Vec::new());
+    };
+    let Some(Object::Dictionary(n)) = resolve(doc, ap.get(b"N"))? else {
+        return Ok(Vec::new());
+    };
+    Ok(n.iter()
+        .filter(|(k, _)| *k != b"Off")
+        .take(MAX_FIELD_OPTIONS)
+        .map(|(k, _)| String::from_utf8_lossy(k).into_owned())
+        .collect())
 }
 
 /// Approval or document timestamp, from a signature dictionary's `/Type`; whether

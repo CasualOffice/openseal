@@ -1224,6 +1224,62 @@ impl<'a> Document<'a> {
         filters::decode(&plain, &filters, &mut ctx)
     }
 
+    /// The value of an inheritable page attribute (§7.7.3.4: `/Resources`,
+    /// `/MediaBox`, `/CropBox`, `/Rotate`) for the page object `page`: its own, else
+    /// the nearest ancestor's through `/Parent`, resolved. `None` when no node has it,
+    /// or the chain is broken; at most `Limits::max_depth` ancestors, each once.
+    ///
+    /// # Errors
+    ///
+    /// Only an error that ends the whole read (the decode budget, cancellation).
+    pub fn inherited_page_attribute(
+        &mut self,
+        page: u32,
+        key: &[u8],
+        cancel: Cancel<'_>,
+    ) -> Result<Option<Object>> {
+        let mut seen: BTreeSet<u32> = BTreeSet::new();
+        let mut cur = page;
+        for _ in 0..=usize::from(self.limits.max_depth) {
+            if !seen.insert(cur) {
+                break;
+            }
+            let dict = match self.object(cur, cancel) {
+                Ok(Object::Dictionary(d)) => d,
+                Err(e) if e.is_document_wide() => return Err(e),
+                _ => break,
+            };
+            if let Some(v) = dict.get(key) {
+                return match self.resolve(v, cancel) {
+                    Ok(Object::Null) => Ok(None),
+                    Ok(v) => Ok(Some(v)),
+                    Err(e) if e.is_document_wide() => Err(e),
+                    Err(_) => Ok(None),
+                };
+            }
+            match dict.get(b"Parent").and_then(Object::as_ref) {
+                Some(p) => cur = p.num,
+                None => break,
+            }
+        }
+        Ok(None)
+    }
+
+    /// The `/Resources` of the page object `page`, inherited (§7.7.3.4); empty when
+    /// absent or not a dictionary.
+    ///
+    /// # Errors
+    ///
+    /// As [`Document::inherited_page_attribute`].
+    pub fn page_resources(&mut self, page: u32, cancel: Cancel<'_>) -> Result<Dictionary> {
+        Ok(
+            match self.inherited_page_attribute(page, b"Resources", cancel)? {
+                Some(Object::Dictionary(d)) => d,
+                _ => Dictionary::new(),
+            },
+        )
+    }
+
     /// Decode the stream object `num` through its filters, charged to the budgets.
     pub fn decode_stream(&mut self, num: u32, cancel: Cancel<'_>) -> Result<Vec<u8>> {
         match self.object(num, cancel)? {
