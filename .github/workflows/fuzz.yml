@@ -21,7 +21,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  NIGHTLY: nightly-2026-10-20
+  NIGHTLY: nightly-2026-08-04
 
 jobs:
   fuzz:
@@ -40,7 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install "$NIGHTLY" --profile minimal
-      - run: cargo +"$NIGHTLY" install cargo-fuzz --version 0.13.1 --locked
+      # Built with stable: a nightly can break its dependencies (rustix), as it did on 2026-11-10.
+      - run: cargo +stable install cargo-fuzz --version 0.13.2 --locked
       - name: Restore the corpus from the last run
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
