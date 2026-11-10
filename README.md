@@ -1,7 +1,7 @@
 # OpenSeal
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Status: design](https://img.shields.io/badge/status-design-lightgrey.svg)](#status)
+[![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#status)
 
 **Electronic signatures you can run anywhere, embed in anything, and verify without us.**
 An Apache-2.0 agreement platform with DocuSign's workflow and SignNow's speed: send documents for signature, route them
@@ -22,19 +22,19 @@ it shares.
   their products. This one can be embedded anywhere.
 - **Nothing behind a paywall.** Bulk send, signing links, conditional fields, formulas, payments, SSO, retention,
   embedding and webhooks are all in the open core.
-- **Evidence first.** Every completed agreement carries a PAdES seal with trusted time (long-term validation
-  optional), a certificate of completion, and a hash-chained audit trail embedded in the PDF. Every seal is checked by
-  our verifier and by independent validators before release.
-- **Verify without us.** A completed PDF can be verified in the browser, offline, or from the command line, with no
+- **Evidence first.** Every completed agreement will carry a PAdES seal with trusted time (long-term validation
+  optional), a certificate of completion, and a hash-chained audit trail embedded in the PDF. Every seal will be
+  checked by our verifier and by independent validators before release (the verifier and validators exist today).
+- **Verify without us.** A completed PDF will be verifiable in the browser, offline, or from the command line, with no
   account and no server.
-- **Keys where you want them.** Signing keys live in your HSM or cloud KMS, behind a separate signing service that
+- **Keys where you want them.** Signing keys will live in your HSM or cloud KMS, behind a separate signing service that
   never sees documents.
 - **An API you already know.** Envelopes, recipients, routing orders, fields, templates, embedded views and signed
   webhooks, in the shapes DocuSign and SignNow integrators expect.
 
 ## Status
 
-Docs are true as of `f34a2ef` (2026-11-10).
+Docs are true as of `b7dce7b` (2026-11-10).
 
 **Pre-alpha, engine under construction; the repository is private until the pre-release alpha.** No server or user
 interface exists yet. What is built is the headless engine's first half, in Rust, tested against 422 real-world PDFs:
@@ -61,13 +61,13 @@ The design, research and plan:
 | Research: DocuSign, SignNow, open-source competitors, law and standards | [docs/48](docs/48-DOCUSIGN-STUDY.md), [49](docs/49-SIGNNOW-STUDY.md), [52](docs/52-COMPETITOR-STUDY.md), [09](docs/09-LEGAL-AND-COMPLIANCE.md) |
 | Security | [docs/07](docs/07-SECURITY-THREAT-MODEL.md) |
 | Roadmap and tracker | [docs/06](docs/06-ROADMAP-AND-DELIVERY.md), [docs/14](docs/14-EXECUTION-TRACKER.md) |
-| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 0 of 165 features working |
+| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; none works end to end yet, 17 have their engine built |
 
 The plan: **Phase 0** sets up the repository, CI, a PDF corpus and independent validators; **Phase 1** builds the
 headless PDF and evidence engine (admit, fill, flatten, seal, verify, audit); **Phase 2** builds the envelope engine,
-server and API; then **29 vertical slices** deliver user-visible features, starting with send-and-sign. Slices are
-grouped into milestones: M1 engine alpha, M2 service alpha, M3 first signature, M4 team beta, **M5 1.0 GA**, then M6
-regulated industries and M7 ecosystem ([roadmap](docs/06-ROADMAP-AND-DELIVERY.md#milestones)).
+server and API; then **35 vertical slices** deliver user-visible features, starting with send-and-sign. Slices are
+grouped into milestones: M0 ready to build, M1 engine alpha, M2 service alpha, M3 first signature, M4 team beta,
+**M5 1.0 GA**, then M6 regulated industries, M7 ecosystem and M8 agreement platform ([roadmap](docs/06-ROADMAP-AND-DELIVERY.md#milestones)).
 
 ## How it will fit together
 

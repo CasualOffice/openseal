@@ -38,9 +38,8 @@ milestone reached, as with phases ([05](05-PHASES-AND-TASKS.md)).
 | **M4 — Team beta** | A team replaces DocuSign Standard or SignNow Business for day-to-day work, and a developer embeds signing in their app | Slices 3 templates, 4 every field, 6 manage and correct, 8 API and webhooks, 9 embedding | Slice end points; [96](96-FEATURE-FIT-GAP.md) rows for those slices `Works`; API reference published; TypeScript and Python SDKs released as beta | XL |
 | **M5 — 1.0 GA** | An organization runs OpenSeal in production in place of DocuSign Business Pro: SSO, branding, bulk send, signing links, retention, HA operations | Slices 10 admin and SSO, 11 bulk and links, 12 brand and language, 15 data controls, 20 operations; release gates `PV-01`, `SEC-REV-01`, `SEC-ASVS-01`, `A11Y-01`, `LEG-01`, `LEG-02`, `UXR-01` | All listed slices closed; all release gates passed ([15](15-CI-AND-RELEASE-GATES.md)); upgrade test; signed images and SBOM | XL |
 | **M6 — Regulated** | Life sciences, finance and EU public sector adopt it: per-signer seals, archives, AES/QES through QTSPs, Part 11 | Slices 16 per-signer seals, 17 archive, 18 advanced and qualified, 19 Part 11 | Slice end points; EU DSS reports B-LTA and QES through a test QTSP; Part 11 validation pack | L |
-| **M7 — Ecosystem** | OpenSeal is everywhere agreements happen: payments, kiosks, desktop, mobile apps, AI agents, the CasualOffice suite, integrations, forms, document generation | Slices 13, 14, 21–30 (25 subject to counsel, `DEC-10`) |
-| **M8 — Agreement platform** | Notarization and the add-on modules: lifecycle management, rooms, workflow builder, agreement intelligence | Slices 31–35 | Each slice closes on its own; M7 is reached when the owner says the set is complete | XL |
-
+| **M7 — Ecosystem** | OpenSeal is everywhere agreements happen: payments, kiosks, desktop, mobile apps, AI agents, the CasualOffice suite, integrations, forms, document generation | Slices 13, 14, 21–30 (25 subject to counsel, `DEC-10`) | Each slice closes on its own; M7 is reached when the owner says the set is complete | XL |
+| **M8 — Agreement platform** | Notarization and the add-on modules: lifecycle management, rooms, workflow builder, agreement intelligence | Slices 31–35 | Each slice closes on its own; M8 is reached when the owner says the set is complete | XL 
 **Critical path:** Phase 0 → stages 1A, 1B → (W-1) Phase 2 → slice 1 → slices 2, 5, 7 → M3. Stages 1C–1J and the
 independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md) §Working in parallel).
 
@@ -55,14 +54,14 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of `f34a2ef` (2026-11-10). The engine's first half is built; no server or UI.
+Docs are true as of `b7dce7b` (2026-11-10). The engine's first half is built; no server or UI.
 
 | Phase | State | Note |
 | --- | --- | --- |
 | D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
-| 0 Foundation | **Open** 2026-11-10 | 1 of 4 exit items met (spikes and ADRs); corpus met but hostile fixtures 40 of 50; validators met locally only; left: a green GitHub run (blocked while private, `W-2`), 10 hostile fixtures, owner sign-off |
-| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1F crypto structures. In progress: 1H verifier. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
-| 2 Envelope engine and server | Not opened | May open in parallel with Phase 1 stages 1C onward (`W-1` proposed) |
+| 0 Foundation | **Open** 2026-11-10 | 2 of the 4 non-sign-off exit items met (spikes and ADRs; validators on GitHub CI). Left: seeded violations seen failing on GitHub's runners (the first GitHub run, at `fd5e8f3`, was all green), 10 more hostile fixtures (40 of 50), owner sign-off |
+| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1F crypto structures, 1H verifier (each with leftovers in its row). In progress: 1E flattening and fill-in-place; reader completion (decryption, LZW, four corpus refusals). Not started: 1G, 1I, 1J. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
+| 2 Envelope engine and server | Not opened | May open once stages 1A and 1B close (`W-1` proposed, `DEC-13`) |
 | Slices 1–35 | Not opened | Slice 1 needs Phases 1 and 2 |
 
 ### Waivers
@@ -98,9 +97,9 @@ Docs are true as of `f34a2ef` (2026-11-10). The engine's first half is built; no
   in Phase 2, when the server is its first consumer: no crate without a consumer.)
 - **Out:** product behaviour.
 - **Closes when:**
-  - [ ] CI green on three platforms; a seeded violation seen failing each job on GitHub's runners.
+  - [ ] CI green on three platforms; a seeded violation seen failing each job on GitHub's runners. *(Green on all 8 jobs, Linux, macOS, Windows, at `fd5e8f3`, run 42825291522; seeded violations on GitHub not yet run, `F-003`.)*
   - [ ] *(Corpus met: 422 PDFs, 40 producer families, `F-004`. Hostile: 40 of 50, `F-005`.)* Fixture corpus: ≥ 200 PDFs from ≥ 10 producers (Word, LibreOffice, Acrobat, Chrome print, macOS Quartz, Ghostscript output used only as a file, scanners, InDesign, LaTeX, Google Docs), each with provenance and licence; ≥ 50 hostile fixtures, one per limit in [21](21-PARSER-LIMITS.md).
-  - [ ] pyHanko and EU DSS run in CI over a known-good signed PDF and a known-tampered one, and disagree correctly. *(Met in `tools/ci-local.sh`; not yet on GitHub, `F-006`.)*
+  - [x] pyHanko and EU DSS run in CI over a known-good signed PDF and a known-tampered one, and disagree correctly. Evidence: GitHub run 42825291522, job `validators`, at `fd5e8f3` (2026-11-10); `F-006`.
   - [x] `SPK-01` (PDF reader: own versus `lopdf`) and `SPK-02` (crypto stack in WASM) reported; ADR-005 and ADR-006 settled. Evidence: [64](64-SPK-01-PDF-READER.md), [66](66-SPK-02-CRYPTO-STACK.md).
   - [ ] Owner sign-off.
 
@@ -203,5 +202,6 @@ extraction are part of every UI slice's end point, not a later slice.
 | 29 | **Advanced routing** | Conditional routing, signing groups, scheduled sending, delayed routing, delegation and auto-delegate | — |
 
 **Release gates** (before any version is called 1.0): `PV-01` Acrobat verification; `SEC-REV-01` external security
-review of the ceremony, sealing and keyd; `LEG-01` licence and notices review; `LEG-02` counsel review of legal claims
-and the default ERSD; slices 1–12 closed.
+review of the ceremony, sealing and keyd; `SEC-ASVS-01` ASVS self-assessment; `A11Y-01` accessibility audit;
+`UXR-01` usability tests; `LEG-01` licence and notices review; `LEG-02` counsel review of legal claims and the default
+ERSD; slices 1–12 closed.

@@ -75,10 +75,10 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 
 - **Routing order** groups recipients: all recipients with order *n* are activated when every required recipient
   with order < *n* has completed. Equal numbers are parallel; distinct numbers are sequential; both together are mixed.
-- **Conditional routing** (later slice): a `RoutingRule` activates or skips a recipient or a group based on field
+- **Conditional routing** (slice 29): a `RoutingRule` activates or skips a recipient or a group based on field
   values (`when amount > 10000, add role "Finance approval"`). Rules are evaluated by the engine at each step from
   values already completed; the evaluation and its inputs are audit events.
-- **Signing groups** (later): one of several people may act; the first to complete does so for the group.
+- **Signing groups** (slice 29): one of several people may act; the first to complete does so for the group.
 - **Delegation and reassignment** create a new recipient at the same order and mark the old one `reassigned`, with
   both in the chain.
 - An envelope **completes** when every recipient with a required action has completed. Optional signature fields do

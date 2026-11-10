@@ -103,6 +103,20 @@ later revision is classified** (DSS addition, document timestamp, form fill perm
 disallowed change). The verdict is structured: per signature `valid`, `invalid` (why), or `indeterminate` (why: no
 trust anchor, no revocation data, unsupported algorithm), in the vocabulary of ETSI EN 319 102-1.
 
+### As built (stage 1H)
+
+Verdicts follow ETSI EN 319 102-1: `TOTAL_PASSED`; `TOTAL_FAILED` with `HASH_FAILURE`, `FORMAT_FAILURE` (a malformed
+ByteRange, or an unreadable CMS under `ETSI.CAdES.detached`) or OpenSeal's `DISALLOWED_MODIFICATION` (`CS-VER-0007`, a
+revision after the signature that the whitelist refuses); `INDETERMINATE` with `NO_CERTIFICATE_CHAIN_FOUND`,
+`REVOKED_NO_POE` (revoked before the best signature time), `OUT_OF_BOUNDS_NO_POE` (expired), `TRY_LATER` (no
+revocation data), `SIG_CONSTRAINTS_FAILURE` (invalid signature timestamp), `CRYPTO_CONSTRAINTS_FAILURE` (SHA-1) or
+`FORMAT_FAILURE` (legacy or BER CMS under `adbe.pkcs7.detached`, `SEAL-13`). A document timestamp is proof of existence
+once its cryptography and chain pass. No DocMDP behaves as P=3; `/Info` and XMP changes are always allowed.
+
+**EU DSS's default policy does not fail modifications.** On the shadow and incremental-saving fixtures it says
+`TOTAL_PASSED` while counting the changes as "undefined changes", and it does not flag DocMDP violations. Rung 3 is
+therefore read with that column: `tools/verify-sealed.py` already requires 0 undefined changes for a pass.
+
 ### Verification ladder
 
 A seal is "verified" only when every rung below passes. **Our verifier alone is never enough** (rule 26 in

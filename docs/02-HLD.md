@@ -26,7 +26,7 @@ and identical in another.
 | Engine role | Model, layout, render, export | Admit, place, fill, flatten, seal, verify, chain events |
 | Engine runs in | Browser (WASM) and native | Server, browser (WASM: preview, validation, offline verify) and CLI |
 | Hard problems | Fidelity of a format, text layout, OT | **Cryptographic correctness, tamper evidence, multi-party workflow, delivery, tenancy** |
-| Collaboration | Real-time OT | Asynchronous routing; real-time only for template co-editing (later) |
+| Collaboration | Real-time OT | Asynchronous routing; real-time only for template co-editing (slice 26) |
 
 So the **engine-and-host split is inherited unchanged** (sisters' ADR-002), and the **server becomes first-class**,
 not an optional adjunct.

@@ -37,7 +37,7 @@ pub mod limits {
     pub const MAX_FORMULA_REFERENCES: usize = 100;
     /// Most decimal places a formula or number rule may keep (docs/30 §6).
     pub const MAX_PRECISION: u8 = 15;
-    /// Most bytes in a data label. A decision of `T-1D`: docs/21 names no label limit.
+    /// Most bytes in a data label. A decision of `T-1D`: docs/21 records this limit (255 bytes).
     pub const MAX_LABEL_BYTES: usize = 255;
     /// Most bytes in an opaque id. A decision of `T-1D`: a UUID is 36.
     pub const MAX_ID_BYTES: usize = 64;

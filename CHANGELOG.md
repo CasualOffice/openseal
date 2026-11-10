@@ -5,6 +5,8 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 ## 2026-11-10
 
 ### Phase 1 opened
+- Stage 1H merged: the verifier, with a whitelist revision classifier that catches shadow and incremental-saving attacks, cross-checked against pyHanko and EU DSS (`T-1H`).
+- Repository public; first GitHub CI run green on all 8 jobs. Independent doc audit (`DOC-002`): 26 findings fixed.
 - Stage 1B merged: incremental writer and normalizer; `PDF-INV-01` holds over the hostile set and the corpus; eight more active-content fixtures (`T-1B`).
 - Owner instruction 9: remote online notarization (slice 31) and add-on modules for lifecycle management, rooms, workflow builder and agreement intelligence (slices 32–35, milestone M8).
 - Owner instruction 8, not an MVP: no feature is deferred as `Later`; dynamic XFA, fill-in-place forms, mobile apps, template matching, sign on paper, WhatsApp delivery, insights and integrations are planned with slices and rows.

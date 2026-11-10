@@ -1,7 +1,6 @@
 # 15 — CI and release gates
 
-**Status: Phase 0, partly built.** `.github/workflows/ci.yml` holds `checks`, `commit-messages`, `test` (three OSes), `msrv`, `dependency-policy` and `validators` (pyHanko self-test); it has not run on GitHub yet (`F-003`). The rest of the table lands with the phases that need it. Adapted from OpenPresent's docs/15. CI on GitHub is
-the gate; sessions do not run the full list locally ([CLAUDE.md](../CLAUDE.md)).
+**Status: built and running on GitHub since 2026-11-10** (first run all green at `fd5e8f3`). `ci.yml` jobs: `checks` (fmt, clippy, rustdoc, wasm32, repository gates, hostile and corpus manifest checks), `commit-messages`, `test` (Linux, macOS, Windows), `msrv`, `dependency-policy`, `validators` (pyHanko and EU DSS self-test). The table below is the target; rows not in that list are planned. `tools/ci-local.sh` mirrors `ci.yml` for use before pushing. Adapted from OpenPresent's docs/15. CI on GitHub is
 
 ## Jobs on every push to `main` and every pull request
 

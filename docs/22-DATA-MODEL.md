@@ -22,7 +22,7 @@ Account (tenant) ─┬─ User ── membership(role, permission profile) ─�
                   │            ├─ CustomField (envelope metadata)
                   │            ├─ Reminder/Expiry policy
                   │            ├─ AuditEvent (append-only, hash-chained)
-                  │            └─ Comment (later)
+                  │            └─ Comment (slice 26)
                   ├─ BulkSend ── BulkSendRow ── Envelope
                   ├─ SigningLink (PowerForm / "link to sign")
                   ├─ WebhookSubscription ── WebhookDelivery
@@ -83,14 +83,14 @@ one recorded in `envelope.completed`.
 | Field | Notes |
 | --- | --- |
 | `id`, `envelope_id`, `routing_order` | Equal numbers act in parallel |
-| `type` | `signer`, `in_person_signer`, `approver`, `viewer` (needs to view), `cc` (receives a copy), `editor` (allowed to edit), `intermediary` (updates recipients), `agent` (specifies recipients), `witness` (later), `seal` (legal-entity seal through `RemoteSigner`, later) |
+| `type` | `signer`, `in_person_signer`, `approver`, `viewer` (needs to view), `cc` (receives a copy), `editor` (allowed to edit), `intermediary` (updates recipients), `agent` (specifies recipients), `witness` (slice 16), `seal` (legal-entity seal through `RemoteSigner`, slice 18), `notary` (slice 31) |
 | `role_name` | From the template, when any |
 | `name`, `email`, `phone` | PII, classified (docs/07 §Data) |
 | `status` | `created`, `sent`, `delivered`, `authenticated`, `completed`, `declined`, `auto_responded`, `reassigned` |
 | `auth` | List of requirements: `access_code` (hash), `email_otp`, `sms_otp`, `phone_call`, `idp` (OIDC issuer), `idv` (provider), `kba` (plugin) |
 | `delivery` | `email`, `sms`, `none` (embedded: host delivers) |
 | `embedded_client_user_id` | When set, the recipient signs only through the integrator's embedded session |
-| `signing_group_id` | Any member may act (later) |
+| `signing_group_id` | Any member may act (slice 29) |
 | `consent` | ERSD version accepted, time, from the audit chain |
 | `language` | Signer UI and email language |
 | `declined_reason`, `reassigned_to` | |
@@ -128,13 +128,13 @@ one recorded in `envelope.completed`.
 | `note` | Read-only text shown to the recipient |
 | `approve`, `decline` | Buttons that complete or decline |
 | `hyperlink` | Shown, never followed automatically |
-| `payment` | Amount, currency, line items; via `PaymentGateway` (later) |
-| `drawing` | Free drawing area (later) |
+| `payment` | Amount, currency, line items; via `PaymentGateway` (slice 13) |
+| `drawing` | Free drawing area (slice 4) |
 
 ## 7. Template
 
 A template is an envelope without people: documents, roles (name, routing order, type, default auth), role-bound
-fields, message, settings, and **matching rules** (later: DocuSign's template matching on upload). Creating an envelope
+fields, message, settings, and **matching rules** (slice 3: DocuSign's template matching on upload). Creating an envelope
 from one or more templates copies, never references, so editing a template never changes a sent envelope. Templates
 have owners, sharing (user, group, account), folders and versions.
 

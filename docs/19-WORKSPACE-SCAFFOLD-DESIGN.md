@@ -1,6 +1,6 @@
 # 19 — Workspace and layer division
 
-**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model` and `casual-sign-fields` (stage 1D, merged), `casual-sign-crypto` (stage 1F, merged), `casual-sign-pdf` (stage 1A, merged); `fuzz/` with an `admit` target. Edges: `-fields` → `-model`, `-pdf` (stage 1C). 
+**Status: Draft for owner. As built (2026-11-10):** members `casual-sign-model`, `-fields`, `-pdf`, `-crypto`, `-verify` (built) and `-flatten` (skeleton, stage 1E in progress); `fuzz/` with targets `admit`, `normalize` and `verify`. Edges: `-fields` → `-model`, `-pdf`; `-verify` → `-pdf`, `-crypto`; `-flatten` → `-pdf`, `-model`, `-fields`. The **Key external dependencies** column is the target; a crate not yet built does not have them.
 
 ## Layout
 
@@ -33,7 +33,7 @@ openseal/
 | `casual-sign-flatten` | Engine | pdf, fields, model | `subsetter`, `skrifa` (font subset and metrics), `png`, `zune-jpeg` | `-certificate`, `-sdk` |
 | `casual-sign-crypto` | Engine | — | `der`, `spki`, `x509-cert`, `cms =0.3.0-rc.2`, `x509-tsp =0.2.0-rc.0`, `x509-ocsp =0.3.0-rc.1`, `sha2`, `p256`, `p384`, `rsa` (verify only, feature `rsa`); dev: `aws-lc-rs` (test `KeyProvider`), `rcgen` | `-seal`, `-verify`, `-audit` |
 | `casual-sign-seal` | Engine | pdf, crypto | — | `-sdk` |
-| `casual-sign-verify` | Engine | pdf, crypto, audit | — | `-sdk`, `-wasm` |
+| `casual-sign-verify` | Engine | pdf, crypto (audit joins with stage 1I) | `der`, `spki`, `x509-cert`, `x509-ocsp`, `sha2`, `p256`, `p384`, `rsa` (verify only, default feature) | `-sdk`, `-wasm` |
 | `casual-sign-audit` | Engine | model, crypto | `serde_json`, `serde_json_canonicalizer` (JCS) | `-workflow`, `-certificate` |
 | `casual-sign-certificate` | Engine | audit, flatten, pdf | — | `-sdk` |
 | `casual-sign-workflow` | Engine | model, audit, fields | — | server |

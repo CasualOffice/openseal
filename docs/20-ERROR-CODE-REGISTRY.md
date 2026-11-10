@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0005` (stage 1B); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0002`, `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0005` (stage 1B); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -19,7 +19,7 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-PDF-0008 | String or name over length cap |
 | CS-PDF-0009 | Encrypted, and no password or the wrong one supplied |
 | CS-PDF-0010 | Public-key security handler: not supported |
-| CS-PDF-0011 | Unsupported filter |
+| CS-PDF-0011 | Unsupported filter, or a filter chain over its limit |
 | CS-PDF-0012 | Dynamic-only XFA form: no static content to sign |
 | CS-PDF-0013 | Read stopped by the host's time budget, or a page's content-operator budget for text extraction |
 | CS-PDF-0014 | Signed document cannot be repaired or rewritten (normalized) without breaking its signatures |
@@ -30,12 +30,11 @@ counts, never document text, field values or personal data (`SEC-D01`). Codes ar
 | CS-PDF-0105 | (report) External reference removed |
 | CS-PDF-0106 | (report) Existing form fields found |
 | CS-PDF-0107 | (report) Existing signatures found |
-| CS-PDF-0108 | (report) Optional content flattened to default visibility |
+| CS-PDF-0108 | (report) Optional content present, kept as it is (flattening it to its default visibility is `T-1E`, SEC-S03) |
 
 The recovering reader's findings also carry limit codes (`0002`, `0003`, `0004`, `0006`, `0008`, `0011`, `0013`) where a
 limit was crossed and the rest of the document still opened; `fixtures/hostile/manifest.tsv` lists which. **Issued by stage
-1A:** every `CS-PDF` code above except `0010` and `0012`, whose cases the reader reaches only after decryption and
-XFA handling land.
+1A:** every `CS-PDF` code above.
 
 ## Writing, fields, flattening
 

@@ -19,7 +19,7 @@ A PDF is hostile, and a sealed PDF is evidence. Both rules apply at once.
 **Sealing** (`docs/31`)
 - ByteRange covers the whole file except the `/Contents` hex string; the placeholder is sized by a computed upper bound, never a guess; overflow is an error, not a truncation.
 - Algorithms and profiles come only from ADR-006 and docs/31. SHA-1 and MD5 are never used to sign.
-- Every sealing test verifies its output with at least two independent validators from the ladder in `docs/31` §Verification (our `casual-sign-verify`, plus pyHanko or the EU DSS library in CI). A test that only checks our own verifier does not count.
+- Every sealing test verifies its output with at least two independent validators from the ladder in `docs/31` §Verification (our `casual-sign-verify`, plus pyHanko **and** EU DSS in CI). A test that only checks our own verifier does not count.
 
 **Evidence** (`docs/32`)
 - The document hash recorded in the audit chain is computed over the exact bytes delivered to the signer.

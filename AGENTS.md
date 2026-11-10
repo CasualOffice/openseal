@@ -63,19 +63,19 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `f34a2ef` (2026-11-10).
+Docs are true as of `b7dce7b` (2026-11-10).
 
-**Phases D, 0 and 1 are open. Phase 1 runs under waiver `W-2`**, because CI cannot run on GitHub while the repository
-(`CasualOffice/openseal`, private until the pre-release alpha, owner instruction 7) is private; `tools/ci-local.sh`
-mirrors the CI list and gates every merge.
+**Phases D, 0 and 1 are open. Phase 1 runs under waiver `W-2`** (opened while the repository was private). The owner
+made `CasualOffice/openseal` public on 2026-11-10; GitHub CI now runs, and `tools/ci-local.sh` stays as the pre-push gate.
 
-- **Phase D** lacks the independent doc audit (`DOC-002`, in progress), Accepted ADRs beyond ADR-009 for Phases 0–2,
-  and `DEC-02` to `DEC-07`, `DEC-10` to `DEC-14`.
-- **Phase 0** lacks a green GitHub run (`F-003`), ten more hostile fixtures (40 of 50, `F-005`), the EU DSS
-  `TOTAL_PASSED` path (`F-008`) and the owner's sign-off. Corpus (422 PDFs, 40 producers), spikes and ADR-005/006 are done.
+- **Phase D** lacks Accepted ADRs for Phases 0–2 beyond ADR-009 (ADR-010 to ADR-023 are Proposed) and `DEC-02` to
+  `DEC-07`; the independent doc audit (`DOC-002`) is done and its findings fixed. Also open: `DEC-10`, `DEC-12` to `DEC-14`.
+- **Phase 0** lacks seeded violations seen failing on GitHub's runners (`F-003`; the first GitHub run was all green),
+  ten more hostile fixtures (40 of 50, `F-005`) and the owner's sign-off. Corpus (422 PDFs, 40 producers), validators on
+  GitHub, spikes and ADR-005/006 are done.
 - **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm
-  conversion, 1D field rules, 1F crypto structures (leftovers in their rows). In progress in parallel workers: 1E
-  flattening with fill-in-place, 1H verifier, and reader completion (decryption, LZW, four wrongly refused corpus files).
+  conversion, 1D field rules, 1F crypto structures, 1H verifier (leftovers in their rows). In progress in parallel
+  workers: 1E flattening with fill-in-place, and reader completion (decryption, LZW, four wrongly refused corpus files).
   Not started: 1G sealing, 1I audit chain and certificate, 1J SDK and CLI. The reader opens 387 of 422 real-world PDFs
   with page counts matching the manifest.
 - **No server, API or UI exists yet.** The roadmap has 35 slices and milestones M0–M8; the fit-gap has 167 rows, none

@@ -8,10 +8,9 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 (merged, tested, in a browser run where it has UI).
 
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
-instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
-(merged, tested, in a browser run where it has UI).
+instructions 8 and 9). 
 
-**Today: 0 of 167 rows work end to end; 28 have their engine built and tested** (counted with `grep`). Docs are true as of `f34a2ef` (2026-11-10).
+**Today: 0 of 167 rows work end to end; 17 have their engine built and tested** (counted with `grep`). Docs are true as of `b7dce7b` (2026-11-10).
 
 ## Documents
 
@@ -64,13 +63,13 @@ instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-050 | Signature (draw, type, upload) | DS, SN | Build | 1 | Engine |
-| FG-051 | Initials | DS, SN | Build | 1 | Engine |
-| FG-052 | Optional signature | DS | Build | 4 | Engine |
-| FG-053 | Stamp | DS, SN | Build | 4 | Engine |
-| FG-054 | Date signed | DS | Build | 1 | Engine |
-| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Engine |
-| FG-056 | Envelope id field | DS | Build | 4 | Engine |
+| FG-050 | Signature (draw, type, upload) | DS, SN | Build | 1 | Designed |
+| FG-051 | Initials | DS, SN | Build | 1 | Designed |
+| FG-052 | Optional signature | DS | Build | 4 | Designed |
+| FG-053 | Stamp | DS, SN | Build | 4 | Designed |
+| FG-054 | Date signed | DS | Build | 1 | Designed |
+| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Designed |
+| FG-056 | Envelope id field | DS | Build | 4 | Designed |
 | FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Engine |
 | FG-058 | Number with locale, currency, min, max | DS, SN | Build | 4 | Engine |
 | FG-059 | Date with format | DS, SN | Build | 4 | Engine |
@@ -79,10 +78,10 @@ instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
 | FG-062 | Radio group | DS, SN | Build | 4 | Engine |
 | FG-063 | Dropdown (with custom entry) | DS, SN | Build | 4 | Engine |
 | FG-064 | Formula / calculated field | DS, SN | Build | 4 | Engine |
-| FG-065 | Signer attachment | DS, SN | Build | 4 | Engine |
-| FG-066 | Note | DS | Build | 4 | Engine |
-| FG-067 | Approve and decline buttons | DS | Build | 4 | Engine |
-| FG-068 | Hyperlink | SN | Build | 4 | Engine |
+| FG-065 | Signer attachment | DS, SN | Build | 4 | Designed |
+| FG-066 | Note | DS | Build | 4 | Designed |
+| FG-067 | Approve and decline buttons | DS | Build | 4 | Designed |
+| FG-068 | Hyperlink | SN | Build | 4 | Designed |
 | FG-069 | Drawing area | DS | Build | 4 | — |
 | FG-070 | Payment field | DS, SN | Plugin | 13 | Designed |
 | FG-071 | Prefill (sender-filled) fields | DS, SN | Build | 4 | Engine |
@@ -96,7 +95,7 @@ instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
 | FG-079 | Custom (saved) field presets | DS | Build | 4 | — |
 | FG-080 | Strike-through by editor | DS | Build | 6 | — |
 | FG-081 | Responsive signing (smart sections) | DS | Build | 23 | — |
-| FG-082 | 3,000 fields per envelope | DS | Build | 4 | Engine |
+| FG-082 | 3,000 fields per envelope | DS | Build | 4 | Designed |
 
 ## Sending
 
@@ -169,7 +168,7 @@ instructions 8 and 9). **Status:** `—` not started, `Designed`, `Works`
 | FG-154 | Long-term validation (B-LT, B-LTA) | — | Build | 7, 17 | Designed |
 | FG-155 | Audit trail embedded in the PDF | — (ours) | Build | 1 | Designed |
 | FG-156 | Hash-chained audit events | — (ours) | Build | Phase 1 | Designed |
-| FG-157 | Offline verification page and CLI | — (ours) | Build | 7 | Designed |
+| FG-157 | Offline verification page and CLI | — (ours) | Build | 7 | Engine |
 | FG-158 | Public anchoring of chain heads | — (ours) | Build | 7 | Designed |
 | FG-159 | Per-signer seals; certification signature | — | Build | 16 | Designed |
 | FG-160 | PDF/A-3 output | — | Build | 17 | Designed |

@@ -3,7 +3,7 @@
 **Every upload is hostile, every party is a potential adversary of the record, and the operator is trusted only as far
 as the evidence can be checked without them.** Every threat has a control and a named test. A limit without a test seen
 to fail is not a control. Status: **Planned** (where it lands), **Partial**, **Tested** (test seen red without the fix).
-Nothing is built; every row is Planned.
+The PDF, field and cryptographic rows built in Phase 1 are Tested or Partial; server, ceremony and abuse rows are Planned.
 
 ## Adversaries
 
@@ -35,14 +35,14 @@ Nothing is built; every row is Planned.
 | SEC-P11 | Parser differential: what we parse differs from what readers render, so a sender shows one thing and the PDF says another | Normalization rewrites a fresh, unambiguous file before delivery; signers see pdf.js rendering of exactly the delivered bytes; fixtures of known differentials (duplicate object numbers, xref vs scanned objects) ; **normalization rewrites a fresh file and recomputes the page tree; pyHanko strict agrees on every output; a /Count mismatch was found and fixed this way (stage 1B)** | Tested |
 | SEC-P12 | Polyglot files (PDF + ZIP/HTML/JS) | Normalized output is a fresh file (built, stage 1B); served with `Content-Type: application/pdf`, `Content-Disposition: attachment` unless viewed inline in pdf.js, and `X-Content-Type-Options: nosniff` (server, Phase 2) | Partial |
 | SEC-P13 | Malicious Office upload exploiting the converter | Converter runs in a separate container: no network, read-only root, seccomp, CPU and memory limits, time limit, a fresh instance per job | Planned slice 6 |
-| SEC-P14 | Fonts embedded in the PDF exploiting the viewer | pdf.js in a worker on our origin; we do not parse embedded fonts beyond widths and ToUnicode | Planned 1C |
+| SEC-P14 | Fonts embedded in the PDF exploiting the viewer | pdf.js in a worker on our origin; we do not parse embedded fonts beyond widths and ToUnicode ; text extraction parses only widths, `/W` and ToUnicode CMaps, bounded (stage 1C) | Partial |
 
 ## Signatures and evidence (`SEC-S*`)
 
 | ID | Threat | Control | Status |
 | --- | --- | --- | --- |
-| SEC-S01 | Shadow attacks (hide, replace, hide-and-replace) after sealing | Verifier classifies every revision after a signature; any content change other than DSS or document timestamp is reported as a modification; fixtures from the published attack classes | Planned 1H |
-| SEC-S02 | Incremental saving attack; signature wrapping; universal signature forgery (empty or malformed ByteRange, `/Contents` tricks) | ByteRange must start at 0, cover to EOF of its revision, exclude only `/Contents`; strict CMS parsing; fixtures | Planned 1H |
+| SEC-S01 | Shadow attacks (hide, replace, hide-and-replace) after sealing | Verifier classifies every revision against a whitelist of allowed changes (DSS, document timestamp, form fill and annotations as DocMDP permits); five shadow fixtures and an incremental-saving fixture all fail with `DISALLOWED_MODIFICATION`; pyHanko agrees; EU DSS's default policy passes them with "undefined changes" counted; default deny seen red when removed (stage 1H, re-run by the main session) | Tested |
+| SEC-S02 | Incremental saving attack; signature wrapping; universal signature forgery (empty or malformed ByteRange, `/Contents` tricks) | ByteRange must start at 0, cover to its revision's end and exclude exactly `/Contents`; strict CMS parsing; fixtures for a non-zero start, a gap and a flipped byte in each range; each check seen red when removed (stage 1H) | Tested |
 | SEC-S03 | Signer sees content different from what is sealed (overlay tricks, optional content, annotations hidden at render) | WYSIWYS: signers review the engine's flattened output; optional content groups flattened to their default state and reported; annotations flattened or removed | Planned 1E |
 | SEC-S04 | Platform key theft from the web tier | Key only in `keyd` and its HSM/KMS; the web tier has no key material; file keys refused outside development | Planned 2E |
 | SEC-S05 | Misuse of the platform key (signing arbitrary digests) | `keyd` authenticates callers, logs every digest with envelope id, rate-limits; worker requests are tied to `completing` envelopes; reconciliation job compares `keyd`'s log with `document.sealed` events | Planned 2E |
@@ -50,6 +50,8 @@ Nothing is built; every row is Planned.
 | SEC-S07 | Evidence rewrite by an insider | Hash chain; chain head inside the sealed PDF every party received; append-only DB grants and trigger; optional public anchoring | Planned 1I, slice 7 |
 | SEC-S08 | Weak algorithms | SHA-256+ only, SHA-1 never (identifiers included, pending `SEAL-14`); RSA ≥ 3072 or ECDSA P-256/P-384 for new seals; RSA 2,048–8,192 bits accepted for verification | Partial: verification side built in stage 1F; sealing side in 1G |
 | SEC-S09 | Timestamp response forgery or replay | Nonce, imprint, TSA signature, ESSCertIDv2 and critical timeStamping EKU checked before embedding (`casual-sign-crypto`); nonce and imprint checks seen red when removed (stage 1F). **Left:** a guard test for the EKU check; chain to the TSA's trust anchor in stage 1H | Partial |
+| SEC-S10 | Malformed DER in CMS, timestamps, OCSP or CRLs crashes or fools the verifier | Bounded DER parsing; signed bytes verified as received, never re-encoded; 10,000 deterministic mutations over every fixture with no panic (stage 1F); digest, signature, ESS, nonce, imprint, OCSP and CRL status and validity checks each seen red when removed (worker; digest re-run by the main session) | Tested |
+| SEC-S11 | Revocation answered by an unauthorized responder | OCSP accepted only from the issuer or a delegate with the OCSPSigning EKU signed by the issuer and valid at producedAt; CRL issuer, cRLSign, signature and period checked; unauthorized responder test seen red when removed (stage 1F) | Tested |
 
 ## Accounts, ceremony and API (`SEC-A*`)
 
@@ -66,8 +68,6 @@ Nothing is built; every row is Planned.
 | SEC-A09 | Credential stuffing on staff login | SSO preferred; WebAuthn and TOTP; rate limits; breached-password check (k-anonymity, optional) | Planned 2C |
 | SEC-A10 | API key leakage | Prefixed keys for secret scanning, hashed at rest, scoped, expiring, last-used shown | Planned 2C |
 
-| SEC-S10 | Malformed DER in CMS, timestamps, OCSP or CRLs crashes or fools the verifier | Bounded DER parsing; signed bytes verified as received, never re-encoded; 10,000 deterministic mutations over every fixture with no panic (stage 1F); digest, signature, ESS, nonce, imprint, OCSP and CRL status and validity checks each seen red when removed (worker; digest re-run by the main session) | Tested |
-| SEC-S11 | Revocation answered by an unauthorized responder | OCSP accepted only from the issuer or a delegate with the OCSPSigning EKU signed by the issuer and valid at producedAt; CRL issuer, cRLSign, signature and period checked; unauthorized responder test seen red when removed (stage 1F) | Tested |
 
 ## Field input (`SEC-F*`)
 
@@ -98,7 +98,7 @@ Nothing is built; every row is Planned.
 
 | ID | Threat | Control | Status |
 | --- | --- | --- | --- |
-| SEC-D01 | PII or content in logs, traces, error messages | Typed errors with ids and counts only (docs/20); log scrubber tests over every error code | Planned Phase 0 |
+| SEC-D01 | PII or content in logs, traces, error messages | Typed errors with ids and counts only (docs/20): built in every engine crate, with tests that no message carries document text or anchor strings (stages 1C, 1F); log scrubber tests over every error code wait for the server | Partial |
 | SEC-D02 | Backups leak data | Backups encrypted with separate keys; restore drill | Planned slice 20 |
 | SEC-D03 | Purge leaves copies (thumbnails, caches, search index) | Every derived artefact keyed by envelope and deleted by the purge job; purge test enumerates stores | Planned slice 15 |
 
@@ -106,6 +106,6 @@ Nothing is built; every row is Planned.
 
 | ID | Threat | Control | Status |
 | --- | --- | --- | --- |
-| SEC-C01 | Malicious or vulnerable dependency | `cargo deny` (advisories, licences, sources), lockfiles, vendored pdf.js with a recorded hash, Dependabot | Planned Phase 0 |
+| SEC-C01 | Malicious or vulnerable dependency | `cargo deny` (advisories, licences, sources), lockfiles, vendored pdf.js with a recorded hash, Dependabot ; `cargo deny` and `cargo audit` run in CI and `tools/ci-local.sh` | Partial |
 | SEC-C02 | Tampered release artefacts | Signed container images (cosign), SBOM (CycloneDX), SLSA provenance | Planned slice 20 |
 | SEC-C03 | AGPL code contamination | Clean-room rule; DCO and attestation; review | Planned Phase 0 |
