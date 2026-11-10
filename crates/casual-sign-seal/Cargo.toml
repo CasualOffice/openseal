@@ -11,6 +11,26 @@ publish = false
 [dependencies]
 casual-sign-pdf = { path = "../casual-sign-pdf" }
 casual-sign-crypto = { path = "../casual-sign-crypto" }
+# docs/31 §4 step 8: every seal is verified before it is returned (`CS-SEAL-0010`).
+casual-sign-verify = { path = "../casual-sign-verify" }
+# The RustCrypto der-0.8 generation casual-sign-crypto already pins (ADR-006), so the
+# graph does not grow: certificate fields, the OCSP request (RFC 6960) the engine hands
+# the host, and the responder certificates an OCSP answer carries into the DSS.
+der = { version = "0.8.3", default-features = false, features = ["alloc", "derive", "oid"] }
+x509-cert = { version = "0.3.0", default-features = false }
+x509-ocsp = { version = "=0.3.0-rc.1", default-features = false }
+# PAdES VRI keys are the upper-case hex SHA-1 of the signature's /Contents (ETSI EN 319
+# 142-1 §5.4.2.2; ISO 32000-2 §12.8.4.4): an identifier, never a signature or a content
+# digest (SEAL-14). RustCrypto, MIT OR Apache-2.0, the digest 0.11 generation of `sha2`.
+sha1 = { version = "0.11.0", default-features = false }
+
+[dev-dependencies]
+# Test-only key provider, throwaway PKI, in-process TSA and OCSP responder (as
+# casual-sign-crypto's tests; docs/66 §1). Never a normal dependency (ADR-006).
+aws-lc-rs = "1.19.0"
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto"] }
+cms = { version = "=0.3.0-rc.2", default-features = false }
+x509-tsp = { version = "=0.2.0-rc.0", default-features = false }
 
 [lints]
 workspace = true
