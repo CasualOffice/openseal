@@ -526,6 +526,26 @@ mod tests {
     }
 
     #[test]
+    fn attributes_per_element_are_bounded() {
+        let element = |n: usize| {
+            let mut x = String::from("<x:xmpmeta xmlns:x='adobe:ns:meta/'");
+            for i in 1..n {
+                x.push_str(&format!(" a{i}='v'"));
+            }
+            x.push_str("/>");
+            x
+        };
+        assert_eq!(
+            check(element(MAX_XMP_ATTRIBUTES).as_bytes()),
+            Ok(Xmp::Packet)
+        );
+        assert_eq!(
+            check(element(MAX_XMP_ATTRIBUTES + 1).as_bytes()),
+            Err(MetadataProblem::NotXml)
+        );
+    }
+
+    #[test]
     fn cdata_comments_and_pis_inside_are_fine() {
         let s = "<x:xmpmeta xmlns:x='adobe:ns:meta/'><!-- c --><?pi data?><![CDATA[ <&> ]]>t &lt;</x:xmpmeta>";
         assert_eq!(check(s.as_bytes()), Ok(Xmp::Packet));

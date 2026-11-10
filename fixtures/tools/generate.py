@@ -36,6 +36,7 @@ NO_FIXTURE = {
     "Values per parsed object": "built in memory by casual-sign-pdf's allocation test (a 40 MB array)",
     "Content-stream operands": "unit tests of ContentLexer and the `content` fuzz target build the cases in memory",
     "Field options and appearance states": "a unit test builds a field with 1,001 options in memory",
+    "Document metadata (`/Metadata`) checked as XMP (`NORM-03`)": "casual-sign-pdf's normalize_metadata tests build each over-limit and refused packet in memory (size, depth, attributes, DOCTYPE)",
 }
 
 

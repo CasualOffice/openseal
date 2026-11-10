@@ -13,11 +13,15 @@ step "checks: clippy";     cargo clippy --workspace --all-targets --all-features
 step "checks: rustdoc";    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked -q
 step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-secrets --locked -q   # hosts under server/ are native only
 step "checks: repository"; python3 tools/check-repo.py
-step "checks: fixtures";   python3 -I fixtures/tools/generate.py --check && python3 -I fixtures/corpus/fetch.py --check
+# One command per line: under `set -e`, a failure on the left of `&&` does not stop the
+# script (docs/04 rule 31).
+step "checks: fixtures";   python3 -I fixtures/tools/generate.py --check
+                           python3 -I fixtures/corpus/fetch.py --check
 step "commit messages";    python3 tools/check-commits.py --range "$(git rev-list --max-parents=0 HEAD | tail -1)..HEAD"
 step "test";               cargo test --workspace --all-features --locked --no-fail-fast -q
 step "msrv 1.94";          cargo +1.94.0 check --workspace --locked -q
-step "dependency policy";  cargo deny check bans licenses sources && cargo audit --deny warnings
+step "dependency policy";  cargo deny check bans licenses sources
+                           cargo audit --deny warnings
 step "validators"
 VENV=target/tools-venv
 [ -x "$VENV/bin/python" ] || { ~/.local/bin/uv venv -q -p 3.12 "$VENV" && ~/.local/bin/uv pip install -q -p "$VENV/bin/python" "pyhanko==0.38.1" cryptography; }
@@ -30,7 +34,7 @@ docker rm -f openseal-ci-pg >/dev/null 2>&1 || true
 docker run -d --rm --name openseal-ci-pg -e POSTGRES_PASSWORD=ci-only -p 127.0.0.1:55433:5432 postgres:17-alpine >/dev/null
 until docker exec openseal-ci-pg pg_isready -U postgres -q 2>/dev/null; do sleep 1; done
 if OPENSEAL_TEST_DATABASE_URL=postgres://postgres:ci-only@127.0.0.1:55433/postgres SQLX_OFFLINE=true SQLX_CLI_BIN="$PWD/target/sqlx-cli/bin" \
-    sh -c 'server/casual-sign-store/sqlx-prepare.sh --check && cargo test -q -p casual-sign-store --locked'; then
+    sh -ec 'server/casual-sign-store/sqlx-prepare.sh --check; cargo test -q -p casual-sign-store --locked'; then
     docker stop openseal-ci-pg >/dev/null
 else
     docker stop openseal-ci-pg >/dev/null; exit 1
