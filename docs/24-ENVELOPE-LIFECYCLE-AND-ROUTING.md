@@ -124,3 +124,80 @@ normal envelope. Links have use limits, expiry and rate limits; they are an abus
 
 Every rejected command returns a `WorkflowError` with a stable `CS-WF-*` or `CS-FLD-*` code (docs/20) and the ids of the
 objects concerned, never their content.
+
+## As built (stage 2A, `T-2A`)
+
+`casual_sign_workflow::decide(state: Option<&EnvelopeState>, command: &Command, ctx: &Context) -> Result<Decision, WorkflowError>`;
+`Decision { state, events: Vec<PendingEvent>, effects: Vec<Effect>, replayed }`. `Context` carries `command_id`, `now`,
+`principal`, the request context copied into events, `expected_version` and the account `Policy`. Builds for
+`wasm32-unknown-unknown` with no `#[cfg]` fork.
+
+**Decisions taken here** (recorded for the owner):
+
+- **The aggregate lives in the engine.** `casual-sign-model` gained the plain vocabulary (`EnvelopeStatus`,
+  `RecipientStatus`, `RecipientType`, `RoutingOrder` 1–999, `Delivery`, `SealProfile`, `SigningOptions`,
+  `ReminderPolicy` ≤ 999 days); `EnvelopeState`, `RecipientState` and `DocumentState` are in `-workflow` because they
+  carry `Hash256`, `Timestamp` and `Personal` from `-audit`, which `-model` does not depend on.
+- **Events are the docs/32 §3 types** (`casual_sign_audit::EventData`), returned unchained; the server numbers and
+  appends them with `PendingEvent::into_audit(&chain)` in the same transaction (ADR-010).
+- **Ids are supplied in commands**, not drawn from an id source: new recipients, fields and documents carry their ids.
+  Effect ids are `(command_id, index)`, so a re-run decision names the same jobs.
+- **Idempotency.** The state records every applied command id with the SHA-256 of the command's RFC 8785 form. The same
+  id and command again is `replayed` (no events, no effects, state unchanged); the same id with another command is
+  `CS-WF-0006`. The record is bounded at 100,000 commands (`CS-WF-0011`).
+- **Version.** Raised by every observable change; recording access, timers that do nothing, and bookkeeping (applied
+  ids, pending timers, the seal job) do not raise it. `expected_version` is checked when the command carries one.
+- **Correction is one command** (`Correct { changes }`): the "correcting" mode is the client's; saving sends the list,
+  applied all or none, and a signer acting meanwhile makes it stale.
+- **§6 "its fields changed"** is read as: a completed recipient acts again when a document they acted on is replaced or
+  removed, or when **their own** fields change. Changing a not-yet-completed recipient's fields does not send others back.
+- **`delivered` is recomputed** after every command: when routing reaches a recipient who has not opened, the envelope
+  is `sent` again until they do.
+- **Routing after every change**: a recipient whose turn no longer holds (a correction added someone earlier, or sent a
+  completed signer back) returns to `created` with tokens revoked; whoever's turn holds is invited. This keeps
+  "nobody acts before their turn" true through corrections.
+- **Timers** are `Schedule { timer, at }` effects answered by `TimerDue { timer }` (this is `RemindDue`, `Expire` and
+  the expiry warning); a timer not pending is a no-op with no event. `Expire` alone is a sweeper's command.
+- **Completion** is `SealSucceeded { job, documents }`: the pending job, every document exactly once, `verified: true`
+  (the independent validator's verdict), sealed from the delivered hash, at the envelope's profile; otherwise
+  `CS-WF-0009`. It records `document.flattened`, `document.sealed` per document, then `envelope.completed`.
+  `SealFailed` keeps `completing`, alerts, and schedules a new seal job; the old job's late success is refused.
+- **Delete draft** records `envelope.purged` (policy `draft_deleted`) and marks the envelope purged.
+- **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says.
+- **A signer with no signature field** must still adopt a signature before finishing (free-form signing, intent).
+- **Sending needs a recipient with a required action**; an envelope of carbon copies only is `CS-WF-0004`.
+
+| docs/24 item | Built |
+| --- | --- |
+| Create; edit documents, recipients, fields, subject, message, expiry, reminders, options, seal profile while draft | Built |
+| Send (validate for send returning every violation; `document.fixed`; first step invited; expiry, warning, reminders scheduled) | Built |
+| Delete draft | Built |
+| Deliver/open (`recipient.delivered`; envelope `delivered` per §2) | Built |
+| Consent to the current ERSD; withdraw | Built |
+| Authenticate: challenge, pass, fail with lockout after `max_auth_attempts`, unlock by resend; host-asserted | Built |
+| View documents (hash and pages checked); viewers complete by viewing every document to the end | Built |
+| Adopt signature or initials; complete fields (validated); signature values need adoption | Built |
+| Sign (field rules re-run, hidden values dropped, `date_signed` stamped in the recipient's offset and format, name, email and envelope id filled, payments charged) | Built |
+| Approve (approver's own field rules re-run) | Built |
+| Agents and intermediaries name later recipients, editors also fields and recipients, then complete; unreachable later recipient refused | Built |
+| In-person signing hosted by a staff user | Built |
+| Decline (envelope declined; prior signers and sender told) | Built |
+| Reassign (new recipient at the same order, fields moved, both in the chain) | Built |
+| Finish later | Built |
+| Correct with re-routing and the §6 impact | Built |
+| Void with reason | Built |
+| Expire (timer and sweep); expiry warning | Built |
+| Resend (clears bounce and lock); remind; reminder timers | Built |
+| Invitation dispatched, reminder dispatched, bounce (`auto_responded`) | Built |
+| `completing` → `completed` only on a verified seal; seal failure retried | Built |
+| Purge (terminal only; personal data scrubbed, hashes kept) | Built |
+| Access events (sender viewed, document and certificate downloaded) | Built |
+| Routing: sequential, parallel, mixed; carbon copies complete when reached | Built |
+| Conditional routing, signing groups (§4, slice 29) | **Not built**: no event type or status for a skipped recipient or a group member's act (rows proposed) |
+| Bulk send (§8), signing links (§9) | **Not in the engine**: host jobs that issue `Create`/`Edit`/`Send` |
+| Witness ordering, legal-entity seal recipient, notary | **Partial**: act as signers; witnessing after the witnessed signer, a `Seal` recipient acting through `RemoteSigner`, and notary steps belong to slices 16, 18, 31 |
+
+Tested by `tests/transitions.rs` (one test per transition) and `tests/properties.rs` (256 random envelopes under up to
+60 random commands each, every invariant checked after every accepted command and the chain verified; a second
+property drives every valid envelope to `completed`; a seeded run shows the sequences reach every status). Each
+invariant was seen to fail with its guard removed.

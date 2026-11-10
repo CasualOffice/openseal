@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-FLT-0001` to `0005` (stage 1E); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-FLT-0001` to `0005` (stage 1E); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-WF-0001` to `0018`, and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion.
 
@@ -109,7 +109,20 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-WF-0002 | Stale version (optimistic concurrency) |
 | CS-WF-0003 | Actor not permitted to perform the command |
 | CS-WF-0004 | Envelope invalid for sending (with the list of violations) |
-| CS-WF-0005 | Routing would leave a required recipient unreachable |
+| CS-WF-0005 | Routing would leave a required recipient unreachable: no address and nobody earlier to supply one |
+| CS-WF-0006 | Command id already applied with a different command (re-applying the same command is a replay, not an error) |
+| CS-WF-0007 | Routing has not reached the recipient yet |
+| CS-WF-0008 | Unknown envelope, recipient, document or field id |
+| CS-WF-0009 | Seal result does not prove an independently verified seal of every document as delivered (or names a job not pending) |
+| CS-WF-0010 | Id already used in the envelope |
+| CS-WF-0011 | Envelope has applied its most commands (100,000; the idempotency record is bounded) |
+| CS-WF-0012 | Envelope's signing options do not allow decline, reassign or finish later |
+| CS-WF-0013 | Signature or initials not adopted before use |
+| CS-WF-0014 | Viewer has not viewed every document to the end |
+| CS-WF-0015 | Viewed document does not match the document as fixed (hash or pages) |
+| CS-WF-0016 | Field not editable by this recipient: another's, read-only, locked, or takes no input |
+| CS-WF-0017 | A computed time (timer, date stamp) falls outside years 0000 to 9999 |
+| CS-WF-0018 | A value could not be put in canonical form for hashing |
 | CS-API-0001 | Malformed request |
 | CS-API-0002 | Not found (also returned for objects of another tenant) |
 | CS-API-0003 | Rate limited |
