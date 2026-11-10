@@ -110,7 +110,7 @@ the page tree always kept, `/Kids` rebuilt from dictionaries and `/Count` recomp
 `/AA` whole, JavaScript actions and the JavaScript name tree, Launch, SubmitForm, ImportData, GoToR, GoToE, URI actions
 that run without a click (link URIs are kept), embedded files and FileAttachment annotations, RichMedia and 3D, XFA;
 external stream data emptied; optional content reported and kept. Signed input is refused (`CS-PDF-0014`) unless
-`print_to_new` is asked (`NORM-02`, below). **Document metadata (`NORM-03`):** the catalog's `/Metadata` must be an XMP
+`print_to_new` is asked (`NORM-02`, §2 "Print to new"). **Document metadata (`NORM-03`):** the catalog's `/Metadata` must be an XMP
 packet, well-formed XML whose root is `x:xmpmeta`, because validators check it whenever a later revision touches the
 catalog (pyHanko calls a B-LT seal's DSS update a suspicious change otherwise). A bounded, non-recursive scan (UTF-8 of
 XML characters, matched tags, unique quoted attributes, the five predefined entities and character references, declared
