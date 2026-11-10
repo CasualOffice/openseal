@@ -183,7 +183,7 @@ def self_test(dss_image=None):
 
         at = sealed.index(b"(Agreement)") + 1
         flipped = bytearray(sealed)
-        flipped[at] ^= 0x20
+        flipped[at] ^= 0x00  # SEEDED (F-003): no flip, so the self-test must fail
         intact, _, _ = validate(bytes(flipped), root)
         if intact:
             failures.append("a flipped byte inside the signed range still validated")

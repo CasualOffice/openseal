@@ -9,6 +9,8 @@ ignore = []
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# SEEDED (F-003): bans a crate the workspace uses, so the dependency-policy job must fail.
+deny = [{ name = "der" }]
 # Intra-workspace path dependencies have no version; that is not a real wildcard.
 allow-wildcard-paths = true
 

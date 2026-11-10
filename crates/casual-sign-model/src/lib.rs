@@ -48,3 +48,22 @@ pub mod limits {
     /// Highest page number a field may name. A decision of `T-1D`, equal to docs/21's page cap.
     pub const MAX_PAGE: u32 = 5_000;
 }
+
+// SEEDED (F-003): not rustfmt-formatted, so the checks job must fail.
+#[cfg(test)]
+mod seeded_fmt {   #[test] fn formatted_badly(){ assert_eq!(1+1,2) } }
+
+// SEEDED (F-003): `File::lock` is stable only from Rust 1.89, so the msrv job must fail.
+#[doc(hidden)]
+pub fn seeded_msrv_probe(file: &std::fs::File) -> std::io::Result<()> {
+    file.lock()
+}
+
+// SEEDED (F-003): fails on every platform, so each test job must fail.
+#[cfg(test)]
+mod seeded_test {
+    #[test]
+    fn seeded_failure() {
+        assert_eq!(1 + 1, 3, "seeded failure for F-003");
+    }
+}
