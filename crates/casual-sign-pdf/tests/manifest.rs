@@ -13,7 +13,7 @@
 
 mod common;
 
-use casual_sign_pdf::{Limits, admit, admit_strict};
+use casual_sign_pdf::{Credentials, Limits, admit, admit_strict, admit_strict_with, admit_with};
 
 /// The finding the default reader must report for each `open+…` row. A manifest row
 /// missing here fails the test, so the manifest cannot grow past the reader unseen.
@@ -45,6 +45,9 @@ const DEFAULT_FINDING: &[(&str, &str)] = &[
     ("active_gotoe.pdf", "CS-PDF-0105"),
     ("active_importdata.pdf", "CS-PDF-0103"),
     ("active_js_nametree.pdf", "CS-PDF-0103"),
+    ("lzw_bomb.pdf", "CS-PDF-0003"),
+    ("encrypted_empty_password.pdf", "CS-PDF-0109"),
+    ("encrypted_flate_bomb.pdf", "CS-PDF-0003"),
 ];
 
 fn input_for(file: &str) -> (Vec<u8>, Limits) {
@@ -135,6 +138,43 @@ fn every_manifest_row_holds_in_both_modes() {
         rows.len(),
         failures.join("\n")
     );
+}
+
+/// Encrypted rows give the same outcome with a wrong password as with none, and the
+/// password-protected one opens with its password (`PDF-ENC-01`).
+#[test]
+fn encrypted_rows_with_passwords() {
+    if !common::ensure_hostile() {
+        return;
+    }
+    let wrong = Credentials::new().with_password("not-the-password");
+    for row in common::manifest() {
+        if !row[0].starts_with("encrypted_") {
+            continue;
+        }
+        let bytes = std::fs::read(common::hostile_dir().join(&row[0])).unwrap();
+        let l = Limits::default();
+        let code = |r: Result<casual_sign_pdf::Admitted<'_>, casual_sign_pdf::PdfError>| {
+            r.err().map(|e| e.code())
+        };
+        assert_eq!(
+            code(admit_with(&bytes, &l, &wrong, &common::never)),
+            code(admit(&bytes, &l, &common::never)),
+            "{}",
+            row[0]
+        );
+        assert_eq!(
+            code(admit_strict_with(&bytes, &l, &wrong, &common::never)),
+            code(admit_strict(&bytes, &l, &common::never)),
+            "{}",
+            row[0]
+        );
+    }
+    let bytes = std::fs::read(common::hostile_dir().join("encrypted_wrong_password.pdf")).unwrap();
+    let right = Credentials::new().with_password("openseal-user");
+    let a = admit_strict_with(&bytes, &Limits::default(), &right, &common::never).unwrap();
+    assert!(a.report.has_code("CS-PDF-0109"));
+    assert_eq!(a.report.page_count, 1);
 }
 
 #[test]

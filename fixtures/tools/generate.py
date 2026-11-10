@@ -16,6 +16,7 @@ do (`refuse`, `open+report`, `open+remove`). `--check` fails when a manifest row
 file this script does not write, when the script writes a file the manifest lacks, or
 when a PDF limit in docs/21 with a code has no fixture and no stated reason.
 """
+import hashlib
 import pathlib
 import re
 import sys
@@ -106,6 +107,118 @@ def zeros_deflate(prefix, n_zero):
         left -= take
     parts.append(c.flush())
     return b"".join(parts)
+
+
+# Encryption for the fixtures (PDF-ENC-01): the standard security handler, revision 3,
+# RC4 128-bit (ISO 32000-2 §7.6.4), which the standard library can express. RC4 and the
+# key derivation are written out here to build test input only.
+PAD = bytes.fromhex("28BF4E5E4E758A4164004E56FFFA01082E2E00B6D0683E802F0CA9FE6453697A")
+FILE_ID = b"openseal-fixture"
+PERMS = -3904
+
+
+def rc4(key, data):
+    s = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + s[i] + key[i % len(key)]) & 0xFF
+        s[i], s[j] = s[j], s[i]
+    out = bytearray(len(data))
+    i = j = 0
+    for k, byte in enumerate(data):
+        i = (i + 1) & 0xFF
+        j = (j + s[i]) & 0xFF
+        s[i], s[j] = s[j], s[i]
+        out[k] = byte ^ s[(s[i] + s[j]) & 0xFF]
+    return bytes(out)
+
+
+def md5(*parts):
+    h = hashlib.md5()
+    for x in parts:
+        h.update(x)
+    return h.digest()
+
+
+def r3_encryption(user, owner):
+    """(/Encrypt dictionary body, file key) for RC4-128, revision 3."""
+    pad = lambda pw: (pw + PAD)[:32]
+    ok = md5(pad(owner))
+    for _ in range(50):
+        ok = md5(ok)
+    o = rc4(ok, pad(user))
+    for i in range(1, 20):
+        o = rc4(bytes(b ^ i for b in ok), o)
+    key = md5(pad(user), o, PERMS.to_bytes(4, "little", signed=True), FILE_ID)
+    for _ in range(50):
+        key = md5(key)
+    x = rc4(key, md5(PAD, FILE_ID))
+    for i in range(1, 20):
+        x = rc4(bytes(b ^ i for b in key), x)
+    u = x + b"\0" * 16
+    body = b"<</Filter/Standard/V 2/R 3/Length 128/P %d/O<%s>/U<%s>>>" % (
+        PERMS, o.hex().encode(), u.hex().encode())
+    return body, key
+
+
+def encrypted_file(objs, user=b"", owner=b"openseal-owner", enc_body=None):
+    """A classic file whose streams are RC4-encrypted (strings are left out of these
+    fixtures); the /Encrypt dictionary is object 99."""
+    body, key = r3_encryption(user, owner)
+    out = []
+    for num, obj in objs:
+        k = md5(key, num.to_bytes(4, "little")[:3], b"\0\0")[:16]
+        if b"stream\n" in obj:
+            head, _, rest = obj.partition(b"stream\n")
+            data, _, tail = rest.rpartition(b"\nendstream")
+            obj = head + b"stream\n" + rc4(k, data) + b"\nendstream" + tail
+        out.append((num, obj))
+    out.append((99, enc_body if enc_body is not None else body))
+    ident = FILE_ID.hex().encode()
+    return classic(out, b"/Encrypt 99 0 R/ID[<%s><%s>]" % (ident, ident))[0]
+
+
+def lzw_zero_bomb(n_zero):
+    """LZW (EarlyChange 1) codes for n_zero zero bytes: 0, then 258, 259, ... each one
+    zero longer, a clear code before the table fills."""
+    out = bytearray()
+    acc = nbits = 0
+    width = 9
+
+    def put(code):
+        nonlocal acc, nbits
+        acc = (acc << width) | code
+        nbits += width
+        while nbits >= 8:
+            nbits -= 8
+            out.append((acc >> nbits) & 0xFF)
+            acc &= (1 << nbits) - 1
+
+    left = n_zero
+    while left > 0:
+        put(256)  # at the width in force; the decoder then starts again at 9 bits
+        width = 9
+        put(0)
+        left -= 1
+        dec_next = 258
+        run = 2
+        while left >= run and dec_next < 4094:
+            put(dec_next)  # the KwKwK case: one zero longer than the last
+            left -= run
+            run += 1
+            dec_next += 1
+            if dec_next + 1 >= (1 << width) and width < 12:
+                width += 1
+        while left > 0 and dec_next < 4094:
+            put(0)
+            left -= 1
+            dec_next += 1
+            if dec_next + 1 >= (1 << width) and width < 12:
+                width += 1
+    put(257)
+    if nbits:
+        out.append((acc << (8 - nbits)) & 0xFF)
+    return bytes(out)
 
 
 def with_catalog_entry(entry):
@@ -346,6 +459,29 @@ def builders():
     b["active_importdata.pdf"] = lambda: with_page_entry(b"/AA<</O<</S/ImportData/F(data.fdf)>>>>", [])
     b["active_js_nametree.pdf"] = lambda: classic(with_catalog_entry(b"/Names<</JavaScript<</Names[(a) 10 0 R]>>>>")
                                                   + [(10, b"<</S/JavaScript/JS(app.alert\\(1\\))>>")])[0]
+
+    # LZW (PDF-LZW-01) is bounded like Flate: 64 MiB of zeros from about 50 KB crosses
+    # the decode ratio.
+    def lzw_bomb():
+        objs = pages_objs(1)
+        objs[3] = (4, stream_obj(b"/Filter/LZWDecode", lzw_zero_bomb(64 * MIB)))
+        return classic(objs)[0]
+    b["lzw_bomb.pdf"] = lzw_bomb
+
+    # Encrypted input (PDF-ENC-01).
+    b["encrypted_empty_password.pdf"] = lambda: encrypted_file(pages_objs(1))
+    b["encrypted_wrong_password.pdf"] = lambda: encrypted_file(pages_objs(1), user=b"openseal-user")
+
+    def encrypted_flate_bomb():
+        objs = pages_objs(1)
+        objs[3] = (4, stream_obj(b"/Filter/FlateDecode", zeros_deflate(b"", 1 << 30)))
+        return encrypted_file(objs)
+    b["encrypted_flate_bomb.pdf"] = encrypted_flate_bomb
+    b["encrypted_malformed.pdf"] = lambda: encrypted_file(
+        pages_objs(1), enc_body=b"<</Filter/Standard/V 2/R 3/Length 128/P -3904/U<00>>>")
+    b["encrypted_unknown_handler.pdf"] = lambda: encrypted_file(
+        pages_objs(1), enc_body=b"<</Filter/FOPN_foweb/V 1/R 2/O<00>/U<00>/P -4>>")
+
     return b
 
 
