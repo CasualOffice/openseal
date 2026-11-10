@@ -93,9 +93,12 @@ async fn the_seal_goes_through_keyd_with_the_development_reason() {
         )),
     );
     casual_sign_worker::seal::check_verified(&report, casual_sign_sdk::Profile::BaselineT).unwrap();
-    // keyd logged one signature, against the envelope.
+    // keyd logged two signatures (the document and the standalone certificate), both
+    // against the envelope.
     let log = std::fs::read_to_string(&keyd.oplog).unwrap();
     let signs: Vec<&str> = log.lines().filter(|l| l.contains("\tsign\t")).collect();
-    assert_eq!(signs.len(), 1, "{log}");
-    assert!(signs[0].contains(&ids.env.hyphenated().to_string()));
+    assert_eq!(signs.len(), 2, "{log}");
+    for s in &signs {
+        assert!(s.contains(&ids.env.hyphenated().to_string()));
+    }
 }

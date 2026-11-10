@@ -222,7 +222,7 @@ pub fn table() -> Vec<Route> {
             "/api/v1/envelopes/{id}/documents/combined",
             er,
             JSON,
-            env::certificate,
+            env::combined,
         ),
         r(
             "GET",

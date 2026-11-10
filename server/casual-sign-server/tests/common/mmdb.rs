@@ -4,7 +4,12 @@
 //! Its type is `OpenSeal-Test-City`, built 2026-11-06. The same construction as the
 //! unit test in `src/geo.rs`.
 
-#![allow(clippy::cast_possible_truncation)]
+// Test code: fixed small values (CLAUDE.md: tests may index and do arithmetic).
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing
+)]
 
 fn ctl(kind: u8, size: usize, out: &mut Vec<u8>) {
     if kind <= 7 {

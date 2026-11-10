@@ -10,10 +10,15 @@
 --    session bound to the browser).
 -- 3. Idempotency records (docs/40 §1: replays within 24 h return the first response).
 -- 4. Staff sessions (docs/40 §2: session cookie and CSRF token), hashed at rest.
+-- 5. The certificate of completion the seal job (stage 2D) renders on its own and
+--    seals (`GET /envelopes/{id}/certificate`): its blob's SHA-256, written once, in the
+--    transaction that records the sealed documents.
 
 ALTER TABLE envelopes
     ADD COLUMN host_client_id uuid,
-    ADD FOREIGN KEY (account_id, host_client_id) REFERENCES api_clients (account_id, id);
+    ADD FOREIGN KEY (account_id, host_client_id) REFERENCES api_clients (account_id, id),
+    ADD COLUMN certificate_sha256 bytea
+        CHECK (certificate_sha256 IS NULL OR octet_length(certificate_sha256) = 32);
 -- Cursor pagination over every envelope of an account, newest first.
 CREATE INDEX envelopes_account_cursor ON envelopes (account_id, created_at DESC, id DESC);
 

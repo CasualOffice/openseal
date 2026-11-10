@@ -451,6 +451,46 @@ impl Envelopes<'_> {
         Ok(row.flatten().map(crate::ids::ApiClientId))
     }
 
+    /// Record the sealed certificate of completion's blob. Written once: recording the
+    /// same hash again changes nothing (a seal job re-run), a different one is refused.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such envelope, or one whose certificate is already another.
+    pub async fn set_certificate(&mut self, id: EnvelopeId, sha256: &[u8; 32]) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE envelopes SET certificate_sha256 = $3 WHERE account_id = $1 AND id = $2 \
+               AND (certificate_sha256 IS NULL OR certificate_sha256 = $3)",
+            acct,
+            id.0,
+            sha256.as_slice()
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "envelope")
+    }
+
+    /// The sealed certificate of completion's blob, once the seal job stored it; `None`
+    /// before, and when the account has no such envelope.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0010` for a stored hash that is not 32 bytes.
+    pub async fn certificate(&mut self, id: EnvelopeId) -> Result<Option<[u8; 32]>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query_scalar!(
+            "SELECT certificate_sha256 FROM envelopes WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        opt_hash32(row.flatten(), "envelopes.certificate_sha256")
+    }
+
     /// Write the projection of the engine's state (docs/22 §10) onto the envelope's
     /// columns, if the row is still at `row_version`; returns the new row version. The
     /// engine state itself lives in `envelope_states`, whose row the caller holds

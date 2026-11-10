@@ -135,9 +135,10 @@ async fn seal_after(at: Boundary, test: &str, seals: usize) {
         let want = if ty == "recipient.signed" { 2 } else { 1 };
         assert_eq!(env.count(ids.env, ty).await, want, "{ty}");
     }
+    // Each seal run signs the document and the standalone certificate.
     assert_eq!(
         env.signatures.load(Ordering::SeqCst),
-        seals,
+        seals * 2,
         "keyd signatures"
     );
     // The stored seal is the one the chain names, and it verifies.

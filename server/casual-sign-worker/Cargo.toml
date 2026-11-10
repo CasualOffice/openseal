@@ -15,6 +15,9 @@ casual-sign-model = { path = "../../crates/casual-sign-model" }
 casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
 # fill → flatten → certificate → seal → verify (docs/30 §1).
 casual-sign-sdk = { path = "../../crates/casual-sign-sdk" }
+# The certificate of completion on its own (`render_certificate`), sealed beside the
+# documents for `GET /envelopes/{id}/certificate`; already in the tree through the SDK.
+casual-sign-certificate = { path = "../../crates/casual-sign-certificate" }
 # The one decide-and-record path and the job contract, shared with the API server.
 casual-sign-host = { path = "../casual-sign-host" }
 # The queue, the engine state, the audit chain and the blobs (ADR-012, ADR-013).
@@ -70,6 +73,13 @@ rust_decimal = { version = "1.37", default-features = false, features = ["std"] 
 casual-sign-seal = { path = "../../crates/casual-sign-seal" }
 casual-sign-verify = { path = "../../crates/casual-sign-verify" }
 casual-sign-crypto = { path = "../../crates/casual-sign-crypto" }
+# The end-to-end test drives the API server's router in process against the same
+# database, blob store and clock (tests/end_to_end.rs). Dev only: the worker does not
+# depend on the server.
+casual-sign-server = { path = "../casual-sign-server" }
+axum = { version = "0.8.4", default-features = false, features = ["tokio"] }
+tower = { version = "0.5.2", default-features = false, features = ["util"] }
+http-body-util = "0.1.2"
 
 [lints]
 workspace = true

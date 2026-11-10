@@ -581,6 +581,7 @@ impl Env {
         }
         SealServices {
             engine: self.engine.clone(),
+            fonts: FontSet::bundled(),
             key,
             timestamps: Arc::new(move || {
                 Box::new(pki::TestTsa::new(Duration::from_millis(

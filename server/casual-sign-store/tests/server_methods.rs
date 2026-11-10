@@ -121,6 +121,16 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
             .code(),
         "CS-DB-0003"
     );
+    // The sealed certificate: neither recorded nor read through B.
+    assert_eq!(
+        tx.envelopes()
+            .set_certificate(a_env, &hash("certificate"))
+            .await
+            .unwrap_err()
+            .code(),
+        "CS-DB-0003"
+    );
+    assert!(tx.envelopes().certificate(a_env).await.unwrap().is_none());
     let page = tx.envelopes().page(None, None, None, 100).await.unwrap();
     assert!(
         page.iter().all(|e| e.id != a_env),
@@ -375,6 +385,28 @@ async fn engine_state_tokens_and_sessions_behave() {
         .await
         .unwrap();
     assert_eq!(tx.envelopes().host_client(env).await.unwrap(), None);
+    // The certificate is written once: the same hash again is a no-op, another refused.
+    assert!(tx.envelopes().certificate(env).await.unwrap().is_none());
+    tx.envelopes()
+        .set_certificate(env, &hash("cert-1"))
+        .await
+        .unwrap();
+    tx.envelopes()
+        .set_certificate(env, &hash("cert-1"))
+        .await
+        .unwrap();
+    assert_eq!(
+        tx.envelopes()
+            .set_certificate(env, &hash("cert-2"))
+            .await
+            .unwrap_err()
+            .code(),
+        "CS-DB-0003"
+    );
+    assert_eq!(
+        tx.envelopes().certificate(env).await.unwrap(),
+        Some(hash("cert-1"))
+    );
     let row_version = tx.envelopes().get(env).await.unwrap().unwrap().version;
     let mut p = projection("Changed");
     p.status = EnvelopeStatus::Voided;

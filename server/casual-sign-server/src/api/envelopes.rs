@@ -843,22 +843,37 @@ pub(crate) async fn content(
             ApiError::not_found()
         });
     };
+    let sha = v.version.sha256;
+    let access = (l.state.status != MStatus::Draft && kind != VersionKind::Original).then_some(
+        Access::DocumentDownloaded {
+            document: d,
+            hash: Hash256(sha),
+        },
+    );
+    serve_pdf(&c, tx, &mut l, sha, access).await
+}
+
+/// Read a stored PDF, record its download in the chain when `access` says so, commit,
+/// and answer it as an attachment.
+async fn serve_pdf(
+    c: &Call,
+    mut tx: TenantTx,
+    l: &mut Loaded,
+    sha256: [u8; 32],
+    access: Option<Access>,
+) -> Result<Response, ApiError> {
     let bytes =
         c.st.0
             .blobs
-            .get(&casual_sign_store::blob::BlobKey(v.version.sha256))
+            .get(&casual_sign_store::blob::BlobKey(sha256))
             .await?;
-    if l.state.status != MStatus::Draft && kind != VersionKind::Original {
+    if let Some(access) = access {
         let mut cmds = c.commands(&mut tx).await?;
-        let access = Access::DocumentDownloaded {
-            document: d,
-            hash: Hash256(v.version.sha256),
-        };
         command(
-            &c,
+            c,
             &mut tx,
             &mut cmds,
-            &mut l,
+            l,
             Command::RecordAccess { access },
             None,
         )
@@ -877,14 +892,51 @@ pub(crate) async fn content(
     Ok(r)
 }
 
-/// `GET /envelopes/{id}/certificate` and `/documents/combined`: produced by the seal
-/// job (stage 2D) when the envelope completes.
+/// `GET /envelopes/{id}/certificate`: the certificate of completion on its own, with
+/// the audit trail embedded, sealed by the seal job (stage 2D) when the envelope
+/// completes; `409 CS-API-0009` before. The download is recorded in the chain.
 pub(crate) async fn certificate(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     let mut tx = c.tx().await?;
-    let _l = find(&mut tx, &c.p, &id).await?;
-    Err(ApiError::not_available(
-        "the certificate is made by the seal job when the envelope completes",
-    ))
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let Some(sha) = tx.envelopes().certificate(l.id).await? else {
+        return Err(ApiError::not_available(
+            "the certificate is made by the seal job when the envelope completes",
+        ));
+    };
+    let access = Some(Access::CertificateDownloaded { hash: Hash256(sha) });
+    serve_pdf(&c, tx, &mut l, sha, access).await
+}
+
+/// `GET /envelopes/{id}/documents/combined`: the sealed documents with the certificate
+/// as one PDF. For an envelope of one document that is its sealed version (the
+/// certificate is appended to it before sealing); several documents need a PDF merge
+/// the engine does not have yet, and answer `409 CS-API-0009`, as does an envelope not
+/// yet sealed.
+pub(crate) async fn combined(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let [doc] = l.state.documents.as_slice() else {
+        return Err(ApiError::not_available(
+            "combining several documents into one PDF is not available yet",
+        ));
+    };
+    let d = doc.id().clone();
+    let versions = tx.documents().versions(DocumentId(uid(&d)?)).await?;
+    let Some(v) = versions
+        .iter()
+        .rev()
+        .find(|v| v.version.kind == VersionKind::Sealed)
+    else {
+        return Err(ApiError::not_available(
+            "sealed when the envelope completes",
+        ));
+    };
+    let sha = v.version.sha256;
+    let access = Some(Access::DocumentDownloaded {
+        document: d,
+        hash: Hash256(sha),
+    });
+    serve_pdf(&c, tx, &mut l, sha, access).await
 }
 
 // Recipients ----------------------------------------------------------------------------

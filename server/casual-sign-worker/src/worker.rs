@@ -1181,10 +1181,14 @@ impl<B: BlobStore + 'static> Worker<B> {
         .map_err(|_| WorkerError::Pipeline {
             code: "CS-SEAL-0001",
         })?;
-        let outs = outs?;
+        let sealed = outs?;
         self.boundary(Boundary::Sealed, &ctx.job.kind).await;
 
-        // Store, read back, verify independently.
+        // Store, read back, verify independently: the documents and the certificate.
+        let certificate = self.blobs.put(&sealed.certificate).await?;
+        let back = self.blobs.get(&certificate).await?;
+        seal::verify_stored(&self.seal, &back, input.state.seal_profile, now)?;
+        let outs = sealed.documents;
         let mut records = Vec::with_capacity(outs.len());
         let mut versions = Vec::with_capacity(outs.len());
         for out in outs {
@@ -1215,6 +1219,9 @@ impl<B: BlobStore + 'static> Worker<B> {
                 })
                 .await?;
         }
+        tx.envelopes()
+            .set_certificate(ctx.envelope, &certificate.0)
+            .await?;
         tx.job_steps()
             .record(
                 ctx.job.id,

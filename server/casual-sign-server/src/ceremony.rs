@@ -18,7 +18,7 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use casual_sign_audit::{AdoptionMethod, AuthMethod, Hash256, MarkKind};
+use casual_sign_audit::{AdoptionMethod, AuthMethod, EventData, Hash256, MarkKind};
 use casual_sign_model::{FieldValue, Id};
 use casual_sign_store::repo::documents::VersionKind;
 use casual_sign_store::{DocumentId, RecipientId, TenantTx};
@@ -49,6 +49,8 @@ pub(crate) struct Open {
     cookie: Option<String>,
     ip: ClientIp,
     geoip: Option<std::sync::Arc<crate::geo::GeoIp>>,
+    /// The capture this request adopted, answered as `adoption_id`.
+    adoption: Option<String>,
 }
 
 fn json_body(method: &Method, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -163,6 +165,7 @@ async fn open(
             cookie: set_cookie,
             ip,
             geoip: st.0.geoip.get().cloned(),
+            adoption: None,
         })
     };
     inner.await.map_err(IntoResponse::into_response)
@@ -191,9 +194,60 @@ impl Open {
                 .map(casual_sign_audit::Personal);
     }
 
+    /// Refuse a signature or initials value that does not name a capture this
+    /// recipient adopted in this envelope (the seal job draws what the value names; a
+    /// value naming anyone else's capture must never reach it).
+    async fn check_marks<'v>(
+        &mut self,
+        values: impl Iterator<Item = (&'v FieldValue, String)>,
+    ) -> Result<(), ApiError> {
+        let mut mine: Option<Vec<String>> = None;
+        for (v, at) in values {
+            let FieldValue::Signature(id) = v else {
+                continue;
+            };
+            if mine.is_none() {
+                let chain = self.tx.audit().chain(self.l.id).await?;
+                mine = Some(
+                    chain
+                        .events()
+                        .iter()
+                        .filter_map(|c| match &c.event.data {
+                            EventData::RecipientSignatureAdopted {
+                                recipient_id,
+                                image_hash,
+                                ..
+                            } if *recipient_id == self.recipient => Some(image_hash.hex()),
+                            _ => None,
+                        })
+                        .collect(),
+                );
+            }
+            if !mine
+                .as_ref()
+                .is_some_and(|m| m.iter().any(|h| h == id.as_str()))
+            {
+                return Err(ApiError::invalid(&at));
+            }
+        }
+        Ok(())
+    }
+
     fn view(&self) -> Value {
         let s = &self.l.state;
         let me = s.recipient(&self.recipient);
+        let mut v = self.view_of(s, me);
+        if let (Some(a), Some(o)) = (&self.adoption, v.as_object_mut()) {
+            o.insert("adoption_id".into(), Value::String(a.clone()));
+        }
+        v
+    }
+
+    fn view_of(
+        &self,
+        s: &casual_sign_workflow::EnvelopeState,
+        me: Option<&casual_sign_workflow::RecipientState>,
+    ) -> Value {
         json!({
             "envelope": {
                 "id": s.id, "status": s.status, "subject": s.subject.0, "message": s.message.0,
@@ -502,8 +556,10 @@ struct AdoptIn {
 }
 
 /// `POST /s/{token}/adopt {mark, method, image_base64}`: the image is stored (content
-/// addressed) and its hash recorded. Answers `adoption_id`, the value a signature or
-/// initials field takes (`{"signature": "<adoption_id>"}`).
+/// addressed), then the capture document naming it (`{"kind":"image","image":"<hex>"}`,
+/// the seal job's contract, `casual_sign_worker::capture`), whose hash is recorded.
+/// Answers `adoption_id`, that hash in hex: the value a signature or initials field
+/// takes (`{"signature": "<adoption_id>"}`).
 pub(crate) async fn adopt(
     State(st): State<AppState>,
     axum::Extension(ip): axum::Extension<ClientIp>,
@@ -528,14 +584,18 @@ pub(crate) async fn adopt(
             return Err(ApiError::invalid("/image_base64"));
         }
         let key = st.0.blobs.put(&image).await?;
+        let capture = serde_json::to_vec(&json!({"kind": "image", "image": Hash256(key.0).hex()}))
+            .map_err(|_| ApiError::internal("capture"))?;
+        let capture = Hash256(st.0.blobs.put(&capture).await?.0);
         let r = o.recipient.clone();
         o.run(Command::AdoptSignature {
             recipient: r,
             mark: req.mark,
             method: req.method,
-            image_hash: Hash256(key.0),
+            image_hash: capture,
         })
         .await?;
+        o.adoption = Some(capture.hex());
         Ok(StatusCode::OK)
     })
 }
@@ -565,6 +625,8 @@ pub(crate) async fn fill(
                 .map(|f| f.id.clone())
                 .ok_or_else(ApiError::not_found)?;
         let req: FieldIn = parse(&body)?;
+        o.check_marks(std::iter::once((&req.value, "/value".to_owned())))
+            .await?;
         let r = o.recipient.clone();
         o.run(Command::CompleteField {
             recipient: r,
@@ -606,6 +668,13 @@ pub(crate) async fn finish(
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: FinishIn = parse(&body)?;
         o.locate(req.location.as_ref());
+        o.check_marks(
+            req.values
+                .iter()
+                .enumerate()
+                .map(|(i, v)| (&v.value, format!("/values/{i}/value"))),
+        )
+        .await?;
         let mut values = Vec::with_capacity(req.values.len());
         for (i, v) in req.values.into_iter().enumerate() {
             let f =

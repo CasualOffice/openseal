@@ -782,7 +782,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "viewed",
     )
     .await;
-    ok(
+    let a1 = ok(
         api.call(
             "POST",
             &format!("{s1}/adopt"),
@@ -795,6 +795,32 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "adopt",
     )
     .await;
+    let a1 = a1["adoption_id"].as_str().unwrap().to_owned();
+    // A signature value must name a capture this recipient adopted.
+    let f1_now = e["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["recipient_id"] == client.as_str())
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let foreign = api
+        .call(
+            "PUT",
+            &format!("{s1}/fields/{f1_now}"),
+            &Auth::None,
+            Some(json!({"value": {"signature": "ab".repeat(32)}})),
+            &h1,
+        )
+        .await;
+    assert_eq!(
+        foreign.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        foreign.json()
+    );
     let f1 = e["fields"]
         .as_array()
         .unwrap()
@@ -809,7 +835,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             "PUT",
             &format!("{s1}/fields/{f1}"),
             &Auth::None,
-            Some(json!({"value": {"signature": "sig-client"}})),
+            Some(json!({"value": {"signature": a1}})),
             &h1,
         )
         .await,
@@ -873,7 +899,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "viewed 2",
     )
     .await;
-    ok(
+    let a2 = ok(
         api.call(
             "POST",
             &format!("{s2}/adopt"),
@@ -886,6 +912,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "adopt 2",
     )
     .await;
+    let a2 = a2["adoption_id"].as_str().unwrap().to_owned();
     let f2 = e["fields"]
         .as_array()
         .unwrap()
@@ -900,7 +927,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             "POST",
             &format!("{s2}/finish"),
             &Auth::None,
-            Some(json!({"values": [{"field": f2, "value": {"signature": "sig-ceo"}}]})),
+            Some(json!({"values": [{"field": f2, "value": {"signature": a2}}]})),
             &h2,
         )
         .await,

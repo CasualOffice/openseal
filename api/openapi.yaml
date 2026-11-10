@@ -542,6 +542,7 @@ components:
         recipient: {$ref: '#/components/schemas/Recipient'}
         fields: {type: array, items: {$ref: '#/components/schemas/Field'}}
         capture_location: {type: boolean, description: 'Whether the page asks the device for its location (GEO-01)'}
+        adoption_id: {type: string, description: 'After adopt: the capture a signature or initials field value names ({"signature": "<adoption_id>"})'}
         consent_required: {type: [object, 'null']}
         auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
     ConsentRequest:

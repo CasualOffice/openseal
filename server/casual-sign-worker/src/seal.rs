@@ -1,8 +1,10 @@
 //! The seal job's pipeline (docs/24 `SealEnvelope`, docs/30 §1, docs/31): for each
 //! document, fill and flatten the signers' values into the delivered bytes, append the
 //! certificate of completion with the audit trail, seal at the envelope's PAdES profile
-//! with the platform key, and verify the stored result independently. Blocking (the
-//! keyd and TSA calls are synchronous): run on a blocking thread.
+//! with the platform key, and verify the stored result independently. The certificate
+//! of completion is also rendered on its own, with the trail embedded, and sealed the
+//! same way (`GET /envelopes/{id}/certificate`). Blocking (the keyd and TSA calls are
+//! synchronous): run on a blocking thread.
 //!
 //! **What "verified" means here.** After sealing, the worker reads the sealed bytes back
 //! as stored and runs `casual-sign-verify` over them, separately from the seal's own
@@ -28,8 +30,9 @@ use casual_sign_sdk::evidence::{
 };
 use casual_sign_sdk::verify::{Check, Indication, SubIndication};
 use casual_sign_sdk::{
-    Capture, CertificateInput, CertificateOptions, Engine, Fill, FlattenOptions, KeyProvider,
-    Profile, RevocationSource, TimestampSource, TrustStore, VerificationReport,
+    Capture, CertificateInput, CertificateOptions, Engine, Fill, FlattenOptions, FontSet,
+    KeyProvider, Profile, RevocationSource, SealRequest, TimestampSource, TrustStore,
+    VerificationReport,
 };
 use casual_sign_workflow::{EnvelopeState, SealedDocument};
 
@@ -120,6 +123,9 @@ pub struct SealServices {
     pub location: Option<String>,
     /// The certificate's layout.
     pub certificate: CertificateOptions,
+    /// The faces the standalone certificate is drawn with: the same set the engine was
+    /// made with.
+    pub fonts: FontSet,
     /// Where readers can verify online, printed on the certificate.
     pub verify_url: Option<String>,
 }
@@ -480,14 +486,24 @@ fn fill_parts(
     Ok((mine, caps))
 }
 
-/// Seal every document of `input` (blocking). The records' `verified` is false: the
-/// caller stores the bytes, reads them back and calls [`verify_stored`].
+/// What [`seal_all`] made: each document sealed, and the standalone certificate sealed.
+#[derive(Debug)]
+pub struct Sealed {
+    /// One per document, in the envelope's order.
+    pub documents: Vec<SealedOut>,
+    /// The certificate of completion on its own, the trail embedded, sealed.
+    pub certificate: Vec<u8>,
+}
+
+/// Seal every document of `input`, and the certificate of completion on its own
+/// (blocking). The records' `verified` is false: the caller stores the bytes, reads them
+/// back and calls [`verify_stored`] on each, the certificate's too.
 ///
 /// # Errors
 ///
 /// The failing step's code (`CS-FLD-*`, `CS-FLT-*`, `CS-AUD-*`, `CS-SEAL-*`,
 /// `CS-KEY-*`, ...), or `CS-WRK-0011` for a missing input.
-pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Vec<SealedOut>> {
+pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
     let s = &input.state;
     if input.delivered.len() != s.documents.len() {
         return Err(WorkerError::SealInput { what: "document" });
@@ -538,29 +554,14 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Vec<Sealed
         let completed = e
             .complete(&flat.bytes, &cert_input, &services.certificate)
             .map_err(|x| pipeline(x.code()))?;
-        let field = e
-            .free_field_name(&completed.bytes, "OpenSealSeal")
-            .map_err(|x| pipeline(x.code()))?;
-        let mut request = e.seal_request(target, &field, duration(input.now));
-        request.trust = services.trust.clone();
-        request.name.clone_from(&services.name);
-        request.location.clone_from(&services.location);
-        request.reason = if development {
-            Some(DEV_REASON.to_owned())
-        } else {
-            services.reason.clone()
-        };
-        let tsa = (services.timestamps)();
-        let revocation = (services.revocation)();
-        let sealed = e
-            .seal(
-                &completed.bytes,
-                &request,
-                provider.as_ref(),
-                tsa.as_ref(),
-                revocation.as_ref(),
-            )
-            .map_err(|x| pipeline(x.code()))?;
+        let sealed = seal_bytes(
+            services,
+            &completed.bytes,
+            target,
+            input.now,
+            provider.as_ref(),
+            development,
+        )?;
         let tsa_time = sealed
             .report
             .signature_timestamp
@@ -585,7 +586,54 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Vec<Sealed
             pages,
         });
     }
-    Ok(out)
+    let rendered = casual_sign_certificate::render_certificate(
+        &cert_input,
+        &services.fonts,
+        &services.certificate,
+    )
+    .map_err(|x| pipeline(x.code()))?;
+    let certificate = seal_bytes(
+        services,
+        &rendered.bytes,
+        target,
+        input.now,
+        provider.as_ref(),
+        development,
+    )?
+    .bytes;
+    Ok(Sealed {
+        documents: out,
+        certificate,
+    })
+}
+
+/// Seal `bytes` at `target` with the platform key, the operator's name, reason and
+/// location (the development reason for a development key).
+fn seal_bytes(
+    services: &SealServices,
+    bytes: &[u8],
+    target: Profile,
+    now: Timestamp,
+    provider: &dyn KeyProvider,
+    development: bool,
+) -> Result<casual_sign_sdk::Sealed> {
+    let e = &services.engine;
+    let field = e
+        .free_field_name(bytes, "OpenSealSeal")
+        .map_err(|x| pipeline(x.code()))?;
+    let mut request: SealRequest = e.seal_request(target, &field, duration(now));
+    request.trust = services.trust.clone();
+    request.name.clone_from(&services.name);
+    request.location.clone_from(&services.location);
+    request.reason = if development {
+        Some(DEV_REASON.to_owned())
+    } else {
+        services.reason.clone()
+    };
+    let tsa = (services.timestamps)();
+    let revocation = (services.revocation)();
+    e.seal(bytes, &request, provider, tsa.as_ref(), revocation.as_ref())
+        .map_err(|x| pipeline(x.code()))
 }
 
 /// Verify sealed bytes as read back from storage (module docs).

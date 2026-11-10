@@ -162,8 +162,10 @@ fn configure() -> Result<
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
         .collect();
+    let fonts = FontSet::bundled();
     let seal = SealServices {
-        engine: Engine::new(Limits::default(), FontSet::bundled()),
+        engine: Engine::new(Limits::default(), fonts.clone()),
+        fonts,
         key: seal_key()?,
         timestamps: tsa::http_tsa(tsa_urls),
         revocation: tsa::http_revocation(),

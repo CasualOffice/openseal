@@ -124,17 +124,18 @@ async fn sign(api: &Api, s: &str, cookie: &str, field: &str, env: &Value) {
         cookie,
     )
     .await;
-    post(
+    let adopted = post(
         api,
         &format!("{s}/adopt"),
         json!({"mark": "signature", "method": "draw", "image_base64": b64(&png())}),
         cookie,
     )
     .await;
+    let capture = adopted["adoption_id"].as_str().unwrap();
     post(
         api,
         &format!("{s}/finish"),
-        json!({"values": [{"field": field, "value": {"signature": "sig-w"}}],
+        json!({"values": [{"field": field, "value": {"signature": capture}}],
                "location": {"latitude": 48.856_614, "longitude": 2.352_222, "accuracy_m": 14.2}}),
         cookie,
     )

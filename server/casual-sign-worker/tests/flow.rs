@@ -127,8 +127,8 @@ async fn two_signers_reach_completed_with_a_verified_seal() {
     }
     assert_eq!(
         env.signatures.load(Ordering::SeqCst),
-        1,
-        "one document, one seal"
+        2,
+        "one document and the standalone certificate, one seal each"
     );
 
     // Completion copies to both signers, with a link.
