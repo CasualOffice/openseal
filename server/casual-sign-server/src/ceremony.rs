@@ -47,6 +47,8 @@ pub(crate) struct Open {
     recipient: Id,
     cmds: Commands,
     cookie: Option<String>,
+    ip: ClientIp,
+    geoip: Option<std::sync::Arc<crate::geo::GeoIp>>,
 }
 
 fn json_body(method: &Method, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -159,6 +161,8 @@ async fn open(
             recipient,
             cmds,
             cookie: set_cookie,
+            ip,
+            geoip: st.0.geoip.get().cloned(),
         })
     };
     inner.await.map_err(IntoResponse::into_response)
@@ -174,6 +178,13 @@ impl Open {
         )?;
         run(&mut self.tx, &mut self.l, &cmd, &ctx, self.cmds.now).await?;
         Ok(())
+    }
+
+    /// The location evidence for this request: the device's fix, or (when the envelope
+    /// captures location, a setting GEO-01 adds) the GeoIP approximation.
+    fn location(&self, device: Option<&DeviceLocation>) -> Option<crate::geo::Located> {
+        let capture = false;
+        crate::geo::resolve(device, capture, self.ip.0, self.geoip.as_deref())
     }
 
     fn view(&self) -> Value {
@@ -290,7 +301,8 @@ pub(crate) async fn consent(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: ConsentIn = parse(&body)?;
-        let _ = req.location;
+        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
+        let _location = o.location(req.location.as_ref());
         let ersd = o
             .cmds
             .policy
@@ -427,7 +439,8 @@ pub(crate) async fn viewed(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: ViewedIn = parse(&body)?;
-        let _ = req.location;
+        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
+        let _location = o.location(req.location.as_ref());
         if req.pages_seen.len() > 5_000 {
             return Err(ApiError::invalid("/pages_seen"));
         }
@@ -475,7 +488,8 @@ pub(crate) async fn adopt(
     let max = st.config().max_image_bytes;
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: AdoptIn = parse(&body)?;
-        let _ = req.location;
+        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
+        let _location = o.location(req.location.as_ref());
         if req.image_base64.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
             return Err(ApiError::too_large());
         }
@@ -565,7 +579,8 @@ pub(crate) async fn finish(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: FinishIn = parse(&body)?;
-        let _ = req.location;
+        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
+        let _location = o.location(req.location.as_ref());
         let mut values = Vec::with_capacity(req.values.len());
         for (i, v) in req.values.into_iter().enumerate() {
             let f =
@@ -620,7 +635,8 @@ pub(crate) async fn decline(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: DeclineIn = parse(&body)?;
-        let _ = req.location;
+        // Recorded once `Context::location` lands (GEO-01 merge; see `crate::geo`).
+        let _location = o.location(req.location.as_ref());
         let reason = req.reason.as_deref().map(dto::message).transpose()?;
         let r = o.recipient.clone();
         o.run(Command::Decline {

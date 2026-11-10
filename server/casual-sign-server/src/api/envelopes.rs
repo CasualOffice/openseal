@@ -1,7 +1,7 @@
 //! Envelopes and everything inside one (docs/40 §3): documents, recipients, fields,
 //! send, correct, void, resend, status, audit events, downloads and the embedded
 //! signing view. Every change is a workflow command (docs/24 §1) run by
-//! [`crate::apply`].
+//! the command pipeline (`apply`).
 
 use std::collections::BTreeMap;
 

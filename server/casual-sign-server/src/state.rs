@@ -224,6 +224,7 @@ pub(crate) struct Inner {
     pub config: Config,
     pub limiter: RateLimiter,
     pub dummy_phc: String,
+    pub geoip: std::sync::OnceLock<Arc<crate::geo::GeoIp>>,
 }
 
 impl AppState {
@@ -248,7 +249,14 @@ impl AppState {
             config,
             limiter: RateLimiter::default(),
             dummy_phc: crate::crypto::dummy_phc()?,
+            geoip: std::sync::OnceLock::new(),
         })))
+    }
+
+    /// Approximate signer locations from `geoip` (row GEO-01). Set once; a second
+    /// call is ignored.
+    pub fn set_geoip(&self, geoip: crate::geo::GeoIp) {
+        let _ = self.0.geoip.set(Arc::new(geoip));
     }
 
     pub(crate) fn now(&self) -> OffsetDateTime {

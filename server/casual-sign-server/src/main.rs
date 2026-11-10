@@ -11,6 +11,7 @@
 //! | `OPENSEAL_PUBLIC_URL` | Public base URL (links, token issuer) |
 //! | `OPENSEAL_LISTEN` | Address to listen on (default `127.0.0.1:8080`) |
 //! | `OPENSEAL_TRUSTED_PROXIES` | Comma-separated CIDRs whose forwarding headers count |
+//! | `OPENSEAL_GEOIP_DB` | Optional GeoIP `.mmdb` the operator supplies (row GEO-01) |
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key, plain-HTTP cookies |
 //! | `OPENSEAL_ADMIN_PASSWORD` (secret) | `bootstrap` only: the first administrator's password |
 //!
@@ -123,6 +124,12 @@ async fn main() -> ExitCode {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
     };
+    if let Ok(path) = std::env::var("OPENSEAL_GEOIP_DB") {
+        match casual_sign_server::geo::GeoIp::open(std::path::Path::new(&path)) {
+            Ok(g) => state.set_geoip(g),
+            Err(e) => return fail(&format!("OPENSEAL_GEOIP_DB: {e}")),
+        }
+    }
     let listen = std::env::var("OPENSEAL_LISTEN").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let listener = match tokio::net::TcpListener::bind(&listen).await {
         Ok(l) => l,

@@ -1,4 +1,4 @@
-//! `/api/v1` handlers (docs/40 §3). Every handler runs behind [`crate::http::guard`],
+//! `/api/v1` handlers (docs/40 §3). Every handler runs behind the route guard (`http::guard`),
 //! so a [`Principal`] is in its extensions; every object is reached through the
 //! principal's account only (ADR-013), and an object the principal may not see answers
 //! exactly as a missing one: `404 CS-API-0002` (SEC-A04).

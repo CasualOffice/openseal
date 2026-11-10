@@ -4,7 +4,7 @@
 //!
 //! - **Commands, one transaction.** Every change is a workflow command; the new state,
 //!   its audit events (hash-chained) and its effects (as jobs) are written in one
-//!   transaction before the answer ([`apply`](crate::routes) via `apply`).
+//!   transaction before the answer.
 //! - **Deny by default, per object.** Every route but login, the token endpoint, JWKS
 //!   and the ceremony needs a principal and a scope; every object is reached through
 //!   the principal's account only, and another account's object answers exactly as a
