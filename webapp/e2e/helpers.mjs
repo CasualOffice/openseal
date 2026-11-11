@@ -53,8 +53,10 @@ export async function signIn(page, land = "agreements") {
   const agreements = page.getByRole("heading", { name: "Agreements" });
   const home = page.getByRole("heading", { name: "Home", exact: true });
   const goLand = async () => {
-    if (land === "home") { await page.goto(app("#/home")); await expect(home).toBeVisible(); return; }
-    await page.goto(app("#/agreements"));
+    // "domcontentloaded": the heading below is what matters; WebKit on the shared stack
+    // has waited past the test timeout for a full "load" (compose-e2e, run 43121391179).
+    if (land === "home") { await page.goto(app("#/home"), { waitUntil: "domcontentloaded" }); await expect(home).toBeVisible(); return; }
+    await page.goto(app("#/agreements"), { waitUntil: "domcontentloaded" });
     await expect(agreements).toBeVisible();
   };
   if (REAL && realSession) {
