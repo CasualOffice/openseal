@@ -86,6 +86,30 @@ Release 1 covers the common 60–70% of use; everything else follows as slices, 
 - **Work order:** finish Phase 2 to what Release 1 needs (integrate 2C and 2D, 2F Compose, the end-to-end test), then
   slice 1's web app for senders and signers, then the Release 1 gate.
 
+### Release 1 ships as v0.0.1 (owner instruction 23)
+
+v0.0.1 is the first tagged pre-release: usable end to end on a single machine, not yet for production agreements. It
+is cut when every box below is ticked, from evidence, not from intent (`REL-01`).
+
+- **Gate**
+  - [ ] Phase 2 exit items met and signed off: end-to-end on the Compose stack green on GitHub (`compose-e2e`); crash
+    tests on the stack (`P2-CRASH`); every SEC-A, SEC-T, SEC-W threat with a test seen red (`P2-THREATS`).
+  - [ ] GitHub CI fully green on the release commit, every job, no job skipped or cancelled.
+  - [ ] Release 1 scope above works on the Compose stack, checked by the Playwright suite against the real server and
+    one manual walkthrough recorded in `docs/65` (send, sign on desktop and phone, decline, correct, templates, verify).
+  - [ ] Independent validators: the release's sealed outputs accepted by pyHanko and EU DSS.
+  - [ ] No open P0 row in docs/14.
+- **Artefacts**
+  - [ ] Version `0.0.1` in the workspace `Cargo.toml` and `webapp/` (shown in the app footer and `/api/v1` health).
+  - [ ] Container images built by a release workflow from the tag, pinned base images, published to GitHub Container
+    Registry as `ghcr.io/casualoffice/openseal-{server,worker,keyd}:0.0.1`, with SBOM and provenance attestations.
+  - [ ] `docker-compose.yml` able to use the published images (no local build needed).
+  - [ ] Git tag `v0.0.1` (annotated) and a GitHub pre-release with notes from `CHANGELOG.md`: what works, what does not,
+    the development-only security posture (generated CA, SoftHSM, dev TSA), and how to report security issues.
+  - [ ] Site: Download page and roadmap updated for v0.0.1.
+- **Not in v0.0.1** (stays on the roadmap, after it): SSO, SAML and WebAuthn, SMS authentication, bulk send, payments,
+  B-LTA renewal jobs, production deployment (Helm, HA), and everything in the slices after Release 1.
+
 ## Phase D — Design
 
 - **Gives:** an agreed design, so later phases need no do-over.
