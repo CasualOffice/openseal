@@ -1,7 +1,7 @@
 {
   "name": "openseal-webapp",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "The OpenSeal web app: plain ES modules, no build step. This file only marks .js as ES modules for Node's own test runner.",
   "type": "module",
   "license": "Apache-2.0",

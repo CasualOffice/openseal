@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-audit"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal audit events: canonical form, hash chain and chain verification (docs/32)"
 edition.workspace = true
 license.workspace = true

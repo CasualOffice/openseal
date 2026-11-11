@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-server"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal API server: the /api/v1 REST surface, staff and API authentication, and the recipient ceremony endpoints over the workflow engine and the store (stage 2C, docs/40)"
 edition.workspace = true
 license.workspace = true

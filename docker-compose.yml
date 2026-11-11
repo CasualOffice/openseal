@@ -81,7 +81,7 @@ services:
 
   keyd:
     build: {context: ., dockerfile: deploy/Dockerfile, target: keyd}
-    image: openseal-keyd:dev
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-keyd:${OPENSEAL_VERSION:-dev}
     environment:
       OPENSEAL_KEYD_TLS_CERT: /secrets/keyd-tls-chain.pem
       OPENSEAL_KEYD_TLS_KEY: /secrets/keyd-tls.key
@@ -100,7 +100,7 @@ services:
 
   migrate:
     build: {context: ., dockerfile: deploy/Dockerfile, target: server}
-    image: openseal-server:dev
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-server:${OPENSEAL_VERSION:-dev}
     command: ["migrate"]
     environment:
       OPENSEAL_MIGRATE_DATABASE_URL_FILE: /secrets/migrate-database-url
@@ -110,7 +110,7 @@ services:
     healthcheck: {disable: true}
 
   server:
-    image: openseal-server:dev
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-server:${OPENSEAL_VERSION:-dev}
     environment:
       <<: *s3
       OPENSEAL_DATABASE_URL_FILE: /secrets/database-url
@@ -126,7 +126,7 @@ services:
 
   worker:
     build: {context: ., dockerfile: deploy/Dockerfile, target: worker}
-    image: openseal-worker:dev
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-worker:${OPENSEAL_VERSION:-dev}
     environment:
       <<: *s3
       OPENSEAL_DATABASE_URL_FILE: /secrets/database-url

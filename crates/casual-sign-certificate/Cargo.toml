@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-certificate"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal certificate of completion and embedded audit trail (docs/30 §8, docs/32 §6)"
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-store"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal persistence: PostgreSQL schema and migrations, the tenancy-scoped repository, append-only audit table, blob store (stage 2B, docs/22)"
 edition.workspace = true
 license.workspace = true

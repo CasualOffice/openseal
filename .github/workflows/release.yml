@@ -1,0 +1,51 @@
+name: release
+
+# REL-01 (docs/06 "Release 1 ships as v0.0.1"): on a `v*` tag, build the server, worker and
+# keyd images from deploy/Dockerfile, push them to GitHub Container Registry with an SBOM
+# and provenance attestation, and publish a GitHub pre-release with the CHANGELOG notes.
+# Only the owner pushes release tags.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        target: [server, worker, keyd]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push with SBOM and provenance
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/openseal-${{ matrix.target }}"
+          docker buildx create --use --name rel
+          docker buildx build -f deploy/Dockerfile --target "${{ matrix.target }}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.version=${version}" \
+            --label "org.opencontainers.image.licenses=Apache-2.0" \
+            --sbom=true --provenance=mode=max \
+            -t "${image}:${version}" --push .
+
+  release:
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## \\[?"v {f=1; next} f && /^## / {exit} f' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for ${version}"; exit 1; }
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" --prerelease --title "OpenSeal ${GITHUB_REF_NAME}" --notes-file notes.md

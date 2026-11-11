@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-secrets"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal host secrets: a value from NAME or the file NAME_FILE names, never both (copied from OpenCalc's casual-calc-secrets)"
 edition.workspace = true
 license.workspace = true

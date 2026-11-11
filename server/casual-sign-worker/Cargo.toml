@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-worker"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal worker: runs the workflow's effects as idempotent jobs from the PostgreSQL queue (email, timers, sealing, webhooks, token revocation, alerts, purge) and feeds their results back through the engine (stage 2D, docs/24 §1)"
 edition.workspace = true
 license.workspace = true

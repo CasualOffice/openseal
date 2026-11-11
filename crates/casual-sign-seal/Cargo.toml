@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-seal"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal sealing: PAdES B-B, B-T, B-LT and B-LTA as incremental updates (docs/31)"
 edition.workspace = true
 license.workspace = true

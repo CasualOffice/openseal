@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-verify"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal verifier: any signed PDF, its revisions, chains, revocation and timestamps (docs/31 §7)"
 edition.workspace = true
 license.workspace = true

@@ -17,6 +17,9 @@ docker compose logs -f server worker         # what it is doing
 docker compose down -v                       # stop, and discard every volume (data, keys, mail)
 ```
 
+**Released images instead of building:** `OPENSEAL_IMAGE_PREFIX=ghcr.io/casualoffice/openseal OPENSEAL_VERSION=0.0.1 docker compose up -d --wait`
+pulls the published v0.0.1 images (`docker compose pull` first) rather than building from source.
+
 `bootstrap` prints the account and administrator ids; run it once (a second run with the same email is refused).
 Ports bind to `127.0.0.1` only: `OPENSEAL_HTTP_PORT` (default 8080) and `OPENSEAL_MAIL_PORT` (default 8025) move them.
 

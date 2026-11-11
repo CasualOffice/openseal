@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-cli"
-version = "0.0.0"
+version = "0.0.1"
 description = "openseal: the OpenSeal engine on the command line (admit, normalize, fill, seal, verify, audit verify)"
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-host"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal host core shared by the API server and the worker: the one decide-and-record path (engine state, chained audit events, relational projection, effects as jobs, in one transaction) and the job contract (docs/24 §1)"
 edition.workspace = true
 license.workspace = true

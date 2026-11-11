@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-fields"
-version = "0.0.0"
+version = "0.0.1"
 description = "OpenSeal fields: rules and formulas, geometry, text extraction, anchors, text tags and AcroForm conversion, identical natively and in WASM (docs/30)"
 edition.workspace = true
 license.workspace = true
