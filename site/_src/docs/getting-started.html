@@ -1,0 +1,79 @@
+<!--meta {"title": "Getting started", "description": "Run the whole OpenSeal stack on your machine with Docker Compose, create the first administrator, and send a test envelope."} -->
+<h1>Getting started</h1>
+<p class="lede">Run the whole OpenSeal stack on one machine with Docker Compose, create the first administrator, and send yourself a document to sign. About ten minutes, most of it the first image build.</p>
+
+<div class="callout warn">{{icon:triangle-alert}}<div><p><strong>A development stack.</strong> It generates its own certificate authority, keeps the seal key in a software HSM and runs a local timestamp authority, so its seals validate only against that generated root, not in Adobe Acrobat. OpenSeal is pre-alpha: do not use it for real agreements yet.</p></div></div>
+
+<h2>What you need</h2>
+<ul>
+  <li>Docker with Compose v2 (Docker Desktop, or Docker Engine with the compose plugin).</li>
+  <li>Git, and a few gigabytes of free disk for the images.</li>
+  <li>Ports 8080 and 8025 free on <code>127.0.0.1</code> (both can be moved, see below).</li>
+</ul>
+
+<h2>Start the stack</h2>
+<p>Clone the repository and start everything. <code>--wait</code> returns once every service reports healthy.</p>
+<pre><code>git clone https://github.com/CasualOffice/openseal
+cd openseal
+docker compose up -d --build --wait</code></pre>
+<p>On the first start a one-shot <code>pki</code> service writes a development CA, the TLS certificates between services, the seal key and certificate, a timestamp certificate, the API token key and random passwords into a <code>secrets</code> volume. Nothing secret is baked into an image.</p>
+
+<h2>Create the first administrator</h2>
+<p>An install starts empty. <code>bootstrap</code> creates the first account and its administrator, and prints their ids. Run it once; a second run with the same email is refused.</p>
+<pre><code>docker compose exec -e OPENSEAL_ADMIN_PASSWORD='a long passphrase' server \
+    casual-sign-server bootstrap "Acme" admin@acme.example "Ada Admin"</code></pre>
+
+<h2>Send yourself a document</h2>
+<ol>
+  <li>Open the web app at <a href="http://localhost:8080">http://localhost:8080</a> and sign in as <code>admin@acme.example</code> with the passphrase you chose.</li>
+  <li>Choose <strong>Start</strong>, then drop a PDF on the page.</li>
+  <li>Add a signer with any email address, place a signature and a date field, and send. <a href="first-envelope.html">Sending your first envelope</a> walks through each step.</li>
+  <li>Open Mailpit at <a href="http://localhost:8025">http://localhost:8025</a>. Every email the stack sends lands there, including the signing invitation.</li>
+  <li>Follow the link in the invitation, consent, and sign. When the last signer finishes, the worker seals the document and both the sealed PDF and its certificate of completion appear on the envelope.</li>
+</ol>
+<figure>
+  <div class="frame">{{shot:sign-desktop|The signing page on a desktop: the document with a job title field, an optional checkbox, a signature field and the date, with a list of the signer's fields on the right.}}</div>
+  <figcaption>The signing page a signer reaches from the emailed link.</figcaption>
+</figure>
+
+<h2>Look around without a server</h2>
+<p>To see the web app without Docker, serve it in demo mode. Data lives only in the browser tab; nothing is sent or signed.</p>
+<pre><code>python3 -I tools/serve-webapp.py
+# open http://127.0.0.1:8130/app.html?mock=1
+# sign in as demo@openseal.test with the password openseal-demo-1</code></pre>
+
+<h2>What is running</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Services in the Compose stack">
+<table>
+  <thead><tr><th scope="col">Service</th><th scope="col">What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>server</code></td><td>The API, the signing ceremony and the web app, on port 8080</td></tr>
+    <tr><td><code>worker</code></td><td>Email through Mailpit, reminders and expiry, sealing through keyd and the timestamp authority, webhooks</td></tr>
+    <tr><td><code>keyd</code></td><td>The key daemon over mutual TLS; the seal key in a SoftHSM token</td></tr>
+    <tr><td><code>postgres</code></td><td>The database; the application role is bound by row-level security</td></tr>
+    <tr><td><code>migrate</code></td><td>One-shot: applies every migration before the server starts</td></tr>
+    <tr><td><code>s3</code></td><td>An S3-compatible blob store (SeaweedFS) for documents</td></tr>
+    <tr><td><code>mailpit</code></td><td>Catches all email; web UI on port 8025</td></tr>
+    <tr><td><code>tsa</code></td><td>A development RFC 3161 timestamp authority</td></tr>
+    <tr><td><code>pki</code></td><td>One-shot, first start only: the development keys and certificates</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Everyday commands</h2>
+<pre><code>docker compose logs -f server worker   # what it is doing
+docker compose down                    # stop, keep the data
+docker compose down -v                 # stop and discard every volume (data, keys, mail)</code></pre>
+<p>Ports bind to <code>127.0.0.1</code> only. Set <code>OPENSEAL_HTTP_PORT</code> (default 8080) or <code>OPENSEAL_MAIL_PORT</code> (default 8025) to move them.</p>
+
+<h2>Check a sealed PDF yourself</h2>
+<p>Download the sealed PDF from the envelope, then fetch the stack's root certificate and check the seal with the browser verifier or any PAdES validator:</p>
+<pre><code>docker compose exec -T keyd cat /secrets/ca.pem > openseal-dev-root.pem</code></pre>
+<p>Open <code>http://localhost:8080/verify.html</code>, add <code>openseal-dev-root.pem</code> as a trusted certificate and drop the PDF. <a href="verifying.html">Verifying a document</a> covers the offline and command-line options.</p>
+
+<h2>Next steps</h2>
+<div class="cards">
+  <a class="card" href="first-envelope.html"><span class="cell-icon">{{icon:send}}</span><h3>Send your first envelope</h3><p>Recipients, routing order, fields and sending.</p></a>
+  <a class="card" href="self-hosting.html"><span class="cell-icon">{{icon:server}}</span><h3>Self-hosting</h3><p>Configuration and the production checklist.</p></a>
+  <a class="card" href="api.html"><span class="cell-icon">{{icon:braces}}</span><h3>API reference</h3><p>Every operation of the REST API.</p></a>
+</div>

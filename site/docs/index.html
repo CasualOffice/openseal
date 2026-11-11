@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Documentation | OpenSeal</title>
+<meta name="description" content="OpenSeal documentation: run it, send and sign, verify, administer, integrate with the API and webhooks, and how the evidence model works.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="Documentation | OpenSeal">
+<meta property="og:description" content="OpenSeal documentation: run it, send and sign, verify, administer, integrate with the API and webhooks, and how the evidence model works.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="../docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="../docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Start</h2><ul><li><a href="index.html" aria-current="page">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Start</h2><ul><li><a href="index.html" aria-current="page">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+<h1>Documentation</h1>
+<p class="lede">How to run OpenSeal, send and sign agreements, verify what was signed, and build on the API. Press <kbd>/</kbd> anywhere to search.</p>
+
+<div class="callout"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><div><p>OpenSeal is pre-alpha. These pages describe what is built today and say so where something is planned. The <a href="../roadmap.html">roadmap</a> has the full picture.</p></div></div>
+
+<h2 id="start">Start</h2>
+<div class="cards">
+  <a class="card" href="getting-started.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"/><path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"/></svg></span><h3 id="getting-started">Getting started</h3><p>The whole stack on your machine with Docker Compose.</p></a>
+  <a class="card" href="first-envelope.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg></span><h3 id="sending-your-first-envelope">Sending your first envelope</h3><p>Upload, add recipients, place fields, send.</p></a>
+  <a class="card" href="signing.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 17-2.156-1.868A.5.5 0 0 0 18 15.5v.5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1c0-2.545-3.991-3.97-8.5-4a1 1 0 0 0 0 5c4.153 0 4.745-11.295 5.708-13.5a2.5 2.5 0 1 1 3.31 3.284"/><path d="M3 21h18"/></svg></span><h3 id="signing">Signing</h3><p>What a signer sees, on a phone or a desktop.</p></a>
+</div>
+
+<h2 id="use-and-operate">Use and operate</h2>
+<div class="cards">
+  <a class="card" href="templates.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/></svg></span><h3 id="templates">Templates</h3><p>Reuse documents, roles and fields.</p></a>
+  <a class="card" href="verifying.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></span><h3 id="verifying-a-document">Verifying a document</h3><p>Online, offline and from the command line.</p></a>
+  <a class="card" href="administration.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/></svg></span><h3 id="administration">Administration</h3><p>Users, invitations and API clients.</p></a>
+  <a class="card" href="self-hosting.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg></span><h3 id="self-hosting-and-configuration">Self-hosting and configuration</h3><p>Services, settings and the production checklist.</p></a>
+</div>
+
+<h2 id="build-and-understand">Build and understand</h2>
+<div class="cards">
+  <a class="card" href="api.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg></span><h3 id="api-reference">API reference</h3><p>Every REST operation and schema.</p></a>
+  <a class="card" href="webhooks.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/></svg></span><h3 id="webhooks">Webhooks</h3><p>Signed events, retries and the delivery log.</p></a>
+  <a class="card" href="security.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="16" r="1"/><rect x="3" y="10" width="18" height="12" rx="2"/><path d="M7 10V7a5 5 0 0 1 10 0v3"/></svg></span><h3 id="security-and-evidence-model">Security and evidence model</h3><p>Seals, the audit chain, keys and threats.</p></a>
+  <a class="card" href="architecture.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></span><h3 id="architecture-overview">Architecture overview</h3><p>The engine, the server and how they fit.</p></a>
+  <a class="card" href="faq.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span><h3 id="faq">FAQ</h3><p>Status, licensing, legal questions.</p></a>
+  <a class="card" href="contributing.html"><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></svg></span><h3 id="contributing">Contributing</h3><p>How to build, test and send a change.</p></a>
+</div>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-next" href="getting-started.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Getting started</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#start">Start</a></li><li><a href="#use-and-operate">Use and operate</a></li><li><a href="#build-and-understand">Build and understand</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#features">Features</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li><li><a href="../docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../brand.html">Brand and attribution</a></li><li><a href="../docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

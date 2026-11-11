@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>OpenSeal: open-source e-signatures</title>
+<meta name="description" content="OpenSeal is an open-source, Apache-2.0 alternative to DocuSign: send documents for signature, self-host it, and verify every sealed PDF offline.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="OpenSeal: open-source e-signatures">
+<meta property="og:description" content="OpenSeal is an open-source, Apache-2.0 alternative to DocuSign: send documents for signature, self-host it, and verify every sealed PDF offline.">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/theme-init.js"></script>
+<script type="module" src="assets/site.js"></script>
+</head>
+<body data-root="">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="index.html#features">Features</a><a href="docs/index.html">Docs</a><a href="docs/api.html">API</a><a href="roadmap.html">Roadmap</a><a href="download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="index.html#features">Features</a><a href="docs/index.html">Docs</a><a href="docs/api.html">API</a><a href="roadmap.html">Roadmap</a><a href="download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1">
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v18"/><path d="m19 8 3 8a5 5 0 0 1-6 0zV7"/><path d="M3 7h1a17 17 0 0 0 8-2 17 17 0 0 0 8 2h1"/><path d="m5 8 3 8a5 5 0 0 1-6 0zV7"/><path d="M7 21h10"/></svg>Apache-2.0 e-signature platform</span>
+      <h1>Agreements, signed <em>and provable.</em></h1>
+      <p class="lede">The open-source DocuSign alternative. Self-host it, embed it, and let anyone verify the sealed PDF offline.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="docs/getting-started.html">Get started with Docker<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span></a>
+        <a class="btn btn-secondary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span></a>
+      </div>
+    </div>
+    <div class="hero-art">
+      <svg viewBox="0 0 520 470" role="img" aria-labelledby="hero-art-t" focusable="false">
+        <title id="hero-art-t">A document receives a handwritten signature, then the OpenSeal seal stamps onto it and the audit trail links up: sent, viewed, signed, sealed.</title>
+        <g class="anim a-page">
+          <rect class="h-sheet" x="72" y="44" width="330" height="398" rx="16" transform="rotate(-4 237 243)"/>
+          <rect class="h-shadow" x="96" y="40" width="330" height="404" rx="16"/>
+          <rect class="h-page" x="90" y="30" width="330" height="404" rx="16"/>
+          <rect class="h-title" x="122" y="66" width="150" height="13" rx="6.5"/>
+          <rect class="h-line" x="122" y="100" width="264" height="7" rx="3.5"/>
+          <rect class="h-line" x="122" y="118" width="246" height="7" rx="3.5"/>
+          <rect class="h-line" x="122" y="136" width="258" height="7" rx="3.5"/>
+          <rect class="h-line" x="122" y="154" width="190" height="7" rx="3.5"/>
+          <rect class="h-line" x="122" y="186" width="264" height="7" rx="3.5"/>
+          <rect class="h-line" x="122" y="204" width="232" height="7" rx="3.5"/>
+          <rect class="h-line" x="122" y="222" width="250" height="7" rx="3.5"/>
+          <rect class="h-line" x="122" y="240" width="140" height="7" rx="3.5"/>
+          <line class="h-base" x1="122" y1="380" x2="318" y2="380"/>
+          <rect class="h-line" x="122" y="392" width="88" height="6" rx="3"/>
+        </g>
+        <g class="anim a-field">
+          <rect class="h-field" x="122" y="300" width="196" height="68" rx="9"/>
+          <rect class="h-tag" x="122" y="276" width="74" height="20" rx="10"/>
+          <text class="h-tag-text" x="134" y="290">Sign here</text>
+        </g>
+        <path class="a-sig h-sig" pathLength="1" d="M136 352c5-16 13-34 21-31 7 3-8 33-1 35 8 2 14-23 22-21 6 2 -3 19 4 20 8 1 12-15 20-13 6 2 0 13 8 12 9-1 15-17 26-15 7 1-3 12 6 12 12 0 25-10 40-12 10-1 21 0 30 2"/>
+        <circle class="anim a-ring h-ring" cx="370" cy="336" r="58"/>
+        <image class="anim a-seal" href="assets/mark.svg" x="320" y="286" width="100" height="100"/>
+        <g class="anim a-chip">
+          <rect class="h-chip" x="214" y="418" width="206" height="34" rx="17"/>
+          <path class="h-chip-ok" d="M232 435l5 5 9-10"/>
+          <text class="h-chip-text" x="256" y="439.5">Sealed with PAdES B-T</text>
+        </g>
+        <g>
+          <line class="h-link-bar" x1="462" y1="92" x2="462" y2="290"/>
+          <g class="anim a-l1"><rect class="h-link" x="430" y="70" width="64" height="40" rx="10"/><text class="h-link-text" x="444" y="88">sent</text><text class="h-hash" x="444" y="101">a3f1</text></g>
+          <g class="anim a-l2"><rect class="h-link" x="430" y="134" width="64" height="40" rx="10"/><text class="h-link-text" x="444" y="152">viewed</text><text class="h-hash" x="444" y="165">9c0e</text></g>
+          <g class="anim a-l3"><rect class="h-link" x="430" y="198" width="64" height="40" rx="10"/><text class="h-link-text" x="444" y="216">signed</text><text class="h-hash" x="444" y="229">5d72</text></g>
+          <g class="anim a-l4"><rect class="h-link" x="430" y="262" width="64" height="40" rx="10"/><text class="h-link-text" x="444" y="280">sealed</text><text class="h-hash" x="444" y="293">205a</text></g>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section class="section-tight" aria-labelledby="product-h">
+  <div class="wrap">
+    <h2 id="product-h" class="sr-only">The product</h2>
+    <p class="status reveal"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span><strong>Pre-alpha.</strong> The PDF and evidence engine is complete and tested against 422 real-world PDFs. The server, worker, key service and web app run together on Docker Compose. Not yet for production agreements; see the <a href="roadmap.html">roadmap</a>.</span></p>
+    <figure class="showcase reveal reveal-d1">
+      <div class="frame"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="assets/screens/editor-light.webp"><img src="assets/screens/editor-light.png" width="1280" height="800" alt="The send editor: a two-page services agreement with signature, date and text fields placed for two signers, a field palette on the left and field properties on the right." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="assets/screens/editor-dark.webp"><img src="assets/screens/editor-dark.png" width="1280" height="800" alt="The send editor: a two-page services agreement with signature, date and text fields placed for two signers, a field palette on the left and field properties on the right." loading="lazy" decoding="async"></picture></span></div>
+      <figcaption>The document-first editor: the page gets the screen, fields go where you drop them.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="section section-alt" id="features" aria-labelledby="features-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <h2 id="features-h">Everything a signature needs, nothing behind a paywall.</h2>
+      <p>Bulk send, conditional fields, SSO, embedding and webhooks are planned for the open core, not a higher tier.</p>
+    </div>
+    <div class="bento">
+      <article class="cell c-send reveal">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg></span>
+        <h3 id="send-in-minutes">Send in minutes</h3>
+        <p>Upload a PDF, add signers in order or in parallel, place fields and send. Every agreement is tracked from one list.</p>
+        <div class="cell-media"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="assets/screens/agreements-light.webp"><img src="assets/screens/agreements-light.png" width="1280" height="800" alt="The Agreements list with drafts, sent, completed, declined and voided envelopes, each with its status." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="assets/screens/agreements-dark.webp"><img src="assets/screens/agreements-dark.png" width="1280" height="800" alt="The Agreements list with drafts, sent, completed, declined and voided envelopes, each with its status." loading="lazy" decoding="async"></picture></span></div>
+      </article>
+      <article class="cell c-phone reveal reveal-d1">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg></span>
+        <h3 id="sign-on-any-phone">Sign on any phone</h3>
+        <p>Access code, consent, a guide through every required field, and a signature typed, drawn or uploaded. Designed for WCAG 2.2 AA.</p>
+        <div class="cell-media"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="assets/screens/adopt-phone-light.webp"><img src="assets/screens/adopt-phone-light.png" width="600" height="1298" alt="The signing page on a phone: the adopt-your-signature panel with the typed name shown in two script styles." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="assets/screens/adopt-phone-dark.webp"><img src="assets/screens/adopt-phone-dark.png" width="600" height="1298" alt="The signing page on a phone: the adopt-your-signature panel with the typed name shown in two script styles." loading="lazy" decoding="async"></picture></span></div>
+      </article>
+      <article class="cell c-verify reveal">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <h3 id="verify-without-us">Verify without us</h3>
+        <p>Drop a sealed PDF on the verify page. The check runs in your browser in WebAssembly, and the file is never uploaded.</p>
+        <div class="cell-media"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="assets/screens/verify-light.webp"><img src="assets/screens/verify-light.png" width="1280" height="800" alt="The verify page reporting &quot;Signed and unchanged&quot;: one valid approval signature with its timestamp, and the later revision classified as allowed validation data." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="assets/screens/verify-dark.webp"><img src="assets/screens/verify-dark.png" width="1280" height="800" alt="The verify page reporting &quot;Signed and unchanged&quot;: one valid approval signature with its timestamp, and the later revision classified as allowed validation data." loading="lazy" decoding="async"></picture></span></div>
+      </article>
+      <article class="cell c-templates reveal reveal-d1">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/></svg></span>
+        <h3 id="templates-with-roles">Templates with roles</h3>
+        <p>Save documents, fields and routing once. Fill in the people when you send.</p>
+        <div class="cell-media"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="assets/screens/templates-light.webp"><img src="assets/screens/templates-light.png" width="1280" height="800" alt="The Templates list with a mutual NDA and a contractor onboarding template." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="assets/screens/templates-dark.webp"><img src="assets/screens/templates-dark.png" width="1280" height="800" alt="The Templates list with a mutual NDA and a contractor onboarding template." loading="lazy" decoding="async"></picture></span></div>
+      </article>
+      <article class="cell c-api reveal">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg></span>
+        <h3 id="an-api-you-already-know">An API you already know</h3>
+        <p>Envelopes, recipients, routing orders, fields and signed webhooks, in the shapes DocuSign and SignNow integrators expect.</p>
+<pre><code><span class="c-cmt"># Create and send an envelope in one call</span>
+curl https://sign.example.com/api/v1/envelopes \
+  -H "Authorization: Bearer $OPENSEAL_KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d @envelope.json</code></pre>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="how-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <h2 id="how-h">From upload to sealed PDF.</h2>
+      <p>Four moves for the sender and the signers. The evidence is assembled for you at every step.</p>
+    </div>
+    <ol class="steps">
+      <li class="reveal"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/></svg></span><h3 id="upload">Upload</h3><p>Bring a PDF. Scripts, actions and embedded files are stripped before anyone sees it.</p></li>
+      <li class="reveal reveal-d1"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><h3 id="place-fields">Place fields</h3><p>Signature, initials, date, text, checkbox and more, dropped on the page or found from text tags.</p></li>
+      <li class="reveal reveal-d2"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 17-2.156-1.868A.5.5 0 0 0 18 15.5v.5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1c0-2.545-3.991-3.97-8.5-4a1 1 0 0 0 0 5c4.153 0 4.745-11.295 5.708-13.5a2.5 2.5 0 1 1 3.31 3.284"/><path d="M3 21h18"/></svg></span><h3 id="sign">Sign</h3><p>Each signer is invited in turn, authenticates, consents and signs on any device.</p></li>
+      <li class="reveal reveal-d3"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-6 0c0 2 1 2 1 3.5V13"/><path d="M20 15.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1z"/><path d="M5 22h14"/></svg></span><h3 id="seal">Seal</h3><p>A PAdES seal with a trusted timestamp, a certificate of completion and the audit trail inside the PDF.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="section section-alt" aria-labelledby="evidence-h">
+  <div class="wrap split">
+    <div class="reveal">
+      <span class="eyebrow"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>Evidence first</span>
+      <div class="sec-head">
+        <h2 id="evidence-h">Proof that outlives the platform.</h2>
+        <p>A completed agreement shows which document every party saw, who signed it, when and how. Anyone can check that for decades, with no account and no server.</p>
+      </div>
+      <ul class="facts">
+        <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-6 0c0 2 1 2 1 3.5V13"/><path d="M20 15.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1z"/><path d="M5 22h14"/></svg></span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation and archive renewal are one setting away.</span></li>
+        <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span><strong>Hash-chained audit trail</strong><span>Every event is canonical JSON (RFC 8785) linked by SHA-256 to the one before it. Deleting, inserting, reordering or editing any event is detected.</span></li>
+        <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m16 9-5.5 5.5L8 12"/></svg></span><strong>Checked by independent validators</strong><span>Our verifier, pyHanko and EU DSS must agree on every sealed and tampered fixture; all 417 admissible PDFs of a 422-file real-world corpus pass all three.</span></li>
+        <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg></span><strong>Keys in your HSM</strong><span>Seals are made by keyd, a separate daemon that holds the key behind PKCS#11 and signs digests, never documents. Cloud KMS backends are planned.</span></li>
+        <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg></span><strong>Every upload treated as hostile</strong><span>A bounded PDF reader, fuzzed for 24 hours per entry point, rewrites the file without active content before it is signed.</span></li>
+      </ul>
+    </div>
+    <div class="cert-stack reveal reveal-d1">
+      <div class="frame"><span class="shot"><picture class="shot__any"><source type="image/webp" srcset="assets/screens/certificate-light.webp"><img src="assets/screens/certificate-light.png" width="900" height="938" alt="Page one of a certificate of completion: envelope summary, document hashes, and the first signer&#x27;s events with authentication, IP address, location, times and drawn signature." loading="lazy" decoding="async"></picture></span></div>
+      <p class="chain-chip"><b><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>audit-trail.json embedded</b><span>Chain head <code>sha256:205ae758…fd01</code></span></p>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="compare-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <h2 id="compare-h">How it compares.</h2>
+      <p>From each product's public documentation. Where OpenSeal's answer is still on the roadmap, the table says so.</p>
+    </div>
+    <div class="table-scroll reveal" tabindex="0" role="region" aria-labelledby="compare-h">
+      <table class="compare">
+        <thead><tr><th scope="col">&nbsp;<span class="sr-only">Question</span></th><th scope="col">OpenSeal</th><th scope="col">DocuSign</th><th scope="col">SignNow</th><th scope="col">AGPL projects<br><span class="muted">DocuSeal, Documenso, OpenSign</span></th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Licence</th><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>Apache-2.0</span></td><td>Proprietary service</td><td>Proprietary service</td><td>AGPL-3.0</td></tr>
+          <tr><th scope="row">Run it on your own servers</th><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>Yes, Docker Compose today</span></td><td><span class="mark no"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>No, vendor cloud</span></td><td><span class="mark no"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>No, vendor cloud</span></td><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>Yes</span></td></tr>
+          <tr><th scope="row">Embed in a closed-source product</th><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>Yes, no copyleft</span></td><td>Through their paid API</td><td>Through their paid API</td><td><span class="mark part"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>AGPL terms apply; some embedding is paid</span></td></tr>
+          <tr><th scope="row">Bulk send, conditional fields, SSO</th><td><span class="mark part"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>Open core, no tiers (planned)</span></td><td>Higher plans</td><td>Higher plans</td><td>Mostly paid editions</td></tr>
+          <tr><th scope="row">Verify a completed PDF offline</th><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>In-browser verifier and CLI</span></td><td>In a PDF reader</td><td>Not documented</td><td>Documenso: no verifier; DocuSeal: basic</td></tr>
+          <tr><th scope="row">Independent validators in CI</th><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>pyHanko and EU DSS</span></td><td>Not published</td><td>Not published</td><td>Not published</td></tr>
+          <tr><th scope="row">Long-term validation (B-LT, B-LTA)</th><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>Built; B-T is the default</span></td><td>Not documented</td><td>Not documented</td><td>Documenso: B-B to B-LTA; others limited</td></tr>
+          <tr><th scope="row">Signing key custody</th><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>Your HSM via PKCS#11</span></td><td>Vendor-managed</td><td>Vendor-managed</td><td>Mostly a .p12 file</td></tr>
+          <tr><th scope="row">Audit evidence</th><td><span class="mark yes"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg>Hash-chained trail inside the PDF, plus a certificate</span></td><td>Certificate of completion</td><td>Audit trail report</td><td>Audit log and certificate pages</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Compiled from public documentation in November 2026; vendors change their products and plans. "Planned" rows are open work on the <a href="roadmap.html">roadmap</a>. OpenSeal is designed to support e-signature laws; it makes no legal or certification claim.</p>
+  </div>
+</section>
+
+<section class="section section-alt" aria-labelledby="selfhost-h">
+  <div class="wrap split">
+    <div class="reveal">
+      <div class="sec-head">
+        <h2 id="selfhost-h">Your servers, your keys, your data.</h2>
+        <p>One command builds and starts the whole stack on a machine with Docker. Nothing calls home.</p>
+      </div>
+      <ul class="services">
+        <li><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg><span><b>server</b>: the API, the signing ceremony and the web app</span></li>
+        <li><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg><span><b>worker</b>: email, reminders, sealing and webhooks</span></li>
+        <li><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg><span><b>keyd</b>: the seal key behind PKCS#11, over mutual TLS</span></li>
+        <li><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg><span><b>PostgreSQL</b>: row-level security per account</span></li>
+        <li><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><polyline points="3.29 7 12 12 20.71 7"/><path d="m7.5 4.27 9 5.15"/></svg><span><b>S3-compatible store</b>: write-once documents</span></li>
+        <li><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span><b>Timestamp authority</b>: a development TSA, or yours</span></li>
+      </ul>
+      <p class="cta-row"><a class="btn btn-secondary" href="docs/self-hosting.html">Self-hosting guide<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span></a></p>
+    </div>
+    <div class="terminal reveal reveal-d1">
+<pre><code><span class="c-cmt"># Build and start everything</span>
+git clone https://github.com/CasualOffice/openseal
+cd openseal
+docker compose up -d --build --wait
+
+<span class="c-cmt"># Create the first account and administrator</span>
+docker compose exec \
+  -e OPENSEAL_ADMIN_PASSWORD='a long passphrase' \
+  server casual-sign-server bootstrap \
+  "Acme" admin@acme.example "Ada Admin"
+
+<span class="c-cmt"># Web app  http://localhost:8080</span>
+<span class="c-cmt"># Mail     http://localhost:8025</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="oss-h">
+  <div class="wrap os-band">
+    <div class="reveal">
+      <span class="eyebrow"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762"/></svg>Open source</span>
+      <div class="sec-head">
+        <h2 id="oss-h">Apache-2.0. Commercial use welcome.</h2>
+        <p>Every serious open-source e-signature project is AGPL, which most companies cannot ship inside their products. OpenSeal can go anywhere.</p>
+      </div>
+      <ul class="os-points">
+        <li><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg><span>Use it in SaaS, on-premises, desktop and mobile products. No royalties and no separate commercial licence.</span></li>
+        <li><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg><span>Fork it, rename it, sell what you build. Keep the LICENSE and NOTICE when you redistribute it.</span></li>
+        <li><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg><span>OpenSeal never adds its name to your application or to the PDFs it produces.</span></li>
+      </ul>
+    </div>
+    <div class="badge-card reveal reveal-d1">
+      <a class="powered" href="https://github.com/CasualOffice/openseal"><img class="logo-light" src="assets/logo.svg" alt="" width="84" height="16" loading="lazy"><img class="logo-dark" src="assets/logo-dark.svg" alt="" width="84" height="16" loading="lazy"><span>Powered by OpenSeal</span></a>
+      <p class="muted">A credit like this is appreciated, never required.</p>
+      <a class="btn btn-secondary btn-sm" href="brand.html">Logos and snippets</a>
+    </div>
+  </div>
+</section>
+
+<section class="section section-alt" aria-labelledby="faq-h">
+  <div class="wrap faq-grid">
+    <div class="sec-head reveal">
+      <h2 id="faq-h">Questions people ask.</h2>
+      <p>More in the <a href="docs/faq.html">documentation FAQ</a>.</p>
+    </div>
+    <div class="faq reveal reveal-d1">
+      <details><summary>Can I use it for real agreements today?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>Not yet. OpenSeal is pre-alpha: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what is left for Release 1.</p></div></details>
+      <details><summary>Are the signatures legally binding?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. Whether a given signature is valid depends on your deployment, its configuration, the jurisdiction and the transaction. Nothing here is legal advice.</p></div></details>
+      <details><summary>How do I check a document without your servers?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>Open the verify page from any OpenSeal install, or run it locally; the check runs in your browser and the file stays on your machine. The seal is standard PAdES, so independent tools such as pyHanko and EU DSS validate it too.</p></div></details>
+      <details><summary>Can I build a commercial product on it?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>Yes. Apache-2.0 allows commercial and proprietary use, embedding, hosting and resale. When you redistribute it, keep the LICENSE and the NOTICE file. See <a href="brand.html">brand and attribution</a>.</p></div></details>
+      <details><summary>Does it have an API and webhooks?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>Yes: a REST API under <code>/api/v1</code> with API keys and OAuth client credentials, idempotency keys, ETags, and webhooks signed with the Standard Webhooks scheme. Read the <a href="docs/api.html">API reference</a>.</p></div></details>
+      <details><summary>Where are the signing keys?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>In a separate service, keyd, which talks PKCS#11 to your HSM (SoftHSM in the development stack) and signs digests only. File keys are refused outside development.</p></div></details>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="closing-h">
+  <div class="wrap closing reveal">
+    <h2 id="closing-h">Run it on your machine in one command.</h2>
+    <p class="lede">Docker Compose brings up the server, the worker, the key service, the database, storage, a mail catcher and a timestamp authority.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="docs/getting-started.html">Get started with Docker<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span></a>
+      <a class="btn btn-secondary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span></a>
+    </div>
+  </div>
+</section>
+
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="index.html#features">Features</a></li><li><a href="roadmap.html">Roadmap</a></li><li><a href="download.html">Download and deploy</a></li><li><a href="changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="docs/getting-started.html">Getting started</a></li><li><a href="docs/api.html">API reference</a></li><li><a href="docs/webhooks.html">Webhooks</a></li><li><a href="docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="security.html">Security policy</a></li><li><a href="brand.html">Brand and attribution</a></li><li><a href="docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>
