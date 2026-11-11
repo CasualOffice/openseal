@@ -3,7 +3,8 @@
 **Every upload is hostile, every party is a potential adversary of the record, and the operator is trusted only as far
 as the evidence can be checked without them.** Every threat has a control and a named test. A limit without a test seen
 to fail is not a control. Status: **Planned** (where it lands), **Partial**, **Tested** (test seen red without the fix).
-The PDF, field and cryptographic rows built in Phase 1 are Tested or Partial; server, ceremony and abuse rows are Planned.
+The PDF, field and cryptographic rows built in Phase 1 are Tested or Partial; the account, ceremony and webhook rows
+built in Phase 2 are tested with each control seen red (§Phase 2 threat tests); abuse rows are Planned.
 
 ## Adversaries
 
@@ -58,18 +59,16 @@ The PDF, field and cryptographic rows built in Phase 1 are Tested or Partial; se
 
 | ID | Threat | Control | Status |
 | --- | --- | --- | --- |
-| SEC-A01 | Invitation link forwarded, leaked or guessed | 256-bit random tokens stored hashed; one recipient; expiring; revocable; optional extra authentication; first use binds a browser session; links in reminders are new tokens | Planned 2C |
-| SEC-A02 | OTP brute force | 6+ digits, 5 attempts, lockout with sender notification, per-token and per-IP rate limits, OTP valid 10 minutes | Planned slice 5 |
-| SEC-A03 | Access code brute force | Same as A02; codes stored with Argon2id | Planned slice 5 |
-| SEC-A04 | Cross-tenant access (IDOR) | Tenancy-scoped repository; RLS; generated cross-tenant tests for every endpoint | Partial: repository scoping and RLS built and tested in stage 2B (every repository method refused cross-tenant with RLS on and off; RLS alone isolates every tenant table; both seen red). The per-endpoint generated tests come with the server (`T-2C`) |
-| SEC-A05 | Privilege escalation in an account | Permission checks per endpoint from the OpenAPI document's `x-permission`; deny-by-default; tests per profile | Planned 2C |
-| SEC-A06 | Session theft; CSRF; clickjacking | Secure cookies; CSRF tokens; `frame-ancestors` per account; CSP strict with nonces | Planned 2C |
-| SEC-A07 | XSS through names, messages, field values, filenames | `textContent` only; no HTML from users anywhere, including emails (plain text plus a fixed template with escaped values) | Planned slice 1 |
-| SEC-A08 | Embedded view token misuse | Single-use, 5-minute URLs bound to recipient and host client; `auth.asserted_by_host` recorded as such | Planned slice 9 |
-| SEC-A09 | Credential stuffing on staff login | SSO preferred; WebAuthn and TOTP; rate limits; breached-password check (k-anonymity, optional) | Planned 2C |
-| SEC-A10 | API key leakage | Prefixed keys for secret scanning, hashed at rest, scoped, expiring, last-used shown | Planned 2C |
-
-
+| SEC-A01 | Invitation link forwarded, leaked or guessed | 256-bit random tokens stored hashed; one recipient; expiring; revocable; optional extra authentication; first use binds a browser session; links in reminders are new tokens | Partial, tested and seen red 2026-11-12 (`P2-THREATS`, §Phase 2 threat tests): hashed at rest, one recipient, expiring, revoked on void, correction, reassignment and lock, bound to the first browser, limited per link and per address. Not checked: reminder links being new tokens; optional extra authentication beyond the access code (slice 5) |
+| SEC-A02 | OTP brute force | 6+ digits, 5 attempts, lockout with sender notification, per-token and per-IP rate limits, OTP valid 10 minutes | Planned slice 5 (one-time codes not built, `CS-API-0014`); the per-link and per-address ceremony limits it relies on are tested and seen red (A01) |
+| SEC-A03 | Access code brute force | Same as A02; codes stored with Argon2id | Partial, tested and seen red 2026-11-12: Argon2id at rest; the account's attempts (default 3) lock the recipient and revoke the link, so the right code then fails; each failure is an audit event. Not tested: the sender notification effect |
+| SEC-A04 | Cross-tenant access (IDOR) | Tenancy-scoped repository; RLS; generated cross-tenant tests for every endpoint | Built and tested, seen red 2026-11-12: repository scoping and RLS (stage 2B); every id-bearing operation of `api/openapi.yaml` (53 of 89; the 17 ceremony operations are reached by token, A01) refused across accounts, generated, with RLS on and off; one repository query unscoped turned the RLS-off run red (200 with the other account's webhook) while RLS alone held |
+| SEC-A05 | Privilege escalation in an account | Permission checks per endpoint from the OpenAPI document's `x-permission`; deny-by-default; tests per profile | Built and tested, seen red 2026-11-12: one guard per route from the table the OpenAPI document is checked against; a generated test calls every scoped route with a key holding every scope but its own (`403 CS-AUTH-0006`); profile tests (a sender cannot administer or mint wider keys) |
+| SEC-A06 | Session theft; CSRF; clickjacking | Secure cookies; CSRF tokens; `frame-ancestors` per account; CSP strict with nonces | Partial, tested and seen red 2026-11-12: `HttpOnly`, `Secure`, `SameSite=Lax` staff cookie and `SameSite=Strict` ceremony cookie; CSRF token on every changing session request; CSP `default-src 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`, HSTS, `no-store` on every kind of response; JSON bodies over 1 MiB refused. Not built: per-account `frame-ancestors` for embedding (slice 9) |
+| SEC-A07 | XSS through names, messages, field values, filenames | `textContent` only; no HTML from users anywhere, including emails (plain text plus a fixed template with escaped values) | Partial, **no test**: the web app has no `innerHTML`, `insertAdjacentHTML` or `document.write` outside vendored pdf.js (searched 2026-11-12, not a test); emails are plain text from a fixed template with B-encoded headers (SEC-M02). A browser test that renders hostile names, subjects and filenames is still to write |
+| SEC-A08 | Embedded view token misuse | Single-use, 5-minute URLs bound to recipient and host client; `auth.asserted_by_host` recorded as such | Partial, tested and seen red 2026-11-12: the view URL lives 5 minutes, only the creating API client may ask (`CS-AUTH-0010`), it binds to the first browser that opens it (A01); `auth.asserted_by_host` recorded. Not built: `prepare` and `correct` views (slice 9) |
+| SEC-A09 | Credential stuffing on staff login | SSO preferred; WebAuthn and TOTP; rate limits; breached-password check (k-anonymity, optional) | Partial, tested and seen red 2026-11-12: sign-in limited per login name and per client address, API calls per principal; an unknown email costs a wrong password's time (not tested). Not built: SSO, WebAuthn, TOTP, breached-password check |
+| SEC-A10 | API key leakage | Prefixed keys for secret scanning, hashed at rest, scoped, expiring, last-used shown | Built and tested, seen red 2026-11-12: `osk_` prefix, stored only as SHA-256 (a search of every table for the clear key, client secret, link and ceremony cookie), scoped (A05), expiring, revocable; access tokens expire and die with their client. Not checked: last-used shown |
 ## Field input (`SEC-F*`)
 
 | ID | Threat | Control | Status |
@@ -82,11 +81,58 @@ The PDF, field and cryptographic rows built in Phase 1 are Tested or Partial; se
 
 | ID | Threat | Control | Status |
 | --- | --- | --- | --- |
-| SEC-W01 | SSRF through webhook URLs, URL import, IdP metadata URLs | Public HTTPS only; refuse private, loopback, link-local, metadata ranges at registration and after DNS resolution at connect; no redirects to such ranges; egress proxy option | Planned 2D |
-| SEC-W02 | Webhook spoofing to integrators | Standard Webhooks HMAC with timestamps; secret rotation | Planned slice 8 |
+| SEC-W01 | SSRF through webhook URLs, URL import, IdP metadata URLs | Public HTTPS only; refuse private, loopback, link-local, metadata ranges at registration and after DNS resolution at connect; no redirects to such ranges; egress proxy option | Partial, tested and seen red 2026-11-12: webhook URLs checked at registration and every address checked again at connect (worker integration test red with the policy removed). Not built: URL import, IdP metadata URLs, egress proxy option |
+| SEC-W02 | Webhook spoofing to integrators | Standard Webhooks HMAC with timestamps; secret rotation | Partial, tested and seen red 2026-11-12: Standard Webhooks HMAC over `id.timestamp.body`, checked against the specification's example; the header on every delivery. Not tested: several secrets during rotation |
 | SEC-L01 | Signing links used for spam or resource exhaustion | Email verification by default; per-link and per-IP limits; usage caps; CAPTCHA option | Planned slice 11 |
 | SEC-M01 | Platform used for phishing (our domain sending lures) | Sender verification for new accounts; outbound rate limits; content of emails fixed by template; abuse reporting link in every email; DKIM/SPF/DMARC | Planned 2D |
 | SEC-M02 | Email header injection | Names and subjects validated; no CR/LF; library-built messages | Planned 2D |
+
+## Phase 2 threat tests (`SEC-A*`, `SEC-W*`; `P2-THREATS`)
+
+docs/06 Phase 2 exit item 4 names `SEC-A*`, `SEC-T*` and `SEC-W*`; this document has no `SEC-T*` rows. Each control
+below was removed or weakened once on 2026-11-12, its test run against PostgreSQL 17 and seen to fail with the message
+shown, then restored. Server tests are in `server/casual-sign-server/tests/`, worker tests in
+`server/casual-sign-worker/`.
+
+| Threat | Control removed | Test | Seen red |
+| --- | --- | --- | --- |
+| A01 | Per-link ceremony limit raised 1000× | `threats.rs::ceremony_calls_are_limited_per_link_and_per_client_address` | `left: (401, "CS-AUTH-0002")` `right: (429, "CS-API-0003")` |
+| A01 | Per-address ceremony limit raised 1000× | same | `an address guessing links is limited (0)` |
+| A01 | Browser binding (`CS-AUTH-0009`) skipped | `contract.rs::every_operation_and_a_two_signer_envelope_to_its_seal_job` | `left: (200, "")` `right: (403, "CS-AUTH-0009")` |
+| A01 | `revoked_at IS NULL` dropped from the token resolver | `threats.rs::a_voided_envelopes_link_opens_nothing`; `correct.rs::a_sent_envelope_is_corrected_and_changed_links_are_reissued` | `left: (200, "")` `right: (401, "CS-AUTH-0002")`; `the old link is revoked` |
+| A01, A08 | `expires_at > now` dropped from the token resolver | `auth.rs::only_the_creating_client_opens_an_embedded_signing_view` | `left: (200, "")` `right: (401, "CS-AUTH-0002")` |
+| A01, A10 | An API key written in clear (as the client's name) | `threats.rs::keys_secrets_and_signing_links_are_stored_only_as_hashes` | `API key in clear in api_clients` `left: 1` `right: 0` |
+| A03 | Engine lock threshold made unreachable | `threats.rs::an_access_code_locks_after_the_accounts_attempts_even_for_the_right_code` | `left: (200, "")` `right: (401, "CS-AUTH-0002")` |
+| A04 | `account_id = $1` dropped from the webhook `get` query | `isolation.rs::another_accounts_ids_are_not_found_without_rls` (the RLS-on run stayed green) | `GET /api/v1/webhooks/{id} as another account (Off)` `left: (200, "")` |
+| A05 | Route guard checks no scope | `threats.rs::every_scoped_route_refuses_a_credential_lacking_exactly_its_scope`; `auth.rs::wrong_accounts_revoked_keys_expired_tokens_and_missing_csrf_are_refused` | `PATCH /api/v1/accounts/me needs admin:account` `left: (422, …)`; `left: (200, "")` `right: (403, "CS-AUTH-0006")` |
+| A06 | CSRF check skipped | `auth.rs::wrong_accounts_…`; `threats.rs::every_kind_of_response_carries_the_security_headers_and_bodies_are_bounded` | `left: (201, "")` `right: (403, "CS-AUTH-0008")` |
+| A06 | `X-Frame-Options` not set | `threats.rs::every_kind_of_response_…`; `auth.rs::every_guarded_route_refuses_a_request_without_credentials` | `no x-frame-options` |
+| A06 | `Cache-Control: no-store` not set | `threats.rs::every_kind_of_response_…` | `200 JSON: no cache-control` |
+| A06 | `Secure`, then `HttpOnly`, dropped from the session cookie | `auth.rs::wrong_accounts_…` | the cookie printed without the flag |
+| A06 | JSON body limit raised to 4 MiB | `threats.rs::every_kind_of_response_…` | `left: (400, "CS-API-0001")` `right: (413, "CS-API-0006")` |
+| A08 | Embedding owner check skipped | `auth.rs::only_the_creating_client_opens_an_embedded_signing_view` | `left: (201, "")` `right: (403, "CS-AUTH-0010")` |
+| A08 | View lifetime 300 s → 3,600 s | same | `left: (200, "")` `right: (401, "CS-AUTH-0002")` |
+| A09 | Per-name sign-in limit raised 1000× | `auth.rs::rate_limits_answer_429_with_retry_after` | `left: (200, "")` `right: (429, "CS-API-0003")` |
+| A09 | Per-address sign-in limit raised 1000× | `threats.rs::sign_in_attempts_are_limited_per_client_address_across_names` | `left: (401, "CS-AUTH-0007")` `right: (429, "CS-API-0003")` |
+| A09 | Per-principal API limit raised 1000× | `auth.rs::rate_limits_answer_429_with_retry_after` | `left: (200, "")` `right: (429, "CS-API-0003")` |
+| A10 | `revoked_at IS NULL` dropped from the key resolver | `auth.rs::wrong_accounts_…` | `left: (200, "")` `right: (401, "CS-AUTH-0001")` |
+| A10 | Expiry dropped from the key resolver | same | `expired key` `left: (200, "")` |
+| A10 | Access-token `exp` not checked | same | `left: (200, "")` `right: (401, "CS-AUTH-0002")` |
+| A10 | Revoked OAuth client's tokens accepted | same | `revoked client's token` `left: (200, "")` |
+| W01 | Literal forbidden address accepted at registration | `casual-sign-server` lib `api::webhooks::tests::only_public_https_urls_register` | `called Result::unwrap_err() on an Ok value` |
+| W01 | Worker address policy allows everything (both the pre-request and the connect-time check) | `flow.rs::a_webhook_to_a_private_address_is_refused` | `[("deliver_webhook", Done), …]` |
+| W02 | Timestamp left out of the HMAC input | worker lib `webhook::tests::signature_matches_the_standard_webhooks_example` | `left: "v1,qpNd…"` `right: "v1,g0hM…"` |
+| W02 | Signature header renamed | `flow.rs::two_signers_reach_completed_with_a_verified_seal` | `no entry found for key` |
+
+**Timing-safe comparisons.** Session CSRF tokens, ceremony cookies and idempotency bodies are compared as SHA-256
+digests with `crypto::same`, which folds over all 32 bytes; API keys, client secrets and links are found by the
+digest's index lookup, never compared in clear. `same_compares_every_byte` checks the result, not the timing: no test
+measures time.
+
+**Still without a seen-red test**, so exit item 4 is not met: A02 (one-time codes, slice 5), A07 (a browser test of
+hostile names, subjects and filenames), and the unbuilt or untested parts named in the rows above (per-account
+`frame-ancestors`, WebAuthn and TOTP, breached-password check, reminder links as new tokens, the lock's sender
+notice, several webhook secrets, URL import and IdP metadata).
 
 ## Data classification (`SEC-D*`)
 
