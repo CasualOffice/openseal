@@ -54,7 +54,11 @@ jobs:
         with:
           path: _site
 
+  # Publishing makes the site public, so it waits for the owner: enable Pages (Settings →
+  # Pages → Source: GitHub Actions) and set the repository variable PAGES_ENABLED=true.
+  # Until then the site still builds on every push and this job is skipped, not failed.
   deploy:
+    if: vars.PAGES_ENABLED == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:
