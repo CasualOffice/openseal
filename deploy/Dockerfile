@@ -38,8 +38,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # server's Verify page runs the same verifier the parity job checks.
 FROM ${RUST_IMAGE} AS wasm
 RUN rustup target add wasm32-unknown-unknown
+# wasm-bindgen's CLI built here at the version Cargo.lock pins (wasm-pack uses it from
+# PATH): the prebuilt binary wasm-pack would download needs a newer glibc than Debian 12.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo install wasm-pack --version 0.14.0 --locked
+    cargo install wasm-pack --version 0.14.0 --locked \
+ && cargo install wasm-bindgen-cli --version 0.2.130 --locked
 WORKDIR /src
 COPY . .
 ENV CARGO_TERM_COLOR=never CARGO_INCREMENTAL=0

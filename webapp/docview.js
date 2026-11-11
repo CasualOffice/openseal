@@ -216,9 +216,13 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
   function step(dir) { setZoom(stepScale(view.scale, dir)); }
   function percent() { return Math.round((view.scale / ACTUAL) * 100); }
 
+  /// After a resize: refit when the fit's scale changed. Nothing moves otherwise, so a
+  /// scroll in progress (a thumbnail's smooth scroll) is never cut short.
   function relayout() {
-    if (!view.els.length) return;
-    if (typeof view.mode === "number") return;
+    if (!view.els.length || typeof view.mode === "number") return;
+    const [mw, mh] = maxSize();
+    const next = scaleFor(view.mode, mw, mh, scroller.clientWidth - padLeft, scroller.clientHeight, remPx(1.5));
+    if (Math.abs(next - view.scale) < 1e-4) return;
     setZoom(view.mode);
   }
 
