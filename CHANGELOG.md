@@ -2,6 +2,34 @@
 
 All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.1] - pre-release
+
+The first pre-release of OpenSeal: the common send-and-sign case works end to end on one machine. **Not for production
+agreements yet:** the bundled stack uses a generated certificate authority, a software HSM and a development timestamp
+authority, so seals validate only against that CA.
+
+### What works
+- Upload a PDF, add signers in order or in parallel and carbon copies, place signature, initials, date, name, email,
+  text, checkbox, company, title, number, radio, dropdown, attachment and note fields (with field detection), and send.
+- Signing on desktop and phone: access code, consent, guided Start/Next, draw, type or upload a signature, review,
+  finish, decline, finish later, reassign when allowed; optional signer location (device or IP approximation).
+- Every completed envelope is sealed as PAdES (B-T by default) and verified before it completes; a certificate of
+  completion with the hash-chained audit trail embedded. Outputs are checked by pyHanko and EU DSS in CI.
+- Agreements, envelope detail with audit trail, Correct, resend, void, downloads in progress and when complete,
+  templates, admin (users, invitations, API clients), reports, and Verify in the browser.
+- REST API (`/api/v1`, OpenAPI document) with API keys and OAuth client credentials; signed webhooks.
+- Engine: bounded PDF reader (417 of 422 real-world PDFs admitted, the rest refused with codes), incremental writer,
+  print-to-new for certified PDFs, dynamic XFA forms laid out to static pages, 24 h of fuzzing per target.
+- One-command deployment with Docker Compose; images on GitHub Container Registry.
+
+### Not yet
+SSO (OIDC, SAML), WebAuthn, SMS authentication, bulk send, payments, B-LTA renewal jobs, production deployment (Helm,
+high availability, backups), and the slices after Release 1 on the [roadmap](https://casualoffice.github.io/openseal/roadmap.html).
+
+### Security
+Report vulnerabilities as described in `SECURITY.md`. This is pre-release software; do not use it for agreements you
+need to rely on.
+
 ## 2026-11-10
 
 ### Phase 1 opened
