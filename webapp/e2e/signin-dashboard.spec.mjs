@@ -74,7 +74,7 @@ test("resend and void act on a sent envelope", async ({ page }) => {
   test.skip(REAL, "needs a sent envelope seeded on the server");
   await signIn(page);
   await page.getByRole("link", { name: "Vendor services agreement" }).click();
-  await page.getByRole("button", { name: "Resend" }).click();
+  await page.getByRole("button", { name: "Resend", exact: true }).click();
   await expect(page.getByText("Resent to everyone who has not finished.")).toBeVisible();
   await page.getByRole("button", { name: "Void", exact: true }).click();
   const dlg = page.getByRole("dialog", { name: "Void this envelope?" });

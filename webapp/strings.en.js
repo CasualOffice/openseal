@@ -210,6 +210,7 @@ export const EN = {
   "event.signature_adopted": "Signature adopted",
   "event.field_filled": "Field filled",
   "event.notification_resent": "Invitation resent",
+  "event.envelope_corrected": "Envelope corrected",
 
   "form.required": "This is required.",
 

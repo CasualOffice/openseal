@@ -78,6 +78,17 @@
   .os-filters .os-select { min-width: 0; width: 100%; }
 }
 
+/* ---- Envelope details (E-02 to E-05) ----------------------------------------------- */
+.os-detail__line { flex-basis: 100%; margin: 0; }
+.os-timeline__who > .os-btn { flex: none; }
+.os-timeline__who > div { flex: 1 1 12rem; }
+.os-chainhead { overflow-wrap: anywhere; }
+.os-audit td { overflow-wrap: anywhere; }
+@media (max-width: 37.5em) {
+  .os-audit.os-table--cards tr { padding: var(--os-s2) 0; }
+  .os-audit .os-audit__event { font-weight: 600; }
+}
+
 /* ---- E-01 Correct: one block per recipient ---------------------------------------- */
 .os-correct { list-style: none; margin: var(--os-s3) 0 0; padding: 0; display: grid; gap: var(--os-s3); }
 .os-correct__item { border: 1px solid var(--os-border); border-left: 0.25rem solid var(--os-rc, var(--os-r1)); border-radius: var(--os-radius); padding: var(--os-s3) var(--os-s4); background: var(--os-raised); }
