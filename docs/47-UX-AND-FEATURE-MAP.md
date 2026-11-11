@@ -149,7 +149,68 @@ colour falls under 4.5:1 or a control edge, focus ring or recipient colour under
 
 ### Not yet
 
-Home counters, Templates, Reports, Admin, Verify; a field list view as an alternative to the page; fields enlarging
-on focus on phones; pinch zoom; page thumbnails; auto-place by text; preview as recipient; the flattened review step
-of ADR-020 (the review dialog lists values; it does not show engine-flattened pages yet); two of the four script
+Auto-place by text; preview as recipient; the engine-flattened review pages (`WEB-05` proposed: a server endpoint
+`GET /s/{token}/preview` returning casual-sign-flatten's output; today the review draws the delivered PDF with the
+values in place); palette types the model has but the ceremony cannot yet fill (company, title, radio group,
+dropdown, attachment); "Sign a document myself" in the Start menu (needs an envelope where the sender signs and a
+self-signing view); a Download button on the signer's completion page (no signer endpoint for the sealed PDF);
+template documents and fields on the server (docs/40 slice 3; the client calls the designed endpoints and falls back
+to roles only); `DELETE /templates/{id}` (not drawn); a recipient filter for "waiting for me"; the browser verifier
+reporting the signer's certificate subject and recomputing the embedded audit chain's hashes; two of the four script
 fonts; languages beyond English.
+
+## As built (WEB-02 and WEB-03, 2026-11-11)
+
+### Side by side with the reference products
+
+Clean room: layout patterns, flows and component behaviour only, from [48](48-DOCUSIGN-STUDY.md) (DocuSign, public
+sources) and SignNow's public help centre (dashboard overview, add and edit fields, send for signature, signing
+process guide, templates; read 2026-11-11). DocuSign's own help pages could not be fetched in this session, so its
+column rests on docs/48. No logo, name, colour, illustration or text of theirs is used.
+
+| Screen | DocuSign | SignNow | OpenSeal |
+| --- | --- | --- | --- |
+| Shell | Top bar: logo, Home, Agreements, Templates, Reports, Admin; Start button; search; help; account | Left sidebar of folders; Upload or Create; search at top; notifications bell | DocuSign's top bar: logo, Home, Agreements, Templates, Reports, Admin (admins only); **Start** menu (send, use a template, verify); search; shortcuts; theme; avatar menu. Drawer below 960 px |
+| Home | Start actions; counters (Action Required, Waiting for Others, Expiring Soon, Completed); recent activity | Quick access to Waiting for Me, Waiting for Others, Completed, Drafts, Expiring Soon | Greeting; four stat cards linking to their views (action required = declined or expired, waiting, expiring within 7 days, completed); drop zone that opens the editor with the PDFs; recent envelopes; start list |
+| Agreements | Folders (Inbox, Sent, Drafts, Deleted) and quick views; list with status and last change; row actions (Correct, Void, Resend, Download, History…); search and filters | Folder tree, status/type/date filters, sort, bulk select (move, archive), row actions panel | Folder rail with counts (all, drafts; action required, waiting, completed; declined, voided, expired); dense table (select, subject with recipients, status pill, last change, row menu: open, edit, resend, void, download, certificate); bulk bar (resend, download, void); the top search filters subject and recipients |
+| Envelope | Detail with recipients and routing, history, documents | — | Summary tab (routing timeline in order, audit trail with chain head) and Documents tab (pdf.js preview with thumbnails and zoom; sealed PDF once completed); actions in the head |
+| Send | Add documents → add recipients (action, order, authentication) → message → advanced (reminders, expiry) → tag fields (left palette, recipient dropdown, right properties) → send | Upload, then a single-screen editor: left field palette, right settings panel, roles; then Invite to Sign (recipients, order, per-recipient reminders and expiry, subject and message) | Four steps with a step bar and Back/Next footer: documents (cards with first page, reorder, remove), recipients (cards with colour, order number, type, access code; Set signing order switch), fields (SignNow's editor: palette with recipient switcher on the left, page canvas with zoom and a page strip, properties on the right; tabs in the recipient's colour with a required marker; drag, click or keyboard), review and send (subject, message, reminders, expiry, location, who signs what) |
+| Templates | My templates; roles; use with people per role | Make Template from a document; Templates folder; send creates a copy | List; New template is the send flow with roles; Use: one card per role (name, email), the template's document previewed, then Send or Edit before sending; rename |
+| Signer | ERSD consent; yellow Start flag becoming Next; required fields outlined; Adopt Your Signature (style, draw, upload); Finish; Other Actions (finish later, decline…) | Welcome or consent pop-up; Guide Me through required fields; Finish and Decline at top right | Access code and consent cards; a bar with the document's name, progress, zoom, a field list and Finish; a yellow Start/Next tag in the left margin beside the next required field; adopt dialog with Style, Draw, Upload; a review step showing the pages with the values before Finish (ADR-020); phones: bottom bar with progress, Next and Finish, pinch zoom, the active field enlarged |
+| Verify | — (ours) | — | Drop or choose a PDF; optional trusted certificates; verdict banner; per-signature verdict, time, coverage, checks; changes after signing; the embedded audit trail as a timeline with its links checked; the document previewed |
+| Reports, Admin | Envelope and usage reports; eSignature Admin | — | Reports: sent, completion rate, median time to complete, by-status bars, CSV export. Admin: users (add, rename, remove) and API clients (create, secret shown once, revoke) |
+
+### Screens and calls added
+
+| Screen | Where | Calls |
+| --- | --- | --- |
+| Home | `app.html#/home` (`home.js`) | `GET /api/v1/envelopes?status=&limit=` per counter, `GET …/{id}` for expiry |
+| Agreements | `app.html#/agreements[?folder=&q=]` (`dashboard.js`) | as WEB-01, plus `GET …/{id}` per row for recipients and last change |
+| Templates | `#/templates`, `#/templates/new`, `#/templates/{id}` (`templates.js`, `prepare.js` in template mode) | `GET/POST /api/v1/templates`, `GET/PATCH /api/v1/templates/{id}`; slice-3 design `POST /templates/{id}/documents`, `GET …/documents/{doc}/content`, `POST /templates/{id}/fields` (404 or 405 today: roles kept, the editor says so); using one is a single `POST /api/v1/envelopes` (`templatemodel.js`) |
+| Reports | `#/reports` (`reports.js`, `reportmodel.js`) | `GET /api/v1/envelopes` (up to 1,000) and `GET …/{id}` for completed ones |
+| Admin | `#/admin[?tab=api]` (`admin.js`) | `GET/POST /api/v1/users`, `PATCH/DELETE /api/v1/users/{id}`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}` |
+| Verify | `verify.html` (`verify.js`, `verifyreport.js`, `trail.js`) | none: casual-sign-wasm's `verify()` in the page; `audit-trail.json` read by pdf.js |
+
+- **Calls added outside api.js** are in `api-extra.js`. **Mock mode** serves templates (with the slice-3 design;
+  `sessionStorage["openseal.mock.no-template-docs"]="1"` turns it off), users and API clients, and is remembered for the
+  tab once `?mock=1` is seen on loopback (`?mock=0` forgets). Without mock or a server on loopback the app and signing
+  page say "No OpenSeal server is running here".
+- **Verifier build**: `tools/build-webapp-wasm.sh` builds casual-sign-wasm as `tools/wasm-parity.sh` ships it and
+  copies it to `webapp/vendor/openseal-wasm/` (build output, not committed); without it Verify says so.
+- **CSP**: `verify.html` alone adds `'wasm-unsafe-eval'` to `script-src` (meta tag and `tools/serve-webapp.py`
+  header), which a browser requires to compile WebAssembly; no JavaScript eval is allowed anywhere.
+- **Components** (`webapp/ui/`, one library): buttons and icon buttons with tooltips, fields, selects, checkboxes,
+  radios, switches, tabs, menu buttons, modal, drawer, toasts, pills, cards, tables, step bar, empty states,
+  skeletons, avatars and the PDF preview; screens import from `ui/index.js`.
+- **Theme**: light by default (as the reference products); dark and system from the account menu. Tokens gained a
+  canvas colour, a medium shadow and the guide-tag colours; contrast tests cover them.
+
+### Tests added
+
+- Node: `tests/web02.test.mjs` (templates as data, verifier report, audit-trail links, zoom, mock persistence, the
+  new mock endpoints, string families).
+- Playwright: `web02.spec.mjs` (Home, Templates, Admin, Verify on real sealed fixtures, mock persistence, no-server
+  state), `visual.spec.mjs` (every screen at 1440×900 and 390×844: full-page screenshots
+  `target/e2e-screens/visual-*`; fails on horizontal overflow, overlapping controls, unstyled controls, or a blank PDF
+  canvas, by sampling pixels), `redesign-screens.spec.mjs`; the send, keyboard, ceremony, a11y and empty-state specs
+  follow the stepped flow and the review step.
