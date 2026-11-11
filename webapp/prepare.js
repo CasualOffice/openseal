@@ -566,10 +566,16 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("span", { class: "os-field__who", attrs: { "aria-hidden": "true", "data-who": initials(displayName(recipient(f.recipientKey), S.recipients.findIndex((r) => r.key === f.recipientKey))) } }),
         h("span", { class: "os-field__handle", attrs: { "aria-hidden": "true" } }));
       place(el, f);
-      el.addEventListener("focus", () => { if (S.selected !== f.key) select(f.key, false); });
-      el.addEventListener("pointerdown", (e) => startDrag(e, f, e.target.classList.contains("os-field__handle") ? "resize" : "move"));
+      el.addEventListener("focus", () => { if (S.selected !== f.key && !multi.has(f.key)) select(f.key, false); });
+      el.addEventListener("mousedown", (e) => { if (e.shiftKey) e.preventDefault(); });
+      el.addEventListener("pointerdown", (e) => {
+        if (e.shiftKey && e.button === 0) { e.preventDefault(); toggleInSelection(f.key); return; }
+        startDrag(e, f, e.target.classList.contains("os-field__handle") ? "resize" : "move");
+      });
+      el.addEventListener("keydown", (e) => { if (e.shiftKey && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleInSelection(f.key); } });
       ov.append(el);
     }
+    if (multi.size) markSelection();
   }
   /// A field box in percentages of its page: PDF points × the view's scale at any zoom,
   /// without a relayout per zoom step.
@@ -626,14 +632,30 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     window.addEventListener("pointercancel", up);
   }
 
-  function select(key, focus = true) {
-    const changed = S.selected !== key;
-    S.selected = key;
+  /// Shift+click (or Shift+Enter/Space) adds a field to the selection or takes it out
+  /// (F-03); the group then moves with the arrows and lines up from the panel.
+  const multi = new Set();
+  function markSelection() {
     for (const n of stage.querySelectorAll(".os-field")) {
-      const on = n.dataset.fkey === key;
+      const on = n.dataset.fkey === S.selected || multi.has(n.dataset.fkey);
       n.classList.toggle("is-selected", on);
       n.setAttribute("aria-pressed", String(on));
     }
+  }
+  function toggleInSelection(key) {
+    if (!multi.size && S.selected) multi.add(S.selected);
+    if (multi.has(key)) multi.delete(key); else multi.add(key);
+    if (multi.size === 1) { const [only] = multi; multi.clear(); S.selected = only; } else S.selected = multi.has(key) ? key : [...multi][0] || null;
+    markSelection();
+    renderProps();
+    say(multi.size > 1 ? t("prepare.multi-n", { n: multi.size }) : "");
+  }
+  const selection = () => (multi.size > 1 ? S.fields.filter((f) => multi.has(f.key)) : S.fields.filter((f) => f.key === S.selected));
+  function select(key, focus = true) {
+    const changed = S.selected !== key;
+    S.selected = key;
+    multi.clear();
+    markSelection();
     const f = S.fields.find((x) => x.key === key);
     if (f && focus) {
       // Smooth scroll-to-field when it is out of view; focus without the browser's jump.
@@ -691,6 +713,19 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let advancedOpen = false;
   function renderProps() {
     clear(props);
+    if (multi.size > 1) {
+      // A Shift-selected group (F-03): line it up, size it alike, space it, or delete it.
+      const b = (label, ic, how) => button(label, { icon: ic, size: "sm", onClick: () => arrange(how), attrs: { "data-testid": `arrange-${how}` } });
+      props.append(
+        h("div", { class: "os-props__head" }, h("h3", { class: "os-props__title", text: t("prepare.multi-n", { n: multi.size }) })),
+        h("p", { class: "os-muted os-small", text: t("prepare.multi-help") }),
+        h("p", { class: "os-label", text: t("prepare.align") }),
+        h("div", { class: "os-actions" }, b(t("prepare.align-left"), "arrow-right", "left"), b(t("prepare.align-top"), "chevron-down", "top"), b(t("prepare.align-right"), "chevron-left", "right"), b(t("prepare.align-bottom"), "chevron-down", "bottom")),
+        h("p", { class: "os-label", text: t("prepare.arrange") }),
+        h("div", { class: "os-actions" }, b(t("prepare.same-size"), "copy", "size"), b(t("prepare.space-evenly"), "list", "vspace")),
+        h("div", { class: "os-actions os-props__danger" }, button(t("prepare.delete-n", { n: multi.size }), { icon: "trash-2", size: "sm", variant: "danger", onClick: () => run("field.delete") })));
+      return;
+    }
     const f = S.fields.find((x) => x.key === S.selected);
     if (!f) {
       props.append(h("p", { class: "os-muted os-small", text: t("prepare.props-none") }));
@@ -1137,17 +1172,48 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
 
   // ---- Commands -----------------------------------------------------------------------------
   const sel = () => S.fields.find((f) => f.key === S.selected);
+  /// Run `fn` on every selected field (one, or the Shift-selected group), as one undo step.
   const withSel = (fn) => () => {
-    const f = sel();
+    const all = selection();
+    const f = sel() || all[0];
     if (!f) return;
     const before = snapshot();
-    fn(f);
+    for (const x of all) fn(x);
     S.undo.push(before); S.redo = []; S.dirty = true;
-    const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`);
-    if (el) { place(el, f); el.setAttribute("aria-label", fieldLabel(f)); }
+    for (const x of all) {
+      const el = stage.querySelector(`.os-field[data-fkey="${x.key}"]`);
+      if (el) { place(el, x); el.setAttribute("aria-label", fieldLabel(x)); }
+    }
     renderProps();
-    say(t("prepare.field-at", { x: Math.round(f.x), y: Math.round(f.y), w: Math.round(f.width), h: Math.round(f.height) }));
+    say(all.length > 1 ? t("prepare.multi-moved", { n: all.length }) : t("prepare.field-at", { x: Math.round(f.x), y: Math.round(f.y), w: Math.round(f.width), h: Math.round(f.height) }));
   };
+  /// Line the selected group up (F-03): edges, centres, sizes, or even spacing.
+  function arrange(how) {
+    const all = selection();
+    if (all.length < 2) return;
+    const before = snapshot();
+    const minX = Math.min(...all.map((f) => f.x));
+    const minY = Math.min(...all.map((f) => f.y));
+    const maxR = Math.max(...all.map((f) => f.x + f.width));
+    const maxB = Math.max(...all.map((f) => f.y + f.height));
+    const first = sel() || all[0];
+    if (how === "left") for (const f of all) f.x = minX;
+    if (how === "top") for (const f of all) f.y = minY;
+    if (how === "right") for (const f of all) f.x = maxR - f.width;
+    if (how === "bottom") for (const f of all) f.y = maxB - f.height;
+    if (how === "size") for (const f of all) { f.width = first.width; f.height = first.height; }
+    if (how === "vspace") {
+      const byY = [...all].sort((a, b) => a.y - b.y);
+      const total = byY.reduce((s, f) => s + f.height, 0);
+      const gap = (maxB - minY - total) / (byY.length - 1);
+      let y = minY;
+      for (const f of byY) { f.y = y; y += f.height + gap; }
+    }
+    for (const f of all) Object.assign(f, clampRect(f, pageOf(f)));
+    S.undo.push(before); S.redo = []; S.dirty = true;
+    for (const f of all) { const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`); if (el) place(el, f); }
+    say(t("prepare.arranged", { n: all.length }));
+  }
   const hasSel = () => !!sel();
   const nudgeBy = (dx, dy) => withSel((f) => Object.assign(f, nudge(f, dx, dy, pageOf(f))));
   const sizeBy = (dw, dh) => withSel((f) => Object.assign(f, resize(f, dw, dh, pageOf(f))));
@@ -1167,10 +1233,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   reg("field.delete", t("cmd.field.delete"), () => {
     const f = sel();
     if (!f) return;
-    const order = S.fields.filter((x) => x.docKey === f.docKey && x.page === f.page);
+    const gone = new Set(selection());
+    const order = S.fields.filter((x) => x.docKey === f.docKey && x.page === f.page && (x === f || !gone.has(x)));
     const next = order[order.indexOf(f) + 1] || order[order.indexOf(f) - 1];
-    change(() => { S.fields = S.fields.filter((x) => x !== f); S.selected = null; });
-    toast(t("prepare.field-deleted"), "info", { action: { label: t("cmd.edit.undo"), onClick: () => run("edit.undo") } });
+    multi.clear();
+    change(() => { S.fields = S.fields.filter((x) => !gone.has(x)); S.selected = null; });
+    toast(gone.size > 1 ? t("prepare.fields-deleted", { n: gone.size }) : t("prepare.field-deleted"), "info", { action: { label: t("cmd.edit.undo"), onClick: () => run("edit.undo") } });
     if (next) select(next.key); else stage.focus();
   });
   reg("field.duplicate", t("cmd.field.duplicate"), () => {

@@ -1007,6 +1007,9 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 .os-field__who::before { content: attr(data-who); display: block; padding: 0 0.25rem; border: 1px solid var(--rc); border-radius: 0.25rem; background: #fff; color: #111827; font-size: var(--os-fs-12); font-weight: 700; line-height: 1.4; }
 .os-field__who:not([data-who]), .os-field__who[data-who=""] { display: none; }
 .os-rcpt__err { grid-column: 1 / -1; margin: 0; }
+/* A small field (a checkbox) keeps most of itself visible under its resize handle (F-05). */
+.os-field__handle { width: min(0.75rem, 35%); height: min(0.75rem, 35%); }
+.os-props__danger { margin-top: var(--os-s4); }
 /* Review summary (R-01): the field kinds wrap under the person on narrow screens. */
 .os-summary__fields { text-align: right; }
 .os-panel--review > .os-card:first-of-type { margin-top: 0; }

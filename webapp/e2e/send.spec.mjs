@@ -131,6 +131,52 @@ test("a field dragged from the palette lands on the page where it is dropped", a
   await expect(page.getByText("Page 2, from the top-left corner.")).toBeAttached();
 });
 
+test("Shift+click selects several fields; they line up, move and delete together, and undo restores them", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
+  await addRecipient(page, 0, { name: "Gus Group", email: "gus@example.com" });
+  await page.getByTestId("wizard-next").click();
+  const sig = page.locator(".os-palette").getByRole("button", { name: "Add Signature field" });
+  await sig.click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).click();
+  const fields = page.locator(".os-field");
+  await expect(fields).toHaveCount(3);
+  // Spread them out so that lining up has something to do.
+  await fields.nth(1).click();
+  for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight");
+  await fields.nth(0).click();
+  await fields.nth(1).click({ modifiers: ["Shift"] });
+  await fields.nth(2).click({ modifiers: ["Shift"] });
+  await expect(page.getByRole("heading", { name: "3 fields selected" })).toBeVisible();
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(3);
+  const lefts = async () => Promise.all([0, 1, 2].map(async (i) => Math.round((await fields.nth(i).boundingBox()).x)));
+  const before = await lefts();
+  expect(new Set(before).size).toBeGreaterThan(1);
+  await page.getByTestId("arrange-left").click();
+  expect(new Set(await lefts()).size).toBe(1);
+  // The arrows move the group.
+  const x0 = (await lefts())[0];
+  await fields.nth(0).focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  expect(new Set(await lefts()).size).toBe(1);
+  expect((await lefts())[0]).toBeGreaterThan(x0);
+  // Undo twice: back to the spread-out positions.
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  expect(await lefts()).toEqual(before);
+  // Select all three again and delete them together; Undo in the toast brings them back.
+  await fields.nth(0).click();
+  await fields.nth(1).click({ modifiers: ["Shift"] });
+  await fields.nth(2).click({ modifiers: ["Shift"] });
+  await page.getByRole("button", { name: "Delete 3 fields" }).click();
+  await expect(fields).toHaveCount(0);
+  await page.getByTestId("toast-action").click();
+  await expect(fields).toHaveCount(3);
+});
+
 test("a draft saves itself after a pause, keeps the selection, and then leaves without asking", async ({ page }) => {
   await signIn(page);
   await page.goto(app("#/prepare"));
