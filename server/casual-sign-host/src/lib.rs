@@ -18,6 +18,7 @@
 
 pub mod apply;
 pub mod capture;
+pub mod crash;
 mod error;
 pub mod ids;
 pub mod jobs;

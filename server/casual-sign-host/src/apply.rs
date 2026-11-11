@@ -185,6 +185,8 @@ pub async fn apply_loaded(
         l.state = state.clone();
         l.revision = revision;
     }
+    // Everything is written in the caller's transaction; nothing is committed yet.
+    crate::crash::before_commit(command);
     Ok(Applied {
         replayed: false,
         events,

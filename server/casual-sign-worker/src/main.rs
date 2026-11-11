@@ -21,6 +21,7 @@
 //! | `OPENSEAL_KEYD_ALIAS` | The platform key's alias (default `platform`) |
 //! | `OPENSEAL_WORKER_DEV_KEY`, `OPENSEAL_WORKER_DEV_CHAIN` | Instead of keyd: a PEM key and its chain, development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_WEBHOOK_ALLOW` | Non-public ranges webhooks may reach anyway, comma-separated CIDRs (default none) |
+//! | `OPENSEAL_WEBHOOK_EXTRA_ROOTS` | PEM file of CAs webhook receivers may chain to besides the platform's roots (a private CA) |
 //! | `OPENSEAL_SEAL_NAME`, `OPENSEAL_SEAL_REASON` | The seal's `/Name` and `/Reason` |
 //!
 //! Webhook signing secrets are read by the reference a subscription stores, as an
@@ -224,18 +225,34 @@ async fn serve<B: BlobStore + 'static>(
     seal: SealServices,
     policy: SsrfPolicy,
 ) -> Result<(), WorkerError> {
+    let mut roots = Vec::new();
+    if var("OPENSEAL_WEBHOOK_EXTRA_ROOTS").is_some() {
+        for c in certificates(&read("OPENSEAL_WEBHOOK_EXTRA_ROOTS")?)
+            .map_err(|e| WorkerError::Pipeline { code: e.code() })?
+        {
+            roots.push(der::Encode::to_der(&c).map_err(|_| WorkerError::Config {
+                setting: "OPENSEAL_WEBHOOK_EXTRA_ROOTS",
+            })?);
+        }
+    }
     let worker = Worker::new(
         store,
         blobs,
         config,
         Some(Mailer::new(&smtp)?),
-        Sender::new(policy, &[]),
+        Sender::new(policy, &roots),
         Arc::new(EnvSecrets),
         seal,
         Arc::new(NoPayments),
         Arc::new(LogAlerts),
         Arc::new(SystemClock),
     );
+    #[cfg(feature = "crash-points")]
+    let worker = worker.with_fault_hook(Arc::new(|at, kind| {
+        // P2-CRASH: `OPENSEAL_CRASH_AT=worker:<Boundary>:<job kind>` kills the process.
+        casual_sign_host::crash::point("worker", &format!("{at:?}:{kind}"));
+        false
+    }));
     let (_stop, rx) = tokio::sync::watch::channel(false);
     casual_sign_worker::log("INFO", "started", &[]);
     worker.run(rx).await;
@@ -243,6 +260,7 @@ async fn serve<B: BlobStore + 'static>(
 }
 
 fn main() -> ExitCode {
+    casual_sign_host::crash::startup();
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

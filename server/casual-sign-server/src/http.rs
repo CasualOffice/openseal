@@ -52,9 +52,12 @@ pub(crate) async fn request_context(
         .get::<MatchedPath>()
         .map_or_else(|| "unmatched".to_owned(), |m| m.as_str().to_owned());
     let started = Instant::now();
+    let crash_subject = route_of_crash(&method, &route);
     let mut resp = REQUEST_ID
         .scope(id.clone(), async move {
             let resp = next.run(req).await;
+            // P2-CRASH: the handler committed and answered; nothing is sent yet.
+            casual_sign_host::crash::point("after_commit", &crash_subject);
             normalize(resp)
         })
         .await;
@@ -258,32 +261,26 @@ async fn idempotent_inner(
     let since = now
         .checked_sub(TimeDuration::hours(24))
         .ok_or_else(|| ApiError::internal("time"))?;
-    if let Some(rec) = tx.idempotency().get(&principal, key, since).await? {
+    // A placeholder older than this was left by a server that died mid-request (P2-CRASH):
+    // the retry takes it over and runs the request again. Its commands' ids derive from
+    // the key, so whatever the dead request committed is `replayed`, not repeated.
+    let abandoned = now
+        .checked_sub(IN_PROGRESS_ABANDONED)
+        .ok_or_else(|| ApiError::internal("time"))?;
+    let mut expired_before = since;
+    let first = tx.idempotency().get(&principal, key, since).await?;
+    if let Some(rec) = first {
         if !same(&rec.request_sha256, &request_sha256) {
             return Err(ApiError::idempotency_mismatch());
         }
-        if rec.status == 102 {
+        if rec.status == 102 && rec.created_at >= abandoned {
             return Err(ApiError::idempotency_in_progress());
         }
-        let Some(body) = rec.body else {
-            return Err(ApiError::not_available(
-                "the first response held a secret, shown once",
-            ));
-        };
-        let status = u16::try_from(rec.status)
-            .ok()
-            .and_then(|s| StatusCode::from_u16(s).ok())
-            .unwrap_or(StatusCode::OK);
-        let mut r = (status, body).into_response();
-        r.headers_mut().insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
-        r.headers_mut().insert(
-            HeaderName::from_static("idempotency-replayed"),
-            HeaderValue::from_static("true"),
-        );
-        return Ok(r);
+        if rec.status == 102 {
+            expired_before = abandoned;
+        } else {
+            return replay(rec);
+        }
     }
     let placeholder = Record {
         principal: principal.clone(),
@@ -293,7 +290,7 @@ async fn idempotent_inner(
         body: None,
         created_at: now,
     };
-    if !tx.idempotency().put(&placeholder, since).await? {
+    if !tx.idempotency().put(&placeholder, expired_before).await? {
         return Err(ApiError::idempotency_in_progress());
     }
     tx.commit().await?;
@@ -301,9 +298,16 @@ async fn idempotent_inner(
     let seed: String = digest.hex().chars().take(40).collect();
     let seed = format!("idem-{seed}");
     parts.extensions.insert(CommandSeed(seed));
+    let route = parts
+        .extensions
+        .get::<MatchedPath>()
+        .map_or_else(String::new, |m| m.as_str().to_owned());
+    let method = parts.method.clone();
     let resp = next
         .run(Request::from_parts(parts, Body::from(bytes)))
         .await;
+    // P2-CRASH: the handler committed; its answer is not yet kept for the key.
+    casual_sign_host::crash::point("after_commit", &route_of_crash(&method, &route));
     let secret = resp.extensions().get::<SecretBearing>().is_some();
     let (rparts, rbody) = resp.into_parts();
     let rbytes = to_bytes(rbody, 64 * 1024 * 1024)
@@ -332,4 +336,43 @@ async fn idempotent_inner(
     }
     tx.commit().await?;
     Ok(Response::from_parts(rparts, Body::from(rbytes)))
+}
+
+/// How long a request may hold its key "in progress" before a retry counts it as
+/// abandoned by a server that died (P2-CRASH). Far longer than any request runs.
+const IN_PROGRESS_ABANDONED: TimeDuration = TimeDuration::minutes(5);
+
+/// The first answer to a key, again.
+fn replay(rec: Record) -> Result<Response, ApiError> {
+    let Some(body) = rec.body else {
+        return Err(ApiError::not_available(
+            "the first response held a secret, shown once",
+        ));
+    };
+    let status = u16::try_from(rec.status)
+        .ok()
+        .and_then(|s| StatusCode::from_u16(s).ok())
+        .unwrap_or(StatusCode::OK);
+    let mut r = (status, body).into_response();
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    r.headers_mut().insert(
+        HeaderName::from_static("idempotency-replayed"),
+        HeaderValue::from_static("true"),
+    );
+    Ok(r)
+}
+
+/// A route's crash-point subject, `<METHOD> <pattern>` (no token, no id).
+#[cfg(feature = "crash-points")]
+fn route_of_crash(method: &Method, route: &str) -> String {
+    format!("{method} {route}")
+}
+
+/// Without the crash points: never read.
+#[cfg(not(feature = "crash-points"))]
+fn route_of_crash(_method: &Method, _route: &str) -> String {
+    String::new()
 }
