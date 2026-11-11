@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT name AS \"name!\", email AS \"email!\", last_used AS \"last_used!\" FROM (\n                 SELECT DISTINCT ON (lower(r.email)) r.name, r.email, r.created_at AS last_used\n                 FROM recipients AS r JOIN envelopes AS e\n                   ON e.account_id = r.account_id AND e.id = r.envelope_id\n                 WHERE r.account_id = $1 AND r.email IS NOT NULL\n                   AND EXISTS (SELECT 1 FROM envelope_states AS s\n                                WHERE s.account_id = e.account_id AND s.envelope_id = e.id)\n                   AND ($2::uuid IS NULL OR e.sender_user_id = $2)\n                   AND ($3::text IS NULL OR r.name ILIKE $3 ESCAPE '\\'\n                        OR r.email ILIKE $3 ESCAPE '\\')\n                 ORDER BY lower(r.email), r.created_at DESC, r.id DESC) AS c\n               ORDER BY last_used DESC, email LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "email!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_used!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "0e85f00732515ca2256039bc932aabc0e49b2fb3d55ca7700db95800ca4c9f82"
+}

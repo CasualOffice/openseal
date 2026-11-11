@@ -175,6 +175,7 @@ pub fn table() -> Vec<Route> {
             admin::revoke_client,
         ),
         // Envelopes.
+        r("GET", "/api/v1/contacts", er, JSON, env::contacts),
         r("GET", "/api/v1/envelopes", er, JSON, env::list),
         r("POST", "/api/v1/envelopes", ew, CREATE, env::create),
         r("GET", "/api/v1/envelopes/{id}", er, JSON, env::get),

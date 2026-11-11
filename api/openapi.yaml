@@ -406,6 +406,17 @@ components:
         subject: {type: string}
         sender_user_id: {type: string}
         created_at: {type: string, format: date-time}
+    Contact:
+      type: object
+      description: A past recipient (personal data); the name last used with this address.
+      properties:
+        name: {type: string}
+        email: {type: string}
+        last_used_at: {type: string, format: date-time}
+    ContactList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Contact'}}
     EnvelopePage:
       type: object
       properties:
@@ -840,6 +851,31 @@ paths:
       x-permission: "admin:account"
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/contacts:
+    get:
+      operationId: listContacts
+      summary: "Past recipients for autocomplete: one per email address, most recently used first (WEB-06)"
+      description: >-
+        From the envelopes the caller may see (their own without `view_all`), never another
+        account's. `q` matches the name or email, ignoring case; `limit` is 1 to 50 (default 10).
+      x-permission: "envelopes:read"
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Text the name or email contains (ignoring case); at most 200 characters, no control characters.
+          schema: {type: string, maxLength: 200}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 10}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContactList'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes:
     get:

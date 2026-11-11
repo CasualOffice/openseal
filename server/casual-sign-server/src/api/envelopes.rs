@@ -377,6 +377,43 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
     ))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ContactsQuery {
+    q: Option<String>,
+    limit: Option<u32>,
+}
+
+/// `GET /contacts?q=&limit=`: past recipients for autocomplete (WEB-06), one per email
+/// address, most recently used first, from the envelopes the principal may see.
+pub(crate) async fn contacts(
+    c: Call,
+    Query(q): Query<ContactsQuery>,
+) -> Result<Response, ApiError> {
+    let limit = q.limit.unwrap_or(10);
+    if !(1..=50).contains(&limit) {
+        return Err(ApiError::invalid("/query/limit"));
+    }
+    let search = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    if search.is_some_and(|t| t.chars().count() > MAX_QUERY || t.chars().any(char::is_control)) {
+        return Err(ApiError::invalid("/query/q"));
+    }
+    let sender = (!(c.p.admin || c.p.view_all)).then_some(c.p.user);
+    let mut tx = c.tx().await?;
+    let found = tx.recipients().contacts(search, sender, limit).await?;
+    let items: Vec<Value> = found
+        .iter()
+        .map(|x| {
+            json!({
+                "name": x.name.get(),
+                "email": x.email.get(),
+                "last_used_at": rfc3339(x.last_used),
+            })
+        })
+        .collect();
+    Ok(json(StatusCode::OK, &json!({ "items": items })))
+}
+
 pub(crate) fn rfc3339(t: OffsetDateTime) -> String {
     t.format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
