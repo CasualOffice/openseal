@@ -65,9 +65,13 @@ test("upload, two signers in order and a CC, fields for each, send", async ({ pa
   await page.getByLabel("Subject").fill(subject);
   await page.getByLabel("First reminder after (days)").fill("3");
   await expect(page.locator(".os-summary__item")).toHaveCount(3);
-  await expect(page.locator(".os-summary__item").first()).toContainText("3 fields");
+  await expect(page.locator(".os-summary__item").first()).toContainText("3 fields: Signature, Date signed, Text");
+  await expect(page.locator(".os-summary__item").nth(2)).toContainText("Gets a copy when it is complete");
+  await expect(page.locator(".os-stepper__btn.is-done")).toHaveCount(3);
   await page.getByRole("button", { name: "Send", exact: true }).first().click();
-  await page.getByRole("dialog", { name: "Send this envelope?" }).getByRole("button", { name: "Send" }).click();
+  const confirm = page.getByRole("dialog", { name: "Send this envelope?" });
+  await expect(confirm).toContainText("They sign in order: Ana Signer → Ben Signer. Cleo Copy will get a copy when it is complete.");
+  await confirm.getByRole("button", { name: "Send" }).click();
   await expect(page.getByRole("heading", { name: "Recipients" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".os-page-head .os-badge")).toHaveText("Sent");
   await expect(page.locator(".os-timeline__item")).toHaveCount(3);

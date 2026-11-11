@@ -174,7 +174,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const [k, pane] of Object.entries(panes)) pane.hidden = k !== s;
     for (const [k, b] of stepBtns) {
       if (k === s) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
-      b.classList.toggle("is-done", STEPS.indexOf(k) < i);
+      const doneStep = STEPS.indexOf(k) < i;
+      b.classList.toggle("is-done", doneStep);
+      // Steps behind are ticked (R-04); the number stays for the screen reader.
+      const n = b.querySelector(".os-stepper__n");
+      n.replaceChildren(doneStep ? icon("check", { size: 16 }) : String(STEPS.indexOf(k) + 1), doneStep ? h("span", { class: "os-sr-only", text: `${STEPS.indexOf(k) + 1} ${t("wizard.step-done")}` }) : "");
     }
     docTools.hidden = s !== "fields";
     skipTo(s === "fields" ? "#document" : "#main", t(s === "fields" ? "a11y.skip-doc" : "a11y.skip"));
@@ -694,7 +698,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         props.append(emptyState({ illus: "fields", title: t("empty.fields.title"), text: t("empty.fields.text"), action: button(t("prepare.add-field", { type: t("ftype.signature") }), { icon: "signature", variant: "primary", onClick: () => addFieldInView("signature") }), testId: "empty-fields" }));
       } else if (S.fields.length) {
         // Every placed field, in page order: choosing one selects it and scrolls to it.
-        props.append(h("h3", { class: "os-panel__title", text: t("prepare.fields-count", { n: S.fields.length }) }));
+        props.append(h("h3", { class: "os-panel__title", text: t(S.fields.length === 1 ? "prepare.fields-count-one" : "prepare.fields-count", { n: S.fields.length }) }));
         const order = [...S.fields].sort((a, b) => pageIndex(a.docKey, a.page) - pageIndex(b.docKey, b.page) || a.y - b.y || a.x - b.x);
         const ul = h("ul", { class: "os-placed" });
         for (const x of order) {
@@ -786,7 +790,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     reviewPanel.append(email);
     if (!TPL) {
       const num = (id, value, set) => {
-        const i = h("input", { id, class: "os-input os-input--num", type: "number", min: "0", max: "999", step: "1", value: value == null ? "" : String(value), inputMode: "numeric" });
+        // Empty means the account's default, and says so (R-03).
+        const i = h("input", { id, class: "os-input os-input--num", type: "number", min: "0", max: "999", step: "1", value: value == null ? "" : String(value), inputMode: "numeric", placeholder: t("prepare.default") });
         i.addEventListener("change", () => { const v = Number.parseInt(i.value, 10); set(Number.isInteger(v) && v > 0 ? Math.min(v, 999) : null); S.dirty = true; });
         return i;
       };
@@ -804,23 +809,28 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     } else {
       reviewPanel.append(h("p", { class: "os-muted os-small", text: t("template.roles-help") }));
     }
-    // Summary: documents, then each recipient with the fields they fill.
+    // Summary first (R-01): documents, then who does what, in order, with the fields
+    // each one fills by kind, so a missing signature shows before Send.
     const sum = h("section", { class: "os-card", attrs: { "aria-labelledby": "rv-sum-h" } }, h("h3", { id: "rv-sum-h", class: "os-card__title", text: t("wizard.summary") }));
     sum.append(h("p", { class: "os-summary__docs" }, icon("file-text", { size: 16 }),
-      h("span", { text: S.docs.length ? S.docs.map((d) => t("wizard.doc-pages", { name: d.name, n: d.pages.length })).join(", ") : t("prepare.no-docs") })));
+      h("span", { text: S.docs.length ? S.docs.map((d) => t(d.pages.length === 1 ? "wizard.doc-page-one" : "wizard.doc-pages", { name: d.name, n: d.pages.length })).join(", ") : t("prepare.no-docs") })));
     const ul = h("ul", { class: "os-summary" });
     S.recipients.forEach((r, i) => {
-      const n = S.fields.filter((f) => f.recipientKey === r.key).length;
-      ul.append(h("li", { class: `os-summary__item os-r${colourOf(r.key)}` },
+      const mine = S.fields.filter((f) => f.recipientKey === r.key);
+      const kinds = FIELD_TYPES.map((ty) => [ty, mine.filter((f) => f.type === ty).length]).filter(([, c]) => c)
+        .map(([ty, c]) => (c > 1 ? `${t(`ftype.${ty}`)} ×${c}` : t(`ftype.${ty}`))).join(", ");
+      ul.append(h("li", { class: `os-summary__item os-r${colourOf(r.key)}`, attrs: { "data-testid": "summary-recipient" } },
         h("span", { class: "os-order", text: String(orderOf(r)) }),
         h("span", { class: "os-summary__who" }, h("strong", { text: displayName(r, i) }), TPL ? null : h("span", { class: "os-muted os-small", text: r.email || t("wizard.no-email") })),
         h("span", { class: "os-muted os-small", text: t(`rtype.${r.type}`) }),
-        h("span", { class: "os-small", text: r.type === "signer" ? t("wizard.fields-n", { n }) : "" })));
+        h("span", { class: "os-small os-summary__fields", text: r.type === "signer" ? (mine.length ? `${fieldsN(mine.length)}: ${kinds}` : t("wizard.no-fields")) : t("wizard.gets-copy") })));
     });
     if (!S.recipients.length) ul.append(h("li", { class: "os-muted", text: t(TPL ? "empty.roles.title" : "empty.recipients.title") }));
     sum.append(ul);
-    reviewPanel.append(sum);
+    reviewPanel.querySelector(".os-step-head").after(sum);
   }
+  /// "1 field" / "3 fields" (T-02).
+  const fieldsN = (n) => t(n === 1 ? "wizard.fields-one" : "wizard.fields-n", { n });
 
   // ---- Loading a draft ------------------------------------------------------------------
   async function loadFromServer(env) {
@@ -1027,7 +1037,17 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const list = problems();
     if (list.length) { await showProblems(list, t("send.problems-title")); return; }
     const sum = S.recipients.filter((r) => r.type === "signer").length;
-    if (!(await confirmDialog(t("send.confirm-title"), t("send.confirm-text", { n: sum, subject: S.subject.trim() || t("envelope.untitled") }), { confirm: t("prepare.send") }))) return;
+    // Says who signs when and who only gets a copy (R-02).
+    const subj = S.subject.trim() || t("envelope.untitled");
+    const sg = signers();
+    const copies = S.recipients.filter((r) => r.type !== "signer");
+    const nameOf = (r) => displayName(r, S.recipients.indexOf(r));
+    const text = [
+      t(sum === 1 ? "send.confirm-one" : "send.confirm-text", { n: sum, subject: subj }),
+      sg.length > 1 ? (S.routing === "sequential" ? t("send.confirm-order", { order: sg.map(nameOf).join(" → ") }) : t("send.confirm-together")) : "",
+      copies.length ? t("send.confirm-copies", { names: copies.map(nameOf).join(", ") }) : "",
+    ].filter(Boolean).join(" ");
+    if (!(await confirmDialog(t("send.confirm-title"), text, { confirm: t("prepare.send") }))) return;
     await busy(sendBtn, async () => {
       try {
         await save();
