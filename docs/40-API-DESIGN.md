@@ -210,7 +210,7 @@ questions; `DEC-10` decides, and nothing is built before the owner answers.
 
 ## As built (stage 2C, `casual-sign-server`)
 
-The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 68 operations, each with its `x-permission`
+The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 87 operations (68 at stage 2C, 19 added by `WEB-06`), each with its `x-permission`
 (the scope it needs, SEC-A05). The router is built from one table (`routes::table`), and a contract test keeps the
 table and the document equal in both directions, scope by scope.
 
