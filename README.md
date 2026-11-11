@@ -41,6 +41,27 @@ it shares.
 - **An API you already know.** Envelopes, recipients, routing orders, fields, templates, embedded views and signed
   webhooks, in the shapes DocuSign and SignNow integrators expect.
 
+## Run it
+
+You need Docker with Compose. One command builds and starts the whole stack (server and web app, job worker, signing
+key service, Postgres, object storage, a mail catcher and a development timestamp authority):
+
+```sh
+git clone https://github.com/CasualOffice/openseal && cd openseal
+docker compose up -d --build --wait
+docker compose exec -e OPENSEAL_ADMIN_PASSWORD='a long passphrase' server \
+    casual-sign-server bootstrap "Acme" admin@acme.example "Ada Admin"
+```
+
+- Web app: <http://localhost:8080>. Sign in as `admin@acme.example`, then send a PDF for signature.
+- Every email the stack sends (signing links, completions) appears in Mailpit: <http://localhost:8025>.
+- Stop and discard everything: `docker compose down -v`.
+
+This is a **development** deployment: a generated certificate authority, a software HSM for the sealing key and a
+local timestamp authority, so seals validate only against that CA. Configuration, services and production notes are
+in [docs/65](docs/65-RUNNING-IT.md). To look at the web app without any server, run `python3 -I tools/serve-webapp.py`
+and open <http://127.0.0.1:8130/app.html?mock=1> (demo mode; sign in as `demo@openseal.test` / `openseal-demo-1`).
+
 ## Status
 
 Docs are true as of 2026-11-11. **Pre-alpha.** The headless engine is complete and tested against 422 real-world PDFs.
