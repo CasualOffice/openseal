@@ -17,6 +17,9 @@
 // a template name instead of a subject, "Save template" instead of Send. Saving is
 // `POST /api/v1/templates` (name, email subject and message, roles), then the
 // documents and the fields bound to the roles' ids (templatesync.js, WEB-10).
+// `#/templates/{id}/edit` (`opts.templateId`, WEB-09) reopens a saved template's
+// documents, roles and fields; saving brings the server's template into line with
+// the editor (removals, changes and additions, each with If-Match).
 
 import { h, clear, reducedMotion, skipTo, initials } from "./dom.js";
 import { icon } from "./icons.js";
@@ -41,7 +44,10 @@ const newKey = (p) => `${p}${++keySeq}`;
 
 export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) {
   const TPL = !!opts.template;
+  const TPL_ID = TPL && opts.templateId ? decodeURIComponent(opts.templateId) : null;
   const S = {
+    tplId: TPL_ID,
+    tplServer: null,
     id: rawId && !TPL ? decodeURIComponent(rawId) : null,
     subject: "",
     message: "",
@@ -79,12 +85,13 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const STEPS = ["documents", "recipients", "fields", "review"];
   let step = "documents";
   const subject = h("input", { id: "env-subject", class: "os-input", placeholder: t(TPL ? "template.name-placeholder" : "prepare.subject-placeholder"), maxLength: 255 });
-  subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; title.textContent = S.subject.trim() || t(TPL ? "template.new-title" : "prepare.title"); title.title = title.textContent; });
+  subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; title.textContent = S.subject.trim() || newTitle(); title.title = title.textContent; });
   const saveBtn = TPL
     ? button(t("template.save"), { icon: "save", variant: "primary", command: "template.save", onClick: () => run("template.save") })
     : button(t("prepare.save"), { icon: "save", command: "envelope.save", onClick: () => run("envelope.save"), attrs: { "data-testid": "save-draft", title: t("prepare.save-tip") } });
   const sendBtn = TPL ? null : button(t("prepare.send"), { icon: "send", variant: "primary", command: "envelope.send", onClick: () => run("envelope.send") });
-  const title = h("h1", { class: "os-prepare__title", text: t(TPL ? "template.new-title" : "prepare.title") });
+  const newTitle = () => t(TPL_ID ? "templates.edit-title" : TPL ? "template.new-title" : "prepare.title");
+  const title = h("h1", { class: "os-prepare__title", text: newTitle() });
   const stepper = h("ol", { class: "os-stepper", attrs: { "aria-label": t("wizard.steps") } });
   const stepBtns = new Map();
   STEPS.forEach((s, i) => {
@@ -476,7 +483,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           h("strong", { class: "os-doccard__name", text: d.name }),
           h("span", { class: "os-muted os-small", text: (d.pages.length === 1 ? t("prepare.page-one") : t("prepare.pages-long", { n: d.pages.length })) })),
         h("div", { class: "os-doccard__actions" }, up, down,
-          d.id ? null : button(t("prepare.remove-doc", { name: d.name }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) }))));
+          d.id && !TPL ? null : button(t("prepare.remove-doc", { name: d.name }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) }))));
     });
     const add = h("li", {}, h("button", { type: "button", class: "os-doccard os-doccard--add", on: { click: () => fileInput.click() } },
       icon("plus", { size: 24 }), h("span", { text: t("prepare.add-pdf") })));
@@ -562,6 +569,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     });
     thumbs.build();
     renderFieldsOnly();
+    // The placed-fields list numbers pages by the laid-out view, so it follows the stage.
+    renderProps();
     zoom.sync();
   }
   const pageIndex = (docKey, page) => dv.pages.findIndex((p) => p.key === docKey && p.n === page);
@@ -580,7 +589,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const ov = overlayFor(f);
       if (!ov) continue;
       const el = h("button", { type: "button", class: `os-field os-r${colourOf(f.recipientKey)}${f.required ? " is-required" : ""}${S.selected === f.key ? " is-selected" : ""}`, attrs: { "data-fkey": f.key, "data-field": f.type, "aria-label": fieldLabel(f), "aria-pressed": String(S.selected === f.key) } },
-        icon(FIELD_ICON[f.type], { size: 16 }),
+        icon(FIELD_ICON[f.type] || "text-cursor-input", { size: 16 }),
         h("span", { class: "os-field__label", text: f.label || t(`ftype.${f.type}`) }),
         // Whose field it is, beside its colour (F-02): the recipient's initials, drawn by CSS
         // from data-who so the visible text stays the field's label (SC 2.5.3).
@@ -782,7 +791,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           const r = recipient(x.recipientKey);
           const i = S.recipients.indexOf(r);
           const b = h("button", { type: "button", class: `os-placed__item os-r${colourOf(x.recipientKey)}`, attrs: { "data-testid": "placed-field" } },
-            icon(FIELD_ICON[x.type], { size: 16 }),
+            icon(FIELD_ICON[x.type] || "text-cursor-input", { size: 16 }),
             h("span", { class: "os-placed__main" }, h("span", { class: "os-placed__name", text: x.label || t(`ftype.${x.type}`) }), h("span", { class: "os-muted os-small os-trunc", text: t("prepare.placed-meta", { name: displayName(r, i), page: pageIndex(x.docKey, x.page) + 1 }) })),
             x.required ? h("span", { class: "os-placed__req", text: t("prepare.required") }) : null);
           b.addEventListener("click", () => select(x.key));
@@ -946,6 +955,43 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const p = fromWire(f.placement);
       if (!p || !dkey.has(f.document_id)) return null;
       return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", server: JSON.stringify({ r: f.recipient_id, p: f.placement, q: !!f.required, l: f.label || "" }) };
+    }).filter(Boolean);
+    S.active = S.recipients[0]?.key || null;
+    S.selected = null;
+    S.undo = []; S.redo = [];
+    S.dirty = false;
+  }
+
+  // ---- Loading a template (WEB-09) ----------------------------------------------------------
+  /// A saved template into the editor: its documents (fetched and opened), its roles in
+  /// routing order as the people, and its fields bound to them by `role_id`.
+  async function loadTemplate(tp) {
+    S.tplServer = tp;
+    S.subject = tp.name || "";
+    S.emailSubject = tp.email_subject || "";
+    S.message = tp.email_message || "";
+    subject.value = S.subject;
+    title.textContent = S.subject.trim() || newTitle();
+    title.title = title.textContent;
+    const docs = [];
+    for (const d of [...(tp.documents || [])].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))) {
+      const bytes = new Uint8Array(await (await ctx.api.templates.documentContent(tp.id, d.id)).arrayBuffer());
+      const pdf = await openPdf(bytes.slice());
+      const doc = { key: newKey("d"), id: d.id, name: d.name, bytes, pages: pdf.pages };
+      pdfs.set(doc.key, pdf);
+      docs.push(doc);
+    }
+    S.docs = docs;
+    const roles = [...(tp.roles || [])].sort((a, b) => (a.routing_order ?? 1) - (b.routing_order ?? 1));
+    const signerOrders = new Set(roles.filter((r) => r.type === "signer").map((r) => r.routing_order));
+    S.routing = roles.filter((r) => r.type === "signer").length > 1 && signerOrders.size === 1 ? "parallel" : "sequential";
+    S.recipients = roles.map((r) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: "", type: r.type === "cc" ? "cc" : "signer", accessCode: "", serverOrder: r.routing_order }));
+    const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
+    const dkey = new Map(S.docs.map((d) => [d.id, d.key]));
+    S.fields = (tp.fields || []).map((f) => {
+      const p = fromWire(f.placement || f);
+      if (!p || !dkey.has(f.document_id) || !rkey.has(f.role_id)) return null;
+      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.role_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "" };
     }).filter(Boolean);
     S.active = S.recipients[0]?.key || null;
     S.selected = null;
@@ -1161,7 +1207,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       details: { name: S.subject.trim(), email_subject: S.emailSubject.trim(), email_message: S.message },
       roles: S.recipients.map((r, i) => ({ key: r.key, id: r.id, ...roles[i] })),
       docs: S.docs,
-      fields: S.fields.map((f) => ({ ...f, roleKey: f.recipientKey })),
+      // A field whose document is gone (an undo after removing it) is not sent.
+      fields: S.fields.filter((f) => S.docs.some((d) => d.key === f.docKey)).map((f) => ({ ...f, roleKey: f.recipientKey })),
     };
   }
 
@@ -1348,6 +1395,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   renderAll();
   syncStatus();
   dv.inner.append(h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } }));
+  if (TPL_ID) {
+    try {
+      const { template } = await ctx.api.templates.get(TPL_ID);
+      await loadTemplate(template);
+      renderAll();
+    } catch (err) {
+      if (!ctx.failed(err)) toastError(err);
+    }
+  }
   if (S.id) {
     try {
       const { envelope } = await ctx.api.getEnvelope(S.id);

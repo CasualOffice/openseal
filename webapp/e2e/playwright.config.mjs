@@ -55,7 +55,7 @@ const chromiumArgs = (process.env.OPENSEAL_E2E_CHROMIUM_ARGS || "").split(" ").f
 const chromiumChannel = process.env.OPENSEAL_E2E_CHROMIUM_CHANNEL || undefined; // e.g. "chromium" (new headless)
 const chrome = { ...devices["Desktop Chrome"], channel: chromiumChannel, launchOptions: { args: chromiumArgs } };
 
-const desktop = /(manage|signin-dashboard|send|keyboard|a11y|screens|empty-states|web02|redesign-screens|visual|docview|real-stack)\.spec\.mjs$/;
+const desktop = /(manage|signin-dashboard|send|editor|keyboard|a11y|screens|empty-states|web02|redesign-screens|visual|docview|real-stack)\.spec\.mjs$/;
 const signer = /(ceremony|decline|a11y-sign)\.spec\.mjs$/;
 
 export default defineConfig({
@@ -77,7 +77,7 @@ export default defineConfig({
     { name: "chromium", use: chrome },
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
     { name: "mobile", testMatch: signer, use: { ...devices["iPhone 13"] } },
-    { name: "reduced-motion", testMatch: /(send|ceremony)\.spec\.mjs$/, use: { ...chrome, contextOptions: { reducedMotion: "reduce" } } },
+    { name: "reduced-motion", testMatch: /(^|[\\/])(send|ceremony)\.spec\.mjs$/, use: { ...chrome, contextOptions: { reducedMotion: "reduce" } } },
   ].map((p) => (p.testMatch ? p : { ...p, testMatch: [desktop, signer] })),
   webServer: REAL ? undefined : {
     command: `python3 -I ../../tools/serve-webapp.py ${PORT}`,
