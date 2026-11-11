@@ -11,6 +11,15 @@
 //   `templateDocsUnsupported(err)` tells a caller that this is "not yet", not a failure.
 // - Users: `GET/POST /api/v1/users`, `PATCH/DELETE /api/v1/users/{id}`.
 // - API clients: `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}`.
+// - WEB-06 (the manage screens), ahead of the server worker adding them, shaped as
+//   docs/40 and openapi.yaml name them where they do: `POST /envelopes/{id}/correct`
+//   (`{changes:[{op:"update_recipient", recipient:{id,type,routing_order,name,email,
+//   auth,access_code?}}]}`, If-Match), `GET …/documents/{doc}/content?variant=current`,
+//   `PATCH` (name, email subject, message) and `DELETE /templates/{id}` (If-Match),
+//   `POST /templates/{id}/duplicate`, `POST /users/invite` (`{email, name?, profile}`),
+//   `PATCH /users/{id}` (`profile`, `disabled`), `PATCH /accounts/me` (`name`,
+//   `settings`). The mock implements each; a server without one answers 404 or 405,
+//   which the screens show as an error, never as success.
 //
 // No DOM here, so Node's tests run it.
 
@@ -32,6 +41,10 @@ export function extend(api) {
     },
     create: (body) => data(req("POST", "/api/v1/templates", { body })),
     rename: (id, etag, name) => data(req("PATCH", T(id), { body: { name }, ifMatch: etag })),
+    /// WEB-06 T-01: name, email subject and message in one `PATCH`.
+    update: (id, etag, body) => data(req("PATCH", T(id), { body, ifMatch: etag })),
+    remove: (id, etag) => data(req("DELETE", T(id), { ifMatch: etag })),
+    duplicate: (id) => data(req("POST", `${T(id)}/duplicate`, { body: {} })),
     // Slice 3 (docs/40): not in api/openapi.yaml yet.
     addDocument: (id, name, bytes) => data(req("POST", `${T(id)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),
     addFields: (id, items) => data(req("POST", `${T(id)}/fields`, { body: { items } })),
@@ -42,6 +55,8 @@ export function extend(api) {
     list: () => data(req("GET", "/api/v1/users")),
     create: (body) => data(req("POST", "/api/v1/users", { body })),
     patch: (id, body) => data(req("PATCH", `/api/v1/users/${encodeURIComponent(id)}`, { body })),
+    /// WEB-06 AD-01: `{email, name?, profile}`; the server emails a set-up link.
+    invite: (body) => data(req("POST", "/api/v1/users/invite", { body })),
     remove: (id) => data(req("DELETE", `/api/v1/users/${encodeURIComponent(id)}`)),
   };
 
@@ -49,6 +64,21 @@ export function extend(api) {
     list: () => data(req("GET", "/api/v1/api-clients")),
     create: (body) => data(req("POST", "/api/v1/api-clients", { body })),
     revoke: (id) => data(req("DELETE", `/api/v1/api-clients/${encodeURIComponent(id)}`)),
+  };
+
+  // ---- WEB-06 manage screens -------------------------------------------------------
+
+  /// Correct a sent envelope (`POST …/correct`, If-Match): the engine's change list,
+  /// all or none (docs/40, docs/24). Recipients who have acted cannot be changed.
+  api.correctEnvelope = (id, etag, changes) =>
+    data(req("POST", `/api/v1/envelopes/${encodeURIComponent(id)}/correct`, { body: { changes }, ifMatch: etag }));
+  /// A document as it stands while the envelope is in progress (`variant=current`).
+  api.documentCurrent = async (id, doc) =>
+    (await req("GET", `/api/v1/envelopes/${encodeURIComponent(id)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, query: { variant: "current" } })).blob;
+  /// The account and its settings (`GET/PATCH /api/v1/accounts/me`).
+  api.accountSettings = {
+    get: () => data(req("GET", "/api/v1/accounts/me")),
+    patch: (body) => data(req("PATCH", "/api/v1/accounts/me", { body })),
   };
 
   /// How many envelopes have `status`, counting at most `cap` (one page of the list;

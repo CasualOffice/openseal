@@ -20,7 +20,8 @@ test("the dashboard lists envelopes with their status and opens one", async ({ p
     await expect(page.locator("tbody")).toContainText("Completed");
     await expect(page.locator("tbody")).toContainText("Draft");
   }
-  await rows.first().getByRole("link").click();
+  // A draft opens in the editor (WEB-06 A-02); a sent envelope opens its details.
+  await page.locator('tbody tr:not([data-status="draft"])').first().getByRole("link").click();
   await expect(page.getByRole("heading", { name: "Recipients" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();
 });

@@ -1,20 +1,28 @@
-// Agreements (WEB-01, redesigned in WEB-02; docs/47 §Screens "Agreements", after
-// DocuSign's Manage page): a folder rail with quick views and counts, a dense table
-// (select, subject with its recipients, status, last change, row actions), a bulk
-// action bar, and the top bar's search filtering what is loaded.
+// Agreements (WEB-01, redesigned in WEB-02 and WEB-06; docs/47 §Screens "Agreements",
+// after DocuSign's Manage page): a folder rail with quick views and counts, filters
+// (sender, last change), a dense table (select, subject with its recipients, status
+// with a line in words, sender, last change, expiry, row actions) with sortable
+// columns, a bulk action bar, and the top bar's search.
 //
 // Folders are status filters on `GET /api/v1/envelopes?status=`; a view over two
 // statuses (Waiting for others = sent + delivered) pages each and merges them, newest
-// first. Recipients and the last change come from each row's `GET …/{id}`, fetched
-// after the list paints. Search matches subject, recipient names and emails among
-// the loaded rows (the API has no text query yet, row WEB-04).
+// first. Recipients, dates and the status line come from each row's `GET …/{id}`,
+// fetched after the list paints. Search is the server's (`q`, WEB-04). Sorting and the
+// sender and date filters apply to the envelopes loaded (the API has neither yet; the
+// page says so when more could be loaded — docs/47 finding A-01).
+//
+// A draft opens in the editor (A-02). Each row's menu (A-03) offers what its state
+// allows: edit or delete a draft; correct, resend, download as it stands or void one
+// in progress; download, certificate; copy, save as template and history for any
+// sent one; delete one that ended without completing.
 
 import { h, clear, fmtDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { button, busy, emptyState, skeletonRows, statusBadge, errorState, toast, toastError, reasonDialog, confirmDialog, menuButton } from "./ui/index.js";
+import { button, busy, emptyState, skeletonRows, statusBadge, errorState, toast, toastError, reasonDialog, confirmDialog, menuButton, selectField } from "./ui/index.js";
 import { countLabel } from "./templatemodel.js";
+import { statusLine, copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, historyPanel, correctPanel, DELETABLE, ACTIVE } from "./envactions.js";
 
 /// The rail: id, statuses (none = every status), icon, group.
 export const FOLDERS = [
@@ -28,7 +36,7 @@ export const FOLDERS = [
   { id: "expired", statuses: ["expired"], icon: "clock", group: "ended" },
 ];
 const LEGACY = { draft: "drafts", sent: "waiting", delivered: "waiting", completed: "completed", declined: "declined", voided: "voided", expired: "expired" };
-const ACTIVE = new Set(["sent", "delivered"]);
+const DAY = 86_400_000;
 
 /// The folder a route's parameters name: `?folder=`, or the older `?status=`.
 export function folderFrom(params) {
@@ -37,6 +45,40 @@ export function folderFrom(params) {
   return LEGACY[params?.get("status")] || "all";
 }
 
+/// Where a row goes: a draft to the editor (A-02), anything sent to its details.
+export function rowHref(r) {
+  return r.status === "draft" ? `#/prepare/${encodeURIComponent(r.id)}` : `#/envelopes/${encodeURIComponent(r.id)}`;
+}
+
+/// Whether `when` (ISO) falls in the filter's range. `range`: "any" | "7" | "30" | "90"
+/// | "custom" with `from`/`to` as yyyy-mm-dd (inclusive, local days). `now` in ms.
+export function inRange(when, { range = "any", from = "", to = "" } = {}, now = Date.now()) {
+  if (range === "any") return true;
+  const at = Date.parse(when);
+  if (!Number.isFinite(at)) return false;
+  if (range === "custom") {
+    if (from && at < new Date(`${from}T00:00:00`).getTime()) return false;
+    if (to && at >= new Date(`${to}T00:00:00`).getTime() + DAY) return false;
+    return true;
+  }
+  const days = Number(range);
+  return Number.isFinite(days) ? at >= now - days * DAY : true;
+}
+
+/// Compare two rows for a sort key; empty values sort last either way.
+export function compareBy(key, dir, get) {
+  return (a, b) => {
+    const x = get(a, key);
+    const y = get(b, key);
+    if (x === y) return 0;
+    if (x == null || x === "") return 1;
+    if (y == null || y === "") return -1;
+    return (x < y ? -1 : 1) * (dir === "asc" ? 1 : -1);
+  };
+}
+
+const SORTS = [["subject", "agreements.col.subject"], ["status", "agreements.col.status"], ["changed", "dates.changed"], ["expires", "agreements.col.expires"]];
+
 export function mount(view, ctx, _match, params) {
   const folder = FOLDERS.find((f) => f.id === folderFrom(params));
   let rows = [];
@@ -44,6 +86,9 @@ export function mount(view, ctx, _match, params) {
   let query = (params.get("q") || "").trim().toLowerCase();
   const details = new Map(); // id → envelope
   const selected = new Set();
+  const filter = { sender: "", range: "any", from: "", to: "" };
+  let sort = { key: null, dir: "desc" };
+  const people = new Map(); // user id → name
 
   const topSearch = document.getElementById("top-search");
   if (topSearch) topSearch.value = params.get("q") || "";
@@ -71,6 +116,24 @@ export function mount(view, ctx, _match, params) {
     rail.append(ul);
   }
 
+  // ---- Filters (A-01) ------------------------------------------------------------------
+  const senderSel = selectField(t("agreements.filter.sender"), [["", t("agreements.filter.anyone")], ["me", t("agreements.filter.me")]], { id: "flt-sender", size: "sm", onChange: (v) => { filter.sender = v; renderRows(); } });
+  const rangeSel = selectField(t("agreements.filter.when"), ["any", "7", "30", "90", "custom"].map((k) => [k, t(`agreements.filter.${k}`)]), { id: "flt-range", size: "sm", onChange: (v) => { filter.range = v; custom.hidden = v !== "custom"; renderRows(); } });
+  const fromIn = h("input", { id: "flt-from", type: "date", class: "os-input os-input--sm" });
+  const toIn = h("input", { id: "flt-to", type: "date", class: "os-input os-input--sm" });
+  fromIn.addEventListener("change", () => { filter.from = fromIn.value; renderRows(); });
+  toIn.addEventListener("change", () => { filter.to = toIn.value; renderRows(); });
+  const custom = h("div", { class: "os-filters__custom", hidden: true },
+    h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "flt-from" }, text: t("agreements.filter.from") }), fromIn),
+    h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "flt-to" }, text: t("agreements.filter.to") }), toIn));
+  const clearBtn = button(t("agreements.filter.clear"), { icon: "x", size: "sm", variant: "ghost", onClick: () => {
+    Object.assign(filter, { sender: "", range: "any", from: "", to: "" });
+    senderSel.select.value = ""; rangeSel.select.value = "any"; fromIn.value = ""; toIn.value = ""; custom.hidden = true;
+    renderRows();
+  } });
+  const filters = h("div", { class: "os-filters", attrs: { role: "group", "aria-label": t("agreements.filters") } }, senderSel.el, rangeSel.el, custom, clearBtn);
+  const filtering = () => !!filter.sender || filter.range !== "any";
+
   // ---- Content -------------------------------------------------------------------------
   const title = h("h1", { class: "os-page-title", text: t("agreements.title") });
   const sub = h("p", { class: "os-muted", text: t(`agreements.folder.${folder.id}`) });
@@ -78,8 +141,9 @@ export function mount(view, ctx, _match, params) {
     button(t("nav.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/prepare") }));
   const bulk = h("div", { class: "os-bulk", attrs: { role: "region", "aria-label": t("agreements.bulk"), hidden: true } });
   const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
+  const note = h("p", { class: "os-muted os-small os-filters__note", hidden: true });
   const more = h("div", { class: "os-list__more" });
-  const content = h("div", { class: "os-manage__content" }, head, bulk, list, more);
+  const content = h("div", { class: "os-manage__content" }, head, filters, bulk, list, note, more);
   view.append(h("div", { class: "os-manage" }, rail, content));
 
   register("list.search", { label: t("cmd.search"), run: () => topSearch?.focus() });
@@ -120,7 +184,19 @@ export function mount(view, ctx, _match, params) {
     }));
   }
 
-  /// Recipients and last change for each row, a few at a time, without blocking the list.
+  /// Names of the account's members for the Sender column and filter; a member who may
+  /// not list users sees "You" and the others as "—".
+  async function loadPeople() {
+    try {
+      for (const u of (await ctx.api.users.list()).items || []) people.set(u.id, u.name || u.email || "");
+      const others = [...people].filter(([id]) => id !== ctx.session?.user_id).sort((a, b) => a[1].localeCompare(b[1]));
+      for (const [id, name] of others) senderSel.select.append(h("option", { value: id, text: name }));
+      renderRows();
+    } catch { /* not an admin: the column says You or — */ }
+  }
+
+  /// Recipients and dates for each row, a few at a time, without blocking the list; the
+  /// rows are drawn again once all are in when a sort or filter depends on them.
   async function fillDetails(items) {
     const queue = items.filter((r) => !details.has(r.id));
     const worker = async () => {
@@ -134,6 +210,7 @@ export function mount(view, ctx, _match, params) {
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
+    if (sort.key || filter.range !== "any") renderRows();
   }
 
   function lastChange(r) {
@@ -145,29 +222,79 @@ export function mount(view, ctx, _match, params) {
     if (!recs.length) return t("agreements.no-recipients");
     return t("agreements.to", { names: recs.map((r) => r.name || r.email).join(", ") });
   }
+  const senderName = (r) => (r.sender_user_id && r.sender_user_id === ctx.session?.user_id ? t("agreements.you") : people.get(r.sender_user_id) || "—");
   function paintDetail(id) {
     const tr = list.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
     if (!tr) return;
     const e = details.get(id);
     tr.querySelector(".os-row__sub").textContent = recipientsLine(e);
+    tr.querySelector(".os-row__line").textContent = statusLine(e);
     const when = lastChange({ id, created_at: e.created_at });
-    const time = tr.querySelector(".os-col-date time");
+    const time = tr.querySelector(".os-col-changed time");
     time.dateTime = when;
     time.textContent = fmtDate(when);
+    const exp = tr.querySelector(".os-col-expires");
+    exp.replaceChildren(expiresCell(e));
+  }
+  function expiresCell(e) {
+    if (!e) return "";
+    if (!e.expires_at) return h("span", { class: "os-muted", text: ACTIVE.has(e.status) || e.status === "draft" ? t("agreements.never") : "—" });
+    return h("time", { attrs: { datetime: e.expires_at }, text: fmtDate(e.expires_at) });
   }
 
   // ---- Rendering --------------------------------------------------------------------------
-  const matches = () => true; // the server applied `q`
+  const sortValue = (r, key) => {
+    const e = details.get(r.id);
+    if (key === "subject") return (r.subject || "").toLowerCase();
+    if (key === "status") return r.status;
+    if (key === "changed") return lastChange(r);
+    if (key === "expires") return e?.expires_at || "";
+    return r.created_at;
+  };
+  const visible = () => {
+    const me = ctx.session?.user_id;
+    let out = rows.filter((r) => {
+      if (filter.sender === "me" && r.sender_user_id !== me) return false;
+      if (filter.sender && filter.sender !== "me" && r.sender_user_id !== filter.sender) return false;
+      return inRange(lastChange(r), filter);
+    });
+    if (sort.key) out = [...out].sort(compareBy(sort.key, sort.dir, sortValue));
+    return out;
+  };
+
+  function sortHeader(key, labelKey, cls = "") {
+    const label = t(labelKey);
+    const on = sort.key === key;
+    const b = h("button", { type: "button", class: "os-sort", attrs: { "data-sort": key, title: t("agreements.sort-by", { column: label }) } },
+      h("span", { text: label }), icon("chevron-down", { size: 16, className: `os-sort__icon${on ? ` is-${sort.dir}` : ""}` }));
+    b.addEventListener("click", () => {
+      sort = on ? { key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "subject" || key === "status" ? "asc" : "desc" };
+      renderRows();
+      list.querySelector(`.os-sort[data-sort="${key}"]`)?.focus();
+    });
+    return h("th", { class: cls, attrs: { scope: "col", "aria-sort": on ? (sort.dir === "asc" ? "ascending" : "descending") : null } }, b);
+  }
+
+  function clearSearch() {
+    const s = document.getElementById("top-search");
+    if (s) { s.value = ""; s.focus(); }
+    query = "";
+    load();
+  }
 
   function renderRows() {
     clear(list);
     clear(more);
-    const shown = rows.filter(matches);
+    const shown = visible();
     for (const id of [...selected]) if (!rows.some((r) => r.id === id)) selected.delete(id);
     renderBulk();
+    const canMore = [...cursors.values()].some(Boolean);
+    note.hidden = !(canMore && (filtering() || sort.key));
+    note.textContent = t("agreements.filter.loaded", { n: rows.length });
+    clearBtn.hidden = !filtering();
     if (!rows.length && query) {
       const q = document.getElementById("top-search")?.value.trim() || query;
-      list.append(emptyState({ illus: "search", title: t("empty.search.title"), text: t("empty.search.text", { query: q }), action: button(t("action.clear-search"), { variant: "primary", onClick: () => { const s = document.getElementById("top-search"); if (s) { s.value = ""; s.focus(); } query = ""; load(); } }), testId: "empty-search" }));
+      list.append(emptyState({ illus: "search", title: t("empty.search.title"), text: t("empty.search.text", { query: q }), action: button(t("action.clear-search"), { variant: "primary", onClick: clearSearch }), testId: "empty-search" }));
       return;
     }
     if (!rows.length) {
@@ -177,37 +304,43 @@ export function mount(view, ctx, _match, params) {
       return;
     }
     if (!shown.length) {
-      const q = document.getElementById("top-search")?.value.trim() || query;
-      list.append(emptyState({ illus: "search", title: t("empty.search.title"), text: t("empty.search.text", { query: q }), action: button(t("action.clear-search"), { variant: "primary", onClick: () => { const s = document.getElementById("top-search"); if (s) { s.value = ""; s.focus(); } query = ""; renderRows(); } }), testId: "empty-search" }));
+      list.append(emptyState({ illus: "search", title: t("agreements.filter.none"), text: t("agreements.filter.none-text"), action: button(t("agreements.filter.clear"), { variant: "primary", onClick: () => clearBtn.click() }), testId: "empty-filters" }));
+      if (canMore) more.append(moreButton());
       return;
     }
     const all = h("input", { type: "checkbox", class: "os-checkbox", attrs: { "aria-label": t("agreements.select-all") } });
     all.checked = shown.every((r) => selected.has(r.id));
     all.indeterminate = !all.checked && shown.some((r) => selected.has(r.id));
     all.addEventListener("change", () => { for (const r of shown) { if (all.checked) selected.add(r.id); else selected.delete(r.id); } renderRows(); });
-    const table = h("table", { class: "os-table os-table--rows os-table--manage" },
+    const table = h("table", { class: "os-table os-table--rows os-table--manage os-table--cards has-check" },
       h("caption", { class: "os-sr-only", text: t("agreements.caption") }),
       h("thead", {}, h("tr", {},
         h("th", { class: "os-col-check", attrs: { scope: "col" } }, all),
-        h("th", { attrs: { scope: "col" }, text: t("agreements.col.subject") }),
-        h("th", { attrs: { scope: "col" }, text: t("agreements.col.status") }),
-        h("th", { attrs: { scope: "col" }, class: "os-col-date", text: t("agreements.col.changed") }),
+        sortHeader("subject", "agreements.col.subject"),
+        sortHeader("status", "agreements.col.status"),
+        h("th", { class: "os-col-opt", attrs: { scope: "col" }, text: t("agreements.col.sender") }),
+        sortHeader("changed", "dates.changed", "os-col-date"),
+        sortHeader("expires", "agreements.col.expires", "os-col-opt"),
         h("th", { attrs: { scope: "col" }, class: "os-col-actions" }, h("span", { class: "os-sr-only", text: t("templates.col.actions") })))));
     const tb = h("tbody");
     for (const r of shown) {
-      const href = `#/envelopes/${encodeURIComponent(r.id)}`;
+      const href = rowHref(r);
       const subject = r.subject || t("envelope.untitled");
       const box = h("input", { type: "checkbox", class: "os-checkbox", checked: selected.has(r.id), attrs: { "aria-label": t("agreements.select", { subject }) } });
       box.addEventListener("change", () => { if (box.checked) selected.add(r.id); else selected.delete(r.id); tr.classList.toggle("is-selected", box.checked); renderBulk(); syncAll(); });
       const e = details.get(r.id);
       const when = lastChange(r);
-      const tr = h("tr", { class: `os-row${selected.has(r.id) ? " is-selected" : ""}`, attrs: { "data-id": r.id } },
+      const tr = h("tr", { class: `os-row${selected.has(r.id) ? " is-selected" : ""}`, attrs: { "data-id": r.id, "data-status": r.status } },
         h("td", { class: "os-col-check" }, box),
         h("td", {}, h("div", { class: "os-col-subject" },
           h("a", { href, class: "os-row-link", text: subject }),
           h("span", { class: "os-row__sub os-muted", text: e ? recipientsLine(e) : "" }))),
-        h("td", {}, statusBadge(r.status)),
-        h("td", { class: "os-col-date os-muted" }, h("time", { attrs: { datetime: when }, text: fmtDate(when) })),
+        h("td", { class: "os-col-status" }, statusBadge(r.status), h("span", { class: "os-row__line os-small", text: e ? statusLine(e) : "" })),
+        h("td", { class: "os-col-opt os-col-sender", attrs: { "data-label": t("agreements.col.sender") }, text: senderName(r) }),
+        h("td", { class: "os-col-date os-col-changed", attrs: { "data-label": t("dates.changed") } },
+          h("time", { attrs: { datetime: when }, text: fmtDate(when) }),
+          h("span", { class: "os-muted os-small os-block", text: t("agreements.created-on", { date: fmtDate(r.created_at) }) })),
+        h("td", { class: "os-col-opt os-col-expires", attrs: { "data-label": t("agreements.col.expires") } }, expiresCell(e)),
         h("td", { class: "os-col-actions" }, rowMenu(r, subject)));
       tr.addEventListener("click", (ev) => { if (ev.target.closest("a, button, input, .os-menu")) return; ctx.navigate(href); });
       tb.append(tr);
@@ -218,24 +351,38 @@ export function mount(view, ctx, _match, params) {
       all.checked = shown.every((r) => selected.has(r.id));
       all.indeterminate = !all.checked && shown.some((r) => selected.has(r.id));
     }
-    if ([...cursors.values()].some(Boolean)) {
-      const b = button(t("agreements.more"), { icon: "chevron-down", onClick: async () => { b.disabled = true; await load(true); } });
-      more.append(b);
-    }
+    if (canMore) more.append(moreButton());
+  }
+  function moreButton() {
+    const b = button(t("agreements.more"), { icon: "chevron-down", onClick: async () => { b.disabled = true; await load(true); } });
+    return b;
   }
 
   /// The row's actions, as DocuSign's per-row menu: what the envelope's state allows.
   function rowMenu(r, subject) {
-    const acts = [[t("agreements.open"), "eye", () => ctx.navigate(`#/envelopes/${encodeURIComponent(r.id)}`)]];
-    if (r.status === "draft") acts.push([t("envelope.edit"), "file-pen-line", () => ctx.navigate(`#/prepare/${encodeURIComponent(r.id)}`)]);
+    const id = r.id;
+    const acts = [];
+    const refresh = () => { details.delete(id); load(); loadCounts(); };
+    const guard = (fn) => async () => { try { await fn(); } catch (err) { if (!ctx.failed(err)) toastError(err); } };
+    if (r.status === "draft") {
+      acts.push([t("envelope.edit"), "file-pen-line", () => ctx.navigate(rowHref(r))]);
+    } else {
+      acts.push([t("agreements.open"), "eye", () => ctx.navigate(rowHref(r))]);
+    }
     if (ACTIVE.has(r.status)) {
-      acts.push([t("envelope.resend"), "rotate-cw", () => resend([r.id])]);
-      acts.push([t("envelope.void"), "ban", () => voidMany([r.id]), true]);
+      acts.push([t("agreements.correct"), "pencil", guard(async () => { if (await correctPanel(ctx, id)) refresh(); })]);
+      acts.push([t("envelope.resend"), "rotate-cw", () => resend([id])]);
+      acts.push([t("agreements.download-current"), "download", guard(() => downloadCurrent(ctx, id, details.get(id)))]);
     }
     if (r.status === "completed") {
-      acts.push([t("envelope.download"), "download", () => downloadMany([r.id])]);
-      acts.push([t("envelope.certificate"), "file-check", () => certificate(r.id)]);
+      acts.push([t("envelope.download"), "download", () => downloadMany([id])]);
+      acts.push([t("envelope.certificate"), "file-check", () => certificate(id)]);
     }
+    acts.push([t("agreements.copy"), "copy", guard(async () => { const c = await copyEnvelope(ctx, id); ctx.navigate(`#/prepare/${encodeURIComponent(c.id)}`); })]);
+    acts.push([t("agreements.save-template"), "layout-template", guard(() => saveAsTemplate(ctx, id))]);
+    if (r.status !== "draft") acts.push([t("agreements.history"), "list-ordered", guard(() => historyPanel(ctx, id, subject))]);
+    if (ACTIVE.has(r.status)) acts.push([t("envelope.void"), "ban", () => voidMany([id]), true]);
+    if (DELETABLE.has(r.status)) acts.push([t(r.status === "draft" ? "agreements.delete-draft" : "agreements.delete"), "trash-2", guard(async () => { if (await deleteEnvelope(ctx, id, subject, r.status)) { selected.delete(id); refresh(); } }), true]);
     return menuButton({
       label: t("agreements.actions-for", { subject }),
       buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
@@ -281,17 +428,18 @@ export function mount(view, ctx, _match, params) {
   }
   async function downloadMany(ids) {
     try {
-      for (const id of ids) {
-        const e = details.get(id) || (await ctx.api.getEnvelope(id)).envelope;
-        for (const d of e.documents || []) download(await ctx.api.documentContent(id, d.id, "sealed"), `${(d.name || "document.pdf").replace(/\.pdf$/i, "")}-sealed.pdf`);
-      }
+      for (const id of ids) await downloadSealed(ctx, id, details.get(id));
     } catch (err) { if (!ctx.failed(err)) toastError(err); }
   }
   async function certificate(id) {
-    try { download(await ctx.api.certificate(id), `certificate-${id}.pdf`); } catch (err) { if (!ctx.failed(err)) toastError(err); }
+    try {
+
+      download(await ctx.api.certificate(id), `certificate-${id}.pdf`);
+    } catch (err) { if (!ctx.failed(err)) toastError(err); }
   }
 
   load();
   loadCounts();
+  loadPeople();
   return () => { unregisterPrefix("list."); ctx.onSearch = null; };
 }

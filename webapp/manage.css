@@ -49,6 +49,45 @@
   .os-recent__icon { display: none; }
 }
 
+/* ---- A-01 Agreements: filters, sortable columns, a status line in words ------------ */
+.os-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--os-s2) var(--os-s3); margin: 0 0 var(--os-s3); }
+.os-filters .os-label { margin: 0 0 var(--os-s1); font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-filters .os-select { min-width: 9rem; }
+.os-filters__custom { display: flex; flex-wrap: wrap; gap: var(--os-s2); }
+.os-filters__custom[hidden] { display: none; }
+.os-filters > .os-btn[hidden] { display: none; }
+.os-filters__note { margin: var(--os-s2) 0 0; }
+.os-sort { display: inline-flex; align-items: center; gap: var(--os-s1); min-height: var(--os-target-min); padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; border-radius: var(--os-radius-sm); }
+.os-sort:hover { color: var(--os-text); }
+.os-sort__icon { opacity: 0; transition: transform var(--os-dur-fast) var(--os-ease); }
+.os-sort:hover .os-sort__icon, .os-sort:focus-visible .os-sort__icon { opacity: 0.6; }
+.os-sort__icon.is-desc, .os-sort__icon.is-asc { opacity: 1; color: var(--os-accent); }
+.os-sort__icon.is-asc { transform: rotate(180deg); }
+.os-col-status .os-badge { margin-bottom: 0.125rem; }
+.os-row__line { display: block; color: var(--os-muted); max-width: 16rem; overflow-wrap: anywhere; }
+.os-row__line:empty { display: none; }
+.os-table--manage .os-col-date { min-width: 9rem; }
+@media (max-width: 77.5em) { .os-table--manage .os-col-opt { display: none; } }
+@media (max-width: 37.5em) {
+  .os-table--manage.os-table--cards td.os-col-sender, .os-table--manage.os-table--cards .os-col-changed .os-block { display: none; }
+  .os-table--manage.os-table--cards td.os-col-expires:has(time) { display: block; }
+  .os-table--manage.os-table--cards td.os-col-date, .os-table--manage.os-table--cards td.os-col-expires { font-size: var(--os-fs-12); color: var(--os-muted); }
+  .os-table--manage.os-table--cards td.os-col-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--os-s2); }
+  .os-row__line { max-width: none; }
+  .os-filters .os-fieldrow { flex: 1 1 8rem; }
+  .os-filters .os-select { min-width: 0; width: 100%; }
+}
+
+/* ---- E-01 Correct: one block per recipient ---------------------------------------- */
+.os-correct { list-style: none; margin: var(--os-s3) 0 0; padding: 0; display: grid; gap: var(--os-s3); }
+.os-correct__item { border: 1px solid var(--os-border); border-left: 0.25rem solid var(--os-rc, var(--os-r1)); border-radius: var(--os-radius); padding: var(--os-s3) var(--os-s4); background: var(--os-raised); }
+.os-correct__item.os-r1 { --os-rc: var(--os-r1); } .os-correct__item.os-r2 { --os-rc: var(--os-r2); } .os-correct__item.os-r3 { --os-rc: var(--os-r3); }
+.os-correct__item.os-r4 { --os-rc: var(--os-r4); } .os-correct__item.os-r5 { --os-rc: var(--os-r5); } .os-correct__item.os-r6 { --os-rc: var(--os-r6); }
+.os-correct__item.is-acted { background: var(--os-surface); }
+.os-correct__head { display: flex; align-items: center; gap: var(--os-s2); flex-wrap: wrap; }
+.os-correct__item .os-check { margin-top: var(--os-s3); }
+.os-correct__code[hidden] { display: none; }
+
 /* ---- E-06: toasts never over row actions or table columns -------------------------- */
 /* Bottom left and narrow, away from the actions and the status and date columns on the
    right; the page keeps room below its content so a last row scrolls clear of one. */
