@@ -480,3 +480,35 @@ Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`
   the moving corner. Holding Alt turns snapping off (the old 4-point grid is gone). Keyboard parity: Ctrl/Cmd+A selects
   the fields of the page in view (not while typing, where it selects the text); Alt+Shift+arrows move the selection
   to the next guide on that side; any keyboard move shows for a moment the guides it lands on.
+- **Detect fields** (`detect.js`; DocuSign's and SignNow's auto-place). A button under the field types calls
+  `POST …/documents/{doc}/detect-fields` for each document (saving the draft first when a document is new, since
+  detection reads the stored file) and draws the suggestions as ghost fields: dashed, in the colour of the signer
+  fields are being placed for, each with its cue as the label where the kind alone would not say it. A suggestion on
+  a field already placed, past the document's pages, or with unreadable geometry is left out; kinds the palette does
+  not place (title, company, a form field's own kind) become text fields labelled with the cue. Click or Enter on a
+  ghost accepts it for that signer; its × or Delete dismisses it; the properties panel accepts or dismisses them all.
+  Each is one undo step. Templates do not offer it (the API detects on an envelope's documents).
+- Found on the way: a save (including autosave) put "placing fields for" back to the first signer; it now keeps
+  the one chosen.
+
+### Tests (WEB-09, WEB-10)
+
+- Node (`cd webapp && npm test`): `tests/editor.test.mjs` (signing steps, snapping guides, marquee helpers,
+  suggestions), `tests/web02.test.mjs` (the template, account, member, correction and detection calls against the
+  mock in the server's shapes; `templatePlan` and `applyTemplate`). Each new test was seen to fail against the code
+  before the change.
+- Playwright, mock: `e2e/editor.spec.mjs` (template round trip and document removal, signing steps by number, drag
+  and keys with undo and the routing orders saved, order off and on, marquee and group drag, snapping with and
+  without Alt, keyboard parity, Detect fields accept/dismiss/undo, no Detect in templates); `send.spec.mjs` and
+  `real-stack.spec.mjs` read the step boxes; `manage.spec.mjs` asks an invite for a name and shows the account name
+  read-only; `guided-ceremony.spec.mjs` checks the signer's history in the server's dotted types.
+- Playwright, Compose stack: `e2e/real-api.spec.mjs` runs api.js in the signed-in page against the server (template
+  documents, roles and fields by id with the editor's plan applied, account settings, invitations, a correction by
+  PATCH while `/correct` refuses `access_code`, detection) and the editor's template round trip, a parallel step and
+  Detect fields through the UI.
+- The reduced-motion project matched `guided-ceremony.spec.mjs` as well as `ceremony.spec.mjs`, running its phone
+  tests on desktop; its pattern is exact now.
+
+Further findings for the main session: the staff audit view (`envactions.js` `eventLabel`, `envelope.js`'s recipient
+timeline) still reads the mock's underscore event names and `event.recipient_id`, while the server answers dotted types
+with `event.data.recipient_id`, so on a real server the audit table shows raw types and the timeline misses "opened".
