@@ -160,6 +160,9 @@ objects concerned, never their content.
   applied all or none, and a signer acting meanwhile makes it stale.
 - **§6 "its fields changed"** is read as: a completed recipient acts again when a document they acted on is replaced or
   removed, or when **their own** fields change. Changing a not-yet-completed recipient's fields does not send others back.
+- **A changed link** (WEB-06): correcting an active recipient's email, phone, delivery or authentication requirements
+  revokes their links and sends a new invitation, so no session opened under the old details carries them past the
+  new checks; a name change alone keeps the link. Recipients not yet reached have no link to revoke.
 - **`delivered` is recomputed** after every command: when routing reaches a recipient who has not opened, the envelope
   is `sent` again until they do.
 - **Routing after every change**: a recipient whose turn no longer holds (a correction added someone earlier, or sent a

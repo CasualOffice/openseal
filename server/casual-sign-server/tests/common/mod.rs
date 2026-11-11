@@ -17,6 +17,7 @@
     dead_code
 )]
 
+pub mod flow;
 pub mod harness;
 
 use casual_sign_store::Store;
