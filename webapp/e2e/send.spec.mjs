@@ -131,6 +131,21 @@ test("a field dragged from the palette lands on the page where it is dropped", a
   await expect(page.getByText("Page 2, from the top-left corner.")).toBeAttached();
 });
 
+test("recipients reorder with the arrows and by dragging a card", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
+  await addRecipient(page, 0, { name: "One", email: "one@example.com" });
+  await addRecipient(page, 1, { name: "Two", email: "two@example.com" });
+  await addRecipient(page, 2, { name: "Three", email: "three@example.com" });
+  const names = () => page.getByTestId("recipient-name").evaluateAll((els) => els.map((e) => e.value));
+  await page.locator(".os-rcpt").nth(0).getByRole("button", { name: "Move down in signing order" }).click();
+  expect(await names()).toEqual(["Two", "One", "Three"]);
+  await page.locator(".os-rcpt").nth(2).locator(".os-rcpt__head").dragTo(page.locator(".os-rcpt").nth(0).locator(".os-rcpt__head"));
+  expect(await names()).toEqual(["Three", "Two", "One"]);
+});
+
 test("Shift+click selects several fields; they line up, move and delete together, and undo restores them", async ({ page }) => {
   await signIn(page);
   await page.goto(app("#/prepare"));

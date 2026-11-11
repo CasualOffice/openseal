@@ -314,17 +314,22 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const up = button(t("prepare.move-up"), { icon: "chevron-left", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, -1) });
       up.querySelector("svg").classList.add("os-rot90");
       up.disabled = i === 0;
-      const del = button(t("prepare.remove-recipient", { name: displayName(r, i) }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeRecipient(r) });
+      // Down as well as up, and a drag handle (S-04): reorder by keyboard or pointer.
+      const down = button(t("prepare.move-down"), { icon: "chevron-right", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, 1) });
+      down.querySelector("svg").classList.add("os-rot90");
+      down.disabled = i === S.recipients.length - 1;
+      const grip = h("span", { class: "os-rcpt__grip", attrs: { "aria-hidden": "true", title: t("prepare.drag-reorder") } }, icon("grip-vertical", { size: 16 }));
+      const del =button(t("prepare.remove-recipient", { name: displayName(r, i) }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeRecipient(r) });
       // The access code is set when the recipient is created; the API has no way to
       // change it afterwards (RecipientPatch), so a saved recipient shows it read-only.
       const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code"), maxLength: 64, attrs: { "aria-label": t("prepare.access-code-for", { name: displayName(r, i) }), "data-testid": "recipient-access-code" } });
       access.addEventListener("input", () => { r.accessCode = access.value.trim(); S.dirty = true; });
       const li = h("li", { class: `os-rcpt os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key } },
         h("div", { class: "os-rcpt__head" },
-          h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
+          grip, h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
           h("span", { class: "os-order", attrs: { title: t("prepare.routing-order") }, text: String(orderOf(r)) }),
           typeField.el,
-          h("span", { class: "os-spacer" }), up, del),
+          h("span", { class: "os-spacer" }), up, down, del),
         // Visible labels, not placeholders alone (S-03); "of recipient 2" for screen readers.
         h("div", { class: "os-rcpt__cell" },
           h("label", { class: "os-label os-rcpt__label", attrs: { for: nameId } }, t("prepare.name"), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })), name),
@@ -332,6 +337,20 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
         r.type === "signer" && !TPL ? access : null);
       li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
+      // Drag a card by its head onto another to put it there.
+      li.draggable = true;
+      li.addEventListener("dragstart", (e) => { if (e.target.closest("input, select, button")) { e.preventDefault(); return; } e.dataTransfer.setData("application/x-openseal-recipient", String(i)); e.dataTransfer.effectAllowed = "move"; li.classList.add("is-dragging"); });
+      li.addEventListener("dragend", () => li.classList.remove("is-dragging"));
+      li.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); li.classList.add("is-drop-target"); } });
+      li.addEventListener("dragleave", () => li.classList.remove("is-drop-target"));
+      li.addEventListener("drop", (e) => {
+        const from = Number(e.dataTransfer.getData("application/x-openseal-recipient"));
+        li.classList.remove("is-drop-target");
+        if (!Number.isInteger(from) || from === i) return;
+        e.preventDefault();
+        moveRecipient(from, i - from);
+        say(t("prepare.moved-to", { name: displayName(S.recipients[i], i), n: i + 1 }));
+      });
       list.append(li);
     });
     rcptPanel.append(list);
