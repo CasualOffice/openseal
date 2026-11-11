@@ -2143,6 +2143,38 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyView'}
         default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/fields/{field}/attachment:
+    parameters:
+      - {name: token, in: path, required: true, description: Ceremony link token (secret), schema: {type: string}}
+      - {name: field, in: path, required: true, description: The recipient's attachment field, schema: {type: string}}
+    put:
+      operationId: ceremonyAttach
+      summary: "Attach a file (PDF, PNG or JPEG, at most 10 MiB) to an attachment field (WEB-06)"
+      description: >-
+        A PDF is admitted by the bounded reader (nothing in it run or followed); images by
+        their signature. Stored write-once; the field's value is `{"attachment": "<sha256 hex>"}`,
+        which the chain's `recipient.field_completed` binds and the certificate of completion
+        lists. The sealed document is not changed by it. An attachment value can be given
+        to `/fields/{field}` or `/finish` only as uploaded here.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content_base64]
+              additionalProperties: false
+              properties:
+                content_base64: {type: string}
+      responses:
+        '200':
+          description: The ceremony view
+          content:
+            application/json:
+              schema: {type: object}
+        default: {$ref: '#/components/responses/Problem'}
   /s/{token}/finish:
     parameters:
       - name: token

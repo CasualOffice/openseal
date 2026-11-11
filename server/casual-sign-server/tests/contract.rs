@@ -908,6 +908,17 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .await;
     assert_eq!(copy.status, StatusCode::OK, "{:?}", copy.json());
     assert_eq!(copy.headers["x-openseal-document"], "preview");
+    // WEB-06: a signature field takes no attachment (tests/field_types.rs uploads one).
+    let not_attachment = api
+        .call(
+            "PUT",
+            &format!("{s1}/fields/{f1}/attachment"),
+            &Auth::None,
+            Some(json!({"content_base64": b64(&png())})),
+            &h1,
+        )
+        .await;
+    assert_eq!(not_attachment.status, StatusCode::NOT_FOUND);
     let mid = ok(
         api.call("GET", &base, k, None, &[]).await,
         StatusCode::OK,

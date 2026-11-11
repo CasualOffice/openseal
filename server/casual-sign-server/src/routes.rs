@@ -54,6 +54,8 @@ const UPLOAD: usize = 70 * 1024 * 1024;
 const CREATE: usize = 270 * 1024 * 1024;
 /// A 5 MiB signature image as base64.
 const IMAGE: usize = 7 * 1024 * 1024;
+/// A 10 MiB signer attachment as base64 (WEB-06).
+const ATTACHMENT: usize = 14 * 1024 * 1024;
 
 fn r<H, T>(method: &'static str, path: &'static str, access: Access, max_body: usize, h: H) -> Route
 where
@@ -568,6 +570,13 @@ pub fn table() -> Vec<Route> {
             Public,
             JSON,
             ceremony::fill,
+        ),
+        r(
+            "PUT",
+            "/s/{token}/fields/{field}/attachment",
+            Public,
+            ATTACHMENT,
+            ceremony::attach,
         ),
         r("POST", "/s/{token}/finish", Public, JSON, ceremony::finish),
         r(

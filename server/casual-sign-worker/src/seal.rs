@@ -152,6 +152,8 @@ pub struct SealInput {
     pub delivered: Vec<Vec<u8>>,
     /// Captures by id (the field values' and the adoptions' hashes).
     pub captures: BTreeMap<String, casual_sign_sdk::Art>,
+    /// Files signers attached, for the certificate (WEB-06).
+    pub attachments: Vec<casual_sign_certificate::AttachmentRow>,
     /// The sealing time.
     pub now: Timestamp,
 }
@@ -442,6 +444,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
             .collect(),
         recipients: rows,
         copies,
+        attachments: input.attachments.clone(),
         disclosure: None,
         seal: SealInfo::Pending,
         verify_url: None,

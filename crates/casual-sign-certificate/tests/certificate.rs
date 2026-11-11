@@ -176,6 +176,51 @@ fn input_errors_carry_codes() {
     );
 }
 
+/// Signer attachments are listed by recipient, field, kind, size and SHA-256 (WEB-06),
+/// and their bounds are checked; with none, the section is absent.
+#[test]
+fn signer_attachments_are_listed_by_hash() {
+    let fonts = FontSet::bundled();
+    let (chain, delivered) = chain(1);
+    let text = |inp: &casual_sign_certificate::CertificateInput<'_>| {
+        let r = render_certificate(inp, &fonts, &CertificateOptions::default()).unwrap();
+        let mut a = admit(&r.bytes, &Limits::default(), &never).unwrap();
+        let pages = a.report.pages.clone();
+        casual_sign_fields::extract_text(&mut a.document, &pages, &never)
+            .unwrap()
+            .iter()
+            .flat_map(|p| p.runs.iter().map(|r| r.text.clone()))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let mut with = input(&chain, delivered, 1);
+    let sha = casual_sign_audit::Hash256::digest(b"the attached file");
+    with.attachments = vec![casual_sign_certificate::AttachmentRow {
+        recipient: with.recipients[0].party.name.clone(),
+        field: "proof_of_address".into(),
+        media_type: "application/pdf".into(),
+        bytes: 1234,
+        sha256: sha,
+    }];
+    let shown = text(&with);
+    assert!(shown.contains("Signer attachments"), "{shown}");
+    assert!(shown.contains("proof_of_address"), "{shown}");
+    assert!(shown.contains("1234 bytes"), "{shown}");
+    let hex = sha.hex();
+    assert!(
+        shown.replace(' ', "").contains(&hex[..16]),
+        "the hash is printed: {shown}"
+    );
+    assert!(!text(&input(&chain, delivered, 1)).contains("Signer attachments"));
+    with.attachments[0].field = "x".repeat(4_001);
+    assert_eq!(
+        render_certificate(&with, &fonts, &CertificateOptions::default())
+            .unwrap_err()
+            .code(),
+        "CS-AUD-0020"
+    );
+}
+
 #[test]
 fn locations_at_their_longest_fit_the_layout() {
     use casual_sign_audit::{FallbackReason, Location, MAX_DATABASE_BYTES, MAX_PLACE_BYTES};

@@ -35,7 +35,7 @@ openseal/
 | `casual-sign-seal` | Engine | pdf, crypto, verify (self-check, docs/31 §4 step 8) | `sha1` (PAdES `/VRI` identifiers only) | `-sdk` |
 | `casual-sign-verify` | Engine | pdf, crypto (audit joins with stage 1I) | `der`, `spki`, `x509-cert`, `x509-ocsp`, `sha2`, `p256`, `p384`, `rsa` (verify only, default feature) | `-sdk`, `-wasm` |
 | `casual-sign-audit` | Engine | model, crypto | `serde`, `serde_json`; RFC 8785 and a bounded JSON parser are our own | `-workflow`, `-certificate` |
-| `casual-sign-certificate` | Engine | audit, flatten, pdf, model, crypto | `rust_decimal`, `md-5` (the `/CheckSum` ISO 32000-2 defines) | `-sdk` |
+| `casual-sign-certificate` | Engine | audit, flatten, pdf, model, crypto | `rust_decimal`, `md-5` (the `/CheckSum` ISO 32000-2 defines); dev: `casual-sign-fields` (reads a rendered certificate's text, `WEB-06`) | `-sdk` |
 | `casual-sign-workflow` | Engine | model, audit, fields | `serde`, `serde_json` (both already in the tree); dev: `proptest`, `rust_decimal` | server |
 | `casual-sign-sdk` | Engine facade | model, pdf, fields, flatten, crypto, seal, verify, audit, certificate | —; dev: `aws-lc-rs`, `rcgen` and the RustCrypto PKI crates (test TSA and OCSP, as `-seal`) | server, `-cli`, desktop |
 | `casual-sign-cli` | Host | sdk | `serde_json`; native only: `aws-lc-rs` (file keys, TSA nonce), `der`, `x509-cert`, `pem-rfc7468`, `ureq` with `rustls` on aws-lc-rs and `rustls-native-certs` (TSA, OCSP, CRL over HTTP) | developers, `tools/pipeline-corpus.py` |

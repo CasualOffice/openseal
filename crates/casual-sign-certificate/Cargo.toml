@@ -24,5 +24,10 @@ rust_decimal = { version = "1.37", default-features = false, features = ["std"] 
 # tree (lopdf's test oracle). MIT OR Apache-2.0.
 md-5 = { version = "0.11", default-features = false }
 
+[dev-dependencies]
+# Reading a rendered certificate's text in its tests (WEB-06). Already a dependency
+# of `casual-sign-flatten`.
+casual-sign-fields = { path = "../casual-sign-fields" }
+
 [lints]
 workspace = true

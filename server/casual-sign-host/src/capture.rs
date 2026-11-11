@@ -135,6 +135,22 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed> {
     }
 }
 
+/// The media type of a signer's attachment by its leading bytes (WEB-06):
+/// `application/pdf`, `image/png`, `image/jpeg`, else `application/octet-stream`
+/// (which the API never admits).
+#[must_use]
+pub fn media_type(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(b"%PDF-") {
+        "application/pdf"
+    } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "image/png"
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "image/jpeg"
+    } else {
+        "application/octet-stream"
+    }
+}
+
 /// An uploaded image's art.
 ///
 /// # Errors

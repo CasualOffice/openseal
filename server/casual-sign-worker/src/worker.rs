@@ -1274,8 +1274,39 @@ impl<B: BlobStore + 'static> Worker<B> {
             };
             captures.insert(id, art);
         }
+        // Signer attachments (WEB-06): each value names its file by SHA-256; the file
+        // is read to give its size and kind, and its hash checked.
+        let mut attachments = Vec::new();
+        for f in &state.fields.0 {
+            let Some(casual_sign_model::FieldValue::Attachment(id)) = &f.value else {
+                continue;
+            };
+            let key = BlobKey::parse(id.as_str())
+                .map_err(|_| WorkerError::SealInput { what: "attachment" })?;
+            let bytes = self.blob_or(&key, "attachment").await?;
+            if Hash256::digest(&bytes).hex() != id.as_str() {
+                return Err(WorkerError::SealInput { what: "attachment" });
+            }
+            let recipient = f
+                .recipient_id
+                .as_ref()
+                .and_then(|r| state.recipient(r))
+                .map(|r| r.spec.name.get().as_str().to_owned())
+                .unwrap_or_default();
+            attachments.push(casual_sign_certificate::AttachmentRow {
+                recipient,
+                field: f
+                    .label
+                    .as_ref()
+                    .map_or_else(|| f.id.as_str().to_owned(), |l| l.as_str().to_owned()),
+                media_type: casual_sign_host::capture::media_type(&bytes).to_owned(),
+                bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+                sha256: Hash256::digest(&bytes),
+            });
+        }
         let now = ts(self.now())?;
         let input = SealInput {
+            attachments,
             state,
             chain,
             account_name: account.name,

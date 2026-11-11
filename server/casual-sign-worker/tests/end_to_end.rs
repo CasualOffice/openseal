@@ -173,6 +173,19 @@ async fn sign(env: &Env, app: &axum::Router, email: &str, field: &str) -> (Http,
         )
         .await;
     let capture = adopted["adoption_id"].as_str().unwrap();
+    // WEB-06: a required attachment field is filled by uploading a file.
+    for f in view["fields"].as_array().unwrap() {
+        if f["type"] == "attachment" {
+            let fid = f["id"].as_str().unwrap();
+            c.ok(
+                "PUT",
+                &format!("{s}/fields/{fid}/attachment"),
+                Some(json!({"content_base64": b64(&png())})),
+                StatusCode::OK,
+            )
+            .await;
+        }
+    }
     c.ok(
         "POST",
         &format!("{s}/finish"),
@@ -291,7 +304,8 @@ async fn api_and_worker_take_two_signers_to_completed_with_a_verified_seal() {
                     {"ref": "a", "type": "signer", "name": "Ada Lovelace", "email": "ada@e2e.example.test", "routing_order": 1},
                     {"ref": "g", "type": "signer", "name": "Grace Hopper", "email": "grace@e2e.example.test", "routing_order": 2},
                 ],
-                "fields": [sig("a", 100), sig("g", 160)],
+                "fields": [sig("a", 100), sig("g", 160),
+                    {"recipient": "a", "document": 0, "type": "attachment", "page": 1, "x": 72, "y": 300, "width": 120, "height": 20, "required": true, "label": "id_proof"}],
             })),
             StatusCode::CREATED,
         )

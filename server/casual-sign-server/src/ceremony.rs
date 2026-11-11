@@ -207,6 +207,17 @@ impl Open {
     ) -> Result<(), ApiError> {
         let mut mine: Option<Vec<String>> = None;
         for (v, at) in values {
+            // An attachment value must name a file this recipient uploaded through
+            // `PUT …/fields/{field}/attachment` (WEB-06): one of their fields holds it.
+            if let FieldValue::Attachment(_) = v {
+                let theirs = self.l.state.fields.0.iter().any(|f| {
+                    f.recipient_id.as_ref() == Some(&self.recipient) && f.value.as_ref() == Some(v)
+                });
+                if !theirs {
+                    return Err(ApiError::invalid(&at));
+                }
+                continue;
+            }
             let FieldValue::Signature(id) = v else {
                 continue;
             };
@@ -735,6 +746,87 @@ pub(crate) async fn fill(
             entry: FieldEntry {
                 field: f,
                 value: casual_sign_audit::Personal(req.value),
+            },
+        })
+        .await?;
+        Ok(StatusCode::OK)
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AttachmentIn {
+    content_base64: String,
+}
+
+/// Largest signer attachment, in bytes (docs/21, WEB-06).
+pub(crate) const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
+
+/// `PUT /s/{token}/fields/{field}/attachment {content_base64}` (WEB-06): the signer
+/// attaches a file to their attachment field. Admitted as a PDF (the bounded reader of
+/// docs/30 §2, nothing in it run or followed) or a PNG or JPEG by its signature; stored
+/// write-once by SHA-256, which is the field's value, so the chain's
+/// `recipient.field_completed` binds the file. Listed by hash in the certificate of
+/// completion; never drawn into or appended to the sealed document (evidence-safe:
+/// the sealed document stays exactly what was delivered plus the values drawn).
+pub(crate) async fn attach(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path((token, field)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let f =
+            o.l.state
+                .fields
+                .0
+                .iter()
+                .find(|f| {
+                    same_id(&f.id, &field)
+                        && f.recipient_id.as_ref() == Some(&o.recipient)
+                        && f.field_type == casual_sign_model::FieldType::Attachment
+                })
+                .map(|f| f.id.clone())
+                .ok_or_else(ApiError::not_found)?;
+        let req: AttachmentIn = parse(&body)?;
+        if req.content_base64.len()
+            > MAX_ATTACHMENT_BYTES
+                .div_ceil(3)
+                .saturating_mul(4)
+                .saturating_add(4)
+        {
+            return Err(ApiError::too_large());
+        }
+        let bytes = STANDARD
+            .decode(&req.content_base64)
+            .map_err(|_| ApiError::invalid("/content_base64"))?;
+        if bytes.is_empty() || bytes.len() > MAX_ATTACHMENT_BYTES {
+            return Err(ApiError::invalid("/content_base64"));
+        }
+        match casual_sign_host::capture::media_type(&bytes) {
+            "application/pdf" => {
+                let engine = st.0.engine.clone();
+                let b = bytes.clone();
+                tokio::task::spawn_blocking(move || {
+                    engine.admit(&b, &casual_sign_sdk::Credentials::default())
+                })
+                .await
+                .map_err(|_| ApiError::internal("admission"))?
+                .map_err(|_| ApiError::invalid("/content_base64"))?;
+            }
+            "image/png" | "image/jpeg" => {}
+            _ => return Err(ApiError::invalid("/content_base64")),
+        }
+        let key = st.0.blobs.put(&bytes).await?;
+        let id = Id::new(Hash256(key.0).hex()).map_err(|_| ApiError::internal("attachment"))?;
+        let r = o.recipient.clone();
+        o.run(Command::CompleteField {
+            recipient: r,
+            entry: FieldEntry {
+                field: f,
+                value: casual_sign_audit::Personal(FieldValue::Attachment(id)),
             },
         })
         .await?;
