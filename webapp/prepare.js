@@ -16,8 +16,7 @@
 // roles ("Client", "Witness") where an envelope has people: no emails or access codes,
 // a template name instead of a subject, "Save template" instead of Send. Saving is
 // `POST /api/v1/templates` (name, email subject and message, roles), then the
-// documents and fields on docs/40's slice-3 template endpoints (api-extra.js); a
-// server without those keeps the roles and the editor says so.
+// documents and the fields bound to the roles' ids (templatesync.js, WEB-10).
 
 import { h, clear, reducedMotion, skipTo, initials } from "./dom.js";
 import { icon } from "./icons.js";
@@ -28,8 +27,8 @@ import { openPdf } from "./pdfview.js";
 import { docView, zoomControls, thumbnails } from "./docview.js";
 import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, snap, toWire, fromWire, takesInput } from "./geometry.js";
 import { errorMessage } from "./api.js";
-import { templateDocsUnsupported } from "./api-extra.js";
 import { rolesFrom } from "./templatemodel.js";
+import { templatePlan, applyTemplate } from "./templatesync.js";
 import { takeFiles } from "./handoff.js";
 
 const FIELD_ICON = { signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", text: "text-cursor-input", checkbox: "square-check" };
@@ -1156,49 +1155,53 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     return out;
   }
 
+  /// The editor's template as templatesync.js takes it; `roles` from `rolesFrom`.
+  function templateState(roles) {
+    return {
+      details: { name: S.subject.trim(), email_subject: S.emailSubject.trim(), email_message: S.message },
+      roles: S.recipients.map((r, i) => ({ key: r.key, id: r.id, ...roles[i] })),
+      docs: S.docs,
+      fields: S.fields.map((f) => ({ ...f, roleKey: f.recipientKey })),
+    };
+  }
+
   async function saveTemplate() {
     const list = templateProblems();
     if (list.length) { await showProblems(list, t("template.problems-title")); return; }
     await busy(saveBtn, async () => {
       saving = true; syncStatus();
       const roles = rolesFrom(S.recipients, S.routing);
-      let tpl;
       try {
-        tpl = await ctx.api.templates.create({
-          name: S.subject.trim(),
-          ...(S.emailSubject.trim() ? { email_subject: S.emailSubject.trim() } : {}),
-          ...(S.message ? { email_message: S.message } : {}),
-          roles,
-        });
+        if (!S.tplId) {
+          const tpl = await ctx.api.templates.create({
+            name: S.subject.trim(),
+            ...(S.emailSubject.trim() ? { email_subject: S.emailSubject.trim() } : {}),
+            ...(S.message ? { email_message: S.message } : {}),
+            roles,
+          });
+          // The roles come back with ids; their names are unique (rolesFrom).
+          S.tplId = tpl.id;
+          S.tplServer = tpl;
+          S.recipients.forEach((r, i) => { r.id = (tpl.roles || []).find((x) => x.name === roles[i].name)?.id || null; });
+        }
+        const st = templateState(roles);
+        const plan = templatePlan(S.tplServer, st, { takesInput });
+        try {
+          S.tplServer = await applyTemplate(ctx.api, S.tplId, st, plan, { takesInput });
+        } finally {
+          // What was made has its id now, even after a failure part-way.
+          for (const r of st.roles) { const x = S.recipients.find((y) => y.key === r.key); if (x) x.id = r.id; }
+          for (const f of st.fields) { const x = S.fields.find((y) => y.key === f.key); if (x) x.id = f.id; }
+        }
       } catch (err) {
+        saving = false;
         if (!ctx.failed(err)) showSaveError(err);
         return;
-      }
-      // Documents and fields: docs/40 slice 3. A server without them keeps the roles.
-      let partial = false;
-      try {
-        const docIds = new Map();
-        for (const d of S.docs) docIds.set(d.key, (await ctx.api.templates.addDocument(tpl.id, d.name, d.bytes)).id);
-        const roleOf = new Map(S.recipients.map((r, i) => [r.key, roles[i].name]));
-        if (S.fields.length) {
-          await ctx.api.templates.addFields(tpl.id, S.fields.map((f) => {
-            const body = { document_id: docIds.get(f.docKey), role: roleOf.get(f.recipientKey), type: f.type, placement: toWire(f.page, f) };
-            if (f.required && takesInput(f.type)) body.required = true;
-            if (f.label) body.label = f.label;
-            return body;
-          }));
-        }
-      } catch (err) {
-        if (!templateDocsUnsupported(err)) {
-          if (!ctx.failed(err)) showSaveError(err);
-          return;
-        }
-        partial = S.docs.length > 0;
       }
       saving = false;
       savedAt = new Date();
       S.dirty = false;
-      toast(partial ? t("template.saved-roles-only") : t("template.saved"), partial ? "info" : "success");
+      toast(t("template.saved"), "success");
       ctx.navigate("#/templates");
     });
   }

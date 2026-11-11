@@ -1,16 +1,15 @@
-// Templates (WEB-02, WEB-06; docs/47 §Screens "Templates", after DocuSign's): the list
-// with search, owner and last use; a new template in the editor (`#/templates/new`,
-// prepare.js in template mode); edit details (name, email subject and message) in a
-// side panel; duplicate; delete (a destructive confirmation); and "Use"
-// (`#/templates/{id}`): the document on the left, the roles and Send in a sticky side
-// panel on the right (T-03).
+// Templates (WEB-02, WEB-06, WEB-09; docs/47 §Screens "Templates", after DocuSign's):
+// the list with search, owner and last use; a new template in the editor
+// (`#/templates/new`, prepare.js in template mode); Edit reopens its documents, roles
+// and fields in the same editor (`#/templates/{id}/edit`); edit details (name, email
+// subject and message) in a side panel; duplicate; delete (a destructive
+// confirmation); and "Use" (`#/templates/{id}`): the document on the left, the roles
+// and Send in a sticky side panel on the right (T-03).
 //
-// Using a template is one `POST /api/v1/envelopes` (templatemodel.js), so it works on
-// today's API. A template the server keeps without documents (no slice-3 template
-// documents yet) becomes a draft with its recipients, opened in the editor to add the
-// PDF and fields. Update, delete and duplicate are `PATCH`/`DELETE /templates/{id}` and
-// `POST /templates/{id}/duplicate` (api-extra.js). Reopening a template's fields in
-// the editor needs prepare.js to load a template (docs/47 finding T-01, open).
+// Using a template is one `POST /api/v1/envelopes` (templatemodel.js): the template's
+// documents, its roles filled with people, and its fields bound to the roles' ids. A
+// template without documents becomes a draft with its recipients, opened in the editor
+// to add the PDF and fields. Every call is api.js's (WEB-10).
 
 import { h, clear, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
@@ -100,6 +99,7 @@ export function mount(view, ctx) {
               label: t("templates.actions-for", { name }),
               buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
               items: () => [
+                { label: t("templates.edit-fields"), icon: "file-pen-line", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/edit`) },
                 { label: t("templates.edit"), icon: "pencil", run: () => edit(tp) },
                 { label: t("templates.duplicate"), icon: "copy", run: () => duplicate(tp) },
                 { label: t("templates.delete"), icon: "trash-2", danger: true, run: () => remove(tp) },
@@ -134,7 +134,7 @@ export function mount(view, ctx) {
             const name = f.name.value.trim();
             if (!name) { f.err.textContent = t("form.required"); f.name.setAttribute("aria-invalid", "true"); f.name.focus(); return undefined; }
             const { etag } = await ctx.api.templates.get(tp.id);
-            await ctx.api.templates.update(tp.id, etag, { name, email_subject: f.subject.value, email_message: f.message.value });
+            await ctx.api.templates.patch(tp.id, etag, { name, email_subject: f.subject.value, email_message: f.message.value });
             return true;
           },
         },

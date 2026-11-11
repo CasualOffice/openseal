@@ -10,7 +10,8 @@ import { summarize, coverage, certificatesFrom, CHECKS } from "../verifyreport.j
 import { parseTrail, eventLabel, MAX_TRAIL_BYTES } from "../trail.js";
 import { clampZoom, pinchZoom, enlargeFor, MIN_ZOOM, MAX_ZOOM } from "../zoom.js";
 import { createClient, isMockMode, isNoServer } from "../api.js";
-import { extend, templateDocsUnsupported } from "../api-extra.js";
+import { templatePlan, applyTemplate, emptyPlan, added, fieldSig } from "../templatesync.js";
+import { profileName, invitePending, recipientCorrection } from "../people.js";
 import { createMockFetch, MOCK } from "../mock.js";
 import { makePdf } from "../mockpdf.js";
 
@@ -152,28 +153,154 @@ test("isNoServer is a loopback dev server's 404 or 501, or no answer; never a re
 });
 
 async function signedIn() {
-  const api = extend(createClient({ fetch: createMockFetch() }));
+  const api = createClient({ fetch: createMockFetch() });
   await api.login(MOCK.email, MOCK.password);
   return api;
 }
 
-test("templates: list, create with roles, rename with If-Match; slice-3 documents and fields", async () => {
+test("templates: create with roles, patch with If-Match; documents, roles and fields bound to role ids (WEB-10)", async () => {
   const api = await signedIn();
   const before = (await api.templates.list()).items.length;
   const tp = await api.templates.create({ name: "Lease", roles: [{ name: "Tenant", type: "signer", routing_order: 1 }] });
   assert.equal((await api.templates.list()).items.length, before + 1);
+  assert.match(tp.roles[0].id, /./);
   const { etag } = await api.templates.get(tp.id);
-  const renamed = await api.templates.rename(tp.id, etag, "Lease 2027");
+  const renamed = await api.templates.patch(tp.id, etag, { name: "Lease 2027" });
   assert.equal(renamed.name, "Lease 2027");
-  await assert.rejects(api.templates.rename(tp.id, etag, "stale"), (e) => e.code === "CS-WF-0002");
-  const doc = await api.templates.addDocument(tp.id, "lease.pdf", makePdf([{ title: "Lease" }]));
+  await assert.rejects(api.templates.patch(tp.id, etag, { name: "stale" }), (e) => e.code === "CS-WF-0002");
+  // Adding a document answers the whole template (as the server): the new one is the
+  // document that was not there before.
+  const whole = await api.templates.addDocument(tp.id, "lease.pdf", makePdf([{ title: "Lease" }]));
+  assert.equal(whole.id, tp.id);
+  const [doc] = added([], whole.documents);
   const placement = { page: 1, x: "72", y: "600", width: "160", height: "44" };
-  await api.templates.addFields(tp.id, [{ document_id: doc.id, role: "Tenant", type: "signature", placement, required: true }]);
-  await assert.rejects(api.templates.addFields(tp.id, [{ document_id: doc.id, role: "Nobody", type: "text", placement }]), (e) => e.code === "CS-WF-0008");
-  const { template } = await api.templates.get(tp.id);
-  assert.equal(template.fields.length, 1);
+  const role = tp.roles[0].id;
+  const out = await api.templates.addFields(tp.id, [{ document_id: doc.id, role_id: role, type: "signature", placement, required: true }]);
+  assert.equal(out.items[0].role_id, role);
+  // A role is named by its id, never by its name (the server matches ids).
+  await assert.rejects(api.templates.addFields(tp.id, [{ document_id: doc.id, role: "Tenant", type: "text", placement }]), (e) => e.code === "CS-API-0001");
+  const withRole = await api.templates.addRole(tp.id, { name: "Landlord", type: "signer", routing_order: 2 });
+  const landlord = added(whole.roles, withRole.roles)[0];
+  assert.equal(landlord.name, "Landlord");
+  const g = await api.templates.get(tp.id);
+  await api.templates.patchField(tp.id, out.items[0].id, g.etag, { role_id: landlord.id, label: "Sign here" });
+  const { template, etag: e2 } = await api.templates.get(tp.id);
+  assert.deepEqual([template.fields[0].role_id, template.fields[0].label, template.fields[0].placement.x], [landlord.id, "Sign here", "72"]);
+  await api.templates.removeRole(tp.id, landlord.id, e2);
+  assert.equal((await api.templates.get(tp.id)).template.fields.length, 0, "a role takes its fields with it");
   const blob = await api.templates.documentContent(tp.id, doc.id);
   assert.equal(new TextDecoder().decode(new Uint8Array(await blob.arrayBuffer()).subarray(0, 5)), "%PDF-");
+  await api.templates.removeDocument(tp.id, doc.id, (await api.templates.get(tp.id)).etag);
+  assert.equal((await api.templates.get(tp.id)).template.documents.length, 0);
+});
+
+test("templatePlan: what to remove, change and add; applyTemplate makes it so (WEB-09, WEB-10)", async () => {
+  const api = await signedIn();
+  const nda = (await api.templates.list()).items.find((x) => x.name === "Mutual NDA");
+  const { template: server } = await api.templates.get(nda.id);
+  const [company, counterparty, legal] = server.roles;
+  const doc = server.documents[0];
+  const roles = server.roles.map((r) => ({ key: r.id, id: r.id, name: r.name, type: r.type, routing_order: r.routing_order }));
+  const num = (v) => Number.parseFloat(v);
+  const fields = server.fields.map((f) => ({ key: f.id, id: f.id, roleKey: f.role_id, docKey: doc.id, type: f.type, page: f.placement.page, x: num(f.placement.x), y: num(f.placement.y), width: num(f.placement.width), height: num(f.placement.height), required: !!f.required, label: f.label || "" }));
+  const st = { details: { name: server.name, email_subject: server.email_subject, email_message: server.email_message }, roles, docs: [{ key: doc.id, id: doc.id, name: doc.name }], fields };
+  assert.ok(emptyPlan(templatePlan(server, st)), "nothing changed, nothing to do");
+  // Rename a role, drop the copy role, move one field, delete one, add one for a new role.
+  roles[0].name = "Company (signatory)";
+  st.roles = roles.filter((r) => r.id !== legal.id);
+  fields[0].x += 10;
+  const gone = fields.pop();
+  st.roles.push({ key: "new-role", id: null, name: "Witness", type: "signer", routing_order: 3 });
+  fields.push({ key: "new-field", id: null, roleKey: "new-role", docKey: doc.id, type: "signature", page: 2, x: 72, y: 100, width: 160, height: 44, required: true, label: "" });
+  st.details.name = "Mutual NDA (2027)";
+  const plan = templatePlan(server, st);
+  assert.deepEqual(plan.details, { name: "Mutual NDA (2027)", email_subject: server.email_subject, email_message: server.email_message });
+  assert.deepEqual(plan.removeRoles, [legal.id]);
+  assert.deepEqual(plan.removeFields, [gone.id]);
+  assert.deepEqual(plan.patchRoles, [{ id: company.id, body: { name: "Company (signatory)" } }]);
+  assert.deepEqual(plan.patchFields.map((x) => x.id), [fields[0].id]);
+  assert.deepEqual([plan.addRoles, plan.addFields, plan.addDocs], [["new-role"], ["new-field"], []]);
+  const after = await applyTemplate(api, nda.id, st, plan);
+  assert.equal(after.name, "Mutual NDA (2027)");
+  assert.deepEqual(after.roles.map((r) => r.name).sort(), ["Company (signatory)", "Counterparty", "Witness"]);
+  const witness = after.roles.find((r) => r.name === "Witness");
+  assert.equal(st.roles.find((r) => r.key === "new-role").id, witness.id, "the new role's id is written back");
+  assert.ok(after.fields.some((f) => f.role_id === witness.id && f.placement.page === 2));
+  assert.equal(after.fields.find((f) => f.id === fields[0].id).placement.x, String(fields[0].x));
+  assert.ok(!after.fields.some((f) => f.id === gone.id));
+  assert.equal(after.fields.filter((f) => f.role_id === counterparty.id).length, 1);
+});
+
+test("fieldSig ignores how a placement is written, not what it says", () => {
+  const a = fieldSig("r1", { page: 1, x: "72", y: "600.50", width: 160, height: "44" }, true, "");
+  assert.equal(a, fieldSig("r1", { page: 1, x: 72, y: "600.5", width: "160", height: "44.00" }, 1, null));
+  assert.notEqual(a, fieldSig("r1", { page: 1, x: 72.01, y: 600.5, width: 160, height: 44 }, true, ""));
+  assert.notEqual(a, fieldSig("r2", { page: 1, x: 72, y: 600.5, width: 160, height: 44 }, true, ""));
+});
+
+test("account settings: PATCH takes {settings} only and answers {settings}; profiles are named by id (WEB-10)", async () => {
+  const api = await signedIn();
+  await assert.rejects(api.request("PATCH", "/api/v1/accounts/me", { body: { name: "Renamed", settings: {} } }), (e) => e.code === "CS-API-0001");
+  const out = await api.patchAccountSettings({ default_expiry_days: 30, branding: { name: "Acme" } });
+  assert.deepEqual(Object.keys(out), ["settings"]);
+  assert.equal(out.settings.default_expiry_days, 30);
+  assert.equal((await api.patchAccountSettings({ default_expiry_days: null })).settings.default_expiry_days, undefined);
+  await assert.rejects(api.patchAccountSettings({ builtin_profiles: {} }), (e) => e.code === "CS-API-0001");
+  const acct = await api.account();
+  const builtin = acct.settings.builtin_profiles;
+  assert.equal(profileName({ permission_profile_id: builtin.viewer }, builtin), "viewer");
+  assert.equal(profileName({ permission_profile_id: "0190-custom" }, builtin), "0190-custom");
+});
+
+test("invitations: a name is required; the state is on single reads, not the list; accept takes token and password only", async () => {
+  const api = await signedIn();
+  await assert.rejects(api.users.invite({ email: "kai@example.com", profile: "sender" }), (e) => e.code === "CS-API-0001");
+  const u = await api.users.invite({ email: "kai@example.com", name: "Kai", profile: "sender" });
+  assert.ok(invitePending(u));
+  assert.ok(!("invitation" in (await api.users.list()).items.find((x) => x.id === u.id)));
+  assert.ok(invitePending(await api.users.get(u.id)));
+  assert.ok(invitePending(await api.users.reinvite(u.id)));
+  assert.equal(invitePending({ invitation: "accepted" }), false);
+  assert.equal(invitePending({}), false);
+});
+
+test("a correction of one recipient is a PATCH with only what changed (WEB-10)", async () => {
+  const r = { name: "Jordan Rivera", email: "jordan@example.com", auth: ["access_code"] };
+  assert.equal(recipientCorrection(r, { name: "Jordan Rivera", email: "jordan@example.com", requireCode: true, code: "" }), null);
+  assert.deepEqual(recipientCorrection(r, { name: "Jordan R.", email: "jordan@example.com", requireCode: true, code: "" }), { name: "Jordan R." });
+  assert.deepEqual(recipientCorrection(r, { name: "Jordan Rivera", email: "jordan@example.com", requireCode: true, code: "9999" }), { access_code: "9999" });
+  assert.deepEqual(recipientCorrection(r, { name: "Jordan Rivera", email: "jordan@example.com", requireCode: false, code: "" }), { auth: [] });
+  assert.deepEqual(recipientCorrection({ ...r, auth: [] }, { name: "Jordan Rivera", email: "j@example.com", requireCode: true, code: "1234" }), { email: "j@example.com", auth: ["access_code"], access_code: "1234" });
+});
+
+test("correcting a sent envelope: PATCH recipient keeps the rest and stores a code; /correct refuses an access_code member", async () => {
+  const api = await signedIn();
+  const offer = (await api.listEnvelopes({ status: "sent", limit: 200 })).items.find((x) => x.subject.startsWith("Offer letter"));
+  const { envelope, etag } = await api.getEnvelope(offer.id);
+  const jordan = envelope.recipients.find((r) => r.name === "Jordan Rivera");
+  const spec = { id: jordan.id, type: jordan.type, routing_order: jordan.routing_order, name: "Jordan R.", email: jordan.email, auth: jordan.auth, access_code: "2468" };
+  await assert.rejects(api.correctEnvelope(offer.id, etag, [{ op: "update_recipient", recipient: spec }]), (e) => e.code === "CS-API-0001");
+  await api.patchRecipient(offer.id, jordan.id, etag, { name: "Jordan R.", access_code: "2468" });
+  const after = (await api.getEnvelope(offer.id)).envelope.recipients.find((r) => r.id === jordan.id);
+  assert.deepEqual([after.name, after.auth], ["Jordan R.", ["access_code"]]);
+  // A code without the method, or the method newly required without a code, is refused.
+  const e3 = (await api.getEnvelope(offer.id)).etag;
+  await assert.rejects(api.patchRecipient(offer.id, jordan.id, e3, { auth: [], access_code: "1" }), (e) => e.code === "CS-API-0001");
+});
+
+test("detect-fields suggests fields in the field endpoints' geometry and changes nothing", async () => {
+  const api = await signedIn();
+  const draft = (await api.listEnvelopes({ status: "draft", limit: 200 })).items[0];
+  const { envelope, etag } = await api.getEnvelope(draft.id);
+  const out = await api.detectFields(draft.id, envelope.documents[0].id);
+  assert.equal(out.truncated, false);
+  assert.ok(out.items.length >= 3);
+  for (const s of out.items) {
+    assert.equal(s.document_id, envelope.documents[0].id);
+    for (const k of ["x", "y", "width", "height"]) assert.equal(typeof s[k], "string");
+    assert.ok(s.page >= 1 && s.confidence >= 0 && s.confidence <= 100);
+  }
+  assert.equal((await api.getEnvelope(draft.id)).etag, etag);
 });
 
 test("a template becomes one envelope on the envelope API", async () => {
@@ -213,13 +340,6 @@ test("countEnvelopes counts one page and says when there is more", async () => {
   const drafts = await api.countEnvelopes("draft");
   assert.ok(drafts.n >= 1 && drafts.n <= all);
   assert.equal((await api.countEnvelopes(undefined, 1)).more, all > 1);
-});
-
-test("templateDocsUnsupported is a 404 or 405 only", () => {
-  assert.equal(templateDocsUnsupported({ status: 404 }), true);
-  assert.equal(templateDocsUnsupported({ status: 405 }), true);
-  assert.equal(templateDocsUnsupported({ status: 422 }), false);
-  assert.equal(templateDocsUnsupported(null), false);
 });
 
 // ---- strings built from data ------------------------------------------------------------------

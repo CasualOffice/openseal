@@ -148,21 +148,21 @@ test("templates: search, owner and last use, duplicate, edit details, delete", a
 
   await page.getByRole("button", { name: "Actions for Mutual NDA" }).click();
   await page.getByRole("menuitem", { name: "Duplicate" }).click();
-  await expect(page.getByRole("link", { name: "Mutual NDA (copy)" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Copy of Mutual NDA" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Actions for Mutual NDA (copy)" }).click();
+  await page.getByRole("button", { name: "Actions for Copy of Mutual NDA" }).click();
   await page.getByRole("menuitem", { name: "Edit details" }).click();
   const panel = page.getByRole("dialog", { name: "Edit template" });
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await panel.getByLabel("Email subject").fill("NDA for the Q1 partners");
   await expectAccessible(page, "template edit panel");
   await panel.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator("tbody tr", { hasText: "Mutual NDA (copy)" })).toContainText("NDA for the Q1 partners");
+  await expect(page.locator("tbody tr", { hasText: "Copy of Mutual NDA" })).toContainText("NDA for the Q1 partners");
 
-  await page.getByRole("button", { name: "Actions for Mutual NDA (copy)" }).click();
+  await page.getByRole("button", { name: "Actions for Copy of Mutual NDA" }).click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
   await page.getByRole("dialog", { name: "Delete this template?" }).getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByRole("link", { name: "Mutual NDA (copy)" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Copy of Mutual NDA" })).toHaveCount(0);
   await expectAccessible(page, "templates");
 });
 
@@ -189,6 +189,10 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
   await inv.getByRole("button", { name: "Invite user" }).click();
   await expect(inv.getByText("Enter a valid email.")).toBeVisible();
   await inv.getByLabel("Email").fill("lee@example.com");
+  // WEB-10: the server needs a name (UserCreate), so the form asks for one first.
+  await inv.getByRole("button", { name: "Invite user" }).click();
+  await expect(inv.getByLabel("Name", { exact: true })).toHaveAttribute("aria-invalid", "true");
+  await inv.getByLabel("Name", { exact: true }).fill("Lee Park");
   await inv.getByRole("button", { name: "Invite user" }).click();
   await expect(page.locator(".os-toast").last()).toContainText("Invitation sent to lee@example.com.");
   await expect(page.getByRole("row", { name: /lee@example.com/ })).toContainText("Invited");
@@ -220,6 +224,9 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
   await expect(page.getByTestId("account-branding")).toContainText("#0e7490");
   await page.getByTestId("account-settings").getByRole("button", { name: "Edit settings" }).click();
   const st = page.getByRole("dialog", { name: "Settings" });
+  // The API has no rename (AccountPatch is settings only): the name is shown, not a field.
+  await expect(st.getByTestId("account-name")).toHaveText("Demo account");
+  await expect(st.getByRole("textbox", { name: "Account name" })).toHaveCount(0);
   await st.getByLabel("Envelopes expire after (days)").fill("30");
   await st.getByRole("button", { name: "Save" }).click();
   await expect(page.getByTestId("account-settings")).toContainText("30");
@@ -232,6 +239,7 @@ test("an invited member sets a password from the emailed link, once", async ({ p
   await page.getByRole("button", { name: "Invite user" }).click();
   const inv = page.getByRole("dialog", { name: "Invite user" });
   await inv.getByLabel("Email").fill("kai@example.com");
+  await inv.getByLabel("Name", { exact: true }).fill("Kai Moreno");
   await inv.getByRole("button", { name: "Invite user" }).click();
   await page.getByRole("button", { name: "Resend invitation to kai@example.com" }).click();
   await expect(page.locator(".os-toast").last()).toContainText("Invitation sent again to kai@example.com.");

@@ -102,10 +102,9 @@ test("use a template: fill the roles, send, and the envelope has its fields", as
   await expect(page.locator(".os-timeline__item")).toHaveCount(3);
 });
 
-test("a template the server keeps without documents continues in the editor", async ({ page }) => {
+test("a template without documents continues in the editor", async ({ page }) => {
   mockOnly();
   await signIn(page);
-  await page.evaluate(() => sessionStorage.setItem("openseal.mock.no-template-docs", "1"));
   await page.goto(app("#/templates"));
   await page.getByRole("button", { name: "Use Contractor onboarding" }).click();
   await expect(page.getByTestId("use-no-docs")).toBeVisible();
@@ -119,10 +118,9 @@ test("a template the server keeps without documents continues in the editor", as
   await expect(page.getByLabel("Subject")).toHaveValue("Welcome aboard: documents to sign");
 });
 
-test("a new template on a server without template documents keeps its roles and says so", async ({ page }) => {
+test("a new template keeps its document and fields, bound to the role's id (WEB-10)", async ({ page }) => {
   mockOnly();
   await signIn(page);
-  await page.evaluate(() => sessionStorage.setItem("openseal.mock.no-template-docs", "1"));
   await page.goto(app("#/templates/new"));
   await page.getByTestId("pdf-input").setInputFiles(pdfFile("w9.pdf", "Form"));
   await page.getByTestId("wizard-next").click();
@@ -132,8 +130,12 @@ test("a new template on a server without template documents keeps its roles and 
   await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
   await page.getByTestId("wizard-next").click();
   await page.getByRole("button", { name: "Save template" }).click();
-  await expect(page.locator(".os-toast")).toContainText("does not keep template documents");
-  await expect(page.getByRole("link", { name: "w9" })).toBeVisible();
+  await expect(page.locator(".os-toast")).toContainText("Template saved.");
+  await page.getByRole("link", { name: "w9" }).click();
+  await expect(page.getByText("1 field")).toBeVisible();
+  const tp = await page.evaluate(() => JSON.parse(sessionStorage.getItem("openseal.mock.v1")).templates.find((x) => x.name === "w9"));
+  expect(tp.documents).toHaveLength(1);
+  expect(tp.fields.map((f) => f.role_id)).toEqual([tp.roles[0].id]);
 });
 
 test("rename a template in its details panel (WEB-06 T-01)", async ({ page }) => {

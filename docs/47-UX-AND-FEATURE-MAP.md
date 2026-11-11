@@ -198,14 +198,14 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
 | --- | --- | --- |
 | Home | `app.html#/home` (`home.js`) | `GET /api/v1/envelopes?status=&limit=` per counter, `GET …/{id}` for expiry |
 | Agreements | `app.html#/agreements[?folder=&q=]` (`dashboard.js`) | as WEB-01, plus `GET …/{id}` per row for recipients and last change |
-| Templates | `#/templates`, `#/templates/new`, `#/templates/{id}` (`templates.js`, `prepare.js` in template mode) | `GET/POST /api/v1/templates`, `GET/PATCH /api/v1/templates/{id}`; slice-3 design `POST /templates/{id}/documents`, `GET …/documents/{doc}/content`, `POST /templates/{id}/fields` (404 or 405 today: roles kept, the editor says so); using one is a single `POST /api/v1/envelopes` (`templatemodel.js`) |
+| Templates | `#/templates`, `#/templates/new`, `#/templates/{id}`, `#/templates/{id}/edit` (`templates.js`, `prepare.js` in template mode) | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{id}`, the template's documents, roles and fields (`templatesync.js`, WEB-09 and WEB-10 below); using one is a single `POST /api/v1/envelopes` (`templatemodel.js`) |
 | Reports | `#/reports` (`reports.js`, `reportmodel.js`) | `GET /api/v1/envelopes` (up to 1,000) and `GET …/{id}` for completed ones |
 | Admin | `#/admin[?tab=api]` (`admin.js`) | `GET/POST /api/v1/users`, `PATCH/DELETE /api/v1/users/{id}`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}` |
 | Verify | `verify.html` (`verify.js`, `verifyreport.js`, `trail.js`) | none: casual-sign-wasm's `verify()` in the page; `audit-trail.json` read by pdf.js |
 
-- **Calls added outside api.js** are in `api-extra.js`. **Mock mode** serves templates (with the slice-3 design;
-  `sessionStorage["openseal.mock.no-template-docs"]="1"` turns it off), users and API clients, and is remembered for the
-  tab once `?mock=1` is seen on loopback (`?mock=0` forgets). Without mock or a server on loopback the app and signing
+- **Every call is in `api.js`** (WEB-10 moved `api-extra.js` there; see below). **Mock mode** serves templates, users
+  and API clients as the server does, and is remembered for the tab once `?mock=1` is seen on loopback (`?mock=0`
+  forgets). Without mock or a server on loopback the app and signing
   page say "No OpenSeal server is running here".
 - **Verifier build**: `tools/build-webapp-wasm.sh` builds casual-sign-wasm as `tools/wasm-parity.sh` ships it and
   copies it to `webapp/vendor/openseal-wasm/` (build output, not committed); without it Verify says so.
@@ -428,3 +428,26 @@ review, not drawn on the page), note and sender-locked values (shown, never edit
 length) and number rules (min, max, decimals) are checked inline as the field is left, in the engine's terms
 (`webapp/signfields.js`); the server checks again on every fill and at finish. Download before finishing is the
 delivered document (`409` from `/document` until the signer finishes).
+
+## As built (WEB-09 and WEB-10, 2026-11-12)
+
+### One API client, checked against the server (WEB-10)
+
+`webapp/api-extra.js` is gone: every call is a method of `api.js`'s client, named as the server names it, and its
+request and response were checked against `api/openapi.yaml` and the handlers in `server/casual-sign-server/src/api/`.
+`mock.js` answers in the same shapes, so the browser tests catch a client that drifts. What the check found and changed:
+
+| Call | Was | Now |
+| --- | --- | --- |
+| Correct (`envactions.js`) | `POST …/correct` with `update_recipient` carrying a partial recipient and `access_code`. The engine's `RecipientSpec` refuses unknown members (`access_code`: 400) and `update_recipient` replaces the whole spec, so delivery, phone, time zone and date format would have been reset | One `PATCH …/recipients/{r}` per changed recipient, with only what changed (`people.js` `recipientCorrection`); the server applies it as a correction of a sent envelope, keeps the rest of the spec, and stores the access code. `api.correctEnvelope` stays for the engine change list, documented as such |
+| Template fields | `role: <role name>` | `role_id`: the server matches roles by id only. Adding a template document or role answers the whole template, so the new one is the id that was not there (`templatesync.js` `added`); the editor and Save as template used the template's id as the document's |
+| Use a template | Fields matched by role name | By `role_id` (`templatemodel.js`), so a server template's fields reach the envelope |
+| `PATCH /accounts/me` | `{name, settings}`, answer taken as the account | `{settings}` only (`AccountPatch`), answer `{settings}` merged into the account; the account's name is shown, not edited (the API has no rename) |
+| Members' profiles | `permission_profile_id` read as `profile-<name>` | Named through `settings.builtin_profiles` (name → id), else the id (`people.js` `profileName`) |
+| Invitations | `invited` flag on the list; name optional | The list has no invitation state, so Admin reads each local member (`GET /users/{id}`, at most 100) for `invitation`; a name is required (`UserCreate`); `POST /users/{id}/invite` answers 202 |
+| Accept invitation | `{token, password, name?}` | `{token, password}` (`AcceptInvite` refuses other members); the name field is gone from the page |
+| Duplicate template | "… (copy)" in the mock | "Copy of …", the server's default |
+
+Findings for the server (rows for the main session): the users list should carry `invitation` (one read per member
+today); the recipient JSON lacks `date_format` and `witness_for`, so no client can send a whole `RecipientSpec` to
+`/correct` safely; there is no account rename.

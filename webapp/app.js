@@ -3,7 +3,7 @@
 //
 // Routes (hash, so a static server needs no rewrites):
 //   #/signin  #/home  #/agreements[?status=…]  #/envelopes/{id}  #/prepare  #/prepare/{id}
-//   #/templates  #/templates/new  #/templates/{id}  #/admin[?tab=api|account]   (WEB-02)
+//   #/templates  #/templates/new  #/templates/{id}  #/templates/{id}/edit  #/admin[?tab=api|account]
 //   #/accept-invite?token=…   (WEB-06; no session needed)
 // Verify is its own page, verify.html, usable without an account.
 
@@ -11,7 +11,6 @@ import { h, clear, isTyping, initials } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, ApiError, errorMessage } from "./api.js";
-import { extend } from "./api-extra.js";
 import { register, run, command } from "./commands.js";
 import { handle, bindings } from "./keys.js";
 import { openPanel, toast, errorState, noServerState, menuButton, avatar } from "./ui/index.js";
@@ -26,7 +25,6 @@ if (mock) {
   const base = document.querySelector('meta[name="openseal-api-base"]')?.content || "";
   api = createClient({ baseUrl: base, store: safeSession() });
 }
-extend(api);
 
 function safeSession() {
   try { return globalThis.sessionStorage; } catch { return null; }
@@ -64,6 +62,11 @@ const ROUTES = [
   [/^#\/templates\/new$/, async () => {
     const prepare = await import("./prepare.js");
     return { mount: (view, c, _m, params) => prepare.mount(view, c, [], params, { template: true }) };
+  }, { nav: "templates", wide: true, chrome: false, frame: true }],
+  // WEB-09: a saved template's documents, roles and fields, reopened in the editor.
+  [/^#\/templates\/([^/?]+)\/edit$/, async () => {
+    const prepare = await import("./prepare.js");
+    return { mount: (view, c, m, params) => prepare.mount(view, c, [], params, { template: true, templateId: m[0] }) };
   }, { nav: "templates", wide: true, chrome: false, frame: true }],
   [/^#\/templates\/([^/?]+)$/, async () => ({ mount: (await import("./templates.js")).mountUse }), { nav: "templates" }],
   [/^#\/admin(?:\?.*)?$/, () => import("./admin.js"), { nav: "admin" }],
