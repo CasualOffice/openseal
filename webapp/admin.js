@@ -10,7 +10,7 @@
 import { h, clear } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, emptyState, skeletonRows, errorState, openDialog, confirmDialog, toast, toastError, selectField, tabs } from "./ui/index.js";
+import { button, emptyState, skeletonRows, errorState, openPanel, confirmDialog, toast, toastError, selectField, tabs } from "./ui/index.js";
 
 const PROFILES = ["admin", "sender", "viewer"];
 const SCOPES = ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write"];
@@ -82,7 +82,7 @@ function users(panel, ctx) {
 
   async function add() {
     const f = {};
-    const created = await openDialog({
+    const created = await openPanel({
       title: t("admin.add-user"),
       build(body) {
         f.name = h("input", { id: "u-name", class: "os-input", maxLength: 255, autocomplete: "off", attrs: { autofocus: true } });
@@ -121,7 +121,7 @@ function users(panel, ctx) {
 
   async function rename(u) {
     let input;
-    const v = await openDialog({
+    const v = await openPanel({
       title: t("admin.rename-named", { name: u.name }),
       build(body) {
         input = h("input", { id: "u-rename", class: "os-input", value: u.name || "", maxLength: 255, attrs: { autofocus: true } });
@@ -195,7 +195,7 @@ function clients(panel, ctx) {
 
   async function add() {
     const f = { scopes: [] };
-    const created = await openDialog({
+    const created = await openPanel({
       title: t("admin.add-client"),
       build(body) {
         f.name = h("input", { id: "c-name", class: "os-input", maxLength: 255, autocomplete: "off", attrs: { autofocus: true } });
@@ -249,7 +249,7 @@ function clients(panel, ctx) {
 /// The one time a secret is shown: what to copy, and that it will not be shown again.
 function showSecret(c) {
   const rows = c.key ? [[t("admin.key"), c.key]] : [[t("admin.client-id"), c.client_id], [t("admin.client-secret"), c.client_secret]];
-  return openDialog({
+  return openPanel({
     title: t("admin.secret-title"),
     description: t("admin.secret-text"),
     build(body) {

@@ -11,3 +11,4 @@ export {
 export { iconButton, field, selectField, checkbox, radioGroup, toggle, pill, card, table, avatar, tooltip, stepper } from "./controls.js";
 export { menuButton, tabs, drawer } from "./menus.js";
 export { pdfPreview } from "./pdfpreview.js";
+export { dockPanel, openPanel, closePanel } from "./panel.js";

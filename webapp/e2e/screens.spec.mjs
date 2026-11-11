@@ -2,7 +2,7 @@
 // under target/e2e-screens/: sign-in, dashboard, editor with a placed field, the
 // signing page at 390 px, in light and dark. Not pixel baselines.
 import { test, expect } from "@playwright/test";
-import { signIn, app, pdfFile, snap, signPage, tokens, REAL } from "./helpers.mjs";
+import { signIn, app, pdfFile, snap, signPage, tokens, REAL, placingFor } from "./helpers.mjs";
 
 for (const scheme of ["light", "dark"]) {
   test(`screens (${scheme})`, async ({ page }, testInfo) => {
@@ -38,10 +38,10 @@ for (const scheme of ["light", "dark"]) {
     await snap(page, testInfo, `${scheme}-4b-prepare-recipients`);
     await page.getByTestId("wizard-next").click();
     await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
-    await page.getByLabel("Placing fields for").selectOption({ index: 0 });
+    await placingFor(page, 0);
     await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
     await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).click();
-    await page.getByLabel("Placing fields for").selectOption({ index: 1 });
+    await placingFor(page, 1);
     await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
     await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).click();
     await snap(page, testInfo, `${scheme}-4c-prepare-fields`);

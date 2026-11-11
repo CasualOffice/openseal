@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { signIn, app, pdfFile, snap, expectAccessible, REAL } from "./helpers.mjs";
+import { signIn, app, pdfFile, snap, expectAccessible, REAL, placingFor } from "./helpers.mjs";
 import { pdfWithAttachments } from "./pdfattach.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -63,9 +63,9 @@ test("templates: empty state, then a new template from a PDF with roles and fiel
   await page.getByTestId("role-name").nth(1).fill("Landlord");
   await page.getByTestId("wizard-next").click();
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
-  await page.getByLabel("Placing fields for").selectOption({ index: 0 });
+  await placingFor(page, 0);
   await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
-  await page.getByLabel("Placing fields for").selectOption({ index: 1 });
+  await placingFor(page, 1);
   await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
   await expectAccessible(page, "template editor");
   await snap(page, testInfo, "web02-template-editor");

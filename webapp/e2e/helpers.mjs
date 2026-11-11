@@ -35,6 +35,17 @@ export const signPage = (token) => `/s/${encodeURIComponent(token)}${q}`;
 /// sign-in of each worker and by the specs about signing in.
 let realSession = null;
 
+/// Choose who the next fields are for in the editor (WEB-06: recipient chips, a radio
+/// group of the signers). `who`: a signer's index, or a name ("1. Ana Signer" also works).
+export async function placingFor(page, who) {
+  const group = page.getByRole("radiogroup", { name: "Placing fields for" });
+  const radio = typeof who === "number"
+    ? group.getByRole("radio").nth(who)
+    : group.getByRole("radio", { name: String(who).replace(/^\d+\.\s*/, ""), exact: true });
+  await radio.click();
+  await expect(radio).toHaveAttribute("aria-checked", "true");
+}
+
 /// Sign in and land on Agreements (most specs), or on Home with `land = "home"`.
 /// Sign-in itself lands on Home (WEB-02).
 export async function signIn(page, land = "agreements") {

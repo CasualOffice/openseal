@@ -40,6 +40,15 @@ export function clear(node) {
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+/// Point the page's skip link at `href` with `text` ("Skip to document" on the document
+/// views, A19).
+export function skipTo(href, text) {
+  const a = document.querySelector(".os-skip");
+  if (!a) return;
+  a.setAttribute("href", href);
+  if (text) a.textContent = text;
+}
+
 /// Whether the user asked the system for less motion.
 export function reducedMotion() {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;

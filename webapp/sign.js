@@ -7,15 +7,16 @@
 // The link token is a secret: it is never logged or put in a message; the server
 // binds it to this browser with an HttpOnly cookie on `POST /s/{token}/session`.
 
-import { h, clear, reducedMotion } from "./dom.js";
+import { h, clear, reducedMotion, skipTo } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, errorMessage, locationFrom, ApiError } from "./api.js";
-import { button, busy, emptyState, toast, toastError, openDialog, reasonDialog, noServerState } from "./ui/index.js";
-import { openPdf, fitScale } from "./pdfview.js";
+import { button, busy, emptyState, toast, toastError, reasonDialog, noServerState, dockPanel, closePanel } from "./ui/index.js";
+import { openPdf } from "./pdfview.js";
 import { fromWire, takesInput } from "./geometry.js";
 import { adoptDialog } from "./signature.js";
-import { clampZoom, pinchZoom, distance, enlargeFor, ZOOM_STEP } from "./zoom.js";
+import { enlargeFor } from "./zoom.js";
+import { docView, zoomControls, thumbnails } from "./docview.js";
 import { initTheme } from "./theme.js";
 
 const store = (() => { try { return sessionStorage; } catch { return null; } })();
@@ -51,7 +52,12 @@ let pdfHandles = [];
 // ---- Screens ------------------------------------------------------------------------------
 
 function screen(...children) {
+  dv?.destroy();
+  dv = null;
+  closePanel();
   clear(main);
+  main.classList.remove("is-frame-host");
+  skipTo("#main", t("a11y.skip"));
   const s = h("div", { class: "os-sign__screen" }, ...children);
   main.append(s);
   main.focus({ preventScroll: true });
@@ -201,42 +207,24 @@ function consent() {
 
 const AUTO = { date_signed: () => new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }), name: () => view.recipient?.name || "", email: () => view.recipient?.email || "" };
 
-// Pages are laid out at the width that fits, times `zoom` (buttons in the bar, pinch on
-// phones; zoom.js). The PDFs are fetched once and kept; a zoom repaints from them.
-let zoom = 1;
-let loaded = null; // [{doc, pdf}] once fetched
-let pagesWrap = null;
+// WEB-06 (docs/47 §Layout spec): the pages fill a full-height frame between the page
+// thumbnails (left) and the field list (right); one scroll container (docview.js) with
+// fit width, fit page, 50–200 %, Ctrl/Cmd +/−/0 and pinch, painted near the view only.
+// The PDFs are fetched once and kept.
+let dv = null;            // the document view on screen, if any
+let zc = null;            // its zoom controls
+let loaded = null;        // [{doc, pdf}] once fetched
+let listDock = null;      // the field list panel
+let listBody = null;
 let seenObserver = null;
 const seen = new Map();
+const phone = () => matchMedia("(max-width: 47.999em)").matches;
 
 async function documents() {
   const fields = myFields();
   for (const f of fields) if (f.value && !values.has(f.id)) values.set(f.id, f.value);
-  pagesWrap = h("div", { class: "os-sign__pages" });
-  const tag = h("button", { type: "button", id: "guide-tag", class: "os-guidetag", attrs: { "data-testid": "guide-tag" } },
-    h("span", { class: "os-guidetag__text", text: t("sign.start") }));
-  tag.addEventListener("click", goNext);
-  screen(
-    h("h1", { class: "os-sr-only", text: t("sign.documents-title") }),
-    h("div", { class: "os-sign__stage" }, tag,
-      view.envelope?.message ? h("p", { class: "os-sign__message", text: view.envelope.message }) : null,
-      pagesWrap));
-  guide.hidden = false;
-  document.body.classList.add("is-signing");
-  setTools(true);
-  if (!seenObserver && typeof IntersectionObserver === "function") {
-    seenObserver = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        const { doc, page } = e.target.dataset;
-        const set = seen.get(doc) || new Set();
-        if (!set.has(Number(page))) { set.add(Number(page)); seen.set(doc, set); reportViewed(doc, set); }
-      }
-    }, { threshold: 0.5 });
-  }
   if (!loaded) {
-    pagesWrap.append(h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } }));
-    pagesWrap.setAttribute("aria-busy", "true");
+    screen(h("div", { class: "os-sign__loading", attrs: { "aria-busy": "true" } }, h("div", { class: "os-page os-skeleton-page" })), h("p", { class: "os-sr-only", attrs: { role: "status" }, text: t("sign.loading") }));
     const list = [];
     for (const d of view.envelope?.documents || []) {
       try {
@@ -247,104 +235,93 @@ async function documents() {
     loaded = list;
     pdfHandles = list.map((x) => x.pdf);
   }
-  layout();
-  pinchOn(pagesWrap);
+  if (!seenObserver && typeof IntersectionObserver === "function") {
+    seenObserver = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const { doc, page } = e.target.dataset;
+        const set = seen.get(doc) || new Set();
+        if (!set.has(Number(page))) { set.add(Number(page)); seen.set(doc, set); reportViewed(doc, set); }
+      }
+    }, { threshold: 0.5 });
+  }
+  const tag = h("button", { type: "button", id: "guide-tag", class: "os-guidetag", attrs: { "data-testid": "guide-tag" } },
+    h("span", { class: "os-guidetag__text", text: t("sign.start") }));
+  tag.addEventListener("click", goNext);
+  const v = docView({
+    label: t("sign.documents-title"),
+    testId: "signer-doc",
+    onLayout: () => { enlarge(); zc?.sync(); requestAnimationFrame(placeTag); },
+    onZoom: () => zc?.sync(),
+    onPage: (i) => { zc?.sync(); thumbs.mark(i); },
+  });
+  v.scroller.classList.add("os-sign__pages");
+  const thumbsBox = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
+  const thumbs = thumbnails(v, thumbsBox, { width: 96 });
+  const pagesDock = dockPanel({ id: "sign-pages", side: "left", title: t("prepare.thumbs"), width: 9, min: 7, max: 16, collapsed: matchMedia("(max-width: 79.999em)").matches, testId: "panel-pages" });
+  pagesDock.body.append(h("div", { class: "os-panel--thumbs" }, thumbsBox));
+  listDock = dockPanel({ id: "sign-fields", side: "right", title: t("sign.fields.title"), width: 18, min: 14, max: 30, testId: "panel-fieldlist" });
+  listBody = listDock.body;
+  const zoomCtl = zoomControls(v, { size: "sm" });
+  const frame = h("div", { class: "os-signframe" },
+    pagesDock.el,
+    h("div", { class: "os-signframe__centre" }, v.scroller, h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoomCtl.el)),
+    listDock.el);
+  screen(h("h1", { class: "os-sr-only", text: t("sign.documents-title") }), frame, v.live);
+  main.classList.add("is-frame-host");
+  dv = v;
+  zc = zoomCtl;
+  skipTo("#document", t("a11y.skip-doc"));
+  guide.hidden = false;
+  document.body.classList.add("is-signing");
+  setTools(true);
+  dv.setPages(loaded.flatMap(({ doc: d, pdf }) => pdf.pages.map((pg, i) => ({ key: d.id, n: i + 1, total: pdf.pages.length, name: d.name, width: pg.width, height: pg.height, pdf }))));
+  dv.inner.append(tag);
+  dv.els.forEach(({ el, overlay }, i) => {
+    const p = dv.pages[i];
+    seenObserver?.observe(el);
+    const mine = fields.filter((f) => f.document_id === p.key && f.p.page === p.n).sort((a, b) => a.p.y - b.p.y || a.p.x - b.p.x);
+    for (const f of mine) overlay.append(fieldNode(f, p));
+  });
+  thumbs.build();
+  enlarge();
+  zc.sync();
+  updateGuide();
+  // Coming back (A36): the guide is at the next required field, not the top of page 1.
+  if (values.size && nextField()) setTimeout(() => focusField(nextField().id, false), 50);
 }
 
 function myFields() {
   return (view.fields || []).map((f) => ({ ...f, p: fromWire(f.placement) })).filter((f) => f.p);
 }
 
-/// Paint every page at the current zoom with this signer's fields over it.
-function layout(keepFocus = null) {
-  if (!pagesWrap || !loaded) return;
-  clear(pagesWrap);
-  pagesWrap.removeAttribute("aria-busy");
-  pagesWrap.style.transform = "";
-  const fields = myFields();
-  const width = Math.min(main.clientWidth || 360, 960) - 16;
-  for (const { doc: d, pdf } of loaded) {
-    pdf.pages.forEach((pg, i) => {
-      const scale = fitScale(pg.width, width) * zoom;
-      const canvas = h("canvas", { attrs: { "aria-hidden": "true" } });
-      const overlay = h("div", { class: "os-page__overlay" });
-      const page = h("div", { class: "os-page is-loading", attrs: { role: "group", "aria-label": t("prepare.page-of", { n: i + 1, total: pdf.pages.length, name: d.name }), "data-doc": d.id, "data-page": String(i + 1) } }, canvas, overlay);
-      page.style.width = `${pg.width * scale}px`;
-      page.style.height = `${pg.height * scale}px`;
-      pagesWrap.append(page);
-      pdf.render(i + 1, canvas, scale).then(() => page.classList.remove("is-loading")).catch(() => page.classList.add("is-error"));
-      seenObserver?.observe(page);
-      const mine = fields.filter((f) => f.document_id === d.id && f.p.page === i + 1).sort((a, b) => a.p.y - b.p.y || a.p.x - b.p.x);
-      const pageW = pg.width * scale;
-      for (const f of mine) {
-        const node = fieldNode(f, scale);
-        // Focus-enlarge on phones: the field in use grows to a 44 px target (zoom.js).
-        node.style.setProperty("--os-enlarge", String(enlargeFor(f.p.width * scale, f.p.height * scale, pageW - f.p.x * scale - 4)));
-        overlay.append(node);
-      }
-    });
+/// Phones: how much each field grows while in use, at the current zoom (zoom.js).
+function enlarge() {
+  if (!dv) return;
+  for (const node of main.querySelectorAll(".os-sfield")) {
+    const f = myFields().find((x) => x.id === node.dataset.fieldId);
+    const pg = dv.pages.find((p) => p.key === f?.document_id && p.n === f?.p.page);
+    if (!f || !pg) continue;
+    const s = dv.scale;
+    node.style.setProperty("--os-enlarge", String(enlargeFor(f.p.width * s, f.p.height * s, (pg.width - f.p.x) * s - 4)));
   }
-  document.getElementById("zoom-label").textContent = `${Math.round(zoom * 100)}%`;
-  updateGuide();
-  if (keepFocus) main.querySelector(`[data-field-id="${CSS.escape(keepFocus)}"] button, [data-field-id="${CSS.escape(keepFocus)}"] input`)?.focus({ preventScroll: true });
-}
-
-function setZoom(z) {
-  const next = clampZoom(z);
-  if (next === zoom) return;
-  const focused = document.activeElement?.closest?.("[data-field-id]")?.dataset.fieldId || null;
-  zoom = next;
-  layout(focused);
-}
-
-/// Two fingers on the pages: scale them live, then repaint at the new zoom.
-function pinchOn(el) {
-  const pts = new Map();
-  let start = null;
-  el.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "touch") return;
-    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pts.size === 2) { const [a, b] = [...pts.values()]; start = { d: distance(a, b), z: zoom }; }
-  });
-  el.addEventListener("pointermove", (e) => {
-    if (!pts.has(e.pointerId)) return;
-    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (start && pts.size === 2) {
-      const [a, b] = [...pts.values()];
-      const z = pinchZoom(start.z, start.d, distance(a, b));
-      el.style.transform = `scale(${z / zoom})`;
-      el.dataset.pinch = String(z);
-    }
-  });
-  const end = (e) => {
-    pts.delete(e.pointerId);
-    if (start && pts.size < 2) {
-      const z = Number(el.dataset.pinch || zoom);
-      start = null;
-      delete el.dataset.pinch;
-      setZoom(z);
-      if (z === zoom) el.style.transform = "";
-    }
-  };
-  el.addEventListener("pointerup", end);
-  el.addEventListener("pointercancel", end);
 }
 
 /// The Start/Next tag in the left margin, beside the next required field.
 function placeTag() {
   const tag = document.getElementById("guide-tag");
-  if (!tag) return;
+  if (!tag || !dv) return;
   const next = nextField();
-  const label = values.size ? t("sign.next") : t("sign.start");
-  tag.querySelector(".os-guidetag__text").textContent = label;
+  tag.querySelector(".os-guidetag__text").textContent = values.size ? t("sign.next") : t("sign.start");
   if (!next) { tag.hidden = true; return; }
   tag.hidden = false;
   const el = main.querySelector(`[data-field-id="${CSS.escape(next.id)}"]`);
-  const stage = tag.parentElement;
-  if (!el || !stage) return;
+  const page = el?.closest(".os-page");
+  if (!el || !page) return;
   const a = el.getBoundingClientRect();
-  const s = stage.getBoundingClientRect();
+  const s = dv.inner.getBoundingClientRect();
   tag.style.top = `${a.top - s.top + a.height / 2}px`;
+  tag.style.left = `${Math.max(4, page.offsetLeft - tag.offsetWidth - 28)}px`;
 }
 
 function nextField() {
@@ -352,36 +329,55 @@ function nextField() {
   return remaining().sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))[0] || null;
 }
 
-/// The field list: every field of this signer, with its state; choosing one goes there.
-function fieldList() {
+/// The field list in the right panel (A7): every field of this signer with its state;
+/// choosing one goes there. The sender's message sits above it.
+function renderFieldList() {
+  if (!listBody || !listBody.isConnected) return;
   const fields = myFields().filter((f) => takesInput(f.type));
-  openDialog({
-    title: t("sign.fields.title"),
-    description: t("sign.fields.text"),
-    build(body, close) {
-      const ol = h("ol", { class: "os-fieldlist" });
-      for (const f of fields) {
-        const done = isDone(f) && values.has(f.id);
-        const state = done ? t("sign.fields.done") : f.required ? t("sign.required") : t("sign.fields.optional");
-        const b = h("button", { type: "button", class: `os-fieldlist__item${done ? " is-done" : ""}` },
-          icon(done ? "circle-check" : f.required ? "circle-alert" : "pen-line", { size: 20 }),
-          h("span", { class: "os-fieldlist__main" }, h("strong", { text: f.label || t(`ftype.${f.type}`) }), h("span", { class: "os-muted os-small", text: t("sign.fields.page", { n: f.p.page, type: t(`ftype.${f.type}`) }) })),
-          h("span", { class: "os-fieldlist__state", text: state }));
-        b.addEventListener("click", () => { close(null); setTimeout(() => focusField(f.id), 200); });
-        ol.append(h("li", {}, b));
-      }
-      body.append(ol);
-    },
-  });
+  const next = nextField();
+  clear(listBody);
+  if (view.envelope?.message) {
+    listBody.append(h("div", { class: "os-sign__message os-sign__message--panel" },
+      h("p", { class: "os-small os-muted", text: t("sign.message") }), h("p", { text: view.envelope.message })));
+  }
+  listBody.append(h("p", { class: "os-muted os-small", text: t("sign.fields.text") }));
+  const ol = h("ol", { class: "os-fieldlist", attrs: { "data-testid": "field-list" } });
+  for (const f of fields) {
+    const done = isDone(f) && values.has(f.id);
+    const state = done ? t("sign.fields.done") : f.required ? t("sign.required") : t("sign.fields.optional");
+    const b = h("button", { type: "button", class: `os-fieldlist__item${done ? " is-done" : ""}${next?.id === f.id ? " is-next" : ""}` },
+      icon(done ? "circle-check" : f.required ? "circle-alert" : "pen-line", { size: 20 }),
+      h("span", { class: "os-fieldlist__main" }, h("strong", { class: "os-trunc", title: f.label || t(`ftype.${f.type}`), text: f.label || t(`ftype.${f.type}`) }), h("span", { class: "os-muted os-small", text: t("sign.fields.page", { n: f.p.page, type: t(`ftype.${f.type}`) }) })),
+      h("span", { class: "os-fieldlist__state", text: state }));
+    b.addEventListener("click", () => { listDock?.closeSheet(); focusField(f.id); });
+    ol.append(h("li", {}, b));
+  }
+  listBody.append(ol);
 }
 
-function focusField(id) {
+/// The Fields button: on phones the list is a bottom sheet; on desktop it shows the panel.
+function fieldList() {
+  if (!listDock) return;
+  if (phone()) { listDock.openSheet(); return; }
+  if (listDock.isCollapsed()) listDock.collapse(false);
+  listBody.querySelector("button")?.focus();
+}
+
+/// Bring field `id` into the middle of the view and focus it. On phones a field too
+/// small to use is zoomed to a usable size first (P-05, M-01).
+function focusField(id, flag = true) {
+  const f = myFields().find((x) => x.id === id);
   const el = main.querySelector(`[data-field-id="${CSS.escape(id)}"]`);
-  if (!el) return;
-  el.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
-  el.classList.add("is-flagged");
-  setTimeout(() => el.classList.remove("is-flagged"), 1200);
+  if (!f || !el || !dv) return;
+  const i = dv.pages.findIndex((p) => p.key === f.document_id && p.n === f.p.page);
+  if (phone() && f.p.height * dv.scale < 32) dv.setZoom(Math.min(32 / f.p.height, dv.scale * 2.5));
+  dv.scrollToBox(i, f.p);
+  if (flag) {
+    el.classList.add("is-flagged");
+    setTimeout(() => el.classList.remove("is-flagged"), 1200);
+  }
   el.querySelector("button, input")?.focus({ preventScroll: true });
+  requestAnimationFrame(placeTag);
 }
 
 function setTools(on) {
@@ -413,12 +409,28 @@ function isDone(f) {
   return !!v.signature;
 }
 
-function fieldNode(f, scale) {
+/// Place a box at `p` (points) on a page of `pg` (points) in percentages: PDF points ×
+/// the view's scale at every zoom, without a relayout.
+function placeBox(box, p, pg) {
+  box.style.left = `${(p.x / pg.width) * 100}%`;
+  box.style.top = `${(p.y / pg.height) * 100}%`;
+  box.style.width = `${(p.width / pg.width) * 100}%`;
+  box.style.height = `${(p.height / pg.height) * 100}%`;
+}
+
+/// "Saved" in the bar for a moment after each value reaches the server (A32).
+let savedTimer = null;
+function savedChip() {
+  const chip = document.getElementById("save-chip");
+  if (!chip) return;
+  chip.textContent = t("sign.saved");
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(() => { chip.textContent = ""; }, 2500);
+}
+
+function fieldNode(f, pg) {
   const box = h("div", { class: `os-sfield os-sfield--${f.type}${f.required ? " is-required" : ""}`, attrs: { "data-field-id": f.id, "data-field": f.type } });
-  box.style.left = `${f.p.x * scale}px`;
-  box.style.top = `${f.p.y * scale}px`;
-  box.style.width = `${f.p.width * scale}px`;
-  box.style.height = `${f.p.height * scale}px`;
+  placeBox(box, f.p, pg);
   const req = f.required ? `, ${t("sign.required")}` : "";
   const label = f.label || t(`ftype.${f.type}`);
   if (f.type === "signature" || f.type === "initials") {
@@ -440,24 +452,28 @@ function fieldNode(f, scale) {
     paint();
   } else if (f.type === "text") {
     const id = `sf-${f.id}`;
-    const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, placeholder: label + (f.required ? " *" : ""), attrs: { "aria-label": `${label}${req}`, ...(f.required ? { "aria-required": "true" } : {}) } });
+    // A rejected value is said beside the field, not only in a toast (A17).
+    const err = h("span", { id: `${id}-err`, class: "os-sfield__err", attrs: { role: "alert" } });
+    const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}) } });
     input.addEventListener("change", async () => {
       const v = { text: input.value };
       try {
         await api.ceremony.fill(token, f.id, v);
         values.set(f.id, v);
         input.removeAttribute("aria-invalid");
-      } catch (err) { input.setAttribute("aria-invalid", "true"); toastError(err); }
+        err.textContent = "";
+        savedChip();
+      } catch (ex) { input.setAttribute("aria-invalid", "true"); err.textContent = errorMessage(ex); }
       box.classList.toggle("is-done", isDone(f));
       updateGuide();
     });
-    box.append(input);
+    box.append(input, err);
     box.classList.toggle("is-done", isDone(f));
   } else if (f.type === "checkbox") {
-    const input = h("input", { type: "checkbox", class: "os-sfield__check", checked: values.get(f.id)?.checked === true, attrs: { "aria-label": `${label}${req}` } });
+    const input = h("input", { type: "checkbox", class: "os-sfield__check", checked: values.get(f.id)?.checked === true, title: label, attrs: { "aria-label": `${label}${req}` } });
     input.addEventListener("change", async () => {
       const v = { checked: input.checked };
-      try { await api.ceremony.fill(token, f.id, v); values.set(f.id, v); } catch (err) { input.checked = !input.checked; toastError(err); }
+      try { await api.ceremony.fill(token, f.id, v); values.set(f.id, v); savedChip(); } catch (err) { input.checked = !input.checked; toastError(err); }
       box.classList.toggle("is-done", isDone(f));
       updateGuide();
     });
@@ -474,7 +490,7 @@ async function signField(f, paint) {
   const mark = f.type === "initials" ? "initials" : "signature";
   let a = adoptions[mark];
   if (!a) {
-    const res = await adoptDialog({ mark, name: view.recipient?.name || "" });
+    const res = await adoptDialog({ mark, name: view.recipient?.name || "", host: listDock?.isCollapsed() ? null : listDock?.el });
     if (!res) return;
     try {
       const r = await api.ceremony.adopt(token, mark, res.method, res.base64, location_);
@@ -487,6 +503,7 @@ async function signField(f, paint) {
     await api.ceremony.fill(token, f.id, v);
     values.set(f.id, v);
     paint();
+    savedChip();
     const el = main.querySelector(`[data-field-id="${CSS.escape(f.id)}"]`);
     el?.classList.add("is-stamped");
     setTimeout(() => el?.classList.remove("is-stamped"), 300);
@@ -506,16 +523,21 @@ function updateGuide() {
   progress.textContent = req.length ? t("sign.progress", { done: req.length - left.length, total: req.length }) : t("sign.progress-none");
   const barProgress = document.getElementById("bar-progress");
   barProgress.textContent = progress.textContent;
-  const barFinish = document.getElementById("bar-finish");
-  barFinish.disabled = left.length > 0;
-  barFinish.classList.toggle("is-ready", left.length === 0);
+  // Finish says why it cannot finish yet (A18): aria-disabled keeps it focusable and
+  // hoverable for its reason; choosing it goes to the next required field.
+  const reason = left.length === 1 ? t("sign.finish-reason-one") : t("sign.finish-reason", { n: left.length });
+  const reasonEl = document.getElementById("finish-reason");
+  if (reasonEl) reasonEl.textContent = left.length ? reason : "";
+  for (const b of [document.getElementById("bar-finish"), document.getElementById("guide-finish")]) {
+    if (left.length) { b.setAttribute("aria-disabled", "true"); b.title = reason; } else { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); }
+    b.setAttribute("aria-describedby", "finish-reason");
+    b.classList.toggle("is-ready", left.length === 0);
+  }
   requestAnimationFrame(placeTag);
   const nextBtn = document.getElementById("guide-next");
-  const finish = document.getElementById("guide-finish");
   nextBtn.hidden = left.length === 0;
-  finish.disabled = left.length > 0;
-  finish.classList.toggle("is-ready", left.length === 0);
   nextBtn.querySelector("span").textContent = values.size ? t("sign.next") : t("sign.start");
+  renderFieldList();
 }
 
 function goNext() {
@@ -536,22 +558,12 @@ function review() {
   guide.hidden = true;
   setTools(false);
   const fields = myFields();
-  const pages = h("div", { class: "os-review__pages", attrs: { role: "region", "aria-label": t("sign.review.pages") } });
-  const width = Math.min((main.clientWidth || 360) - 32, 720);
-  for (const { doc: d, pdf } of loaded || []) {
-    pdf.pages.forEach((pg, i) => {
-      const scale = fitScale(pg.width, width);
-      const canvas = h("canvas", { attrs: { "aria-hidden": "true" } });
-      const overlay = h("div", { class: "os-page__overlay", attrs: { "aria-hidden": "true" } });
-      const page = h("div", { class: "os-page", attrs: { role: "img", "aria-label": t("sign.review.page", { n: i + 1, total: pdf.pages.length, name: d.name }), "data-testid": "review-page" } }, canvas, overlay);
-      page.style.width = `${pg.width * scale}px`;
-      page.style.height = `${pg.height * scale}px`;
-      page.classList.add("is-loading");
-      pdf.render(i + 1, canvas, scale).then(() => page.classList.remove("is-loading")).catch(() => page.classList.add("is-error"));
-      for (const f of fields.filter((x) => x.document_id === d.id && x.p.page === i + 1)) overlay.append(flat(f, scale));
-      pages.append(page);
-    });
-  }
+  // The pages in the same document view as signing (fit width, zoom, one scroller).
+  const rv = docView({ label: t("sign.review.pages"), testId: "review-doc", onLayout: () => rzc?.sync(), onZoom: () => rzc?.sync(), onPage: () => rzc?.sync() });
+  rv.scroller.classList.add("os-review__pages");
+  let rzc = null;
+  rzc = zoomControls(rv, { size: "sm" });
+  closePanel();
   const dl = h("dl", { class: "os-review" });
   for (const f of myInputs()) {
     const v = values.get(f.id);
@@ -567,34 +579,48 @@ function review() {
       done(everyoneSigned(view.envelope?.status), true);
     } catch (err) { toastError(err); }
   });
-  screen(h("div", { class: "os-reviewscreen" },
-    h("div", { class: "os-reviewscreen__head" },
-      h("h1", { class: "os-sign__title", text: t("sign.review.title") }),
-      h("p", { class: "os-muted", text: t("sign.review.text") })),
-    h("div", { class: "os-reviewscreen__grid" },
-      pages,
-      h("aside", { class: "os-reviewscreen__side", attrs: { "aria-labelledby": "rv-values-h" } },
-        h("h2", { id: "rv-values-h", class: "os-card__title", text: t("sign.review.values") }),
-        dl,
-        h("p", { class: "os-small", text: t("sign.review.legal") }),
-        h("div", { class: "os-stack" }, go, back)))));
+  // The values panel beside the pages: on desktop a docked panel, on phones above them.
+  const side = dockPanel({ id: "sign-review", side: "right", title: t("sign.review.title"), width: 20, min: 16, max: 32, testId: "panel-review" });
+  side.el.classList.add("os-dock--static");
+  if (side.isCollapsed()) side.collapse(false);
+  side.body.append(
+    h("h1", { class: "os-sign__title", text: t("sign.review.title") }),
+    h("p", { class: "os-muted", text: t("sign.review.text") }),
+    h("h2", { id: "rv-values-h", class: "os-card__title", text: t("sign.review.values") }),
+    dl,
+    h("p", { class: "os-small", text: t("sign.review.legal") }),
+    h("div", { class: "os-stack" }, go, back));
+  screen(h("div", { class: "os-signframe os-signframe--review" },
+    h("div", { class: "os-signframe__centre" }, rv.scroller, h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, rzc.el)),
+    side.el), rv.live);
+  main.classList.add("is-frame-host");
+  dv = rv;
+  rv.setPages((loaded || []).flatMap(({ doc: d, pdf }) => pdf.pages.map((pg, i) => ({ key: d.id, n: i + 1, total: pdf.pages.length, name: d.name, width: pg.width, height: pg.height, pdf }))));
+  rv.els.forEach(({ el, overlay }, i) => {
+    const p = rv.pages[i];
+    el.setAttribute("role", "img");
+    el.setAttribute("aria-label", t("sign.review.page", { n: p.n, total: p.total, name: p.name }));
+    el.dataset.testid = "review-page";
+    el.setAttribute("data-testid", "review-page");
+    overlay.setAttribute("aria-hidden", "true");
+    for (const f of fields.filter((x) => x.document_id === p.key && x.p.page === p.n)) overlay.append(flat(f, p));
+  });
+  rzc.sync();
   go.focus({ preventScroll: true });
 }
 
-/// A field as it will look on the signed page: the value only, no field chrome.
-function flat(f, scale) {
+/// A field as it will look on the signed page: the value only, no field chrome. Sized
+/// in percentages of the page, the text in container units of the page's height.
+function flat(f, pg) {
   const box = h("div", { class: `os-flat os-flat--${f.type}` });
-  box.style.left = `${f.p.x * scale}px`;
-  box.style.top = `${f.p.y * scale}px`;
-  box.style.width = `${f.p.width * scale}px`;
-  box.style.height = `${f.p.height * scale}px`;
-  box.style.fontSize = `${Math.max(8, Math.min(16, f.p.height * scale * 0.6))}px`;
+  placeBox(box, f.p, pg);
+  box.style.fontSize = `${Math.min(60, (f.p.height / pg.height) * 100 * 0.6).toFixed(3)}cqh`;
   const v = values.get(f.id);
   if (f.type === "signature" || f.type === "initials") {
     const a = Object.values(adoptions).find((x) => x.id === v?.signature);
     if (a) box.append(h("img", { src: a.dataUrl, alt: "" }));
   } else if (f.type === "checkbox") {
-    if (v?.checked) box.append(icon("check", { size: Math.max(10, Math.round(f.p.height * scale)) }));
+    if (v?.checked) box.append(icon("check", { size: 16 }));
   } else if (f.type === "text") {
     box.textContent = v?.text || "";
   } else {
@@ -681,17 +707,12 @@ function buildChrome() {
   const barFin = document.getElementById("bar-finish");
   barFin.prepend(icon("check", { size: 20 }));
   barFin.addEventListener("click", finish);
-  const zi = document.getElementById("zoom-in");
-  const zo = document.getElementById("zoom-out");
-  zi.append(icon("zoom-in"));
-  zo.append(icon("zoom-out"));
-  zi.addEventListener("click", () => setZoom(zoom * ZOOM_STEP));
-  zo.addEventListener("click", () => setZoom(zoom / ZOOM_STEP));
   const fl = document.getElementById("fields-btn");
   fl.prepend(icon("list-checks", { size: 20 }));
   fl.addEventListener("click", fieldList);
+  // The document view relays itself out on resize; the tag follows.
   let resizeTimer = null;
-  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (document.body.classList.contains("is-signing")) layout(); else placeTag(); }, 200); });
+  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(placeTag, 250); });
 }
 
 initTheme();

@@ -14,7 +14,7 @@ import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { toBase64 } from "./api.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { button, busy, emptyState, skeletonRows, errorState, openDialog, confirmDialog, toast, toastError, pdfPreview } from "./ui/index.js";
+import { button, busy, emptyState, skeletonRows, errorState, openPanel, confirmDialog, toast, toastError, pdfPreview } from "./ui/index.js";
 import { rolesOf, peopleProblems, envelopeFromTemplate } from "./templatemodel.js";
 
 /// `#/templates`: the list.
@@ -70,7 +70,7 @@ export function mount(view, ctx) {
   async function rename(tp) {
     let input;
     let err;
-    const name = await openDialog({
+    const name = await openPanel({
       title: t("templates.rename-title"),
       build(body) {
         body.append(

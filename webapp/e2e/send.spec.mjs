@@ -1,7 +1,7 @@
 // Scenario 2 (WEB-01): create an envelope — upload a PDF, two sequential signers and a
 // CC, signature, date and text fields for each signer — send it, and find it as sent.
 import { test, expect } from "@playwright/test";
-import { signIn, app, pdfFile } from "./helpers.mjs";
+import { signIn, app, pdfFile, placingFor } from "./helpers.mjs";
 
 async function addRecipient(page, n, { name, email, type = "signer" }) {
   await page.getByRole("button", { name: "Add recipient" }).first().click();
@@ -19,8 +19,7 @@ async function step(page, name) {
 }
 
 async function placeFor(page, who, types) {
-  await expect(page.getByLabel("Placing fields for").locator("option", { hasText: who })).toHaveCount(1);
-  await page.getByLabel("Placing fields for").selectOption({ label: who });
+  await placingFor(page, who);
   for (const type of types) await page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).click();
 }
 
