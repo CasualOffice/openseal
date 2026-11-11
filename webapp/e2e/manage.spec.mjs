@@ -180,6 +180,69 @@ test("use a template: the document beside a panel holding the roles and Send", a
   await expectAccessible(page, "use template");
 });
 
+test("admin: invite by email, edit a user's profile and disable them, settings and branding in side panels", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/admin"));
+  await page.getByRole("button", { name: "Invite user" }).click();
+  const inv = page.getByRole("dialog", { name: "Invite user" });
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await inv.getByRole("button", { name: "Invite user" }).click();
+  await expect(inv.getByText("Enter a valid email.")).toBeVisible();
+  await inv.getByLabel("Email").fill("lee@example.com");
+  await inv.getByRole("button", { name: "Invite user" }).click();
+  await expect(page.locator(".os-toast").last()).toContainText("Invitation sent to lee@example.com.");
+  await expect(page.getByRole("row", { name: /lee@example.com/ })).toContainText("Invited");
+
+  await page.getByRole("button", { name: "Edit Robin Sender" }).click();
+  const ed = page.getByRole("dialog", { name: "Edit user" });
+  await ed.getByLabel("Permission profile").selectOption("viewer");
+  await ed.getByText("Disable sign-in", { exact: true }).click();
+  await expect(ed.getByRole("switch", { name: "Disable sign-in" })).toBeChecked();
+  await expectAccessible(page, "edit user panel");
+  await ed.getByRole("button", { name: "Save" }).click();
+  const robin = page.getByRole("row", { name: /Robin Sender/ });
+  await expect(robin).toContainText("Viewer");
+  await expect(robin).toContainText("Disabled");
+  await page.getByRole("button", { name: "Edit Demo Admin" }).click();
+  await expect(page.getByRole("dialog", { name: "Edit user" }).getByRole("switch", { name: "Disable sign-in" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("tab", { name: "Account" }).click();
+  await page.getByTestId("account-branding").getByRole("button", { name: "Edit branding" }).click();
+  const br = page.getByRole("dialog", { name: "Branding" });
+  await br.getByLabel("Accent colour").fill("red");
+  await br.getByRole("button", { name: "Save" }).click();
+  await expect(br.getByText("Enter a colour as # and six hex digits.")).toBeVisible();
+  await br.getByLabel("Accent colour").fill("#0E7490");
+  await br.getByLabel("Name shown to recipients").fill("Acme Legal");
+  await br.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByTestId("account-branding")).toContainText("Acme Legal");
+  await expect(page.getByTestId("account-branding")).toContainText("#0e7490");
+  await page.getByTestId("account-settings").getByRole("button", { name: "Edit settings" }).click();
+  const st = page.getByRole("dialog", { name: "Settings" });
+  await st.getByLabel("Envelopes expire after (days)").fill("30");
+  await st.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByTestId("account-settings")).toContainText("30");
+  await expectAccessible(page, "admin account");
+});
+
+test("reports: a period, a colour per status, no stray border", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/reports"));
+  await expect(page.getByTestId("report-note")).toContainText("6 envelopes");
+  const colours = await page.locator(".os-bars tbody .os-bar").evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
+  expect(new Set(colours).size).toBe(colours.length);
+  const last = page.locator(".os-bars tbody tr:last-child");
+  for (const cell of [last.locator("th"), last.locator("td")]) expect(await cell.evaluate((e) => getComputedStyle(e).borderBottomWidth)).toBe("0px");
+  await page.getByLabel("Period").selectOption("7");
+  await expect(page.getByTestId("report-note")).toContainText("6 envelopes");
+  await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); db.envelopes[0].created_at = "2020-01-01T00:00:00.000Z"; sessionStorage.setItem(k, JSON.stringify(db)); });
+  await page.reload();
+  await page.getByLabel("Period").selectOption("30");
+  await expect(page.getByTestId("report-note")).toContainText("5 envelopes");
+  await expectAccessible(page, "reports");
+});
+
 test("no horizontal scroll at 320 px on the manage screens", async ({ page }, testInfo) => {
   await signIn(page);
   const env = await subjectId(page, "Offer letter — Jordan Rivera");

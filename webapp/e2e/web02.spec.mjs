@@ -22,7 +22,7 @@ test("home shows counters, recent envelopes and where to start", async ({ page }
   await expect(page.getByTestId("counter-expiring").locator(".os-counter__n")).toHaveText("1");
   await expect(page.getByTestId("counter-action").locator(".os-counter__n")).toHaveText("1");
   await expect(page.getByTestId("counter-completed").locator(".os-counter__n")).toHaveText("1");
-  await expect(page.locator(".os-recent__item")).toHaveCount(6);
+  await expect(page.locator("section[aria-labelledby=recent-h] .os-recent__item")).toHaveCount(6);
   await expectAccessible(page, "home");
   await snap(page, testInfo, "web02-home");
   await page.getByTestId("counter-completed").click();

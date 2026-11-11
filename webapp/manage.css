@@ -117,6 +117,39 @@
   .os-usepanel__foot .os-btn { flex: 1 1 auto; }
 }
 
+/* ---- AD-01 Admin: user status, account cards, side-panel switches ------------------ */
+.os-badge--user-active { background: color-mix(in srgb, var(--os-success) 12%, var(--os-bg)); color: var(--os-success); }
+.os-badge--user-pending { background: color-mix(in srgb, var(--os-info) 12%, var(--os-bg)); color: var(--os-info); }
+.os-badge--user-disabled { background: var(--os-surface-2); color: var(--os-muted); }
+.os-col-email { overflow-wrap: anywhere; }
+.os-panel__head--page { flex-wrap: wrap; gap: var(--os-s2); }
+.os-admin-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--os-s4); margin-top: var(--os-s2); }
+.os-admin-cards > .os-card { margin-top: 0; }
+.os-swatchrow { display: flex; align-items: center; gap: var(--os-s2); }
+.os-swatch { width: 1rem; height: 1rem; border-radius: 0.25rem; border: 1px solid var(--os-border-strong); flex: none; }
+.os-switchrow { margin-top: var(--os-s4); }
+@media (max-width: 37.5em) { .os-table--cards td.os-col-email { font-size: var(--os-fs-12); } }
+@media (max-width: 26em) {
+  /* Three admin tabs fit 320 px: no icons, tighter padding, and a scroll if a language is longer. */
+  .os-tabs { overflow-x: auto; }
+  .os-tab { padding: 0 var(--os-s3); white-space: nowrap; flex: none; }
+  .os-tab > svg { display: none; }
+}
+
+/* ---- RP-01 Reports: a period, one colour per status, the table's last row ---------- */
+.os-reports__tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--os-s3); margin: 0 0 var(--os-s4); }
+.os-reports__tools .os-label { margin: 0 0 var(--os-s1); font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-bars tbody tr:last-child th { border-bottom: 0; }
+.os-bars th[scope="row"] { border-bottom: 1px solid var(--os-border); }
+.os-bar--draft { background: var(--os-border-strong); }
+.os-bar--sent { background: var(--os-info); }
+.os-bar--delivered { background: var(--os-r5); }
+.os-bar--completed { background: var(--os-success); }
+.os-bar--declined { background: var(--os-danger); }
+.os-bar--voided { background: var(--os-r3); }
+.os-bar--expired { background: var(--os-warning); }
+.os-bar__key { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: 0.1875rem; margin-right: var(--os-s2); vertical-align: baseline; }
+
 /* ---- E-01 Correct: one block per recipient ---------------------------------------- */
 .os-correct { list-style: none; margin: var(--os-s3) 0 0; padding: 0; display: grid; gap: var(--os-s3); }
 .os-correct__item { border: 1px solid var(--os-border); border-left: 0.25rem solid var(--os-rc, var(--os-r1)); border-radius: var(--os-radius); padding: var(--os-s3) var(--os-s4); background: var(--os-raised); }
