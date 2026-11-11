@@ -882,6 +882,7 @@ pub(crate) async fn content(
         None | Some("normalized") => VersionKind::Normalized,
         Some("original") => VersionKind::Original,
         Some("sealed") => VersionKind::Sealed,
+        Some("current") => return current(&c, tx, &mut l, &d).await,
         Some(_) => return Err(ApiError::invalid("/query/version")),
     };
     let versions = tx.documents().versions(DocumentId(uid(&d)?)).await?;
@@ -963,11 +964,29 @@ pub(crate) async fn detect_fields(
     ))
 }
 
+/// `content?version=current` (WEB-06): the sealed version once sealed, else a preview
+/// of the values completed so far with a "not signed" banner on every page, made on
+/// request and never stored (`preview`). Recorded as `document.downloaded` with the
+/// hash of the bytes served once the envelope is sent.
+async fn current(c: &Call, mut tx: TenantTx, l: &mut Loaded, d: &Id) -> Result<Response, ApiError> {
+    let (bytes, sealed) = crate::preview::current(&c.st, &mut tx, &l.state, d).await?;
+    let access = (l.state.status != MStatus::Draft).then(|| Access::DocumentDownloaded {
+        document: d.clone(),
+        hash: Hash256::digest(&bytes),
+    });
+    let mut r = serve_bytes(c, tx, l, bytes, access).await?;
+    r.headers_mut().insert(
+        "x-openseal-document",
+        HeaderValue::from_static(if sealed { "sealed" } else { "preview" }),
+    );
+    Ok(r)
+}
+
 /// Read a stored PDF, record its download in the chain when `access` says so, commit,
 /// and answer it as an attachment.
 async fn serve_pdf(
     c: &Call,
-    mut tx: TenantTx,
+    tx: TenantTx,
     l: &mut Loaded,
     sha256: [u8; 32],
     access: Option<Access>,
@@ -977,6 +996,18 @@ async fn serve_pdf(
             .blobs
             .get(&casual_sign_store::blob::BlobKey(sha256))
             .await?;
+    serve_bytes(c, tx, l, bytes, access).await
+}
+
+/// Record a download in the chain when `access` says so, commit, and answer `bytes`
+/// as a PDF attachment.
+async fn serve_bytes(
+    c: &Call,
+    mut tx: TenantTx,
+    l: &mut Loaded,
+    bytes: Vec<u8>,
+    access: Option<Access>,
+) -> Result<Response, ApiError> {
     if let Some(access) = access {
         let mut cmds = c.commands(&mut tx).await?;
         command(

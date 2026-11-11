@@ -23,7 +23,7 @@
 //! subject, a URL, a token or document content (`SEC-D01`).
 
 pub mod apply;
-pub mod capture;
+pub use casual_sign_host::capture;
 pub mod email;
 mod error;
 pub mod jobs;

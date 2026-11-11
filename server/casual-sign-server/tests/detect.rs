@@ -3,7 +3,11 @@
 //! geometry, and a suggestion posted back with a recipient becomes a field where it was
 //! suggested. Another account's document is `404`.
 
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 
 mod common;
 

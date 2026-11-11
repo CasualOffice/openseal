@@ -105,10 +105,16 @@ pub async fn sent(api: &Api, t: &Tenant, signers: usize, extra: &[Value]) -> Val
 }
 
 /// Sign as the recipient behind `token`: open, view every document, adopt, give
-/// `values` (`(field id, value)`), sign every own signature field, finish.
-pub async fn sign(api: &Api, token: &str, values: &[(String, Value)]) -> Value {
+/// `values` (`(field id, value)`), sign every own signature field, finish. Answers the
+/// view after finishing and the cookie the link is now bound to.
+pub async fn sign(
+    api: &Api,
+    token: &str,
+    values: &[(String, Value)],
+) -> (Value, Vec<(&'static str, String)>) {
     let s = format!("/s/{token}");
-    let (view, h) = open(api, token).await;
+    let (view, bound) = open(api, token).await;
+    let h = bound.clone();
     let h: Vec<(&str, &str)> = h.iter().map(|(k, v)| (*k, v.as_str())).collect();
     for d in view["envelope"]["documents"].as_array().unwrap() {
         let doc = d["id"].as_str().unwrap();
@@ -147,7 +153,7 @@ pub async fn sign(api: &Api, token: &str, values: &[(String, Value)]) -> Value {
             all.push(json!({"field": f["id"], "value": {"signature": adoption}}));
         }
     }
-    ok(
+    let done = ok(
         api.call(
             "POST",
             &format!("{s}/finish"),
@@ -158,5 +164,6 @@ pub async fn sign(api: &Api, token: &str, values: &[(String, Value)]) -> Value {
         .await,
         StatusCode::OK,
         "finish",
-    )
+    );
+    (done, bound)
 }

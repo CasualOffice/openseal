@@ -6,6 +6,7 @@
 
 #![allow(
     clippy::unwrap_used,
+    clippy::arithmetic_side_effects,
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::too_many_lines

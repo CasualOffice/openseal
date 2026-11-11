@@ -71,7 +71,8 @@ components:
       name: version
       in: query
       required: false
-      schema: {type: string, enum: [original, normalized, sealed], default: normalized}
+      description: "`current` (WEB-06): the sealed version once sealed, else a preview of the values completed so far with a not-signed banner on every page, made on request and never stored; the `X-OpenSeal-Document` header says `sealed` or `preview`."
+      schema: {type: string, enum: [original, normalized, sealed, current], default: normalized}
     recipientId:
       name: recipient_id
       in: query
@@ -1734,6 +1735,36 @@ paths:
       summary: "The document as delivered"
       security: []
       x-permission: public
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/document:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyDownload
+      summary: "After finishing: the sealed document once complete, else a preview of the values so far (WEB-06)"
+      description: >-
+        Only for a recipient who has finished (`409 CS-API-0009` before), in the browser the
+        link is bound to, while the link is valid. `doc` may be left out when the envelope has
+        one document. Recorded as `document.downloaded`; `X-OpenSeal-Document` says `sealed`
+        or `preview`.
+      security: []
+      x-permission: public
+      parameters:
+        - name: doc
+          in: query
+          required: false
+          description: Document id
+          schema: {type: string}
       responses:
         '200':
           description: PDF

@@ -15,6 +15,8 @@ casual-sign-model = { path = "../../crates/casual-sign-model" }
 casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
 # State, events, projection and the job queue, in the caller's transaction (ADR-012).
 casual-sign-store = { path = "../casual-sign-store" }
+# Signature art for the captures both hosts read (`capture`, WEB-06).
+casual-sign-sdk = { path = "../../crates/casual-sign-sdk" }
 # Ids, times and JSON as the store takes them; all already in the tree.
 uuid = { version = "1.10", features = ["v4", "serde"] }
 time = "0.3.36"

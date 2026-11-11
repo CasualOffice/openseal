@@ -1,4 +1,5 @@
-//! Signature art as the seal job reads it.
+//! Signature art as the seal job and the API's preview download read it (moved here
+//! from the worker for WEB-06, so both read captures with the same bounds).
 //!
 //! **Contract with the API (stage 2C).** A captured signature, initials or stamp is
 //! stored in the blob store as a small JSON document (below); its blob key, the
@@ -19,7 +20,27 @@ use casual_sign_model::Rgb;
 use casual_sign_sdk::{Art, Ink, InkPoint};
 use serde::Deserialize;
 
-use crate::error::{Result, WorkerError};
+/// A capture malformed or over its limits (`CS-WRK-0016`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BadCapture;
+
+impl BadCapture {
+    /// The stable docs/20 code.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        "CS-WRK-0016"
+    }
+}
+
+impl core::fmt::Display for BadCapture {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("CS-WRK-0016: capture malformed or over its limits")
+    }
+}
+
+impl std::error::Error for BadCapture {}
+
+type Result<T> = core::result::Result<T, BadCapture>;
 
 /// Largest capture document read, in bytes.
 pub const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
@@ -67,21 +88,21 @@ pub enum Parsed {
 /// `CS-WRK-0016` when it is malformed or over a limit.
 pub fn parse(bytes: &[u8]) -> Result<Parsed> {
     if bytes.len() > MAX_CAPTURE_BYTES {
-        return Err(WorkerError::BadCapture);
+        return Err(BadCapture);
     }
-    let doc: Doc = serde_json::from_slice(bytes).map_err(|_| WorkerError::BadCapture)?;
+    let doc: Doc = serde_json::from_slice(bytes).map_err(|_| BadCapture)?;
     match doc {
         Doc::Drawn { strokes, color } => {
             let points: usize = strokes.iter().map(Vec::len).sum();
             if strokes.is_empty() || strokes.len() > MAX_STROKES || points > MAX_POINTS {
-                return Err(WorkerError::BadCapture);
+                return Err(BadCapture);
             }
             let mut out = Vec::with_capacity(strokes.len());
             for s in strokes {
                 let mut pts = Vec::with_capacity(s.len());
                 for [x, y] in s {
                     if !x.is_finite() || !y.is_finite() {
-                        return Err(WorkerError::BadCapture);
+                        return Err(BadCapture);
                     }
                     pts.push(InkPoint { x, y });
                 }
@@ -97,7 +118,7 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed> {
                 || text.len() > MAX_TYPED
                 || text.chars().any(char::is_control)
             {
-                return Err(WorkerError::BadCapture);
+                return Err(BadCapture);
             }
             Ok(Parsed::Art(Art::Typed { text, style }))
         }
@@ -107,7 +128,7 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed> {
                     .bytes()
                     .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
             {
-                return Err(WorkerError::BadCapture);
+                return Err(BadCapture);
             }
             Ok(Parsed::Image(image))
         }
@@ -121,7 +142,7 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed> {
 /// `CS-WRK-0016` over [`MAX_IMAGE_BYTES`].
 pub fn image_art(bytes: Vec<u8>) -> Result<Art> {
     if bytes.len() > MAX_IMAGE_BYTES || bytes.is_empty() {
-        return Err(WorkerError::BadCapture);
+        return Err(BadCapture);
     }
     Ok(Art::Image(bytes))
 }

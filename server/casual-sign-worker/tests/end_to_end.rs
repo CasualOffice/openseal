@@ -139,7 +139,7 @@ fn png() -> Vec<u8> {
 
 /// Sign as the recipient whose invitation went to `email`: open the link from the
 /// email, view, adopt, finish with the adopted signature in `field`.
-async fn sign(env: &Env, app: &axum::Router, email: &str, field: &str) {
+async fn sign(env: &Env, app: &axum::Router, email: &str, field: &str) -> (Http, String) {
     let mails = env.smtp.to(email);
     assert_eq!(mails.len(), 1, "one invitation to {email}");
     let token = mails[0].token().expect("a signing link");
@@ -180,6 +180,7 @@ async fn sign(env: &Env, app: &axum::Router, email: &str, field: &str) {
         StatusCode::OK,
     )
     .await;
+    (c, s)
 }
 
 /// Our verifier at B-T, with the test PKI's CRLs.
@@ -326,7 +327,7 @@ async fn api_and_worker_take_two_signers_to_completed_with_a_verified_seal() {
     let out = env.run().await;
     assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
     assert!(env.smtp.to("grace@e2e.example.test").is_empty());
-    sign(&env, &app, "ada@e2e.example.test", &f_ada).await;
+    let (ada, ada_link) = sign(&env, &app, "ada@e2e.example.test", &f_ada).await;
     // Then the second.
     let out = env.run().await;
     assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
@@ -357,6 +358,16 @@ async fn api_and_worker_take_two_signers_to_completed_with_a_verified_seal() {
         "one document: the combined PDF is the sealed one"
     );
     assert!(certificate.starts_with(b"%PDF-"));
+    // WEB-06: once sealed, "current" is the sealed document, for staff and for a
+    // signer who finished, through their own link.
+    let current = get(format!("{base}/documents/{doc}/content?version=current")).await;
+    assert_eq!(current, sealed);
+    let mine = ada
+        .call("GET", &format!("{ada_link}/document"), None, &[])
+        .await;
+    assert_eq!(mine.status, StatusCode::OK, "{:?}", mine.json());
+    assert_eq!(mine.headers["x-openseal-document"], "sealed");
+    assert_eq!(mine.body, sealed);
     // The sealed document served is the one the chain records.
     let audit = staff
         .ok("GET", &format!("{base}/audit"), None, StatusCode::OK)

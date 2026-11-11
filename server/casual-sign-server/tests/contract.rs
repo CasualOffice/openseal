@@ -878,6 +878,12 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "finish 1",
     )
     .await;
+    // WEB-06: having finished, signer 1 downloads the document as it stands.
+    let copy = api
+        .call("GET", &format!("{s1}/document"), &Auth::None, None, &h1)
+        .await;
+    assert_eq!(copy.status, StatusCode::OK, "{:?}", copy.json());
+    assert_eq!(copy.headers["x-openseal-document"], "preview");
     let mid = ok(
         api.call("GET", &base, k, None, &[]).await,
         StatusCode::OK,

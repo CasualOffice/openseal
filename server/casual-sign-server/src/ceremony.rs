@@ -528,6 +528,84 @@ pub(crate) async fn document(
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct DownloadQuery {
+    #[serde(default)]
+    doc: Option<String>,
+}
+
+/// `GET /s/{token}/document?doc=` (WEB-06): a recipient who has finished downloads
+/// the document as it stands: the sealed version once the envelope completes, else the
+/// preview of the values completed so far (`preview`), while the link is valid and in
+/// the browser it is bound to. `doc` may be left out when the envelope has one
+/// document. Recorded as `document.downloaded` by the recipient.
+pub(crate) async fn download(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<DownloadQuery>,
+) -> Response {
+    let mut o = match open(&st, &token, &headers, ip, &method, false).await {
+        Ok(o) => o,
+        Err(r) => return r,
+    };
+    let result = async {
+        let finished =
+            o.l.state
+                .recipient(&o.recipient)
+                .is_some_and(|r| r.status == casual_sign_model::RecipientStatus::Completed);
+        if !finished {
+            return Err(ApiError::not_available(
+                "the document can be downloaded once you have finished",
+            ));
+        }
+        let docs = &o.l.state.documents;
+        let d = match (&q.doc, docs.as_slice()) {
+            (Some(doc), _) => docs.iter().find(|d| same_id(d.id(), doc)),
+            (None, [only]) => Some(only),
+            (None, _) => return Err(ApiError::invalid("/query/doc")),
+        }
+        .ok_or_else(ApiError::not_found)?
+        .id()
+        .clone();
+        let state = o.l.state.clone();
+        let (bytes, sealed) = crate::preview::current(&st, &mut o.tx, &state, &d).await?;
+        o.run(Command::RecordAccess {
+            access: casual_sign_workflow::Access::DocumentDownloaded {
+                document: d,
+                hash: Hash256::digest(&bytes),
+            },
+        })
+        .await?;
+        o.tx.commit().await?;
+        Ok((bytes, sealed))
+    }
+    .await;
+    match result {
+        Ok((bytes, sealed)) => {
+            let mut r = (StatusCode::OK, bytes).into_response();
+            let h = r.headers_mut();
+            h.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/pdf"),
+            );
+            h.insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_static("attachment"),
+            );
+            h.insert(
+                "x-openseal-document",
+                HeaderValue::from_static(if sealed { "sealed" } else { "preview" }),
+            );
+            r
+        }
+        Err(e) => e.into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ViewedIn {
     pages_seen: Vec<u32>,
     #[serde(default)]
