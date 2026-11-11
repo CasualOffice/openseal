@@ -49,3 +49,16 @@ objstm_n_huge.pdf	Indirect objects	CS-PDF-0002	refuse	An object stream whose /N 
 xref_w_huge.pdf	recovery	CS-PDF-0005	open+report	An xref stream with /W [1 20 2]; strict refuses, default rebuilds by scanning (CS-PDF-0101)
 pages_count_lies.pdf	Pages	-	open	/Count claims 1,000,000 pages over one kid; pages come from the tree, never from /Count
 xobject_self_cycle.pdf	Form XObject nesting in text extraction	-	open	A Form XObject that draws itself; admission opens it, text extraction stops at the cycle (stage 1C)
+xfa_valid.pdf	control	CS-PDF-0012	refuse	A dynamic-only XFA form (one field with a caption) that lays out to one page; the reader refuses it as dynamic (XFA-01)
+xfa_too_large.pdf	XFA packets (XDP) size	CS-PDF-0012	refuse	XDP of 64 MiB + 1 byte (a comment, Flate about 1:100): CS-XFA-0001
+xfa_depth_65.pdf	XFA element nesting	CS-PDF-0012	refuse	65 nested elements (xdp, template, root subform, a draw holding XHTML 58 spans deep): CS-XFA-0002
+xfa_nodes_4m.pdf	XFA XML nodes	CS-PDF-0012	refuse	4,000,001 empty draw elements: CS-XFA-0003
+xfa_attributes_257.pdf	XFA attributes per element	CS-PDF-0012	refuse	One element with 257 attributes: CS-XFA-0003
+xfa_billion_laughs.pdf	XFA DTD and entities	CS-PDF-0012	refuse	Nested internal entities (billion laughs) in a DTD: refused before any expansion, CS-XFA-0005
+xfa_external_entity.pdf	XFA DTD and entities	CS-PDF-0012	refuse	An external entity (file:///etc/passwd) declared and used: never resolved, CS-XFA-0005
+xfa_undefined_entity.pdf	XFA DTD and entities	CS-PDF-0012	refuse	An entity reference with no declaration: CS-XFA-0004
+xfa_unbalanced.pdf	XFA well-formedness	CS-PDF-0012	refuse	Crossed end tags (<subform><draw></subform></draw>), balanced in count: CS-XFA-0004
+xfa_no_template.pdf	XFA well-formedness	CS-PDF-0012	refuse	An XDP without a template packet: CS-XFA-0006
+xfa_instances_200k.pdf	XFA form nodes	CS-PDF-0012	refuse	A subform with occur min 200,001: CS-XFA-0007
+xfa_pages_2001.pdf	XFA pages laid out	CS-PDF-0012	refuse	2,001 instances of a 6 in field, one a page: CS-XFA-0008
+xfa_nesting_33.pdf	XFA container nesting	CS-PDF-0012	refuse	33 nested subforms under the root (35 elements deep, within the element limit): CS-XFA-0002

@@ -230,6 +230,41 @@ def with_catalog_entry(entry):
     return objs
 
 
+# Dynamic XFA forms (XFA-01): the reader refuses them (CS-PDF-0012, no static content);
+# casual-sign-xfa lays their packets out, within the limits of docs/21 §XFA. Each fixture
+# below crosses one of those limits; its code is in the manifest's note.
+XFA_PAGESET = (b'<pageSet><pageArea name="P"><contentArea x="0.5in" y="0.5in" w="7.5in" h="10in"/>'
+               b'<medium short="8.5in" long="11in"/></pageArea></pageSet>')
+
+
+def xfa_xdp(template_body, data=b"<form1/>", before=b""):
+    return (b'<?xml version="1.0" encoding="UTF-8"?>' + before +
+            b'<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/"><template xmlns="http://www.xfa.org/schema/xfa-template/3.3/">'
+            b'<subform name="form1" layout="tb">' + XFA_PAGESET + template_body + b'</subform></template>'
+            b'<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data>' + data +
+            b'</xfa:data></xfa:datasets></xdp:xdp>')
+
+
+def dynamic_xfa(packets):
+    """A dynamic-only XFA form: one placeholder page, /NeedsRendering, the packets in one
+    Flate stream."""
+    objs = pages_objs(1)
+    objs[0] = (1, b"<</Type/Catalog/Pages 2 0 R/NeedsRendering true/AcroForm<</Fields[]/XFA 5 0 R>>>>")
+    objs.append((5, stream_obj(b"/Filter/FlateDecode", zlib.compress(packets, 9))))
+    return classic(objs)[0]
+
+
+def xfa_padding(n):
+    """n bytes of XML comment that Flate compresses about 1:100, below the reader's
+    1:1000 decode ratio, so the XFA size limit is what refuses them."""
+    out = bytearray()
+    x = 12345
+    while len(out) < n:
+        x = (x * 1103515245 + 12345) & 0x7FFFFFFF
+        out += b"a" * 400 + bytes([97 + x % 26])
+    return b"<!--" + bytes(out[:n]) + b"-->"
+
+
 def builders():
     """name -> function returning the file's bytes. Order is the manifest's order."""
     b = {}
@@ -514,6 +549,34 @@ def builders():
         pages_objs(1), enc_body=b"<</Filter/Standard/V 2/R 3/Length 128/P -3904/U<00>>>")
     b["encrypted_unknown_handler.pdf"] = lambda: encrypted_file(
         pages_objs(1), enc_body=b"<</Filter/FOPN_foweb/V 1/R 2/O<00>/U<00>/P -4>>")
+
+
+    # Dynamic XFA (XFA-01): a control that lays out, then one fixture per docs/21 §XFA
+    # limit and for each refused XML construct.
+    b["xfa_valid.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b'<field name="name" w="3in" h="0.3in"><ui><textEdit/></ui><caption reserve="1in"><value><text>Name</text></value></caption></field>'))
+    b["xfa_too_large.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"", before=xfa_padding(64 * MIB + 1)))
+    b["xfa_depth_65.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b'<draw name="d"><value><exData contentType="text/html"><body>' + b"<span>" * 58 + b"x" + b"</span>" * 58
+        + b"</body></exData></value></draw>"))
+    b["xfa_nesting_33.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b'<subform layout="tb">' * 33 + b'<field name="f" w="1in" h="0.25in"/>' + b"</subform>" * 33))
+    b["xfa_nodes_4m.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"<draw/>" * 4_000_001))
+    b["xfa_attributes_257.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b"<draw " + b" ".join(b'a%d="1"' % i for i in range(257)) + b"/>"))
+    b["xfa_billion_laughs.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"", before=(
+        b'<!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">'
+        b'<!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">]>')))
+    b["xfa_external_entity.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b'<draw name="d"><value><text>&xxe;</text></value></draw>',
+        before=b'<!DOCTYPE x [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'))
+    b["xfa_undefined_entity.pdf"] = lambda: dynamic_xfa(xfa_xdp(b'<draw name="d"><value><text>&xxe;</text></value></draw>'))
+    b["xfa_unbalanced.pdf"] = lambda: dynamic_xfa(xfa_xdp(b"<subform><draw></subform></draw>"))
+    b["xfa_no_template.pdf"] = lambda: dynamic_xfa(b'<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/"><config/></xdp:xdp>')
+    b["xfa_instances_200k.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b'<subform name="r" layout="tb" w="1in"><occur min="200001" max="-1"/></subform>'))
+    b["xfa_pages_2001.pdf"] = lambda: dynamic_xfa(xfa_xdp(
+        b'<subform name="r" layout="tb" w="1in"><occur min="2001" max="-1"/><field name="f" w="1in" h="6in"/></subform>'))
 
     return b
 

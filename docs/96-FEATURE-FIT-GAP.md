@@ -24,7 +24,7 @@ instructions 8 and 9).
 | FG-006 | Size limits: 50 MB per file, 200 MB per envelope | DS | Build | 1 | Designed |
 | FG-007 | Neutralize JavaScript, actions, embedded files; report | — | Build | Phase 1 | Engine |
 | FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Engine |
-| FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | — |
+| FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | Engine (`XFA-01`; gaps `XFA-02`..`XFA-05`) |
 | FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | Engine |
 | FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
 | FG-010 | Document visibility per recipient | DS | Build | 6 | — |

@@ -39,6 +39,10 @@
 //! - [`IncrementalUpdate`] appends new and replaced objects to an admitted,
 //!   structurally sound document. The input is always a prefix of the output
 //!   (`CS-WRT-0001`).
+//!
+//! A dynamic-only XFA form is refused by admission (`CS-PDF-0012`); [`xfa_packets`]
+//! reads its XFA packets so the host can lay the form out with `casual-sign-xfa`
+//! (`XFA-01`).
 
 mod classify;
 mod content;
@@ -57,6 +61,7 @@ mod report;
 mod serialize;
 mod text;
 mod writer;
+mod xfa;
 mod xref;
 
 pub use content::{
@@ -77,6 +82,7 @@ pub use report::{
     SignatureInfo, SignatureKind, Widget,
 };
 pub use writer::{Change, IncrementalUpdate, WriteError};
+pub use xfa::xfa_packets;
 pub use xref::XrefKind;
 
 /// Decode a PDF text string (ISO 32000-2 §7.9.2.2): UTF-16BE or UTF-8 with a

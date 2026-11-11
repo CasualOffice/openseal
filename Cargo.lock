@@ -525,6 +525,7 @@ dependencies = [
  "casual-sign-pdf",
  "casual-sign-seal",
  "casual-sign-verify",
+ "casual-sign-xfa",
  "cms",
  "der",
  "rcgen",
@@ -697,6 +698,15 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "casual-sign-xfa"
+version = "0.0.0"
+dependencies = [
+ "casual-sign-pdf",
+ "miniz_oxide 0.8.9",
+ "skrifa",
 ]
 
 [[package]]
