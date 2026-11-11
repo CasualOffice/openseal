@@ -133,7 +133,10 @@ test("hostile names, subjects, labels and URLs render as text on every sender sc
   const ids = await seed(page, run);
   await signIn(page, "home");
 
-  await clean(page, dialogs, "home");
+  // Home lists only the few most recent envelopes; on the shared real stack other specs
+  // may have sent newer ones, so the payload's presence is checked on the agreements
+  // search below there. Every safety check (no script, no markup, no dialog) still runs.
+  await clean(page, dialogs, "home", REAL ? null : IMG);
   await page.goto(app("#/agreements"));
   await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
   await clean(page, dialogs, "agreements");

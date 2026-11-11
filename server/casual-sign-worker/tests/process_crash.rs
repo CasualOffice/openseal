@@ -17,7 +17,8 @@
 //! Needs `OPENSEAL_TEST_DATABASE_URL` and binaries built with the feature:
 //! `cargo build -p casual-sign-server --features crash-points` (the worker binary is
 //! this package's own, built with the feature by `cargo test --features crash-points`).
-
+// Kills its children with SIGKILL and reads their exit signals: Unix only.
+#![cfg(unix)]
 #![cfg(feature = "crash-points")]
 // Test code: a panic is the failure report (CLAUDE.md).
 #![allow(

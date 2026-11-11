@@ -417,6 +417,12 @@ pub fn repo_root() -> PathBuf {
 
 /// `fixtures/hostile/valid.pdf`, generated when absent (it is not committed).
 pub fn valid_pdf() -> Vec<u8> {
+    // Tests run in parallel; generating the fixtures once per process keeps one test from
+    // reading `valid.pdf` while another is still writing it.
+    static GENERATED: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = GENERATED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let path = repo_root().join("fixtures/hostile/valid.pdf");
     if !path.exists() {
         let out = std::process::Command::new("python3")
