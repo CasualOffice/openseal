@@ -30,6 +30,7 @@ by saying so.
 | 19 | 2026-11-11 | "Instead of building all at once, build it first for the most common use case and then extend it horizontally with features: target 50–70% of use cases for the first release, then scale." Chose the core send-and-sign scope for Release 1. Sequencing only: instruction 8 still holds, nothing leaves the roadmap | [06](06-ROADMAP-AND-DELIVERY.md) §Release 1 |
 | 20 | 2026-11-11 | OpenSeal stays Apache-2.0, free to use, embed and commercialize; "Powered by OpenSeal" is a voluntary request, never a license condition; no CLA, no commercial license, no trademark license | [ATTRIBUTION.md](../ATTRIBUTION.md), [BRANDING.md](../BRANDING.md) |
 | 21 | 2026-11-11 | "We don't even have a web app, not even a base." Start the web app now, in parallel with Phase 1 and 2, rather than after them; this overrides CLAUDE.md's "no UI until Phase 1 closes" | `webapp/`, slice 1, `WEB-01` |
+| 22 | 2026-11-11 | After using the demo: major UX issues in layout, accessibility and detail. The form-creation page gives the PDF far too little space and its scrolling is terrible; the same on the signing page. Use side panels (user-resizable, width remembered) instead of dialogs where possible. Use rem instead of px, with rem scaling to screen resolution and browser zoom | `WEB-06`, [47](47-UX-AND-FEATURE-MAP.md) |
 
 ## Inherited working rules
 
