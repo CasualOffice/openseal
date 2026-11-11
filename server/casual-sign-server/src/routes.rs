@@ -261,6 +261,13 @@ pub fn table() -> Vec<Route> {
             env::content,
         ),
         r(
+            "POST",
+            "/api/v1/envelopes/{id}/documents/{doc}/detect-fields",
+            ew,
+            JSON,
+            env::detect_fields,
+        ),
+        r(
             "GET",
             "/api/v1/envelopes/{id}/recipients",
             er,

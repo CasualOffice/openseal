@@ -406,6 +406,24 @@ components:
         subject: {type: string}
         sender_user_id: {type: string}
         created_at: {type: string, format: date-time}
+    DetectedField:
+      type: object
+      properties:
+        document_id: {type: string}
+        type: {type: string, description: "signature, initials, date_signed, name, title, company or text; any field type for an AcroForm field"}
+        page: {type: integer, minimum: 1}
+        x: {type: string, description: Decimal points}
+        y: {type: string}
+        width: {type: string}
+        height: {type: string}
+        source: {type: string, enum: [underline, label, box, acroform]}
+        cue: {type: string, description: "The text cue (at most 64 characters), or the form field's data label"}
+        confidence: {type: integer, minimum: 0, maximum: 100}
+    DetectedFields:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/DetectedField'}}
+        truncated: {type: boolean}
     Contact:
       type: object
       description: A past recipient (personal data); the name last used with this address.
@@ -1217,6 +1235,36 @@ paths:
           content:
             application/pdf:
               schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/documents/{doc}/detect-fields:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+      - name: doc
+        in: path
+        required: true
+        description: Document id
+        schema: {type: string}
+    post:
+      operationId: detectFields
+      summary: "Suggested fields from the document's lines, boxes, labels and form fields (WEB-06)"
+      description: >-
+        Nothing is changed or recorded. Each suggestion is in the field endpoints' geometry
+        (displayed page space, points, origin top-left, ADR-019); add one by posting it to
+        `/fields` with a `recipient_id`. At most 500, ordered by page, top, left; `truncated`
+        says a bound was reached.
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DetectedFields'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/recipients:
     parameters:

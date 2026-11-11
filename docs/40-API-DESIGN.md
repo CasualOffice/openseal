@@ -318,3 +318,10 @@ disabled and the account condition removed); the access code patched on a draft 
 voided, the link taking the new code and not the old; the ceremony cookie `Secure` unless the server is plain-HTTP
 development (seen red when it was always `Secure`, which broke signing in WebKit on the Compose stack). The server
 binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised by the Compose stack (docs/65).
+
+## As built (`WEB-06`, server side of the UX audit)
+
+| Endpoint | As built |
+| --- | --- |
+| `GET /contacts?q=&limit=` | Recipient autocomplete: the account's past recipients, one per email address (any case), the name last used with it, most recently used first, `limit` 1–50 (default 10); `q` matches name or email as `GET /envelopes?q=` does (wildcards literal). From the envelopes the caller may see: a member without `view_all` gets only the people they sent to. Scope `envelopes:read`. `tests/contacts.rs`, RLS on and off; seen red with the account condition removed and RLS off |
+| `POST /envelopes/{id}/documents/{doc}/detect-fields` | Suggested fields for the delivered document, by `casual_sign_sdk::Engine::detect_fields` (docs/30 §5 "Field auto-detection"): underscore lines, painted rules and boxes with the labels near them, and the document's AcroForm fields, as `{document_id, type, page, x, y, width, height, source, cue?, confidence}` in the field endpoints' geometry, so a suggestion posted to `/fields` with a `recipient_id` lands where it was suggested; at most 500, `truncated` when a bound was reached. Changes and records nothing. Scope `envelopes:write`. `tests/detect.rs` |

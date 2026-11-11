@@ -691,6 +691,28 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .await;
     spec = ok(corrected, StatusCode::OK, "correct").await;
     assert_eq!(spec["recipients"][1]["email"], "b2@example.test");
+    // WEB-06: field suggestions and recipient autocomplete.
+    ok(
+        api.call(
+            "POST",
+            &format!("{base}/documents/{doc}/detect-fields"),
+            k,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "detect fields",
+    )
+    .await;
+    let people = ok(
+        api.call("GET", "/api/v1/contacts?q=b2@", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "contacts",
+    )
+    .await;
+    assert_eq!(people["items"][0]["email"], "b2@example.test");
     for path in [
         format!("{base}/certificate"),
         format!("{base}/documents/combined"),

@@ -902,6 +902,67 @@ pub(crate) async fn content(
     serve_pdf(&c, tx, &mut l, sha, access).await
 }
 
+/// `POST /envelopes/{id}/documents/{doc}/detect-fields`: suggested fields for the
+/// delivered document (WEB-06), from underscore lines, painted rules and boxes and the
+/// labels near them ("Signature", "Sign here", "Date", "Name", "Initials", "Title",
+/// "Company"), plus its AcroForm fields. Each suggestion is in the field geometry the
+/// field endpoints take (page, x, y, width, height: displayed points, origin top-left,
+/// ADR-019), so a client adds one by naming a recipient. Nothing is changed or recorded.
+pub(crate) async fn detect_fields(
+    c: Call,
+    Path((id, doc)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let d = doc_in(&l.state, &doc)?.id().clone();
+    let versions = tx.documents().versions(DocumentId(uid(&d)?)).await?;
+    tx.commit().await?;
+    let v = versions
+        .iter()
+        .rev()
+        .find(|v| v.version.kind == VersionKind::Normalized)
+        .ok_or_else(ApiError::not_found)?;
+    let bytes =
+        c.st.0
+            .blobs
+            .get(&casual_sign_store::blob::BlobKey(v.version.sha256))
+            .await?;
+    let engine = c.st.0.engine.clone();
+    let doc_id = d.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        let mut n: u32 = 0;
+        let mut next = || {
+            n = n.saturating_add(1);
+            Id::new(format!("acroform-{n}")).unwrap_or_else(|_| doc_id.clone())
+        };
+        engine.detect_fields(&bytes, &doc_id, &mut next)
+    })
+    .await
+    .map_err(|_| ApiError::internal("detection"))??;
+    let items: Vec<Value> = found
+        .fields
+        .iter()
+        .map(|f| {
+            let mut v = serde_json::to_value(f.placement).unwrap_or(Value::Null);
+            if let Some(o) = v.as_object_mut() {
+                o.insert("document_id".into(), json!(d));
+                o.insert("type".into(), json!(f.field_type));
+                o.insert("source".into(), json!(f.source.as_str()));
+                o.insert("confidence".into(), json!(f.confidence));
+                if let Some(label) = &f.label {
+                    o.insert("cue".into(), json!(label));
+                }
+            }
+            v
+        })
+        .collect();
+    Ok(json(
+        StatusCode::OK,
+        &json!({ "items": items, "truncated": found.truncated }),
+    ))
+}
+
 /// Read a stored PDF, record its download in the chain when `access` says so, commit,
 /// and answer it as an attachment.
 async fn serve_pdf(

@@ -42,7 +42,10 @@ use casual_sign_pdf::{Admitted, NormalizeOptions, OutputXref, WriteError, admit_
 pub use casual_sign_audit::{ChainReport, Hash256, VerifyOptions as TrailOptions};
 pub use casual_sign_certificate::{CertificateInput, CertificateOptions};
 pub use casual_sign_crypto::{Certificate, KeyError, KeyProvider, Signature, SignatureAlgorithm};
-pub use casual_sign_fields::{Conversion, Converted, Issue, Outcome, Skipped, Unmapped};
+pub use casual_sign_fields::{
+    Conversion, Converted, DetectedField, DetectedSource, Detection, Issue, Outcome, Skipped,
+    Unmapped,
+};
 pub use casual_sign_flatten::{
     Art, Capture, FlattenOptions, FlattenReport, FontSet, FormMode, Ink, InkPoint, NotDrawn,
 };
@@ -613,6 +616,35 @@ impl Engine {
             next_id,
             &cancel,
         )?)
+    }
+
+    /// Suggest fields for the delivered document (WEB-06, docs/30 §5): signature,
+    /// initials, date, name, title, company and text slots from underscore lines,
+    /// painted rules and boxes and the labels beside them, plus its existing AcroForm
+    /// fields, in displayed page space (ADR-019), ordered by page, top, left, at most
+    /// [`casual_sign_fields::MAX_DETECTED_FIELDS`]. Nothing is changed.
+    ///
+    /// # Errors
+    /// [`SdkError::Pdf`] when reading crosses a limit or is cancelled.
+    pub fn detect_fields(
+        &self,
+        delivered: &[u8],
+        document_id: &Id,
+        next_id: &mut dyn FnMut() -> Id,
+    ) -> Result<Detection, SdkError> {
+        let mut admitted = self.open(delivered, &Credentials::default())?;
+        let report = admitted.report.clone();
+        let cancel = || self.cancelled();
+        let pages =
+            casual_sign_fields::extract_text(&mut admitted.document, &report.pages, &cancel)?;
+        let form = casual_sign_fields::convert_acroform(
+            &mut admitted.document,
+            &report,
+            document_id,
+            next_id,
+            &cancel,
+        )?;
+        Ok(casual_sign_fields::detect_fields(&pages, &form.fields))
     }
 
     /// Evaluate the fields' values as completion does (linking, locking, formulas,
