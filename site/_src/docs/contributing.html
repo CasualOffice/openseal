@@ -1,0 +1,50 @@
+<!--meta {"title": "Contributing", "description": "How to build, test and contribute to OpenSeal: the toolchain, the tests, the clean-room rule, commit conventions and where the plan lives."} -->
+<h1>Contributing</h1>
+<p class="lede">OpenSeal is built in the open, and contributions are welcome. Because evidence integrity is the product's most critical property, the bar for changes that read, write or sign a PDF is high, and every rule below has a reason.</p>
+
+<h2>Get the code running</h2>
+<p>You need Rust 1.96 (pinned in <code>rust-toolchain.toml</code>), Python 3.12, and Docker for the validators and the full stack.</p>
+<pre><code>git clone https://github.com/CasualOffice/openseal && cd openseal
+git config core.hooksPath .githooks          # once per clone: repository checks and commit messages
+cargo test --workspace                       # every crate's tests
+python3 -I fixtures/tools/generate.py        # the hostile PDF set
+tools/ci-local.sh                            # everything CI runs, locally</code></pre>
+<p>The web app needs no build step: <code>python3 -I tools/serve-webapp.py</code>, then open <code>http://127.0.0.1:8130/app.html?mock=1</code>. Its browser tests are in <code>webapp/e2e</code> (Playwright and axe).</p>
+
+<h2>Before you write code</h2>
+<ul>
+  <li>Every piece of work has a row in the tracker, <a href="https://github.com/CasualOffice/openseal/blob/main/docs/14-EXECUTION-TRACKER.md">docs/14</a>. The only roadmap is <a href="https://github.com/CasualOffice/openseal/blob/main/docs/06-ROADMAP-AND-DELIVERY.md">docs/06</a>.</li>
+  <li>The design is written down in a numbered document. Decisions that need one have an accepted ADR in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/08-ADR-REGISTER.md">docs/08</a>.</li>
+  <li>Name the acceptance test first. A test counts only if it was seen to fail without the change.</li>
+  <li>Open an issue to discuss anything substantial.</li>
+</ul>
+
+<h2>Rules that protect the evidence</h2>
+<ul>
+  <li><strong>Untrusted input never panics.</strong> No <code>unwrap</code>, <code>expect</code>, indexing or unchecked arithmetic on values from a file or a request; return a typed error with a stable code.</li>
+  <li><strong>Every parser is bounded</strong>, with each limit named, a hostile fixture and a fuzz target.</li>
+  <li><strong>A sealed document is never modified</strong>; later changes are signed incremental updates.</li>
+  <li><strong>The audit trail is append-only</strong>; corrections are new events.</li>
+  <li><strong>Our verifier is never enough alone</strong>: anything that seals is checked by pyHanko and EU DSS too.</li>
+  <li><strong>Time, randomness and keys are supplied</strong>, never sampled by an engine crate; the same input gives the same bytes. No <code>unsafe</code> in <code>crates/</code>.</li>
+  <li><strong>Cryptography is never hand-rolled.</strong></li>
+  <li>No personal data, real agreements or private keys in fixtures, logs or commits.</li>
+</ul>
+
+<h2>Clean room</h2>
+<p>Never copy, translate or adapt code, schemas, CSS, interface text or tests from AGPL projects (Documenso, DocuSeal, OpenSign Labs' OpenSign, LibreSign) or from vendors' documentation. Ideas from their public documentation and behaviour are fine. Sign off every commit under the <a href="https://developercertificate.org/">Developer Certificate of Origin</a> (<code>git commit -s</code>); for this project the sign-off also attests that no such material is included.</p>
+
+<h2>Commits</h2>
+<p><a href="https://www.conventionalcommits.org/">Conventional Commits</a>, one coherent change per commit, citing the tracker id and giving the reason:</p>
+<pre><code>feat(seal): compute the signature placeholder from the chain and timestamp (T-1G)</code></pre>
+<p>A change is not done until every document it affects is true in the same commit. Never skip the hooks.</p>
+
+<h2>Security issues</h2>
+<p>Do not open a public issue for a vulnerability, a malicious PDF or a forgery technique. Follow the <a href="../security.html">security policy</a>.</p>
+
+<h2>Read next</h2>
+<ul>
+  <li><a href="https://github.com/CasualOffice/openseal/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>, <a href="https://github.com/CasualOffice/openseal/blob/main/AGENTS.md">AGENTS.md</a> and <a href="https://github.com/CasualOffice/openseal/blob/main/CLAUDE.md">CLAUDE.md</a>: the full contract</li>
+  <li><a href="https://github.com/CasualOffice/openseal/blob/main/GOVERNANCE.md">GOVERNANCE.md</a> and the <a href="https://github.com/CasualOffice/openseal/blob/main/CODE_OF_CONDUCT.md">code of conduct</a></li>
+  <li><a href="architecture.html">Architecture overview</a></li>
+</ul>

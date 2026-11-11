@@ -40,3 +40,9 @@ Docs are true as of `1163eca` (2026-11-10). **The engine's first half is built**
 | [66-SPK-02-CRYPTO-STACK](66-SPK-02-CRYPTO-STACK.md) | Crypto stack spike: PAdES B-B sealed with aws-lc-rs keys and RustCrypto CMS, validated by pyHanko; RustCrypto-only WASM verifier; pitfalls; ADR-006 amendments | Measured, 2026-11-10, macOS only |
 | [65-RUNNING-IT](65-RUNNING-IT.md) | Deployment, production checklist, configuration, upgrades | Design; the server does not exist yet (Phase 2) |
 | [96-FEATURE-FIT-GAP](96-FEATURE-FIT-GAP.md) | **Every DocuSign and SignNow feature** (167 rows) with disposition, slice and status — the parity measure | Live |
+
+**Website** ([`site/`](../site/), `SITE-01`): the marketing site and user documentation as static files, published by
+`.github/workflows/pages.yml`. Page sources are in `site/_src/`; `tools/build-site.py` builds them, the roadmap page from
+[06](06-ROADMAP-AND-DELIVERY.md) and [14](14-EXECUTION-TRACKER.md) (`tools/build-roadmap.py`) and the API reference from
+`api/openapi.yaml` (`tools/build-api-docs.py`). Preview with `python3 -I tools/serve-site.py`; check links with
+`python3 -I tools/check-site-links.py`.

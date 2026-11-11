@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Changelog | OpenSeal</title>
+<meta name="description" content="What changed in OpenSeal, by date.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="Changelog | OpenSeal">
+<meta property="og:description" content="What changed in OpenSeal, by date.">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/theme-init.js"></script>
+<script type="module" src="assets/site.js"></script>
+</head>
+<body data-root="">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="index.html#features">Features</a><a href="docs/index.html">Docs</a><a href="docs/api.html">API</a><a href="roadmap.html">Roadmap</a><a href="download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="index.html#features">Features</a><a href="docs/index.html">Docs</a><a href="docs/api.html">API</a><a href="roadmap.html">Roadmap</a><a href="download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1">
+<section class="page-head"><div class="wrap narrow">
+  <h1>Changelog</h1>
+  <p class="lede">Every notable change, newest first, from <a href="https://github.com/CasualOffice/openseal/blob/main/CHANGELOG.md">CHANGELOG.md</a>. The format follows Keep a Changelog.</p>
+</div></section>
+<section class="section-tight"><div class="wrap narrow prose changelog">
+<p>All notable changes, by date. Format: <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>.</p>
+<h2 id="2026-11-10">2026-11-10</h2>
+<h3 id="phase-1-opened">Phase 1 opened</h3>
+<ul><li>Stage 1G merged: PAdES B-B to B-LTA sealing, self-verified, agreeing with pyHanko and EU DSS (<code>T-1G</code>). Stage 1I merged: hash-chained audit trail, RFC 8785, Merkle anchoring, certificate of completion with the trail embedded (<code>T-1I</code>).</li><li>Reader completion merged: password-protected PDFs (standard handler R2–R6), LZW, four wrongly refused real PDFs fixed, a public content lexer; 417 of 422 corpus PDFs open (<code>PDF-ENC-01</code>, <code>PDF-LZW-01</code>, <code>PDF-REAL-01..03</code>).</li><li>Stage 1E merged: flattening with subset fonts, drawn, uploaded and typed signatures, and fill-in-place forms (<code>T-1E</code>, <code>FILL-01</code>), checked by PDFium and pypdf.</li><li>Stage 1H merged: the verifier, with a whitelist revision classifier that catches shadow and incremental-saving attacks, cross-checked against pyHanko and EU DSS (<code>T-1H</code>).</li><li>Repository public; first GitHub CI run green on all 8 jobs. Independent doc audit (<code>DOC-002</code>): 26 findings fixed.</li><li>Stage 1B merged: incremental writer and normalizer; <code>PDF-INV-01</code> holds over the hostile set and the corpus; eight more active-content fixtures (<code>T-1B</code>).</li><li>Owner instruction 9: remote online notarization (slice 31) and add-on modules for lifecycle management, rooms, workflow builder and agreement intelligence (slices 32–35, milestone M8).</li><li>Owner instruction 8, not an MVP: no feature is deferred as <code>Later</code>; dynamic XFA, fill-in-place forms, mobile apps, template matching, sign on paper, WhatsApp delivery, insights and integrations are planned with slices and rows.</li><li>Stage 1C merged: page geometry, text extraction with positions, anchor text, <code>{{…}}</code> text tags and AcroForm conversion (<code>T-1C</code>).</li><li>First corpus run of the reader: 422 real PDFs, no panic or hang, 387 admitted with page counts matching the manifest; four wrong refusals tracked as <code>PDF-REAL-01</code> to <code>03</code>.</li><li>Stage 1A merged: the bounded PDF reader and admission report, with a cargo-fuzz <code>admit</code> target (<code>T-1A</code>, <code>F-007</code>). Fixed after merge: three fixture defects and an object-stream cache that could hold two oversized streams at once.</li><li>Stage 1F merged: <code>KeyProvider</code>, CMS builder and verifier, RFC 3161, OCSP and CRL, cross-checked with <code>cryptography</code> and pyHanko both ways (<code>T-1F</code>).</li><li>Stage 1D merged: field types, validation (linear-time regex), conditional fields, groups, linked fields and a decimal formula language, identical natively and in WASM (<code>T-1D</code>).</li><li>Owner instruction 7: private until the pre-release alpha; <code>tools/ci-local.sh</code> runs the CI list locally. Phase 1 opened under waiver <code>W-2</code>; skeleton crates <code>casual-sign-model</code>, <code>-crypto</code>, <code>-fields</code> for stages 1A, 1D and 1F.</li></ul>
+<h3 id="phase-0-opened">Phase 0 opened</h3>
+<ul><li>EU DSS 6.5.1 validator image (<code>tools/eu-dss/</code>) added to the validator self-test and CI, rung 3 of the ladder (<code>F-006</code>).</li><li>Hostile PDF fixtures: generator and manifest covering every PDF limit in docs/21 (<code>F-005</code>).</li><li>Real-world PDF corpus: a manifest of 422 freely licensed PDFs (URL, SHA-256, licence, producer, features), a fetch script that checks them and a byte scanner that describes them (<a href="https://github.com/CasualOffice/openseal/blob/main/fixtures/corpus/README.md">fixtures/corpus</a>, <code>F-004</code>).</li><li><code>SPK-01</code>: PDF reader spike merged; ADR-005 confirmed (own bounded reader and writer; lopdf as test oracle) (<a href="https://github.com/CasualOffice/openseal/blob/main/docs/64-SPK-01-PDF-READER.md">docs/64</a>); docs/21 and docs/30 corrected from its findings.</li><li><code>SPK-02</code>: crypto stack spike merged; ADR-006 confirmed with amendments; ADR-009 now signs DER signed attributes (<a href="https://github.com/CasualOffice/openseal/blob/main/docs/66-SPK-02-CRYPTO-STACK.md">docs/66</a>).</li><li>ADR-001 to ADR-009 Accepted; Phase 0 opened (owner instruction 6).</li><li>Cargo workspace, <code>casual-sign-pdf</code> skeleton, toolchain pin, <code>deny.toml</code>, lints; repository gates, commit hooks and CI workflow copied from OpenPresent (<code>F-002</code>, <code>PROVENANCE.md</code>).</li><li><code>tools/verify-sealed.py</code>: pyHanko validator harness with a self-test (<code>F-006</code>).</li><li><code>GOVERNANCE.md</code>, <code>CODE_OF_CONDUCT.md</code>.</li></ul>
+<h3 id="changed">Changed</h3>
+<ul><li>Roadmap gains milestones M0–M7 with exit evidence, critical path and parallel lanes (<code>docs/06</code>, <code>MS-*</code>).</li><li>Git workflow decided (<code>DEC-11</code>); repository initialized on <code>main</code>.</li><li>Product named <strong>OpenSeal</strong> (owner instruction 4, <code>DEC-01</code>); skills renamed <code>openseal-*</code>.</li></ul>
+<h3 id="added">Added</h3>
+<ul><li>Initial design documentation: PRD, HLD, DocuSign, SignNow and open-source studies, legal and compliance mapping, data model, envelope lifecycle, PDF pipeline, sealing, audit trail, API design, threat model, ADR register, roadmap, execution tracker, feature fit-gap (<code>DOC-001</code>).</li><li><code>CLAUDE.md</code>, <code>AGENTS.md</code>, project skills, <code>LICENSE</code> (Apache-2.0), <code>NOTICE</code>, <code>SECURITY.md</code>, <code>CONTRIBUTING.md</code>.</li></ul>
+</div></section>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="index.html#features">Features</a></li><li><a href="roadmap.html">Roadmap</a></li><li><a href="download.html">Download and deploy</a></li><li><a href="changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="docs/getting-started.html">Getting started</a></li><li><a href="docs/api.html">API reference</a></li><li><a href="docs/webhooks.html">Webhooks</a></li><li><a href="docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="security.html">Security policy</a></li><li><a href="brand.html">Brand and attribution</a></li><li><a href="docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

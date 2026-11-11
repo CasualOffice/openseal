@@ -1,0 +1,74 @@
+<!--meta {"title": "Webhooks", "description": "OpenSeal webhooks: subscribing, event types, the payload, Standard Webhooks signatures, verifying them, retries and SSRF protection."} -->
+<h1>Webhooks</h1>
+<p class="lede">OpenSeal tells your system when something happens to an envelope by POSTing a small, signed JSON event to an HTTPS endpoint you register. Events carry ids and statuses only; your system fetches the details it needs with its own credentials.</p>
+
+<h2>Subscribe</h2>
+<p>A subscription names the URL, the event types (or <code>*</code> for all), and references to one to four secrets. Secrets are provisioned by the operator, as an environment variable or a file the worker can read, so they never travel through the API. A secret is <code>whsec_</code> followed by base64 of at least 16 random bytes. Optionally, limit the subscription to one envelope.</p>
+<pre><code>curl https://sign.example.com/api/v1/webhooks \
+  -H "Authorization: Bearer $OPENSEAL_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: crm-webhook-1" \
+  -d '{
+    "url": "https://crm.example.com/hooks/openseal",
+    "event_types": ["envelope.completed", "envelope.declined", "recipient.completed"],
+    "secret_refs": ["OPENSEAL_WEBHOOK_SECRET_CRM"]
+  }'</code></pre>
+<p>Needs the <code>webhooks:manage</code> scope. <code>GET /api/v1/webhooks/{id}/deliveries</code> lists every attempt with its outcome.</p>
+
+<h2>Event types</h2>
+<p>Events mirror the audit trail's types that matter to integrators:</p>
+<ul>
+  <li><strong>Envelope:</strong> <code>envelope.sent</code>, <code>envelope.delivered</code>, <code>envelope.completing</code> (sealing has started), <code>envelope.completed</code>, <code>envelope.declined</code>, <code>envelope.voided</code>, <code>envelope.expired</code>, <code>envelope.corrected</code>, <code>envelope.purged</code></li>
+  <li><strong>Recipient:</strong> <code>recipient.sent</code>, <code>recipient.delivered</code>, <code>recipient.auth_failed</code>, <code>recipient.completed</code>, <code>recipient.declined</code>, <code>recipient.reassigned</code>, <code>recipient.bounced</code></li>
+</ul>
+<p>Designed but not emitted yet: <code>recipient.finish_later</code>, <code>template.*</code> and <code>bulk_send.completed</code>.</p>
+
+<h2>Payload</h2>
+<pre><code>{
+  "id": "0193a1b2-…",
+  "type": "envelope.completed",
+  "created_at": "2026-11-12T09:14:03Z",
+  "account_id": "0193a1b2-…",
+  "data": {
+    "envelope_id": "0193a1b2-…",
+    "status": "completed",
+    "version": 7,
+    "recipient_id": "0193a1b2-…"
+  }
+}</code></pre>
+<p>No names, email addresses, subjects, field values or documents are sent, so a misconfigured endpoint leaks nothing about the agreement. <code>recipient_id</code> appears on recipient events. Every attempt of one event sends the same bytes.</p>
+
+<h2>Verify the signature</h2>
+<p>Deliveries follow the <a href="https://www.standardwebhooks.com/">Standard Webhooks</a> scheme. Three headers come with each request:</p>
+<ul>
+  <li><code>webhook-id</code>: the event delivery's id, the same on every retry; use it to ignore duplicates.</li>
+  <li><code>webhook-timestamp</code>: the attempt's Unix time; reject anything more than five minutes old.</li>
+  <li><code>webhook-signature</code>: <code>v1,</code> and the base64 HMAC-SHA256 of <code>id.timestamp.body</code>, once per active secret, separated by spaces (so secrets can be rotated).</li>
+</ul>
+<pre><code>import base64, hashlib, hmac, time
+
+def verify(secret: str, headers: dict, body: bytes) -> bool:
+    key = base64.b64decode(secret.removeprefix("whsec_"))
+    msg_id, ts = headers["webhook-id"], headers["webhook-timestamp"]
+    if abs(time.time() - int(ts)) &gt; 300:
+        return False
+    signed = f"{msg_id}.{ts}.".encode() + body
+    expected = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest()).decode()
+    return any(
+        hmac.compare_digest(expected, part.split(",", 1)[1])
+        for part in headers["webhook-signature"].split()
+        if part.startswith("v1,")
+    )</code></pre>
+<p>Compute the HMAC over the raw request body exactly as received, before any JSON parsing.</p>
+
+<h2>Delivery and retries</h2>
+<ul>
+  <li>Any 2xx answer within 10 seconds counts as delivered. Redirects are not followed.</li>
+  <li>Otherwise the worker retries with exponential back-off (from 30 seconds, doubling, capped at 12 hours, with jitter) for 15 attempts, about three days.</li>
+  <li>Delivery is at least once: the same event may arrive twice with the same <code>webhook-id</code>. Order is not guaranteed; compare <code>version</code> to discard stale events.</li>
+</ul>
+
+<h2>Where webhooks may go</h2>
+<p>Only <code>https://</code> URLs to public addresses. Private, loopback, link-local (including cloud metadata), carrier-grade NAT, reserved and multicast addresses are refused, both when the address is resolved and again when the connection is made, so DNS rebinding cannot reach your internal network. An operator can allow a private range with <code>OPENSEAL_WEBHOOK_ALLOW</code>.</p>
+
+<div class="callout">{{icon:info}}<div><p>Planned: manual redelivery, disabling a subscription that has failed for five days, filters by sender or template, and optional mutual TLS to receivers.</p></div></div>

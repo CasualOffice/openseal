@@ -17,6 +17,8 @@ through signers in order, collect every kind of field, and get back a sealed PDF
 offline. A deterministic Rust engine does the PDF work, the sealing and the evidence; a server of record runs the
 workflow; a plain web app and an API sit on top.
 
+Website and documentation: [`site/`](site/) (built by `tools/build-site.py`; `.github/workflows/pages.yml` publishes it once GitHub Pages is enabled).
+
 Part of [CasualOffice](https://github.com/CasualOffice), with
 [OpenCalc](https://github.com/CasualOffice/opencalc) (spreadsheets),
 [OpenPresent](https://github.com/CasualOffice/openpresent) (presentations) and OpenDoc (documents), whose architecture

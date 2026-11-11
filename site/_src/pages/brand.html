@@ -1,0 +1,77 @@
+<!--meta {"title": "Brand and attribution", "description": "OpenSeal logos to download, how to credit OpenSeal with Powered by OpenSeal, what the Apache-2.0 licence requires, and ready-made snippets.", "nav": ""} -->
+<section class="page-head"><div class="wrap">
+  <h1>Brand and attribution</h1>
+  <p class="lede">How to credit OpenSeal in a product built with it. Everything here is optional: the Apache-2.0 licence asks only for the notices described below.</p>
+</div></section>
+
+<section class="section-tight"><div class="wrap">
+  <div class="sec-head"><h2 id="logos">Logos</h2><p>Use the files as they are: don't recolour, stretch, crop or add effects. Leave clear space of at least a quarter of the logo's height around it.</p></div>
+  <div class="logo-tiles">
+    <div class="logo-tile"><div class="stage"><img src="assets/logo.svg" alt="OpenSeal logo for light backgrounds" width="180" height="35" loading="lazy"></div><div class="meta"><span>Badge and wordmark, light backgrounds</span><a href="assets/logo.svg" download="openseal-logo.svg">{{icon:download:16}} <span class="sr-only">Download the light-background logo, </span>SVG</a></div></div>
+    <div class="logo-tile"><div class="stage dark"><img src="assets/logo-dark.svg" alt="OpenSeal logo for dark backgrounds" width="180" height="35" loading="lazy"></div><div class="meta"><span>Badge and wordmark, dark backgrounds</span><a href="assets/logo-dark.svg" download="openseal-logo-dark.svg">{{icon:download:16}} <span class="sr-only">Download the dark-background logo, </span>SVG</a></div></div>
+    <div class="logo-tile"><div class="stage"><img src="assets/mark.svg" alt="OpenSeal badge" width="56" height="56" loading="lazy"></div><div class="meta"><span>Badge alone, for small spaces (at least 16 px)</span><a href="assets/mark.svg" download="openseal-mark.svg">{{icon:download:16}} <span class="sr-only">Download the badge, </span>SVG</a></div></div>
+  </div>
+</div></section>
+
+<section class="section-tight section-alt"><div class="wrap narrow prose">
+  <h2>Wording</h2>
+  <ul>
+    <li>Preferred: <strong>Powered by OpenSeal</strong></li>
+    <li>Alternative: <strong>Built with OpenSeal</strong></li>
+    <li>Link: <a href="https://github.com/CasualOffice/openseal">https://github.com/CasualOffice/openseal</a></li>
+  </ul>
+  <p>Write "OpenSeal" as one word with a capital S. Avoid wording that suggests a partnership or endorsement, such as "Official OpenSeal partner" or "Certified by OpenSeal", unless the project has agreed to it in writing. Using OpenSeal does not mean your product is endorsed, certified, sponsored or maintained by the OpenSeal project or CasualOffice, and the OpenSeal name and logo are not to be used as your product's own.</p>
+
+  <h2>What the licence requires</h2>
+  <p>These are the conditions of the Apache License 2.0 (section 4), not project policy. When you redistribute OpenSeal or a work derived from it, in source or binary form:</p>
+  <ol>
+    <li>give recipients a copy of the <a href="https://github.com/CasualOffice/openseal/blob/main/LICENSE">LICENSE</a>;</li>
+    <li>keep the copyright, patent, trademark and attribution notices from the source you received;</li>
+    <li>mark files you modified as changed;</li>
+    <li>include the <a href="https://github.com/CasualOffice/openseal/blob/main/NOTICE">NOTICE</a> file's attribution notices in a reasonable place: a NOTICE file shipped with your product, its documentation, or a third-party notices screen.</li>
+  </ol>
+  <p>Running OpenSeal as a hosted service without distributing it does not trigger these conditions. Forks are welcome under the same terms, and may have a name of their own.</p>
+
+  <h2>What the project asks (voluntary)</h2>
+  <p>If OpenSeal helps you, please say so: in an application footer, an About dialog, a settings or acknowledgements page, your documentation, your third-party notices, or an integration listing. This is a request, not a condition; leaving it out does not affect your rights. OpenSeal never adds attribution to your application or to the PDFs it produces.</p>
+
+  <h2>Accessibility</h2>
+  <ul>
+    <li>A logo used as attribution needs a text alternative: <code>alt="Powered by OpenSeal"</code> on the image, or visible text beside a decorative image with <code>alt=""</code>.</li>
+    <li>A link must be reachable by keyboard and have a visible focus style; its accessible name should say where it goes.</li>
+    <li>Text should meet WCAG 2.2 AA contrast (4.5:1 for small text). Use the dark-background logo on dark themes.</li>
+    <li>Attribution should never cover content, block interaction, flash, or appear as a pop-up, banner or watermark.</li>
+  </ul>
+
+  <h2>Snippets</h2>
+  <h3>Plain text</h3>
+<pre><code>Powered by OpenSeal - https://github.com/CasualOffice/openseal</code></pre>
+  <h3>Markdown</h3>
+<pre><code>Powered by [OpenSeal](https://github.com/CasualOffice/openseal)</code></pre>
+  <h3>HTML</h3>
+  <p>A small footer credit that follows the page's colour scheme. The image is decorative because the link text names it.</p>
+<pre><code>&lt;a class="powered-by-openseal" href="https://github.com/CasualOffice/openseal"&gt;
+  &lt;picture&gt;
+    &lt;source media="(prefers-color-scheme: dark)" srcset="/assets/openseal-logo-dark.svg"&gt;
+    &lt;img src="/assets/openseal-logo.svg" alt="" width="84" height="20"&gt;
+  &lt;/picture&gt;
+  &lt;span&gt;Powered by OpenSeal&lt;/span&gt;
+&lt;/a&gt;
+&lt;style&gt;
+  .powered-by-openseal { display: inline-flex; gap: .5rem; align-items: center; font-size: .875rem; color: inherit; }
+  .powered-by-openseal:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+&lt;/style&gt;</code></pre>
+  <h3>React (TSX)</h3>
+<pre><code>export function PoweredByOpenSeal({ dark = false }: { dark?: boolean }) {
+  return (
+    &lt;a
+      href="https://github.com/CasualOffice/openseal"
+      style={{ display: "inline-flex", gap: "0.5rem", alignItems: "center", fontSize: "0.875rem", color: "inherit" }}
+    &gt;
+      &lt;img src={dark ? "/assets/openseal-logo-dark.svg" : "/assets/openseal-logo.svg"} alt="" width={84} height={20} /&gt;
+      &lt;span&gt;Powered by OpenSeal&lt;/span&gt;
+    &lt;/a&gt;
+  );
+}</code></pre>
+  <p>Copy the SVGs into your own static files; the paths above are examples. From <a href="https://github.com/CasualOffice/openseal/blob/main/BRANDING.md">BRANDING.md</a> and <a href="https://github.com/CasualOffice/openseal/blob/main/ATTRIBUTION.md">ATTRIBUTION.md</a>.</p>
+</div></section>

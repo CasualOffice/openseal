@@ -1,0 +1,95 @@
+<!--meta {"title": "Architecture overview", "description": "OpenSeal's shape: a deterministic Rust engine for PDFs, seals and evidence, hosted by a server of record with a worker and a key daemon, and a web app on the public API."} -->
+<h1>Architecture overview</h1>
+<p class="lede">OpenSeal is a deterministic, headless agreement engine in Rust, hosted by a server of record. The engine owns the PDF, the fields, the routing rules, the seal and the evidence. The server owns identity, storage, delivery, keys and policy.</p>
+
+<figure class="arch">
+<div class="arch-scroll" tabindex="0" role="region" aria-label="Architecture diagram (scrolls sideways on narrow screens)">
+<svg viewBox="0 0 820 560" role="img" aria-labelledby="arch-t arch-d" focusable="false">
+  <title id="arch-t">OpenSeal architecture</title>
+  <desc id="arch-d">Clients (the web app, the signing page, integrators through the REST API and webhooks) talk to casual-sign-server. The server and casual-sign-worker share PostgreSQL and an S3-compatible object store. The worker asks casual-sign-keyd to sign digests; keyd holds the key in an HSM through PKCS#11. The worker also reaches email, timestamp authorities and webhook receivers. Server, worker and the browser's verify page all run the same Rust engine: pdf, fields, flatten, seal, verify, audit, certificate and workflow. Anyone can verify a sealed PDF offline with the verify page or the openseal command line.</desc>
+  <g class="ar-band"><rect x="10" y="10" width="800" height="96" rx="14"/><text class="ar-label" x="28" y="34">Clients</text></g>
+  <g class="ar-box"><rect x="28" y="46" width="170" height="44" rx="10"/><text x="113" y="73">Web app (senders)</text></g>
+  <g class="ar-box"><rect x="212" y="46" width="170" height="44" rx="10"/><text x="297" y="73">Signing page</text></g>
+  <g class="ar-box"><rect x="396" y="46" width="190" height="44" rx="10"/><text x="491" y="73">Integrators: REST API</text></g>
+  <g class="ar-box ar-accent"><rect x="600" y="46" width="192" height="44" rx="10"/><text x="696" y="73">Anyone: verify offline</text></g>
+
+  <path class="ar-line" d="M113 90v40M297 90v40M491 90v40"/>
+  <path class="ar-line ar-dash" d="M792 68h12v415h-12"/>
+
+  <g class="ar-band"><rect x="10" y="130" width="580" height="190" rx="14"/><text class="ar-label" x="28" y="154">Operator's deployment</text></g>
+  <g class="ar-box ar-strong"><rect x="28" y="166" width="250" height="52" rx="10"/><text x="153" y="190">casual-sign-server</text><text class="ar-sub" x="153" y="207">API, ceremony, web app</text></g>
+  <g class="ar-box ar-strong"><rect x="312" y="166" width="260" height="52" rx="10"/><text x="442" y="190">casual-sign-worker</text><text class="ar-sub" x="442" y="207">email, sealing, webhooks</text></g>
+  <path class="ar-line" d="M278 192h34"/>
+  <g class="ar-box"><rect x="28" y="246" width="250" height="52" rx="10"/><text x="153" y="270">PostgreSQL</text><text class="ar-sub" x="153" y="287">record, append-only audit</text></g>
+  <g class="ar-box"><rect x="312" y="246" width="260" height="52" rx="10"/><text x="442" y="270">Object store (S3)</text><text class="ar-sub" x="442" y="287">documents, written once</text></g>
+  <path class="ar-line" d="M153 218v28M442 218v28M278 220l34 26"/>
+
+  <g class="ar-box ar-key"><rect x="612" y="166" width="180" height="52" rx="10"/><text x="702" y="190">casual-sign-keyd</text><text class="ar-sub" x="702" y="207">signs digests only</text></g>
+  <path class="ar-line" d="M572 192h40"/>
+  <text class="ar-note" x="592" y="184" text-anchor="middle">mTLS</text>
+  <g class="ar-box ar-key"><rect x="612" y="246" width="180" height="52" rx="10"/><text x="702" y="270">HSM / KMS</text><text class="ar-sub" x="702" y="287">PKCS#11</text></g>
+  <path class="ar-line" d="M702 218v28"/>
+
+  <g class="ar-out"><rect x="312" y="336" width="260" height="34" rx="17"/><text x="442" y="358">email · timestamp authority · webhooks</text></g>
+  <path class="ar-line" d="M442 298v38"/>
+
+  <g class="ar-band ar-engine"><rect x="10" y="400" width="800" height="150" rx="14"/><text class="ar-label" x="28" y="424">Engine: Rust, native and WebAssembly, no I/O, no clock, no keys</text></g>
+  <g class="ar-chip"><rect x="28" y="440" width="84" height="32" rx="8"/><text x="70" y="461">pdf</text></g>
+  <g class="ar-chip"><rect x="122" y="440" width="84" height="32" rx="8"/><text x="164" y="461">fields</text></g>
+  <g class="ar-chip"><rect x="216" y="440" width="84" height="32" rx="8"/><text x="258" y="461">flatten</text></g>
+  <g class="ar-chip"><rect x="310" y="440" width="84" height="32" rx="8"/><text x="352" y="461">crypto</text></g>
+  <g class="ar-chip"><rect x="404" y="440" width="84" height="32" rx="8"/><text x="446" y="461">seal</text></g>
+  <g class="ar-chip"><rect x="498" y="440" width="84" height="32" rx="8"/><text x="540" y="461">verify</text></g>
+  <g class="ar-chip"><rect x="28" y="484" width="84" height="32" rx="8"/><text x="70" y="505">audit</text></g>
+  <g class="ar-chip"><rect x="122" y="484" width="178" height="32" rx="8"/><text x="211" y="505">certificate</text></g>
+  <g class="ar-chip"><rect x="310" y="484" width="178" height="32" rx="8"/><text x="399" y="505">workflow</text></g>
+  <g class="ar-chip"><rect x="498" y="484" width="84" height="32" rx="8"/><text x="540" y="505">model</text></g>
+  <g class="ar-box ar-accent"><rect x="612" y="450" width="180" height="66" rx="10"/><text x="702" y="476">verify.html (WASM)</text><text class="ar-sub" x="702" y="496">openseal CLI</text></g>
+  <path class="ar-line ar-dash" d="M153 298v102M442 370v30"/>
+</svg>
+</div>
+<figcaption>Every arrow leaving the deployment goes through a host seam; the engine knows none of them exist.</figcaption>
+</figure>
+
+<h2>Why this shape</h2>
+<p>OpenSeal's sister projects, OpenCalc and OpenPresent, are document editors where the file is the product and a server only orders edits. In an e-signature product the product is the <strong>evidence that the file was agreed to</strong>, no party may hold the only copy of it, and no party trusts another. So the engine-and-host split is kept, and the server becomes the system of record.</p>
+
+<h2>The engine</h2>
+<p>Pure Rust crates that compile unchanged to native code and to WebAssembly. Time, randomness, keys, fonts, trust lists and network answers are supplied as values, so the same input gives the same bytes and every verdict is the same on every host.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Engine crates">
+<table>
+  <thead><tr><th scope="col">Crate</th><th scope="col">Does</th></tr></thead>
+  <tbody>
+    <tr><td><code>casual-sign-pdf</code></td><td>Bounded reader, repair, decryption with a password, an incremental writer that never touches earlier bytes, and the cleaner that strips active content</td></tr>
+    <tr><td><code>casual-sign-model</code>, <code>-fields</code></td><td>Every field type, validation, conditions, groups, formulas; page geometry, text extraction, anchors and text tags</td></tr>
+    <tr><td><code>casual-sign-flatten</code></td><td>Draws values and signatures with embedded subset fonts, or fills the PDF's own form</td></tr>
+    <tr><td><code>casual-sign-crypto</code>, <code>-seal</code></td><td>CMS, RFC 3161, OCSP and CRL; PAdES B-B to B-LTA as incremental updates; the <code>KeyProvider</code> seam</td></tr>
+    <tr><td><code>casual-sign-verify</code></td><td>Verifies any signed PDF and classifies every later revision</td></tr>
+    <tr><td><code>casual-sign-audit</code>, <code>-certificate</code></td><td>The hash-chained trail and the certificate of completion</td></tr>
+    <tr><td><code>casual-sign-workflow</code></td><td>Envelope and recipient state machines and routing: commands in, new state, events and effects out</td></tr>
+    <tr><td><code>casual-sign-sdk</code>, <code>-wasm</code>, <code>-cli</code></td><td>The facade, the browser binding, and the <code>openseal</code> command</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>The hosts</h2>
+<ul>
+  <li><strong>casual-sign-server</strong> (axum): the REST API described in <code>api/openapi.yaml</code>, sessions and API credentials, the signing ceremony, and the web app's files.</li>
+  <li><strong>casual-sign-worker</strong>: a PostgreSQL job queue with leases, retries and dead letters; it sends email, runs reminders and expiry, seals, and delivers webhooks.</li>
+  <li><strong>casual-sign-keyd</strong>: the only process that touches the seal key.</li>
+</ul>
+<p>Both server and worker change an envelope only by applying a typed command through the workflow engine, which returns the new state, the audit events and the effects to perform. The audit events are committed in the same transaction as the state change.</p>
+
+<h2>The main flows</h2>
+<h3>Send</h3>
+<p>Upload, admit (bounded parse, active content removed, a report), store the original and its hash, prepare recipients and fields, validate, send. The document hash is fixed and the first recipients are invited.</p>
+<h3>Sign</h3>
+<p>The link, authentication, consent, the exact bytes whose hash is in the chain, fields validated by the engine in the browser and again on the server, adopt, review, finish. The workflow advances.</p>
+<h3>Complete and seal</h3>
+<p>The last action moves the envelope to <code>completing</code>. The worker flattens values, adds the certificate and the audit trail, has keyd sign the digest, timestamps it, optionally adds long-term validation data, verifies the result, stores it and records <code>envelope.completed</code> with the sealed hash.</p>
+<h3>Verify</h3>
+<p>Anyone with the PDF runs the same verifier in the browser or on the command line, against the roots they trust. No server is involved.</p>
+
+<h2>The web app</h2>
+<p>Plain ES modules with no framework and no bundler, as in the sister projects, under a strict Content Security Policy. PDF pages are drawn by pdf.js in a worker with scripting disabled. It is one client of the public API: everything it does, an integrator can do too.</p>
+<p>The full design is in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/02-HLD.md">docs/02, the high-level design</a>.</p>

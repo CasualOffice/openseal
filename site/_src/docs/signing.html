@@ -1,0 +1,42 @@
+<!--meta {"title": "Signing", "description": "What a signer sees in OpenSeal: the emailed link, access code, consent to electronic records, the guided path through fields, adopting a signature, review and finish."} -->
+<h1>Signing</h1>
+<p class="lede">Signers need no account. They follow the link in their invitation, on a phone or a computer, and the page guides them through every field.</p>
+
+<h2>The steps</h2>
+<ol>
+  <li><strong>Open the link.</strong> Each link is for one recipient of one envelope. It is bound to the browser that opens it first.</li>
+  <li><strong>Prove who you are</strong>, when the sender asked for it: an access code shared outside the email.</li>
+  <li><strong>Share your location</strong>, if you choose. The browser asks; declining is fine, and the certificate then records an approximate location from the network address, saying so.</li>
+  <li><strong>Consent to electronic records.</strong> The signer reads the disclosure and agrees to use electronic records and signatures. The version they accepted is recorded.</li>
+  <li><strong>Fill the fields.</strong> <strong>Start</strong> jumps to the first required field and <strong>Next</strong> to the one after. The list of fields on the side, or the Fields button on a phone, is an alternative to finding them on the page.</li>
+  <li><strong>Adopt a signature</strong> the first time a signature or initials field is chosen.</li>
+  <li><strong>Review and finish.</strong> The review shows the pages with every value in place. Finish is a separate, explicit action.</li>
+</ol>
+<figure>
+  <div class="frame">{{shot:sign-desktop|The signing page: the offer letter with a required job title field, an optional checkbox, the signature field and the date, and the list of fields on the right.}}</div>
+  <figcaption>The document gets the screen; the signer's fields are listed on the side.</figcaption>
+</figure>
+
+<h2>Adopting a signature</h2>
+<p>The name is filled in and can be edited. A signer can <strong>type</strong> it and pick one of the script styles, <strong>draw</strong> it with a mouse, finger or pen, or <strong>upload</strong> an image. By choosing <strong>Adopt and sign</strong> they agree that the mark is their electronic signature for these documents. The script fonts shown on screen are the same files the engine embeds in the sealed PDF.</p>
+<div class="cards">
+  <figure class="card">{{shot:adopt-phone|The adopt-your-signature panel on a phone, with Type, Draw and Upload tabs and the typed name in two script styles.}}<figcaption>On a phone, the panel rises from the bottom.</figcaption></figure>
+  <figure class="card">{{shot:sign-phone|The signing page on a phone at 390 pixels wide: the document fills the screen with Start and Finish in a bottom bar.}}<figcaption>Pages fit the width; targets are at least 44 pixels.</figcaption></figure>
+</div>
+
+<h2>Other actions</h2>
+<ul>
+  <li><strong>Finish later</strong> keeps what was filled and lets the signer come back through the same link.</li>
+  <li><strong>Decline</strong> asks for a reason and ends the envelope for everyone; the sender is told.</li>
+  <li><strong>Withdraw consent</strong> to electronic records, which declines any required action.</li>
+</ul>
+
+<h2>When everyone has signed</h2>
+<p>The last signer sees a confirmation. The worker then flattens every value into the documents, adds the certificate of completion and the audit trail, seals the result and checks the seal before releasing it. Recipients are emailed when the sealed document is ready.</p>
+<figure>
+  <div class="frame">{{shot:sign-done|The confirmation page after finishing: the signer's part is done.}}</div>
+  <figcaption>The confirmation after finishing.</figcaption>
+</figure>
+
+<h2>Accessibility</h2>
+<p>The signing page is designed for WCAG 2.2 AA: every field is reachable with Tab in reading order, required fields are named as required, the field list is an alternative to the page, typing a signature is the default, and text and controls meet contrast minimums in light and dark themes. An external audit (<code>A11Y-01</code>) is a release gate still ahead.</p>

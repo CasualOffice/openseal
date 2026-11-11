@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Security and evidence model | OpenSeal</title>
+<meta name="description" content="How OpenSeal protects a completed agreement: PAdES seals, trusted timestamps, the hash-chained audit trail, key custody in keyd, hostile-PDF handling, tenancy, and what is still to be reviewed.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="Security and evidence model | OpenSeal">
+<meta property="og:description" content="How OpenSeal protects a completed agreement: PAdES seals, trusted timestamps, the hash-chained audit trail, key custody in keyd, hostile-PDF handling, tenancy, and what is still to be reviewed.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="../docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="../docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html" aria-current="page">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html" aria-current="page">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+<h1>Security and evidence model</h1>
+<p class="lede">The product is not the PDF; it is the proof that the PDF was agreed to. A completed agreement must show which document every party saw, who signed it, when and how, and anyone must be able to check that offline for decades. This page explains how, and what is still to be reviewed.</p>
+
+<div class="callout warn"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. It makes no claim of legal validity, compliance or certification. An external security and cryptographic review (<code>SEC-REV-01</code>) and an ASVS self-assessment are release gates still ahead. Report vulnerabilities privately: see the <a href="../security.html">security policy</a>.</p></div></div>
+
+<h2 id="who-we-defend-against">Who we defend against</h2>
+<p>Nobody in an agreement trusts anybody else, so the design assumes each of them may attack the record:</p>
+<ul>
+  <li>a <strong>signer</strong> who later says "I never signed", or tries to change the document after signing;</li>
+  <li>a <strong>sender</strong> who wants a signer to agree to something other than what they saw;</li>
+  <li>a <strong>counterparty holding the PDF</strong> who alters it while keeping a valid look (shadow and incremental-saving attacks);</li>
+  <li><strong>another tenant</strong> on the same install, an <strong>outside attacker</strong>, a <strong>malicious integrator</strong> abusing webhooks or embedded views;</li>
+  <li>an <strong>insider or compromised operator</strong> who would rewrite evidence, backdate, or sign with the platform key.</li>
+</ul>
+
+<h2 id="two-kinds-of-signature">Two kinds of signature</h2>
+<p>Like DocuSign and SignNow by default, OpenSeal separates the person's <strong>electronic signature</strong> (a typed, drawn or uploaded mark adopted with intent, plus the evidence of who adopted it) from the platform's <strong>digital signature</strong>, the seal: a cryptographic signature over the final bytes that proves the record has not changed since. Signatures made with each signer's own certificate, for advanced and qualified signatures, are planned (<code>VS-18</code>).</p>
+
+<h2 id="the-seal">The seal</h2>
+<ul>
+  <li><strong>PAdES baseline profiles.</strong> B-T is the default: a CAdES-detached CMS signature with an RFC 3161 timestamp from a timestamp authority, so the time does not come from our clock. B-LT adds the certificates and revocation data needed to validate years later without a network; B-LTA adds a document timestamp over everything, renewed before algorithms or certificates weaken.</li>
+  <li><strong>Incremental, never rewritten.</strong> The sealed file starts with the exact bytes delivered to signers. Anything later, such as long-term validation data, is appended as a new revision. A sealed document is never modified.</li>
+  <li><strong>Sized by computation, checked before release.</strong> The signature placeholder is computed, never guessed; a seal that would not fit fails instead of being truncated. Every seal is verified by our own verifier before it is stored; a failure leaves the envelope in <code>completing</code> with a job to retry, never <code>completed</code>.</li>
+  <li><strong>Algorithms.</strong> SHA-256 (SHA-384 and SHA-512 supported); RSA 3072 and above (PKCS#1 v1.5 and PSS), ECDSA P-256 and P-384. SHA-1 subfilters are never written. Cryptography comes from established libraries, never hand-rolled.</li>
+</ul>
+
+<h2 id="the-audit-trail">The audit trail</h2>
+<ul>
+  <li><strong>Every legally relevant fact is an event</strong>, written in the same database transaction as the change it describes, before the client hears success.</li>
+  <li><strong>Append-only.</strong> No code path updates or deletes an event; the application's database role cannot, and a trigger refuses it. Corrections are new events.</li>
+  <li><strong>Hash-chained per envelope.</strong> Each event is canonical JSON (RFC 8785) whose SHA-256 is the next event's <code>prev</code>; sequence numbers are dense. Removing, inserting, reordering or editing any event breaks the chain.</li>
+  <li><strong>Sealed into the document.</strong> The chain is embedded in the sealed PDF as <code>audit-trail.json</code>, and the certificate of completion prints the chain head. The seal covers both, so altering either breaks the seal, and the database's copy can be checked against the copy every party received.</li>
+  <li><strong>Minimal personal data.</strong> Typed values are recorded as hashes in the chain; the values themselves are in the sealed document.</li>
+</ul>
+
+<h2 id="the-certificate-of-completion">The certificate of completion</h2>
+<p>Appended to the sealed PDF: the envelope summary and chain head; each document's SHA-256 as delivered; for each signer, their email (masked as the account chooses), authentication methods and results, IP address, user agent, location and how it was obtained, the signature images and adoption method, and the sent, viewed and signed times; consent versions and times; and how to verify. <a href="../index.html#evidence-h">See an example</a>.</p>
+
+<h2 id="signing-keys">Signing keys</h2>
+<ul>
+  <li>The seal key lives in <strong>keyd</strong>, a separate daemon that talks PKCS#11 to an HSM (SoftHSM in development). It receives the encoded signed attributes, never the document, and returns the signature.</li>
+  <li>keyd accepts only the worker, over TLS 1.3 with mutual authentication and a client allow-list, rate-limits requests, and keeps its own hash-chained log of every operation.</li>
+  <li>File keys are refused outside development, and any seal made with one says so in its reason. No private key appears in code, logs, the database or an image.</li>
+  <li>Cloud KMS backends (AWS, GCP, Azure, Vault) are planned (<code>KEYD-01</code>).</li>
+</ul>
+
+<h2 id="hostile-documents">Hostile documents</h2>
+<p>Every uploaded file is assumed to be an attack. The PDF reader is OpenSeal's own: every limit (size, depth, object count, stream expansion and more) is named, has an error code, a hostile test file and a fuzz target, and each target has been fuzzed for 24 cumulative hours without a finding. Uploads are rewritten into a fresh file without JavaScript, launch actions, embedded files, external references or XFA, which are never executed or followed; what was removed is reported to the sender. The browser draws pages with pdf.js with scripting disabled, inside a strict Content Security Policy.</p>
+
+<h2 id="verification-you-can-repeat">Verification you can repeat</h2>
+<p>Our verifier is not trusted alone. Every sealed and every tampered fixture must get the same verdict from three validators: <code>casual-sign-verify</code>, pyHanko and EU DSS. Across a corpus of 422 real-world PDFs, all 417 admissible files are filled, flattened, sealed and verified by all three. The verifier's classifier of later revisions catches shadow attacks (hide, replace, hide-and-replace) and incremental-saving attacks. The same verifier compiled to WebAssembly gives byte-identical verdicts in the browser.</p>
+
+<h2 id="accounts-tenancy-and-the-api">Accounts, tenancy and the API</h2>
+<ul>
+  <li>Access is decided on the server for every request and every object, deny by default. PostgreSQL row-level security per account is a second line, not the first; isolation tests are generated from the API description and run with it on and off.</li>
+  <li>Another account's objects answer exactly like missing ones.</li>
+  <li>Signing links are opaque, for one recipient of one envelope, and bound to the first browser that opens them; they are never logged.</li>
+  <li>Personal data (names, emails, IP addresses, phone numbers, signature images) is classified and never logged in clear; no document text is logged.</li>
+  <li>Webhooks refuse private and internal addresses at resolution and at connection (<a href="webhooks.html#where-webhooks-may-go">details</a>).</li>
+</ul>
+
+<h2 id="read-further">Read further</h2>
+<ul>
+  <li><a href="https://github.com/CasualOffice/openseal/blob/main/docs/07-SECURITY-THREAT-MODEL.md">docs/07: the threat model</a>, threat by threat with its control and test</li>
+  <li><a href="https://github.com/CasualOffice/openseal/blob/main/docs/31-SEALING-AND-SIGNATURES.md">docs/31: sealing and signatures</a></li>
+  <li><a href="https://github.com/CasualOffice/openseal/blob/main/docs/32-AUDIT-TRAIL-AND-EVIDENCE.md">docs/32: the audit trail and evidence</a></li>
+  <li><a href="https://github.com/CasualOffice/openseal/blob/main/docs/09-LEGAL-AND-COMPLIANCE.md">docs/09: legal and compliance mapping</a></li>
+</ul>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="webhooks.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Webhooks</span></a><a class="pn pn-next" href="architecture.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Architecture overview</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#who-we-defend-against">Who we defend against</a></li><li><a href="#two-kinds-of-signature">Two kinds of signature</a></li><li><a href="#the-seal">The seal</a></li><li><a href="#the-audit-trail">The audit trail</a></li><li><a href="#the-certificate-of-completion">The certificate of completion</a></li><li><a href="#signing-keys">Signing keys</a></li><li><a href="#hostile-documents">Hostile documents</a></li><li><a href="#verification-you-can-repeat">Verification you can repeat</a></li><li><a href="#accounts-tenancy-and-the-api">Accounts, tenancy and the API</a></li><li><a href="#read-further">Read further</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#features">Features</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li><li><a href="../docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../brand.html">Brand and attribution</a></li><li><a href="../docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>
