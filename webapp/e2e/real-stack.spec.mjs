@@ -51,7 +51,8 @@ async function sign(browser, link, name, last) {
   await page.goto(link);
   // The disclosure is asked for only when the account has one (a fresh account has none).
   const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
-  const progress = page.locator("#guide-progress");
+  // Progress shows in the bar on a desktop and in the bottom bar on a phone (WEB-02).
+  const progress = page.locator("#bar-progress, #guide-progress").filter({ visible: true });
   await expect(consent.or(progress)).toBeVisible();
   if (await consent.isVisible()) {
     await page.getByLabel("I agree to use electronic records and signatures.").check();
@@ -63,9 +64,10 @@ async function sign(browser, link, name, last) {
   await expect(dlg.getByLabel("Your full name")).toHaveValue(name);
   await dlg.getByTestId("adopt-confirm").click();
   await expect(dlg).toBeHidden();
-  await expect(page.locator("#guide-progress")).toHaveText("1 of 1 required");
+  await expect(progress).toHaveText("1 of 1 required");
   await page.getByRole("button", { name: "Finish" }).click();
-  await page.getByRole("dialog", { name: "Review and finish" }).getByTestId("review-finish").click();
+  await expect(page.getByRole("heading", { name: "Review and finish" })).toBeVisible();
+  await page.getByTestId("review-finish").click();
   await expect(page.getByTestId("sign-done")).toContainText(last ? "Everyone has signed" : "Your part is done");
   await context.close();
 }
@@ -82,17 +84,21 @@ test("two signers in order sign through emailed links; the sealed PDF and certif
   await signIn(page);
   await page.getByRole("button", { name: "New envelope" }).first().click();
   await page.getByTestId("pdf-input").setInputFiles(pdfFile("real-stack.pdf", "Real stack agreement"));
-  await expect(page.locator(".os-page")).toHaveCount(2);
-  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
-  await page.getByLabel("Subject").fill(subject);
+  await expect(page.getByTestId("doc-card")).toHaveCount(1);
+  await page.getByTestId("wizard-next").click();
   await addRecipient(page, 0, ana);
   await addRecipient(page, 1, ben);
   await expect(page.locator(".os-rcpt .os-order")).toHaveText(["1", "2"]);
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page")).toHaveCount(2);
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   for (const who of ["1. Ana Signer", "2. Ben Signer"]) {
     await page.getByLabel("Placing fields for").selectOption({ label: who });
     await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
   }
   await expect(page.locator(".os-field")).toHaveCount(2);
+  await page.getByTestId("wizard-next").click();
+  await page.getByLabel("Subject").fill(subject);
   await page.getByRole("button", { name: "Send", exact: true }).first().click();
   await page.getByRole("dialog", { name: "Send this envelope?" }).getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/#\/envelopes\/[^/]+$/, { timeout: 20_000 });

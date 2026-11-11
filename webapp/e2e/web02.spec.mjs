@@ -186,7 +186,7 @@ test("admin: add and remove a user; an API client's key is shown once, then revo
 });
 
 test.describe("verify", () => {
-  test.skip(!WASM, "the WASM verifier is not built: run tools/build-webapp-wasm.sh");
+  test.skip(!WASM || REAL, "the WASM verifier is built locally by tools/build-webapp-wasm.sh; the server image does not ship it yet");
 
   test("a sealed PDF verifies against its trust root, and is only indeterminate without it", async ({ page }, testInfo) => {
     await page.goto("/verify.html");

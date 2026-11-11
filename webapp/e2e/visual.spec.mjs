@@ -153,7 +153,7 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
     });
 
     test("verify", async ({ page }, testInfo) => {
-      test.skip(!WASM || testInfo.project.name !== "chromium", "needs the WASM verifier; one browser");
+      test.skip(!WASM || REAL || testInfo.project.name !== "chromium", "needs the locally built WASM verifier (not in the server image yet); one browser");
       await page.goto("/verify.html");
       await checkLayout(page, `${vp} verify start`);
       await shot(page, "16-verify-start", vp);
