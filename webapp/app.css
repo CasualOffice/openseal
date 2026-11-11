@@ -854,8 +854,11 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 }
 
 /* ---- Reduced motion: no transforms, no shimmer, no stamping ---------------------- */
+/* Transitions are 0 s, not a token 0.01 ms: transition-property defaults to `all`, so a
+   non-zero duration on every element would start a transition of every property (a
+   page's width as it zooms), and layout read in the same task would see the old size. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
   .os-skel, .os-skeleton-page, .os-page.is-loading { animation: none !important; }
 }
 

@@ -340,7 +340,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           all.length > 1 ? earlier : null, all.length > 1 ? later : null),
         h("ol", { class: "os-rcpt-list" }, ...g.members.map((i) => card(S.recipients[i], i))));
       // A card dropped on the box joins its step.
-      box.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); box.classList.add("is-drop-target"); } });
+      // Drop targets cancel dragenter as well as dragover (HTML drag and drop): WebKit
+      // sends a drag that entered an uncancelled target to the body, so it never drops.
+      for (const ev of ["dragenter", "dragover"]) box.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; box.classList.add("is-drop-target"); } });
       box.addEventListener("dragleave", (e) => { if (!box.contains(e.relatedTarget)) box.classList.remove("is-drop-target"); });
       box.addEventListener("drop", (e) => {
         box.classList.remove("is-drop-target");
@@ -360,7 +362,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   /// A drop zone between steps: a card dropped here gets a step of its own there.
   function gap(order) {
     const z = h("li", { class: "os-rgroup__gap", attrs: { "aria-hidden": "true", "data-before": String(order), "data-testid": "step-gap" } });
-    z.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); z.classList.add("is-drop-target"); } });
+    for (const ev of ["dragenter", "dragover"]) z.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; z.classList.add("is-drop-target"); } });
     z.addEventListener("dragleave", () => z.classList.remove("is-drop-target"));
     z.addEventListener("drop", (e) => {
       z.classList.remove("is-drop-target");
@@ -468,7 +470,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     li.addEventListener("dragstart", (e) => { if (e.target.closest("input, select, button")) { e.preventDefault(); return; } e.dataTransfer.setData("application/x-openseal-recipient", String(i)); e.dataTransfer.effectAllowed = "move"; li.classList.add("is-dragging"); });
     li.addEventListener("dragend", () => li.classList.remove("is-dragging"));
     if (!S.ordered) {
-      li.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); li.classList.add("is-drop-target"); } });
+      for (const ev of ["dragenter", "dragover"]) li.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; li.classList.add("is-drop-target"); } });
       li.addEventListener("dragleave", () => li.classList.remove("is-drop-target"));
       li.addEventListener("drop", (e) => {
         const from = Number(e.dataTransfer.getData("application/x-openseal-recipient"));
@@ -691,7 +693,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     dv.els.forEach(({ overlay }, i) => {
       const p = dv.pages[i];
       const d = S.docs.find((x) => x.key === p.key);
-      overlay.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-field")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
+      for (const ev of ["dragenter", "dragover"]) overlay.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("application/x-openseal-field")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
       overlay.addEventListener("drop", (e) => {
         const type = e.dataTransfer.getData("application/x-openseal-field");
         if (!type) return;
@@ -1759,7 +1761,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   // Files dropped from the desktop onto the stage.
-  stage.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); stage.classList.add("is-dropping"); } });
+  for (const ev of ["dragenter", "dragover"]) stage.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); stage.classList.add("is-dropping"); } });
   stage.addEventListener("dragleave", (e) => { if (e.target === stage) stage.classList.remove("is-dropping"); });
   stage.addEventListener("drop", (e) => {
     if (!e.dataTransfer.files?.length) return;

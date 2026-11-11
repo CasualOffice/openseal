@@ -33,7 +33,7 @@ export function mount(view, ctx, _match, params) {
     return;
   }
   const errId = "inv-error";
-  const pw = h("input", { id: "inv-pw", class: "os-input", type: "password", autocomplete: "new-password", maxLength: 256, attrs: { "aria-describedby": `inv-pw-help ${errId}`, autofocus: true } });
+  const pw = h("input", { id: "inv-pw", class: "os-input", type: "password", autocomplete: "new-password", maxLength: 256, attrs: { "aria-describedby": `inv-pw-help ${errId}` } });
   const pw2 = h("input", { id: "inv-pw2", class: "os-input", type: "password", autocomplete: "new-password", maxLength: 256, attrs: { "aria-describedby": errId } });
   const error = h("p", { id: errId, class: "os-field-error", attrs: { role: "alert" } });
   const submit = button(t("invite.submit"), { variant: "primary", size: "lg", type: "submit" });

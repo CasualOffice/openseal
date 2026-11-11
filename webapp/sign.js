@@ -117,7 +117,7 @@ function next() {
 function accessCode() {
   guide.hidden = true;
   const err = h("p", { id: "code-err", class: "os-field-error", attrs: { role: "alert" } });
-  const input = h("input", { id: "access-code", class: "os-input os-input--lg", autocomplete: "one-time-code", inputMode: "text", maxLength: 64, required: true, attrs: { "aria-describedby": "code-err code-help", autofocus: true } });
+  const input = h("input", { id: "access-code", class: "os-input os-input--lg", autocomplete: "one-time-code", inputMode: "text", maxLength: 64, required: true, attrs: { "aria-describedby": "code-err code-help" } });
   const submit = button(t("sign.code.submit"), { variant: "primary", size: "lg", type: "submit" });
   const form = h("form", { class: "os-sign__card", attrs: { novalidate: true } },
     icon("lock", { size: 24 }),
@@ -325,7 +325,12 @@ function enlarge() {
     const pg = dv.pages.find((p) => p.key === f?.document_id && p.n === f?.p.page);
     if (!f || !pg) continue;
     const s = dv.scale;
-    node.style.setProperty("--os-enlarge", String(enlargeFor(f.p.width * s, f.p.height * s, (pg.width - f.p.x) * s - 4)));
+    // Room to grow: to the page's right edge, and no further than the screen's right
+    // edge with the field centred in view (focusField centres it), so a field zoomed to
+    // the width of a phone is not then pushed past the edge of the screen.
+    const w = f.p.width * s;
+    const room = Math.min((pg.width - f.p.x) * s - 4, (dv.scroller.clientWidth + w) / 2 - 8);
+    node.style.setProperty("--os-enlarge", String(enlargeFor(w, f.p.height * s, room)));
   }
 }
 
