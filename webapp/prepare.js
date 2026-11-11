@@ -28,10 +28,11 @@ import { register, unregisterPrefix, run } from "./commands.js";
 import { button, busy, emptyState, toast, toastError, confirmDialog, selectField, dockPanel, openPanel, closePanel } from "./ui/index.js";
 import { openPdf } from "./pdfview.js";
 import { docView, zoomControls, thumbnails } from "./docview.js";
-import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, snap, toWire, fromWire, takesInput } from "./geometry.js";
+import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput } from "./geometry.js";
 import { errorMessage } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate } from "./templatesync.js";
+import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from "./guides.js";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
 
@@ -266,7 +267,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   function addRecipient(focus = true) {
     const r = { key: newKey("r"), id: null, name: "", email: "", type: "signer", accessCode: "", order: nextStep() };
     change(() => { S.recipients.push(r); S.active = r.key; });
-    if (focus) setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] input`)?.focus(), 0);
+    if (focus) setTimeout(() => document.getElementById(`rn-${r.key}`)?.focus(), 0);
     return r;
   }
   function addMe() {
@@ -681,7 +682,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         const box = overlay.getBoundingClientRect();
         addField(type, d, p.n, (e.clientX - box.left) / dv.scale, (e.clientY - box.top) / dv.scale);
       });
-      overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) select(null); });
+      overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) startMarquee(e, overlay, p.key, p.n); });
     });
     thumbs.build();
     renderFieldsOnly();
@@ -738,41 +739,141 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     return d?.pages[f.page - 1] || { width: 612, height: 792 };
   }
 
+  // ---- Moving, resizing, snapping guides and marquee (WEB-09) ----------------------------
+  // A field (or the selected group, as one box) snaps its edges and centre to the page's
+  // and to other fields' on its page while it moves or resizes, and a line shows what it
+  // lined up with (guides.js); Alt held turns snapping off. Tolerance is 6 screen pixels
+  // at any zoom. Dragging on an empty part of a page draws a marquee that selects the
+  // fields it touches (Shift adds to the selection). The keyboard has the same:
+  // Ctrl/Cmd+A selects the page's fields, Alt+Shift+arrows jump to the next guide, and
+  // a nudge shows the guides it lands on.
+  const SNAP_PX = 6;
+  let guideTimer = null;
+  /// Draw `guides` (`[{axis, at}]`, points) on `ov`, the page `pg`; none clears them.
+  function drawGuides(ov, pg, guides = []) {
+    clearTimeout(guideTimer);
+    for (const g of stage.querySelectorAll(".os-guide")) g.remove();
+    if (!ov) return;
+    for (const g of guides) {
+      const line = h("div", { class: `os-guide os-guide--${g.axis}`, attrs: { "aria-hidden": "true", "data-testid": "snap-guide" } });
+      if (g.axis === "x") line.style.left = `${(g.at / pg.width) * 100}%`;
+      else line.style.top = `${(g.at / pg.height) * 100}%`;
+      ov.append(line);
+    }
+  }
+  /// Show the guides a field now lies on for a moment (after a keyboard move).
+  function flashGuides(moved) {
+    const f = moved[0];
+    if (!f) return;
+    const pg = pageOf(f);
+    const keys = new Set(moved.map((x) => x.key));
+    const others = S.fields.filter((x) => x.docKey === f.docKey && x.page === f.page && !keys.has(x.key));
+    drawGuides(overlayFor(f), pg, touching(moved.length > 1 ? bounds(moved) : f, others, pg));
+    guideTimer = setTimeout(() => drawGuides(null), 900);
+  }
+  const elOf = (f) => stage.querySelector(`.os-field[data-fkey="${f.key}"]`);
+
   function startDrag(e, f, mode) {
     if (e.button !== 0) return;
     e.preventDefault();
     const el = e.currentTarget;
-    select(f.key, false);
+    // A field of the selected group moves the group, as one box.
+    const group = mode === "move" && multi.size > 1 && multi.has(f.key)
+      ? S.fields.filter((x) => multi.has(x.key) && x.docKey === f.docKey && x.page === f.page) : null;
+    if (!group) select(f.key, false);
     el.focus({ preventScroll: true });
     try { el.setPointerCapture(e.pointerId); } catch { /* listeners are on window anyway */ }
-    const start = { x: e.clientX, y: e.clientY, r: { x: f.x, y: f.y, width: f.width, height: f.height } };
+    const moving = group || [f];
+    const starts = new Map(moving.map((x) => [x.key, { x: x.x, y: x.y, width: x.width, height: x.height }]));
+    const box0 = bounds([...starts.values()]);
+    const others = S.fields.filter((x) => x.docKey === f.docKey && x.page === f.page && !starts.has(x.key));
+    const ov = overlayFor(f);
+    const start = { x: e.clientX, y: e.clientY };
     const before = snapshot();
     let moved = false;
-    el.classList.add("is-dragging");
+    for (const x of moving) elOf(x)?.classList.add("is-dragging");
     const move = (ev) => {
       const dx = (ev.clientX - start.x) / dv.scale;
       const dy = (ev.clientY - start.y) / dv.scale;
       if (!moved && Math.abs(dx) + Math.abs(dy) < 1) return;
       moved = true;
       const pg = pageOf(f);
-      const r = mode === "move"
-        ? clampRect({ ...start.r, x: snap(start.r.x + dx), y: snap(start.r.y + dy) }, pg)
-        : clampRect({ ...start.r, width: snap(start.r.width + dx), height: snap(start.r.height + dy) }, pg);
-      Object.assign(f, r);
-      place(el, f);
-      el.classList.toggle("is-snapped", r.x % 4 === 0 && r.y % 4 === 0);
+      const tol = SNAP_PX / dv.scale;
+      let guides = [];
+      if (mode === "move") {
+        let b = clampRect({ ...box0, x: box0.x + dx, y: box0.y + dy }, pg);
+        if (!ev.altKey) { const s = snapRect(b, others, pg, tol); b = clampRect(s.rect, pg); guides = s.guides; }
+        for (const x of moving) {
+          const s0 = starts.get(x.key);
+          Object.assign(x, clampRect({ ...s0, x: s0.x + (b.x - box0.x), y: s0.y + (b.y - box0.y) }, pg));
+          const n = elOf(x);
+          if (n) place(n, x);
+        }
+      } else {
+        const s0 = starts.get(f.key);
+        let r = { ...s0, width: s0.width + dx, height: s0.height + dy };
+        if (!ev.altKey) { const s = snapRect(r, others, pg, tol, "resize"); r = s.rect; guides = s.guides; }
+        Object.assign(f, clampRect(r, pg));
+        place(el, f);
+      }
+      drawGuides(ov, pg, guides);
+      el.classList.toggle("is-snapped", guides.length > 0);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
-      el.classList.remove("is-dragging", "is-snapped");
+      for (const x of moving) elOf(x)?.classList.remove("is-dragging", "is-snapped");
+      drawGuides(null);
+      // A click (no move) on one field of a group selects just that field.
+      if (!moved && group) select(f.key, false);
       if (moved) {
         S.undo.push(before); S.redo = []; S.dirty = true;
         el.classList.add("is-dropped");
         setTimeout(() => el.classList.remove("is-dropped"), 250);
         renderProps();
+        if (group) say(t("prepare.multi-moved", { n: group.length }));
       }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  /// Marquee selection on an empty part of a page (mouse and pen; a finger scrolls).
+  function startMarquee(e, ov, docKey, pageN) {
+    if (e.button !== 0 || e.pointerType === "touch") { if (e.button === 0) select(null); return; }
+    e.preventDefault();
+    stage.focus({ preventScroll: true });
+    const pg = S.docs.find((d) => d.key === docKey)?.pages[pageN - 1];
+    if (!pg) return;
+    const at = (ev) => {
+      const b = ov.getBoundingClientRect();
+      return [Math.min(Math.max((ev.clientX - b.left) / dv.scale, 0), pg.width), Math.min(Math.max((ev.clientY - b.top) / dv.scale, 0), pg.height)];
+    };
+    const [sx, sy] = at(e);
+    const kept = e.shiftKey ? selection().map((f) => f.key) : [];
+    let band = null;
+    const move = (ev) => {
+      const [ex, ey] = at(ev);
+      const r = fromCorners(sx, sy, ex, ey);
+      if (!band && r.width * dv.scale + r.height * dv.scale < 4) return;
+      if (!band) { band = h("div", { class: "os-marquee", attrs: { "aria-hidden": "true", "data-testid": "marquee" } }); ov.append(band); }
+      band.style.left = `${(r.x / pg.width) * 100}%`;
+      band.style.top = `${(r.y / pg.height) * 100}%`;
+      band.style.width = `${(r.width / pg.width) * 100}%`;
+      band.style.height = `${(r.height / pg.height) * 100}%`;
+      const hits = S.fields.filter((f) => f.docKey === docKey && f.page === pageN && intersects(r, f)).map((f) => f.key);
+      setSelection([...new Set([...kept, ...hits])], false);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      if (!band) { if (!kept.length) select(null); return; }
+      band.remove();
+      const n = selection().length;
+      say(n > 1 ? t("prepare.multi-n", { n }) : n === 1 ? t("prepare.selected", { label: fieldLabel(selection()[0]) }) : t("prepare.none-selected"));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -798,6 +899,16 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     say(multi.size > 1 ? t("prepare.multi-n", { n: multi.size }) : "");
   }
   const selection = () => (multi.size > 1 ? S.fields.filter((f) => multi.has(f.key)) : S.fields.filter((f) => f.key === S.selected));
+  /// Select exactly `keys` (a marquee, Ctrl/Cmd+A): one is a plain selection, several a group.
+  function setSelection(keys, announce = true) {
+    multi.clear();
+    if (keys.length > 1) for (const k of keys) multi.add(k);
+    S.selected = keys.length ? keys[keys.length - 1] : null;
+    markSelection();
+    renderProps();
+    propsFab.hidden = !S.selected;
+    if (announce) say(keys.length > 1 ? t("prepare.multi-n", { n: keys.length }) : "");
+  }
   function select(key, focus = true) {
     const changed = S.selected !== key;
     S.selected = key;
@@ -1397,6 +1508,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const el = stage.querySelector(`.os-field[data-fkey="${x.key}"]`);
       if (el) { place(el, x); el.setAttribute("aria-label", fieldLabel(x)); }
     }
+    flashGuides(all);
     renderProps();
     say(all.length > 1 ? t("prepare.multi-moved", { n: all.length }) : t("prepare.field-at", { x: Math.round(f.x), y: Math.round(f.y), w: Math.round(f.width), h: Math.round(f.height) }));
   };
@@ -1428,6 +1540,24 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     say(t("prepare.arranged", { n: all.length }));
   }
   const hasSel = () => !!sel();
+  /// Alt+Shift+arrow: the selection (as one box) to the next guide on that side
+  /// (guides.js nextStop): another field's edge or centre, or the page's.
+  const jump = (axis, dir) => () => {
+    const all = selection();
+    const f = all[0];
+    if (!f) return;
+    const pg = pageOf(f);
+    const keys = new Set(all.map((x) => x.key));
+    const box = all.length > 1 ? bounds(all) : f;
+    const pos = nextStop(box, S.fields.filter((x) => x.docKey === f.docKey && x.page === f.page && !keys.has(x.key)), pg, axis, dir);
+    if (pos === null) { say(t("prepare.no-guide")); return; }
+    const d = pos - box[axis];
+    withSel((x) => Object.assign(x, clampRect({ ...x, [axis]: x[axis] + d }, pageOf(x))))();
+  };
+  /// Ctrl/Cmd+A on the fields step: every field on the page in view (the marquee's
+  /// keyboard equivalent); not while typing, where it selects the text.
+  const typingNow = () => { const a = document.activeElement; return !!a && (a.matches?.("input, textarea, select") || a.isContentEditable); };
+  const pageFields = () => { const w = inView(); return w ? S.fields.filter((f) => f.docKey === w.doc.key && f.page === w.page) : []; };
   const nudgeBy = (dx, dy) => withSel((f) => Object.assign(f, nudge(f, dx, dy, pageOf(f))));
   const sizeBy = (dw, dh) => withSel((f) => Object.assign(f, resize(f, dw, dh, pageOf(f))));
   const reg = (id, label, runFn, enabled = hasSel) => register(id, { label, run: runFn, enabled });
@@ -1439,6 +1569,16 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   reg("field.nudge-right-10", t("cmd.field.nudge-10"), nudgeBy(10, 0));
   reg("field.nudge-up-10", t("cmd.field.nudge-10"), nudgeBy(0, -10));
   reg("field.nudge-down-10", t("cmd.field.nudge-10"), nudgeBy(0, 10));
+  reg("field.jump-left", t("cmd.field.jump"), jump("x", -1));
+  reg("field.jump-right", t("cmd.field.jump"), jump("x", 1));
+  reg("field.jump-up", t("cmd.field.jump"), jump("y", -1));
+  reg("field.jump-down", t("cmd.field.jump"), jump("y", 1));
+  reg("field.select-page", t("cmd.field.select-page"), () => {
+    const keys = pageFields().map((f) => f.key);
+    setSelection(keys);
+    if (keys.length === 1) say(t("prepare.selected", { label: fieldLabel(sel()) }));
+    stage.querySelector(`.os-field[data-fkey="${S.selected}"]`)?.focus({ preventScroll: true });
+  }, () => step === "fields" && !typingNow() && pageFields().length > 0);
   reg("field.grow-width", t("cmd.field.resize"), sizeBy(4, 0));
   reg("field.shrink-width", t("cmd.field.resize"), sizeBy(-4, 0));
   reg("field.grow-height", t("cmd.field.resize"), sizeBy(0, 4));

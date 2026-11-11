@@ -188,3 +188,112 @@ test("with signing order off, everyone signs at once; turning it on gives one st
   expect(await stepsOf(page)).toEqual([["Ana"], ["Ben"]]);
   expect(await names(page)).toEqual(["Ana", "Ben"]);
 });
+
+// ---- 3. Marquee selection and snapping guides -----------------------------------------------------
+
+/// A draft with one signer and a signature, a date and a text field stacked on page 1.
+async function threeFields(page) {
+  await newWithRecipients(page, [["Ana", "ana@example.com"]]);
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  for (const type of ["Signature", "Date signed", "Text"]) await page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).click();
+  await expect(page.locator(".os-field")).toHaveCount(3);
+}
+/// The selected field's x, as its properties panel shows it (points).
+async function xOf(page, field) {
+  await field.click();
+  const adv = page.locator(".os-advanced");
+  if (!(await adv.evaluate((d) => d.open))) await adv.locator("summary").click();
+  return Number(await page.locator("#fp-x").inputValue());
+}
+
+test("a marquee selects the fields it touches; the group moves as one", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await threeFields(page);
+  const fields = page.locator(".os-field");
+  const boxes = await fields.evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
+  const top = Math.min(...boxes.map((b) => b.y));
+  const left = Math.min(...boxes.map((b) => b.x));
+  // From empty page above-left of the fields to past the first two.
+  await page.mouse.move(left - 30, top - 20);
+  await page.mouse.down();
+  await page.mouse.move(left + 40, boxes[1].y + boxes[1].h / 2, { steps: 6 });
+  await expect(page.getByTestId("marquee")).toBeVisible();
+  await snap(page, testInfo, "editor-marquee-1440");
+  await page.mouse.up();
+  await expect(page.getByTestId("marquee")).toHaveCount(0);
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(2);
+  await expect(page.locator(".os-props")).toContainText("2 fields selected");
+  // Dragging one of them moves both by the same distance.
+  // Positions as placed (style, in % of the page), not as drawn: a dropped field bounces.
+  const lefts = () => fields.evaluateAll((els) => els.slice(0, 2).map((e) => Number.parseFloat(e.style.left)));
+  const before = await lefts();
+  const f0 = boxes[0];
+  await page.mouse.move(f0.x + f0.w / 2, f0.y + f0.h / 2);
+  await page.mouse.down();
+  await page.mouse.move(f0.x + f0.w / 2 + 60, f0.y + f0.h / 2 + 30, { steps: 6 });
+  await page.mouse.up();
+  const after = await lefts();
+  expect((after[0] - before[0]).toFixed(2)).toBe((after[1] - before[1]).toFixed(2));
+  expect(after[0] - before[0]).toBeGreaterThan(3);
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(2);
+  // A click on an empty part of the page clears the selection.
+  await page.mouse.click(left - 30, top - 20);
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(0);
+});
+
+test("a dragged field snaps to another field's edge with a guide; Alt turns snapping off", async ({ page }) => {
+  await threeFields(page);
+  const date = page.locator('.os-field[data-field="date_signed"]');
+  const x0 = await xOf(page, date);
+  const dragBy = async (dx, alt) => {
+    const b = await date.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    if (alt) await page.keyboard.down("Alt");
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + dx / 2, b.y + b.height / 2, { steps: 2 });
+    await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2, { steps: 2 });
+    const guides = await page.getByTestId("snap-guide").count();
+    await page.mouse.up();
+    if (alt) await page.keyboard.up("Alt");
+    return guides;
+  };
+  // 4 screen pixels right is within the 6-pixel tolerance of the other fields' left edge.
+  expect(await dragBy(4, false)).toBeGreaterThan(0);
+  await expect(page.getByTestId("snap-guide")).toHaveCount(0);
+  expect(await xOf(page, date)).toBe(x0);
+  // With Alt the same move is kept as made.
+  expect(await dragBy(4, true)).toBe(0);
+  expect(await xOf(page, date)).toBeGreaterThan(x0 + 1);
+});
+
+test("keyboard parity: Ctrl/Cmd+A selects the page's fields; Alt+Shift+arrows jump to the next guide", async ({ page }) => {
+  await threeFields(page);
+  const date = page.locator('.os-field[data-field="date_signed"]');
+  const x0 = await xOf(page, date);
+  // Away from the others, then back to their left edge in one jump.
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Shift+ArrowRight");
+  expect(await xOf(page, date)).toBe(x0 + 30);
+  await date.focus();
+  // Each press stops at the next guide (a centre or an edge lining up), never past x0.
+  const seen = [];
+  for (let i = 0; i < 6 && (seen.at(-1) ?? Infinity) > x0; i++) {
+    await date.focus();
+    await page.keyboard.press("Alt+Shift+ArrowLeft");
+    // The guide it landed on shows for a moment.
+    await expect(page.getByTestId("snap-guide").first()).toBeAttached();
+    seen.push(await xOf(page, date));
+  }
+  expect(seen.at(-1)).toBe(x0);
+  expect(seen.every((x, i) => x < (seen[i - 1] ?? x0 + 30))).toBe(true);
+  await page.locator("#document").focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(3);
+  await expect(page.locator(".os-props")).toContainText("3 fields selected");
+  // In a text box, Ctrl/Cmd+A is the text's, not the fields'.
+  await page.keyboard.press("Escape");
+  await page.locator('.os-field[data-field="text"]').click();
+  await page.getByLabel("Label").fill("Title");
+  await page.getByLabel("Label").press("ControlOrMeta+a");
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(1);
+});

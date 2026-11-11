@@ -486,6 +486,11 @@ select.os-input {
 .os-field.is-new, .os-field.is-dropped { animation: os-drop var(--os-dur-slow) var(--os-ease); }
 @keyframes os-drop { from { transform: scale(1.08); } to { transform: none; } }
 .os-field__handle { position: absolute; right: 0; bottom: 0; width: 0.75rem; height: 0.75rem; background: var(--rc); cursor: nwse-resize; border-top-left-radius: 0.1875rem; }
+/* Snapping guides and the marquee (WEB-09): drawn on the page, never in the way. */
+.os-guide { position: absolute; pointer-events: none; z-index: 4; background: var(--os-focus); }
+.os-guide--x { top: 0; bottom: 0; width: 1px; transform: translateX(-0.5px); }
+.os-guide--y { left: 0; right: 0; height: 1px; transform: translateY(-0.5px); }
+.os-marquee { position: absolute; pointer-events: none; z-index: 4; border: 1px dashed var(--os-focus); background: color-mix(in srgb, var(--os-focus) 10%, transparent); }
 .os-geo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--os-s2); }
 .os-geo__item { display: grid; gap: 0.125rem; font-size: var(--os-fs-12); color: var(--os-muted); }
 

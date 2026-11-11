@@ -65,7 +65,8 @@ declined, voided, expiring soon, OTP), with translatable strings and brand colou
 
 As the sisters: shortcuts are registry entries. Initial set: `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` redo, `Delete`
 remove field, arrows nudge (Shift ×10), `Ctrl/Cmd+D` duplicate, `Ctrl/Cmd+C/V` copy and paste fields across pages,
-`1`–`9` switch recipient, `?` shortcut list.
+`1`–`9` switch recipient, `?` shortcut list; since WEB-09 `Ctrl/Cmd+A` selects the page's fields and `Alt+Shift+arrows`
+jump to the next snapping guide.
 
 ## What we measure
 
@@ -471,3 +472,11 @@ Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`
   change is one undo step and is announced ("Ben signs at step 2, at the same time as Cleo"). With the order off,
   signers are all step 1 and copies step 2, as before. The routing order sent is the step; a draft or template is
   read back the same way, and the send confirmation names the steps ("Dev → Ana → Ben & Cleo").
+- **Marquee selection and snapping guides** (`guides.js`). Dragging on an empty part of a page (mouse or pen; a
+  finger scrolls) draws a box that selects every field it touches, Shift adding to the selection; a click there
+  clears it. Dragging a field of the selection moves the group as one box; a click on one selects just it. While a
+  field or group moves, its edges and centre snap to the page's edges and centre and to other fields' edges and
+  centres on that page within 6 screen pixels at any zoom, and a line shows each one it lined up with; resizing snaps
+  the moving corner. Holding Alt turns snapping off (the old 4-point grid is gone). Keyboard parity: Ctrl/Cmd+A selects
+  the fields of the page in view (not while typing, where it selects the text); Alt+Shift+arrows move the selection
+  to the next guide on that side; any keyboard move shows for a moment the guides it lands on.
