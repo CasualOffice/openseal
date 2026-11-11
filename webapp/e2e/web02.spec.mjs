@@ -247,6 +247,9 @@ test("mock mode survives navigation from the site page", async ({ page }) => {
   await page.getByRole("link", { name: "Open the app" }).click();
   await expect(page).toHaveURL(/app\.html\?mock=1/);
   await expect(page.getByRole("note")).toContainText("Demo mode");
+  // Let the app finish starting and routing (it sets its own #/ route) before the next
+  // navigation; WebKit cancels a load that overlaps the app's own (seen on CI).
+  await page.waitForFunction(() => document.readyState === "complete" && location.hash.length > 1);
   // A link that drops the query keeps mock mode for this tab.
   await page.goto("/app.html#/signin", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("note")).toContainText("Demo mode");
