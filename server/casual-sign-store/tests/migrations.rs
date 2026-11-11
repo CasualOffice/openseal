@@ -97,8 +97,9 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     .collect();
     // Pinned: a new table must be looked at here, not just pass by default. 0008 added
     // `envelope_states` and `job_steps` (stage 2D), both tenant tables; 0009 added
-    // `idempotency_keys` and `staff_sessions` (stage 2C); 0010 `user_invitations` (WEB-06).
-    assert_eq!(tables.len(), 41, "{tables:?}");
+    // `idempotency_keys` and `staff_sessions` (stage 2C); 0010 `user_invitations` (WEB-06);
+    // 0012 `recipient_otp_codes` (SEC-A02), a tenant table.
+    assert_eq!(tables.len(), 42, "{tables:?}");
     let mut problems = Vec::new();
     for t in &tables {
         let row = sqlx::query(
