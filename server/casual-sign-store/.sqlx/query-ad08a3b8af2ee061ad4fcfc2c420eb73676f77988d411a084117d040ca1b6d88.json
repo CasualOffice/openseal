@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, version, chain_head, created_at, sent_at, completed_at, voided_at FROM envelopes WHERE account_id = $1 AND ($2::text IS NULL OR status = $2) ORDER BY created_at DESC, id DESC LIMIT $3",
+  "query": "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, version, chain_head, created_at, sent_at, completed_at, voided_at, updated_at, deleted_at, lower(subject) AS \"subject_key!\" FROM envelopes AS e WHERE account_id = $1 AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM envelope_states AS s WHERE s.account_id = e.account_id AND s.envelope_id = e.id) AND (cardinality($2::text[]) = 0 OR status = ANY($2)) AND ($3::uuid IS NULL OR sender_user_id = $3) AND ($4::text IS NULL OR subject ILIKE $4 ESCAPE '\\' OR EXISTS (SELECT 1 FROM recipients AS r WHERE r.account_id = e.account_id AND r.envelope_id = e.id AND (r.name ILIKE $4 ESCAPE '\\' OR r.email ILIKE $4 ESCAPE '\\'))) AND ($5::timestamptz IS NULL OR updated_at >= $5) AND ($6::timestamptz IS NULL OR updated_at < $6) AND (NOT $7::bool OR (created_at, id) > ($8, $9::uuid)) ORDER BY created_at ASC, id ASC LIMIT $10",
   "describe": {
     "columns": [
       {
@@ -200,12 +200,47 @@
             "name": "voided_at"
           }
         }
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "deleted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "deleted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "subject_key!",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
+        "TextArray",
+        "Uuid",
         "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Bool",
+        "Timestamptz",
+        "Uuid",
         "Int8"
       ]
     },
@@ -227,8 +262,11 @@
       false,
       true,
       true,
-      true
+      true,
+      false,
+      true,
+      null
     ]
   },
-  "hash": "bd20d117a62be79025dfdb99e7c23df1f55b6e992f0045da9be5dda31b2ff2c9"
+  "hash": "ad08a3b8af2ee061ad4fcfc2c420eb73676f77988d411a084117d040ca1b6d88"
 }

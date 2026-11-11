@@ -175,6 +175,12 @@ objects concerned, never their content.
   `CS-WF-0009`. It records `document.flattened`, `document.sealed` per document, then `envelope.completed`.
   `SealFailed` keeps `completing`, alerts, and schedules a new seal job; the old job's late success is refused.
 - **Delete draft** records `envelope.purged` (policy `draft_deleted`) and marks the envelope purged.
+- **Delete ended** (`DeleteEnded`, `WEB-08`): the sender or an administrator removes an envelope that ended without
+  completing (`declined`, `voided`, `expired`) from the lists. It records `envelope.deleted`, sets the state's
+  `deleted_at`, and changes nothing else: no status change, no scrub, no effect; the chain and evidence stay and later
+  access is still recorded. Any other status, a purged envelope, or a second time is `CS-WF-0001`.
+- **Attachment downloaded** (`Access::AttachmentDownloaded {field, hash}`, `WEB-08`) records `attachment.downloaded`
+  only when the field's value names that hash (`CS-WF-0008` otherwise).
 - **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says.
 - **A signer with no signature field** must still adopt a signature before finishing (free-form signing, intent).
 - **Sending needs a recipient with a required action**; an envelope of carbon copies only is `CS-WF-0004`.
@@ -189,6 +195,7 @@ objects concerned, never their content.
 | Create; edit documents, recipients, fields, subject, message, expiry, reminders, options, seal profile while draft | Built |
 | Send (validate for send returning every violation; `document.fixed`; first step invited; expiry, warning, reminders scheduled) | Built |
 | Delete draft | Built |
+| Delete an envelope that ended without completing from the lists (`envelope.deleted`, nothing purged; `WEB-08`) | Built |
 | Deliver/open (`recipient.delivered`; envelope `delivered` per §2) | Built |
 | Consent to the current ERSD; withdraw | Built |
 | Authenticate: challenge, pass, fail with lockout after `max_auth_attempts`, unlock by resend; host-asserted | Built |
@@ -208,7 +215,7 @@ objects concerned, never their content.
 | Invitation dispatched, reminder dispatched, bounce (`auto_responded`) | Built |
 | `completing` → `completed` only on a verified seal; seal failure retried | Built |
 | Purge (terminal only; personal data scrubbed, hashes kept) | Built |
-| Access events (sender viewed, document and certificate downloaded) | Built |
+| Access events (sender viewed, document, certificate and signer attachment downloaded) | Built |
 | Signer location on recipient actions when `capture_location` is on; refusal recorded, never blocking (GEO-01) | Built (engine, and the server's capture and GeoIP fallback, docs/40 §As built) |
 | Routing: sequential, parallel, mixed; carbon copies complete when reached | Built |
 | Conditional routing, signing groups (§4, slice 29) | **Not built**: no event type or status for a skipped recipient or a group member's act (rows proposed) |

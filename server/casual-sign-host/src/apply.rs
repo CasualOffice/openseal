@@ -32,6 +32,7 @@ use casual_sign_workflow::{Command, Context, EffectKind, EnvelopeState, decide};
 use crate::error::{HostError, Result};
 use crate::ids::{odt, uuid_of};
 use crate::jobs;
+use time::OffsetDateTime;
 
 /// An envelope's engine state, read with its row locked until the transaction ends.
 #[derive(Clone)]
@@ -159,7 +160,10 @@ pub async fn apply_loaded(
         }
     };
 
-    project(tx, envelope, &state).await?;
+    // An access (a download, the sender viewing) is recorded but changes nothing: the
+    // envelope's last change stays (WEB-08).
+    let changed = (!matches!(command, Command::RecordAccess { .. })).then_some(now);
+    project(tx, envelope, &state, changed).await?;
 
     // Effects: tokens revoked here, the rest as jobs keyed by (envelope, effect id): a
     // decision recorded again names the same jobs and the queue keeps one of each.
@@ -279,7 +283,7 @@ fn text(s: &str) -> Personal<String> {
 }
 
 /// The envelope columns the API lists and searches, as the state has them.
-fn projection(s: &EnvelopeState) -> Result<Projection> {
+fn projection(s: &EnvelopeState, changed: Option<OffsetDateTime>) -> Result<Projection> {
     let ended = s.ended_at.map(odt).transpose()?;
     Ok(Projection {
         status: status(s.status),
@@ -301,6 +305,8 @@ fn projection(s: &EnvelopeState) -> Result<Projection> {
             None
         },
         void_reason: s.void_reason.as_ref().map(|r| text(r.get().as_str())),
+        updated_at: changed,
+        deleted_at: s.deleted_at.map(odt).transpose()?,
     })
 }
 
@@ -332,19 +338,31 @@ async fn insert_envelope_row(
 /// a draft keeps its row: its versions are write-once records of what was uploaded, and
 /// the engine's state, not the table, says which documents the envelope has. Personal
 /// data is copied from the state the engine checked.
-async fn project(tx: &mut TenantTx, envelope: EnvelopeId, state: &EnvelopeState) -> Result<()> {
+async fn project(
+    tx: &mut TenantTx,
+    envelope: EnvelopeId,
+    state: &EnvelopeState,
+    changed: Option<OffsetDateTime>,
+) -> Result<()> {
     let Some(row) = tx.envelopes().get(envelope).await? else {
         return Err(HostError::Store(StoreError::NotFound {
             entity: "envelope",
         }));
     };
     tx.envelopes()
-        .project(envelope, row.version, &projection(state)?)
+        .project(envelope, row.version, &projection(state, changed)?)
         .await?;
 
-    // Recipients.
+    // Recipients. A purged state (a deleted draft) has no names left to project: its
+    // rows go rather than being overwritten with blanks the table refuses (WEB-08;
+    // rows something still references stay for the purge job).
     let mut keep = Vec::with_capacity(state.recipients.len());
-    for r in &state.recipients {
+    let live = if state.purged {
+        &[][..]
+    } else {
+        &state.recipients[..]
+    };
+    for r in live {
         let id = RecipientId(uuid_of(r.id(), "recipient")?);
         keep.push(id);
         let email = r.spec.email.get().as_str();

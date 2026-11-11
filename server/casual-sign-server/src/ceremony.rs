@@ -979,9 +979,17 @@ struct ReassignIn {
     email: String,
     #[serde(default)]
     reason: Option<String>,
+    #[serde(default)]
+    location: Option<DeviceLocation>,
 }
 
-/// `POST /s/{token}/reassign {name, email, reason?}`.
+/// `POST /s/{token}/reassign {name, email, reason?, location?}` (WEB-07): the engine's
+/// `Reassign` (docs/24): only when the envelope's `signing_options.allow_reassign`
+/// is on and this recipient has a required action they have not finished. The new
+/// recipient takes the same routing order and fields (values cleared) and is invited
+/// when their turn has come; this link is revoked in the same transaction; the chain
+/// records `recipient.reassigned` with the reason and, when the envelope captures
+/// location, where.
 pub(crate) async fn reassign(
     State(st): State<AppState>,
     axum::Extension(ip): axum::Extension<ClientIp>,
@@ -992,6 +1000,7 @@ pub(crate) async fn reassign(
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: ReassignIn = parse(&body)?;
+        o.locate(req.location.as_ref());
         let name = req.name.trim();
         if name.is_empty() || name.chars().count() > 255 {
             return Err(ApiError::invalid("/name"));
@@ -1016,6 +1025,114 @@ pub(crate) async fn reassign(
         .await?;
         Ok(StatusCode::OK)
     })
+}
+
+/// The events every recipient may see in their history: the envelope's milestones.
+const MILESTONES: &[&str] = &[
+    "envelope.sent",
+    "envelope.corrected",
+    "envelope.voided",
+    "envelope.declined",
+    "envelope.expired",
+    "envelope.completing",
+    "envelope.completed",
+];
+
+/// Who acted, as a recipient's history says it: never another person's identity.
+fn by(actor: &Value, me: &str) -> &'static str {
+    match actor.get("kind").and_then(Value::as_str) {
+        Some("recipient") if actor.get("id").and_then(Value::as_str) == Some(me) => "you",
+        Some("recipient") => "recipient",
+        Some("sender") => "sender",
+        Some("user") => "user",
+        Some("host") => "host",
+        _ => "system",
+    }
+}
+
+/// `GET /s/{token}/history` (WEB-07): the envelope's history as this recipient may see
+/// it: the events they acted in or that concern them (`data.recipient_id`), and the
+/// envelope's milestones (sent, corrected, voided, declined, expired, completing,
+/// completed), oldest first, as `{seq, type, at, by}`: `by` is `you`, `sender`,
+/// `recipient` (another, unnamed), `user`, `host` or `system`. Nothing else of any
+/// event is answered: no names, addresses, IPs, user agents, locations or values.
+/// Only in the browser the link is bound to, once the recipient has passed every
+/// authentication they need and, when the account has a disclosure, consented to it
+/// (`403` before); still available after they finished or declined, while the link
+/// is valid. The chain is verified as it is read. Reading it records nothing
+/// (docs/32 §3 lists no access event for it) and changes nothing.
+pub(crate) async fn history(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+) -> Response {
+    let mut o = match open(&st, &token, &headers, ip, &method, false).await {
+        Ok(o) => o,
+        Err(r) => return r,
+    };
+    let result = async {
+        let r =
+            o.l.state
+                .recipient(&o.recipient)
+                .ok_or_else(ApiError::expired)?;
+        let who = || o.recipient.clone();
+        if r.auth_locked {
+            return Err(
+                casual_sign_workflow::WorkflowError::AuthLocked { recipient: who() }.into(),
+            );
+        }
+        if !r.auth_satisfied() {
+            return Err(
+                casual_sign_workflow::WorkflowError::AuthRequired { recipient: who() }.into(),
+            );
+        }
+        if let Some(ersd) = &o.cmds.policy.ersd {
+            let consented = r
+                .consent
+                .as_ref()
+                .is_some_and(|c| c.ersd_version == ersd.version && c.ersd_hash == ersd.hash);
+            if !consented {
+                return Err(casual_sign_workflow::WorkflowError::ConsentRequired {
+                    recipient: who(),
+                }
+                .into());
+            }
+        }
+        // `chain` re-verifies every link; a broken chain is an error, never served.
+        let _ = o.tx.audit().chain(o.l.id).await?;
+        let events = o.tx.audit().events(o.l.id).await?;
+        let me = o.recipient.as_str();
+        let items: Vec<Value> = events
+            .iter()
+            .filter_map(|e| {
+                let v: Value = serde_json::from_slice(&e.canonical).ok()?;
+                let actor = v.get("actor").cloned().unwrap_or(Value::Null);
+                let by = by(&actor, me);
+                let concerns = v
+                    .get("data")
+                    .and_then(|d| d.get("recipient_id"))
+                    .and_then(Value::as_str)
+                    == Some(me);
+                let shown = by == "you" || concerns || MILESTONES.contains(&e.event_type.as_str());
+                shown.then(|| {
+                    json!({
+                        "seq": e.seq,
+                        "type": e.event_type,
+                        "at": crate::api::envelopes::rfc3339(e.at),
+                        "by": by,
+                    })
+                })
+            })
+            .collect();
+        Ok::<_, ApiError>(json!({ "events": items }))
+    }
+    .await;
+    match result {
+        Ok(v) => json_resp(StatusCode::OK, &v),
+        Err(e) => e.into_response(),
+    }
 }
 
 #[allow(dead_code)]

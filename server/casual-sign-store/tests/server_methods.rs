@@ -36,6 +36,8 @@ fn projection(subject: &str) -> Projection {
         completed_at: None,
         voided_at: None,
         void_reason: None,
+        updated_at: None,
+        deleted_at: None,
     }
 }
 

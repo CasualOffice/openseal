@@ -295,6 +295,10 @@ pub struct EnvelopeState {
     /// Documents and personal data purged (or a draft deleted); nothing more happens.
     #[serde(default)]
     pub purged: bool,
+    /// When an envelope that ended without completing was removed from the sender's
+    /// lists (`Command::DeleteEnded`, WEB-08); its evidence stays.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<Timestamp>,
     /// The engine's own records.
     #[serde(default)]
     pub book: Bookkeeping,

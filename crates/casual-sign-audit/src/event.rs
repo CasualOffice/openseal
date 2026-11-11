@@ -258,6 +258,10 @@ pub enum EventData {
         /// The retention policy or request that purged it.
         policy: String,
     },
+    /// An envelope that ended without completing was removed from the sender's lists
+    /// (WEB-08); nothing was purged: its documents, state and this chain stay.
+    #[serde(rename = "envelope.deleted")]
+    EnvelopeDeleted {},
 
     // Document ------------------------------------------------------------------------
     /// A document was uploaded.
@@ -506,6 +510,14 @@ pub enum EventData {
         /// SHA-256 of the bytes served.
         hash: Hash256,
     },
+    /// A signer's attachment was downloaded (WEB-08; the actor says by whom).
+    #[serde(rename = "attachment.downloaded")]
+    AttachmentDownloaded {
+        /// The attachment field whose value names the file.
+        field_id: Id,
+        /// SHA-256 of the bytes served.
+        hash: Hash256,
+    },
 
     // Integration ---------------------------------------------------------------------
     /// An embedding host asserted that it authenticated the signer.
@@ -530,6 +542,7 @@ impl EventData {
         "envelope.completing",
         "envelope.completed",
         "envelope.purged",
+        "envelope.deleted",
         "document.added",
         "document.admitted",
         "document.fixed",
@@ -558,6 +571,7 @@ impl EventData {
         "envelope.viewed_by_sender",
         "document.downloaded",
         "certificate.downloaded",
+        "attachment.downloaded",
         "auth.asserted_by_host",
     ];
 }
@@ -850,7 +864,7 @@ mod tests {
             serde_json::to_value(&empty).unwrap(),
             serde_json::json!({"type": "envelope.expired", "data": {}})
         );
-        assert_eq!(EventData::TYPES.len(), 38);
+        assert_eq!(EventData::TYPES.len(), 40);
     }
 
     #[test]

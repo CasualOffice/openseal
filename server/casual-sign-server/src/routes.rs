@@ -238,6 +238,13 @@ pub fn table() -> Vec<Route> {
         ),
         r(
             "GET",
+            "/api/v1/envelopes/{id}/attachments/{sha256}",
+            er,
+            JSON,
+            env::attachment,
+        ),
+        r(
+            "GET",
             "/api/v1/envelopes/{id}/documents/combined",
             er,
             JSON,
@@ -607,6 +614,7 @@ pub fn table() -> Vec<Route> {
             JSON,
             ceremony::finish_later,
         ),
+        r("GET", "/s/{token}/history", Public, JSON, ceremony::history),
         r(
             "POST",
             "/s/{token}/reassign",
