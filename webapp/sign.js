@@ -257,7 +257,7 @@ async function documents() {
     label: t("sign.documents-title"),
     testId: "signer-doc",
     onLayout: () => { enlarge(); zc?.sync(); requestAnimationFrame(placeTag); },
-    onZoom: () => zc?.sync(),
+    onZoom: () => { enlarge(); zc?.sync(); },
     onPage: (i) => { zc?.sync(); thumbs.mark(i); },
   });
   v.scroller.classList.add("os-sign__pages");
@@ -521,7 +521,9 @@ function fieldNode(f, pg) {
     // a large input; the keyboard path (Tab, Next) types into the field as on desktop.
     let tapped = false;
     input.addEventListener("pointerdown", (e) => { tapped = phone() && e.pointerType !== "mouse"; if (tapped) e.preventDefault(); });
-    input.addEventListener("click", () => { if (!tapped) return; tapped = false; textSheet(f, label, input.value, save); });
+    // On pointerup, not click: WebKit sends no click after a prevented touch pointerdown.
+    input.addEventListener("pointerup", () => { if (!tapped) return; tapped = false; textSheet(f, label, input.value, save); });
+    input.addEventListener("pointercancel", () => { tapped = false; });
     hit.addEventListener("click", () => (phone() ? textSheet(f, label, input.value, save) : input.focus()));
     box.append(input, err);
     box.classList.toggle("is-done", isDone(f));
