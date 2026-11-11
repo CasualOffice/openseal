@@ -290,12 +290,38 @@ this branch's last commit.
 | A27 | Envelope, Templates, Verify | Preview is a fixed 640 px box inside a scrolling page; zoom resets the scroll | H8 | P1 | Preview on `docview.js` | Fixed |
 | A28 | Admin, Templates, shortcuts | Add or rename user, new API client, rename template, shortcut list are modals | owner | P2 | Side panels (`openPanel`); modals only for void, delete, decline, remove, leave-without-saving | Fixed |
 | A29 | Tables | Headers scroll away | H6 | P2 | Sticky headers | Fixed |
-| A30 | Envelope | No Correct for a sent envelope (DocuSign Correct) | H3 | P1 | Needs the server's correct flow (docs/24) | Open (server row needed) |
+| A30 | Envelope | No Correct for a sent envelope (DocuSign Correct) | H3 | P1 | Side panel over `POST …/correct` (§Manage screens, E-01) | Fixed |
 | A31 | Agreements, Home | No notice when an envelope changes status while the list is open | H1 | P2 | Refresh on focus and every minute | Open (`WEB-07` proposed) |
 | A32 | Signer | No "saved" feedback after a fill (values are saved per field) | H1 | P2 | "Saved" in the bar after each fill | Fixed |
 | A33 | Signer | Required vs optional shown by outline colour plus a star | 1.4.1 | P2 | Names say "required"; optional dashed; list says it in words | Kept (already met) |
 | A34 | Editor | Palette drag is HTML drag and drop only (no touch) | 2.5.7 | P2 | Tap places on the page in view | Kept (already met) |
 | A35 | Verify | The server image lacks the WASM verifier and its CSP blocks it | — | P1 | `WEB-05`: Dockerfile builds it; server adds `'wasm-unsafe-eval'` for `verify.html` only | Fixed |
+
+### Manage screens (second audit, WEB-06)
+
+Home, Agreements, envelope details, Templates and template use, Admin and Reports, walked at 1440, 1920, 390, 320
+and 200 % zoom. Fixed in `home.js`, `dashboard.js`, `envelope.js`, `envactions.js` (what Agreements and the envelope
+page share), `templates.js`, `admin.js`, `acceptinvite.js`, `reports.js` and their own stylesheet `manage.css`;
+covered by `e2e/manage.spec.mjs` (axe on each screen, no sideways scroll at 320 px, screenshots at every size).
+
+| # | Screen | Problem | Sev | Fix | Status |
+| --- | --- | --- | --- | --- | --- |
+| G-02 | All manage screens | Sideways scroll at 320 px (top bar, tables, admin tabs); titles broke inside words | P1 | Tables become cards below 37.5em (`.os-table--cards`, each cell labelled); titles wrap between words; the top bar drops the theme button below 22.5em (it is in the account menu); tabs scroll | Fixed |
+| G-03 | Home | Six ways to start a new envelope | P2 | Top bar's Start only; the drop zone's button is quiet; the Start card becomes Recent templates | Fixed |
+| A-01 | Agreements | No "waiting for whom", sender or expiry; no sort; no date or sender filter | P1 | Status line in words, Sender and Expires columns, sortable Subject, Status, Last change, Expires; sender and date-range filters | Fixed on the loaded rows; server-side sort and filters needed for more than what is loaded (row needed) |
+| A-02 | Agreements, Home | A draft opened its detail page, not the editor | P2 | Drafts open in the editor | Fixed |
+| A-03 | Agreements | Row menu lacked Download in progress, Copy, Correct, Save as template, Delete, History | P1 | All of them, by state; History is a side panel; Delete for drafts and envelopes that ended without completing (never a completed one) | Fixed in the web app; the server deletes drafts only today (row needed) |
+| A-04 | Home, Agreements | "Action required" meant declined or expired; dates unlabelled | P2 | "Declined or expired"; "Last change" with "Created" under it | Fixed |
+| E-01 | Envelope | No Correct (DocuSign's) | P1 | Side panel: name, email and access code of each recipient who has not acted; one `POST …/correct` (If-Match), then a new invitation to those changed | Fixed |
+| E-02 | Envelope | No download while in progress | P2 | Download current PDF (`content?version=current`) | Fixed |
+| E-03 | Envelope | Resend only for everyone; "Reminder" and "Resend" both used | P2 | Resend on each waiting recipient's row; "Resent" everywhere | Fixed |
+| E-04 | Envelope | CC rows showed Sent/Opened/Signed; Opened had no time | P2 | A CC row says when its copy goes; Opened takes the first opening event's time | Fixed |
+| E-05 | Envelope | Audit events without who did them; seeded audit dates disagreed with the header | P1 | "By" column (sender, recipient, OpenSeal); the mock's seeded histories carry their own times | Fixed |
+| E-06 | All manage screens | Toasts covered table columns and row actions | P2 | Toasts bottom-left and narrow, away from the actions and status columns; 7rem kept below the content so a last row scrolls clear | Fixed (a toast can still sit over the left of a row while it shows) |
+| T-01 | Templates | No edit, delete, duplicate, search, owner or last use | P1 | Search, Owner, Last used; Edit details in a side panel; Duplicate; Delete (confirmation) | Fixed; reopening a template's fields in the editor needs `prepare.js` to load a template (row needed) |
+| T-03 | Use template | Form, document and Send stacked in one long page | P1 | Document left; roles, email and Send in a sticky panel that fits the window; form first below 60em | Fixed |
+| AD-01 | Admin | No invite, no profile change or disabling, no account settings | P1 | Invite user (side panel; `POST /users` with `invite: true`), Resend invitation, Edit user (name, profile, disable) in a side panel, Status column; Account tab with Settings and Branding edited in side panels; `#/accept-invite?token=` sets the password without a session and takes the token out of the address bar at once | Fixed |
+| RP-01 | Reports | No period; two statuses shared a colour; a stray border under the last row | P2 | Period filter (by creation date); one colour per status with a key; border fixed | Fixed |
 
 ### Layout spec: editor (fields step) and signing page
 
