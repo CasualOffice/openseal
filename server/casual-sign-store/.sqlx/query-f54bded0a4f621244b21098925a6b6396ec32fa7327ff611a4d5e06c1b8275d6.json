@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recipient_otp_codes SET closed_at = $3, closed_reason = 'superseded' WHERE account_id = $1 AND recipient_id = $2 AND closed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f54bded0a4f621244b21098925a6b6396ec32fa7327ff611a4d5e06c1b8275d6"
+}

@@ -649,6 +649,7 @@ dependencies = [
 name = "casual-sign-worker"
 version = "0.0.1"
 dependencies = [
+ "argon2",
  "aws-lc-rs",
  "axum",
  "base64 0.22.1",
@@ -680,6 +681,7 @@ dependencies = [
  "time",
  "tokio",
  "tower",
+ "tracing-subscriber",
  "ureq",
  "uuid",
  "x509-cert",

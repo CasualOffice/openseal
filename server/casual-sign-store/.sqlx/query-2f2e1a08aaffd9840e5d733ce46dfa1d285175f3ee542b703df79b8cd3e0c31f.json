@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recipient_otp_codes SET code_hash = $3, sent_at = $4 WHERE account_id = $1 AND id = $2 AND closed_at IS NULL AND code_hash IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f2e1a08aaffd9840e5d733ce46dfa1d285175f3ee542b703df79b8cd3e0c31f"
+}

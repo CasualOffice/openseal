@@ -55,6 +55,9 @@ rustls-pki-types = { version = "1.15.1", features = ["std"] }
 # HMAC-SHA256 for Standard Webhooks signatures, randomness for tokens, lease tokens,
 # nonces and jitter (ADR-006: hosts use aws-lc-rs). Already in the tree.
 aws-lc-rs = "1.19.0"
+# Argon2id for the email one-time code's stored hash (SEC-A02), as the API server hashes
+# access codes and verifies these (ADR-006). Already in the tree through the server.
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "password-hash", "std"] }
 # Standard Webhooks' base64 and the email body's transfer encoding. Already in the tree.
 base64 = "0.22.1"
 # Certificates for the RFC 3161 and revocation sources' URLs (as the CLI). Already in
@@ -86,6 +89,9 @@ casual-sign-server = { path = "../casual-sign-server" }
 axum = { version = "0.8.4", default-features = false, features = ["tokio"] }
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
 http-body-util = "0.1.2"
+# tests/email_otp.rs captures every log line at TRACE to show a one-time code is never
+# logged (SEC-A02). Already in the tree through the server.
+tracing-subscriber = { version = "0.3.19", default-features = false, features = ["fmt"] }
 
 [lints]
 workspace = true

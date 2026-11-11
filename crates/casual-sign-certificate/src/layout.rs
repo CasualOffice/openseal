@@ -385,6 +385,7 @@ fn auth_name(m: AuthMethod) -> &'static str {
         AuthMethod::Sso => "Single sign-on",
         AuthMethod::AccountLogin => "Account sign-in",
         AuthMethod::HostAsserted => "Asserted by host application",
+        AuthMethod::EmailOtp => "Email one-time code",
         _ => "Other",
     }
 }

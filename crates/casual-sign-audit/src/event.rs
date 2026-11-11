@@ -125,6 +125,9 @@ pub enum AuthMethod {
     AccountLogin,
     /// The embedding host asserts it authenticated the signer.
     HostAsserted,
+    /// A one-time code by email (SEC-A02). Added after the others, so every chain
+    /// written before it hashes exactly as it did (`tests/compat.rs`).
+    EmailOtp,
 }
 
 /// Request context. IP, user agent and location are personal data.

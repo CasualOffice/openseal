@@ -118,7 +118,7 @@ components:
       enum: [signer, in_person_signer, approver, viewer, cc, editor, intermediary, agent, witness, seal, notary]
     AuthMethod:
       type: string
-      enum: [email_link, access_code, sms_otp, voice_otp, kba, id_verification, sso, account_login, host_asserted]
+      enum: [email_link, access_code, sms_otp, voice_otp, kba, id_verification, sso, account_login, host_asserted, email_otp]
     DeviceLocation:
       description: The browser's Geolocation fix, or a decline (row GEO-01).
       oneOf:
@@ -647,6 +647,13 @@ components:
       properties:
         method: {$ref: '#/components/schemas/AuthMethod'}
         code: {type: string}
+    OtpVerifyRequest:
+      description: An emailed one-time code (SEC-A02), six digits.
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: {type: string, pattern: '^[0-9]{6}$'}
     ViewedRequest:
       type: object
       required: [pages_seen]
@@ -2092,6 +2099,72 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/otp:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyOtpSend
+      summary: "Email a one-time code"
+      description: >-
+        Emails the recipient a 6-digit code (SEC-A02) when the sender required `email_otp`.
+        The worker draws the code and stores only its Argon2id hash; it works once, for 10
+        minutes, and asking again replaces it. Limited per link and per address (3 a
+        minute) and per recipient (30 seconds apart, 5 an hour): `CS-API-0003` with
+        `Retry-After`. `CS-API-0014` when the recipient does not require it;
+        `CS-API-0009` once it has passed.
+      security: []
+      x-permission: public
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        '202':
+          description: Accepted; the code is on its way
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/otp/verify:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyOtpVerify
+      summary: "Check an emailed one-time code"
+      description: >-
+        `200` with the view when the code matches the open, unexpired code (which is then
+        spent); `403` with the view otherwise (wrong, expired, replaced or already used),
+        recorded as a failed attempt. The account's `max_auth_attempts` failures lock the
+        recipient and revoke the link (`CS-AUTH-0004`, then `CS-AUTH-0002`); five wrong
+        tries spend a code.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OtpVerifyRequest'}
+      responses:
+        '200':
+          description: Passed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        '403':
+          description: Not passed
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyView'}

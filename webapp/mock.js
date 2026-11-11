@@ -21,6 +21,8 @@ export const MOCK = {
   declineToken: "demo-decline",
   fieldsToken: "demo-fields",
   accessCode: "2468",
+  // The emailed one-time code every mock `POST /s/{token}/otp` "sends" (SEC-A02).
+  emailCode: "135790",
 };
 
 const KEY = "openseal.mock.v1";
@@ -29,7 +31,7 @@ const TERMINAL = new Set(["completed", "declined", "voided", "expired"]);
 const AUDIT_TYPES = {
   envelope_created: "envelope.created", envelope_sent: "envelope.sent", envelope_corrected: "envelope.corrected",
   envelope_voided: "envelope.voided", envelope_completed: "envelope.completed", seal_applied: "document.sealed",
-  recipient_opened: "recipient.delivered", recipient_authenticated: "recipient.auth_passed", recipient_auth_failed: "recipient.auth_failed",
+  recipient_opened: "recipient.delivered", recipient_auth_challenged: "recipient.auth_challenged", recipient_authenticated: "recipient.auth_passed", recipient_auth_failed: "recipient.auth_failed",
   recipient_consented: "recipient.consented", document_viewed: "recipient.viewed_document", signature_adopted: "recipient.signature_adopted",
   field_filled: "recipient.field_completed", recipient_finish_later: "recipient.finish_later", recipient_completed: "recipient.signed",
   recipient_declined: "recipient.declined", recipient_reassigned: "recipient.reassigned", notification_resent: "reminder.sent",
@@ -204,8 +206,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     };
   }
   const publicRecipient = (r) => {
-    const { access_code, auth_passed, token, ...rest } = r;
-    void access_code; void auth_passed; void token;
+    const { access_code, auth_passed, token, otp_open, ...rest } = r;
+    void access_code; void auth_passed; void token; void otp_open;
     return { ...rest, authenticated: r.auth.every((m) => r.auth_passed.includes(m)) };
   };
   const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
@@ -934,6 +936,28 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
       if (!rec.auth_passed.includes("access_code")) rec.auth_passed.push("access_code");
       await audit(env, "recipient_authenticated", { recipient_id: rec.id, method: "access_code" });
+      return json(200, view(env, rec));
+    }
+    // The emailed one-time code (SEC-A02): "sent" is MOCK.emailCode; a wrong code answers
+    // 403 with the view, as the server does; five failures lock.
+    if (sub === "otp" && method === "POST") {
+      if (!rec.auth.includes("email_otp")) fail(409, "CS-API-0014", "Method not available");
+      if (rec.auth_passed.includes("email_otp")) fail(409, "CS-API-0009", "Already authenticated");
+      rec.otp_open = true;
+      await audit(env, "recipient_auth_challenged", { recipient_id: rec.id, method: "email_otp" });
+      return json(202, view(env, rec));
+    }
+    if (sub === "otp" && parts[4] === "verify" && method === "POST") {
+      const n = (db.attempts[token] || 0);
+      if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
+      if (!rec.auth.includes("email_otp") || !rec.otp_open || body?.code !== MOCK.emailCode) {
+        db.attempts[token] = n + 1;
+        await audit(env, "recipient_auth_failed", { recipient_id: rec.id, method: "email_otp" });
+        return json(403, view(env, rec));
+      }
+      rec.otp_open = false;
+      if (!rec.auth_passed.includes("email_otp")) rec.auth_passed.push("email_otp");
+      await audit(env, "recipient_authenticated", { recipient_id: rec.id, method: "email_otp" });
       return json(200, view(env, rec));
     }
     if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
