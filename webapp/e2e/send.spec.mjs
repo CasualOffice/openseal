@@ -124,5 +124,5 @@ test("a field dragged from the palette lands on the page where it is dropped", a
   const page2 = page.locator(".os-page__overlay").nth(1);
   await page.locator(".os-palette").getByRole("button", { name: "Add Initials field" }).dragTo(page2, { targetPosition: { x: 120, y: 160 } });
   await expect(page2.locator(".os-field")).toHaveCount(1);
-  await expect(page.getByText("Page 2, from the top-left corner.")).toBeVisible();
+  await expect(page.getByText("Page 2, from the top-left corner.")).toBeAttached();
 });

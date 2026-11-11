@@ -738,6 +738,7 @@ export const EN = {
   "prepare.add-field-short": "Add field",
   "prepare.field-settings": "Field settings",
   "prepare.field-types": "Field types",
+  "prepare.advanced": "Advanced",
   "prepare.placing-key": "Key {n}",
   "prepare.selected": "Selected: {label}",
   "prepare.back-to-list": "All fields",

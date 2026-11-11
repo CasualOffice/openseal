@@ -580,13 +580,12 @@ function review() {
     } catch (err) { toastError(err); }
   });
   // The values panel beside the pages: on desktop a docked panel, on phones above them.
-  const side = dockPanel({ id: "sign-review", side: "right", title: t("sign.review.title"), width: 20, min: 16, max: 32, testId: "panel-review" });
+  const side = dockPanel({ id: "sign-review", side: "right", title: t("sign.review.values"), width: 20, min: 16, max: 32, testId: "panel-review" });
   side.el.classList.add("os-dock--static");
   if (side.isCollapsed()) side.collapse(false);
   side.body.append(
     h("h1", { class: "os-sign__title", text: t("sign.review.title") }),
     h("p", { class: "os-muted", text: t("sign.review.text") }),
-    h("h2", { id: "rv-values-h", class: "os-card__title", text: t("sign.review.values") }),
     dl,
     h("p", { class: "os-small", text: t("sign.review.legal") }),
     h("div", { class: "os-stack" }, go, back));

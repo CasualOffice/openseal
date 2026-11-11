@@ -167,6 +167,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   /// Open step `s`: show its pane, mark the step bar, set the toolbar's buttons.
   async function go(s) {
     if (!STEPS.includes(s)) return;
+    const prevStep = step;
     step = s;
     frame.dataset.step = s;
     const i = STEPS.indexOf(s);
@@ -184,6 +185,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (TPL) saveBtn.hidden = s !== "review";
     say(t("wizard.where", { n: i + 1, total: STEPS.length, label: t(stepLabel(s)) }));
     if (s === "fields") {
+      // Fields start with the first signer (P-01), whoever was edited last on step 2.
+      if (prevStep !== "fields") { S.active = signers()[0]?.key || null; renderPalette(); }
       if (stageKey !== S.docs.map((d) => d.key).join()) await renderStage();
       else { dv.relayout(); renderFieldsOnly(); }
     }
@@ -663,6 +666,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   // ---- Properties ------------------------------------------------------------------------
+  let advancedOpen = false;
   function renderProps() {
     clear(props);
     const f = S.fields.find((x) => x.key === S.selected);
@@ -723,7 +727,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       });
       geo.append(h("label", { class: "os-geo__item", attrs: { for: id } }, h("span", { text: t(`prepare.geo-${k}`) }), inp));
     }
-    props.append(h("p", { class: "os-label", text: t("prepare.position") }), geo, h("p", { class: "os-muted os-small", text: t("prepare.position-help", { page: f.page }) }));
+    // Coordinates are for the few who need them (F-07): under Advanced, closed by default.
+    const adv = h("details", { class: "os-details os-advanced", open: advancedOpen },
+      h("summary", { text: t("prepare.advanced") }),
+      h("p", { class: "os-label", text: t("prepare.position") }), geo, h("p", { class: "os-muted os-small", text: t("prepare.position-help", { page: f.page }) }));
+    adv.addEventListener("toggle", () => { advancedOpen = adv.open; });
+    props.append(adv);
     props.append(h("div", { class: "os-actions" },
       button(t("prepare.duplicate"), { icon: "copy", size: "sm", onClick: () => run("field.duplicate") }),
       button(t("prepare.delete-field"), { icon: "trash-2", size: "sm", variant: "danger", onClick: () => run("field.delete") })));

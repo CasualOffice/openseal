@@ -146,7 +146,9 @@ export async function snap(target, testInfo, name) {
 /// and Option+Tab reaches every control, as a Safari keyboard user presses it.
 export async function tabTo(page, locator, max = 80, shift = false) {
   const webkit = page.context().browser()?.browserType().name() === "webkit";
-  const key = `${shift ? "Shift+" : ""}${webkit ? "Alt+" : ""}Tab`;
+  // macOS WebKit moves focus to buttons and links only with Option+Tab (its system
+  // setting); WebKit on Linux, as on the CI runners, uses plain Tab like everyone else.
+  const key = `${shift ? "Shift+" : ""}${webkit && process.platform === "darwin" ? "Alt+" : ""}Tab`;
   for (let i = 0; i < max; i++) {
     if (await locator.evaluate((el) => el === document.activeElement).catch(() => false)) return;
     await page.keyboard.press(key);

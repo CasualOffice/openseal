@@ -1000,6 +1000,8 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 .os-placed__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .os-placed__req { font-size: var(--os-fs-12); color: var(--os-muted); }
 .os-trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-advanced:not([open]) > :not(summary) { display: none; }
+.os-advanced { margin-top: var(--os-s3); }
 .os-problems li { align-items: center; }
 .os-problems__text { flex: 1; }
 
