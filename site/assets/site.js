@@ -80,15 +80,29 @@ for (const pre of document.querySelectorAll("pre")) {
 }
 
 // ---- Scroll reveal ----------------------------------------------------------------------------
-const reveals = document.querySelectorAll(".reveal");
-if (reveals.length && "IntersectionObserver" in window) {
+// Progressive: everything is visible unless this code decides to animate it. Only
+// elements wholly below the fold are hidden, and only when motion is welcome and
+// IntersectionObserver exists; anything already in view is never hidden.
+const motionOK = matchMedia("(prefers-reduced-motion: no-preference)").matches;
+const reveals = [...document.querySelectorAll(".reveal")];
+if (motionOK && "IntersectionObserver" in window) {
+  const fold = window.innerHeight;
+  const pending = reveals.filter((el) => el.getBoundingClientRect().top > fold);
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); }
-  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
-  for (const el of reveals) io.observe(el);
-} else {
-  for (const el of reveals) el.classList.add("is-in");
+  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.01 });
+  for (const el of pending) { el.classList.add("reveal-pending"); io.observe(el); }
+  const showAll = () => { for (const el of pending) el.classList.add("is-in"); };
+  addEventListener("beforeprint", showAll);
+  // A jump past content (a #link, Find, End) must not leave it hidden.
+  addEventListener("hashchange", showAll);
 }
+
+// ---- Hero illustration ------------------------------------------------------------------------
+// Played once, only when motion is welcome and the hero is on screen; its resting state
+// (shown otherwise) is the finished drawing.
+const heroArt = document.querySelector(".hero-art");
+if (heroArt && motionOK && heroArt.getBoundingClientRect().top < window.innerHeight) heroArt.classList.add("play");
 
 // ---- On this page ----------------------------------------------------------------------------
 const tocLinks = [...document.querySelectorAll(".toc a")];

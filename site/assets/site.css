@@ -198,18 +198,14 @@ code, kbd, pre { font-family: var(--os-font-mono); font-size: 0.875em; }
 .h-hash { fill: var(--os-accent); font: 600 10px/1 var(--os-font-mono); }
 .hero-art .anim { transform-box: fill-box; transform-origin: center; }
 .hero-art .a-seal { transform: rotate(-10deg); }
+/* The illustration's resting state is the finished one: page, signature, seal, chain.
+ * site.js adds .play only when motion is welcome and the hero is on screen; then the
+ * signature draws and the seal stamps, once, within two seconds. The page, field, chip
+ * and chain never animate, so a screenshot at any moment shows the document. */
 @media (prefers-reduced-motion: no-preference) {
-  .hero-art .a-page { animation: h-rise 700ms var(--spring) 100ms both; }
-  .hero-art .a-field { animation: h-fade 500ms var(--spring) 550ms both; }
-  .hero-art .a-sig { stroke-dasharray: 1; animation: h-draw 1300ms cubic-bezier(.45, .05, .35, 1) 900ms both; }
-  .hero-art .a-seal { animation: h-stamp 520ms cubic-bezier(.2, 1.5, .4, 1) 2300ms both; }
-  .hero-art .a-ring { animation: h-ring 750ms var(--spring) 2560ms both; }
-  .hero-art .a-chip { animation: h-rise 600ms var(--spring) 2850ms both; }
-  .hero-art .a-bar { animation: h-fade 600ms var(--spring) 3000ms both; }
-  .hero-art .a-l1 { animation: h-pop 450ms var(--spring) 3050ms both; }
-  .hero-art .a-l2 { animation: h-pop 450ms var(--spring) 3200ms both; }
-  .hero-art .a-l3 { animation: h-pop 450ms var(--spring) 3350ms both; }
-  .hero-art .a-l4 { animation: h-pop 450ms var(--spring) 3500ms both; }
+  .hero-art.play .a-sig { stroke-dasharray: 1; animation: h-draw 1100ms cubic-bezier(.45, .05, .35, 1) 150ms both; }
+  .hero-art.play .a-seal { animation: h-stamp 520ms cubic-bezier(.2, 1.5, .4, 1) 1300ms both; }
+  .hero-art.play .a-ring { animation: h-ring 750ms var(--spring) 1560ms both; }
 }
 .hero-art .a-ring { opacity: 0; }
 @keyframes h-rise { from { opacity: 0; transform: translateY(18px); } }
@@ -547,14 +543,18 @@ a.card:hover { border-color: var(--os-border-strong); transform: translateY(-2px
 .search-results .r-text { font-size: 0.8125rem; color: var(--os-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .search-results mark { background: var(--os-accent-soft); color: inherit; border-radius: 0.2rem; }
 
-/* ---- Scroll reveal (only when scripts run and motion is welcome) ------------------------ */
+/* ---- Scroll reveal: progressive enhancement ------------------------------------------- */
+/* Content is visible by default: without scripts, in print, in a screenshot, under
+ * reduced motion. site.js marks .reveal-pending only on elements below the fold, when
+ * IntersectionObserver exists and motion is welcome, and adds .is-in as they arrive. */
 @media (prefers-reduced-motion: no-preference) {
-  .js .reveal { opacity: 0; transform: translateY(1.5rem); transition: opacity 800ms var(--spring), transform 800ms var(--spring); }
-  .js .reveal.is-in { opacity: 1; transform: none; }
-  .js .reveal-d1 { transition-delay: 80ms; }
-  .js .reveal-d2 { transition-delay: 160ms; }
-  .js .reveal-d3 { transition-delay: 240ms; }
+  .reveal-pending { transition: opacity 700ms var(--spring), transform 700ms var(--spring); }
+  .reveal-pending:not(.is-in) { opacity: 0; transform: translateY(1.5rem); }
+  .reveal-pending.reveal-d1 { transition-delay: 80ms; }
+  .reveal-pending.reveal-d2 { transition-delay: 160ms; }
+  .reveal-pending.reveal-d3 { transition-delay: 240ms; }
 }
+@media print { .reveal-pending { opacity: 1 !important; transform: none !important; } }
 @media print { .site-header, .site-footer, .docs-side, .toc, .copy-btn { display: none !important; } }
 .tl-stack { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .lane-blurb { padding-inline: 0.5rem; font-size: 0.875rem; margin-top: -0.5rem; }
@@ -582,3 +582,4 @@ kbd { font: 600 0.8em/1 var(--os-font-mono); border: 1px solid var(--os-border-s
 .arch-scroll { overflow-x: auto; }
 @media (max-width: 40em) { .arch svg { min-width: 40rem; } }
 .card { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.cards.cards-wide { grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); }
