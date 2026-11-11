@@ -123,6 +123,10 @@ pub struct Envelope {
     pub completed_at: Option<OffsetDateTime>,
     /// Voided.
     pub voided_at: Option<OffsetDateTime>,
+    /// Last change: the last command that changed it (WEB-08).
+    pub updated_at: OffsetDateTime,
+    /// Removed from the lists (an envelope that ended without completing, WEB-08).
+    pub deleted_at: Option<OffsetDateTime>,
 }
 
 /// A state change the workflow engine decided.
@@ -156,6 +160,8 @@ struct EnvelopeRow {
     sent_at: Option<OffsetDateTime>,
     completed_at: Option<OffsetDateTime>,
     voided_at: Option<OffsetDateTime>,
+    updated_at: OffsetDateTime,
+    deleted_at: Option<OffsetDateTime>,
 }
 
 impl TryFrom<EnvelopeRow> for Envelope {
@@ -180,6 +186,8 @@ impl TryFrom<EnvelopeRow> for Envelope {
             sent_at: r.sent_at,
             completed_at: r.completed_at,
             voided_at: r.voided_at,
+            updated_at: r.updated_at,
+            deleted_at: r.deleted_at,
         })
     }
 }
@@ -235,7 +243,8 @@ impl Envelopes<'_> {
             EnvelopeRow,
             "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, \
              reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, \
-             version, chain_head, created_at, sent_at, completed_at, voided_at \
+             version, chain_head, created_at, sent_at, completed_at, voided_at, updated_at, \
+             deleted_at \
              FROM envelopes WHERE account_id = $1 AND id = $2",
             acct,
             id.0
@@ -262,7 +271,8 @@ impl Envelopes<'_> {
             EnvelopeRow,
             "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, \
              reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, \
-             version, chain_head, created_at, sent_at, completed_at, voided_at \
+             version, chain_head, created_at, sent_at, completed_at, voided_at, updated_at, \
+             deleted_at \
              FROM envelopes WHERE account_id = $1 AND ($2::text IS NULL OR status = $2) \
              ORDER BY created_at DESC, id DESC LIMIT $3",
             acct,
@@ -395,6 +405,11 @@ pub struct Projection {
     pub voided_at: Option<OffsetDateTime>,
     /// Why it was voided.
     pub void_reason: Option<Personal<String>>,
+    /// The time of the command that changed the envelope, as its last change; `None`
+    /// keeps the last change (an access such as a download changes nothing, WEB-08).
+    pub updated_at: Option<OffsetDateTime>,
+    /// When it was removed from the lists (WEB-08).
+    pub deleted_at: Option<OffsetDateTime>,
 }
 
 /// Where a page of envelopes resumes: after this creation time and id.
@@ -511,7 +526,8 @@ impl Envelopes<'_> {
             "UPDATE envelopes SET version = version + 1, status = $4, \
                subject = $5, message = $6, expires_at = $7, reminder_policy = $8, \
                signing_options = $9, seal_profile = $10, sent_at = $11, completed_at = $12, \
-               voided_at = $13, void_reason = $14 \
+               voided_at = $13, void_reason = $14, updated_at = COALESCE($15, updated_at), \
+               deleted_at = $16 \
              WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
             acct,
             id.0,
@@ -526,7 +542,9 @@ impl Envelopes<'_> {
             p.sent_at,
             p.completed_at,
             p.voided_at,
-            p.void_reason.as_ref().map(|r| r.get().as_str())
+            p.void_reason.as_ref().map(|r| r.get().as_str()),
+            p.updated_at,
+            p.deleted_at
         )
         .fetch_optional(self.tx.conn())
         .await
@@ -536,12 +554,7 @@ impl Envelopes<'_> {
 
     /// A page of this account's envelopes, newest first, after `after`, optionally of
     /// one status and one sender, and matching `search`, at most `limit` (capped at
-    /// 1,000). Stable under inserts: new envelopes sort before every cursor already
-    /// handed out.
-    ///
-    /// `search` is a text the subject, or a recipient's name or email, contains,
-    /// ignoring case (row WEB-04); `%`, `_` and `\` in it are matched as themselves.
-    /// Recipients are this account's only, like everything else here.
+    /// 1,000): [`Envelopes::search`] in creation order, newest first.
     ///
     /// # Errors
     ///
@@ -554,37 +567,310 @@ impl Envelopes<'_> {
         search: Option<&str>,
         limit: u32,
     ) -> Result<Vec<Envelope>> {
+        let statuses: Vec<EnvelopeStatus> = status.into_iter().collect();
+        let filter = ListFilter {
+            statuses: &statuses,
+            sender,
+            search,
+            changed_from: None,
+            changed_to: None,
+        };
+        let sort = Sort {
+            key: SortKey::Created,
+            descending: true,
+        };
+        let after = after.map(|c| After {
+            key: AfterKey::Time(c.created_at),
+            id: c.id,
+        });
+        Ok(self
+            .search(&filter, sort, after.as_ref(), limit)
+            .await?
+            .into_iter()
+            .map(|l| l.envelope)
+            .collect())
+    }
+
+    /// A page of this account's listed envelopes (WEB-08): those with engine state, not
+    /// removed from the lists, matching `filter`, in `sort` order with the id as the
+    /// tie-break, after `after` (the last of the previous page, in the same sort), at
+    /// most `limit` (capped at 1,000). Keyset paging: stable under inserts; every value
+    /// is a bound parameter, and each sort is one static query.
+    ///
+    /// `filter.search` is a text the subject, or a recipient's name or email, contains,
+    /// ignoring case (row WEB-04); `%`, `_` and `\` in it are matched as themselves.
+    /// Recipients are this account's only, like everything else here. An `after` whose
+    /// key is not of the sort's kind matches nothing.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn search(
+        &mut self,
+        filter: &ListFilter<'_>,
+        sort: Sort,
+        after: Option<&After>,
+        limit: u32,
+    ) -> Result<Vec<Listed>> {
         let acct = self.tx.acct();
-        let pattern = search.map(like_contains);
-        let rows = sqlx::query_as!(
-            EnvelopeRow,
-            "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, \
-             reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, \
-             version, chain_head, created_at, sent_at, completed_at, voided_at \
-             FROM envelopes AS e WHERE account_id = $1 \
-               AND EXISTS (SELECT 1 FROM envelope_states AS s \
-                            WHERE s.account_id = e.account_id AND s.envelope_id = e.id) \
-               AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid)) \
-               AND ($4::text IS NULL OR status = $4) \
-               AND ($5::uuid IS NULL OR sender_user_id = $5) \
-               AND ($7::text IS NULL OR subject ILIKE $7 ESCAPE '\\' \
-                    OR EXISTS (SELECT 1 FROM recipients AS r \
-                               WHERE r.account_id = e.account_id AND r.envelope_id = e.id \
-                                 AND (r.name ILIKE $7 ESCAPE '\\' \
-                                      OR r.email ILIKE $7 ESCAPE '\\'))) \
-             ORDER BY created_at DESC, id DESC LIMIT $6",
-            acct,
-            after.map(|c| c.created_at),
-            after.map(|c| c.id.0),
-            status.map(EnvelopeStatus::as_str),
-            sender.map(|s| s.0),
-            i64::from(limit.min(1000)),
-            pattern
-        )
-        .fetch_all(self.tx.conn())
-        .await
+        let pattern = filter.search.map(like_contains);
+        let statuses: Vec<String> = filter
+            .statuses
+            .iter()
+            .map(|s| s.as_str().to_owned())
+            .collect();
+        let sender = filter.sender.map(|s| s.0);
+        let (from, to) = (filter.changed_from, filter.changed_to);
+        let lim = i64::from(limit.min(1000));
+        let after_id = after.map(|a| a.id.0);
+        let has = after.is_some();
+        let time = match after.map(|a| &a.key) {
+            Some(AfterKey::Time(t)) => Some(*t),
+            _ => None,
+        };
+        let text = match after.map(|a| &a.key) {
+            Some(AfterKey::Text(t)) => Some(t.clone()),
+            _ => None,
+        };
+        let rank = match after.map(|a| &a.key) {
+            Some(AfterKey::Rank(r)) => Some(*r),
+            _ => None,
+        };
+        // One static query per sort key and direction, so each key's index applies.
+        macro_rules! q {
+            ($key:tt, $cmp:tt, $dir:tt, $after:expr) => {
+                sqlx::query_as!(
+                    ListRow,
+                    "SELECT id, sender_user_id, status, subject, message, routing_mode, \
+                     expires_at, reminder_policy, signing_options, seal_profile, \
+                     completion_delivery, template_ids, version, chain_head, created_at, \
+                     sent_at, completed_at, voided_at, updated_at, deleted_at, \
+                     lower(subject) AS \"subject_key!\" \
+                     FROM envelopes AS e WHERE account_id = $1 AND deleted_at IS NULL \
+                       AND EXISTS (SELECT 1 FROM envelope_states AS s \
+                                    WHERE s.account_id = e.account_id AND s.envelope_id = e.id) \
+                       AND (cardinality($2::text[]) = 0 OR status = ANY($2)) \
+                       AND ($3::uuid IS NULL OR sender_user_id = $3) \
+                       AND ($4::text IS NULL OR subject ILIKE $4 ESCAPE '\\' \
+                            OR EXISTS (SELECT 1 FROM recipients AS r \
+                                       WHERE r.account_id = e.account_id AND r.envelope_id = e.id \
+                                         AND (r.name ILIKE $4 ESCAPE '\\' \
+                                              OR r.email ILIKE $4 ESCAPE '\\'))) \
+                       AND ($5::timestamptz IS NULL OR updated_at >= $5) \
+                       AND ($6::timestamptz IS NULL OR updated_at < $6) \
+                       AND (NOT $7::bool OR ("
+                        + $key
+                        + ", id) "
+                        + $cmp
+                        + " ($8, $9::uuid)) ORDER BY "
+                        + $key
+                        + " "
+                        + $dir
+                        + ", id "
+                        + $dir
+                        + " LIMIT $10",
+                    acct,
+                    &statuses,
+                    sender,
+                    pattern,
+                    from,
+                    to,
+                    has,
+                    $after,
+                    after_id,
+                    lim
+                )
+                .fetch_all(self.tx.conn())
+                .await
+            };
+        }
+        let rows = match (sort.key, sort.descending) {
+            (SortKey::Created, true) => q!("created_at", "<", "DESC", time),
+            (SortKey::Created, false) => q!("created_at", ">", "ASC", time),
+            (SortKey::Updated, true) => q!("updated_at", "<", "DESC", time),
+            (SortKey::Updated, false) => q!("updated_at", ">", "ASC", time),
+            (SortKey::Expires, true) => q!(
+                "COALESCE(expires_at, '9999-12-31T00:00:00Z'::timestamptz)",
+                "<",
+                "DESC",
+                time
+            ),
+            (SortKey::Expires, false) => q!(
+                "COALESCE(expires_at, '9999-12-31T00:00:00Z'::timestamptz)",
+                ">",
+                "ASC",
+                time
+            ),
+            (SortKey::Subject, true) => q!("lower(subject)", "<", "DESC", text),
+            (SortKey::Subject, false) => q!("lower(subject)", ">", "ASC", text),
+            (SortKey::Status, true) => q!(
+                "(CASE status WHEN 'draft' THEN 0 WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 \
+                 WHEN 'completing' THEN 3 WHEN 'completed' THEN 4 WHEN 'declined' THEN 5 \
+                 WHEN 'voided' THEN 6 ELSE 7 END)",
+                "<",
+                "DESC",
+                rank
+            ),
+            (SortKey::Status, false) => q!(
+                "(CASE status WHEN 'draft' THEN 0 WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 \
+                 WHEN 'completing' THEN 3 WHEN 'completed' THEN 4 WHEN 'declined' THEN 5 \
+                 WHEN 'voided' THEN 6 ELSE 7 END)",
+                ">",
+                "ASC",
+                rank
+            ),
+        }
         .map_err(db)?;
-        rows.into_iter().map(Envelope::try_from).collect()
+        rows.into_iter().map(Listed::try_from).collect()
+    }
+}
+
+/// What a list sorts by (WEB-08).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    /// Creation time.
+    Created,
+    /// Last change.
+    Updated,
+    /// Expiry; an envelope that never expires sorts after every date.
+    Expires,
+    /// Subject, ignoring case.
+    Subject,
+    /// Status, in lifecycle order: draft, sent, delivered, completing, completed,
+    /// declined, voided, expired.
+    Status,
+}
+
+/// A sort key and direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sort {
+    /// The key.
+    pub key: SortKey,
+    /// Largest first.
+    pub descending: bool,
+}
+
+/// The expiry an envelope that never expires sorts as: 9999-12-31T00:00:00Z, the
+/// query's literal.
+#[must_use]
+pub fn never_expires() -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(253_402_214_400).unwrap_or(OffsetDateTime::UNIX_EPOCH)
+}
+
+/// The lifecycle rank [`SortKey::Status`] sorts by (the query's `CASE`).
+#[must_use]
+pub fn status_rank(s: EnvelopeStatus) -> i32 {
+    match s {
+        EnvelopeStatus::Draft => 0,
+        EnvelopeStatus::Sent => 1,
+        EnvelopeStatus::Delivered => 2,
+        EnvelopeStatus::Completing => 3,
+        EnvelopeStatus::Completed => 4,
+        EnvelopeStatus::Declined => 5,
+        EnvelopeStatus::Voided => 6,
+        EnvelopeStatus::Expired => 7,
+    }
+}
+
+/// The sort value of the last row of a page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AfterKey {
+    /// For [`SortKey::Created`], [`SortKey::Updated`] and [`SortKey::Expires`] (with
+    /// [`never_expires`] for none).
+    Time(OffsetDateTime),
+    /// For [`SortKey::Subject`]: the subject as the database lower-cases it
+    /// ([`Listed::subject_key`]).
+    Text(String),
+    /// For [`SortKey::Status`]: [`status_rank`].
+    Rank(i32),
+}
+
+/// Where a page resumes: after this sort value and id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct After {
+    /// The sort value.
+    pub key: AfterKey,
+    /// The id.
+    pub id: EnvelopeId,
+}
+
+/// What a list keeps (WEB-08). Empty `statuses` keeps every status.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ListFilter<'a> {
+    /// Any of these statuses.
+    pub statuses: &'a [EnvelopeStatus],
+    /// This sender's only.
+    pub sender: Option<UserId>,
+    /// Text the subject or a recipient's name or email contains.
+    pub search: Option<&'a str>,
+    /// Last change at or after.
+    pub changed_from: Option<OffsetDateTime>,
+    /// Last change before.
+    pub changed_to: Option<OffsetDateTime>,
+}
+
+/// A listed envelope and its subject sort key.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Listed {
+    /// The envelope.
+    pub envelope: Envelope,
+    /// The subject as the database lower-cases it: the cursor of a subject sort.
+    pub subject_key: Personal<String>,
+}
+
+struct ListRow {
+    id: Uuid,
+    sender_user_id: Uuid,
+    status: String,
+    subject: String,
+    message: String,
+    routing_mode: String,
+    expires_at: Option<OffsetDateTime>,
+    reminder_policy: serde_json::Value,
+    signing_options: serde_json::Value,
+    seal_profile: String,
+    completion_delivery: serde_json::Value,
+    template_ids: Vec<Uuid>,
+    version: i32,
+    chain_head: Option<Vec<u8>>,
+    created_at: OffsetDateTime,
+    sent_at: Option<OffsetDateTime>,
+    completed_at: Option<OffsetDateTime>,
+    voided_at: Option<OffsetDateTime>,
+    updated_at: OffsetDateTime,
+    deleted_at: Option<OffsetDateTime>,
+    subject_key: String,
+}
+
+impl TryFrom<ListRow> for Listed {
+    type Error = StoreError;
+    fn try_from(r: ListRow) -> Result<Self> {
+        let envelope = Envelope::try_from(EnvelopeRow {
+            id: r.id,
+            sender_user_id: r.sender_user_id,
+            status: r.status,
+            subject: r.subject,
+            message: r.message,
+            routing_mode: r.routing_mode,
+            expires_at: r.expires_at,
+            reminder_policy: r.reminder_policy,
+            signing_options: r.signing_options,
+            seal_profile: r.seal_profile,
+            completion_delivery: r.completion_delivery,
+            template_ids: r.template_ids,
+            version: r.version,
+            chain_head: r.chain_head,
+            created_at: r.created_at,
+            sent_at: r.sent_at,
+            completed_at: r.completed_at,
+            voided_at: r.voided_at,
+            updated_at: r.updated_at,
+            deleted_at: r.deleted_at,
+        })?;
+        Ok(Self {
+            envelope,
+            subject_key: Personal(r.subject_key),
+        })
     }
 }
 

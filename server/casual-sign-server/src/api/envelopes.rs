@@ -15,7 +15,9 @@ use casual_sign_audit::{Hash256, Personal};
 use casual_sign_model::{EnvelopeStatus as MStatus, Id};
 use casual_sign_sdk::{AdmissionReport, Credentials, NormalizationReport};
 use casual_sign_store::repo::documents::{Document, NewVersion, VersionKind};
-use casual_sign_store::repo::envelopes::{Cursor, EnvelopeStatus};
+use casual_sign_store::repo::envelopes::{
+    After, AfterKey, EnvelopeStatus, ListFilter, Listed, Sort, SortKey, never_expires, status_rank,
+};
 use casual_sign_store::repo::recipients::{NewToken, TokenPurpose};
 use casual_sign_store::{
     DocumentId, DocumentVersionId, EnvelopeId, RecipientId, RecipientTokenId, TenantTx, UserId,
@@ -283,9 +285,20 @@ fn days_from(now: OffsetDateTime, days: u32) -> Result<casual_sign_audit::Timest
 pub(crate) struct ListQuery {
     cursor: Option<String>,
     limit: Option<u32>,
+    /// One status, or several separated by commas (WEB-08).
     status: Option<String>,
     /// Text the subject or a recipient's name or email contains (row WEB-04).
     q: Option<String>,
+    /// `created_at` (default), `updated_at`, `expires_at`, `subject` or `status`.
+    sort: Option<String>,
+    /// `asc` or `desc`; by default times newest first, subjects and statuses ascending.
+    order: Option<String>,
+    /// A sender's user id, or `me`.
+    sender: Option<String>,
+    /// Last change at or after (RFC 3339).
+    from: Option<String>,
+    /// Last change before (RFC 3339).
+    to: Option<String>,
 }
 
 /// The longest `q` searched for, in characters.
@@ -305,76 +318,197 @@ fn parse_status(s: &str) -> Option<EnvelopeStatus> {
     })
 }
 
-fn encode_cursor(c: Cursor) -> String {
-    let raw = format!("{}.{}", c.created_at.unix_timestamp_nanos(), c.id);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+fn sort_name(k: SortKey) -> &'static str {
+    match k {
+        SortKey::Created => "created_at",
+        SortKey::Updated => "updated_at",
+        SortKey::Expires => "expires_at",
+        SortKey::Subject => "subject",
+        SortKey::Status => "status",
+    }
 }
 
-fn decode_cursor(s: &str) -> Option<Cursor> {
-    let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(s)
-        .ok()?;
-    let raw = String::from_utf8(raw).ok()?;
-    let (t, id) = raw.split_once('.')?;
-    Some(Cursor {
-        created_at: OffsetDateTime::from_unix_timestamp_nanos(t.parse().ok()?).ok()?,
+fn parse_sort(s: &str) -> Option<SortKey> {
+    [
+        SortKey::Created,
+        SortKey::Updated,
+        SortKey::Expires,
+        SortKey::Subject,
+        SortKey::Status,
+    ]
+    .into_iter()
+    .find(|k| sort_name(*k) == s)
+}
+
+/// A cursor names its sort, so a cursor of another sort is refused rather than
+/// misread: `v2|<sort>|<a or d>|<key>|<id>`, base64url; a time key in nanoseconds, a
+/// subject key in base64url. The earlier `<nanoseconds>.<id>` (newest first by
+/// creation) is still read.
+fn encode_cursor(sort: Sort, a: &After) -> String {
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let key = match &a.key {
+        AfterKey::Time(t) => t.unix_timestamp_nanos().to_string(),
+        AfterKey::Text(t) => b64.encode(t),
+        AfterKey::Rank(r) => r.to_string(),
+    };
+    let raw = format!(
+        "v2|{}|{}|{key}|{}",
+        sort_name(sort.key),
+        if sort.descending { "d" } else { "a" },
+        a.id
+    );
+    b64.encode(raw)
+}
+
+fn decode_cursor(s: &str, sort: Sort) -> Option<After> {
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let raw = String::from_utf8(b64.decode(s).ok()?).ok()?;
+    let time = |t: &str| OffsetDateTime::from_unix_timestamp_nanos(t.parse().ok()?).ok();
+    let Some(rest) = raw.strip_prefix("v2|") else {
+        // The earlier form: creation time, newest first.
+        let (t, id) = raw.split_once('.')?;
+        return (sort.key == SortKey::Created && sort.descending).then_some(After {
+            key: AfterKey::Time(time(t)?),
+            id: EnvelopeId(Uuid::parse_str(id).ok()?),
+        });
+    };
+    let mut parts = rest.split('|');
+    let (name, dir, key, id) = (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some()
+        || name != sort_name(sort.key)
+        || dir != if sort.descending { "d" } else { "a" }
+    {
+        return None;
+    }
+    let key = match sort.key {
+        SortKey::Created | SortKey::Updated | SortKey::Expires => AfterKey::Time(time(key)?),
+        SortKey::Subject => AfterKey::Text(String::from_utf8(b64.decode(key).ok()?).ok()?),
+        SortKey::Status => AfterKey::Rank(key.parse().ok()?),
+    };
+    Some(After {
+        key,
         id: EnvelopeId(Uuid::parse_str(id).ok()?),
     })
 }
 
-/// `GET /envelopes`: a page, newest first, of the envelopes the principal may see.
+/// The cursor after `l` in `sort`.
+fn after_of(sort: Sort, l: &Listed) -> After {
+    let e = &l.envelope;
+    let key = match sort.key {
+        SortKey::Created => AfterKey::Time(e.created_at),
+        SortKey::Updated => AfterKey::Time(e.updated_at),
+        SortKey::Expires => AfterKey::Time(e.expires_at.unwrap_or_else(never_expires)),
+        SortKey::Subject => AfterKey::Text(l.subject_key.get().clone()),
+        SortKey::Status => AfterKey::Rank(status_rank(e.status)),
+    };
+    After { key, id: e.id }
+}
+
+fn instant(s: Option<&str>, at: &str) -> Result<Option<OffsetDateTime>, ApiError> {
+    s.map(|t| {
+        OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339)
+            .map_err(|_| ApiError::invalid(at))
+    })
+    .transpose()
+}
+
+/// `GET /envelopes`: a page of the envelopes the principal may see that are not
+/// removed from the lists, filtered and sorted as asked (WEB-08), newest first by
+/// default.
 pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response, ApiError> {
     let limit = q.limit.unwrap_or(50);
     if !(1..=200).contains(&limit) {
         return Err(ApiError::invalid("/query/limit"));
     }
+    let key = match q.sort.as_deref() {
+        None => SortKey::Created,
+        Some(s) => parse_sort(s).ok_or_else(|| ApiError::invalid("/query/sort"))?,
+    };
+    let descending = match q.order.as_deref() {
+        None => matches!(key, SortKey::Created | SortKey::Updated | SortKey::Expires),
+        Some("desc") => true,
+        Some("asc") => false,
+        Some(_) => return Err(ApiError::invalid("/query/order")),
+    };
+    let sort = Sort { key, descending };
     let after = q
         .cursor
         .as_deref()
-        .map(|s| decode_cursor(s).ok_or_else(|| ApiError::invalid("/query/cursor")))
+        .map(|s| decode_cursor(s, sort).ok_or_else(|| ApiError::invalid("/query/cursor")))
         .transpose()?;
-    let status = q
-        .status
-        .as_deref()
-        .map(|s| parse_status(s).ok_or_else(|| ApiError::invalid("/query/status")))
-        .transpose()?;
+    let mut statuses = Vec::new();
+    for s in q.status.as_deref().unwrap_or("").split(',') {
+        let s = s.trim();
+        if s.is_empty() {
+            continue;
+        }
+        let st = parse_status(s).ok_or_else(|| ApiError::invalid("/query/status"))?;
+        if !statuses.contains(&st) {
+            statuses.push(st);
+        }
+    }
     let search = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty());
     if search.is_some_and(|t| t.chars().count() > MAX_QUERY || t.chars().any(char::is_control)) {
         return Err(ApiError::invalid("/query/q"));
     }
-    let sender = (!(c.p.admin || c.p.view_all)).then_some(c.p.user);
+    let asked = match q.sender.as_deref() {
+        None => None,
+        Some("me") => Some(c.p.user),
+        Some(s) => Some(UserId(
+            Uuid::parse_str(s).map_err(|_| ApiError::invalid("/query/sender"))?,
+        )),
+    };
+    let changed_from = instant(q.from.as_deref(), "/query/from")?;
+    let changed_to = instant(q.to.as_deref(), "/query/to")?;
+    // Without `view_all`, the caller's own only: another sender asked for is an empty
+    // page, never someone else's envelopes.
+    let own = (!(c.p.admin || c.p.view_all)).then_some(c.p.user);
+    let sender = match (own, asked) {
+        (Some(me), Some(other)) if me != other => return Ok(page_json(Vec::new(), None)),
+        (Some(me), _) => Some(me),
+        (None, a) => a,
+    };
+    let filter = ListFilter {
+        statuses: &statuses,
+        sender,
+        search,
+        changed_from,
+        changed_to,
+    };
     let mut tx = c.tx().await?;
     let page = tx
         .envelopes()
-        .page(after, status, sender, search, limit)
+        .search(&filter, sort, after.as_ref(), limit)
         .await?;
     let next = (page.len() == usize::try_from(limit).unwrap_or(usize::MAX))
         .then(|| page.last())
         .flatten()
-        .map(|e| {
-            encode_cursor(Cursor {
-                created_at: e.created_at,
-                id: e.id,
-            })
-        });
+        .map(|l| encode_cursor(sort, &after_of(sort, l)));
     let items: Vec<Value> = page
         .iter()
-        .map(|e| {
+        .map(|l| {
+            let e = &l.envelope;
             json!({
                 "id": e.id.to_string(),
                 "status": e.status.as_str(),
                 "subject": e.subject.get(),
                 "sender_user_id": e.sender_user_id.to_string(),
                 "created_at": rfc3339(e.created_at),
+                "updated_at": rfc3339(e.updated_at),
                 "sent_at": e.sent_at.map(rfc3339),
                 "completed_at": e.completed_at.map(rfc3339),
+                "expires_at": e.expires_at.map(rfc3339),
             })
         })
         .collect();
-    Ok(json(
+    Ok(page_json(items, next))
+}
+
+fn page_json(items: Vec<Value>, next: Option<String>) -> Response {
+    json(
         StatusCode::OK,
         &json!({ "items": items, "next_cursor": next }),
-    ))
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -592,14 +726,23 @@ pub(crate) async fn patch(
     Ok(envelope_response(StatusCode::OK, &l.state))
 }
 
-/// `DELETE /envelopes/{id}`: delete a draft (recorded, docs/24 As built).
+/// `DELETE /envelopes/{id}`: delete a draft (recorded, docs/24 As built), or remove an
+/// envelope that ended without completing (declined, voided, expired) from the lists
+/// (WEB-08): a soft delete recorded as `envelope.deleted`; its documents, state and
+/// audit chain stay, and it is still reachable by id. A completed envelope, or one in
+/// flight, is `409`.
 pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     c.p.require("envelopes:write")?;
     let mut tx = c.tx().await?;
     let mut l = find(&mut tx, &c.p, &id).await?;
     let v = expected(&c, true)?;
     let mut cmds = c.commands(&mut tx).await?;
-    command(&c, &mut tx, &mut cmds, &mut l, Command::DeleteDraft, v).await?;
+    let cmd = if l.state.status == MStatus::Draft {
+        Command::DeleteDraft
+    } else {
+        Command::DeleteEnded
+    };
+    command(&c, &mut tx, &mut cmds, &mut l, cmd, v).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -1046,6 +1189,62 @@ pub(crate) async fn certificate(c: Call, Path(id): Path<String>) -> Result<Respo
     };
     let access = Some(Access::CertificateDownloaded { hash: Hash256(sha) });
     serve_pdf(&c, tx, &mut l, sha, access).await
+}
+
+/// `GET /envelopes/{id}/attachments/{sha256}` (WEB-08): a signer's attachment, the file
+/// an attachment field's value names, for staff who may see the envelope. The bytes are
+/// checked against the hash before they are served, answered as an attachment of the
+/// type their leading bytes show (PDF, PNG or JPEG, as admitted), and recorded as
+/// `attachment.downloaded` with the field and the hash. Any other hash, and a purged
+/// envelope's, is `404`.
+pub(crate) async fn attachment(
+    c: Call,
+    Path((id, sha)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let hash = Hash256::parse(&format!("sha256:{sha}")).map_err(|_| ApiError::not_found())?;
+    let field = l
+        .state
+        .fields
+        .0
+        .iter()
+        .find(|f| {
+            matches!(&f.value, Some(casual_sign_model::FieldValue::Attachment(a))
+                if a.as_str() == hash.hex())
+        })
+        .map(|f| f.id.clone())
+        .ok_or_else(ApiError::not_found)?;
+    let bytes =
+        c.st.0
+            .blobs
+            .get(&casual_sign_store::blob::BlobKey(hash.0))
+            .await?;
+    if Hash256::digest(&bytes) != hash {
+        return Err(ApiError::internal("attachment"));
+    }
+    let media = casual_sign_host::capture::media_type(&bytes);
+    let mut cmds = c.commands(&mut tx).await?;
+    command(
+        &c,
+        &mut tx,
+        &mut cmds,
+        &mut l,
+        Command::RecordAccess {
+            access: Access::AttachmentDownloaded { field, hash },
+        },
+        None,
+    )
+    .await?;
+    tx.commit().await?;
+    let mut r = (StatusCode::OK, bytes).into_response();
+    r.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(media));
+    r.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment"),
+    );
+    Ok(r)
 }
 
 /// `GET /envelopes/{id}/documents/combined`: the sealed documents with the certificate

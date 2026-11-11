@@ -82,6 +82,9 @@ const SORTS = [["subject", "agreements.col.subject"], ["status", "agreements.col
 export function mount(view, ctx, _match, params) {
   const folder = FOLDERS.find((f) => f.id === folderFrom(params));
   let rows = [];
+  // Whether `rows` holds a loaded list. Until then the list shows the skeleton or the
+  // error state, and late helpers (sender names, details) must not draw over it.
+  let ready = false;
   let cursors = new Map(); // status|"" → next cursor
   let query = (params.get("q") || "").trim().toLowerCase();
   const details = new Map(); // id → envelope
@@ -155,6 +158,7 @@ export function mount(view, ctx, _match, params) {
       clear(list);
       list.setAttribute("aria-busy", "true");
       list.append(skeletonRows(8));
+      ready = false;
       cursors = new Map(keys().map((k) => [k, undefined]));
     }
     try {
@@ -164,6 +168,7 @@ export function mount(view, ctx, _match, params) {
       want.forEach((k, i) => cursors.set(k, pages[i].next_cursor || null));
       rows = (append ? rows.concat(got) : got).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       list.removeAttribute("aria-busy");
+      ready = true;
       renderRows();
       fillDetails(got);
     } catch (err) {
@@ -283,6 +288,7 @@ export function mount(view, ctx, _match, params) {
   }
 
   function renderRows() {
+    if (!ready) return; // the skeleton or the error state stays (a late name or filter must not hide it)
     clear(list);
     clear(more);
     const shown = visible();

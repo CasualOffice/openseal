@@ -80,10 +80,10 @@ recipient action (`recipient.delivered`, `recipient.viewed_document`, `recipient
 
 | Group | Events |
 | --- | --- |
-| Envelope | `envelope.created`, `envelope.sent`, `envelope.corrected`, `envelope.voided`, `envelope.declined`, `envelope.expired`, `envelope.completing`, `envelope.completed`, `envelope.purged` |
+| Envelope | `envelope.created`, `envelope.sent`, `envelope.corrected`, `envelope.voided`, `envelope.declined`, `envelope.expired`, `envelope.completing`, `envelope.completed`, `envelope.purged`, `envelope.deleted` (an envelope that ended without completing removed from the lists; nothing purged, `WEB-08`) |
 | Document | `document.added`, `document.admitted` (report hash), `document.fixed` (delivered hash at send), `document.replaced`, `document.flattened`, `document.sealed` (sealed hash, profile, certificate fingerprint, TSA time) |
 | Recipient | `invitation.sent`, `invitation.bounced`, `reminder.sent`, `recipient.delivered` (opened link), `recipient.auth_challenged`, `recipient.auth_passed`, `recipient.auth_failed`, `recipient.consented` (ERSD version hash), `recipient.consent_withdrawn`, `recipient.viewed_document` (document hash, pages seen), `recipient.signature_adopted` (method: draw/type/upload, image hash), `recipient.field_completed`, `recipient.signed` / `recipient.approved` / `recipient.completed`, `recipient.declined` (reason), `recipient.reassigned`, `recipient.finish_later`, `recipient.in_person_hosted` (host user) |
-| Access | `envelope.viewed_by_sender`, `document.downloaded` (by whom), `certificate.downloaded` |
+| Access | `envelope.viewed_by_sender`, `document.downloaded` (by whom), `certificate.downloaded`, `attachment.downloaded` (a signer's attachment: field and hash, by whom; `WEB-08`) |
 | Integration | `auth.asserted_by_host` (embedded host claims it authenticated the signer), `webhook.delivered` is **not** in the chain (operational log only) |
 
 ### As built (stage 1I)

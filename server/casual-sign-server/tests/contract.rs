@@ -908,6 +908,22 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .await;
     assert_eq!(copy.status, StatusCode::OK, "{:?}", copy.json());
     assert_eq!(copy.headers["x-openseal-document"], "preview");
+    // WEB-07: their history (tests/signer_history.rs checks what it holds).
+    let hist = api
+        .call("GET", &format!("{s1}/history"), &Auth::None, None, &h1)
+        .await;
+    assert_eq!(hist.status, StatusCode::OK, "{:?}", hist.json());
+    // WEB-08: a staff download of an attachment no field names (tests/lists.rs serves one).
+    let none = api
+        .call(
+            "GET",
+            &format!("/api/v1/envelopes/{id}/attachments/{}", "ab".repeat(32)),
+            k,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(none.status, StatusCode::NOT_FOUND);
     // WEB-06: a signature field takes no attachment (tests/field_types.rs uploads one).
     let not_attachment = api
         .call(

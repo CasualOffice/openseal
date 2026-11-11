@@ -29,7 +29,8 @@ for (const scheme of ["light", "dark"]) {
         await page.getByRole("link", { name: "Offer letter — Jordan Rivera" }).click();
       } else {
         await page.getByRole("button", { name: "Clear search" }).click();
-        await page.locator("tbody tr a").first().click();
+        // A draft opens in the editor (A-02), so open the newest one that was sent.
+        await page.locator("tbody tr").filter({ hasNot: page.locator(".os-badge--draft") }).locator("a").first().click();
       }
       await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();
       await expectAccessible(page, `envelope detail (${scheme})`);

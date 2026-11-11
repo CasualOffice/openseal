@@ -2,7 +2,7 @@
 **/target/
 /fuzz/corpus/
 /fuzz/artifacts/
-node_modules/
+node_modules
 .DS_Store
 .env
 *.p12

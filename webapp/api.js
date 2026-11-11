@@ -126,8 +126,20 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
 
     // ---- Envelopes ---------------------------------------------------------
     /// `q`: text the subject or a recipient's name or email contains (WEB-04).
-    listEnvelopes: ({ status, cursor, limit = 25, q } = {}) =>
-      data(request("GET", "/api/v1/envelopes", { query: { status, cursor, limit, q } })),
+    /// WEB-08: `status` one status or an array of them (any of); `sort` one of
+    /// `created_at`, `updated_at` (last change), `expires_at`, `subject`, `status`, with
+    /// `order` `asc` or `desc` (the server's default when left out); `sender` a user id
+    /// or `"me"`; `from`/`to` a last-change range (Date or RFC 3339; `to` exclusive).
+    /// A `cursor` is only valid with the sort and order it came with.
+    listEnvelopes: ({ status, cursor, limit = 25, q, sort, order, sender, from, to } = {}) => {
+      const instant = (d) => (d instanceof Date ? d.toISOString() : d);
+      return data(request("GET", "/api/v1/envelopes", {
+        query: {
+          status: Array.isArray(status) ? status.join(",") : status,
+          cursor, limit, q, sort, order, sender, from: instant(from), to: instant(to),
+        },
+      }));
+    },
     /// `{envelope, etag}`; the ETag falls back to the version when a proxy drops it.
     async getEnvelope(id) {
       const r = await request("GET", E(id));
@@ -142,6 +154,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     status: (id) => data(request("GET", `${E(id)}/status`)),
     audit: (id) => data(request("GET", `${E(id)}/audit`)),
     certificate: async (id) => (await request("GET", `${E(id)}/certificate`, { raw: true })).blob,
+    /// WEB-08: a signer's attachment by the SHA-256 its field's value names (recorded
+    /// in the audit trail as `attachment.downloaded`).
+    attachment: async (id, sha256) =>
+      (await request("GET", `${E(id)}/attachments/${encodeURIComponent(sha256)}`, { raw: true })).blob,
     documentContent: async (id, doc, version = "normalized") =>
       (await request("GET", `${E(id)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, query: { version } })).blob,
     addDocument: (id, name, bytes) => data(request("POST", `${E(id)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),
@@ -264,7 +280,8 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       download: async (token, doc) =>
         (await request("GET", `${S(token)}/document`, { raw: true, ceremony: true, query: doc ? { doc } : undefined })).blob,
       // WEB-06 (G-S2): the envelope's history as this recipient may see it, and
-      // reassignment when the envelope allows it (server rows to follow).
+      // reassignment when the envelope allows it (WEB-07). History events are
+      // `{seq, type, at, by}`, `type` the audit event type (`recipient.signed`, …).
       history: (token) => data(request("GET", `${S(token)}/history`, { ceremony: true })),
       reassign: (token, { name, email, reason }, location) =>
         data(request("POST", `${S(token)}/reassign`, { body: withLocation({ name, email, ...(reason ? { reason } : {}) }, location), ceremony: true })),

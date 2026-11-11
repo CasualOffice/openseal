@@ -421,6 +421,10 @@ components:
         subject: {type: string}
         sender_user_id: {type: string}
         created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time, description: "Last change (WEB-08)"}
+        sent_at: {type: [string, 'null'], format: date-time}
+        completed_at: {type: [string, 'null'], format: date-time}
+        expires_at: {type: [string, 'null'], format: date-time}
     DetectedField:
       type: object
       properties:
@@ -685,10 +689,24 @@ components:
     ReassignRequest:
       type: object
       required: [name, email]
+      additionalProperties: false
       properties:
-        name: {type: string}
-        email: {type: string}
-        reason: {type: string}
+        name: {type: string, maxLength: 255}
+        email: {type: string, maxLength: 320}
+        reason: {type: string, maxLength: 10000}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
+    CeremonyHistory:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              seq: {type: integer}
+              type: {type: string, description: "The audit event type (docs/32 §3)"}
+              at: {type: string, format: date-time}
+              by: {type: string, enum: [you, sender, recipient, user, host, system]}
 
 paths:
   /api/v1/auth/login:
@@ -990,13 +1008,55 @@ paths:
   /api/v1/envelopes:
     get:
       operationId: listEnvelopes
-      summary: "Envelopes, newest first, cursor-paginated"
+      summary: "Envelopes, sorted and filtered, cursor-paginated (WEB-08)"
+      description: >-
+        The envelopes the caller may see (their own without `view_all`), never another
+        account's, and never those removed from the lists (`DELETE` of an envelope that
+        ended without completing). Newest first by default. Keyset paging: a cursor
+        belongs to the sort and order it was issued for (another is `422`), and pages stay
+        stable under inserts.
       x-permission: "envelopes:read"
       parameters:
         - $ref: '#/components/parameters/cursor'
         - $ref: '#/components/parameters/limit'
-        - $ref: '#/components/parameters/status'
+        - name: status
+          in: query
+          required: false
+          description: One status, or several separated by commas (any of them).
+          schema: {type: string, example: "sent,delivered"}
         - $ref: '#/components/parameters/search'
+        - name: sort
+          in: query
+          required: false
+          description: >-
+            `created_at` (default), `updated_at` (last change: the last command that
+            changed the envelope; downloads are not changes), `expires_at` (never
+            expiring after every date), `subject` (ignoring case) or `status` (lifecycle
+            order: draft, sent, delivered, completing, completed, declined, voided,
+            expired). Ties are broken by id.
+          schema: {type: string, enum: [created_at, updated_at, expires_at, subject, status], default: created_at}
+        - name: order
+          in: query
+          required: false
+          description: Default `desc` for the times, `asc` for subject and status.
+          schema: {type: string, enum: [asc, desc]}
+        - name: sender
+          in: query
+          required: false
+          description: >-
+            A sender's user id, or `me`. Without `view_all` another sender's id answers an
+            empty page.
+          schema: {type: string}
+        - name: from
+          in: query
+          required: false
+          description: Last change at or after this instant (RFC 3339).
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          required: false
+          description: Last change before this instant (RFC 3339).
+          schema: {type: string, format: date-time}
       responses:
         '200':
           description: OK
@@ -1060,7 +1120,12 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     delete:
       operationId: deleteEnvelope
-      summary: "Delete a draft (If-Match required)"
+      summary: "Delete a draft, or remove an envelope that ended without completing from the lists (If-Match required)"
+      description: >-
+        A draft is deleted (`envelope.purged`, policy `draft_deleted`). A declined, voided
+        or expired envelope is removed from the lists only (WEB-08): `envelope.deleted` is
+        recorded; its documents, audit chain and evidence stay and it can still be read by
+        id. A completed envelope, or one in flight, is `409`.
       x-permission: "envelopes:write"
       parameters:
         - $ref: '#/components/parameters/ifMatch'
@@ -1215,6 +1280,30 @@ paths:
           description: PDF
           content:
             application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/attachments/{sha256}:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: sha256, in: path, required: true, description: "The attachment's SHA-256, 64 lower-case hex digits (an attachment field's value)", schema: {type: string, pattern: '^[0-9a-f]{64}$'}}
+    get:
+      operationId: getAttachment
+      summary: "A signer's attachment (WEB-08), recorded as attachment.downloaded"
+      description: >-
+        The file an attachment field's value names, checked against its hash, served as an
+        attachment of the type its leading bytes show (PDF, PNG or JPEG). Recorded in the
+        chain as `attachment.downloaded` with the field and the hash. Any other hash is
+        `404`.
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: The file
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+            image/png:
+              schema: {type: string, format: binary}
+            image/jpeg:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/documents/combined:
@@ -2304,7 +2393,13 @@ paths:
         schema: {type: string}
     post:
       operationId: ceremonyReassign
-      summary: "Hand the part to someone else"
+      summary: "Hand the part to someone else (when allow_reassign; WEB-07)"
+      description: >-
+        Only while the envelope's `signing_options.allow_reassign` is on and this recipient
+        has a required action not yet finished (`409` otherwise). The new recipient takes
+        the same routing order and fields (values cleared) and is invited when their turn
+        comes; this link stops working at once; `recipient.reassigned` is recorded with
+        the reason and, when the envelope captures location, where.
       security: []
       x-permission: public
       requestBody:
@@ -2318,4 +2413,30 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/history:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyHistory
+      summary: "The envelope's history as this recipient may see it (WEB-07)"
+      description: >-
+        Events this recipient acted in or that concern them, and the envelope's milestones
+        (sent, corrected, voided, declined, expired, completing, completed), oldest first,
+        as `{seq, type, at, by}` only: no other person's name, address, IP, user agent or
+        location, and no values. Only in the bound browser, after every required
+        authentication and, when the account has a disclosure, consent (`403` before).
+        Records nothing.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyHistory'}
         default: {$ref: '#/components/responses/Problem'}
