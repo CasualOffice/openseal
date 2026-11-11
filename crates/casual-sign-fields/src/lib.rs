@@ -21,6 +21,8 @@
 //! - [`extract_text`], [`extract_page`]: text with positions, from a bounded
 //!   interpreter of the text operators ([`text`]).
 //! - [`place_anchor`]: anchor text to placed fields; [`scan_tags`]: text tags to fields.
+//! - [`detect_fields`]: suggested fields from underscore lines, painted rules and boxes,
+//!   labels and existing form fields (`WEB-06`).
 //! - [`convert_acroform`]: existing AcroForm fields to OpenSeal fields;
 //!   [`radio_choices`]: a radio group's options and the states they write, shared with
 //!   flattening; [`annotation_pages`]: the page of a widget without `/P`.
@@ -29,6 +31,7 @@ mod acroform;
 mod anchor;
 mod cmap;
 mod content;
+mod detect;
 mod envelope;
 mod error;
 mod font;
@@ -48,12 +51,18 @@ pub use anchor::{
     AnchorMatch, AnchorPlacement, AnchorSpec, AnchorUnits, MAX_ANCHOR_CHARS, MAX_ANCHOR_MATCHES,
     place_anchor,
 };
+pub use detect::{
+    DetectedField, DetectedSource, Detection, MAX_CUE_CHARS, MAX_DETECT_SLOTS, MAX_DETECT_STEPS,
+    MAX_DETECT_WORDS, MAX_DETECTED_FIELDS, detect_fields,
+};
 pub use envelope::{Computed, Outcome, Values, check_client, check_for_send, evaluate_envelope};
 pub use error::{FieldError, FormulaError, Invalid, Issue, PlaceError, TagProblem};
 pub use formula::{Env, ErrorValue, Expression, format_result, parse_formula, round_result};
 pub use geometry::{DisplayRect, PageGeometry, Point};
 pub use tags::{MAX_TAG_CHARS, MAX_TAGS, TYPES, TagScan, TextTag, scan_tags};
-pub use text::{PageText, TextRun, extract_page, extract_text};
+pub use text::{
+    MAX_SHAPES_PER_PAGE, PageText, Shape, ShapeKind, TextRun, extract_page, extract_text,
+};
 pub use validate::{REGEX_DFA_LIMIT, REGEX_NEST_LIMIT, REGEX_SIZE_LIMIT, validate};
 
 use unicode_normalization::UnicodeNormalization;
