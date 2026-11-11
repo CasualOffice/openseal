@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Architecture overview | OpenSeal</title>
+<meta name="description" content="OpenSeal&#x27;s shape: a deterministic Rust engine for PDFs, seals and evidence, hosted by a server of record with a worker and a key daemon, and a web app on the public API.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="Architecture overview | OpenSeal">
+<meta property="og:description" content="OpenSeal&#x27;s shape: a deterministic Rust engine for PDFs, seals and evidence, hosted by a server of record with a worker and a key daemon, and a web app on the public API.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="../docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="../docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html" aria-current="page">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html" aria-current="page">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+<h1>Architecture overview</h1>
+<p class="lede">OpenSeal is a deterministic, headless agreement engine in Rust, hosted by a server of record. The engine owns the PDF, the fields, the routing rules, the seal and the evidence. The server owns identity, storage, delivery, keys and policy.</p>
+
+<figure class="arch">
+<div class="arch-scroll" tabindex="0" role="region" aria-label="Architecture diagram (scrolls sideways on narrow screens)">
+<svg viewBox="0 0 820 560" role="img" aria-labelledby="arch-t arch-d" focusable="false">
+  <title id="arch-t">OpenSeal architecture</title>
+  <desc id="arch-d">Clients (the web app, the signing page, integrators through the REST API and webhooks) talk to casual-sign-server. The server and casual-sign-worker share PostgreSQL and an S3-compatible object store. The worker asks casual-sign-keyd to sign digests; keyd holds the key in an HSM through PKCS#11. The worker also reaches email, timestamp authorities and webhook receivers. Server, worker and the browser's verify page all run the same Rust engine: pdf, fields, flatten, seal, verify, audit, certificate and workflow. Anyone can verify a sealed PDF offline with the verify page or the openseal command line.</desc>
+  <g class="ar-band"><rect x="10" y="10" width="800" height="96" rx="14"/><text class="ar-label" x="28" y="34">Clients</text></g>
+  <g class="ar-box"><rect x="28" y="46" width="170" height="44" rx="10"/><text x="113" y="73">Web app (senders)</text></g>
+  <g class="ar-box"><rect x="212" y="46" width="170" height="44" rx="10"/><text x="297" y="73">Signing page</text></g>
+  <g class="ar-box"><rect x="396" y="46" width="190" height="44" rx="10"/><text x="491" y="73">Integrators: REST API</text></g>
+  <g class="ar-box ar-accent"><rect x="600" y="46" width="192" height="44" rx="10"/><text x="696" y="73">Anyone: verify offline</text></g>
+
+  <path class="ar-line" d="M113 90v40M297 90v40M491 90v40"/>
+  <path class="ar-line ar-dash" d="M792 68h12v415h-12"/>
+
+  <g class="ar-band"><rect x="10" y="130" width="580" height="190" rx="14"/><text class="ar-label" x="28" y="154">Operator's deployment</text></g>
+  <g class="ar-box ar-strong"><rect x="28" y="166" width="250" height="52" rx="10"/><text x="153" y="190">casual-sign-server</text><text class="ar-sub" x="153" y="207">API, ceremony, web app</text></g>
+  <g class="ar-box ar-strong"><rect x="312" y="166" width="260" height="52" rx="10"/><text x="442" y="190">casual-sign-worker</text><text class="ar-sub" x="442" y="207">email, sealing, webhooks</text></g>
+  <path class="ar-line" d="M278 192h34"/>
+  <g class="ar-box"><rect x="28" y="246" width="250" height="52" rx="10"/><text x="153" y="270">PostgreSQL</text><text class="ar-sub" x="153" y="287">record, append-only audit</text></g>
+  <g class="ar-box"><rect x="312" y="246" width="260" height="52" rx="10"/><text x="442" y="270">Object store (S3)</text><text class="ar-sub" x="442" y="287">documents, written once</text></g>
+  <path class="ar-line" d="M153 218v28M442 218v28M278 220l34 26"/>
+
+  <g class="ar-box ar-key"><rect x="612" y="166" width="180" height="52" rx="10"/><text x="702" y="190">casual-sign-keyd</text><text class="ar-sub" x="702" y="207">signs digests only</text></g>
+  <path class="ar-line" d="M572 192h40"/>
+  <text class="ar-note" x="592" y="184" text-anchor="middle">mTLS</text>
+  <g class="ar-box ar-key"><rect x="612" y="246" width="180" height="52" rx="10"/><text x="702" y="270">HSM / KMS</text><text class="ar-sub" x="702" y="287">PKCS#11</text></g>
+  <path class="ar-line" d="M702 218v28"/>
+
+  <g class="ar-out"><rect x="312" y="336" width="260" height="34" rx="17"/><text x="442" y="358">email · timestamp authority · webhooks</text></g>
+  <path class="ar-line" d="M442 298v38"/>
+
+  <g class="ar-band ar-engine"><rect x="10" y="400" width="800" height="150" rx="14"/><text class="ar-label" x="28" y="424">Engine: Rust, native and WebAssembly, no I/O, no clock, no keys</text></g>
+  <g class="ar-chip"><rect x="28" y="440" width="84" height="32" rx="8"/><text x="70" y="461">pdf</text></g>
+  <g class="ar-chip"><rect x="122" y="440" width="84" height="32" rx="8"/><text x="164" y="461">fields</text></g>
+  <g class="ar-chip"><rect x="216" y="440" width="84" height="32" rx="8"/><text x="258" y="461">flatten</text></g>
+  <g class="ar-chip"><rect x="310" y="440" width="84" height="32" rx="8"/><text x="352" y="461">crypto</text></g>
+  <g class="ar-chip"><rect x="404" y="440" width="84" height="32" rx="8"/><text x="446" y="461">seal</text></g>
+  <g class="ar-chip"><rect x="498" y="440" width="84" height="32" rx="8"/><text x="540" y="461">verify</text></g>
+  <g class="ar-chip"><rect x="28" y="484" width="84" height="32" rx="8"/><text x="70" y="505">audit</text></g>
+  <g class="ar-chip"><rect x="122" y="484" width="178" height="32" rx="8"/><text x="211" y="505">certificate</text></g>
+  <g class="ar-chip"><rect x="310" y="484" width="178" height="32" rx="8"/><text x="399" y="505">workflow</text></g>
+  <g class="ar-chip"><rect x="498" y="484" width="84" height="32" rx="8"/><text x="540" y="505">model</text></g>
+  <g class="ar-box ar-accent"><rect x="612" y="450" width="180" height="66" rx="10"/><text x="702" y="476">verify.html (WASM)</text><text class="ar-sub" x="702" y="496">openseal CLI</text></g>
+  <path class="ar-line ar-dash" d="M153 298v102M442 370v30"/>
+</svg>
+</div>
+<figcaption>Every arrow leaving the deployment goes through a host seam; the engine knows none of them exist.</figcaption>
+</figure>
+
+<h2 id="why-this-shape">Why this shape</h2>
+<p>OpenSeal's sister projects, OpenCalc and OpenPresent, are document editors where the file is the product and a server only orders edits. In an e-signature product the product is the <strong>evidence that the file was agreed to</strong>, no party may hold the only copy of it, and no party trusts another. So the engine-and-host split is kept, and the server becomes the system of record.</p>
+
+<h2 id="the-engine">The engine</h2>
+<p>Pure Rust crates that compile unchanged to native code and to WebAssembly. Time, randomness, keys, fonts, trust lists and network answers are supplied as values, so the same input gives the same bytes and every verdict is the same on every host.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Engine crates">
+<table>
+  <thead><tr><th scope="col">Crate</th><th scope="col">Does</th></tr></thead>
+  <tbody>
+    <tr><td><code>casual-sign-pdf</code></td><td>Bounded reader, repair, decryption with a password, an incremental writer that never touches earlier bytes, and the cleaner that strips active content</td></tr>
+    <tr><td><code>casual-sign-model</code>, <code>-fields</code></td><td>Every field type, validation, conditions, groups, formulas; page geometry, text extraction, anchors and text tags</td></tr>
+    <tr><td><code>casual-sign-flatten</code></td><td>Draws values and signatures with embedded subset fonts, or fills the PDF's own form</td></tr>
+    <tr><td><code>casual-sign-crypto</code>, <code>-seal</code></td><td>CMS, RFC 3161, OCSP and CRL; PAdES B-B to B-LTA as incremental updates; the <code>KeyProvider</code> seam</td></tr>
+    <tr><td><code>casual-sign-verify</code></td><td>Verifies any signed PDF and classifies every later revision</td></tr>
+    <tr><td><code>casual-sign-audit</code>, <code>-certificate</code></td><td>The hash-chained trail and the certificate of completion</td></tr>
+    <tr><td><code>casual-sign-workflow</code></td><td>Envelope and recipient state machines and routing: commands in, new state, events and effects out</td></tr>
+    <tr><td><code>casual-sign-sdk</code>, <code>-wasm</code>, <code>-cli</code></td><td>The facade, the browser binding, and the <code>openseal</code> command</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="the-hosts">The hosts</h2>
+<ul>
+  <li><strong>casual-sign-server</strong> (axum): the REST API described in <code>api/openapi.yaml</code>, sessions and API credentials, the signing ceremony, and the web app's files.</li>
+  <li><strong>casual-sign-worker</strong>: a PostgreSQL job queue with leases, retries and dead letters; it sends email, runs reminders and expiry, seals, and delivers webhooks.</li>
+  <li><strong>casual-sign-keyd</strong>: the only process that touches the seal key.</li>
+</ul>
+<p>Both server and worker change an envelope only by applying a typed command through the workflow engine, which returns the new state, the audit events and the effects to perform. The audit events are committed in the same transaction as the state change.</p>
+
+<h2 id="the-main-flows">The main flows</h2>
+<h3 id="send">Send</h3>
+<p>Upload, admit (bounded parse, active content removed, a report), store the original and its hash, prepare recipients and fields, validate, send. The document hash is fixed and the first recipients are invited.</p>
+<h3 id="sign">Sign</h3>
+<p>The link, authentication, consent, the exact bytes whose hash is in the chain, fields validated by the engine in the browser and again on the server, adopt, review, finish. The workflow advances.</p>
+<h3 id="complete-and-seal">Complete and seal</h3>
+<p>The last action moves the envelope to <code>completing</code>. The worker flattens values, adds the certificate and the audit trail, has keyd sign the digest, timestamps it, optionally adds long-term validation data, verifies the result, stores it and records <code>envelope.completed</code> with the sealed hash.</p>
+<h3 id="verify">Verify</h3>
+<p>Anyone with the PDF runs the same verifier in the browser or on the command line, against the roots they trust. No server is involved.</p>
+
+<h2 id="the-web-app">The web app</h2>
+<p>Plain ES modules with no framework and no bundler, as in the sister projects, under a strict Content Security Policy. PDF pages are drawn by pdf.js in a worker with scripting disabled. It is one client of the public API: everything it does, an integrator can do too.</p>
+<p>The full design is in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/02-HLD.md">docs/02, the high-level design</a>.</p>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="security.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Security and evidence model</span></a><a class="pn pn-next" href="faq.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">FAQ</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#why-this-shape">Why this shape</a></li><li><a href="#the-engine">The engine</a></li><li><a href="#the-hosts">The hosts</a></li><li><a href="#the-main-flows">The main flows</a></li><li><a href="#the-web-app">The web app</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#features">Features</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li><li><a href="../docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../brand.html">Brand and attribution</a></li><li><a href="../docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

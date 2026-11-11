@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Signing | OpenSeal</title>
+<meta name="description" content="What a signer sees in OpenSeal: the emailed link, access code, consent to electronic records, the guided path through fields, adopting a signature, review and finish.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="Signing | OpenSeal">
+<meta property="og:description" content="What a signer sees in OpenSeal: the emailed link, access code, consent to electronic records, the guided path through fields, adopting a signature, review and finish.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="../docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="../docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html" aria-current="page">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html" aria-current="page">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+<h1>Signing</h1>
+<p class="lede">Signers need no account. They follow the link in their invitation, on a phone or a computer, and the page guides them through every field.</p>
+
+<h2 id="the-steps">The steps</h2>
+<ol>
+  <li><strong>Open the link.</strong> Each link is for one recipient of one envelope. It is bound to the browser that opens it first.</li>
+  <li><strong>Prove who you are</strong>, when the sender asked for it: an access code shared outside the email.</li>
+  <li><strong>Share your location</strong>, if you choose. The browser asks; declining is fine, and the certificate then records an approximate location from the network address, saying so.</li>
+  <li><strong>Consent to electronic records.</strong> The signer reads the disclosure and agrees to use electronic records and signatures. The version they accepted is recorded.</li>
+  <li><strong>Fill the fields.</strong> <strong>Start</strong> jumps to the first required field and <strong>Next</strong> to the one after. The list of fields on the side, or the Fields button on a phone, is an alternative to finding them on the page.</li>
+  <li><strong>Adopt a signature</strong> the first time a signature or initials field is chosen.</li>
+  <li><strong>Review and finish.</strong> The review shows the pages with every value in place. Finish is a separate, explicit action.</li>
+</ol>
+<figure>
+  <div class="frame"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="../assets/screens/sign-desktop-light.webp"><img src="../assets/screens/sign-desktop-light.png" width="1280" height="800" alt="The signing page: the offer letter with a required job title field, an optional checkbox, the signature field and the date, and the list of fields on the right." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="../assets/screens/sign-desktop-dark.webp"><img src="../assets/screens/sign-desktop-dark.png" width="1280" height="800" alt="The signing page: the offer letter with a required job title field, an optional checkbox, the signature field and the date, and the list of fields on the right." loading="lazy" decoding="async"></picture></span></div>
+  <figcaption>The document gets the screen; the signer's fields are listed on the side.</figcaption>
+</figure>
+
+<h2 id="adopting-a-signature">Adopting a signature</h2>
+<p>The name is filled in and can be edited. A signer can <strong>type</strong> it and pick one of the script styles, <strong>draw</strong> it with a mouse, finger or pen, or <strong>upload</strong> an image. By choosing <strong>Adopt and sign</strong> they agree that the mark is their electronic signature for these documents. The script fonts shown on screen are the same files the engine embeds in the sealed PDF.</p>
+<div class="cards">
+  <figure class="card"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="../assets/screens/adopt-phone-light.webp"><img src="../assets/screens/adopt-phone-light.png" width="600" height="1298" alt="The adopt-your-signature panel on a phone, with Type, Draw and Upload tabs and the typed name in two script styles." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="../assets/screens/adopt-phone-dark.webp"><img src="../assets/screens/adopt-phone-dark.png" width="600" height="1298" alt="The adopt-your-signature panel on a phone, with Type, Draw and Upload tabs and the typed name in two script styles." loading="lazy" decoding="async"></picture></span><figcaption>On a phone, the panel rises from the bottom.</figcaption></figure>
+  <figure class="card"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="../assets/screens/sign-phone-light.webp"><img src="../assets/screens/sign-phone-light.png" width="600" height="1298" alt="The signing page on a phone at 390 pixels wide: the document fills the screen with Start and Finish in a bottom bar." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="../assets/screens/sign-phone-dark.webp"><img src="../assets/screens/sign-phone-dark.png" width="600" height="1298" alt="The signing page on a phone at 390 pixels wide: the document fills the screen with Start and Finish in a bottom bar." loading="lazy" decoding="async"></picture></span><figcaption>Pages fit the width; targets are at least 44 pixels.</figcaption></figure>
+</div>
+
+<h2 id="other-actions">Other actions</h2>
+<ul>
+  <li><strong>Finish later</strong> keeps what was filled and lets the signer come back through the same link.</li>
+  <li><strong>Decline</strong> asks for a reason and ends the envelope for everyone; the sender is told.</li>
+  <li><strong>Withdraw consent</strong> to electronic records, which declines any required action.</li>
+</ul>
+
+<h2 id="when-everyone-has-signed">When everyone has signed</h2>
+<p>The last signer sees a confirmation. The worker then flattens every value into the documents, adds the certificate of completion and the audit trail, seals the result and checks the seal before releasing it. Recipients are emailed when the sealed document is ready.</p>
+<figure>
+  <div class="frame"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="../assets/screens/sign-done-light.webp"><img src="../assets/screens/sign-done-light.png" width="1280" height="800" alt="The confirmation page after finishing: the signer&#x27;s part is done." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="../assets/screens/sign-done-dark.webp"><img src="../assets/screens/sign-done-dark.png" width="1280" height="800" alt="The confirmation page after finishing: the signer&#x27;s part is done." loading="lazy" decoding="async"></picture></span></div>
+  <figcaption>The confirmation after finishing.</figcaption>
+</figure>
+
+<h2 id="accessibility">Accessibility</h2>
+<p>The signing page is designed for WCAG 2.2 AA: every field is reachable with Tab in reading order, required fields are named as required, the field list is an alternative to the page, typing a signature is the default, and text and controls meet contrast minimums in light and dark themes. An external audit (<code>A11Y-01</code>) is a release gate still ahead.</p>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="first-envelope.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Sending your first envelope</span></a><a class="pn pn-next" href="templates.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Templates</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#the-steps">The steps</a></li><li><a href="#adopting-a-signature">Adopting a signature</a></li><li><a href="#other-actions">Other actions</a></li><li><a href="#when-everyone-has-signed">When everyone has signed</a></li><li><a href="#accessibility">Accessibility</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#features">Features</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li><li><a href="../docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../brand.html">Brand and attribution</a></li><li><a href="../docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

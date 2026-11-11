@@ -1,0 +1,39 @@
+<!--meta {"title": "Templates", "description": "Save documents, roles, fields and the email message once as an OpenSeal template, then send envelopes from it by filling in the people."} -->
+<h1>Templates</h1>
+<p class="lede">A template saves what stays the same from one envelope to the next: documents, roles in routing order, the fields each role fills, and the email subject and message. When you use it, you only name the people.</p>
+
+<h2>Roles, not people</h2>
+<p>A template has <strong>roles</strong> such as "Employee" or "Company signer" instead of names and email addresses. Each role has a type (signer or carbon copy) and a routing order, and fields belong to roles. Using the template asks for one person per role.</p>
+<figure>
+  <div class="frame">{{shot:templates|The Templates list with a mutual NDA and a contractor onboarding template, each with a Use button.}}</div>
+  <figcaption>Templates, ready to use.</figcaption>
+</figure>
+
+<h2>Make one</h2>
+<ol>
+  <li>Open <strong>Templates</strong> and choose <strong>New template</strong>.</li>
+  <li>Name it and add its documents. They are admitted and cleaned like any upload.</li>
+  <li>Add the roles in routing order.</li>
+  <li>Place fields for each role, as in the <a href="first-envelope.html#place-fields">editor</a>.</li>
+  <li>Save. Edits later change the template only; envelopes already sent from it keep their own copies.</li>
+</ol>
+
+<h2>Use one</h2>
+<p>Choose <strong>Use</strong> next to a template, fill in a name and email for each role, adjust the message if you like, and send. You can also <strong>duplicate</strong> a template to start a variant, or delete one; envelopes made from it are not affected.</p>
+
+<h2>Through the API</h2>
+<p>Templates are a resource of their own: create one with roles, then add documents, roles and fields to it.</p>
+<pre><code># A template with two roles
+curl https://sign.example.com/api/v1/templates \
+  -H "Authorization: Bearer $OPENSEAL_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: nda-template-1" \
+  -d @template.json
+
+# Its documents, roles and fields
+POST /api/v1/templates/{id}/documents
+POST /api/v1/templates/{id}/roles
+POST /api/v1/templates/{id}/fields</code></pre>
+<p>The full list of template operations is in the <a href="api.html#templates">API reference</a>.</p>
+
+<div class="callout">{{icon:info}}<div><p>Planned for the templates slice (<code>VS-03</code>): composite templates, sharing and folders. Bulk send from a template with a CSV file comes with <code>VS-11</code>. See the <a href="../roadmap.html">roadmap</a>.</p></div></div>

@@ -91,10 +91,12 @@ def op_html(spec: dict, path: str, method: str, op: dict, shared_params: list) -
         parts.append(f"<p>{inline(op['description'])}</p>")
     perm = op.get("x-permission")
     sec = op.get("security")
-    if perm:
+    if perm == "public" or sec == []:
+        parts.append('<p class="op-perm">No API credential (public, or the signing link\'s token)</p>')
+    elif perm:
         parts.append(f'<p class="op-perm">Needs scope <code>{esc(perm)}</code></p>')
-    elif sec == []:
-        parts.append('<p class="op-perm">No authentication</p>')
+    else:
+        parts.append('<p class="op-perm">Any signed-in caller</p>')
     if params:
         rows = "".join(
             f"<tr><td><code>{esc(p['name'])}</code></td><td>{esc(p.get('in', ''))}</td><td>{'yes' if p.get('required') else 'no'}</td>"

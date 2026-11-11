@@ -1,0 +1,48 @@
+<!--meta {"title": "Verifying a document", "description": "Check an OpenSeal sealed PDF in the browser, offline, with the openseal command line, or with independent PAdES validators such as pyHanko and EU DSS."} -->
+<h1>Verifying a document</h1>
+<p class="lede">A completed agreement carries its own proof. Anyone holding the sealed PDF can check it, with no account and without asking the server that made it.</p>
+
+<h2>What is checked</h2>
+<ul>
+  <li><strong>The seal</strong>: the byte ranges it covers, the digest, the CMS signature, and the certificate chain up to a root you trust.</li>
+  <li><strong>The timestamp</strong>: when the seal was made, from an RFC 3161 timestamp authority rather than the server's clock.</li>
+  <li><strong>Every later revision</strong>: anything appended after the seal must be of a kind the seal allows (for example long-term validation data). Anything else, including the hiding and replacing tricks known as shadow attacks, makes the document fail.</li>
+  <li><strong>The audit trail</strong> embedded as <code>audit-trail.json</code>: every event's hash, its link to the one before, and the sequence.</li>
+</ul>
+
+<h2>In the browser</h2>
+<p>Open <code>/verify.html</code> on any OpenSeal install, or serve the web app yourself. Drop the PDF on the page. The check is the engine's own verifier compiled to WebAssembly: it runs in your browser and the file is never uploaded.</p>
+<figure>
+  <div class="frame">{{shot:verify|The verify page reporting Signed and unchanged, with the signature's time, coverage and format, the allowed later revision, and the audit trail section.}}</div>
+  <figcaption>A sealed test document, signed and unchanged.</figcaption>
+</figure>
+<p>Add the certificate of the authority you trust under <strong>Trusted certificates</strong> (DER or PEM): your organisation's root, or the root of the service that sealed the document. Without one, the verifier can confirm the document is unchanged but not who issued the seal, and says so.</p>
+
+<h2>Offline</h2>
+<p>The verify page needs nothing from a server once it has loaded: save it, or serve <code>webapp/</code> from a laptop with <code>python3 -I tools/serve-webapp.py</code>, disconnect, and verify. The verifier module is built by <code>tools/build-webapp-wasm.sh</code>.</p>
+
+<h2>On the command line</h2>
+<p>The <code>openseal</code> command runs the same engine natively.</p>
+<pre><code>cargo build --release -p casual-sign-cli
+target/release/openseal verify agreement.pdf --trust root.pem
+target/release/openseal verify agreement.pdf --trust root.pem --json
+target/release/openseal audit verify audit-trail.json --head &lt;chain head&gt;</code></pre>
+<p>Exit codes: <code>0</code> every signature passed and the last covers the whole file; <code>1</code> verification failed; <code>4</code> indeterminate (nothing failed, but not every signature could be confirmed, for example without a trusted root). <code>openseal help</code> lists them all.</p>
+
+<h2>With independent validators</h2>
+<p>OpenSeal seals are standard PAdES, so tools that know nothing about OpenSeal can check them. The project's own tests require three to agree on every sealed and every tampered fixture: our verifier, <a href="https://github.com/MatthiasValvekens/pyHanko">pyHanko</a> and the European Commission's <a href="https://github.com/esig/dss">DSS</a>.</p>
+<pre><code>pip install pyhanko
+pyhanko sign validate --trust root.pem --pretty-print agreement.pdf</code></pre>
+<div class="callout warn">{{icon:triangle-alert}}<div><p>Validation in Adobe Acrobat is a release gate (<code>PV-01</code>) that has not been passed yet, so OpenSeal makes no claim about how Acrobat shows its seals. Seals from the development stack validate only against that stack's generated root.</p></div></div>
+
+<h2>Reading the result</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Verification outcomes">
+<table>
+  <thead><tr><th scope="col">Outcome</th><th scope="col">Means</th></tr></thead>
+  <tbody>
+    <tr><td>Signed and unchanged</td><td>Every signature checks out, and nothing changed after signing except what the signatures allow.</td></tr>
+    <tr><td>Indeterminate</td><td>Nothing failed, but something could not be confirmed: usually the issuer is not among your trusted certificates.</td></tr>
+    <tr><td>Failed</td><td>A signature does not verify, or the document was changed in a way its signatures do not allow. Treat it as altered.</td></tr>
+  </tbody>
+</table>
+</div>

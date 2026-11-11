@@ -1,0 +1,58 @@
+<!--meta {"title": "Administration", "description": "Manage OpenSeal users and invitations, permission profiles, API keys and OAuth clients, and account settings and branding."} -->
+<h1>Administration</h1>
+<p class="lede">Administrators manage who can use the account, which programs can call the API, and the account's defaults. Everything here is under <strong>Admin</strong> in the top bar, and every action is also an API call.</p>
+
+<h2>Users</h2>
+<p>A member signs in to send and manage envelopes; signers never need an account. Each member has a <strong>permission profile</strong>:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Permission profiles">
+<table>
+  <thead><tr><th scope="col">Profile</th><th scope="col">Can</th></tr></thead>
+  <tbody>
+    <tr><td><code>admin</code></td><td>Everything, including users, API clients and account settings</td></tr>
+    <tr><td><code>sender</code></td><td>Create, send and manage envelopes and templates</td></tr>
+    <tr><td><code>viewer</code></td><td>Look at envelopes without changing them</td></tr>
+  </tbody>
+</table>
+</div>
+<ul>
+  <li><strong>Invite user</strong> emails a one-time link to set a password. <strong>Resend invitation</strong> sends a new link; earlier links stop working.</li>
+  <li>Or <strong>add a user</strong> with a password (at least 12 characters), or none for someone who signs in another way.</li>
+  <li><strong>Disable sign-in</strong> stops a member signing in or calling the API. Their envelopes stay, as they do when a member is removed.</li>
+</ul>
+<p>The first administrator is created on the command line with <code>bootstrap</code> (<a href="getting-started.html#create-the-first-administrator">Getting started</a>).</p>
+
+<h2>API clients</h2>
+<figure>
+  <div class="frame">{{shot:admin-api|The Admin page on the API clients tab, listing a CRM integration and its scopes.}}</div>
+  <figcaption>API clients: personal keys and OAuth clients with their scopes.</figcaption>
+</figure>
+<p>A program calls the API with one of two kinds of credential:</p>
+<ul>
+  <li><strong>API key</strong> (<code>osk_…</code>), sent as a bearer token. Good for scripts.</li>
+  <li><strong>OAuth client</strong>: a client id and secret exchanged at <code>/api/v1/oauth/token</code> (client-credentials grant) for a one-hour access token signed by the server. Good for services; the keys that verify tokens are at <code>/.well-known/jwks.json</code>.</li>
+</ul>
+<p>Each client gets only the <strong>scopes</strong> it needs and an expiry between 1 and 3,650 days. The secret is shown once, when it is created, and stored only as a hash; copy it then. <strong>Revoke</strong> stops it at once.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="API scopes">
+<table>
+  <thead><tr><th scope="col">Scope</th><th scope="col">Allows</th></tr></thead>
+  <tbody>
+    <tr><td><code>envelopes:read</code></td><td>List and read envelopes, documents, recipients, fields and status</td></tr>
+    <tr><td><code>envelopes:write</code></td><td>Create envelopes; change drafts, their documents, recipients and fields</td></tr>
+    <tr><td><code>envelopes:send</code></td><td>Send, correct, resend and void; embedded signing links</td></tr>
+    <tr><td><code>templates:read</code>, <code>templates:write</code></td><td>Read or manage templates</td></tr>
+    <tr><td><code>webhooks:manage</code></td><td>Manage webhook subscriptions</td></tr>
+    <tr><td><code>admin:users</code></td><td>Manage members and invitations</td></tr>
+    <tr><td><code>admin:account</code></td><td>Account settings and API clients</td></tr>
+    <tr><td><code>audit:read</code></td><td>Read audit trails</td></tr>
+  </tbody>
+</table>
+</div>
+<p>The scope each operation needs is listed beside it in the <a href="api.html">API reference</a>.</p>
+
+<h2>Account settings and branding</h2>
+<ul>
+  <li><strong>Settings</strong>: the account name, after how many days new envelopes expire, and when the first reminder goes out.</li>
+  <li><strong>Branding</strong>: the name recipients see in emails and on the signing page, and an accent colour. Text on that colour must stay readable; the form says so if it would not.</li>
+</ul>
+
+<div class="callout">{{icon:info}}<div><p>Planned for organization admin (<code>VS-10</code>): groups, custom permission profiles, OIDC and SAML single sign-on, domain claims, SCIM and an admin audit log. See the <a href="../roadmap.html">roadmap</a>.</p></div></div>

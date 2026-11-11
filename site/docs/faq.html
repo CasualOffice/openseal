@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>FAQ | OpenSeal</title>
+<meta name="description" content="Frequently asked questions about OpenSeal: status, legal standing, licensing and commercial use, verification, keys, the API, and how it relates to DocuSign, SignNow and AGPL projects.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="FAQ | OpenSeal">
+<meta property="og:description" content="Frequently asked questions about OpenSeal: status, legal standing, licensing and commercial use, verification, keys, the API, and how it relates to DocuSign, SignNow and AGPL projects.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="../docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="../docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html" aria-current="page">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html" aria-current="page">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+<h1>FAQ</h1>
+<p class="lede">Short answers, with links to the longer ones.</p>
+
+<h2 id="status">Status</h2>
+<h3 id="is-openseal-ready-for-production">Is OpenSeal ready for production?</h3>
+<p>No. It is pre-alpha. The PDF and evidence engine is complete and tested against 422 real-world PDFs and a set of hostile files; the server, worker, key service and web app run end to end on Docker Compose. Release 1 and its gates (an external security review, an accessibility audit, validation in Adobe Acrobat, a licence review and a counsel review) are still ahead. The <a href="../roadmap.html">roadmap</a> shows where things stand.</p>
+<h3 id="when-will-version-1-0-be-released">When will version 1.0 be released?</h3>
+<p>The project does not promise dates. Work is sized and ordered in the roadmap, and 1.0 is reached when its slices and release gates are done.</p>
+
+<h2 id="legal">Legal</h2>
+<h3 id="are-signatures-made-with-openseal-legally-binding">Are signatures made with OpenSeal legally binding?</h3>
+<p>OpenSeal is designed to support electronic-signature laws such as ESIGN and UETA in the United States and eIDAS in the European Union. Whether a particular signature is valid depends on the deployment, its configuration, the jurisdiction and the transaction. Nothing on this site is legal advice; ask counsel for your case.</p>
+<h3 id="is-it-certified-for-soc-2-iso-27001-or-21-cfr-part-11">Is it certified for SOC 2, ISO 27001 or 21 CFR Part 11?</h3>
+<p>No. A self-hosted deployment is certified by its operator, not by the software. OpenSeal plans control mappings to help operators (<code>LEG-04</code>) and a Part 11 mode (<code>VS-19</code>); neither is a certification.</p>
+<h3 id="does-it-support-qualified-electronic-signatures-qes">Does it support qualified electronic signatures (QES)?</h3>
+<p>Not yet. Remote signing through a qualified trust service provider with the CSC API is planned (<code>VS-18</code>).</p>
+
+<h2 id="licence-and-use">Licence and use</h2>
+<h3 id="can-i-use-openseal-in-a-commercial-or-closed-source-product">Can I use OpenSeal in a commercial or closed-source product?</h3>
+<p>Yes. It is licensed under Apache-2.0: you may use, modify, embed, host and sell products built with it, with no royalties and no separate commercial licence. When you redistribute it, keep the LICENSE and the NOTICE file. See <a href="../brand.html">brand and attribution</a>.</p>
+<h3 id="do-i-have-to-show-powered-by-openseal">Do I have to show "Powered by OpenSeal"?</h3>
+<p>No. It is appreciated, never required, and OpenSeal never adds it to your application or your PDFs.</p>
+<h3 id="why-not-use-an-existing-open-source-project">Why not use an existing open-source project?</h3>
+<p>The established open-source e-signature projects (DocuSeal, Documenso, OpenSign by OpenSign Labs, LibreSign) are licensed under the AGPL, which many companies cannot ship inside their products, and several keep features such as conditional fields, bulk send or SSO in paid editions. OpenSeal is permissively licensed and plans every feature for the open core. OpenSeal is written clean-room: no code from those projects is copied or adapted.</p>
+
+<h2 id="evidence-and-verification">Evidence and verification</h2>
+<h3 id="how-can-someone-check-a-document-without-openseal">How can someone check a document without OpenSeal?</h3>
+<p>The sealed PDF is standard PAdES, so independent validators such as pyHanko and EU DSS check it, and OpenSeal's own verifier runs offline in a browser or on the command line. See <a href="verifying.html">Verifying a document</a>.</p>
+<h3 id="what-happens-if-the-openseal-server-disappears">What happens if the OpenSeal server disappears?</h3>
+<p>Every party already holds the sealed PDF with its certificate of completion and audit trail inside, protected by the seal and a trusted timestamp. Nothing needs the server to be verified.</p>
+<h3 id="where-are-the-signing-keys-kept">Where are the signing keys kept?</h3>
+<p>In keyd, a separate service that uses your HSM through PKCS#11 and signs digests only. See <a href="security.html#signing-keys">Signing keys</a>.</p>
+
+<h2 id="integration">Integration</h2>
+<h3 id="is-there-an-api">Is there an API?</h3>
+<p>Yes: a REST API under <code>/api/v1</code>, described in OpenAPI, with API keys and OAuth client credentials, idempotency keys, ETags for safe concurrent edits, and signed webhooks. See the <a href="api.html">API reference</a> and <a href="webhooks.html">Webhooks</a>.</p>
+<h3 id="is-the-api-compatible-with-docusign-s">Is the API compatible with DocuSign's?</h3>
+<p>Its concepts are the familiar ones (envelopes, recipients, routing orders, fields, templates, embedded views). A DocuSign-shaped compatibility endpoint is a separate, later question, to be decided with counsel (<code>VS-25</code>).</p>
+<h3 id="can-i-embed-signing-in-my-application">Can I embed signing in my application?</h3>
+<p>An embedded signing link for a recipient is available through the API today. Embeddable signing and preparing elements are planned (<code>VS-09</code>).</p>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="architecture.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Architecture overview</span></a><a class="pn pn-next" href="contributing.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Contributing</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#status">Status</a></li><li><a href="#legal">Legal</a></li><li><a href="#licence-and-use">Licence and use</a></li><li><a href="#evidence-and-verification">Evidence and verification</a></li><li><a href="#integration">Integration</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#features">Features</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li><li><a href="../docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../brand.html">Brand and attribution</a></li><li><a href="../docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

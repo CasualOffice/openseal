@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Sending your first envelope | OpenSeal</title>
+<meta name="description" content="Upload a PDF, add recipients in routing order, place fields in the document-first editor, review and send an OpenSeal envelope.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="Sending your first envelope | OpenSeal">
+<meta property="og:description" content="Upload a PDF, add recipients in routing order, place fields in the document-first editor, review and send an OpenSeal envelope.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="../docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="../docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html" aria-current="page">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html" aria-current="page">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+<h1>Sending your first envelope</h1>
+<p class="lede">An envelope is one or more documents, the people who act on them, and the fields each of them fills. You prepare it in four steps: documents, recipients, fields, then review and send.</p>
+
+<h2 id="start-an-envelope">Start an envelope</h2>
+<p>From <strong>Home</strong>, drop a PDF on the page or choose <strong>Start</strong> and then <strong>Send for signature</strong>. You can add several documents; they are sent, signed and sealed together, in the order shown.</p>
+<p>Every upload is treated as hostile. The server reads it with strict limits, then rewrites it without JavaScript, actions, embedded files and XFA forms before anyone sees it. If something was removed, the admission report says what. Files up to 50 MB are accepted.</p>
+<figure>
+  <div class="frame"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="../assets/screens/home-light.webp"><img src="../assets/screens/home-light.png" width="1280" height="800" alt="Home: counters for declined, waiting, expiring and completed envelopes, a drop zone for new documents, and recent envelopes and templates." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="../assets/screens/home-dark.webp"><img src="../assets/screens/home-dark.png" width="1280" height="800" alt="Home: counters for declined, waiting, expiring and completed envelopes, a drop zone for new documents, and recent envelopes and templates." loading="lazy" decoding="async"></picture></span></div>
+  <figcaption>Home: what needs attention, a drop zone, and recent envelopes and templates.</figcaption>
+</figure>
+
+<h2 id="add-recipients">Add recipients</h2>
+<p>Each recipient has a name, an email address, a type and a routing order.</p>
+<ul>
+  <li><strong>Signers</strong> fill fields and sign.</li>
+  <li><strong>Carbon copies</strong> receive the completed documents and take no action.</li>
+  <li><strong>Routing order</strong> decides who goes when: recipients with order 1 are invited first, order 2 when every order-1 recipient has finished, and so on. Give two signers the same order to let them sign in parallel.</li>
+</ul>
+<p>For extra assurance you can ask a recipient for an <strong>access code</strong> you share with them separately; the signing link alone is then not enough.</p>
+
+<h2 id="place-fields">Place fields</h2>
+<p>The editor puts the document in the middle of the screen. Choose whom you are placing fields for, then drag a field type onto the page, or press Enter to drop it on the page in view. Each recipient's fields have their own colour.</p>
+<figure>
+  <div class="frame"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="../assets/screens/editor-light.webp"><img src="../assets/screens/editor-light.png" width="1280" height="800" alt="The editor with fields for two signers on a services agreement." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="../assets/screens/editor-dark.webp"><img src="../assets/screens/editor-dark.png" width="1280" height="800" alt="The editor with fields for two signers on a services agreement." loading="lazy" decoding="async"></picture></span></div>
+  <figcaption>Fields for two signers: blue for the first, green for the second.</figcaption>
+</figure>
+<p>Field types in the editor today: signature, initials, date signed, name, email, text and checkbox. Arrow keys move the selected field; Alt with the arrows resizes it; Shift-click selects several. The properties panel on the right sets the recipient, a label and whether the field is required. Undo and redo are in the top bar, and the draft saves as you go.</p>
+<div class="callout"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><div><p>Every signer needs at least one signature field. The engine checks the envelope before it can be sent: every field must be on a page and belong to a recipient.</p></div></div>
+
+<h2 id="review-and-send">Review and send</h2>
+<p>The last step shows the envelope as the recipients will get it: the subject and message of the email, the recipients in order, and the documents. Choose <strong>Send</strong>. From that moment the documents are fixed: their hashes are recorded in the audit trail, and the first recipients are emailed a signing link.</p>
+
+<h2 id="follow-it">Follow it</h2>
+<p>The <strong>Agreements</strong> list shows every envelope with its status: draft, sent, completed, declined, voided or expired. Open one to see who has acted, its documents and its audit trail.</p>
+<figure>
+  <div class="frame"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="../assets/screens/envelope-light.webp"><img src="../assets/screens/envelope-light.png" width="1280" height="800" alt="An envelope&#x27;s summary: recipients with their status, and the audit trail of events." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="../assets/screens/envelope-dark.webp"><img src="../assets/screens/envelope-dark.png" width="1280" height="800" alt="An envelope&#x27;s summary: recipients with their status, and the audit trail of events." loading="lazy" decoding="async"></picture></span></div>
+  <figcaption>An envelope with its recipients and audit trail.</figcaption>
+</figure>
+<p>From an envelope you can resend invitations, correct a sent envelope (all changes or none), or void it with a reason. When the last signer finishes, the worker seals the documents and the sealed PDF and its certificate of completion can be downloaded from the envelope.</p>
+
+<h2 id="the-same-through-the-api">The same through the API</h2>
+<p>One call creates and sends an envelope. Field positions are in points on the page as displayed, measured from its top-left corner.</p>
+<pre><code>curl https://sign.example.com/api/v1/envelopes \
+  -H "Authorization: Bearer $OPENSEAL_KEY" \
+  -H "Idempotency-Key: 6f1d2a4e-first-envelope" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Services agreement",
+    "status": "sent",
+    "documents": [{"name": "msa.pdf", "content_base64": "JVBERi0xLjcK..."}],
+    "recipients": [{"ref": "s1", "type": "signer", "name": "Ilse Marten",
+                    "email": "ilse@halden.example", "routing_order": 1}],
+    "fields": [{"recipient": "s1", "document": 0, "type": "signature",
+                "page": 1, "x": 72, "y": 600, "width": 180, "height": 40, "required": true}]
+  }'</code></pre>
+<p>See <a href="api.html#op-createenvelope">createEnvelope</a> in the API reference for every option, including reminders, expiry and the seal profile.</p>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="getting-started.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Getting started</span></a><a class="pn pn-next" href="signing.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Signing</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#start-an-envelope">Start an envelope</a></li><li><a href="#add-recipients">Add recipients</a></li><li><a href="#place-fields">Place fields</a></li><li><a href="#review-and-send">Review and send</a></li><li><a href="#follow-it">Follow it</a></li><li><a href="#the-same-through-the-api">The same through the API</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#features">Features</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li><li><a href="../docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../brand.html">Brand and attribution</a></li><li><a href="../docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

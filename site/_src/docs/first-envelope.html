@@ -1,0 +1,57 @@
+<!--meta {"title": "Sending your first envelope", "description": "Upload a PDF, add recipients in routing order, place fields in the document-first editor, review and send an OpenSeal envelope."} -->
+<h1>Sending your first envelope</h1>
+<p class="lede">An envelope is one or more documents, the people who act on them, and the fields each of them fills. You prepare it in four steps: documents, recipients, fields, then review and send.</p>
+
+<h2>Start an envelope</h2>
+<p>From <strong>Home</strong>, drop a PDF on the page or choose <strong>Start</strong> and then <strong>Send for signature</strong>. You can add several documents; they are sent, signed and sealed together, in the order shown.</p>
+<p>Every upload is treated as hostile. The server reads it with strict limits, then rewrites it without JavaScript, actions, embedded files and XFA forms before anyone sees it. If something was removed, the admission report says what. Files up to 50 MB are accepted.</p>
+<figure>
+  <div class="frame">{{shot:home|Home: counters for declined, waiting, expiring and completed envelopes, a drop zone for new documents, and recent envelopes and templates.}}</div>
+  <figcaption>Home: what needs attention, a drop zone, and recent envelopes and templates.</figcaption>
+</figure>
+
+<h2>Add recipients</h2>
+<p>Each recipient has a name, an email address, a type and a routing order.</p>
+<ul>
+  <li><strong>Signers</strong> fill fields and sign.</li>
+  <li><strong>Carbon copies</strong> receive the completed documents and take no action.</li>
+  <li><strong>Routing order</strong> decides who goes when: recipients with order 1 are invited first, order 2 when every order-1 recipient has finished, and so on. Give two signers the same order to let them sign in parallel.</li>
+</ul>
+<p>For extra assurance you can ask a recipient for an <strong>access code</strong> you share with them separately; the signing link alone is then not enough.</p>
+
+<h2>Place fields</h2>
+<p>The editor puts the document in the middle of the screen. Choose whom you are placing fields for, then drag a field type onto the page, or press Enter to drop it on the page in view. Each recipient's fields have their own colour.</p>
+<figure>
+  <div class="frame">{{shot:editor|The editor with fields for two signers on a services agreement.}}</div>
+  <figcaption>Fields for two signers: blue for the first, green for the second.</figcaption>
+</figure>
+<p>Field types in the editor today: signature, initials, date signed, name, email, text and checkbox. Arrow keys move the selected field; Alt with the arrows resizes it; Shift-click selects several. The properties panel on the right sets the recipient, a label and whether the field is required. Undo and redo are in the top bar, and the draft saves as you go.</p>
+<div class="callout">{{icon:info}}<div><p>Every signer needs at least one signature field. The engine checks the envelope before it can be sent: every field must be on a page and belong to a recipient.</p></div></div>
+
+<h2>Review and send</h2>
+<p>The last step shows the envelope as the recipients will get it: the subject and message of the email, the recipients in order, and the documents. Choose <strong>Send</strong>. From that moment the documents are fixed: their hashes are recorded in the audit trail, and the first recipients are emailed a signing link.</p>
+
+<h2>Follow it</h2>
+<p>The <strong>Agreements</strong> list shows every envelope with its status: draft, sent, completed, declined, voided or expired. Open one to see who has acted, its documents and its audit trail.</p>
+<figure>
+  <div class="frame">{{shot:envelope|An envelope's summary: recipients with their status, and the audit trail of events.}}</div>
+  <figcaption>An envelope with its recipients and audit trail.</figcaption>
+</figure>
+<p>From an envelope you can resend invitations, correct a sent envelope (all changes or none), or void it with a reason. When the last signer finishes, the worker seals the documents and the sealed PDF and its certificate of completion can be downloaded from the envelope.</p>
+
+<h2>The same through the API</h2>
+<p>One call creates and sends an envelope. Field positions are in points on the page as displayed, measured from its top-left corner.</p>
+<pre><code>curl https://sign.example.com/api/v1/envelopes \
+  -H "Authorization: Bearer $OPENSEAL_KEY" \
+  -H "Idempotency-Key: 6f1d2a4e-first-envelope" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Services agreement",
+    "status": "sent",
+    "documents": [{"name": "msa.pdf", "content_base64": "JVBERi0xLjcK..."}],
+    "recipients": [{"ref": "s1", "type": "signer", "name": "Ilse Marten",
+                    "email": "ilse@halden.example", "routing_order": 1}],
+    "fields": [{"recipient": "s1", "document": 0, "type": "signature",
+                "page": 1, "x": 72, "y": 600, "width": 180, "height": 40, "required": true}]
+  }'</code></pre>
+<p>See <a href="api.html#op-createenvelope">createEnvelope</a> in the API reference for every option, including reminders, expiry and the seal profile.</p>

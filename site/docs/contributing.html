@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Contributing | OpenSeal</title>
+<meta name="description" content="How to build, test and contribute to OpenSeal: the toolchain, the tests, the clean-room rule, commit conventions and where the plan lives.">
+<meta name="theme-color" content="#b3141f">
+<meta property="og:title" content="Contributing | OpenSeal">
+<meta property="og:description" content="How to build, test and contribute to OpenSeal: the toolchain, the tests, the clean-room rule, commit conventions and where the plan lives.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a></nav>
+    <div class="header-actions">
+      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="btn btn-primary btn-sm header-cta" href="../docs/getting-started.html">Get started</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#features">Features</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a href="../docs/getting-started.html">Get started</a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html" aria-current="page">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html" aria-current="page">Contributing</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+<h1>Contributing</h1>
+<p class="lede">OpenSeal is built in the open, and contributions are welcome. Because evidence integrity is the product's most critical property, the bar for changes that read, write or sign a PDF is high, and every rule below has a reason.</p>
+
+<h2 id="get-the-code-running">Get the code running</h2>
+<p>You need Rust 1.96 (pinned in <code>rust-toolchain.toml</code>), Python 3.12, and Docker for the validators and the full stack.</p>
+<pre><code>git clone https://github.com/CasualOffice/openseal && cd openseal
+git config core.hooksPath .githooks          # once per clone: repository checks and commit messages
+cargo test --workspace                       # every crate's tests
+python3 -I fixtures/tools/generate.py        # the hostile PDF set
+tools/ci-local.sh                            # everything CI runs, locally</code></pre>
+<p>The web app needs no build step: <code>python3 -I tools/serve-webapp.py</code>, then open <code>http://127.0.0.1:8130/app.html?mock=1</code>. Its browser tests are in <code>webapp/e2e</code> (Playwright and axe).</p>
+
+<h2 id="before-you-write-code">Before you write code</h2>
+<ul>
+  <li>Every piece of work has a row in the tracker, <a href="https://github.com/CasualOffice/openseal/blob/main/docs/14-EXECUTION-TRACKER.md">docs/14</a>. The only roadmap is <a href="https://github.com/CasualOffice/openseal/blob/main/docs/06-ROADMAP-AND-DELIVERY.md">docs/06</a>.</li>
+  <li>The design is written down in a numbered document. Decisions that need one have an accepted ADR in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/08-ADR-REGISTER.md">docs/08</a>.</li>
+  <li>Name the acceptance test first. A test counts only if it was seen to fail without the change.</li>
+  <li>Open an issue to discuss anything substantial.</li>
+</ul>
+
+<h2 id="rules-that-protect-the-evidence">Rules that protect the evidence</h2>
+<ul>
+  <li><strong>Untrusted input never panics.</strong> No <code>unwrap</code>, <code>expect</code>, indexing or unchecked arithmetic on values from a file or a request; return a typed error with a stable code.</li>
+  <li><strong>Every parser is bounded</strong>, with each limit named, a hostile fixture and a fuzz target.</li>
+  <li><strong>A sealed document is never modified</strong>; later changes are signed incremental updates.</li>
+  <li><strong>The audit trail is append-only</strong>; corrections are new events.</li>
+  <li><strong>Our verifier is never enough alone</strong>: anything that seals is checked by pyHanko and EU DSS too.</li>
+  <li><strong>Time, randomness and keys are supplied</strong>, never sampled by an engine crate; the same input gives the same bytes. No <code>unsafe</code> in <code>crates/</code>.</li>
+  <li><strong>Cryptography is never hand-rolled.</strong></li>
+  <li>No personal data, real agreements or private keys in fixtures, logs or commits.</li>
+</ul>
+
+<h2 id="clean-room">Clean room</h2>
+<p>Never copy, translate or adapt code, schemas, CSS, interface text or tests from AGPL projects (Documenso, DocuSeal, OpenSign Labs' OpenSign, LibreSign) or from vendors' documentation. Ideas from their public documentation and behaviour are fine. Sign off every commit under the <a href="https://developercertificate.org/">Developer Certificate of Origin</a> (<code>git commit -s</code>); for this project the sign-off also attests that no such material is included.</p>
+
+<h2 id="commits">Commits</h2>
+<p><a href="https://www.conventionalcommits.org/">Conventional Commits</a>, one coherent change per commit, citing the tracker id and giving the reason:</p>
+<pre><code>feat(seal): compute the signature placeholder from the chain and timestamp (T-1G)</code></pre>
+<p>A change is not done until every document it affects is true in the same commit. Never skip the hooks.</p>
+
+<h2 id="security-issues">Security issues</h2>
+<p>Do not open a public issue for a vulnerability, a malicious PDF or a forgery technique. Follow the <a href="../security.html">security policy</a>.</p>
+
+<h2 id="read-next">Read next</h2>
+<ul>
+  <li><a href="https://github.com/CasualOffice/openseal/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>, <a href="https://github.com/CasualOffice/openseal/blob/main/AGENTS.md">AGENTS.md</a> and <a href="https://github.com/CasualOffice/openseal/blob/main/CLAUDE.md">CLAUDE.md</a>: the full contract</li>
+  <li><a href="https://github.com/CasualOffice/openseal/blob/main/GOVERNANCE.md">GOVERNANCE.md</a> and the <a href="https://github.com/CasualOffice/openseal/blob/main/CODE_OF_CONDUCT.md">code of conduct</a></li>
+  <li><a href="architecture.html">Architecture overview</a></li>
+</ul>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="faq.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">FAQ</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#get-the-code-running">Get the code running</a></li><li><a href="#before-you-write-code">Before you write code</a></li><li><a href="#rules-that-protect-the-evidence">Rules that protect the evidence</a></li><li><a href="#clean-room">Clean room</a></li><li><a href="#commits">Commits</a></li><li><a href="#security-issues">Security issues</a></li><li><a href="#read-next">Read next</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#features">Features</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li><li><a href="../docs/security.html">Security and evidence</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../brand.html">Brand and attribution</a></li><li><a href="../docs/contributing.html">Contributing</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>
