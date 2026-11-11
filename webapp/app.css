@@ -446,6 +446,9 @@ select.os-input {
 .os-rcpt { display: grid; gap: var(--os-s1); padding: var(--os-s2); border: 1px solid var(--os-border); border-left: 0.25rem solid var(--rc); border-radius: var(--os-radius); background: var(--os-bg); transition: box-shadow var(--os-dur-fast) var(--os-ease); }
 .os-rcpt.is-active { box-shadow: 0 0 0 0.125rem var(--rc); }
 .os-rcpt__head { display: flex; align-items: center; gap: var(--os-s1); }
+/* The role select shrinks and the head wraps on narrow screens, so it never sits under the order buttons (e2e visual phone). */
+.os-rcpt__head { flex-wrap: wrap; }
+.os-rcpt__head select, .os-rcpt__head .os-select { flex: 1 1 8rem; min-width: 0; max-width: 100%; }
 .os-rcpt__head select { width: auto; }
 .os-rcpt__dot { width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--rc); flex: none; }
 
