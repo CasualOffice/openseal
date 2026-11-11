@@ -451,3 +451,47 @@ async fn keys_secrets_and_signing_links_are_stored_only_as_hashes() {
     }
     api.db.drop().await;
 }
+
+#[tokio::test]
+async fn sign_in_attempts_are_limited_per_client_address_across_names() {
+    let Some(api) = Api::with("threat_login_ip", Rls::On, |c| {
+        c.rate.login_per_minute = 1;
+    })
+    .await
+    else {
+        return;
+    };
+    // One attempt per name, ten per address: the eleventh name from one address stops.
+    let mut last = None;
+    for n in 0..11 {
+        last = Some(
+            api.call(
+                "POST",
+                "/api/v1/auth/login",
+                &Auth::None,
+                Some(
+                    json!({"email": format!("n{n}@example.test"), "password": "guess guess guess"}),
+                ),
+                &[],
+            )
+            .await,
+        );
+    }
+    let r = last.unwrap();
+    assert_eq!(
+        code(&r),
+        (StatusCode::TOO_MANY_REQUESTS, "CS-API-0003".into())
+    );
+    api.set_peer("203.0.113.9:40000");
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/auth/login",
+            &Auth::None,
+            Some(json!({"email": "fresh@example.test", "password": "guess guess guess"})),
+            &[],
+        )
+        .await;
+    assert_eq!(code(&r), (StatusCode::UNAUTHORIZED, "CS-AUTH-0007".into()));
+    api.db.drop().await;
+}
