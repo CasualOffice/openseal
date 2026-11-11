@@ -672,6 +672,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!f) rightDock.closeSheet();
   }
 
+  let lastPlaced = null;
   function addField(type, doc, page, cx, cy) {
     let r = recipient(S.active);
     if (r?.type !== "signer") r = signers()[0];
@@ -680,6 +681,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const rect = placeAt(type, cx, cy, pg);
     const f = { key: newKey("f"), id: null, docKey: doc.key, recipientKey: r.key, type, page, ...rect, required: type === "signature" || type === "initials", label: "" };
     change(() => { S.fields.push(f); S.selected = f.key; });
+    lastPlaced = f.key;
     const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`);
     if (el) {
       el.classList.add("is-new");
@@ -704,8 +706,26 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const pg = doc.pages[page - 1];
     const here = S.fields.filter((f) => f.docKey === doc.key && f.page === page);
     const size = DEFAULT_SIZE[type];
+    // Where the user is looking (F-01): just below the field placed last on this page,
+    // lined up with it; else the top third of the part of the page that is on screen.
+    const last = lastPlaced && here.find((f) => f.key === lastPlaced);
+    let cx = pg.width / 2;
+    let cy = pg.height / 3;
+    if (last) {
+      cx = last.x + size.width / 2;
+      cy = last.y + last.height + 12 + size.height / 2;
+    } else {
+      const el = dv.els[pageIndex(doc.key, page)]?.el;
+      const r = el?.getBoundingClientRect();
+      const s = stage.getBoundingClientRect();
+      if (r && r.height) {
+        const top = Math.max(r.top, s.top);
+        const bottom = Math.min(r.bottom, s.bottom);
+        if (bottom > top) cy = ((top - r.top) + (bottom - top) / 3) / dv.scale;
+      }
+    }
     // A margin below each field keeps keyboard-placed fields apart, not touching.
-    const spot = freeSpot(here.map((f) => ({ ...f, height: f.height + 16 })), size, pg, pg.width / 2, pg.height / 3);
+    const spot = freeSpot(here.map((f) => ({ ...f, height: f.height + 12 })), size, pg, cx, cy);
     addField(type, doc, page, spot.x + size.width / 2, spot.y + size.height / 2);
   }
 

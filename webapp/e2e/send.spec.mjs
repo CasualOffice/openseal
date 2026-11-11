@@ -144,6 +144,12 @@ test("Shift+click selects several fields; they line up, move and delete together
   await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).click();
   const fields = page.locator(".os-field");
   await expect(fields).toHaveCount(3);
+  // Each new field goes just below the one placed before it, lined up (F-01).
+  const [a, b2, c] = await Promise.all([0, 1, 2].map((i) => fields.nth(i).boundingBox()));
+  expect(Math.round(b2.x)).toBe(Math.round(a.x));
+  expect(b2.y).toBeGreaterThan(a.y + a.height);
+  expect(c.y).toBeGreaterThan(b2.y + b2.height);
+  expect(c.y - (a.y + a.height)).toBeLessThan(200);
   // Spread them out so that lining up has something to do.
   await fields.nth(1).click();
   for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight");
