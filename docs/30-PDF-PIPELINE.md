@@ -218,6 +218,31 @@ after its position (`"0"`, `"1"`, as `/Opt` groups name theirs, ISO 32000-2 §12
 appearance under it. Filling and flattening map a choice back to the document's own name bytes, never to decoded text
 (`FLD-RADIO-NAME`, `FLD-RADIO-NOOPT`).
 
+### Field auto-detection (`WEB-06`)
+
+`detect_fields(pages: &[PageText], acroform: &[Converted]) -> Detection` suggests fields from what a page already
+shows; nothing here changes an envelope, and the sender accepts or discards each suggestion. Cues: runs of four or
+more underscores are lines; painted horizontal rules, thin filled bars and rectangles 2.5–100 pt tall, at least half
+an inch wide, are lines and boxes, but only when a label names them (pages draw many rules that are not fields: table
+borders, separators), never when they underline text or sit under underscores, and a box with text inside is not
+empty; a label (`signature`, `sign`, `signed`, `signer`, `initials`, `date`, `dated`, `name`, `title`, `company`,
+`organization`; any case, punctuation ignored) left of a line on the same line (nearest four words, stopping at a gap
+over 18 pt, at most 300 pt away), else just under it, else just over it (within 20 pt, words whose middle is within
+the line's width), sets the kind, by priority date, initials, signature, company, title, name ("Date signed" is a date,
+"Company name" a company); an unlabelled underscore line is a text field; a label ending in a colon with at least
+72 pt of blank space after it and no line is a field in that space; existing form fields (`convert_acroform`) are
+suggested as converted, and a text cue overlapping one is dropped. Sizes: signature line width × 30 pt sitting on the
+line, initials at most 60 × 30, date at most 100 × 18, others line width × 18, inside a box its height; clamped to the
+page, in displayed space (ADR-019). Each suggestion carries its source (`underline`, `label`, `box`, `acroform`), its
+label cue (at most 64 characters) and a confidence (100 form field, 90 line with a label beside, 80 under or over, 70
+labelled painted rule or box, 60 colon label, 40 unlabelled line); ordered by page, top, left; bounds in docs/21, a
+crossed bound sets `truncated`. The text interpreter now also reads `m l re h c v y` and the painting operators to
+keep those rules and boxes (`PageText::shapes`, curves not followed, clipping-only paths dropped). Tested on synthetic
+pages for each cue, a rotated page, the cap (seen red with the cap removed: 612 suggestions) and FEC Form 1 from the
+corpus (signature and date lines found). **Not built:** labels in vertical text on rotated content are matched only
+under or over a line, not beside it; a line spanning two column labels takes the kind of the higher-priority one;
+check boxes and other field kinds are not detected from drawings (only from existing form fields).
+
 ## 6. Field values and formulas
 
 Validation, conditional visibility, group rules and formulas run in `casual-sign-fields` on both the browser (WASM) and
