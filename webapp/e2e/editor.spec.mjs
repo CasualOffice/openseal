@@ -297,3 +297,62 @@ test("keyboard parity: Ctrl/Cmd+A selects the page's fields; Alt+Shift+arrows ju
   await page.getByLabel("Label").press("ControlOrMeta+a");
   await expect(page.locator(".os-field.is-selected")).toHaveCount(1);
 });
+
+// ---- 4. Detect fields ---------------------------------------------------------------------------
+
+test("Detect fields: suggestions as ghosts for the current signer; accept one, accept all, dismiss; undoable", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await newWithRecipients(page, [["Ana", "ana@example.com"], ["Ben", "ben@example.com"]]);
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await placingFor(page, "Ben");
+  // The draft is saved first (detection reads the stored documents), then the mock
+  // suggests a signature, a date and a name on each of the two pages.
+  await page.getByTestId("detect-fields").click();
+  const ghosts = page.getByTestId("ghost");
+  await expect(ghosts).toHaveCount(6);
+  await expect(page.getByTestId("suggestions")).toContainText("Accepted fields go to Ben");
+  await expect(page.locator(".os-field")).toHaveCount(0);
+  await expectAccessible(page, "detected fields");
+  await snap(page, testInfo, "editor-detect-1440");
+
+  // Accept one: a real field for Ben where the ghost was.
+  await page.getByRole("button", { name: "Accept suggested Signature field, page 1" }).click();
+  await expect(ghosts).toHaveCount(5);
+  await expect(page.locator('.os-field[data-field="signature"]')).toHaveCount(1);
+  await expect(page.locator('.os-field[data-field="signature"]')).toHaveAttribute("aria-label", /Ben/);
+  // Dismiss one by keyboard.
+  await page.getByRole("button", { name: "Accept suggested Date signed field, page 1" }).focus();
+  await page.keyboard.press("Delete");
+  await expect(ghosts).toHaveCount(4);
+  // Undo brings the dismissed suggestion back; redo takes it away again.
+  await page.getByTestId("undo").click();
+  await expect(ghosts).toHaveCount(5);
+  await page.getByTestId("redo").click();
+  await expect(ghosts).toHaveCount(4);
+  // Accept all for Ana.
+  await placingFor(page, "Ana");
+  await page.getByTestId("accept-all").click();
+  await expect(ghosts).toHaveCount(0);
+  await expect(page.locator(".os-field")).toHaveCount(5);
+  await expect(page.locator(".os-field", { has: page.locator('[data-who="A"]') })).toHaveCount(4);
+  await page.getByTestId("undo").click();
+  await expect(ghosts).toHaveCount(4);
+  await page.getByTestId("dismiss-all").click();
+  await expect(ghosts).toHaveCount(0);
+  await expect(page.locator(".os-field")).toHaveCount(1);
+  // Detection again skips what is already placed.
+  await page.getByTestId("detect-fields").click();
+  await expect(ghosts).toHaveCount(5);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await snap(page, testInfo, "editor-detect-390");
+});
+
+test("Detect fields is not offered for a template (the API detects on envelopes)", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/templates/new"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await step(page, "Fields");
+  await expect(page.getByTestId("detect-fields")).toHaveCount(0);
+});

@@ -32,6 +32,7 @@ import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot,
 import { errorMessage } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate } from "./templatesync.js";
+import { suggestionsFrom } from "./detect.js";
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from "./guides.js";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
@@ -66,6 +67,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     active: null,
     selected: null,
     clipboard: null,
+    ghosts: [], // suggested fields from detection, not yet accepted (WEB-09)
     undo: [],
     redo: [],
   };
@@ -223,7 +225,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   // ---- History -----------------------------------------------------------------------
-  const snapshot = () => JSON.stringify({ recipients: S.recipients, fields: S.fields, ordered: S.ordered });
+  const snapshot = () => JSON.stringify({ recipients: S.recipients, fields: S.fields, ordered: S.ordered, ghosts: S.ghosts });
   function change(fn) {
     S.undo.push(snapshot());
     if (S.undo.length > 200) S.undo.shift();
@@ -237,6 +239,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.recipients = v.recipients;
     S.fields = v.fields;
     S.ordered = v.ordered;
+    S.ghosts = v.ghosts || [];
     if (S.selected && !S.fields.some((f) => f.key === S.selected)) S.selected = null;
     if (!S.recipients.some((r) => r.key === S.active)) S.active = S.recipients[0]?.key || null;
     S.dirty = true;
@@ -517,6 +520,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     palFor,
     h("h3", { id: "pal-h", class: "os-panel__title", text: t("prepare.field-types") }),
     palGrid, h("p", { class: "os-muted os-small", text: t("prepare.palette-hint") }));
+  // Detect fields (WEB-09): the server's suggestions as ghost fields. Envelopes only:
+  // the API detects on an envelope's documents.
+  const detectBtn = TPL ? null : button(t("prepare.detect"), { icon: "scan", command: "field.detect", onClick: () => run("field.detect"), attrs: { "data-testid": "detect-fields", "aria-describedby": "detect-help" } });
+  if (detectBtn) palettePanel.append(h("div", { class: "os-detect" }, detectBtn, h("p", { id: "detect-help", class: "os-muted os-small", text: t("prepare.detect-help") })));
 
   /// The recipient chips (A21): who the next field is for, by colour, number and key 1–9.
   /// A radio group with roving focus; arrows move, the choice follows focus.
@@ -559,6 +566,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.active = key;
     markActive();
     renderPalette();
+    if (S.ghosts.length) { renderGhosts(); renderProps(); }
     if (focus) palFor.querySelector('[aria-checked="true"]')?.focus();
     const i = S.recipients.findIndex((r) => r.key === key);
     say(t("prepare.placing-for-name", { name: displayName(S.recipients[i], i) }));
@@ -722,6 +730,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       el.addEventListener("keydown", (e) => { if (e.shiftKey && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleInSelection(f.key); } });
       ov.append(el);
     }
+    renderGhosts();
     if (multi.size) markSelection();
     thumbs.badges((i) => S.fields.filter((f) => pageIndex(f.docKey, f.page) === i).length, (n) => t(n === 1 ? "prepare.thumb-one" : "prepare.thumb-n", { n }));
   }
@@ -987,6 +996,93 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     addField(type, doc, page, spot.x + size.width / 2, spot.y + size.height / 2);
   }
 
+  // ---- Detected fields (WEB-09) -----------------------------------------------------------
+  // The server's suggestions (`POST …/documents/{doc}/detect-fields`, detect.js) are drawn
+  // as ghost fields in the colour of the signer fields are being placed for. Each can be
+  // accepted (click, Enter) or dismissed (its ×, Delete); the properties panel accepts or
+  // dismisses them all. Each of these is one undo step. A draft is saved first, since
+  // detection reads the stored documents.
+  /// Who accepted suggestions are for: the signer being placed for, else the first.
+  const signerFor = () => { const r = recipient(S.active); return r?.type === "signer" ? r : signers()[0] || null; };
+  const ghostLabel = (g) => (g.label || t(`ftype.${g.type}`));
+  function renderGhosts() {
+    for (const n of stage.querySelectorAll(".os-ghost")) n.remove();
+    const who = signerFor();
+    const colour = who ? colourOf(who.key) : 1;
+    for (const g of S.ghosts) {
+      const ov = overlayFor(g);
+      if (!ov) continue;
+      const accept = h("button", { type: "button", class: "os-ghost__accept", attrs: { "aria-label": t("prepare.ghost-accept", { type: ghostLabel(g), page: pageIndex(g.docKey, g.page) + 1 }), "data-testid": "ghost" } },
+        icon(FIELD_ICON[g.type] || "text-cursor-input", { size: 16 }), h("span", { class: "os-field__label", text: ghostLabel(g) }));
+      const dismiss = h("button", { type: "button", class: "os-ghost__dismiss", attrs: { "aria-label": t("prepare.ghost-dismiss", { type: ghostLabel(g), page: pageIndex(g.docKey, g.page) + 1 }), title: t("prepare.dismiss") } }, icon("x", { size: 16 }));
+      accept.addEventListener("click", () => acceptGhosts([g]));
+      dismiss.addEventListener("click", () => dismissGhosts([g]));
+      for (const b of [accept, dismiss]) {
+        b.addEventListener("keydown", (e) => {
+          if (e.key !== "Delete" && e.key !== "Backspace") return;
+          e.preventDefault();
+          e.stopPropagation();
+          dismissGhosts([g]);
+        });
+      }
+      const el = h("div", { class: `os-ghost os-r${colour}`, attrs: { "data-gkey": g.key, "data-field": g.type } }, accept, dismiss);
+      place(el, g);
+      ov.append(el);
+    }
+  }
+  /// After a ghost goes, focus the next one (or the document), so the keyboard keeps its place.
+  function focusNextGhost(i) {
+    const keys = S.ghosts.map((x) => x.key);
+    const next = keys[Math.min(i, keys.length - 1)];
+    setTimeout(() => (next ? stage.querySelector(`.os-ghost[data-gkey="${next}"] .os-ghost__accept`) : stage)?.focus({ preventScroll: false }), 0);
+  }
+  function acceptGhosts(list) {
+    if (!list.length) return;
+    const i = S.ghosts.indexOf(list[0]);
+    let r = signerFor();
+    if (!r) r = addRecipient(false);
+    const made = list.map((g) => ({ key: newKey("f"), id: null, docKey: g.docKey, recipientKey: r.key, type: g.type, page: g.page, x: g.x, y: g.y, width: g.width, height: g.height, required: g.type === "signature" || g.type === "initials", label: g.label || "" }));
+    const gone = new Set(list);
+    change(() => { S.ghosts = S.ghosts.filter((g) => !gone.has(g)); S.fields.push(...made); });
+    say(made.length === 1 ? t("prepare.field-added", { label: fieldLabel(made[0]) }) : t("prepare.ghosts-accepted", { n: made.length, name: displayName(r, S.recipients.indexOf(r)) }));
+    if (list.length === 1) focusNextGhost(i);
+  }
+  function dismissGhosts(list) {
+    if (!list.length) return;
+    const i = S.ghosts.indexOf(list[0]);
+    const gone = new Set(list);
+    change(() => { S.ghosts = S.ghosts.filter((g) => !gone.has(g)); });
+    say(t(list.length === 1 ? "prepare.ghost-dismissed" : "prepare.ghosts-dismissed", { n: list.length }));
+    if (list.length === 1) focusNextGhost(i);
+  }
+  async function detect() {
+    if (!S.docs.length) { toast(t("prepare.add-pdf-first"), "info"); fileInput.click(); return; }
+    await busy(detectBtn, async () => {
+      try {
+        // Detection reads the stored documents: save the draft first when any is new.
+        if (!S.id || S.docs.some((d) => !d.id)) await save();
+        const items = [];
+        let truncated = false;
+        for (const d of S.docs.filter((x) => x.id)) {
+          const out = await ctx.api.detectFields(S.id, d.id);
+          items.push(...(out?.items || []));
+          truncated ||= !!out?.truncated;
+        }
+        const ghosts = suggestionsFrom(items, S.docs, S.fields, () => newKey("g"));
+        if (!ghosts.length) { toast(t("prepare.detect-none"), "info"); say(t("prepare.detect-none")); return; }
+        change(() => { S.ghosts = ghosts; S.selected = null; });
+        const who = signerFor();
+        const msg = t("prepare.detect-found", { n: ghosts.length, name: who ? displayName(who, S.recipients.indexOf(who)) : t("prepare.recipient-n", { n: S.recipients.length + 1 }) });
+        toast(truncated ? `${msg} ${t("prepare.detect-truncated")}` : msg, "info");
+        say(msg);
+        const first = ghosts[0];
+        dv.scrollToBox(pageIndex(first.docKey, first.page), first);
+      } catch (err) {
+        if (!ctx.failed(err)) showSaveError(err);
+      }
+    });
+  }
+
   // ---- Properties ------------------------------------------------------------------------
   let advancedOpen = false;
   function renderProps() {
@@ -1007,7 +1103,16 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const f = S.fields.find((x) => x.key === S.selected);
     if (!f) {
       props.append(h("p", { class: "os-muted os-small", text: t("prepare.props-none") }));
-      if (S.docs.length && !S.fields.length) {
+      if (S.ghosts.length) {
+        const who = signerFor();
+        props.append(h("section", { class: "os-suggest", attrs: { "aria-labelledby": "suggest-h", "data-testid": "suggestions" } },
+          h("h3", { id: "suggest-h", class: "os-panel__title", text: t(S.ghosts.length === 1 ? "prepare.suggestions-one" : "prepare.suggestions", { n: S.ghosts.length }) }),
+          h("p", { class: "os-muted os-small", text: who ? t("prepare.suggestions-for", { name: displayName(who, S.recipients.indexOf(who)) }) : t("prepare.suggestions-new") }),
+          h("div", { class: "os-actions" },
+            button(t("prepare.accept-all"), { icon: "check", size: "sm", variant: "primary", command: "field.accept-suggestions", onClick: () => run("field.accept-suggestions"), attrs: { "data-testid": "accept-all" } }),
+            button(t("prepare.dismiss-all"), { icon: "x", size: "sm", command: "field.dismiss-suggestions", onClick: () => run("field.dismiss-suggestions"), attrs: { "data-testid": "dismiss-all" } }))));
+      }
+      if (S.docs.length && !S.fields.length && !S.ghosts.length) {
         props.append(emptyState({ illus: "fields", title: t("empty.fields.title"), text: t("empty.fields.text"), action: button(t("prepare.add-field", { type: t("ftype.signature") }), { icon: "signature", variant: "primary", onClick: () => addFieldInView("signature") }), testId: "empty-fields" }));
       } else if (S.fields.length) {
         // Every placed field, in page order: choosing one selects it and scrolls to it.
@@ -1172,6 +1277,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const d of S.docs) if (!docs.includes(d)) { pdfs.get(d.key)?.destroy(); pdfs.delete(d.key); }
     S.docs = docs;
     const recs = [...(env.recipients || [])].sort((a, b) => a.routing_order - b.routing_order);
+    const prevActive = Math.max(0, S.recipients.findIndex((r) => r.key === S.active));
     const prevAccess = new Map(S.recipients.map((r) => [r.id, r.accessCode]));
     const steps = fromServer(recs.map((r) => r.routing_order));
     S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: r.type === "cc" ? "cc" : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), order: steps[i] }));
@@ -1184,7 +1290,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (!p || !dkey.has(f.document_id)) return null;
       return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", server: JSON.stringify({ r: f.recipient_id, p: f.placement, q: !!f.required, l: f.label || "" }) };
     }).filter(Boolean);
-    S.active = S.recipients[0]?.key || null;
+    // Keep whom fields are being placed for across a save (the list keeps its order).
+    S.active = S.recipients[prevActive]?.key || S.recipients[0]?.key || null;
     S.selected = null;
     S.undo = []; S.redo = [];
     S.dirty = false;
@@ -1573,6 +1680,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   reg("field.jump-right", t("cmd.field.jump"), jump("x", 1));
   reg("field.jump-up", t("cmd.field.jump"), jump("y", -1));
   reg("field.jump-down", t("cmd.field.jump"), jump("y", 1));
+  if (!TPL) {
+    reg("field.detect", t("prepare.detect"), () => detect(), () => S.docs.length > 0);
+    reg("field.accept-suggestions", t("prepare.accept-all"), () => acceptGhosts([...S.ghosts]), () => S.ghosts.length > 0);
+    reg("field.dismiss-suggestions", t("prepare.dismiss-all"), () => dismissGhosts([...S.ghosts]), () => S.ghosts.length > 0);
+  }
   reg("field.select-page", t("cmd.field.select-page"), () => {
     const keys = pageFields().map((f) => f.key);
     setSelection(keys);

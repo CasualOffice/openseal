@@ -480,3 +480,13 @@ Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`
   the moving corner. Holding Alt turns snapping off (the old 4-point grid is gone). Keyboard parity: Ctrl/Cmd+A selects
   the fields of the page in view (not while typing, where it selects the text); Alt+Shift+arrows move the selection
   to the next guide on that side; any keyboard move shows for a moment the guides it lands on.
+- **Detect fields** (`detect.js`; DocuSign's and SignNow's auto-place). A button under the field types calls
+  `POST …/documents/{doc}/detect-fields` for each document (saving the draft first when a document is new, since
+  detection reads the stored file) and draws the suggestions as ghost fields: dashed, in the colour of the signer
+  fields are being placed for, each with its cue as the label where the kind alone would not say it. A suggestion on
+  a field already placed, past the document's pages, or with unreadable geometry is left out; kinds the palette does
+  not place (title, company, a form field's own kind) become text fields labelled with the cue. Click or Enter on a
+  ghost accepts it for that signer; its × or Delete dismisses it; the properties panel accepts or dismisses them all.
+  Each is one undo step. Templates do not offer it (the API detects on an envelope's documents).
+- Found on the way: a save (including autosave) put "placing fields for" back to the first signer; it now keeps
+  the one chosen.
