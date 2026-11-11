@@ -397,5 +397,19 @@ export function thumbnails(view, container, { width = 96 } = {}) {
       container.scrollTop = Math.max(0, top - container.clientHeight / 3);
     }
   }
-  return { build, mark, destroy() { io?.disconnect(); } };
+  /// A count on each thumbnail (the editor: fields on that page, F-06); 0 shows nothing.
+  /// `count(i)` gives the number, `label(n)` its words for assistive technology.
+  function badges(count, label) {
+    btns.forEach((b, i) => {
+      const n = count(i);
+      let s = b.querySelector(".os-thumb__count");
+      if (!n) { s?.remove(); b.removeAttribute("aria-description"); return; }
+      // Drawn from data-count by CSS, so the visible text stays the page number (SC 2.5.3).
+      if (!s) { s = h("span", { class: "os-thumb__count", attrs: { "aria-hidden": "true" } }); b.append(s); }
+      s.dataset.count = String(n);
+      s.title = label(n);
+      b.setAttribute("aria-description", label(n));
+    });
+  }
+  return { build, mark, badges, destroy() { io?.disconnect(); } };
 }

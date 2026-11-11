@@ -325,8 +325,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           h("span", { class: "os-order", attrs: { title: t("prepare.routing-order") }, text: String(orderOf(r)) }),
           typeField.el,
           h("span", { class: "os-spacer" }), up, del),
-        h("label", { class: "os-sr-only", attrs: { for: nameId }, text: t(TPL ? "template.role-name-of" : "prepare.name-of", { n: i + 1 }) }), name,
-        TPL ? null : [h("label", { class: "os-sr-only", attrs: { for: mailId }, text: t("prepare.email-of", { n: i + 1 }) }), email, emailErr],
+        // Visible labels, not placeholders alone (S-03); "of recipient 2" for screen readers.
+        h("div", { class: "os-rcpt__cell" },
+          h("label", { class: "os-label os-rcpt__label", attrs: { for: nameId } }, t("prepare.name"), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })), name),
+        TPL ? null : h("div", { class: "os-rcpt__cell" },
+          h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
         r.type === "signer" && !TPL ? access : null);
       li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
       list.append(li);
@@ -576,6 +579,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       ov.append(el);
     }
     if (multi.size) markSelection();
+    thumbs.badges((i) => S.fields.filter((f) => pageIndex(f.docKey, f.page) === i).length, (n) => t(n === 1 ? "prepare.thumb-one" : "prepare.thumb-n", { n }));
   }
   /// A field box in percentages of its page: PDF points × the view's scale at any zoom,
   /// without a relayout per zoom step.

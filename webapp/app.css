@@ -1010,6 +1010,10 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 /* A small field (a checkbox) keeps most of itself visible under its resize handle (F-05). */
 .os-field__handle { width: min(0.75rem, 35%); height: min(0.75rem, 35%); }
 .os-props__danger { margin-top: var(--os-s4); }
+.os-rcpt__cell { display: grid; gap: var(--os-s1); align-content: start; min-width: 0; }
+.os-rcpt__label { margin: 0; font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-thumb__count::before { content: attr(data-count); }
+.os-thumb__count { position: absolute; left: 0.25rem; top: 0.25rem; min-width: 1.25rem; padding: 0 0.25rem; border-radius: 62rem; background: var(--os-text); color: var(--os-bg); font-size: var(--os-fs-12); font-weight: 700; text-align: center; }
 /* Review summary (R-01): the field kinds wrap under the person on narrow screens. */
 .os-summary__fields { text-align: right; }
 .os-panel--review > .os-card:first-of-type { margin-top: 0; }
