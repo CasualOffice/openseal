@@ -32,6 +32,7 @@ import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot,
 import { errorMessage } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate } from "./templatesync.js";
+import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
 
 const FIELD_ICON = { signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", text: "text-cursor-input", checkbox: "square-check" };
@@ -57,7 +58,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     reminderEvery: null,
     expiresDays: null,
     serverOptions: "",
-    routing: "sequential",
+    ordered: true, // "Set signing order"; each recipient's step is `r.order` (WEB-09)
     docs: [],
     recipients: [],
     fields: [],
@@ -221,7 +222,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   // ---- History -----------------------------------------------------------------------
-  const snapshot = () => JSON.stringify({ recipients: S.recipients, fields: S.fields, routing: S.routing });
+  const snapshot = () => JSON.stringify({ recipients: S.recipients, fields: S.fields, ordered: S.ordered });
   function change(fn) {
     S.undo.push(snapshot());
     if (S.undo.length > 200) S.undo.shift();
@@ -234,7 +235,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const v = JSON.parse(snap);
     S.recipients = v.recipients;
     S.fields = v.fields;
-    S.routing = v.routing;
+    S.ordered = v.ordered;
     if (S.selected && !S.fields.some((f) => f.key === S.selected)) S.selected = null;
     if (!S.recipients.some((r) => r.key === S.active)) S.active = S.recipients[0]?.key || null;
     S.dirty = true;
@@ -242,25 +243,42 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   // ---- Recipients ----------------------------------------------------------------------
+  // WEB-09 signing groups (routing.js; DocuSign's "Set signing order"): with the order on,
+  // each recipient has a step (`r.order`), recipients who share a step get the envelope
+  // at the same time, and the list is drawn as one box per step. The list is kept in
+  // step order. With the order off, signers are all step 1 and copies step 2.
   const colourOf = (rk) => (S.recipients.findIndex((r) => r.key === rk) % COLOURS) + 1;
   const recipient = (rk) => S.recipients.find((r) => r.key === rk);
   const signers = () => S.recipients.filter((r) => r.type === "signer");
   const displayName = (r, i) => r?.name?.trim() || t(TPL ? "template.role-n" : "prepare.recipient-n", { n: i + 1 });
   function orderOf(r) {
-    const sg = signers();
-    if (r.type !== "signer") return S.routing === "parallel" ? 2 : sg.length + 1;
-    return S.routing === "parallel" ? 1 : sg.indexOf(r) + 1;
+    if (S.ordered) return r.order || 1;
+    return r.type === "signer" ? 1 : 2;
   }
+  const orders = () => S.recipients.map((r) => r.order || 1);
+  /// Set every recipient's step from `next` (aligned with S.recipients), then keep the
+  /// list in step order.
+  function setOrders(next) {
+    S.recipients.forEach((r, i) => { r.order = next[i]; });
+    S.recipients = byOrder(next).map((i) => S.recipients[i]);
+  }
+  const nextStep = () => (S.recipients.length ? Math.max(...orders()) + 1 : 1);
   function addRecipient(focus = true) {
-    const r = { key: newKey("r"), id: null, name: "", email: "", type: "signer", accessCode: "" };
+    const r = { key: newKey("r"), id: null, name: "", email: "", type: "signer", accessCode: "", order: nextStep() };
     change(() => { S.recipients.push(r); S.active = r.key; });
     if (focus) setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] input`)?.focus(), 0);
     return r;
   }
   function addMe() {
-    const r = { key: newKey("r"), id: null, name: ctx.who?.name || "", email: ctx.who?.email || "", type: "signer", accessCode: "" };
+    const r = { key: newKey("r"), id: null, name: ctx.who?.name || "", email: ctx.who?.email || "", type: "signer", accessCode: "", order: nextStep() };
     change(() => { S.recipients.push(r); });
     say(t("prepare.added-me", { name: r.name || r.email }));
+  }
+  /// Where a recipient now signs, for the live region: "step 2", and with whom.
+  function sayStep(r) {
+    const i = S.recipients.indexOf(r);
+    const with_ = S.recipients.filter((x) => x !== r && orderOf(x) === orderOf(r)).map((x) => displayName(x, S.recipients.indexOf(x)));
+    say(with_.length ? t("prepare.step-with", { name: displayName(r, i), n: orderOf(r), names: with_.join(", ") }) : t("prepare.step-now", { name: displayName(r, i), n: orderOf(r) }));
   }
 
   function renderRecipients() {
@@ -280,73 +298,162 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         : emptyState({ illus: "recipients", title: t("empty.recipients.title"), text: t("empty.prepare-recipients.text"), action: button(addLabel, { icon: "user-plus", variant: "primary", onClick: () => addRecipient() }), testId: "empty-recipients" }));
       return;
     }
-    // DocuSign's "Set signing order": on, signers go one after another; off, all at once.
-    const orderBox = h("input", { id: "routing-order", type: "checkbox", class: "os-switch__input", checked: S.routing === "sequential", attrs: { role: "switch" } });
-    orderBox.addEventListener("change", () => change(() => { S.routing = orderBox.checked ? "sequential" : "parallel"; }));
+    // DocuSign's "Set signing order": on, recipients go step by step (a step may hold
+    // several, who sign at the same time); off, all signers at once.
+    const orderBox = h("input", { id: "routing-order", type: "checkbox", class: "os-switch__input", checked: S.ordered, attrs: { role: "switch" } });
+    orderBox.addEventListener("change", () => change(() => {
+      S.ordered = orderBox.checked;
+      // Turned on: one step each, in the order shown.
+      if (S.ordered) S.recipients.forEach((r, i) => { r.order = i + 1; });
+    }));
     rcptPanel.append(h("div", { class: "os-switchrow" },
       h("label", { class: "os-switch", attrs: { for: "routing-order" } }, orderBox, h("span", { class: "os-switch__track", attrs: { "aria-hidden": "true" } }), h("span", { text: t("prepare.set-order") })),
-      h("span", { class: "os-muted os-small", text: t(S.routing === "sequential" ? "prepare.routing-sequential-help" : "prepare.routing-parallel-help") })));
-    const list = h("ol", { class: "os-rcpt-list" });
-    S.recipients.forEach((r, i) => {
-      const c = colourOf(r.key);
-      const nameId = `rn-${r.key}`;
-      const mailId = `re-${r.key}`;
-      const typeId = `rt-${r.key}`;
-      const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t(TPL ? "template.role-placeholder" : "prepare.name"), maxLength: 255, attrs: { "data-testid": TPL ? "role-name" : "recipient-name" } });
-      const emailErr = h("p", { id: `${mailId}-err`, class: "os-field-error os-rcpt__err", attrs: { "aria-live": "polite" } });
-      const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "email", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email", "aria-describedby": `${mailId}-err` } });
-      const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), [["signer", t("rtype.signer")], ["cc", t("rtype.cc")]], { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
-      const type = typeField.select;
-      const commit = (k, v) => {
-        if (r[k] === v) return;
-        S.undo.push(snapshot()); S.redo = [];
-        r[k] = v; S.dirty = true;
-        renderPalette(); renderFieldsOnly(); renderProps();
-        if (k === "type") renderRecipients();
-      };
-      // Typed values are kept as they are typed, so a re-render (a role change, a field
-      // placed) never loses them; the label refresh waits for the change event.
-      name.addEventListener("input", () => { r.name = name.value.trim(); S.dirty = true; });
-      email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; });
-      name.addEventListener("change", () => { renderPalette(); renderFieldsOnly(); renderProps(); });
-      // A bad address is said beside the field when the user leaves it (S-02), not only at send.
-      const checkEmail = () => {
-        const bad = !!r.email && !EMAIL.test(r.email);
-        emailErr.textContent = bad ? t("prepare.email-invalid") : "";
-        if (bad) email.setAttribute("aria-invalid", "true"); else email.removeAttribute("aria-invalid");
-      };
-      email.addEventListener("change", () => { checkEmail(); renderPalette(); });
-      type.addEventListener("change", () => commit("type", type.value));
-      const up = button(t("prepare.move-up"), { icon: "chevron-left", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, -1) });
-      up.querySelector("svg").classList.add("os-rot90");
-      up.disabled = i === 0;
-      // Down as well as up, and a drag handle (S-04): reorder by keyboard or pointer.
-      const down = button(t("prepare.move-down"), { icon: "chevron-right", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, 1) });
-      down.querySelector("svg").classList.add("os-rot90");
-      down.disabled = i === S.recipients.length - 1;
-      const grip = h("span", { class: "os-rcpt__grip", attrs: { "aria-hidden": "true", title: t("prepare.drag-reorder") } }, icon("grip-vertical", { size: 16 }));
-      const del =button(t("prepare.remove-recipient", { name: displayName(r, i) }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeRecipient(r) });
-      // The access code is set when the recipient is created; the API has no way to
-      // change it afterwards (RecipientPatch), so a saved recipient shows it read-only.
-      const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code"), maxLength: 64, attrs: { "aria-label": t("prepare.access-code-for", { name: displayName(r, i) }), "data-testid": "recipient-access-code" } });
-      access.addEventListener("input", () => { r.accessCode = access.value.trim(); S.dirty = true; });
-      const li = h("li", { class: `os-rcpt os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key } },
-        h("div", { class: "os-rcpt__head" },
-          grip, h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
-          h("span", { class: "os-order", attrs: { title: t("prepare.routing-order") }, text: String(orderOf(r)) }),
-          typeField.el,
-          h("span", { class: "os-spacer" }), up, down, del),
-        // Visible labels, not placeholders alone (S-03); "of recipient 2" for screen readers.
-        h("div", { class: "os-rcpt__cell" },
-          h("label", { class: "os-label os-rcpt__label", attrs: { for: nameId } }, t("prepare.name"), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })), name),
-        TPL ? null : h("div", { class: "os-rcpt__cell" },
-          h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
-        r.type === "signer" && !TPL ? access : null);
-      li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
-      // Drag a card by its head onto another to put it there.
-      li.draggable = true;
-      li.addEventListener("dragstart", (e) => { if (e.target.closest("input, select, button")) { e.preventDefault(); return; } e.dataTransfer.setData("application/x-openseal-recipient", String(i)); e.dataTransfer.effectAllowed = "move"; li.classList.add("is-dragging"); });
-      li.addEventListener("dragend", () => li.classList.remove("is-dragging"));
+      h("span", { class: "os-muted os-small", text: t(S.ordered ? "prepare.routing-groups-help" : "prepare.routing-parallel-help") })));
+    if (!S.ordered) {
+      rcptPanel.append(h("ol", { class: "os-rcpt-list" }, ...S.recipients.map((r, i) => card(r, i))));
+      return;
+    }
+    const list = h("ol", { class: "os-rgroups", attrs: { "data-testid": "signing-steps" } });
+    const all = groups(orders());
+    all.forEach((g, gi) => {
+      list.append(gap(g.order));
+      const headId = `rg-${g.order}`;
+      const together = g.members.length > 1;
+      const earlier = button(t("prepare.step-earlier", { n: g.order }), { icon: "chevron-left", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveStep(g.order, -1) });
+      earlier.querySelector("svg").classList.add("os-rot90");
+      earlier.disabled = gi === 0;
+      const later = button(t("prepare.step-later", { n: g.order }), { icon: "chevron-right", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveStep(g.order, 1) });
+      later.querySelector("svg").classList.add("os-rot90");
+      later.disabled = gi === all.length - 1;
+      const box = h("div", { class: `os-rgroup${together ? " is-together" : ""}`, attrs: { role: "group", "aria-labelledby": headId, "data-step": String(g.order), "data-testid": "signing-step" } },
+        h("div", { class: "os-rgroup__head" },
+          h("span", { id: headId, class: "os-rgroup__title" },
+            h("span", { class: "os-rgroup__n", attrs: { "aria-hidden": "true" }, text: String(g.order) }),
+            h("span", { text: t("prepare.step-n", { n: g.order }) }),
+            together ? h("span", { class: "os-rgroup__together" }, icon("users", { size: 16 }), h("span", { text: t("prepare.step-together", { n: g.members.length }) })) : null),
+          h("span", { class: "os-spacer" }),
+          all.length > 1 ? earlier : null, all.length > 1 ? later : null),
+        h("ol", { class: "os-rcpt-list" }, ...g.members.map((i) => card(S.recipients[i], i))));
+      // A card dropped on the box joins its step.
+      box.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); box.classList.add("is-drop-target"); } });
+      box.addEventListener("dragleave", (e) => { if (!box.contains(e.relatedTarget)) box.classList.remove("is-drop-target"); });
+      box.addEventListener("drop", (e) => {
+        box.classList.remove("is-drop-target");
+        const from = Number(e.dataTransfer.getData("application/x-openseal-recipient"));
+        if (!Number.isInteger(from) || !S.recipients[from]) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const r = S.recipients[from];
+        change(() => setOrders(joinGroup(orders(), from, g.order)));
+        sayStep(r);
+      });
+      list.append(h("li", { class: "os-rgroup-item" }, box));
+    });
+    list.append(gap(Math.max(...orders()) + 1));
+    rcptPanel.append(list, h("p", { class: "os-muted os-small", text: t("prepare.steps-help") }));
+  }
+  /// A drop zone between steps: a card dropped here gets a step of its own there.
+  function gap(order) {
+    const z = h("li", { class: "os-rgroup__gap", attrs: { "aria-hidden": "true", "data-before": String(order), "data-testid": "step-gap" } });
+    z.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); z.classList.add("is-drop-target"); } });
+    z.addEventListener("dragleave", () => z.classList.remove("is-drop-target"));
+    z.addEventListener("drop", (e) => {
+      z.classList.remove("is-drop-target");
+      const from = Number(e.dataTransfer.getData("application/x-openseal-recipient"));
+      if (!Number.isInteger(from) || !S.recipients[from]) return;
+      e.preventDefault();
+      const r = S.recipients[from];
+      change(() => setOrders(newStepBefore(orders(), from, order)));
+      sayStep(r);
+    });
+    return z;
+  }
+  function moveStep(order, d) {
+    change(() => setOrders(moveGroup(orders(), order, d)));
+    say(t("prepare.step-moved", { n: order + d }));
+    setTimeout(() => rcptPanel.querySelector(`[data-step="${order + d}"] .os-rgroup__head button:not([disabled])`)?.focus(), 0);
+  }
+
+  /// One recipient's card: type, step (when ordered), name, email, access code, and
+  /// the controls that move it.
+  function card(r, i) {
+    const c = colourOf(r.key);
+    const nameId = `rn-${r.key}`;
+    const mailId = `re-${r.key}`;
+    const typeId = `rt-${r.key}`;
+    const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t(TPL ? "template.role-placeholder" : "prepare.name"), maxLength: 255, attrs: { "data-testid": TPL ? "role-name" : "recipient-name" } });
+    const emailErr = h("p", { id: `${mailId}-err`, class: "os-field-error os-rcpt__err", attrs: { "aria-live": "polite" } });
+    const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "email", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email", "aria-describedby": `${mailId}-err` } });
+    const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), [["signer", t("rtype.signer")], ["cc", t("rtype.cc")]], { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
+    const type = typeField.select;
+    const commit = (k, v) => {
+      if (r[k] === v) return;
+      S.undo.push(snapshot()); S.redo = [];
+      r[k] = v; S.dirty = true;
+      renderPalette(); renderFieldsOnly(); renderProps();
+      if (k === "type") renderRecipients();
+    };
+    // Typed values are kept as they are typed, so a re-render (a role change, a field
+    // placed) never loses them; the label refresh waits for the change event.
+    name.addEventListener("input", () => { r.name = name.value.trim(); S.dirty = true; });
+    email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; });
+    name.addEventListener("change", () => { renderPalette(); renderFieldsOnly(); renderProps(); });
+    // A bad address is said beside the field when the user leaves it (S-02), not only at send.
+    const checkEmail = () => {
+      const bad = !!r.email && !EMAIL.test(r.email);
+      emailErr.textContent = bad ? t("prepare.email-invalid") : "";
+      if (bad) email.setAttribute("aria-invalid", "true"); else email.removeAttribute("aria-invalid");
+    };
+    email.addEventListener("change", () => { checkEmail(); renderPalette(); });
+    type.addEventListener("change", () => commit("type", type.value));
+    // Up and down, and a drag handle (S-04): by keyboard or pointer. With the order on,
+    // they move the recipient a step (routing.js stepMove): out of a shared step first,
+    // then past the next one.
+    const canUp = S.ordered ? canStep(orders(), i, -1) : i > 0;
+    const canDown = S.ordered ? canStep(orders(), i, 1) : i < S.recipients.length - 1;
+    const up = button(t("prepare.move-up"), { icon: "chevron-left", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, -1) });
+    up.querySelector("svg").classList.add("os-rot90");
+    up.disabled = !canUp;
+    const down = button(t("prepare.move-down"), { icon: "chevron-right", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, 1) });
+    down.querySelector("svg").classList.add("os-rot90");
+    down.disabled = !canDown;
+    const grip = h("span", { class: "os-rcpt__grip", attrs: { "aria-hidden": "true", title: t("prepare.drag-reorder") } }, icon("grip-vertical", { size: 16 }));
+    const del = button(t("prepare.remove-recipient", { name: displayName(r, i) }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeRecipient(r) });
+    // The step as a number (DocuSign's box): the same number as someone else signs with them.
+    let order = h("span", { class: "os-order", attrs: { title: t("prepare.routing-order") }, text: String(orderOf(r)) });
+    if (S.ordered) {
+      order = h("input", { id: `ro-${r.key}`, class: "os-input os-input--sm os-order-input", type: "number", min: "1", max: "999", step: "1", inputMode: "numeric", value: String(orderOf(r)), attrs: { "aria-label": t("prepare.order-for", { name: displayName(r, i) }), "data-testid": "recipient-order" } });
+      order.addEventListener("change", () => {
+        const n = Number.parseInt(order.value, 10);
+        if (!Number.isInteger(n) || n < 1) { order.value = String(orderOf(r)); return; }
+        change(() => setOrders(setOrder(orders(), i, n)));
+        sayStep(r);
+        setTimeout(() => document.getElementById(`ro-${r.key}`)?.focus(), 0);
+      });
+    }
+    // The access code is set when the recipient is created; the API has no way to
+    // change it afterwards (RecipientPatch), so a saved recipient shows it read-only.
+    const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code"), maxLength: 64, attrs: { "aria-label": t("prepare.access-code-for", { name: displayName(r, i) }), "data-testid": "recipient-access-code" } });
+    access.addEventListener("input", () => { r.accessCode = access.value.trim(); S.dirty = true; });
+    const li = h("li", { class: `os-rcpt os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key } },
+      h("div", { class: "os-rcpt__head" },
+        grip, h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
+        order,
+        typeField.el,
+        h("span", { class: "os-spacer" }), up, down, del),
+      // Visible labels, not placeholders alone (S-03); "of recipient 2" for screen readers.
+      h("div", { class: "os-rcpt__cell" },
+        h("label", { class: "os-label os-rcpt__label", attrs: { for: nameId } }, t("prepare.name"), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })), name),
+      TPL ? null : h("div", { class: "os-rcpt__cell" },
+        h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
+      r.type === "signer" && !TPL ? access : null);
+    li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
+    // Drag a card by its head: onto another card or step box to sign with them (order
+    // on), or to take that place (order off); onto a gap for a step of its own.
+    li.draggable = true;
+    li.addEventListener("dragstart", (e) => { if (e.target.closest("input, select, button")) { e.preventDefault(); return; } e.dataTransfer.setData("application/x-openseal-recipient", String(i)); e.dataTransfer.effectAllowed = "move"; li.classList.add("is-dragging"); });
+    li.addEventListener("dragend", () => li.classList.remove("is-dragging"));
+    if (!S.ordered) {
       li.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); li.classList.add("is-drop-target"); } });
       li.addEventListener("dragleave", () => li.classList.remove("is-drop-target"));
       li.addEventListener("drop", (e) => {
@@ -357,17 +464,25 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         moveRecipient(from, i - from);
         say(t("prepare.moved-to", { name: displayName(S.recipients[i], i), n: i + 1 }));
       });
-      list.append(li);
-    });
-    rcptPanel.append(list);
+    }
+    return li;
   }
   function markActive() {
     for (const li of rcptPanel.querySelectorAll(".os-rcpt")) li.classList.toggle("is-active", li.dataset.rkey === S.active);
   }
   function moveRecipient(i, d) {
-    const j = i + d;
-    if (j < 0 || j >= S.recipients.length) return;
-    change(() => { const [r] = S.recipients.splice(i, 1); S.recipients.splice(j, 0, r); });
+    const r = S.recipients[i];
+    if (S.ordered) {
+      if (Math.abs(d) !== 1) return;
+      change(() => setOrders(stepMove(orders(), i, d)));
+      sayStep(r);
+    } else {
+      const j = i + d;
+      if (j < 0 || j >= S.recipients.length) return;
+      change(() => { S.recipients.splice(i, 1); S.recipients.splice(j, 0, r); });
+    }
+    // Keep focus on the same control of the card that moved.
+    setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] .os-rcpt__head button[aria-label="${t(d < 0 ? "prepare.move-up" : "prepare.move-down")}"]:not([disabled])`)?.focus(), 0);
   }
   async function removeRecipient(r) {
     const n = S.fields.filter((f) => f.recipientKey === r.key).length;
@@ -376,6 +491,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       S.recipients = S.recipients.filter((x) => x !== r);
       S.fields = S.fields.filter((f) => f.recipientKey !== r.key);
       if (S.active === r.key) S.active = S.recipients[0]?.key || null;
+      if (S.recipients.length) setOrders(compact(orders()));
     });
   }
 
@@ -945,10 +1061,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const d of S.docs) if (!docs.includes(d)) { pdfs.get(d.key)?.destroy(); pdfs.delete(d.key); }
     S.docs = docs;
     const recs = [...(env.recipients || [])].sort((a, b) => a.routing_order - b.routing_order);
-    const signerOrders = new Set(recs.filter((r) => r.type === "signer").map((r) => r.routing_order));
-    S.routing = recs.filter((r) => r.type === "signer").length > 1 && signerOrders.size === 1 ? "parallel" : "sequential";
     const prevAccess = new Map(S.recipients.map((r) => [r.id, r.accessCode]));
-    S.recipients = recs.map((r) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: r.type === "cc" ? "cc" : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), serverOrder: r.routing_order }));
+    const steps = fromServer(recs.map((r) => r.routing_order));
+    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: r.type === "cc" ? "cc" : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), order: steps[i] }));
+    // Signers all at one step with copies after them is the switch off; anything else is steps.
+    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type === "signer");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
     const dkey = new Map(S.docs.map((d) => [d.id, d.key]));
     S.fields = (env.fields || []).map((f) => {
@@ -983,9 +1100,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
     S.docs = docs;
     const roles = [...(tp.roles || [])].sort((a, b) => (a.routing_order ?? 1) - (b.routing_order ?? 1));
-    const signerOrders = new Set(roles.filter((r) => r.type === "signer").map((r) => r.routing_order));
-    S.routing = roles.filter((r) => r.type === "signer").length > 1 && signerOrders.size === 1 ? "parallel" : "sequential";
-    S.recipients = roles.map((r) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: "", type: r.type === "cc" ? "cc" : "signer", accessCode: "", serverOrder: r.routing_order }));
+    const steps = fromServer(roles.map((r) => r.routing_order));
+    S.recipients = roles.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: "", type: r.type === "cc" ? "cc" : "signer", accessCode: "", order: steps[i] }));
+    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type === "signer");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
     const dkey = new Map(S.docs.map((d) => [d.id, d.key]));
     S.fields = (tp.fields || []).map((f) => {
@@ -1167,7 +1284,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const nameOf = (r) => displayName(r, S.recipients.indexOf(r));
     const text = [
       t(sum === 1 ? "send.confirm-one" : "send.confirm-text", { n: sum, subject: subj }),
-      sg.length > 1 ? (S.routing === "sequential" ? t("send.confirm-order", { order: sg.map(nameOf).join(" → ") }) : t("send.confirm-together")) : "",
+      sg.length > 1 ? (new Set(sg.map(orderOf)).size > 1
+        // Steps in order; a step of several is "A & B" (they sign at the same time).
+        ? t("send.confirm-order", { order: groups(sg.map(orderOf)).map((g) => g.members.map((i) => nameOf(sg[i])).join(" & ")).join(" → ") })
+        : t("send.confirm-together")) : "",
       copies.length ? t("send.confirm-copies", { names: copies.map(nameOf).join(", ") }) : "",
     ].filter(Boolean).join(" ");
     if (!(await confirmDialog(t("send.confirm-title"), text, { confirm: t("prepare.send") }))) return;
@@ -1217,7 +1337,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (list.length) { await showProblems(list, t("template.problems-title")); return; }
     await busy(saveBtn, async () => {
       saving = true; syncStatus();
-      const roles = rolesFrom(S.recipients, S.routing);
+      const roles = rolesFrom(S.recipients, (r) => orderOf(r));
       try {
         if (!S.tplId) {
           const tpl = await ctx.api.templates.create({

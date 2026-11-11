@@ -451,3 +451,23 @@ request and response were checked against `api/openapi.yaml` and the handlers in
 Findings for the server (rows for the main session): the users list should carry `invitation` (one read per member
 today); the recipient JSON lacks `date_format` and `witness_for`, so no client can send a whole `RecipientSpec` to
 `/correct` safely; there is no account rename.
+
+### Send editor (WEB-09)
+
+Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`. Screenshots at 1440 and 390:
+`target/e2e-screens/chromium-editor-*.png`.
+
+- **Templates reopen in the editor.** Templates' row menu has **Edit** (`#/templates/{id}/edit`): the template's
+  documents (fetched and opened), its roles in routing order and its fields (by `role_id`) load into the same editor;
+  **Save template** compares the editor with the template as last read and sends only the differences, removals first,
+  each change with If-Match (`templatesync.js` `templatePlan`, `applyTemplate`). A template's saved document can be
+  removed (`DELETE …/documents/{doc}`, taking its fields). "Edit details" (the side panel) stays for name and email.
+- **Signing steps with parallel groups** (DocuSign's "Set signing order", `routing.js`). With the order on, each
+  recipient has a step; recipients who share a step get the envelope at the same time. The recipients step draws one
+  box per step ("Step 2 · 2 sign at the same time", a `group` named by its heading). To put people together: type
+  the same number in a card's step box, or drag a card (by its grip) onto another step's box. A card dropped on the
+  space between boxes gets a step of its own there. Up/down on a card move it a step: out of a shared step first, to
+  a step just before (after) it, else past the neighbouring step; each box has "Move step n earlier/later". Every
+  change is one undo step and is announced ("Ben signs at step 2, at the same time as Cleo"). With the order off,
+  signers are all step 1 and copies step 2, as before. The routing order sent is the step; a draft or template is
+  read back the same way, and the send confirmation names the steps ("Dev → Ana → Ben & Cleo").

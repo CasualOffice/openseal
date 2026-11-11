@@ -96,3 +96,95 @@ test("a template's document can be removed in the editor, and the server drops i
   expect(tp.fields).toHaveLength(1);
   expect(tp.fields[0].document_id).toBe(tp.documents[0].id);
 });
+
+// ---- 2. Parallel signing groups ---------------------------------------------------------------
+
+async function newWithRecipients(page, people) {
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
+  for (const [i, [name, email]] of people.entries()) {
+    await page.getByRole("button", { name: "Add recipient" }).first().click();
+    const row = page.locator(".os-rcpt").nth(i);
+    await row.getByTestId("recipient-name").fill(name);
+    await row.getByTestId("recipient-email").fill(email);
+    await row.getByTestId("recipient-email").blur();
+  }
+}
+const names = (page) => page.getByTestId("recipient-name").evaluateAll((els) => els.map((e) => e.value));
+const stepsOf = (page) => page.getByTestId("signing-step").evaluateAll((els) => els.map((g) => [...g.querySelectorAll('[data-testid="recipient-name"]')].map((e) => e.value)));
+/// A card dragged by its grip; the pointer leaves the grip first, so the drag starts there.
+async function dragCard(page, source, target) {
+  const s = await source.boundingBox();
+  const d = await target.boundingBox();
+  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(s.x + s.width / 2 + 4, s.y + s.height / 2 + 4);
+  await page.mouse.move(d.x + d.width / 2, d.y + d.height / 2, { steps: 6 });
+  await page.mouse.up();
+}
+const cardOf = (page, name) => page.locator(".os-rcpt").filter({ has: page.getByLabel(`Signing step for ${name}`) });
+
+test("recipients sharing a step sign at the same time: grouped by number, drag and keys; saved as one routing order", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await newWithRecipients(page, [["Ana", "ana@example.com"], ["Ben", "ben@example.com"], ["Cleo", "cleo@example.com"], ["Dev", "dev@example.com"]]);
+  expect(await stepsOf(page)).toEqual([["Ana"], ["Ben"], ["Cleo"], ["Dev"]]);
+  // The number box: Cleo to step 2 joins Ben.
+  await page.getByLabel("Signing step for Cleo").fill("2");
+  await page.getByLabel("Signing step for Cleo").press("Enter");
+  expect(await stepsOf(page)).toEqual([["Ana"], ["Ben", "Cleo"], ["Dev"]]);
+  const step2 = page.getByTestId("signing-step").nth(1);
+  await expect(step2).toContainText("2 sign at the same time");
+  await expect(step2).toHaveAccessibleName(/Step 2/);
+  // Drag Dev's card onto step 1's box: Dev signs with Ana.
+  // Tall enough that both ends of the drag are on screen (no scrolling mid-drag).
+  await page.setViewportSize({ width: 1440, height: 1400 });
+  await dragCard(page, cardOf(page, "Dev").locator(".os-rcpt__grip"), page.getByTestId("signing-step").nth(0).locator(".os-rgroup__head"));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await stepsOf(page)).toEqual([["Ana", "Dev"], ["Ben", "Cleo"]]);
+  await expectAccessible(page, "signing steps");
+  await snap(page, testInfo, "editor-steps-1440");
+  // Keys: Dev up leaves the shared step for one of their own before it; then the
+  // whole of step 3 moves earlier.
+  await cardOf(page, "Dev").getByRole("button", { name: "Move up in signing order" }).click();
+  expect(await stepsOf(page)).toEqual([["Dev"], ["Ana"], ["Ben", "Cleo"]]);
+  await page.getByRole("button", { name: "Move step 3 earlier" }).click();
+  expect(await stepsOf(page)).toEqual([["Dev"], ["Ben", "Cleo"], ["Ana"]]);
+  // Undo puts the steps back as they were before the last change.
+  await page.getByRole("heading", { name: "Recipients" }).click();
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await stepsOf(page)).toEqual([["Dev"], ["Ana"], ["Ben", "Cleo"]]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await snap(page, testInfo, "editor-steps-390");
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  // Fields for each signer, then save: one routing order per step on the server.
+  await page.getByTestId("wizard-next").click();
+  for (const who of ["Dev", "Ana", "Ben", "Cleo"]) {
+    await placingFor(page, who);
+    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  }
+  await page.getByTestId("save-draft").click();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+  const env = (await mockDb(page)).envelopes.find((e) => e.recipients.some((r) => r.name === "Dev"));
+  expect(Object.fromEntries(env.recipients.map((r) => [r.name, r.routing_order]))).toEqual({ Dev: 1, Ana: 2, Ben: 3, Cleo: 3 });
+  // Reopened, the steps are as saved; the send confirmation names them in order.
+  await page.reload();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await step(page, "Recipients");
+  expect(await stepsOf(page)).toEqual([["Dev"], ["Ana"], ["Ben", "Cleo"]]);
+  await step(page, "Review");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("Dev → Ana → Ben & Cleo");
+});
+
+test("with signing order off, everyone signs at once; turning it on gives one step each", async ({ page }) => {
+  await newWithRecipients(page, [["Ana", "ana@example.com"], ["Ben", "ben@example.com"]]);
+  await page.getByText("Set signing order").click();
+  await expect(page.getByTestId("signing-step")).toHaveCount(0);
+  await expect(page.getByText("All signers get the envelope at once.")).toBeVisible();
+  await page.getByText("Set signing order").click();
+  expect(await stepsOf(page)).toEqual([["Ana"], ["Ben"]]);
+  expect(await names(page)).toEqual(["Ana", "Ben"]);
+});

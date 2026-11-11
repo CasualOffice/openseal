@@ -1014,6 +1014,25 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 .os-rcpt.is-dragging { opacity: .55; }
 .os-rcpt.is-drop-target { outline: var(--os-focus-width) dashed var(--os-focus); outline-offset: 0.125rem; }
 .os-rcpt__cell { display: grid; gap: var(--os-s1); align-content: start; min-width: 0; }
+/* Signing steps (WEB-09): one box per step; a step of several is tinted and says so. */
+.os-rgroups { list-style: none; margin: 0; padding: 0; display: grid; }
+.os-rgroup-item { list-style: none; }
+.os-rgroup { padding: var(--os-s3); border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-surface-2); }
+.os-rgroup.is-together { border-color: var(--os-border-strong); }
+.os-rgroup.is-drop-target { outline: var(--os-focus-width) dashed var(--os-focus); outline-offset: 0.125rem; }
+.os-rgroup__head { display: flex; align-items: center; gap: var(--os-s2); margin: 0 0 var(--os-s2); min-height: 2rem; }
+.os-rgroup__title { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--os-s2); font-weight: 700; }
+.os-rgroup__n { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--os-text); color: var(--os-bg); font-size: var(--os-fs-12); }
+.os-rgroup__together { display: inline-flex; align-items: center; gap: var(--os-s1); font-weight: 400; font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-rgroup__gap { list-style: none; height: var(--os-s3); border-radius: var(--os-radius); transition: height var(--os-dur-fast) var(--os-ease); }
+.os-rgroup__gap.is-drop-target { height: var(--os-s8); outline: var(--os-focus-width) dashed var(--os-focus); outline-offset: -0.25rem; }
+.os-order-input { width: 3.5rem; flex: none; text-align: center; }
+@media (max-width: 47.999em) {
+  .os-rgroup { padding: var(--os-s2); }
+  .os-rgroup .os-rcpt { padding: var(--os-s3); }
+  .os-rcpt__head { flex-wrap: wrap; row-gap: var(--os-s1); }
+  .os-rcpt__head .os-fieldrow { min-width: 0; flex: 1 1 8rem; }
+}
 .os-rcpt__label { margin: 0; font-size: var(--os-fs-12); color: var(--os-muted); }
 .os-thumb__count::before { content: attr(data-count); }
 .os-thumb__count { position: absolute; left: 0.25rem; top: 0.25rem; min-width: 1.25rem; padding: 0 0.25rem; border-radius: 62rem; background: var(--os-text); color: var(--os-bg); font-size: var(--os-fs-12); font-weight: 700; text-align: center; }
