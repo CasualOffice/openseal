@@ -201,6 +201,28 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "patch user",
     )
     .await;
+    // WEB-06: invitations (the worker's tests/user_invite.rs drives the email).
+    let inv = ok(
+        api.call("POST", &format!("/api/v1/users/{uid}/invite"), k, None, &[])
+            .await,
+        StatusCode::ACCEPTED,
+        "invite user",
+    )
+    .await;
+    assert_eq!(inv["invitation"], "pending");
+    let bogus = api
+        .call(
+            "POST",
+            "/api/v1/auth/accept-invite",
+            &Auth::None,
+            Some(json!({"token": "not-a-token", "password": "another long passphrase"})),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (bogus.status, bogus.code().as_str()),
+        (StatusCode::UNAUTHORIZED, "CS-AUTH-0002")
+    );
 
     // OAuth client, token, JWKS, revocation.
     let oc = ok(

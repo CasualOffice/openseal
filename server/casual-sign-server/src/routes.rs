@@ -82,6 +82,13 @@ pub fn table() -> Vec<Route> {
         r("POST", "/api/v1/auth/login", Public, JSON, admin::login),
         r(
             "POST",
+            "/api/v1/auth/accept-invite",
+            Public,
+            JSON,
+            admin::accept_invite,
+        ),
+        r(
+            "POST",
             "/api/v1/auth/logout",
             Scope(""),
             JSON,
@@ -145,6 +152,13 @@ pub fn table() -> Vec<Route> {
             Scope("admin:users"),
             JSON,
             admin::delete_user,
+        ),
+        r(
+            "POST",
+            "/api/v1/users/{id}/invite",
+            Scope("admin:users"),
+            JSON,
+            admin::reinvite_user,
         ),
         r(
             "GET",

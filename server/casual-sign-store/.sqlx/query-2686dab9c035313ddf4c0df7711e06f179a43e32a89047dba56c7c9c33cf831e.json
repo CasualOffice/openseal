@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_invitations SET accepted_at = $3 WHERE account_id = $1 AND id = $2 AND accepted_at IS NULL AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2686dab9c035313ddf4c0df7711e06f179a43e32a89047dba56c7c9c33cf831e"
+}

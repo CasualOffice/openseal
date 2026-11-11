@@ -486,6 +486,9 @@ impl<B: BlobStore + 'static> Worker<B> {
     }
 
     async fn dispatch(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        if job.kind == casual_sign_host::jobs::SEND_USER_INVITATION {
+            return self.user_invitation(job, lease).await;
+        }
         let payload = jobs::parse(&job.kind, &job.payload)?;
         let envelope = EnvelopeId(payload.envelope_id);
         if job.envelope_id != Some(envelope) {
@@ -736,6 +739,119 @@ impl<B: BlobStore + 'static> Worker<B> {
             "{}/s/{token}",
             self.config.base_url.trim_end_matches('/')
         ))
+    }
+
+    /// `send_user_invitation` (WEB-06): mint the invitation's one-time link (256 random
+    /// bits, base64url, only its SHA-256 stored, 7 days), replacing any earlier one, and
+    /// email it to the member; once per job (a job step), nothing for an invitation
+    /// accepted or revoked meanwhile. The link is `{base_url}/#/accept-invite?token=`,
+    /// in the fragment, which browsers never send to a server.
+    async fn user_invitation(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        use casual_sign_store::UserInvitationId;
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: casual_sign_host::jobs::UserInvitationJob =
+            serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        if job.envelope_id.is_some() {
+            return Err(bad());
+        }
+        let id = UserInvitationId(p.invitation_id);
+        let account = job.account_id;
+        let mut tx = self.store.for_account(account).begin().await?;
+        let done = tx
+            .job_steps()
+            .list(job.id)
+            .await?
+            .iter()
+            .any(|s| s.step == "email.invitation");
+        let open = tx
+            .users()
+            .invitation(id)
+            .await?
+            .filter(|i| i.accepted_at.is_none() && i.revoked_at.is_none());
+        let (Some(inv), false) = (open, done) else {
+            return self.close_job(tx, job, lease).await;
+        };
+        let member = tx
+            .users()
+            .get(inv.user_id)
+            .await?
+            .ok_or(WorkerError::SealInput { what: "user" })?;
+        let account_name = tx.account().get().await?.name;
+        let mut raw = [0u8; 32];
+        aws_lc_rs::rand::fill(&mut raw).map_err(|_| WorkerError::Config { setting: "rng" })?;
+        let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
+        let now = self.now();
+        let expires = jobs::after(now, Duration::from_secs(7 * 86_400));
+        if !tx
+            .users()
+            .set_invitation_token(
+                id,
+                Hash256::digest(token.as_bytes()).as_bytes(),
+                expires,
+                now,
+            )
+            .await?
+        {
+            return self.close_job(tx, job, lease).await;
+        }
+        tx.commit().await?;
+        let link = format!(
+            "{}/#/accept-invite?token={token}",
+            self.config.base_url.trim_end_matches('/')
+        );
+        let mailer = self.mailer.as_ref().ok_or(WorkerError::NoChannel)?;
+        let (subject, body) = email::render(
+            Template::UserInvitation,
+            &Fill {
+                name: member.name.get(),
+                subject: &account_name,
+                message: "",
+                link: Some(&link),
+                product: &self.config.product,
+                abuse: &self.config.abuse,
+            },
+        );
+        let msg = Message {
+            from: self.config.mail_from.clone(),
+            from_name: self.config.mail_from_name.clone(),
+            to: member.email.get().clone(),
+            to_name: member.name.get().clone(),
+            subject,
+            body,
+            message_id: self.message_id(job.id, "invitation"),
+            date: now,
+        };
+        let sent = mailer.send(&msg).await?;
+        self.boundary(Boundary::EmailSent, &job.kind).await;
+        let mut tx = self.store.for_account(account).begin().await?;
+        tx.job_steps()
+            .record(
+                job.id,
+                "email.invitation",
+                &serde_json::json!({
+                    "outcome": if matches!(sent, Sent::Accepted) { "accepted" } else { "bounced" },
+                    "message_id": msg.message_id,
+                }),
+                now,
+            )
+            .await?;
+        self.close_job(tx, job, lease).await
+    }
+
+    /// Finish a job that has no envelope in `tx` and commit.
+    async fn close_job(&self, mut tx: TenantTx, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        self.boundary(Boundary::BeforeCommit, &job.kind).await;
+        tx.jobs()
+            .complete(job.id, lease, self.now())
+            .await
+            .map_err(|e| match e.code() {
+                "CS-DB-0003" => WorkerError::LeaseLost,
+                _ => store_err(e),
+            })?;
+        tx.commit().await?;
+        Ok(())
     }
 
     fn message_id(&self, job: JobId, who: &str) -> String {

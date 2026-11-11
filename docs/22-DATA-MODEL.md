@@ -247,6 +247,14 @@ it is stored) and `job_steps` (the worker's insert-only record of acts done outs
 `openseal_resolve_staff_session`. Forty tables. The relational rows of an envelope are the projection
 `casual_sign_host::apply` writes from the engine state in the deciding transaction (§10).
 
+`0010_user_invitations.sql` (`WEB-06`) adds `account_memberships.disabled_at` (a member disabled in one account only;
+`users.disabled_at` stays the platform-wide switch, and a member reads as disabled when either is set),
+`user_invitations` (a member's one-time set-password link: the token's SHA-256 and expiry, written by the worker as it
+mails it, `sent_at`, `accepted_at`, `revoked_at`, `invited_by`; removed with the membership), the entry point
+`openseal_resolve_user_invitation` (an open, unexpired invitation of an enabled member, ids only), and
+`openseal_resolve_staff_session` replaced to refuse a member disabled in the session's account. Forty-one tables.
+Contacts for autocomplete are a query over `recipients`, not a table.
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 

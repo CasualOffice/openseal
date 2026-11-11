@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.password_hash FROM users u JOIN account_memberships m ON m.user_id = u.id WHERE m.account_id = $1 AND u.id = $2 AND u.disabled_at IS NULL",
+  "query": "SELECT u.password_hash FROM users u JOIN account_memberships m ON m.user_id = u.id WHERE m.account_id = $1 AND u.id = $2 AND u.disabled_at IS NULL AND m.disabled_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       true
     ]
   },
-  "hash": "1a6830857b9e98f169b3710d949c84db10e61241bb023115eb6c27e1b6dfc769"
+  "hash": "0fbadb1a0ce82a925a4cd7829bc44bfff02225f3cc6afec7b8d78dd1b0eebca3"
 }

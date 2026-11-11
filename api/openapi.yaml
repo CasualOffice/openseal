@@ -217,7 +217,11 @@ components:
         name: {type: string}
         login_kind: {type: string}
         permission_profile_id: {type: string}
-        disabled: {type: boolean}
+        disabled: {type: boolean, description: Disabled in this account}
+        invitation:
+          type: [string, 'null']
+          enum: [pending, sent, expired, accepted, revoked, null]
+          description: The latest invitation's state (single-user reads and invites only; WEB-06)
     UserList:
       type: object
       properties:
@@ -231,11 +235,21 @@ components:
         name: {type: string, maxLength: 255}
         profile: {type: string, description: '`admin`, `sender`, `viewer`, or a permission profile id'}
         password: {type: string, minLength: 12, maxLength: 256}
+        invite: {type: boolean, default: false, description: "Email a one-time link to set a password, valid 7 days (WEB-06); not with `password`"}
     UserPatch:
       type: object
       additionalProperties: false
       properties:
         name: {type: string, maxLength: 255}
+        password: {type: string, minLength: 12, maxLength: 256}
+        profile: {type: string, description: "`admin`, `sender`, `viewer`, or a permission profile id; not your own (WEB-06)"}
+        disabled: {type: boolean, description: "Disable (ending their sessions and open invitations) or enable the member in this account only; not yourself (WEB-06)"}
+    AcceptInvite:
+      type: object
+      required: [token, password]
+      additionalProperties: false
+      properties:
+        token: {type: string, maxLength: 128, description: The token from the invitation link}
         password: {type: string, minLength: 12, maxLength: 256}
     ApiClient:
       type: object
@@ -664,6 +678,32 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/LoginResponse'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/accept-invite:
+    post:
+      operationId: acceptInvite
+      summary: "Spend a user invitation's one-time link and set the password (WEB-06)"
+      description: >-
+        An unknown, expired, spent or revoked link, or a member disabled meanwhile, is
+        `401 CS-AUTH-0002`, all alike. The member then logs in with `/auth/login`.
+        Rate-limited as login.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AcceptInvite'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id: {type: string}
+                  user_id: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/auth/logout:
     post:
       operationId: logout
@@ -795,7 +835,7 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     patch:
       operationId: patchUser
-      summary: "Rename a member or set their password"
+      summary: "Rename a member, set their password, change their profile, disable or enable them"
       x-permission: "admin:users"
       requestBody:
         required: true
@@ -815,6 +855,26 @@ paths:
       x-permission: "admin:users"
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/{id}/invite:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: inviteUser
+      summary: "Email the member a new one-time set-password link; earlier links stop working (WEB-06)"
+      x-permission: "admin:users"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/api-clients:
     get:

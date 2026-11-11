@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id, u.email, u.name, u.login_kind, u.disabled_at, m.permission_profile_id FROM account_memberships m JOIN users u ON u.id = m.user_id WHERE m.account_id = $1 ORDER BY u.name, u.id",
+  "query": "SELECT u.id, u.email, u.name, u.login_kind, COALESCE(m.disabled_at, u.disabled_at) AS disabled_at, m.permission_profile_id FROM account_memberships m JOIN users u ON u.id = m.user_id WHERE m.account_id = $1 ORDER BY u.name, u.id",
   "describe": {
     "columns": [
       {
@@ -51,12 +51,7 @@
         "ordinal": 4,
         "name": "disabled_at",
         "type_info": "Timestamptz",
-        "origin": {
-          "Table": {
-            "table": "users",
-            "name": "disabled_at"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 5,
@@ -80,9 +75,9 @@
       false,
       false,
       false,
-      true,
+      null,
       false
     ]
   },
-  "hash": "1e6ea997e9ba99963cf62a751f5630ec789ff220ac3c52a11155a221b0de0ff1"
+  "hash": "135952a9adf7d04111434d6932c375d5203d9cffd6d0648080f0c60755816732"
 }
