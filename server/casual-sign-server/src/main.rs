@@ -178,6 +178,7 @@ async fn main() -> ExitCode {
         )
         .with_ansi(false)
         .init();
+    casual_sign_host::crash::startup();
     match std::env::args().nth(1).as_deref() {
         Some("healthcheck") => return healthcheck(),
         Some("migrate") => return migrate().await,

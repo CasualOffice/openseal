@@ -8,6 +8,11 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
+# Test only (P2-CRASH): `casual_sign_host::crash` kills the process at a named point
+# when `OPENSEAL_CRASH_AT` names it. Never enabled in a release or deployed build.
+[features]
+crash-points = ["casual-sign-host/crash-points"]
+
 [dependencies]
 casual-sign-audit = { path = "../../crates/casual-sign-audit" }
 casual-sign-model = { path = "../../crates/casual-sign-model" }

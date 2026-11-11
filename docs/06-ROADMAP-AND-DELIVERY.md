@@ -191,7 +191,7 @@ is cut when every box below is ticked, from evidence, not from intent (`REL-01`)
 
 - **Closes when:**
   - [ ] An API-driven end-to-end test sends a two-signer sequential envelope, signs through the ceremony endpoints, and downloads a sealed PDF that passes rungs 1–3, on the Compose deployment in CI.
-  - [ ] Crash tests: killing the server or worker at every effect boundary loses no audit event and never yields `completed` without a verified seal.
+  - [x] Crash tests: killing the server or worker at every effect boundary loses no audit event and never yields `completed` without a verified seal. (`P2-CRASH`: in-process `server/casual-sign-worker/tests/crash.rs` and real-process `tests/process_crash.rs`, SIGKILL at each boundary, docs/24 §As built.)
   - [ ] Tenant isolation tests: every endpoint refuses cross-tenant ids (generated from the OpenAPI document), with RLS disabled and enabled.
   - [ ] Threats `SEC-A*`, `SEC-T*`, `SEC-W*` in [07](07-SECURITY-THREAT-MODEL.md) have tests seen red.
   - [ ] Owner sign-off.

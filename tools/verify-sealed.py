@@ -44,6 +44,13 @@ def need(module):
         sys.exit(f"verify-sealed: `{module}` is not installed; pip install pyhanko cryptography")
 
 
+def roots_of(root):
+    """Trust roots as a list: `trust-root.pem` may hold several (a seal root and a
+    separate TSA root, as the process crash tests' keyd and TSA have, P2-CRASH)."""
+    if root is None:
+        return []
+    return list(root) if isinstance(root, list) else [root]
+
 def validate(data, trust_root):
     """Return (intact, coverage_is_whole_file, modification_level) for the last signature."""
     from pyhanko.pdf_utils.reader import PdfFileReader
@@ -54,7 +61,7 @@ def validate(data, trust_root):
     sigs = reader.embedded_signatures
     if not sigs:
         return False, False, "no signature"
-    status = validate_pdf_signature(sigs[-1], ValidationContext(trust_roots=[trust_root] if trust_root else []))
+    status = validate_pdf_signature(sigs[-1], ValidationContext(trust_roots=roots_of(trust_root)))
     whole = status.coverage.name == "ENTIRE_FILE"
     level = status.modification_level.name if status.modification_level else "UNKNOWN"
     return bool(status.intact and status.valid), whole, level
@@ -169,7 +176,7 @@ def self_test(dss_image=None):
     logging.getLogger("pyhanko").setLevel(logging.CRITICAL)
     need("pyhanko")
     need("cryptography")
-    from pyhanko.keys import load_cert_from_pemder
+    from pyhanko.keys import load_cert_from_pemder, load_certs_from_pemder
 
     failures = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -242,7 +249,7 @@ def pyhanko_sealed(data, root, level):
     if not sigs:
         return ["no signature"], "-"
     for i, sig in enumerate(sigs):
-        ctx = ValidationContext(trust_roots=[root], allow_fetching=False, revocation_mode="soft-fail")
+        ctx = ValidationContext(trust_roots=roots_of(root), allow_fetching=False, revocation_mode="soft-fail")
         doc_ts = sig.sig_object_type == "/DocTimeStamp"
         st = validate_pdf_timestamp(sig, validation_context=ctx) if doc_ts else validate_pdf_signature(sig, ctx, ctx)
         mod = st.modification_level.name if st.modification_level else "-"
@@ -269,7 +276,7 @@ def pyhanko_sealed(data, root, level):
             key = str(DocumentSecurityStore.sig_content_identifier(sig.pkcs7_content))
             if key not in vri:
                 problems.append(f"signature {i}: no VRI entry {key}")
-            kwargs = {"trust_roots": [root], "allow_fetching": False, "revocation_mode": "hard-fail"}
+            kwargs = {"trust_roots": roots_of(root), "allow_fetching": False, "revocation_mode": "hard-fail"}
             hard = dss.as_validation_context(kwargs)
             hard_ts = dss.as_validation_context(kwargs)
             st = (validate_pdf_timestamp(sig, validation_context=hard) if doc_ts
@@ -334,7 +341,7 @@ def check_dirs(dirs, dss_image=None):
     logging.getLogger("pyhanko").setLevel(logging.CRITICAL)
     logging.getLogger("pyhanko_certvalidator").setLevel(logging.CRITICAL)
     need("pyhanko")
-    from pyhanko.keys import load_cert_from_pemder
+    from pyhanko.keys import load_cert_from_pemder, load_certs_from_pemder
 
     problems, checked = [], 0
     for d in map(pathlib.Path, dirs):
@@ -343,7 +350,7 @@ def check_dirs(dirs, dss_image=None):
             problems.append(f"{d}: no manifest.tsv")
             continue
         root_pem = d / "trust-root.pem"
-        root = load_cert_from_pemder(str(root_pem)) if root_pem.is_file() else None
+        root = list(load_certs_from_pemder([str(root_pem)])) if root_pem.is_file() else None
         lines = [ln for ln in manifest.read_text(encoding="utf8").splitlines() if ln.strip()]
         head = lines[0].split("\t")
         rows = [dict(zip(head, ln.split("\t"))) for ln in lines[1:]]

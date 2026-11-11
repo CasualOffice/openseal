@@ -173,6 +173,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
       - run: cargo test -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server --locked
+      # P2-CRASH (Phase 2 exit item 2): the real server and worker binaries, built with the
+      # test-only crash points, SIGKILLed at every effect boundary and restarted.
+      - run: cargo build -p casual-sign-server --features crash-points --locked
+      - run: cargo test -p casual-sign-worker --features crash-points --test process_crash --locked
 
   # WEB-01, E2E-01: web app unit tests, then Playwright in Chromium, WebKit and a phone
   # viewport (mock mode until the Compose deployment, 2F), with axe on every screen.
