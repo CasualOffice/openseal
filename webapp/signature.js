@@ -6,7 +6,7 @@
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { openDialog, button, toast } from "./ui.js";
+import { openDialog, button, toast } from "./ui/index.js";
 
 const W = 600;
 const H = 200;

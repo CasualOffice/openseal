@@ -6,7 +6,7 @@ import { h, clear, fmtDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { button, busy, statusBadge, errorState, skeletonRows, toast, toastError, reasonDialog, emptyState } from "./ui.js";
+import { button, busy, statusBadge, errorState, skeletonRows, toast, toastError, reasonDialog, emptyState, tabs, pdfPreview } from "./ui/index.js";
 
 const ACTIVE = new Set(["sent", "delivered"]);
 
@@ -15,6 +15,8 @@ export function mount(view, ctx, [rawId]) {
   const body = h("div", { class: "os-detail", attrs: { "aria-busy": "true" } }, skeletonRows(4));
   view.append(body);
   let env = null;
+  let previews = [];
+  let tab = "summary";
 
   async function load() {
     try {
@@ -52,7 +54,27 @@ export function mount(view, ctx, [rawId]) {
       e.void_reason ? [h("dt", { text: t("envelope.void-reason") }), h("dd", { text: e.void_reason })] : null,
       h("dt", { text: t("envelope.documents") }), h("dd", { text: (e.documents || []).map((d) => d.name).join(", ") || "—" }));
 
-    body.append(back, head, meta, recipientsSection(e, audit), auditSection(audit));
+    // Summary (routing and history) and Documents (a preview of each, sealed once
+    // completed), as DocuSign's envelope page.
+    for (const p of previews) p.destroy();
+    previews = [];
+    const docTab = (panel) => {
+      const docs = e.documents || [];
+      if (!docs.length) { panel.append(emptyState({ illus: "documents", title: t("empty.documents.title"), text: t("envelope.no-docs"), testId: "empty-envelope-docs" })); return; }
+      for (const d of docs) {
+        const v = e.status === "completed" ? "sealed" : "normalized";
+        const p = pdfPreview({ load: () => ctx.api.documentContent(id, d.id, v), name: d.name });
+        previews.push(p);
+        panel.append(p.el);
+      }
+    };
+    body.append(back, head, meta, tabs({
+      label: t("envelope.sections"),
+      tabs: [{ id: "summary", label: t("envelope.tab.summary"), icon: "list-checks" }, { id: "documents", label: t("envelope.tab.documents"), icon: "file-text" }],
+      current: tab,
+      onChange: (v) => { tab = v; },
+      render: (which, panel) => { if (which === "documents") docTab(panel); else panel.append(recipientsSection(e, audit), auditSection(audit)); },
+    }));
   }
 
   function recipientsSection(e, audit) {
@@ -137,5 +159,5 @@ export function mount(view, ctx, [rawId]) {
 
   register("envelope.refresh", { label: t("action.refresh"), run: load });
   load();
-  return () => unregisterPrefix("envelope.refresh");
+  return () => { unregisterPrefix("envelope.refresh"); for (const p of previews) p.destroy(); };
 }

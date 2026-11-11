@@ -7,6 +7,7 @@ import { signIn, app, pdfFile, snap, signPage, tokens, REAL } from "./helpers.mj
 for (const scheme of ["light", "dark"]) {
   test(`screens (${scheme})`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "chromium", "one browser is enough for the pictures");
+    await page.addInitScript((s) => { try { localStorage.setItem("openseal.theme", s); } catch { /* storage off */ } }, scheme);
     await page.emulateMedia({ colorScheme: scheme });
     await page.setViewportSize({ width: 1366, height: 860 });
     await page.goto(app("#/signin"));

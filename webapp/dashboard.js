@@ -13,7 +13,7 @@ import { h, clear, fmtDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { button, busy, emptyState, skeletonRows, statusBadge, errorState, toast, toastError, reasonDialog, confirmDialog } from "./ui.js";
+import { button, busy, emptyState, skeletonRows, statusBadge, errorState, toast, toastError, reasonDialog, confirmDialog, menuButton } from "./ui/index.js";
 import { countLabel } from "./templatemodel.js";
 
 /// The rail: id, statuses (none = every status), icon, group.
@@ -231,33 +231,11 @@ export function mount(view, ctx, _match, params) {
       acts.push([t("envelope.download"), "download", () => downloadMany([r.id])]);
       acts.push([t("envelope.certificate"), "file-check", () => certificate(r.id)]);
     }
-    const wrap = h("div", { class: "os-menu-wrap" });
-    const btn = button(t("agreements.actions-for", { subject }), { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true, attrs: { "aria-haspopup": "menu", "aria-expanded": "false" } });
-    const menu = h("div", { class: "os-menu os-menu--end", attrs: { role: "menu", "aria-label": t("agreements.actions-for", { subject }) }, hidden: true });
-    const close = (focus) => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); if (focus) btn.focus(); };
-    btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      if (!menu.hidden) return close();
-      for (const m of list.querySelectorAll(".os-menu:not([hidden])")) m.hidden = true;
-      clear(menu);
-      for (const [label, ic, act, danger] of acts) {
-        const it = h("button", { type: "button", class: `os-menu__item${danger ? " os-menu__item--danger" : ""}`, attrs: { role: "menuitem", tabindex: "-1" } }, icon(ic, { size: 16 }), h("span", { text: label }));
-        it.addEventListener("click", (e2) => { e2.stopPropagation(); close(); act(); });
-        menu.append(it);
-      }
-      menu.hidden = false;
-      btn.setAttribute("aria-expanded", "true");
-      const items = [...menu.children];
-      items[0].focus();
-      menu.onkeydown = (e) => {
-        const i = items.indexOf(document.activeElement);
-        if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
-        else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
-        else if (e.key === "Escape" || e.key === "Tab") close(e.key === "Escape");
-      };
+    return menuButton({
+      label: t("agreements.actions-for", { subject }),
+      buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
+      items: () => acts.map(([label, ic, run, danger]) => ({ label, icon: ic, run, danger })),
     });
-    wrap.append(btn, menu);
-    return wrap;
   }
 
   // ---- Bulk actions --------------------------------------------------------------------------

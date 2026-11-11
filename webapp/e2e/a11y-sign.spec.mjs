@@ -6,6 +6,7 @@ import { signPage, tokens, REAL, expectAccessible } from "./helpers.mjs";
 for (const scheme of ["light", "dark"]) {
   test(`every ceremony step is accessible (${scheme})`, async ({ page }) => {
     test.skip(REAL && !tokens.sign, "OPENSEAL_E2E_SIGN_TOKEN is needed against a real server");
+    await page.addInitScript((s) => { try { localStorage.setItem("openseal.theme", s); } catch { /* storage off */ } }, scheme);
     await page.emulateMedia({ colorScheme: scheme });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(signPage(tokens.sign));

@@ -23,7 +23,7 @@ import { h, clear, reducedMotion } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix, run } from "./commands.js";
-import { button, busy, emptyState, toast, toastError, openDialog, confirmDialog } from "./ui.js";
+import { button, busy, emptyState, toast, toastError, openDialog, confirmDialog } from "./ui/index.js";
 import { openPdf, fitScale } from "./pdfview.js";
 import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, snap, toWire, fromWire, takesInput } from "./geometry.js";
 import { errorMessage } from "./api.js";

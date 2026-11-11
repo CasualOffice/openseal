@@ -699,4 +699,17 @@ export const EN = {
   "sign.review.pages": "The documents as you will sign them",
   "sign.review.page": "Page {n} of {total}, {name}, with your values",
   "sign.review.values": "Your values",
+
+  // ---- WEB-02 redesign: previews and the envelope page -----------------------------
+  "preview.pages": "Pages of {name}",
+  "preview.thumbs": "Page thumbnails",
+  "preview.toolbar": "Document preview",
+  "preview.page": "Page {n} of {total}, {name}",
+  "preview.go-page": "Go to page {n}",
+  "preview.error": "This document could not be shown.",
+  "envelope.sections": "Envelope sections",
+  "envelope.tab.summary": "Summary",
+  "envelope.tab.documents": "Documents",
+  "envelope.no-docs": "This envelope has no documents yet.",
+  "verify.preview": "Document",
 };

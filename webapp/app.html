@@ -33,20 +33,14 @@
       <a class="os-nav__link os-nav__link--drawer" href="verify.html" data-nav="verify" data-icon="shield-check"><span data-i18n="nav.verify">Verify a PDF</span></a>
     </nav>
     <span class="os-spacer"></span>
-    <div class="os-menu-wrap os-start">
-      <button type="button" id="start-btn" class="os-btn os-btn--primary os-btn--md" aria-haspopup="menu" aria-expanded="false" aria-controls="start-menu"></button>
-      <div id="start-menu" class="os-menu os-menu--start" role="menu" data-i18n-attr="aria-label:start.menu" hidden></div>
-    </div>
+    <div id="start-slot" class="os-start"></div>
     <form class="os-topsearch" role="search" id="top-search-form">
       <label class="os-sr-only" for="top-search" data-i18n="agreements.search">Search agreements</label>
       <input id="top-search" class="os-input os-topsearch__input" type="search" autocomplete="off" data-i18n-attr="placeholder:top.search-placeholder">
     </form>
     <button type="button" id="help-btn" class="os-btn os-btn--ghost os-btn--md os-btn--icon" data-i18n-attr="aria-label:help.shortcuts;title:help.shortcuts"></button>
     <button type="button" id="theme-btn" class="os-btn os-btn--ghost os-btn--md os-btn--icon"></button>
-    <div class="os-menu-wrap">
-      <button type="button" id="account-btn" class="os-btn os-btn--ghost os-btn--md os-account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" data-i18n-attr="aria-label:account.menu;title:account.menu"></button>
-      <div id="account-menu" class="os-menu" role="menu" data-i18n-attr="aria-label:account.menu" hidden></div>
-    </div>
+    <div id="account-slot"></div>
   </header>
   <main id="main" class="os-main" tabindex="-1"></main>
 </body>

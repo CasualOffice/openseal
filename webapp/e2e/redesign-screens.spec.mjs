@@ -7,6 +7,7 @@ import { signIn, app, snap, REAL } from "./helpers.mjs";
 for (const scheme of ["light", "dark"]) {
   test(`redesign screens (${scheme})`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "chromium" || REAL, "one browser, mock data");
+    await page.addInitScript((s) => { try { localStorage.setItem("openseal.theme", s); } catch { /* storage off */ } }, scheme);
     await page.emulateMedia({ colorScheme: scheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await signIn(page, "home");

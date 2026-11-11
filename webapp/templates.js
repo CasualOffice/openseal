@@ -14,7 +14,7 @@ import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { toBase64 } from "./api.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { button, busy, emptyState, skeletonRows, errorState, openDialog, confirmDialog, toast, toastError } from "./ui.js";
+import { button, busy, emptyState, skeletonRows, errorState, openDialog, confirmDialog, toast, toastError, pdfPreview } from "./ui/index.js";
 import { rolesOf, peopleProblems, envelopeFromTemplate } from "./templatemodel.js";
 
 /// `#/templates`: the list.
@@ -169,7 +169,8 @@ export function mountUse(view, ctx, [rawId]) {
     const docsCard = h("section", { class: "os-card", attrs: { "aria-labelledby": "use-docs-h" } },
       h("h2", { id: "use-docs-h", class: "os-card__title", text: t("prepare.documents") }));
     if (docs.length) {
-      docsCard.append(h("ul", { class: "os-doc-list" }, ...docs.map((d) => h("li", {}, icon("file-text", { size: 16 }), h("span", { class: "os-doc-list__name", text: d.name }), h("span", { class: "os-muted os-small", text: t("prepare.pages-n", { n: d.pages || 1 }) })))),
+      for (const d of docs) docsCard.append(pdfPreview({ load: () => ctx.api.templates.documentContent(tp.id, d.id), name: d.name, height: 520 }).el);
+      docsCard.append(
         h("p", { class: "os-muted os-small", text: t("use.fields-n", { n: fields.length }) }));
     } else {
       docsCard.append(h("p", { class: "os-muted", attrs: { "data-testid": "use-no-docs" }, text: t("use.no-docs") }));

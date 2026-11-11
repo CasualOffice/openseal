@@ -6,6 +6,7 @@ import { signIn, app, pdfFile, expectAccessible, REAL } from "./helpers.mjs";
 for (const scheme of ["light", "dark"]) {
   test.describe(`${scheme} theme`, () => {
     test.use({ colorScheme: scheme });
+    test.beforeEach(async ({ page }) => { await page.addInitScript((s) => { try { localStorage.setItem("openseal.theme", s); } catch { /* storage off */ } }, scheme); });
 
     test("sign-in", async ({ page }) => {
       await page.goto(app("#/signin"));

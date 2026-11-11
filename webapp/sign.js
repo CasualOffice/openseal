@@ -11,7 +11,7 @@ import { h, clear, reducedMotion } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, errorMessage, locationFrom, ApiError } from "./api.js";
-import { button, busy, emptyState, toast, toastError, openDialog, reasonDialog, noServerState } from "./ui.js";
+import { button, busy, emptyState, toast, toastError, openDialog, reasonDialog, noServerState } from "./ui/index.js";
 import { openPdf, fitScale } from "./pdfview.js";
 import { fromWire, takesInput } from "./geometry.js";
 import { adoptDialog } from "./signature.js";
@@ -535,7 +535,8 @@ function review() {
       const page = h("div", { class: "os-page", attrs: { role: "img", "aria-label": t("sign.review.page", { n: i + 1, total: pdf.pages.length, name: d.name }), "data-testid": "review-page" } }, canvas, overlay);
       page.style.width = `${pg.width * scale}px`;
       page.style.height = `${pg.height * scale}px`;
-      pdf.render(i + 1, canvas, scale).catch(() => page.classList.add("is-error"));
+      page.classList.add("is-loading");
+      pdf.render(i + 1, canvas, scale).then(() => page.classList.remove("is-loading")).catch(() => page.classList.add("is-error"));
       for (const f of fields.filter((x) => x.document_id === d.id && x.p.page === i + 1)) overlay.append(flat(f, scale));
       pages.append(page);
     });

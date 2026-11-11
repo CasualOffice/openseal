@@ -13,7 +13,7 @@
 import { h, clear, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
-import { button, emptyState, toast } from "./ui.js";
+import { button, emptyState, toast, pdfPreview } from "./ui/index.js";
 import { illustration } from "./illustrations.js";
 import { initTheme, getTheme, toggleTheme } from "./theme.js";
 import { summarize, coverage, certificatesFrom } from "./verifyreport.js";
@@ -126,6 +126,7 @@ async function check(file) {
     trail = raw ? parseTrail(raw) : null;
   } catch { trail = null; }
   show(file, bytes.length, report, trail);
+  main.append(h("section", { class: "os-card", attrs: { "aria-labelledby": "vpreview-h" } }, h("h2", { id: "vpreview-h", class: "os-card__title", text: t("verify.preview") }), pdfPreview({ load: async () => bytes, name: file.name, height: 560 }).el));
 }
 
 function problem(text) {

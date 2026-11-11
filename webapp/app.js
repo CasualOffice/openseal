@@ -13,7 +13,7 @@ import { createClient, isMockMode, isNoServer, ApiError, errorMessage } from "./
 import { extend } from "./api-extra.js";
 import { register, run, command } from "./commands.js";
 import { handle, bindings } from "./keys.js";
-import { button, openDialog, toast, errorState, noServerState } from "./ui.js";
+import { openDialog, toast, errorState, noServerState, menuButton, avatar } from "./ui/index.js";
 import { initTheme, setTheme, getTheme, toggleTheme } from "./theme.js";
 
 const mock = isMockMode();
@@ -143,14 +143,17 @@ function buildChrome() {
     if (mock && !a.getAttribute("href").startsWith("#")) a.href = `${a.getAttribute("href")}?mock=1`;
   }
 
-  // Start: DocuSign's place for beginning anything.
-  const start = document.getElementById("start-btn");
-  start.append(icon("plus", { size: 20 }), h("span", { text: t("start.label") }), icon("chevron-down", { size: 16 }));
-  menu(start, document.getElementById("start-menu"), () => [
-    [t("start.send"), "send", () => run("envelope.new")],
-    [t("start.template"), "layout-template", () => ctx.navigate("#/templates")],
-    [t("start.verify"), "shield-check", () => { location.href = mock ? "verify.html?mock=1" : "verify.html"; }],
-  ]);
+  // Start: DocuSign's place for beginning anything (component library menu).
+  const start = h("button", { type: "button", id: "start-btn", class: "os-btn os-btn--primary os-btn--md" },
+    icon("plus", { size: 20 }), h("span", { text: t("start.label") }), icon("chevron-down", { size: 16 }));
+  document.getElementById("start-slot").replaceWith(Object.assign(menuButton({
+    label: t("start.label"), trigger: start, menuLabel: t("start.menu"), align: "start",
+    items: () => [
+      { label: t("start.send"), icon: "send", run: () => run("envelope.new") },
+      { label: t("start.template"), icon: "layout-template", run: () => ctx.navigate("#/templates") },
+      { label: t("start.verify"), icon: "shield-check", run: () => { location.href = mock ? "verify.html?mock=1" : "verify.html"; } },
+    ],
+  }), { className: "os-menu-wrap os-start" }));
 
   // Search: on Agreements it filters as you type; elsewhere Enter opens Agreements with it.
   const form = document.getElementById("top-search-form");
@@ -173,18 +176,21 @@ function buildChrome() {
   help.append(icon("keyboard"));
   help.addEventListener("click", () => run("help.shortcuts"));
 
-  const acct = document.getElementById("account-btn");
-  acct.append(h("span", { class: "os-avatar", attrs: { "aria-hidden": "true" }, text: "" }), icon("chevron-down", { size: 16 }));
-  menu(acct, document.getElementById("account-menu"), () => [
-    h("div", { class: "os-menu__who" },
-      h("strong", { text: who.name || (ctx.mock ? t("mock.user") : t("account.signed-in")) }),
-      h("span", { class: "os-muted", text: who.email || ctx.session?.user_id || "" })),
-    [t("theme.light"), "sun", () => run("theme.light")],
-    [t("theme.dark"), "moon", () => run("theme.dark")],
-    [t("theme.system"), "monitor", () => run("theme.system")],
-    [t("help.shortcuts"), "keyboard", () => run("help.shortcuts")],
-    [t("account.signout"), "log-out", () => run("account.signout")],
-  ]);
+  const acct = h("button", { type: "button", id: "account-btn", class: "os-btn os-btn--ghost os-btn--md os-account-btn", attrs: { "aria-label": t("account.menu") } },
+    avatar(""), icon("chevron-down", { size: 16 }));
+  document.getElementById("account-slot").replaceWith(menuButton({
+    label: t("account.menu"), trigger: acct, menuLabel: t("account.menu"),
+    items: () => [
+      h("div", { class: "os-menu__who" },
+        h("strong", { text: who.name || (ctx.mock ? t("mock.user") : t("account.signed-in")) }),
+        h("span", { class: "os-muted", text: who.email || ctx.session?.user_id || "" })),
+      { label: t("theme.light"), icon: "sun", run: () => run("theme.light") },
+      { label: t("theme.dark"), icon: "moon", run: () => run("theme.dark") },
+      { label: t("theme.system"), icon: "monitor", run: () => run("theme.system") },
+      { label: t("help.shortcuts"), icon: "keyboard", run: () => run("help.shortcuts") },
+      { label: t("account.signout"), icon: "log-out", run: () => run("account.signout") },
+    ],
+  }));
 }
 
 /// Who is signed in, for the avatar: an admin can read their own member record; anyone
@@ -205,44 +211,6 @@ async function loadWho() {
     // The name starts with what is shown (SC 2.5.3, label in name).
     av.parentElement.setAttribute("aria-label", av.textContent ? `${av.textContent} ${t("account.menu")}` : t("account.menu"));
   }
-}
-
-/// A menu button: `items()` gives `[label, icon, run]` entries or nodes. Arrow keys,
-/// Home, End, Escape and Tab as the ARIA menu pattern; a click outside closes it.
-const menus = [];
-function menu(btn, list, items) {
-  const close = (focus = false) => {
-    if (list.hidden) return;
-    list.hidden = true;
-    btn.setAttribute("aria-expanded", "false");
-    if (focus) btn.focus();
-  };
-  menus.push(close);
-  btn.addEventListener("click", () => {
-    if (!list.hidden) return close();
-    for (const other of menus) if (other !== close) other();
-    clear(list);
-    for (const it of items()) {
-      if (!Array.isArray(it)) { list.append(it); continue; }
-      const [label, ic, act] = it;
-      const b = h("button", { type: "button", class: "os-menu__item", attrs: { role: "menuitem", tabindex: "-1" } }, icon(ic, { size: 16 }), h("span", { text: label }));
-      b.addEventListener("click", () => { close(); act(); });
-      list.append(b);
-    }
-    list.hidden = false;
-    btn.setAttribute("aria-expanded", "true");
-    const entries = [...list.querySelectorAll('[role="menuitem"]')];
-    entries[0]?.focus();
-    list.onkeydown = (e) => {
-      const i = entries.indexOf(document.activeElement);
-      if (e.key === "ArrowDown") { e.preventDefault(); entries[(i + 1) % entries.length].focus(); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); entries[(i - 1 + entries.length) % entries.length].focus(); }
-      else if (e.key === "Home") { e.preventDefault(); entries[0].focus(); }
-      else if (e.key === "End") { e.preventDefault(); entries[entries.length - 1].focus(); }
-      else if (e.key === "Escape" || e.key === "Tab") close(e.key === "Escape");
-    };
-  });
-  document.addEventListener("click", (e) => { if (!btn.contains(e.target) && !list.contains(e.target)) close(); });
 }
 
 function closeNav() {

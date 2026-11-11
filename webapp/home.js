@@ -12,7 +12,7 @@
 import { h, clear, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, emptyState, skeletonRows, statusBadge, errorState, toast } from "./ui.js";
+import { button, emptyState, skeletonRows, statusBadge, errorState, toast } from "./ui/index.js";
 import { countLabel } from "./templatemodel.js";
 import { handFiles } from "./handoff.js";
 

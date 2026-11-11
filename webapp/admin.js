@@ -10,7 +10,7 @@
 import { h, clear } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, emptyState, skeletonRows, errorState, openDialog, confirmDialog, toast, toastError } from "./ui.js";
+import { button, emptyState, skeletonRows, errorState, openDialog, confirmDialog, toast, toastError } from "./ui/index.js";
 
 const PROFILES = ["admin", "sender", "viewer"];
 const SCOPES = ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write"];

@@ -6,11 +6,11 @@
 // on close), on the native `<dialog>` element, which gives the focus trap, Escape and
 // the inert background for free. Toasts announce through one polite live region.
 
-import { h, clear, reducedMotion } from "./dom.js";
-import { icon } from "./icons.js";
-import { illustration } from "./illustrations.js";
-import { t } from "./i18n.js";
-import { errorMessage } from "./api.js";
+import { h, clear, reducedMotion } from "../dom.js";
+import { icon } from "../icons.js";
+import { illustration } from "../illustrations.js";
+import { t } from "../i18n.js";
+import { errorMessage } from "../api.js";
 
 /// A button. `variant`: primary | secondary | ghost | danger; `size`: sm | md | lg.
 /// `command` adds `data-os-command`, so the registry can find and run it.

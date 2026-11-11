@@ -8,7 +8,7 @@
 import { h, clear, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, emptyState, skeletonRows, errorState } from "./ui.js";
+import { button, emptyState, skeletonRows, errorState } from "./ui/index.js";
 import { statusCounts, medianHours, toCsv } from "./reportmodel.js";
 
 const STATUSES = ["draft", "sent", "delivered", "completed", "declined", "voided", "expired"];

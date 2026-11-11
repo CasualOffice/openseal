@@ -3,7 +3,7 @@
 
 import { h } from "./dom.js";
 import { t } from "./i18n.js";
-import { button, busy } from "./ui.js";
+import { button, busy } from "./ui/index.js";
 import { errorMessage } from "./api.js";
 
 export async function mount(view, ctx) {

@@ -19,6 +19,7 @@ async function step(page, name) {
 }
 
 async function placeFor(page, who, types) {
+  await expect(page.getByLabel("Placing fields for").locator("option", { hasText: who })).toHaveCount(1);
   await page.getByLabel("Placing fields for").selectOption({ label: who });
   for (const type of types) await page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).click();
 }

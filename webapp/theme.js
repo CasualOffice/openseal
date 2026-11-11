@@ -1,22 +1,22 @@
-// Light, dark, or the system's choice (WEB-01). The choice is a per-browser
-// convenience in localStorage; without storage the app follows the system.
+// Light, dark, or the system's choice (WEB-01). Light is the default, as in the
+// products OpenSeal follows (WEB-02); the choice is a per-browser convenience in
+// localStorage, and without storage the app is light.
 
 const KEY = "openseal.theme";
 
 export function getTheme() {
-  try { return localStorage.getItem(KEY) || "system"; } catch { return "system"; }
+  try { return localStorage.getItem(KEY) || "light"; } catch { return "light"; }
 }
 
 function apply(theme) {
   const root = document.documentElement;
-  if (theme === "light" || theme === "dark") root.dataset.theme = theme;
-  else delete root.dataset.theme;
+  if (theme === "system") delete root.dataset.theme;
+  else root.dataset.theme = theme === "dark" ? "dark" : "light";
 }
 
 export function setTheme(theme) {
   try {
-    if (theme === "system") localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, theme);
+    localStorage.setItem(KEY, theme);
   } catch { /* storage off: this page only */ }
   apply(theme);
 }
