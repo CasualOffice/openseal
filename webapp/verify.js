@@ -51,7 +51,7 @@ function start() {
     h("p", { class: "os-drop__title", text: t("verify.drop") }),
     choose,
     h("p", { class: "os-muted os-small", text: t("verify.private") }));
-  drop.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); drop.classList.add("is-dropping"); } });
+  for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); drop.classList.add("is-dropping"); } });
   drop.addEventListener("dragleave", () => drop.classList.remove("is-dropping"));
   drop.addEventListener("drop", (e) => {
     e.preventDefault();

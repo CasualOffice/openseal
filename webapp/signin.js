@@ -9,7 +9,7 @@ import { errorMessage } from "./api.js";
 export async function mount(view, ctx) {
   const hint = ctx.mock ? (await import("./mock.js")).MOCK : null;
   const errId = "signin-error";
-  const email = h("input", { id: "signin-email", class: "os-input", type: "email", name: "email", autocomplete: "username", required: true, attrs: { "aria-describedby": errId, autofocus: true } });
+  const email = h("input", { id: "signin-email", class: "os-input", type: "email", name: "email", autocomplete: "username", required: true, attrs: { "aria-describedby": errId } });
   const password = h("input", { id: "signin-password", class: "os-input", type: "password", name: "password", autocomplete: "current-password", required: true, attrs: { "aria-describedby": errId } });
   const error = h("p", { id: errId, class: "os-field-error", attrs: { role: "alert" } });
   const submit = button(t("signin.submit"), { variant: "primary", size: "lg", type: "submit" });
@@ -47,5 +47,8 @@ export async function mount(view, ctx) {
     hint ? h("p", { class: "os-signin__hint", text: t("signin.mock-hint", hint) }) : null,
   );
   view.append(h("div", { class: "os-signin-wrap" }, card));
+  // Focused here, not by an `autofocus` attribute: WebKit runs a page's autofocus at a
+  // later rendering update, which on a slow machine lands after typing has begun and
+  // pulls the caret back into this field mid-password (WEB-06, the CI e2e on Linux).
   email.focus();
 }

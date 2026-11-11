@@ -77,7 +77,10 @@ export default defineConfig({
     { name: "chromium", use: chrome },
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
     { name: "mobile", testMatch: signer, use: { ...devices["iPhone 13"] } },
-    { name: "reduced-motion", testMatch: /(^|[\\/])(send|ceremony)\.spec\.mjs$/, use: { ...chrome, contextOptions: { reducedMotion: "reduce" } } },
+    // Anchored at a path separator so a name only ends in "ceremony" by choice; the
+    // guided ceremony runs here too (its phone tests set a phone viewport themselves):
+    // with no transitions, a field pushed off screen cannot pass mid-animation.
+    { name: "reduced-motion", testMatch: /(^|[\\/])(send|ceremony|guided-ceremony)\.spec\.mjs$/, use: { ...chrome, contextOptions: { reducedMotion: "reduce" } } },
   ].map((p) => (p.testMatch ? p : { ...p, testMatch: [desktop, signer] })),
   webServer: REAL ? undefined : {
     command: `python3 -I ../../tools/serve-webapp.py ${PORT}`,

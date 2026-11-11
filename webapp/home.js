@@ -65,7 +65,7 @@ export function mount(view, ctx) {
       h("p", { class: "os-muted", text: t("home.drop-text") })),
     button(t("home.choose-files"), { icon: "upload", onClick: () => input.click() }),
     input);
-  drop.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); drop.classList.add("is-dropping"); } });
+  for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); drop.classList.add("is-dropping"); } });
   drop.addEventListener("dragleave", (e) => { if (!drop.contains(e.relatedTarget)) drop.classList.remove("is-dropping"); });
   drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("is-dropping"); if (e.dataTransfer.files?.length) start(e.dataTransfer.files); });
 
