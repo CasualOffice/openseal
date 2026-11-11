@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE template_roles SET name = $4, routing_order = $5, recipient_type = $6, default_auth = $7 WHERE account_id = $1 AND id = $2 AND template_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6fab7ffa18ef345904c02b6f2eda66a358d3bb25cd71a9f26e5e392d0976b67a"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM template_fields WHERE account_id = $1 AND template_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "90ee2807ff6e9e43ee6b74b61ba37f46beef782c10185e835e2f83bcda59c674"
+}

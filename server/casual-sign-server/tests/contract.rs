@@ -358,6 +358,8 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "template patch",
     )
     .await;
+    // WEB-06: every template-editing operation.
+    common::templates::edit_template(&api, k).await;
 
     // Webhooks.
     let w = ok(

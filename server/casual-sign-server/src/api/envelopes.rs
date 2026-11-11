@@ -88,7 +88,7 @@ fn new_id() -> Result<Id, ApiError> {
 }
 
 /// Bytes from base64, at most `max` decoded.
-fn base64(s: &str, max: usize, at: &str) -> Result<Vec<u8>, ApiError> {
+pub(crate) fn base64(s: &str, max: usize, at: &str) -> Result<Vec<u8>, ApiError> {
     if s.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
         return Err(ApiError::too_large());
     }
@@ -125,7 +125,7 @@ fn admission_json(a: &AdmissionReport, n: Option<&NormalizationReport>) -> (Valu
     )
 }
 
-fn pages_json(a: &AdmissionReport) -> Value {
+pub(crate) fn pages_json(a: &AdmissionReport) -> Value {
     Value::Array(
         a.pages
             .iter()

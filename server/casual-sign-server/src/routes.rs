@@ -77,6 +77,8 @@ pub fn table() -> Vec<Route> {
     let er = Scope("envelopes:read");
     let ew = Scope("envelopes:write");
     let es = Scope("envelopes:send");
+    let tr = Scope("templates:read");
+    let tw = Scope("templates:write");
     vec![
         // Authentication (docs/40 §2).
         r("POST", "/api/v1/auth/login", Public, JSON, admin::login),
@@ -393,6 +395,91 @@ pub fn table() -> Vec<Route> {
             Scope("templates:write"),
             JSON,
             templates::patch,
+        ),
+        // Template editing (WEB-06).
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}",
+            tw,
+            JSON,
+            templates::delete,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/duplicate",
+            tw,
+            JSON,
+            templates::duplicate,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/documents",
+            tw,
+            UPLOAD,
+            templates::add_document,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}/documents/{doc}",
+            tw,
+            JSON,
+            templates::delete_document,
+        ),
+        r(
+            "GET",
+            "/api/v1/templates/{id}/documents/{doc}/content",
+            tr,
+            JSON,
+            templates::document_content,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/roles",
+            tw,
+            JSON,
+            templates::add_role,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/templates/{id}/roles/{role}",
+            tw,
+            JSON,
+            templates::patch_role,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}/roles/{role}",
+            tw,
+            JSON,
+            templates::delete_role,
+        ),
+        r(
+            "GET",
+            "/api/v1/templates/{id}/fields",
+            tr,
+            JSON,
+            templates::fields,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/fields",
+            tw,
+            JSON,
+            templates::add_fields,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/templates/{id}/fields/{f}",
+            tw,
+            JSON,
+            templates::patch_field,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}/fields/{f}",
+            tw,
+            JSON,
+            templates::delete_field,
         ),
         // Webhooks.
         r(

@@ -19,6 +19,7 @@
 
 pub mod flow;
 pub mod harness;
+pub mod templates;
 
 use casual_sign_store::Store;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};

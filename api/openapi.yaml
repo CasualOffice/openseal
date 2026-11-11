@@ -540,7 +540,11 @@ components:
         id: {type: string}
         name: {type: string}
         version: {type: integer}
+        email_subject: {type: [string, 'null']}
+        email_message: {type: [string, 'null']}
         roles: {type: array, items: {type: object}}
+        documents: {type: array, items: {type: object}, description: "Single-template reads only: id, name, ord, pages, page_geometry, sha256"}
+        fields: {type: array, items: {$ref: '#/components/schemas/TemplateField'}, description: Single-template reads only}
     TemplateList:
       type: object
       properties:
@@ -564,10 +568,37 @@ components:
               type: {$ref: '#/components/schemas/RecipientType'}
     TemplatePatch:
       type: object
-      required: [name]
       additionalProperties: false
       properties:
-        name: {type: string}
+        name: {type: string, maxLength: 255}
+        email_subject: {type: [string, 'null'], maxLength: 255}
+        email_message: {type: [string, 'null'], maxLength: 10000}
+    TemplateRoleIn:
+      type: object
+      required: [name, type]
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        type: {type: string}
+        routing_order: {type: integer, minimum: 1, maximum: 999, default: 1}
+    TemplateRolePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        type: {type: string}
+        routing_order: {type: integer, minimum: 1, maximum: 999}
+    TemplateField:
+      type: object
+      description: >-
+        A field as on an envelope (docs/22 §6), bound to `role_id` instead of a recipient;
+        input takes `role_id` (or `role`), `document_id`, and the flat `page`, `x`, `y`,
+        `width`, `height` or `placement` (WEB-06).
+      additionalProperties: true
+    TemplateFieldList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/TemplateField'}}
     Webhook:
       type: object
       properties:
@@ -1595,7 +1626,7 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     patch:
       operationId: patchTemplate
-      summary: "Rename a template (If-Match required)"
+      summary: "Rename a template or change its email subject and message (If-Match required)"
       x-permission: "templates:write"
       parameters:
         - $ref: '#/components/parameters/ifMatch'
@@ -1610,6 +1641,204 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteTemplate
+      summary: "Delete a template with its roles, documents and fields; envelopes made from it keep their copies (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/duplicate:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    post:
+      operationId: duplicateTemplate
+      summary: "A copy owned by the caller, with new ids, sharing the stored PDFs (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: {type: string, maxLength: 255, description: "Default `Copy of <name>`"}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/documents:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    post:
+      operationId: addTemplateDocument
+      summary: "Add a document {name, content_base64}, admitted and normalized as an upload (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DocumentIn'}
+      responses:
+        '201':
+          description: The template
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/documents/{doc}:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: doc, in: path, required: true, description: Template document id, schema: {type: string}}
+    delete:
+      operationId: deleteTemplateDocument
+      summary: "Remove a document and the fields on it (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/documents/{doc}/content:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: doc, in: path, required: true, description: Template document id, schema: {type: string}}
+    get:
+      operationId: getTemplateDocumentContent
+      summary: "The template document's normalized PDF (WEB-06)"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/roles:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    post:
+      operationId: addTemplateRole
+      summary: "Add a role (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TemplateRoleIn'}
+      responses:
+        '201':
+          description: The template
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/roles/{role}:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: role, in: path, required: true, description: Role id, schema: {type: string}}
+    patch:
+      operationId: patchTemplateRole
+      summary: "Rename a role or change its type or routing order (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TemplateRolePatch'}
+      responses:
+        '200':
+          description: The template
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteTemplateRole
+      summary: "Remove a role and its fields (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/fields:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    get:
+      operationId: listTemplateFields
+      summary: "A template's fields (WEB-06)"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateFieldList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: addTemplateFields
+      summary: "Add one field, or {items: [...]}, bound to roles (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateFieldList'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/fields/{f}:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: f, in: path, required: true, description: Field id, schema: {type: string}}
+    patch:
+      operationId: patchTemplateField
+      summary: "Change a field: the members given replace its own; checked whole again (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateField'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteTemplateField
+      summary: "Remove a field (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/webhooks:
     get:
