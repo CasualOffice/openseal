@@ -25,6 +25,15 @@ export const MOCK = {
 
 const KEY = "openseal.mock.v1";
 const TERMINAL = new Set(["completed", "declined", "voided", "expired"]);
+/// The mock's audit names → casual-sign-audit's (the server's) for `GET /s/{token}/history`.
+const AUDIT_TYPES = {
+  envelope_created: "envelope.created", envelope_sent: "envelope.sent", envelope_corrected: "envelope.corrected",
+  envelope_voided: "envelope.voided", envelope_completed: "envelope.completed", seal_applied: "document.sealed",
+  recipient_opened: "recipient.delivered", recipient_authenticated: "recipient.auth_passed", recipient_auth_failed: "recipient.auth_failed",
+  recipient_consented: "recipient.consented", document_viewed: "recipient.viewed_document", signature_adopted: "recipient.signature_adopted",
+  field_filled: "recipient.field_completed", recipient_finish_later: "recipient.finish_later", recipient_completed: "recipient.signed",
+  recipient_declined: "recipient.declined", recipient_reassigned: "recipient.reassigned", notification_resent: "reminder.sent",
+};
 const SIGNING_TYPES = new Set(["signer", "in_person_signer", "approver"]);
 const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
 
@@ -900,8 +909,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
       if (sub === "history") {
+        // As the server (WEB-07): `{seq, type, at, by}`, the type as casual-sign-audit
+        // names it (the mock records its own underscore names), `by` without names.
         const mine = (db.audit[env.id] || []).filter((e) => !e.event.recipient_id || e.event.recipient_id === rec.id);
-        return json(200, { events: mine.map((e) => ({ seq: e.seq, type: e.type, at: e.at })) });
+        const by = (e) => (e.event.actor === "recipient" ? (e.event.recipient_id === rec.id ? "you" : "recipient") : e.event.actor === "sender" ? "sender" : "system");
+        return json(200, { events: mine.map((e) => ({ seq: e.seq, type: AUDIT_TYPES[e.type] || e.type, at: e.at, by: by(e) })) });
       }
       // As the server: only after this recipient finished (409 before), `doc` optional
       // for one document; the mock serves the delivered bytes (no preview banner).
