@@ -151,6 +151,35 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     patchField: (id, f, etag, body) => data(request("PATCH", `${E(id)}/fields/${encodeURIComponent(f)}`, { body, ifMatch: etag })),
     deleteField: (id, f, etag) => data(request("DELETE", `${E(id)}/fields/${encodeURIComponent(f)}`, { ifMatch: etag })),
 
+    // ---- WEB-06 server additions --------------------------------------------
+    /// Correct a sent envelope with the engine's change list (or use the per-element
+    /// recipient and field calls, which correct a sent envelope too).
+    correctEnvelope: (id, etag, changes) => data(request("POST", `${E(id)}/correct`, { body: { changes }, ifMatch: etag })),
+    /// The document as it stands: sealed once sealed, else a "not signed" preview.
+    currentDocument: async (id, doc) =>
+      (await request("GET", `${E(id)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, query: { version: "current" } })).blob,
+    detectFields: (id, doc) => data(request("POST", `${E(id)}/documents/${encodeURIComponent(doc)}/detect-fields`)),
+    contacts: (q, limit = 10) => data(request("GET", "/api/v1/contacts", { query: { q, limit } })),
+    inviteUser: (body) => data(request("POST", "/api/v1/users", { body: { ...body, invite: true } })),
+    resendInvite: (userId) => data(request("POST", `/api/v1/users/${encodeURIComponent(userId)}/invite`)),
+    patchUser: (userId, body) => data(request("PATCH", `/api/v1/users/${encodeURIComponent(userId)}`, { body })),
+    acceptInvite: (token, password) => data(request("POST", "/api/v1/auth/accept-invite", { body: { token, password } })),
+    templates: {
+      get: async (t) => { const r = await request("GET", `/api/v1/templates/${encodeURIComponent(t)}`); return { template: r.data, etag: r.etag }; },
+      patch: (t, etag, body) => data(request("PATCH", `/api/v1/templates/${encodeURIComponent(t)}`, { body, ifMatch: etag })),
+      remove: (t, etag) => data(request("DELETE", `/api/v1/templates/${encodeURIComponent(t)}`, { ifMatch: etag })),
+      duplicate: (t, name) => data(request("POST", `/api/v1/templates/${encodeURIComponent(t)}/duplicate`, { body: name ? { name } : {} })),
+      addDocument: (t, name, bytes) => data(request("POST", `/api/v1/templates/${encodeURIComponent(t)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),
+      removeDocument: (t, doc, etag) => data(request("DELETE", `/api/v1/templates/${encodeURIComponent(t)}/documents/${encodeURIComponent(doc)}`, { ifMatch: etag })),
+      documentContent: async (t, doc) => (await request("GET", `/api/v1/templates/${encodeURIComponent(t)}/documents/${encodeURIComponent(doc)}/content`, { raw: true })).blob,
+      addRole: (t, role) => data(request("POST", `/api/v1/templates/${encodeURIComponent(t)}/roles`, { body: role })),
+      patchRole: (t, role, etag, body) => data(request("PATCH", `/api/v1/templates/${encodeURIComponent(t)}/roles/${encodeURIComponent(role)}`, { body, ifMatch: etag })),
+      removeRole: (t, role, etag) => data(request("DELETE", `/api/v1/templates/${encodeURIComponent(t)}/roles/${encodeURIComponent(role)}`, { ifMatch: etag })),
+      addFields: (t, items) => data(request("POST", `/api/v1/templates/${encodeURIComponent(t)}/fields`, { body: { items } })),
+      patchField: (t, f, etag, body) => data(request("PATCH", `/api/v1/templates/${encodeURIComponent(t)}/fields/${encodeURIComponent(f)}`, { body, ifMatch: etag })),
+      removeField: (t, f, etag) => data(request("DELETE", `/api/v1/templates/${encodeURIComponent(t)}/fields/${encodeURIComponent(f)}`, { ifMatch: etag })),
+    },
+
     // ---- Ceremony (docs/40 §6; not public API) ----------------------------
     ceremony: {
       view: (token) => data(request("GET", S(token), { ceremony: true })),
@@ -172,6 +201,12 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       decline: (token, reason, location) =>
         data(request("POST", `${S(token)}/decline`, { body: withLocation(reason ? { reason } : {}, location), ceremony: true })),
       finishLater: (token) => data(request("POST", `${S(token)}/finish-later`, { body: {}, ceremony: true })),
+      /// WEB-06: attach a file (PDF, PNG or JPEG) to an attachment field.
+      attach: (token, field, bytes) =>
+        data(request("PUT", `${S(token)}/fields/${encodeURIComponent(field)}/attachment`, { body: { content_base64: toBase64(bytes) }, ceremony: true })),
+      /// WEB-06: after finishing, the sealed copy once complete, else a preview.
+      download: async (token, doc) =>
+        (await request("GET", `${S(token)}/document`, { raw: true, ceremony: true, query: doc ? { doc } : undefined })).blob,
     },
   };
 }
