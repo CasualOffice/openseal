@@ -19,7 +19,7 @@
 // documents and fields on docs/40's slice-3 template endpoints (api-extra.js); a
 // server without those keeps the roles and the editor says so.
 
-import { h, clear, reducedMotion, skipTo } from "./dom.js";
+import { h, clear, reducedMotion, skipTo, initials } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix, run } from "./commands.js";
@@ -247,6 +247,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (focus) setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] input`)?.focus(), 0);
     return r;
   }
+  function addMe() {
+    const r = { key: newKey("r"), id: null, name: ctx.who?.name || "", email: ctx.who?.email || "", type: "signer", accessCode: "" };
+    change(() => { S.recipients.push(r); });
+    say(t("prepare.added-me", { name: r.name || r.email }));
+  }
 
   function renderRecipients() {
     clear(rcptPanel);
@@ -255,7 +260,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       h("div", {},
         h("h2", { id: "rcpt-h", class: "os-step-head__title", text: t(TPL ? "template.roles" : "prepare.recipients") }),
         h("p", { class: "os-muted", text: t(TPL ? "wizard.roles-lede" : "wizard.recipients-lede") })),
-      S.recipients.length ? button(addLabel, { icon: "user-plus", command: "recipient.add", onClick: () => addRecipient() }) : null));
+      h("div", { class: "os-actions" },
+        // "Add me" (S-03): the sender as a signer, in one click, when the app knows who they are.
+        !TPL && ctx.who?.email && !S.recipients.some((x) => x.email === ctx.who.email) ? button(t("prepare.add-me"), { icon: "user", onClick: addMe, attrs: { "data-testid": "add-me" } }) : null,
+        S.recipients.length ? button(addLabel, { icon: "user-plus", command: "recipient.add", onClick: () => addRecipient() }) : null)));
     if (!S.recipients.length) {
       rcptPanel.append(TPL
         ? emptyState({ illus: "recipients", title: t("empty.roles.title"), text: t("empty.roles.text"), action: button(addLabel, { icon: "user-plus", variant: "primary", onClick: () => addRecipient() }), testId: "empty-roles" })
@@ -275,7 +283,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const mailId = `re-${r.key}`;
       const typeId = `rt-${r.key}`;
       const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t(TPL ? "template.role-placeholder" : "prepare.name"), maxLength: 255, attrs: { "data-testid": TPL ? "role-name" : "recipient-name" } });
-      const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "off", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email" } });
+      const emailErr = h("p", { id: `${mailId}-err`, class: "os-field-error os-rcpt__err", attrs: { "aria-live": "polite" } });
+      const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "email", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email", "aria-describedby": `${mailId}-err` } });
       const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), [["signer", t("rtype.signer")], ["cc", t("rtype.cc")]], { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
       const type = typeField.select;
       const commit = (k, v) => {
@@ -290,7 +299,13 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       name.addEventListener("input", () => { r.name = name.value.trim(); S.dirty = true; });
       email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; });
       name.addEventListener("change", () => { renderPalette(); renderFieldsOnly(); renderProps(); });
-      email.addEventListener("change", () => { renderPalette(); });
+      // A bad address is said beside the field when the user leaves it (S-02), not only at send.
+      const checkEmail = () => {
+        const bad = !!r.email && !EMAIL.test(r.email);
+        emailErr.textContent = bad ? t("prepare.email-invalid") : "";
+        if (bad) email.setAttribute("aria-invalid", "true"); else email.removeAttribute("aria-invalid");
+      };
+      email.addEventListener("change", () => { checkEmail(); renderPalette(); });
       type.addEventListener("change", () => commit("type", type.value));
       const up = button(t("prepare.move-up"), { icon: "chevron-left", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, -1) });
       up.querySelector("svg").classList.add("os-rot90");
@@ -307,7 +322,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           typeField.el,
           h("span", { class: "os-spacer" }), up, del),
         h("label", { class: "os-sr-only", attrs: { for: nameId }, text: t(TPL ? "template.role-name-of" : "prepare.name-of", { n: i + 1 }) }), name,
-        TPL ? null : [h("label", { class: "os-sr-only", attrs: { for: mailId }, text: t("prepare.email-of", { n: i + 1 }) }), email],
+        TPL ? null : [h("label", { class: "os-sr-only", attrs: { for: mailId }, text: t("prepare.email-of", { n: i + 1 }) }), email, emailErr],
         r.type === "signer" && !TPL ? access : null);
       li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
       list.append(li);
@@ -542,6 +557,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const el = h("button", { type: "button", class: `os-field os-r${colourOf(f.recipientKey)}${f.required ? " is-required" : ""}${S.selected === f.key ? " is-selected" : ""}`, attrs: { "data-fkey": f.key, "data-field": f.type, "aria-label": fieldLabel(f), "aria-pressed": String(S.selected === f.key) } },
         icon(FIELD_ICON[f.type], { size: 16 }),
         h("span", { class: "os-field__label", text: f.label || t(`ftype.${f.type}`) }),
+        // Whose field it is, beside its colour (F-02): the recipient's initials, drawn by CSS
+        // from data-who so the visible text stays the field's label (SC 2.5.3).
+        h("span", { class: "os-field__who", attrs: { "aria-hidden": "true", "data-who": initials(displayName(recipient(f.recipientKey), S.recipients.findIndex((r) => r.key === f.recipientKey))) } }),
         h("span", { class: "os-field__handle", attrs: { "aria-hidden": "true" } }));
       place(el, f);
       el.addEventListener("focus", () => { if (S.selected !== f.key) select(f.key, false); });
