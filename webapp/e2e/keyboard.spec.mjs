@@ -16,7 +16,9 @@ test("place a field and send with the keyboard alone", async ({ page }) => {
   await page.locator("body").press("n"); // N: new envelope (keys.js)
   await expect(page.getByTestId("empty-documents")).toBeVisible();
   await page.getByTestId("pdf-input").setInputFiles(pdfFile("keys.pdf", "Keyboard terms"));
-  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await expect(page.getByTestId("doc-card")).toHaveCount(1);
+  await tabTo(page, page.getByTestId("wizard-next"));
+  await page.keyboard.press("Enter");
 
   const add = page.getByRole("button", { name: "Add recipient" }).first();
   await tabTo(page, add);
@@ -25,6 +27,9 @@ test("place a field and send with the keyboard alone", async ({ page }) => {
   await page.keyboard.type("Kim Keys");
   await page.keyboard.press("Tab");
   await page.keyboard.type("kim@example.com");
+  await tabTo(page, page.getByTestId("wizard-next"));
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
 
   const sig = page.locator(".os-palette").getByRole("button", { name: "Add Signature field" });
   await tabTo(page, sig);

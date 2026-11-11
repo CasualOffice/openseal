@@ -12,6 +12,12 @@ async function addRecipient(page, n, { name, email, type = "signer" }) {
   await row.getByTestId("recipient-email").blur();
 }
 
+/// The send flow's steps (WEB-02 redesign): documents, recipients, fields, review.
+async function step(page, name) {
+  await page.locator(".os-stepper__btn", { hasText: name }).click();
+  await expect(page.locator('.os-stepper__btn[aria-current="step"]')).toContainText(name);
+}
+
 async function placeFor(page, who, types) {
   await page.getByLabel("Placing fields for").selectOption({ label: who });
   for (const type of types) await page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).click();
@@ -23,14 +29,17 @@ test("upload, two signers in order and a CC, fields for each, send", async ({ pa
   await page.getByRole("button", { name: "New envelope" }).first().click();
   await expect(page.getByTestId("empty-documents")).toBeVisible();
   await page.getByTestId("pdf-input").setInputFiles(pdfFile());
-  await expect(page.locator(".os-page")).toHaveCount(2);
-  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
-  await page.getByLabel("Subject").fill(subject);
+  await expect(page.getByTestId("doc-card")).toHaveCount(1);
+  await expect(page.getByTestId("doc-card")).toContainText("2 pages");
+  await page.getByTestId("wizard-next").click();
 
   await addRecipient(page, 0, { name: "Ana Signer", email: "ana@example.com" });
   await addRecipient(page, 1, { name: "Ben Signer", email: "ben@example.com" });
   await addRecipient(page, 2, { name: "Cleo Copy", email: "cleo@example.com", type: "cc" });
   await expect(page.locator(".os-rcpt .os-order")).toHaveText(["1", "2", "3"]);
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page")).toHaveCount(2);
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
 
   await placeFor(page, "1. Ana Signer", ["Signature", "Date signed", "Text"]);
   await placeFor(page, "2. Ben Signer", ["Signature", "Date signed", "Text"]);
@@ -52,6 +61,11 @@ test("upload, two signers in order and a CC, fields for each, send", async ({ pa
   await page.getByLabel("Label").blur();
   await expect(page.locator('.os-field[data-field="text"]').first()).toContainText("Job title");
 
+  await page.getByTestId("wizard-next").click();
+  await page.getByLabel("Subject").fill(subject);
+  await page.getByLabel("First reminder after (days)").fill("3");
+  await expect(page.locator(".os-summary__item")).toHaveCount(3);
+  await expect(page.locator(".os-summary__item").first()).toContainText("3 fields");
   await page.getByRole("button", { name: "Send", exact: true }).first().click();
   await page.getByRole("dialog", { name: "Send this envelope?" }).getByRole("button", { name: "Send" }).click();
   await expect(page.getByRole("heading", { name: "Recipients" })).toBeVisible({ timeout: 20_000 });
@@ -67,7 +81,9 @@ test("send refuses an envelope that is not ready, and says what is missing", asy
   await signIn(page);
   await page.goto(app("#/prepare"));
   await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
   await page.getByRole("button", { name: "Add recipient" }).first().click();
+  await step(page, "Review and send");
   await page.getByRole("button", { name: "Send", exact: true }).first().click();
   const dlg = page.getByRole("dialog", { name: "Not ready to send" });
   await expect(dlg).toContainText("Enter a name for recipient 1");
@@ -79,7 +95,9 @@ test("a saved draft reopens with its fields where they were", async ({ page }) =
   await signIn(page);
   await page.goto(app("#/prepare"));
   await page.getByTestId("pdf-input").setInputFiles(pdfFile("draft.pdf", "Draft terms"));
+  await page.getByTestId("wizard-next").click();
   await addRecipient(page, 0, { name: "Dee Draft", email: "dee@example.com" });
+  await page.getByTestId("wizard-next").click();
   await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Shift+ArrowDown");
@@ -99,8 +117,10 @@ test("a field dragged from the palette lands on the page where it is dropped", a
   await signIn(page);
   await page.goto(app("#/prepare"));
   await page.getByTestId("pdf-input").setInputFiles(pdfFile());
-  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await page.getByTestId("wizard-next").click();
   await addRecipient(page, 0, { name: "Dana Drop", email: "dana@example.com" });
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   const page2 = page.locator(".os-page__overlay").nth(1);
   await page.locator(".os-palette").getByRole("button", { name: "Add Initials field" }).dragTo(page2, { targetPosition: { x: 120, y: 160 } });
   await expect(page2.locator(".os-field")).toHaveCount(1);

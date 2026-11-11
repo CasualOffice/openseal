@@ -122,7 +122,7 @@ test("every bound command id is one the app registers", () => {
 test("every message key used in code and HTML has an English string", () => {
   const files = fs.readdirSync(WEBAPP).filter((f) => /\.(js|html)$/.test(f) && f !== "strings.en.js");
   const missing = [];
-  const prefixes = "a11y|account|action|adopt|admin|agreements|audit|cmd|empty|error|event|form|ftype|help|home|mock|nav|prepare|recipient|reports|rtype|send|sign|signin|start|status|template|templates|theme|timeline|top|use|verify";
+  const prefixes = "a11y|account|action|adopt|admin|agreements|audit|cmd|empty|error|event|form|ftype|help|home|mock|nav|prepare|recipient|reports|rtype|send|sign|signin|start|status|template|templates|theme|timeline|top|use|verify|wizard";
   const commandIds = new Set(["envelope.new", "envelope.refresh", "envelope.save", "envelope.send", "envelope.edit", "envelope.resend", "envelope.void", "envelope.download", "envelope.certificate", "theme.toggle", "recipient.add", "recipient.select", "recipient.select-", "help.shortcuts", "document.add", "template.new", "verify.html", "verify.js"]);
   for (const f of files) {
     const text = fs.readFileSync(path.join(WEBAPP, f), "utf8");

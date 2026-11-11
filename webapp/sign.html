@@ -17,13 +17,26 @@
 <body class="os-sign">
   <a class="os-skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
   <div id="mock-banner" class="os-mock-banner" role="note" hidden><span data-i18n="mock.banner">Demo mode</span></div>
+  <!-- The signer's bar (WEB-02 redesign): the document's name and progress, zoom, the
+       field list, other actions, and Finish. On phones Finish and the guide move to
+       the bottom bar. -->
   <header class="os-sign__bar">
     <img class="os-sign__mark" src="/assets/mark.svg" alt="OpenSeal" width="28" height="28">
-    <p id="subject" class="os-sign__subject"></p>
+    <div class="os-sign__titles">
+      <p id="subject" class="os-sign__subject"></p>
+      <p id="bar-progress" class="os-sign__barprogress" role="status"></p>
+    </div>
+    <div id="sign-tools" class="os-sign__tools" hidden>
+      <button type="button" id="zoom-out" class="os-btn os-btn--ghost os-btn--lg os-btn--icon" data-i18n-attr="aria-label:sign.zoom-out;title:sign.zoom-out"></button>
+      <span id="zoom-label" class="os-zoom__label" aria-live="polite"></span>
+      <button type="button" id="zoom-in" class="os-btn os-btn--ghost os-btn--lg os-btn--icon" data-i18n-attr="aria-label:sign.zoom-in;title:sign.zoom-in"></button>
+      <button type="button" id="fields-btn" class="os-btn os-btn--secondary os-btn--lg"><span data-i18n="sign.fields.button">Fields</span></button>
+    </div>
     <div class="os-menu-wrap">
       <button type="button" id="more-btn" class="os-btn os-btn--ghost os-btn--lg" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu" hidden></button>
       <div id="more-menu" class="os-menu os-menu--end" role="menu" data-i18n-attr="aria-label:sign.more" hidden></div>
     </div>
+    <button type="button" id="bar-finish" class="os-btn os-btn--primary os-btn--lg os-sign__barfinish" disabled hidden><span data-i18n="sign.finish">Finish</span></button>
   </header>
   <main id="main" class="os-sign__main" tabindex="-1"></main>
   <footer id="guide" class="os-sign__guide" hidden>

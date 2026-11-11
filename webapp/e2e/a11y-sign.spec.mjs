@@ -40,6 +40,7 @@ test("the signing page's controls are at least 44 px", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Electronic records and signatures" })).toBeVisible();
   for (const b of await page.locator(".os-sign__card .os-btn, .os-sign__bar .os-btn, .os-check--lg").all()) {
     const box = await b.boundingBox();
+    if (!box) continue; // not shown on this screen
     expect(box.height, await b.textContent()).toBeGreaterThanOrEqual(44);
   }
 });

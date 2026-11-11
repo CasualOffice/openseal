@@ -60,9 +60,12 @@ test("access code, location, consent, guide, draw, fill, finish", async ({ page 
   await expect(page.locator('[data-field="signature"] img')).toBeVisible();
 
   await page.getByRole("button", { name: "Finish" }).click();
-  const review = page.getByRole("dialog", { name: "Review and finish" });
-  await expect(review).toContainText("Senior engineer");
-  await review.getByTestId("review-finish").click();
+  // The review step (ADR-020): the pages with the values drawn in, then Finish.
+  await expect(page.getByRole("heading", { name: "Review and finish" })).toBeVisible();
+  await expect(page.getByTestId("review-page")).toHaveCount(2);
+  await expect(page.getByTestId("review-page").first().locator(".os-flat--text")).toHaveText("Senior engineer");
+  await expect(page.locator(".os-review")).toContainText("Senior engineer");
+  await page.getByTestId("review-finish").click();
   await expect(page.getByTestId("sign-done")).toBeVisible();
   await expect(page.getByTestId("sign-done")).toContainText("Everyone has signed");
 });

@@ -25,21 +25,27 @@ for (const scheme of ["light", "dark"]) {
 
     await page.goto(app("#/prepare"));
     await page.getByTestId("pdf-input").setInputFiles(pdfFile());
-    await expect(page.locator(".os-page:not(.os-skeleton-page)").first()).toBeVisible();
-    await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+    await expect(page.getByTestId("doc-card")).toHaveCount(1);
+    await snap(page, testInfo, `${scheme}-4a-prepare-documents`);
+    await page.getByTestId("wizard-next").click();
     await page.getByRole("button", { name: "Add recipient" }).first().click();
     await page.getByTestId("recipient-name").fill("Avery Chen");
     await page.getByTestId("recipient-email").fill("avery@example.com");
     await page.getByRole("button", { name: "Add recipient" }).first().click();
     await page.getByTestId("recipient-name").nth(1).fill("Sam Patel");
     await page.getByTestId("recipient-email").nth(1).fill("sam@example.com");
+    await snap(page, testInfo, `${scheme}-4b-prepare-recipients`);
+    await page.getByTestId("wizard-next").click();
+    await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
     await page.getByLabel("Placing fields for").selectOption({ index: 0 });
     await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
     await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).click();
     await page.getByLabel("Placing fields for").selectOption({ index: 1 });
     await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
     await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).click();
-    await snap(page, testInfo, `${scheme}-4-editor`);
+    await snap(page, testInfo, `${scheme}-4c-prepare-fields`);
+    await page.getByTestId("wizard-next").click();
+    await snap(page, testInfo, `${scheme}-4d-prepare-review`);
 
     if (REAL && !tokens.sign) return;
     await page.setViewportSize({ width: 390, height: 844 });

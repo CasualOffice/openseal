@@ -51,20 +51,26 @@ test("templates: empty state, then a new template from a PDF with roles and fiel
   await snap(page, testInfo, "web02-templates-empty");
 
   await page.getByTestId("empty-templates").getByRole("button", { name: "New template" }).click();
-  await expect(page.getByTestId("empty-roles")).toBeVisible();
+  await expect(page.getByTestId("empty-documents")).toBeVisible();
   await page.getByTestId("pdf-input").setInputFiles(pdfFile("lease.pdf", "Lease"));
-  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
-  await expect(page.getByLabel("Template name")).toHaveValue("lease");
+  await expect(page.getByTestId("doc-card")).toHaveCount(1);
+  await page.getByTestId("wizard-next").click();
+  await expect(page.getByTestId("empty-roles")).toBeVisible();
   await page.getByRole("button", { name: "Add role" }).first().click();
   await page.getByTestId("role-name").fill("Tenant");
   await expect(page.getByTestId("recipient-email")).toHaveCount(0);
-  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
   await page.getByRole("button", { name: "Add role" }).first().click();
   await page.getByTestId("role-name").nth(1).fill("Landlord");
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await page.getByLabel("Placing fields for").selectOption({ index: 0 });
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
   await page.getByLabel("Placing fields for").selectOption({ index: 1 });
   await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
   await expectAccessible(page, "template editor");
   await snap(page, testInfo, "web02-template-editor");
+  await page.getByTestId("wizard-next").click();
+  await expect(page.getByLabel("Template name")).toHaveValue("lease");
   await page.getByRole("button", { name: "Save template" }).click();
   await expect(page.getByRole("heading", { name: "Templates" })).toBeVisible();
   await expect(page.getByRole("link", { name: "lease" })).toBeVisible();
@@ -109,7 +115,8 @@ test("a template the server keeps without documents continues in the editor", as
   await page.getByTestId("use-edit").click();
   await expect(page.getByTestId("empty-documents")).toBeVisible();
   await expect(page.getByTestId("recipient-name")).toHaveValue("Jo Park");
-  await expect(page.locator("#env-subject")).toHaveValue("Welcome aboard: documents to sign");
+  await page.locator(".os-stepper__btn", { hasText: "Review and send" }).click();
+  await expect(page.getByLabel("Subject")).toHaveValue("Welcome aboard: documents to sign");
 });
 
 test("a new template on a server without template documents keeps its roles and says so", async ({ page }) => {
@@ -118,9 +125,12 @@ test("a new template on a server without template documents keeps its roles and 
   await page.evaluate(() => sessionStorage.setItem("openseal.mock.no-template-docs", "1"));
   await page.goto(app("#/templates/new"));
   await page.getByTestId("pdf-input").setInputFiles(pdfFile("w9.pdf", "Form"));
+  await page.getByTestId("wizard-next").click();
   await page.getByRole("button", { name: "Add role" }).first().click();
   await page.getByTestId("role-name").fill("Vendor");
+  await page.getByTestId("wizard-next").click();
   await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await page.getByTestId("wizard-next").click();
   await page.getByRole("button", { name: "Save template" }).click();
   await expect(page.locator(".os-toast")).toContainText("does not keep template documents");
   await expect(page.getByRole("link", { name: "w9" })).toBeVisible();

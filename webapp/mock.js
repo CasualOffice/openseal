@@ -337,6 +337,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "POST") {
         const b = body || {};
         const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
+        if (b.reminders) env.reminders = b.reminders;
+        if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
         const docIds = (b.documents || []).map((d) => addDocument(env, d.name, unb64(d.content_base64 || "")).id);
         const refs = {};
         for (const r of b.recipients || []) { const rec = addRecipient(env, r); if (r.ref) refs[r.ref] = rec.id; }
@@ -351,7 +353,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "GET") return withEtag(env);
       if (method === "PATCH") {
         checkIfMatch(env, headers); draftOnly(env);
-        for (const k of ["subject", "message", "signing_options"]) if (body && k in body) env[k] = body[k];
+        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) env[k] = body[k];
+        if (body && "expires_in_days" in body) env.expires_at = Number.isInteger(body.expires_in_days) ? iso(body.expires_in_days * 24 * 60) : null;
         env.version++;
         return withEtag(env);
       }

@@ -47,6 +47,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     message: "",
     emailSubject: "",
     captureLocation: false,
+    reminderFirst: null,
+    reminderEvery: null,
+    expiresDays: null,
+    serverOptions: "",
     routing: "sequential",
     docs: [],
     recipients: [],
@@ -63,28 +67,91 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let scale = 1;
 
   // ---- Layout ----------------------------------------------------------------------
-  const subject = h("input", { id: "env-subject", class: "os-input os-input--title", placeholder: t(TPL ? "template.name-placeholder" : "prepare.subject-placeholder"), maxLength: 255, attrs: { "aria-label": t(TPL ? "template.name" : "prepare.subject") } });
-  subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; });
+  // A stepped flow (WEB-02 redesign, DocuSign's send flow): 1 documents, 2 recipients
+  // (roles in a template), 3 fields, 4 review and send. Every step's panels stay in the
+  // page and are shown one step at a time, so state and commands never depend on which
+  // step is open; the step bar and the Back and Next buttons move between them.
+  const STEPS = ["documents", "recipients", "fields", "review"];
+  let step = "documents";
+  const subject = h("input", { id: "env-subject", class: "os-input", placeholder: t(TPL ? "template.name-placeholder" : "prepare.subject-placeholder"), maxLength: 255 });
+  subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; title.textContent = S.subject.trim() || t(TPL ? "template.new-title" : "prepare.title"); });
   const saveBtn = TPL
     ? button(t("template.save"), { icon: "save", variant: "primary", command: "template.save", onClick: () => run("template.save") })
     : button(t("prepare.save"), { icon: "save", command: "envelope.save", onClick: () => run("envelope.save") });
   const sendBtn = TPL ? null : button(t("prepare.send"), { icon: "send", variant: "primary", command: "envelope.send", onClick: () => run("envelope.send") });
+  const title = h("h1", { class: "os-prepare__title", text: t(TPL ? "template.new-title" : "prepare.title") });
+  const stepper = h("ol", { class: "os-stepper", attrs: { "aria-label": t("wizard.steps") } });
+  const stepBtns = new Map();
+  STEPS.forEach((s, i) => {
+    const b = h("button", { type: "button", class: "os-stepper__btn", attrs: { "data-step": s } },
+      h("span", { class: "os-stepper__n", text: String(i + 1) }), h("span", { class: "os-stepper__label", text: t(stepLabel(s)) }));
+    b.addEventListener("click", () => go(s));
+    stepBtns.set(s, b);
+    stepper.append(h("li", {}, b));
+  });
   const bar = h("div", { class: "os-prepare__bar" },
     h("a", { href: TPL ? "#/templates" : "#/agreements", class: "os-btn os-btn--ghost os-btn--md os-btn--icon", attrs: { "aria-label": t(TPL ? "template.back" : "prepare.back"), title: t(TPL ? "template.back" : "prepare.back") } }, icon("chevron-left")),
-    h("h1", { class: "os-sr-only", text: t(TPL ? "template.new-title" : "prepare.title") }),
-    TPL ? h("span", { class: "os-badge os-badge--template" }, icon("layout-template", { size: 16 }), h("span", { text: t("template.badge") })) : null,
-    subject, h("span", { class: "os-prepare__status os-muted", attrs: { "aria-live": "polite", id: "save-status" } }), saveBtn, sendBtn);
+    h("div", { class: "os-prepare__head" },
+      TPL ? h("span", { class: "os-badge os-badge--template" }, icon("layout-template", { size: 16 }), h("span", { text: t("template.badge") })) : null,
+      title),
+    stepper,
+    h("span", { class: "os-spacer" }),
+    h("span", { class: "os-prepare__status os-muted", attrs: { "aria-live": "polite", id: "save-status" } }),
+    TPL ? null : saveBtn);
 
-  const docsPanel = h("section", { class: "os-panel", attrs: { "aria-labelledby": "docs-h" } });
-  const rcptPanel = h("section", { class: "os-panel", attrs: { "aria-labelledby": "rcpt-h" } });
+  const docsPanel = h("section", { class: "os-panel os-panel--docs", attrs: { "aria-labelledby": "docs-h" } });
+  const rcptPanel = h("section", { class: "os-panel os-panel--rcpt", attrs: { "aria-labelledby": "rcpt-h" } });
   const palettePanel = h("section", { class: "os-panel", attrs: { "aria-labelledby": "pal-h" } });
-  const left = h("aside", { class: "os-prepare__left", attrs: { "aria-label": t("prepare.setup") } }, docsPanel, rcptPanel, palettePanel);
+  const thumbs = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
+  const left = h("aside", { class: "os-prepare__left", attrs: { "aria-label": t("prepare.setup") } }, palettePanel, thumbs);
   const stage = h("div", { class: "os-stage", attrs: { "aria-label": t("prepare.pages"), role: "region", tabindex: "0", id: "stage" } });
+  const zoomLabel = h("span", { class: "os-zoom__label", attrs: { "aria-live": "polite" } });
+  let zoom = 1;
+  const setZoom = (z) => { zoom = Math.max(0.5, Math.min(2.5, Math.round(z * 100) / 100)); renderStage(); };
+  const zoomBar = h("div", { class: "os-zoom", attrs: { role: "toolbar", "aria-label": t("prepare.zoom") } },
+    button(t("prepare.zoom-out"), { icon: "zoom-out", size: "sm", variant: "ghost", iconOnly: true, onClick: () => setZoom(zoom / 1.25) }),
+    zoomLabel,
+    button(t("prepare.zoom-in"), { icon: "zoom-in", size: "sm", variant: "ghost", iconOnly: true, onClick: () => setZoom(zoom * 1.25) }),
+    button(t("prepare.zoom-fit"), { size: "sm", variant: "ghost", onClick: () => setZoom(1) }));
+  const centre = h("div", { class: "os-prepare__centre" }, zoomBar, stage);
   const props = h("aside", { class: "os-prepare__right", attrs: { "aria-label": t("prepare.properties") } });
+  const reviewPanel = h("section", { class: "os-panel os-panel--review", attrs: { "aria-labelledby": "review-h" } });
   const live = h("div", { class: "os-sr-only", attrs: { "aria-live": "polite" } });
   const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; });
-  view.append(h("div", { class: "os-prepare" }, bar, h("div", { class: "os-prepare__body" }, left, stage, props), live, fileInput));
+  const panes = {
+    documents: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, docsPanel),
+    recipients: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, rcptPanel),
+    fields: h("div", { class: "os-prepare__body" }, left, centre, props),
+    review: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, reviewPanel),
+  };
+  const backBtn = button(t("action.back"), { icon: "chevron-left", onClick: () => go(STEPS[STEPS.indexOf(step) - 1]) });
+  const nextBtn = button(t("wizard.next"), { icon: "arrow-right", variant: "primary", attrs: { "data-testid": "wizard-next" }, onClick: () => go(STEPS[STEPS.indexOf(step) + 1]) });
+  const where = h("span", { class: "os-wizard__where os-muted" });
+  const foot = h("div", { class: "os-wizard__foot" }, backBtn, where, h("span", { class: "os-spacer" }), TPL ? saveBtn : null, sendBtn, nextBtn);
+  view.append(h("div", { class: "os-prepare" }, bar, h("div", { class: "os-wizard" }, ...Object.values(panes)), foot, live, fileInput));
+
+  function stepLabel(s) {
+    return s === "recipients" && TPL ? "wizard.step.roles" : `wizard.step.${s}`;
+  }
+  /// Open step `s`: show its pane, mark the step bar, set the footer's buttons.
+  async function go(s) {
+    if (!STEPS.includes(s)) return;
+    step = s;
+    const i = STEPS.indexOf(s);
+    for (const [k, pane] of Object.entries(panes)) pane.hidden = k !== s;
+    for (const [k, b] of stepBtns) {
+      if (k === s) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+      b.classList.toggle("is-done", STEPS.indexOf(k) < i);
+    }
+    backBtn.hidden = i === 0;
+    nextBtn.hidden = i === STEPS.length - 1;
+    if (sendBtn) sendBtn.hidden = s !== "review";
+    if (TPL) saveBtn.hidden = s !== "review";
+    where.textContent = t("wizard.where", { n: i + 1, total: STEPS.length, label: t(stepLabel(s)) });
+    if (s === "fields") await renderStage();
+    if (s === "review") renderReview();
+  }
 
   const say = (msg) => { live.textContent = ""; setTimeout(() => { live.textContent = msg; }, 30); };
 
@@ -129,24 +196,23 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   function renderRecipients() {
     clear(rcptPanel);
     const addLabel = t(TPL ? "template.add-role" : "prepare.add-recipient");
-    rcptPanel.append(h("div", { class: "os-panel__head" },
-      h("h2", { id: "rcpt-h", class: "os-panel__title", text: t(TPL ? "template.roles" : "prepare.recipients") }),
-      button(addLabel, { icon: "user-plus", size: "sm", command: "recipient.add", onClick: () => addRecipient() })));
+    rcptPanel.append(h("div", { class: "os-step-head" },
+      h("div", {},
+        h("h2", { id: "rcpt-h", class: "os-step-head__title", text: t(TPL ? "template.roles" : "prepare.recipients") }),
+        h("p", { class: "os-muted", text: t(TPL ? "wizard.roles-lede" : "wizard.recipients-lede") })),
+      S.recipients.length ? button(addLabel, { icon: "user-plus", command: "recipient.add", onClick: () => addRecipient() }) : null));
     if (!S.recipients.length) {
       rcptPanel.append(TPL
         ? emptyState({ illus: "recipients", title: t("empty.roles.title"), text: t("empty.roles.text"), action: button(addLabel, { icon: "user-plus", variant: "primary", onClick: () => addRecipient() }), testId: "empty-roles" })
         : emptyState({ illus: "recipients", title: t("empty.recipients.title"), text: t("empty.prepare-recipients.text"), action: button(addLabel, { icon: "user-plus", variant: "primary", onClick: () => addRecipient() }), testId: "empty-recipients" }));
       return;
     }
-    const routing = h("fieldset", { class: "os-segmented" },
-      h("legend", { class: "os-label", text: t("prepare.routing") }),
-      ...["sequential", "parallel"].map((m) => {
-        const id = `routing-${m}`;
-        const input = h("input", { type: "radio", name: "routing", id, value: m, checked: S.routing === m });
-        input.addEventListener("change", () => change(() => { S.routing = m; }));
-        return h("label", { attrs: { for: id } }, input, icon(m === "sequential" ? "list-ordered" : "layers", { size: 16 }), h("span", { text: t(`prepare.routing-${m}`) }));
-      }));
-    rcptPanel.append(routing);
+    // DocuSign's "Set signing order": on, signers go one after another; off, all at once.
+    const orderBox = h("input", { id: "routing-order", type: "checkbox", class: "os-switch__input", checked: S.routing === "sequential", attrs: { role: "switch" } });
+    orderBox.addEventListener("change", () => change(() => { S.routing = orderBox.checked ? "sequential" : "parallel"; }));
+    rcptPanel.append(h("div", { class: "os-switchrow" },
+      h("label", { class: "os-switch", attrs: { for: "routing-order" } }, orderBox, h("span", { class: "os-switch__track", attrs: { "aria-hidden": "true" } }), h("span", { text: t("prepare.set-order") })),
+      h("span", { class: "os-muted os-small", text: t(S.routing === "sequential" ? "prepare.routing-sequential-help" : "prepare.routing-parallel-help") })));
     const list = h("ol", { class: "os-rcpt-list" });
     S.recipients.forEach((r, i) => {
       const c = colourOf(r.key);
@@ -251,19 +317,55 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   // ---- Documents ---------------------------------------------------------------------------
+  /// Step 1: each document as a card with its first page, page count, order and remove.
+  /// Saved documents keep their order (the API has no reorder) and stay.
   function renderDocs() {
     clear(docsPanel);
-    docsPanel.append(h("div", { class: "os-panel__head" },
-      h("h2", { id: "docs-h", class: "os-panel__title", text: t("prepare.documents") }),
-      button(t("prepare.add-pdf"), { icon: "file-up", size: "sm", command: "document.add", onClick: () => fileInput.click() })));
-    if (!S.docs.length) { docsPanel.append(h("p", { class: "os-muted os-small", text: t("prepare.no-docs") })); return; }
-    const ul = h("ul", { class: "os-doc-list" });
-    for (const d of S.docs) {
-      ul.append(h("li", {}, icon("file-text", { size: 16 }), h("span", { class: "os-doc-list__name", text: d.name }),
-        h("span", { class: "os-muted os-small", text: t("prepare.pages-n", { n: d.pages.length }) }),
-        d.id ? null : button(t("prepare.remove-doc", { name: d.name }), { icon: "x", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) })));
+    docsPanel.append(h("div", { class: "os-step-head" },
+      h("div", {},
+        h("h2", { id: "docs-h", class: "os-step-head__title", text: t("prepare.documents") }),
+        h("p", { class: "os-muted", text: t("wizard.documents-lede") })),
+      S.docs.length ? button(t("prepare.add-pdf"), { icon: "file-up", command: "document.add", onClick: () => fileInput.click() }) : null));
+    if (!S.docs.length) {
+      const empty = emptyState({
+        illus: "documents", title: t("empty.documents.title"), text: t("empty.documents.text"),
+        action: button(t("prepare.add-pdf"), { icon: "file-up", variant: "primary", size: "lg", onClick: () => fileInput.click() }),
+        testId: "empty-documents",
+      });
+      empty.classList.add("os-dropzone--big");
+      docsPanel.append(empty);
+      return;
     }
+    const ul = h("ul", { class: "os-doccards" });
+    S.docs.forEach((d, i) => {
+      const thumb = h("canvas", { class: "os-doccard__thumb", attrs: { "aria-hidden": "true" } });
+      const pdf = pdfs.get(d.key);
+      const p1 = d.pages[0] || { width: 612, height: 792 };
+      pdf?.render(1, thumb, 140 / p1.width).catch(() => {});
+      const up = button(t("prepare.move-doc-up", { name: d.name }), { icon: "chevron-left", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveDoc(i, -1) });
+      const down = button(t("prepare.move-doc-down", { name: d.name }), { icon: "chevron-right", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveDoc(i, 1) });
+      up.disabled = i === 0 || !!d.id || !!S.docs[i - 1]?.id;
+      down.disabled = i === S.docs.length - 1 || !!d.id || !!S.docs[i + 1]?.id;
+      ul.append(h("li", { class: "os-doccard", attrs: { "data-testid": "doc-card" } },
+        h("div", { class: "os-doccard__frame" }, thumb),
+        h("div", { class: "os-doccard__meta" },
+          h("strong", { class: "os-doccard__name", text: d.name }),
+          h("span", { class: "os-muted os-small", text: t("prepare.pages-long", { n: d.pages.length }) })),
+        h("div", { class: "os-doccard__actions" }, up, down,
+          d.id ? null : button(t("prepare.remove-doc", { name: d.name }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) }))));
+    });
+    const add = h("li", {}, h("button", { type: "button", class: "os-doccard os-doccard--add", on: { click: () => fileInput.click() } },
+      icon("plus", { size: 24 }), h("span", { text: t("prepare.add-pdf") })));
+    ul.append(add);
     docsPanel.append(ul);
+  }
+  function moveDoc(i, dlt) {
+    const j = i + dlt;
+    if (j < 0 || j >= S.docs.length) return;
+    const [d] = S.docs.splice(i, 1);
+    S.docs.splice(j, 0, d);
+    S.dirty = true;
+    renderDocs();
   }
   async function removeDoc(d) {
     const n = S.fields.filter((f) => f.docKey === d.key).length;
@@ -274,7 +376,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     });
     pdfs.get(d.key)?.destroy();
     pdfs.delete(d.key);
-    renderStage();
+    if (step === "fields") renderStage();
   }
 
   async function addFiles(files) {
@@ -297,24 +399,27 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       }
     }
     renderDocs();
-    await renderStage();
+    if (step === "fields") await renderStage();
     renderProps();
   }
 
   // ---- Stage: pages and fields ---------------------------------------------------------
   async function renderStage() {
     clear(stage);
+    clear(thumbs);
+    zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
     if (!S.docs.length) {
       stage.append(emptyState({
         illus: "documents", title: t("empty.documents.title"), text: t("empty.documents.text"),
         action: button(t("prepare.add-pdf"), { icon: "file-up", variant: "primary", size: "lg", onClick: () => fileInput.click() }),
-        testId: "empty-documents",
+        testId: "empty-stage",
       }));
       return;
     }
     const width = stage.clientWidth || 800;
     const widest = Math.max(...S.docs.flatMap((d) => d.pages.map((p) => p.width)));
-    scale = Math.min(fitScale(widest, width - 48), 1.5);
+    scale = Math.min(fitScale(widest, width - 48), 1.5) * zoom;
+    renderThumbs();
     for (const d of S.docs) {
       const pdf = pdfs.get(d.key);
       d.pages.forEach((p, i) => {
@@ -338,6 +443,22 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       });
     }
     renderFieldsOnly();
+  }
+
+  /// The page strip: a small picture of every page; choosing one scrolls the stage to it.
+  function renderThumbs() {
+    const ol = h("ol", { class: "os-thumbs__list" });
+    for (const d of S.docs) {
+      const pdf = pdfs.get(d.key);
+      d.pages.forEach((p, i) => {
+        const c = h("canvas", { attrs: { "aria-hidden": "true" } });
+        pdf?.render(i + 1, c, 72 / p.width).catch(() => {});
+        const b = h("button", { type: "button", class: "os-thumb", attrs: { "aria-label": t("prepare.page-of", { n: i + 1, total: d.pages.length, name: d.name }) } }, c, h("span", { class: "os-thumb__n", text: String(i + 1) }));
+        b.addEventListener("click", () => stage.querySelector(`.os-page__overlay[data-doc="${d.key}"][data-page="${i + 1}"]`)?.parentElement.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" }));
+        ol.append(h("li", {}, b));
+      });
+    }
+    thumbs.append(h("h2", { class: "os-panel__title", text: t("prepare.pages") }), ol);
   }
 
   function overlayFor(f) {
@@ -470,24 +591,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     clear(props);
     const f = S.fields.find((x) => x.key === S.selected);
     if (!f) {
-      props.append(h("h2", { class: "os-panel__title", text: t(TPL ? "template.settings" : "prepare.settings") }));
-      const msg = h("textarea", { id: "env-message", class: "os-input os-textarea", rows: 4, maxLength: 10000, value: S.message, placeholder: t("prepare.message-placeholder") });
-      msg.addEventListener("change", () => { S.message = msg.value; S.dirty = true; });
-      if (TPL) {
-        const es = h("input", { id: "tpl-email-subject", class: "os-input", maxLength: 255, value: S.emailSubject, placeholder: t("prepare.message-placeholder") });
-        es.addEventListener("change", () => { S.emailSubject = es.value; S.dirty = true; });
-        props.append(
-          h("label", { class: "os-label", attrs: { for: "tpl-email-subject" }, text: t("template.email-subject") }), es,
-          h("label", { class: "os-label", attrs: { for: "env-message" }, text: t("prepare.message") }), msg,
-          h("p", { class: "os-muted os-small", text: t("template.roles-help") }));
-      } else {
-        const loc = h("input", { id: "env-location", type: "checkbox", checked: S.captureLocation });
-        loc.addEventListener("change", () => { S.captureLocation = loc.checked; S.dirty = true; });
-        props.append(
-          h("label", { class: "os-label", attrs: { for: "env-message" }, text: t("prepare.message") }), msg,
-          h("label", { class: "os-check", attrs: { for: "env-location" } }, loc, h("span", { text: t("prepare.capture-location") })),
-          h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") }));
-      }
+      props.append(h("h2", { class: "os-panel__title", text: t("prepare.properties") }),
+        h("p", { class: "os-muted os-small", text: t("prepare.props-none") }));
       if (S.docs.length && !S.fields.length) {
         props.append(emptyState({ illus: "fields", title: t("empty.fields.title"), text: t("empty.fields.text"), action: button(t("prepare.add-field", { type: t("ftype.signature") }), { icon: "signature", variant: "primary", onClick: () => addFieldInView("signature") }), testId: "empty-fields" }));
       } else if (S.fields.length) {
@@ -541,6 +646,64 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     renderPalette();
     renderFieldsOnly();
     renderProps();
+    if (step === "review") renderReview();
+  }
+
+  /// Step 4: the email (subject, message), reminders and expiry, signer location, and a
+  /// summary of who gets what. In a template: its name, email subject and message.
+  function renderReview() {
+    clear(reviewPanel);
+    reviewPanel.append(h("div", { class: "os-step-head" }, h("div", {},
+      h("h2", { id: "review-h", class: "os-step-head__title", text: t(TPL ? "wizard.review-template" : "wizard.step.review") }),
+      h("p", { class: "os-muted", text: t(TPL ? "wizard.review-template-lede" : "wizard.review-lede") }))));
+    const msg = h("textarea", { id: "env-message", class: "os-input os-textarea", rows: 4, maxLength: 10000, value: S.message, placeholder: t("prepare.message-placeholder") });
+    msg.addEventListener("input", () => { S.message = msg.value; S.dirty = true; });
+    const email = h("section", { class: "os-card", attrs: { "aria-labelledby": "rv-email-h" } },
+      h("h3", { id: "rv-email-h", class: "os-card__title", text: t(TPL ? "wizard.template-details" : "wizard.email") }),
+      h("label", { class: "os-label", attrs: { for: "env-subject" }, text: t(TPL ? "template.name" : "prepare.subject") }), subject);
+    if (TPL) {
+      const es = h("input", { id: "tpl-email-subject", class: "os-input", maxLength: 255, value: S.emailSubject });
+      es.addEventListener("input", () => { S.emailSubject = es.value; S.dirty = true; });
+      email.append(h("label", { class: "os-label", attrs: { for: "tpl-email-subject" }, text: t("template.email-subject") }), es);
+    }
+    email.append(h("label", { class: "os-label", attrs: { for: "env-message" }, text: t("prepare.message") }), msg);
+    reviewPanel.append(email);
+    if (!TPL) {
+      const num = (id, value, set) => {
+        const i = h("input", { id, class: "os-input os-input--num", type: "number", min: "0", max: "999", step: "1", value: value == null ? "" : String(value), inputMode: "numeric" });
+        i.addEventListener("change", () => { const v = Number.parseInt(i.value, 10); set(Number.isInteger(v) && v > 0 ? Math.min(v, 999) : null); S.dirty = true; });
+        return i;
+      };
+      const loc = h("input", { id: "env-location", type: "checkbox", checked: S.captureLocation });
+      loc.addEventListener("change", () => { S.captureLocation = loc.checked; S.dirty = true; });
+      reviewPanel.append(h("section", { class: "os-card", attrs: { "aria-labelledby": "rv-opt-h" } },
+        h("h3", { id: "rv-opt-h", class: "os-card__title", text: t("wizard.options") }),
+        h("div", { class: "os-optgrid" },
+          h("div", {}, h("label", { class: "os-label", attrs: { for: "rem-first" }, text: t("prepare.reminder-first") }), num("rem-first", S.reminderFirst, (v) => { S.reminderFirst = v; })),
+          h("div", {}, h("label", { class: "os-label", attrs: { for: "rem-every" }, text: t("prepare.reminder-every") }), num("rem-every", S.reminderEvery, (v) => { S.reminderEvery = v; })),
+          h("div", {}, h("label", { class: "os-label", attrs: { for: "expires" }, text: t("prepare.expires") }), num("expires", S.expiresDays, (v) => { S.expiresDays = v; }))),
+        h("p", { class: "os-muted os-small", text: t("prepare.reminders-help") }),
+        h("label", { class: "os-check", attrs: { for: "env-location" } }, loc, h("span", { text: t("prepare.capture-location") })),
+        h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") })));
+    } else {
+      reviewPanel.append(h("p", { class: "os-muted os-small", text: t("template.roles-help") }));
+    }
+    // Summary: documents, then each recipient with the fields they fill.
+    const sum = h("section", { class: "os-card", attrs: { "aria-labelledby": "rv-sum-h" } }, h("h3", { id: "rv-sum-h", class: "os-card__title", text: t("wizard.summary") }));
+    sum.append(h("p", { class: "os-summary__docs" }, icon("file-text", { size: 16 }),
+      h("span", { text: S.docs.length ? S.docs.map((d) => t("wizard.doc-pages", { name: d.name, n: d.pages.length })).join(", ") : t("prepare.no-docs") })));
+    const ul = h("ul", { class: "os-summary" });
+    S.recipients.forEach((r, i) => {
+      const n = S.fields.filter((f) => f.recipientKey === r.key).length;
+      ul.append(h("li", { class: `os-summary__item os-r${colourOf(r.key)}` },
+        h("span", { class: "os-order", text: String(orderOf(r)) }),
+        h("span", { class: "os-summary__who" }, h("strong", { text: displayName(r, i) }), TPL ? null : h("span", { class: "os-muted os-small", text: r.email || t("wizard.no-email") })),
+        h("span", { class: "os-muted os-small", text: t(`rtype.${r.type}`) }),
+        h("span", { class: "os-small", text: r.type === "signer" ? t("wizard.fields-n", { n }) : "" })));
+    });
+    if (!S.recipients.length) ul.append(h("li", { class: "os-muted", text: t(TPL ? "empty.roles.title" : "empty.recipients.title") }));
+    sum.append(ul);
+    reviewPanel.append(sum);
   }
 
   // ---- Loading a draft ------------------------------------------------------------------
@@ -549,7 +712,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.subject = env.subject || "";
     S.message = env.message || "";
     S.captureLocation = !!env.signing_options?.capture_location;
+    S.reminderFirst = Number.isInteger(env.reminders?.first_after_days) ? env.reminders.first_after_days : null;
+    S.reminderEvery = Number.isInteger(env.reminders?.then_every_days) ? env.reminders.then_every_days : null;
+    S.expiresDays = env.expires_at ? Math.max(1, Math.ceil((Date.parse(env.expires_at) - Date.now()) / 86_400_000)) : null;
+    S.serverOptions = JSON.stringify(sendOptions());
     subject.value = S.subject;
+    title.textContent = S.subject.trim() || t("prepare.title");
     const prevDocs = new Map(S.docs.filter((d) => d.id).map((d) => [d.id, d]));
     const docs = [];
     for (const d of env.documents || []) {
@@ -595,6 +763,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     return body;
   }
   const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}) });
+  /// Reminders and expiry as the API takes them; absent members mean "account default".
+  const sendOptions = () => ({
+    reminders: { ...(S.reminderFirst ? { first_after_days: S.reminderFirst } : {}), ...(S.reminderEvery ? { then_every_days: S.reminderEvery } : {}) },
+    expires_in_days: S.expiresDays || null,
+  });
   const etagNow = async () => (await ctx.api.getEnvelope(S.id)).etag;
 
   async function save() {
@@ -605,6 +778,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         subject: S.subject.trim(),
         message: S.message,
         signing_options: options(),
+        ...(Object.keys(sendOptions().reminders).length ? { reminders: sendOptions().reminders } : {}),
+        ...(S.expiresDays ? { expires_in_days: S.expiresDays } : {}),
         documents: S.docs.map((d) => ({ name: d.name, content_base64: toB64(d.bytes) })),
         recipients: S.recipients.map((r, i) => ({ ref: `r${i}`, ...recipientBody(r) })),
         fields: S.fields.map((f) => fieldBody(f, `r${S.recipients.findIndex((r) => r.key === f.recipientKey)}`, S.docs.findIndex((d) => d.key === f.docKey))),
@@ -648,8 +823,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const newFields = S.fields.filter((x) => !x.id);
       if (newFields.length) await ctx.api.addFields(S.id, newFields.map((f) => fieldBody(f, rid(f.recipientKey), did(f.docKey))));
       const { envelope: e2, etag } = await ctx.api.getEnvelope(S.id);
-      if ((e2.subject || "") !== S.subject.trim() || (e2.message || "") !== S.message || !!e2.signing_options?.capture_location !== S.captureLocation) {
-        await ctx.api.patchEnvelope(S.id, etag, { subject: S.subject.trim(), message: S.message, signing_options: { ...(e2.signing_options || {}), capture_location: S.captureLocation } });
+      const optsChanged = JSON.stringify(sendOptions()) !== S.serverOptions;
+      if (optsChanged || (e2.subject || "") !== S.subject.trim() || (e2.message || "") !== S.message || !!e2.signing_options?.capture_location !== S.captureLocation) {
+        await ctx.api.patchEnvelope(S.id, etag, { subject: S.subject.trim(), message: S.message, signing_options: { ...(e2.signing_options || {}), capture_location: S.captureLocation }, ...(optsChanged ? sendOptions() : {}) });
       }
       const { envelope: final } = await ctx.api.getEnvelope(S.id);
       await loadFromServer(final);
@@ -866,7 +1042,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   });
 
   let resizeTimer = null;
-  const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (S.docs.length) renderStage(); }, 200); };
+  const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (S.docs.length && step === "fields") renderStage(); }, 200); };
   window.addEventListener("resize", onResize);
   const beforeUnload = (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } };
   window.addEventListener("beforeunload", beforeUnload);
@@ -884,10 +1060,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (!ctx.failed(err)) toastError(err);
     }
   }
-  await renderStage();
   const handed = !TPL && !S.id ? takeFiles() : null;
   if (handed) await addFiles(handed);
-  if (!S.id) subject.focus();
+  // A saved draft with documents and people opens on its fields; anything else starts
+  // at the documents, or at the people when the documents are already there.
+  await go(S.docs.length && S.recipients.length ? "fields" : S.docs.length ? "recipients" : "documents");
+  if (step === "documents") docsPanel.querySelector(".os-btn--primary")?.focus();
 
   return () => {
     window.removeEventListener("resize", onResize);
