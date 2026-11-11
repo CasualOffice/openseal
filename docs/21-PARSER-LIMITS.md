@@ -39,6 +39,28 @@ Phase 1 gate.
 | Document metadata (`/Metadata`) checked as XMP (`NORM-03`) | 4 MiB decoded; element depth 256; 1,024 attributes per element; no DOCTYPE; larger, deeper or wider metadata is dropped, never a refusal | CS-PDF-0110 | none: unit tests in `normalize_xmp.rs`, `tests/normalize_metadata.rs` |
 | Attachments extracted when kept (`NORM-02`) | 64 embedded files per document; their bytes charged to "Total decoded per document"; more are counted, not extracted | — (`attachments_dropped`) | none: `tests/normalize_print.rs` |
 
+
+## XFA (`casual-sign-xfa`, `XFA-01`)
+
+Dynamic XFA forms are laid out into static pages (docs/30 §3). The packets come out of the PDF through the reader's own
+limits (stream size, decode ratio and budget); these bound the XML and the layout. Each has a hostile fixture, a
+dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-sign-xfa` refuses with the code below
+(`crates/casual-sign-xfa/tests/hostile.rs`). Corpus maxima, measured over the 40 corpus files with XFA: XDP 14.1 MB
+(`opm-sf86`), element depth 16, container nesting 8.
+
+| Limit | Default | Code | Fixture |
+| --- | ---: | --- | --- |
+| XFA packets (XDP) size | 64 MiB | CS-XFA-0001 | `xfa_too_large` |
+| XFA element nesting | 64 (the reader is iterative) | CS-XFA-0002 | `xfa_depth_65` |
+| XFA container nesting | 32 (merge and layout recurse per level; at the limit they run on a 1 MiB stack in a debug build) | CS-XFA-0002 | `xfa_nesting_33` |
+| XFA XML nodes | 4,000,000 (elements and text) | CS-XFA-0003 | `xfa_nodes_4m` |
+| XFA attributes per element | 256 | CS-XFA-0003 | `xfa_attributes_257` |
+| XFA DTD and entities | none: `<!DOCTYPE` and `<!ENTITY` refused; only the five predefined entities and character references | CS-XFA-0005, CS-XFA-0004 | `xfa_billion_laughs`, `xfa_external_entity`, `xfa_undefined_entity` |
+| XFA well-formedness | — | CS-XFA-0004, CS-XFA-0006 | `xfa_unbalanced`, `xfa_no_template` |
+| XFA form nodes (every instance) | 200,000; layout items 4 × that | CS-XFA-0007 | `xfa_instances_200k` |
+| XFA pages laid out | 2,000 | CS-XFA-0008 | `xfa_pages_2001` |
+| XFA embedded image | 16 MiB decoded, 16,384 px a side; over either, not drawn and reported | — | none: a unit test |
+
 ## Cryptographic structures (`casual-sign-crypto`, stage 1F)
 
 | Limit | Default | Code |

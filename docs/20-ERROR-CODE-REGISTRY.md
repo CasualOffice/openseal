@@ -68,6 +68,24 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-FLT-0005 | A font face supplied by the host cannot be read |
 | CS-FLT-0006 | An optional content visibility expression (`/VE`) nested deeper than 32 or over 4,096 terms |
 
+## XFA layout (`casual-sign-xfa`, `XFA-01`)
+
+A dynamic-only XFA form is refused by admission (`CS-PDF-0012`); the SDK then lays it out into static pages, and these
+are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
+
+| Code | Meaning |
+| --- | --- |
+| CS-XFA-0001 | XFA packets (the XDP) larger than the limit |
+| CS-XFA-0002 | XML elements nested deeper than the limit, or containers (subforms, areas, groups) nested deeper than the layout limit |
+| CS-XFA-0003 | Too many XML nodes, or too many attributes on one element |
+| CS-XFA-0004 | XML not well formed: syntax, crossed or unbalanced tags, a duplicate attribute, an undefined entity, an invalid character reference |
+| CS-XFA-0005 | A document type or entity declaration: refused, so no entity is expanded or resolved |
+| CS-XFA-0006 | No template packet with a root subform |
+| CS-XFA-0007 | Merging or layout made more form nodes or layout items than the limit (instance explosion) |
+| CS-XFA-0008 | Layout made more pages than the limit |
+| CS-XFA-0009 | Cancelled by the host |
+| CS-XFA-0010 | No usable face supplied to draw text with |
+
 ## Sealing and verification
 
 | Code | Meaning |

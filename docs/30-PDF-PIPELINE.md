@@ -98,7 +98,7 @@ packet (19 with an `rdf:RDF` root) seal at B-LT with pyHanko passing; without `N
 | JavaScript, actions that run or fetch, `/Launch`, `/SubmitForm`, `/ImportData` | Removed. Reported |
 | `/URI` link annotations | Kept, never followed automatically; the signer UI shows the target before opening it in a new tab |
 | Embedded files, RichMedia, 3D | Removed by default (account setting may keep embedded files as attachments, admitted separately). Reported |
-| XFA (dynamic forms) | Today: static rendering kept if present and XFA removed; dynamic-only XFA refused (`CS-PDF-0012`). **Planned (`XFA-01`):** lay out dynamic XFA into static pages (template, data and layout per the XFA 3.3 specification), so the form renders, fills and signs; refusal is temporary, not a policy |
+| XFA (dynamic forms) | Static rendering kept if present and XFA removed (`CS-PDF-0103`). A dynamic-only form (`CS-PDF-0012` at admission) is laid out into static pages by `casual-sign-xfa` and the result admitted and normalized (§3 "XFA layout", `XFA-01`); no XFA script runs |
 | Existing AcroForm fields | Offered to the sender to **convert to OpenSeal fields** (name, type, rect, options mapped) or flatten as they are |
 | External streams, remote fonts | Removed. Reported |
 | Broken xref, damaged objects | Rebuilt; unreadable objects dropped and reported |
@@ -132,6 +132,73 @@ xref in the file's own form, checks DocMDP (`CS-WRT-0004`) and refuses repaired 
 holds over the hostile set and the corpus: 315 corpus files normalized and appended; of 72 signed files, 42 appended
 with every signature, page and MediaBox kept and 30 refused for DocMDP P=1, as they must be. pyHanko reads every output
 strictly. A `normalize` fuzz target ran 1.4 million inputs without a crash after four fixed findings.
+
+### XFA layout (`XFA-01`, `casual-sign-xfa`)
+
+A dynamic-only XFA form has no page content: admission refuses it (`CS-PDF-0012`). `Engine::prepare` then reads its
+packets (`casual_sign_pdf::xfa_packets`, the `/XFA` streams concatenated, within the reader's limits and with the host's
+passwords), lays the form out with `casual_sign_xfa::lay_out` into a **new static PDF**, and admits and normalizes that
+like any upload; `Delivered::xfa` carries the layout report. From there the form is filled, flattened and sealed like
+any AcroForm. Forms that also carry a static rendering keep it (XFA removed, `CS-PDF-0103`), as before: the author's own
+pages are preferred over ours.
+
+**No script runs.** FormCalc and JavaScript (`script`, `calculate`, `validate` scripts, events) are counted in the
+report and ignored. What that changes: calculated values and totals are not computed; presence changes made at
+initialization or on events do not happen (the template's own `presence` applies); page numbers and page counts written
+by script are not written; instances added by script (Add Row buttons) are not added; validation and formatting run only
+in the fill stage, by OpenSeal's own rules.
+
+**Built.** A bounded XML reader of our own (ADR-026, accepted 2026-11-12; limits in docs/21 §XFA): DTDs and entity declarations
+refused, the five predefined entities and character references only, iterative, depth, node and attribute limits.
+The merge: normal binding (`once`), `global`, `none`, `dataRef` (`$`, `$record`, `$data`, `[n]`, `[*]`), unnamed and
+unbound subforms as transparent scopes, exclusion groups, `occur` `min`/`max`/`initial` with instance counts from the
+data. Layout: `position` (with `anchorType`), `tb`, `lr-tb`, `rl-tb`, `table` (`columnWidths`, `colSpan`, rows
+stretched to the tallest cell) and `row`; growable `w`/`h` within `minW`/`maxW`/`minH`/`maxH`; margins; borders (four
+edges, the last repeating; thickness, colour, dashed and dotted strokes, corner radius, fill); `presence`
+(`hidden`/`inactive` take no space, `invisible` takes space and draws nothing); `relevant="-print"` left out (the output is
+the printed form); `rotate` by 90, 180 and 270. Draws: plain text, XHTML rich text (`p`, `span`, `br`, `b`, `i`, `u`,
+`sup`, `sub`, lists; CSS font family, size, weight, style, colour, alignment, margins, indent, line height,
+`xfa-spacerun`), lines (both slopes), rectangles, arcs and ellipses, JPEG and 8-bit PNG images. Fields: captions (left,
+right, top, bottom, `reserve` or their own size; their own font, paragraph and margin), the widget's border and margin,
+values from data or defaults. Text: faces by typeface (Arial, Helvetica, Myriad and unknown faces to Liberation Sans;
+Times and serif faces to Liberation Serif; Courier and OCR to Liberation Mono), bold by stroking the outline and italic by
+shearing (only regular faces are bundled), size, colour, underline, baseline shift, alignment, wrapping at spaces with a
+word wider than its box broken between characters. Pagination: page areas with their media and content areas, each
+page's own page-area content, overflow to the next content area or page, splitting of flowed subforms between rows
+(recursively; `keep intact` holds a subform whole; a split subform's border is drawn per fragment), `breakBefore`,
+`breakAfter` and XFA 2's `break` to a named page area or content area (`startNew`), `overflow` targets, page-area
+`occur max`. Output: PDF 1.7 with Type0/CIDFontType2 subsets (`/W`, `ToUnicode`), and an AcroForm whose names follow
+Acrobat's for XFA fields (`form1[0].page1[0].Name[0]`): text (`multiLine`, `maxChars`, `comb`, password), numeric and
+date fields as text, check buttons with on and off appearances drawn as vector marks (check, circle, cross, diamond,
+square, star), exclusion groups as radio fields, choice lists (display and saved items, combo, editable, multi-select),
+signature fields; default values written as `/V` with an appearance in the embedded faces. Deterministic.
+
+**Not built** (tracked as `XFA-04` for pagination and binding and `XFA-05` for rendering; none is dropped): script execution of any kind (by design: see
+above); picture clauses (`format`/`picture`) for display; `keep next`/`previous`; overflow leaders and trailers, bookend
+leaders and trailers; page-area selection by `pagePosition` and `oddOrEven` (`duplexPaginated`, `simplexPaginated`) and
+`occur min`; splitting a single field's or draw's text across pages; `hAlign` of flowed subforms; prototypes (`use`,
+`usehref`); `match="global"` on subforms, data descriptions and `xfa:dataNode` hints, records beyond the first;
+justified text (set flush left); text shaping, kerning and right-to-left scripts; symbol typefaces (Adobe Pi,
+Dingbats, Wingdings) drawn as the letters they encode, counted as `symbol_chars`; bold and italic faces (synthesized);
+push buttons, barcodes and image fields (drawn as their border, no widget, counted as `inert_fields`); PNG with alpha,
+16-bit or interlaced PNG, GIF, TIFF and BMP images and every external image reference (never fetched; counted as
+`images_skipped`); gradient and pattern fills (painted flat); the appearance of a rotated widget (left to the viewer);
+`/MK` border and background on widgets (the border is page content).
+
+**Checked.** Unit tests per construct (`casual-sign-xfa`: reader, binding, each layout mode, captions, tables,
+exclusion groups, presence, page-area content, rotation, pagination, splitting, breaks, overflow, limits); a hostile
+fixture per docs/21 §XFA limit, each seen red with its guard removed (the layout's container-nesting guard is the
+second line behind the merge's, which refuses first). **The two dynamic-only corpus forms** go through `openseal
+normalize` → `fill` (6 text values and 2 check boxes from Acrobat's field names) → `seal` (B-B, development key) →
+`verify`: `dd-2875` lays out on 5 pages (89 fields converted), `dd-2656` on 12 (245 fields); our verifier says
+TOTAL_PASSED and pyHanko agrees (`tools/verify-sealed.py`), and a flipped byte is caught by both. `dd-2875` probably
+fits Acrobat on 4 pages: our page 1 runs about 9 mm long and its last row spills to a page of its own (`XFA-02`). **Corpus run** (all 40 corpus files that carry XFA: the manifest's 26 and 14 encrypted ones whose manifest
+features cannot see XFA): every one lays out, 1 to 136 pages, 5 ms to 0.6 s. Against the 37 that also have a static
+rendering, rendered by PDFium at 72 dpi (`opm-sf86`, 136 pages, page count compared only): page counts agree for 36;
+over the pages compared, 2 % to 18 % of pixels differ and 81 % to 99 % of the original's ink has ours within 2 px
+(median about 94 %), the rest being Liberation metrics against Myriad and Helvetica Neue, synthetic bold, and the
+missing scripted text. One file is wrong: `dd-1351-2` lays out on 3 pages against 2, its itinerary table rows too tall
+(46 % of its ink matched; `XFA-03`).
 
 ## 4. Geometry (`casual-sign-fields`)
 

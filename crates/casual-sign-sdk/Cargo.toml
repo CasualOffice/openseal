@@ -20,6 +20,8 @@ casual-sign-model = { path = "../casual-sign-model" }
 casual-sign-pdf = { path = "../casual-sign-pdf" }
 casual-sign-seal = { path = "../casual-sign-seal" }
 casual-sign-verify = { path = "../casual-sign-verify" }
+# Dynamic XFA forms laid out into static pages before normalization (XFA-01).
+casual-sign-xfa = { path = "../casual-sign-xfa" }
 
 [dev-dependencies]
 # The throwaway test PKI, TSA and OCSP responder of casual-sign-seal's tests
