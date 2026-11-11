@@ -49,7 +49,7 @@ test("rows can be selected for bulk actions, and each row has its own actions", 
   const bulk = page.getByRole("region", { name: "Actions on the selected envelopes" });
   await expect(bulk).toContainText("1 selected");
   await bulk.getByRole("button", { name: "Resend (1)" }).click();
-  await expect(page.locator(".os-toast")).toContainText("Reminder sent");
+  await expect(page.locator(".os-toast")).toContainText("Resent");
   await bulk.getByRole("button", { name: "Clear selection" }).click();
   await expect(bulk).toBeHidden();
   await page.getByRole("button", { name: "Actions for Mutual NDA — Acme and Globex" }).click();
@@ -74,7 +74,7 @@ test("resend and void act on a sent envelope", async ({ page }) => {
   await signIn(page);
   await page.getByRole("link", { name: "Vendor services agreement" }).click();
   await page.getByRole("button", { name: "Resend" }).click();
-  await expect(page.getByText("Reminder sent to recipients")).toBeVisible();
+  await expect(page.getByText("Resent to everyone who has not finished.")).toBeVisible();
   await page.getByRole("button", { name: "Void", exact: true }).click();
   const dlg = page.getByRole("dialog", { name: "Void this envelope?" });
   await dlg.getByRole("button", { name: "Void", exact: true }).click();

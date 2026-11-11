@@ -1,0 +1,57 @@
+/* The manage screens' own styles (WEB-06; docs/47 §UX audit, findings G-, A-, E-, T-,
+ * AD-, RP-): Home, Agreements, envelope details, Templates and template use, Admin and
+ * Reports. Loaded after app.css by app.html; it only adds or overrides for these
+ * screens, so the editor and the signing page are untouched. Sizes in rem (docs/47
+ * §Root size); 1 px hairlines kept. */
+
+/* ---- G-02: no horizontal scroll at 320 px ------------------------------------------ */
+/* Titles wrap between words only; a page head's actions drop under the title first. */
+.os-page-head .os-page-title { overflow-wrap: normal; word-break: normal; }
+.os-page-head > .os-page-head__main { flex: 1 1 14rem; }
+@media (max-width: 22.5em) {
+  .os-topbar { gap: var(--os-s1); padding: 0 var(--os-s2); }
+  .os-brand { margin-right: 0; }
+  #theme-btn { display: none; } /* the account menu has Light, Dark and System */
+}
+
+/* Tables become cards below 37.5em. A cell shows its column's name from `data-label`;
+   the check and the actions sit beside the main cell. */
+@media (max-width: 37.5em) {
+  .os-table--cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-table--cards, .os-table--cards tbody { display: block; width: 100%; }
+  .os-table--cards tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--os-s3); row-gap: var(--os-s1); padding: var(--os-s3) var(--os-s4); border-bottom: 1px solid var(--os-border); }
+  .os-table--cards tbody tr:last-child { border-bottom: 0; }
+  .os-table--cards td { display: block; height: auto; padding: 0; border: 0; grid-column: 1; min-width: 0; text-align: left; white-space: normal; }
+  .os-table--cards td.os-col-date { display: block; }
+  .os-table--cards td[data-label]::before { content: attr(data-label) ": "; color: var(--os-muted); font-size: var(--os-fs-12); font-weight: 600; }
+  .os-table--cards td.os-col-actions { grid-column: 2; grid-row: 1; align-self: start; }
+  .os-table--cards.has-check tr { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .os-table--cards.has-check td { grid-column: 2; }
+  .os-table--cards.has-check td.os-col-check { grid-column: 1; grid-row: 1 / span 5; align-self: start; padding-top: 0.125rem; }
+  .os-table--cards.has-check td.os-col-actions { grid-column: 3; grid-row: 1; }
+  .os-table--cards .os-actions--row { flex-wrap: wrap; justify-content: flex-end; }
+  .os-table--cards td.os-col-hash { display: none; }
+  .os-table--cards td.os-col-num { display: none; }
+}
+
+/* ---- G-03 Home: recent templates instead of a second Start menu -------------------- */
+.os-recent__icon--tpl { background: var(--os-accent-soft); color: var(--os-accent); }
+.os-home__none { display: grid; gap: var(--os-s2); justify-items: start; padding: var(--os-s4) var(--os-s6) var(--os-s6); }
+.os-recent__item > a.os-btn { text-decoration: none; }
+@media (max-width: 47.5em) { .os-recent__item { padding: var(--os-s3) var(--os-s4); } }
+.os-card__head .os-link { white-space: nowrap; }
+@media (max-width: 25em) {
+  /* One counter per row: icon, label and number on one line. */
+  .os-counters { grid-template-columns: minmax(0, 1fr); gap: var(--os-s2); }
+  .os-counter { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon label n"; padding: var(--os-s3) var(--os-s4); }
+  .os-counter__n { font-size: var(--os-fs-20); }
+  .os-recent__item { grid-template-columns: minmax(0, 1fr) auto; }
+  .os-recent__icon { display: none; }
+}
+
+/* ---- E-06: toasts never over row actions or table columns -------------------------- */
+/* Bottom left and narrow, away from the actions and the status and date columns on the
+   right; the page keeps room below its content so a last row scrolls clear of one. */
+.os-app:not(.is-frame) .os-toasts { right: auto; left: var(--os-s4); width: min(20rem, calc(100vw - 2 * var(--os-s4))); }
+.os-app:not(.is-frame) .os-main { padding-bottom: 7rem; }
+@media (max-width: 47.5em) { .os-app:not(.is-frame) .os-toasts { right: var(--os-s4); width: auto; } }
