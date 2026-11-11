@@ -285,6 +285,28 @@ refusal; the seal through keyd with the development reason. Seen red: the email 
 a crash past the record), the stored-seal verification removed (the envelope completed on a seal that does not
 verify), the development reason dropped, both SSRF checks removed.
 
+**Process crash tests (Phase 2 exit item 2, `P2-CRASH`).** `server/casual-sign-worker/tests/process_crash.rs` runs
+the real `casual-sign-server` and `casual-sign-worker` binaries as child processes against PostgreSQL 17, an SMTP
+sink, an HTTPS webhook receiver, keyd over mTLS (development file key) and an RFC 3161 TSA over HTTP, and kills them
+with `SIGKILL` at named points: the test-only `crash-points` feature (`casual_sign_host::crash`, off in every release
+and deployed build; `OPENSEAL_CRASH_AT=<kind>:<suffix>`) adds `before_commit:<Command>` at the end of decide and
+record, `after_commit:<route>` after a handler committed and before its answer (and before an idempotency key keeps
+it), and `worker:<Boundary>:<job kind>` at each worker boundary. Covered: send, ceremony finish, decline, void and
+correct, each killed before and after commit, then retried (the same `Idempotency-Key` for API calls: answered 200,
+a second retry replays the same body); the invitation email at claim, sent, recorded and before commit; the webhook
+at claim, answered and recorded; the seal through keyd at claim, sealed, recorded and before commit; and a two-signer
+envelope with seeded kills of both processes (`OPENSEAL_CRASH_SEED`) completing. After each: the chain verifies, each
+operation's event is recorded once, nothing of a request killed before commit is left, repeats happen only in the
+at-least-once window with the same `Message-ID` or `webhook-id`, no job is dead, and a `completed` envelope's stored
+sealed PDF passes our verifier at B-T and pyHanko. **Found and fixed here:** a request killed after its
+`Idempotency-Key` placeholder committed left the key "in progress" for 24 hours, so every retry got `409
+CS-API-0011`; a placeholder older than five minutes is now taken over by the retry (atomically, by the store's
+`created_at` condition), and the rerun is a replay because the commands' ids derive from the key. A ceremony request
+carries no key: a retry after a commit finds the act done (no second event). Seen red: the abandoned-key takeover
+removed (`409 CS-API-0011` on the retry of a send killed before commit), the invitation's email step check removed
+(two emails after a kill at `Recorded`). In CI: the `server-db` job (and `tools/ci-local.sh`) builds the server with
+the feature and runs the test.
+
 **Integration (T-2C with T-2D, GEO-01).** `tests/end_to_end.rs` drives a two-signer envelope through the API
 server's router (in process, same database, blob store and clock) and the worker to `completed`, signing through the
 ceremony with the links from the worker's emails, then downloads the sealed PDF, the certificate and the combined

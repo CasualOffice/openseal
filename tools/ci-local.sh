@@ -38,6 +38,9 @@ until docker exec openseal-ci-pg pg_isready -U postgres -q 2>/dev/null; do sleep
 export OPENSEAL_TEST_DATABASE_URL=postgres://postgres:ci-only@127.0.0.1:55433/postgres SQLX_OFFLINE=true SQLX_CLI_BIN="$PWD/target/sqlx-cli/bin"
 server/casual-sign-store/sqlx-prepare.sh --check
 OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server --locked
+# P2-CRASH (Phase 2 exit item 2): the real server and worker binaries SIGKILLed at every effect boundary
+cargo build -q -p casual-sign-server --features crash-points --locked
+OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-worker --features crash-points --test process_crash --locked
 docker stop openseal-ci-pg >/dev/null
 trap - EXIT
 unset OPENSEAL_TEST_DATABASE_URL SQLX_OFFLINE SQLX_CLI_BIN
