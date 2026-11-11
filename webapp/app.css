@@ -1002,6 +1002,30 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 .os-trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .os-advanced:not([open]) > :not(summary) { display: none; }
 .os-advanced { margin-top: var(--os-s3); }
+.os-field__label { flex: 0 1 auto; }
+.os-field__who { flex: none; margin: 0 0.75rem 0 auto; }
+.os-field__who::before { content: attr(data-who); display: block; padding: 0 0.25rem; border: 1px solid var(--rc); border-radius: 0.25rem; background: #fff; color: #111827; font-size: var(--os-fs-12); font-weight: 700; line-height: 1.4; }
+.os-field__who:not([data-who]), .os-field__who[data-who=""] { display: none; }
+.os-rcpt__err { grid-column: 1 / -1; margin: 0; }
+/* A small field (a checkbox) keeps most of itself visible under its resize handle (F-05). */
+.os-field__handle { width: min(0.75rem, 35%); height: min(0.75rem, 35%); }
+.os-props__danger { margin-top: var(--os-s4); }
+.os-rcpt__grip { display: inline-flex; color: var(--os-muted); cursor: grab; }
+.os-rcpt.is-dragging { opacity: .55; }
+.os-rcpt.is-drop-target { outline: var(--os-focus-width) dashed var(--os-focus); outline-offset: 0.125rem; }
+.os-rcpt__cell { display: grid; gap: var(--os-s1); align-content: start; min-width: 0; }
+.os-rcpt__label { margin: 0; font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-thumb__count::before { content: attr(data-count); }
+.os-thumb__count { position: absolute; left: 0.25rem; top: 0.25rem; min-width: 1.25rem; padding: 0 0.25rem; border-radius: 62rem; background: var(--os-text); color: var(--os-bg); font-size: var(--os-fs-12); font-weight: 700; text-align: center; }
+/* Review summary (R-01): the field kinds wrap under the person on narrow screens. */
+.os-summary__fields { text-align: right; }
+.os-panel--review > .os-card:first-of-type { margin-top: 0; }
+@media (max-width: 47.999em) {
+  .os-summary__item { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .os-summary__fields { grid-column: 2 / -1; text-align: left; }
+  /* The current step keeps its name on phones (R-04). */
+  .os-stepper__btn[aria-current="step"] .os-stepper__label { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: nowrap; }
+}
 .os-problems li { align-items: center; }
 .os-problems__text { flex: 1; }
 

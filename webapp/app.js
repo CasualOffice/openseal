@@ -217,6 +217,7 @@ async function loadWho() {
     if (ctx.session?.admin) {
       const me = (await api.users.list()).items?.find((u) => u.id === ctx.session.user_id);
       if (me) { who.name = me.name || ""; who.email = me.email || ""; }
+      ctx.who = who;
     }
     if (!who.name) who.name = (await api.account())?.name || "";
   } catch { /* the avatar falls back to a person icon */ }

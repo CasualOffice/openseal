@@ -19,7 +19,7 @@
 // documents and fields on docs/40's slice-3 template endpoints (api-extra.js); a
 // server without those keeps the roles and the editor says so.
 
-import { h, clear, reducedMotion, skipTo } from "./dom.js";
+import { h, clear, reducedMotion, skipTo, initials } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix, run } from "./commands.js";
@@ -66,7 +66,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let dirty = false;
   let savedAt = null;
   let saving = false;
-  Object.defineProperty(S, "dirty", { get: () => dirty, set: (v) => { dirty = !!v; syncStatus(); } });
+  Object.defineProperty(S, "dirty", { get: () => dirty, set: (v) => { dirty = !!v; syncStatus(); if (dirty) scheduleAutosave(); } });
   ctx.contexts = ["editor", "global"];
   const pdfs = new Map(); // doc key → pdf.js handle
 
@@ -174,7 +174,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const [k, pane] of Object.entries(panes)) pane.hidden = k !== s;
     for (const [k, b] of stepBtns) {
       if (k === s) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
-      b.classList.toggle("is-done", STEPS.indexOf(k) < i);
+      const doneStep = STEPS.indexOf(k) < i;
+      b.classList.toggle("is-done", doneStep);
+      // Steps behind are ticked (R-04); the number stays for the screen reader.
+      const n = b.querySelector(".os-stepper__n");
+      n.replaceChildren(doneStep ? icon("check", { size: 16 }) : String(STEPS.indexOf(k) + 1), doneStep ? h("span", { class: "os-sr-only", text: `${STEPS.indexOf(k) + 1} ${t("wizard.step-done")}` }) : "");
     }
     docTools.hidden = s !== "fields";
     skipTo(s === "fields" ? "#document" : "#main", t(s === "fields" ? "a11y.skip-doc" : "a11y.skip"));
@@ -247,6 +251,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (focus) setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] input`)?.focus(), 0);
     return r;
   }
+  function addMe() {
+    const r = { key: newKey("r"), id: null, name: ctx.who?.name || "", email: ctx.who?.email || "", type: "signer", accessCode: "" };
+    change(() => { S.recipients.push(r); });
+    say(t("prepare.added-me", { name: r.name || r.email }));
+  }
 
   function renderRecipients() {
     clear(rcptPanel);
@@ -255,7 +264,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       h("div", {},
         h("h2", { id: "rcpt-h", class: "os-step-head__title", text: t(TPL ? "template.roles" : "prepare.recipients") }),
         h("p", { class: "os-muted", text: t(TPL ? "wizard.roles-lede" : "wizard.recipients-lede") })),
-      S.recipients.length ? button(addLabel, { icon: "user-plus", command: "recipient.add", onClick: () => addRecipient() }) : null));
+      h("div", { class: "os-actions" },
+        // "Add me" (S-03): the sender as a signer, in one click, when the app knows who they are.
+        !TPL && ctx.who?.email && !S.recipients.some((x) => x.email === ctx.who.email) ? button(t("prepare.add-me"), { icon: "user", onClick: addMe, attrs: { "data-testid": "add-me" } }) : null,
+        S.recipients.length ? button(addLabel, { icon: "user-plus", command: "recipient.add", onClick: () => addRecipient() }) : null)));
     if (!S.recipients.length) {
       rcptPanel.append(TPL
         ? emptyState({ illus: "recipients", title: t("empty.roles.title"), text: t("empty.roles.text"), action: button(addLabel, { icon: "user-plus", variant: "primary", onClick: () => addRecipient() }), testId: "empty-roles" })
@@ -275,7 +287,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const mailId = `re-${r.key}`;
       const typeId = `rt-${r.key}`;
       const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t(TPL ? "template.role-placeholder" : "prepare.name"), maxLength: 255, attrs: { "data-testid": TPL ? "role-name" : "recipient-name" } });
-      const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "off", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email" } });
+      const emailErr = h("p", { id: `${mailId}-err`, class: "os-field-error os-rcpt__err", attrs: { "aria-live": "polite" } });
+      const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "email", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email", "aria-describedby": `${mailId}-err` } });
       const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), [["signer", t("rtype.signer")], ["cc", t("rtype.cc")]], { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
       const type = typeField.select;
       const commit = (k, v) => {
@@ -290,26 +303,54 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       name.addEventListener("input", () => { r.name = name.value.trim(); S.dirty = true; });
       email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; });
       name.addEventListener("change", () => { renderPalette(); renderFieldsOnly(); renderProps(); });
-      email.addEventListener("change", () => { renderPalette(); });
+      // A bad address is said beside the field when the user leaves it (S-02), not only at send.
+      const checkEmail = () => {
+        const bad = !!r.email && !EMAIL.test(r.email);
+        emailErr.textContent = bad ? t("prepare.email-invalid") : "";
+        if (bad) email.setAttribute("aria-invalid", "true"); else email.removeAttribute("aria-invalid");
+      };
+      email.addEventListener("change", () => { checkEmail(); renderPalette(); });
       type.addEventListener("change", () => commit("type", type.value));
       const up = button(t("prepare.move-up"), { icon: "chevron-left", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, -1) });
       up.querySelector("svg").classList.add("os-rot90");
       up.disabled = i === 0;
-      const del = button(t("prepare.remove-recipient", { name: displayName(r, i) }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeRecipient(r) });
+      // Down as well as up, and a drag handle (S-04): reorder by keyboard or pointer.
+      const down = button(t("prepare.move-down"), { icon: "chevron-right", size: "sm", variant: "ghost", iconOnly: true, onClick: () => moveRecipient(i, 1) });
+      down.querySelector("svg").classList.add("os-rot90");
+      down.disabled = i === S.recipients.length - 1;
+      const grip = h("span", { class: "os-rcpt__grip", attrs: { "aria-hidden": "true", title: t("prepare.drag-reorder") } }, icon("grip-vertical", { size: 16 }));
+      const del =button(t("prepare.remove-recipient", { name: displayName(r, i) }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeRecipient(r) });
       // The access code is set when the recipient is created; the API has no way to
       // change it afterwards (RecipientPatch), so a saved recipient shows it read-only.
       const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code"), maxLength: 64, attrs: { "aria-label": t("prepare.access-code-for", { name: displayName(r, i) }), "data-testid": "recipient-access-code" } });
       access.addEventListener("input", () => { r.accessCode = access.value.trim(); S.dirty = true; });
       const li = h("li", { class: `os-rcpt os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key } },
         h("div", { class: "os-rcpt__head" },
-          h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
+          grip, h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
           h("span", { class: "os-order", attrs: { title: t("prepare.routing-order") }, text: String(orderOf(r)) }),
           typeField.el,
-          h("span", { class: "os-spacer" }), up, del),
-        h("label", { class: "os-sr-only", attrs: { for: nameId }, text: t(TPL ? "template.role-name-of" : "prepare.name-of", { n: i + 1 }) }), name,
-        TPL ? null : [h("label", { class: "os-sr-only", attrs: { for: mailId }, text: t("prepare.email-of", { n: i + 1 }) }), email],
+          h("span", { class: "os-spacer" }), up, down, del),
+        // Visible labels, not placeholders alone (S-03); "of recipient 2" for screen readers.
+        h("div", { class: "os-rcpt__cell" },
+          h("label", { class: "os-label os-rcpt__label", attrs: { for: nameId } }, t("prepare.name"), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })), name),
+        TPL ? null : h("div", { class: "os-rcpt__cell" },
+          h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
         r.type === "signer" && !TPL ? access : null);
       li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
+      // Drag a card by its head onto another to put it there.
+      li.draggable = true;
+      li.addEventListener("dragstart", (e) => { if (e.target.closest("input, select, button")) { e.preventDefault(); return; } e.dataTransfer.setData("application/x-openseal-recipient", String(i)); e.dataTransfer.effectAllowed = "move"; li.classList.add("is-dragging"); });
+      li.addEventListener("dragend", () => li.classList.remove("is-dragging"));
+      li.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-recipient")) { e.preventDefault(); li.classList.add("is-drop-target"); } });
+      li.addEventListener("dragleave", () => li.classList.remove("is-drop-target"));
+      li.addEventListener("drop", (e) => {
+        const from = Number(e.dataTransfer.getData("application/x-openseal-recipient"));
+        li.classList.remove("is-drop-target");
+        if (!Number.isInteger(from) || from === i) return;
+        e.preventDefault();
+        moveRecipient(from, i - from);
+        say(t("prepare.moved-to", { name: displayName(S.recipients[i], i), n: i + 1 }));
+      });
       list.append(li);
     });
     rcptPanel.append(list);
@@ -542,12 +583,22 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const el = h("button", { type: "button", class: `os-field os-r${colourOf(f.recipientKey)}${f.required ? " is-required" : ""}${S.selected === f.key ? " is-selected" : ""}`, attrs: { "data-fkey": f.key, "data-field": f.type, "aria-label": fieldLabel(f), "aria-pressed": String(S.selected === f.key) } },
         icon(FIELD_ICON[f.type], { size: 16 }),
         h("span", { class: "os-field__label", text: f.label || t(`ftype.${f.type}`) }),
+        // Whose field it is, beside its colour (F-02): the recipient's initials, drawn by CSS
+        // from data-who so the visible text stays the field's label (SC 2.5.3).
+        h("span", { class: "os-field__who", attrs: { "aria-hidden": "true", "data-who": initials(displayName(recipient(f.recipientKey), S.recipients.findIndex((r) => r.key === f.recipientKey))) } }),
         h("span", { class: "os-field__handle", attrs: { "aria-hidden": "true" } }));
       place(el, f);
-      el.addEventListener("focus", () => { if (S.selected !== f.key) select(f.key, false); });
-      el.addEventListener("pointerdown", (e) => startDrag(e, f, e.target.classList.contains("os-field__handle") ? "resize" : "move"));
+      el.addEventListener("focus", () => { if (S.selected !== f.key && !multi.has(f.key)) select(f.key, false); });
+      el.addEventListener("mousedown", (e) => { if (e.shiftKey) e.preventDefault(); });
+      el.addEventListener("pointerdown", (e) => {
+        if (e.shiftKey && e.button === 0) { e.preventDefault(); toggleInSelection(f.key); return; }
+        startDrag(e, f, e.target.classList.contains("os-field__handle") ? "resize" : "move");
+      });
+      el.addEventListener("keydown", (e) => { if (e.shiftKey && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleInSelection(f.key); } });
       ov.append(el);
     }
+    if (multi.size) markSelection();
+    thumbs.badges((i) => S.fields.filter((f) => pageIndex(f.docKey, f.page) === i).length, (n) => t(n === 1 ? "prepare.thumb-one" : "prepare.thumb-n", { n }));
   }
   /// A field box in percentages of its page: PDF points × the view's scale at any zoom,
   /// without a relayout per zoom step.
@@ -604,14 +655,30 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     window.addEventListener("pointercancel", up);
   }
 
-  function select(key, focus = true) {
-    const changed = S.selected !== key;
-    S.selected = key;
+  /// Shift+click (or Shift+Enter/Space) adds a field to the selection or takes it out
+  /// (F-03); the group then moves with the arrows and lines up from the panel.
+  const multi = new Set();
+  function markSelection() {
     for (const n of stage.querySelectorAll(".os-field")) {
-      const on = n.dataset.fkey === key;
+      const on = n.dataset.fkey === S.selected || multi.has(n.dataset.fkey);
       n.classList.toggle("is-selected", on);
       n.setAttribute("aria-pressed", String(on));
     }
+  }
+  function toggleInSelection(key) {
+    if (!multi.size && S.selected) multi.add(S.selected);
+    if (multi.has(key)) multi.delete(key); else multi.add(key);
+    if (multi.size === 1) { const [only] = multi; multi.clear(); S.selected = only; } else S.selected = multi.has(key) ? key : [...multi][0] || null;
+    markSelection();
+    renderProps();
+    say(multi.size > 1 ? t("prepare.multi-n", { n: multi.size }) : "");
+  }
+  const selection = () => (multi.size > 1 ? S.fields.filter((f) => multi.has(f.key)) : S.fields.filter((f) => f.key === S.selected));
+  function select(key, focus = true) {
+    const changed = S.selected !== key;
+    S.selected = key;
+    multi.clear();
+    markSelection();
     const f = S.fields.find((x) => x.key === key);
     if (f && focus) {
       // Smooth scroll-to-field when it is out of view; focus without the browser's jump.
@@ -628,6 +695,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!f) rightDock.closeSheet();
   }
 
+  let lastPlaced = null;
   function addField(type, doc, page, cx, cy) {
     let r = recipient(S.active);
     if (r?.type !== "signer") r = signers()[0];
@@ -636,6 +704,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const rect = placeAt(type, cx, cy, pg);
     const f = { key: newKey("f"), id: null, docKey: doc.key, recipientKey: r.key, type, page, ...rect, required: type === "signature" || type === "initials", label: "" };
     change(() => { S.fields.push(f); S.selected = f.key; });
+    lastPlaced = f.key;
     const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`);
     if (el) {
       el.classList.add("is-new");
@@ -660,8 +729,26 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const pg = doc.pages[page - 1];
     const here = S.fields.filter((f) => f.docKey === doc.key && f.page === page);
     const size = DEFAULT_SIZE[type];
+    // Where the user is looking (F-01): just below the field placed last on this page,
+    // lined up with it; else the top third of the part of the page that is on screen.
+    const last = lastPlaced && here.find((f) => f.key === lastPlaced);
+    let cx = pg.width / 2;
+    let cy = pg.height / 3;
+    if (last) {
+      cx = last.x + size.width / 2;
+      cy = last.y + last.height + 12 + size.height / 2;
+    } else {
+      const el = dv.els[pageIndex(doc.key, page)]?.el;
+      const r = el?.getBoundingClientRect();
+      const s = stage.getBoundingClientRect();
+      if (r && r.height) {
+        const top = Math.max(r.top, s.top);
+        const bottom = Math.min(r.bottom, s.bottom);
+        if (bottom > top) cy = ((top - r.top) + (bottom - top) / 3) / dv.scale;
+      }
+    }
     // A margin below each field keeps keyboard-placed fields apart, not touching.
-    const spot = freeSpot(here.map((f) => ({ ...f, height: f.height + 16 })), size, pg, pg.width / 2, pg.height / 3);
+    const spot = freeSpot(here.map((f) => ({ ...f, height: f.height + 12 })), size, pg, cx, cy);
     addField(type, doc, page, spot.x + size.width / 2, spot.y + size.height / 2);
   }
 
@@ -669,6 +756,19 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let advancedOpen = false;
   function renderProps() {
     clear(props);
+    if (multi.size > 1) {
+      // A Shift-selected group (F-03): line it up, size it alike, space it, or delete it.
+      const b = (label, ic, how) => button(label, { icon: ic, size: "sm", onClick: () => arrange(how), attrs: { "data-testid": `arrange-${how}` } });
+      props.append(
+        h("div", { class: "os-props__head" }, h("h3", { class: "os-props__title", text: t("prepare.multi-n", { n: multi.size }) })),
+        h("p", { class: "os-muted os-small", text: t("prepare.multi-help") }),
+        h("p", { class: "os-label", text: t("prepare.align") }),
+        h("div", { class: "os-actions" }, b(t("prepare.align-left"), "arrow-right", "left"), b(t("prepare.align-top"), "chevron-down", "top"), b(t("prepare.align-right"), "chevron-left", "right"), b(t("prepare.align-bottom"), "chevron-down", "bottom")),
+        h("p", { class: "os-label", text: t("prepare.arrange") }),
+        h("div", { class: "os-actions" }, b(t("prepare.same-size"), "copy", "size"), b(t("prepare.space-evenly"), "list", "vspace")),
+        h("div", { class: "os-actions os-props__danger" }, button(t("prepare.delete-n", { n: multi.size }), { icon: "trash-2", size: "sm", variant: "danger", onClick: () => run("field.delete") })));
+      return;
+    }
     const f = S.fields.find((x) => x.key === S.selected);
     if (!f) {
       props.append(h("p", { class: "os-muted os-small", text: t("prepare.props-none") }));
@@ -676,7 +776,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         props.append(emptyState({ illus: "fields", title: t("empty.fields.title"), text: t("empty.fields.text"), action: button(t("prepare.add-field", { type: t("ftype.signature") }), { icon: "signature", variant: "primary", onClick: () => addFieldInView("signature") }), testId: "empty-fields" }));
       } else if (S.fields.length) {
         // Every placed field, in page order: choosing one selects it and scrolls to it.
-        props.append(h("h3", { class: "os-panel__title", text: t("prepare.fields-count", { n: S.fields.length }) }));
+        props.append(h("h3", { class: "os-panel__title", text: t(S.fields.length === 1 ? "prepare.fields-count-one" : "prepare.fields-count", { n: S.fields.length }) }));
         const order = [...S.fields].sort((a, b) => pageIndex(a.docKey, a.page) - pageIndex(b.docKey, b.page) || a.y - b.y || a.x - b.x);
         const ul = h("ul", { class: "os-placed" });
         for (const x of order) {
@@ -768,7 +868,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     reviewPanel.append(email);
     if (!TPL) {
       const num = (id, value, set) => {
-        const i = h("input", { id, class: "os-input os-input--num", type: "number", min: "0", max: "999", step: "1", value: value == null ? "" : String(value), inputMode: "numeric" });
+        // Empty means the account's default, and says so (R-03).
+        const i = h("input", { id, class: "os-input os-input--num", type: "number", min: "0", max: "999", step: "1", value: value == null ? "" : String(value), inputMode: "numeric", placeholder: t("prepare.default") });
         i.addEventListener("change", () => { const v = Number.parseInt(i.value, 10); set(Number.isInteger(v) && v > 0 ? Math.min(v, 999) : null); S.dirty = true; });
         return i;
       };
@@ -786,23 +887,28 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     } else {
       reviewPanel.append(h("p", { class: "os-muted os-small", text: t("template.roles-help") }));
     }
-    // Summary: documents, then each recipient with the fields they fill.
+    // Summary first (R-01): documents, then who does what, in order, with the fields
+    // each one fills by kind, so a missing signature shows before Send.
     const sum = h("section", { class: "os-card", attrs: { "aria-labelledby": "rv-sum-h" } }, h("h3", { id: "rv-sum-h", class: "os-card__title", text: t("wizard.summary") }));
     sum.append(h("p", { class: "os-summary__docs" }, icon("file-text", { size: 16 }),
-      h("span", { text: S.docs.length ? S.docs.map((d) => t("wizard.doc-pages", { name: d.name, n: d.pages.length })).join(", ") : t("prepare.no-docs") })));
+      h("span", { text: S.docs.length ? S.docs.map((d) => t(d.pages.length === 1 ? "wizard.doc-page-one" : "wizard.doc-pages", { name: d.name, n: d.pages.length })).join(", ") : t("prepare.no-docs") })));
     const ul = h("ul", { class: "os-summary" });
     S.recipients.forEach((r, i) => {
-      const n = S.fields.filter((f) => f.recipientKey === r.key).length;
-      ul.append(h("li", { class: `os-summary__item os-r${colourOf(r.key)}` },
+      const mine = S.fields.filter((f) => f.recipientKey === r.key);
+      const kinds = FIELD_TYPES.map((ty) => [ty, mine.filter((f) => f.type === ty).length]).filter(([, c]) => c)
+        .map(([ty, c]) => (c > 1 ? `${t(`ftype.${ty}`)} ×${c}` : t(`ftype.${ty}`))).join(", ");
+      ul.append(h("li", { class: `os-summary__item os-r${colourOf(r.key)}`, attrs: { "data-testid": "summary-recipient" } },
         h("span", { class: "os-order", text: String(orderOf(r)) }),
         h("span", { class: "os-summary__who" }, h("strong", { text: displayName(r, i) }), TPL ? null : h("span", { class: "os-muted os-small", text: r.email || t("wizard.no-email") })),
         h("span", { class: "os-muted os-small", text: t(`rtype.${r.type}`) }),
-        h("span", { class: "os-small", text: r.type === "signer" ? t("wizard.fields-n", { n }) : "" })));
+        h("span", { class: "os-small os-summary__fields", text: r.type === "signer" ? (mine.length ? `${fieldsN(mine.length)}: ${kinds}` : t("wizard.no-fields")) : t("wizard.gets-copy") })));
     });
     if (!S.recipients.length) ul.append(h("li", { class: "os-muted", text: t(TPL ? "empty.roles.title" : "empty.recipients.title") }));
     sum.append(ul);
-    reviewPanel.append(sum);
+    reviewPanel.querySelector(".os-step-head").after(sum);
   }
+  /// "1 field" / "3 fields" (T-02).
+  const fieldsN = (n) => t(n === 1 ? "wizard.fields-one" : "wizard.fields-n", { n });
 
   // ---- Loading a draft ------------------------------------------------------------------
   async function loadFromServer(env) {
@@ -874,6 +980,39 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     try { await saveNow(); savedAt = new Date(); } finally { saving = false; syncStatus(); }
     renderAll();
     await renderStage();
+  }
+
+  // ---- Autosave (P-04) -----------------------------------------------------------------
+  // A draft saves itself 4 s after the last change, as DocuSign's and SignNow's do, when
+  // what is there can be saved (every recipient named with a valid email, at least one
+  // document) and the user is not typing or dragging. It is quiet: no toast; the status
+  // says "Saving…" then "Saved at …", and a failure leaves "Unsaved changes" for the
+  // explicit Save, which reports errors. Templates save only on request.
+  let autosaveTimer = null;
+  const AUTOSAVE_MS = 4000;
+  function scheduleAutosave() {
+    if (TPL) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(autosave, AUTOSAVE_MS);
+  }
+  const savable = () => S.docs.length > 0 && S.recipients.every((r) => r.name.trim() && EMAIL.test(r.email));
+  async function autosave() {
+    if (!dirty || saving || !frame.isConnected) return;
+    const a = document.activeElement;
+    const typing = a && (a.matches?.("input, textarea, select") || a.isContentEditable);
+    if (typing || document.querySelector(".os-field.is-dragging, dialog[open]") || !savable()) { scheduleAutosave(); return; }
+    // Keep the selection and focus across the reload of state that a save does.
+    const sel = S.fields.find((f) => f.key === S.selected);
+    const hadFocus = sel && a?.dataset?.fkey === sel.key;
+    const same = sel && { type: sel.type, page: sel.page, x: sel.x, y: sel.y, doc: S.docs.findIndex((d) => d.key === sel.docKey) };
+    try {
+      await save();
+    } catch { saving = false; syncStatus(); return; }
+    if (same) {
+      const docKey = S.docs[same.doc]?.key;
+      const f = S.fields.find((x) => x.type === same.type && x.page === same.page && x.docKey === docKey && Math.abs(x.x - same.x) < 0.01 && Math.abs(x.y - same.y) < 0.01);
+      if (f) select(f.key, hadFocus);
+    }
   }
   async function saveNow() {
     if (!S.id) {
@@ -976,7 +1115,17 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const list = problems();
     if (list.length) { await showProblems(list, t("send.problems-title")); return; }
     const sum = S.recipients.filter((r) => r.type === "signer").length;
-    if (!(await confirmDialog(t("send.confirm-title"), t("send.confirm-text", { n: sum, subject: S.subject.trim() || t("envelope.untitled") }), { confirm: t("prepare.send") }))) return;
+    // Says who signs when and who only gets a copy (R-02).
+    const subj = S.subject.trim() || t("envelope.untitled");
+    const sg = signers();
+    const copies = S.recipients.filter((r) => r.type !== "signer");
+    const nameOf = (r) => displayName(r, S.recipients.indexOf(r));
+    const text = [
+      t(sum === 1 ? "send.confirm-one" : "send.confirm-text", { n: sum, subject: subj }),
+      sg.length > 1 ? (S.routing === "sequential" ? t("send.confirm-order", { order: sg.map(nameOf).join(" → ") }) : t("send.confirm-together")) : "",
+      copies.length ? t("send.confirm-copies", { names: copies.map(nameOf).join(", ") }) : "",
+    ].filter(Boolean).join(" ");
+    if (!(await confirmDialog(t("send.confirm-title"), text, { confirm: t("prepare.send") }))) return;
     await busy(sendBtn, async () => {
       try {
         await save();
@@ -1066,17 +1215,48 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
 
   // ---- Commands -----------------------------------------------------------------------------
   const sel = () => S.fields.find((f) => f.key === S.selected);
+  /// Run `fn` on every selected field (one, or the Shift-selected group), as one undo step.
   const withSel = (fn) => () => {
-    const f = sel();
+    const all = selection();
+    const f = sel() || all[0];
     if (!f) return;
     const before = snapshot();
-    fn(f);
+    for (const x of all) fn(x);
     S.undo.push(before); S.redo = []; S.dirty = true;
-    const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`);
-    if (el) { place(el, f); el.setAttribute("aria-label", fieldLabel(f)); }
+    for (const x of all) {
+      const el = stage.querySelector(`.os-field[data-fkey="${x.key}"]`);
+      if (el) { place(el, x); el.setAttribute("aria-label", fieldLabel(x)); }
+    }
     renderProps();
-    say(t("prepare.field-at", { x: Math.round(f.x), y: Math.round(f.y), w: Math.round(f.width), h: Math.round(f.height) }));
+    say(all.length > 1 ? t("prepare.multi-moved", { n: all.length }) : t("prepare.field-at", { x: Math.round(f.x), y: Math.round(f.y), w: Math.round(f.width), h: Math.round(f.height) }));
   };
+  /// Line the selected group up (F-03): edges, centres, sizes, or even spacing.
+  function arrange(how) {
+    const all = selection();
+    if (all.length < 2) return;
+    const before = snapshot();
+    const minX = Math.min(...all.map((f) => f.x));
+    const minY = Math.min(...all.map((f) => f.y));
+    const maxR = Math.max(...all.map((f) => f.x + f.width));
+    const maxB = Math.max(...all.map((f) => f.y + f.height));
+    const first = sel() || all[0];
+    if (how === "left") for (const f of all) f.x = minX;
+    if (how === "top") for (const f of all) f.y = minY;
+    if (how === "right") for (const f of all) f.x = maxR - f.width;
+    if (how === "bottom") for (const f of all) f.y = maxB - f.height;
+    if (how === "size") for (const f of all) { f.width = first.width; f.height = first.height; }
+    if (how === "vspace") {
+      const byY = [...all].sort((a, b) => a.y - b.y);
+      const total = byY.reduce((s, f) => s + f.height, 0);
+      const gap = (maxB - minY - total) / (byY.length - 1);
+      let y = minY;
+      for (const f of byY) { f.y = y; y += f.height + gap; }
+    }
+    for (const f of all) Object.assign(f, clampRect(f, pageOf(f)));
+    S.undo.push(before); S.redo = []; S.dirty = true;
+    for (const f of all) { const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`); if (el) place(el, f); }
+    say(t("prepare.arranged", { n: all.length }));
+  }
   const hasSel = () => !!sel();
   const nudgeBy = (dx, dy) => withSel((f) => Object.assign(f, nudge(f, dx, dy, pageOf(f))));
   const sizeBy = (dw, dh) => withSel((f) => Object.assign(f, resize(f, dw, dh, pageOf(f))));
@@ -1096,10 +1276,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   reg("field.delete", t("cmd.field.delete"), () => {
     const f = sel();
     if (!f) return;
-    const order = S.fields.filter((x) => x.docKey === f.docKey && x.page === f.page);
+    const gone = new Set(selection());
+    const order = S.fields.filter((x) => x.docKey === f.docKey && x.page === f.page && (x === f || !gone.has(x)));
     const next = order[order.indexOf(f) + 1] || order[order.indexOf(f) - 1];
-    change(() => { S.fields = S.fields.filter((x) => x !== f); S.selected = null; });
-    toast(t("prepare.field-deleted"), "info", { action: { label: t("cmd.edit.undo"), onClick: () => run("edit.undo") } });
+    multi.clear();
+    change(() => { S.fields = S.fields.filter((x) => !gone.has(x)); S.selected = null; });
+    toast(gone.size > 1 ? t("prepare.fields-deleted", { n: gone.size }) : t("prepare.field-deleted"), "info", { action: { label: t("cmd.edit.undo"), onClick: () => run("edit.undo") } });
     if (next) select(next.key); else stage.focus();
   });
   reg("field.duplicate", t("cmd.field.duplicate"), () => {
@@ -1183,6 +1365,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   return () => {
     window.removeEventListener("beforeunload", beforeUnload);
     ctx.leaveGuard = null;
+    clearTimeout(autosaveTimer);
     dv.destroy();
     thumbs.destroy();
     closePanel();

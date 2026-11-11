@@ -65,9 +65,13 @@ test("upload, two signers in order and a CC, fields for each, send", async ({ pa
   await page.getByLabel("Subject").fill(subject);
   await page.getByLabel("First reminder after (days)").fill("3");
   await expect(page.locator(".os-summary__item")).toHaveCount(3);
-  await expect(page.locator(".os-summary__item").first()).toContainText("3 fields");
+  await expect(page.locator(".os-summary__item").first()).toContainText("3 fields: Signature, Date signed, Text");
+  await expect(page.locator(".os-summary__item").nth(2)).toContainText("Gets a copy when it is complete");
+  await expect(page.locator(".os-stepper__btn.is-done")).toHaveCount(3);
   await page.getByRole("button", { name: "Send", exact: true }).first().click();
-  await page.getByRole("dialog", { name: "Send this envelope?" }).getByRole("button", { name: "Send" }).click();
+  const confirm = page.getByRole("dialog", { name: "Send this envelope?" });
+  await expect(confirm).toContainText("They sign in order: Ana Signer → Ben Signer. Cleo Copy will get a copy when it is complete.");
+  await confirm.getByRole("button", { name: "Send" }).click();
   await expect(page.getByRole("heading", { name: "Recipients" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".os-page-head .os-badge")).toHaveText("Sent");
   await expect(page.locator(".os-timeline__item")).toHaveCount(3);
@@ -125,4 +129,92 @@ test("a field dragged from the palette lands on the page where it is dropped", a
   await page.locator(".os-palette").getByRole("button", { name: "Add Initials field" }).dragTo(page2, { targetPosition: { x: 120, y: 160 } });
   await expect(page2.locator(".os-field")).toHaveCount(1);
   await expect(page.getByText("Page 2, from the top-left corner.")).toBeAttached();
+});
+
+test("recipients reorder with the arrows and by dragging a card", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
+  await addRecipient(page, 0, { name: "One", email: "one@example.com" });
+  await addRecipient(page, 1, { name: "Two", email: "two@example.com" });
+  await addRecipient(page, 2, { name: "Three", email: "three@example.com" });
+  const names = () => page.getByTestId("recipient-name").evaluateAll((els) => els.map((e) => e.value));
+  await page.locator(".os-rcpt").nth(0).getByRole("button", { name: "Move down in signing order" }).click();
+  expect(await names()).toEqual(["Two", "One", "Three"]);
+  await page.locator(".os-rcpt").nth(2).locator(".os-rcpt__head").dragTo(page.locator(".os-rcpt").nth(0).locator(".os-rcpt__head"));
+  expect(await names()).toEqual(["Three", "Two", "One"]);
+});
+
+test("Shift+click selects several fields; they line up, move and delete together, and undo restores them", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
+  await addRecipient(page, 0, { name: "Gus Group", email: "gus@example.com" });
+  await page.getByTestId("wizard-next").click();
+  const sig = page.locator(".os-palette").getByRole("button", { name: "Add Signature field" });
+  await sig.click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).click();
+  const fields = page.locator(".os-field");
+  await expect(fields).toHaveCount(3);
+  // Each new field goes just below the one placed before it, lined up (F-01).
+  const [a, b2, c] = await Promise.all([0, 1, 2].map((i) => fields.nth(i).boundingBox()));
+  expect(Math.round(b2.x)).toBe(Math.round(a.x));
+  expect(b2.y).toBeGreaterThan(a.y + a.height);
+  expect(c.y).toBeGreaterThan(b2.y + b2.height);
+  expect(c.y - (a.y + a.height)).toBeLessThan(200);
+  // Spread them out so that lining up has something to do.
+  await fields.nth(1).click();
+  for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight");
+  await fields.nth(0).click();
+  await fields.nth(1).click({ modifiers: ["Shift"] });
+  await fields.nth(2).click({ modifiers: ["Shift"] });
+  await expect(page.getByRole("heading", { name: "3 fields selected" })).toBeVisible();
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(3);
+  const lefts = async () => Promise.all([0, 1, 2].map(async (i) => Math.round((await fields.nth(i).boundingBox()).x)));
+  const before = await lefts();
+  expect(new Set(before).size).toBeGreaterThan(1);
+  await page.getByTestId("arrange-left").click();
+  expect(new Set(await lefts()).size).toBe(1);
+  // The arrows move the group.
+  const x0 = (await lefts())[0];
+  await fields.nth(0).focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  expect(new Set(await lefts()).size).toBe(1);
+  expect((await lefts())[0]).toBeGreaterThan(x0);
+  // Undo twice: back to the spread-out positions.
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  expect(await lefts()).toEqual(before);
+  // Select all three again and delete them together; Undo in the toast brings them back.
+  await fields.nth(0).click();
+  await fields.nth(1).click({ modifiers: ["Shift"] });
+  await fields.nth(2).click({ modifiers: ["Shift"] });
+  await page.getByRole("button", { name: "Delete 3 fields" }).click();
+  await expect(fields).toHaveCount(0);
+  await page.getByTestId("toast-action").click();
+  await expect(fields).toHaveCount(3);
+});
+
+test("a draft saves itself after a pause, keeps the selection, and then leaves without asking", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
+  await addRecipient(page, 0, { name: "Ada Auto", email: "ada@example.com" });
+  await page.getByTestId("wizard-next").click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await expect(page.getByTestId("save-status")).toContainText("Unsaved changes");
+  // Unsaved: leaving asks (A12); staying keeps the work.
+  await page.goto(app("#/agreements"));
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page).toHaveURL(/#\/prepare$/);
+  // Autosave (P-04): quietly, a few seconds after the last change.
+  await expect(page.getByTestId("save-status")).toContainText("Saved at", { timeout: 15_000 });
+  await expect(page).toHaveURL(/#\/prepare\/.+/);
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(1);
+  await page.goto(app("#/agreements"));
+  await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
 });
