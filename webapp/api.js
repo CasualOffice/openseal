@@ -105,6 +105,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
   const data = async (p) => (await p).data;
   const E = (id) => `/api/v1/envelopes/${encodeURIComponent(id)}`;
   const S = (token) => `/s/${encodeURIComponent(token)}`;
+  const T = (tp) => `/api/v1/templates/${encodeURIComponent(tp)}`;
   const etagOf = (env) => (env && Number.isInteger(env.version) ? `"v${env.version}"` : null);
 
   return {
@@ -167,33 +168,88 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     patchField: (id, f, etag, body) => data(request("PATCH", `${E(id)}/fields/${encodeURIComponent(f)}`, { body, ifMatch: etag })),
     deleteField: (id, f, etag) => data(request("DELETE", `${E(id)}/fields/${encodeURIComponent(f)}`, { ifMatch: etag })),
 
-    // ---- WEB-06 server additions --------------------------------------------
-    /// Correct a sent envelope with the engine's change list (or use the per-element
-    /// recipient and field calls, which correct a sent envelope too).
+    /// How many envelopes have `status`, counting at most `cap` (one page of the list;
+    /// the API has no count). `{n, more}`: `more` when the list goes on past `cap`.
+    async countEnvelopes(status, cap = 200) {
+      const page = await data(request("GET", "/api/v1/envelopes", { query: { status, limit: cap } }));
+      return { n: (page?.items || []).length, more: !!page?.next_cursor };
+    },
+
+    // ---- Correct, preview, detection, contacts (WEB-06 server) ----------------
+    /// `POST …/correct {changes}` (If-Match): the engine's change list (casual-sign-workflow
+    /// `Change`, tagged by `op`), all or none. `update_recipient` replaces the whole
+    /// `RecipientSpec`, which refuses unknown members (so no `access_code`), and the API
+    /// does not show every member of it (`date_format`); a correction of one recipient's
+    /// name, email or access code is therefore `patchRecipient`, which keeps the rest and
+    /// stores the code (it corrects a sent envelope as this does).
     correctEnvelope: (id, etag, changes) => data(request("POST", `${E(id)}/correct`, { body: { changes }, ifMatch: etag })),
     /// The document as it stands: sealed once sealed, else a "not signed" preview.
     currentDocument: async (id, doc) =>
       (await request("GET", `${E(id)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, query: { version: "current" } })).blob,
+    /// Suggested fields `{items: [{document_id, type, page, x, y, width, height, source,
+    /// cue?, confidence}], truncated}`; nothing is changed or recorded on the server.
     detectFields: (id, doc) => data(request("POST", `${E(id)}/documents/${encodeURIComponent(doc)}/detect-fields`)),
     contacts: (q, limit = 10) => data(request("GET", "/api/v1/contacts", { query: { q, limit } })),
-    inviteUser: (body) => data(request("POST", "/api/v1/users", { body: { ...body, invite: true } })),
-    resendInvite: (userId) => data(request("POST", `/api/v1/users/${encodeURIComponent(userId)}/invite`)),
-    patchUser: (userId, body) => data(request("PATCH", `/api/v1/users/${encodeURIComponent(userId)}`, { body })),
+
+    // ---- Account and members (Admin) -------------------------------------------
+    /// `PATCH /accounts/me {settings}`: merged into the account's settings (`null`
+    /// removes a key). Answers `{settings}`. The API has no way to rename the account.
+    patchAccountSettings: (settings) => data(request("PATCH", "/api/v1/accounts/me", { body: { settings } })),
+    /// An invited member sets their password with the emailed token (no session).
     acceptInvite: (token, password) => data(request("POST", "/api/v1/auth/accept-invite", { body: { token, password } })),
+    users: {
+      list: () => data(request("GET", "/api/v1/users")),
+      /// One member, with `invitation` (the latest invitation's state; the list has none).
+      get: (u) => data(request("GET", `/api/v1/users/${encodeURIComponent(u)}`)),
+      /// `{email, name, profile, password?}`.
+      create: (body) => data(request("POST", "/api/v1/users", { body })),
+      /// `{email, name, profile}`: the server emails a one-time link to set a password.
+      invite: (body) => data(request("POST", "/api/v1/users", { body: { ...body, invite: true } })),
+      /// A new link for a member who has not set up their sign-in; earlier links stop working.
+      reinvite: (u) => data(request("POST", `/api/v1/users/${encodeURIComponent(u)}/invite`)),
+      /// `{name?, password?, profile?, disabled?}`.
+      patch: (u, body) => data(request("PATCH", `/api/v1/users/${encodeURIComponent(u)}`, { body })),
+      remove: (u) => data(request("DELETE", `/api/v1/users/${encodeURIComponent(u)}`)),
+    },
+    apiClients: {
+      list: () => data(request("GET", "/api/v1/api-clients")),
+      /// `{name, kind: "api_key" | "oauth_app", scopes, owner_user_id?, expires_in_days?}`.
+      create: (body) => data(request("POST", "/api/v1/api-clients", { body })),
+      revoke: (c) => data(request("DELETE", `/api/v1/api-clients/${encodeURIComponent(c)}`)),
+    },
+
+    // ---- Templates (docs/40: roles, documents and fields, as on envelopes) -----
+    // A single-template read, and the document and role calls, answer the whole
+    // template: `roles` with ids, `documents`, and `fields` bound to `role_id`. The
+    // ETag is `"v<version>"`; every change bumps the version.
     templates: {
-      get: async (t) => { const r = await request("GET", `/api/v1/templates/${encodeURIComponent(t)}`); return { template: r.data, etag: r.etag }; },
-      patch: (t, etag, body) => data(request("PATCH", `/api/v1/templates/${encodeURIComponent(t)}`, { body, ifMatch: etag })),
-      remove: (t, etag) => data(request("DELETE", `/api/v1/templates/${encodeURIComponent(t)}`, { ifMatch: etag })),
-      duplicate: (t, name) => data(request("POST", `/api/v1/templates/${encodeURIComponent(t)}/duplicate`, { body: name ? { name } : {} })),
-      addDocument: (t, name, bytes) => data(request("POST", `/api/v1/templates/${encodeURIComponent(t)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),
-      removeDocument: (t, doc, etag) => data(request("DELETE", `/api/v1/templates/${encodeURIComponent(t)}/documents/${encodeURIComponent(doc)}`, { ifMatch: etag })),
-      documentContent: async (t, doc) => (await request("GET", `/api/v1/templates/${encodeURIComponent(t)}/documents/${encodeURIComponent(doc)}/content`, { raw: true })).blob,
-      addRole: (t, role) => data(request("POST", `/api/v1/templates/${encodeURIComponent(t)}/roles`, { body: role })),
-      patchRole: (t, role, etag, body) => data(request("PATCH", `/api/v1/templates/${encodeURIComponent(t)}/roles/${encodeURIComponent(role)}`, { body, ifMatch: etag })),
-      removeRole: (t, role, etag) => data(request("DELETE", `/api/v1/templates/${encodeURIComponent(t)}/roles/${encodeURIComponent(role)}`, { ifMatch: etag })),
-      addFields: (t, items) => data(request("POST", `/api/v1/templates/${encodeURIComponent(t)}/fields`, { body: { items } })),
-      patchField: (t, f, etag, body) => data(request("PATCH", `/api/v1/templates/${encodeURIComponent(t)}/fields/${encodeURIComponent(f)}`, { body, ifMatch: etag })),
-      removeField: (t, f, etag) => data(request("DELETE", `/api/v1/templates/${encodeURIComponent(t)}/fields/${encodeURIComponent(f)}`, { ifMatch: etag })),
+      list: () => data(request("GET", "/api/v1/templates")),
+      /// `{template, etag}`; the ETag falls back to the version when a proxy drops it.
+      async get(tp) {
+        const r = await request("GET", T(tp));
+        return { template: r.data, etag: r.etag || etagOf(r.data) };
+      },
+      /// `{name, email_subject?, email_message?, roles?: [{name, type, routing_order}]}`.
+      create: (body) => data(request("POST", "/api/v1/templates", { body })),
+      /// `{name?, email_subject?, email_message?}` (If-Match).
+      patch: (tp, etag, body) => data(request("PATCH", T(tp), { body, ifMatch: etag })),
+      remove: (tp, etag) => data(request("DELETE", T(tp), { ifMatch: etag })),
+      duplicate: (tp, name) => data(request("POST", `${T(tp)}/duplicate`, { body: name ? { name } : {} })),
+      /// Answers the whole template: the new document is the one that was not there.
+      addDocument: (tp, name, bytes) => data(request("POST", `${T(tp)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),
+      removeDocument: (tp, doc, etag) => data(request("DELETE", `${T(tp)}/documents/${encodeURIComponent(doc)}`, { ifMatch: etag })),
+      documentContent: async (tp, doc) => (await request("GET", `${T(tp)}/documents/${encodeURIComponent(doc)}/content`, { raw: true })).blob,
+      /// `{name, type, routing_order}`; answers the whole template.
+      addRole: (tp, role) => data(request("POST", `${T(tp)}/roles`, { body: role })),
+      /// `{name?, type?, routing_order?}` (If-Match); answers the whole template.
+      patchRole: (tp, role, etag, body) => data(request("PATCH", `${T(tp)}/roles/${encodeURIComponent(role)}`, { body, ifMatch: etag })),
+      removeRole: (tp, role, etag) => data(request("DELETE", `${T(tp)}/roles/${encodeURIComponent(role)}`, { ifMatch: etag })),
+      fields: (tp) => data(request("GET", `${T(tp)}/fields`)),
+      /// `[{role_id, document_id, type, placement, required?, label?}]` → `{items}`.
+      addFields: (tp, items) => data(request("POST", `${T(tp)}/fields`, { body: { items } })),
+      /// The members given replace the field's (If-Match).
+      patchField: (tp, f, etag, body) => data(request("PATCH", `${T(tp)}/fields/${encodeURIComponent(f)}`, { body, ifMatch: etag })),
+      removeField: (tp, f, etag) => data(request("DELETE", `${T(tp)}/fields/${encodeURIComponent(f)}`, { ifMatch: etag })),
     },
 
     // ---- Ceremony (docs/40 §6; not public API) ----------------------------

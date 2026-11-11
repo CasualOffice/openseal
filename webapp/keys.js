@@ -32,6 +32,12 @@ export const SHORTCUTS = {
     ["Alt+ArrowLeft", "field.shrink-width"],
     ["Alt+ArrowDown", "field.grow-height"],
     ["Alt+ArrowUp", "field.shrink-height"],
+    // WEB-09: the keyboard side of snapping guides and marquee selection.
+    ["Alt+Shift+ArrowLeft", "field.jump-left"],
+    ["Alt+Shift+ArrowRight", "field.jump-right"],
+    ["Alt+Shift+ArrowUp", "field.jump-up"],
+    ["Alt+Shift+ArrowDown", "field.jump-down"],
+    ["Ctrl+A", "field.select-page"],
     ["Ctrl+D", "field.duplicate"],
     ["Ctrl+C", "field.copy"],
     ["Ctrl+V", "field.paste"],

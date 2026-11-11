@@ -78,7 +78,6 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     await seed();
     save();
   }
-  const flag = (name) => { try { return store?.getItem(`openseal.mock.${name}`) === "1"; } catch { return false; } };
 
   const iso = (offsetMin = 0) => new Date(now().getTime() + offsetMin * 60000).toISOString();
 
@@ -310,11 +309,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // Templates (WEB-02): one with a document and fields, one with roles only.
     const nda = newTemplate({ name: "Mutual NDA", email_subject: "Mutual NDA for signature", email_message: "Please review and sign this NDA.", roles: [{ name: "Company", type: "signer", routing_order: 1 }, { name: "Counterparty", type: "signer", routing_order: 2 }, { name: "Legal", type: "cc", routing_order: 3 }] }, iso(-60 * 24 * 10));
     const ndaBytes = doc("Mutual non-disclosure agreement");
-    const ndaDoc = { id: uid(), name: "mutual-nda.pdf", pages: 2, bytes: ndaBytes.length };
+    const ndaDoc = { id: uid(), name: "mutual-nda.pdf", ord: 0, pages: 2, sha256: null };
     db.blobs[ndaDoc.id] = b64(ndaBytes);
     nda.documents.push(ndaDoc);
     for (const [role, y] of [["Company", 560], ["Counterparty", 640]]) {
-      for (const f of sigFields(y)) nda.fields.push({ id: uid(), document_id: ndaDoc.id, role, type: f.type, placement: placementOf(f), ...(f.required ? { required: true } : {}) });
+      const roleId = nda.roles.find((r) => r.name === role).id;
+      for (const f of sigFields(y)) nda.fields.push({ id: uid(), document_id: ndaDoc.id, role_id: roleId, type: f.type, placement: placementOf(f), ...(f.required ? { required: true } : {}) });
     }
     nda.last_used_at = iso(-60 * 24 * 3);
     newTemplate({ name: "Contractor onboarding", email_subject: "Welcome aboard: documents to sign", roles: [{ name: "Contractor", type: "signer", routing_order: 1 }] }, iso(-60 * 24 * 4));
@@ -356,17 +356,19 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
     if (res === "accounts" && id === "me") {
-      // Settings and branding (WEB-06 AD-01): `PATCH` merges `name` and `settings`.
+      // Settings and branding (WEB-06 AD-01), as the server (`AccountPatch`): `PATCH
+      // {settings}` only, merged, `null` removing a key; answers `{settings}`. The
+      // server's own `builtin_profiles` (profile name → id) cannot be changed.
       db.account ||= { id: "acct-demo", name: "Demo account", settings: {}, data_region: null, created_at: iso(-60 * 24 * 30) };
+      db.account.settings.builtin_profiles ||= { admin: "profile-admin", sender: "profile-sender", viewer: "profile-viewer" };
       if (method === "PATCH") {
-        if (body?.name != null) {
-          if (typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
-          db.account.name = body.name.trim().slice(0, 255);
-        }
-        if (body?.settings != null) {
-          if (typeof body.settings !== "object" || Array.isArray(body.settings)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/settings", code: "type" }]);
-          db.account.settings = { ...db.account.settings, ...body.settings };
-        }
+        for (const k of Object.keys(body || {})) if (k !== "settings") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        if (!body?.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/settings", code: "type" }]);
+        if ("builtin_profiles" in body.settings) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/builtin_profiles", code: "CS-API-0001" }]);
+        const next = { ...db.account.settings };
+        for (const [k, v] of Object.entries(body.settings)) { if (v === null) delete next[k]; else next[k] = v; }
+        db.account.settings = next;
+        return json(200, { settings: next });
       } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       return json(200, db.account);
     }
@@ -439,28 +441,31 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
     }
     if (sub === "correct" && method === "POST") {
-      // `POST …/correct` (docs/40, WEB-06 E-01): the engine's change list, all or none.
-      // The mock takes `update_recipient` for a recipient who has not acted yet.
+      // `POST …/correct {changes}` (docs/40, docs/24 §6), as the server: the engine's change
+      // list, all or none, If-Match. The mock takes `update_recipient`, whose `recipient`
+      // is a whole engine `RecipientSpec` (unknown members refused, so no `access_code`),
+      // for a recipient who has not acted yet.
       checkIfMatch(env, headers);
       if (!["sent", "delivered"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      for (const k of Object.keys(body || {})) if (k !== "changes") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
       const changes = body?.changes;
       if (!Array.isArray(changes) || !changes.length) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/changes", code: "required" }]);
+      const SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for"];
       const plan = changes.map((c, i) => {
         if (c?.op !== "update_recipient" || !c.recipient?.id) fail(422, "CS-WF-0008", "Unsupported change", [{ pointer: `/changes/${i}/op`, code: "unsupported" }]);
-        const r = env.recipients.find((x) => x.id === c.recipient.id);
+        const n = c.recipient;
+        for (const k of Object.keys(n)) if (!SPEC.includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/changes/${i}/recipient/${k}`, code: "unknown" }]);
+        for (const k of ["type", "routing_order", "name", "email"]) if (!(k in n)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: `/changes/${i}/recipient/${k}`, code: "required" }]);
+        const r = env.recipients.find((x) => x.id === n.id);
         if (!r) fail(422, "CS-WF-0008", "Unknown recipient", [{ pointer: `/changes/${i}/recipient/id`, code: "unknown" }]);
         if (["completed", "declined"].includes(r.status)) fail(409, "CS-WF-0001", "Recipient has already acted", [{ pointer: `/changes/${i}/recipient/id`, code: "acted" }]);
-        const n = c.recipient;
         if (typeof n.name !== "string" || !n.name.trim()) fail(400, "CS-API-0001", "Recipient name required", [{ pointer: `/changes/${i}/recipient/name`, code: "required" }]);
-        if (typeof n.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: `/changes/${i}/recipient/email`, code: "format" }]);
-        const auth = Array.isArray(n.auth) ? n.auth : r.auth;
-        if (auth.includes("access_code") && !r.auth.includes("access_code") && !n.access_code) fail(400, "CS-API-0001", "Access code required", [{ pointer: `/changes/${i}/recipient/access_code`, code: "required" }]);
-        return [r, { name: n.name.trim(), email: n.email.trim(), auth, access_code: n.access_code || null }];
+        if (typeof n.email !== "string" || (n.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n.email))) fail(400, "CS-API-0001", "Invalid email", [{ pointer: `/changes/${i}/recipient/email`, code: "format" }]);
+        return [r, n];
       });
       for (const [r, n] of plan) {
-        r.name = n.name; r.email = n.email; r.auth = n.auth;
-        if (n.access_code) { r.access_code = n.access_code; r.auth_passed = []; }
-        if (!n.auth.includes("access_code")) r.access_code = null;
+        Object.assign(r, { type: n.type, routing_order: n.routing_order, name: n.name.trim(), email: n.email, delivery: n.delivery || "email", auth: Array.isArray(n.auth) ? n.auth : [] });
+        if (!r.auth.includes("access_code")) r.access_code = null;
       }
       env.version++;
       await audit(env, "envelope_corrected", { actor: "sender", recipient_ids: plan.map(([r]) => r.id) });
@@ -497,6 +502,20 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!subId && method === "GET") return json(200, { items: env.documents });
       const d = env.documents.find((x) => x.id === subId);
       if (!d) fail(404, "CS-API-0002", "Not found");
+      if (subSub === "detect-fields" && method === "POST") {
+        // As `POST …/detect-fields` (nothing changed or recorded): the mock's documents
+        // put their signature lines low on each page, so it suggests a signature, a date
+        // and a name there, ordered by page, top, left.
+        const items = [];
+        for (let page = 1; page <= d.pages; page++) {
+          items.push(
+            { document_id: d.id, type: "signature", page, x: "72", y: "680", width: "180", height: "40", source: "underline", cue: "Signature", confidence: 82 },
+            { document_id: d.id, type: "date_signed", page, x: "330", y: "698", width: "120", height: "22", source: "label", cue: "Date", confidence: 74 },
+            { document_id: d.id, type: "name", page, x: "72", y: "730", width: "180", height: "22", source: "label", cue: "Print name", confidence: 61 },
+          );
+        }
+        return json(200, { items, truncated: false });
+      }
       if (subSub === "content" && method === "GET") {
         if (query.get("version") === "sealed" && !env.sealed) fail(409, "CS-API-0009", "Not available in the object's state");
         // `version=current` (WEB-06 E-02): the document as it stands, fields filled so
@@ -524,11 +543,29 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const r = env.recipients.find((x) => x.id === subId);
       if (!r) fail(404, "CS-API-0002", "Not found");
       if (method === "PATCH") {
-        checkIfMatch(env, headers); draftOnly(env);
-        for (const k of ["name", "email", "routing_order", "auth"]) if (body && k in body) r[k] = body[k];
-        if (body && "access_code" in body) r.access_code = body.access_code;
+        // As the server: a draft, or a correction of a sent envelope for a recipient who
+        // has not acted. The access code follows the methods: one given needs
+        // `access_code` among them; newly requiring it needs one; dropping it clears it.
+        checkIfMatch(env, headers);
+        const correcting = ["sent", "delivered"].includes(env.status);
+        if (!correcting) draftOnly(env);
+        if (correcting && ["completed", "declined"].includes(r.status)) fail(409, "CS-WF-0001", "Recipient has already acted");
+        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "auth", "access_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        if (body?.name != null && !String(body.name).trim()) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
+        if (body?.email != null && !String(body.email).includes("@")) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/email", code: "CS-API-0001" }]);
+        const had = r.auth.includes("access_code");
+        const auth = Array.isArray(body?.auth) ? body.auth : r.auth;
+        const wants = auth.includes("access_code");
+        const code = body?.access_code || null;
+        if (code ? !wants : wants && !had) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/access_code", code: "CS-API-0001" }]);
+        if (body?.name != null) r.name = String(body.name).trim();
+        if (body?.email != null) r.email = String(body.email);
+        if (body?.routing_order != null) r.routing_order = body.routing_order;
+        r.auth = auth;
+        if (code) { r.access_code = code; r.auth_passed = []; } else if (had && !wants) r.access_code = null;
         env.version++;
-        return json(200, publicRecipient(r));
+        if (correcting) await audit(env, "envelope_corrected", { actor: "sender", recipient_ids: [r.id] });
+        return json(200, publicRecipient(r), { ETag: `"v${env.version}"` });
       }
       if (method === "DELETE") {
         checkIfMatch(env, headers); draftOnly(env);
@@ -570,102 +607,175 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     fail(405, "CS-API-0012", "Method not allowed");
   }
 
-  // ---- Templates (WEB-02) ------------------------------------------------------
-  // `GET/POST /templates`, `GET/PATCH /templates/{id}` as api/openapi.yaml. Documents
-  // and fields of a template are docs/40's slice-3 design ("as envelopes"), ahead of
-  // the server: `sessionStorage["openseal.mock.no-template-docs"] = "1"` turns them
-  // off, so the browser tests also cover today's server, which keeps roles only.
-  const templateDocs = () => !flag("no-template-docs");
-  function publicTemplate(tp) {
-    // The server's shape (server/…/api/templates.rs): no creation time; the list
-    // carries no roles.
-    const { documents, fields, created_at: _c, ...rest } = tp;
-    return templateDocs() ? { ...rest, documents, fields } : rest;
+  // ---- Templates (WEB-02, WEB-09, WEB-10) ---------------------------------------
+  // As the server (server/…/api/templates.rs, api/openapi.yaml): roles with ids; a
+  // single-template read, and adding a document or a role, answer the whole template
+  // (roles, documents, fields); fields are bound to `role_id` (or `role`, also an id);
+  // every change bumps the version, and the changes that name one object need If-Match.
+  function publicTemplate(tp, whole = true) {
+    const { documents, fields, created_at: _c, last_used_at: _l, ...rest } = tp;
+    return whole ? { ...rest, documents, fields } : rest;
+  }
+  const ROLE_TYPES = ["signer", "cc", "approver", "viewer", "in_person_signer"];
+  function checkRole(r, at) {
+    if (!r || typeof r.name !== "string" || !r.name.trim() || r.name.trim().length > 255) fail(400, "CS-API-0001", "Role name required", [{ pointer: `${at}/name`, code: "required" }]);
+    for (const k of Object.keys(r)) if (!["name", "type", "routing_order"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `${at}/${k}`, code: "unknown" }]);
+    if (!ROLE_TYPES.includes(r.type)) fail(400, "CS-API-0001", "Unknown recipient type", [{ pointer: `${at}/type`, code: "enum" }]);
+    const order = r.routing_order ?? 1;
+    if (!Number.isInteger(order) || order < 1 || order > 999) fail(400, "CS-API-0001", "Malformed request", [{ pointer: `${at}/routing_order`, code: "range" }]);
+    return { id: uid(), name: r.name.trim(), type: r.type, routing_order: order };
   }
   function checkRoles(roles) {
     if (roles == null) return [];
     if (!Array.isArray(roles)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/roles", code: "type" }]);
-    return roles.map((r, i) => {
-      if (!r || typeof r.name !== "string" || !r.name.trim()) fail(400, "CS-API-0001", "Role name required", [{ pointer: `/roles/${i}/name`, code: "required" }]);
-      if (!["signer", "cc", "approver", "viewer", "in_person_signer"].includes(r.type)) fail(400, "CS-API-0001", "Unknown recipient type", [{ pointer: `/roles/${i}/type`, code: "enum" }]);
-      return { id: uid(), name: r.name.trim().slice(0, 255), type: r.type, routing_order: Number.isInteger(r.routing_order) ? r.routing_order : 1 };
-    });
+    return roles.map((r, i) => checkRole(r, `/roles/${i}`));
   }
   function newTemplate(b, createdAt) {
     if (!b || typeof b.name !== "string" || !b.name.trim()) fail(400, "CS-API-0001", "Template name required", [{ pointer: "/name", code: "required" }]);
     for (const k of Object.keys(b)) if (!["name", "email_subject", "email_message", "roles"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
-    const tp = { id: uid(), owner_user_id: "user-demo", name: b.name.trim().slice(0, 255), version: 1, email_subject: b.email_subject || "", email_message: b.email_message || "", roles: checkRoles(b.roles), documents: [], fields: [], created_at: createdAt || iso() };
+    const tp = { id: uid(), owner_user_id: "user-demo", name: b.name.trim().slice(0, 255), version: 1, email_subject: b.email_subject ?? null, email_message: b.email_message ?? null, roles: checkRoles(b.roles), documents: [], fields: [], created_at: createdAt || iso() };
     db.templates.push(tp);
     return tp;
   }
+  function tplIfMatch(tp, headers, required = true) {
+    const v = headers["if-match"];
+    if (!v) { if (required) fail(428, "CS-API-0008", "Precondition required"); return; }
+    if (v !== `"v${tp.version}"`) fail(412, "CS-WF-0002", "Stale version");
+  }
+  /// A template field from the API's shape: `role_id` (or `role`), `document_id`, `type`,
+  /// and the placement flat or as `placement`; checked against the roles and documents.
+  function templateField(tp, f, at, id = uid()) {
+    if (!f || typeof f !== "object") fail(400, "CS-API-0001", "Malformed request", [{ pointer: at, code: "type" }]);
+    if ("recipient" in f) fail(400, "CS-API-0001", "Malformed request", [{ pointer: `${at}/recipient`, code: "unknown" }]);
+    const role = f.role_id ?? f.role;
+    if (!tp.roles.some((r) => r.id === role)) fail(400, "CS-API-0001", "Unknown role", [{ pointer: `${at}/role_id`, code: "unknown" }]);
+    const doc = tp.documents.find((d) => d.id === f.document_id);
+    if (!doc) fail(400, "CS-API-0001", "Unknown document", [{ pointer: `${at}/document_id`, code: "unknown" }]);
+    const placement = placementOf(f.placement || f);
+    if (placement.page > doc.pages) fail(400, "CS-API-0001", "Page out of range", [{ pointer: `${at}/page`, code: "range" }]);
+    const field = { id, document_id: doc.id, role_id: role, type: String(f.type || "text"), placement };
+    if (f.required) field.required = true;
+    if (f.label) field.label = String(f.label);
+    return field;
+  }
+  const tplWhole = (tp, status = 200) => json(status, publicTemplate(tp), { ETag: `"v${tp.version}"` });
   function templates(method, id, sub, subId, subSub, headers, body) {
     if (!id) {
       if (method === "GET") {
         const items = [...db.templates].sort((a, b) => b.created_at.localeCompare(a.created_at))
-          .map((tp) => ({ id: tp.id, owner_user_id: tp.owner_user_id, name: tp.name, email_subject: tp.email_subject, email_message: tp.email_message, version: tp.version, roles: [], last_used_at: tp.last_used_at || null }));
+          .map((tp) => ({ ...publicTemplate(tp, false), roles: tp.roles, last_used_at: tp.last_used_at || null }));
         return json(200, { items });
       }
-      if (method === "POST") { const tp = newTemplate(body); return json(201, publicTemplate(tp), { ETag: `"v${tp.version}"` }); }
+      if (method === "POST") return tplWhole(newTemplate(body), 201);
     }
     const tp = db.templates.find((x) => x.id === id);
     if (!tp) fail(404, "CS-API-0002", "Not found");
     if (!sub) {
-      if (method === "GET") return json(200, publicTemplate(tp), { ETag: `"v${tp.version}"` });
+      if (method === "GET") return tplWhole(tp);
       if (method === "PATCH") {
-        const v = headers["if-match"];
-        if (!v) fail(428, "CS-API-0008", "Precondition required");
-        if (v !== `"v${tp.version}"`) fail(412, "CS-WF-0002", "Stale version");
-        // Name, and (WEB-06 T-01) the email subject and message.
-        if (!body || (body.name != null && (typeof body.name !== "string" || !body.name.trim())) || (body.name == null && !("email_subject" in body) && !("email_message" in body))) fail(400, "CS-API-0001", "Template name required", [{ pointer: "/name", code: "required" }]);
-        if (body.name != null) tp.name = body.name.trim().slice(0, 255);
-        for (const k of ["email_subject", "email_message"]) if (k in body) tp[k] = String(body[k] ?? "").slice(0, k === "email_subject" ? 255 : 10000);
+        tplIfMatch(tp, headers);
+        for (const k of Object.keys(body || {})) if (!["name", "email_subject", "email_message"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        if (body?.name != null && (typeof body.name !== "string" || !body.name.trim())) fail(400, "CS-API-0001", "Template name required", [{ pointer: "/name", code: "required" }]);
+        if (body?.name != null) tp.name = body.name.trim().slice(0, 255);
+        for (const k of ["email_subject", "email_message"]) if (body && k in body) tp[k] = body[k] == null ? null : String(body[k]).slice(0, k === "email_subject" ? 255 : 10000);
         tp.version++;
-        return json(200, publicTemplate(tp), { ETag: `"v${tp.version}"` });
+        return tplWhole(tp);
       }
       if (method === "DELETE") {
-        const v = headers["if-match"];
-        if (!v) fail(428, "CS-API-0008", "Precondition required");
-        if (v !== `"v${tp.version}"`) fail(412, "CS-WF-0002", "Stale version");
+        tplIfMatch(tp, headers);
         db.templates = db.templates.filter((x) => x !== tp);
         return json(204, null);
       }
     }
     if (sub === "duplicate" && method === "POST") {
-      // `POST /templates/{id}/duplicate` (WEB-06 T-01): a copy named "… (copy)".
-      const copy = newTemplate({ name: `${tp.name} (copy)`.slice(0, 255), email_subject: tp.email_subject, email_message: tp.email_message, roles: tp.roles.map(({ name, type, routing_order }) => ({ name, type, routing_order })) });
+      // `POST /templates/{id}/duplicate {name?}`: "Copy of <name>" unless named.
+      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : `Copy of ${tp.name}`;
+      const copy = newTemplate({ name: name.slice(0, 255), ...(tp.email_subject != null ? { email_subject: tp.email_subject } : {}), ...(tp.email_message != null ? { email_message: tp.email_message } : {}), roles: tp.roles.map(({ name: n, type, routing_order }) => ({ name: n, type, routing_order })) });
+      const roleIds = new Map(tp.roles.map((r, i) => [r.id, copy.roles[i].id]));
       const ids = new Map();
       for (const d of tp.documents) { const nd = { ...d, id: uid() }; db.blobs[nd.id] = db.blobs[d.id]; ids.set(d.id, nd.id); copy.documents.push(nd); }
-      for (const f of tp.fields) copy.fields.push({ ...f, id: uid(), document_id: ids.get(f.document_id) || f.document_id });
-      return json(201, publicTemplate(copy), { ETag: `"v${copy.version}"` });
+      for (const f of tp.fields) copy.fields.push({ ...f, id: uid(), document_id: ids.get(f.document_id), role_id: roleIds.get(f.role_id) });
+      return tplWhole(copy, 201);
     }
-    if (!templateDocs()) fail(404, "CS-API-0002", "Not found");
     if (sub === "documents") {
       if (!subId && method === "POST") {
+        tplIfMatch(tp, headers, false);
+        for (const k of Object.keys(body || {})) if (!["name", "content_base64"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
         const bytes = unb64(body?.content_base64 || "");
         if (bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") fail(422, "CS-PDF-0001", "Not a PDF");
-        const d = { id: uid(), name: String(body?.name || "document.pdf").slice(0, 255), pages: countPages(bytes), bytes: bytes.length };
+        const d = { id: uid(), name: String(body?.name || "document.pdf").slice(0, 255), ord: tp.documents.length, pages: countPages(bytes), sha256: null };
         db.blobs[d.id] = b64(bytes);
         tp.documents.push(d);
         tp.version++;
-        return json(201, d);
+        return tplWhole(tp, 201);
       }
       const d = tp.documents.find((x) => x.id === subId);
       if (!d) fail(404, "CS-API-0002", "Not found");
       if (subSub === "content" && method === "GET") return pdf(unb64(db.blobs[d.id]));
+      if (!subSub && method === "DELETE") {
+        tplIfMatch(tp, headers);
+        tp.documents = tp.documents.filter((x) => x !== d);
+        tp.fields = tp.fields.filter((f) => f.document_id !== d.id);
+        tp.version++;
+        return json(204, null);
+      }
     }
-    if (sub === "fields" && !subId && method === "POST") {
-      const items = body?.items || [body];
-      const out = items.map((f, i) => {
-        if (!tp.roles.some((r) => r.name === f?.role)) fail(422, "CS-WF-0008", "Unknown role", [{ pointer: `/items/${i}/role`, code: "unknown" }]);
-        if (!tp.documents.some((d) => d.id === f.document_id)) fail(422, "CS-WF-0008", "Unknown document", [{ pointer: `/items/${i}/document_id`, code: "unknown" }]);
-        const field = { id: uid(), document_id: f.document_id, role: f.role, type: String(f.type || "text"), placement: placementOf(f.placement || f) };
-        if (f.required) field.required = true;
-        if (f.label) field.label = String(f.label);
-        tp.fields.push(field);
-        return field;
-      });
-      tp.version++;
-      return json(201, { items: out });
+    if (sub === "roles") {
+      if (!subId && method === "POST") {
+        tplIfMatch(tp, headers, false);
+        tp.roles.push(checkRole(body, ""));
+        tp.version++;
+        return tplWhole(tp, 201);
+      }
+      const r = tp.roles.find((x) => x.id === subId);
+      if (!r) fail(404, "CS-API-0002", "Not found");
+      if (method === "PATCH") {
+        tplIfMatch(tp, headers);
+        const next = checkRole({ name: r.name, type: r.type, routing_order: r.routing_order, ...(body || {}) }, "");
+        Object.assign(r, { name: next.name, type: next.type, routing_order: next.routing_order });
+        tp.version++;
+        return tplWhole(tp);
+      }
+      if (method === "DELETE") {
+        tplIfMatch(tp, headers);
+        tp.roles = tp.roles.filter((x) => x !== r);
+        tp.fields = tp.fields.filter((f) => f.role_id !== r.id);
+        tp.version++;
+        return json(204, null);
+      }
+    }
+    if (sub === "fields") {
+      if (!subId && method === "GET") return json(200, { items: tp.fields }, { ETag: `"v${tp.version}"` });
+      if (!subId && method === "POST") {
+        tplIfMatch(tp, headers, false);
+        const items = Array.isArray(body?.items) ? body.items : body?.items != null ? fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/items", code: "type" }]) : [body];
+        if (!items.length) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/items", code: "required" }]);
+        const out = items.map((f, i) => templateField(tp, f, body?.items ? `/items/${i}` : ""));
+        tp.fields.push(...out);
+        tp.version++;
+        return json(201, { items: out }, { ETag: `"v${tp.version}"` });
+      }
+      const f = tp.fields.find((x) => x.id === subId);
+      if (!f) fail(404, "CS-API-0002", "Not found");
+      if (method === "PATCH") {
+        tplIfMatch(tp, headers);
+        if (body && "id" in body) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/id", code: "read_only" }]);
+        const merged = { ...f, ...f.placement, ...(body || {}), ...(body?.placement || {}) };
+        delete merged.placement;
+        if (body && "required" in body && !body.required) delete merged.required;
+        if (body && "label" in body && !body.label) delete merged.label;
+        const next = templateField(tp, merged, "", f.id);
+        Object.keys(f).forEach((k) => delete f[k]);
+        Object.assign(f, next);
+        tp.version++;
+        return json(200, f, { ETag: `"v${tp.version}"` });
+      }
+      if (method === "DELETE") {
+        tplIfMatch(tp, headers);
+        tp.fields = tp.fields.filter((x) => x !== f);
+        tp.version++;
+        return json(204, null);
+      }
     }
     fail(405, "CS-API-0012", "Method not allowed");
   }
@@ -681,11 +791,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   function users(method, id, body, sub) {
     if (!id && method === "POST" && body?.invite === true) {
       // `POST /users` with `invite: true` (WEB-06 AD-01): a member who sets up their own
-      // sign-in from the emailed link; listed as invited until then.
+      // sign-in from the emailed link. As the server: `invitation` (the latest one's
+      // state) is on single reads and invites, not on the list; a name is required.
+      for (const k of Object.keys(body)) if (!["email", "name", "profile", "password", "invite"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+      if (typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
       if (typeof body?.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
       if (!["admin", "sender", "viewer"].includes(body.profile)) fail(400, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "enum" }]);
       if (db.users.some((u) => u.email.toLowerCase() === body.email.toLowerCase())) fail(400, "CS-API-0001", "Already a member", [{ pointer: "/email", code: "exists" }]);
-      const u = { id: uid(), email: body.email, name: typeof body.name === "string" ? body.name.trim() : "", login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false, invited: true };
+      const u = { id: uid(), email: body.email, name: body.name.trim(), login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false, invitation: "sent" };
       db.users.push(u);
       mintInvite(u);
       return json(201, u);
@@ -693,12 +806,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (id && sub === "invite" && method === "POST") {
       const u = db.users.find((x) => x.id === id);
       if (!u) fail(404, "CS-API-0002", "Not found");
-      if (!u.invited) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      if (u.disabled || u.login_kind !== "local") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/id", code: "CS-API-0001" }]);
       mintInvite(u);
-      return json(200, u);
+      u.invitation = "sent";
+      return json(202, u);
     }
     if (!id) {
-      if (method === "GET") return json(200, { items: db.users });
+      if (method === "GET") return json(200, { items: db.users.map(({ invitation: _i, ...rest }) => rest) });
       if (method === "POST") {
         if (!body || typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
         if (typeof body.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
@@ -711,7 +825,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     const u = db.users.find((x) => x.id === id);
     if (!u) fail(404, "CS-API-0002", "Not found");
-    if (method === "GET") return json(200, u);
+    if (method === "GET") return json(200, { ...u, invitation: u.invitation ?? null });
     if (method === "PATCH") {
       if (body?.name != null) {
         if (!String(body.name).trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
@@ -951,15 +1065,15 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         // WEB-06 AD-01: the invited member sets a password with the emailed token (no
         // session needed). The token works once.
         const uidOf = db.invites?.[body?.token];
+        for (const k of Object.keys(body || {})) if (!["token", "password"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
         if (typeof body?.token !== "string" || !uidOf) fail(401, "CS-AUTH-0002", "Invitation not valid");
         if (typeof body.password !== "string" || body.password.length < 12) fail(400, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
         const u = db.users.find((x) => x.id === uidOf);
         if (!u) fail(401, "CS-AUTH-0002", "Invitation not valid");
-        if (typeof body.name === "string" && body.name.trim()) u.name = body.name.trim().slice(0, 255);
-        u.invited = false;
+        u.invitation = "accepted";
         delete db.invites[body.token];
         save();
-        return json(200, { email: u.email, name: u.name });
+        return json(200, { account_id: "acct-demo", user_id: u.id });
       }
       let res;
       if (parts[1] === "api" && parts[2] === "v1") res = await staff(method, parts, url.searchParams, headers, body);

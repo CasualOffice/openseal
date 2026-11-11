@@ -9,10 +9,11 @@
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-/// Roles for `POST /api/v1/templates` from the editor's recipients, in routing order:
-/// sequential signers get 1, 2, 3…; parallel signers share 1; CCs come after them.
-/// Empty names become "Role n". Names are trimmed and must be unique (the fields refer
-/// to them), so a repeat gets " (2)".
+/// Roles for `POST /api/v1/templates` from the editor's recipients. `routing` is either
+/// a function giving each recipient's routing order (the editor's signing groups,
+/// WEB-09), or "sequential" (signers 1, 2, 3…, CCs after them) or "parallel" (signers
+/// share 1, CCs 2). Empty names become "Role n". Names are trimmed and kept unique (a
+/// person filling the template tells roles apart by name), so a repeat gets " (2)".
 export function rolesFrom(recipients, routing = "sequential") {
   const signers = recipients.filter((r) => r.type === "signer");
   const seen = new Map();
@@ -21,19 +22,21 @@ export function rolesFrom(recipients, routing = "sequential") {
     const n = (seen.get(name.toLowerCase()) || 0) + 1;
     seen.set(name.toLowerCase(), n);
     if (n > 1) name = `${name} (${n})`;
-    const order = r.type === "signer"
-      ? (routing === "parallel" ? 1 : signers.indexOf(r) + 1)
-      : (routing === "parallel" ? 2 : signers.length + 1);
+    const order = typeof routing === "function" ? routing(r, i)
+      : r.type === "signer"
+        ? (routing === "parallel" ? 1 : signers.indexOf(r) + 1)
+        : (routing === "parallel" ? 2 : signers.length + 1);
     return { name: name.slice(0, 255), type: r.type === "cc" ? "cc" : "signer", routing_order: order };
   });
 }
 
 /// The roles of a template as the API returns them, sorted by routing order, each
-/// with a usable name and type (an API object with neither is shown as "Role n").
+/// with its id, a usable name and type (an API object with neither is "Role n").
 export function rolesOf(template) {
   const list = Array.isArray(template?.roles) ? template.roles : [];
   return list
     .map((r, i) => ({
+      id: typeof r?.id === "string" ? r.id : null,
       name: typeof r?.name === "string" && r.name.trim() ? r.name.trim() : `Role ${i + 1}`,
       type: r?.type === "cc" ? "cc" : "signer",
       routing_order: Number.isInteger(r?.routing_order) && r.routing_order > 0 ? r.routing_order : 1,
@@ -57,7 +60,8 @@ export function peopleProblems(roles, people) {
 /// The `POST /api/v1/envelopes` body for a template filled with `people`.
 ///
 /// - `docs`: `[{id, name, base64}]`, the template's documents with their bytes.
-/// - `fields`: the template's fields, `{document_id, role, type, placement, required?, label?}`.
+/// - `fields`: the template's fields, `{document_id, role_id, type, placement, required?,
+///   label?}` as the server answers them (a `role` name is taken too).
 /// - `status`: "draft" (open it in the editor) or "sent" (send at once).
 ///
 /// A field whose role or document is not in the template is left out (the template
@@ -65,6 +69,7 @@ export function peopleProblems(roles, people) {
 export function envelopeFromTemplate(template, people, { docs = [], fields = [], subject, message, status = "draft", signingOptions = {} } = {}) {
   const roles = rolesOf(template);
   const ref = new Map(roles.map((r, i) => [r.name, `role${i}`]));
+  const refById = new Map(roles.filter((r) => r.id).map((r) => [r.id, `role${roles.indexOf(r)}`]));
   const docIndex = new Map(docs.map((d, i) => [d.id, i]));
   let dropped = 0;
   const body = {
@@ -83,7 +88,7 @@ export function envelopeFromTemplate(template, people, { docs = [], fields = [],
     fields: [],
   };
   for (const f of fields) {
-    const rf = ref.get(f.role);
+    const rf = f.role_id != null ? refById.get(f.role_id) : ref.get(f.role);
     const di = docIndex.get(f.document_id);
     if (rf === undefined || di === undefined || !f.placement) { dropped++; continue; }
     const field = { recipient: rf, document: di, type: f.type, page: f.placement.page, x: f.placement.x, y: f.placement.y, width: f.placement.width, height: f.placement.height };

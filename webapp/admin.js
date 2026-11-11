@@ -7,14 +7,20 @@
 // CS-AUTH-0006, shown in place. A new API key or OAuth secret is shown once, in a
 // dialog with a copy button, and never stored by the page.
 //
-// WEB-06 AD-01: invite a member by email (`POST /users/invite`), edit one (name,
-// permission profile, disabled) in a side panel, and the account's settings and
-// branding (`PATCH /accounts/me`) as cards whose Edit opens a side panel. Modals
-// remain only for remove and revoke.
+// WEB-06 AD-01: invite a member by email (`POST /users` with `invite: true`), edit one
+// (name, permission profile, disabled) in a side panel, and the account's settings and
+// branding (`PATCH /accounts/me {settings}`) as cards whose Edit opens a side panel.
+// Modals remain only for remove and revoke.
+//
+// WEB-10, against api/openapi.yaml and the server: a member's `permission_profile_id`
+// is an id, named through the account's `settings.builtin_profiles`; the list has no
+// invitation state, so it is read per local member (`GET /users/{id}`); the account's
+// name is shown, not edited (the API has no rename).
 
 import { h, clear } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
+import { profileName, invitePending } from "./people.js";
 import { button, emptyState, skeletonRows, errorState, openPanel, confirmDialog, toast, toastError, selectField, tabs, toggle } from "./ui/index.js";
 
 const PROFILES = ["admin", "sender", "viewer"];
@@ -36,8 +42,6 @@ export function mount(view, ctx, _match, params) {
     }));
 }
 
-const profileOf = (u) => String(u.permission_profile_id || "").replace(/^profile-/, "");
-
 // ---- Account: settings and branding (AD-01) ------------------------------------------
 
 function account(panel, ctx) {
@@ -47,7 +51,7 @@ function account(panel, ctx) {
 
   async function load() {
     try {
-      acct = await ctx.api.accountSettings.get();
+      acct = await ctx.api.account();
       box.removeAttribute("aria-busy");
       render();
     } catch (err) {
@@ -90,12 +94,11 @@ function account(panel, ctx) {
       title: t("admin.settings"),
       description: t("admin.settings-lede"),
       build(body) {
-        f.name = h("input", { id: "a-name", class: "os-input", value: acct.name || "", maxLength: 255, attrs: { autofocus: true } });
-        f.expiry = h("input", { id: "a-expiry", class: "os-input", type: "number", min: "1", max: "365", step: "1", value: s().default_expiry_days ?? "" });
+        f.expiry = h("input", { id: "a-expiry", class: "os-input", type: "number", min: "1", max: "365", step: "1", value: s().default_expiry_days ?? "", attrs: { autofocus: true } });
         f.remind = h("input", { id: "a-remind", class: "os-input", type: "number", min: "0", max: "60", step: "1", value: s().first_reminder_days ?? "" });
         f.err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
         body.append(
-          h("label", { class: "os-label", attrs: { for: "a-name" }, text: t("admin.account-name") }), f.name,
+          h("p", { class: "os-label", text: t("admin.account-name") }), h("p", { class: "os-muted", attrs: { "data-testid": "account-name" }, text: acct.name || t("admin.not-set") }),
           h("label", { class: "os-label", attrs: { for: "a-expiry" }, text: t("admin.expiry-days") }), f.expiry,
           h("label", { class: "os-label", attrs: { for: "a-remind" }, text: t("admin.reminder-days") }), f.remind, f.err);
       },
@@ -104,12 +107,11 @@ function account(panel, ctx) {
         {
           label: t("templates.save"), variant: "primary",
           onClick: async () => {
-            const name = f.name.value.trim();
             const expiry = f.expiry.value === "" ? null : Number.parseInt(f.expiry.value, 10);
             const remind = f.remind.value === "" ? null : Number.parseInt(f.remind.value, 10);
-            if (!name) { f.err.textContent = t("form.required"); f.name.setAttribute("aria-invalid", "true"); f.name.focus(); return undefined; }
             if (expiry != null && !(expiry >= 1 && expiry <= 365)) { f.err.textContent = t("admin.need-days"); f.expiry.focus(); return undefined; }
-            acct = await ctx.api.accountSettings.patch({ name, settings: { default_expiry_days: expiry, first_reminder_days: remind || null } });
+            const out = await ctx.api.patchAccountSettings({ default_expiry_days: expiry, first_reminder_days: remind || null });
+            acct = { ...acct, settings: out?.settings || acct.settings };
             return true;
           },
         },
@@ -141,7 +143,8 @@ function account(panel, ctx) {
           onClick: async () => {
             const color = f.color.value.trim();
             if (color && !HEX.test(color)) { f.err.textContent = t("admin.need-color"); f.color.setAttribute("aria-invalid", "true"); f.color.focus(); return undefined; }
-            acct = await ctx.api.accountSettings.patch({ settings: { branding: { name: f.name.value.trim(), color: color.toLowerCase() } } });
+            const out = await ctx.api.patchAccountSettings({ branding: { name: f.name.value.trim(), color: color.toLowerCase() } });
+            acct = { ...acct, settings: out?.settings || acct.settings };
             return true;
           },
         },
@@ -156,6 +159,7 @@ function account(panel, ctx) {
 // ---- Members ---------------------------------------------------------------------------
 
 function users(panel, ctx) {
+  let builtin = {};
   const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
   panel.append(h("div", { class: "os-panel__head os-panel__head--page" },
     h("h2", { class: "os-card__title", text: t("admin.users") }),
@@ -168,9 +172,15 @@ function users(panel, ctx) {
     list.setAttribute("aria-busy", "true");
     list.append(skeletonRows(3));
     try {
-      const page = await ctx.api.users.list();
+      const [page, acct] = await Promise.all([ctx.api.users.list(), ctx.api.account().catch(() => null)]);
+      builtin = acct?.settings?.builtin_profiles || {};
+      const items = page.items || [];
+      // The list carries no invitation state; a single read does. Local members who are
+      // not disabled, at most 100, in parallel; one that fails just shows no Resend.
+      await Promise.all(items.filter((u) => u.login_kind === "local" && !u.disabled && !("invitation" in u)).slice(0, 100)
+        .map(async (u) => { try { u.invitation = (await ctx.api.users.get(u.id))?.invitation ?? null; } catch { u.invitation = null; } }));
       list.removeAttribute("aria-busy");
-      render(page.items || []);
+      render(items);
     } catch (err) {
       list.removeAttribute("aria-busy");
       if (ctx.failed(err)) return;
@@ -195,8 +205,8 @@ function users(panel, ctx) {
     const tb = h("tbody");
     for (const u of items) {
       const me = u.id === ctx.session?.user_id;
-      const profile = profileOf(u);
-      const state = u.disabled ? "disabled" : u.invited ? "pending" : "active";
+      const profile = profileName(u, builtin);
+      const state = u.disabled ? "disabled" : invitePending(u) ? "pending" : "active";
       tb.append(h("tr", { attrs: { "data-id": u.id } },
         h("td", {}, h("strong", { text: u.name || "—" }), me ? h("span", { class: "os-muted os-small", text: ` ${t("admin.you")}` }) : null),
         h("td", { class: "os-muted os-col-email", text: u.email || "" }),
@@ -204,7 +214,7 @@ function users(panel, ctx) {
         h("td", { class: "os-col-date", attrs: { "data-label": t("admin.col.status") } }, h("span", { class: `os-badge os-badge--user-${state}`, text: t(`admin.${state}`) })),
         h("td", { class: "os-col-actions" }, h("div", { class: "os-actions os-actions--row" },
           button(t("admin.edit"), { icon: "pencil", size: "sm", attrs: { "aria-label": t("admin.edit-named", { name: u.name || u.email }) }, onClick: () => edit(u, me) }),
-          u.invited ? button(t("admin.reinvite"), { icon: "mail", size: "sm", attrs: { "aria-label": t("admin.reinvite-named", { email: u.email }) }, onClick: () => reinvite(u) }) : null,
+          invitePending(u) ? button(t("admin.reinvite"), { icon: "mail", size: "sm", attrs: { "aria-label": t("admin.reinvite-named", { email: u.email }) }, onClick: () => reinvite(u) }) : null,
           me ? null : button(t("admin.remove"), { icon: "trash-2", size: "sm", variant: "danger", attrs: { "aria-label": t("admin.remove-named", { name: u.name }) }, onClick: () => remove(u) })))));
     }
     table.append(tb);
@@ -260,7 +270,7 @@ function users(panel, ctx) {
       description: u.email || null,
       build(body) {
         f.name = h("input", { id: "u-name-e", class: "os-input", value: u.name || "", maxLength: 255, attrs: { autofocus: true, "aria-describedby": "u-err-e" } });
-        const profile = selectField(t("admin.profile"), PROFILES.map((p) => [p, t(`admin.profile.${p}`)]), { id: "u-profile-e", value: profileOf(u) || "sender" });
+        const profile = selectField(t("admin.profile"), PROFILES.map((p) => [p, t(`admin.profile.${p}`)]), { id: "u-profile-e", value: profileName(u, builtin) || "sender" });
         f.profile = profile.select;
         f.profile.disabled = me;
         const dis = toggle(t("admin.disable"), { id: "u-disabled-e", checked: !!u.disabled });
@@ -313,8 +323,12 @@ function users(panel, ctx) {
           label: t("admin.invite"), variant: "primary", icon: "mail",
           onClick: async () => {
             const email = f.email.value.trim();
-            if (!EMAIL.test(email)) { f.err.textContent = t("admin.need-email"); f.email.setAttribute("aria-invalid", "true"); f.email.focus(); return undefined; }
-            await ctx.api.users.invite({ email, profile: f.profile.value, ...(f.name.value.trim() ? { name: f.name.value.trim() } : {}) });
+            const name = f.name.value.trim();
+            for (const el of [f.email, f.name]) el.removeAttribute("aria-invalid");
+            // The server needs both (UserCreate: email, name, profile).
+            const bad = !EMAIL.test(email) ? [f.email, t("admin.need-email")] : !name ? [f.name, t("form.required")] : null;
+            if (bad) { f.err.textContent = bad[1]; bad[0].setAttribute("aria-invalid", "true"); bad[0].focus(); return undefined; }
+            await ctx.api.users.invite({ email, name, profile: f.profile.value });
             return email;
           },
         },

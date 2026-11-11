@@ -36,7 +36,7 @@ test("upload, two signers in order and a CC, fields for each, send", async ({ pa
   await addRecipient(page, 0, { name: "Ana Signer", email: "ana@example.com" });
   await addRecipient(page, 1, { name: "Ben Signer", email: "ben@example.com" });
   await addRecipient(page, 2, { name: "Cleo Copy", email: "cleo@example.com", type: "cc" });
-  await expect(page.locator(".os-rcpt .os-order")).toHaveText(["1", "2", "3"]);
+  expect(await page.getByTestId("recipient-order").evaluateAll((els) => els.map((e) => e.value))).toEqual(["1", "2", "3"]);
   await page.getByTestId("wizard-next").click();
   await expect(page.locator(".os-page")).toHaveCount(2);
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
@@ -142,7 +142,15 @@ test("recipients reorder with the arrows and by dragging a card", async ({ page 
   const names = () => page.getByTestId("recipient-name").evaluateAll((els) => els.map((e) => e.value));
   await page.locator(".os-rcpt").nth(0).getByRole("button", { name: "Move down in signing order" }).click();
   expect(await names()).toEqual(["Two", "One", "Three"]);
-  await page.locator(".os-rcpt").nth(2).locator(".os-rcpt__head").dragTo(page.locator(".os-rcpt").nth(0).locator(".os-rcpt__head"));
+  // Dropped on the gap before the first step, a card takes a step of its own there.
+  await page.setViewportSize({ width: 1280, height: 1300 }); // both ends on screen: no scroll mid-drag
+  const from = await page.locator(".os-rcpt__grip").nth(2).boundingBox();
+  const to = await page.getByTestId("step-gap").first().boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2 + 4, from.y + from.height / 2 - 4);
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+  await page.mouse.up();
   expect(await names()).toEqual(["Three", "Two", "One"]);
 });
 

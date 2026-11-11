@@ -65,7 +65,8 @@ declined, voided, expiring soon, OTP), with translatable strings and brand colou
 
 As the sisters: shortcuts are registry entries. Initial set: `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` redo, `Delete`
 remove field, arrows nudge (Shift ×10), `Ctrl/Cmd+D` duplicate, `Ctrl/Cmd+C/V` copy and paste fields across pages,
-`1`–`9` switch recipient, `?` shortcut list.
+`1`–`9` switch recipient, `?` shortcut list; since WEB-09 `Ctrl/Cmd+A` selects the page's fields and `Alt+Shift+arrows`
+jump to the next snapping guide.
 
 ## What we measure
 
@@ -198,14 +199,14 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
 | --- | --- | --- |
 | Home | `app.html#/home` (`home.js`) | `GET /api/v1/envelopes?status=&limit=` per counter, `GET …/{id}` for expiry |
 | Agreements | `app.html#/agreements[?folder=&q=]` (`dashboard.js`) | as WEB-01, plus `GET …/{id}` per row for recipients and last change |
-| Templates | `#/templates`, `#/templates/new`, `#/templates/{id}` (`templates.js`, `prepare.js` in template mode) | `GET/POST /api/v1/templates`, `GET/PATCH /api/v1/templates/{id}`; slice-3 design `POST /templates/{id}/documents`, `GET …/documents/{doc}/content`, `POST /templates/{id}/fields` (404 or 405 today: roles kept, the editor says so); using one is a single `POST /api/v1/envelopes` (`templatemodel.js`) |
+| Templates | `#/templates`, `#/templates/new`, `#/templates/{id}`, `#/templates/{id}/edit` (`templates.js`, `prepare.js` in template mode) | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{id}`, the template's documents, roles and fields (`templatesync.js`, WEB-09 and WEB-10 below); using one is a single `POST /api/v1/envelopes` (`templatemodel.js`) |
 | Reports | `#/reports` (`reports.js`, `reportmodel.js`) | `GET /api/v1/envelopes` (up to 1,000) and `GET …/{id}` for completed ones |
 | Admin | `#/admin[?tab=api]` (`admin.js`) | `GET/POST /api/v1/users`, `PATCH/DELETE /api/v1/users/{id}`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}` |
 | Verify | `verify.html` (`verify.js`, `verifyreport.js`, `trail.js`) | none: casual-sign-wasm's `verify()` in the page; `audit-trail.json` read by pdf.js |
 
-- **Calls added outside api.js** are in `api-extra.js`. **Mock mode** serves templates (with the slice-3 design;
-  `sessionStorage["openseal.mock.no-template-docs"]="1"` turns it off), users and API clients, and is remembered for the
-  tab once `?mock=1` is seen on loopback (`?mock=0` forgets). Without mock or a server on loopback the app and signing
+- **Every call is in `api.js`** (WEB-10 moved `api-extra.js` there; see below). **Mock mode** serves templates, users
+  and API clients as the server does, and is remembered for the tab once `?mock=1` is seen on loopback (`?mock=0`
+  forgets). Without mock or a server on loopback the app and signing
   page say "No OpenSeal server is running here".
 - **Verifier build**: `tools/build-webapp-wasm.sh` builds casual-sign-wasm as `tools/wasm-parity.sh` ships it and
   copies it to `webapp/vendor/openseal-wasm/` (build output, not committed); without it Verify says so.
@@ -428,3 +429,54 @@ review, not drawn on the page), note and sender-locked values (shown, never edit
 length) and number rules (min, max, decimals) are checked inline as the field is left, in the engine's terms
 (`webapp/signfields.js`); the server checks again on every fill and at finish. Download before finishing is the
 delivered document (`409` from `/document` until the signer finishes).
+
+## As built (WEB-09 and WEB-10, 2026-11-12)
+
+### One API client, checked against the server (WEB-10)
+
+`webapp/api-extra.js` is gone: every call is a method of `api.js`'s client, named as the server names it, and its
+request and response were checked against `api/openapi.yaml` and the handlers in `server/casual-sign-server/src/api/`.
+`mock.js` answers in the same shapes, so the browser tests catch a client that drifts. What the check found and changed:
+
+| Call | Was | Now |
+| --- | --- | --- |
+| Correct (`envactions.js`) | `POST …/correct` with `update_recipient` carrying a partial recipient and `access_code`. The engine's `RecipientSpec` refuses unknown members (`access_code`: 400) and `update_recipient` replaces the whole spec, so delivery, phone, time zone and date format would have been reset | One `PATCH …/recipients/{r}` per changed recipient, with only what changed (`people.js` `recipientCorrection`); the server applies it as a correction of a sent envelope, keeps the rest of the spec, and stores the access code. `api.correctEnvelope` stays for the engine change list, documented as such |
+| Template fields | `role: <role name>` | `role_id`: the server matches roles by id only. Adding a template document or role answers the whole template, so the new one is the id that was not there (`templatesync.js` `added`); the editor and Save as template used the template's id as the document's |
+| Use a template | Fields matched by role name | By `role_id` (`templatemodel.js`), so a server template's fields reach the envelope |
+| `PATCH /accounts/me` | `{name, settings}`, answer taken as the account | `{settings}` only (`AccountPatch`), answer `{settings}` merged into the account; the account's name is shown, not edited (the API has no rename) |
+| Members' profiles | `permission_profile_id` read as `profile-<name>` | Named through `settings.builtin_profiles` (name → id), else the id (`people.js` `profileName`) |
+| Invitations | `invited` flag on the list; name optional | The list has no invitation state, so Admin reads each local member (`GET /users/{id}`, at most 100) for `invitation`; a name is required (`UserCreate`); `POST /users/{id}/invite` answers 202 |
+| Accept invitation | `{token, password, name?}` | `{token, password}` (`AcceptInvite` refuses other members); the name field is gone from the page |
+| Duplicate template | "… (copy)" in the mock | "Copy of …", the server's default |
+
+Findings for the server (rows for the main session): the users list should carry `invitation` (one read per member
+today); the recipient JSON lacks `date_format` and `witness_for`, so no client can send a whole `RecipientSpec` to
+`/correct` safely; there is no account rename.
+
+### Send editor (WEB-09)
+
+Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`. Screenshots at 1440 and 390:
+`target/e2e-screens/chromium-editor-*.png`.
+
+- **Templates reopen in the editor.** Templates' row menu has **Edit** (`#/templates/{id}/edit`): the template's
+  documents (fetched and opened), its roles in routing order and its fields (by `role_id`) load into the same editor;
+  **Save template** compares the editor with the template as last read and sends only the differences, removals first,
+  each change with If-Match (`templatesync.js` `templatePlan`, `applyTemplate`). A template's saved document can be
+  removed (`DELETE …/documents/{doc}`, taking its fields). "Edit details" (the side panel) stays for name and email.
+- **Signing steps with parallel groups** (DocuSign's "Set signing order", `routing.js`). With the order on, each
+  recipient has a step; recipients who share a step get the envelope at the same time. The recipients step draws one
+  box per step ("Step 2 · 2 sign at the same time", a `group` named by its heading). To put people together: type
+  the same number in a card's step box, or drag a card (by its grip) onto another step's box. A card dropped on the
+  space between boxes gets a step of its own there. Up/down on a card move it a step: out of a shared step first, to
+  a step just before (after) it, else past the neighbouring step; each box has "Move step n earlier/later". Every
+  change is one undo step and is announced ("Ben signs at step 2, at the same time as Cleo"). With the order off,
+  signers are all step 1 and copies step 2, as before. The routing order sent is the step; a draft or template is
+  read back the same way, and the send confirmation names the steps ("Dev → Ana → Ben & Cleo").
+- **Marquee selection and snapping guides** (`guides.js`). Dragging on an empty part of a page (mouse or pen; a
+  finger scrolls) draws a box that selects every field it touches, Shift adding to the selection; a click there
+  clears it. Dragging a field of the selection moves the group as one box; a click on one selects just it. While a
+  field or group moves, its edges and centre snap to the page's edges and centre and to other fields' edges and
+  centres on that page within 6 screen pixels at any zoom, and a line shows each one it lined up with; resizing snaps
+  the moving corner. Holding Alt turns snapping off (the old 4-point grid is gone). Keyboard parity: Ctrl/Cmd+A selects
+  the fields of the page in view (not while typing, where it selects the text); Alt+Shift+arrows move the selection
+  to the next guide on that side; any keyboard move shows for a moment the guides it lands on.

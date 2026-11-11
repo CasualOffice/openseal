@@ -88,7 +88,7 @@ test("two signers in order sign through emailed links; the sealed PDF and certif
   await page.getByTestId("wizard-next").click();
   await addRecipient(page, 0, ana);
   await addRecipient(page, 1, ben);
-  await expect(page.locator(".os-rcpt .os-order")).toHaveText(["1", "2"]);
+  expect(await page.getByTestId("recipient-order").evaluateAll((els) => els.map((e) => e.value))).toEqual(["1", "2"]);
   await page.getByTestId("wizard-next").click();
   await expect(page.locator(".os-page")).toHaveCount(2);
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);

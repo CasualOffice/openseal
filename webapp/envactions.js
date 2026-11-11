@@ -8,7 +8,8 @@ import { h, fmtDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { toBase64 } from "./api.js";
-import { templateDocsUnsupported } from "./api-extra.js";
+import { added } from "./templatesync.js";
+import { recipientCorrection } from "./people.js";
 import { openPanel, toast, confirmDialog, emptyState } from "./ui/index.js";
 
 const SIGNING = new Set(["signer", "in_person_signer", "approver"]);
@@ -149,36 +150,36 @@ export async function copyEnvelope(ctx, id) {
   return created;
 }
 
-/// Save as template (A-03): roles "Role 1…n" in routing order, the documents and the
-/// fields when the server keeps template documents (slice 3), else the roles alone.
+/// Save as template (A-03): roles "Role 1…n" in routing order, then the documents and
+/// the fields bound to the roles' ids (the server answers the template with ids; adding
+/// a document answers the whole template, so the new document is the one not there).
 export async function saveAsTemplate(ctx, id) {
   const { envelope: e } = await ctx.api.getEnvelope(id);
   const recs = byOrder(e);
   const roleOf = new Map(recs.map((r, i) => [r.id, t("template.role-n", { n: i + 1 })]));
   const name = (e.subject || t("envelope.untitled")).slice(0, 255);
   const tpl = await ctx.api.templates.create({
-    name, email_subject: e.subject || "", email_message: e.message || "",
+    name, ...(e.subject ? { email_subject: e.subject } : {}), ...(e.message ? { email_message: e.message } : {}),
     roles: recs.map((r) => ({ name: roleOf.get(r.id), type: r.type, routing_order: r.routing_order })),
   });
-  try {
-    const docs = await docsOf(ctx, e);
-    const ids = new Map();
-    for (const d of docs) {
-      const bytes = Uint8Array.from(atob(d.content_base64), (c) => c.charCodeAt(0));
-      ids.set(d.id, (await ctx.api.templates.addDocument(tpl.id, d.name, bytes)).id);
-    }
-    const fields = (e.fields || []).filter((f) => ids.has(f.document_id) && roleOf.has(f.recipient_id));
-    if (fields.length) {
-      await ctx.api.templates.addFields(tpl.id, fields.map((f) => ({
-        role: roleOf.get(f.recipient_id), document_id: ids.get(f.document_id), type: f.type, placement: f.placement,
-        ...(f.required ? { required: true } : {}), ...(f.label ? { label: f.label } : {}),
-      })));
-    }
-    toast(t("agreements.template-saved", { name }), "success");
-  } catch (err) {
-    if (!templateDocsUnsupported(err)) throw err;
-    toast(t("agreements.template-roles-only", { name }), "info");
+  const roleId = new Map(recs.map((r) => [r.id, (tpl.roles || []).find((x) => x.name === roleOf.get(r.id))?.id]));
+  const docs = await docsOf(ctx, e);
+  const ids = new Map();
+  let known = tpl.documents || [];
+  for (const d of docs) {
+    const bytes = Uint8Array.from(atob(d.content_base64), (c) => c.charCodeAt(0));
+    const next = await ctx.api.templates.addDocument(tpl.id, d.name, bytes);
+    ids.set(d.id, added(known, next?.documents)[0]?.id);
+    known = next?.documents || known;
   }
+  const fields = (e.fields || []).filter((f) => ids.get(f.document_id) && roleId.get(f.recipient_id));
+  if (fields.length) {
+    await ctx.api.templates.addFields(tpl.id, fields.map((f) => ({
+      role_id: roleId.get(f.recipient_id), document_id: ids.get(f.document_id), type: f.type, placement: f.placement,
+      ...(f.required ? { required: true } : {}), ...(f.label ? { label: f.label } : {}),
+    })));
+  }
+  toast(t("agreements.template-saved", { name }), "success");
   return tpl;
 }
 
@@ -212,8 +213,14 @@ export async function downloadSealed(ctx, id, env = null) {
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /// Correct a sent envelope (E-01, DocuSign's Correct) in a side panel: name, email and
-/// access code of each recipient who has not acted, then one `POST …/correct` and a new
-/// invitation to those changed who were already sent it. Resolves true when corrected.
+/// access code of each recipient who has not acted, then a new invitation to those
+/// changed who were already sent it. Resolves true when corrected.
+///
+/// WEB-10: each changed recipient is one `PATCH …/recipients/{r}` (If-Match), which the
+/// server applies as a correction of a sent envelope. `POST …/correct`'s
+/// `update_recipient` replaces the whole engine `RecipientSpec`, refuses an
+/// `access_code` member, and needs members the API does not show (`date_format`), so
+/// it would drop settings or fail; the PATCH keeps the rest and stores the code.
 export async function correctPanel(ctx, id) {
   const { envelope: e, etag } = await ctx.api.getEnvelope(id);
   const recs = byOrder(e);
@@ -278,11 +285,13 @@ export async function correctPanel(ctx, id) {
           if (bad) { bad.focus(); return undefined; }
           const changed = rows.filter((x) => x.name.value.trim() !== (x.r.name || "") || x.email.value.trim() !== (x.r.email || "") || x.req.checked !== x.had || (x.req.checked && x.code.value));
           if (!changed.length) return "same";
-          const changes = changed.map((x) => {
-            const auth = (x.r.auth || []).filter((m) => m !== "access_code").concat(x.req.checked ? ["access_code"] : []);
-            return { op: "update_recipient", recipient: { id: x.r.id, type: x.r.type, routing_order: x.r.routing_order, name: x.name.value.trim(), email: x.email.value.trim(), auth, ...(x.req.checked && x.code.value ? { access_code: x.code.value } : {}) } };
-          });
-          await ctx.api.correctEnvelope(id, etag, changes);
+          let tag = etag;
+          for (const x of changed) {
+            const body = recipientCorrection(x.r, { name: x.name.value.trim(), email: x.email.value.trim(), requireCode: x.req.checked, code: x.code.value });
+            if (!body) continue;
+            await ctx.api.patchRecipient(id, x.r.id, tag, body);
+            tag = (await ctx.api.getEnvelope(id)).etag;
+          }
           const notify = changed.filter((x) => x.r.status === "sent" || x.r.status === "delivered").map((x) => x.r.id);
           if (notify.length) await ctx.api.resend(id, notify);
           return "corrected";
