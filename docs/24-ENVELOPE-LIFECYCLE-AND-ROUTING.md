@@ -160,6 +160,9 @@ objects concerned, never their content.
   applied all or none, and a signer acting meanwhile makes it stale.
 - **§6 "its fields changed"** is read as: a completed recipient acts again when a document they acted on is replaced or
   removed, or when **their own** fields change. Changing a not-yet-completed recipient's fields does not send others back.
+- **A changed link** (WEB-06): correcting an active recipient's email, phone, delivery or authentication requirements
+  revokes their links and sends a new invitation, so no session opened under the old details carries them past the
+  new checks; a name change alone keeps the link. Recipients not yet reached have no link to revoke.
 - **`delivered` is recomputed** after every command: when routing reaches a recipient who has not opened, the envelope
   is `sent` again until they do.
 - **Routing after every change**: a recipient whose turn no longer holds (a correction added someone earlier, or sent a
@@ -247,6 +250,7 @@ decision's time. `Cancel` and `RevokeTokens` enqueue nothing. Invitation tokens 
 | `SealEnvelope` | `seal_envelope` | Only while `completing` with this job pending: fill and flatten each delivered document (from the blob store, its hash checked), certificate of completion with the stored chain as `audit-trail.json`, seal at the envelope's profile through keyd (`RemoteKey`, the development `/Reason` when keyd says its key is one) with the configured TSAs, store the sealed bytes as a `sealed` document version, read them back and verify them (docs/31 rung 1, independent of the seal's self-check); the certificate of completion is also rendered on its own with the trail embedded, sealed, verified as stored and recorded as `envelopes.certificate_sha256` (migration 0009) in the same transaction | `SealSucceeded` with `verified: true`, or `SealFailed` with the code (the engine alerts and schedules a new job) |
 | `RevokeTokens` | none | Performed inside the deciding transaction (`casual_sign_host::apply`), so a revoked link stops working when the answer is given | — |
 | `DeliverWebhook` | `deliver_webhook` | docs/40 §4 as built | — |
+| (not an effect, `WEB-06`) | `send_user_invitation` | Mint a user invitation's one-time link (hash and 7-day expiry stored, earlier link replaced) and email it; nothing for an invitation accepted or revoked meanwhile; once per job (a job step) | — |
 | `ChargePayment` | `charge_payment` | Through `PaymentGateway`; the only one built refuses (`CS-WRK-0014`, dead-lettered with an alert) until slice 13 | — |
 | `AlertOperator` | `alert_operator` | To the operator's `AlertSink` (a log line by default) | — |
 | `PurgeData`, `DeleteDraft` | `purge_data`, `delete_draft` | Revoke every token of the envelope; blobs stay (write-once, no delete: slice 15) | — |

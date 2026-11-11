@@ -88,7 +88,7 @@ fn new_id() -> Result<Id, ApiError> {
 }
 
 /// Bytes from base64, at most `max` decoded.
-fn base64(s: &str, max: usize, at: &str) -> Result<Vec<u8>, ApiError> {
+pub(crate) fn base64(s: &str, max: usize, at: &str) -> Result<Vec<u8>, ApiError> {
     if s.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
         return Err(ApiError::too_large());
     }
@@ -125,7 +125,7 @@ fn admission_json(a: &AdmissionReport, n: Option<&NormalizationReport>) -> (Valu
     )
 }
 
-fn pages_json(a: &AdmissionReport) -> Value {
+pub(crate) fn pages_json(a: &AdmissionReport) -> Value {
     Value::Array(
         a.pages
             .iter()
@@ -375,6 +375,43 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
         StatusCode::OK,
         &json!({ "items": items, "next_cursor": next }),
     ))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ContactsQuery {
+    q: Option<String>,
+    limit: Option<u32>,
+}
+
+/// `GET /contacts?q=&limit=`: past recipients for autocomplete (WEB-06), one per email
+/// address, most recently used first, from the envelopes the principal may see.
+pub(crate) async fn contacts(
+    c: Call,
+    Query(q): Query<ContactsQuery>,
+) -> Result<Response, ApiError> {
+    let limit = q.limit.unwrap_or(10);
+    if !(1..=50).contains(&limit) {
+        return Err(ApiError::invalid("/query/limit"));
+    }
+    let search = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    if search.is_some_and(|t| t.chars().count() > MAX_QUERY || t.chars().any(char::is_control)) {
+        return Err(ApiError::invalid("/query/q"));
+    }
+    let sender = (!(c.p.admin || c.p.view_all)).then_some(c.p.user);
+    let mut tx = c.tx().await?;
+    let found = tx.recipients().contacts(search, sender, limit).await?;
+    let items: Vec<Value> = found
+        .iter()
+        .map(|x| {
+            json!({
+                "name": x.name.get(),
+                "email": x.email.get(),
+                "last_used_at": rfc3339(x.last_used),
+            })
+        })
+        .collect();
+    Ok(json(StatusCode::OK, &json!({ "items": items })))
 }
 
 pub(crate) fn rfc3339(t: OffsetDateTime) -> String {
@@ -845,6 +882,7 @@ pub(crate) async fn content(
         None | Some("normalized") => VersionKind::Normalized,
         Some("original") => VersionKind::Original,
         Some("sealed") => VersionKind::Sealed,
+        Some("current") => return current(&c, tx, &mut l, &d).await,
         Some(_) => return Err(ApiError::invalid("/query/version")),
     };
     let versions = tx.documents().versions(DocumentId(uid(&d)?)).await?;
@@ -865,11 +903,90 @@ pub(crate) async fn content(
     serve_pdf(&c, tx, &mut l, sha, access).await
 }
 
+/// `POST /envelopes/{id}/documents/{doc}/detect-fields`: suggested fields for the
+/// delivered document (WEB-06), from underscore lines, painted rules and boxes and the
+/// labels near them ("Signature", "Sign here", "Date", "Name", "Initials", "Title",
+/// "Company"), plus its AcroForm fields. Each suggestion is in the field geometry the
+/// field endpoints take (page, x, y, width, height: displayed points, origin top-left,
+/// ADR-019), so a client adds one by naming a recipient. Nothing is changed or recorded.
+pub(crate) async fn detect_fields(
+    c: Call,
+    Path((id, doc)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let d = doc_in(&l.state, &doc)?.id().clone();
+    let versions = tx.documents().versions(DocumentId(uid(&d)?)).await?;
+    tx.commit().await?;
+    let v = versions
+        .iter()
+        .rev()
+        .find(|v| v.version.kind == VersionKind::Normalized)
+        .ok_or_else(ApiError::not_found)?;
+    let bytes =
+        c.st.0
+            .blobs
+            .get(&casual_sign_store::blob::BlobKey(v.version.sha256))
+            .await?;
+    let engine = c.st.0.engine.clone();
+    let doc_id = d.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        let mut n: u32 = 0;
+        let mut next = || {
+            n = n.saturating_add(1);
+            Id::new(format!("acroform-{n}")).unwrap_or_else(|_| doc_id.clone())
+        };
+        engine.detect_fields(&bytes, &doc_id, &mut next)
+    })
+    .await
+    .map_err(|_| ApiError::internal("detection"))??;
+    let items: Vec<Value> = found
+        .fields
+        .iter()
+        .map(|f| {
+            let mut v = serde_json::to_value(f.placement).unwrap_or(Value::Null);
+            if let Some(o) = v.as_object_mut() {
+                o.insert("document_id".into(), json!(d));
+                o.insert("type".into(), json!(f.field_type));
+                o.insert("source".into(), json!(f.source.as_str()));
+                o.insert("confidence".into(), json!(f.confidence));
+                if let Some(label) = &f.label {
+                    o.insert("cue".into(), json!(label));
+                }
+            }
+            v
+        })
+        .collect();
+    Ok(json(
+        StatusCode::OK,
+        &json!({ "items": items, "truncated": found.truncated }),
+    ))
+}
+
+/// `content?version=current` (WEB-06): the sealed version once sealed, else a preview
+/// of the values completed so far with a "not signed" banner on every page, made on
+/// request and never stored (`preview`). Recorded as `document.downloaded` with the
+/// hash of the bytes served once the envelope is sent.
+async fn current(c: &Call, mut tx: TenantTx, l: &mut Loaded, d: &Id) -> Result<Response, ApiError> {
+    let (bytes, sealed) = crate::preview::current(&c.st, &mut tx, &l.state, d).await?;
+    let access = (l.state.status != MStatus::Draft).then(|| Access::DocumentDownloaded {
+        document: d.clone(),
+        hash: Hash256::digest(&bytes),
+    });
+    let mut r = serve_bytes(c, tx, l, bytes, access).await?;
+    r.headers_mut().insert(
+        "x-openseal-document",
+        HeaderValue::from_static(if sealed { "sealed" } else { "preview" }),
+    );
+    Ok(r)
+}
+
 /// Read a stored PDF, record its download in the chain when `access` says so, commit,
 /// and answer it as an attachment.
 async fn serve_pdf(
     c: &Call,
-    mut tx: TenantTx,
+    tx: TenantTx,
     l: &mut Loaded,
     sha256: [u8; 32],
     access: Option<Access>,
@@ -879,6 +996,18 @@ async fn serve_pdf(
             .blobs
             .get(&casual_sign_store::blob::BlobKey(sha256))
             .await?;
+    serve_bytes(c, tx, l, bytes, access).await
+}
+
+/// Record a download in the chain when `access` says so, commit, and answer `bytes`
+/// as a PDF attachment.
+async fn serve_bytes(
+    c: &Call,
+    mut tx: TenantTx,
+    l: &mut Loaded,
+    bytes: Vec<u8>,
+    access: Option<Access>,
+) -> Result<Response, ApiError> {
     if let Some(access) = access {
         let mut cmds = c.commands(&mut tx).await?;
         command(

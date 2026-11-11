@@ -291,6 +291,7 @@ pub fn certificate_input<'a>(
             consent: None,
         }],
         copies: Vec::new(),
+        attachments: Vec::new(),
         disclosure: None,
         seal: SealInfo::Pending,
         verify_url: None,

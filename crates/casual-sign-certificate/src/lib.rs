@@ -40,9 +40,9 @@ use casual_sign_pdf::{Admitted, Change, Dictionary, IncrementalUpdate, Limits, O
 
 pub use error::CertificateError;
 pub use input::{
-    AuthStep, CertificateInput, CertificateOptions, Consent, CopyKind, CopyRow, Disclosure,
-    DisclosurePlacement, DocumentRow, EmailMask, EnvelopeSummary, Mark, Outcome, PageSize, Party,
-    RecipientRow, Role, SealInfo,
+    AttachmentRow, AuthStep, CertificateInput, CertificateOptions, Consent, CopyKind, CopyRow,
+    Disclosure, DisclosurePlacement, DocumentRow, EmailMask, EnvelopeSummary, Mark, Outcome,
+    PageSize, Party, RecipientRow, Role, SealInfo,
 };
 
 /// Bounds on certificate input (`CS-AUD-0020`, `CS-AUD-0021`). Decisions of `T-1I`
@@ -54,6 +54,8 @@ pub mod limits {
     pub const MAX_DOCUMENTS: usize = 100;
     /// Most carbon copies and viewers.
     pub const MAX_COPIES: usize = 100;
+    /// Most signer attachments listed (WEB-06; docs/21).
+    pub const MAX_ATTACHMENTS: usize = 1_000;
     /// Most bytes in any one text value (docs/21 "Text field value").
     pub const MAX_TEXT_BYTES: usize = 4_000;
     /// Most bytes of disclosure text.
@@ -143,6 +145,16 @@ fn checked(input: &CertificateInput<'_>) -> Result<Vec<u8>, CertificateError> {
         if let Some(c) = &r.consent {
             bounded(&c.version, "recipients.consent")?;
         }
+    }
+    if input.attachments.len() > limits::MAX_ATTACHMENTS {
+        return Err(CertificateError::Input {
+            what: "attachments",
+        });
+    }
+    for a in &input.attachments {
+        bounded(&a.recipient, "attachments.recipient")?;
+        bounded(&a.field, "attachments.field")?;
+        bounded(&a.media_type, "attachments.media_type")?;
     }
     for c in &input.copies {
         bounded(&c.party.name, "copies.name")?;

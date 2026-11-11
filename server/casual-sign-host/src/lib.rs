@@ -17,6 +17,7 @@
 //! **Privacy.** Errors carry codes and the kind of thing named, never personal data.
 
 pub mod apply;
+pub mod capture;
 mod error;
 pub mod ids;
 pub mod jobs;

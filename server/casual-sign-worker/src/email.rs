@@ -324,6 +324,9 @@ pub enum Template {
     AuthLocked,
     /// An invitation bounced.
     Bounced,
+    /// An administrator invited a user to an account (WEB-06); `subject` is the
+    /// account's name and the link sets a password once.
+    UserInvitation,
     /// A correction changed what this recipient must do.
     Corrected,
 }
@@ -392,6 +395,10 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
         Template::Corrected => (
             format!("Corrected: {}", f.subject),
             "The sender corrected these documents. Please review them again.",
+        ),
+        Template::UserInvitation => (
+            format!("You are invited to {} on {}", f.subject, f.product),
+            "An administrator added you to this account. Set your password with the link below. It works once and expires in 7 days; if it has expired, ask the administrator to send it again.",
         ),
     };
     let mut body = String::new();

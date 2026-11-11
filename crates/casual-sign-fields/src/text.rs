@@ -2,8 +2,10 @@
 //! operators only. Nothing is rendered; each shown glyph becomes a quadrilateral in
 //! displayed page space with its Unicode text, which is what anchors and text tags need.
 //!
-//! Operators read: `BT ET Tf Tm Td TD T* TL Tc Tw Tz Ts Tj TJ ' "`, `q Q cm`, and `Do`
-//! for Form XObjects (nested at most [`MAX_XOBJECT_DEPTH`] deep, cycle-safe). Every
+//! Operators read: `BT ET Tf Tm Td TD T* TL Tc Tw Tz Ts Tj TJ ' "`, `q Q cm`, `Do`
+//! for Form XObjects, and the path operators `m l re h c v y` with their painting
+//! operators `S s f F f* B B* b b* n`, only to keep painted horizontal rules and
+//! rectangles as [`Shape`]s for field detection (no curve is followed, nothing drawn) (nested at most [`MAX_XOBJECT_DEPTH`] deep, cycle-safe). Every
 //! operator a page runs, in its own streams or in forms, counts against
 //! `Limits::max_content_ops` (docs/21, `CS-PDF-0013`); glyphs kept per page are capped
 //! at [`MAX_GLYPHS_PER_PAGE`]. Streams are decoded through the reader, so its decode
@@ -27,6 +29,18 @@ pub const MAX_XOBJECT_DEPTH: usize = 8;
 pub const MAX_GLYPHS_PER_PAGE: usize = 500_000;
 /// Deepest `q` nesting tracked; deeper `q`/`Q` pairs are counted, not stored.
 const MAX_GS_DEPTH: usize = 256;
+/// Most painted shapes kept per page (a decision of `WEB-06`: a form page draws a few
+/// hundred); later ones are dropped and [`TextIssue::Shapes`] recorded.
+pub const MAX_SHAPES_PER_PAGE: usize = 10_000;
+/// Most path points held for one path before it is painted; beyond, points are dropped.
+const MAX_PATH_POINTS: usize = 4_096;
+/// The shortest painted rule or rectangle kept, in displayed points (half an inch).
+const MIN_SHAPE_WIDTH: f64 = 36.0;
+/// The tallest painted rectangle still read as a rule rather than a box.
+const MAX_RULE_HEIGHT: f64 = 2.5;
+/// The tallest rectangle kept as a box (a field box, not a frame).
+const MAX_BOX_HEIGHT: f64 = 100.0;
+
 /// Operands kept on the stack; older ones are dropped (no operator takes more than 6).
 const MAX_OPERANDS: usize = 64;
 /// Decoded Form XObject bytes kept per page for reuse.
@@ -113,6 +127,28 @@ pub enum TextIssue {
     UnsupportedCMap,
     /// A font writes vertically; its glyphs were placed as horizontal text (`CS-PDF-0102`).
     VerticalText,
+    /// The page painted more than [`MAX_SHAPES_PER_PAGE`] rules and boxes; the rest
+    /// were not kept (`CS-PDF-0013`).
+    Shapes,
+}
+
+/// What a painted shape looks like in displayed space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ShapeKind {
+    /// A horizontal line or a thin filled bar: a line to write on.
+    Rule,
+    /// A rectangle between 2.5 and 100 points tall: a box to write in.
+    Box,
+}
+
+/// A painted horizontal rule or rectangle, at least half an inch wide, in displayed
+/// page space. Only axis-aligned shapes in displayed space are kept.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Shape {
+    /// Rule or box.
+    pub kind: ShapeKind,
+    /// Its bounds.
+    pub rect: DisplayRect,
 }
 
 /// One issue, with its docs/20 code and the object it concerns.
@@ -137,6 +173,9 @@ pub struct PageText {
     pub runs: Vec<TextRun>,
     /// What was skipped or guessed, de-duplicated.
     pub findings: Vec<TextFinding>,
+    /// Painted rules and boxes in content order (for field detection), at most
+    /// [`MAX_SHAPES_PER_PAGE`].
+    pub shapes: Vec<Shape>,
     /// Operators counted.
     pub operators: u32,
 }
@@ -374,6 +413,11 @@ struct Interp<'d, 'a, 'c> {
     deep_q: u32,
     tm: M,
     tlm: M,
+    /// The current path's segments as displayed points: `(from, to)`.
+    path: Vec<(Point, Point)>,
+    /// The current point and the subpath's start, displayed.
+    cur: Option<(Point, Point)>,
+    shapes: Vec<Shape>,
 }
 
 type Flow = Result<Result<(), Stop>, PdfError>;
@@ -566,9 +610,138 @@ impl Interp<'_, '_, '_> {
                     return self.form(res, name);
                 }
             }
+            b"m" => {
+                if let Some([x, y]) = Self::nums::<2>(ops) {
+                    let p = self.user(x, y);
+                    self.cur = Some((p, p));
+                }
+            }
+            b"l" => {
+                if let Some([x, y]) = Self::nums::<2>(ops) {
+                    let p = self.user(x, y);
+                    if let Some((from, start)) = self.cur {
+                        self.segment(from, p);
+                        self.cur = Some((p, start));
+                    }
+                }
+            }
+            b"c" | b"v" | b"y" => {
+                // Curves are not followed; the current point moves to the end.
+                let end = match op {
+                    b"c" => Self::nums::<6>(ops).map(|v| (v[4], v[5])),
+                    _ => Self::nums::<4>(ops).map(|v| (v[2], v[3])),
+                };
+                if let (Some((x, y)), Some((_, start))) = (end, self.cur) {
+                    self.cur = Some((self.user(x, y), start));
+                }
+            }
+            b"h" => {
+                if let Some((from, start)) = self.cur {
+                    self.segment(from, start);
+                    self.cur = Some((start, start));
+                }
+            }
+            b"re" => {
+                if let Some([x, y, w, h]) = Self::nums::<4>(ops) {
+                    let c = [
+                        self.user(x, y),
+                        self.user(x + w, y),
+                        self.user(x + w, y + h),
+                        self.user(x, y + h),
+                    ];
+                    if let Some(r) = DisplayRect::bounding(c) {
+                        self.paint_rect(r);
+                    }
+                    self.cur = Some((c[0], c[0]));
+                }
+            }
+            b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*" => {
+                self.paint_path();
+            }
+            b"n" => {
+                self.path.clear();
+                self.cur = None;
+            }
             _ => {}
         }
         Ok(Ok(()))
+    }
+
+    /// A user-space point under the current matrix, in displayed space.
+    fn user(&self, x: f64, y: f64) -> Point {
+        self.display(self.gs.ctm.apply(x, y))
+    }
+
+    fn segment(&mut self, from: Point, to: Point) {
+        if self.path.len() < MAX_PATH_POINTS {
+            self.path.push((from, to));
+        }
+    }
+
+    /// Rectangles of a path waiting for its painting operator are kept on `re` as
+    /// pending segments; painted, each horizontal segment is a rule.
+    fn paint_rect(&mut self, r: DisplayRect) {
+        // Recorded as four segments so a clipping-only path (`re W n`) leaves nothing.
+        let (x0, y0, x1, y1) = (r.x, r.y, r.right(), r.bottom());
+        if r.height <= MAX_RULE_HEIGHT {
+            // A thin bar: one rule along its middle.
+            let y = y0 + r.height / 2.0;
+            self.segment(Point::new(x0, y), Point::new(x1, y));
+        } else {
+            self.segment(Point::new(x0, y0), Point::new(x1, y0));
+            self.segment(Point::new(x1, y0), Point::new(x1, y1));
+            self.segment(Point::new(x1, y1), Point::new(x0, y1));
+            self.segment(Point::new(x0, y1), Point::new(x0, y0));
+        }
+    }
+
+    /// Keep the painted path's horizontal rules and closed axis-aligned boxes.
+    fn paint_path(&mut self) {
+        let path = core::mem::take(&mut self.path);
+        self.cur = None;
+        let horizontal = |a: Point, b: Point| (a.y - b.y).abs() <= 0.5;
+        let vertical = |a: Point, b: Point| (a.x - b.x).abs() <= 0.5;
+        let mut i = 0usize;
+        while let Some(&(a, b)) = path.get(i) {
+            // Four segments closing an axis-aligned rectangle make a box.
+            let next = path.get(i.saturating_add(1)..i.saturating_add(4));
+            if let Some(&[(_, b1), (_, b2), (_, b3)]) = next {
+                let closes = (b3.x - a.x).abs() <= 0.5 && (b3.y - a.y).abs() <= 0.5;
+                let axis =
+                    (horizontal(a, b) && vertical(b, b1) && horizontal(b1, b2) && vertical(b2, b3))
+                        || (vertical(a, b)
+                            && horizontal(b, b1)
+                            && vertical(b1, b2)
+                            && horizontal(b2, b3));
+                if closes
+                    && axis
+                    && let Some(r) = DisplayRect::bounding([a, b, b1, b2])
+                {
+                    if r.height > MAX_RULE_HEIGHT && r.height <= MAX_BOX_HEIGHT {
+                        self.shape(ShapeKind::Box, r);
+                    }
+                    i = i.saturating_add(4);
+                    continue;
+                }
+            }
+            if horizontal(a, b)
+                && let Some(r) = DisplayRect::bounding([a, b])
+            {
+                self.shape(ShapeKind::Rule, r);
+            }
+            i = i.saturating_add(1);
+        }
+    }
+
+    fn shape(&mut self, kind: ShapeKind, rect: DisplayRect) {
+        if rect.width < MIN_SHAPE_WIDTH || !rect.width.is_finite() || !rect.y.is_finite() {
+            return;
+        }
+        if self.shapes.len() >= MAX_SHAPES_PER_PAGE {
+            self.finding("CS-PDF-0013", TextIssue::Shapes, None);
+            return;
+        }
+        self.shapes.push(Shape { kind, rect });
     }
 
     fn td(&mut self, x: f64, y: f64) {
@@ -854,6 +1027,9 @@ fn extract_with(
         deep_q: 0,
         tm: M::ID,
         tlm: M::ID,
+        path: Vec::new(),
+        cur: None,
+        shapes: Vec::new(),
     };
     let page_obj = local(it.doc.object(page.object, cancel))?;
     let Some(pd) = page_obj.as_ref().and_then(Object::dict).cloned() else {
@@ -894,6 +1070,7 @@ impl Interp<'_, '_, '_> {
             geometry: self.geom,
             runs: self.runs,
             findings: self.findings,
+            shapes: self.shapes,
             operators: self.ops,
         }
     }

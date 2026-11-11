@@ -406,3 +406,252 @@ impl Templates<'_> {
             .collect()
     }
 }
+
+/// Editing (WEB-06): every change raises the template's version, checked against the
+/// caller's when it gives one.
+impl Templates<'_> {
+    /// Raise the version of template `id`, at `version` when given; returns the new one.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0007` stale version; `CS-DB-0003` no such template.
+    pub async fn bump(&mut self, id: TemplateId, version: Option<i32>) -> Result<i32> {
+        let acct = self.tx.acct();
+        let new = sqlx::query_scalar!(
+            "UPDATE templates SET version = version + 1, updated_at = now() \
+             WHERE account_id = $1 AND id = $2 AND ($3::int IS NULL OR version = $3) \
+             RETURNING version",
+            acct,
+            id.0,
+            version
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        if let Some(v) = new {
+            return Ok(v);
+        }
+        if self.get(id).await?.is_some() {
+            Err(StoreError::StaleVersion { entity: "template" })
+        } else {
+            Err(StoreError::NotFound { entity: "template" })
+        }
+    }
+
+    /// Set a template's email subject and message (`None` clears).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such template.
+    pub async fn set_email(
+        &mut self,
+        id: TemplateId,
+        subject: Option<&Personal<String>>,
+        message: Option<&Personal<String>>,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE templates SET email_subject = $3, email_message = $4 \
+             WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0,
+            subject.map(Personal::get),
+            message.map(Personal::get)
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "template")
+    }
+
+    /// Change a role's name, routing order, type and default authentication.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such role in the template; `CS-DB-0006` a name already used.
+    pub async fn update_role(&mut self, r: &TemplateRole) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE template_roles SET name = $4, routing_order = $5, recipient_type = $6, \
+             default_auth = $7 WHERE account_id = $1 AND id = $2 AND template_id = $3",
+            acct,
+            r.id.0,
+            r.template_id.0,
+            r.name,
+            r.routing_order,
+            r.kind.as_str(),
+            &r.default_auth
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "template role")
+    }
+
+    /// Remove a role and the fields bound to it.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such role in the template.
+    pub async fn delete_role(&mut self, template: TemplateId, role: TemplateRoleId) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "DELETE FROM template_fields WHERE account_id = $1 AND template_id = $2 AND role_id = $3",
+            acct,
+            template.0,
+            role.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        let done = sqlx::query!(
+            "DELETE FROM template_roles WHERE account_id = $1 AND template_id = $2 AND id = $3",
+            acct,
+            template.0,
+            role.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "template role")
+    }
+
+    /// Remove a document and the fields on it (its blob stays: write-once).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such document in the template.
+    pub async fn delete_document(
+        &mut self,
+        template: TemplateId,
+        document: TemplateDocumentId,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "DELETE FROM template_fields WHERE account_id = $1 AND template_id = $2 \
+             AND template_document_id = $3",
+            acct,
+            template.0,
+            document.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        let done = sqlx::query!(
+            "DELETE FROM template_documents WHERE account_id = $1 AND template_id = $2 AND id = $3",
+            acct,
+            template.0,
+            document.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "template document")
+    }
+
+    /// Replace a field (its id names it) within its template.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such field; `CS-DB-0008` a document or role of another template.
+    pub async fn replace_field(&mut self, f: &TemplateField) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE template_fields SET template_document_id = $4, role_id = $5, type = $6, \
+             page = $7, x = $8, y = $9, width = $10, height = $11, required = $12, label = $13, \
+             spec = $14 WHERE account_id = $1 AND id = $2 AND template_id = $3",
+            acct,
+            f.id.0,
+            f.template_id.0,
+            f.template_document_id.0,
+            f.role_id.0,
+            field_type_text(f.kind)?,
+            f.rect.page,
+            f.rect.x,
+            f.rect.y,
+            f.rect.width,
+            f.rect.height,
+            f.required,
+            f.label.as_deref(),
+            f.spec.get()
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "template field")
+    }
+
+    /// Remove a field.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such field in the template.
+    pub async fn delete_field(
+        &mut self,
+        template: TemplateId,
+        field: TemplateFieldId,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "DELETE FROM template_fields WHERE account_id = $1 AND template_id = $2 AND id = $3",
+            acct,
+            template.0,
+            field.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "template field")
+    }
+
+    /// Delete a template with its fields, documents, roles and shares. Envelopes made
+    /// from it are copies and keep everything.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such template.
+    pub async fn delete(&mut self, id: TemplateId) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "DELETE FROM template_fields WHERE account_id = $1 AND template_id = $2",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        sqlx::query!(
+            "DELETE FROM template_documents WHERE account_id = $1 AND template_id = $2",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        sqlx::query!(
+            "DELETE FROM template_roles WHERE account_id = $1 AND template_id = $2",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        sqlx::query!(
+            "DELETE FROM template_shares WHERE account_id = $1 AND template_id = $2",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        let done = sqlx::query!(
+            "DELETE FROM templates WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "template")
+    }
+}

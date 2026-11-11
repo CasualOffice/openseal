@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use super::{affected, text_enum};
 use crate::error::{Result, StoreError, db};
-use crate::ids::{EnvelopeId, RecipientId, RecipientTokenId};
+use crate::ids::{EnvelopeId, RecipientId, RecipientTokenId, UserId};
 use crate::store::TenantTx;
 
 text_enum!(
@@ -571,4 +571,64 @@ impl Recipients<'_> {
         .map_err(db)?;
         Ok(row.flatten().map(Personal))
     }
+
+    /// Past recipients of this account for autocomplete (WEB-06): one entry per email
+    /// address (compared ignoring case) with the name last used with it, most recently
+    /// used first, at most `limit` (1 to 50). `search` is text the name or email
+    /// contains, ignoring case, with `%`, `_` and `\` matched as themselves; `sender`
+    /// limits the envelopes to that user's (a member without `view_all` sees only the
+    /// people they sent to). Personal data: never logged.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn contacts(
+        &mut self,
+        search: Option<&str>,
+        sender: Option<UserId>,
+        limit: u32,
+    ) -> Result<Vec<Contact>> {
+        let acct = self.tx.acct();
+        let pattern = search.map(super::envelopes::like_contains);
+        let rows = sqlx::query!(
+            r#"SELECT name AS "name!", email AS "email!", last_used AS "last_used!" FROM (
+                 SELECT DISTINCT ON (lower(r.email)) r.name, r.email, r.created_at AS last_used
+                 FROM recipients AS r JOIN envelopes AS e
+                   ON e.account_id = r.account_id AND e.id = r.envelope_id
+                 WHERE r.account_id = $1 AND r.email IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM envelope_states AS s
+                                WHERE s.account_id = e.account_id AND s.envelope_id = e.id)
+                   AND ($2::uuid IS NULL OR e.sender_user_id = $2)
+                   AND ($3::text IS NULL OR r.name ILIKE $3 ESCAPE '\'
+                        OR r.email ILIKE $3 ESCAPE '\')
+                 ORDER BY lower(r.email), r.created_at DESC, r.id DESC) AS c
+               ORDER BY last_used DESC, email LIMIT $4"#,
+            acct,
+            sender.map(|u| u.0),
+            pattern,
+            i64::from(limit.clamp(1, 50))
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Contact {
+                name: Personal(r.name),
+                email: Personal(r.email),
+                last_used: r.last_used,
+            })
+            .collect())
+    }
+}
+
+/// A past recipient, for autocomplete (WEB-06).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Contact {
+    /// The name last used with this address (personal data).
+    pub name: Personal<String>,
+    /// The email address (personal data).
+    pub email: Personal<String>,
+    /// When it was last used on a recipient.
+    pub last_used: OffsetDateTime,
 }

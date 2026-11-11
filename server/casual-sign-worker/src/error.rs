@@ -171,6 +171,12 @@ impl fmt::Display for WorkerError {
 
 impl std::error::Error for WorkerError {}
 
+impl From<casual_sign_host::capture::BadCapture> for WorkerError {
+    fn from(_: casual_sign_host::capture::BadCapture) -> Self {
+        Self::BadCapture
+    }
+}
+
 impl From<StoreError> for WorkerError {
     fn from(e: StoreError) -> Self {
         Self::Store(e)

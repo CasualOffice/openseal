@@ -418,6 +418,7 @@ pub fn input(chain: &Chain, delivered: Hash256, n: usize) -> CertificateInput<'_
             sealed: None,
         }],
         recipients,
+        attachments: Vec::new(),
         copies: vec![
             CopyRow {
                 party: Party {

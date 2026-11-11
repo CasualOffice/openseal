@@ -597,6 +597,31 @@ pub(crate) fn plan(
         wr.row(MARGIN, cw, &c.party.name, &v);
     }
 
+    // 5a. Signer attachments (WEB-06): listed by hash, only when there are any.
+    if !input.attachments.is_empty() {
+        wr.heading("Signer attachments");
+        wr.para(
+            MARGIN,
+            cw,
+            &Value::plain(
+                "Files signers attached. Each file's SHA-256 is recorded in its recipient.field_completed event; the files are kept with the envelope.",
+            ),
+            GREY,
+        );
+        for a in &input.attachments {
+            wr.row(
+                MARGIN,
+                cw,
+                &a.recipient,
+                &Value::plain(format!(
+                    "{} \u{b7} {} \u{b7} {} bytes",
+                    a.field, a.media_type, a.bytes
+                )),
+            );
+            wr.row(MARGIN, cw, "SHA-256", &Value::hash(hash_text(&a.sha256)));
+        }
+    }
+
     // 6. Seal.
     wr.heading("Seal");
     match &input.seal {

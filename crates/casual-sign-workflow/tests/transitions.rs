@@ -934,6 +934,54 @@ fn correcting_an_active_recipients_email_revokes_and_reinvites() {
 }
 
 #[test]
+fn correcting_an_active_recipients_authentication_revokes_and_reinvites() {
+    // WEB-06: a link opened under the old requirements must not carry the recipient
+    // past the new ones; the old link is revoked and a new one sent.
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1), recipient("r2", Signer, 2)]);
+    hx.send();
+    hx.ok(
+        as_recipient("r1"),
+        Command::OpenLink {
+            recipient: id("r1"),
+        },
+    );
+    let r = auth(&[AuthMethod::SmsOtp], recipient("r1", Signer, 1));
+    let d = hx.ok(
+        sender(),
+        Command::Correct {
+            changes: vec![Change::UpdateRecipient { recipient: r }],
+        },
+    );
+    assert_eq!(invited(&d), ["r1"]);
+    assert!(d.effects.iter().any(|e| e.kind
+        == EffectKind::RevokeTokens {
+            recipient: id("r1")
+        }));
+    assert_eq!(hx.rstatus("r1"), RecipientStatus::Sent);
+    // A name change alone keeps the link, and a recipient not yet reached has none.
+    let mut renamed = auth(&[AuthMethod::SmsOtp], recipient("r1", Signer, 1));
+    renamed.name = text("Renamed");
+    let mut later = recipient("r2", Signer, 2);
+    later.email = text("later@example.test");
+    let d = hx.ok(
+        sender(),
+        Command::Correct {
+            changes: vec![
+                Change::UpdateRecipient { recipient: renamed },
+                Change::UpdateRecipient { recipient: later },
+            ],
+        },
+    );
+    assert!(invited(&d).is_empty());
+    assert!(
+        !d.effects
+            .iter()
+            .any(|e| matches!(e.kind, EffectKind::RevokeTokens { .. }))
+    );
+}
+
+#[test]
 fn replacing_a_signed_document_sends_its_signers_back() {
     let mut hx = Harness::new();
     hx.draft(&[recipient("r1", Signer, 1), recipient("r2", Signer, 2)]);

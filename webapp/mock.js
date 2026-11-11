@@ -318,6 +318,21 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
     if (res === "accounts" && id === "me") return json(200, { id: "acct-demo", name: "Demo account", settings: {}, data_region: null, created_at: iso(-60 * 24 * 30) });
+    // WEB-06: recipient autocomplete, as the server's GET /contacts.
+    if (res === "contacts" && method === "GET") {
+      const q = (query.get("q") || "").trim().toLowerCase();
+      const limit = Math.min(50, Math.max(1, Number(query.get("limit")) || 10));
+      const seen = new Map();
+      for (const e of [...db.envelopes].sort((a, b) => b.created_at.localeCompare(a.created_at))) {
+        for (const r of e.recipients || []) {
+          const key = (r.email || "").toLowerCase();
+          if (!key || seen.has(key)) continue;
+          if (q && !key.includes(q) && !(r.name || "").toLowerCase().includes(q)) continue;
+          seen.set(key, { name: r.name, email: r.email, last_used_at: e.created_at });
+        }
+      }
+      return json(200, { items: [...seen.values()].slice(0, limit) });
+    }
     if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
     if (res === "users") return users(method, id, body);
     if (res === "api-clients") return apiClients(method, id, body);

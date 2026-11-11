@@ -65,6 +65,7 @@ Phase 1 gate.
 | Audit trail size; events; JSON depth | 64 MiB; 100,000; 32 | CS-AUD-0002 |
 | Event time going backwards | 1 s tolerance (host-supplied) | CS-AUD-0007 |
 | Certificate: recipients, documents, copies | 100 each | CS-AUD-0020 |
+| Certificate: signer attachments listed (`WEB-06`) | 1,000 | CS-AUD-0020 |
 | Certificate: text value; disclosure | 4,000 bytes; 256 KiB | CS-AUD-0020 |
 | Certificate pages; objects copied when appending | 500; 200,000 | CS-AUD-0021, CS-AUD-0023 |
 | Signer location: latitude; longitude (GEO-01) | −90 to 90; −180 to 180, finite | CS-AUD-0011 |
@@ -117,6 +118,9 @@ Phase 1 gate.
 | Text tag | 512 characters between the braces; 3,000 tags per document | CS-FLD-0011 |
 | Glyphs per page in text extraction | 500,000 | CS-PDF-0013 |
 | Form XObject nesting in text extraction | 8 (cycle-safe) | CS-PDF-0004 |
+| Painted rules and boxes kept per page in text extraction (for field detection) | 10,000 (built, `WEB-06`); later ones dropped with a finding; path points held per path 4,096 | CS-PDF-0013 |
+| Field detection suggestions per document | 500 (built, `WEB-06`); more stops detection with `truncated`, not an error, since they are suggestions | — |
+| Field detection work | 20,000 words and 2,000 lines or boxes per page, 50,000,000 word-to-line comparisons per document (built, `WEB-06`); crossing one sets `truncated` | — |
 | `/Annots` entries read per page to find the page of a widget without `/P` (AcroForm conversion) | 10,000 (built, `PDF-WID-01`); later entries are not indexed and their widgets are reported `NoPage`, not an error | — |
 | Subject / message | 255 / 10,000 characters | CS-API-0001 |
 | Custom fields per envelope | 100 | CS-API-0001 |
@@ -152,6 +156,9 @@ Phase 1 gate.
 | Document upload request (base64 of 50 MiB, or the raw PDF) | 70 MiB body; 50 MiB decoded | CS-API-0006, CS-PDF-0001 |
 | One-call envelope create | 270 MiB body; 200 MiB of documents decoded | CS-API-0006 |
 | Adopted signature image (PNG or JPEG) | 5 MiB | CS-API-0006 |
+| Signer attachment (PDF admitted by the reader, PNG or JPEG; `WEB-06`) | 10 MiB decoded, 14 MiB body | CS-API-0001, CS-API-0006 |
+| Contacts search (`GET /contacts`; `WEB-06`) | `q` 200 characters, `limit` 1–50 | CS-API-0001 |
+| User invitation link (`WEB-06`) | 256 random bits, 7 days, once | CS-AUTH-0002 |
 | Requests per authenticated principal | 1,200 per minute | CS-API-0003 |
 | Ceremony requests per token / per client address | 300 / 1,200 per minute | CS-API-0003 |
 | Login and token attempts per login name or client / per address | 10 / 100 per minute | CS-API-0003 |

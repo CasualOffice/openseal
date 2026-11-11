@@ -111,6 +111,59 @@ struct UserIn {
     profile: String,
     #[serde(default)]
     password: Option<String>,
+    /// Email the member a one-time link to set their password (WEB-06); not with
+    /// `password`.
+    #[serde(default)]
+    invite: bool,
+}
+
+/// Record an invitation for `user` and queue the job that emails its link, revoking
+/// any earlier open one (WEB-06).
+async fn invite_member(
+    c: &Call,
+    tx: &mut casual_sign_store::TenantTx,
+    user: UserId,
+) -> Result<(), ApiError> {
+    let now = c.st.now();
+    tx.users().revoke_invitations(user, now).await?;
+    let id = casual_sign_store::UserInvitationId(Uuid::now_v7());
+    tx.users()
+        .create_invitation(id, user, c.p.user, now)
+        .await?;
+    let job = casual_sign_host::jobs::user_invitation_job(
+        casual_sign_store::JobId(Uuid::now_v7()),
+        id.0,
+        now,
+    );
+    tx.jobs().enqueue(&job).await?;
+    Ok(())
+}
+
+/// The member as the API shows them, with their latest invitation's state.
+async fn member_with_invitation(
+    tx: &mut casual_sign_store::TenantTx,
+    m: &casual_sign_store::repo::accounts::Member,
+    now: time::OffsetDateTime,
+) -> Result<Value, ApiError> {
+    let mut v = member_json(m);
+    let latest = tx.users().invitations(m.user_id).await?.into_iter().next();
+    let state = latest.map(|i| {
+        if i.accepted_at.is_some() {
+            "accepted"
+        } else if i.revoked_at.is_some() {
+            "revoked"
+        } else if i.expires_at.is_some_and(|e| e <= now) {
+            "expired"
+        } else if i.sent_at.is_some() {
+            "sent"
+        } else {
+            "pending"
+        }
+    });
+    if let Some(o) = v.as_object_mut() {
+        o.insert("invitation".into(), json!(state));
+    }
+    Ok(v)
 }
 
 /// The profile a name or id means in this account.
@@ -155,6 +208,9 @@ fn check_password(p: &str) -> Result<(), ApiError> {
 /// `POST /users`: a new local member.
 pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let req: UserIn = parse(&body)?;
+    if req.invite && req.password.is_some() {
+        return Err(ApiError::invalid("/invite"));
+    }
     let email = normalize_email(&req.email)?;
     let name = req.name.trim().to_owned();
     if name.is_empty() || name.chars().count() > 255 {
@@ -191,13 +247,17 @@ pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiErr
     if let Some(phc) = phc {
         tx.users().set_password_hash(id, &Personal(phc)).await?;
     }
+    if req.invite {
+        invite_member(&c, &mut tx, id).await?;
+    }
     let m = tx
         .users()
         .get(id)
         .await?
         .ok_or_else(|| ApiError::internal("user"))?;
+    let v = member_with_invitation(&mut tx, &m, c.st.now()).await?;
     tx.commit().await?;
-    Ok(json(StatusCode::CREATED, &member_json(&m)))
+    Ok(json(StatusCode::CREATED, &v))
 }
 
 /// `GET /users/{id}`.
@@ -205,7 +265,87 @@ pub(crate) async fn user(c: Call, Path(id): Path<String>) -> Result<Response, Ap
     let id = UserId(path_id(&id)?);
     let mut tx = c.tx().await?;
     let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
-    Ok(json(StatusCode::OK, &member_json(&m)))
+    let v = member_with_invitation(&mut tx, &m, c.st.now()).await?;
+    Ok(json(StatusCode::OK, &v))
+}
+
+/// `POST /users/{id}/invite`: email the member a new one-time set-password link; any
+/// earlier open link stops working (WEB-06).
+pub(crate) async fn reinvite_user(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let id = UserId(path_id(&id)?);
+    let mut tx = c.tx().await?;
+    let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    if m.disabled_at.is_some() || m.login_kind != LoginKind::Local {
+        return Err(ApiError::invalid("/id"));
+    }
+    invite_member(&c, &mut tx, id).await?;
+    let v = member_with_invitation(&mut tx, &m, c.st.now()).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::ACCEPTED, &v))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AcceptIn {
+    token: String,
+    password: String,
+}
+
+/// `POST /auth/accept-invite {token, password}` (WEB-06): spend an invitation's
+/// one-time link and set the member's password; they then log in. An unknown, expired,
+/// spent or revoked link is `401 CS-AUTH-0002`, all alike. Rate-limited as login.
+pub(crate) async fn accept_invite(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    body: Bytes,
+) -> Response {
+    match accept_inner(&st, ip, &body).await {
+        Ok(r) | Err(r) => r,
+    }
+}
+
+async fn accept_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Response, Response> {
+    let req: AcceptIn = parse(body).map_err(IntoResponse::into_response)?;
+    login_limit(st, ip, "accept-invite")?;
+    let refuse = || ApiError::expired().into_response();
+    if req.token.is_empty() || req.token.len() > 128 {
+        return Err(refuse());
+    }
+    check_password(&req.password).map_err(IntoResponse::into_response)?;
+    let now = st.now();
+    let found = st
+        .store()
+        .entry_points()
+        .resolve_user_invitation(&sha256(req.token.as_bytes()), now)
+        .await
+        .map_err(|e| ApiError::from(e).into_response())?;
+    let Some((account, invitation, user)) = found else {
+        return Err(refuse());
+    };
+    let password = req.password.clone();
+    let phc = tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .map_err(|_| ApiError::internal("argon2").into_response())?
+        .map_err(IntoResponse::into_response)?;
+    let inner = async {
+        let mut tx = st.store().for_account(account).begin().await?;
+        if !tx.users().accept_invitation(invitation, now).await? {
+            return Ok(None);
+        }
+        tx.users().set_password_hash(user, &Personal(phc)).await?;
+        tx.users().revoke_invitations(user, now).await?;
+        tx.sessions().revoke_all(user, now).await?;
+        tx.commit().await?;
+        Ok::<_, casual_sign_store::StoreError>(Some(()))
+    };
+    match inner.await {
+        Ok(Some(())) => Ok(json(
+            StatusCode::OK,
+            &json!({"account_id": account.to_string(), "user_id": user.to_string()}),
+        )),
+        Ok(None) => Err(refuse()),
+        Err(e) => Err(ApiError::from(e).into_response()),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -215,9 +355,17 @@ struct UserPatch {
     name: Option<String>,
     #[serde(default)]
     password: Option<String>,
+    /// `admin`, `sender`, `viewer` or a profile id (WEB-06).
+    #[serde(default)]
+    profile: Option<String>,
+    /// Disable or enable the member in this account (WEB-06).
+    #[serde(default)]
+    disabled: Option<bool>,
 }
 
-/// `PATCH /users/{id} {name?, password?}`. A new password ends the member's sessions.
+/// `PATCH /users/{id} {name?, password?, profile?, disabled?}`. A new password ends the
+/// member's sessions; so does disabling them, which also revokes their open
+/// invitations. An administrator cannot change their own profile or disable themselves.
 pub(crate) async fn patch_user(
     c: Call,
     Path(id): Path<String>,
@@ -227,6 +375,25 @@ pub(crate) async fn patch_user(
     let mut tx = c.tx().await?;
     tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
     let req: UserPatch = parse(&body)?;
+    if id == c.p.user && (req.profile.is_some() || req.disabled.is_some()) {
+        return Err(ApiError::invalid(if req.profile.is_some() {
+            "/profile"
+        } else {
+            "/disabled"
+        }));
+    }
+    if let Some(p) = &req.profile {
+        let profile = profile_id(&mut tx, p).await?;
+        tx.users().set_profile(id, profile).await?;
+    }
+    if let Some(off) = req.disabled {
+        let now = c.st.now();
+        tx.users().set_disabled(id, off.then_some(now)).await?;
+        if off {
+            tx.sessions().revoke_all(id, now).await?;
+            tx.users().revoke_invitations(id, now).await?;
+        }
+    }
     if let Some(n) = &req.name {
         let n = n.trim();
         if n.is_empty() || n.chars().count() > 255 {

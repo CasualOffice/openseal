@@ -590,7 +590,7 @@ impl Envelopes<'_> {
 
 /// A `LIKE` pattern matching any text that contains `s`, with `\`, `%` and `_` in `s`
 /// escaped (the query names `\` as the escape character).
-fn like_contains(s: &str) -> String {
+pub(crate) fn like_contains(s: &str) -> String {
     let mut p = String::with_capacity(s.len().saturating_add(2));
     p.push('%');
     for c in s.chars() {

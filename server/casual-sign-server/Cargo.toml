@@ -50,6 +50,9 @@ http-body-util = "0.1.2"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres"] }
 # Reading api/openapi.yaml in the contract tests. MIT OR Apache-2.0.
 serde_norway = "0.9.42"
+# Reading a served PDF's text in the preview tests (WEB-06).
+casual-sign-pdf = { path = "../../crates/casual-sign-pdf" }
+casual-sign-fields = { path = "../../crates/casual-sign-fields" }
 
 [lints]
 workspace = true

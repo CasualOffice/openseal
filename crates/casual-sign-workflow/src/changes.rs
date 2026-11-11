@@ -56,7 +56,7 @@ pub(crate) struct ChangeReport {
     pub(crate) touched_documents: BTreeSet<Id>,
     /// Completed recipients whose own fields changed: they act again.
     pub(crate) redo: BTreeSet<Id>,
-    /// Active recipients whose address or delivery changed: re-invited.
+    /// Active recipients whose address, delivery or authentication changed: re-invited.
     pub(crate) readdressed: BTreeSet<Id>,
     /// The expiry changed.
     pub(crate) expiry_changed: bool,
@@ -219,9 +219,13 @@ pub(crate) fn apply_changes(
                         }
                     }
                 }
+                // A new address, delivery or authentication requirement: a link sent
+                // under the old ones is revoked and a new one sent (WEB-06), so no
+                // session opened before carries the recipient past the new checks.
                 let readdress = old.email != recipient.email
                     || old.phone != recipient.phone
-                    || old.delivery != recipient.delivery;
+                    || old.delivery != recipient.delivery
+                    || old.auth != recipient.auth;
                 if readdress && existing.status.is_active() {
                     report.readdressed.insert(recipient.id.clone());
                 }

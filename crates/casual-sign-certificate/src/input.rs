@@ -173,6 +173,21 @@ pub struct CopyRow {
     pub delivered: Option<Timestamp>,
 }
 
+/// Section 5a: a file a signer attached to an attachment field (WEB-06).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentRow {
+    /// Who attached it (personal data).
+    pub recipient: String,
+    /// The field: its data label, else its id.
+    pub field: String,
+    /// The file's media type (`application/pdf`, `image/png`, `image/jpeg`).
+    pub media_type: String,
+    /// Its size in bytes.
+    pub bytes: u64,
+    /// SHA-256 of the file as stored.
+    pub sha256: Hash256,
+}
+
 /// Section 4: the electronic record and signature disclosure as shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Disclosure {
@@ -215,6 +230,10 @@ pub struct CertificateInput<'a> {
     pub recipients: Vec<RecipientRow>,
     /// Section 5.
     pub copies: Vec<CopyRow>,
+    /// Section 5a (WEB-06): files signers attached, by hash; the files themselves are
+    /// kept by the host, and each one's hash is bound into the chain by its
+    /// `recipient.field_completed` event.
+    pub attachments: Vec<AttachmentRow>,
     /// Section 4's disclosure, when the account uses one.
     pub disclosure: Option<Disclosure>,
     /// Section 6.

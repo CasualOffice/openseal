@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use super::{affected, text_enum};
 use crate::error::{Result, StoreError, db};
-use crate::ids::{AccountId, PermissionProfileId, UserId};
+use crate::ids::{AccountId, PermissionProfileId, UserId, UserInvitationId};
 use crate::store::TenantTx;
 
 /// The current account's row.
@@ -301,7 +301,8 @@ impl Users<'_> {
     pub async fn get(&mut self, user: UserId) -> Result<Option<Member>> {
         let acct = self.tx.acct();
         let row = sqlx::query!(
-            "SELECT u.id, u.email, u.name, u.login_kind, u.disabled_at, m.permission_profile_id \
+            "SELECT u.id, u.email, u.name, u.login_kind, \
+             COALESCE(m.disabled_at, u.disabled_at) AS disabled_at, m.permission_profile_id \
              FROM account_memberships m JOIN users u ON u.id = m.user_id \
              WHERE m.account_id = $1 AND m.user_id = $2",
             acct,
@@ -321,7 +322,8 @@ impl Users<'_> {
     pub async fn list(&mut self) -> Result<Vec<Member>> {
         let acct = self.tx.acct();
         let rows = sqlx::query!(
-            "SELECT u.id, u.email, u.name, u.login_kind, u.disabled_at, m.permission_profile_id \
+            "SELECT u.id, u.email, u.name, u.login_kind, \
+             COALESCE(m.disabled_at, u.disabled_at) AS disabled_at, m.permission_profile_id \
              FROM account_memberships m JOIN users u ON u.id = m.user_id \
              WHERE m.account_id = $1 ORDER BY u.name, u.id",
             acct
@@ -382,7 +384,8 @@ impl Users<'_> {
         let acct = self.tx.acct();
         let row = sqlx::query_scalar!(
             "SELECT u.password_hash FROM users u JOIN account_memberships m ON m.user_id = u.id \
-             WHERE m.account_id = $1 AND u.id = $2 AND u.disabled_at IS NULL",
+             WHERE m.account_id = $1 AND u.id = $2 AND u.disabled_at IS NULL \
+             AND m.disabled_at IS NULL",
             acct,
             user.0
         )
@@ -410,5 +413,224 @@ impl Users<'_> {
         .await
         .map_err(db)?;
         affected(done.rows_affected(), "user")
+    }
+}
+
+/// A user invitation (WEB-06): ids and times only; the token is stored as SHA-256.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Invitation {
+    /// Its id.
+    pub id: UserInvitationId,
+    /// The member invited.
+    pub user_id: UserId,
+    /// When the worker sent the current link.
+    pub sent_at: Option<OffsetDateTime>,
+    /// When the current link expires.
+    pub expires_at: Option<OffsetDateTime>,
+    /// When it was accepted.
+    pub accepted_at: Option<OffsetDateTime>,
+    /// When it was revoked.
+    pub revoked_at: Option<OffsetDateTime>,
+}
+
+impl Users<'_> {
+    /// Change a member's permission profile in this account.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when not a member; `CS-DB-0008` for a profile of another account.
+    pub async fn set_profile(&mut self, user: UserId, profile: PermissionProfileId) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE account_memberships SET permission_profile_id = $3 \
+             WHERE account_id = $1 AND user_id = $2",
+            acct,
+            user.0,
+            profile.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "user")
+    }
+
+    /// Disable (`Some(at)`) or enable (`None`) a member in this account only; their
+    /// other accounts are untouched.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when not a member.
+    pub async fn set_disabled(&mut self, user: UserId, at: Option<OffsetDateTime>) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE account_memberships SET disabled_at = $3 \
+             WHERE account_id = $1 AND user_id = $2",
+            acct,
+            user.0,
+            at
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "user")
+    }
+
+    /// Record an invitation for a member; the worker sends it.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` when the user is not a member.
+    pub async fn create_invitation(
+        &mut self,
+        id: UserInvitationId,
+        user: UserId,
+        invited_by: UserId,
+        now: OffsetDateTime,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "INSERT INTO user_invitations (id, account_id, user_id, invited_by, created_at) \
+             VALUES ($1, $2, $3, $4, $5)",
+            id.0,
+            acct,
+            user.0,
+            invited_by.0,
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    /// An invitation of this account.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn invitation(&mut self, id: UserInvitationId) -> Result<Option<Invitation>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "SELECT id, user_id, sent_at, expires_at, accepted_at, revoked_at \
+             FROM user_invitations WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| Invitation {
+            id: UserInvitationId(r.id),
+            user_id: UserId(r.user_id),
+            sent_at: r.sent_at,
+            expires_at: r.expires_at,
+            accepted_at: r.accepted_at,
+            revoked_at: r.revoked_at,
+        }))
+    }
+
+    /// A member's invitations, newest first.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn invitations(&mut self, user: UserId) -> Result<Vec<Invitation>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query!(
+            "SELECT id, user_id, sent_at, expires_at, accepted_at, revoked_at \
+             FROM user_invitations WHERE account_id = $1 AND user_id = $2 \
+             ORDER BY created_at DESC, id DESC",
+            acct,
+            user.0
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Invitation {
+                id: UserInvitationId(r.id),
+                user_id: UserId(r.user_id),
+                sent_at: r.sent_at,
+                expires_at: r.expires_at,
+                accepted_at: r.accepted_at,
+                revoked_at: r.revoked_at,
+            })
+            .collect())
+    }
+
+    /// Give an open invitation its link: the token's SHA-256, its expiry and the time
+    /// sent, replacing any earlier link. False when it is accepted or revoked.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn set_invitation_token(
+        &mut self,
+        id: UserInvitationId,
+        token_sha256: &[u8; 32],
+        expires_at: OffsetDateTime,
+        sent_at: OffsetDateTime,
+    ) -> Result<bool> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE user_invitations SET token_sha256 = $3, expires_at = $4, sent_at = $5 \
+             WHERE account_id = $1 AND id = $2 AND accepted_at IS NULL AND revoked_at IS NULL",
+            acct,
+            id.0,
+            token_sha256.as_slice(),
+            expires_at,
+            sent_at
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// Spend an open invitation. False when it was already accepted or revoked (a
+    /// second use of the link).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn accept_invitation(
+        &mut self,
+        id: UserInvitationId,
+        now: OffsetDateTime,
+    ) -> Result<bool> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE user_invitations SET accepted_at = $3 \
+             WHERE account_id = $1 AND id = $2 AND accepted_at IS NULL AND revoked_at IS NULL",
+            acct,
+            id.0,
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// Revoke a member's open invitations (sent again, disabled, or set up otherwise).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn revoke_invitations(&mut self, user: UserId, now: OffsetDateTime) -> Result<u64> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE user_invitations SET revoked_at = $3 \
+             WHERE account_id = $1 AND user_id = $2 AND accepted_at IS NULL \
+             AND revoked_at IS NULL",
+            acct,
+            user.0,
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(done.rows_affected())
     }
 }

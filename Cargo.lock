@@ -379,6 +379,7 @@ name = "casual-sign-certificate"
 version = "0.0.0"
 dependencies = [
  "casual-sign-audit",
+ "casual-sign-fields",
  "casual-sign-flatten",
  "casual-sign-model",
  "casual-sign-pdf",
@@ -458,6 +459,7 @@ version = "0.0.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-model",
+ "casual-sign-sdk",
  "casual-sign-store",
  "casual-sign-workflow",
  "serde",
@@ -568,8 +570,10 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "casual-sign-audit",
+ "casual-sign-fields",
  "casual-sign-host",
  "casual-sign-model",
+ "casual-sign-pdf",
  "casual-sign-sdk",
  "casual-sign-secrets",
  "casual-sign-store",

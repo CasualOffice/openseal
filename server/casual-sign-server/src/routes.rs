@@ -54,6 +54,8 @@ const UPLOAD: usize = 70 * 1024 * 1024;
 const CREATE: usize = 270 * 1024 * 1024;
 /// A 5 MiB signature image as base64.
 const IMAGE: usize = 7 * 1024 * 1024;
+/// A 10 MiB signer attachment as base64 (WEB-06).
+const ATTACHMENT: usize = 14 * 1024 * 1024;
 
 fn r<H, T>(method: &'static str, path: &'static str, access: Access, max_body: usize, h: H) -> Route
 where
@@ -77,9 +79,18 @@ pub fn table() -> Vec<Route> {
     let er = Scope("envelopes:read");
     let ew = Scope("envelopes:write");
     let es = Scope("envelopes:send");
+    let tr = Scope("templates:read");
+    let tw = Scope("templates:write");
     vec![
         // Authentication (docs/40 §2).
         r("POST", "/api/v1/auth/login", Public, JSON, admin::login),
+        r(
+            "POST",
+            "/api/v1/auth/accept-invite",
+            Public,
+            JSON,
+            admin::accept_invite,
+        ),
         r(
             "POST",
             "/api/v1/auth/logout",
@@ -147,6 +158,13 @@ pub fn table() -> Vec<Route> {
             admin::delete_user,
         ),
         r(
+            "POST",
+            "/api/v1/users/{id}/invite",
+            Scope("admin:users"),
+            JSON,
+            admin::reinvite_user,
+        ),
+        r(
             "GET",
             "/api/v1/api-clients",
             Scope("admin:account"),
@@ -175,6 +193,7 @@ pub fn table() -> Vec<Route> {
             admin::revoke_client,
         ),
         // Envelopes.
+        r("GET", "/api/v1/contacts", er, JSON, env::contacts),
         r("GET", "/api/v1/envelopes", er, JSON, env::list),
         r("POST", "/api/v1/envelopes", ew, CREATE, env::create),
         r("GET", "/api/v1/envelopes/{id}", er, JSON, env::get),
@@ -258,6 +277,13 @@ pub fn table() -> Vec<Route> {
             er,
             JSON,
             env::content,
+        ),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/documents/{doc}/detect-fields",
+            ew,
+            JSON,
+            env::detect_fields,
         ),
         r(
             "GET",
@@ -372,6 +398,91 @@ pub fn table() -> Vec<Route> {
             JSON,
             templates::patch,
         ),
+        // Template editing (WEB-06).
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}",
+            tw,
+            JSON,
+            templates::delete,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/duplicate",
+            tw,
+            JSON,
+            templates::duplicate,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/documents",
+            tw,
+            UPLOAD,
+            templates::add_document,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}/documents/{doc}",
+            tw,
+            JSON,
+            templates::delete_document,
+        ),
+        r(
+            "GET",
+            "/api/v1/templates/{id}/documents/{doc}/content",
+            tr,
+            JSON,
+            templates::document_content,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/roles",
+            tw,
+            JSON,
+            templates::add_role,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/templates/{id}/roles/{role}",
+            tw,
+            JSON,
+            templates::patch_role,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}/roles/{role}",
+            tw,
+            JSON,
+            templates::delete_role,
+        ),
+        r(
+            "GET",
+            "/api/v1/templates/{id}/fields",
+            tr,
+            JSON,
+            templates::fields,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/fields",
+            tw,
+            JSON,
+            templates::add_fields,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/templates/{id}/fields/{f}",
+            tw,
+            JSON,
+            templates::patch_field,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}/fields/{f}",
+            tw,
+            JSON,
+            templates::delete_field,
+        ),
         // Webhooks.
         r(
             "GET",
@@ -439,6 +550,13 @@ pub fn table() -> Vec<Route> {
             ceremony::document,
         ),
         r(
+            "GET",
+            "/s/{token}/document",
+            Public,
+            JSON,
+            ceremony::download,
+        ),
+        r(
             "POST",
             "/s/{token}/documents/{doc}/viewed",
             Public,
@@ -452,6 +570,13 @@ pub fn table() -> Vec<Route> {
             Public,
             JSON,
             ceremony::fill,
+        ),
+        r(
+            "PUT",
+            "/s/{token}/fields/{field}/attachment",
+            Public,
+            ATTACHMENT,
+            ceremony::attach,
         ),
         r("POST", "/s/{token}/finish", Public, JSON, ceremony::finish),
         r(

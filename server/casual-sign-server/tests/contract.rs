@@ -201,6 +201,28 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "patch user",
     )
     .await;
+    // WEB-06: invitations (the worker's tests/user_invite.rs drives the email).
+    let inv = ok(
+        api.call("POST", &format!("/api/v1/users/{uid}/invite"), k, None, &[])
+            .await,
+        StatusCode::ACCEPTED,
+        "invite user",
+    )
+    .await;
+    assert_eq!(inv["invitation"], "pending");
+    let bogus = api
+        .call(
+            "POST",
+            "/api/v1/auth/accept-invite",
+            &Auth::None,
+            Some(json!({"token": "not-a-token", "password": "another long passphrase"})),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (bogus.status, bogus.code().as_str()),
+        (StatusCode::UNAUTHORIZED, "CS-AUTH-0002")
+    );
 
     // OAuth client, token, JWKS, revocation.
     let oc = ok(
@@ -336,6 +358,8 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "template patch",
     )
     .await;
+    // WEB-06: every template-editing operation.
+    common::templates::edit_template(&api, k).await;
 
     // Webhooks.
     let w = ok(
@@ -691,6 +715,28 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .await;
     spec = ok(corrected, StatusCode::OK, "correct").await;
     assert_eq!(spec["recipients"][1]["email"], "b2@example.test");
+    // WEB-06: field suggestions and recipient autocomplete.
+    ok(
+        api.call(
+            "POST",
+            &format!("{base}/documents/{doc}/detect-fields"),
+            k,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "detect fields",
+    )
+    .await;
+    let people = ok(
+        api.call("GET", "/api/v1/contacts?q=b2@", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "contacts",
+    )
+    .await;
+    assert_eq!(people["items"][0]["email"], "b2@example.test");
     for path in [
         format!("{base}/certificate"),
         format!("{base}/documents/combined"),
@@ -856,6 +902,23 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "finish 1",
     )
     .await;
+    // WEB-06: having finished, signer 1 downloads the document as it stands.
+    let copy = api
+        .call("GET", &format!("{s1}/document"), &Auth::None, None, &h1)
+        .await;
+    assert_eq!(copy.status, StatusCode::OK, "{:?}", copy.json());
+    assert_eq!(copy.headers["x-openseal-document"], "preview");
+    // WEB-06: a signature field takes no attachment (tests/field_types.rs uploads one).
+    let not_attachment = api
+        .call(
+            "PUT",
+            &format!("{s1}/fields/{f1}/attachment"),
+            &Auth::None,
+            Some(json!({"content_base64": b64(&png())})),
+            &h1,
+        )
+        .await;
+    assert_eq!(not_attachment.status, StatusCode::NOT_FOUND);
     let mid = ok(
         api.call("GET", &base, k, None, &[]).await,
         StatusCode::OK,

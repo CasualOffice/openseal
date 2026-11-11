@@ -308,6 +308,37 @@ impl EntryPoints<'_> {
         .transpose()
     }
 
+    /// The open user invitation a link token's hash names (WEB-06): sent, unexpired,
+    /// not accepted or revoked, its member enabled. Answers the account, the invitation
+    /// and the user.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn resolve_user_invitation(
+        &self,
+        token_sha256: &[u8; 32],
+        now: OffsetDateTime,
+    ) -> Result<Option<(AccountId, crate::ids::UserInvitationId, UserId)>> {
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!", invitation_id AS "invitation_id!",
+                      user_id AS "user_id!"
+                 FROM openseal_resolve_user_invitation($1, $2)"#,
+            token_sha256.as_slice(),
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| {
+            (
+                AccountId(r.account_id),
+                crate::ids::UserInvitationId(r.invitation_id),
+                UserId(r.user_id),
+            )
+        }))
+    }
+
     /// The signing link an active link token's hash names (docs/24 §9).
     ///
     /// # Errors

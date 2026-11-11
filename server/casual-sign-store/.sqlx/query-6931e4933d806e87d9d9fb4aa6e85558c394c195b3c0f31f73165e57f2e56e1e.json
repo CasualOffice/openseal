@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE account_memberships SET permission_profile_id = $3 WHERE account_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6931e4933d806e87d9d9fb4aa6e85558c394c195b3c0f31f73165e57f2e56e1e"
+}

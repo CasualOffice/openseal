@@ -71,7 +71,8 @@ components:
       name: version
       in: query
       required: false
-      schema: {type: string, enum: [original, normalized, sealed], default: normalized}
+      description: "`current` (WEB-06): the sealed version once sealed, else a preview of the values completed so far with a not-signed banner on every page, made on request and never stored; the `X-OpenSeal-Document` header says `sealed` or `preview`."
+      schema: {type: string, enum: [original, normalized, sealed, current], default: normalized}
     recipientId:
       name: recipient_id
       in: query
@@ -216,7 +217,11 @@ components:
         name: {type: string}
         login_kind: {type: string}
         permission_profile_id: {type: string}
-        disabled: {type: boolean}
+        disabled: {type: boolean, description: Disabled in this account}
+        invitation:
+          type: [string, 'null']
+          enum: [pending, sent, expired, accepted, revoked, null]
+          description: The latest invitation's state (single-user reads and invites only; WEB-06)
     UserList:
       type: object
       properties:
@@ -230,11 +235,21 @@ components:
         name: {type: string, maxLength: 255}
         profile: {type: string, description: '`admin`, `sender`, `viewer`, or a permission profile id'}
         password: {type: string, minLength: 12, maxLength: 256}
+        invite: {type: boolean, default: false, description: "Email a one-time link to set a password, valid 7 days (WEB-06); not with `password`"}
     UserPatch:
       type: object
       additionalProperties: false
       properties:
         name: {type: string, maxLength: 255}
+        password: {type: string, minLength: 12, maxLength: 256}
+        profile: {type: string, description: "`admin`, `sender`, `viewer`, or a permission profile id; not your own (WEB-06)"}
+        disabled: {type: boolean, description: "Disable (ending their sessions and open invitations) or enable the member in this account only; not yourself (WEB-06)"}
+    AcceptInvite:
+      type: object
+      required: [token, password]
+      additionalProperties: false
+      properties:
+        token: {type: string, maxLength: 128, description: The token from the invitation link}
         password: {type: string, minLength: 12, maxLength: 256}
     ApiClient:
       type: object
@@ -406,6 +421,35 @@ components:
         subject: {type: string}
         sender_user_id: {type: string}
         created_at: {type: string, format: date-time}
+    DetectedField:
+      type: object
+      properties:
+        document_id: {type: string}
+        type: {type: string, description: "signature, initials, date_signed, name, title, company or text; any field type for an AcroForm field"}
+        page: {type: integer, minimum: 1}
+        x: {type: string, description: Decimal points}
+        y: {type: string}
+        width: {type: string}
+        height: {type: string}
+        source: {type: string, enum: [underline, label, box, acroform]}
+        cue: {type: string, description: "The text cue (at most 64 characters), or the form field's data label"}
+        confidence: {type: integer, minimum: 0, maximum: 100}
+    DetectedFields:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/DetectedField'}}
+        truncated: {type: boolean}
+    Contact:
+      type: object
+      description: A past recipient (personal data); the name last used with this address.
+      properties:
+        name: {type: string}
+        email: {type: string}
+        last_used_at: {type: string, format: date-time}
+    ContactList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Contact'}}
     EnvelopePage:
       type: object
       properties:
@@ -496,7 +540,11 @@ components:
         id: {type: string}
         name: {type: string}
         version: {type: integer}
+        email_subject: {type: [string, 'null']}
+        email_message: {type: [string, 'null']}
         roles: {type: array, items: {type: object}}
+        documents: {type: array, items: {type: object}, description: "Single-template reads only: id, name, ord, pages, page_geometry, sha256"}
+        fields: {type: array, items: {$ref: '#/components/schemas/TemplateField'}, description: Single-template reads only}
     TemplateList:
       type: object
       properties:
@@ -520,10 +568,37 @@ components:
               type: {$ref: '#/components/schemas/RecipientType'}
     TemplatePatch:
       type: object
-      required: [name]
       additionalProperties: false
       properties:
-        name: {type: string}
+        name: {type: string, maxLength: 255}
+        email_subject: {type: [string, 'null'], maxLength: 255}
+        email_message: {type: [string, 'null'], maxLength: 10000}
+    TemplateRoleIn:
+      type: object
+      required: [name, type]
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        type: {type: string}
+        routing_order: {type: integer, minimum: 1, maximum: 999, default: 1}
+    TemplateRolePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 255}
+        type: {type: string}
+        routing_order: {type: integer, minimum: 1, maximum: 999}
+    TemplateField:
+      type: object
+      description: >-
+        A field as on an envelope (docs/22 §6), bound to `role_id` instead of a recipient;
+        input takes `role_id` (or `role`), `document_id`, and the flat `page`, `x`, `y`,
+        `width`, `height` or `placement` (WEB-06).
+      additionalProperties: true
+    TemplateFieldList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/TemplateField'}}
     Webhook:
       type: object
       properties:
@@ -633,6 +708,32 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/LoginResponse'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/accept-invite:
+    post:
+      operationId: acceptInvite
+      summary: "Spend a user invitation's one-time link and set the password (WEB-06)"
+      description: >-
+        An unknown, expired, spent or revoked link, or a member disabled meanwhile, is
+        `401 CS-AUTH-0002`, all alike. The member then logs in with `/auth/login`.
+        Rate-limited as login.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AcceptInvite'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id: {type: string}
+                  user_id: {type: string}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/auth/logout:
     post:
@@ -765,7 +866,7 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     patch:
       operationId: patchUser
-      summary: "Rename a member or set their password"
+      summary: "Rename a member, set their password, change their profile, disable or enable them"
       x-permission: "admin:users"
       requestBody:
         required: true
@@ -785,6 +886,26 @@ paths:
       x-permission: "admin:users"
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/{id}/invite:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: inviteUser
+      summary: "Email the member a new one-time set-password link; earlier links stop working (WEB-06)"
+      x-permission: "admin:users"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/api-clients:
     get:
@@ -840,6 +961,31 @@ paths:
       x-permission: "admin:account"
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/contacts:
+    get:
+      operationId: listContacts
+      summary: "Past recipients for autocomplete: one per email address, most recently used first (WEB-06)"
+      description: >-
+        From the envelopes the caller may see (their own without `view_all`), never another
+        account's. `q` matches the name or email, ignoring case; `limit` is 1 to 50 (default 10).
+      x-permission: "envelopes:read"
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Text the name or email contains (ignoring case); at most 200 characters, no control characters.
+          schema: {type: string, maxLength: 200}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 10}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContactList'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes:
     get:
@@ -1182,6 +1328,36 @@ paths:
             application/pdf:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/documents/{doc}/detect-fields:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+      - name: doc
+        in: path
+        required: true
+        description: Document id
+        schema: {type: string}
+    post:
+      operationId: detectFields
+      summary: "Suggested fields from the document's lines, boxes, labels and form fields (WEB-06)"
+      description: >-
+        Nothing is changed or recorded. Each suggestion is in the field endpoints' geometry
+        (displayed page space, points, origin top-left, ADR-019); add one by posting it to
+        `/fields` with a `recipient_id`. At most 500, ordered by page, top, left; `truncated`
+        says a bound was reached.
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DetectedFields'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/recipients:
     parameters:
       - name: id
@@ -1450,7 +1626,7 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     patch:
       operationId: patchTemplate
-      summary: "Rename a template (If-Match required)"
+      summary: "Rename a template or change its email subject and message (If-Match required)"
       x-permission: "templates:write"
       parameters:
         - $ref: '#/components/parameters/ifMatch'
@@ -1465,6 +1641,204 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteTemplate
+      summary: "Delete a template with its roles, documents and fields; envelopes made from it keep their copies (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/duplicate:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    post:
+      operationId: duplicateTemplate
+      summary: "A copy owned by the caller, with new ids, sharing the stored PDFs (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: {type: string, maxLength: 255, description: "Default `Copy of <name>`"}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/documents:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    post:
+      operationId: addTemplateDocument
+      summary: "Add a document {name, content_base64}, admitted and normalized as an upload (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DocumentIn'}
+      responses:
+        '201':
+          description: The template
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/documents/{doc}:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: doc, in: path, required: true, description: Template document id, schema: {type: string}}
+    delete:
+      operationId: deleteTemplateDocument
+      summary: "Remove a document and the fields on it (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/documents/{doc}/content:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: doc, in: path, required: true, description: Template document id, schema: {type: string}}
+    get:
+      operationId: getTemplateDocumentContent
+      summary: "The template document's normalized PDF (WEB-06)"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/roles:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    post:
+      operationId: addTemplateRole
+      summary: "Add a role (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TemplateRoleIn'}
+      responses:
+        '201':
+          description: The template
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/roles/{role}:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: role, in: path, required: true, description: Role id, schema: {type: string}}
+    patch:
+      operationId: patchTemplateRole
+      summary: "Rename a role or change its type or routing order (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TemplateRolePatch'}
+      responses:
+        '200':
+          description: The template
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteTemplateRole
+      summary: "Remove a role and its fields (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/fields:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    get:
+      operationId: listTemplateFields
+      summary: "A template's fields (WEB-06)"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateFieldList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: addTemplateFields
+      summary: "Add one field, or {items: [...]}, bound to roles (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateFieldList'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/fields/{f}:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: f, in: path, required: true, description: Field id, schema: {type: string}}
+    patch:
+      operationId: patchTemplateField
+      summary: "Change a field: the members given replace its own; checked whole again (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateField'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteTemplateField
+      summary: "Remove a field (WEB-06)"
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '204': {description: Done}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/webhooks:
     get:
@@ -1657,6 +2031,36 @@ paths:
             application/pdf:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/document:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyDownload
+      summary: "After finishing: the sealed document once complete, else a preview of the values so far (WEB-06)"
+      description: >-
+        Only for a recipient who has finished (`409 CS-API-0009` before), in the browser the
+        link is bound to, while the link is valid. `doc` may be left out when the envelope has
+        one document. Recorded as `document.downloaded`; `X-OpenSeal-Document` says `sealed`
+        or `preview`.
+      security: []
+      x-permission: public
+      parameters:
+        - name: doc
+          in: query
+          required: false
+          description: Document id
+          schema: {type: string}
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
   /s/{token}/documents/{doc}/viewed:
     parameters:
       - name: token
@@ -1738,6 +2142,38 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/fields/{field}/attachment:
+    parameters:
+      - {name: token, in: path, required: true, description: Ceremony link token (secret), schema: {type: string}}
+      - {name: field, in: path, required: true, description: The recipient's attachment field, schema: {type: string}}
+    put:
+      operationId: ceremonyAttach
+      summary: "Attach a file (PDF, PNG or JPEG, at most 10 MiB) to an attachment field (WEB-06)"
+      description: >-
+        A PDF is admitted by the bounded reader (nothing in it run or followed); images by
+        their signature. Stored write-once; the field's value is `{"attachment": "<sha256 hex>"}`,
+        which the chain's `recipient.field_completed` binds and the certificate of completion
+        lists. The sealed document is not changed by it. An attachment value can be given
+        to `/fields/{field}` or `/finish` only as uploaded here.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content_base64]
+              additionalProperties: false
+              properties:
+                content_base64: {type: string}
+      responses:
+        '200':
+          description: The ceremony view
+          content:
+            application/json:
+              schema: {type: object}
         default: {$ref: '#/components/responses/Problem'}
   /s/{token}/finish:
     parameters:

@@ -40,6 +40,7 @@ pub const KINDS: &[&str] = &[
     ALERT_OPERATOR,
     PURGE_DATA,
     DELETE_DRAFT,
+    SEND_USER_INVITATION,
 ];
 
 /// `SendInvitation`.
@@ -68,6 +69,33 @@ pub const ALERT_OPERATOR: &str = "alert_operator";
 pub const PURGE_DATA: &str = "purge_data";
 /// `DeleteDraft`.
 pub const DELETE_DRAFT: &str = "delete_draft";
+/// Not an effect (WEB-06): email a user invitation's one-time set-password link. Its
+/// payload is [`UserInvitationJob`]; it has no envelope.
+pub const SEND_USER_INVITATION: &str = "send_user_invitation";
+
+/// The payload of a [`SEND_USER_INVITATION`] job: the invitation's id only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserInvitationJob {
+    /// The invitation (`user_invitations.id`).
+    pub invitation_id: Uuid,
+}
+
+/// Job `id` (minted by the caller), sending invitation `invitation`, due at `now`. Its
+/// idempotency key names
+/// the invitation, so recording it twice queues one email.
+#[must_use]
+pub fn user_invitation_job(id: JobId, invitation: Uuid, now: time::OffsetDateTime) -> NewJob {
+    NewJob {
+        id,
+        envelope_id: None,
+        kind: SEND_USER_INVITATION.to_owned(),
+        idempotency_key: format!("user-invitation:{invitation}"),
+        payload: serde_json::json!({ "invitation_id": invitation }),
+        run_at: now,
+        max_attempts: 15,
+    }
+}
 
 /// The payload of a job made from an effect: everything a job needs to find its work,
 /// ids only (the effect itself carries ids and parameters, never personal data).
