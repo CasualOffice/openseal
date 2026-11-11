@@ -110,8 +110,11 @@ async function expectPainted(page, selector, what) {
     const ctx = c.getContext("2d");
     if (!c.width || !c.height) return true;
     const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    // Every pixel, any visible ink: a 140 px thumbnail holds a few hundred antialiased
+    // text pixels, which Linux renders lighter than macOS, so a sparse sample with a dark
+    // threshold found none on CI although the card was painted.
     let ink = 0;
-    for (let i = 0; i < d.length; i += 4 * 97) if (d[i + 3] > 0 && (d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200)) ink++;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (d[i] < 230 || d[i + 1] < 230 || d[i + 2] < 230)) ink++;
     return ink < 3;
   }).filter(Boolean).length, selector);
   await expect.poll(blank, { message: `blank canvases on ${what}`, timeout: 10_000 }).toBe(0);
