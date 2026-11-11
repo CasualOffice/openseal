@@ -66,7 +66,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let dirty = false;
   let savedAt = null;
   let saving = false;
-  Object.defineProperty(S, "dirty", { get: () => dirty, set: (v) => { dirty = !!v; syncStatus(); } });
+  Object.defineProperty(S, "dirty", { get: () => dirty, set: (v) => { dirty = !!v; syncStatus(); if (dirty) scheduleAutosave(); } });
   ctx.contexts = ["editor", "global"];
   const pdfs = new Map(); // doc key → pdf.js handle
 
@@ -893,6 +893,39 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     renderAll();
     await renderStage();
   }
+
+  // ---- Autosave (P-04) -----------------------------------------------------------------
+  // A draft saves itself 4 s after the last change, as DocuSign's and SignNow's do, when
+  // what is there can be saved (every recipient named with a valid email, at least one
+  // document) and the user is not typing or dragging. It is quiet: no toast; the status
+  // says "Saving…" then "Saved at …", and a failure leaves "Unsaved changes" for the
+  // explicit Save, which reports errors. Templates save only on request.
+  let autosaveTimer = null;
+  const AUTOSAVE_MS = 4000;
+  function scheduleAutosave() {
+    if (TPL) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(autosave, AUTOSAVE_MS);
+  }
+  const savable = () => S.docs.length > 0 && S.recipients.every((r) => r.name.trim() && EMAIL.test(r.email));
+  async function autosave() {
+    if (!dirty || saving || !frame.isConnected) return;
+    const a = document.activeElement;
+    const typing = a && (a.matches?.("input, textarea, select") || a.isContentEditable);
+    if (typing || document.querySelector(".os-field.is-dragging, dialog[open]") || !savable()) { scheduleAutosave(); return; }
+    // Keep the selection and focus across the reload of state that a save does.
+    const sel = S.fields.find((f) => f.key === S.selected);
+    const hadFocus = sel && a?.dataset?.fkey === sel.key;
+    const same = sel && { type: sel.type, page: sel.page, x: sel.x, y: sel.y, doc: S.docs.findIndex((d) => d.key === sel.docKey) };
+    try {
+      await save();
+    } catch { saving = false; syncStatus(); return; }
+    if (same) {
+      const docKey = S.docs[same.doc]?.key;
+      const f = S.fields.find((x) => x.type === same.type && x.page === same.page && x.docKey === docKey && Math.abs(x.x - same.x) < 0.01 && Math.abs(x.y - same.y) < 0.01);
+      if (f) select(f.key, hadFocus);
+    }
+  }
   async function saveNow() {
     if (!S.id) {
       const body = {
@@ -1201,6 +1234,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   return () => {
     window.removeEventListener("beforeunload", beforeUnload);
     ctx.leaveGuard = null;
+    clearTimeout(autosaveTimer);
     dv.destroy();
     thumbs.destroy();
     closePanel();

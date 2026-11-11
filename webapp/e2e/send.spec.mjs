@@ -126,3 +126,24 @@ test("a field dragged from the palette lands on the page where it is dropped", a
   await expect(page2.locator(".os-field")).toHaveCount(1);
   await expect(page.getByText("Page 2, from the top-left corner.")).toBeAttached();
 });
+
+test("a draft saves itself after a pause, keeps the selection, and then leaves without asking", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
+  await addRecipient(page, 0, { name: "Ada Auto", email: "ada@example.com" });
+  await page.getByTestId("wizard-next").click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await expect(page.getByTestId("save-status")).toContainText("Unsaved changes");
+  // Unsaved: leaving asks (A12); staying keeps the work.
+  await page.goto(app("#/agreements"));
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page).toHaveURL(/#\/prepare$/);
+  // Autosave (P-04): quietly, a few seconds after the last change.
+  await expect(page.getByTestId("save-status")).toContainText("Saved at", { timeout: 15_000 });
+  await expect(page).toHaveURL(/#\/prepare\/.+/);
+  await expect(page.locator(".os-field.is-selected")).toHaveCount(1);
+  await page.goto(app("#/agreements"));
+  await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+});

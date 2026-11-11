@@ -297,6 +297,30 @@ this branch's last commit.
 | A34 | Editor | Palette drag is HTML drag and drop only (no touch) | 2.5.7 | P2 | Tap places on the page in view | Kept (already met) |
 | A35 | Verify | The server image lacks the WASM verifier and its CSP blocks it | — | P1 | `WEB-05`: Dockerfile builds it; server adds `'wasm-unsafe-eval'` for `verify.html` only | Fixed |
 
+#### Independent review, merged (send flow)
+
+An independent reviewer walked the current app (scripts and shots kept with the session). Its findings are split
+across three workers by screen: the send flow (this table), the signing pages and the manage screens (their own
+sections). Findings that repeat a row above point to it.
+
+| # | Problem | Sev | Fix | Status |
+| --- | --- | --- | --- | --- |
+| P-01 | "Placing fields for" defaulted to the last recipient added (a CC) | P0 | Fields step starts with the first signer; copies never offered; the field's recipient list holds signers | Fixed |
+| P-02 | Fields left on a CC were dropped at send without a word | P0 | Sending (and the problems panel) blocks with "X receives a copy … has N fields" and a Fix button | Fixed |
+| P-03 | At 400 % zoom (320×256) the header, steps and footer covered the step | P0 | No footer; under 31.25em tall nothing is pinned and the page scrolls | Fixed |
+| P-04 | Leaving the editor lost work without a prompt | P0 | Leave prompt (A12), beforeunload, and autosave 4 s after the last change when the draft is savable | Fixed |
+| G-01 | Editor chrome took 240 of 900 px | P1 | = A1 | Fixed |
+| S-02 | No inline email validation | P1 | Message under the field on leaving it, `aria-invalid` | Fixed |
+| S-03 | Recipients step starts empty, no "Add me", placeholder-only labels | P1 | "Add me" when the app knows the sender; visible labels and contacts autocomplete need the server's contacts | Partly (labels and autocomplete open) |
+| F-01 | New fields stack mid-page | P1 | Keyboard and click placement step below the previous field; text detection waits for the server's suggestions endpoint | Partly |
+| F-02 | Field chips do not show the recipient | P1 | Recipient's initials on each field, beside its colour | Fixed |
+| F-03 | No multi-select, marquee, align, distribute; paste overlaps | P1 | Paste lands on the page in view (A23); multi-select and align = A25 | Partly |
+| F-04 | Missing field types | P1 | The palette takes the types the server adds | Open (server) |
+| F-07 | Coordinates in the main properties | P2 | Under a closed "Advanced" | Fixed |
+| F-08 | Phone: palette took 75 % of the screen | P1 | Palette is a bottom sheet behind "Add field" | Fixed |
+| F-06 | Thumbnails: no current page, no page x of y | P2 | Current marked and followed; "Page n of N"; field counts open | Partly |
+| F-09 | Fit width is very large at 1920 | P2 | Kept: fit width is what the reference viewers do; presets are one click away | Kept |
+
 ### Layout spec: editor (fields step) and signing page
 
 Both are a full-height frame (`100dvh`; the page itself never scrolls) built from the same parts:
@@ -312,9 +336,12 @@ Both are a full-height frame (`100dvh`; the page itself never scrolls) built fro
 └────────────┴────────────────────────────────────────────────────────────────────┴─────────────┘
 ```
 
-- **Toolbar**, editor: back, title, steps; on the fields step the document group (zoom out, zoom preset — fit width,
-  fit page, 50–200 % — zoom in, "Page 3 of 12"), undo, redo, shortcuts; then save status, Save draft, Back, Next or
-  Send. Signer: mark, subject and progress, the document group, Fields, More, Finish.
+- **Toolbar**, editor: back, title, steps; on the fields step undo, redo, shortcuts; then save status, Save draft,
+  Back, Next or Send. Below 90em the save status is a dot (its words in the tooltip and for screen readers) and Save
+  and Back are icons. Signer: mark, subject and progress, Fields, More, Finish.
+- **Document bar**: floating at the bottom centre of the pages (Acrobat's and Drive's place for it), so the toolbar
+  stays one row at 1280: zoom out, zoom preset (fit width, fit page, 50–200 %, and the current custom zoom), zoom in,
+  "Page 3 of 12". On phones it shows the page only (pinch zooms).
 - **Left panel**, editor: recipient chips (colour, number, key), the field palette, and the page thumbnails, which
   scroll on their own, follow the document and jump on click. Signer: page thumbnails (collapsed by default).
 - **Right panel**, editor: properties of the selected field, or the list of placed fields. Signer: the sender's
