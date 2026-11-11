@@ -852,6 +852,7 @@ export const EN = {
   "templates.delete-text": "{name} is removed for everyone in the account. Envelopes already sent from it are not affected.",
   "templates.deleted": "Template deleted.",
   "templates.actions-for": "Actions for {name}",
+  "templates.save": "Save",
   "templates.no-match": "No templates match “{query}”",
   "templates.edit-fields": "Edit fields in the editor",
   "use.panel": "Recipients and message",

@@ -134,6 +134,52 @@ test("envelope: every audit event names who did it, and its dates agree with the
   await expect(page.getByTestId("recipient-row").first().locator("li", { hasText: "Opened" }).locator("time")).toBeVisible();
 });
 
+test("templates: search, owner and last use, duplicate, edit details, delete", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/templates"));
+  const nda = page.locator("tbody tr", { hasText: "Mutual NDA" });
+  await expect(nda.locator("td").nth(1)).toHaveText("You");
+  await expect(page.locator("tbody tr", { hasText: "Contractor onboarding" })).toContainText("Never");
+  await page.getByLabel("Search templates").fill("contract");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await page.getByLabel("Search templates").fill("zzz");
+  await expect(page.getByTestId("empty-template-search")).toBeVisible();
+  await page.getByLabel("Search templates").fill("");
+
+  await page.getByRole("button", { name: "Actions for Mutual NDA" }).click();
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(page.getByRole("link", { name: "Mutual NDA (copy)" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Actions for Mutual NDA (copy)" }).click();
+  await page.getByRole("menuitem", { name: "Edit details" }).click();
+  const panel = page.getByRole("dialog", { name: "Edit template" });
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await panel.getByLabel("Email subject").fill("NDA for the Q1 partners");
+  await expectAccessible(page, "template edit panel");
+  await panel.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("tbody tr", { hasText: "Mutual NDA (copy)" })).toContainText("NDA for the Q1 partners");
+
+  await page.getByRole("button", { name: "Actions for Mutual NDA (copy)" }).click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await page.getByRole("dialog", { name: "Delete this template?" }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("link", { name: "Mutual NDA (copy)" })).toHaveCount(0);
+  await expectAccessible(page, "templates");
+});
+
+test("use a template: the document beside a panel holding the roles and Send", async ({ page }) => {
+  await signIn(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(app(`#/templates/${await templateId(page, "Mutual NDA")}`));
+  const panel = page.locator(".os-usepanel");
+  const doc = page.locator(".os-usedoc");
+  await expect(panel.getByTestId("use-send")).toBeVisible();
+  const [p, d] = [await panel.boundingBox(), await doc.boundingBox()];
+  expect(d.x + d.width).toBeLessThanOrEqual(p.x);
+  await page.mouse.wheel(0, 600);
+  await expect(panel.getByTestId("use-send")).toBeInViewport();
+  await expectAccessible(page, "use template");
+});
+
 test("no horizontal scroll at 320 px on the manage screens", async ({ page }, testInfo) => {
   await signIn(page);
   const env = await subjectId(page, "Offer letter — Jordan Rivera");

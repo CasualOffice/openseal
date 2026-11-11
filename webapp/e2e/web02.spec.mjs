@@ -136,17 +136,18 @@ test("a new template on a server without template documents keeps its roles and 
   await expect(page.getByRole("link", { name: "w9" })).toBeVisible();
 });
 
-test("rename a template", async ({ page }) => {
+test("rename a template in its details panel (WEB-06 T-01)", async ({ page }) => {
   mockOnly();
   await signIn(page);
   await page.goto(app("#/templates"));
-  await page.getByRole("button", { name: "Rename Contractor onboarding" }).click();
-  const dlg = page.getByRole("dialog", { name: "Rename template" });
+  await page.getByRole("button", { name: "Actions for Contractor onboarding" }).click();
+  await page.getByRole("menuitem", { name: "Edit details" }).click();
+  const dlg = page.getByRole("dialog", { name: "Edit template" });
   await dlg.getByLabel("Template name").fill("");
-  await dlg.getByRole("button", { name: "Rename" }).click();
+  await dlg.getByRole("button", { name: "Save" }).click();
   await expect(dlg.getByText("This is required.")).toBeVisible();
   await dlg.getByLabel("Template name").fill("Contractor onboarding 2027");
-  await dlg.getByRole("button", { name: "Rename" }).click();
+  await dlg.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("link", { name: "Contractor onboarding 2027" })).toBeVisible();
 });
 

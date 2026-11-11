@@ -89,6 +89,34 @@
   .os-audit .os-audit__event { font-weight: 600; }
 }
 
+/* ---- T-01 Templates list; T-03 use: document left, a sticky panel right ------------ */
+.os-filters__search { flex: 0 1 20rem; }
+.os-filters[hidden] { display: none; }
+.os-usegrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(20rem, 26rem); gap: var(--os-s6); align-items: start; }
+.os-usedoc { min-width: 0; }
+.os-usedoc > .os-preview { margin-top: 0; }
+.os-usedoc .os-preview__body { height: calc(100dvh - var(--os-topbar-h) - 13rem); min-height: 22rem; }
+.os-usedoc > .os-card { margin-top: 0; }
+.os-usepanel {
+  position: sticky; top: calc(var(--os-topbar-h) + var(--os-s4)); max-height: max(24rem, calc(100dvh - var(--os-topbar-h) - 10rem));
+  display: flex; flex-direction: column; border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-raised); box-shadow: var(--os-shadow-md); max-width: none;
+}
+.os-usepanel__title { font-size: var(--os-fs-16); font-weight: 600; margin: 0; padding: var(--os-s4) var(--os-s6); border-bottom: 1px solid var(--os-border); }
+.os-usepanel__body { flex: 1; min-height: 0; overflow: auto; padding: var(--os-s4) var(--os-s6); }
+.os-usepanel__sec + .os-usepanel__sec { margin-top: var(--os-s6); }
+.os-usepanel .os-use__inputs { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.os-usepanel .os-use__inputs .os-label { margin-top: var(--os-s2); }
+.os-use > .os-actions.os-usepanel__foot { margin: 0; padding: var(--os-s3) var(--os-s6); border-top: 1px solid var(--os-border); justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 60em) {
+  .os-usegrid { grid-template-columns: minmax(0, 1fr); }
+  .os-usegrid > .os-usepanel { order: -1; position: static; max-height: none; }
+  .os-usedoc .os-preview__body { height: min(70vh, 40rem); }
+}
+@media (max-width: 37.5em) {
+  .os-usepanel__title, .os-usepanel__body, .os-use > .os-actions.os-usepanel__foot { padding-left: var(--os-s4); padding-right: var(--os-s4); }
+  .os-usepanel__foot .os-btn { flex: 1 1 auto; }
+}
+
 /* ---- E-01 Correct: one block per recipient ---------------------------------------- */
 .os-correct { list-style: none; margin: var(--os-s3) 0 0; padding: 0; display: grid; gap: var(--os-s3); }
 .os-correct__item { border: 1px solid var(--os-border); border-left: 0.25rem solid var(--os-rc, var(--os-r1)); border-radius: var(--os-radius); padding: var(--os-s3) var(--os-s4); background: var(--os-raised); }
