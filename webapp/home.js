@@ -1,13 +1,15 @@
 // Home (WEB-02; docs/47 §Screens "Home", after DocuSign's): a greeting, four stat
-// cards, a drop zone that starts an envelope with the dropped PDFs, and recent activity.
+// cards, a drop zone that starts an envelope with the dropped PDFs, recent activity and
+// recent templates. One way in to a new envelope (WEB-06 G-03): the top bar's Start;
+// the drop zone is the same action for files already in hand, so its button is quiet.
 //
 // Counts come from `GET /api/v1/envelopes?status=` (the API has no count): one page of
-// up to 200 per status, shown as "200+" past that. "Action required" is the sender's
-// own to-do: envelopes that ended without completing (declined, expired) and need
-// correcting, resending or voiding. "Expiring soon" reads `expires_at` from the
-// waiting envelopes (at most 50) and counts those ending within 7 days. Envelopes
-// waiting for *this user's* signature need a recipient filter the API lacks (row in
-// the WEB-02 report).
+// up to 200 per status, shown as "200+" past that. "Declined or expired" (WEB-06 A-04;
+// it was "Action required", which DocuSign uses for "waiting for you") is the sender's
+// own to-do: envelopes that ended without completing and need a new copy or a word with
+// the recipient. "Expiring soon" reads `expires_at` from the waiting envelopes (at most
+// 50) and counts those ending within 7 days. Envelopes waiting for *this user's*
+// signature need a recipient filter the API lacks (row in the WEB-02 report).
 
 import { h, clear, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
@@ -33,10 +35,7 @@ export function mount(view, ctx) {
   const head = h("div", { class: "os-page-head os-home__head" },
     h("div", { class: "os-page-head__main os-page-head__stack" },
       h("h1", { class: "os-page-title", text: t("home.title") }),
-      h("p", { class: "os-muted", text: t(greetingKey(new Date().getHours())) })),
-    h("div", { class: "os-actions" },
-      button(t("home.use-template"), { icon: "layout-template", onClick: () => ctx.navigate("#/templates") }),
-      button(t("nav.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/prepare") })));
+      h("p", { class: "os-muted", text: t(greetingKey(new Date().getHours())) })));
 
   const counters = h("ul", { class: "os-counters os-counters--home", attrs: { "aria-label": t("home.overview"), "aria-busy": "true" } });
   const cells = new Map();
@@ -64,7 +63,7 @@ export function mount(view, ctx) {
     h("div", { class: "os-dropzone__text" },
       h("h2", { id: "drop-h", class: "os-dropzone__title", text: t("home.drop") }),
       h("p", { class: "os-muted", text: t("home.drop-text") })),
-    button(t("home.upload"), { icon: "upload", variant: "primary", onClick: () => input.click() }),
+    button(t("home.choose-files"), { icon: "upload", onClick: () => input.click() }),
     input);
   drop.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); drop.classList.add("is-dropping"); } });
   drop.addEventListener("dragleave", (e) => { if (!drop.contains(e.relatedTarget)) drop.classList.remove("is-dropping"); });
@@ -77,21 +76,15 @@ export function mount(view, ctx) {
       h("a", { class: "os-link", href: "#/agreements" }, h("span", { text: t("home.all-agreements") }), icon("arrow-right", { size: 16 }))),
     recent);
 
-  const startCard = h("section", { class: "os-card", attrs: { "aria-labelledby": "start-h" } },
-    h("h2", { id: "start-h", class: "os-card__title", text: t("home.start") }),
-    h("ul", { class: "os-start__list" },
-      startItem("send", "#/prepare", t("home.start.send"), t("home.start.send-text")),
-      startItem("layout-template", "#/templates", t("home.start.template"), t("home.start.template-text")),
-      startItem("shield-check", ctx.mock ? "verify.html?mock=1" : "verify.html", t("home.start.verify"), t("home.start.verify-text"))));
+  // Recent templates (G-03): the old Start card repeated the top bar's Start menu.
+  const tplList = h("div", { class: "os-list", attrs: { "aria-busy": "true" } }, skeletonRows(3));
+  const tplCard = h("section", { class: "os-card os-card--flush", attrs: { "aria-labelledby": "tpl-h", "data-testid": "home-templates" } },
+    h("div", { class: "os-card__head" },
+      h("h2", { id: "tpl-h", class: "os-card__title", text: t("home.templates") }),
+      h("a", { class: "os-link", href: "#/templates" }, h("span", { text: t("home.all-templates") }), icon("arrow-right", { size: 16 }))),
+    tplList);
 
-  view.append(head, counters, drop, h("div", { class: "os-home__grid" }, recentCard, startCard));
-
-  function startItem(ic, href, title, text) {
-    return h("li", {}, h("a", { class: "os-start__item", href },
-      h("span", { class: "os-start__icon" }, icon(ic, { size: 20 })),
-      h("span", { class: "os-start__text" }, h("strong", { text: title }), h("span", { class: "os-muted os-small", text })),
-      icon("chevron-right", { size: 16, className: "os-start__chev" })));
-  }
+  view.append(head, counters, drop, h("div", { class: "os-home__grid" }, recentCard, tplCard));
 
   async function count(statuses) {
     const parts = await Promise.all(statuses.map((s) => ctx.api.countEnvelopes(s)));
@@ -122,6 +115,32 @@ export function mount(view, ctx) {
     }
   }
 
+  async function loadTemplates() {
+    try {
+      const items = ((await ctx.api.templates.list()).items || []).slice(0, 5);
+      tplList.removeAttribute("aria-busy");
+      if (!items.length) {
+        tplList.replaceChildren(h("div", { class: "os-home__none" },
+          h("p", { class: "os-muted", text: t("home.no-templates") }),
+          h("a", { class: "os-link", href: "#/templates/new" }, icon("plus", { size: 16 }), h("span", { text: t("templates.new") }))));
+        return;
+      }
+      tplList.replaceChildren(h("ul", { class: "os-recent" }, items.map((tp) => {
+        const name = tp.name || t("templates.untitled");
+        return h("li", { class: "os-recent__item" },
+          h("span", { class: "os-recent__icon os-recent__icon--tpl" }, icon("layout-template", { size: 20 })),
+          h("span", { class: "os-recent__main" },
+            h("a", { class: "os-row-link", href: `#/templates/${encodeURIComponent(tp.id)}`, text: name }),
+            h("span", { class: "os-muted os-small", text: tp.email_subject || t("home.template-no-subject") })),
+          h("a", { class: "os-btn os-btn--secondary os-btn--sm", href: `#/templates/${encodeURIComponent(tp.id)}`, attrs: { "aria-label": t("templates.use-named", { name }) } }, h("span", { text: t("templates.use") })));
+      })));
+    } catch (err) {
+      tplList.removeAttribute("aria-busy");
+      if (ctx.failed(err)) return;
+      errorState(tplList, err, loadTemplates);
+    }
+  }
+
   function renderRecent(items) {
     clear(recent);
     recent.removeAttribute("aria-busy");
@@ -131,15 +150,18 @@ export function mount(view, ctx) {
     }
     const ul = h("ul", { class: "os-recent" });
     for (const r of items) {
+      // A draft opens in the editor (A-02); anything sent opens its details.
+      const href = r.status === "draft" ? `#/prepare/${encodeURIComponent(r.id)}` : `#/envelopes/${encodeURIComponent(r.id)}`;
       ul.append(h("li", { class: "os-recent__item" },
         h("span", { class: "os-recent__icon" }, icon("file-text", { size: 20 })),
         h("span", { class: "os-recent__main" },
-          h("a", { class: "os-row-link", href: `#/envelopes/${encodeURIComponent(r.id)}`, text: r.subject || t("envelope.untitled") }),
-          h("time", { class: "os-muted os-small", attrs: { datetime: r.created_at }, text: fmtDate(r.created_at) })),
+          h("a", { class: "os-row-link", href, text: r.subject || t("envelope.untitled") }),
+          h("span", { class: "os-muted os-small" }, h("span", { text: `${t("dates.created")} ` }), h("time", { attrs: { datetime: r.created_at }, text: fmtDate(r.created_at) }))),
         statusBadge(r.status)));
     }
     recent.append(ul);
   }
 
   load();
+  loadTemplates();
 }

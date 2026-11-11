@@ -162,7 +162,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     return order;
   }
-  async function send(env) {
+  async function send(env, at = null) {
     const violations = [];
     if (!env.documents.length) violations.push({ pointer: "/documents", code: "required" });
     const signers = env.recipients.filter((r) => SIGNING_TYPES.has(r.type));
@@ -171,10 +171,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     for (const s of signers) if (!env.fields.some((f) => f.recipient_id === s.id)) violations.push({ pointer: `/recipients/${s.id}`, code: "no_fields" });
     if (violations.length) fail(422, "CS-WF-0004", "Envelope invalid for sending", violations);
     env.status = "sent";
-    env.sent_at = iso();
+    env.sent_at = at || iso();
     env.version++;
     for (const d of env.documents) d.fixed = true;
-    await audit(env, "envelope_sent", { actor: "sender" });
+    await audit(env, "envelope_sent", { actor: "sender", at: env.sent_at });
     route(env);
   }
   function view(env, rec) {
@@ -218,18 +218,23 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       { type: "signature", page: 1, x: 72, y, width: 160, height: 44, required: true },
       { type: "date_signed", page: 1, x: 340, y: y + 22, width: 110, height: 22 },
     ];
+    // Seeded histories carry their own times (WEB-06 E-05): the audit trail's dates
+    // agree with the envelope's sent, opened, signed and ended dates.
     const complete = async (env, recs) => {
-      await send(env);
-      env.sent_at = iso(-60 * 24 * 2); // sent before it was signed
+      await send(env, iso(-60 * 24 * 2)); // sent two days before it was signed
+      let at = -60 * 24 * 2;
       for (const r of recs.filter((x) => SIGNING_TYPES.has(x.type))) {
-        r.status = "completed"; r.completed_at = iso(-30); r.consented = true;
-        await audit(env, "recipient_completed", { recipient_id: r.id, actor: "recipient" });
+        at += 60 * 3;
+        await audit(env, "recipient_opened", { recipient_id: r.id, actor: "recipient", at: iso(at) });
+        at += 20;
+        r.status = "completed"; r.completed_at = iso(at); r.consented = true;
+        await audit(env, "recipient_completed", { recipient_id: r.id, actor: "recipient", at: iso(at) });
         route(env);
       }
-      env.status = "completed"; env.ended_at = iso(-30); env.sealed = true; env.version++;
-      for (const r of recs) if (r.type === "cc") r.status = "completed";
-      await audit(env, "envelope_completed");
-      await audit(env, "seal_applied", { profile: "pades-b-t" });
+      env.status = "completed"; env.ended_at = iso(at); env.sealed = true; env.version++;
+      for (const r of recs) if (r.type === "cc") { r.status = "completed"; r.completed_at = iso(at); }
+      await audit(env, "envelope_completed", { actor: "system", at: iso(at) });
+      await audit(env, "seal_applied", { actor: "system", profile: "pades-b-t", at: iso(at) });
     };
     await mk("Mutual NDA — Acme and Globex", 60 * 24 * 3,
       [{ name: "Avery Chen", email: "avery@acme.example", routing_order: 1 }, { name: "Sam Patel", email: "sam@globex.example", routing_order: 2 }],
@@ -249,25 +254,26 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         env.signing_options = { capture_location: true, allow_decline: true, allow_finish_later: true };
         env.expires_at = iso(60 * 24 * 3);
         recs[0].token = MOCK.ceremonyToken;
-        await send(env);
+        await send(env, iso(-60 * 4));
       });
     void offer;
     await mk("Vendor services agreement", 60 * 26,
       [{ name: "Riley Morgan", email: "riley@vendor.example", routing_order: 1 }],
       [sigFields(600)],
-      async (env, recs) => { recs[0].token = MOCK.declineToken; env.signing_options = { allow_decline: true }; await send(env); });
+      async (env, recs) => { recs[0].token = MOCK.declineToken; env.signing_options = { allow_decline: true }; await send(env, iso(-60 * 25)); });
     await mk("Lease renewal 2027", 60 * 2,
       [{ name: "Taylor Kim", email: "taylor@example.com", routing_order: 1 }], [sigFields(600)]);
     await mk("Consulting SOW — Q1", 60 * 24 * 6,
       [{ name: "Casey Lee", email: "casey@example.com", routing_order: 1 }], [sigFields(600)],
-      async (env) => { await send(env); env.status = "voided"; env.void_reason = "Replaced by a new version"; env.ended_at = iso(-60 * 24 * 5); env.version++; await audit(env, "envelope_voided", { reason: env.void_reason }); });
+      async (env) => { await send(env, iso(-60 * 24 * 6 + 60)); env.status = "voided"; env.void_reason = "Replaced by a new version"; env.ended_at = iso(-60 * 24 * 5); env.version++; await audit(env, "envelope_voided", { actor: "sender", reason: env.void_reason, at: env.ended_at }); });
     await mk("Board consent — November", 60 * 24 * 2,
       [{ name: "Morgan Diaz", email: "morgan@example.com", routing_order: 1 }], [sigFields(600)],
       async (env, recs) => {
-        await send(env);
+        await send(env, iso(-60 * 24 * 2 + 30));
+        await audit(env, "recipient_opened", { recipient_id: recs[0].id, actor: "recipient", at: iso(-60 * 25) });
         recs[0].status = "declined"; recs[0].declined_reason = "Wrong meeting date";
         env.status = "declined"; env.ended_at = iso(-60 * 24); env.version++;
-        await audit(env, "recipient_declined", { recipient_id: recs[0].id, reason: recs[0].declined_reason });
+        await audit(env, "recipient_declined", { recipient_id: recs[0].id, actor: "recipient", reason: recs[0].declined_reason, at: env.ended_at });
       });
 
     // Templates (WEB-02): one with a document and fields, one with roles only.
@@ -279,6 +285,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     for (const [role, y] of [["Company", 560], ["Counterparty", 640]]) {
       for (const f of sigFields(y)) nda.fields.push({ id: uid(), document_id: ndaDoc.id, role, type: f.type, placement: placementOf(f), ...(f.required ? { required: true } : {}) });
     }
+    nda.last_used_at = iso(-60 * 24 * 3);
     newTemplate({ name: "Contractor onboarding", email_subject: "Welcome aboard: documents to sign", roles: [{ name: "Contractor", type: "signer", routing_order: 1 }] }, iso(-60 * 24 * 4));
 
     db.users.push(
@@ -317,7 +324,21 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, { account_id: "acct-demo", user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true });
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
-    if (res === "accounts" && id === "me") return json(200, { id: "acct-demo", name: "Demo account", settings: {}, data_region: null, created_at: iso(-60 * 24 * 30) });
+    if (res === "accounts" && id === "me") {
+      // Settings and branding (WEB-06 AD-01): `PATCH` merges `name` and `settings`.
+      db.account ||= { id: "acct-demo", name: "Demo account", settings: {}, data_region: null, created_at: iso(-60 * 24 * 30) };
+      if (method === "PATCH") {
+        if (body?.name != null) {
+          if (typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
+          db.account.name = body.name.trim().slice(0, 255);
+        }
+        if (body?.settings != null) {
+          if (typeof body.settings !== "object" || Array.isArray(body.settings)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/settings", code: "type" }]);
+          db.account.settings = { ...db.account.settings, ...body.settings };
+        }
+      } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
+      return json(200, db.account);
+    }
     // WEB-06: recipient autocomplete, as the server's GET /contacts.
     if (res === "contacts" && method === "GET") {
       const q = (query.get("q") || "").trim().toLowerCase();
@@ -334,7 +355,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, { items: [...seen.values()].slice(0, limit) });
     }
     if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
-    if (res === "users") return users(method, id, body);
+    if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
     if (res !== "envelopes") fail(404, "CS-API-0002", "Not found");
 
@@ -378,10 +399,41 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return withEtag(env);
       }
       if (method === "DELETE") {
-        checkIfMatch(env, headers); draftOnly(env);
+        // A draft, or an envelope that ended without completing (WEB-06 A-03; today's
+        // server deletes drafts only). A completed agreement is never deleted here.
+        checkIfMatch(env, headers);
+        if (!["draft", "voided", "declined", "expired"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
         db.envelopes = db.envelopes.filter((e) => e !== env);
         return json(204, null);
       }
+    }
+    if (sub === "correct" && method === "POST") {
+      // `POST …/correct` (docs/40, WEB-06 E-01): the engine's change list, all or none.
+      // The mock takes `update_recipient` for a recipient who has not acted yet.
+      checkIfMatch(env, headers);
+      if (!["sent", "delivered"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      const changes = body?.changes;
+      if (!Array.isArray(changes) || !changes.length) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/changes", code: "required" }]);
+      const plan = changes.map((c, i) => {
+        if (c?.op !== "update_recipient" || !c.recipient?.id) fail(422, "CS-WF-0008", "Unsupported change", [{ pointer: `/changes/${i}/op`, code: "unsupported" }]);
+        const r = env.recipients.find((x) => x.id === c.recipient.id);
+        if (!r) fail(422, "CS-WF-0008", "Unknown recipient", [{ pointer: `/changes/${i}/recipient/id`, code: "unknown" }]);
+        if (["completed", "declined"].includes(r.status)) fail(409, "CS-WF-0001", "Recipient has already acted", [{ pointer: `/changes/${i}/recipient/id`, code: "acted" }]);
+        const n = c.recipient;
+        if (typeof n.name !== "string" || !n.name.trim()) fail(400, "CS-API-0001", "Recipient name required", [{ pointer: `/changes/${i}/recipient/name`, code: "required" }]);
+        if (typeof n.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: `/changes/${i}/recipient/email`, code: "format" }]);
+        const auth = Array.isArray(n.auth) ? n.auth : r.auth;
+        if (auth.includes("access_code") && !r.auth.includes("access_code") && !n.access_code) fail(400, "CS-API-0001", "Access code required", [{ pointer: `/changes/${i}/recipient/access_code`, code: "required" }]);
+        return [r, { name: n.name.trim(), email: n.email.trim(), auth, access_code: n.access_code || null }];
+      });
+      for (const [r, n] of plan) {
+        r.name = n.name; r.email = n.email; r.auth = n.auth;
+        if (n.access_code) { r.access_code = n.access_code; r.auth_passed = []; }
+        if (!n.auth.includes("access_code")) r.access_code = null;
+      }
+      env.version++;
+      await audit(env, "envelope_corrected", { actor: "sender", recipient_ids: plan.map(([r]) => r.id) });
+      return withEtag(env);
     }
     if (sub === "send" && method === "POST") { draftOnly(env); await send(env); return withEtag(env); }
     if (sub === "void" && method === "POST") {
@@ -416,6 +468,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!d) fail(404, "CS-API-0002", "Not found");
       if (subSub === "content" && method === "GET") {
         if (query.get("version") === "sealed" && !env.sealed) fail(409, "CS-API-0009", "Not available in the object's state");
+        // `version=current` (WEB-06 E-02): the document as it stands, fields filled so
+        // far. The mock has no flattening, so it is the delivered file.
+        if (query.get("version") === "current" && env.status === "draft") fail(409, "CS-API-0009", "Not available in the object's state");
         return pdf(unb64(db.blobs[d.id]));
       }
       if (!subSub && method === "DELETE") {
@@ -516,7 +571,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!id) {
       if (method === "GET") {
         const items = [...db.templates].sort((a, b) => b.created_at.localeCompare(a.created_at))
-          .map((tp) => ({ id: tp.id, owner_user_id: tp.owner_user_id, name: tp.name, email_subject: tp.email_subject, email_message: tp.email_message, version: tp.version, roles: [] }));
+          .map((tp) => ({ id: tp.id, owner_user_id: tp.owner_user_id, name: tp.name, email_subject: tp.email_subject, email_message: tp.email_message, version: tp.version, roles: [], last_used_at: tp.last_used_at || null }));
         return json(200, { items });
       }
       if (method === "POST") { const tp = newTemplate(body); return json(201, publicTemplate(tp), { ETag: `"v${tp.version}"` }); }
@@ -529,11 +584,28 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         const v = headers["if-match"];
         if (!v) fail(428, "CS-API-0008", "Precondition required");
         if (v !== `"v${tp.version}"`) fail(412, "CS-WF-0002", "Stale version");
-        if (!body || typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Template name required", [{ pointer: "/name", code: "required" }]);
-        tp.name = body.name.trim().slice(0, 255);
+        // Name, and (WEB-06 T-01) the email subject and message.
+        if (!body || (body.name != null && (typeof body.name !== "string" || !body.name.trim())) || (body.name == null && !("email_subject" in body) && !("email_message" in body))) fail(400, "CS-API-0001", "Template name required", [{ pointer: "/name", code: "required" }]);
+        if (body.name != null) tp.name = body.name.trim().slice(0, 255);
+        for (const k of ["email_subject", "email_message"]) if (k in body) tp[k] = String(body[k] ?? "").slice(0, k === "email_subject" ? 255 : 10000);
         tp.version++;
         return json(200, publicTemplate(tp), { ETag: `"v${tp.version}"` });
       }
+      if (method === "DELETE") {
+        const v = headers["if-match"];
+        if (!v) fail(428, "CS-API-0008", "Precondition required");
+        if (v !== `"v${tp.version}"`) fail(412, "CS-WF-0002", "Stale version");
+        db.templates = db.templates.filter((x) => x !== tp);
+        return json(204, null);
+      }
+    }
+    if (sub === "duplicate" && method === "POST") {
+      // `POST /templates/{id}/duplicate` (WEB-06 T-01): a copy named "… (copy)".
+      const copy = newTemplate({ name: `${tp.name} (copy)`.slice(0, 255), email_subject: tp.email_subject, email_message: tp.email_message, roles: tp.roles.map(({ name, type, routing_order }) => ({ name, type, routing_order })) });
+      const ids = new Map();
+      for (const d of tp.documents) { const nd = { ...d, id: uid() }; db.blobs[nd.id] = db.blobs[d.id]; ids.set(d.id, nd.id); copy.documents.push(nd); }
+      for (const f of tp.fields) copy.fields.push({ ...f, id: uid(), document_id: ids.get(f.document_id) || f.document_id });
+      return json(201, publicTemplate(copy), { ETag: `"v${copy.version}"` });
     }
     if (!templateDocs()) fail(404, "CS-API-0002", "Not found");
     if (sub === "documents") {
@@ -568,7 +640,32 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   }
 
   // ---- Users and API clients (WEB-02 Admin) ------------------------------------------
-  function users(method, id, body) {
+  /// Mint an invitation token for `u` (the server emails `…/app.html#/accept-invite?token=`);
+  /// the mock keeps it in `db.invites` for the tests to read.
+  function mintInvite(u) {
+    db.invites ||= {};
+    for (const [k, v] of Object.entries(db.invites)) if (v === u.id) delete db.invites[k];
+    db.invites[`inv-${uid()}`] = u.id;
+  }
+  function users(method, id, body, sub) {
+    if (!id && method === "POST" && body?.invite === true) {
+      // `POST /users` with `invite: true` (WEB-06 AD-01): a member who sets up their own
+      // sign-in from the emailed link; listed as invited until then.
+      if (typeof body?.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
+      if (!["admin", "sender", "viewer"].includes(body.profile)) fail(400, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "enum" }]);
+      if (db.users.some((u) => u.email.toLowerCase() === body.email.toLowerCase())) fail(400, "CS-API-0001", "Already a member", [{ pointer: "/email", code: "exists" }]);
+      const u = { id: uid(), email: body.email, name: typeof body.name === "string" ? body.name.trim() : "", login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false, invited: true };
+      db.users.push(u);
+      mintInvite(u);
+      return json(201, u);
+    }
+    if (id && sub === "invite" && method === "POST") {
+      const u = db.users.find((x) => x.id === id);
+      if (!u) fail(404, "CS-API-0002", "Not found");
+      if (!u.invited) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      mintInvite(u);
+      return json(200, u);
+    }
     if (!id) {
       if (method === "GET") return json(200, { items: db.users });
       if (method === "POST") {
@@ -588,6 +685,17 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (body?.name != null) {
         if (!String(body.name).trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
         u.name = String(body.name).trim();
+      }
+      // Permission profile and disabling (WEB-06 AD-01); nobody disables or demotes themselves.
+      if (body?.profile != null) {
+        if (!["admin", "sender", "viewer"].includes(body.profile)) fail(400, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "enum" }]);
+        if (u.id === "user-demo" && body.profile !== "admin") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/profile", code: "self" }]);
+        u.permission_profile_id = `profile-${body.profile}`;
+      }
+      if (body?.disabled != null) {
+        if (typeof body.disabled !== "boolean") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/disabled", code: "type" }]);
+        if (u.id === "user-demo" && body.disabled) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/disabled", code: "self" }]);
+        u.disabled = body.disabled;
       }
       return json(200, u);
     }
@@ -751,6 +859,20 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         db.session = { csrf: uid() };
         save();
         return json(200, { account_id: "acct-demo", user_id: "user-demo", csrf_token: db.session.csrf, expires_at: iso(60 * 12) });
+      }
+      if (url.pathname === "/api/v1/auth/accept-invite" && method === "POST") {
+        // WEB-06 AD-01: the invited member sets a password with the emailed token (no
+        // session needed). The token works once.
+        const uidOf = db.invites?.[body?.token];
+        if (typeof body?.token !== "string" || !uidOf) fail(401, "CS-AUTH-0002", "Invitation not valid");
+        if (typeof body.password !== "string" || body.password.length < 12) fail(400, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
+        const u = db.users.find((x) => x.id === uidOf);
+        if (!u) fail(401, "CS-AUTH-0002", "Invitation not valid");
+        if (typeof body.name === "string" && body.name.trim()) u.name = body.name.trim().slice(0, 255);
+        u.invited = false;
+        delete db.invites[body.token];
+        save();
+        return json(200, { email: u.email, name: u.name });
       }
       let res;
       if (parts[1] === "api" && parts[2] === "v1") res = await staff(method, parts, url.searchParams, headers, body);

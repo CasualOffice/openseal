@@ -21,7 +21,7 @@ test("decline needs a reason, ends the ceremony, and the sender sees it", async 
 
   test.skip(REAL, "the sender's side is checked with the seeded mock envelope");
   await signIn(page);
-  await page.getByRole("navigation", { name: "Folders" }).getByRole("link", { name: /^Declined/ }).click();
+  await page.getByRole("navigation", { name: "Folders" }).getByRole("link", { name: /^Declined\s*\d*$/ }).click();
   await page.getByRole("link", { name: "Vendor services agreement" }).click();
   await expect(page.getByText("Reason given: The fee is wrong")).toBeVisible();
 });
