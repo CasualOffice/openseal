@@ -7,16 +7,16 @@
 // The link token is a secret: it is never logged or put in a message; the server
 // binds it to this browser with an HttpOnly cookie on `POST /s/{token}/session`.
 
-import { h, clear, reducedMotion, skipTo } from "./dom.js";
+import { h, clear, skipTo, download, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, errorMessage, locationFrom, ApiError } from "./api.js";
-import { button, busy, emptyState, toast, toastError, reasonDialog, noServerState, dockPanel, closePanel } from "./ui/index.js";
+import { button, busy, emptyState, toastError, openDialog, noServerState, dockPanel, openPanel, closePanel } from "./ui/index.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire, takesInput } from "./geometry.js";
 import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
-import { docView, zoomControls, thumbnails } from "./docview.js";
+import { docView, zoomControls, thumbnails, clampScale } from "./docview.js";
 import { initTheme } from "./theme.js";
 
 const store = (() => { try { return sessionStorage; } catch { return null; } })();
@@ -102,9 +102,12 @@ function next() {
   const env = view.envelope || {};
   if (r.status === "completed") return done(everyoneSigned(env.status));
   if (r.status === "declined") return message({ illus: "inbox", title: t("sign.declined.title"), text: t("sign.declined.text"), testId: "sign-declined" });
+  if (r.status === "reassigned") return message({ illus: "inbox", title: t("sign.reassigned.title"), text: t("sign.reassigned.done"), testId: "sign-reassigned" });
   if (["voided", "declined", "expired"].includes(env.status)) return message({ illus: "inbox", title: t("sign.closed.title"), text: t(`sign.closed.${env.status}`), testId: "sign-closed" });
+  const authing = (view.auth_required || []).includes("access_code");
+  buildMenu(authing ? "auth" : "open");
   moreBtn.hidden = false;
-  if ((view.auth_required || []).includes("access_code")) return accessCode();
+  if (authing) return accessCode();
   if (env.signing_options?.capture_location && !location_) return askLocation();
   if (view.consent_required && !r.consented) return consent();
   return documents();
@@ -245,7 +248,9 @@ async function documents() {
       }
     }, { threshold: 0.5 });
   }
-  const tag = h("button", { type: "button", id: "guide-tag", class: "os-guidetag", attrs: { "data-testid": "guide-tag" } },
+  // The tag points at the next field; the bar's Start/Next button (G-S1) is the same
+  // action for the keyboard and assistive technology, so the tag is a pointer only.
+  const tag = h("button", { type: "button", id: "guide-tag", class: "os-guidetag", tabIndex: -1, attrs: { "data-testid": "guide-tag", "aria-hidden": "true" } },
     h("span", { class: "os-guidetag__text", text: t("sign.start") }));
   tag.addEventListener("click", goNext);
   const v = docView({
@@ -287,8 +292,22 @@ async function documents() {
   enlarge();
   zc.sync();
   updateGuide();
-  // Coming back (A36): the guide is at the next required field, not the top of page 1.
-  if (values.size && nextField()) setTimeout(() => focusField(nextField().id, false), 50);
+  // Arrival (G-S1): the view goes to the first required field, flagged, without taking
+  // focus (no keyboard pops up on a phone). Coming back (A36): to the next required
+  // field, focused, not the top of page 1.
+  const first = nextField();
+  if (first) setTimeout(() => (values.size ? focusField(first.id, false) : revealField(first.id)), 50);
+}
+
+/// Scroll field `id` into the middle of the view and flag it, leaving focus and zoom.
+function revealField(id) {
+  const f = myFields().find((x) => x.id === id);
+  const el = main.querySelector(`[data-field-id="${CSS.escape(id)}"]`);
+  if (!f || !el || !dv) return;
+  dv.scrollToBox(dv.pages.findIndex((p) => p.key === f.document_id && p.n === f.p.page), f.p);
+  el.classList.add("is-flagged");
+  setTimeout(() => el.classList.remove("is-flagged"), 1200);
+  requestAnimationFrame(placeTag);
 }
 
 function myFields() {
@@ -370,7 +389,7 @@ function focusField(id, flag = true) {
   const el = main.querySelector(`[data-field-id="${CSS.escape(id)}"]`);
   if (!f || !el || !dv) return;
   const i = dv.pages.findIndex((p) => p.key === f.document_id && p.n === f.p.page);
-  if (phone() && f.p.height * dv.scale < 32) dv.setZoom(Math.min(32 / f.p.height, dv.scale * 2.5));
+  zoomToField(f);
   dv.scrollToBox(i, f.p);
   if (flag) {
     el.classList.add("is-flagged");
@@ -378,6 +397,17 @@ function focusField(id, flag = true) {
   }
   el.querySelector("button, input")?.focus({ preventScroll: true });
   requestAnimationFrame(placeTag);
+}
+
+/// Phones (P-05, M-01; DocuSign's guided zoom): the view zooms until the field is a
+/// 44 px target, as far as the field still fits the width, so the words around it are
+/// readable too. Never zooms out; pinch still works.
+const TOUCH_PX = 44;
+function zoomToField(f) {
+  if (!phone() || !dv || f.p.height * dv.scale >= TOUCH_PX - 0.5) return;
+  const fitsWidth = (dv.scroller.clientWidth - 32) / f.p.width;
+  const want = clampScale(Math.min(TOUCH_PX / f.p.height, fitsWidth));
+  if (want > dv.scale * 1.02) dv.setZoom(want);
 }
 
 function setTools(on) {
@@ -432,14 +462,22 @@ function fieldNode(f, pg) {
   const box = h("div", { class: `os-sfield os-sfield--${f.type}${f.required ? " is-required" : ""}`, attrs: { "data-field-id": f.id, "data-field": f.type } });
   placeBox(box, f.p, pg);
   // Phones: a field too small to use is zoomed to a usable size when it is reached by
-  // typing into it or tabbing to it, not only through Next (P-05). A tapped button or
-  // box is left alone: zooming under the finger would swallow the tap, and both have a
-  // 44 px touch area already.
+  // typing into it or tabbing to it, not only through Next (P-05). A tapped field is
+  // left alone: zooming under the finger would swallow the tap; a tap opens the
+  // field's own sheet instead (below).
   box.addEventListener("focusin", (e) => {
-    if (phone() && dv && f.p.height * dv.scale < 32 && e.target.matches?.(":focus-visible")) focusField(f.id, false);
+    if (phone() && dv && f.p.height * dv.scale < TOUCH_PX && e.target.matches?.(":focus-visible")) focusField(f.id, false);
   });
   const req = f.required ? `, ${t("sign.required")}` : "";
   const label = f.label || t(`ftype.${f.type}`);
+  // G-S8: every field says what it is on the page: a label tab above it, shown on
+  // hover and focus and for the next required field (the names are in the controls'
+  // accessible names already, so the tab is hidden from assistive technology).
+  const tip = h("span", { class: "os-sfield__tip", attrs: { "aria-hidden": "true" }, text: `${label}${f.required ? " *" : ""}` });
+  // P-05: on phones every field has a touch area of at least 44 px, centred on it,
+  // under the control so a tap on the control itself still reaches it.
+  const hit = h("span", { class: "os-sfield__hit", attrs: { "aria-hidden": "true", "data-testid": "field-hit" } });
+  box.append(hit, tip);
   if (f.type === "signature" || f.type === "initials") {
     const b = h("button", { type: "button", class: "os-sfield__btn" });
     const paint = () => {
@@ -455,6 +493,7 @@ function fieldNode(f, pg) {
       box.classList.toggle("is-done", isDone(f));
     };
     b.addEventListener("click", () => signField(f, paint));
+    hit.addEventListener("click", () => b.click());
     box.append(b);
     paint();
   } else if (f.type === "text") {
@@ -462,18 +501,28 @@ function fieldNode(f, pg) {
     // A rejected value is said beside the field, not only in a toast (A17).
     const err = h("span", { id: `${id}-err`, class: "os-sfield__err", attrs: { role: "alert" } });
     const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}) } });
-    input.addEventListener("change", async () => {
-      const v = { text: input.value };
+    const save = async (text) => {
+      const v = { text };
+      let ok = true;
       try {
         await api.ceremony.fill(token, f.id, v);
         values.set(f.id, v);
+        input.value = text;
         input.removeAttribute("aria-invalid");
         err.textContent = "";
         savedChip();
-      } catch (ex) { input.setAttribute("aria-invalid", "true"); err.textContent = errorMessage(ex); }
+      } catch (ex) { ok = false; input.setAttribute("aria-invalid", "true"); err.textContent = errorMessage(ex); }
       box.classList.toggle("is-done", isDone(f));
       updateGuide();
-    });
+      return ok ? null : err.textContent;
+    };
+    input.addEventListener("change", () => save(input.value));
+    // P-05 (SignNow): on a phone a tap on the small field opens a full-width sheet with
+    // a large input; the keyboard path (Tab, Next) types into the field as on desktop.
+    let tapped = false;
+    input.addEventListener("pointerdown", (e) => { tapped = phone() && e.pointerType !== "mouse"; if (tapped) e.preventDefault(); });
+    input.addEventListener("click", () => { if (!tapped) return; tapped = false; textSheet(f, label, input.value, save); });
+    hit.addEventListener("click", () => (phone() ? textSheet(f, label, input.value, save) : input.focus()));
     box.append(input, err);
     box.classList.toggle("is-done", isDone(f));
   } else if (f.type === "checkbox") {
@@ -484,14 +533,57 @@ function fieldNode(f, pg) {
       box.classList.toggle("is-done", isDone(f));
       updateGuide();
     });
+    hit.addEventListener("click", () => input.click());
     box.append(input);
     box.classList.toggle("is-done", isDone(f));
   } else {
     box.classList.add("is-auto");
+    hit.remove();
     box.append(h("span", { class: "os-sfield__auto", attrs: { "aria-label": `${label}: ${AUTO[f.type]?.() || ""}` }, text: AUTO[f.type]?.() || label }));
   }
   return box;
 }
+
+/// The phone sheet for a text field (P-05): the field's label, a full-width input at a
+/// readable size, Cancel and Save. Enter saves. A rejected value is said in the sheet.
+function textSheet(f, label, value, save) {
+  let input;
+  let err;
+  return openPanel({
+    id: "field",
+    title: label,
+    className: "os-fieldsheet",
+    build(body, close) {
+      const id = "fieldsheet-input";
+      input = h("input", { id, class: "os-input os-input--lg", value, maxLength: 4000, autocomplete: "off", attrs: { autofocus: true, "aria-describedby": "fieldsheet-err", ...(f.required ? { "aria-required": "true" } : {}) } });
+      err = h("p", { id: "fieldsheet-err", class: "os-field-error", attrs: { role: "alert" } });
+      input.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        input.closest(".os-sheet")?.querySelector(".os-sheet__foot .os-btn--primary")?.click();
+      });
+      body.append(
+        h("label", { class: "os-label", attrs: { for: id }, text: `${label}${f.required ? ` (${t("sign.required")})` : ""}` }),
+        input, err);
+      void close;
+    },
+    actions: [
+      { label: t("action.cancel"), value: null },
+      {
+        label: t("sign.field.save"),
+        variant: "primary",
+        attrs: { "data-testid": "fieldsheet-save" },
+        onClick: async () => {
+          if (f.required && !input.value.trim()) { err.textContent = t("form.required"); input.setAttribute("aria-invalid", "true"); input.focus(); return undefined; }
+          const problem = await save(input.value);
+          if (problem) { err.textContent = problem; input.setAttribute("aria-invalid", "true"); input.focus(); return undefined; }
+          return true;
+        },
+      },
+    ],
+  });
+}
+
 
 async function signField(f, paint) {
   const mark = f.type === "initials" ? "initials" : "signature";
@@ -541,9 +633,13 @@ function updateGuide() {
     b.classList.toggle("is-ready", left.length === 0);
   }
   requestAnimationFrame(placeTag);
-  const nextBtn = document.getElementById("guide-next");
-  nextBtn.hidden = left.length === 0;
-  nextBtn.querySelector("span").textContent = values.size ? t("sign.next") : t("sign.start");
+  // Start/Next (G-S1, M-02): in the bar on desktop, in the bottom bar on phones, worded.
+  for (const nextBtn of [document.getElementById("guide-next"), document.getElementById("bar-next")]) {
+    nextBtn.hidden = left.length === 0;
+    nextBtn.querySelector("span").textContent = values.size ? t("sign.next") : t("sign.start");
+  }
+  const nf = nextField();
+  for (const node of main.querySelectorAll(".os-sfield")) node.classList.toggle("is-next", node.dataset.fieldId === nf?.id);
   renderFieldList();
 }
 
@@ -571,10 +667,18 @@ function review() {
   let rzc = null;
   rzc = zoomControls(rv, { size: "sm" });
   closePanel();
-  const dl = h("dl", { class: "os-review" });
-  for (const f of myInputs()) {
+  // G-S7: every value this signer's signature carries, in page order, the automatic
+  // ones (date signed, name, email) included, as they will be drawn.
+  const dl = h("dl", { class: "os-review", attrs: { "data-testid": "review-values" } });
+  const order = (a, b) => (loaded || []).findIndex((x) => x.doc.id === a.document_id) - (loaded || []).findIndex((x) => x.doc.id === b.document_id) || a.p.page - b.p.page || a.p.y - b.p.y || a.p.x - b.p.x;
+  for (const f of [...fields].sort(order)) {
     const v = values.get(f.id);
-    const shown = !v ? t(f.type === "checkbox" ? "sign.review.unchecked" : "sign.review.empty") : v.signature ? t("sign.review.adopted") : "checked" in v ? t(v.checked ? "sign.review.checked" : "sign.review.unchecked") : v.text;
+    let shown;
+    if (!takesInput(f.type)) shown = AUTO[f.type]?.() || "";
+    else if (!v) shown = t(f.type === "checkbox" ? "sign.review.unchecked" : "sign.review.empty");
+    else if (v.signature) shown = t("sign.review.adopted");
+    else if ("checked" in v) shown = t(v.checked ? "sign.review.checked" : "sign.review.unchecked");
+    else shown = v.text;
     dl.append(h("dt", { text: f.label || t(`ftype.${f.type}`) }), h("dd", { text: shown }));
   }
   const back = button(t("sign.review.back"), { icon: "chevron-left", size: "lg" });
@@ -594,8 +698,9 @@ function review() {
     h("h1", { class: "os-sign__title", text: t("sign.review.title") }),
     h("p", { class: "os-muted", text: t("sign.review.text") }),
     dl,
-    h("p", { class: "os-small", text: t("sign.review.legal") }),
-    h("div", { class: "os-stack" }, go, back));
+    h("p", { class: "os-small", text: t("sign.review.legal") }));
+  // The one Finish of this step, pinned below the values so it is always in view.
+  side.el.append(h("div", { class: "os-review__actions os-stack" }, go, back));
   screen(h("div", { class: "os-signframe os-signframe--review" },
     h("div", { class: "os-signframe__centre" }, rv.scroller, h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, rzc.el)),
     side.el), rv.live);
@@ -606,12 +711,15 @@ function review() {
     const p = rv.pages[i];
     el.setAttribute("role", "img");
     el.setAttribute("aria-label", t("sign.review.page", { n: p.n, total: p.total, name: p.name }));
-    el.dataset.testid = "review-page";
     el.setAttribute("data-testid", "review-page");
     overlay.setAttribute("aria-hidden", "true");
     for (const f of fields.filter((x) => x.document_id === p.key && x.p.page === p.n)) overlay.append(flat(f, p));
   });
   rzc.sync();
+  // G-S7: the review opens at the top of the first page and of the values.
+  const top = () => { rv.scroller.scrollTop = 0; rv.scroller.scrollLeft = 0; side.body.scrollTop = 0; main.scrollTop = 0; };
+  top();
+  requestAnimationFrame(top);
   go.focus({ preventScroll: true });
 }
 
@@ -643,38 +751,240 @@ function everyoneSigned(status) {
 
 function done(everyone, celebrate = false) {
   guide.hidden = true;
-  moreBtn.hidden = true;
+  // Finished: More keeps what still applies (a copy, history, help).
+  buildMenu("ended");
+  moreBtn.hidden = false;
+  document.getElementById("bar-progress").textContent = "";
   setTools(false);
   const seal = h("img", { class: `os-done__seal${celebrate ? " is-stamping" : ""}`, src: "/assets/mark.svg", alt: "", width: 96, height: 96 });
-  screen(h("div", { class: "os-empty os-done", attrs: { "data-testid": "sign-done", role: "status" } },
+  // G-S3: a copy now, and what happens next.
+  const copy = button(t("sign.done.download"), { icon: "download", variant: "primary", size: "lg", attrs: { "data-testid": "done-download" } });
+  copy.addEventListener("click", () => busy(copy, () => downloadCopy()));
+  const steps = h("ol", { class: "os-done__steps" },
+    h("li", { text: everyone ? t("sign.done.next-sealed") : t("sign.done.next-others") }),
+    h("li", { text: t("sign.done.next-email") }),
+    h("li", { text: t("sign.done.next-verify") }));
+  screen(h("div", { class: "os-empty os-done", attrs: { "data-testid": "sign-done" } },
     seal,
     h("h1", { class: "os-empty__title", text: t("sign.done.title") }),
-    h("p", { class: "os-empty__text", text: everyone ? t("sign.done.everyone") : t("sign.done.waiting") })));
+    h("p", { class: "os-empty__text", attrs: { role: "status" }, text: everyone ? t("sign.done.everyone") : t("sign.done.waiting") }),
+    h("h2", { class: "os-done__next", text: t("sign.done.next") }),
+    steps,
+    h("div", { class: "os-done__actions" }, copy)));
 }
 
 // ---- Other actions ------------------------------------------------------------------------------
 
+/// The signer's copy (G-S2, G-S3): `GET /s/{token}/document`, one PDF. Until the server
+/// answers it, each delivered document is saved as it is. `print`: open it in a new tab,
+/// where the browser's PDF viewer prints it.
+async function downloadCopy(print = false) {
+  closeMore();
+  const name = (s) => `${String(s || "document").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, 120) || "document"}.pdf`;
+  let files;
+  try {
+    files = [{ blob: await api.ceremony.download(token), name: name(view.envelope?.subject) }];
+  } catch (err) {
+    if (!(err instanceof ApiError) || ![404, 405, 501].includes(err.status)) { toastError(err); return; }
+    try {
+      files = [];
+      for (const d of view.envelope?.documents || []) files.push({ blob: await api.ceremony.document(token, d.id), name: name(d.name) });
+    } catch (e2) { toastError(e2); return; }
+  }
+  if (print) {
+    for (const f of files) {
+      const url = URL.createObjectURL(new Blob([f.blob], { type: "application/pdf" }));
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
+    return;
+  }
+  for (const f of files) download(f.blob, f.name);
+}
+
+/// Decline (G-S5): a destructive confirmation, so a true modal. It says what declining
+/// does before asking why; the confirming button is filled red.
 async function decline() {
   closeMore();
-  const reason = await reasonDialog(t("sign.decline.title"), t("sign.decline.label"), { confirm: t("sign.decline.confirm"), required: true, maxLength: 2000 });
+  let area;
+  let err;
+  const reason = await openDialog({
+    title: t("sign.decline.title"),
+    className: "os-decline",
+    build(body) {
+      body.append(
+        h("div", { class: "os-callout os-callout--danger" }, icon("triangle-alert", { size: 20 }),
+          h("div", {}, h("p", { class: "os-callout__title", text: t("sign.decline.consequence") }), h("p", { text: t("sign.decline.consequence-more") }))),
+        h("label", { class: "os-label", attrs: { for: "decline-reason" }, text: t("sign.decline.label") }),
+        (area = h("textarea", { id: "decline-reason", class: "os-input os-textarea", rows: 4, maxLength: 2000, attrs: { autofocus: true, required: true, "aria-describedby": "decline-err" } })),
+        (err = h("p", { id: "decline-err", class: "os-field-error", attrs: { "aria-live": "polite" } })));
+    },
+    actions: [
+      { label: t("action.cancel"), value: null },
+      {
+        label: t("sign.decline.confirm"),
+        variant: "danger-fill",
+        attrs: { "data-testid": "decline-confirm" },
+        onClick: () => {
+          const v = area.value.trim();
+          if (!v) { err.textContent = t("form.required"); area.setAttribute("aria-invalid", "true"); area.focus(); return undefined; }
+          return v;
+        },
+      },
+    ],
+  });
   if (!reason) return;
   try {
     view = await api.ceremony.decline(token, reason, location_);
     message({ illus: "inbox", title: t("sign.declined.title"), text: t("sign.declined.text"), testId: "sign-declined" });
-  } catch (err) { toastError(err); }
+  } catch (ex) { toastError(ex); }
 }
 
 async function finishLater() {
   closeMore();
   try {
     await api.ceremony.finishLater(token);
-    message({ illus: "inbox", title: t("sign.later.title"), text: t("sign.later.text"), testId: "sign-later" });
+    // G-S4: the way back in is right here, not only in the email.
+    const again = button(t("sign.later.continue"), { icon: "arrow-right", variant: "primary", size: "lg", onClick: () => start(), attrs: { "data-testid": "later-continue" } });
+    message({ illus: "inbox", title: t("sign.later.title"), text: t("sign.later.text"), action: again, testId: "sign-later" });
   } catch (err) { toastError(err); }
+}
+
+/// Assign to someone else (G-S2), only when the envelope allows it: their name and
+/// email, and an optional note for the sender. The fields move to them; this link ends.
+async function reassign() {
+  closeMore();
+  let nameIn;
+  let emailIn;
+  let noteIn;
+  let err;
+  const res = await openPanel({
+    id: "reassign",
+    title: t("sign.reassign.title"),
+    build(body) {
+      body.append(h("p", { class: "os-muted", text: t("sign.reassign.text") }));
+      const row = (id, label, el) => h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: label }), el);
+      nameIn = h("input", { id: "reassign-name", class: "os-input", autocomplete: "off", maxLength: 200, attrs: { autofocus: true, required: true } });
+      emailIn = h("input", { id: "reassign-email", class: "os-input", type: "email", autocomplete: "off", maxLength: 320, attrs: { required: true } });
+      noteIn = h("textarea", { id: "reassign-note", class: "os-input os-textarea", rows: 3, maxLength: 2000 });
+      err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
+      body.append(h("div", { class: "os-stack" }, row("reassign-name", t("sign.reassign.name"), nameIn), row("reassign-email", t("sign.reassign.email"), emailIn), row("reassign-note", t("sign.reassign.note"), noteIn)), err);
+    },
+    actions: [
+      { label: t("action.cancel"), value: null },
+      {
+        label: t("sign.reassign.confirm"),
+        variant: "primary",
+        attrs: { "data-testid": "reassign-confirm" },
+        onClick: async () => {
+          const name = nameIn.value.trim();
+          const email = emailIn.value.trim();
+          if (!name) { err.textContent = t("form.required"); nameIn.focus(); return undefined; }
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = t("sign.reassign.bad-email"); emailIn.focus(); return undefined; }
+          view = await api.ceremony.reassign(token, { name, email, reason: noteIn.value.trim() }, location_);
+          return name;
+        },
+      },
+    ],
+  });
+  if (!res) return;
+  message({ illus: "inbox", title: t("sign.reassigned.title"), text: t("sign.reassigned.text", { name: res }), testId: "sign-reassigned" });
+}
+
+/// Help (G-S2): how signing works here, and who to ask about the document.
+function help() {
+  closeMore();
+  openPanel({
+    id: "help",
+    title: t("sign.help.title"),
+    build(body) {
+      const sec = (title, ...items) => h("section", { class: "os-help-sec" }, h("h3", { class: "os-help-sec__title", text: title }), ...items);
+      body.append(
+        sec(t("sign.help.how"), h("ol", { class: "os-sign__list" },
+          h("li", { text: t("sign.help.step1") }), h("li", { text: t("sign.help.step2") }),
+          h("li", { text: t("sign.help.step3") }), h("li", { text: t("sign.help.step4") }))),
+        sec(t("sign.help.questions"), h("p", { text: t("sign.help.questions-text") })),
+        sec(t("sign.help.trouble"), h("p", { text: t("sign.help.trouble-text") })));
+    },
+    actions: [{ label: t("action.close"), value: null }],
+  });
+}
+
+const HISTORY = {
+  envelope_sent: "sign.history.sent",
+  recipient_opened: "sign.history.opened",
+  recipient_authenticated: "sign.history.authenticated",
+  recipient_auth_failed: "sign.history.auth-failed",
+  recipient_consented: "sign.history.consented",
+  document_viewed: "sign.history.viewed",
+  signature_adopted: "sign.history.adopted",
+  field_filled: "sign.history.filled",
+  recipient_finish_later: "sign.history.later",
+  recipient_completed: "sign.history.completed",
+  recipient_declined: "sign.history.declined",
+  envelope_completed: "sign.history.envelope-completed",
+  seal_applied: "sign.history.sealed",
+};
+
+/// View history (G-S2): the envelope's events this recipient may see, newest first.
+function history() {
+  closeMore();
+  openPanel({
+    id: "history",
+    title: t("sign.history.title"),
+    build(body) {
+      const list = h("ol", { class: "os-history", attrs: { "aria-busy": "true" } });
+      body.append(h("p", { class: "os-muted", text: t("sign.history.text") }), list);
+      api.ceremony.history(token).then((r) => {
+        list.removeAttribute("aria-busy");
+        const events = [...(r?.events || [])].reverse();
+        if (!events.length) { list.append(h("li", { class: "os-muted", text: t("sign.history.none") })); return; }
+        for (const e of events) {
+          const key = HISTORY[e.type];
+          list.append(h("li", { class: "os-history__item" },
+            h("span", { class: "os-history__what", text: key ? t(key) : String(e.type || "").replace(/_/g, " ") }),
+            h("time", { class: "os-history__when os-muted os-small", attrs: { datetime: e.at || "" }, text: fmtDate(e.at) })));
+        }
+      }).catch((err) => {
+        list.removeAttribute("aria-busy");
+        list.append(h("li", { class: "os-muted", text: err instanceof ApiError && [404, 405, 501].includes(err.status) ? t("sign.history.unavailable") : errorMessage(err) }));
+      });
+    },
+    actions: [{ label: t("action.close"), value: null }],
+  });
 }
 
 function closeMore() {
   moreMenu.hidden = true;
   moreBtn.setAttribute("aria-expanded", "false");
+}
+
+/// The More menu (G-S2), built for this envelope's options once the view is known.
+/// `stage`: "auth" (before the access code: help only, as nothing else is open yet),
+/// "open" (signing), "ended" (this recipient finished: copy, history, help).
+function buildMenu(stage = "open") {
+  const opts = view?.envelope?.signing_options || {};
+  const item = (ic, label, onClick, { danger = false, testId = null } = {}) => {
+    const b = h("button", { type: "button", class: `os-menu__item${danger ? " os-menu__item--danger" : ""}`, attrs: { role: "menuitem", ...(testId ? { "data-testid": testId } : {}) } }, icon(ic, { size: 16 }), h("span", { text: label }));
+    b.addEventListener("click", onClick);
+    return b;
+  };
+  const sep = () => h("div", { class: "os-menu__sep", attrs: { role: "separator" } });
+  const help_ = item("circle-help", t("sign.menu.help"), help, { testId: "menu-help" });
+  if (stage === "auth") { moreMenu.replaceChildren(help_); return; }
+  const items = [
+    item("download", t("sign.menu.download"), () => downloadCopy(), { testId: "menu-download" }),
+    item("external-link", t("sign.menu.print"), () => downloadCopy(true), { testId: "menu-print" }),
+  ];
+  if (stage === "open" && opts.allow_reassign === true) items.push(item("user-plus", t("sign.menu.reassign"), reassign, { testId: "menu-reassign" }));
+  items.push(item("list-ordered", t("sign.menu.history"), history, { testId: "menu-history" }));
+  items.push(help_);
+  if (stage === "open") {
+    items.push(sep());
+    if (opts.allow_finish_later !== false) items.push(item("clock", t("sign.later"), finishLater));
+    if (opts.allow_decline !== false) items.push(item("circle-x", t("sign.decline"), decline, { danger: true }));
+  }
+  moreMenu.replaceChildren(...items);
 }
 
 function buildChrome() {
@@ -691,22 +1001,21 @@ function buildChrome() {
     moreBtn.setAttribute("aria-expanded", String(open));
     if (open) moreMenu.querySelector("button")?.focus();
   });
-  const later = h("button", { type: "button", class: "os-menu__item", attrs: { role: "menuitem" } }, icon("clock", { size: 16 }), h("span", { text: t("sign.later") }));
-  later.addEventListener("click", finishLater);
-  const dec = h("button", { type: "button", class: "os-menu__item os-menu__item--danger", attrs: { role: "menuitem" } }, icon("circle-x", { size: 16 }), h("span", { text: t("sign.decline") }));
-  dec.addEventListener("click", decline);
-  moreMenu.append(later, dec);
   moreMenu.addEventListener("keydown", (e) => {
     const items = [...moreMenu.querySelectorAll("button")];
     const i = items.indexOf(document.activeElement);
     if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
     if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    if (e.key === "Home") { e.preventDefault(); items[0].focus(); }
+    if (e.key === "End") { e.preventDefault(); items[items.length - 1].focus(); }
     if (e.key === "Escape") { closeMore(); moreBtn.focus(); }
   });
   document.addEventListener("click", (e) => { if (!e.target.closest?.("#more-menu, #more-btn")) closeMore(); });
-  const nextBtn = document.getElementById("guide-next");
-  nextBtn.prepend(icon("arrow-right", { size: 20 }));
-  nextBtn.addEventListener("click", goNext);
+  for (const id of ["guide-next", "bar-next"]) {
+    const nextBtn = document.getElementById(id);
+    nextBtn.prepend(icon("arrow-right", { size: 20 }));
+    nextBtn.addEventListener("click", goNext);
+  }
   const fin = document.getElementById("guide-finish");
   fin.prepend(icon("check", { size: 20 }));
   fin.addEventListener("click", finish);

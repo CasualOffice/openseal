@@ -29,6 +29,7 @@ export function adoptDialog({ mark = "signature", name = "", host = null }) {
   const strokes = [];
   let uploaded = null;
 
+  let leaveFull = () => {};
   return openPanel({
     id: "adopt",
     host,
@@ -101,18 +102,52 @@ export function adoptDialog({ mark = "signature", name = "", host = null }) {
         }
       }
       let current = null;
-      const pos = (e) => { const b = canvas.getBoundingClientRect(); return [((e.clientX - b.left) / b.width) * W, ((e.clientY - b.top) / b.height) * H]; };
+      // Full screen on an upright phone turns the pad a quarter clockwise (app.css), so
+      // the signature is drawn along the long side; the pad's x then runs down the screen.
+      const turned = () => canvas.parentElement?.classList.contains("is-full") && matchMedia("(orientation: portrait)").matches;
+      const pos = (e) => {
+        const b = canvas.getBoundingClientRect();
+        if (turned()) return [((e.clientY - b.top) / b.height) * W, ((b.right - e.clientX) / b.width) * H];
+        return [((e.clientX - b.left) / b.width) * W, ((e.clientY - b.top) / b.height) * H];
+      };
       canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); current = [pos(e)]; strokes.push(current); redraw(); });
       canvas.addEventListener("pointermove", (e) => { if (!current) return; current.push(pos(e)); redraw(); });
       const end = () => { current = null; };
       canvas.addEventListener("pointerup", end);
       canvas.addEventListener("pointercancel", end);
+      // M-03: on phones the pad can fill the screen (landscape-friendly); the strokes
+      // are kept in pad units, so they survive going in and out of full screen.
+      const pad = h("div", { class: "os-adopt__padwrap" });
+      const fullHint = h("p", { class: "os-adopt__fullhint", text: t("adopt.full-hint") });
+      const fullBtn = button(t("adopt.full"), { icon: "maximize", size: "lg", attrs: { "data-testid": "adopt-full" } });
+      fullBtn.classList.add("os-adopt__fullbtn");
+      const doneBtn = button(t("adopt.full-done"), { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "adopt-full-done" } });
+      doneBtn.classList.add("os-adopt__fulldone");
+      const setFull = (on) => {
+        pad.classList.toggle("is-full", on);
+        document.body.classList.toggle("has-fullpad", on);
+        for (const [k, v] of Object.entries({ role: "dialog", "aria-modal": "true", "aria-label": t("adopt.pad") })) {
+          if (on) pad.setAttribute(k, v); else pad.removeAttribute(k);
+        }
+        // Escape leaves full screen only; the panel's own Escape (a document capture
+        // listener) must not close the whole panel, so this one listens on window first.
+        if (on) window.addEventListener("keydown", onEsc, true); else window.removeEventListener("keydown", onEsc, true);
+        (on ? doneBtn : fullBtn).focus({ preventScroll: true });
+        redraw();
+      };
+      const onEsc = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setFull(false); } };
+      leaveFull = () => { if (pad.classList.contains("is-full")) setFull(false); };
+      fullBtn.addEventListener("click", () => setFull(true));
+      doneBtn.addEventListener("click", () => setFull(false));
+      pad.append(fullHint, canvas,
+        h("div", { class: "os-actions os-adopt__padtools" },
+          button(t("adopt.undo"), { icon: "undo-2", size: "lg", onClick: () => { strokes.pop(); redraw(); } }),
+          button(t("adopt.clear"), { icon: "eraser", size: "lg", onClick: () => { strokes.length = 0; redraw(); } }),
+          doneBtn));
       panels.draw.append(
         h("p", { class: "os-muted os-small", text: t("adopt.draw-help") }),
-        canvas,
-        h("div", { class: "os-actions" },
-          button(t("adopt.undo"), { icon: "undo-2", size: "sm", onClick: () => { strokes.pop(); redraw(); } }),
-          button(t("adopt.clear"), { icon: "eraser", size: "sm", onClick: () => { strokes.length = 0; redraw(); } })));
+        fullBtn,
+        pad);
 
       // Upload
       const file = h("input", { id: "adopt-file", type: "file", accept: "image/png,image/jpeg", class: "os-input" });
@@ -157,12 +192,13 @@ export function adoptDialog({ mark = "signature", name = "", host = null }) {
             if (!uploaded) { toast(t("adopt.need-image"), "error"); return undefined; }
             c = uploaded;
           }
+          leaveFull();
           const dataUrl = c.toDataURL("image/png");
           return { method: mode, dataUrl, base64: dataUrl.slice(dataUrl.indexOf(",") + 1) };
         },
       },
     ],
-  });
+  }).finally(() => leaveFull());
 }
 
 async function typedCanvas(text, family) {

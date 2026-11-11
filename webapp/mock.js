@@ -246,7 +246,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         { type: "date_signed", page: 1, x: 340, y: 622, width: 110, height: 22 },
       ], []],
       async (env, recs) => {
-        env.signing_options = { capture_location: true, allow_decline: true, allow_finish_later: true };
+        env.signing_options = { capture_location: true, allow_decline: true, allow_finish_later: true, allow_reassign: true };
         env.expires_at = iso(60 * 24 * 3);
         recs[0].token = MOCK.ceremonyToken;
         await send(env);
@@ -625,6 +625,19 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, view(env, rec));
     }
     if (!db.opened.includes(token)) fail(403, "CS-AUTH-0009", "Ceremony link not opened in this browser");
+    // WEB-06: the signer's copy (`GET /s/{token}/document`; in the mock the first
+    // document) and history stay available after finishing or declining.
+    if ((sub === "document" && parts.length === 4) || sub === "history") {
+      if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
+      if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
+      if (sub === "history") {
+        const mine = (db.audit[env.id] || []).filter((e) => !e.event.recipient_id || e.event.recipient_id === rec.id);
+        return json(200, { events: mine.map((e) => ({ seq: e.seq, type: e.type, at: e.at })) });
+      }
+      const d = env.documents[0];
+      if (!d) fail(404, "CS-API-0002", "Not found");
+      return pdf(unb64(db.blobs[d.id]));
+    }
     if (TERMINAL.has(env.status) || rec.status === "completed" || rec.status === "declined") fail(409, "CS-WF-0001", "Not allowed in the current state");
     if (sub === "authenticate" && method === "POST") {
       const n = (db.attempts[token] || 0);
@@ -705,6 +718,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         await audit(env, "seal_applied", { profile: env.seal_profile });
       }
       env.version++;
+      return json(200, view(env, rec));
+    }
+    if (sub === "reassign" && method === "POST") {
+      if (env.signing_options?.allow_reassign !== true) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      const name = String(body?.name || "").trim();
+      const email = String(body?.email || "").trim();
+      if (!name || !/^[^@\s]+@[^@\s]+$/.test(email)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: name ? "/email" : "/name", code: "required" }]);
+      rec.status = "reassigned";
+      const nr = { ...rec, id: uid(), name, email, status: "sent", auth: [], auth_passed: [], consented: false, token: null };
+      env.recipients.push(nr);
+      for (const f of env.fields) if (f.recipient_id === rec.id) f.recipient_id = nr.id;
+      await audit(env, "recipient_reassigned", { recipient_id: rec.id, new_recipient_id: nr.id, ...loc });
       return json(200, view(env, rec));
     }
     if (sub === "finish-later" && method === "POST") {
