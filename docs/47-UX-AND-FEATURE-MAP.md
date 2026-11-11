@@ -285,7 +285,7 @@ this branch's last commit.
 | A22 | Editor | Shortcut help unreachable once the app bar is gone | H10 | P2 | Keyboard button in the editor toolbar | Fixed |
 | A23 | Editor | Paste lands on the original page; no way to copy a field to another page | H7 | P2 | Paste lands on the page in view | Fixed |
 | A24 | Editor | Deleting a field gives no undo affordance | H3 | P2 | Toast with Undo | Fixed |
-| A25 | Editor | No multi-select, align or distribute | H7 | P2 | Shift+click selection; align, same size, delete | Open (`WEB-07` proposed) |
+| A25 | Editor | No multi-select, align or distribute | H7 | P2 | Shift+click selection; align edges, same size, space evenly, move and delete together | Fixed |
 | A26 | Editor | Snapping to a 4 pt grid only; no alignment guides (SignNow has field snapping) | H7 | P2 | Guides to other fields' edges while dragging | Open (`WEB-07` proposed) |
 | A27 | Envelope, Templates, Verify | Preview is a fixed 640 px box inside a scrolling page; zoom resets the scroll | H8 | P1 | Preview on `docview.js` | Fixed |
 | A28 | Admin, Templates, shortcuts | Add or rename user, new API client, rename template, shortcut list are modals | owner | P2 | Side panels (`openPanel`); modals only for void, delete, decline, remove, leave-without-saving | Fixed |
@@ -311,15 +311,22 @@ sections). Findings that repeat a row above point to it.
 | P-04 | Leaving the editor lost work without a prompt | P0 | Leave prompt (A12), beforeunload, and autosave 4 s after the last change when the draft is savable | Fixed |
 | G-01 | Editor chrome took 240 of 900 px | P1 | = A1 | Fixed |
 | S-02 | No inline email validation | P1 | Message under the field on leaving it, `aria-invalid` | Fixed |
-| S-03 | Recipients step starts empty, no "Add me", placeholder-only labels | P1 | "Add me" when the app knows the sender; visible labels and contacts autocomplete need the server's contacts | Partly (labels and autocomplete open) |
-| F-01 | New fields stack mid-page | P1 | Keyboard and click placement step below the previous field; text detection waits for the server's suggestions endpoint | Partly |
+| S-03 | Recipients step starts empty, no "Add me", placeholder-only labels | P1 | "Add me" when the app knows the sender; visible Name and Email labels; contacts autocomplete on the server's `GET /contacts` | Partly (autocomplete waits for the server merge) |
+| F-01 | New fields stack mid-page | P1 | A new field goes below the one placed last on that page, lined up, or in the part of the page on screen; detection uses the server's `detect-fields` | Partly (detection waits for the server merge) |
 | F-02 | Field chips do not show the recipient | P1 | Recipient's initials on each field, beside its colour | Fixed |
-| F-03 | No multi-select, marquee, align, distribute; paste overlaps | P1 | Paste lands on the page in view (A23); multi-select and align = A25 | Partly |
+| F-03 | No multi-select, marquee, align, distribute; paste overlaps | P1 | Shift+click selection with align, size, spacing, group move and delete (A25); paste lands on the page in view (A23); marquee open | Mostly |
 | F-04 | Missing field types | P1 | The palette takes the types the server adds | Open (server) |
 | F-07 | Coordinates in the main properties | P2 | Under a closed "Advanced" | Fixed |
 | F-08 | Phone: palette took 75 % of the screen | P1 | Palette is a bottom sheet behind "Add field" | Fixed |
-| F-06 | Thumbnails: no current page, no page x of y | P2 | Current marked and followed; "Page n of N"; field counts open | Partly |
+| F-06 | Thumbnails: no current page, no page x of y, no field counts | P2 | Current marked and followed; "Page n of N"; a count of fields on each thumbnail | Fixed |
 | F-09 | Fit width is very large at 1920 | P2 | Kept: fit width is what the reference viewers do; presets are one click away | Kept |
+| F-05 | A checkbox field is hidden under its resize handle | P2 | The handle is at most 35 % of the field | Fixed |
+| S-04 | Recipients reorder only upward; no drag; no parallel groups | P2 | Up, down and drag by the card's head; parallel groups need per-recipient order numbers | Partly (groups open) |
+| R-01 | Review summary below the fold, counts only | P1 | Summary first; each recipient with the kinds of field they fill, or "gets a copy" | Fixed |
+| R-02 | Send confirmation silent about order and copies | P2 | "They sign in order: A → B. C will get a copy when it is complete." | Fixed |
+| R-03 | Reminder and expiry defaults unseen | P2 | Empty boxes say "Account default" | Fixed |
+| R-04 | No ticks on completed steps; no step name on phones | P2 | Done steps ticked (number kept for screen readers); the current step keeps its name on phones | Fixed |
+| T-02 | "1 fields" | P2 | Singular forms for fields, pages and counts | Fixed |
 
 ### Layout spec: editor (fields step) and signing page
 
