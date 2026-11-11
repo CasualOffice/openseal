@@ -144,7 +144,7 @@ test("every message key used in code and HTML has an English string", () => {
 
 test("t fills placeholders as text and leaves unknown ones", () => {
   assert.equal(t("sign.progress", { done: 1, total: 3 }), "1 of 3 required");
-  assert.equal(t("empty.search.text", { query: "<b>x</b>" }), "No loaded envelope has “<b>x</b>” in its subject.");
+  assert.equal(t("empty.search.text", { query: "<b>x</b>" }), "No envelope has “<b>x</b>” in its subject or recipients.");
   assert.equal(t("no.such.key"), "no.such.key");
 });
 

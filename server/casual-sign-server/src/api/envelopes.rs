@@ -284,7 +284,12 @@ pub(crate) struct ListQuery {
     cursor: Option<String>,
     limit: Option<u32>,
     status: Option<String>,
+    /// Text the subject or a recipient's name or email contains (row WEB-04).
+    q: Option<String>,
 }
+
+/// The longest `q` searched for, in characters.
+const MAX_QUERY: usize = 200;
 
 fn parse_status(s: &str) -> Option<EnvelopeStatus> {
     Some(match s {
@@ -333,9 +338,16 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
         .as_deref()
         .map(|s| parse_status(s).ok_or_else(|| ApiError::invalid("/query/status")))
         .transpose()?;
+    let search = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    if search.is_some_and(|t| t.chars().count() > MAX_QUERY || t.chars().any(char::is_control)) {
+        return Err(ApiError::invalid("/query/q"));
+    }
     let sender = (!(c.p.admin || c.p.view_all)).then_some(c.p.user);
     let mut tx = c.tx().await?;
-    let page = tx.envelopes().page(after, status, sender, limit).await?;
+    let page = tx
+        .envelopes()
+        .page(after, status, sender, search, limit)
+        .await?;
     let next = (page.len() == usize::try_from(limit).unwrap_or(usize::MAX))
         .then(|| page.last())
         .flatten()
@@ -1029,9 +1041,18 @@ struct RecipientPatch {
     routing_order: Option<u32>,
     #[serde(default)]
     auth: Option<Vec<casual_sign_audit::AuthMethod>>,
+    /// A new access code (row WEB-04); stored only as Argon2id, never returned.
+    #[serde(default)]
+    access_code: Option<String>,
 }
 
-/// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, authentication.
+/// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, authentication
+/// and the access code, while the envelope is a draft or being corrected (the engine
+/// refuses the change otherwise, and then no code is stored).
+///
+/// The access code follows the authentication methods it ends up with: `access_code`
+/// among them needs a code, given here or set before; a code given without the method
+/// is refused; dropping the method deletes the stored code.
 pub(crate) async fn patch_recipient(
     c: Call,
     Path((id, r)): Path<(String, String)>,
@@ -1063,12 +1084,22 @@ pub(crate) async fn patch_recipient(
         spec.routing_order = casual_sign_model::RoutingOrder::new(o)
             .map_err(|_| ApiError::invalid("/routing_order"))?;
     }
+    let had_code = spec
+        .auth
+        .contains(&casual_sign_audit::AuthMethod::AccessCode);
     if let Some(a) = req.auth {
-        if a.contains(&casual_sign_audit::AuthMethod::AccessCode) {
-            // A new access code goes with the recipient's creation (the code is a secret).
-            return Err(ApiError::invalid("/auth"));
-        }
         spec.auth = a;
+    }
+    let wants_code = spec
+        .auth
+        .contains(&casual_sign_audit::AuthMethod::AccessCode);
+    let code = req.access_code.filter(|c| !c.is_empty());
+    let refused = match &code {
+        Some(c) => !wants_code || c.chars().count() > 255,
+        None => wants_code && !had_code,
+    };
+    if refused {
+        return Err(ApiError::invalid("/access_code"));
     }
     let rid = spec.id.clone();
     change(
@@ -1079,6 +1110,12 @@ pub(crate) async fn patch_recipient(
         v,
     )
     .await?;
+    let stored = RecipientId(uid(&rid)?);
+    if let Some(code) = code {
+        store_codes(&mut tx, vec![(stored, code)]).await?;
+    } else if had_code && !wants_code {
+        tx.recipients().clear_access_code(stored).await?;
+    }
     tx.commit().await?;
     let x = l.state.recipient(&rid).ok_or_else(ApiError::not_found)?;
     Ok(json_tagged(

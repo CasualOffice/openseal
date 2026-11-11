@@ -71,7 +71,9 @@ function fail(err) {
     moreBtn.hidden = true;
     return noServerState(screen(), start);
   }
-  if (err instanceof ApiError && err.code === "CS-API-0002") {
+  // The server answers an unknown, expired or revoked link alike (CS-AUTH-0002, so a
+  // link cannot be probed); the mock answers CS-API-0002.
+  if (err instanceof ApiError && (err.code === "CS-API-0002" || err.code === "CS-AUTH-0002")) {
     return message({ illus: "error", title: t("sign.not-found.title"), text: t("sign.not-found.text"), testId: "sign-not-found" });
   }
   const offline = err?.code === "CS-NET-0001";
@@ -92,7 +94,7 @@ async function start() {
 function next() {
   const r = view.recipient || {};
   const env = view.envelope || {};
-  if (r.status === "completed") return done(env.status === "completed");
+  if (r.status === "completed") return done(everyoneSigned(env.status));
   if (r.status === "declined") return message({ illus: "inbox", title: t("sign.declined.title"), text: t("sign.declined.text"), testId: "sign-declined" });
   if (["voided", "declined", "expired"].includes(env.status)) return message({ illus: "inbox", title: t("sign.closed.title"), text: t(`sign.closed.${env.status}`), testId: "sign-closed" });
   moreBtn.hidden = false;
@@ -553,7 +555,7 @@ function review() {
   go.addEventListener("click", async () => {
     try {
       view = await busy(go, () => api.ceremony.finish(token, [], location_));
-      done(view.envelope?.status === "completed", true);
+      done(everyoneSigned(view.envelope?.status), true);
     } catch (err) { toastError(err); }
   });
   screen(h("div", { class: "os-reviewscreen" },
@@ -590,6 +592,12 @@ function flat(f, scale) {
     box.textContent = AUTO[f.type]?.() || "";
   }
   return box;
+}
+
+/// Everyone has signed once the envelope is `completing` (the server is sealing it,
+/// docs/40 §Statuses on the wire) or `completed`.
+function everyoneSigned(status) {
+  return status === "completing" || status === "completed";
 }
 
 function done(everyone, celebrate = false) {

@@ -47,7 +47,12 @@ export function mount(view, ctx, _match, params) {
 
   const topSearch = document.getElementById("top-search");
   if (topSearch) topSearch.value = params.get("q") || "";
-  ctx.onSearch = (q) => { query = q.toLowerCase(); renderRows(); };
+  // The server searches subject, names and emails (`q`, WEB-04); typing waits 250 ms.
+  let searchTimer = null;
+  ctx.onSearch = (q) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { if (q.toLowerCase() !== query) { query = q.toLowerCase(); load(); } }, 250);
+  };
 
   // ---- Rail -------------------------------------------------------------------------
   const rail = h("nav", { class: "os-rail", attrs: { "aria-label": t("agreements.folders") } });
@@ -90,7 +95,7 @@ export function mount(view, ctx, _match, params) {
     }
     try {
       const want = keys().filter((k) => !append || cursors.get(k));
-      const pages = await Promise.all(want.map((k) => ctx.api.listEnvelopes({ status: k || undefined, cursor: append ? cursors.get(k) : undefined, limit: 25 })));
+      const pages = await Promise.all(want.map((k) => ctx.api.listEnvelopes({ status: k || undefined, cursor: append ? cursors.get(k) : undefined, limit: 25, q: query || undefined })));
       const got = pages.flatMap((p) => p.items || []);
       want.forEach((k, i) => cursors.set(k, pages[i].next_cursor || null));
       rows = (append ? rows.concat(got) : got).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
@@ -152,12 +157,7 @@ export function mount(view, ctx, _match, params) {
   }
 
   // ---- Rendering --------------------------------------------------------------------------
-  function matches(r) {
-    if (!query) return true;
-    const e = details.get(r.id);
-    const hay = [r.subject, ...(e?.recipients || []).flatMap((x) => [x.name, x.email])].join(" ").toLowerCase();
-    return hay.includes(query);
-  }
+  const matches = () => true; // the server applied `q`
 
   function renderRows() {
     clear(list);
@@ -165,6 +165,11 @@ export function mount(view, ctx, _match, params) {
     const shown = rows.filter(matches);
     for (const id of [...selected]) if (!rows.some((r) => r.id === id)) selected.delete(id);
     renderBulk();
+    if (!rows.length && query) {
+      const q = document.getElementById("top-search")?.value.trim() || query;
+      list.append(emptyState({ illus: "search", title: t("empty.search.title"), text: t("empty.search.text", { query: q }), action: button(t("action.clear-search"), { variant: "primary", onClick: () => { const s = document.getElementById("top-search"); if (s) { s.value = ""; s.focus(); } query = ""; load(); } }), testId: "empty-search" }));
+      return;
+    }
     if (!rows.length) {
       list.append(folder.id === "all"
         ? emptyState({ illus: "documents", title: t("empty.envelopes.title"), text: t("empty.envelopes.text"), action: button(t("nav.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/prepare") }), testId: "empty-envelopes" })

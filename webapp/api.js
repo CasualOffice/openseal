@@ -124,8 +124,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     account: () => data(request("GET", "/api/v1/accounts/me")),
 
     // ---- Envelopes ---------------------------------------------------------
-    listEnvelopes: ({ status, cursor, limit = 25 } = {}) =>
-      data(request("GET", "/api/v1/envelopes", { query: { status, cursor, limit } })),
+    /// `q`: text the subject or a recipient's name or email contains (WEB-04).
+    listEnvelopes: ({ status, cursor, limit = 25, q } = {}) =>
+      data(request("GET", "/api/v1/envelopes", { query: { status, cursor, limit, q } })),
     /// `{envelope, etag}`; the ETag falls back to the version when a proxy drops it.
     async getEnvelope(id) {
       const r = await request("GET", E(id));

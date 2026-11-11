@@ -1,0 +1,3 @@
+# The devtools image needs only its own files (T-2F).
+*
+!deploy/devtools

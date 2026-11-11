@@ -29,6 +29,7 @@ mod http;
 pub mod net;
 pub mod routes;
 mod state;
+pub mod web;
 
 pub mod api;
 

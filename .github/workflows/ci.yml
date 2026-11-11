@@ -192,3 +192,39 @@ jobs:
           name: e2e-results
           path: target/e2e-results
           retention-days: 7
+
+  # T-2F, E2E-01 (Phase 2 exit item 1, in a browser): the Compose deployment built from
+  # this commit, the Playwright specs against it with mock off (sign in, send to two
+  # signers in order, each signs through the link read from Mailpit, the sender downloads
+  # the sealed PDF and certificate), then pyHanko over the downloads against the stack's
+  # generated root. The stack is torn down with its volumes however the job ends.
+  compose-e2e:
+    runs-on: ubuntu-latest
+    env:
+      OPENSEAL_E2E_BASE_URL: http://localhost:8080
+      OPENSEAL_E2E_MAIL_URL: http://127.0.0.1:8025
+      OPENSEAL_E2E_EMAIL: e2e@openseal.test
+      OPENSEAL_E2E_PASSWORD: e2e-only-passphrase
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: docker compose up -d --build --wait
+      - run: docker compose exec -T -e OPENSEAL_ADMIN_PASSWORD="$OPENSEAL_E2E_PASSWORD" server casual-sign-server bootstrap "E2E" "$OPENSEAL_E2E_EMAIL" "E2E Admin"
+      - working-directory: webapp/e2e
+        run: npm ci && npx playwright install --with-deps chromium webkit
+      - working-directory: webapp/e2e
+        run: npx playwright test --project=chromium --project=webkit
+      - run: docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
+      - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
+      - run: /tmp/v/bin/python tools/verify-sealed.py target/e2e-sealed
+      - if: failure()
+        run: mkdir -p target && docker compose logs --no-color > target/compose.log 2>&1
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: compose-e2e-results
+          path: |
+            target/e2e-results
+            target/compose.log
+          retention-days: 7
+      - if: always()
+        run: docker compose down -v

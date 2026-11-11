@@ -409,7 +409,7 @@ pub fn table() -> Vec<Route> {
             webhooks::deliveries,
         ),
         // Ceremony (docs/40 §6).
-        r("GET", "/s/{token}", Public, JSON, ceremony::view),
+        r("GET", "/s/{token}", Public, JSON, ceremony::view_or_page),
         r(
             "POST",
             "/s/{token}/session",
@@ -513,6 +513,7 @@ pub fn app(state: AppState) -> Router {
         router = router.route(route.path, h);
     }
     router
+        .fallback(crate::web::fallback)
         .layer(from_fn_with_state(state.clone(), request_context))
         .with_state(state)
 }

@@ -143,7 +143,7 @@ export const EN = {
   "empty.prepare-recipients.text": "Add the people who sign, and anyone who gets a copy.",
   "empty.recipients.text": "Add the people who sign this envelope.",
   "empty.recipients.title": "No recipients yet",
-  "empty.search.text": "No loaded envelope has “{query}” in its subject.",
+  "empty.search.text": "No envelope has “{query}” in its subject or recipients.",
   "empty.search.title": "No matches",
 
   "envelope.audit": "Audit trail",
