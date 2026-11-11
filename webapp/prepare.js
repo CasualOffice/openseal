@@ -270,7 +270,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   function addRecipient(focus = true) {
     const r = { key: newKey("r"), id: null, name: "", email: "", type: "signer", accessCode: "", order: nextStep() };
     change(() => { S.recipients.push(r); S.active = r.key; });
-    if (focus) setTimeout(() => document.getElementById(`rn-${r.key}`)?.focus(), 0);
+    // To the new name box, unless the user has already gone on to type somewhere.
+    if (focus) setTimeout(() => { if (!document.activeElement?.matches?.("input, select, textarea")) document.getElementById(`rn-${r.key}`)?.focus(); }, 0);
     return r;
   }
   function addMe() {

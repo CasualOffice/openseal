@@ -144,13 +144,7 @@ test("recipients reorder with the arrows and by dragging a card", async ({ page 
   expect(await names()).toEqual(["Two", "One", "Three"]);
   // Dropped on the gap before the first step, a card takes a step of its own there.
   await page.setViewportSize({ width: 1280, height: 1300 }); // both ends on screen: no scroll mid-drag
-  const from = await page.locator(".os-rcpt__grip").nth(2).boundingBox();
-  const to = await page.getByTestId("step-gap").first().boundingBox();
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(from.x + from.width / 2 + 4, from.y + from.height / 2 - 4);
-  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
-  await page.mouse.up();
+  await page.locator(".os-rcpt__grip").nth(2).dragTo(page.getByTestId("step-gap").first());
   expect(await names()).toEqual(["Three", "Two", "One"]);
 });
 

@@ -114,15 +114,10 @@ async function newWithRecipients(page, people) {
 }
 const names = (page) => page.getByTestId("recipient-name").evaluateAll((els) => els.map((e) => e.value));
 const stepsOf = (page) => page.getByTestId("signing-step").evaluateAll((els) => els.map((g) => [...g.querySelectorAll('[data-testid="recipient-name"]')].map((e) => e.value)));
-/// A card dragged by its grip; the pointer leaves the grip first, so the drag starts there.
+/// A card dragged by its grip onto `target` (HTML drag and drop, as Playwright drives it
+/// in each engine).
 async function dragCard(page, source, target) {
-  const s = await source.boundingBox();
-  const d = await target.boundingBox();
-  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(s.x + s.width / 2 + 4, s.y + s.height / 2 + 4);
-  await page.mouse.move(d.x + d.width / 2, d.y + d.height / 2, { steps: 6 });
-  await page.mouse.up();
+  await source.dragTo(target);
 }
 const cardOf = (page, name) => page.locator(".os-rcpt").filter({ has: page.getByLabel(`Signing step for ${name}`) });
 
