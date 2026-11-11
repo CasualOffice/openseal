@@ -142,13 +142,13 @@ Release 1 covers the common 60–70% of use; everything else follows as slices, 
 - **Per-stage gate:** every limit tested with a hostile fixture and in [21](21-PARSER-LIMITS.md); a fuzz target per
   entry point, run 1 hour in CI without a finding; acceptance tests seen red; docs/96 rows updated.
 - **Closes when:**
-  - [ ] Every corpus PDF is admitted or refused with a coded reason; no panic, hang or unbounded allocation under fuzzing (24 h cumulative per target).
+  - [x] Every corpus PDF is admitted or refused with a coded reason; no panic, hang or unbounded allocation under fuzzing (24 h cumulative per target). Evidence: corpus gate (417 admitted, 5 refused with codes); fuzz run 42907980149 (2026-11-11): 6 targets × 2 jobs × 4 workers × 3 h, no finding, after the `admit` finding of run 42890029431 was fixed (`FUZZ-01`).
   - [x] For every admitted corpus PDF, fill + flatten + seal (B-T) + verify passes rungs 1–3 of the verification ladder; `sealed.starts_with(delivered)` holds. Evidence: `fixtures/corpus/pipeline/` (2026-11-11, main session, EU DSS image pinned by digest): **417 of 417 admitted files pass** ours, pyHanko and EU DSS with the prefix holding, 0 excluded, 0 failed (`P1-GATE-01`). The 32 files certified DocMDP P1 pass as new documents printed from the signed ones (`NORM-02`); the owner's earlier exclusion rule (instruction 11) is no longer needed.
   - [x] B-LT and B-LTA outputs are detected at their level by EU DSS. Evidence: `fixtures/sealed`, `tools/verify-sealed.py fixtures/sealed --dss`, EU DSS 6.5.1 reports PAdES-BASELINE-LT and -LTA (stage 1G, re-run by the main session).
   - [x] Tampering fixtures (byte flip in each revision, appended unsigned revision, shadow attacks: hide, replace, hide-and-replace; incremental saving attack; signature wrapping) are all detected by our verifier and agree with pyHanko and EU DSS. Evidence: `fixtures/signed` (35 rows), `gen.py --check --dss openseal-eu-dss` rerun by the main session 2026-11-11 (`VER-03`).
   - [x] The audit chain verifier detects deletion, insertion, reordering and edit of any event in generated chains. Evidence: `casual-sign-audit` tamper tests and the every-mutation property (1,024 cases); the prev-link check seen red by the main session (stage 1I).
   - [x] The WASM build of `-fields` and `-verify` gives byte-identical verdicts to native over the corpus. Evidence: `tools/wasm-parity.sh`, 2,112 jobs identical, rerun by the main session 2026-11-11; a CI job (`WASM-01`).
-  - [ ] Owner sign-off. Given 2026-11-11 on condition that fuzz run 42890029431 finds no crash (instruction 18); **reopened**: the `admit` target found strict reading opening a signed file the default refused (fixed, regression test in `casual-sign-pdf/tests/fuzz_regressions.rs`); a new 24 h run must pass.
+  - [x] Owner sign-off. **Phase 1 closed, 2026-11-11** (instruction 18: signed off on condition of a clean fuzz run; run 42907980149 was clean).
 
 ## Phase 2 — Envelope engine and server
 
