@@ -102,6 +102,7 @@ The PDF, field and cryptographic rows built in Phase 1 are Tested or Partial; se
 | SEC-D01 | PII or content in logs, traces, error messages | Typed errors with ids and counts only (docs/20): built in every engine crate, with tests that no message carries document text or anchor strings (stages 1C, 1F); log scrubber tests over every error code wait for the server | Partial |
 | SEC-D02 | Backups leak data | Backups encrypted with separate keys; restore drill | Planned slice 20 |
 | SEC-D03 | Purge leaves copies (thumbnails, caches, search index) | Every derived artefact keyed by envelope and deleted by the purge job; purge test enumerates stores | Planned slice 15 |
+| SEC-D04 | A recipient learns another recipient's personal data from the signing page (history), or staff read a signer's attachment they may not see | The signer's history answers only `{seq, type, at, by}` for their own events and the envelope's milestones, never another person's name, address, IP, user agent, location or values, and only in the bound browser after authentication and consent; a staff attachment download is per object (`404` for an envelope the caller may not see or another account's), checked against the hash, and recorded as `attachment.downloaded` (`WEB-07`, `WEB-08`) | Tested (`server/casual-sign-server/tests/signer_history.rs`, `tests/lists.rs`; the history filter seen red) |
 
 ## Supply chain (`SEC-C*`)
 

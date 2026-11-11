@@ -279,6 +279,14 @@ pub enum Access {
         /// SHA-256 of the bytes served.
         hash: Hash256,
     },
+    /// A signer's attachment was downloaded (WEB-08): the file an attachment field's
+    /// value names.
+    AttachmentDownloaded {
+        /// The attachment field.
+        field: Id,
+        /// SHA-256 of the bytes served (the value names the same hash).
+        hash: Hash256,
+    },
 }
 
 /// Every command of docs/24. Recipient commands name the recipient; the principal must
@@ -310,6 +318,10 @@ pub enum Command {
     Send,
     /// Delete a draft.
     DeleteDraft,
+    /// Remove an envelope that ended without completing (declined, voided, expired)
+    /// from the sender's lists (WEB-08). Nothing is purged: the chain, the documents
+    /// and the state stay; `envelope.deleted` records who removed it and when.
+    DeleteEnded,
     /// Correct a sent envelope (docs/24 §6).
     Correct {
         /// The changes, applied in order, all or none.
@@ -515,6 +527,7 @@ impl Command {
             Self::Edit { .. } => "edit",
             Self::Send => "send",
             Self::DeleteDraft => "delete_draft",
+            Self::DeleteEnded => "delete_ended",
             Self::Correct { .. } => "correct",
             Self::Void { .. } => "void",
             Self::Resend { .. } => "resend",

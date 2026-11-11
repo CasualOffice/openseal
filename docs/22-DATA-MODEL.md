@@ -255,6 +255,16 @@ mails it, `sent_at`, `accepted_at`, `revoked_at`, `invited_by`; removed with the
 `openseal_resolve_staff_session` replaced to refuse a member disabled in the session's account. Forty-one tables.
 Contacts for autocomplete are a query over `recipients`, not a table.
 
+`0011_envelope_lists.sql` (`WEB-08`) adds `envelopes.updated_at` (last change: the time of the last command that changed
+the envelope, projected from the command's context; an access such as a download is not a change; earlier rows take
+their state row's last write) and `envelopes.deleted_at` (an envelope that ended without completing removed from the
+lists, from the engine state's `deleted_at`; a check allows it only on `declined`, `voided` or `expired`; a soft delete:
+the row, documents, state and chain stay), and indexes for each list sort with `id` as the tie-break
+(`updated_at`, expiry with no expiry as 9999-12-31, `lower(subject)`). `Envelopes::search` is the list: one static,
+parameterized query per sort key and direction (keyset paging on `(key, id)`), filtered by a set of statuses, a sender,
+a text and a last-change range, excluding removed envelopes. A purged draft's recipient rows are removed by the
+projection instead of being blanked (the name check refused the blanks, so deleting a draft with recipients failed).
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 

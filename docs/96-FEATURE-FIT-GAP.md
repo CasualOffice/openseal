@@ -51,7 +51,7 @@ instructions 8 and 9).
 | FG-032 | Conditional routing | DS | Build | 29 | Designed |
 | FG-033 | Signing groups | DS | Build | 29 | — |
 | FG-034 | Scheduled sending; delayed routing | DS | Build | 29 | — |
-| FG-035 | Reassign / assign to someone else | DS, SN | Build | 2 | Designed |
+| FG-035 | Reassign / assign to someone else | DS, SN | Build | 2 | Works (signer's `POST /s/{token}/reassign`, `WEB-07`) |
 | FG-036 | Auto-delegate while away | DS | Build | 29 | — |
 | FG-037 | Free-form signer (places own signature) | SN | Build | 4 | Designed |
 | FG-038 | Per-recipient private message and language | DS | Build | 2 | Designed |
@@ -146,13 +146,13 @@ instructions 8 and 9).
 | --- | --- | --- | --- | --- | --- |
 | FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Designed |
 | FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Designed |
-| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | — |
+| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search, status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
 | FG-133 | Correct | DS | Build | 6 | Designed |
 | FG-134 | Void with reason | DS, SN | Build | 2 | Designed |
 | FG-135 | Resend | DS, SN | Build | 2 | Designed |
 | FG-136 | Copy; save as template | DS | Build | 6 | — |
 | FG-137 | Transfer ownership | DS | Build | 10 | — |
-| FG-138 | History view | DS, SN | Build | 6 | Designed |
+| FG-138 | History view | DS, SN | Build | 6 | Works (staff audit view; the signer's own `GET /s/{token}/history`, `WEB-07`) |
 | FG-139 | Envelope custom fields | DS | Build | 6 | Designed |
 | FG-140 | Reports and CSV export | DS | Build | 6 | — |
 | FG-141 | Insights dashboard | DS | Build | 6 | — |

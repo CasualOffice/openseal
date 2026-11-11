@@ -308,6 +308,7 @@ fn create(
         void_reason: None,
         sealed: Vec::new(),
         purged: false,
+        deleted_at: None,
         book,
     };
     let mut out = Out::new(ctx, actor_for(&ctx.principal, &state));
@@ -486,6 +487,19 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             });
             out.effect(EffectKind::DeleteDraft);
             scrub(s);
+            Ok(())
+        }
+        Command::DeleteEnded => {
+            authorize_sender(s, cmd, ctx)?;
+            let ended = matches!(
+                s.status,
+                EnvelopeStatus::Declined | EnvelopeStatus::Voided | EnvelopeStatus::Expired
+            );
+            if !ended || s.purged || s.deleted_at.is_some() {
+                return Err(not_allowed(cmd, s));
+            }
+            out.event(EventData::EnvelopeDeleted {});
+            s.deleted_at = Some(ctx.now);
             Ok(())
         }
         Command::Correct { changes } => correct(s, cmd, changes, out),
@@ -1961,6 +1975,23 @@ fn record_access(
         }
         Access::CertificateDownloaded { hash } => {
             out.event(EventData::CertificateDownloaded { hash: *hash });
+        }
+        Access::AttachmentDownloaded { field, hash } => {
+            // Only the file the field's value names: the value is the file's SHA-256.
+            let names = s.fields.0.iter().any(|f| {
+                f.id == *field
+                    && matches!(&f.value, Some(FieldValue::Attachment(a)) if a.as_str() == hash.hex())
+            });
+            if !names {
+                return Err(WorkflowError::Unknown {
+                    kind: ObjectKind::Field,
+                    id: Some(field.clone()),
+                });
+            }
+            out.event(EventData::AttachmentDownloaded {
+                field_id: field.clone(),
+                hash: *hash,
+            });
         }
     }
     Ok(())

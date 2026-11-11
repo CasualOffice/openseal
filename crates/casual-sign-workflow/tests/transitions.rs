@@ -188,6 +188,36 @@ fn delete_draft_purges_it_and_nothing_follows() {
     assert_eq!(code(hx.run(sender(), Command::Send)), "CS-WF-0001");
 }
 
+#[test]
+fn delete_ended_takes_only_an_envelope_that_ended_without_completing_and_purges_nothing() {
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1)]);
+    assert_eq!(code(hx.run(sender(), Command::DeleteEnded)), "CS-WF-0001");
+    hx.send();
+    assert_eq!(code(hx.run(sender(), Command::DeleteEnded)), "CS-WF-0001");
+    hx.ok(sender(), Command::Void { reason: text("x") });
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), Command::DeleteEnded)),
+        "CS-WF-0003"
+    );
+    let d = hx.ok(sender(), Command::DeleteEnded);
+    assert_eq!(types(&d), ["envelope.deleted"]);
+    assert!(d.effects.is_empty());
+    let s = hx.state();
+    assert!(s.deleted_at.is_some() && !s.purged);
+    assert_eq!(s.status, EnvelopeStatus::Voided);
+    assert!(!s.recipients[0].spec.email.0.is_empty(), "nothing scrubbed");
+    assert_eq!(code(hx.run(sender(), Command::DeleteEnded)), "CS-WF-0001");
+    // An attachment download must name a file a field's value names.
+    let c = Command::RecordAccess {
+        access: Access::AttachmentDownloaded {
+            field: id("sig-r1"),
+            hash: h(3),
+        },
+    };
+    assert_eq!(code(hx.run(sender(), c)), "CS-WF-0008");
+}
+
 // Routing -----------------------------------------------------------------------------
 
 #[test]
