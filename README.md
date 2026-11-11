@@ -68,8 +68,7 @@ and open <http://127.0.0.1:8130/app.html?mock=1> (demo mode; sign in as `demo@op
 
 Docs are true as of 2026-11-11. **Pre-alpha.** The headless engine is complete and tested against 422 real-world PDFs.
 The workflow engine, persistence, key service, API server and job worker are built and merged; the web app is being
-built. **Phases D, 0 and 1 are closed** (owner, 2026-11-11; Phase 1 after a clean 24 h
-fuzz run). **Phase 2** is open early under waiver `W-1`.
+built. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12). v0.0.1, the first pre-release, is being cut. **Phase 2** is open early under waiver `W-1`.
 **Release 1** (the common send-and-sign case, [docs/06](docs/06-ROADMAP-AND-DELIVERY.md)) comes next.
 
 | Phase | Exit gate | State |
@@ -77,7 +76,7 @@ fuzz run). **Phase 2** is open early under waiver `W-1`.
 | D — Design | **Closed** (6 of 6) | All design docs and research; doc audit fixed; ADR-001 to 024 Accepted; owner decisions `DEC-01` to `14` answered. Signed off 2026-11-11 |
 | 0 — Foundation | **Closed** (4 of 4) | CI green on GitHub (Linux, macOS, Windows), every CI job seen failing on a seeded violation (PR #1), 422-PDF corpus, 50 hostile fixtures, pyHanko and EU DSS validators, spikes. Signed off 2026-11-11 |
 | 1 — PDF and evidence core | **Closed** (7 of 7) | Every admitted corpus PDF (417 of 417) filled, flattened, sealed and verified by ours, pyHanko and EU DSS; tamper and signature-wrapping fixtures detected by all three; WASM byte-identical to native; 24 h of fuzzing per target with no finding. Signed off 2026-11-11 |
-| 2 — Envelope engine and server | 6 of 6 stages built; exit item 1 met locally | Workflow engine, persistence, API server, job worker, keyd, and the Docker Compose deployment. A browser test sends a two-signer envelope on the stack, both sign through emailed links, and the sealed PDF passes pyHanko. Left: the same green on GitHub (`compose-e2e`), crash tests on the stack, threat tests, sign-off |
+| 2 — Envelope engine and server | **Closed** (5 of 5) | Workflow engine, persistence, API server, job worker, keyd and the Docker Compose deployment; end-to-end on the stack green in CI; crash tests with real process kills; tenant isolation over every operation; every access and web threat with a test seen red. Signed off 2026-11-12 |
 | Release 1 and slices 1–35 | — | Release 1 scope set (owner, 2026-11-11): slice 1 send and sign with routing, templates, API and webhooks; the rest follows slice by slice |
 
 **What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):

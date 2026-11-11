@@ -65,7 +65,7 @@ Every task, none of it optional:
 
 Docs are true as of `40b9429` (2026-11-11).
 
-**Phases D, 0 and 1 are closed** (owner, 2026-11-11; Phase 1 after clean fuzz run 42907980149). Phase 2 is open early under waiver `W-1`**
+**Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11; Phase 1 after clean fuzz run 42907980149). Phase 2 is open early under waiver `W-1`**
 (`DEC-13`). `W-2` is retired. The repository is public; GitHub CI runs, and `tools/ci-local.sh` stays the pre-push gate.
 
 - **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm

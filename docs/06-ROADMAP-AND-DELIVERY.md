@@ -190,15 +190,15 @@ is cut when every box below is ticked, from evidence, not from intent (`REL-01`)
 | **2F** | Single-node deployment: Docker images, Compose with Postgres, MinIO, Mailpit; [65](65-RUNNING-IT.md) |
 
 - **Closes when:**
-  - [ ] An API-driven end-to-end test sends a two-signer sequential envelope, signs through the ceremony endpoints, and downloads a sealed PDF that passes rungs 1–3, on the Compose deployment in CI.
+  - [x] An API-driven end-to-end test sends a two-signer sequential envelope, signs through the ceremony endpoints, and downloads a sealed PDF that passes rungs 1–3, on the Compose deployment in CI. Evidence: GitHub CI `compose-e2e` green (run 43112163812, 2026-11-12): two signers through emailed links on the Compose stack, sealed PDF and certificate accepted by pyHanko (`E2E-01`).
   - [x] Crash tests: killing the server or worker at every effect boundary loses no audit event and never yields `completed` without a verified seal. (`P2-CRASH`: in-process `server/casual-sign-worker/tests/crash.rs` and real-process `tests/process_crash.rs`, SIGKILL at each boundary, docs/24 §As built.)
-  - [ ] Tenant isolation tests: every endpoint refuses cross-tenant ids (generated from the OpenAPI document), with RLS disabled and enabled.
+  - [x] Tenant isolation tests: every endpoint refuses cross-tenant ids (generated from the OpenAPI document), with RLS disabled and enabled. Evidence: `casual-sign-server` isolation tests generated from `api/openapi.yaml` over every id-bearing operation, RLS on and off, green in GitHub CI `server-db` (run 43112163812); store-level guards seen red (`T-2B`, `T-2C`, `P2-THREATS`).
   - [x] Threats `SEC-A*`, `SEC-T*`, `SEC-W*` in [07](07-SECURITY-THREAT-MODEL.md) have tests seen red.
     (2026-11-12, `P2-THREATS`: every `SEC-A01`–`A10` and `SEC-W01`–`W02` row has a test
     seen red, A02 and A07 last; docs/07 has no `SEC-T` rows. Out of scope, with the slice
     each row names: SMS and voice codes (slice 5), per-account `frame-ancestors` (slice 9),
     and the other parts the rows mark "Not built".)
-  - [ ] Owner sign-off.
+  - [x] Owner sign-off. **Phase 2 closed, 2026-11-12** (instruction 23: signed off once its exit items were met).
 
 ## After Phase 2 — vertical slices
 
