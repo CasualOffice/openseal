@@ -789,6 +789,31 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     assert_eq!(wrong.status, StatusCode::FORBIDDEN);
+    // An emailed code is refused for a recipient whose sender did not require one (the
+    // ceremony itself: casual-sign-worker's tests/email_otp.rs).
+    let otp = api
+        .call(
+            "POST",
+            &format!("{s1}/otp"),
+            &Auth::None,
+            Some(json!({})),
+            &h1,
+        )
+        .await;
+    assert_eq!(
+        (otp.status, otp.code().as_str()),
+        (StatusCode::CONFLICT, "CS-API-0014")
+    );
+    let otp = api
+        .call(
+            "POST",
+            &format!("{s1}/otp/verify"),
+            &Auth::None,
+            Some(json!({"code": "123456"})),
+            &h1,
+        )
+        .await;
+    assert!(otp.status.is_client_error(), "{:?}", otp.json());
     ok(
         api.call(
             "POST",

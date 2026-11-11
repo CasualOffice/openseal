@@ -41,6 +41,7 @@ pub const KINDS: &[&str] = &[
     PURGE_DATA,
     DELETE_DRAFT,
     SEND_USER_INVITATION,
+    SEND_EMAIL_OTP,
 ];
 
 /// `SendInvitation`.
@@ -94,6 +95,40 @@ pub fn user_invitation_job(id: JobId, invitation: Uuid, now: time::OffsetDateTim
         payload: serde_json::json!({ "invitation_id": invitation }),
         run_at: now,
         max_attempts: 15,
+    }
+}
+
+/// Not an effect (SEC-A02): draw a recipient's email one-time code, store only its
+/// Argon2id hash and email it. Its payload is [`EmailOtpJob`]: ids only, never the code,
+/// which the worker draws as it sends.
+pub const SEND_EMAIL_OTP: &str = "send_email_otp";
+
+/// The payload of a [`SEND_EMAIL_OTP`] job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmailOtpJob {
+    /// The code's row (`recipient_otp_codes.id`).
+    pub code_id: Uuid,
+}
+
+/// Job `id` sending the code of row `code` on `envelope`, due at `now`. A code is sent
+/// once, and a failed delivery leaves the recipient to ask for another, so only a few
+/// attempts (within the code's 10 minutes).
+#[must_use]
+pub fn email_otp_job(
+    id: JobId,
+    envelope: EnvelopeId,
+    code: Uuid,
+    now: time::OffsetDateTime,
+) -> NewJob {
+    NewJob {
+        id,
+        envelope_id: Some(envelope),
+        kind: SEND_EMAIL_OTP.to_owned(),
+        idempotency_key: format!("email-otp:{code}"),
+        payload: serde_json::json!({ "code_id": code }),
+        run_at: now,
+        max_attempts: 3,
     }
 }
 

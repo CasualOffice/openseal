@@ -491,6 +491,178 @@ pub(crate) async fn authenticate(
     })
 }
 
+/// How long an email one-time code works (SEC-A02).
+const OTP_TTL: time::Duration = time::Duration::minutes(10);
+/// The shortest wait between two codes for one recipient.
+const OTP_RESEND_AFTER: time::Duration = time::Duration::seconds(30);
+/// Codes one recipient may be sent in an hour.
+const OTP_PER_HOUR: i64 = 5;
+/// Code requests per link, and per email address, in a minute.
+const OTP_PER_MINUTE: u32 = 3;
+/// Wrong tries that spend one code, whatever the account's lockout limit.
+const OTP_TRIES: i32 = 5;
+
+/// `POST /s/{token}/otp`: email the recipient a one-time code (SEC-A02), `202` with
+/// the view. Records `recipient.auth_challenged` (`email_otp`) and queues the worker's
+/// `send_email_otp` job, which draws the code, stores only its Argon2id hash and emails
+/// it; any earlier code stops working. Limited per link and per address (3 a minute),
+/// and per recipient (30 seconds apart, 5 an hour): `CS-API-0003` with `Retry-After`.
+pub(crate) async fn otp_send(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Response {
+    let link = Hash256(sha256(token.as_bytes())).hex();
+    if let Err(r) = limit(&st, "otp", &format!("otp-link:{link}"), OTP_PER_MINUTE) {
+        return r;
+    }
+    let limiter = st.clone();
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let _ = location_in(&body)?;
+        let r = o.recipient.clone();
+        let me = o.l.state.recipient(&r).ok_or_else(ApiError::expired)?;
+        if !me.spec.auth.contains(&AuthMethod::EmailOtp) {
+            return Err(ApiError::method_unavailable());
+        }
+        if me.auth_passed.contains(&AuthMethod::EmailOtp) {
+            return Err(ApiError::not_available("already authenticated"));
+        }
+        let email = me.spec.email.0.as_str().trim().to_lowercase();
+        if email.is_empty() {
+            return Err(ApiError::method_unavailable());
+        }
+        let addr = Hash256(sha256(email.as_bytes())).hex();
+        let now = o.cmds.now;
+        let d = limiter
+            .0
+            .limiter
+            .hit(&format!("otp-addr:{addr}"), OTP_PER_MINUTE, now);
+        if !d.allowed {
+            return Err(ApiError::rate_limited(d.reset_secs));
+        }
+        let rid = RecipientId(uid(&r)?);
+        let (recent, latest) =
+            o.tx.recipients()
+                .otp_history(rid, now.saturating_sub(time::Duration::HOUR))
+                .await?;
+        if let Some(l) = latest {
+            let next = l.saturating_add(OTP_RESEND_AFTER);
+            if now < next {
+                let wait = next
+                    .unix_timestamp()
+                    .saturating_sub(now.unix_timestamp())
+                    .max(1);
+                return Err(ApiError::rate_limited(u64::try_from(wait).unwrap_or(30)));
+            }
+        }
+        if recent >= OTP_PER_HOUR {
+            return Err(ApiError::rate_limited(600));
+        }
+        o.run(Command::ChallengeAuth {
+            recipient: r,
+            method: AuthMethod::EmailOtp,
+        })
+        .await?;
+        let code = uuid::Uuid::now_v7();
+        o.tx.recipients()
+            .open_otp(rid, code, now, now.saturating_add(OTP_TTL))
+            .await?;
+        let job = casual_sign_host::jobs::email_otp_job(
+            casual_sign_store::JobId(uuid::Uuid::now_v7()),
+            o.l.id,
+            code,
+            now,
+        );
+        o.tx.jobs().enqueue(&job).await?;
+        Ok(StatusCode::ACCEPTED)
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OtpIn {
+    code: String,
+}
+
+/// `POST /s/{token}/otp/verify {code}`: check the recipient's open email one-time code
+/// (Argon2id, whose comparison is constant-time). A pass spends the code (a replay
+/// fails) and records `recipient.auth_passed`; anything else (wrong, expired, spent,
+/// none sent) records `recipient.auth_failed`, which the engine counts to the account's
+/// lockout (`max_auth_attempts`), when it locks the recipient and revokes the link, as
+/// for an access code. Five wrong tries spend a code whatever that limit.
+pub(crate) async fn otp_verify(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Response {
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let req: OtpIn = parse(&body)?;
+        let r = o.recipient.clone();
+        let rid = RecipientId(uid(&r)?);
+        let now = o.cmds.now;
+        let open = o.tx.recipients().open_otp_code(Some(rid), None).await?;
+        let code = req.code.trim().to_owned();
+        let well_formed = code.len() == 6 && code.bytes().all(|b| b.is_ascii_digit());
+        let mut passed = false;
+        if let Some(c) = &open
+            && let Some(phc) = c.code_hash.clone()
+            && c.expires_at > now
+            && well_formed
+        {
+            passed = tokio::task::spawn_blocking(move || verify_password(&code, &phc))
+                .await
+                .unwrap_or(false);
+        }
+        if let Some(c) = &open
+            && c.code_hash.is_some()
+        {
+            if passed {
+                o.tx.recipients()
+                    .close_otp(
+                        rid,
+                        casual_sign_store::repo::recipients::OtpClosed::Used,
+                        now,
+                    )
+                    .await?;
+            } else if o.tx.recipients().otp_failed(c.id).await? >= OTP_TRIES {
+                o.tx.recipients()
+                    .close_otp(
+                        rid,
+                        casual_sign_store::repo::recipients::OtpClosed::Exhausted,
+                        now,
+                    )
+                    .await?;
+            }
+        }
+        o.run(Command::AuthResult {
+            recipient: r.clone(),
+            method: AuthMethod::EmailOtp,
+            passed,
+        })
+        .await?;
+        if o.l.state.recipient(&r).is_some_and(|x| x.auth_locked) {
+            o.tx.recipients()
+                .close_otp(
+                    rid,
+                    casual_sign_store::repo::recipients::OtpClosed::Revoked,
+                    now,
+                )
+                .await?;
+        }
+        Ok(if passed {
+            StatusCode::OK
+        } else {
+            StatusCode::FORBIDDEN
+        })
+    })
+}
+
 /// `GET /s/{token}/documents/{doc}/content`: the document as delivered (normalized).
 pub(crate) async fn document(
     State(st): State<AppState>,

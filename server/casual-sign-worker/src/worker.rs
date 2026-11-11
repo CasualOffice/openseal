@@ -285,6 +285,35 @@ fn store_err(e: casual_sign_store::StoreError) -> WorkerError {
     WorkerError::Store(e)
 }
 
+/// A uniformly drawn 6-digit code: 32 random bits, redrawn above the largest multiple
+/// of 10^6 (no modulo bias).
+fn one_time_code() -> Result<String> {
+    const LIMIT: u32 = 4_294_000_000;
+    loop {
+        let mut raw = [0u8; 4];
+        aws_lc_rs::rand::fill(&mut raw).map_err(|_| WorkerError::Config { setting: "rng" })?;
+        let v = u32::from_le_bytes(raw);
+        if v < LIMIT {
+            return Ok(format!("{:06}", v % 1_000_000));
+        }
+    }
+}
+
+/// The code's Argon2id PHC string, with the API server's parameters (it verifies).
+fn hash_code(code: &str) -> Result<String> {
+    use argon2::password_hash::{PasswordHasher, SaltString};
+    use argon2::{Algorithm, Argon2, Params, Version};
+    let failed = || WorkerError::Config { setting: "argon2" };
+    let mut salt = [0u8; 16];
+    aws_lc_rs::rand::fill(&mut salt).map_err(|_| WorkerError::Config { setting: "rng" })?;
+    let salt = SaltString::encode_b64(&salt).map_err(|_| failed())?;
+    let params = Params::new(19 * 1024, 2, 1, None).map_err(|_| failed())?;
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
+        .hash_password(code.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .map_err(|_| failed())
+}
+
 impl<B: BlobStore + 'static> Worker<B> {
     /// A worker over `store` and `blobs`.
     #[allow(clippy::too_many_arguments)]
@@ -488,6 +517,9 @@ impl<B: BlobStore + 'static> Worker<B> {
     async fn dispatch(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
         if job.kind == casual_sign_host::jobs::SEND_USER_INVITATION {
             return self.user_invitation(job, lease).await;
+        }
+        if job.kind == casual_sign_host::jobs::SEND_EMAIL_OTP {
+            return self.email_otp(job, lease).await;
         }
         let payload = jobs::parse(&job.kind, &job.payload)?;
         let envelope = EnvelopeId(payload.envelope_id);
@@ -830,6 +862,99 @@ impl<B: BlobStore + 'static> Worker<B> {
             .record(
                 job.id,
                 "email.invitation",
+                &serde_json::json!({
+                    "outcome": if matches!(sent, Sent::Accepted) { "accepted" } else { "bounced" },
+                    "message_id": msg.message_id,
+                }),
+                now,
+            )
+            .await?;
+        self.close_job(tx, job, lease).await
+    }
+
+    /// `send_email_otp` (SEC-A02): draw the recipient's 6-digit code (uniform, from the
+    /// system's random source), store only its Argon2id PHC string on the open code's
+    /// row, and email it; nothing for a code closed, sent or expired meanwhile. The code
+    /// lives only in this function and the message: never in the job, a step, a log or
+    /// the audit chain. A message lost after the row is marked sent is not resent (the
+    /// recipient asks for another code).
+    async fn email_otp(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: casual_sign_host::jobs::EmailOtpJob =
+            serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        let envelope = job.envelope_id.ok_or_else(bad)?;
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        let now = self.now();
+        let open = tx
+            .recipients()
+            .open_otp_code(None, Some(p.code_id))
+            .await?
+            .filter(|c| c.code_hash.is_none() && c.expires_at > now);
+        let Some(code_row) = open else {
+            return self.close_job(tx, job, lease).await;
+        };
+        let person = tx
+            .recipients()
+            .get(code_row.recipient_id)
+            .await?
+            .ok_or(WorkerError::SealInput { what: "recipient" })?;
+        let to = person
+            .recipient
+            .email
+            .clone()
+            .ok_or(WorkerError::NoChannel)?;
+        let subject = tx
+            .envelopes()
+            .get(envelope)
+            .await?
+            .ok_or(WorkerError::SealInput { what: "envelope" })?
+            .subject;
+        let code = one_time_code()?;
+        let phc = {
+            let code = code.clone();
+            tokio::task::spawn_blocking(move || hash_code(&code))
+                .await
+                .map_err(|_| WorkerError::Config { setting: "argon2" })??
+        };
+        if !tx
+            .recipients()
+            .otp_sent(code_row.id, &casual_sign_audit::Personal(phc), now)
+            .await?
+        {
+            return self.close_job(tx, job, lease).await;
+        }
+        tx.commit().await?;
+        let mailer = self.mailer.as_ref().ok_or(WorkerError::NoChannel)?;
+        let (subject, body) = email::render(
+            Template::EmailOtp,
+            &Fill {
+                name: person.recipient.name.get(),
+                subject: subject.get(),
+                message: "",
+                link: Some(&code),
+                product: &self.config.product,
+                abuse: &self.config.abuse,
+            },
+        );
+        let msg = Message {
+            from: self.config.mail_from.clone(),
+            from_name: self.config.mail_from_name.clone(),
+            to: to.get().clone(),
+            to_name: person.recipient.name.get().clone(),
+            subject,
+            body,
+            message_id: self.message_id(job.id, "otp"),
+            date: now,
+        };
+        let sent = mailer.send(&msg).await?;
+        self.boundary(Boundary::EmailSent, &job.kind).await;
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        tx.job_steps()
+            .record(
+                job.id,
+                "email.otp",
                 &serde_json::json!({
                     "outcome": if matches!(sent, Sent::Accepted) { "accepted" } else { "bounced" },
                     "message_id": msg.message_id,

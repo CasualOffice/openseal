@@ -329,6 +329,8 @@ pub enum Template {
     UserInvitation,
     /// A correction changed what this recipient must do.
     Corrected,
+    /// A recipient's email one-time code (SEC-A02): `link` carries the code.
+    EmailOtp,
 }
 
 /// What fills a template: the only supplied text.
@@ -400,6 +402,10 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
             format!("You are invited to {} on {}", f.subject, f.product),
             "An administrator added you to this account. Set your password with the link below. It works once and expires in 7 days; if it has expired, ask the administrator to send it again.",
         ),
+        Template::EmailOtp => (
+            format!("Your verification code: {}", f.subject),
+            "Enter this code on the signing page to open the documents. It works once and expires in 10 minutes. If you did not ask for it, ignore this email.",
+        ),
     };
     let mut body = String::new();
     if !f.name.is_empty() {
@@ -413,11 +419,19 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
         body.push_str("\n\n");
     }
     if let Some(link) = f.link {
+        if template == Template::EmailOtp {
+            body.push_str("Your code: ");
+        }
         body.push_str(link);
         body.push_str("\n\n");
     }
+    let warning = if template == Template::EmailOtp {
+        "Do not share this code: it opens the documents"
+    } else {
+        "Do not share this email: its link gives access to the documents"
+    };
     body.push_str(&format!(
-        "This message was sent by {}. Do not share this email: its link gives access to the documents.\nReport abuse: {}\n",
+        "This message was sent by {}. {warning}.\nReport abuse: {}\n",
         f.product, f.abuse
     ));
     (subject, body)

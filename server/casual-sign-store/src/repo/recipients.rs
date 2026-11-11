@@ -632,3 +632,224 @@ pub struct Contact {
     /// When it was last used on a recipient.
     pub last_used: OffsetDateTime,
 }
+
+/// A recipient's open email one-time code (SEC-A02): only its Argon2id PHC string.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OtpCode {
+    /// The code's row.
+    pub id: Uuid,
+    /// The recipient.
+    pub recipient_id: RecipientId,
+    /// The code's Argon2id PHC string; `None` until the worker has sent it.
+    pub code_hash: Option<String>,
+    /// When it stops working.
+    pub expires_at: OffsetDateTime,
+    /// Wrong tries against it so far.
+    pub attempts: i32,
+}
+
+impl core::fmt::Debug for OtpCode {
+    /// Never the hash (a 6-digit code's hash is guessable offline).
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("OtpCode")
+            .field("id", &self.id)
+            .field("attempts", &self.attempts)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Why a one-time code closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OtpClosed {
+    /// It passed; a replay is refused.
+    Used,
+    /// A newer code replaced it.
+    Superseded,
+    /// Too many wrong tries against it.
+    Exhausted,
+    /// The recipient was locked.
+    Revoked,
+}
+
+impl OtpClosed {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Used => "used",
+            Self::Superseded => "superseded",
+            Self::Exhausted => "exhausted",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl Recipients<'_> {
+    /// Open a new email one-time code `id` for `recipient`, expiring at `expires`,
+    /// closing any open one (`superseded`): at most one is open (a partial unique index).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` when the recipient is not this account's.
+    pub async fn open_otp(
+        &mut self,
+        recipient: RecipientId,
+        id: Uuid,
+        now: OffsetDateTime,
+        expires: OffsetDateTime,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "UPDATE recipient_otp_codes SET closed_at = $3, closed_reason = 'superseded' \
+             WHERE account_id = $1 AND recipient_id = $2 AND closed_at IS NULL",
+            acct,
+            recipient.0,
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        sqlx::query!(
+            "INSERT INTO recipient_otp_codes (id, account_id, recipient_id, created_at, \
+             expires_at) VALUES ($3, $1, $2, $4, $5)",
+            acct,
+            recipient.0,
+            id,
+            now,
+            expires
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    /// How many codes `recipient` was given since `since`, and when the latest was
+    /// opened.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn otp_history(
+        &mut self,
+        recipient: RecipientId,
+        since: OffsetDateTime,
+    ) -> Result<(i64, Option<OffsetDateTime>)> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            r#"SELECT count(*) FILTER (WHERE created_at >= $3) AS "n!",
+                      max(created_at) AS latest
+                 FROM recipient_otp_codes WHERE account_id = $1 AND recipient_id = $2"#,
+            acct,
+            recipient.0,
+            since
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok((row.n, row.latest))
+    }
+
+    /// The open code of `recipient`, or (with `recipient` `None`) the open code with
+    /// row `id`, locked for this transaction.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn open_otp_code(
+        &mut self,
+        recipient: Option<RecipientId>,
+        id: Option<Uuid>,
+    ) -> Result<Option<OtpCode>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "SELECT id, recipient_id, code_hash, expires_at, attempts FROM recipient_otp_codes \
+             WHERE account_id = $1 AND closed_at IS NULL \
+               AND ($2::uuid IS NULL OR recipient_id = $2) AND ($3::uuid IS NULL OR id = $3) \
+             FOR UPDATE",
+            acct,
+            recipient.map(|r| r.0),
+            id
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| OtpCode {
+            id: r.id,
+            recipient_id: RecipientId(r.recipient_id),
+            code_hash: r.code_hash,
+            expires_at: r.expires_at,
+            attempts: r.attempts,
+        }))
+    }
+
+    /// Record that open, unsent code `id` was sent, with its Argon2id PHC string; false
+    /// when it was closed or sent meanwhile.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn otp_sent(
+        &mut self,
+        id: Uuid,
+        phc: &Personal<String>,
+        now: OffsetDateTime,
+    ) -> Result<bool> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE recipient_otp_codes SET code_hash = $3, sent_at = $4 \
+             WHERE account_id = $1 AND id = $2 AND closed_at IS NULL AND code_hash IS NULL",
+            acct,
+            id,
+            phc.get(),
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// Count a wrong try against code `id`; returns the tries so far.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when there is no such code.
+    pub async fn otp_failed(&mut self, id: Uuid) -> Result<i32> {
+        let acct = self.tx.acct();
+        let n = sqlx::query_scalar!(
+            "UPDATE recipient_otp_codes SET attempts = attempts + 1 \
+             WHERE account_id = $1 AND id = $2 RETURNING attempts",
+            acct,
+            id
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        n.ok_or(StoreError::NotFound { entity: "otp code" })
+    }
+
+    /// Close `recipient`'s open code, if any, for `why`.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn close_otp(
+        &mut self,
+        recipient: RecipientId,
+        why: OtpClosed,
+        now: OffsetDateTime,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "UPDATE recipient_otp_codes SET closed_at = $3, closed_reason = $4 \
+             WHERE account_id = $1 AND recipient_id = $2 AND closed_at IS NULL",
+            acct,
+            recipient.0,
+            now,
+            why.as_str()
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+}

@@ -105,6 +105,10 @@ impl RecipientIn {
         {
             return Err(ApiError::invalid(&format!("{at}/access_code")));
         }
+        // An email one-time code needs an address to send it to (SEC-A02).
+        if self.auth.contains(&AuthMethod::EmailOtp) && email.is_empty() {
+            return Err(ApiError::invalid(&format!("{at}/auth")));
+        }
         let embedded = self
             .embedded_client_user_id
             .as_deref()
