@@ -185,6 +185,9 @@ test.describe("desktop", () => {
     await page.getByRole("menuitem", { name: "View history" }).click();
     const hist = page.getByRole("dialog", { name: "History" });
     await expect(hist.getByText("You agreed to electronic records")).toBeVisible();
+    // The server's dotted audit types (WEB-07), and who acted without naming them.
+    await expect(hist.locator('[data-type="envelope.sent"]')).toContainText("by the sender");
+    await expect(hist.locator('[data-type*="_"]:not([data-type*="."])')).toHaveCount(0);
     await expectAccessible(page, "history panel");
     await hist.getByRole("button", { name: "Close" }).first().click();
 

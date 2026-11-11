@@ -1058,21 +1058,34 @@ function help() {
   });
 }
 
+// The server's audit event types (casual-sign-audit, dotted; `GET /s/{token}/history`,
+// WEB-07), each as this recipient reads it. `by` says who acted: `you`, `sender`,
+// `recipient` (another, never named), `user`, `host` or `system`.
 const HISTORY = {
-  envelope_sent: "sign.history.sent",
-  recipient_opened: "sign.history.opened",
-  recipient_authenticated: "sign.history.authenticated",
-  recipient_auth_failed: "sign.history.auth-failed",
-  recipient_consented: "sign.history.consented",
-  document_viewed: "sign.history.viewed",
-  signature_adopted: "sign.history.adopted",
-  field_filled: "sign.history.filled",
-  recipient_finish_later: "sign.history.later",
-  recipient_completed: "sign.history.completed",
-  recipient_declined: "sign.history.declined",
-  envelope_completed: "sign.history.envelope-completed",
-  seal_applied: "sign.history.sealed",
+  "envelope.sent": "sign.history.sent",
+  "envelope.corrected": "sign.history.corrected",
+  "envelope.voided": "sign.history.voided",
+  "envelope.declined": "sign.history.envelope-declined",
+  "envelope.expired": "sign.history.expired",
+  "envelope.completing": "sign.history.completing",
+  "envelope.completed": "sign.history.envelope-completed",
+  "recipient.delivered": "sign.history.opened",
+  "recipient.auth_passed": "sign.history.authenticated",
+  "recipient.auth_failed": "sign.history.auth-failed",
+  "recipient.consented": "sign.history.consented",
+  "recipient.viewed_document": "sign.history.viewed",
+  "recipient.signature_adopted": "sign.history.adopted",
+  "recipient.field_completed": "sign.history.filled",
+  "recipient.finish_later": "sign.history.later",
+  "recipient.signed": "sign.history.completed",
+  "recipient.approved": "sign.history.approved",
+  "recipient.completed": "sign.history.completed",
+  "recipient.declined": "sign.history.declined",
+  "recipient.reassigned": "sign.history.reassigned",
+  "document.sealed": "sign.history.sealed",
 };
+/// Who acted, for an event someone other than this recipient did.
+const BY = { sender: "sign.history.by-sender", recipient: "sign.history.by-recipient", user: "sign.history.by-user", host: "sign.history.by-host" };
 
 /// View history (G-S2): the envelope's events this recipient may see, newest first.
 function history() {
@@ -1089,8 +1102,10 @@ function history() {
         if (!events.length) { list.append(h("li", { class: "os-muted", text: t("sign.history.none") })); return; }
         for (const e of events) {
           const key = HISTORY[e.type];
-          list.append(h("li", { class: "os-history__item" },
-            h("span", { class: "os-history__what", text: key ? t(key) : String(e.type || "").replace(/_/g, " ") }),
+          const by = BY[e.by];
+          list.append(h("li", { class: "os-history__item", attrs: { "data-type": String(e.type || "") } },
+            h("span", { class: "os-history__what", text: key ? t(key) : String(e.type || "").replace(/[._]/g, " ") }),
+            by ? h("span", { class: "os-history__by os-muted os-small", text: t(by) }) : null,
             h("time", { class: "os-history__when os-muted os-small", attrs: { datetime: e.at || "" }, text: fmtDate(e.at) })));
         }
       }).catch((err) => {
