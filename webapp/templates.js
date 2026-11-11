@@ -22,7 +22,7 @@ export function mount(view, ctx) {
   const head = h("div", { class: "os-page-head" },
     h("h1", { class: "os-page-title", text: t("templates.title") }),
     button(t("templates.new"), { icon: "plus", variant: "primary", command: "template.new", onClick: () => ctx.navigate("#/templates/new") }));
-  const list = h("div", { class: "os-list", attrs: { "aria-live": "polite" } });
+  const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
   view.append(head, h("p", { class: "os-muted os-lede", text: t("templates.lede") }), list);
 
   async function load() {

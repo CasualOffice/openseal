@@ -81,9 +81,10 @@ async function expectPainted(page, selector, what) {
   await expect.poll(blank, { message: `blank canvases on ${what}`, timeout: 10_000 }).toBe(0);
 }
 
-async function shot(page, name, viewport) {
+async function shot(page, name, viewport, fullPage = true) {
   fs.mkdirSync(SHOTS, { recursive: true });
-  await page.screenshot({ path: path.join(SHOTS, `visual-${viewport}-${name}.png`), fullPage: true, animations: "disabled" });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: path.join(SHOTS, `visual-${viewport}-${name}.png`), fullPage, animations: "disabled" });
 }
 
 for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]]) {
@@ -168,7 +169,8 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
       await context.grantPermissions(["geolocation"]);
       await context.setGeolocation({ latitude: 52.37, longitude: 4.89, accuracy: 25 });
-      const check = async (name) => { await checkLayout(page, `${vp} ${name}`); await shot(page, name, vp); };
+      // The signing page has fixed bars: the shots show the viewport, as a signer sees it.
+      const check = async (name) => { await checkLayout(page, `${vp} ${name}`); await shot(page, name, vp, false); };
       await page.goto(signPage(tokens.sign));
       await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
       await check("20-sign-code");
@@ -187,7 +189,7 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       const dlg = page.getByRole("dialog", { name: "Adopt your signature" });
       await expect(dlg).toBeVisible();
       await checkLayout(page, `${vp} adopt`);
-      await shot(page, "23-sign-adopt", vp);
+      await page.screenshot({ path: path.join(SHOTS, `visual-${vp}-23-sign-adopt.png`), animations: "disabled" });
       await dlg.getByTestId("adopt-confirm").click();
       await expect(dlg).toBeHidden();
       await page.getByRole("button", { name: "Finish" }).click();

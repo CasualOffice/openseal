@@ -677,6 +677,7 @@ export const EN = {
   "prepare.move-doc-up": "Move {name} earlier",
   "prepare.move-doc-down": "Move {name} later",
   "prepare.pages-long": "{n} pages",
+  "prepare.page-one": "1 page",
   "prepare.set-order": "Set signing order",
   "prepare.routing-sequential-help": "Signers get the envelope one after another, in the order shown.",
   "prepare.routing-parallel-help": "All signers get the envelope at once.",
@@ -688,6 +689,8 @@ export const EN = {
 
   // ---- WEB-03: the signer's review, field list and zoom ----------------------------
   "sign.zoom-in": "Zoom in",
+  "sign.location.chip-shared": "Location shared",
+  "sign.location.chip-not": "Location not shared",
   "sign.zoom-out": "Zoom out",
   "sign.fields.button": "Fields",
   "sign.fields.title": "Your fields",

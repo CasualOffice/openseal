@@ -10,7 +10,7 @@
 import { h, clear } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, emptyState, skeletonRows, errorState, openDialog, confirmDialog, toast, toastError } from "./ui/index.js";
+import { button, emptyState, skeletonRows, errorState, openDialog, confirmDialog, toast, toastError, selectField, tabs } from "./ui/index.js";
 
 const PROFILES = ["admin", "sender", "viewer"];
 const SCOPES = ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write"];
@@ -18,34 +18,20 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export function mount(view, ctx, _match, params) {
   const tab = params?.get("tab") === "api" ? "api" : "users";
-  const tabs = h("div", { class: "os-tabs", attrs: { role: "tablist", "aria-label": t("admin.sections") } });
-  const panel = h("div", { class: "os-tabpanel", attrs: { role: "tabpanel", id: "admin-panel", tabindex: "0" } });
-  const names = { users: t("admin.users"), api: t("admin.api") };
-  const btns = {};
-  for (const key of ["users", "api"]) {
-    const b = h("button", { type: "button", class: "os-tab", id: `admin-tab-${key}`, attrs: { role: "tab", "aria-selected": String(key === tab), "aria-controls": "admin-panel", tabindex: key === tab ? "0" : "-1" } },
-      icon(key === "users" ? "users" : "key-round", { size: 16 }), h("span", { text: names[key] }));
-    b.addEventListener("click", () => ctx.navigate(key === "users" ? "#/admin" : "#/admin?tab=api"));
-    b.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-        e.preventDefault();
-        const other = key === "users" ? "api" : "users";
-        btns[other].focus();
-        btns[other].click();
-      }
-    });
-    btns[key] = b;
-    tabs.append(b);
-  }
-  panel.setAttribute("aria-labelledby", `admin-tab-${tab}`);
-  view.append(h("div", { class: "os-page-head" }, h("h1", { class: "os-page-title", text: t("admin.title") })), tabs, panel);
-  if (tab === "users") users(panel, ctx); else clients(panel, ctx);
+  view.append(h("div", { class: "os-page-head" }, h("h1", { class: "os-page-title", text: t("admin.title") })),
+    tabs({
+      label: t("admin.sections"),
+      tabs: [{ id: "users", label: t("admin.users"), icon: "users" }, { id: "api", label: t("admin.api"), icon: "key-round" }],
+      current: tab,
+      render: (id, panel) => { if (id === "users") users(panel, ctx); else clients(panel, ctx); },
+      onChange: (id) => history.replaceState(null, "", `${location.pathname}${location.search}${id === "api" ? "#/admin?tab=api" : "#/admin"}`),
+    }));
 }
 
 // ---- Members ---------------------------------------------------------------------------
 
 function users(panel, ctx) {
-  const list = h("div", { class: "os-list", attrs: { "aria-live": "polite" } });
+  const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
   panel.append(h("div", { class: "os-panel__head os-panel__head--page" },
     h("h2", { class: "os-card__title", text: t("admin.users") }),
     button(t("admin.add-user"), { icon: "user-plus", variant: "primary", onClick: add })), list);
@@ -101,13 +87,14 @@ function users(panel, ctx) {
       build(body) {
         f.name = h("input", { id: "u-name", class: "os-input", maxLength: 255, autocomplete: "off", attrs: { autofocus: true } });
         f.email = h("input", { id: "u-email", class: "os-input", type: "email", autocomplete: "off" });
-        f.profile = h("select", { id: "u-profile", class: "os-input" }, ...PROFILES.map((p) => h("option", { value: p, text: t(`admin.profile.${p}`), selected: p === "sender" })));
+        const profile = selectField(t("admin.profile"), PROFILES.map((p) => [p, t(`admin.profile.${p}`)]), { id: "u-profile", value: "sender" });
+        f.profile = profile.select;
         f.password = h("input", { id: "u-password", class: "os-input", type: "password", autocomplete: "new-password", maxLength: 256, attrs: { "aria-describedby": "u-password-help" } });
         f.err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
         body.append(
           h("label", { class: "os-label", attrs: { for: "u-name" }, text: t("prepare.name") }), f.name,
           h("label", { class: "os-label", attrs: { for: "u-email" }, text: t("prepare.email") }), f.email,
-          h("label", { class: "os-label", attrs: { for: "u-profile" }, text: t("admin.profile") }), f.profile,
+          profile.el,
           h("label", { class: "os-label", attrs: { for: "u-password" }, text: t("admin.password") }), f.password,
           h("p", { id: "u-password-help", class: "os-muted os-small", text: t("admin.password-help") }), f.err);
       },
@@ -159,7 +146,7 @@ function users(panel, ctx) {
 // ---- API clients -------------------------------------------------------------------------
 
 function clients(panel, ctx) {
-  const list = h("div", { class: "os-list", attrs: { "aria-live": "polite" } });
+  const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
   panel.append(h("div", { class: "os-panel__head os-panel__head--page" },
     h("h2", { class: "os-card__title", text: t("admin.api") }),
     button(t("admin.add-client"), { icon: "plus", variant: "primary", onClick: add })), list);
@@ -212,9 +199,8 @@ function clients(panel, ctx) {
       title: t("admin.add-client"),
       build(body) {
         f.name = h("input", { id: "c-name", class: "os-input", maxLength: 255, autocomplete: "off", attrs: { autofocus: true } });
-        f.kind = h("select", { id: "c-kind", class: "os-input" },
-          h("option", { value: "api_key", text: t("admin.kind.api_key") }),
-          h("option", { value: "oauth_app", text: t("admin.kind.oauth_app") }));
+        const kind = selectField(t("admin.kind"), [["api_key", t("admin.kind.api_key")], ["oauth_app", t("admin.kind.oauth_app")]], { id: "c-kind" });
+        f.kind = kind.select;
         f.days = h("input", { id: "c-days", class: "os-input", type: "number", min: "1", max: "3650", step: "1", value: "365" });
         const scopes = h("fieldset", { class: "os-fieldset" }, h("legend", { class: "os-label", text: t("admin.scopes") }));
         for (const s of SCOPES) {
@@ -226,7 +212,7 @@ function clients(panel, ctx) {
         f.err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
         body.append(
           h("label", { class: "os-label", attrs: { for: "c-name" }, text: t("prepare.name") }), f.name,
-          h("label", { class: "os-label", attrs: { for: "c-kind" }, text: t("admin.kind") }), f.kind,
+          kind.el,
           scopes,
           h("label", { class: "os-label", attrs: { for: "c-days" }, text: t("admin.expires-days") }), f.days, f.err);
       },

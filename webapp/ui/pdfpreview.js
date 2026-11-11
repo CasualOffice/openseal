@@ -36,7 +36,7 @@ export function pdfPreview({ load, name = "", height = 640, testId = "pdf-previe
     clear(pages);
     clear(thumbs);
     label.textContent = `${Math.round(zoom * 100)}%`;
-    count.textContent = t("prepare.pages-long", { n: pdf.pages.length });
+    count.textContent = (pdf.pages.length === 1 ? t("prepare.page-one") : t("prepare.pages-long", { n: pdf.pages.length }));
     const width = Math.max(240, (pages.clientWidth || 720) - 32);
     pdf.pages.forEach((p, i) => {
       const scale = Math.min(fitScale(p.width, width), 1.6) * zoom;

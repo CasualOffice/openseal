@@ -245,7 +245,7 @@ test("mock mode survives navigation from the site page", async ({ page }) => {
   await expect(page).toHaveURL(/app\.html\?mock=1/);
   await expect(page.getByRole("note")).toContainText("Demo mode");
   // A link that drops the query keeps mock mode for this tab.
-  await page.goto("/app.html#/signin");
+  await page.goto("/app.html#/signin", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("note")).toContainText("Demo mode");
   await signIn(page, "home");
   await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();

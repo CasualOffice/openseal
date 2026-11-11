@@ -137,16 +137,24 @@ function askLocation() {
   const skip = button(t("sign.location.skip"), { size: "lg" });
   share.addEventListener("click", () => busy(share, async () => {
     location_ = await geolocate();
-    toast(location_.declined ? t("sign.location.not-shared") : t("sign.location.shared"), "info");
+    locationChip();
     next();
   }));
-  skip.addEventListener("click", () => { location_ = { declined: true }; next(); });
+  skip.addEventListener("click", () => { location_ = { declined: true }; locationChip(); next(); });
   screen(h("div", { class: "os-sign__card" },
     icon("map-pin", { size: 24 }),
     h("h1", { class: "os-sign__title", text: t("sign.location.title") }),
     h("p", { class: "os-muted", text: t("sign.location.text") }),
     h("div", { class: "os-stack" }, share, skip)));
   share.focus();
+}
+
+/// A small chip in the bar says whether the location was shared (no toast over the page).
+function locationChip() {
+  const chip = document.getElementById("loc-chip");
+  if (!chip || !location_) return;
+  chip.replaceChildren(icon("map-pin", { size: 16 }), h("span", { text: t(location_.declined ? "sign.location.chip-not" : "sign.location.chip-shared") }));
+  chip.hidden = false;
 }
 
 /// Ask the browser once (GEO-01). A refusal, an error or a timeout is a decline; the
@@ -191,7 +199,7 @@ function consent() {
 
 // ---- Documents and fields -------------------------------------------------------------------
 
-const AUTO = { date_signed: () => t("sign.auto-date"), name: () => view.recipient?.name || "", email: () => view.recipient?.email || "" };
+const AUTO = { date_signed: () => new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }), name: () => view.recipient?.name || "", email: () => view.recipient?.email || "" };
 
 // Pages are laid out at the width that fits, times `zoom` (buttons in the bar, pinch on
 // phones; zoom.js). The PDFs are fetched once and kept; a zoom repaints from them.
@@ -209,9 +217,10 @@ async function documents() {
     h("span", { class: "os-guidetag__text", text: t("sign.start") }));
   tag.addEventListener("click", goNext);
   screen(
-    view.envelope?.message ? h("p", { class: "os-sign__message", text: view.envelope.message }) : null,
     h("h1", { class: "os-sr-only", text: t("sign.documents-title") }),
-    h("div", { class: "os-sign__stage" }, tag, pagesWrap));
+    h("div", { class: "os-sign__stage" }, tag,
+      view.envelope?.message ? h("p", { class: "os-sign__message", text: view.envelope.message }) : null,
+      pagesWrap));
   guide.hidden = false;
   document.body.classList.add("is-signing");
   setTools(true);
@@ -431,7 +440,7 @@ function fieldNode(f, scale) {
     paint();
   } else if (f.type === "text") {
     const id = `sf-${f.id}`;
-    const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, attrs: { "aria-label": `${label}${req}`, ...(f.required ? { "aria-required": "true" } : {}) } });
+    const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, placeholder: label + (f.required ? " *" : ""), attrs: { "aria-label": `${label}${req}`, ...(f.required ? { "aria-required": "true" } : {}) } });
     input.addEventListener("change", async () => {
       const v = { text: input.value };
       try {
@@ -546,7 +555,7 @@ function review() {
   const dl = h("dl", { class: "os-review" });
   for (const f of myInputs()) {
     const v = values.get(f.id);
-    const shown = !v ? t("sign.review.empty") : v.signature ? t("sign.review.adopted") : "checked" in v ? t(v.checked ? "sign.review.checked" : "sign.review.unchecked") : v.text;
+    const shown = !v ? t(f.type === "checkbox" ? "sign.review.unchecked" : "sign.review.empty") : v.signature ? t("sign.review.adopted") : "checked" in v ? t(v.checked ? "sign.review.checked" : "sign.review.unchecked") : v.text;
     dl.append(h("dt", { text: f.label || t(`ftype.${f.type}`) }), h("dd", { text: shown }));
   }
   const back = button(t("sign.review.back"), { icon: "chevron-left", size: "lg" });

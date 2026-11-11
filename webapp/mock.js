@@ -220,6 +220,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     ];
     const complete = async (env, recs) => {
       await send(env);
+      env.sent_at = iso(-60 * 24 * 2); // sent before it was signed
       for (const r of recs.filter((x) => SIGNING_TYPES.has(x.type))) {
         r.status = "completed"; r.completed_at = iso(-30); r.consented = true;
         await audit(env, "recipient_completed", { recipient_id: r.id, actor: "recipient" });

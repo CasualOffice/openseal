@@ -23,7 +23,7 @@ import { h, clear, reducedMotion } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix, run } from "./commands.js";
-import { button, busy, emptyState, toast, toastError, openDialog, confirmDialog } from "./ui/index.js";
+import { button, busy, emptyState, toast, toastError, openDialog, confirmDialog, selectField } from "./ui/index.js";
 import { openPdf, fitScale } from "./pdfview.js";
 import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, snap, toWire, fromWire, takesInput } from "./geometry.js";
 import { errorMessage } from "./api.js";
@@ -221,9 +221,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const typeId = `rt-${r.key}`;
       const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t(TPL ? "template.role-placeholder" : "prepare.name"), maxLength: 255, attrs: { "data-testid": TPL ? "role-name" : "recipient-name" } });
       const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "off", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email" } });
-      const type = h("select", { id: typeId, class: "os-input os-input--sm", attrs: { "data-testid": "recipient-type" } },
-        h("option", { value: "signer", text: t("rtype.signer"), selected: r.type === "signer" }),
-        h("option", { value: "cc", text: t("rtype.cc"), selected: r.type === "cc" }));
+      const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), [["signer", t("rtype.signer")], ["cc", t("rtype.cc")]], { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
+      const type = typeField.select;
       const commit = (k, v) => {
         if (r[k] === v) return;
         S.undo.push(snapshot()); S.redo = [];
@@ -250,7 +249,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("div", { class: "os-rcpt__head" },
           h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
           h("span", { class: "os-order", attrs: { title: t("prepare.routing-order") }, text: String(orderOf(r)) }),
-          h("label", { class: "os-sr-only", attrs: { for: typeId }, text: t("prepare.role-for", { name: displayName(r, i) }) }), type,
+          typeField.el,
           h("span", { class: "os-spacer" }), up, del),
         h("label", { class: "os-sr-only", attrs: { for: nameId }, text: t(TPL ? "template.role-name-of" : "prepare.name-of", { n: i + 1 }) }), name,
         TPL ? null : [h("label", { class: "os-sr-only", attrs: { for: mailId }, text: t("prepare.email-of", { n: i + 1 }) }), email],
@@ -305,10 +304,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const focused = document.activeElement?.id === "pal-for";
     clear(palFor);
     if (S.recipients.length > 1) {
-      const sel = h("select", { id: "pal-for", class: "os-input os-input--sm" },
-        ...S.recipients.map((r, i) => h("option", { value: r.key, selected: r.key === S.active, text: `${i + 1}. ${displayName(r, i)}` })));
-      sel.addEventListener("change", () => { S.active = sel.value; markActive(); renderPalette(); });
-      palFor.append(h("label", { class: "os-label", attrs: { for: "pal-for" }, text: t("prepare.placing-for") }), sel);
+      const pf = selectField(t("prepare.placing-for"), S.recipients.map((r, i) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "pal-for", value: S.active, onChange: (v) => { S.active = v; markActive(); renderPalette(); } });
+      const sel = pf.select;
+      palFor.append(pf.el);
       if (focused) sel.focus();
     } else if (active) {
       palFor.append(h("p", { class: "os-muted os-small", text: t("prepare.placing-for-name", { name: displayName(active, idx) }) }));
@@ -350,7 +348,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("div", { class: "os-doccard__frame" }, thumb),
         h("div", { class: "os-doccard__meta" },
           h("strong", { class: "os-doccard__name", text: d.name }),
-          h("span", { class: "os-muted os-small", text: t("prepare.pages-long", { n: d.pages.length }) })),
+          h("span", { class: "os-muted os-small", text: (d.pages.length === 1 ? t("prepare.page-one") : t("prepare.pages-long", { n: d.pages.length })) })),
         h("div", { class: "os-doccard__actions" }, up, down,
           d.id ? null : button(t("prepare.remove-doc", { name: d.name }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) }))));
     });
@@ -582,7 +580,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const pg = doc.pages[page - 1];
     const here = S.fields.filter((f) => f.docKey === doc.key && f.page === page);
     const size = DEFAULT_SIZE[type];
-    const spot = freeSpot(here, size, pg, pg.width / 2, pg.height / 3);
+    // A margin below each field keeps keyboard-placed fields apart, not touching.
+    const spot = freeSpot(here.map((f) => ({ ...f, height: f.height + 16 })), size, pg, pg.width / 2, pg.height / 3);
     addField(type, doc, page, spot.x + size.width / 2, spot.y + size.height / 2);
   }
 
@@ -607,9 +606,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       renderFieldsOnly();
     };
     props.append(h("h2", { class: "os-panel__title", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }) }));
-    const rsel = h("select", { id: "fp-recipient", class: "os-input" }, ...S.recipients.map((r, i) => h("option", { value: r.key, selected: r.key === f.recipientKey, text: `${i + 1}. ${displayName(r, i)}` })));
-    rsel.addEventListener("change", () => set("recipientKey", rsel.value));
-    props.append(h("label", { class: "os-label", attrs: { for: "fp-recipient" }, text: t(TPL ? "template.assigned-to" : "prepare.assigned-to") }), rsel);
+    props.append(selectField(t(TPL ? "template.assigned-to" : "prepare.assigned-to"), S.recipients.map((r, i) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "fp-recipient", value: f.recipientKey, onChange: (v) => set("recipientKey", v) }).el);
     if (takesInput(f.type)) {
       const req = h("input", { id: "fp-required", type: "checkbox", checked: !!f.required });
       req.addEventListener("change", () => set("required", req.checked));
