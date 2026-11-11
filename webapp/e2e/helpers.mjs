@@ -35,6 +35,17 @@ export const signPage = (token) => `/s/${encodeURIComponent(token)}${q}`;
 /// sign-in of each worker and by the specs about signing in.
 let realSession = null;
 
+/// Choose who the next fields are for in the editor (WEB-06: recipient chips, a radio
+/// group of the signers). `who`: a signer's index, or a name ("1. Ana Signer" also works).
+export async function placingFor(page, who) {
+  const group = page.getByRole("radiogroup", { name: "Placing fields for" });
+  const radio = typeof who === "number"
+    ? group.getByRole("radio").nth(who)
+    : group.getByRole("radio", { name: String(who).replace(/^\d+\.\s*/, ""), exact: true });
+  await radio.click();
+  await expect(radio).toHaveAttribute("aria-checked", "true");
+}
+
 /// Sign in and land on Agreements (most specs), or on Home with `land = "home"`.
 /// Sign-in itself lands on Home (WEB-02).
 export async function signIn(page, land = "agreements") {
@@ -135,7 +146,9 @@ export async function snap(target, testInfo, name) {
 /// and Option+Tab reaches every control, as a Safari keyboard user presses it.
 export async function tabTo(page, locator, max = 80, shift = false) {
   const webkit = page.context().browser()?.browserType().name() === "webkit";
-  const key = `${shift ? "Shift+" : ""}${webkit ? "Alt+" : ""}Tab`;
+  // macOS WebKit moves focus to buttons and links only with Option+Tab (its system
+  // setting); WebKit on Linux, as on the CI runners, uses plain Tab like everyone else.
+  const key = `${shift ? "Shift+" : ""}${webkit && process.platform === "darwin" ? "Alt+" : ""}Tab`;
   for (let i = 0; i < max; i++) {
     if (await locator.evaluate((el) => el === document.activeElement).catch(() => false)) return;
     await page.keyboard.press(key);

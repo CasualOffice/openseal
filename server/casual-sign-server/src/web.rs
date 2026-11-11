@@ -29,6 +29,14 @@ pub const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'se
 img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; \
 object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
+/// The Verify page's policy (WEB-05): the page policy plus `'wasm-unsafe-eval'`, which a
+/// browser requires to compile the WebAssembly verifier. It allows WebAssembly only, not
+/// JavaScript `eval`, and only on this one page.
+pub const VERIFY_CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; \
+style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; \
+worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; \
+frame-ancestors 'none'";
+
 /// A page may ask for the device's location (GEO-01), nothing else.
 const PAGE_PERMISSIONS: &str = "geolocation=(self), camera=(), microphone=()";
 
@@ -94,6 +102,8 @@ fn content_type(name: &str) -> Option<&'static str> {
         "woff2" => "font/woff2",
         "json" => "application/json",
         "txt" => "text/plain; charset=utf-8",
+        // The Verify page's verifier (WEB-05); browsers compile only `application/wasm`.
+        "wasm" => "application/wasm",
         // pdf.js's CMaps and standard fonts, fetched as bytes.
         "pfb" | "bcmap" => "application/octet-stream",
         _ => return None,
@@ -207,9 +217,14 @@ impl WebApp {
         };
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
         if name.ends_with(".html") {
+            let csp = if name == "verify.html" {
+                VERIFY_CSP
+            } else {
+                PAGE_CSP
+            };
             h.insert(
                 header::CONTENT_SECURITY_POLICY,
-                HeaderValue::from_static(PAGE_CSP),
+                HeaderValue::from_static(csp),
             );
             h.insert(
                 header::HeaderName::from_static("permissions-policy"),
@@ -307,5 +322,31 @@ mod tests {
         );
         assert_eq!(content_type("build.py"), None);
         assert_eq!(content_type("LICENSE"), None);
+        assert_eq!(
+            content_type("casual_sign_wasm_bg.wasm"),
+            Some("application/wasm")
+        );
+    }
+
+    fn csp_of(app: &WebApp, name: &str) -> String {
+        let r = app.file(name).unwrap();
+        r.headers()[header::CONTENT_SECURITY_POLICY]
+            .to_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    #[test]
+    fn only_the_verify_page_may_compile_webassembly() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../webapp");
+        let app = WebApp::load(&dir).unwrap();
+        assert_eq!(csp_of(&app, "verify.html"), VERIFY_CSP);
+        assert!(VERIFY_CSP.contains("script-src 'self' 'wasm-unsafe-eval';"));
+        assert!(!VERIFY_CSP.contains("'unsafe-eval'"));
+        for page in ["index.html", "app.html", "sign.html"] {
+            let csp = csp_of(&app, page);
+            assert_eq!(csp, PAGE_CSP, "{page}");
+            assert!(!csp.contains("wasm-unsafe-eval"), "{page}");
+        }
     }
 }

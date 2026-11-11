@@ -6,7 +6,7 @@
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { openDialog, button, toast } from "./ui/index.js";
+import { openPanel, button, toast } from "./ui/index.js";
 
 const W = 600;
 const H = 200;
@@ -22,16 +22,18 @@ export function initialsOf(name) {
 }
 
 /// Open the adopt dialog. Resolves `{method, png: Uint8Array, dataUrl}` or null.
-export function adoptDialog({ mark = "signature", name = "" }) {
+export function adoptDialog({ mark = "signature", name = "", host = null }) {
   let mode = "type";
   let typed = mark === "initials" ? initialsOf(name) : name;
   let font = 0;
   const strokes = [];
   let uploaded = null;
 
-  return openDialog({
+  return openPanel({
+    id: "adopt",
+    host,
+    width: 30,
     title: t(mark === "initials" ? "adopt.title-initials" : "adopt.title"),
-    size: "lg",
     className: "os-adopt",
     build(body) {
       const tabs = h("div", { class: "os-tabs", attrs: { role: "tablist", "aria-label": t("adopt.how") } });

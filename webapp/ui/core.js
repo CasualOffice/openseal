@@ -41,7 +41,9 @@ export async function busy(btn, work) {
 // ---- Toasts ----------------------------------------------------------------------
 
 /// Show a short message. `kind`: info | success | error. Errors stay until dismissed.
-export function toast(message, kind = "info") {
+/// `action`: `{label, onClick}` adds one button (Undo after a delete, A24); a toast
+/// with an action stays 8 s so it can be reached.
+export function toast(message, kind = "info", { action = null } = {}) {
   let region = document.getElementById("os-toasts");
   if (!region) {
     region = h("div", { id: "os-toasts", class: "os-toasts", attrs: { role: "status", "aria-live": "polite" } });
@@ -55,9 +57,10 @@ export function toast(message, kind = "info") {
     node.classList.add("is-leaving");
     setTimeout(() => node.remove(), reducedMotion() ? 0 : 200);
   };
+  if (action) node.append(button(action.label, { variant: "ghost", size: "sm", onClick: () => { close(); action.onClick(); }, attrs: { "data-testid": "toast-action" } }));
   node.append(button(t("action.dismiss"), { icon: "x", variant: "ghost", size: "sm", iconOnly: true, onClick: close }));
   region.append(node);
-  if (kind !== "error") setTimeout(close, 5000);
+  if (kind !== "error") setTimeout(close, action ? 8000 : 5000);
   return close;
 }
 

@@ -13,7 +13,7 @@ import { createClient, isMockMode, isNoServer, ApiError, errorMessage } from "./
 import { extend } from "./api-extra.js";
 import { register, run, command } from "./commands.js";
 import { handle, bindings } from "./keys.js";
-import { openDialog, toast, errorState, noServerState, menuButton, avatar } from "./ui/index.js";
+import { openPanel, toast, errorState, noServerState, menuButton, avatar } from "./ui/index.js";
 import { initTheme, setTheme, getTheme, toggleTheme } from "./theme.js";
 
 const mock = isMockMode();
@@ -55,12 +55,13 @@ const ROUTES = [
   [/^#\/home$/, () => import("./home.js"), { nav: "home" }],
   [/^#\/agreements(?:\?.*)?$/, () => import("./dashboard.js"), { nav: "agreements" }],
   [/^#\/envelopes\/([^/?]+)$/, () => import("./envelope.js"), { nav: "agreements" }],
-  [/^#\/prepare(?:\/([^/?]+))?$/, () => import("./prepare.js"), { nav: "send", wide: true }],
+  // The editor is a full-height frame with its own toolbar (WEB-06): no app bar.
+  [/^#\/prepare(?:\/([^/?]+))?$/, () => import("./prepare.js"), { nav: "send", wide: true, chrome: false, frame: true }],
   [/^#\/templates$/, () => import("./templates.js"), { nav: "templates" }],
   [/^#\/templates\/new$/, async () => {
     const prepare = await import("./prepare.js");
     return { mount: (view, c, _m, params) => prepare.mount(view, c, [], params, { template: true }) };
-  }, { nav: "templates", wide: true }],
+  }, { nav: "templates", wide: true, chrome: false, frame: true }],
   [/^#\/templates\/([^/?]+)$/, async () => ({ mount: (await import("./templates.js")).mountUse }), { nav: "templates" }],
   [/^#\/admin(?:\?.*)?$/, () => import("./admin.js"), { nav: "admin" }],
   [/^#\/reports$/, () => import("./reports.js"), { nav: "reports" }],
@@ -69,9 +70,22 @@ const ROUTES = [
 let cleanup = null;
 let routeSeq = 0;
 
+let shownHash = null;
+
 async function route() {
   const seq = ++routeSeq;
   const hash = location.hash || "#/home";
+  // A screen with unsaved work may hold the user (A12): put the old address back if so.
+  if (ctx.leaveGuard && shownHash && hash !== shownHash) {
+    const guard = ctx.leaveGuard;
+    const back = shownHash;
+    history.replaceState(null, "", `${location.pathname}${location.search}${back}`);
+    if (!(await guard())) return;
+    if (seq !== routeSeq) return;
+    ctx.leaveGuard = null;
+    history.replaceState(null, "", `${location.pathname}${location.search}${hash}`);
+  }
+  shownHash = hash;
   const main = document.getElementById("main");
   if (!ctx.session && hash !== "#/signin") {
     try {
@@ -111,6 +125,7 @@ async function route() {
   const opts = entry[2];
   document.body.classList.toggle("is-chromeless", opts.chrome === false);
   document.body.classList.toggle("is-wide", !!opts.wide);
+  document.body.classList.toggle("is-frame", !!opts.frame);
   for (const a of document.querySelectorAll(".os-nav__link")) {
     if (a.dataset.nav === opts.nav) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -228,7 +243,7 @@ function syncThemeButton() {
 }
 
 function shortcutsDialog() {
-  openDialog({
+  openPanel({
     title: t("help.shortcuts"),
     build(body) {
       const table = h("table", { class: "os-table os-table--compact" },

@@ -6,7 +6,7 @@
 //  - every PDF page canvas that should be painted is painted (pixels sampled).
 // Mock mode: the screens need the mock's seeded data.
 import { test, expect } from "@playwright/test";
-import { signIn, app, signPage, tokens, pdfFile, REAL } from "./helpers.mjs";
+import { signIn, app, signPage, tokens, pdfFile, REAL, placingFor } from "./helpers.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,6 +66,42 @@ async function checkLayout(page, what) {
   expect(problems, `layout on ${what}`).toEqual([]);
 }
 
+/// The document-first rules (WEB-06, docs/47 §Layout spec) on the editor and the signer:
+/// the pages take at least 65 % of a desktop viewport's width; the pages have exactly one
+/// scrolling ancestor (the document view), nothing inside it scrolls, and the page itself
+/// never scrolls; and no visible text is smaller than 12 px (PDF field overlays aside,
+/// which are points × zoom).
+async function documentRules(page, vp, testId) {
+  const r = await page.evaluate((id) => {
+    const doc = document.querySelector(`[data-testid="${id}"]`);
+    const box = doc.getBoundingClientRect();
+    const scrolls = (el) => {
+      const cs = getComputedStyle(el);
+      return /(auto|scroll)/.test(`${cs.overflowY} ${cs.overflowX}`) && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
+    };
+    const first = doc.querySelector(".os-page");
+    const chain = [];
+    for (let p = first?.parentElement; p; p = p.parentElement) if (scrolls(p)) chain.push(p === doc ? "document" : p.className || p.tagName);
+    const se = document.scrollingElement;
+    const root = se.scrollHeight > se.clientHeight + 1 || se.scrollWidth > se.clientWidth + 1;
+    const nested = [...doc.querySelectorAll("*")].filter(scrolls).map((e) => e.className);
+    const small = [...document.querySelectorAll("body *")].filter((el) => {
+      if (el.closest(".os-page__overlay, .os-sr-only, [hidden], [aria-hidden='true']")) return false;
+      if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) return false;
+      const b = el.getBoundingClientRect();
+      if (!b.width || !b.height) return false;
+      return Number.parseFloat(getComputedStyle(el).fontSize) < 12;
+    }).map((e) => `${e.tagName}.${e.className}`);
+    return { share: box.width / innerWidth, chain, root, nested, small };
+  }, testId);
+  if (vp === "desktop") expect(r.share, `${testId}: document share of the width`).toBeGreaterThanOrEqual(0.65);
+  expect(r.chain, `${testId}: scrolling ancestors of the pages`).toEqual(["document"]);
+  expect(r.root, `${testId}: the page itself scrolls`).toBe(false);
+  expect(r.nested, `${testId}: scrolling inside the document`).toEqual([]);
+  expect(r.small, `${testId}: text under 12 px`).toEqual([]);
+}
+const editorRules = (page, vp) => documentRules(page, vp, "editor-doc");
+
 /// Every canvas under `scope` has drawn something other than white: PDF previews work.
 async function expectPainted(page, selector, what) {
   await expect(page.locator(`${selector} canvas`).first()).toBeVisible();
@@ -74,8 +110,11 @@ async function expectPainted(page, selector, what) {
     const ctx = c.getContext("2d");
     if (!c.width || !c.height) return true;
     const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    // Every pixel, any visible ink: a 140 px thumbnail holds a few hundred antialiased
+    // text pixels, which Linux renders lighter than macOS, so a sparse sample with a dark
+    // threshold found none on CI although the card was painted.
     let ink = 0;
-    for (let i = 0; i < d.length; i += 4 * 97) if (d[i + 3] > 0 && (d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200)) ink++;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (d[i] < 230 || d[i + 1] < 230 || d[i + 2] < 230)) ink++;
     return ink < 3;
   }).filter(Boolean).length, selector);
   await expect.poll(blank, { message: `blank canvases on ${what}`, timeout: 10_000 }).toBe(0);
@@ -128,14 +167,21 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       await check("08-prepare-recipients");
       await page.getByTestId("wizard-next").click();
       await expectPainted(page, ".os-stage", "editor pages");
+      // On phones the palette is a bottom sheet behind "Add field" (WEB-06).
+      const palette = async () => { if (vp === "phone") await page.getByTestId("add-field-sheet").click(); };
+      await palette();
       await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
-      await page.getByLabel("Placing fields for").selectOption({ index: 1 });
+      await palette();
+      await placingFor(page, 1);
       await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
       await check("09-prepare-fields");
+      await editorRules(page, vp, "editor");
       await page.getByTestId("wizard-next").click();
       await check("10-prepare-review");
 
+      // Unsaved work: leaving asks first (A12).
       await page.goto(app("#/templates"));
+      await page.getByRole("button", { name: "Leave without saving" }).click();
       await expect(page.getByRole("link", { name: "Mutual NDA" })).toBeVisible();
       await check("11-templates");
       await page.getByRole("button", { name: "Use Mutual NDA" }).click();
@@ -183,6 +229,7 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       await page.getByRole("button", { name: "Continue" }).click();
       await expectPainted(page, ".os-sign__pages", "signer pages");
       await check("22-sign-document");
+      await documentRules(page, vp, "signer-doc");
       await page.getByRole("textbox", { name: /Job title/ }).fill("Engineer");
       await page.getByRole("textbox", { name: /Job title/ }).blur();
       await page.getByRole("button", { name: /Signature, required/ }).click();

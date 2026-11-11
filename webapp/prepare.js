@@ -19,12 +19,13 @@
 // documents and fields on docs/40's slice-3 template endpoints (api-extra.js); a
 // server without those keeps the roles and the editor says so.
 
-import { h, clear, reducedMotion } from "./dom.js";
+import { h, clear, reducedMotion, skipTo } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix, run } from "./commands.js";
-import { button, busy, emptyState, toast, toastError, openDialog, confirmDialog, selectField } from "./ui/index.js";
-import { openPdf, fitScale } from "./pdfview.js";
+import { button, busy, emptyState, toast, toastError, confirmDialog, selectField, dockPanel, openPanel, closePanel } from "./ui/index.js";
+import { openPdf } from "./pdfview.js";
+import { docView, zoomControls, thumbnails } from "./docview.js";
 import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, snap, toWire, fromWire, takesInput } from "./geometry.js";
 import { errorMessage } from "./api.js";
 import { templateDocsUnsupported } from "./api-extra.js";
@@ -58,102 +59,156 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     active: null,
     selected: null,
     clipboard: null,
-    dirty: false,
     undo: [],
     redo: [],
   };
+  // Whether there is unsaved work: the status in the toolbar follows it (A13).
+  let dirty = false;
+  let savedAt = null;
+  let saving = false;
+  Object.defineProperty(S, "dirty", { get: () => dirty, set: (v) => { dirty = !!v; syncStatus(); } });
   ctx.contexts = ["editor", "global"];
   const pdfs = new Map(); // doc key → pdf.js handle
-  let scale = 1;
 
   // ---- Layout ----------------------------------------------------------------------
   // A stepped flow (WEB-02 redesign, DocuSign's send flow): 1 documents, 2 recipients
   // (roles in a template), 3 fields, 4 review and send. Every step's panels stay in the
   // page and are shown one step at a time, so state and commands never depend on which
-  // step is open; the step bar and the Back and Next buttons move between them.
+  // step is open. WEB-06 (docs/47 §Layout spec): a full-height frame with one toolbar —
+  // steps, the document's zoom and page, undo and redo, the save state, and Back, Next
+  // or Send — and on the fields step the document between two docked panels.
   const STEPS = ["documents", "recipients", "fields", "review"];
   let step = "documents";
   const subject = h("input", { id: "env-subject", class: "os-input", placeholder: t(TPL ? "template.name-placeholder" : "prepare.subject-placeholder"), maxLength: 255 });
-  subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; title.textContent = S.subject.trim() || t(TPL ? "template.new-title" : "prepare.title"); });
+  subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; title.textContent = S.subject.trim() || t(TPL ? "template.new-title" : "prepare.title"); title.title = title.textContent; });
   const saveBtn = TPL
     ? button(t("template.save"), { icon: "save", variant: "primary", command: "template.save", onClick: () => run("template.save") })
-    : button(t("prepare.save"), { icon: "save", command: "envelope.save", onClick: () => run("envelope.save") });
+    : button(t("prepare.save"), { icon: "save", command: "envelope.save", onClick: () => run("envelope.save"), attrs: { "data-testid": "save-draft", title: t("prepare.save-tip") } });
   const sendBtn = TPL ? null : button(t("prepare.send"), { icon: "send", variant: "primary", command: "envelope.send", onClick: () => run("envelope.send") });
   const title = h("h1", { class: "os-prepare__title", text: t(TPL ? "template.new-title" : "prepare.title") });
   const stepper = h("ol", { class: "os-stepper", attrs: { "aria-label": t("wizard.steps") } });
   const stepBtns = new Map();
   STEPS.forEach((s, i) => {
-    const b = h("button", { type: "button", class: "os-stepper__btn", attrs: { "data-step": s } },
+    const b = h("button", { type: "button", class: "os-stepper__btn", attrs: { "data-step": s, title: t(stepLabel(s)) } },
       h("span", { class: "os-stepper__n", text: String(i + 1) }), h("span", { class: "os-stepper__label", text: t(stepLabel(s)) }));
     b.addEventListener("click", () => go(s));
     stepBtns.set(s, b);
     stepper.append(h("li", {}, b));
   });
-  const bar = h("div", { class: "os-prepare__bar" },
+  const status = h("span", { class: "os-savestate", attrs: { "aria-live": "polite", id: "save-status", "data-testid": "save-status" } });
+
+  // The document: one scroll container (docview.js), the zoom and page controls, and
+  // the thumbnails, all on the fields step.
+  const live = h("div", { class: "os-sr-only", attrs: { "aria-live": "polite" } });
+  const dv = docView({
+    label: t("prepare.pages"),
+    testId: "editor-doc",
+    onLayout: () => { zoom.sync(); },
+    onZoom: () => zoom.sync(),
+    onPage: (i) => { zoom.sync(); thumbs.mark(i); },
+  });
+  const stage = dv.scroller;
+  stage.classList.add("os-stage");
+  const zoom = zoomControls(dv);
+  const undoBtn = button(t("cmd.edit.undo"), { icon: "undo-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => run("edit.undo"), attrs: { "aria-keyshortcuts": "Control+Z", "data-testid": "undo" } });
+  const redoBtn = button(t("cmd.edit.redo"), { icon: "redo-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => run("edit.redo"), attrs: { "aria-keyshortcuts": "Control+Shift+Z", "data-testid": "redo" } });
+  const keysBtn = button(t("help.shortcuts"), { icon: "keyboard", size: "sm", variant: "ghost", iconOnly: true, onClick: () => run("help.shortcuts") });
+  const docTools = h("div", { class: "os-prepare__doctools", attrs: { role: "group", "aria-label": t("prepare.doc-tools") } }, undoBtn, redoBtn, keysBtn);
+
+  const backBtn = button(t("action.back"), { icon: "chevron-left", size: "md", onClick: () => go(STEPS[STEPS.indexOf(step) - 1]), attrs: { "data-testid": "wizard-back", title: t("action.back") } });
+  const nextBtn = button(t("wizard.next"), { icon: "arrow-right", variant: "primary", attrs: { "data-testid": "wizard-next" }, onClick: () => go(STEPS[STEPS.indexOf(step) + 1]) });
+  const bar = h("header", { class: "os-prepare__bar", attrs: { "aria-label": t(TPL ? "template.new-title" : "prepare.title") } },
     h("a", { href: TPL ? "#/templates" : "#/agreements", class: "os-btn os-btn--ghost os-btn--md os-btn--icon", attrs: { "aria-label": t(TPL ? "template.back" : "prepare.back"), title: t(TPL ? "template.back" : "prepare.back") } }, icon("chevron-left")),
     h("div", { class: "os-prepare__head" },
       TPL ? h("span", { class: "os-badge os-badge--template" }, icon("layout-template", { size: 16 }), h("span", { text: t("template.badge") })) : null,
       title),
-    stepper,
+    h("nav", { class: "os-prepare__steps", attrs: { "aria-label": t("wizard.steps") } }, stepper),
+    docTools,
     h("span", { class: "os-spacer" }),
-    h("span", { class: "os-prepare__status os-muted", attrs: { "aria-live": "polite", id: "save-status" } }),
-    TPL ? null : saveBtn);
+    status,
+    TPL ? null : saveBtn,
+    backBtn, nextBtn, sendBtn, TPL ? saveBtn : null);
 
   const docsPanel = h("section", { class: "os-panel os-panel--docs", attrs: { "aria-labelledby": "docs-h" } });
   const rcptPanel = h("section", { class: "os-panel os-panel--rcpt", attrs: { "aria-labelledby": "rcpt-h" } });
-  const palettePanel = h("section", { class: "os-panel", attrs: { "aria-labelledby": "pal-h" } });
-  const thumbs = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
-  const left = h("aside", { class: "os-prepare__left", attrs: { "aria-label": t("prepare.setup") } }, palettePanel, thumbs);
-  const stage = h("div", { class: "os-stage", attrs: { "aria-label": t("prepare.pages"), role: "region", tabindex: "0", id: "stage" } });
-  const zoomLabel = h("span", { class: "os-zoom__label", attrs: { "aria-live": "polite" } });
-  let zoom = 1;
-  const setZoom = (z) => { zoom = Math.max(0.5, Math.min(2.5, Math.round(z * 100) / 100)); renderStage(); };
-  const zoomBar = h("div", { class: "os-zoom", attrs: { role: "toolbar", "aria-label": t("prepare.zoom") } },
-    button(t("prepare.zoom-out"), { icon: "zoom-out", size: "sm", variant: "ghost", iconOnly: true, onClick: () => setZoom(zoom / 1.25) }),
-    zoomLabel,
-    button(t("prepare.zoom-in"), { icon: "zoom-in", size: "sm", variant: "ghost", iconOnly: true, onClick: () => setZoom(zoom * 1.25) }),
-    button(t("prepare.zoom-fit"), { size: "sm", variant: "ghost", onClick: () => setZoom(1) }));
-  const centre = h("div", { class: "os-prepare__centre" }, zoomBar, stage);
-  const props = h("aside", { class: "os-prepare__right", attrs: { "aria-label": t("prepare.properties") } });
+  const palettePanel = h("section", { class: "os-panel os-panel--palette", attrs: { "aria-labelledby": "pal-h" } });
+  const thumbsBox = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
+  const thumbs = thumbnails(dv, thumbsBox, { width: 88 });
+  const leftDock = dockPanel({ id: "editor-fields", side: "left", title: t("prepare.fields"), icon: "signature", width: 13.5, min: 11, max: 24, testId: "panel-fields" });
+  leftDock.body.append(palettePanel, h("section", { class: "os-panel os-panel--thumbs", attrs: { "aria-labelledby": "thumbs-h" } },
+    h("h3", { id: "thumbs-h", class: "os-panel__title", text: t("prepare.pages") }), thumbsBox));
+  const props = h("div", { class: "os-props" });
+  const rightDock = dockPanel({ id: "editor-props", side: "right", title: t("prepare.properties"), icon: "settings", width: 15, min: 13, max: 30, testId: "panel-props", collapsed: matchMedia("(max-width: 74.999em)").matches });
+  rightDock.body.append(props);
+  // Phones: the palette and the properties are bottom sheets; this opens the palette.
+  const addFab = button(t("prepare.add-field-short"), { icon: "plus", variant: "primary", size: "lg", onClick: () => leftDock.openSheet(), attrs: { "data-testid": "add-field-sheet" } });
+  const propsFab = button(t("prepare.field-settings"), { icon: "settings", size: "lg", onClick: () => rightDock.openSheet(), attrs: { "data-testid": "props-sheet" } });
+  propsFab.hidden = true;
+  // The document's own bar floats at the bottom of the pages: zoom and "Page n of N".
+  const centre = h("div", { class: "os-prepare__centre" }, stage,
+    h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoom.el),
+    h("div", { class: "os-fabs" }, propsFab, addFab));
   const reviewPanel = h("section", { class: "os-panel os-panel--review", attrs: { "aria-labelledby": "review-h" } });
-  const live = h("div", { class: "os-sr-only", attrs: { "aria-live": "polite" } });
   const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; });
   const panes = {
     documents: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, docsPanel),
     recipients: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, rcptPanel),
-    fields: h("div", { class: "os-prepare__body" }, left, centre, props),
+    fields: h("div", { class: "os-prepare__body" }, leftDock.el, centre, rightDock.el),
     review: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, reviewPanel),
   };
-  const backBtn = button(t("action.back"), { icon: "chevron-left", onClick: () => go(STEPS[STEPS.indexOf(step) - 1]) });
-  const nextBtn = button(t("wizard.next"), { icon: "arrow-right", variant: "primary", attrs: { "data-testid": "wizard-next" }, onClick: () => go(STEPS[STEPS.indexOf(step) + 1]) });
-  const where = h("span", { class: "os-wizard__where os-muted" });
-  const foot = h("div", { class: "os-wizard__foot" }, backBtn, where, h("span", { class: "os-spacer" }), TPL ? saveBtn : null, sendBtn, nextBtn);
-  view.append(h("div", { class: "os-prepare" }, bar, h("div", { class: "os-wizard" }, ...Object.values(panes)), foot, live, fileInput));
+  const frame = h("div", { class: "os-prepare", attrs: { "data-step": step } }, bar, h("div", { class: "os-wizard" },...Object.values(panes)), live, dv.live, fileInput);
+  view.append(frame);
+
 
   function stepLabel(s) {
     return s === "recipients" && TPL ? "wizard.step.roles" : `wizard.step.${s}`;
   }
-  /// Open step `s`: show its pane, mark the step bar, set the footer's buttons.
+  /// Open step `s`: show its pane, mark the step bar, set the toolbar's buttons.
   async function go(s) {
     if (!STEPS.includes(s)) return;
+    const prevStep = step;
     step = s;
+    frame.dataset.step = s;
     const i = STEPS.indexOf(s);
     for (const [k, pane] of Object.entries(panes)) pane.hidden = k !== s;
     for (const [k, b] of stepBtns) {
       if (k === s) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
       b.classList.toggle("is-done", STEPS.indexOf(k) < i);
     }
+    docTools.hidden = s !== "fields";
+    skipTo(s === "fields" ? "#document" : "#main", t(s === "fields" ? "a11y.skip-doc" : "a11y.skip"));
+    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); }
     backBtn.hidden = i === 0;
     nextBtn.hidden = i === STEPS.length - 1;
     if (sendBtn) sendBtn.hidden = s !== "review";
     if (TPL) saveBtn.hidden = s !== "review";
-    where.textContent = t("wizard.where", { n: i + 1, total: STEPS.length, label: t(stepLabel(s)) });
-    if (s === "fields") await renderStage();
+    say(t("wizard.where", { n: i + 1, total: STEPS.length, label: t(stepLabel(s)) }));
+    if (s === "fields") {
+      // Fields start with the first signer (P-01), whoever was edited last on step 2.
+      if (prevStep !== "fields") { S.active = signers()[0]?.key || null; renderPalette(); }
+      if (stageKey !== S.docs.map((d) => d.key).join()) await renderStage();
+      else { dv.relayout(); renderFieldsOnly(); }
+    }
     if (s === "review") renderReview();
   }
 
   const say = (msg) => { live.textContent = ""; setTimeout(() => { live.textContent = msg; }, 30); };
+
+  /// The save state beside Save (A13) and the undo and redo buttons (A14).
+  function syncStatus() {
+    status.replaceChildren();
+    if (saving) status.append(h("span", { text: t("prepare.saving") }));
+    else if (dirty) status.append(h("span", { class: "os-savestate__dot", attrs: { "aria-hidden": "true" } }), h("span", { text: t("prepare.unsaved") }));
+    else if (savedAt) status.append(icon("circle-check", { size: 16 }), h("span", { text: t("prepare.saved-at", { time: savedAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) }) }));
+    status.classList.toggle("is-dirty", dirty && !saving);
+    status.title = status.textContent;
+    syncHistory();
+  }
+  function syncHistory() {
+    undoBtn.disabled = !S.undo?.length;
+    redoBtn.disabled = !S.redo?.length;
+  }
 
   // ---- History -----------------------------------------------------------------------
   const snapshot = () => JSON.stringify({ recipients: S.recipients, fields: S.fields, routing: S.routing });
@@ -285,7 +340,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   for (const type of FIELD_TYPES) {
     const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
       icon(FIELD_ICON[type], { size: 20 }), h("span", { text: t(`ftype.${type}`) }));
-    b.addEventListener("click", () => addFieldInView(type));
+    b.addEventListener("click", () => { addFieldInView(type); leftDock.closeSheet(); });
     b.addEventListener("dragstart", (e) => {
       e.dataTransfer.setData("application/x-openseal-field", type);
       e.dataTransfer.effectAllowed = "copy";
@@ -295,23 +350,54 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     palGrid.append(b);
   }
   palettePanel.append(
-    h("div", { class: "os-panel__head" }, h("h2", { id: "pal-h", class: "os-panel__title", text: t("prepare.fields") })),
-    palFor, palGrid, h("p", { class: "os-muted os-small", text: t("prepare.palette-hint") }));
+    palFor,
+    h("h3", { id: "pal-h", class: "os-panel__title", text: t("prepare.field-types") }),
+    palGrid, h("p", { class: "os-muted os-small", text: t("prepare.palette-hint") }));
 
+  /// The recipient chips (A21): who the next field is for, by colour, number and key 1–9.
+  /// A radio group with roving focus; arrows move, the choice follows focus.
+  /// Only signers take fields (P-01): copies are never offered, and the choice falls
+  /// back to the first signer whenever it is not one.
   function renderPalette() {
+    const sg = signers();
+    if (!sg.some((r) => r.key === S.active)) S.active = sg[0]?.key || null;
     const active = recipient(S.active);
     const idx = S.recipients.indexOf(active);
-    const focused = document.activeElement?.id === "pal-for";
+    const focused = palFor.contains(document.activeElement);
     clear(palFor);
-    if (S.recipients.length > 1) {
-      const pf = selectField(t("prepare.placing-for"), S.recipients.map((r, i) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "pal-for", value: S.active, onChange: (v) => { S.active = v; markActive(); renderPalette(); } });
-      const sel = pf.select;
-      palFor.append(pf.el);
-      if (focused) sel.focus();
+    if (sg.length > 1) {
+      const group = h("div", { class: "os-chips-rcpt", attrs: { role: "radiogroup", "aria-labelledby": "pal-for-h" } });
+      const chips = sg.map((r, j) => {
+        const i = S.recipients.indexOf(r);
+        const on = r.key === S.active;
+        const chip = h("button", { type: "button", class: `os-rchip os-r${colourOf(r.key)}`, attrs: { role: "radio", "aria-checked": String(on), tabindex: on ? "0" : "-1", "data-rkey": r.key, title: t("prepare.placing-key", { n: j + 1 }) } },
+          h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
+          h("span", { class: "os-rchip__name", text: displayName(r, i) }),
+          j < 9 ? h("kbd", { class: "os-rchip__key", attrs: { "aria-hidden": "true" }, text: String(j + 1) }) : null);
+        chip.addEventListener("click", () => pick(r.key));
+        chip.addEventListener("keydown", (e) => {
+          const d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+          if (!d) return;
+          e.preventDefault();
+          pick(sg[(j + d + sg.length) % sg.length].key, true);
+        });
+        return chip;
+      });
+      group.append(...chips);
+      palFor.append(h("p", { id: "pal-for-h", class: "os-panel__title", text: t("prepare.placing-for") }), group);
+      if (focused) palFor.querySelector('[aria-checked="true"]')?.focus();
     } else if (active) {
       palFor.append(h("p", { class: "os-muted os-small", text: t("prepare.placing-for-name", { name: displayName(active, idx) }) }));
     }
     palGrid.className = `os-palette os-r${active ? colourOf(active.key) : 1}`;
+  }
+  function pick(key, focus = false) {
+    S.active = key;
+    markActive();
+    renderPalette();
+    if (focus) palFor.querySelector('[aria-checked="true"]')?.focus();
+    const i = S.recipients.findIndex((r) => r.key === key);
+    say(t("prepare.placing-for-name", { name: displayName(S.recipients[i], i) }));
   }
 
   // ---- Documents ---------------------------------------------------------------------------
@@ -402,62 +488,43 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   // ---- Stage: pages and fields ---------------------------------------------------------
+  /// Lay the documents' pages out in the one scroll container (docview.js: fit width,
+  /// painted near the view only) and put the fields on them.
+  let stageKey = null;
   async function renderStage() {
-    clear(stage);
-    clear(thumbs);
-    zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+    stageKey = S.docs.map((d) => d.key).join();
+    stage.querySelector(":scope > .os-empty")?.remove();
     if (!S.docs.length) {
+      dv.setPages([]);
+      thumbs.build();
       stage.append(emptyState({
         illus: "documents", title: t("empty.documents.title"), text: t("empty.documents.text"),
         action: button(t("prepare.add-pdf"), { icon: "file-up", variant: "primary", size: "lg", onClick: () => fileInput.click() }),
         testId: "empty-stage",
       }));
+      zoom.sync();
       return;
     }
-    const width = stage.clientWidth || 800;
-    const widest = Math.max(...S.docs.flatMap((d) => d.pages.map((p) => p.width)));
-    scale = Math.min(fitScale(widest, width - 48), 1.5) * zoom;
-    renderThumbs();
-    for (const d of S.docs) {
-      const pdf = pdfs.get(d.key);
-      d.pages.forEach((p, i) => {
-        const canvas = h("canvas", { class: "os-page__canvas", attrs: { "aria-hidden": "true" } });
-        const overlay = h("div", { class: "os-page__overlay", attrs: { "data-doc": d.key, "data-page": String(i + 1) } });
-        const pageEl = h("div", { class: "os-page is-loading", attrs: { role: "group", "aria-label": t("prepare.page-of", { n: i + 1, total: d.pages.length, name: d.name }) } }, canvas, overlay);
-        pageEl.style.width = `${p.width * scale}px`;
-        pageEl.style.height = `${p.height * scale}px`;
-        overlay.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-field")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
-        overlay.addEventListener("drop", (e) => {
-          const type = e.dataTransfer.getData("application/x-openseal-field");
-          if (!type) return;
-          e.preventDefault();
-          stage.classList.remove("is-dropping");
-          const box = overlay.getBoundingClientRect();
-          addField(type, d, i + 1, (e.clientX - box.left) / scale, (e.clientY - box.top) / scale);
-        });
-        overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) select(null); });
-        stage.append(pageEl);
-        pdf?.render(i + 1, canvas, scale).then(() => pageEl.classList.remove("is-loading")).catch(() => pageEl.classList.add("is-error"));
+    dv.setPages(S.docs.flatMap((d) => d.pages.map((p, i) => ({ key: d.key, n: i + 1, total: d.pages.length, name: d.name, width: p.width, height: p.height, pdf: pdfs.get(d.key) }))));
+    dv.els.forEach(({ overlay }, i) => {
+      const p = dv.pages[i];
+      const d = S.docs.find((x) => x.key === p.key);
+      overlay.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("application/x-openseal-field")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
+      overlay.addEventListener("drop", (e) => {
+        const type = e.dataTransfer.getData("application/x-openseal-field");
+        if (!type) return;
+        e.preventDefault();
+        stage.classList.remove("is-dropping");
+        const box = overlay.getBoundingClientRect();
+        addField(type, d, p.n, (e.clientX - box.left) / dv.scale, (e.clientY - box.top) / dv.scale);
       });
-    }
+      overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) select(null); });
+    });
+    thumbs.build();
     renderFieldsOnly();
+    zoom.sync();
   }
-
-  /// The page strip: a small picture of every page; choosing one scrolls the stage to it.
-  function renderThumbs() {
-    const ol = h("ol", { class: "os-thumbs__list" });
-    for (const d of S.docs) {
-      const pdf = pdfs.get(d.key);
-      d.pages.forEach((p, i) => {
-        const c = h("canvas", { attrs: { "aria-hidden": "true" } });
-        pdf?.render(i + 1, c, 72 / p.width).catch(() => {});
-        const b = h("button", { type: "button", class: "os-thumb", attrs: { "aria-label": t("prepare.page-of", { n: i + 1, total: d.pages.length, name: d.name }) } }, c, h("span", { class: "os-thumb__n", text: String(i + 1) }));
-        b.addEventListener("click", () => stage.querySelector(`.os-page__overlay[data-doc="${d.key}"][data-page="${i + 1}"]`)?.parentElement.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" }));
-        ol.append(h("li", {}, b));
-      });
-    }
-    thumbs.append(h("h2", { class: "os-panel__title", text: t("prepare.pages") }), ol);
-  }
+  const pageIndex = (docKey, page) => dv.pages.findIndex((p) => p.key === docKey && p.n === page);
 
   function overlayFor(f) {
     return stage.querySelector(`.os-page__overlay[data-doc="${f.docKey}"][data-page="${f.page}"]`);
@@ -482,11 +549,14 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       ov.append(el);
     }
   }
+  /// A field box in percentages of its page: PDF points × the view's scale at any zoom,
+  /// without a relayout per zoom step.
   function place(el, f) {
-    el.style.left = `${f.x * scale}px`;
-    el.style.top = `${f.y * scale}px`;
-    el.style.width = `${f.width * scale}px`;
-    el.style.height = `${f.height * scale}px`;
+    const pg = pageOf(f);
+    el.style.left = `${(f.x / pg.width) * 100}%`;
+    el.style.top = `${(f.y / pg.height) * 100}%`;
+    el.style.width = `${(f.width / pg.width) * 100}%`;
+    el.style.height = `${(f.height / pg.height) * 100}%`;
   }
   function pageOf(f) {
     const d = S.docs.find((x) => x.key === f.docKey);
@@ -505,8 +575,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     let moved = false;
     el.classList.add("is-dragging");
     const move = (ev) => {
-      const dx = (ev.clientX - start.x) / scale;
-      const dy = (ev.clientY - start.y) / scale;
+      const dx = (ev.clientX - start.x) / dv.scale;
+      const dy = (ev.clientY - start.y) / dv.scale;
       if (!moved && Math.abs(dx) + Math.abs(dy) < 1) return;
       moved = true;
       const pg = pageOf(f);
@@ -535,18 +605,32 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   function select(key, focus = true) {
+    const changed = S.selected !== key;
     S.selected = key;
     for (const n of stage.querySelectorAll(".os-field")) {
       const on = n.dataset.fkey === key;
       n.classList.toggle("is-selected", on);
       n.setAttribute("aria-pressed", String(on));
     }
-    if (key && focus) stage.querySelector(`.os-field[data-fkey="${key}"]`)?.focus({ preventScroll: false });
+    const f = S.fields.find((x) => x.key === key);
+    if (f && focus) {
+      // Smooth scroll-to-field when it is out of view; focus without the browser's jump.
+      const el = stage.querySelector(`.os-field[data-fkey="${key}"]`);
+      const r = el?.getBoundingClientRect();
+      const s = stage.getBoundingClientRect();
+      if (r && (r.top < s.top || r.bottom > s.bottom || r.left < s.left || r.right > s.right)) dv.scrollToBox(pageIndex(f.docKey, f.page), f);
+      el?.focus({ preventScroll: true });
+    }
     renderProps();
+    if (f && changed) say(t("prepare.selected", { label: fieldLabel(f) }));
+    // Phones: the properties are a bottom sheet, opened from the "Field settings" button.
+    propsFab.hidden = !f;
+    if (!f) rightDock.closeSheet();
   }
 
   function addField(type, doc, page, cx, cy) {
     let r = recipient(S.active);
+    if (r?.type !== "signer") r = signers()[0];
     if (!r) r = addRecipient(false);
     const pg = doc.pages[page - 1];
     const rect = placeAt(type, cx, cy, pg);
@@ -564,19 +648,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
 
   /// Place a field without a pointer: on the page nearest the middle of the view,
   /// at its centre, stepping down for each field already there.
+  function inView() {
+    const p = dv.pages[dv.current] || dv.pages[0];
+    return p ? { doc: S.docs.find((d) => d.key === p.key), page: p.n } : null;
+  }
   function addFieldInView(type) {
     if (!S.docs.length) { toast(t("prepare.add-pdf-first"), "info"); fileInput.click(); return; }
-    const pages = [...stage.querySelectorAll(".os-page__overlay")];
-    const mid = stage.getBoundingClientRect().top + stage.clientHeight / 2;
-    let best = pages[0];
-    let bestD = Infinity;
-    for (const p of pages) {
-      const b = p.getBoundingClientRect();
-      const d = b.top <= mid && b.bottom >= mid ? 0 : Math.min(Math.abs(b.top - mid), Math.abs(b.bottom - mid));
-      if (d < bestD) { bestD = d; best = p; }
-    }
-    const doc = S.docs.find((d) => d.key === best.dataset.doc);
-    const page = Number(best.dataset.page);
+    const where = inView();
+    if (!where?.doc) return;
+    const { doc, page } = where;
     const pg = doc.pages[page - 1];
     const here = S.fields.filter((f) => f.docKey === doc.key && f.page === page);
     const size = DEFAULT_SIZE[type];
@@ -586,16 +666,30 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   // ---- Properties ------------------------------------------------------------------------
+  let advancedOpen = false;
   function renderProps() {
     clear(props);
     const f = S.fields.find((x) => x.key === S.selected);
     if (!f) {
-      props.append(h("h2", { class: "os-panel__title", text: t("prepare.properties") }),
-        h("p", { class: "os-muted os-small", text: t("prepare.props-none") }));
+      props.append(h("p", { class: "os-muted os-small", text: t("prepare.props-none") }));
       if (S.docs.length && !S.fields.length) {
         props.append(emptyState({ illus: "fields", title: t("empty.fields.title"), text: t("empty.fields.text"), action: button(t("prepare.add-field", { type: t("ftype.signature") }), { icon: "signature", variant: "primary", onClick: () => addFieldInView("signature") }), testId: "empty-fields" }));
       } else if (S.fields.length) {
-        props.append(h("p", { class: "os-muted os-small", text: t("prepare.fields-count", { n: S.fields.length }) }));
+        // Every placed field, in page order: choosing one selects it and scrolls to it.
+        props.append(h("h3", { class: "os-panel__title", text: t("prepare.fields-count", { n: S.fields.length }) }));
+        const order = [...S.fields].sort((a, b) => pageIndex(a.docKey, a.page) - pageIndex(b.docKey, b.page) || a.y - b.y || a.x - b.x);
+        const ul = h("ul", { class: "os-placed" });
+        for (const x of order) {
+          const r = recipient(x.recipientKey);
+          const i = S.recipients.indexOf(r);
+          const b = h("button", { type: "button", class: `os-placed__item os-r${colourOf(x.recipientKey)}`, attrs: { "data-testid": "placed-field" } },
+            icon(FIELD_ICON[x.type], { size: 16 }),
+            h("span", { class: "os-placed__main" }, h("span", { class: "os-placed__name", text: x.label || t(`ftype.${x.type}`) }), h("span", { class: "os-muted os-small os-trunc", text: t("prepare.placed-meta", { name: displayName(r, i), page: pageIndex(x.docKey, x.page) + 1 }) })),
+            x.required ? h("span", { class: "os-placed__req", text: t("prepare.required") }) : null);
+          b.addEventListener("click", () => select(x.key));
+          ul.append(h("li", {}, b));
+        }
+        props.append(ul);
       }
       return;
     }
@@ -605,8 +699,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       f[k] = v; S.dirty = true;
       renderFieldsOnly();
     };
-    props.append(h("h2", { class: "os-panel__title", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }) }));
-    props.append(selectField(t(TPL ? "template.assigned-to" : "prepare.assigned-to"), S.recipients.map((r, i) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "fp-recipient", value: f.recipientKey, onChange: (v) => set("recipientKey", v) }).el);
+    props.append(h("div", { class: "os-props__head" },
+      h("h3", { class: "os-props__title", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }) }),
+      button(t("prepare.back-to-list"), { icon: "list", size: "sm", variant: "ghost", iconOnly: true, onClick: () => { select(null); props.querySelector("button")?.focus({ preventScroll: true }); } })));
+    props.append(selectField(t(TPL ? "template.assigned-to" : "prepare.assigned-to"), S.recipients.map((r, i) => [r, i]).filter(([r]) => r.type === "signer" || r.key === f.recipientKey).map(([r, i]) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "fp-recipient", value: f.recipientKey, onChange: (v) => set("recipientKey", v) }).el);
     if (takesInput(f.type)) {
       const req = h("input", { id: "fp-required", type: "checkbox", checked: !!f.required });
       req.addEventListener("change", () => set("required", req.checked));
@@ -631,7 +727,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       });
       geo.append(h("label", { class: "os-geo__item", attrs: { for: id } }, h("span", { text: t(`prepare.geo-${k}`) }), inp));
     }
-    props.append(h("p", { class: "os-label", text: t("prepare.position") }), geo, h("p", { class: "os-muted os-small", text: t("prepare.position-help", { page: f.page }) }));
+    // Coordinates are for the few who need them (F-07): under Advanced, closed by default.
+    const adv = h("details", { class: "os-details os-advanced", open: advancedOpen },
+      h("summary", { text: t("prepare.advanced") }),
+      h("p", { class: "os-label", text: t("prepare.position") }), geo, h("p", { class: "os-muted os-small", text: t("prepare.position-help", { page: f.page }) }));
+    adv.addEventListener("toggle", () => { advancedOpen = adv.open; });
+    props.append(adv);
     props.append(h("div", { class: "os-actions" },
       button(t("prepare.duplicate"), { icon: "copy", size: "sm", onClick: () => run("field.duplicate") }),
       button(t("prepare.delete-field"), { icon: "trash-2", size: "sm", variant: "danger", onClick: () => run("field.delete") })));
@@ -768,8 +869,13 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const etagNow = async () => (await ctx.api.getEnvelope(S.id)).etag;
 
   async function save() {
-    const status = document.getElementById("save-status");
-    status.textContent = t("prepare.saving");
+    saving = true;
+    syncStatus();
+    try { await saveNow(); savedAt = new Date(); } finally { saving = false; syncStatus(); }
+    renderAll();
+    await renderStage();
+  }
+  async function saveNow() {
     if (!S.id) {
       const body = {
         subject: S.subject.trim(),
@@ -827,34 +933,48 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const { envelope: final } = await ctx.api.getEnvelope(S.id);
       await loadFromServer(final);
     }
-    status.textContent = t("prepare.saved");
-    renderAll();
-    await renderStage();
   }
 
+  /// What stops sending, each with the step that fixes it (A16).
   function problems() {
     const out = [];
-    if (!S.docs.length) out.push(t("send.need-doc"));
-    if (!signers().length) out.push(t("send.need-signer"));
+    if (!S.docs.length) out.push({ text: t("send.need-doc"), step: "documents" });
+    if (!signers().length) out.push({ text: t("send.need-signer"), step: "recipients" });
     S.recipients.forEach((r, i) => {
-      if (!r.name.trim()) out.push(t("send.need-name", { n: i + 1 }));
-      if (!EMAIL.test(r.email)) out.push(t("send.need-email", { name: displayName(r, i) }));
-      if (r.type === "signer" && !S.fields.some((f) => f.recipientKey === r.key)) out.push(t("send.need-field", { name: displayName(r, i) }));
+      if (!r.name.trim()) out.push({ text: t("send.need-name", { n: i + 1 }), step: "recipients", focus: `#rn-${r.key}` });
+      if (!EMAIL.test(r.email)) out.push({ text: t("send.need-email", { name: displayName(r, i) }), step: "recipients", focus: `#re-${r.key}` });
+      if (r.type === "signer" && !S.fields.some((f) => f.recipientKey === r.key)) out.push({ text: t("send.need-field", { name: displayName(r, i) }), step: "fields", recipient: r.key });
+      // A copy recipient signs nothing: fields left on one would be dropped (P-02).
+      const cc = r.type !== "signer" ? S.fields.filter((f) => f.recipientKey === r.key).length : 0;
+      if (cc) out.push({ text: t("send.cc-fields", { name: displayName(r, i), n: cc }), step: "fields" });
     });
     return out;
   }
 
+  /// The problems in a side panel: each one a button that opens the step and the place to fix it.
+  function showProblems(list, title) {
+    return openPanel({
+      id: "problems",
+      title,
+      description: t("send.problems-text"),
+      build(body, close) {
+        body.append(h("ul", { class: "os-problems" }, ...list.map((p) => {
+          const fix = button(t("send.fix"), { size: "sm", icon: "arrow-right", onClick: async () => {
+            close(null);
+            await go(p.step);
+            if (p.recipient) pick(p.recipient);
+            if (p.focus) setTimeout(() => document.querySelector(p.focus)?.focus(), 0);
+          } });
+          return h("li", {}, icon("triangle-alert", { size: 16 }), h("span", { class: "os-problems__text", text: p.text }), fix);
+        })));
+      },
+      actions: [{ label: t("action.ok"), variant: "primary", value: null }],
+    });
+  }
+
   async function send() {
     const list = problems();
-    if (list.length) {
-      await openDialog({
-        title: t("send.problems-title"),
-        description: t("send.problems-text"),
-        build(body) { body.append(h("ul", { class: "os-problems" }, ...list.map((p) => h("li", {}, icon("triangle-alert", { size: 16 }), h("span", { text: p }))))); },
-        actions: [{ label: t("action.ok"), variant: "primary", value: null }],
-      });
-      return;
-    }
+    if (list.length) { await showProblems(list, t("send.problems-title")); return; }
     const sum = S.recipients.filter((r) => r.type === "signer").length;
     if (!(await confirmDialog(t("send.confirm-title"), t("send.confirm-text", { n: sum, subject: S.subject.trim() || t("envelope.untitled") }), { confirm: t("prepare.send") }))) return;
     await busy(sendBtn, async () => {
@@ -871,7 +991,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
 
   function showSaveError(err) {
-    document.getElementById("save-status").textContent = t("prepare.not-saved");
+    saving = false;
+    syncStatus();
+    status.replaceChildren(icon("circle-alert", { size: 16 }), h("span", { text: t("prepare.not-saved") }));
     const extra = (err.errors || []).map((e) => `${e.pointer || ""} ${e.code || ""}`.trim()).filter(Boolean);
     toast(extra.length ? `${errorMessage(err)} — ${extra.slice(0, 3).join("; ")}` : errorMessage(err), "error");
   }
@@ -879,26 +1001,17 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // ---- Template mode: save ---------------------------------------------------------------
   function templateProblems() {
     const out = [];
-    if (!S.subject.trim()) out.push(t("template.need-name"));
-    if (!S.recipients.length) out.push(t("template.need-role"));
-    else if (!signers().length) out.push(t("send.need-signer"));
+    if (!S.subject.trim()) out.push({ text: t("template.need-name"), step: "review", focus: "#env-subject" });
+    if (!S.recipients.length) out.push({ text: t("template.need-role"), step: "recipients" });
+    else if (!signers().length) out.push({ text: t("send.need-signer"), step: "recipients" });
     return out;
   }
 
   async function saveTemplate() {
     const list = templateProblems();
-    if (list.length) {
-      await openDialog({
-        title: t("template.problems-title"),
-        description: t("send.problems-text"),
-        build(body) { body.append(h("ul", { class: "os-problems" }, ...list.map((p) => h("li", {}, icon("triangle-alert", { size: 16 }), h("span", { text: p }))))); },
-        actions: [{ label: t("action.ok"), variant: "primary", value: null }],
-      });
-      return;
-    }
+    if (list.length) { await showProblems(list, t("template.problems-title")); return; }
     await busy(saveBtn, async () => {
-      const status = document.getElementById("save-status");
-      status.textContent = t("prepare.saving");
+      saving = true; syncStatus();
       const roles = rolesFrom(S.recipients, S.routing);
       let tpl;
       try {
@@ -933,8 +1046,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         }
         partial = S.docs.length > 0;
       }
+      saving = false;
+      savedAt = new Date();
       S.dirty = false;
-      status.textContent = t("prepare.saved");
       toast(partial ? t("template.saved-roles-only") : t("template.saved"), partial ? "info" : "success");
       ctx.navigate("#/templates");
     });
@@ -985,7 +1099,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const order = S.fields.filter((x) => x.docKey === f.docKey && x.page === f.page);
     const next = order[order.indexOf(f) + 1] || order[order.indexOf(f) - 1];
     change(() => { S.fields = S.fields.filter((x) => x !== f); S.selected = null; });
-    say(t("prepare.field-deleted"));
+    toast(t("prepare.field-deleted"), "info", { action: { label: t("cmd.edit.undo"), onClick: () => run("edit.undo") } });
     if (next) select(next.key); else stage.focus();
   });
   reg("field.duplicate", t("cmd.field.duplicate"), () => {
@@ -999,7 +1113,13 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   reg("field.paste", t("cmd.field.paste"), () => {
     const c = S.clipboard;
     if (!c || !S.docs.some((d) => d.key === c.docKey)) return;
-    const copy = { ...c, key: newKey("f"), id: null, server: undefined, ...nudge(c, 12, 12, pageOf(c)) };
+    // Paste lands on the page in view (A23): the same spot there, or nudged on the same page.
+    const where = inView();
+    const samePage = !where || (where.doc.key === c.docKey && where.page === c.page);
+    const target = samePage ? { docKey: c.docKey, page: c.page } : { docKey: where.doc.key, page: where.page };
+    const pg = where && !samePage ? where.doc.pages[where.page - 1] : pageOf(c);
+    const pos = samePage ? nudge(c, 12, 12, pg) : clampRect({ x: c.x, y: c.y, width: c.width, height: c.height }, pg);
+    const copy = { ...c, ...target, key: newKey("f"), id: null, server: undefined, ...pos };
     S.clipboard = copy;
     change(() => { S.fields.push(copy); S.selected = copy.key; });
     select(copy.key);
@@ -1021,11 +1141,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   reg("document.add", t("prepare.add-pdf"), () => fileInput.click(), () => true);
   for (const type of FIELD_TYPES) reg(`field.add-${type}`, t("prepare.add-field", { type: t(`ftype.${type}`) }), () => addFieldInView(type), () => true);
   for (let n = 1; n <= 9; n++) {
-    reg(`recipient.select-${n}`, t("cmd.recipient.select"), () => {
-      S.active = S.recipients[n - 1].key;
-      markActive(); renderPalette();
-      say(t("prepare.placing-for-name", { name: displayName(S.recipients[n - 1], n - 1) }));
-    }, () => S.recipients.length >= n);
+    reg(`recipient.select-${n}`, t("cmd.recipient.select"), () => pick(signers()[n - 1].key), () => signers().length >= n);
   }
 
   // Files dropped from the desktop onto the stage.
@@ -1038,15 +1154,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     addFiles([...e.dataTransfer.files].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name)));
   });
 
-  let resizeTimer = null;
-  const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (S.docs.length && step === "fields") renderStage(); }, 200); };
-  window.addEventListener("resize", onResize);
   const beforeUnload = (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } };
   window.addEventListener("beforeunload", beforeUnload);
+  // Leaving by a link asks first when there is unsaved work (A12).
+  ctx.leaveGuard = async () => !S.dirty || confirmDialog(t("prepare.leave-title"), t("prepare.leave-text"), { confirm: t("prepare.leave"), danger: true });
 
   // ---- Start ---------------------------------------------------------------------------------
   renderAll();
-  stage.append(h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } }));
+  syncStatus();
+  dv.inner.append(h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } }));
   if (S.id) {
     try {
       const { envelope } = await ctx.api.getEnvelope(S.id);
@@ -1065,8 +1181,13 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   if (step === "documents") docsPanel.querySelector(".os-btn--primary")?.focus();
 
   return () => {
-    window.removeEventListener("resize", onResize);
     window.removeEventListener("beforeunload", beforeUnload);
+    ctx.leaveGuard = null;
+    dv.destroy();
+    thumbs.destroy();
+    closePanel();
+    document.body.classList.remove("has-sheet");
+    skipTo("#main", t("a11y.skip"));
     unregisterPrefix("field.");
     unregisterPrefix("edit.");
     unregisterPrefix("envelope.save");

@@ -52,7 +52,7 @@ for (const scheme of ["light", "dark"]) {
       await page.getByTestId("wizard-next").click();
       await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
       await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
-      await expect(page.getByLabel("Left")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Signature field" })).toBeVisible();
       await expectAccessible(page, `prepare, field selected (${scheme})`);
       await page.getByTestId("wizard-next").click();
       await expectAccessible(page, `prepare, review step (${scheme})`);

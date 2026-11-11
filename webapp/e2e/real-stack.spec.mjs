@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { test, expect } from "@playwright/test";
-import { signIn, pdfFile, REAL } from "./helpers.mjs";
+import { signIn, pdfFile, REAL, placingFor } from "./helpers.mjs";
 
 const MAIL = (process.env.OPENSEAL_E2E_MAIL_URL || "http://127.0.0.1:8025").replace(/\/$/, "");
 const OUT = path.resolve(fileURLToPath(new URL("../../target/e2e-sealed", import.meta.url)));
@@ -93,7 +93,7 @@ test("two signers in order sign through emailed links; the sealed PDF and certif
   await expect(page.locator(".os-page")).toHaveCount(2);
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   for (const who of ["1. Ana Signer", "2. Ben Signer"]) {
-    await page.getByLabel("Placing fields for").selectOption({ label: who });
+    await placingFor(page, who);
     await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
   }
   await expect(page.locator(".os-field")).toHaveCount(2);

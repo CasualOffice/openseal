@@ -229,3 +229,114 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
   `target/e2e-screens/visual-*`; fails on horizontal overflow, overlapping controls, unstyled controls, or a blank PDF
   canvas, by sampling pixels), `redesign-screens.spec.mjs`; the send, keyboard, ceremony, a11y and empty-state specs
   follow the stepped flow and the review step.
+
+## UX audit and document-first rebuild (WEB-06, 2026-11-11)
+
+Owner instruction 22 (docs/03): after using the demo, the editor and the signing page gave the PDF far too little
+room and scrolled badly; side panels (resizable, width remembered) instead of dialogs; rem instead of px, scaling with
+the screen and browser zoom. The owner's points were examples; this section is the full audit that followed, then the
+layout the editor and the signing page were rebuilt to.
+
+### How the audit was done
+
+Every task walked end to end in mock mode with Playwright at 1280×800, 1440×900, 1920×1080, 390×844 and at real
+browser zoom 150 % and 200 % (Chromium at zoom z renders a W-wide window as a W/z CSS px viewport at device scale z,
+which is how the spec reproduces it). Before-screenshots: `target/before/visual-*`. Each screen judged against
+Nielsen's ten heuristics (H1–H10), WCAG 2.2 AA, and how the reference products do the same task (docs/48, docs/49, and
+SignNow's public help pages read 2026-11-11: add-edit-fields, keyboard-shortcuts-editor, guide-me-document-signing,
+signing-process-guide, dashboard-overview; DocuSign's help pages served only a script shell or 404 to the fetcher,
+so its column rests on docs/48). Clicks counted from the code paths.
+
+| Task | Before | After |
+| --- | --- | --- |
+| Send one PDF to two signers in order with a CC, one signature each | 17 clicks | 15 (Next and Send in the toolbar; recipient chips switch in one click) |
+| Place 10 fields across 3 pages | 10 palette clicks, 2 thumbnail clicks, scrolling a ~690 px stage | the same clicks in a stage of the full height |
+| Signer: open the field list and jump to a field | 2, the document hidden meanwhile | 1; the panel stays open beside the pages |
+
+### Findings
+
+Severity: **P0** blocks or badly hurts the task, or is the owner's complaint; **P1** a major friction, a WCAG 2.2 AA
+failure or a missing safeguard; **P2** a detail users of the reference products expect; **P3** polish. Status as of
+this branch's last commit.
+
+| # | Screen | Problem | Heuristic / SC | Sev | Fix | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| A1 | Editor | The pages get 56 % of the width at 1440 and ~690 px of height: app bar, demo banner, step bar, zoom bar and wizard footer stack ~290 px of chrome | H8; owner | P0 | Editor frame `100dvh` without the app bar; one toolbar row; panels 13.5 / 15 rem; pages ≥ 65 % of the width | Fixed |
+| A2 | Editor, phone | Palette, zoom bar and a 60–75 vh stage inside a scrolling body: two scrollbars, the page scroll fights the stage | H8; owner | P0 | One scroll container; palette and properties in bottom sheets | Fixed |
+| A3 | Editor, signer, previews | Zoom repaints every page and jumps to the top; "Fit width" sets 100 % (capped at 1.5× fit); no fit page, presets, Ctrl/Cmd +/−/0 or trackpad pinch | H4, H7; owner | P0 | `docview.js`: fit width, fit page, 50–200 %; keys; Ctrl+wheel and touch pinch; scroll anchored at the pointer or the centre | Fixed |
+| A4 | Editor, signer, previews | Every page and thumbnail painted at once; long documents are slow and hold every bitmap | H7 | P1 | Pages near the viewport painted, far ones released; placeholders keep their size | Fixed |
+| A5 | Editor, signer | No "Page n of N"; thumbnails neither follow the scroll nor mark the current page | H1 | P1 | Page indicator (announced); current thumbnail marked and kept in view | Fixed |
+| A6 | Editor | Panels fixed at 264 / 280 px | owner | P1 | `ui/panel.js`: drag and arrow-key resize, min/max, collapse to an icon rail, remembered per panel | Fixed |
+| A7 | Signer | Field list is a modal that hides the document | H6; owner | P1 | Right side panel (bottom sheet on phones) | Fixed |
+| A8 | Signer | Adopt signature is a modal over the field being signed | owner | P1 | Side panel on desktop, bottom sheet on phones; Escape closes; focus returns | Fixed |
+| A9 | Signer, phone | ~590 of 844 px for the document; the sender's message sits above page 1 | H8 | P1 | Full-height frame; the message moves into the fields panel | Fixed |
+| A10 | All | Sizes in px; root size fixed; nothing scales with the screen | owner | P1 | rem everywhere (1 px borders kept); root size by `clamp()` (§Root size) | Fixed |
+| A11 | Editor | Thumbnail numbers 11 px; 12 px labels would fall to 11.25 px at a 15 px root | 1.4.4 | P1 | Smallest text `max(0.75rem, 12px)` | Fixed |
+| A12 | Editor | Leaving by a link (Agreements, Start, Back) discards unsaved work silently; only a reload asks | H3, H5 | P1 | Route guard: "Leave without saving?" (a destructive confirmation, so a modal) | Fixed |
+| A13 | Editor | No sign that work is unsaved | H1 | P1 | Status: "Unsaved changes" / "Saving…" / "Saved at 14:05" | Fixed |
+| A14 | Editor | Undo and redo only as keys | H3, H6 | P1 | Undo and Redo buttons, enabled with the history | Fixed |
+| A15 | Editor | Back and Next in a footer that repeats the step bar and costs 64 px | H8 | P1 | Back, Next, Send and Save in the toolbar | Fixed |
+| A16 | Editor | Send problems in a modal, no way to jump to the cause | H9 | P1 | Problems in a side panel; each a button to its step | Fixed |
+| A17 | Signer | A rejected text value shows only a toast | H9; 3.3.1 | P1 | Inline message under the field (`aria-describedby`) | Fixed |
+| A18 | Signer | Finish disabled with no reason | H1; 3.3.2 | P1 | Reason as tooltip and accessible description ("2 required fields left") | Fixed |
+| A19 | Editor, signer | Skip link goes to `main`, not the document | 2.4.1 | P2 | "Skip to document" | Fixed |
+| A20 | Editor, signer | No announcements for page, zoom or selection | 4.1.3 | P1 | One polite live region per view | Fixed |
+| A21 | Editor | Recipient switcher is a select without colour; keys 1–9 undiscoverable | H6 | P2 | Recipient chips with colour, number and key hint | Fixed |
+| A22 | Editor | Shortcut help unreachable once the app bar is gone | H10 | P2 | Keyboard button in the editor toolbar | Fixed |
+| A23 | Editor | Paste lands on the original page; no way to copy a field to another page | H7 | P2 | Paste lands on the page in view | Fixed |
+| A24 | Editor | Deleting a field gives no undo affordance | H3 | P2 | Toast with Undo | Fixed |
+| A25 | Editor | No multi-select, align or distribute | H7 | P2 | Shift+click selection; align, same size, delete | Open (`WEB-07` proposed) |
+| A26 | Editor | Snapping to a 4 pt grid only; no alignment guides (SignNow has field snapping) | H7 | P2 | Guides to other fields' edges while dragging | Open (`WEB-07` proposed) |
+| A27 | Envelope, Templates, Verify | Preview is a fixed 640 px box inside a scrolling page; zoom resets the scroll | H8 | P1 | Preview on `docview.js` | Fixed |
+| A28 | Admin, Templates, shortcuts | Add or rename user, new API client, rename template, shortcut list are modals | owner | P2 | Side panels (`openPanel`); modals only for void, delete, decline, remove, leave-without-saving | Fixed |
+| A29 | Tables | Headers scroll away | H6 | P2 | Sticky headers | Fixed |
+| A30 | Envelope | No Correct for a sent envelope (DocuSign Correct) | H3 | P1 | Needs the server's correct flow (docs/24) | Open (server row needed) |
+| A31 | Agreements, Home | No notice when an envelope changes status while the list is open | H1 | P2 | Refresh on focus and every minute | Open (`WEB-07` proposed) |
+| A32 | Signer | No "saved" feedback after a fill (values are saved per field) | H1 | P2 | "Saved" in the bar after each fill | Fixed |
+| A33 | Signer | Required vs optional shown by outline colour plus a star | 1.4.1 | P2 | Names say "required"; optional dashed; list says it in words | Kept (already met) |
+| A34 | Editor | Palette drag is HTML drag and drop only (no touch) | 2.5.7 | P2 | Tap places on the page in view | Kept (already met) |
+| A35 | Verify | The server image lacks the WASM verifier and its CSP blocks it | — | P1 | `WEB-05`: Dockerfile builds it; server adds `'wasm-unsafe-eval'` for `verify.html` only | Fixed |
+
+### Layout spec: editor (fields step) and signing page
+
+Both are a full-height frame (`100dvh`; the page itself never scrolls) built from the same parts:
+
+```
+┌ toolbar 3.5rem (the only chrome) ─────────────────────────────────────────────────────────────┐
+├ left panel ┬ document scroller (the one scroll container) ─────────────────────┬ right panel ┤
+│ 13.5rem    │ pages centred, 1.5rem apart; fit width by default                  │ 15rem       │
+│ min 11     │ placeholders sized at the current scale; canvases painted within   │ min 13      │
+│ max 24     │ one viewport above and below, released beyond three                │ max 30      │
+│ or a 3rem  │                                                                    │ or a 3rem   │
+│ icon rail  │                                                                    │ icon rail   │
+└────────────┴────────────────────────────────────────────────────────────────────┴─────────────┘
+```
+
+- **Toolbar**, editor: back, title, steps; on the fields step the document group (zoom out, zoom preset — fit width,
+  fit page, 50–200 % — zoom in, "Page 3 of 12"), undo, redo, shortcuts; then save status, Save draft, Back, Next or
+  Send. Signer: mark, subject and progress, the document group, Fields, More, Finish.
+- **Left panel**, editor: recipient chips (colour, number, key), the field palette, and the page thumbnails, which
+  scroll on their own, follow the document and jump on click. Signer: page thumbnails (collapsed by default).
+- **Right panel**, editor: properties of the selected field, or the list of placed fields. Signer: the sender's
+  message and the field list with states; on review, the values and Finish. Adopt signature opens as a side panel
+  over it.
+- **Panels** are `aside` landmarks with a heading; the inner edge is a `separator` handle (pointer drag; ←/→ 1 rem,
+  Shift ×4, Home/End to min/max); collapse turns the panel into a 3 rem icon rail; width and state are stored per panel
+  in `localStorage["openseal.panel.<id>"]` (try/catch: a blocked store just forgets).
+- **Below 48em** (phones, and a 1440 window at 200 % zoom): no side panels; the document takes the width; the palette
+  and properties (editor), field list and adopt (signer) are bottom sheets up to 85 dvh, opened from the toolbar or by
+  selecting a field; thumbnails hidden; the signer's Next and Finish sit in a bottom bar.
+- **Zoom** is a scale on PDF points. Fit width = (scroller width − 3 rem) / widest page; fit page also fits the tallest
+  page's height; steps 50, 75, 100, 125, 150, 200 %; pinch and Ctrl+wheel are continuous between 25 % and 400 %. A
+  zoom keeps the document point under the pointer (wheel, pinch) or under the viewport centre (buttons, keys) in place.
+  Ctrl/Cmd + = / − / 0 act on the document while the view is mounted.
+- **Fields** are positioned in PDF points × scale (px), independent of rem; everything else is rem.
+- **Order**: "Skip to document" → toolbar → left panel → pages (fields in reading order) → right panel. Page, zoom and
+  selection changes are announced in one polite live region.
+
+### Root size
+
+`html { font-size: 100% }`, and from 64em `clamp(0.9375rem, 0.4375rem + 0.625vw, 1.125rem)`: 15 px at 1280, 16 at
+1440, 18 from 1760. `rem` inside the root's `font-size` and `em` in media queries both mean the browser's default size,
+so a user who set 20 px gets everything 25 % larger; browser zoom shrinks the CSS viewport, so 1440 at 200 % is the
+phone layout at 16 px. The smallest text token is `max(0.75rem, 12px)`.

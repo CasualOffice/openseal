@@ -55,7 +55,7 @@ const chromiumArgs = (process.env.OPENSEAL_E2E_CHROMIUM_ARGS || "").split(" ").f
 const chromiumChannel = process.env.OPENSEAL_E2E_CHROMIUM_CHANNEL || undefined; // e.g. "chromium" (new headless)
 const chrome = { ...devices["Desktop Chrome"], channel: chromiumChannel, launchOptions: { args: chromiumArgs } };
 
-const desktop = /(signin-dashboard|send|keyboard|a11y|screens|empty-states|web02|redesign-screens|visual|real-stack)\.spec\.mjs$/;
+const desktop = /(signin-dashboard|send|keyboard|a11y|screens|empty-states|web02|redesign-screens|visual|docview|real-stack)\.spec\.mjs$/;
 const signer = /(ceremony|decline|a11y-sign)\.spec\.mjs$/;
 
 export default defineConfig({

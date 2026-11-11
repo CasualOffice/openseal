@@ -27,23 +27,24 @@
       <p id="bar-progress" class="os-sign__barprogress" role="status"></p>
     </div>
     <span id="loc-chip" class="os-statuschip" role="status" hidden></span>
+    <span id="save-chip" class="os-sign__savechip" role="status"></span>
+    <!-- WEB-06: zoom and the page are in the document's own bar; Fields shows the field
+         list panel (a bottom sheet on phones). -->
     <div id="sign-tools" class="os-sign__tools" hidden>
-      <button type="button" id="zoom-out" class="os-btn os-btn--ghost os-btn--lg os-btn--icon" data-i18n-attr="aria-label:sign.zoom-out;title:sign.zoom-out"></button>
-      <span id="zoom-label" class="os-zoom__label" aria-live="polite"></span>
-      <button type="button" id="zoom-in" class="os-btn os-btn--ghost os-btn--lg os-btn--icon" data-i18n-attr="aria-label:sign.zoom-in;title:sign.zoom-in"></button>
-      <button type="button" id="fields-btn" class="os-btn os-btn--secondary os-btn--lg"><span data-i18n="sign.fields.button">Fields</span></button>
+      <button type="button" id="fields-btn" class="os-btn os-btn--secondary os-btn--lg" data-i18n-attr="title:sign.fields.open"><span data-i18n="sign.fields.button">Fields</span></button>
     </div>
+    <span id="finish-reason" class="os-sr-only"></span>
     <div class="os-menu-wrap">
       <button type="button" id="more-btn" class="os-btn os-btn--ghost os-btn--lg" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu" hidden></button>
       <div id="more-menu" class="os-menu os-menu--end" role="menu" data-i18n-attr="aria-label:sign.more" hidden></div>
     </div>
-    <button type="button" id="bar-finish" class="os-btn os-btn--primary os-btn--lg os-sign__barfinish" disabled hidden><span data-i18n="sign.finish">Finish</span></button>
+    <button type="button" id="bar-finish" class="os-btn os-btn--primary os-btn--lg os-sign__barfinish" aria-disabled="true" hidden><span data-i18n="sign.finish">Finish</span></button>
   </header>
   <main id="main" class="os-sign__main" tabindex="-1"></main>
   <footer id="guide" class="os-sign__guide" hidden>
     <p id="guide-progress" class="os-sign__progress" role="status"></p>
     <button type="button" id="guide-next" class="os-btn os-btn--secondary os-btn--lg"><span data-i18n="sign.start">Start</span></button>
-    <button type="button" id="guide-finish" class="os-btn os-btn--primary os-btn--lg" disabled><span data-i18n="sign.finish">Finish</span></button>
+    <button type="button" id="guide-finish" class="os-btn os-btn--primary os-btn--lg" aria-disabled="true"><span data-i18n="sign.finish">Finish</span></button>
   </footer>
 </body>
 </html>

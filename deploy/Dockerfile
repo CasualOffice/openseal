@@ -32,11 +32,36 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && cp target/release/casual-sign-server target/release/casual-sign-worker \
        target/release/casual-sign-keyd /out/
 
+# ---- wasm: the browser verifier for verify.html (WEB-05) ---------------------------
+# casual-sign-wasm built exactly as tools/build-webapp-wasm.sh and tools/wasm-parity.sh
+# ship it (wasm-pack 0.14.0, --target web, opt-level "z", fat LTO, no wasm-opt), so the
+# server's Verify page runs the same verifier the parity job checks.
+FROM ${RUST_IMAGE} AS wasm
+RUN rustup target add wasm32-unknown-unknown
+# wasm-bindgen's CLI built here at the version Cargo.lock pins (wasm-pack uses it from
+# PATH): the prebuilt binary wasm-pack would download needs a newer glibc than Debian 12.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo install wasm-pack --version 0.14.0 --locked \
+ && cargo install wasm-bindgen-cli --version 0.2.130 --locked
+WORKDIR /src
+COPY . .
+ENV CARGO_TERM_COLOR=never CARGO_INCREMENTAL=0
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    CARGO_PROFILE_RELEASE_OPT_LEVEL=z CARGO_PROFILE_RELEASE_LTO=true \
+    wasm-pack --quiet build crates/casual-sign-wasm --release --target web --no-pack \
+        --out-dir /out/pkg -- --locked \
+ && mkdir -p /out/openseal-wasm \
+ && cp /out/pkg/casual_sign_wasm.js /out/pkg/casual_sign_wasm_bg.wasm /out/openseal-wasm/
+
 # ---- server: the API, the ceremony and the web app ---------------------------------
 FROM ${RUNTIME_IMAGE} AS server
 COPY --from=build /out/casual-sign-server /usr/local/bin/casual-sign-server
-# The web app's files (.dockerignore leaves out its tests); read once at start.
+# The web app's files (.dockerignore leaves out its tests); read once at start. The
+# verifier comes from the wasm stage; the server sends verify.html alone a policy with
+# 'wasm-unsafe-eval' (casual-sign-server src/web.rs, VERIFY_CSP).
 COPY webapp /srv/webapp
+COPY --from=wasm /out/openseal-wasm /srv/webapp/vendor/openseal-wasm
 ENV OPENSEAL_WEBAPP_DIR=/srv/webapp OPENSEAL_LISTEN=0.0.0.0:8080
 USER nonroot
 EXPOSE 8080
