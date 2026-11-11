@@ -431,6 +431,13 @@ function savedChip() {
 function fieldNode(f, pg) {
   const box = h("div", { class: `os-sfield os-sfield--${f.type}${f.required ? " is-required" : ""}`, attrs: { "data-field-id": f.id, "data-field": f.type } });
   placeBox(box, f.p, pg);
+  // Phones: a field too small to use is zoomed to a usable size when it is reached by
+  // typing into it or tabbing to it, not only through Next (P-05). A tapped button or
+  // box is left alone: zooming under the finger would swallow the tap, and both have a
+  // 44 px touch area already.
+  box.addEventListener("focusin", (e) => {
+    if (phone() && dv && f.p.height * dv.scale < 32 && e.target.matches?.(":focus-visible")) focusField(f.id, false);
+  });
   const req = f.required ? `, ${t("sign.required")}` : "";
   const label = f.label || t(`ftype.${f.type}`);
   if (f.type === "signature" || f.type === "initials") {

@@ -1128,3 +1128,12 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
   .os-dock--static .os-stack { grid-template-columns: 1fr 1fr; }
   .os-guidetag { display: none !important; }
 }
+
+/* Short windows on the signing page too (P-03, 400 % zoom): the bar and the guide stop
+ * being pinned; the page scrolls and the document view takes the full window height. */
+@media (max-height: 31.25em) {
+  .os-sign { display: block; height: auto; min-height: 100dvh; overflow: visible; }
+  .os-sign__main { overflow: visible; }
+  .os-sign__main.is-frame-host { height: 100dvh; overflow: hidden; }
+  .os-docbar { display: none; }
+}
