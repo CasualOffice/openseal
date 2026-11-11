@@ -1,0 +1,16 @@
+# deploy/Dockerfile (T-2F) builds from the workspace's sources only (BuildKit reads this file
+# beside the Dockerfile in place of a root .dockerignore).
+*
+!Cargo.toml
+!Cargo.lock
+!crates
+!server
+!migrations
+!webapp
+!deploy
+**/target
+webapp/e2e
+webapp/tests
+webapp/package.json
+**/node_modules
+**/.DS_Store

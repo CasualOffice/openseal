@@ -61,6 +61,12 @@ components:
       in: query
       required: false
       schema: {$ref: '#/components/schemas/EnvelopeStatus'}
+    search:
+      name: q
+      in: query
+      required: false
+      description: Text the subject, or a recipient's name or email, contains (ignoring case); at most 200 characters, no control characters.
+      schema: {type: string, maxLength: 200}
     version:
       name: version
       in: query
@@ -311,6 +317,11 @@ components:
         email: {type: string}
         routing_order: {type: integer}
         auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}}
+        access_code:
+          type: string
+          maxLength: 255
+          writeOnly: true
+          description: "A new access code, stored only as Argon2id. Needed when `auth` gains `access_code`; refused when the resulting `auth` lacks it. Removing `access_code` from `auth` deletes the stored code. Draft or correcting envelopes only."
     Field:
       type: object
       description: The model's field (docs/22 §6); `placement` in displayed page points, origin top-left.
@@ -839,6 +850,7 @@ paths:
         - $ref: '#/components/parameters/cursor'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/search'
       responses:
         '200':
           description: OK
@@ -1537,6 +1549,7 @@ paths:
     get:
       operationId: ceremonyView
       summary: "Recipient's view (ceremony; not public API)"
+      description: "With `Accept: text/html` and not `application/json` (a browser opening the link), the web app's signing page, which checks nothing and records nothing; otherwise the view as JSON."
       security: []
       x-permission: public
       responses:
@@ -1545,6 +1558,8 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyView'}
+            text/html:
+              schema: {type: string}
         default: {$ref: '#/components/responses/Problem'}
   /s/{token}/session:
     parameters:

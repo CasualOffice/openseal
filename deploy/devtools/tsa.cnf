@@ -1,0 +1,19 @@
+# The development TSA's `openssl ts -reply` settings (T-2F). Never for production.
+[ tsa ]
+default_tsa = dev_tsa
+
+[ dev_tsa ]
+dir = /secrets
+serial = /var/lib/tsa/serial
+crypto_device = builtin
+signer_cert = /secrets/tsa.pem
+certs = /secrets/ca.pem
+signer_key = /secrets/tsa.key
+signer_digest = sha256
+default_policy = 1.2.3.4.1   # an example arc, as OpenSSL's own sample: development only
+digests = sha256, sha384, sha512
+accuracy = secs:1
+ordering = no
+tsa_name = no
+ess_cert_id_chain = no
+ess_cert_id_alg = sha256

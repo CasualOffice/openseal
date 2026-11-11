@@ -59,8 +59,22 @@ pub(crate) async fn request_context(
         })
         .await;
     let h = resp.headers_mut();
+    // A web app page sets its own policy and permissions (row WEB-04, `web.rs`).
     for (name, value) in [
         ("content-security-policy", CSP),
+        (
+            "permissions-policy",
+            "camera=(), microphone=(), geolocation=()",
+        ),
+    ] {
+        if !h.contains_key(name) {
+            h.insert(
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            );
+        }
+    }
+    for (name, value) in [
         ("x-content-type-options", "nosniff"),
         ("referrer-policy", "no-referrer"),
         ("x-frame-options", "DENY"),
@@ -69,10 +83,6 @@ pub(crate) async fn request_context(
         (
             "strict-transport-security",
             "max-age=63072000; includeSubDomains",
-        ),
-        (
-            "permissions-policy",
-            "camera=(), microphone=(), geolocation=()",
         ),
     ] {
         h.insert(

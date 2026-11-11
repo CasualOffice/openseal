@@ -79,7 +79,7 @@ Slice 1's web app, in `webapp/`: plain ES modules, no framework or bundler (ADR-
 | Screen | Where | Calls |
 | --- | --- | --- |
 | Sign-in | `app.html#/signin` (`signin.js`) | `POST /api/v1/auth/login`, `GET /api/v1/auth/session`, `POST /api/v1/auth/logout` |
-| Agreements | `app.html#/agreements[?status=]` (`dashboard.js`) | `GET /api/v1/envelopes?status=&cursor=&limit=`; search filters the loaded rows (no text query in the API yet) |
+| Agreements | `app.html#/agreements[?status=]` (`dashboard.js`) | `GET /api/v1/envelopes?status=&cursor=&limit=`; search filters the loaded rows (the API's `q`, `WEB-04`, is in `api.js` for the screen to use) |
 | Envelope detail | `app.html#/envelopes/{id}` (`envelope.js`) | `GET …/{id}`, `GET …/audit`, `POST …/resend`, `POST …/void`, `GET …/documents/{doc}/content?version=sealed`, `GET …/certificate` |
 | Prepare | `app.html#/prepare[/{id}]` (`prepare.js`) | `POST /api/v1/envelopes` (documents, recipients, fields in one call); for a saved draft `POST …/documents`, `POST/PATCH/DELETE …/recipients`, `POST/PATCH/DELETE …/fields` with `If-Match`, `PATCH …/{id}`; `POST …/send` |
 | Signing | `/s/{token}` → `sign.html` (`sign.js`, `signature.js`) | `POST /s/{t}/session`, `/authenticate`, `/consent`, `GET /s/{t}/documents/{doc}/content`, `POST …/viewed`, `/adopt`, `PUT /fields/{f}`, `/finish`, `/decline`, `/finish-later`; `location` (GEO-01) on consent, viewed, adopt, finish and decline when the envelope sets `signing_options.capture_location` |
@@ -103,7 +103,9 @@ Slice 1's web app, in `webapp/`: plain ES modules, no framework or bundler (ADR-
 
 Each page carries this as a meta tag; the server sends it as a header too, adding `frame-ancestors 'none'` (which a
 meta tag cannot carry), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
-`Permissions-Policy: geolocation=(self), camera=(), microphone=()`. `tools/serve-webapp.py` sends the same headers.
+`Permissions-Policy: geolocation=(self), camera=(), microphone=()`. `tools/serve-webapp.py` sends the same headers,
+and so does `casual-sign-server`, which serves `webapp/` at `/` and `sign.html` at `/s/{token}` for a browser
+(`OPENSEAL_WEBAPP_DIR`, `WEB-04`, docs/40 §As built); its other files keep the API's `default-src 'none'`.
 
 ```
 default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self';
@@ -146,6 +148,16 @@ colour falls under 4.5:1 or a control edge, focus ring or recipient colour under
   both themes; empty states with screenshots; on Chromium, WebKit, an iPhone viewport and reduced motion. The same
   specs run against a real server with `OPENSEAL_E2E_BASE_URL` (signing tokens from `OPENSEAL_E2E_SIGN_TOKEN` and
   `OPENSEAL_E2E_DECLINE_TOKEN`, since the server emails them).
+- **On the Compose deployment** (`E2E-01`, `T-2F`; CI job `compose-e2e`, docs/65): every spec in Chromium and WebKit with mock
+  off. `real-stack.spec.mjs` runs only there: sign in, upload, two signers in order, send; each signer opens the link
+  the worker emailed (read from Mailpit's API) and signs; the sender sees Completed and downloads the sealed PDF and
+  the certificate into `target/e2e-sealed/`, which pyHanko then validates against the stack's root
+  (`tools/verify-sealed.py`). Against a real server the first sign-in seeds a draft and a sent envelope through the
+  API and later sign-ins reuse its session (the server allows ten sign-ins a minute); specs that need a seeded
+  mock envelope or an emailed token skip, saying so. Found and fixed by this run: the signing page took
+  `completing` (the server sealing) for "others still to sign", and showed an error rather than "this link does not
+  work" for the server's `CS-AUTH-0002` (an unknown, expired or revoked link, answered alike); and the server's
+  ceremony cookie was always `Secure`, which WebKit drops over `http://localhost` (docs/40 §As built).
 
 ### Not yet
 

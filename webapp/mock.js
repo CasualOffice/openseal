@@ -305,7 +305,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         const limit = Math.min(Math.max(Number(query.get("limit")) || 50, 1), 200);
         const status = query.get("status");
         const start = Number(query.get("cursor") || 0) || 0;
-        const all = db.envelopes.filter((e) => !status || e.status === status).sort((a, b) => b.created_at.localeCompare(a.created_at));
+        // `q` (WEB-04): the subject or a recipient's name or email contains it, any case.
+        const text = (query.get("q") || "").trim().toLowerCase();
+        const matches = (e) => !text || [e.subject, ...(e.recipients || []).flatMap((r) => [r.name, r.email])].some((v) => (v || "").toLowerCase().includes(text));
+        const all = db.envelopes.filter((e) => (!status || e.status === status) && matches(e)).sort((a, b) => b.created_at.localeCompare(a.created_at));
         const page = all.slice(start, start + limit);
         return json(200, {
           items: page.map((e) => ({ id: e.id, status: e.status, subject: e.subject, sender_user_id: e.sender_user_id, created_at: e.created_at })),

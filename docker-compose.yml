@@ -1,0 +1,161 @@
+# OpenSeal on one machine, for evaluation and development (T-2F, docs/65).
+#
+#   docker compose up -d --build --wait
+#   docker compose exec -e OPENSEAL_ADMIN_PASSWORD='a long passphrase' server \
+#       casual-sign-server bootstrap "Acme" admin@acme.example "Ada Admin"
+#   open http://localhost:8080          # the web app; mail at http://localhost:8025
+#   docker compose down -v              # stop and discard every volume (data, keys)
+#
+# Development only: `pki` generates a throwaway CA, keys and passwords into the `secrets`
+# volume on first start, `tsa` is a development time-stamping authority, keyd keeps the
+# seal key in SoftHSM, and the server sends cookies over plain HTTP on localhost. For
+# production follow docs/65 §Production checklist. Every image is pinned by digest
+# (docs/04 rule 31); ports bind to the loopback address only.
+
+name: openseal
+
+x-secrets: &secrets
+  type: volume
+  source: secrets
+  target: /secrets
+  read_only: true
+
+x-s3: &s3
+  OPENSEAL_S3_ENDPOINT: http://s3:8333
+  OPENSEAL_S3_BUCKET: openseal
+  OPENSEAL_S3_ACCESS_KEY: openseal
+  OPENSEAL_S3_SECRET_KEY_FILE: /secrets/s3-secret-key
+
+services:
+  pki:
+    build: {context: ., dockerfile: deploy/devtools/Dockerfile}
+    image: openseal-devtools:dev
+    command: ["sh", "/usr/local/bin/dev-pki"]
+    user: root
+    volumes: [secrets:/secrets]
+    restart: "no"
+
+  tsa:
+    image: openseal-devtools:dev
+    command: ["python3", "-I", "/usr/local/bin/dev-tsa", "8318"]
+    user: tsa
+    volumes: [*secrets]
+    depends_on: {pki: {condition: service_completed_successfully}}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8318), 2)"]
+      interval: 3s
+      retries: 20
+
+  postgres:
+    image: postgres:17-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
+    environment:
+      POSTGRES_DB: openseal
+      POSTGRES_PASSWORD_FILE: /secrets/postgres-password
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - *secrets
+      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
+    depends_on: {pki: {condition: service_completed_successfully}}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "openseal"]
+      interval: 3s
+      retries: 30
+
+  s3:
+    image: chrislusf/seaweedfs:latest@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/secrets/s3.json", "-ip.bind=0.0.0.0"]
+    volumes: [s3:/data, *secrets]
+    depends_on: {pki: {condition: service_completed_successfully}}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9333/cluster/status"]
+      interval: 3s
+      retries: 40
+
+  mailpit:
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    ports: ["127.0.0.1:${OPENSEAL_MAIL_PORT:-8025}:8025"]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      retries: 20
+
+  keyd:
+    build: {context: ., dockerfile: deploy/Dockerfile, target: keyd}
+    image: openseal-keyd:dev
+    environment:
+      OPENSEAL_KEYD_TLS_CERT: /secrets/keyd-tls-chain.pem
+      OPENSEAL_KEYD_TLS_KEY: /secrets/keyd-tls.key
+      OPENSEAL_KEYD_CLIENT_CA: /secrets/ca.pem
+      OPENSEAL_KEYD_ALLOW_LIST: /secrets/keyd-allow-list
+      OPENSEAL_KEYD_OPLOG: /var/lib/keyd/oplog
+      OPENSEAL_KEYD_CHAIN: /secrets/seal-chain.pem
+      OPENSEAL_KEYD_PKCS11_TOKEN: openseal
+      OPENSEAL_KEYD_PKCS11_KEY_LABEL: platform
+      OPENSEAL_KEYD_PKCS11_PIN_FILE: /secrets/softhsm-pin
+      # Development: import the generated key into a new token on first start.
+      OPENSEAL_KEYD_IMPORT_KEY: /secrets/seal.key
+      OPENSEAL_KEYD_SO_PIN_FILE: /secrets/softhsm-so-pin
+    volumes: [keyd:/var/lib/keyd, *secrets]
+    depends_on: {pki: {condition: service_completed_successfully}}
+
+  migrate:
+    build: {context: ., dockerfile: deploy/Dockerfile, target: server}
+    image: openseal-server:dev
+    command: ["migrate"]
+    environment:
+      OPENSEAL_MIGRATE_DATABASE_URL_FILE: /secrets/migrate-database-url
+    volumes: [*secrets]
+    depends_on: {postgres: {condition: service_healthy}}
+    restart: "no"
+    healthcheck: {disable: true}
+
+  server:
+    image: openseal-server:dev
+    environment:
+      <<: *s3
+      OPENSEAL_DATABASE_URL_FILE: /secrets/database-url
+      OPENSEAL_JWT_SIGNING_KEY_FILE: /secrets/jwt.key
+      OPENSEAL_PUBLIC_URL: http://localhost:${OPENSEAL_HTTP_PORT:-8080}
+      # Plain-HTTP cookies, for http://localhost only (the token key is the file above).
+      OPENSEAL_DEV_INSECURE_KEY: "1"
+    ports: ["127.0.0.1:${OPENSEAL_HTTP_PORT:-8080}:8080"]
+    volumes: [*secrets]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      s3: {condition: service_healthy}
+
+  worker:
+    build: {context: ., dockerfile: deploy/Dockerfile, target: worker}
+    image: openseal-worker:dev
+    environment:
+      <<: *s3
+      OPENSEAL_DATABASE_URL_FILE: /secrets/database-url
+      OPENSEAL_BASE_URL: http://localhost:${OPENSEAL_HTTP_PORT:-8080}
+      OPENSEAL_MAIL_FROM: no-reply@openseal.localhost
+      OPENSEAL_MAIL_FROM_NAME: OpenSeal (development)
+      OPENSEAL_MAIL_DOMAIN: openseal.localhost
+      OPENSEAL_ABUSE: abuse@openseal.localhost
+      OPENSEAL_SMTP_HOST: mailpit
+      OPENSEAL_SMTP_PORT: "1025"
+      OPENSEAL_SMTP_SECURITY: plain
+      OPENSEAL_TSA_URLS: http://tsa:8318/
+      OPENSEAL_TRUST_ANCHORS: /secrets/ca.pem
+      OPENSEAL_KEYD_ADDR: keyd:7443
+      OPENSEAL_KEYD_SERVER_NAME: keyd
+      OPENSEAL_KEYD_CA: /secrets/ca.pem
+      OPENSEAL_KEYD_CLIENT_CERT: /secrets/worker-client-chain.pem
+      OPENSEAL_KEYD_CLIENT_KEY: /secrets/worker-client.key
+      OPENSEAL_SEAL_NAME: OpenSeal development
+      OPENSEAL_SEAL_REASON: Sealed on completion (development)
+    volumes: [*secrets]
+    depends_on:
+      server: {condition: service_healthy}
+      keyd: {condition: service_healthy}
+      tsa: {condition: service_healthy}
+      mailpit: {condition: service_healthy}
+
+volumes:
+  secrets:
+  postgres:
+  s3:
+  keyd:

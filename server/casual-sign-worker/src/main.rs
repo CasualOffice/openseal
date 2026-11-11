@@ -3,7 +3,10 @@
 //! | Variable | Meaning |
 //! | --- | --- |
 //! | `OPENSEAL_DATABASE_URL` (or `_FILE`) | PostgreSQL URL as the application role |
-//! | `OPENSEAL_BLOB_DIR` | The filesystem blob store's root |
+//! | `OPENSEAL_BLOB_DIR` | The filesystem blob store's root, or: |
+//! | `OPENSEAL_S3_ENDPOINT`, `OPENSEAL_S3_BUCKET`, `OPENSEAL_S3_REGION` (default `us-east-1`) | An S3-compatible bucket instead, as the API server's |
+//! | `OPENSEAL_S3_ACCESS_KEY`, `OPENSEAL_S3_SECRET_KEY` (or `_FILE`) | Its credentials |
+//! | `OPENSEAL_S3_VIRTUAL_HOST=1` | Virtual-host URLs (AWS) rather than path style |
 //! | `OPENSEAL_WORKER_NAME` | Recorded on claimed jobs (default `worker`) |
 //! | `OPENSEAL_BASE_URL` | Signing links are `{base}/s/{token}` |
 //! | `OPENSEAL_MAIL_FROM`, `OPENSEAL_MAIL_FROM_NAME`, `OPENSEAL_MAIL_DOMAIN` | The `From` address and name; the `Message-ID` domain |
@@ -32,7 +35,7 @@ use casual_sign_keyd::{DevKeyConsent, Endpoint, FileKey, RemoteKey, certificates
 use casual_sign_sdk::{CertificateOptions, Engine, FontSet, Limits, TrustStore};
 use casual_sign_secrets::env_secret;
 use casual_sign_store::Store;
-use casual_sign_store::blob::FsBlobStore;
+use casual_sign_store::blob::{BlobStore, FsBlobStore, S3BlobStore, S3Config};
 use casual_sign_worker::email::{Mailer, SmtpConfig, SmtpSecurity};
 use casual_sign_worker::seal::{SealKey, SealServices, Shared};
 use casual_sign_worker::webhook::{IpRange, Sender, SsrfPolicy};
@@ -91,17 +94,8 @@ fn seal_key() -> Result<SealKey, WorkerError> {
     Ok(SealKey::Remote(remote))
 }
 
-fn configure() -> Result<
-    (
-        WorkerConfig,
-        SmtpConfig,
-        SealServices,
-        SsrfPolicy,
-        String,
-        String,
-    ),
-    WorkerError,
-> {
+fn configure() -> Result<(WorkerConfig, SmtpConfig, SealServices, SsrfPolicy, String), WorkerError>
+{
     let mut config = WorkerConfig {
         name: var("OPENSEAL_WORKER_NAME").unwrap_or_else(|| "worker".into()),
         base_url: need("OPENSEAL_BASE_URL")?,
@@ -186,22 +180,53 @@ fn configure() -> Result<
     let db = secret("OPENSEAL_DATABASE_URL")?.ok_or(WorkerError::Config {
         setting: "OPENSEAL_DATABASE_URL",
     })?;
-    Ok((
-        config,
-        smtp,
-        seal,
-        policy,
-        db.expose().to_owned(),
-        need("OPENSEAL_BLOB_DIR")?,
-    ))
+    Ok((config, smtp, seal, policy, db.expose().to_owned()))
+}
+
+/// The S3 bucket named by `OPENSEAL_S3_*`, when `OPENSEAL_S3_ENDPOINT` is set.
+fn s3_config() -> Result<Option<S3Config>, WorkerError> {
+    let Some(endpoint) = var("OPENSEAL_S3_ENDPOINT") else {
+        return Ok(None);
+    };
+    let secret_key = secret("OPENSEAL_S3_SECRET_KEY")?.ok_or(WorkerError::Config {
+        setting: "OPENSEAL_S3_SECRET_KEY",
+    })?;
+    Ok(Some(S3Config {
+        endpoint,
+        bucket: need("OPENSEAL_S3_BUCKET")?,
+        region: var("OPENSEAL_S3_REGION").unwrap_or_else(|| "us-east-1".into()),
+        access_key: need("OPENSEAL_S3_ACCESS_KEY")?,
+        secret_key: secret_key.expose().to_owned(),
+        path_style: var("OPENSEAL_S3_VIRTUAL_HOST").as_deref() != Some("1"),
+    }))
 }
 
 async fn run() -> Result<(), WorkerError> {
-    let (config, smtp, seal, policy, db, blobs) = configure()?;
+    let (config, smtp, seal, policy, db) = configure()?;
     let store = Store::connect(&db, 8).await?;
+    match s3_config()? {
+        Some(s3) => {
+            let blobs = S3BlobStore::new(&s3)?;
+            serve(store, Arc::new(blobs), config, smtp, seal, policy).await
+        }
+        None => {
+            let blobs = FsBlobStore::new(need("OPENSEAL_BLOB_DIR")?)?;
+            serve(store, Arc::new(blobs), config, smtp, seal, policy).await
+        }
+    }
+}
+
+async fn serve<B: BlobStore + 'static>(
+    store: Store,
+    blobs: Arc<B>,
+    config: WorkerConfig,
+    smtp: SmtpConfig,
+    seal: SealServices,
+    policy: SsrfPolicy,
+) -> Result<(), WorkerError> {
     let worker = Worker::new(
         store,
-        Arc::new(FsBlobStore::new(blobs)?),
+        blobs,
         config,
         Some(Mailer::new(&smtp)?),
         Sender::new(policy, &[]),

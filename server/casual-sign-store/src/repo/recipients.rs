@@ -530,6 +530,26 @@ impl Recipients<'_> {
         Ok(())
     }
 
+    /// Delete a recipient's access code requirement, when it has one (its method was
+    /// removed from the recipient's authentication).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn clear_access_code(&mut self, recipient: RecipientId) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "DELETE FROM recipient_auth_requirements \
+             WHERE account_id = $1 AND recipient_id = $2 AND kind = 'access_code'",
+            acct,
+            recipient.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
     /// The Argon2id PHC string of a recipient's access code, when one is set.
     ///
     /// # Errors
