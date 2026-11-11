@@ -226,6 +226,39 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
   await expectAccessible(page, "admin account");
 });
 
+test("an invited member sets a password from the emailed link, once", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/admin"));
+  await page.getByRole("button", { name: "Invite user" }).click();
+  const inv = page.getByRole("dialog", { name: "Invite user" });
+  await inv.getByLabel("Email").fill("kai@example.com");
+  await inv.getByRole("button", { name: "Invite user" }).click();
+  await page.getByRole("button", { name: "Resend invitation to kai@example.com" }).click();
+  await expect(page.locator(".os-toast").last()).toContainText("Invitation sent again to kai@example.com.");
+  const token = await page.evaluate(() => Object.keys(JSON.parse(sessionStorage.getItem("openseal.mock.v1")).invites)[0]);
+  await page.getByRole("button", { name: "Account" }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+
+  await page.goto(app(`#/accept-invite?token=${token}`));
+  await expect(page.getByRole("heading", { name: "Set up your account" })).toBeVisible();
+  await expect(page).not.toHaveURL(/token=/);
+  await page.getByLabel("Password", { exact: true }).fill("short");
+  await page.getByRole("button", { name: "Set password" }).click();
+  await expect(page.getByRole("alert")).toContainText("At least 12 characters.");
+  await page.getByLabel("Password", { exact: true }).fill("a-long-enough-password");
+  await page.getByLabel("Password again").fill("a-long-enough-password");
+  await expectAccessible(page, "accept invite");
+  await page.getByRole("button", { name: "Set password" }).click();
+  await expect(page.getByTestId("invite-done")).toBeVisible();
+
+  await page.goto(app(`#/accept-invite?token=${token}`));
+  await page.getByLabel("Password", { exact: true }).fill("a-long-enough-password");
+  await page.getByLabel("Password again").fill("a-long-enough-password");
+  await page.getByRole("button", { name: "Set password" }).click();
+  await expect(page.getByRole("alert")).toContainText("expired or was already used");
+});
+
 test("reports: a period, a colour per status, no stray border", async ({ page }) => {
   await signIn(page);
   await page.goto(app("#/reports"));

@@ -3,7 +3,8 @@
 //
 // Routes (hash, so a static server needs no rewrites):
 //   #/signin  #/home  #/agreements[?status=…]  #/envelopes/{id}  #/prepare  #/prepare/{id}
-//   #/templates  #/templates/new  #/templates/{id}  #/admin[?tab=api]   (WEB-02)
+//   #/templates  #/templates/new  #/templates/{id}  #/admin[?tab=api|account]   (WEB-02)
+//   #/accept-invite?token=…   (WEB-06; no session needed)
 // Verify is its own page, verify.html, usable without an account.
 
 import { h, clear, isTyping, initials } from "./dom.js";
@@ -52,6 +53,8 @@ const ctx = {
 
 const ROUTES = [
   [/^#\/signin$/, () => import("./signin.js"), { chrome: false }],
+  // The invitation email's link (WEB-06 AD-01): open without a session.
+  [/^#\/accept-invite(?:\?.*)?$/, () => import("./acceptinvite.js"), { chrome: false }],
   [/^#\/home$/, () => import("./home.js"), { nav: "home" }],
   [/^#\/agreements(?:\?.*)?$/, () => import("./dashboard.js"), { nav: "agreements" }],
   [/^#\/envelopes\/([^/?]+)$/, () => import("./envelope.js"), { nav: "agreements" }],
@@ -87,7 +90,7 @@ async function route() {
   }
   shownHash = hash;
   const main = document.getElementById("main");
-  if (!ctx.session && hash !== "#/signin") {
+  if (!ctx.session && hash !== "#/signin" && !hash.startsWith("#/accept-invite")) {
     try {
       ctx.session = await api.session();
     } catch (err) {

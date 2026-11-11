@@ -197,7 +197,7 @@ export async function deleteEnvelope(ctx, id, subject, status) {
 export async function downloadCurrent(ctx, id, env = null) {
   const e = env || (await ctx.api.getEnvelope(id)).envelope;
   for (const d of e.documents || []) {
-    download(await ctx.api.documentCurrent(id, d.id), `${(d.name || "document.pdf").replace(/\.pdf$/i, "")}-current.pdf`);
+    download(await ctx.api.documentContent(id, d.id, "current"), `${(d.name || "document.pdf").replace(/\.pdf$/i, "")}-current.pdf`);
   }
 }
 

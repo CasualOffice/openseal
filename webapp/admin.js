@@ -204,6 +204,7 @@ function users(panel, ctx) {
         h("td", { class: "os-col-date", attrs: { "data-label": t("admin.col.status") } }, h("span", { class: `os-badge os-badge--user-${state}`, text: t(`admin.${state}`) })),
         h("td", { class: "os-col-actions" }, h("div", { class: "os-actions os-actions--row" },
           button(t("admin.edit"), { icon: "pencil", size: "sm", attrs: { "aria-label": t("admin.edit-named", { name: u.name || u.email }) }, onClick: () => edit(u, me) }),
+          u.invited ? button(t("admin.reinvite"), { icon: "mail", size: "sm", attrs: { "aria-label": t("admin.reinvite-named", { email: u.email }) }, onClick: () => reinvite(u) }) : null,
           me ? null : button(t("admin.remove"), { icon: "trash-2", size: "sm", variant: "danger", attrs: { "aria-label": t("admin.remove-named", { name: u.name }) }, onClick: () => remove(u) })))));
     }
     table.append(tb);
@@ -320,6 +321,10 @@ function users(panel, ctx) {
       ],
     });
     if (done) { toast(t("admin.invited", { email: done }), "success"); load(); }
+  }
+
+  async function reinvite(u) {
+    try { await ctx.api.users.reinvite(u.id); toast(t("admin.reinvited", { email: u.email }), "success"); } catch (err) { if (!ctx.failed(err)) toastError(err); }
   }
 
   async function remove(u) {

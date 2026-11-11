@@ -340,7 +340,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, db.account);
     }
     if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
-    if (res === "users") return users(method, id, body);
+    if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
     if (res !== "envelopes") fail(404, "CS-API-0002", "Not found");
 
@@ -453,9 +453,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!d) fail(404, "CS-API-0002", "Not found");
       if (subSub === "content" && method === "GET") {
         if (query.get("version") === "sealed" && !env.sealed) fail(409, "CS-API-0009", "Not available in the object's state");
-        // `variant=current` (WEB-06 E-02): the document as it stands, fields filled so
+        // `version=current` (WEB-06 E-02): the document as it stands, fields filled so
         // far. The mock has no flattening, so it is the delivered file.
-        if (query.get("variant") === "current" && env.status === "draft") fail(409, "CS-API-0009", "Not available in the object's state");
+        if (query.get("version") === "current" && env.status === "draft") fail(409, "CS-API-0009", "Not available in the object's state");
         return pdf(unb64(db.blobs[d.id]));
       }
       if (!subSub && method === "DELETE") {
@@ -625,16 +625,31 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   }
 
   // ---- Users and API clients (WEB-02 Admin) ------------------------------------------
-  function users(method, id, body) {
-    if (id === "invite" && method === "POST") {
-      // `POST /users/invite` (WEB-06 AD-01): a member who sets up their own sign-in from
-      // the emailed link; listed as invited until then.
+  /// Mint an invitation token for `u` (the server emails `…/app.html#/accept-invite?token=`);
+  /// the mock keeps it in `db.invites` for the tests to read.
+  function mintInvite(u) {
+    db.invites ||= {};
+    for (const [k, v] of Object.entries(db.invites)) if (v === u.id) delete db.invites[k];
+    db.invites[`inv-${uid()}`] = u.id;
+  }
+  function users(method, id, body, sub) {
+    if (!id && method === "POST" && body?.invite === true) {
+      // `POST /users` with `invite: true` (WEB-06 AD-01): a member who sets up their own
+      // sign-in from the emailed link; listed as invited until then.
       if (typeof body?.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
       if (!["admin", "sender", "viewer"].includes(body.profile)) fail(400, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "enum" }]);
       if (db.users.some((u) => u.email.toLowerCase() === body.email.toLowerCase())) fail(400, "CS-API-0001", "Already a member", [{ pointer: "/email", code: "exists" }]);
       const u = { id: uid(), email: body.email, name: typeof body.name === "string" ? body.name.trim() : "", login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false, invited: true };
       db.users.push(u);
+      mintInvite(u);
       return json(201, u);
+    }
+    if (id && sub === "invite" && method === "POST") {
+      const u = db.users.find((x) => x.id === id);
+      if (!u) fail(404, "CS-API-0002", "Not found");
+      if (!u.invited) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      mintInvite(u);
+      return json(200, u);
     }
     if (!id) {
       if (method === "GET") return json(200, { items: db.users });
@@ -829,6 +844,20 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         db.session = { csrf: uid() };
         save();
         return json(200, { account_id: "acct-demo", user_id: "user-demo", csrf_token: db.session.csrf, expires_at: iso(60 * 12) });
+      }
+      if (url.pathname === "/api/v1/auth/accept-invite" && method === "POST") {
+        // WEB-06 AD-01: the invited member sets a password with the emailed token (no
+        // session needed). The token works once.
+        const uidOf = db.invites?.[body?.token];
+        if (typeof body?.token !== "string" || !uidOf) fail(401, "CS-AUTH-0002", "Invitation not valid");
+        if (typeof body.password !== "string" || body.password.length < 12) fail(400, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
+        const u = db.users.find((x) => x.id === uidOf);
+        if (!u) fail(401, "CS-AUTH-0002", "Invitation not valid");
+        if (typeof body.name === "string" && body.name.trim()) u.name = body.name.trim().slice(0, 255);
+        u.invited = false;
+        delete db.invites[body.token];
+        save();
+        return json(200, { email: u.email, name: u.name });
       }
       let res;
       if (parts[1] === "api" && parts[2] === "v1") res = await staff(method, parts, url.searchParams, headers, body);

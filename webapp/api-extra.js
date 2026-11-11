@@ -14,9 +14,9 @@
 // - WEB-06 (the manage screens), ahead of the server worker adding them, shaped as
 //   docs/40 and openapi.yaml name them where they do: `POST /envelopes/{id}/correct`
 //   (`{changes:[{op:"update_recipient", recipient:{id,type,routing_order,name,email,
-//   auth,access_code?}}]}`, If-Match), `GET …/documents/{doc}/content?variant=current`,
+//   auth,access_code?}}]}`, If-Match), `GET …/documents/{doc}/content?version=current`,
 //   `PATCH` (name, email subject, message) and `DELETE /templates/{id}` (If-Match),
-//   `POST /templates/{id}/duplicate`, `POST /users/invite` (`{email, name?, profile}`),
+//   `POST /templates/{id}/duplicate`, `POST /users` with `invite: true`, `POST /users/{id}/invite`,
 //   `PATCH /users/{id}` (`profile`, `disabled`), `PATCH /accounts/me` (`name`,
 //   `settings`). The mock implements each; a server without one answers 404 or 405,
 //   which the screens show as an error, never as success.
@@ -55,8 +55,10 @@ export function extend(api) {
     list: () => data(req("GET", "/api/v1/users")),
     create: (body) => data(req("POST", "/api/v1/users", { body })),
     patch: (id, body) => data(req("PATCH", `/api/v1/users/${encodeURIComponent(id)}`, { body })),
-    /// WEB-06 AD-01: `{email, name?, profile}`; the server emails a set-up link.
-    invite: (body) => data(req("POST", "/api/v1/users/invite", { body })),
+    /// WEB-06 AD-01: `POST /users` with `invite: true`; the server emails a set-up link.
+    invite: (body) => data(req("POST", "/api/v1/users", { body: { ...body, invite: true } })),
+    /// Send the invitation again to a member who has not set up their sign-in.
+    reinvite: (id) => data(req("POST", `/api/v1/users/${encodeURIComponent(id)}/invite`, { body: {} })),
     remove: (id) => data(req("DELETE", `/api/v1/users/${encodeURIComponent(id)}`)),
   };
 
@@ -72,9 +74,8 @@ export function extend(api) {
   /// all or none (docs/40, docs/24). Recipients who have acted cannot be changed.
   api.correctEnvelope = (id, etag, changes) =>
     data(req("POST", `/api/v1/envelopes/${encodeURIComponent(id)}/correct`, { body: { changes }, ifMatch: etag }));
-  /// A document as it stands while the envelope is in progress (`variant=current`).
-  api.documentCurrent = async (id, doc) =>
-    (await req("GET", `/api/v1/envelopes/${encodeURIComponent(id)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, query: { variant: "current" } })).blob;
+  /// An invited member sets their password with the emailed token (no session needed).
+  api.acceptInvite = (body) => data(req("POST", "/api/v1/auth/accept-invite", { body }));
   /// The account and its settings (`GET/PATCH /api/v1/accounts/me`).
   api.accountSettings = {
     get: () => data(req("GET", "/api/v1/accounts/me")),
