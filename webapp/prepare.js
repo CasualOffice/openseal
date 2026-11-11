@@ -442,6 +442,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // change it afterwards (RecipientPatch), so a saved recipient shows it read-only.
     const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code"), maxLength: 64, attrs: { "aria-label": t("prepare.access-code-for", { name: displayName(r, i) }), "data-testid": "recipient-access-code" } });
     access.addEventListener("input", () => { r.accessCode = access.value.trim(); S.dirty = true; });
+    // An emailed one-time code (SEC-A02): set when the recipient is created, like the
+    // access code, so a saved recipient shows it read-only.
+    const otpBox = h("input", { id: `rotp-${r.key}`, type: "checkbox", checked: !!r.emailOtp, disabled: !!r.id, attrs: { "data-testid": "recipient-email-otp" } });
+    otpBox.addEventListener("change", () => { r.emailOtp = otpBox.checked; S.dirty = true; });
+    const otp = h("label", { class: "os-check os-rcpt__otp", attrs: { for: `rotp-${r.key}` } }, otpBox, h("span", { text: t("prepare.email-otp") }));
     const li = h("li", { class: `os-rcpt os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key } },
       h("div", { class: "os-rcpt__head" },
         grip, h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
@@ -453,7 +458,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("label", { class: "os-label os-rcpt__label", attrs: { for: nameId } }, t("prepare.name"), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })), name),
       TPL ? null : h("div", { class: "os-rcpt__cell" },
         h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
-      r.type === "signer" && !TPL ? access : null);
+      r.type === "signer" && !TPL ? access : null,
+      r.type === "signer" && !TPL ? otp : null);
     // The card's controls are named after the recipient: renamed, they follow.
     name.addEventListener("change", () => {
       const who = displayName(r, S.recipients.indexOf(r));
@@ -1292,7 +1298,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const prevActive = Math.max(0, S.recipients.findIndex((r) => r.key === S.active));
     const prevAccess = new Map(S.recipients.map((r) => [r.id, r.accessCode]));
     const steps = fromServer(recs.map((r) => r.routing_order));
-    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: r.type === "cc" ? "cc" : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), order: steps[i] }));
+    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: r.type === "cc" ? "cc" : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), order: steps[i] }));
     // Signers all at one step with copies after them is the switch off; anything else is steps.
     S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type === "signer");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
@@ -1350,6 +1356,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   function recipientBody(r) {
     const body = { type: r.type, name: r.name || t("prepare.recipient-n", { n: S.recipients.indexOf(r) + 1 }), email: r.email, routing_order: orderOf(r) };
     if (r.type === "signer" && r.accessCode) { body.auth = ["access_code"]; body.access_code = r.accessCode; }
+    if (r.type === "signer" && r.emailOtp && r.email) body.auth = (body.auth || []).concat(["email_otp"]);
     return body;
   }
   function fieldBody(f, recipientRef, documentRef) {

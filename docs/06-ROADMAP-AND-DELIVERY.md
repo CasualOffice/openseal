@@ -193,7 +193,11 @@ is cut when every box below is ticked, from evidence, not from intent (`REL-01`)
   - [ ] An API-driven end-to-end test sends a two-signer sequential envelope, signs through the ceremony endpoints, and downloads a sealed PDF that passes rungs 1–3, on the Compose deployment in CI.
   - [ ] Crash tests: killing the server or worker at every effect boundary loses no audit event and never yields `completed` without a verified seal.
   - [ ] Tenant isolation tests: every endpoint refuses cross-tenant ids (generated from the OpenAPI document), with RLS disabled and enabled.
-  - [ ] Threats `SEC-A*`, `SEC-T*`, `SEC-W*` in [07](07-SECURITY-THREAT-MODEL.md) have tests seen red.
+  - [x] Threats `SEC-A*`, `SEC-T*`, `SEC-W*` in [07](07-SECURITY-THREAT-MODEL.md) have tests seen red.
+    (2026-11-12, `P2-THREATS`: every `SEC-A01`–`A10` and `SEC-W01`–`W02` row has a test
+    seen red, A02 and A07 last; docs/07 has no `SEC-T` rows. Out of scope, with the slice
+    each row names: SMS and voice codes (slice 5), per-account `frame-ancestors` (slice 9),
+    and the other parts the rows mark "Not built".)
   - [ ] Owner sign-off.
 
 ## After Phase 2 — vertical slices
