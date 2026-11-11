@@ -7,21 +7,23 @@ import { signIn, app, pdfFile, REAL, placingFor } from "./helpers.mjs";
 
 test.skip(!REAL, "runs against a real server only (OPENSEAL_E2E_BASE_URL)");
 
-/// Run `fn(api, helpers)` in the signed-in app page with api.js's client.
+/// Run `fn(api, lib, arg)` in the signed-in app page with api.js's client (the page's
+/// CSP allows no eval, so the libraries are put on `window` first and `fn` reads them).
 async function inApp(page, fn, arg) {
-  return page.evaluate(async ([src, a]) => {
-    const { createClient } = await import(new URL("api.js", location.href).href);
-    const { templatePlan, applyTemplate, added } = await import(new URL("templatesync.js", location.href).href);
-    const { makePdf } = await import(new URL("mockpdf.js", location.href).href);
-    const api = createClient({ store: sessionStorage });
-    // eslint-disable-next-line no-new-func
-    return new Function("api", "lib", "arg", `return (${src})(api, lib, arg);`)(api, { templatePlan, applyTemplate, added, makePdf }, a);
-  }, [fn.toString(), arg]);
+  await page.evaluate(async () => {
+    const at = (f) => new URL(f, location.href).href;
+    const { createClient } = await import(at("api.js"));
+    const { templatePlan, applyTemplate, added } = await import(at("templatesync.js"));
+    const { makePdf } = await import(at("mockpdf.js"));
+    window.__web10 = { api: createClient({ store: sessionStorage }), lib: { templatePlan, applyTemplate, added, makePdf } };
+  });
+  return page.evaluate(fn, arg);
 }
 
 test("api.js against the server: templates, account settings, members, correction, detection (WEB-10)", async ({ page }) => {
   await signIn(page, "home");
-  const out = await inApp(page, async (api, lib) => {
+  const out = await inApp(page, async () => {
+    const { api, lib } = window.__web10;
     const r = {};
     const stamp = Date.now();
     // Templates: roles with ids, a document read from the whole template, fields by role_id.
@@ -124,6 +126,7 @@ test("the editor on the server: a template saved, reopened and saved back; a par
   await page.locator(".os-stepper__btn", { hasText: "Roles" }).click();
   await page.getByRole("button", { name: "Add role" }).first().click();
   await page.getByTestId("role-name").nth(1).fill("Witness");
+  await page.getByTestId("role-name").nth(1).blur();
   await page.getByLabel("Signing step for Witness").fill("1");
   await page.getByLabel("Signing step for Witness").press("Enter");
   await page.locator(".os-stepper__btn", { hasText: "Fields" }).click();
@@ -131,8 +134,10 @@ test("the editor on the server: a template saved, reopened and saved back; a par
   await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).click();
   await page.locator(".os-stepper__btn", { hasText: "Review" }).click();
   await page.getByRole("button", { name: "Save template" }).click();
-  await expect(page.locator(".os-toast").last()).toContainText("Template saved.");
-  const tp = await inApp(page, async (api, _lib, n) => {
+  // Saved when the editor hands back to the list.
+  await expect(page).toHaveURL(/#\/templates$/);
+  const tp = await inApp(page, async (n) => {
+    const { api } = window.__web10;
     const t = (await api.templates.list()).items.find((x) => x.name === n);
     const { template } = await api.templates.get(t.id);
     return { roles: template.roles.map((r) => [r.name, r.routing_order]).sort(), fields: template.fields.map((f) => [template.roles.find((r) => r.id === f.role_id)?.name, f.type]).sort() };

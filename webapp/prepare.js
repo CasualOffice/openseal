@@ -452,6 +452,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       TPL ? null : h("div", { class: "os-rcpt__cell" },
         h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
       r.type === "signer" && !TPL ? access : null);
+    // The card's controls are named after the recipient: renamed, they follow.
+    name.addEventListener("change", () => {
+      const who = displayName(r, S.recipients.indexOf(r));
+      if (S.ordered) order.setAttribute("aria-label", t("prepare.order-for", { name: who }));
+      del.setAttribute("aria-label", t("prepare.remove-recipient", { name: who }));
+      del.title = t("prepare.remove-recipient", { name: who });
+      access.setAttribute("aria-label", t("prepare.access-code-for", { name: who }));
+      typeField.el.querySelector("label")?.replaceChildren(t("prepare.role-for", { name: who }));
+    });
     li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
     // Drag a card by its head: onto another card or step box to sign with them (order
     // on), or to take that place (order off); onto a gap for a step of its own.
