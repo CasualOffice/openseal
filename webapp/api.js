@@ -172,9 +172,14 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       decline: (token, reason, location) =>
         data(request("POST", `${S(token)}/decline`, { body: withLocation(reason ? { reason } : {}, location), ceremony: true })),
       finishLater: (token) => data(request("POST", `${S(token)}/finish-later`, { body: {}, ceremony: true })),
-      // WEB-06 (G-S2, G-S3): the signer's copy as one PDF, the envelope's history as
-      // this recipient may see it, and reassignment when the envelope allows it.
-      download: async (token) => (await request("GET", `${S(token)}/document`, { raw: true, ceremony: true })).blob,
+      /// WEB-06: attach a file (PDF, PNG or JPEG) to an attachment field.
+      attach: (token, field, bytes) =>
+        data(request("PUT", `${S(token)}/fields/${encodeURIComponent(field)}/attachment`, { body: { content_base64: toBase64(bytes) }, ceremony: true })),
+      /// WEB-06: after finishing, the sealed copy once complete, else a preview.
+      download: async (token, doc) =>
+        (await request("GET", `${S(token)}/document`, { raw: true, ceremony: true, query: doc ? { doc } : undefined })).blob,
+      // WEB-06 (G-S2): the envelope's history as this recipient may see it, and
+      // reassignment when the envelope allows it (server rows to follow).
       history: (token) => data(request("GET", `${S(token)}/history`, { ceremony: true })),
       reassign: (token, { name, email, reason }, location) =>
         data(request("POST", `${S(token)}/reassign`, { body: withLocation({ name, email, ...(reason ? { reason } : {}) }, location), ceremony: true })),

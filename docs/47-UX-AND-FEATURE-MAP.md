@@ -324,7 +324,7 @@ Both are a full-height frame (`100dvh`; the page itself never scrolls) built fro
   Shift ×4, Home/End to min/max); collapse turns the panel into a 3 rem icon rail; width and state are stored per panel
   in `localStorage["openseal.panel.<id>"]` (try/catch: a blocked store just forgets).
 - **Below 48em** (phones, and a 1440 window at 200 % zoom): no side panels; the document takes the width; the palette
-  and properties (editor), field list and adopt (signer) are bottom sheets up to 85 dvh, opened from the toolbar or by
+  and properties (editor) and adopt (signer) are bottom sheets up to 85 dvh, the signer's field list up to 55 dvh, opened from the toolbar or by
   selecting a field; thumbnails hidden; the signer's Next and Finish sit in a bottom bar.
 - **Zoom** is a scale on PDF points. Fit width = (scroller width − 3 rem) / widest page; fit page also fits the tallest
   page's height; steps 50, 75, 100, 125, 150, 200 %; pinch and Ctrl+wheel are continuous between 25 % and 400 %. A
@@ -340,3 +340,32 @@ Both are a full-height frame (`100dvh`; the page itself never scrolls) built fro
 1440, 18 from 1760. `rem` inside the root's `font-size` and `em` in media queries both mean the browser's default size,
 so a user who set 20 px gets everything 25 % larger; browser zoom shrinks the CSS viewport, so 1440 at 200 % is the
 phone layout at 16 px. The smallest text token is `max(0.75rem, 12px)`.
+
+### Signer findings, second pass (WEB-06, 2026-11-12)
+
+Observed in mock mode at 1440×900, 1920×1080, 390×844, 320 wide and 1440 at 200 %. Spec:
+`webapp/e2e/guided-ceremony.spec.mjs` (seen red on `f10da57`, except the 200 % footer, which already held and is kept
+as a guard); `webapp/tests/signfields.test.mjs`.
+
+| # | Problem | Fix | Status |
+| --- | --- | --- | --- |
+| P-05 | Phone fields tiny (a text field 122×13 px, a checkbox 10×10) | Every field has a touch area of at least 44 px under its control; a tap on a text field opens a full-width sheet with a large input (SignNow); Start/Next zoom until the field is a 44 px target as far as it fits the width (DocuSign) | Fixed |
+| M-01 | Phone body text about 5 px | Zoom-to-field on Start/Next brings it to about 15 px; pinch kept. The signer's and review's scrollers were flex-centred, so a page zoomed wider than the view overflowed to the left out of reach; they are blocks now | Fixed |
+| M-02 | Phone bar: Start/Next and Fields as bare icons, title cut to "Offer…" | Worded Start/Next and Fields; a two-line title; More an icon below 26.25em | Fixed |
+| M-03 | Adopt on a phone: small pad; actions out of reach at 200 % | Draw full screen, turned a quarter on an upright phone so the signature runs along the long edge; adopt is a side panel on desktop (in the field list's place) and a bottom sheet on phones with its actions pinned | Fixed |
+| G-S1 | No Start cue on arrival | Start/Next in the bar; arrival scrolls to the first required field and flags it, without taking focus | Fixed |
+| G-S2 | More had only Finish later and Decline (and showed empty on the access-code screen) | Download, Print, Assign to someone else (only with `signing_options.allow_reassign`), View history, Help, Finish later, Decline; Help only before the access code; a copy, history and help after finishing | Fixed; history and reassign need server endpoints (`GET /s/{token}/history`, `POST /s/{token}/reassign`, mock only so far) |
+| G-S3 | Done screen had no copy and no next steps | Download a copy (`GET /s/{token}/document?doc=`) and what happens next | Fixed |
+| G-S4 | Finish later was a dead end | Continue signing | Fixed |
+| G-S5 | Decline did not say what it does | Says it ends the envelope for everyone; filled danger button; still a true modal (destructive) | Fixed |
+| G-S6 | Phone field list covered the document (85 dvh) | At most 55 dvh; the document stays visible above | Fixed |
+| G-S7 | Review omitted automatic values; two Finish buttons in a row | Every value in page order, date signed, notes and locked values included; opens at the top; one Finish pinned under the values | Fixed |
+| G-S8 | Fields without a visible label | A label tab above each field on hover and focus, and for the next one | Fixed |
+
+The field kinds of the server's WEB-06 branch are rendered and filled in the ceremony: company, title and number
+(typed, `inputmode` by rule), radio group (a panel of radios), dropdown (the platform select; a panel with a typed value
+when `allow_custom`), attachment (PDF, PNG or JPEG up to 10 MiB, `PUT …/fields/{f}/attachment`, listed by name in
+review, not drawn on the page), note and sender-locked values (shown, never editable). Text presets (email, phone, ZIP,
+length) and number rules (min, max, decimals) are checked inline as the field is left, in the engine's terms
+(`webapp/signfields.js`); the server checks again on every fill and at finish. Download before finishing is the
+delivered document (`409` from `/document` until the signer finishes).

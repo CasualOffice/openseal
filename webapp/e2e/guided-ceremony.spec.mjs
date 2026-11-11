@@ -4,6 +4,7 @@
 // decline. Mock data: the seeded envelopes (helpers.mjs).
 import { test, expect } from "@playwright/test";
 import { signPage, tokens, REAL, expectAccessible } from "./helpers.mjs";
+import { MOCK } from "../mock.js";
 
 test.skip(REAL, "uses the mock's seeded envelopes and its reassignable signing option");
 
@@ -231,6 +232,60 @@ test.describe("desktop", () => {
     await done.getByRole("button", { name: "Download a copy" }).click();
     expect((await dl).suggestedFilename()).toMatch(/\.pdf$/);
     await expectAccessible(page, "done");
+  });
+
+  test("every field kind: notes and locked values shown, inline checks, choices, an attachment", async ({ page }) => {
+    await page.goto(signPage(MOCK.fieldsToken));
+    await page.getByLabel("I agree to use electronic records and signatures.").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.locator(".os-page canvas").first()).toBeVisible();
+    // The sender's note and locked value: shown, not editable.
+    await expect(page.getByRole("note", { name: /Note: Read clause 4/ })).toBeVisible();
+    await expect(page.getByRole("note", { name: /PO number: PO-7781/ })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: /PO number/ })).toHaveCount(0);
+    await expect(page.locator("#guide-progress")).toHaveText("0 of 4 required");
+    await expect(page.getByTestId("bar-next")).toHaveText(/Start/);
+    // Inline checks say the problem before the server is asked.
+    const qty = page.getByRole("textbox", { name: /Quantity/ });
+    await qty.fill("500");
+    await qty.blur();
+    await expect(page.getByText("Enter a number from 1 to 100.")).toBeVisible();
+    await expect(qty).toHaveAttribute("aria-invalid", "true");
+    await qty.fill("2.5");
+    await qty.blur();
+    await expect(page.getByText("Enter a whole number.")).toBeVisible();
+    await qty.fill("42");
+    await qty.blur();
+    await expect(qty).not.toHaveAttribute("aria-invalid", "true");
+    const mail = page.getByRole("textbox", { name: /^Email/ });
+    await mail.fill("not an address");
+    await mail.blur();
+    await expect(page.getByText("Enter an email address like name@example.com.")).toBeVisible();
+    await page.getByRole("textbox", { name: /Company/ }).fill("Northwind");
+    await page.getByRole("textbox", { name: /Company/ }).blur();
+    // A radio group: its choices in a panel.
+    await page.getByRole("button", { name: /Plan, required/ }).click();
+    const plan = page.getByRole("dialog", { name: "Plan" });
+    await plan.getByLabel("Pro").check();
+    await expectAccessible(page, "choice panel");
+    await plan.getByTestId("choice-save").click();
+    await expect(plan).toBeHidden();
+    await expect(page.getByRole("button", { name: /^Pro: Plan/ })).toBeVisible();
+    // A dropdown: the platform's select.
+    await page.getByRole("combobox", { name: /Term/ }).selectOption("24 months");
+    // An attachment: PNG bytes.
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4a10000000049454e44ae426082", "hex");
+    await page.locator('[data-field="attachment"] input[type="file"]').setInputFiles({ name: "id.png", mimeType: "image/png", buffer: png });
+    await expect(page.getByRole("button", { name: /^id.png: Proof of ID, Attached/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^id.png: Proof of ID, Attached/ })).toContainText("id.png");
+    await expect(page.locator("#guide-progress")).toHaveText("3 of 4 required");
+    await page.getByRole("button", { name: /Signature, required/ }).click();
+    await page.getByTestId("adopt-confirm").click();
+    await expect(page.locator("#guide-progress")).toHaveText("4 of 4 required");
+    await expectAccessible(page, "field kinds");
+    await page.locator("#bar-finish").click();
+    const values = page.getByTestId("review-values");
+    for (const v of ["Northwind", "42", "Pro", "24 months", "id.png", "PO-7781", "Read clause 4"]) await expect(values).toContainText(v);
   });
 
   test("decline says it ends the envelope for everyone, with a filled danger button", async ({ page }) => {

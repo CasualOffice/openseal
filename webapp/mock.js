@@ -10,6 +10,7 @@
 // one fake server. Each test or Playwright context starts from the same seed.
 
 import { makePdf, countPages } from "./mockpdf.js";
+import { checkText } from "./signfields.js";
 
 /// Fixed demo values; the e2e specs read them from here.
 export const MOCK = {
@@ -18,13 +19,14 @@ export const MOCK = {
   ersd: "2026-1",
   ceremonyToken: "demo-sign",
   declineToken: "demo-decline",
+  fieldsToken: "demo-fields",
   accessCode: "2468",
 };
 
 const KEY = "openseal.mock.v1";
 const TERMINAL = new Set(["completed", "declined", "voided", "expired"]);
 const SIGNING_TYPES = new Set(["signer", "in_person_signer", "approver"]);
-const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox"]);
+const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
 
 let counter = 0;
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${++counter}`);
@@ -142,6 +144,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const field = { id: uid(), document_id: did, recipient_id: rid, type: String(f.type || "text"), placement: placementOf(f) };
     if (f.required) field.required = true;
     if (f.label) field.label = String(f.label);
+    // WEB-06 field kinds: options, validation, a sender's value, locked, read-only.
+    if (Array.isArray(f.options)) field.options = f.options.map(String);
+    if (f.allow_custom) field.allow_custom = true;
+    if (f.validation && typeof f.validation === "object") field.validation = { ...f.validation };
+    if (f.value && typeof f.value === "object") field.value = { ...f.value };
+    if (f.locked) field.locked = true;
+    if (f.read_only) field.read_only = true;
     env.fields.push(field);
     return field;
   }
@@ -194,7 +203,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
 
   // ---- Seed ------------------------------------------------------------------
-  async function seed() {
+  async function seed({ fieldKinds = false } = {}) {
     const doc = (title, n = 2) => makePdf(Array.from({ length: n }, (_, i) => ({
       title: i === 0 ? title : `${title} (continued)`,
       lines: [
@@ -218,6 +227,28 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       { type: "signature", page: 1, x: 72, y, width: 160, height: 44, required: true },
       { type: "date_signed", page: 1, x: 340, y: y + 22, width: 110, height: 22 },
     ];
+    // Every field kind a signer fills or reads (WEB-06), made only when its link is
+    // first opened, so the sender's seeded lists and counts stay as they were.
+    if (fieldKinds) {
+      await mk("Order form — Northwind", 60 * 3,
+        [{ name: "Morgan Diaz", email: "morgan@northwind.example", routing_order: 1 }],
+        [[
+          { type: "note", page: 1, x: 72, y: 300, width: 300, height: 22, label: "Note", value: { text: "Read clause 4 before signing." }, read_only: true, locked: true },
+          { type: "text", page: 1, x: 72, y: 340, width: 160, height: 22, label: "PO number", value: { text: "PO-7781" }, locked: true },
+          { type: "company", page: 1, x: 72, y: 380, width: 200, height: 22, required: true, label: "Company" },
+          { type: "title", page: 1, x: 300, y: 380, width: 160, height: 22, label: "Title" },
+          { type: "number", page: 1, x: 72, y: 420, width: 100, height: 22, required: true, label: "Quantity", validation: { kind: "number", min: "1", max: "100", decimals: 0 } },
+          { type: "text", page: 1, x: 200, y: 420, width: 200, height: 22, label: "Email", validation: { kind: "email" } },
+          { type: "text", page: 1, x: 72, y: 460, width: 160, height: 22, label: "Phone", validation: { kind: "phone" } },
+          { type: "text", page: 1, x: 260, y: 460, width: 100, height: 22, label: "ZIP", validation: { kind: "zip" } },
+          { type: "radio_group", page: 1, x: 72, y: 500, width: 160, height: 22, required: true, label: "Plan", options: ["Basic", "Pro"] },
+          { type: "dropdown", page: 1, x: 260, y: 500, width: 160, height: 22, label: "Term", options: ["12 months", "24 months"] },
+          { type: "attachment", page: 1, x: 72, y: 540, width: 160, height: 26, label: "Proof of ID" },
+          { type: "signature", page: 1, x: 72, y: 600, width: 160, height: 44, required: true },
+        ]],
+        async (env, recs) => { recs[0].token = MOCK.fieldsToken; await send(env); });
+      return;
+    }
     const complete = async (env, recs) => {
       await send(env);
       env.sent_at = iso(-60 * 24 * 2); // sent before it was signed
@@ -605,9 +636,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     fail(405, "CS-API-0012", "Method not allowed");
   }
 
-  async function ceremony(method, parts, body) {
+  async function ceremony(method, parts, body, query = null) {
     const token = decodeURIComponent(parts[2] || "");
     const sub = parts[3];
+    if (token === MOCK.fieldsToken && !db.tokens[token]) await seed({ fieldKinds: true });
     const t = db.tokens[token];
     if (!t) fail(404, "CS-API-0002", "Not found");
     const env = envOr404(t.env);
@@ -634,7 +666,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         const mine = (db.audit[env.id] || []).filter((e) => !e.event.recipient_id || e.event.recipient_id === rec.id);
         return json(200, { events: mine.map((e) => ({ seq: e.seq, type: e.type, at: e.at })) });
       }
-      const d = env.documents[0];
+      // As the server: only after this recipient finished (409 before), `doc` optional
+      // for one document; the mock serves the delivered bytes (no preview banner).
+      if (rec.status !== "completed") fail(409, "CS-API-0009", "Not available before finishing");
+      const want = query?.get("doc");
+      const d = want ? env.documents.find((x) => x.id === want) : env.documents[0];
       if (!d) fail(404, "CS-API-0002", "Not found");
       return pdf(unb64(db.blobs[d.id]));
     }
@@ -689,23 +725,49 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await audit(env, "signature_adopted", { recipient_id: rec.id, mark: body.mark, method: body.method, image_sha256: await sha256hex(body.image_base64), ...loc });
       return json(200, { ...view(env, rec), adoption_id: id });
     }
+    if (sub === "fields" && parts[5] === "attachment" && method === "PUT") {
+      const f = env.fields.find((x) => x.id === parts[4]);
+      if (!f) fail(404, "CS-API-0002", "Not found");
+      if (f.recipient_id !== rec.id || f.type !== "attachment") fail(409, "CS-WF-0016", "Field not editable by this recipient");
+      let bytes;
+      try { bytes = unb64(body?.content_base64 || ""); } catch { fail(400, "CS-API-0001", "Malformed request"); }
+      const isPdf = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+      const isPng = bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50;
+      const isJpeg = bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8;
+      if (!(isPdf || isPng || isJpeg) || bytes.length > 10 * 1024 * 1024) fail(422, "CS-WF-0015", "Attachment refused", [{ pointer: "/content_base64", code: "type" }]);
+      const sha = await sha256hex(body.content_base64);
+      (db.attachments ||= {})[`${rec.id}:${sha}`] = true;
+      f.value = { attachment: sha };
+      await audit(env, "field_filled", { recipient_id: rec.id, field_id: f.id });
+      return json(200, view(env, rec));
+    }
     if (sub === "fields" && method === "PUT") {
       const f = env.fields.find((x) => x.id === parts[4]);
       if (!f) fail(404, "CS-API-0002", "Not found");
-      if (f.recipient_id !== rec.id || !INPUT_TYPES.has(f.type)) fail(409, "CS-WF-0016", "Field not editable by this recipient");
+      if (f.recipient_id !== rec.id || !INPUT_TYPES.has(f.type) || f.locked || f.read_only) fail(409, "CS-WF-0016", "Field not editable by this recipient");
       const v = body?.value;
+      const bad = (code) => fail(422, "CS-WF-0015", "Field value refused", [{ pointer: "/value", code }]);
       if (f.type === "signature" || f.type === "initials") {
         const a = v && db.adoptions[v.signature];
         if (!a || a.rid !== rec.id) fail(409, "CS-WF-0013", "Signature or initials not adopted before use");
       } else if (f.type === "checkbox") {
         if (!v || typeof v.checked !== "boolean") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/value", code: "type" }]);
-      } else if (!v || typeof v.text !== "string") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/value", code: "type" }]);
+      } else if (f.type === "radio_group" || f.type === "dropdown") {
+        if (!v || typeof v.choice !== "string") bad("wrong_kind");
+        if (v.choice && !(f.options || []).includes(v.choice) && !(f.type === "dropdown" && f.allow_custom)) bad("not_an_option");
+      } else if (f.type === "attachment") {
+        if (!v || !db.attachments?.[`${rec.id}:${v.attachment}`]) bad("not_uploaded");
+      } else {
+        if (!v || typeof v.text !== "string") bad("wrong_kind");
+        // The same rules as the engine, by the signer's own module (tests/signfields).
+        if (checkText(f, v.text)) bad("invalid");
+      }
       f.value = v;
       await audit(env, "field_filled", { recipient_id: rec.id, field_id: f.id });
       return json(200, view(env, rec));
     }
     if (sub === "finish" && method === "POST") {
-      const missing = env.fields.filter((f) => f.recipient_id === rec.id && f.required && INPUT_TYPES.has(f.type) && (f.value == null || f.value.text === "" || f.value.checked === false));
+      const missing = env.fields.filter((f) => f.recipient_id === rec.id && f.required && INPUT_TYPES.has(f.type) && (f.value == null || f.value.text === "" || f.value.choice === "" || f.value.checked === false));
       if (missing.length) fail(422, "CS-WF-0004", "Required fields are empty", missing.map((f) => ({ pointer: `/fields/${f.id}`, code: "required" })));
       for (const f of env.fields) if (f.recipient_id === rec.id && f.type === "date_signed") f.value = { text: iso().slice(0, 10) };
       rec.status = "completed"; rec.completed_at = iso();
@@ -764,7 +826,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
       let res;
       if (parts[1] === "api" && parts[2] === "v1") res = await staff(method, parts, url.searchParams, headers, body);
-      else if (parts[1] === "s") res = await ceremony(method, parts, body);
+      else if (parts[1] === "s") res = await ceremony(method, parts, body, url.searchParams);
       else fail(404, "CS-API-0002", "Not found");
       if (method !== "GET") save();
       return res;

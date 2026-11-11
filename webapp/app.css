@@ -1225,3 +1225,14 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 .os-sheet--hosted.os-adopt .os-sheet__foot .os-btn { flex: 1 1 auto; }
 @media (max-width: 47.999em) { .os-review__actions.os-stack { grid-template-columns: minmax(0, 1fr); } }
 #more-btn[hidden] { display: none; }
+/* WEB-06 field kinds in the ceremony: a native select, a choice button, fixed values. */
+.os-sfield__select { width: 100%; min-height: 0; border: 0; border-radius: 0.25rem; padding: 0 var(--os-s1); background: #fff1b8; color: #111827; font-size: var(--os-fs-12); font-weight: 600; cursor: pointer; }
+.os-sfield.is-done .os-sfield__select { background: rgba(255, 255, 255, .7); }
+.os-sfield__choice { justify-content: space-between; padding: 0 var(--os-s1) 0 var(--os-s2); min-width: 0; }
+.os-sfield__choice > .os-trunc { min-width: 0; }
+.os-sfield.is-fixed { background: #f8fafc; border-left-color: #94a3b8; }
+.os-radio--lg { min-height: var(--os-target-touch); font-size: var(--os-fs-16); }
+.os-radio--lg input { width: 1.25rem; height: 1.25rem; }
+@media (max-width: 47.999em) {
+  .os-sfield > .os-sfield__select { position: relative; z-index: 1; font-size: 1rem; }
+}

@@ -11,9 +11,10 @@ import { h, clear, skipTo, download, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, errorMessage, locationFrom, ApiError } from "./api.js";
-import { button, busy, emptyState, toastError, openDialog, noServerState, dockPanel, openPanel, closePanel } from "./ui/index.js";
+import { button, busy, emptyState, toast, toastError, openDialog, noServerState, dockPanel, openPanel, closePanel } from "./ui/index.js";
 import { openPdf } from "./pdfview.js";
-import { fromWire, takesInput } from "./geometry.js";
+import { fromWire } from "./geometry.js";
+import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN } from "./signfields.js";
 import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale } from "./docview.js";
@@ -225,7 +226,9 @@ const phone = () => matchMedia("(max-width: 47.999em)").matches;
 
 async function documents() {
   const fields = myFields();
-  for (const f of fields) if (f.value && !values.has(f.id)) values.set(f.id, f.value);
+  // The signer's own values so far (a sender's locked value is not theirs: it stays on
+  // the field and does not turn Start into Next).
+  for (const f of fields) if (fills(f) && f.value && !values.has(f.id)) values.set(f.id, f.value);
   if (!loaded) {
     screen(h("div", { class: "os-sign__loading", attrs: { "aria-busy": "true" } }, h("div", { class: "os-page os-skeleton-page" })), h("p", { class: "os-sr-only", attrs: { role: "status" }, text: t("sign.loading") }));
     const list = [];
@@ -352,7 +355,7 @@ function nextField() {
 /// choosing one goes there. The sender's message sits above it.
 function renderFieldList() {
   if (!listBody || !listBody.isConnected) return;
-  const fields = myFields().filter((f) => takesInput(f.type));
+  const fields = myFields().filter(fills);
   const next = nextField();
   clear(listBody);
   if (view.envelope?.message) {
@@ -431,12 +434,8 @@ function reportViewed(doc, set) {
 }
 
 function isDone(f) {
-  if (!takesInput(f.type)) return true;
-  const v = values.get(f.id);
-  if (!v) return false;
-  if (f.type === "checkbox") return v.checked === true || !f.required;
-  if (f.type === "text") return !!v.text;
-  return !!v.signature;
+  if (!fills(f)) return true;
+  return isFilled(f, values.get(f.id));
 }
 
 /// Place a box at `p` (points) on a page of `pg` (points) in percentages: PDF points ×
@@ -478,7 +477,13 @@ function fieldNode(f, pg) {
   // under the control so a tap on the control itself still reaches it.
   const hit = h("span", { class: "os-sfield__hit", attrs: { "aria-hidden": "true", "data-testid": "field-hit" } });
   box.append(hit, tip);
-  if (f.type === "signature" || f.type === "initials") {
+  if (isFixed(f)) {
+    // A note or a value the sender locked: shown as the sender wrote it, never changed.
+    const shown = fixedText(f);
+    box.classList.add("is-auto", "is-fixed");
+    hit.remove();
+    box.append(h("span", { class: "os-sfield__auto", attrs: { role: "note", "aria-label": `${label}: ${shown}` }, title: shown, text: shown || label }));
+  } else if (f.type === "signature" || f.type === "initials") {
     const b = h("button", { type: "button", class: "os-sfield__btn" });
     const paint = () => {
       b.replaceChildren();
@@ -496,14 +501,22 @@ function fieldNode(f, pg) {
     hit.addEventListener("click", () => b.click());
     box.append(b);
     paint();
-  } else if (f.type === "text") {
+  } else if (TYPED.has(f.type)) {
     const id = `sf-${f.id}`;
     // A rejected value is said beside the field, not only in a toast (A17).
     const err = h("span", { id: `${id}-err`, class: "os-sfield__err", attrs: { role: "alert" } });
-    const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}) } });
+    const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, inputMode: inputModeFor(f), placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}), ...(f.validation?.kind === "email" ? { autocomplete: "email" } : f.validation?.kind === "phone" ? { autocomplete: "tel" } : {}) } });
+    // Typing: a problem the field's rule finds is said as soon as the value is left,
+    // before the server is asked (it checks again, and at finish).
     const save = async (text) => {
       const v = { text };
       let ok = true;
+      const problem = checkText(f, text);
+      if (problem) {
+        input.setAttribute("aria-invalid", "true");
+        err.textContent = t(problem.key, problem.vars || {});
+        return err.textContent;
+      }
       try {
         await api.ceremony.fill(token, f.id, v);
         values.set(f.id, v);
@@ -538,6 +551,47 @@ function fieldNode(f, pg) {
     hit.addEventListener("click", () => input.click());
     box.append(input);
     box.classList.toggle("is-done", isDone(f));
+  } else if (f.type === "dropdown" && !f.allow_custom) {
+    // A dropdown is the platform's own select: on a phone it opens the system picker.
+    const sel = h("select", { class: "os-sfield__select", title: label, attrs: { "aria-label": `${label}${req}`, ...(f.required ? { "aria-required": "true" } : {}) } },
+      h("option", { value: "", text: t("sign.choose") }),
+      ...(f.options || []).map((o) => h("option", { value: o, text: o })));
+    sel.value = values.get(f.id)?.choice || "";
+    sel.addEventListener("change", () => saveChoice(f, sel.value, box, () => { sel.value = values.get(f.id)?.choice || ""; }));
+    hit.addEventListener("click", () => { sel.focus(); sel.showPicker?.(); });
+    box.append(sel);
+    box.classList.toggle("is-done", isDone(f));
+  } else if (CHOSEN.has(f.type)) {
+    // A radio group (or a dropdown that takes a typed value): a button on the page that
+    // opens the choices in a panel beside the document (a bottom sheet on phones).
+    const b = h("button", { type: "button", class: "os-sfield__btn os-sfield__choice" });
+    const paint = () => {
+      const c = values.get(f.id)?.choice;
+      b.setAttribute("aria-label", `${c ? c : t("sign.choose")}: ${label}${req}`);
+      b.replaceChildren(h("span", { class: "os-trunc", text: c || t("sign.choose") }), icon("chevron-down", { size: 16 }));
+      box.classList.toggle("is-done", isDone(f));
+    };
+    b.addEventListener("click", () => choiceSheet(f, label, paint));
+    hit.addEventListener("click", () => b.click());
+    box.append(b);
+    paint();
+  } else if (f.type === "attachment") {
+    const file = h("input", { type: "file", accept: "application/pdf,image/png,image/jpeg", class: "os-sr-only", tabIndex: -1, attrs: { "aria-hidden": "true" } });
+    const b = h("button", { type: "button", class: "os-sfield__btn" });
+    const paint = () => {
+      const done_ = !!values.get(f.id)?.attachment;
+      const name = attachedNames.get(f.id);
+      // The accessible name starts with the words shown (SC 2.5.3).
+      const shown = done_ ? (name || t("sign.attach.done")) : t("sign.attach");
+      b.setAttribute("aria-label", `${shown}: ${label}${done_ && name ? `, ${t("sign.attach.done")}` : ""}${req}`);
+      b.replaceChildren(icon(done_ ? "circle-check" : "paperclip", { size: 16 }), h("span", { class: "os-trunc", text: shown }));
+      box.classList.toggle("is-done", isDone(f));
+    };
+    b.addEventListener("click", () => file.click());
+    hit.addEventListener("click", () => file.click());
+    file.addEventListener("change", () => attachFile(f, file, b, paint));
+    box.append(b, file);
+    paint();
   } else {
     box.classList.add("is-auto");
     hit.remove();
@@ -557,7 +611,7 @@ function textSheet(f, label, value, save) {
     className: "os-fieldsheet",
     build(body, close) {
       const id = "fieldsheet-input";
-      input = h("input", { id, class: "os-input os-input--lg", value, maxLength: 4000, autocomplete: "off", attrs: { autofocus: true, "aria-describedby": "fieldsheet-err", ...(f.required ? { "aria-required": "true" } : {}) } });
+      input = h("input", { id, class: "os-input os-input--lg", value, maxLength: 4000, autocomplete: "off", inputMode: inputModeFor(f), attrs: { autofocus: true, "aria-describedby": "fieldsheet-err", ...(f.required ? { "aria-required": "true" } : {}) } });
       err = h("p", { id: "fieldsheet-err", class: "os-field-error", attrs: { role: "alert" } });
       input.addEventListener("keydown", (e) => {
         if (e.key !== "Enter") return;
@@ -587,6 +641,85 @@ function textSheet(f, label, value, save) {
 }
 
 
+/// Save a choice (`{choice}`); on refusal the field goes back and says why.
+async function saveChoice(f, choice, box, revert) {
+  try {
+    await api.ceremony.fill(token, f.id, { choice });
+    values.set(f.id, { choice });
+    savedChip();
+  } catch (err) { revert?.(); toastError(err); }
+  box?.classList.toggle("is-done", isDone(f));
+  updateGuide();
+}
+
+/// A radio group's choices (or a dropdown that also takes a typed value), in a side
+/// panel beside the document; a bottom sheet on phones.
+function choiceSheet(f, label, paint) {
+  const current = values.get(f.id)?.choice || "";
+  let custom = null;
+  let picked = current;
+  return openPanel({
+    id: "choice",
+    title: label,
+    className: "os-choicesheet",
+    build(body) {
+      const name = `choice-${f.id}`;
+      const group = h("div", { class: "os-radios", attrs: { role: "radiogroup", "aria-label": label } });
+      for (const [i, o] of (f.options || []).entries()) {
+        const id = `${name}-${i}`;
+        const r = h("input", { type: "radio", id, name, value: o, checked: o === current });
+        r.addEventListener("change", () => { picked = o; if (custom) custom.value = ""; });
+        group.append(h("label", { class: "os-radio os-radio--lg", attrs: { for: id } }, r, h("span", { text: o })));
+      }
+      body.append(group);
+      if (f.type === "dropdown" && f.allow_custom) {
+        custom = h("input", { id: `${name}-own`, class: "os-input os-input--lg", value: (f.options || []).includes(current) ? "" : current, maxLength: 4000 });
+        custom.addEventListener("input", () => { picked = custom.value; for (const r of group.querySelectorAll("input")) r.checked = false; });
+        body.append(h("label", { class: "os-label", attrs: { for: custom.id }, text: t("sign.choice.own") }), custom);
+      }
+    },
+    actions: [
+      { label: t("action.cancel"), value: null },
+      {
+        label: t("sign.field.save"),
+        variant: "primary",
+        attrs: { "data-testid": "choice-save" },
+        onClick: async () => {
+          if (!picked) return null;
+          await saveChoice(f, picked, main.querySelector(`[data-field-id="${CSS.escape(f.id)}"]`));
+          paint();
+          return true;
+        },
+      },
+    ],
+  });
+}
+
+/// Attach a file to an attachment field (`PUT /s/{token}/fields/{field}/attachment`):
+/// PDF, PNG or JPEG of at most 10 MiB, checked here first and by the server.
+const attachedNames = new Map();
+const MAX_ATTACH = 10 * 1024 * 1024;
+async function attachFile(f, input, btn, paint) {
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  if (file.size > MAX_ATTACH || !/^(application\/pdf|image\/png|image\/jpeg)$/.test(file.type)) {
+    toast(t("sign.attach.bad"), "error");
+    return;
+  }
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const r = await busy(btn, () => api.ceremony.attach(token, f.id, bytes));
+    const v = (r?.fields || []).find((x) => x.id === f.id)?.value;
+    if (!v?.attachment) throw new ApiError({ status: 0, code: "CS-API-0010", title: t("sign.attach.bad") });
+    values.set(f.id, v);
+    attachedNames.set(f.id, file.name);
+    savedChip();
+  } catch (err) { toastError(err); }
+  paint();
+  updateGuide();
+}
+
 async function signField(f, paint) {
   const mark = f.type === "initials" ? "initials" : "signature";
   let a = adoptions[mark];
@@ -612,7 +745,7 @@ async function signField(f, paint) {
   updateGuide();
 }
 
-const myInputs = () => (view.fields || []).filter((f) => takesInput(f.type) && fromWire(f.placement));
+const myInputs = () => (view.fields || []).filter((f) => fills(f) && fromWire(f.placement));
 function remaining() {
   return myInputs().filter((f) => f.required && !isDone(f));
 }
@@ -676,10 +809,13 @@ function review() {
   for (const f of [...fields].sort(order)) {
     const v = values.get(f.id);
     let shown;
-    if (!takesInput(f.type)) shown = AUTO[f.type]?.() || "";
+    if (isFixed(f)) shown = fixedText(f);
+    else if (!fills(f)) shown = AUTO[f.type]?.() || "";
     else if (!v) shown = t(f.type === "checkbox" ? "sign.review.unchecked" : "sign.review.empty");
     else if (v.signature) shown = t("sign.review.adopted");
     else if ("checked" in v) shown = t(v.checked ? "sign.review.checked" : "sign.review.unchecked");
+    else if (v.attachment) shown = attachedNames.get(f.id) || t("sign.attach.done");
+    else if (typeof v.choice === "string") shown = v.choice;
     else shown = v.text;
     dl.append(h("dt", { text: f.label || t(`ftype.${f.type}`) }), h("dd", { text: shown }));
   }
@@ -732,13 +868,19 @@ function flat(f, pg) {
   placeBox(box, f.p, pg);
   box.style.fontSize = `${Math.min(60, (f.p.height / pg.height) * 100 * 0.6).toFixed(3)}cqh`;
   const v = values.get(f.id);
-  if (f.type === "signature" || f.type === "initials") {
+  if (isFixed(f)) {
+    box.textContent = fixedText(f);
+  } else if (f.type === "signature" || f.type === "initials") {
     const a = Object.values(adoptions).find((x) => x.id === v?.signature);
     if (a) box.append(h("img", { src: a.dataUrl, alt: "" }));
   } else if (f.type === "checkbox") {
     if (v?.checked) box.append(icon("check", { size: 16 }));
-  } else if (f.type === "text") {
+  } else if (TYPED.has(f.type)) {
     box.textContent = v?.text || "";
+  } else if (CHOSEN.has(f.type)) {
+    box.textContent = v?.choice || "";
+  } else if (f.type === "attachment") {
+    // Listed in the certificate by hash, not drawn on the page (docs/40, WEB-06).
   } else {
     box.textContent = AUTO[f.type]?.() || "";
   }
@@ -782,17 +924,21 @@ function done(everyone, celebrate = false) {
 /// where the browser's PDF viewer prints it.
 async function downloadCopy(print = false) {
   closeMore();
-  const name = (s) => `${String(s || "document").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, 120) || "document"}.pdf`;
-  let files;
+  const name = (s) => `${String(s || "document").replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, 120) || "document"}.pdf`;
+  // After finishing, `GET /s/{token}/document?doc=` (the sealed copy once complete,
+  // else a preview marked "not signed"); before, the server answers 409 and the copy
+  // is the document as delivered, which is what the signer is reading.
+  const files = [];
   try {
-    files = [{ blob: await api.ceremony.download(token), name: name(view.envelope?.subject) }];
-  } catch (err) {
-    if (!(err instanceof ApiError) || ![404, 405, 501].includes(err.status)) { toastError(err); return; }
-    try {
-      files = [];
-      for (const d of view.envelope?.documents || []) files.push({ blob: await api.ceremony.document(token, d.id), name: name(d.name) });
-    } catch (e2) { toastError(e2); return; }
-  }
+    for (const d of view.envelope?.documents || []) {
+      let blob;
+      try { blob = await api.ceremony.download(token, d.id); } catch (err) {
+        if (!(err instanceof ApiError) || ![404, 405, 409, 501].includes(err.status)) throw err;
+        blob = await api.ceremony.document(token, d.id);
+      }
+      files.push({ blob, name: name(d.name || view.envelope?.subject) });
+    }
+  } catch (err) { toastError(err); return; }
   if (print) {
     for (const f of files) {
       const url = URL.createObjectURL(new Blob([f.blob], { type: "application/pdf" }));
