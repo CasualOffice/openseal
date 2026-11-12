@@ -50,11 +50,12 @@ a:hover { color: var(--os-accent-hover); }
   border-radius: var(--os-radius-sm); box-shadow: var(--os-shadow-pop);
 }
 .os-skip:focus { top: var(--os-s2); }
-/* Demo mode: a small amber tag (in the sidebar on the app, in the bar on verify). */
+/* Demo mode: an amber strip across the top (signing and verify pages), or a small tag in the
+ * app's sidebar (.os-side__demo). */
 .os-mock-banner {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--os-s1);
-  min-height: 1.5rem; padding: 0.125rem var(--os-s2); border-radius: var(--os-radius-sm);
-  font-size: var(--os-fs-12); font-weight: 500; white-space: nowrap;
+  display: flex; flex-wrap: wrap; text-align: center; align-items: center; justify-content: center; gap: var(--os-s1);
+  min-height: 1.5rem; padding: 0.125rem var(--os-s2);
+  font-size: var(--os-fs-12); font-weight: 500;
   background: var(--os-st-wait-soft); color: var(--os-st-wait);
 }
 
@@ -225,7 +226,7 @@ select.os-input {
 .os-checkbox:disabled { opacity: .5; cursor: not-allowed; }
 .os-checkbox:focus-visible { outline-offset: calc(var(--os-focus-offset) - var(--os-check-pad, 0px)); }
 .os-table .os-checkbox {
-  --os-check-pad: calc((var(--os-target-touch) - 1.125rem) / 2);
+  --os-check-pad: calc((var(--os-target-touch) - 1.125rem) / 2 + 0.25px); /* a quarter pixel so a fractional root never rounds the target under 44 px */
   padding: var(--os-check-pad); margin: calc(-1 * var(--os-check-pad)); position: relative; z-index: 1;
 }
 .os-col-subject { display: grid; gap: 0.125rem; padding: var(--os-s1) 0; }
@@ -558,6 +559,11 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); color: var(--os-text); tra
 .os-badge--declined, .os-badge--danger { background: color-mix(in srgb, var(--os-danger) 10%, var(--os-bg)); color: var(--os-danger); }
 /* Voided is a neutral end, not an error (UX-02): the plain pill, with its ban icon. */
 .os-badge--voided { background: var(--os-st-draft-soft); color: var(--os-text); }
+/* Neutral pills keep an edge in dark, where their tint is close to the card. */
+:root[data-theme="dark"] .os-badge--draft, :root[data-theme="dark"] .os-badge--voided, :root[data-theme="dark"] .os-badge--neutral, :root[data-theme="dark"] .os-badge--template { box-shadow: inset 0 0 0 1px var(--os-border-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .os-badge--draft, :root:not([data-theme="light"]) .os-badge--voided, :root:not([data-theme="light"]) .os-badge--neutral, :root:not([data-theme="light"]) .os-badge--template { box-shadow: inset 0 0 0 1px var(--os-border-strong); }
+}
 .os-badge--expired, .os-badge--warning { background: color-mix(in srgb, var(--os-warning) 12%, var(--os-bg)); color: var(--os-warning); }
 .os-badge--info { background: color-mix(in srgb, var(--os-info) 10%, var(--os-bg)); color: var(--os-info); }
 .os-badge--ml { background: var(--os-ml-soft); color: var(--os-ml); }
@@ -575,6 +581,7 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); color: var(--os-text); tra
   background: #3f3f46; color: #ffffff; font-size: 0.625rem; font-weight: 600; letter-spacing: .02em; line-height: 1;
 }
 .os-avatar:empty::before { content: ""; width: 0.625rem; height: 0.625rem; border-radius: 50%; border: 0.125rem solid currentColor; }
+.os-avatar[data-initials]:empty::before { content: attr(data-initials); width: auto; height: auto; border: 0; border-radius: 0; }
 .os-avatar--lg { width: 2rem; height: 2rem; font-size: var(--os-fs-12); }
 .os-avatars { display: inline-flex; align-items: center; }
 .os-avatars > .os-avatar { box-shadow: 0 0 0 2px var(--os-bg); font-size: 0.5625rem; }

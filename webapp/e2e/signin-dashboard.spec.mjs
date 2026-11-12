@@ -90,7 +90,7 @@ test("resend and void act on a sent envelope", async ({ page }) => {
 
 test("signing out returns to sign-in, and the app then asks to sign in again", async ({ page }) => {
   await signIn(page);
-  await page.getByRole("button", { name: "Account" }).click();
+  await page.locator("#account-btn").click();
   await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await page.goto(app("#/agreements"));

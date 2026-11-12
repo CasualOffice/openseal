@@ -19,6 +19,9 @@ const WASM = fs.existsSync(path.join(ROOT, "webapp/vendor/openseal-wasm/casual_s
 async function checkLayout(page, what) {
   await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
   const problems = await page.evaluate(() => {
+    // Measured from the top of the page, as the screenshot is: the sticky phone bar (WEB-17)
+    // otherwise sits over whatever a click scrolled under it.
+    window.scrollTo(0, 0);
     const out = [];
     const vw = document.documentElement.clientWidth;
     if (document.documentElement.scrollWidth > vw + 1) out.push(`horizontal overflow: ${document.documentElement.scrollWidth} > ${vw}`);
@@ -293,9 +296,12 @@ for (const [vp, size] of [["1440", { width: 1440, height: 900 }], ["1366", { wid
       await rowMenus.first().click();
       await menuInView(page, `${vp} agreements: first row's menu`);
       await page.keyboard.press("Escape");
+      // On a phone New agreement lives in the drawer (WEB-17); the account is in the top row.
+      if (await page.locator("#nav-toggle").isVisible()) await page.locator("#nav-toggle").click();
       await page.locator("#start-btn").click();
       await menuInView(page, `${vp} Start menu`);
       await page.keyboard.press("Escape");
+      if (await page.locator("#nav-toggle").getAttribute("aria-expanded") === "true") await page.keyboard.press("Escape");
       await page.locator("#account-btn").click();
       await menuInView(page, `${vp} account menu`);
       await page.keyboard.press("Escape");
@@ -340,27 +346,27 @@ for (const scheme of ["light", "dark"]) {
   });
 }
 
-// The UI font and the root size (UX-02): the bundled Inter draws the app and the signing
-// page, and the root size is the same in every window.
-test("the bundled UI font draws the app and the signing page, at one root size", async ({ page }, testInfo) => {
+// The UI font and the root size (UX-02, WEB-17): the bundled Geist draws the app and the
+// signing page, and the root follows the canvas's bounded fluid scale.
+test("the bundled UI font draws the app and the signing page, on the canvas's fluid root (WEB-17)", async ({ page }, testInfo) => {
   test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
-  const sizes = [];
-  for (const width of [1280, 1440, 1920]) {
+  // Owner instruction 44: 15 px at 1280, 16 at 1440, about 17 at 1920, 16 on phones.
+  const want = { 390: 16, 1280: 15.34, 1440: 15.82, 1920: 17.26 };
+  for (const width of [390, 1280, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(app("#/signin"));
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     const r = await page.evaluate(async () => {
       await document.fonts.ready;
-      return { root: getComputedStyle(document.documentElement).fontSize, loaded: document.fonts.check('14px "OpenSeal Inter"', "Agreement"), family: getComputedStyle(document.body).fontFamily };
+      return { root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize), loaded: document.fonts.check('14px "OpenSeal Geist"', "Agreement"), family: getComputedStyle(document.body).fontFamily };
     });
-    expect(r.family.startsWith('"OpenSeal Inter"'), `body font at ${width}: ${r.family}`).toBe(true);
-    expect(r.loaded, `Inter loaded at ${width}`).toBe(true);
-    sizes.push(r.root);
+    expect(r.family.startsWith('"OpenSeal Geist"'), `body font at ${width}: ${r.family}`).toBe(true);
+    expect(r.loaded, `Geist loaded at ${width}`).toBe(true);
+    expect(Math.abs(r.root - want[width]), `root size at ${width}: ${r.root}`).toBeLessThan(0.05);
   }
-  expect(new Set(sizes).size, `root size by window: ${sizes.join(", ")}`).toBe(1);
   await page.goto(signPage(tokens.sign));
   await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
-  expect(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "OpenSeal Inter"', "Sign"); })).toBe(true);
+  expect(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "OpenSeal Geist"', "Sign"); })).toBe(true);
 });
 
 // Small component defects (UX-02).

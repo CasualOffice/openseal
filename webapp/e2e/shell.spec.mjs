@@ -92,36 +92,60 @@ for (const [name, viewport] of WIDTHS) {
   test.describe(`at ${viewport.width}`, () => {
     test.use({ viewport });
 
-    test("search is reachable, from the bar and with /", async ({ page }, testInfo) => {
+    test("the command menu opens from the sidebar or top row, with ⌘K and with /; Escape returns focus (WEB-17)", async ({ page }, testInfo) => {
       await signIn(page, "home");
-      const search = page.getByRole("searchbox", { name: "Search agreements" });
-      if (name === "phone") {
-        await expect(search).toBeHidden();
-        const toggle = page.getByRole("button", { name: "Search agreements" });
-        await toggle.click();
-        await expect(search).toBeVisible();
-        await expect(search).toBeFocused();
-        await snap(page, testInfo, "shell-search-open");
-        await page.keyboard.press("Escape");
-        await expect(search).toBeHidden();
-        await expect(toggle).toBeFocused();
-      }
-      // "/" from Home, not only from Agreements.
+      const menu = page.getByRole("dialog", { name: "Command menu" });
+      const input = menu.getByRole("combobox", { name: "Type a command or search" });
+      // The opener: the sidebar's "Search or jump to…" on a desktop, the top row's search on a phone.
+      const opener = name === "phone" ? page.locator("#search-toggle") : page.locator("#palette-btn");
+      await opener.click();
+      await expect(menu).toBeVisible();
+      await expect(input).toBeFocused();
+      await expect(input).toHaveAttribute("aria-expanded", "true");
+      await snap(page, testInfo, `shell-palette-${name}`);
+      await expectAccessible(page, "command menu");
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+      await expect(opener).toBeFocused();
+
+      // ⌘K / Ctrl+K from Home toggles it.
       await page.locator("main").focus();
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(input).toBeFocused();
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(menu).toHaveCount(0);
+
+      // "/" opens it too; arrows move the active option, Home and End jump.
       await page.keyboard.press("/");
-      await expect(search).toBeVisible();
-      await expect(search).toBeFocused();
-      await search.fill("NDA");
-      await search.press("Enter");
+      await expect(input).toBeFocused();
+      await input.fill("NDA");
+      const options = menu.getByRole("option");
+      await expect(options.first()).toHaveAttribute("aria-selected", "true");
+      await expect(menu.getByRole("option", { name: /Mutual NDA/ })).toBeVisible();
+      await page.keyboard.press("End");
+      await expect(options.last()).toHaveAttribute("aria-selected", "true");
+      const active = await input.getAttribute("aria-activedescendant");
+      expect(active).toBe(await options.last().getAttribute("id"));
+      await page.keyboard.press("Home");
+      await expect(options.first()).toHaveAttribute("aria-selected", "true");
+      // The first option searches every agreement for the words typed.
+      await expect(options.first()).toContainText("Search agreements for “NDA”");
+      await page.keyboard.press("Enter");
       await expect(page).toHaveURL(/#\/agreements\?q=NDA/);
       await expect(page.getByRole("heading", { name: "Agreements", level: 1 })).toBeVisible();
+      await expect(page.getByRole("searchbox", { name: "Search agreements" })).toHaveValue("NDA");
+
+      // Nothing found is said.
+      await page.keyboard.press("ControlOrMeta+k");
+      await input.fill("zzzz-nothing-like-this");
+      await expect(menu.getByTestId("palette-empty")).toContainText("No results for “zzzz-nothing-like-this”");
     });
 
     test("navigating with a side panel open closes it; with input in it, it asks first", async ({ page }) => {
       await signIn(page, "home");
       await page.goto(app("#/admin"));
-      await page.getByRole("button", { name: "Invite user" }).click();
-      const panel = page.getByRole("dialog", { name: "Invite user" });
+      await page.getByRole("button", { name: "Add user" }).click();
+      const panel = page.getByRole("dialog", { name: "Add user" });
       await expect(panel).toBeVisible();
       const goTemplates = async () => {
         if (name === "phone") { await page.locator("#nav-toggle").click(); await page.locator("#nav").getByRole("link", { name: "Templates" }).click(); }
@@ -134,14 +158,14 @@ for (const [name, viewport] of WIDTHS) {
 
       // Typed into: asked; Cancel keeps the panel and the address.
       await page.goto(app("#/admin"));
-      await page.getByRole("button", { name: "Invite user" }).click();
-      await panel.getByLabel("Email").fill("kai@example.com");
+      await page.getByRole("button", { name: "Add user" }).click();
+      await panel.getByRole("textbox", { name: "Email" }).fill("kai@example.com");
       await goTemplates();
       const ask = page.getByRole("dialog", { name: "Discard your changes?" });
       await expect(ask).toBeVisible();
       await ask.getByRole("button", { name: "Cancel" }).click();
       await expect(panel).toBeVisible();
-      await expect(panel.getByLabel("Email")).toHaveValue("kai@example.com");
+      await expect(panel.getByRole("textbox", { name: "Email" })).toHaveValue("kai@example.com");
       await expect(page).toHaveURL(/#\/admin$/);
       // Discard: the panel goes and the new screen shows.
       await goTemplates();
@@ -265,7 +289,7 @@ for (const [name, viewport] of WIDTHS) {
       await expectAccessible(page, "profile");
       await panel.getByTestId("profile-save").click();
       await expect(panel).toHaveCount(0);
-      await expect(page.locator("#account-btn .os-avatar")).toHaveText("RQ");
+      await expect(page.locator("#account-btn .os-avatar")).toHaveAttribute("data-initials", "RQ");
       await page.locator("#account-btn").click();
       await page.getByRole("menuitem", { name: "Notification settings" }).click();
       await expect(panel.getByLabel("a recipient opens an envelope")).toBeChecked();

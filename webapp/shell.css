@@ -28,7 +28,6 @@
 /* A route switch shows the new screen as soon as it has content; until then the old one
  * stays, inert, under it (app.js), so the card never flashes blank. Each screen rises in. */
 .os-view { animation: os-rise var(--os-dur-enter) var(--os-ease-out) both; }
-.os-view.is-entering { position: absolute; inset: 0 0 auto 0; visibility: hidden; animation: none; }
 .os-view.is-leaving { pointer-events: none; }
 
 /* The workspace switcher row (canvas): the seal mark, the workspace and plan. */
@@ -91,7 +90,7 @@
 
 /* Foot: Admin, then the account row with notifications and help beside it. */
 .os-side__foot { margin-top: auto; display: flex; flex-direction: column; gap: 0.125rem; padding-top: var(--os-s4); }
-.os-side__demo { margin: 0 0.5rem 0.375rem; align-self: flex-start; }
+.os-side__demo { display: inline-flex; flex-wrap: nowrap; white-space: nowrap; margin: 0 0.5rem 0.375rem; align-self: flex-start; border-radius: var(--os-radius-sm); }
 .os-side__me { display: flex; align-items: center; gap: 0.125rem; margin-top: 0.375rem; padding-top: 0.5rem; border-top: 1px solid var(--os-hairline); }
 .os-side__me > #account-slot, .os-side__me > .os-menu-wrap:first-child { flex: 1; min-width: 0; }
 .os-account-btn {
@@ -198,7 +197,7 @@
   .os-brand img { width: 6.5rem; height: auto; }
   .os-topbar__tools { display: flex; align-items: center; gap: 0.125rem; min-width: 0; }
   .os-topbar__tools .os-account-btn { width: auto; padding: 0 var(--os-s1); height: var(--os-btn); }
-  .os-topbar__tools .os-account-btn > .os-account__name, .os-topbar__tools .os-account-btn > svg { display: none; }
+  .os-topbar__tools .os-account-btn > .os-account__name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .os-topbar__tools .os-avatar { width: 1.75rem; height: 1.75rem; font-size: var(--os-fs-11); }
   /* The drawer starts at the bar's bottom as measured when it opens (app.js openNav). */
   .os-side {

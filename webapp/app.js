@@ -128,9 +128,11 @@ async function panelMayClose() {
 /// Put `hash` in the address bar without a new navigation.
 const setHash = (hash) => history.replaceState(null, "", `${location.pathname}${location.search}${hash}`);
 
-/// Show `view` (already in `main`, hidden while it fills) and drop the screens before it.
-/// It is shown once it has content, or when its mount finishes, or after 400 ms,
-/// whichever is first: a route switch never flashes an empty card (WEB-17).
+/// Drop the screens after `view` once it has something to show: when its first child
+/// arrives (a MutationObserver callback, a microtask, so before the next paint), when its
+/// mount finishes, or after 400 ms, whichever is first. Until then the empty new view sits
+/// above the old, inert one: a route switch never paints an empty card (WEB-17), and the
+/// new view is visible from the start, so a screen can focus its first field.
 function revealWhenReady(main, view, mounted) {
   let shown = false;
   const show = () => {
@@ -143,9 +145,9 @@ function revealWhenReady(main, view, mounted) {
     main.scrollTop = 0;
     if (narrow()) window.scrollTo(0, 0);
   };
-  const obs = typeof MutationObserver === "function" ? new MutationObserver(() => { if (view.firstElementChild) requestAnimationFrame(show); }) : null;
+  const obs = typeof MutationObserver === "function" ? new MutationObserver(() => { if (view.firstElementChild) show(); }) : null;
   obs?.observe(view, { childList: true });
-  if (view.firstElementChild) requestAnimationFrame(show);
+  if (view.firstElementChild) show();
   const timer = setTimeout(show, 400);
   mounted.then(show, show);
   return show;
@@ -238,7 +240,7 @@ async function route() {
   for (const old of main.children) { old.inert = true; old.setAttribute("aria-hidden", "true"); old.classList.add("is-leaving"); }
   if (layoutChanges) clear(main);
   const view = h("div", { class: "os-view is-entering" });
-  main.append(view);
+  main.prepend(view);
   const params = new URLSearchParams(hash.split("?")[1] || "");
   const mounted = Promise.resolve().then(() => mod.mount(view, ctx, match.slice(1), params));
   const show = revealWhenReady(main, view, mounted);
@@ -359,7 +361,7 @@ function placeChrome() {
 function makeSearchToggle() {
   const b = h("button", {
     type: "button", id: "search-toggle", class: "os-btn os-btn--ghost os-btn--md os-btn--icon",
-    attrs: { "aria-label": t("palette.label"), title: t("palette.label"), "aria-haspopup": "dialog" },
+    attrs: { "aria-label": t("palette.jump"), title: t("palette.jump"), "aria-haspopup": "dialog" },
   }, icon("os-search", { size: 18, stroke: 1.6 }));
   b.addEventListener("click", () => run("palette.open"));
   return b;
@@ -367,7 +369,7 @@ function makeSearchToggle() {
 
 /// The workspace switcher row: the seal mark, the account's name and the product.
 function buildWorkspace() {
-  const btn = h("button", { type: "button", id: "ws-btn", class: "os-ws", attrs: { "aria-label": t("ws.menu") } },
+  const btn = h("button", { type: "button", id: "ws-btn", class: "os-ws" },
     h("span", { class: "os-ws__mark", attrs: { "aria-hidden": "true" } }, icon("os-check", { size: 12, stroke: 2.4 })),
     h("span", { class: "os-ws__text" }, (wsName = h("span", { class: "os-ws__name", text: t("ws.default") })), h("span", { class: "os-ws__plan", text: t("ws.plan") })),
     icon("os-updown", { size: 14, stroke: 1.6 }));
@@ -519,7 +521,7 @@ function registerPaletteSections() {
       items.push({ id: `cmd:${c.id}`, label: c.label, icon: "arrow-right", run: () => run(c.id) });
     }
     const found = q ? items.filter((it) => matches(it.label, q)) : items.slice(0, 6);
-    if (q) found.unshift({ id: "search-all", label: t("palette.search-all", { query: q }), icon: "os-search", run: () => ctx.navigate(`#/agreements?q=${encodeURIComponent(q)}`) });
+    if (q) found.unshift({ id: "search-all", fallback: true, label: t("palette.search-all", { query: q }), icon: "os-search", run: () => ctx.navigate(`#/agreements?q=${encodeURIComponent(q)}`) });
     return found;
   };
   registerPaletteProvider({ id: "actions", title: t("palette.actions"), order: 10, sync: true, search: (q) => actions(q) });
@@ -655,9 +657,11 @@ function syncAvatar() {
   const btn = document.getElementById("account-btn");
   const av = btn?.querySelector(".os-avatar");
   if (av) {
-    av.textContent = initials(who.name) || "";
+    // Initials drawn by CSS (data-initials), so the button's text is the name alone and its
+    // accessible name, "<name>, Account", contains all of it (SC 2.5.3, label in name).
+    av.textContent = "";
+    if (initials(who.name)) av.dataset.initials = initials(who.name); else delete av.dataset.initials;
     btn.querySelector(".os-account__name").textContent = who.name || t("account.menu");
-    // The name starts with what is shown (SC 2.5.3, label in name).
     btn.setAttribute("aria-label", who.name ? `${who.name}, ${t("account.menu")}` : t("account.menu"));
   }
 }
@@ -747,12 +751,12 @@ document.addEventListener("keydown", (e) => {
   // ⌘K / Ctrl+K toggles the command menu from anywhere, even while typing.
   if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {
     if (paletteOpen()) return; // the menu's own handler closes it
-    if (document.querySelector("dialog[open]") || !command("palette.open")?.enabled()) return;
+    if (document.querySelector("dialog[open]:not(.is-leaving)") || !command("palette.open")?.enabled()) return;
     e.preventDefault();
     run("palette.open");
     return;
   }
-  if (document.querySelector("dialog[open]")) return;
+  if (document.querySelector("dialog[open]:not(.is-leaving)")) return;
   handle(e, ctx.contexts, isTyping(e));
 });
 

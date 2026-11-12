@@ -831,3 +831,104 @@ that keeps their meaning); `empty-states.spec.mjs` opens Recipients from the ste
 Not done in UX-05 (rows proposed): a context menu on fields from the command registry; resize dots outside the field;
 schedule send (waits on its server row); the field members in template mode (`templatesync.js` sends required and
 label only); a recipient's type change after the draft is saved (the API's recipient patch has no type).
+
+## As built: design foundation (WEB-17, 2026-11-13)
+
+The foundation every screen of the approved canvas ([assets/design-canvas](assets/design-canvas/), owner instruction
+44) is rebuilt on. It supersedes the token values, root size, motion and shell described in "As built (WEB-01)"
+§Design system, §Root size and "As built: shell" above; their rules (status never colour alone, `hidden` always
+hides, menus in the top layer, contrast measured) still hold. The screens themselves move to the canvas in later
+`WEB-17` lanes (Agreements, Prepare, signing, Admin, console).
+
+**Tokens** (`webapp/tokens.css`). Every `--os-*` name screens used is kept; the values are the canvas's. Light:
+window `#f4f3f0` (`--os-canvas`), surfaces white (`--os-bg`, `--os-raised`), row hover `#fafaf9` (`--os-surface`),
+subtle fills `#f4f3f0` (`--os-surface-2`), ink `#18181b`, body secondary `#52525b` (`--os-text-2`, new), muted
+`#6b6b74` (the canvas's `#71717a` measures 4.36:1 on the window colour), hairlines `rgba(24,24,27,.06)` and `.08`
+(`--os-hairline`, `--os-border`), control edges `#8b8b94` (≥ 3:1). Seal red `#c01622`, `#a8121d` under the
+pointer, for the one primary action; the focus ring is the canvas's 2 px seal red. Destructive is a burgundy rose
+`#9d174d` (CIEDE2000 17.8 from the seal red). Status pairs exactly as the canvas's pills (`--os-st-you`, `-wait`,
+`-done`, `-draft` with `-soft` tints: red, amber `#b45309`/`#fdf6ec`, green `#15803d`/`#eff8f2`, zinc); the generic
+`--os-warning` `#a54b08` and `--os-success` `#14763a` are one step deeper so a 12 % tint badge passes 4.5:1. Model
+suggestions only: `--os-ml` `#6d28d9`, `--os-ml-soft` `#f5f3ff`, `--os-ml-edge`, `--os-ml-mark`. Personal data:
+`--os-pii*` amber on cream. Radii 6 / 7 (controls) / 8 / 12 / 14; shadows are a hairline ring plus a soft drop
+(`--os-shadow`, `-sm`, `-md`, `-pop` = the command menu's). Easing `--os-ease-out` `cubic-bezier(.16,1,.3,1)`
+(entrances), `--os-ease-state` `(.2,.8,.2,1)` (state changes), `--os-ease-spring` `(.34,1.56,.64,1)` (knobs, placed
+fields, the seal). Controls 28 / 32 / 44 px. Dark is the same structure in zinc (window `#0f0f11`, card `#18181b`,
+text `#f4f4f5`, muted `#a1a1aa`, accent text `#ff7a83`, fills keep `#c01622`); the explicit and OS-preference dark
+blocks are identical (tested). Type is Geist and Geist Mono 1.3.1 (OFL, `fonts/ui/`, variable); Inter is gone.
+
+**Root size** (`app.css`): `html { font-size: clamp(15px, calc(11.5px + .3vw), 18px) }`, 16 px under 48em: 15 px at
+1280, 16 at 1440, about 17 at 1920, 18 from 2560. Everything is rem. `pure.test.mjs` pins this rule (it replaced the
+WEB-06 test that forbade a viewport term, by instruction 44). **No control label wraps:** buttons, tabs, pills, menu
+items, nav links and the jump button are `white-space: nowrap`, never shrink below their content, and ellipsize a
+long label where their box is constrained.
+
+**Motion** (`app.css`, shared): keyframes and classes `os-rise` (fade and 6 px up; every screen enters with it),
+`os-pop` (scale .98 and fade; menus, dialogs, the command menu), `os-fade`, `os-slide`, `os-shimmer` / `.os-skel`
+(the warm skeleton), `os-sweep` and `os-scan` (scanning lines), `os-spin`, `os-float` (empty-state illustrations),
+`os-ink` (a clip-path reveal for signatures), `os-seal` (spring pop), `os-drop-in`, `os-indet` (indeterminate bar),
+`os-stagger` (list rows 40 ms apart). All are off under `prefers-reduced-motion: reduce`.
+
+**Shell** (`app.html`, `app.js`, `shell.css`; the Main artboard). A 15.5rem sidebar on the window colour: the
+workspace row (seal mark, workspace name, product; a menu with workspace settings for admins, verify, about),
+"Search or jump to… ⌘K" (`#palette-btn`), **New agreement** (`#start-btn`, the Start menu's send / from a template /
+verify, `N` hint), Home, Agreements, Templates, Reports, an empty labelled group `#nav-views` for the Agreements
+screen's saved views, then at the bottom the demo tag, Admin (admins only) and the account row (`#account-btn`:
+avatar and name; the menu as before, with the theme) beside notifications (`#bell-btn`) and help (`#help-btn`).
+The active section is a white pill with a hairline and a soft shadow. The routed screen renders in a white content
+card inset 0.5rem from the window's top, right and bottom, as wide as the space left (no width cap), scrolling inside
+the card (`#main`). Frame routes (the editor) and chromeless routes (sign-in) take the whole window. Below 60em the
+sidebar is the drawer (scrim, Escape, inert while closed, starts under the bar) and a top row shows Menu, the logo,
+search, notifications and the account; the same bell and account controls are moved there, not copied. A screen
+that sets `ctx.onSearch` gets `#top-search` in a row at the top of the card (Agreements today, until its lane
+replaces it). `ctx.setNavCount(nav, n)` puts the canvas's red count beside a section; the shell does not ask the
+server for it. A route switch never blanks the card: the new view is added hidden, the old one stays inert until the
+new one has content (or its mount ends, or 400 ms), then it is removed, the card scrolls to the top and the new view
+rises in.
+
+**Command menu** (`ui/palette.js`). ⌘K / Ctrl+K from anywhere (also while typing; again to close), the sidebar's
+button, the phone's search button and `/`. A modal `<dialog>` (40rem, 6rem from the top, the canvas's radius and
+shadow) with the WAI-ARIA combobox + listbox pattern: the input owns `aria-activedescendant`; ↑ ↓ wrap, Home and End
+jump, Enter runs, Escape closes, the pointer sets the active option, focus returns to the opener. Sections come from
+providers, `registerPaletteProvider({id, title, icon, order, titleTone?, note?, sync?, search(query, signal)})`
+(also `ctx.registerPaletteProvider`), returning items `{id, label, sub?, snippet?: [{text, mark?}], hint?,
+hintTone?, icon?, kbd?, run()}`; a slow section shows a skeleton row until it answers, typing pauses 150 ms before
+asking, and a newer query aborts the older one. Built in: **Actions** (new agreement, use a template, verify, go to
+each section, theme, shortcuts, and the verbs screens register; with a query, "Search agreements for “…”" first) and
+**Agreements** (titles matching, from the envelope list; envelopes waiting for the user's signature first, "Needs
+your signature", where the Inbox call exists). Empty: "No results for “…”". The Agreements lane adds "Matches by
+meaning" (`api.searchByMeaning`, violet title).
+
+**Primitives** (`ui/`, exported from `ui/index.js`). Buttons: `primary` (seal red, once per screen), `strong` (the
+inspector's ink button), `secondary` (white with a hairline ring), `subtle` (warm fill), `ghost`, `ml` (violet),
+`danger` and `danger-fill`; a `kbd` inside a button is styled. `tabs({variant: "underline" | "pill"})` with an optional
+per-tab `badge`. `statusPill(text, {tone, dot, ic})` and `statusBadge(status)` in the canvas's pill shape;
+`avatarStack(names)`; `switchButton(label, {checked, onChange, tone})` (`role="switch"`, spring knob, busy and rolled
+back when `onChange` rejects) beside the checkbox `toggle`; `skeletonRows` (the canvas's agreement-row shape),
+`skeletonLines`, `skeletonBlock`; `emptyState` with illustrations redrawn in the canvas's style (ellipse shadow,
+hairline paper, one coloured accent, confetti dots, floating) — the existing set plus `calendar` (nothing expiring),
+`fields` / `page-field` (no fields yet), `chart` (all clear) and `scanning` (reading the document); `suggestion(s,
+{onAccept, onDismiss})` (violet edge, label, confidence with "· check this" under 75 %, value, page, Save to details /
+Dismiss, then the decided state), `mlHeading()`, the `.os-pii` callout; `progressRing({value, total, tone})`.
+Toasts are an ink pill; dialogs take the command menu's radius, shadow and soft blurred scrim. Icons default to a
+1.5 stroke, and `icons.js` adds the canvas's own glyphs (`os-agreements`, `os-grid`, `os-bars`, `os-shield`,
+`os-updown`, `os-search`, `os-sparkle`, …).
+
+**Model layer** (`webapp/ml.js`, `WEB-18`; the contract the screen lanes consume). `api.js` adds `getMlSettings`,
+`patchMlSettings`, `requestAnalysis`, `getAnalysis`, `listSuggestions(env, {kind, state})`, `acceptSuggestion`,
+`dismissSuggestion` (docs/33 §6) and `searchByMeaning(q, {signal})` (planned, docs/33 §6, `WEB-19`); `request` takes
+an abort `signal`. `mlStatus()` resolves once per session to `{available, features: {ocr, template_matching,
+extraction, personal_data}, notInPlan, notInstalled, known}`: a 404, `CS-ML-0011` or a refused call means
+unavailable, and **every ML surface hides**; a non-admin's 403 on the settings means "not known here" and each surface
+hides on its own call's 404 or `CS-ML-0011` (`isUnavailable(err)`). The suggestion store per envelope
+(`loadSuggestions`, `suggestions`, `openCount`, `acceptSuggestion`, `dismissSuggestion`, `onSuggestions`) changes
+state at once, rolls back when the server refuses, and tells listeners; `isLowConfidence(s)` is under 0.75 and
+`percent(s)` reads it. The mock serves all of it with all four features on and the canvas's examples (an offer
+letter's start date, salary, notice period and personal data; a vendor agreement's payment terms and a 64 %
+governing law; the draft "Lease renewal 2027" matching the template "MSA v4" at 96 % with its page 3 (or last) read
+by OCR; analysis `running` for about 2 s after it is requested); `sessionStorage["openseal.mock.ml"] = "off"` answers
+404 as the real server does today, `"no-plan"` answers `403 CS-ML-0011`.
+
+**Tests.** `tests/ml.test.mjs` (pure decisions, the mock endpoints, the optimistic store; seen red with the rollback
+removed), `tests/pure.test.mjs` (contrast and the dark blocks on the new values; the fluid root; Geist bundled with
+its licence).

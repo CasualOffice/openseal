@@ -12,8 +12,9 @@
 // Providers: `registerPaletteProvider({id, title, icon, order, search(query, signal)})`.
 // `search` answers an array of items or a promise of one; a slow one shows a skeleton row
 // in its section until it answers, and a newer query aborts it through `signal`. An item
-// is `{id, label, sub?, snippet?: [{text, mark?}], hint?, hintTone?, icon?, kbd?, run()}`
-// (all strings shown as text). A provider may set `titleTone: "ml"` and `note` (the
+// is `{id, label, sub?, snippet?: [{text, mark?}], hint?, hintTone?, icon?, kbd?, fallback?, run()}`
+// (all strings shown as text; a `fallback` item does not count as a result for the
+// "No results" line). A provider may set `titleTone: "ml"` and `note` (the
 // canvas's "Matches by meaning · finds the clause even when the words differ").
 
 import { h, clear, reducedMotion } from "../dom.js";
@@ -63,6 +64,7 @@ export function matches(label, query) {
 }
 
 let open = null; // the open palette's close function
+let instance = 0; // ids are per opening: a leaving menu may still be in the page
 
 /// Whether the command menu is open.
 export function paletteOpen() { return !!open; }
@@ -74,13 +76,14 @@ export function closePalette() { open?.(); }
 export function openPalette({ query = "", debounce = 150 } = {}) {
   if (open) { open(); return; }
   const returnTo = document.activeElement;
-  const listId = "os-cmdk-list";
+  const pre = `os-cmdk${++instance}`;
+  const listId = `${pre}-list`;
   const input = h("input", {
     class: "os-cmdk__input", type: "text", value: query, autocomplete: "off", spellcheck: false,
     attrs: { role: "combobox", "aria-expanded": "true", "aria-controls": listId, "aria-autocomplete": "list", "aria-label": t("palette.input"), placeholder: t("palette.placeholder") },
   });
   const list = h("div", { class: "os-cmdk__list", id: listId, attrs: { role: "listbox", "aria-label": t("palette.results") } });
-  const esc = h("button", { type: "button", class: "os-cmdk__esc", text: "esc", attrs: { "aria-label": t("action.close") } });
+  const esc = h("button", { type: "button", class: "os-cmdk__esc", text: "esc", attrs: { tabindex: "-1", "aria-hidden": "true", title: t("action.close") } });
   const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   const foot = h("div", { class: "os-cmdk__foot", attrs: { "aria-hidden": "true" } },
     h("span", {}, h("kbd", { text: "↑↓" }), t("palette.move")),
@@ -119,7 +122,7 @@ export function openPalette({ query = "", debounce = 150 } = {}) {
     for (const sec of sections) {
       if (sec.state === "done" && !sec.items.length) continue;
       if (sec.state === "error") continue;
-      const titleId = `os-cmdk-g-${sec.p.id}`;
+      const titleId = `${pre}-g-${sec.p.id}`;
       const title = h("div", { id: titleId, class: `os-cmdk__title${sec.p.titleTone === "ml" ? " os-cmdk__title--ml" : ""}`, attrs: { role: "presentation" } },
         sec.p.icon ? icon(sec.p.icon, { size: 12, stroke: 1.6 }) : null, h("span", { text: sec.p.title }),
         sec.p.note ? h("span", { class: "os-cmdk__note", text: `· ${sec.p.note}` }) : null);
@@ -130,7 +133,7 @@ export function openPalette({ query = "", debounce = 150 } = {}) {
       } else {
         sec.items.forEach((it, i) => {
           const key = keyOf(sec, it, i);
-          const id = `os-cmdk-o-${n++}`;
+          const id = `${pre}-o-${n++}`;
           const rich = !!(it.sub || it.snippet);
           const label = h("span", { class: "os-cmdk__label" });
           for (const r of markRuns(it.label, q)) label.append(r.mark ? h("mark", { text: r.text }) : document.createTextNode(r.text));
@@ -155,7 +158,8 @@ export function openPalette({ query = "", debounce = 150 } = {}) {
     }
     const busy = sections.some((s) => s.state === "loading");
     list.setAttribute("aria-busy", busy ? "true" : "false");
-    if (!entries.length && !busy) list.append(h("div", { class: "os-cmdk__empty", attrs: { role: "status", "data-testid": "palette-empty" }, text: q ? t("palette.none", { query: q }) : t("palette.nothing") }));
+    // A fallback item ("Search agreements for …") does not count as a result.
+    if (!entries.some((e) => !e.it.fallback) && !busy) list.prepend(h("div", { class: "os-cmdk__empty", attrs: { role: "status", "data-testid": "palette-empty" }, text: q ? t("palette.none", { query: q }) : t("palette.nothing") }));
     syncActive(true);
   }
 
@@ -218,6 +222,7 @@ export function openPalette({ query = "", debounce = 150 } = {}) {
     render();
   });
   input.addEventListener("keydown", (e) => {
+    if (closed) return; // leaving: a key meant for the page (⌘K again) passes through
     if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
     else if (e.key === "Home" && flat().length) { e.preventDefault(); setActive(flat()[0].key); }
@@ -227,7 +232,7 @@ export function openPalette({ query = "", debounce = 150 } = {}) {
       clearTimeout(timer);
       const entry = flat().find((x) => x.key === activeKey);
       if (entry) run(entry);
-    } else if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) { e.preventDefault(); close(); }
+    } else if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); close(); }
   });
   esc.addEventListener("click", () => close());
   dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
@@ -240,12 +245,14 @@ export function openPalette({ query = "", debounce = 150 } = {}) {
     clearTimeout(timer);
     ctrl?.abort();
     dlg.classList.add("is-leaving");
-    const done = () => {
-      if (dlg.open) dlg.close();
-      dlg.remove();
-      if (restore && returnTo?.isConnected) returnTo.focus?.({ preventScroll: true });
-    };
-    if (reducedMotion()) done(); else setTimeout(done, 120);
+    // Out of the accessibility tree and the focus order at once; the animation is only paint.
+    dlg.setAttribute("aria-hidden", "true");
+    dlg.inert = true;
+    // Gone at once (no leaving animation): a modal dialog closed later would hand focus back
+    // to its opener after the user had moved on, and a key pressed meanwhile must reach the page.
+    if (dlg.open) dlg.close();
+    dlg.remove();
+    if (restore && returnTo?.isConnected) returnTo.focus?.({ preventScroll: true });
   }
   open = close;
 
