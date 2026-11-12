@@ -8,7 +8,7 @@
 
 import { h, initials } from "./dom.js";
 import { t } from "./i18n.js";
-import { openPanel, field, toggle, button, toast, toastError } from "./ui/index.js";
+import { openPanel, field, checkbox, button, toast, toastError } from "./ui/index.js";
 import { errorMessage } from "./api.js";
 
 const NOTIFY = ["completed", "declined", "viewed"];
@@ -35,7 +35,7 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
   try { me = await ctx.api.me(); } catch (err) { if (!ctx.failed?.(err)) toastError(err); return; }
 
   const name = field(t("profile.name"), { id: "profile-name", value: me.name || "", required: true, maxLength: 200, autocomplete: "name" });
-  const checks = Object.fromEntries(NOTIFY.map((k) => [k, toggle(t(`profile.notify.${k}`), { id: `profile-notify-${k}`, checked: !!me.notifications?.[k] })]));
+  const checks = Object.fromEntries(NOTIFY.map((k) => [k, checkbox(t(`profile.notify.${k}`), { id: `profile-notify-${k}`, checked: !!me.notifications?.[k] })]));
   const current = field(t("profile.password-current"), { id: "profile-pw-current", type: "password", autocomplete: "current-password", maxLength: 256 });
   const next = field(t("profile.password-new"), { id: "profile-pw-new", type: "password", autocomplete: "new-password", maxLength: 256, help: t("profile.password-help", { n: MIN_PASSWORD }) });
 
@@ -74,7 +74,7 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
     title: t("profile.title"),
     width: 28,
     build(body) {
-      const notif = h("fieldset", { class: "os-fieldset os-prof__switches", attrs: { "data-testid": "profile-notifications" } },
+      const notif = h("fieldset", { class: "os-fieldset", attrs: { "data-testid": "profile-notifications" } },
         h("legend", { class: "os-label", text: t("profile.notify") }),
         ...NOTIFY.map((k) => checks[k].el));
       body.classList.add("os-prof");

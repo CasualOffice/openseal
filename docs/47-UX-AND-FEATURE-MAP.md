@@ -865,7 +865,7 @@ Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list la
   told apart by its surface and grey glyph.
 - **Templates**: rows with the canvas's page thumbnail, name over subject with ellipsis. **Reports**: a skeleton shaped
   like the four tiles and the chart (no layout shift), tiles and chart card with hairline rings. **Profile**: an
-  identity row (avatar, name, email), notification switches, signature rows as cards.
+  identity row (avatar, name, email) and signature rows as cards (notifications stay checkboxes: the foundation `toggle` hides its input under the track, so a click on the input is intercepted).
 - **Tests**: `tests/intel.test.mjs` (page states, plan, detect follows OCR, PATCH key guard, sizes, hashes, model
   rows, script chips), `tests/ux08.test.mjs` (nav order, old links, hrefs round-trip); `e2e/admin.spec.mjs` adds the
   nav (order, no wrapped label, waiting parts, old links), Document intelligence (count, switches, scripts, models,
