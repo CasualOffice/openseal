@@ -74,12 +74,6 @@
 .os-swatch { width: 1rem; height: 1rem; border-radius: 0.25rem; border: 1px solid var(--os-border-strong); flex: none; }
 .os-switchrow { margin-top: var(--os-s4); }
 @media (max-width: 37.5em) { .os-table--cards td.os-col-email { font-size: var(--os-fs-12); } }
-@media (max-width: 26em) {
-  /* Three admin tabs fit 320 px: no icons, tighter padding, and a scroll if a language is longer. */
-  .os-tabs { overflow-x: auto; }
-  .os-tab { padding: 0 var(--os-s3); white-space: nowrap; flex: none; }
-  .os-tab > svg { display: none; }
-}
 
 /* ---- RP-01 Reports: a period, one colour per status, the table's last row ---------- */
 .os-reports__tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--os-s3); margin: 0 0 var(--os-s4); }
@@ -95,3 +89,92 @@
 .os-bar--expired { background: var(--os-warning); }
 .os-bar__key { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: 0.1875rem; margin-right: var(--os-s2); vertical-align: baseline; }
 
+
+/* ---- UX-08 Admin: the section rail (a select below 37.5em), sections, webhooks ------ */
+.os-admin { grid-template-columns: 17rem minmax(0, 1fr); }
+.os-admin__main { min-width: 0; }
+.os-admin__picker { display: none; }
+.os-admin__content > .os-panel__head--page:first-child { margin-top: 0; }
+.os-rail__link.is-waiting { color: var(--os-muted); font-weight: 400; }
+.os-rail__soon { font-size: var(--os-fs-12); color: var(--os-muted); border: 1px solid var(--os-border); border-radius: 62.4375rem; padding: 0 var(--os-s2); }
+.os-admin__lede { margin: calc(-1 * var(--os-s1)) 0 var(--os-s4); max-width: 46rem; }
+.os-admin__waiting { max-width: 46rem; }
+.os-admin__waiting-head { display: flex; align-items: center; gap: var(--os-s2); margin-top: 0; }
+.os-admin__waiting-head > svg { color: var(--os-muted); }
+.os-admin__tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--os-s3); margin: 0 0 var(--os-s2); }
+.os-admin__tools .os-fieldrow { margin: 0; }
+.os-admin__tools .os-label { margin: 0 0 var(--os-s1); font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-admin__tools--end { justify-content: flex-end; margin-top: var(--os-s4); }
+.os-admin__tools[hidden] { display: none; }
+.os-admin__none { padding: var(--os-s4) var(--os-s6); margin: 0; }
+.os-admin__url { overflow-wrap: anywhere; word-break: break-word; }
+.os-admin__deliveries { margin-top: var(--os-s6); }
+.os-admin__deliveries > .os-card__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--os-s2); }
+.os-admin__deliveries .os-card__head p { margin: 0; }
+.os-admin__events, .os-admin__scopes { display: grid; gap: var(--os-s2); margin-top: var(--os-s2); }
+.os-check--desc { align-items: flex-start; }
+.os-admin__dev { margin-top: 0; }
+.os-admin__devgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: var(--os-s4); }
+.os-admin__devgrid .os-copyrow .os-input { min-width: 0; flex: 1; }
+.os-admin__expiry { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--os-s2); }
+.os-card__lede { margin: 0 0 var(--os-s4); }
+.os-callout--warning { background: color-mix(in srgb, var(--os-warning) 10%, var(--os-raised)); border: 1px solid color-mix(in srgb, var(--os-warning) 45%, var(--os-raised)); }
+.os-callout--warning > svg { color: var(--os-warning); flex: none; margin-top: 0.125rem; }
+.os-callout--warning p { margin: 0; }
+.os-help--warn { color: var(--os-warning); font-weight: 600; }
+/* Branding: the picker beside its hex, and a preview of the email header and signing bar. */
+.os-colorpick { inline-size: 2.75rem; block-size: 2.75rem; padding: 0.125rem; border: 1px solid var(--os-border-strong); border-radius: var(--os-radius); background: var(--os-raised); flex: none; cursor: pointer; }
+.os-brandprev { margin-top: var(--os-s4); display: grid; gap: var(--os-s1); }
+.os-brandprev p { margin: var(--os-s2) 0 0; }
+.os-brandprev__mail, .os-brandprev__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--os-s2); min-height: 2.75rem; padding: 0 var(--os-s4); border-radius: var(--os-radius); }
+.os-brandprev__mail { background: var(--os-brand, var(--os-accent)); color: #fff; font-weight: 600; }
+.os-brandprev__bar { background: var(--os-raised); border: 1px solid var(--os-border); border-top: 0.25rem solid var(--os-brand, var(--os-accent)); font-weight: 600; }
+.os-brandprev__btn { background: var(--os-brand, var(--os-accent)); color: #fff; border-radius: var(--os-radius); padding: var(--os-s1) var(--os-s3); font-size: var(--os-fs-14); }
+/* Phones keep the text of a row's one main action (UX-08); the rest go in the row menu. */
+@media (max-width: 47.5em) {
+  .os-col-actions .os-btn.os-btn--keep-label { width: auto; padding: 0 var(--os-s3); }
+  .os-col-actions .os-btn.os-btn--keep-label > span { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  .os-col-actions .os-btn.os-admin__wide-only { display: none; }
+}
+@media (max-width: 60em) {
+  .os-admin { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 37.5em) {
+  .os-admin__rail { display: none; }
+  .os-admin__picker { display: block; margin-bottom: var(--os-s4); }
+  .os-admin-cards .os-meta { grid-template-columns: minmax(0, 1fr); row-gap: 0.125rem; }
+  .os-admin-cards .os-meta dd { overflow-wrap: normal; }
+  .os-admin-cards .os-meta dd + dt { margin-top: var(--os-s2); }
+}
+
+/* ---- UX-08 Reports: the period, dates, sender and note on one row; sample sizes ---- */
+.os-reports__tools .os-fieldrow { margin: 0; }
+.os-reports__dates { display: flex; flex-wrap: wrap; gap: var(--os-s3); }
+.os-reports__dates[hidden] { display: none; }
+.os-reports__note { margin: 0 0 0.375rem; flex: 1 1 14rem; }
+.os-counter:has(.os-counter__sample) { grid-template-areas: "icon label" "n n" "sample sample"; }
+.os-counter__sample { grid-area: sample; margin-top: calc(-1 * var(--os-s2)); font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-bars__link { display: inline-flex; align-items: center; color: var(--os-text); text-decoration: underline; text-decoration-color: var(--os-border-strong); text-underline-offset: 0.2em; min-height: 1.5rem; }
+.os-bars__link:hover { text-decoration-color: currentColor; }
+@media (max-width: 25em) {
+  .os-counter:has(.os-counter__sample) { grid-template-areas: "icon label n" "sample sample sample"; }
+  .os-counter__sample { margin-top: 0; }
+}
+
+/* ---- UX-08 Template use: the field count and role key above the pages, outlines ---- */
+.os-usedoc__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--os-s2) var(--os-s4); margin: 0 0 var(--os-s2); }
+.os-usedoc__bar p { margin: 0; }
+.os-usedoc__key { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--os-s1) var(--os-s3); font-size: var(--os-fs-12); }
+.os-usedoc__key li { display: inline-flex; align-items: center; gap: var(--os-s1); }
+.os-use__field { position: absolute; z-index: 1; border: 0.125rem solid var(--os-rc, var(--os-r1)); border-radius: 0.1875rem; background: color-mix(in srgb, var(--os-rc, var(--os-r1)) 12%, transparent); pointer-events: none; }
+.os-use__field.os-r1, .os-usedoc__key .os-r1 { --os-rc: var(--os-r1); }
+.os-use__field.os-r2, .os-usedoc__key .os-r2 { --os-rc: var(--os-r2); }
+.os-use__field.os-r3, .os-usedoc__key .os-r3 { --os-rc: var(--os-r3); }
+.os-use__field.os-r4, .os-usedoc__key .os-r4 { --os-rc: var(--os-r4); }
+.os-use__field.os-r5, .os-usedoc__key .os-r5 { --os-rc: var(--os-r5); }
+.os-use__field.os-r6, .os-usedoc__key .os-r6 { --os-rc: var(--os-r6); }
+.os-usedoc__key .os-rcpt__dot { background: var(--os-rc); }
+.os-use__extra:empty { display: none; }
+.os-use__role--extra { border-left-color: var(--os-border-strong); }
+.os-use__role--extra .os-fieldrow { margin-top: var(--os-s2); }
+.os-use__add { margin-top: var(--os-s3); }
