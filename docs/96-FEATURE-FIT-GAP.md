@@ -146,7 +146,7 @@ instructions 8 and 9).
 | --- | --- | --- | --- | --- | --- |
 | FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Designed |
 | FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Designed |
-| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search, status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
+| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (from every screen and on phones, `UX-04`), status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
 | FG-133 | Correct | DS | Build | 6 | Designed |
 | FG-134 | Void with reason | DS, SN | Build | 2 | Works |
 | FG-135 | Resend | DS, SN | Build | 2 | Works |

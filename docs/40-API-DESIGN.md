@@ -395,6 +395,9 @@ once with `CS-NET-0002` (status 501, client-side only like `CS-NET-0001`; the `d
 | `disclosure` | `GET /s/{token}/disclosure` and the view's `sender`, `consent_required.url`, `envelope.expires_at` (§6), and `openapi.yaml` listing them | `UXW-34` |
 | `clearField` | `DELETE /s/{token}/fields/{field}`: a signer removes a value before finishing, recorded by a new audit type | `UXW-35` |
 | `hostInPerson` | `POST /envelopes/{id}/recipients/{r}/host` → `{url}`: a staff user hosts an in-person signer | `UXW-36` |
+| `profile` | `GET`/`PATCH /users/me` `{name, email (read-only), notifications {completed, declined, viewed}, signature, initials ({image_base64} or null)}`, a password change with `current_password` (wrong: `CS-AUTH-0007`): the account menu's Profile and signature (UX-04) | `UXW-37` |
+| `passwordReset` | `POST /auth/password-reset {email}`, no session, `202` whatever the address, and the emailed one-time link to set a new password: sign-in's "Forgot password?" | `UXW-38` |
+| `authProviders` | `GET /auth/providers`, no session → `{items: [{id, name, url}]}`, the configured SSO identity providers (FG-173): sign-in shows a company sign-in button only for these | `UXW-39` |
 
 **The mock follows the server** where it had drifted: every engine recipient type is taken and routed (everyone but a
 copy is waited for; an approver approves, a viewer completes by viewing every document to the end, an in-person signer

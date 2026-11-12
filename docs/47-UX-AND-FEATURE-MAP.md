@@ -248,6 +248,57 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
   canvas, by sampling pixels), `redesign-screens.spec.mjs`; the send, keyboard, ceremony, a11y and empty-state specs
   follow the stepped flow and the review step.
 
+## As built: shell, sign-in, verify and site (UX-04, 2026-11-12)
+
+The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign user expects of it.
+
+- **Top bar** (`app.html`, `app.js`, `shell.css`): brand, sections, Start, search, Help (?), Notifications (bell),
+  account. The theme and keyboard buttons are gone from the bar; theme is in the account menu, shortcuts under Help.
+  Start lists Send an envelope, Use a template, then (after a rule) Verify a signed PDF.
+- **Phone drawer** (below 60em): opens under the bar as measured when it opens (so never over the demo banner or the
+  bar), with a scrim that closes it on a tap; Escape closes it and returns focus to Menu; focus goes to its first link
+  on open; while closed it is `inert` (no link in the tab order); opening any other menu, or any navigation, closes it.
+- **Search everywhere**: below 60em a search button opens the same `#top-search` as a full-width row under the bar
+  (Escape closes it, focus back on the button); `/` focuses it from every screen with the bar (`search.focus`, global),
+  not only Agreements. Enter outside Agreements opens Agreements with `?q=`.
+- **Navigation clears the screen's leftovers**: `route()` closes the side panel (`closePanel()`) and the view-scoped
+  toasts (`clearViewToasts()`). A panel the user has typed into asks first ("Discard your changes?"); Cancel keeps the
+  panel and the address. Choosing the section already shown starts it over.
+- **Missing page**: an address no route matches shows "This page does not exist" with Go to Home (it showed Home).
+- **Account menu**: name and email, Profile and signature, Notification settings, the three themes (the current one
+  ticked), Help and shortcuts, About OpenSeal, Sign out. **Profile and signature** (`profile.js`, a side panel): name,
+  email (read-only), saved signature and initials adopted with the signer's own component (`signature.js`, its styles
+  loaded on demand), email notification choices (completed, declined, viewed) and a password change that needs the
+  current password. Its calls are `NOT_ON_SERVER.profile` (`UXW-37`): against a server without them the panel shows
+  who is signed in and says changing it is not available yet.
+- **Help menu**: Keyboard shortcuts, Verify a signed PDF, About OpenSeal. The **shortcuts panel** lists every table,
+  grouped (Everywhere, Send editor), one row per action with its keys (Delete or Backspace; Redo's two; four arrows as
+  one ←↑→↓ key; the nine recipient digits as 1–9), with ⌘ ⌥ ⇧ on a Mac.
+- **Notifications**: the bell lists the latest completed, declined, viewed, voided and expired envelopes (newest
+  change first, from `GET /envelopes?status=…&sort=updated_at`; no notification store exists), each opening its
+  envelope, and View all agreements. A dot and "Notifications, n new" mark changes since it was last opened (a
+  per-browser convenience in localStorage).
+- **Sign-in** (`signin.js`): a message under each missing field (in that field's `aria-describedby`); a refused
+  sign-in is an alert callout above the fields ("Incorrect email or password."); a Show toggle in the password field
+  (`aria-pressed`); "Forgot password?" opens the reset request in the card (`NOT_ON_SERVER.passwordReset`, `UXW-38`,
+  the same answer for any address; without it the card says to ask the administrator); a company sign-in button only
+  when the server names an identity provider (`NOT_ON_SERVER.authProviders`, `UXW-39`); a footer (Verify a signed PDF,
+  About OpenSeal); edge to edge below 30em. The demo hint gives only the credentials (the banner says demo).
+- **Verify page** (`verify.html`, `verify.js`): the app's bar height and logo, Open OpenSeal on the right, the demo
+  banner and `?mock=1` kept on its links in demo mode. Plain copy ("Check who signed a PDF and whether it changed after
+  signing"); without the browser verifier it says checking is not available here and to contact the administrator (no
+  build command). `verify.html?envelope={id}&document={id}` checks that envelope's current (sealed) document, read with
+  the user's session, as if chosen: the envelope page's Verify link (UX-07) hands over this way.
+- **Site** (`index.html`, `site.css`, `site.js`): the brand is a link; Sign in in the bar is secondary so Open the app is
+  the one primary; four feature tiles (Send and track, Sign anywhere, Verify offline, Self-host and API) and a footer
+  (licence, Sign in, Verify); no internal document reference; the app's theme default (light unless chosen), via
+  `theme.js`.
+- Tests: `tests/shell.test.mjs` (shortcut grouping and Mac symbols, `/` global, the three calls refused at once
+  against a server and served by the mock); `e2e/shell.spec.mjs` at 1440 and 390 (drawer Escape, scrim, top, tab
+  order, closing on another menu; search at 390 and `/`; panel closed on navigation and the discard question; 404;
+  sign-in errors, alert, show password, reset, SSO button; account, help, shortcuts, notifications; profile save;
+  verify bar, demo mode and hand-over; site), with screens under `target/e2e-screens/chromium-shell-*`.
+
 ## UX audit and document-first rebuild (WEB-06, 2026-11-11)
 
 Owner instruction 22 (docs/03): after using the demo, the editor and the signing page gave the PDF far too little
