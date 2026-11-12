@@ -39,11 +39,11 @@ for (const scheme of ["light", "dark"]) {
     await page.getByTestId("wizard-next").click();
     await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
     await placingFor(page, 0);
-    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
-    await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).click();
+    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
+    await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).press("Enter");
     await placingFor(page, 1);
-    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
-    await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).click();
+    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
+    await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).press("Enter");
     await snap(page, testInfo, `${scheme}-4c-prepare-fields`);
     await page.getByTestId("wizard-next").click();
     await snap(page, testInfo, `${scheme}-4d-prepare-review`);

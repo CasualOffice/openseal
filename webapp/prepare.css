@@ -64,7 +64,17 @@
 .os-rcpt__head { flex-wrap: wrap; }
 .os-rcpt__head select, .os-rcpt__head .os-select { flex: 1 1 8rem; min-width: 0; max-width: 100%; }
 .os-rcpt__head select { width: auto; }
-.os-palette { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.375rem; margin-top: var(--os-s3); }
+.os-palette { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--os-s3); margin-top: var(--os-s3); }
+/* The palette's groups (UX-05): signing, filled from the recipient, entered by them. */
+.os-palette__group { display: grid; gap: var(--os-s1); }
+.os-palette__gtitle { margin: 0; font-size: var(--os-fs-12); color: var(--os-muted); font-weight: 600; }
+.os-palette__items { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.375rem; }
+/* The properties panel's sections (UX-05). */
+.os-props__sec { border-top: 1px solid var(--os-border); padding-top: var(--os-s1); }
+.os-props__sec > summary { margin-top: 0; }
+.os-props__sec:not([open]) > :not(summary) { display: none; }
+.os-props__sec > .os-fieldrow, .os-props__sec > .os-check, .os-props__sec > .os-geo { margin-top: var(--os-s2); }
+.os-props .os-help { margin: 0.125rem 0 0; font-size: var(--os-fs-12); color: var(--os-muted); }
 .os-palette__item {
   display: flex; align-items: center; gap: var(--os-s3); height: 2.5rem; padding: 0 var(--os-s3); white-space: nowrap; font-weight: 500;
   border: 1px solid var(--os-border); border-left: 0.25rem solid var(--rc); border-radius: var(--os-radius-sm);
@@ -74,6 +84,12 @@
 .os-palette__item:hover { box-shadow: var(--os-shadow); transform: translateY(-1px); }
 .os-palette__item:active { cursor: grabbing; transform: scale(.98); }
 .os-palette__item svg { color: var(--rc); flex: none; }
+/* Click-to-place (UX-05): the armed type is pressed; the page takes a copy cursor and a
+ * ghost of the field follows the pointer. */
+.os-palette__item.is-armed { background: color-mix(in srgb, var(--rc) 14%, var(--os-bg)); border-color: var(--rc); box-shadow: inset 0 0 0 1px var(--rc); }
+.os-stage.is-armed .os-page__overlay { cursor: copy; }
+.os-armghost { position: absolute; z-index: 5; pointer-events: none; display: flex; align-items: center; gap: var(--os-s1); padding: 0 0.375rem; overflow: hidden; border: 1.5px dashed var(--rc); border-radius: 0.25rem; background: color-mix(in srgb, var(--rc) 12%, transparent); color: #111827; font-size: var(--os-fs-12); font-weight: 600; opacity: .85; white-space: nowrap; }
+.os-armghost svg { color: color-mix(in srgb, var(--rc) 70%, #000); flex: none; }
 .os-field {
   position: absolute; display: flex; align-items: center; gap: var(--os-s1); padding: 0 var(--os-s2) 0 0.375rem;
   min-width: 1rem; min-height: 1rem; overflow: hidden;
@@ -82,7 +98,9 @@
   box-shadow: 0 1px 0.125rem rgba(15, 23, 42, .12);
   transition: box-shadow var(--os-dur-fast) var(--os-ease), transform var(--os-dur-fast) var(--os-ease);
 }
-.os-field.is-required::after { content: "*"; position: absolute; top: 0; right: 0.25rem; color: #b42318; font-weight: 700; }
+/* Required (UX-05): a filled corner flag, distinct from the dashed border of an optional
+ * field and from the red of an error; the field's name says "required" in words. */
+.os-field.is-required::after { content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 0.625rem 0.625rem 0; border-color: transparent color-mix(in srgb, var(--rc) 75%, #000) transparent transparent; }
 .os-field.is-required { border-style: solid; }
 .os-field svg { color: color-mix(in srgb, var(--rc) 70%, #000); flex: none; }
 .os-field__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -116,17 +134,22 @@
 /* Templates, use, admin */
 .os-badge--template { background: var(--os-surface-2); }
 @media (max-width: 47.5em) {
-  .os-palette { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .os-palette__items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .os-stepper li + li::before { width: 0.75rem; }
   .os-wizard__pane { padding: var(--os-s4); }
   .os-panel--rcpt .os-rcpt { grid-template-columns: minmax(0, 1fr); }
   .os-optgrid { grid-template-columns: minmax(0, 1fr); }
   .os-step-head { flex-wrap: wrap; }
 }
-.os-prepare { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; }
-.os-prepare__bar { flex-wrap: wrap; row-gap: var(--os-s1); min-height: 3.5rem; padding: var(--os-s2) var(--os-s3); gap: var(--os-s2); position: relative; z-index: 20; }
-.os-prepare__head { flex: 0 1 auto; max-width: 16rem; }
-.os-prepare__steps { display: flex; min-width: 0; }
+.os-prepare { display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); height: 100%; min-height: 0; container: prepare / inline-size; }
+.os-prepare__bar { flex-wrap: nowrap; min-width: 0; min-height: 3.5rem; padding: var(--os-s2) var(--os-s3); gap: var(--os-s2); position: relative; z-index: 20; }
+.os-prepare__head { flex: 0 1 auto; min-width: 3rem; max-width: 16rem; }
+.os-prepare__steps { display: flex; flex: 0 1 auto; min-width: 0; }
+/* The step's actions (UX-05): one group at the bar's end that never shrinks or wraps. */
+.os-prepare__actions { display: flex; align-items: center; gap: var(--os-s2); flex: none; margin-left: auto; }
+.os-prepare__steps .os-stepper, .os-prepare__steps .os-stepper li { min-width: 0; }
+.os-prepare__steps .os-stepper__btn { min-width: 0; max-width: 100%; }
+.os-prepare__steps .os-stepper__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .os-prepare__steps .os-stepper { margin: 0; }
 .os-prepare__doctools { display: flex; align-items: center; gap: 0.125rem; padding-left: var(--os-s2); border-left: 1px solid var(--os-border); }
 .os-savestate { display: inline-flex; align-items: center; gap: var(--os-s1); font-size: var(--os-fs-12); color: var(--os-muted); white-space: nowrap; }
@@ -134,7 +157,7 @@
 .os-savestate__dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; }
 .os-prepare__body { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
 .os-prepare__centre { position: relative; display: grid; min-width: 0; min-height: 0; }
-.os-fabs { display: none; }
+.os-docbar__actions { display: none; }
 .os-panel--palette { margin: 0; padding: 0; border: 0; }
 .os-dock .os-panel__title { flex: none; }
 .os-palette__for + .os-panel__title { margin-top: var(--os-s4); }
@@ -203,10 +226,7 @@
 .os-problems__text { flex: 1; }
 @media (max-width: 47.999em) {
   .os-prepare__body { grid-template-columns: minmax(0, 1fr); }
-  .os-fabs { position: absolute; right: var(--os-s3); bottom: var(--os-s3); z-index: 7; display: flex; gap: var(--os-s2); }
-  .os-fab { box-shadow: var(--os-shadow-md); }
-  .os-palette { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .has-sheet .os-fabs { visibility: hidden; }
+  .os-palette__items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* Editor toolbar on phones: title and actions, then the steps and undo/redo. */
   .os-prepare__bar { padding: var(--os-s1) var(--os-s2); gap: var(--os-s1); }
   .os-prepare__head { flex: 1 1 6rem; max-width: none; }
@@ -216,13 +236,27 @@
   .os-stepper li + li::before { width: 0.5rem; }
   .os-wizard__pane { padding: var(--os-s4) var(--os-s3); }
 }
-/* Narrower windows (and 150 % zoom): a compact toolbar — save state as a dot with its
- * words for assistive technology and as a tooltip, Save and Back as icons. */
-@media (max-width: 89.999em) {
+/* A compact toolbar by the editor's own width (UX-05: a container query, so a docked
+ * panel, a zoomed page or a long translation compacts it, not the window's width alone).
+ * First the save state becomes a dot (its words for assistive technology and as a
+ * tooltip), then Save and Back become icons, then the steps not open lose their names. */
+@container prepare (max-width: 99.999rem) {
   .os-savestate > span:not(.os-savestate__dot) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .os-prepare__bar > .os-btn:not([data-testid="wizard-next"]):not(.os-btn--primary) > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .os-prepare__bar > .os-btn:not([data-testid="wizard-next"]):not(.os-btn--primary) { width: var(--os-btn); padding: 0; }
   .os-stepper li + li::before { width: 0.75rem; }
+}
+@container prepare (max-width: 89.999rem) {
+  .os-prepare__actions > .os-btn:not(.os-btn--primary) > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-prepare__actions > .os-btn:not(.os-btn--primary) { width: var(--os-btn); padding: 0; }
+}
+@container prepare (max-width: 79.999rem) {
+  .os-prepare__steps .os-stepper__btn:not([aria-current="step"]) .os-stepper__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+}
+/* Phones: two rows on purpose — the title and the step's actions, then the steps. */
+@container prepare (max-width: 47.999rem) {
+  .os-prepare__bar { flex-wrap: wrap; row-gap: var(--os-s1); }
+  .os-prepare__steps { order: 10; flex: 1 1 auto; }
+  .os-prepare__doctools { order: 11; }
+  .os-prepare__actions { gap: var(--os-s1); }
 }
 /* Short windows (400 % zoom, landscape phones): nothing pinned may cover the step (P-03). */
 @media (max-height: 31.25em) {
@@ -231,4 +265,74 @@
   .os-prepare__bar { position: static; }
   .os-wizard, .os-wizard__pane { overflow: visible; }
   .os-prepare__body { height: 80dvh; }
+}
+
+/* ---- UX-05: the pages rail, document bands, preview, phones ------------------------ */
+/* The pages, pinned at the foot of the fields panel so they are always in view, grouped
+ * by document; the palette above scrolls on its own. */
+.os-dock__body--split { overflow: hidden; }
+.os-dock__body--split > .os-panel--palette { flex: 1 1 auto; min-height: 6rem; overflow: auto; margin: calc(-1 * var(--os-s1)); padding: var(--os-s1); }
+.os-prepare__rail { display: flex; flex-direction: column; flex: 0 1 auto; max-height: 40%; min-height: 7.5rem; padding-top: var(--os-s3); border-top: 1px solid var(--os-border); }
+.os-prepare__rail .os-panel__title { flex: none; margin-bottom: var(--os-s2); }
+.os-thumbs__doc { grid-column: 1 / -1; display: flex; min-width: 0; margin-top: var(--os-s2); font-size: var(--os-fs-12); font-weight: 600; color: var(--os-muted); }
+.os-thumbs__doc:first-child { margin-top: 0; }
+/* Each document's name above its first page, when there are several. */
+.os-docband { display: flex; align-items: center; gap: var(--os-s2); max-width: 100%; padding: var(--os-s1) var(--os-s3); border-radius: var(--os-radius-sm); background: var(--os-raised); border: 1px solid var(--os-border); font-size: var(--os-fs-12); font-weight: 600; }
+/* A field narrower than its words shows its icon only; smaller still, no handle either,
+ * so the box stays a target and never a jumble of chips (UX-05; phones, zoomed out). */
+.os-field { container-type: size; }
+@container (max-width: 4.5rem) {
+  .os-field__label, .os-field__who { display: none; }
+}
+@container (max-width: 2rem) {
+  .os-field__handle { display: none; }
+}
+/* Focus and selection differ (UX-05): selection is the recipient's colour ring, focus
+ * the app's focus outline outside it. */
+.os-field:focus-visible { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: 0.375rem; }
+.os-field.is-other { opacity: .3; }
+/* Preview as a recipient: a bar over the document, and the strip on Review. */
+.os-previewbar { position: absolute; z-index: 6; top: var(--os-s3); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: var(--os-s2); padding: var(--os-s1) var(--os-s1) var(--os-s1) var(--os-s3); border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-raised); box-shadow: var(--os-shadow-md); font-size: var(--os-fs-14); max-width: calc(100% - 2 * var(--os-s3)); }
+.os-previewbar[hidden] { display: none; }
+.os-previewstrip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--os-s2); margin-top: var(--os-s4); padding-top: var(--os-s3); border-top: 1px solid var(--os-border); }
+.os-previewstrip .os-label { margin: 0; }
+.os-previewstrip__btn { border-left: 0.25rem solid var(--rc); }
+.os-summary__warn { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--os-s2); color: var(--os-warning); font-weight: 600; }
+.os-summary__warn > svg { flex: none; }
+.os-tplname { max-width: 32rem; margin-bottom: var(--os-s6); }
+@media (max-width: 47.999em) {
+  .os-prepare__rail { display: none; }
+  /* One bottom bar: the page indicator with Add field and Field settings (UX-05). */
+  .os-prepare .os-docbar { left: var(--os-s2); right: var(--os-s2); bottom: var(--os-s2); justify-content: space-between; gap: var(--os-s2); }
+  .os-docbar__actions { display: flex; gap: var(--os-s2); }
+  .os-docbar__actions > .os-btn[hidden] { display: none; }
+  /* Field settings as its icon (its name stays for assistive technology), so the bar fits. */
+  .os-docbar__actions > [data-testid="props-sheet"] { width: var(--os-btn-lg); padding: 0; justify-content: center; }
+  .os-docbar__actions > [data-testid="props-sheet"] > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-prepare .os-docbar { max-width: calc(100% - 2 * var(--os-s2)); }
+  .os-previewbar { top: var(--os-s2); }
+}
+@media (max-width: 47.999em) and (max-height: 31.25em) {
+  .os-prepare .os-docbar { display: flex; }
+}
+
+/* Recipients as dense rows (UX-05): type and step, name, email, tools on one line; the
+ * recipient's options under a disclosure that spans the row. */
+.os-panel--rcpt .os-rcpt--row { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.3fr) auto; align-items: end; padding: var(--os-s2) var(--os-s3); }
+.os-panel--rcpt .os-rcpt--role { grid-template-columns: auto minmax(0, 1fr) auto; }
+.os-panel--rcpt .os-rcpt--row > .os-rcpt__head { grid-column: auto; align-self: end; min-height: var(--os-btn); flex-wrap: nowrap; }
+.os-panel--rcpt .os-rcpt--row .os-rcpt__head .os-fieldrow { width: 10rem; }
+.os-rcpt__tools { display: flex; align-items: center; gap: 0.125rem; min-height: var(--os-btn); }
+.os-rcpt__more { grid-column: 1 / -1; }
+.os-rcpt__more:not([open]) > :not(summary) { display: none; }
+.os-rcpt__more > summary { margin-top: 0; font-size: var(--os-fs-14); }
+.os-rcpt__opts { display: grid; grid-template-columns: minmax(0, 16rem) auto; gap: var(--os-s2) var(--os-s4); align-items: end; padding: var(--os-s2) 0 var(--os-s1); }
+.os-rcpt__opts .os-help { margin: 0.125rem 0 0; font-size: var(--os-fs-12); color: var(--os-muted); }
+@media (max-width: 47.999em) {
+  .os-panel--rcpt .os-rcpt--row, .os-panel--rcpt .os-rcpt--role { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .os-panel--rcpt .os-rcpt--row > .os-rcpt__head { grid-column: 1 / 2; flex-wrap: wrap; }
+  .os-panel--rcpt .os-rcpt--row > .os-rcpt__tools { grid-column: 2; grid-row: 1; }
+  .os-panel--rcpt .os-rcpt--row > .os-rcpt__cell { grid-column: 1 / -1; }
+  .os-panel--rcpt .os-rcpt--row .os-rcpt__head .os-fieldrow { width: auto; flex: 1 1 8rem; }
+  .os-rcpt__opts { grid-template-columns: minmax(0, 1fr); }
 }

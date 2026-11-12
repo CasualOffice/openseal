@@ -17,13 +17,16 @@
 </head>
 <body class="os-verify">
   <a class="os-skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
+  <div id="mock-banner" class="os-mock-banner" role="note" hidden><span data-i18n="mock.banner">Demo mode</span></div>
+  <!-- The app's bar height and logo (UX-04); the links keep ?mock=1 in demo mode. -->
   <header class="os-topbar">
     <a class="os-brand" href="app.html" data-i18n-attr="aria-label:nav.home">
-      <img class="os-logo--light" src="assets/logo.svg" alt="" width="133" height="26">
-      <img class="os-logo--dark" src="assets/logo-dark.svg" alt="" width="133" height="26">
+      <img class="os-logo--light" src="assets/logo.svg" alt="" width="123" height="24">
+      <img class="os-logo--dark" src="assets/logo-dark.svg" alt="" width="123" height="24">
     </a>
     <span class="os-spacer"></span>
     <button type="button" id="theme-btn" class="os-btn os-btn--ghost os-btn--md os-btn--icon"></button>
+    <a id="open-app" class="os-btn os-btn--secondary os-btn--md" href="app.html"><span data-i18n="verify.open-app">Open OpenSeal</span></a>
   </header>
   <main id="main" class="os-verify__main" tabindex="-1"></main>
 </body>

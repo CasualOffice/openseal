@@ -7,13 +7,15 @@
 // with no modifier never fires while the user types in a field.
 
 import { command, run } from "./commands.js";
+import { t } from "./i18n.js";
 
 /// Context → key → command id. The editor's table is checked before the global one.
 export const SHORTCUTS = {
   global: new Map([
-    ["Shift+?", "help.shortcuts"],
+    // "?" is matched without Shift (see `combo`), whichever keyboard needs Shift for it.
     ["?", "help.shortcuts"],
-    ["/", "list.search"],
+    // UX-04: search from any screen with the bar, not only Agreements.
+    ["/", "search.focus"],
     ["N", "envelope.new"],
     ["Ctrl+Shift+L", "theme.toggle"],
   ]),
@@ -96,4 +98,82 @@ export function bindings(contexts) {
   const out = [];
   for (const c of contexts) for (const [k, v] of SHORTCUTS[c] || []) out.push([k, v, c]);
   return out;
+}
+
+// ---- The Keyboard shortcuts panel (UX-04) ----------------------------------------------
+
+/// What each bound command is called in the shortcuts panel: the same words its buttons
+/// and the editor use, available whether or not that screen is open.
+const LABEL_KEYS = [
+  [/^help\.shortcuts$/, "help.shortcuts"],
+  [/^search\.focus$/, "cmd.search"],
+  [/^envelope\.new$/, "nav.new"],
+  [/^theme\.toggle$/, "cmd.theme"],
+  [/^field\.nudge-[a-z]+-10$/, "cmd.field.nudge-10"],
+  [/^field\.nudge-/, "cmd.field.nudge"],
+  [/^field\.(grow|shrink)-/, "cmd.field.resize"],
+  [/^field\.jump-/, "cmd.field.jump"],
+  [/^field\.select-page$/, "cmd.field.select-page"],
+  [/^field\.(delete|duplicate|copy|paste|deselect)$/, (id) => `cmd.${id}`],
+  [/^edit\.(undo|redo)$/, (id) => `cmd.${id}`],
+  [/^envelope\.(save|send)$/, (id) => `cmd.${id}`],
+  [/^recipient\.select-\d$/, "cmd.recipient.select"],
+];
+
+function labelOf(id, fallback) {
+  for (const [re, key] of LABEL_KEYS) if (re.test(id)) return t(typeof key === "function" ? key(id) : key);
+  return fallback?.(id) || id;
+}
+
+const ARROWS = { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓" };
+
+/// A table key as the keys to press: `["Ctrl", "Shift", "Z"]`, or `["⌘", "⇧", "Z"]` on
+/// a Mac; arrows as arrows, Escape as Esc.
+export function keyParts(k, mac = false) {
+  return k.split(/\+(?!$)/).map((p) => {
+    if (p === "Ctrl") return mac ? "⌘" : "Ctrl";
+    if (p === "Alt") return mac ? "⌥" : "Alt";
+    if (p === "Shift") return mac ? "⇧" : "Shift";
+    if (p === "Escape") return "Esc";
+    return ARROWS[p] || p;
+  });
+}
+
+/// The shortcuts panel's content: one group per context (`contexts` first, then the
+/// rest), each a list of `{label, keys: [[part, …], …]}` with one row per action. Keys
+/// that do the same thing share a row (Delete or Backspace); four arrows with the same
+/// modifiers are one key (`←↑→↓`); the nine recipient digits are `1–9`.
+/// `label(id)` names a command no table entry names (a registered command's own label).
+export function shortcutGroups(contexts = ["global"], { mac = false, label = null } = {}) {
+  const order = [...new Set([...contexts.filter((c) => SHORTCUTS[c]), ...Object.keys(SHORTCUTS)])];
+  return order.map((context) => {
+    const rows = new Map();
+    for (const [k, id] of SHORTCUTS[context]) {
+      const name = labelOf(id, label);
+      const row = rows.get(name) || { label: name, keys: [] };
+      rows.set(name, row);
+      if (/^recipient\.select-\d$/.test(id)) {
+        if (!row.keys.length) row.keys.push(["1–9"]);
+        continue;
+      }
+      row.keys.push(keyParts(k, mac));
+    }
+    for (const row of rows.values()) {
+      const arrows = new Map(); // modifiers → arrow count
+      for (const parts of row.keys) {
+        const last = parts[parts.length - 1];
+        if (Object.values(ARROWS).includes(last)) {
+          const mods = parts.slice(0, -1).join("+");
+          arrows.set(mods, (arrows.get(mods) || 0) + 1);
+        }
+      }
+      for (const [mods, n] of arrows) {
+        if (n !== 4) continue;
+        const first = row.keys.findIndex((p) => Object.values(ARROWS).includes(p[p.length - 1]) && p.slice(0, -1).join("+") === mods);
+        row.keys = row.keys.filter((p, i) => i === first || !(Object.values(ARROWS).includes(p[p.length - 1]) && p.slice(0, -1).join("+") === mods));
+        row.keys[first] = [...(mods ? mods.split("+") : []), "←↑→↓"];
+      }
+    }
+    return { context, rows: [...rows.values()] };
+  });
 }

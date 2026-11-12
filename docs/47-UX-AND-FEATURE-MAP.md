@@ -253,6 +253,57 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
   canvas, by sampling pixels), `redesign-screens.spec.mjs`; the send, keyboard, ceremony, a11y and empty-state specs
   follow the stepped flow and the review step.
 
+## As built: shell, sign-in, verify and site (UX-04, 2026-11-12)
+
+The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign user expects of it.
+
+- **Top bar** (`app.html`, `app.js`, `shell.css`): brand, sections, Start, search, Help (?), Notifications (bell),
+  account. The theme and keyboard buttons are gone from the bar; theme is in the account menu, shortcuts under Help.
+  Start lists Send an envelope, Use a template, then (after a rule) Verify a signed PDF.
+- **Phone drawer** (below 60em): opens under the bar as measured when it opens (so never over the demo banner or the
+  bar), with a scrim that closes it on a tap; Escape closes it and returns focus to Menu; focus goes to its first link
+  on open; while closed it is `inert` (no link in the tab order); opening any other menu, or any navigation, closes it.
+- **Search everywhere**: below 60em a search button opens the same `#top-search` as a full-width row under the bar
+  (Escape closes it, focus back on the button); `/` focuses it from every screen with the bar (`search.focus`, global),
+  not only Agreements. Enter outside Agreements opens Agreements with `?q=`.
+- **Navigation clears the screen's leftovers**: `route()` closes the side panel (`closePanel()`) and the view-scoped
+  toasts (`clearViewToasts()`). A panel the user has typed into asks first ("Discard your changes?"); Cancel keeps the
+  panel and the address. Choosing the section already shown starts it over.
+- **Missing page**: an address no route matches shows "This page does not exist" with Go to Home (it showed Home).
+- **Account menu**: name and email, Profile and signature, Notification settings, the three themes (the current one
+  ticked), Help and shortcuts, About OpenSeal, Sign out. **Profile and signature** (`profile.js`, a side panel): name,
+  email (read-only), saved signature and initials adopted with the signer's own component (`signature.js`, its styles
+  loaded on demand), email notification choices (completed, declined, viewed) and a password change that needs the
+  current password. Its calls are `NOT_ON_SERVER.profile` (`UXW-37`): against a server without them the panel shows
+  who is signed in and says changing it is not available yet.
+- **Help menu**: Keyboard shortcuts, Verify a signed PDF, About OpenSeal. The **shortcuts panel** lists every table,
+  grouped (Everywhere, Send editor), one row per action with its keys (Delete or Backspace; Redo's two; four arrows as
+  one ←↑→↓ key; the nine recipient digits as 1–9), with ⌘ ⌥ ⇧ on a Mac.
+- **Notifications**: the bell lists the latest completed, declined, viewed, voided and expired envelopes (newest
+  change first, from `GET /envelopes?status=…&sort=updated_at`; no notification store exists), each opening its
+  envelope, and View all agreements. A dot and "Notifications, n new" mark changes since it was last opened (a
+  per-browser convenience in localStorage).
+- **Sign-in** (`signin.js`): a message under each missing field (in that field's `aria-describedby`); a refused
+  sign-in is an alert callout above the fields ("Incorrect email or password."); a Show toggle beside the password field
+  (`aria-pressed`); "Forgot password?" opens the reset request in the card (`NOT_ON_SERVER.passwordReset`, `UXW-38`,
+  the same answer for any address; without it the card says to ask the administrator); a company sign-in button only
+  when the server names an identity provider (`NOT_ON_SERVER.authProviders`, `UXW-39`); a footer (Verify a signed PDF,
+  About OpenSeal); edge to edge below 30em. The demo hint gives only the credentials (the banner says demo).
+- **Verify page** (`verify.html`, `verify.js`): the app's bar height and logo, Open OpenSeal on the right, the demo
+  banner and `?mock=1` kept on its links in demo mode. Plain copy ("Check who signed a PDF and whether it changed after
+  signing"); without the browser verifier it says checking is not available here and to contact the administrator (no
+  build command). `verify.html?envelope={id}&document={id}` checks that envelope's current (sealed) document, read with
+  the user's session, as if chosen: the envelope page's Verify link (UX-07) hands over this way.
+- **Site** (`index.html`, `site.css`, `site.js`): the brand is a link; Sign in in the bar is secondary so Open the app is
+  the one primary; four feature tiles (Send and track, Sign anywhere, Verify offline, Self-host and API) and a footer
+  (licence, Sign in, Verify); no internal document reference; the app's theme default (light unless chosen), via
+  `theme.js`.
+- Tests: `tests/shell.test.mjs` (shortcut grouping and Mac symbols, `/` global, the three calls refused at once
+  against a server and served by the mock); `e2e/shell.spec.mjs` at 1440 and 390 (drawer Escape, scrim, top, tab
+  order, closing on another menu; search at 390 and `/`; panel closed on navigation and the discard question; 404;
+  sign-in errors, alert, show password, reset, SSO button; account, help, shortcuts, notifications; profile save;
+  verify bar, demo mode and hand-over; site), with screens under `target/e2e-screens/chromium-shell-*`.
+
 ## UX audit and document-first rebuild (WEB-06, 2026-11-11)
 
 Owner instruction 22 (docs/03): after using the demo, the editor and the signing page gave the PDF far too little
@@ -710,3 +761,68 @@ menu; branding contrast and preview; Reports sample sizes, custom range, sender,
 use with role labels, outlines, an added copy recipient sent. The webhook, secret and Reports tests fail on the code
 before UX-08; the Escape check was also seen to fail with the panel made dismissible. `manage.spec.mjs`,
 `web02.spec.mjs` and `visual.spec.mjs` follow the rail, the single Add user panel and the row menus.
+
+## As built (UX-05, 2026-11-13): the prepare editor and template authoring
+
+**Toolbar** (`prepare.js`, `prepare.css`): Back and Next, then Send or Save template, are one group at the bar's end
+that never shrinks or wraps; the title and the step labels give way first. The bar compacts by the editor's own width
+(container queries in `rem`, because `em` inside a container query is the container's 13 px text): under 100 rem the
+save state is a dot (words for assistive technology and as a tooltip), under 90 rem Save and Back are icons, under
+80 rem the steps not open lose their names. On phones the bar is two rows on purpose: title and actions, then steps.
+The audit's wrap reproduced at 1440 px in the system font (the web font blocked); the spec checks 1366, 1440 and 1536
+in both fonts, for envelopes and templates.
+
+**Placing fields**: a click on a field type arms it, a ghost of its default size follows the pointer, and the next
+click on a page places the field centred there; a double click keeps the type armed; Escape (`field.deselect`) or a
+second click disarms (commands `field.arm-*`, `field.disarm`). Enter or Space on a type still places on the page in
+view, now in the visible part of the page across as well as down. Touch screens get touch help text.
+
+**Field kinds**: the palette places the 14 kinds the ceremony fills or shows (`api.js` `FIELD_TYPES_READY`), in three
+groups: Signing (signature, initials, date signed), About the recipient (name, email, company, title), Recipient
+enters (text, number, checkbox, radio group, dropdown, attachment, note). Text, company, title, number and choices
+start required. **Properties** are sections: General (recipient, required, read only with the sender's value or a
+checkbox checked when sent, a note's text, data label, tooltip, placeholder), Options (one per line, repeats and
+blanks dropped, a dropdown's typed answer), Formatting (font, size, alignment, hide on the document) and Validation
+(email, phone, ZIP, SSN, number with range, at most N characters, pattern, with a message). Members travel by their
+wire names on create and as a JSON merge on change (`null` removes one); reopening reads them back. A choice with no
+options is a send problem. A field's accessible name starts with the label it shows. Required is a corner flag; focus
+is an outline outside the selection ring; a field narrower than its words shows its icon only, and smaller still
+loses its handle (container queries on the field).
+
+**Recipients**: each row offers Needs to sign, Approver, Viewer and Receives a copy, and In-person signer where staff
+can host one (`client.available("hostInPerson")`: the mock only until `UXW-36`). A row is one line (type and step,
+name, email, move and remove) with **More options**: a labelled access code and the emailed code. Name and email
+suggest contacts (`GET /contacts`); choosing one fills the other box. Approvers and viewers act in their turn and take
+no fields; with signing order off everyone who acts is step 1 and copies come after. Not built: a per-recipient
+private message and language (no API member yet; row proposed).
+
+**Pages and documents**: the thumbnails are pinned at the foot of the fields panel, always in view, grouped by
+document (`thumbnails({byDocument})`); several documents get a name band above each one's first page. Next on the
+documents step waits for a PDF.
+
+**Review**: a signer with no fields is a warning with **Place fields**; **Preview as** opens the fields step with
+that recipient's fields standing out and the others faded, under a bar that ends it. The send confirmation follows the
+routing (`people.js` `sendSummary`): with steps, only the first step is emailed now, then "A → B & C"; approvers and
+viewers review in their turn; copies last. Suggestions neither accepted nor dismissed stop Send, and the detection
+toast closes when the step is left. Template mode: the last step is **Review and save**, and the documents step has
+the template lede and **Name this template**.
+
+**Detection**: the server's detector sits a field on its line (`detect.rs`: bottom on the line) and `detect.js` keeps
+that geometry; the mock had suggested fields below its own PDF's lines and now matches the server.
+
+**Phones**: the editor opens at 1 CSS px a point (fit width drew 11 pt text at about 6 px) and pans; one bottom bar
+holds the page indicator, Field settings (an icon) and Add field.
+
+Tests: `e2e/prepare-layout.spec.mjs` (19 tests; 1440 and 390 px screenshots): the toolbar at three widths in two
+fonts, click-to-place within 2 pt, every new kind configured and round-tripped through the mock, Next waiting for a
+PDF, template Review and save, the review warning, preview and order-aware confirmation, undecided suggestions, the
+pages panel, the phone editor, recipients at 1440 and 390. Each change's tests were seen to fail on the code before
+it (the toolbar at 1440 px in the system font; the toolbar at 1366 and 1536 and the template bar passed before and
+stay as guards). Node
+`tests/editor.test.mjs`: the palette's kinds and groups, validation presets, options, and a detected field's bottom
+on the mock PDF's line. Specs that placed fields by clicking a palette button now press Enter on it (the keyboard path
+that keeps their meaning); `empty-states.spec.mjs` opens Recipients from the step bar.
+
+Not done in UX-05 (rows proposed): a context menu on fields from the command registry; resize dots outside the field;
+schedule send (waits on its server row); the field members in template mode (`templatesync.js` sends required and
+label only); a recipient's type change after the draft is saved (the API's recipient patch has no type).
