@@ -345,9 +345,12 @@ $$;
 REVOKE ALL ON FUNCTION openseal_bootstrap_organization(uuid, uuid, text, uuid, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION openseal_bootstrap_organization(uuid, uuid, text, uuid, uuid, uuid) TO openseal_app;
 
--- The bootstrap's first administrator becomes the organization's owner: only while the
--- current account's organization has no administrator at all and this is its only
--- workspace, and only for an enabled member of it holding the built-in admin profile.
+-- The bootstrap's first administrator becomes the organization's owner: only for an
+-- organization inserted by this very transaction (its row's `xmin` is the current
+-- transaction id, so a row from a savepoint fails closed), only while it has no
+-- administrator at all and this is its only workspace, and only for an enabled member of
+-- it holding the built-in admin profile. An organization that already existed without an
+-- owner is never claimable here: its owner is named through the console (docs/23 §5.1).
 CREATE FUNCTION openseal_bootstrap_owner(p_user uuid, p_now timestamptz) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path = public, pg_catalog
@@ -356,7 +359,9 @@ DECLARE
     acct uuid := openseal_current_account();
     org uuid;
 BEGIN
-    SELECT a.organization_id INTO org FROM accounts a WHERE a.id = acct;
+    SELECT a.organization_id INTO org FROM accounts a
+      JOIN organizations o ON o.id = a.organization_id
+     WHERE a.id = acct AND o.xmin = pg_current_xact_id()::xid;
     IF org IS NULL
        OR EXISTS (SELECT 1 FROM organization_admins oa WHERE oa.organization_id = org)
        OR EXISTS (SELECT 1 FROM accounts a WHERE a.organization_id = org AND a.id <> acct)

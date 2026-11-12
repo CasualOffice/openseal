@@ -244,8 +244,12 @@ Built as sketched above, with these decisions taken within the design (each test
 - **The bootstrap is one transaction.** `openseal_bootstrap_organization` runs in the account scope of the workspace it
   creates (it refuses another `p_account`), under an exclusive lock on `organizations`, so the first administrator is
   created in the same commit; `openseal_bootstrap_owner(p_user, p_now)` then makes that administrator the owner, only
-  while the organization has no administrator, has this one workspace, and the user is an enabled member here with
-  the built-in admin profile. `casual-sign-server bootstrap` uses both and is refused (`CS-DB-0006`) once any
+  for an organization inserted by the same transaction (the row's `xmin` is the current transaction id), while it has
+  no administrator, has this one workspace, and the user is an enabled member here with the built-in admin profile.
+  An organization that already existed without an owner is never claimable this way, however few admins it has; its
+  owner is named through the console (§5.1). Test:
+  `organizations.rs::bootstrap_owner_refuses_an_organization_made_before_this_transaction` (the ORG-02 review's probe,
+  seen red before the `xmin` check). `casual-sign-server bootstrap` uses both and is refused (`CS-DB-0006`) once any
   organization exists. `casual_sign_server::bootstrap_workspace` provisions a workspace and its first administrator in
   an existing organization (no organization role); its callers until ORG-03 are tests and, from CON-03, the console.
   Until the console exists, a second organization is made by the owner role (as the tests do).

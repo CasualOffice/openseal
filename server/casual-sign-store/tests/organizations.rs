@@ -875,6 +875,69 @@ async fn bootstrap_makes_the_first_organization_and_its_owner_once() {
     db.drop().await;
 }
 
+/// The ORG-02 review probe: an organization that already exists without an owner (the
+/// state the backfill leaves for an account with no admin, or a console-created one
+/// before its owner is named) is not claimable through the bootstrap door by one of its
+/// workspace admins, through the store or by calling the function directly. Owners of
+/// such an organization are named through the console (docs/23 §5.1).
+#[tokio::test]
+async fn bootstrap_owner_refuses_an_organization_made_before_this_transaction() {
+    let Some(db) = fresh("bootstrap_owner_refuses_an_older_org", Rls::On).await else {
+        return;
+    };
+    let (org, account) = db.account("ownerless").await;
+    let admin_profile: uuid::Uuid = sqlx::query_scalar(
+        "SELECT id FROM permission_profiles WHERE account_id = $1 AND kind = 'admin'",
+    )
+    .bind(account.0)
+    .fetch_one(&db.admin)
+    .await
+    .unwrap();
+    let admin = UserId(id());
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    tx.users()
+        .create_member(
+            &admin_user(admin, "ownerless"),
+            PermissionProfileId(admin_profile),
+        )
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    // Through the store.
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    assert_eq!(
+        tx.account()
+            .make_first_owner(admin, now())
+            .await
+            .unwrap_err()
+            .code(),
+        "CS-DB-0003"
+    );
+    drop(tx);
+    // Directly, as the application role in the workspace's scope.
+    let mut conn = db.app.begin().await.unwrap();
+    sqlx::query("SELECT set_config('openseal.account_id', $1, true)")
+        .bind(account.0.to_string())
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    let done: bool = sqlx::query_scalar("SELECT openseal_bootstrap_owner($1, now())")
+        .bind(admin.0)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert!(!done, "an existing ownerless organization was claimed");
+    conn.commit().await.unwrap();
+    let owners: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM organization_admins WHERE organization_id = $1")
+            .bind(org.0)
+            .fetch_one(&db.admin)
+            .await
+            .unwrap();
+    assert_eq!(owners, 0);
+    db.drop().await;
+}
+
 /// The deferred last-owner constraint: removing or demoting the only enabled owner of an
 /// active organization fails at commit (`CS-ORG-0008`).
 #[tokio::test]

@@ -327,7 +327,7 @@ leaves an active organization without an enabled one (`organization_keeps_an_own
 scope reads `accounts`, `account_memberships` and `users` of its own workspaces through `FOR SELECT` policies
 named `organization_scope`; content tables are untouched. Definer functions: `openseal_create_workspace` and
 `openseal_archive_workspace` (organization scope; no events until ORG-05 replaces them),
-`openseal_bootstrap_organization` and `openseal_bootstrap_owner` (the install's first organization only),
+`openseal_bootstrap_organization` and `openseal_bootstrap_owner` (the install's first organization only, in the transaction that created it),
 `openseal_login_password_hash` (login) and `openseal_user_workspaces` (switching, from a live session). Store:
 `Store::for_organization(org)` → `OrgScope::begin()` → `OrgTx` (`organization`, `workspaces`, `workspace(id) →
 WorkspaceOf`, `create_workspace`, `archive_workspace`); `Store::for_workspace_of(&WorkspaceOf)` → a single-account

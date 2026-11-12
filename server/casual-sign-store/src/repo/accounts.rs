@@ -85,8 +85,10 @@ impl Accounts<'_> {
 
     /// Make `user`, the first administrator of a just-bootstrapped install, the owner of
     /// this account's organization ([`crate::Store::bootstrap_organization`]). Refused
-    /// unless the organization has no administrator yet and this is its only workspace,
-    /// and `user` is an enabled member here holding the built-in admin profile.
+    /// unless this transaction created the organization, it has no administrator yet and
+    /// this is its only workspace, and `user` is an enabled member here holding the
+    /// built-in admin profile. An organization that already existed without an owner is
+    /// never claimable here (docs/23 §5.1).
     ///
     /// # Errors
     ///
