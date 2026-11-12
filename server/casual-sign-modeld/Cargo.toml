@@ -16,9 +16,19 @@ publish = false
 # tests/feature_gate.rs proves the client-only tree holds none of them.
 [features]
 default = ["server"]
-# The daemon: bundle verification at start, the op log, the op handlers. Inference
-# dependencies are added here as `dep:` entries by the pieces that need them.
-server = []
+# The daemon: bundle verification at start, the op log, the op handlers, and every
+# inference dependency (`dep:` entries), so none reaches a client-only build.
+server = [
+    "dep:hayro",
+    "dep:image",
+    "dep:oar-ocr",
+    "dep:ort",
+    "dep:rustix",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+    "dep:unicode-bidi",
+    "dep:unicode-normalization",
+]
 
 [[bin]]
 name = "casual-sign-modeld"
@@ -33,6 +43,32 @@ aws-lc-rs = "1.19.0"
 # no process-wide default. Already in the tree.
 rustls = { version = "0.23.46", default-features = false, features = ["std", "aws_lc_rs", "logging"] }
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
+
+# ---- server only (ADR-029; docs/33 §5.1, §5.5) ----
+# The rasteriser (piece C, `ML-02`, `PDF-REN-01`): pure Rust, forbids `unsafe` itself;
+# runs only in the raster child (src/raster.rs). 0.9.0 (2026-11-02) is too new.
+hayro = { version = "=0.8.0", optional = true }
+# Grey and RGB rasters handed to the OCR pipeline: the version oar-ocr uses. No codec
+# features: modeld never decodes an image file, only raw pixels.
+image = { version = "=0.25.10", default-features = false, optional = true }
+# The PaddleOCR pipeline (piece D). Its defaults are `download-binaries` (fetches ONNX
+# Runtime at build) and `simd`: only `simd` is kept, and `auto-download` stays off
+# (review defect 2, `SEC-I09`). Model files come from the verified bundle only.
+oar-ocr = { version = "=0.10.2", default-features = false, features = ["simd"], optional = true }
+# The exact `ort` oar-ocr pins, loading the bundle's ONNX Runtime library at run time
+# (`load-dynamic`); never `download-binaries` or `tls-native` (`SEC-I09`).
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "tracing"], optional = true }
+# Address-space and CPU-time limits the raster child sets on itself (`setrlimit`),
+# without `unsafe` in this crate.
+rustix = { version = "=1.1.5", default-features = false, features = ["std", "process"], optional = true }
+# The one fixed log subscriber (`SEC-I05`): third-party targets capped at WARN whatever
+# RUST_LOG says (src/logging.rs). Both already in the tree.
+tracing = { version = "0.1.44", optional = true }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "std", "registry"], optional = true }
+# OCR text leaves modeld in NFC, right-to-left lines in logical order (docs/33 §3.2,
+# §5.1). Both already in the tree.
+unicode-bidi = { version = "0.3.18", optional = true }
+unicode-normalization = { version = "0.1.26", optional = true }
 
 [dev-dependencies]
 # Throwaway TLS PKI for the mTLS tests (as keyd's tests).
