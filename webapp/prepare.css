@@ -315,3 +315,24 @@
 @media (max-width: 47.999em) and (max-height: 31.25em) {
   .os-prepare .os-docbar { display: flex; }
 }
+
+/* Recipients as dense rows (UX-05): type and step, name, email, tools on one line; the
+ * recipient's options under a disclosure that spans the row. */
+.os-panel--rcpt .os-rcpt--row { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.3fr) auto; align-items: end; padding: var(--os-s2) var(--os-s3); }
+.os-panel--rcpt .os-rcpt--role { grid-template-columns: auto minmax(0, 1fr) auto; }
+.os-panel--rcpt .os-rcpt--row > .os-rcpt__head { grid-column: auto; align-self: end; min-height: var(--os-btn); flex-wrap: nowrap; }
+.os-panel--rcpt .os-rcpt--row .os-rcpt__head .os-fieldrow { width: 10rem; }
+.os-rcpt__tools { display: flex; align-items: center; gap: 0.125rem; min-height: var(--os-btn); }
+.os-rcpt__more { grid-column: 1 / -1; }
+.os-rcpt__more:not([open]) > :not(summary) { display: none; }
+.os-rcpt__more > summary { margin-top: 0; font-size: var(--os-fs-14); }
+.os-rcpt__opts { display: grid; grid-template-columns: minmax(0, 16rem) auto; gap: var(--os-s2) var(--os-s4); align-items: end; padding: var(--os-s2) 0 var(--os-s1); }
+.os-rcpt__opts .os-help { margin: 0.125rem 0 0; font-size: var(--os-fs-12); color: var(--os-muted); }
+@media (max-width: 47.999em) {
+  .os-panel--rcpt .os-rcpt--row, .os-panel--rcpt .os-rcpt--role { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .os-panel--rcpt .os-rcpt--row > .os-rcpt__head { grid-column: 1 / 2; flex-wrap: wrap; }
+  .os-panel--rcpt .os-rcpt--row > .os-rcpt__tools { grid-column: 2; grid-row: 1; }
+  .os-panel--rcpt .os-rcpt--row > .os-rcpt__cell { grid-column: 1 / -1; }
+  .os-panel--rcpt .os-rcpt--row .os-rcpt__head .os-fieldrow { width: auto; flex: 1 1 8rem; }
+  .os-rcpt__opts { grid-template-columns: minmax(0, 1fr); }
+}

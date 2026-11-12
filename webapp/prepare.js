@@ -29,7 +29,7 @@ import { button, busy, emptyState, toast, toastError, confirmDialog, selectField
 import { openPdf } from "./pdfview.js";
 import { docView, zoomControls, thumbnails } from "./docview.js";
 import { FIELD_TYPES, FIELD_GROUPS, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput, requiredByDefault, validationFrom, optionsFrom } from "./geometry.js";
-import { errorMessage } from "./api.js";
+import { errorMessage, RECIPIENT_TYPES } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate } from "./templatesync.js";
 import { suggestionsFrom } from "./detect.js";
@@ -208,7 +208,29 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     fields: h("div", { class: "os-prepare__body" }, leftDock.el, centre, rightDock.el),
     review: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, reviewPanel),
   };
-  const frame = h("div", { class: "os-prepare", attrs: { "data-step": step } }, bar, h("div", { class: "os-wizard" },...Object.values(panes)), live, dv.live, fileInput);
+  // Contacts autocomplete (UX-05; GET /contacts): one list of names and one of addresses
+  // for every recipient row, filled as the user types; choosing one fills the other box.
+  const contactNames = h("datalist", { id: "rc-names" });
+  const contactMails = h("datalist", { id: "rc-mails" });
+  const contacts = new Map(); // lower-cased name or email → {name, email}
+  let contactTimer = null;
+  let contactSeq = 0;
+  function lookContacts(q) {
+    clearTimeout(contactTimer);
+    if (TPL || q.trim().length < 2 || !ctx.api.listContacts) return;
+    contactTimer = setTimeout(async () => {
+      const seq = ++contactSeq;
+      try {
+        const out = await ctx.api.listContacts({ q: q.trim(), limit: 8 });
+        if (seq !== contactSeq) return;
+        const items = (out?.items || []).filter((c) => c && typeof c.email === "string");
+        contactNames.replaceChildren(...items.filter((c) => c.name).map((c) => h("option", { value: c.name, label: c.email })));
+        contactMails.replaceChildren(...items.map((c) => h("option", { value: c.email, label: c.name || "" })));
+        for (const c of items) { contacts.set(c.email.toLowerCase(), c); if (c.name) contacts.set(c.name.toLowerCase(), c); }
+      } catch { /* suggestions only: typing goes on without them */ }
+    }, 200);
+  }
+  const frame = h("div", { class: "os-prepare", attrs: { "data-step": step } }, bar, h("div", { class: "os-wizard" },...Object.values(panes)), live, dv.live, fileInput, contactNames, contactMails);
   view.append(frame);
 
 
@@ -310,10 +332,18 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   /// approver, a viewer and a copy take none.
   const takesFields = (r) => r?.type === "signer" || r?.type === "in_person_signer";
   const signers = () => S.recipients.filter(takesFields);
+  /// The types a recipient may be given (UX-05): the engine's ready ones (api.js
+  /// RECIPIENT_TYPES_READY), and an in-person signer only where staff can host one
+  /// (NOT_ON_SERVER.hostInPerson); a type already set stays offered.
+  const recipientTypes = (current) => {
+    const out = ["signer", ...(ctx.api.available?.("hostInPerson") ? ["in_person_signer"] : []), "approver", "viewer", "cc"];
+    return out.includes(current) || !current ? out : [...out, current];
+  };
   const displayName = (r, i) => r?.name?.trim() || t(TPL ? "template.role-n" : "prepare.recipient-n", { n: i + 1 });
   function orderOf(r) {
     if (S.ordered) return r.order || 1;
-    return r.type === "signer" ? 1 : 2;
+    // All at once: everyone who acts at step 1, copies after them.
+    return r.type === "cc" ? 2 : 1;
   }
   const orders = () => S.recipients.map((r) => r.order || 1);
   /// Set every recipient's step from `next` (aligned with S.recipients), then keep the
@@ -447,7 +477,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t(TPL ? "template.role-placeholder" : "prepare.name"), maxLength: 255, attrs: { "data-testid": TPL ? "role-name" : "recipient-name" } });
     const emailErr = h("p", { id: `${mailId}-err`, class: "os-field-error os-rcpt__err", attrs: { "aria-live": "polite" } });
     const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "email", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email", "aria-describedby": `${mailId}-err` } });
-    const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), [["signer", t("rtype.signer")], ["cc", t("rtype.cc")]], { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
+    const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), recipientTypes(r.type).map((ty) => [ty, t(`rtype.${ty}`)]), { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
     const type = typeField.select;
     const commit = (k, v) => {
       if (r[k] === v) return;
@@ -459,7 +489,18 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // Typed values are kept as they are typed, so a re-render (a role change, a field
     // placed) never loses them; the label refresh waits for the change event.
     name.addEventListener("input", () => { r.name = name.value.trim(); S.dirty = true; });
-    email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; });
+    email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; lookContacts(email.value); });
+    name.addEventListener("input", () => lookContacts(name.value));
+    if (!TPL) { name.setAttribute("list", "rc-names"); email.setAttribute("list", "rc-mails"); }
+    // A contact chosen from either list fills both boxes (the other only when empty).
+    const fillFrom = (v) => {
+      const c = contacts.get(String(v).trim().toLowerCase());
+      if (!c) return;
+      if (!name.value.trim() && c.name) { name.value = c.name; r.name = c.name; }
+      if (!email.value.trim()) { email.value = c.email; r.email = c.email; }
+    };
+    name.addEventListener("change", () => fillFrom(name.value));
+    email.addEventListener("change", () => fillFrom(email.value));
     name.addEventListener("change", () => { renderPalette(); renderFieldsOnly(); renderProps(); });
     // A bad address is said beside the field when the user leaves it (S-02), not only at send.
     const checkEmail = () => {
@@ -496,33 +537,43 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
     // The access code is set when the recipient is created; the API has no way to
     // change it afterwards (RecipientPatch), so a saved recipient shows it read-only.
-    const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code"), maxLength: 64, attrs: { "aria-label": t("prepare.access-code-for", { name: displayName(r, i) }), "data-testid": "recipient-access-code" } });
+    const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code-optional"), maxLength: 64, attrs: { "data-testid": "recipient-access-code", "aria-describedby": `ra-${r.key}-help` } });
     access.addEventListener("input", () => { r.accessCode = access.value.trim(); S.dirty = true; });
     // An emailed one-time code (SEC-A02): set when the recipient is created, like the
     // access code, so a saved recipient shows it read-only.
     const otpBox = h("input", { id: `rotp-${r.key}`, type: "checkbox", checked: !!r.emailOtp, disabled: !!r.id, attrs: { "data-testid": "recipient-email-otp" } });
     otpBox.addEventListener("change", () => { r.emailOtp = otpBox.checked; S.dirty = true; });
     const otp = h("label", { class: "os-check os-rcpt__otp", attrs: { for: `rotp-${r.key}` } }, otpBox, h("span", { text: t("prepare.email-otp") }));
-    const li = h("li", { class: `os-rcpt os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key } },
+    // Per-recipient options (UX-05, DocuSign's "More" on each row): how they prove who
+    // they are. Set when the recipient is created (the API has no later change).
+    const acting = r.type !== "cc";
+    const more = TPL || !acting ? null : h("details", { class: "os-details os-rcpt__more", open: !!(r.accessCode || r.emailOtp) && !r.id, attrs: { "data-testid": "recipient-more" } },
+      h("summary", {}, h("span", { text: t("prepare.more-options") }), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })),
+      h("div", { class: "os-rcpt__opts" },
+        h("div", { class: "os-rcpt__cell" },
+          h("label", { class: "os-label os-rcpt__label", attrs: { for: `ra-${r.key}` } }, t("prepare.access-code-label"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })),
+          access, h("p", { id: `ra-${r.key}-help`, class: "os-help", text: t("prepare.access-code-help") })),
+        otp));
+    // One dense row (UX-05): type, step, name, email, options, then the row's tools.
+    const tools = h("div", { class: "os-rcpt__tools" }, up, down, del);
+    const li = h("li", { class: `os-rcpt os-rcpt--row${TPL ? " os-rcpt--role" : ""} os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key, "data-type": r.type } },
       h("div", { class: "os-rcpt__head" },
         grip, h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
         order,
-        typeField.el,
-        h("span", { class: "os-spacer" }), up, down, del),
+        typeField.el),
       // Visible labels, not placeholders alone (S-03); "of recipient 2" for screen readers.
       h("div", { class: "os-rcpt__cell" },
         h("label", { class: "os-label os-rcpt__label", attrs: { for: nameId } }, t("prepare.name"), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })), name),
       TPL ? null : h("div", { class: "os-rcpt__cell" },
         h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
-      r.type === "signer" && !TPL ? access : null,
-      r.type === "signer" && !TPL ? otp : null);
+      tools,
+      more);
     // The card's controls are named after the recipient: renamed, they follow.
     name.addEventListener("change", () => {
       const who = displayName(r, S.recipients.indexOf(r));
       if (S.ordered) order.setAttribute("aria-label", t("prepare.order-for", { name: who }));
       del.setAttribute("aria-label", t("prepare.remove-recipient", { name: who }));
       del.title = t("prepare.remove-recipient", { name: who });
-      access.setAttribute("aria-label", t("prepare.access-code-for", { name: who }));
       typeField.el.querySelector("label")?.replaceChildren(t("prepare.role-for", { name: who }));
     });
     li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
@@ -560,7 +611,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       change(() => { S.recipients.splice(i, 1); S.recipients.splice(j, 0, r); });
     }
     // Keep focus on the same control of the card that moved.
-    setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] .os-rcpt__head button[aria-label="${t(d < 0 ? "prepare.move-up" : "prepare.move-down")}"]:not([disabled])`)?.focus(), 0);
+    setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] .os-rcpt__tools button[aria-label="${t(d < 0 ? "prepare.move-up" : "prepare.move-down")}"]:not([disabled])`)?.focus(), 0);
   }
   async function removeRecipient(r) {
     const n = S.fields.filter((f) => f.recipientKey === r.key).length;
@@ -1548,9 +1599,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const prevActive = Math.max(0, S.recipients.findIndex((r) => r.key === S.active));
     const prevAccess = new Map(S.recipients.map((r) => [r.id, r.accessCode]));
     const steps = fromServer(recs.map((r) => r.routing_order));
-    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: r.type === "cc" ? "cc" : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), order: steps[i] }));
+    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), order: steps[i] }));
     // Signers all at one step with copies after them is the switch off; anything else is steps.
-    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type === "signer");
+    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type !== "cc");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
     const dkey = new Map(S.docs.map((d) => [d.id, d.key]));
     S.fields = (env.fields || []).map((f) => {
@@ -1587,8 +1638,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.docs = docs;
     const roles = [...(tp.roles || [])].sort((a, b) => (a.routing_order ?? 1) - (b.routing_order ?? 1));
     const steps = fromServer(roles.map((r) => r.routing_order));
-    S.recipients = roles.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: "", type: r.type === "cc" ? "cc" : "signer", accessCode: "", order: steps[i] }));
-    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type === "signer");
+    S.recipients = roles.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: "", order: steps[i] }));
+    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type !== "cc");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
     const dkey = new Map(S.docs.map((d) => [d.id, d.key]));
     S.fields = (tp.fields || []).map((f) => {
@@ -1605,8 +1656,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // ---- Saving ------------------------------------------------------------------------------
   function recipientBody(r) {
     const body = { type: r.type, name: r.name || t("prepare.recipient-n", { n: S.recipients.indexOf(r) + 1 }), email: r.email, routing_order: orderOf(r) };
-    if (r.type === "signer" && r.accessCode) { body.auth = ["access_code"]; body.access_code = r.accessCode; }
-    if (r.type === "signer" && r.emailOtp && r.email) body.auth = (body.auth || []).concat(["email_otp"]);
+    if (r.type !== "cc" && r.accessCode) { body.auth = ["access_code"]; body.access_code = r.accessCode; }
+    if (r.type !== "cc" && r.emailOtp && r.email) body.auth = (body.auth || []).concat(["email_otp"]);
     return body;
   }
   function fieldBody(f, recipientRef, documentRef) {

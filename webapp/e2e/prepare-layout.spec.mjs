@@ -390,3 +390,60 @@ test("on a phone the editor opens readable, places in view, and has one bottom b
   await expectAccessible(page, "phone editor");
 });
 
+
+// ---- Recipients ----------------------------------------------------------------------------
+
+for (const [label, vp] of [["1440", { width: 1440, height: 900 }], ["390", { width: 390, height: 844 }]]) {
+  test(`recipients at ${label}: the engine's types, options per row, contacts autocomplete`, async ({ page }, testInfo) => {
+    await page.setViewportSize(vp);
+    await signIn(page);
+    await page.goto(app("#/prepare"));
+    await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+    await page.getByTestId("wizard-next").click();
+    const addRow = async (n, name, email, type) => {
+      await page.getByRole("button", { name: "Add recipient" }).first().click();
+      const row = page.locator(".os-rcpt").nth(n);
+      await row.getByTestId("recipient-name").fill(name);
+      await row.getByTestId("recipient-email").fill(email);
+      await row.getByTestId("recipient-email").blur();
+      if (type) await row.getByTestId("recipient-type").selectOption(type);
+      return page.locator(".os-rcpt").nth(n);
+    };
+    const ana = await addRow(0, "Ana Signer", "ana@example.com");
+    // Every ready type is offered (in-person where staff can host it: the mock can).
+    expect(await ana.getByTestId("recipient-type").locator("option").evaluateAll((os) => os.map((o) => o.value))).toEqual(["signer", "in_person_signer", "approver", "viewer", "cc"]);
+    await addRow(1, "Ben Approver", "ben@example.com", "approver");
+    await addRow(2, "Vic Viewer", "vic@example.com", "viewer");
+    // Contacts: typing part of a name offers the people sent to before; choosing one fills the email.
+    await page.getByRole("button", { name: "Add recipient" }).first().click();
+    const jo = page.locator(".os-rcpt").nth(3);
+    await jo.getByTestId("recipient-name").fill("Jord");
+    await expect(page.locator("#rc-names option[value='Jordan Rivera']")).toHaveCount(1);
+    await jo.getByTestId("recipient-name").fill("Jordan Rivera");
+    await jo.getByTestId("recipient-name").blur();
+    await expect(jo.getByTestId("recipient-email")).toHaveValue("jordan@example.com");
+    // Ana's options: a labelled access code and the emailed code.
+    const anaRow = page.locator(".os-rcpt").first();
+    await expect(anaRow.getByTestId("recipient-name")).toHaveValue("Ana Signer");
+    await anaRow.getByTestId("recipient-more").locator("summary").click();
+    await anaRow.getByLabel("Access code").fill("4321");
+    await snap(page, testInfo, `prepare-recipients-${label}`);
+    await expectAccessible(page, `recipients at ${label}`);
+    if (label === "1440") {
+      // One line a recipient: name and email side by side.
+      const n = await anaRow.getByTestId("recipient-name").boundingBox();
+      const e = await anaRow.getByTestId("recipient-email").boundingBox();
+      expect(Math.abs(n.y - e.y)).toBeLessThan(2);
+    }
+    await page.getByTestId("wizard-next").click();
+    // Only those who sign take fields (on a phone the palette is a sheet).
+    if (label === "390") await page.getByTestId("add-field-sheet").click();
+    await expect(page.getByRole("radiogroup", { name: "Placing fields for" }).getByRole("radio")).toHaveCount(2);
+    await page.getByTestId("save-draft").click();
+    await expect(page.getByTestId("save-status")).toContainText("Saved");
+    const env = (await mockDb(page)).envelopes.find((x) => x.recipients.some((r) => r.name === "Vic Viewer"));
+    expect(env.recipients.map((r) => [r.name, r.type])).toEqual([["Ana Signer", "signer"], ["Ben Approver", "approver"], ["Vic Viewer", "viewer"], ["Jordan Rivera", "signer"]]);
+    expect(env.recipients[0].auth).toEqual(["access_code"]);
+    expect(env.recipients[0].access_code).toBe("4321");
+  });
+}
