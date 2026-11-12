@@ -628,13 +628,36 @@ components:
     CeremonyView:
       type: object
       properties:
-        envelope: {type: object}
+        envelope:
+          type: object
+          description: '`id`, `status`, `subject`, `message`, `signing_options`, `documents`, and `expires_at` (when it expires, or null; UXW-34)'
         recipient: {$ref: '#/components/schemas/Recipient'}
         fields: {type: array, items: {$ref: '#/components/schemas/Field'}}
         capture_location: {type: boolean, description: 'Whether the page asks the device for its location (GEO-01)'}
         adoption_id: {type: string, description: 'After adopt: the capture a signature or initials field value names ({"signature": "<adoption_id>"})'}
-        consent_required: {type: [object, 'null']}
+        consent_required:
+          type: [object, 'null']
+          description: The account's disclosure the recipient must accept, or null when it requires none.
+          properties:
+            version: {type: string, description: 'The label `POST /s/{token}/consent` takes'}
+            sha256: {type: string, description: '`sha256:<hex>` over the text''s UTF-8, the hash consent records'}
+            url: {type: string, description: '`/s/{token}/disclosure`, present only when the account has published that text (UXW-34)'}
         auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
+        sender:
+          type: object
+          description: Who sent the envelope, so the recipient can judge whether the request is genuine (UXW-34).
+          properties:
+            name: {type: [string, 'null'], description: "The sending user's name as the account holds it now; null once they are no longer a member"}
+            email: {type: [string, 'null'], description: "The sending user's email address; null once they are no longer a member"}
+            organisation: {type: string, description: "The account's brand name (`settings.branding.name`), else the account's name"}
+    CeremonyDisclosure:
+      type: object
+      required: [version, sha256, language, text]
+      properties:
+        version: {type: string, description: 'The label `POST /s/{token}/consent` takes'}
+        sha256: {type: string, description: '`sha256:<hex>` over the text''s UTF-8, re-checked as it is read'}
+        language: {type: string, description: 'The text''s language tag'}
+        text: {type: string}
     ConsentRequest:
       type: object
       required: [ersd_version]
@@ -2521,4 +2544,29 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyHistory'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/disclosure:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyDisclosure
+      summary: "The full disclosure (ERSD) the view's consent_required names (UXW-34)"
+      description: >-
+        The account's published text for its current disclosure, found by the hash consent
+        records and re-checked as it is read. `404` when the account requires no disclosure
+        or has published no text for it. Only in the bound browser, after every required
+        authentication (`403` before), as consent; still readable after finishing or
+        declining while the link is valid. Records nothing.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyDisclosure'}
         default: {$ref: '#/components/responses/Problem'}
