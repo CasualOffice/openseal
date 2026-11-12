@@ -99,3 +99,52 @@ A seal shows "valid" in Adobe Acrobat only if its certificate chains to the **Ad
 Criteria), audited CAs (WebTrust or ETSI EN 319 411), and a CP/CPS (https://support.globalsign.com/aatl-document/aatl-document-signing-faqs) [V].
 A self-hosted deployment with a self-signed key will show "validity unknown". [65](65-RUNNING-IT.md) documents how an
 operator obtains an AATL document-signing certificate and holds it in an HSM or cloud KMS through `keyd`.
+
+## 8. Model weights register (ADR-029)
+
+Pretrained model weights shipped or exported for the assistive features of [33](33-ML-MODELS.md) (OCR, template
+matching, extraction, personal-data detection). Each is checked at image build against the licence in
+`tools/ml/models.toml`, which must be on `deny.toml`'s allow list; GLiNER v0 and v1 checkpoints (CC-BY-NC-4.0) are
+refused by repository id. **Version** is the checkpoint; the exact revision commit and SHA-256 are recorded in the
+manifest when it is written (`ML-09`, piece B). Licences were read from each model card on 2026-11-12 and re-checked
+by the adversarial review; nothing here is legal advice, and `LEG-02`'s counsel review covers this table.
+
+| Model | Version | Use | Weight licence | Source | Training data (as stated by its publisher) | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| PaddlePaddle PP-OCRv6_small_det | PP-OCRv6 (PaddleOCR 3.7.0, 2026-06-11), official ONNX | OCR text detection | Apache-2.0 | https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx | PaddleOCR's own datasets; not itemised | Default |
+| PaddlePaddle PP-OCRv6_small_rec | PP-OCRv6, official ONNX | OCR recognition, 50 languages per the card | Apache-2.0 | https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx | As above | Default |
+| PaddlePaddle arabic_PP-OCRv5_mobile_rec | PP-OCRv5; Paddle format, exported to ONNX by us | OCR, Arabic script pack | Apache-2.0 | https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec | As above | Operator-chosen pack |
+| PaddlePaddle devanagari_PP-OCRv5_mobile_rec | PP-OCRv5; exported by us | OCR, Devanagari script pack | Apache-2.0 | https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec | As above | Operator-chosen pack |
+| PaddlePaddle PP-LCNet_x1_0_textline_ori | PaddleOCR 3.x; exported by us | Text-line orientation | Apache-2.0 | https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori | As above | Default |
+| intfloat/multilingual-e5-small | repository of 2026-04-02, fp32 `onnx/model.onnx` | Template matching and agreement search embeddings | MIT | https://huggingface.co/intfloat/multilingual-e5-small | Includes MS MARCO (licensed for non-commercial research) among its fine-tuning sets | Default |
+| sentence-transformers/all-MiniLM-L6-v2 | repository of 2026-06-01 | Template matching, English "small" profile | Apache-2.0 | https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2 | Includes MS MARCO among its training sets | Optional profile |
+| urchade/gliner_multi-v2.1 | v2.1, `model.safetensors`, int8 exported by us | Agreement extraction (parties, dates, amounts, durations, addresses) | Apache-2.0 | https://huggingface.co/urchade/gliner_multi-v2.1 | LLM-annotated Pile-derived data (`urchade/pile-mistral-v0.1`, card Apache-2.0); encoder microsoft/mdeberta-v3-base (MIT) | Default |
+| urchade/gliner_small-v2.1 | v2.1, `pytorch_model.bin` (hash-pinned, loaded with `weights_only=True`), exported by us | Agreement extraction, English profile | Apache-2.0 | https://huggingface.co/urchade/gliner_small-v2.1 | As gliner_multi-v2.1 | Optional profile |
+| knowledgator/gliner-pii-base-v1.0 | v1.0, official `model_quint8.onnx` (196,757,174 B) | Personal-data layer 2 (names, addresses, organizations), English only | Apache-2.0 | https://huggingface.co/knowledgator/gliner-pii-base-v1.0 | **Undisclosed** (the card names only an evaluation set); encoder microsoft/deberta-v3-small (MIT) | Optional, off by default |
+| urchade/gliner_multi_pii-v1 | v1, `pytorch_model.bin` only; usable only as our int8 export under the file cap | Personal-data layer 2, non-Latin names | Apache-2.0 | https://huggingface.co/urchade/gliner_multi_pii-v1 | Fine-tune of gliner_multi-v2.1; data not itemised | Fallback, not yet exported |
+
+Runtime binary in the same manifest: **ONNX Runtime 1.28.3**, MIT, https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE,
+bundling Eigen (MPL-2.0) and Boost (BSL-1.0) among the third-party code its `ThirdPartyNotices.txt` lists. **Scoped
+exception (owner instruction 32):** MPL-2.0 and BSL-1.0 are allowed for that unmodified binary in the modeld image
+only, nowhere else. The manifest records it per entry (`licence_exception = "owner-instruction-32"` on the two library
+entries), and `tools/ml/fetch-models.py` honours it for those entry ids alone, refusing it on any other entry and
+refusing a bundle that lacks the `ThirdPartyNotices.txt` from the same archive (both cases in its `--self-test`). The
+image ships `ThirdPartyNotices.txt`, the ONNX Runtime licence and `deploy/modeld/NOTICE.txt` in
+`/usr/share/doc/openseal-modeld/`; the notice points to the source of the Eigen revision ONNX Runtime 1.28.3 builds
+(commit `1d8b82b0740839c0de7f1242a3585e3390ff5f33`, per its `cmake/deps.txt`).
+
+Refused (licence not on the allow list): GLiNER v0 and v1 (`gliner_base`, `gliner_multi`; CC-BY-NC-4.0),
+`iiiorg/piiranha-v1` (CC-BY-NC-ND-4.0), `nvidia/gliner-PII` (NVIDIA Open Model License), spaCy fr and es pipelines
+(LGPL-LR, GPL-3.0), `Davlan/xlm-roberta-base-ner-hrl` (AFL-3.0), `Babelscape/wikineural` (CC BY-NC-SA), Flair classic
+models (non-commercial).
+
+**Training-data lineage is not claimed.** The project relies on each weight licence as published. A permissive weight
+licence does not establish that every dataset used to train the weights permitted commercial use: MS MARCO is
+licensed for non-commercial research, and the GLiNER-PII model's training data is undisclosed. **Owner decision D13 is
+open** (proposed `DEC-16`): accept reliance on the weight licence for these models, or exclude them (template
+matching would then use page hashes only, and personal data the deterministic recognisers only). Until the owner
+decides, the models stay off by default and no product text says they are cleared for commercial use.
+
+**Personal-data detection is assistive.** It proposes spans for redaction and retention that a person accepts; it
+does not find every item of personal data, and it is *designed to support* a controller's data-minimization work,
+never described as making a deployment compliant with GDPR or any other law.

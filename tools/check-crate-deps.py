@@ -13,7 +13,7 @@ What is checked, for every package whose manifest is under crates/:
   * a path dependency resolves inside crates/;
   * no dependency, path or registry, normal, dev or build, names a server crate: one
     defined outside crates/ in this repository, or one whose name says it is
-    (`server`, or the server crates docs/19 reserves: `-host`, `-wopi`, `-mcp`,
+    (`server`, or the server crates docs/19 reserves: `-host`, `-wopi`, `-mcp`, `-modeld`,
     `-secrets`, `-collab-server`).
 
 Dev-dependencies are included: a test that needs a server belongs to the server.
@@ -29,7 +29,7 @@ import sys
 
 # From docs/19 server/ list. A crate of this name in crates/ would be one of these
 # moved, and the move is the thing to discuss.
-RESERVED_SERVER = re.compile(r"(server|^casual-sign-(server|worker|keyd|convert|mcp|secrets)$)")
+RESERVED_SERVER = re.compile(r"(server|^casual-sign-(server|worker|keyd|modeld|convert|mcp|secrets)$)")
 
 
 def metadata(root):

@@ -7,7 +7,8 @@
 #   docker compose down -v              # stop and discard every volume (data, keys)
 #
 # Development only: `pki` generates a throwaway CA, keys and passwords into the `secrets`
-# volume on first start, `tsa` is a development time-stamping authority, keyd keeps the
+# volume on first start (and modeld's TLS identity alone into `modeld-secrets`), `tsa` is
+# a development time-stamping authority, keyd keeps the
 # seal key in SoftHSM, and the server sends cookies over plain HTTP on localhost. For
 # production follow docs/65 §Production checklist. Every image is pinned by digest
 # (docs/04 rule 31); ports bind to the loopback address only.
@@ -32,7 +33,8 @@ services:
     image: openseal-devtools:dev
     command: ["sh", "/usr/local/bin/dev-pki"]
     user: root
-    volumes: [secrets:/secrets]
+    # modeld-secrets: modeld's TLS identity only; modeld never mounts `secrets` (ML-01).
+    volumes: [secrets:/secrets, modeld-secrets:/modeld-secrets]
     restart: "no"
 
   tsa:
@@ -154,8 +156,49 @@ services:
       tsa: {condition: service_healthy}
       mailpit: {condition: service_healthy}
 
+  # Optional pretrained models (ML-01, ADR-029, docs/33): `docker compose --profile ml up`.
+  # No secrets beyond its own TLS identity: it mounts its own `modeld-secrets` volume,
+  # which pki fills with modeld's chain, key, ca.pem and allow list only, never the
+  # shared `secrets` volume (tools/ml/check-modeld-isolation.py checks this). Only on the
+  # `ml` network, which is internal (no route out). The weights are baked into the image,
+  # hash-checked at build and again at start. OPENSEAL_ML_PROFILES picks the bundle
+  # (docs/65 §Pretrained models).
+  modeld:
+    profiles: [ml]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: modeld
+      args: {OPENSEAL_ML_PROFILES: "${OPENSEAL_ML_PROFILES:-ocr templates personal_data}"}
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-modeld:${OPENSEAL_VERSION:-dev}
+    environment:
+      OPENSEAL_MODELD_TLS_CERT: /secrets/modeld-tls-chain.pem
+      OPENSEAL_MODELD_TLS_KEY: /secrets/modeld-tls.key
+      OPENSEAL_MODELD_CLIENT_CA: /secrets/ca.pem
+      OPENSEAL_MODELD_ALLOW_LIST: /secrets/modeld-allow-list
+      OPENSEAL_MODELD_OPLOG: /var/lib/modeld/oplog
+    volumes:
+      - modeld:/var/lib/modeld
+      - {type: volume, source: modeld-secrets, target: /secrets, read_only: true}
+    networks: [ml]
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    mem_limit: 4g
+    pids_limit: 256
+    ulimits: {core: 0}
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: {pki: {condition: service_completed_successfully}}
+
+networks:
+  # internal: no gateway, so nothing on it reaches the internet (docs/33 invariant 4).
+  ml:
+    internal: true
+
 volumes:
   secrets:
   postgres:
   s3:
   keyd:
+  modeld:
+  modeld-secrets:

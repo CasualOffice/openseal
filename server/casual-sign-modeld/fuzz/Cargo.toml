@@ -1,0 +1,28 @@
+# cargo-fuzz workspace for casual-sign-modeld (ML-09; the F-007 pattern of fuzz/): its own
+# workspace, kept out of the product graph because libfuzzer-sys needs nightly. The
+# client-only build (`default-features = false`) is all the wire decoders need.
+#
+#   cd server/casual-sign-modeld/fuzz && cargo +nightly fuzz run modeld_wire -- -max_total_time=300
+[package]
+name = "casual-sign-modeld-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Its own workspace root, so the product workspace above never includes it.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+casual-sign-modeld = { path = "..", default-features = false }
+
+[[bin]]
+name = "modeld_wire"
+path = "fuzz_targets/modeld_wire.rs"
+test = false
+doc = false
+bench = false

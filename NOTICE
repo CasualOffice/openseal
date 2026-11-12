@@ -45,6 +45,15 @@ pypdf, BSD-3-Clause; no code from either is included):
     (https://github.com/adobe-type-tools/agl-aglfn), BSD-3-Clause.
   - The base encodings of ISO 32000-2 Annex D (facts from the standard).
 
+Personal-data recognisers in crates/casual-sign-pii/:
+  Patterns, context words and validation rules ported from Presidio 2.2.364
+      (commit 779dbd2), MIT, Copyright (c) Presidio Contributors
+      (https://github.com/data-privacy-stack/presidio); the licence text is in
+      crates/casual-sign-pii/LICENSE-PRESIDIO. No Presidio code is included.
+  phonenumber 0.3.10 (linked), Apache-2.0, a Rust port of Google's
+      libphonenumber, whose phone-number metadata (Apache-2.0, Copyright Google
+      LLC) is compiled into the crate.
+
 Web app (webapp/), shipped to browsers:
   pdf.js 4.10.38 (webapp/vendor/pdfjs/)   Apache-2.0, Copyright Mozilla
       Foundation; its LICENSE is beside it. Its standard_fonts/ carry their own

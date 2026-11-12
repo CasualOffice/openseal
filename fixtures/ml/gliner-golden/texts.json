@@ -1,0 +1,256 @@
+{
+ "about": "Synthetic texts for GLiNER golden spans (ML-07, ML-08; piece X for piece K). Every name, company, address, phone number, email, account, card, passport and id number is invented or taken from a reserved or published test range (US 555-01xx, UK 07700 900xxx, example.com/.org/.net, TEST-NET 192.0.2.0/24, SSA advertising SSN range 987-65-4320..4329, Visa test card 4111 1111 1111 1111, the IBAN registry's GB example). No entry belongs to a real person.",
+ "normalization": "NFC",
+ "texts": [
+  {
+   "id": "t01",
+   "lang": "en",
+   "text": "This Mutual Non-Disclosure Agreement is entered into as of 3 March 2025 (the \"Effective Date\") by and between Quillfern Systems Ltd, a company registered in England, and Marrowgate Holdings LLC, a Delaware limited liability company."
+  },
+  {
+   "id": "t02",
+   "lang": "en",
+   "text": "The Supplier shall deliver the Services for a period of twenty-four (24) months commencing on the Effective Date. The total fee payable is USD 48,500.00, invoiced quarterly in arrears."
+  },
+  {
+   "id": "t03",
+   "lang": "en",
+   "text": "Notices to the Customer shall be sent to 41 Larkspur Wynd, Fernhollow, OR 97999, attention: Elara Voss, Head of Procurement."
+  },
+  {
+   "id": "t04",
+   "lang": "en",
+   "text": "Tessaline Biotech Inc. agrees to pay Orrin & Vale LLP a retainer of $12,000 per month, beginning January 1, 2026, for a minimum term of six months."
+  },
+  {
+   "id": "t05",
+   "lang": "en",
+   "text": "This Lease commences on 1 July 2025 and ends on 30 June 2028. The monthly rent is GBP 3,250, payable in advance on the first day of each month to Hollowmere Property Partners."
+  },
+  {
+   "id": "t06",
+   "lang": "en",
+   "text": "Signed for and on behalf of Saltmarsh Analytics Ltd by Tobin Ashgrove, Director, on 14 February 2025 at 22 Quayside Row, Brackenford BF4 9ZZ."
+  },
+  {
+   "id": "t07",
+   "lang": "en",
+   "text": "The Consultant, Mirela Okonkwo-Hart, will provide advisory services to Brindlewood Capital Partners for an initial period of ninety (90) days at a daily rate of EUR 950."
+  },
+  {
+   "id": "t08",
+   "lang": "en",
+   "text": "Either party may terminate this Agreement on thirty (30) days' written notice. Upon termination, Kestrel Peak Software Inc. shall refund any prepaid fees within fourteen days."
+  },
+  {
+   "id": "t09",
+   "lang": "en",
+   "text": "The purchase price for the Shares is two million five hundred thousand US dollars ($2,500,000), payable by Ashbourne Ventures LP to the Sellers at Closing on or before 31 October 2025."
+  },
+  {
+   "id": "t10",
+   "lang": "en",
+   "text": "This Statement of Work dated 9 September 2025 is issued under the Master Services Agreement between Pellucid Data Corp. and Wrenfield Retail Group Inc."
+  },
+  {
+   "id": "t11",
+   "lang": "en",
+   "text": "The Licensee shall pay the Licensor an annual licence fee of CAD 18,000 for a term of three years. The Licensor is Corvane Labs Inc., 900 Thistledown Avenue, Suite 12, Port Ellery, ON K0K 9Z9."
+  },
+  {
+   "id": "t12",
+   "lang": "en",
+   "text": "Employee: Jonah Petrakis-Lund. Start date: 2 June 2025. Annual base salary: $96,000. Probationary period: three months. Employer: Gildenbrook Health Services LLC."
+  },
+  {
+   "id": "t13",
+   "lang": "en",
+   "text": "The warranty period shall be twelve (12) months from the date of delivery. Claims must be submitted to Ostrander Marine Supply at 7 Harbourlight Lane, Gullhaven, ME 04999."
+  },
+  {
+   "id": "t14",
+   "lang": "en",
+   "text": "In consideration of the sum of £5,000, receipt of which is acknowledged, Rowanmoor Publishing Ltd grants the Author, Cassia Delacroix-Byrne, a non-exclusive right to reproduce the Work."
+  },
+  {
+   "id": "t15",
+   "lang": "en",
+   "text": "The Escrow Agent, Fairhollow Trust Company, shall hold the deposit of $75,000 until the earlier of (a) Closing and (b) 15 December 2025."
+  },
+  {
+   "id": "t16",
+   "lang": "en",
+   "text": "This Agreement shall remain in force for an initial term of five (5) years from the Effective Date and shall renew automatically for successive one-year terms."
+  },
+  {
+   "id": "t17",
+   "lang": "en",
+   "text": "Lender: Pinecrest Mutual Bank. Borrower: Idris Vantongeren. Principal amount: USD 320,000. Interest rate: 6.25% per annum. Maturity date: 1 April 2055."
+  },
+  {
+   "id": "t18",
+   "lang": "en",
+   "text": "The Sponsor will reimburse Vellichor Clinical Research Ltd for travel costs of up to EUR 2,400 per quarter during the eighteen-month study period."
+  },
+  {
+   "id": "t19",
+   "lang": "en",
+   "text": "Bramblecote Facilities Management shall clean the premises at 300 Copperleaf Boulevard, Unit 5, Ashvale, TX 75999 three times per week for a fixed fee of $1,850 per month."
+  },
+  {
+   "id": "t20",
+   "lang": "en",
+   "text": "Dated this 28th day of August, 2025. Witness: Odalys Fenwick-Mbeki. Company: Starling Orchard Foods plc."
+  },
+  {
+   "id": "t21",
+   "lang": "en",
+   "text": "The Contractor shall complete Phase 1 within sixty (60) calendar days after receiving the notice to proceed, and Phase 2 within a further four months."
+  },
+  {
+   "id": "t22",
+   "lang": "en",
+   "text": "Thornbury & Quell Associates is appointed as exclusive distributor in the Territory for a term of two years beginning on 1 November 2025, with minimum annual purchases of AUD 400,000."
+  },
+  {
+   "id": "t23",
+   "lang": "en",
+   "text": "Payment of the final instalment of NZD 22,750 is due within 45 days of acceptance of the Deliverables by Lumenreach Education Trust."
+  },
+  {
+   "id": "t24",
+   "lang": "en",
+   "text": "The Seller, Ravensgill Antiques Ltd, warrants that title to the Goods will pass to the Buyer, Perpetua Ines Calloway, on 10 January 2026."
+  },
+  {
+   "id": "t25",
+   "lang": "en",
+   "text": "This Amendment No. 2, effective 1 May 2025, extends the Term until 30 April 2027 and increases the Fees to $210,000 per year."
+  },
+  {
+   "id": "t26",
+   "lang": "en",
+   "text": "The Landlord, Elderfield Estates LLC, of 18 Marigold Terrace, Westbury Cross, VT 05999, and the Tenant, Fennimore Graphics Studio, agree as follows."
+  },
+  {
+   "id": "t27",
+   "lang": "en",
+   "text": "Any dispute shall first be referred to mediation for a period of not less than twenty-one (21) days before either party commences proceedings."
+  },
+  {
+   "id": "t28",
+   "lang": "en",
+   "text": "Grantor: Halcyon Ridge Farms Cooperative. Grantee: Silverbirch Water Authority. Consideration: ten thousand dollars ($10,000). Easement duration: perpetual."
+  },
+  {
+   "id": "t29",
+   "lang": "en",
+   "text": "The Board of Directors of Nimbusgate Robotics Corp. approved a bonus of $15,000 for Aurelio Szymanski-Reyes on 17 March 2025."
+  },
+  {
+   "id": "t30",
+   "lang": "en",
+   "text": "The Services Fee for the Renewal Term shall be one hundred twenty thousand euros (EUR 120,000), payable in two equal instalments on 1 January and 1 July."
+  },
+  {
+   "id": "t31",
+   "lang": "en",
+   "text": "Contact: Lysandra Quint, lysandra.quint@example.com, +1 555-0142. Billing address: 12 Juniper Hollow Road, Bexley Ford, CA 90999."
+  },
+  {
+   "id": "t32",
+   "lang": "en",
+   "text": "Please call Ferris Abernathy-Cole on 07700 900461 or email ferris.ac@example.org before 5 pm on Friday."
+  },
+  {
+   "id": "t33",
+   "lang": "en",
+   "text": "Payee: Wilhelmina Thorsby. IBAN: GB82 WEST 1234 5698 7654 32. Reference: INV-20417."
+  },
+  {
+   "id": "t34",
+   "lang": "en",
+   "text": "Cardholder: Desmond Arkwright. Card number: 4111 1111 1111 1111. Expiry: 08/29. Billing ZIP: 30999."
+  },
+  {
+   "id": "t35",
+   "lang": "en",
+   "text": "Patient name: Rosalind Achterberg. Date of birth: 14 July 1982. SSN: 987-65-4325. Phone: (555) 010-7788."
+  },
+  {
+   "id": "t36",
+   "lang": "en",
+   "text": "Login from IP address 192.0.2.44 by user caspian.hollis@example.net at 09:14 UTC was recorded by the security system."
+  },
+  {
+   "id": "t37",
+   "lang": "en",
+   "text": "Applicant: Benedikt Oyelaran. Passport number: X40921577. Nationality: Fictionland. Address: Flat 3, 9 Sorrel Gardens, Lowmarsh LM2 0ZZ."
+  },
+  {
+   "id": "t38",
+   "lang": "en",
+   "text": "Emergency contact for Isaura Penhaligon is her brother Matthias Penhaligon, reachable at +1 555-0177 or matthias.p@example.com."
+  },
+  {
+   "id": "t39",
+   "lang": "en",
+   "text": "Account holder Thaddeus Grenville-Okafor, account number 00012345678, sort code 00-99-01, opened at the Brackenford branch on 2 March 2019."
+  },
+  {
+   "id": "t40",
+   "lang": "en",
+   "text": "Ship to: Nerissa Vollmer, 77 Bellwether Close, Apt 4B, Dunmore Vale, NY 10999. Order placed on 3 October 2025 for $149.90."
+  },
+  {
+   "id": "t41",
+   "lang": "fr",
+   "text": "Le présent contrat est conclu le 12 mars 2025 entre la société Ombrelune Conseil SARL, sise 14 rue des Glycines, 75999 Paris, et Mme Héloïse Dumontier, pour une durée de deux ans."
+  },
+  {
+   "id": "t42",
+   "lang": "de",
+   "text": "Dieser Vertrag wird am 1. Juli 2025 zwischen der Kranichfeld Logistik GmbH und Herrn Jörg Wendelstein geschlossen. Die monatliche Vergütung beträgt 4.200 Euro."
+  },
+  {
+   "id": "t43",
+   "lang": "es",
+   "text": "El presente contrato se celebra el 5 de mayo de 2025 entre Alborada Servicios Digitales S.L. y la señora Inmaculada Ferreiro Quintás, por un importe de 18.000 euros."
+  },
+  {
+   "id": "t44",
+   "lang": "it",
+   "text": "Il presente accordo, efficace dal 1° settembre 2025, è stipulato tra Ventofresco Tecnologie S.r.l. e il sig. Leopoldo Castellani per una durata di tre anni."
+  },
+  {
+   "id": "t45",
+   "lang": "pt",
+   "text": "Este contrato é celebrado em 20 de junho de 2025 entre a Maresia Comércio Ltda. e o Sr. Joaquim Albuquerque Penha, pelo valor de R$ 35.000,00."
+  },
+  {
+   "id": "t46",
+   "lang": "nl",
+   "text": "Deze overeenkomst gaat in op 1 januari 2026 en wordt gesloten tussen Duinroos Advies B.V. en mevrouw Femke Uitenbogaard voor een periode van twaalf maanden."
+  },
+  {
+   "id": "t47",
+   "lang": "pl",
+   "text": "Umowa zostaje zawarta w dniu 15 kwietnia 2025 r. pomiędzy Zielony Dąb Sp. z o.o. a panem Grzegorzem Wierzbołowiczem na okres 24 miesięcy."
+  },
+  {
+   "id": "t48",
+   "lang": "sv",
+   "text": "Detta avtal träder i kraft den 1 augusti 2025 mellan Fjällsippa Konsult AB och Ingrid Söderlind-Haaland. Arvodet uppgår till 60 000 kronor."
+  },
+  {
+   "id": "t49",
+   "lang": "ar",
+   "text": "أبرم هذا العقد في الأول من مارس 2025 بين شركة النخلة الزرقاء للخدمات والسيد سامر الحدادين لمدة سنتين بمبلغ 50,000 دولار."
+  },
+  {
+   "id": "t50",
+   "lang": "hi",
+   "text": "यह अनुबंध 1 अप्रैल 2025 को नीलकमल सेवाएँ प्राइवेट लिमिटेड और श्री अरविंद तलवारकर के बीच दो वर्ष की अवधि के लिए किया गया है।"
+  }
+ ]
+}
