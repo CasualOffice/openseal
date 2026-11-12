@@ -14,7 +14,7 @@ import { statusLine, auditTable, copyEnvelope, saveAsTemplate, deleteEnvelope, d
 
 const SIGNING = new Set(["signer", "in_person_signer", "approver"]);
 /// Events a recipient makes on opening: the first of them is when they opened it.
-const OPENING = ["recipient_opened", "recipient_authenticated", "recipient_consented", "document_viewed"];
+const OPENING = ["recipient.delivered", "recipient.auth_passed", "recipient.consented", "recipient.viewed_document"];
 
 export function mount(view, ctx, [rawId]) {
   const id = decodeURIComponent(rawId);
@@ -114,17 +114,18 @@ export function mount(view, ctx, [rawId]) {
     }
     const ol = h("ol", { class: "os-timeline" });
     for (const r of recs) {
-      const events = (audit.items || []).filter((a) => (a.event?.recipient_id || a.event?.actor?.id) === r.id);
+      // The server's events name their recipient in `data.recipient_id` (WEB-12).
+      const events = (audit.items || []).filter((a) => (a.event?.data?.recipient_id || (a.event?.actor?.kind === "recipient" ? a.event.actor.id : null)) === r.id);
       const at = (type) => events.find((x) => x.type === type)?.at;
       const opened = OPENING.map(at).filter(Boolean).sort()[0] || null;
-      const sent = e.sent_at && r.status !== "created" ? (events.find((x) => x.type === "recipient_sent")?.at || e.sent_at) : null;
+      const sent = e.sent_at && r.status !== "created" ? (events.find((x) => x.type === "invitation.sent")?.at || e.sent_at) : null;
       // A copy (CC) is sent once everyone has signed: it has no opened or signed step (E-04).
       const steps = r.type === "cc"
         ? [[r.status === "completed" ? t("timeline.delivered") : t("timeline.cc-waiting"), r.status === "completed" ? (r.completed_at || e.ended_at) : null]]
         : [
           [t("timeline.sent"), sent],
           [t("timeline.opened"), opened],
-          [r.status === "declined" ? t("timeline.declined") : t("timeline.completed"), r.completed_at || at("recipient_completed") || at("recipient_declined")],
+          [r.status === "declined" ? t("timeline.declined") : t("timeline.completed"), r.completed_at || at("recipient.completed") || at("recipient.declined")],
         ];
       const canResend = ACTIVE.has(e.status) && SIGNING.has(r.type) && (r.status === "sent" || r.status === "delivered");
       const li = h("li", { class: `os-timeline__item is-${r.status}`, attrs: { "data-testid": "recipient-row" } },
