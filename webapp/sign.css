@@ -285,3 +285,73 @@
 @media (max-width: 47.999em) {
   .os-sfield > .os-sfield__select { position: relative; z-index: 1; font-size: 1rem; }
 }
+
+/* ---- UX-06: the signer ceremony package of the UX audit ------------------------------ */
+/* Who sent it and by when, on the consent card and in the field list. */
+.os-sign__sender, .os-sign__signby { display: flex; align-items: flex-start; gap: var(--os-s2); margin: 0; overflow-wrap: anywhere; }
+.os-sign__sender { font-weight: 600; }
+.os-sign__signby { color: var(--os-muted); font-size: var(--os-fs-14); }
+.os-sign__sender > svg, .os-sign__signby > svg { flex: none; margin-top: 0.1875rem; color: var(--os-muted); }
+.os-sign__from { font-weight: 600; margin-bottom: var(--os-s1); overflow-wrap: anywhere; }
+/* Quiet text buttons on the card: the disclosure and the other actions. */
+.os-sign__card .os-btn.os-sign__linkbtn { width: auto; justify-self: start; margin-top: 0; padding-left: var(--os-s1); padding-right: var(--os-s1); color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.1875rem; }
+.os-sign__card .os-btn.os-sign__linkbtn:last-child { justify-self: center; }
+.os-sign__disclosure-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: var(--os-s2); }
+/* A menu or a choice floating on a field (signed-field menu, radio popover). */
+.os-sign__floating { position: fixed; z-index: calc(var(--os-z-dialog) + 5); min-width: 12rem; }
+.os-sign__choices { display: grid; padding: var(--os-s1) var(--os-s2); }
+.os-sign__choices .os-radio { padding: 0 var(--os-s1); border-radius: var(--os-radius-sm); }
+.os-sign__choices .os-radio:hover { background: var(--os-surface); }
+/* Required is a neutral strong outline and a red asterisk; a red outline means an
+ * error only; optional is a lighter dashed outline. */
+.os-sfield.is-required { box-shadow: 0 0 0 0.125rem var(--os-text); }
+.os-sfield.is-required:not(.is-done):not(.is-auto)::after { content: "*"; position: absolute; top: -0.625rem; right: -0.5rem; z-index: 3; min-width: 1rem; height: 1rem; border-radius: 50%; background: var(--os-bg); color: var(--os-danger); font-size: 0.875rem; font-weight: 700; line-height: 1.15; text-align: center; pointer-events: none; }
+.os-sfield:not(.is-required):not(.is-auto) { box-shadow: none; outline: 0.125rem dashed var(--os-border-strong); outline-offset: 0; }
+.os-sfield.is-done { box-shadow: 0 0 0 0.125rem var(--os-success); outline: 0; }
+.os-sfield:has([aria-invalid="true"]) { box-shadow: 0 0 0 0.125rem var(--os-danger); outline: 0; }
+.os-fieldlist__item > svg { color: var(--os-muted); }
+/* The label tab says what the field is; the placeholder does not repeat it then. */
+.os-sfield:is(:hover, :focus-within, .is-next) .os-sfield__input::placeholder { color: transparent; }
+/* Finish: full contrast all along (it acts: it goes to the next required field). */
+#bar-finish[aria-disabled="true"], #guide-finish[aria-disabled="true"] { opacity: 1; cursor: pointer; }
+/* Review: the adopted mark in the values list; short values do not wrap needlessly. */
+.os-review { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
+.os-review__mark { display: block; max-width: 100%; max-height: 2.75rem; background: #fff; border-radius: var(--os-radius-sm); }
+@media (min-width: 48em) {
+  /* One heading: the panel's h1, not its head as well. */
+  .os-dock--static .os-dock__head { display: none; }
+}
+/* Review on phones: the document full height, a bottom bar with the values and Finish. */
+@media (max-width: 47.999em) {
+  .os-signframe--review.is-phone { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .os-review__actions--bar.os-stack { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--os-s2); }
+  .os-review__actions--bar .os-btn { padding: 0 var(--os-s3); }
+  /* Compact fields at fit width: the tab only for the next field or the one in use,
+   * the text sized to the field (container units) until it is in use. */
+  .os-sfield:not(.is-next):not(:focus-within) > .os-sfield__tip { display: none; }
+  .os-sfield { container-type: size; }
+  .os-sfield:not(:focus-within) > :is(.os-sfield__btn, .os-sfield__input, .os-sfield__select, .os-sfield__auto) { font-size: clamp(0.4375rem, 62cqh, 1rem); min-height: 0; }
+  .os-sfield:not(:focus-within) > .os-sfield__btn > svg { width: clamp(0.5rem, 70cqh, 1rem); height: auto; }
+}
+.os-done__actions { gap: var(--os-s2); flex-wrap: wrap; }
+/* The adopt panel: wide enough to draw in (30 rem or more), the pads 3:1. */
+.os-adopt__padblock + .os-label { margin-top: var(--os-s4); }
+.os-adopt__padtools { flex-wrap: nowrap; }
+.os-adopt__type--both .os-adopt__font { display: flex; align-items: center; gap: var(--os-s4); }
+.os-adopt__type--both .os-adopt__sample--signature { flex: 1; min-width: 0; }
+.os-adopt__sample--initials { flex: none; max-width: 30%; }
+.os-adopt__drop { display: grid; justify-items: center; align-content: center; gap: var(--os-s1); padding: var(--os-s6) var(--os-s4); border: 0.125rem dashed var(--os-border-strong); border-radius: var(--os-radius-lg); background: var(--os-surface); text-align: center; cursor: pointer; aspect-ratio: 3 / 1; }
+.os-adopt__drop:hover, .os-adopt__drop.is-dropping { border-color: var(--os-accent-fill); background: var(--os-accent-soft); }
+.os-adopt__drop > svg { color: var(--os-muted); }
+.os-adopt__drop-title { font-weight: 600; }
+.os-adopt__drop.has-image { aspect-ratio: auto; }
+.os-adopt__drop .os-adopt__upload-preview { margin-top: var(--os-s2); max-height: 8rem; }
+#adopt-file:focus-visible + .os-adopt__drop { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
+#adopt-err:empty { display: none; }
+/* An inline link in running text (the done page's Verify page). */
+.os-sign__inlink { color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.1875rem; }
+/* A side panel (adopt, help, history) covers the field list on desktop; what it covers
+ * is hidden, so nothing behind it can be reached or read through it. */
+@media (min-width: 48em) {
+  .has-side-sheet .os-signframe > .os-dock--right { visibility: hidden; }
+}

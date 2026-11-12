@@ -12,7 +12,11 @@ import { MOCK } from "../mock.js";
 
 test.skip(REAL, "uses the mock's seeded envelopes, sender and disclosure");
 
+/// Wait until nothing on the page is animating (a sheet sliding in, a menu fading in).
+const settled = (page) => expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running" && a.effect?.getTiming().iterations !== Infinity).length)).toBe(0);
+
 const shot = async (page, name) => {
+  await settled(page);
   fs.mkdirSync(path.join(SCREENS, "ux06"), { recursive: true });
   await page.screenshot({ path: path.join(SCREENS, "ux06", `${name}.png`) });
 };
@@ -192,7 +196,9 @@ test("Finish reads as a secondary action until ready; required is not error-red"
   await expect(fin).toHaveClass(/os-btn--secondary/);
   expect(await fin.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   const req = page.locator(".os-sfield.is-required").first();
-  const err = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--os-danger").trim());
+  // The danger colour as the browser writes it (rgb), against the required outline.
+  const err = await page.evaluate(() => { const s = document.createElement("span"); s.style.color = "var(--os-danger)"; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; });
+  expect(err).toMatch(/^rgb/);
   expect(await req.evaluate((el) => getComputedStyle(el).boxShadow)).not.toContain(err);
   await page.getByRole("textbox", { name: /Job title/ }).fill("Engineer");
   await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
@@ -235,6 +241,8 @@ test.describe("phone", () => {
     await text.press("Tab");
     await page.getByRole("button", { name: /^Sign: Signature/ }).click();
     await adoptTyped(page);
+    // Nothing is left to do, so there is no dead Next in the bottom bar.
+    await expect(page.locator("#guide-next")).toBeHidden();
     await page.locator("#guide-finish").click();
     await expect(page.getByRole("heading", { name: "Review and finish" })).toBeAttached();
     const pages = await page.getByTestId("review-doc").boundingBox();
@@ -244,8 +252,11 @@ test.describe("phone", () => {
     expect(fin.y + fin.height).toBeLessThanOrEqual(844);
     await shot(page, "review-390");
     // The values are one tap away.
-    await page.getByRole("button", { name: /Review values/ }).click();
-    await expect(page.getByTestId("review-values")).toBeVisible();
+    await page.getByTestId("review-values-btn").click();
+    await expect(page.getByTestId("review-values")).toBeInViewport();
+    await expect(page.getByTestId("panel-review")).not.toContainText("null");
+    await settled(page);
+    expect((await page.getByTestId("panel-review").boundingBox()).y).toBeLessThan(844 * 0.7);
     await shot(page, "review-values-390");
   });
 

@@ -41,12 +41,17 @@ icons (MIT), no vendor artwork or wording.
       certificate (after completion) · Help · Session information · Language
 ```
 
+As built (UX-06): Other actions has Download, Print, Assign to someone else (when allowed), Change signature (once
+one is adopted), View history, Help, Finish later and Decline. **Language** waits for a second locale (`FG-125`) and
+**Session information** and **View certificate** for their rows (`UX-06` returned rows); neither is in the menu yet.
+
 - **Start / Next** flag in the margin moves to the next required field; a progress count ("3 of 7 required").
 - **Required** fields have a solid outline and an accessible name ending "required"; optional fields dashed.
 - **Adopt signature** dialog: name and initials prefilled and editable; tabs **Style** (typed in one of 4 bundled
   script fonts), **Draw** (pointer and touch, with clear and undo), **Upload** (PNG or JPEG, background removed
   client-side, then re-validated server-side); one "Adopt and sign" button; the adoption applies to later fields
-  until changed.
+  until changed. As built (UX-06): name and initials adopted together, **2** bundled script fonts so far (Great
+  Vibes, Allura; the other two are a returned row), a signed field offers Remove and Change.
 - **Review** step (WYSIWYS, [02](02-HLD.md) §6): the flattened pages, with the values listed beside them; "Finish"
   is a separate, explicit action with the legal wording the account configures.
 - **Mobile**: full-width pages with pinch zoom; fields enlarge when focused; the adopt dialog is full-screen; the
@@ -529,3 +534,35 @@ Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`
 Further findings for the main session: the staff audit view (`envactions.js` `eventLabel`, `envelope.js`'s recipient
 timeline) still reads the mock's underscore event names and `event.recipient_id`, while the server answers dotted types
 with `event.data.recipient_id`, so on a real server the audit table shows raw types and the timeline misses "opened".
+
+## As built (UX-06, signer ceremony, 2026-11-12)
+
+The signer package of the UX-01 audit (the bar: a DocuSign or SignNow signer switching misses nothing). Observed in
+mock mode at 1024, 1280 and 1440 wide and 390×844. Spec: `webapp/e2e/sign-layout.spec.mjs` (its 12 tests seen red:
+the three fit-width tests on `e851426`, 98 px of horizontal overflow at each width; the other nine against the
+signer files before this change); `guided-ceremony.spec.mjs` follows the radio popover and the signature image in
+review.
+
+| # | Problem | Fix | Status |
+| --- | --- | --- | --- |
+| 1 | Fit width did not fit: the page ran about 98 px under the field list and the view scrolled sideways (the Start flag's 6.5 rem room was in the pages' padding, never in the fit) | `docView` takes `padLeft` as a function read at each layout; the signer answers the pages' padding beyond the usual margin; review, which has no flag, has no room | Fixed |
+| 2 | The sender was never named | The consent card says "<Name> (<email>) sent you documents to review and sign", on whose behalf when the account differs, and "Sign by <date>"; the field list shows "From <name> (<email>)" above the message and the deadline; Help names the sender to ask | Fixed in the UI; the view's `sender` and `envelope.expires_at` are the mock's until `NOT_ON_SERVER.disclosure` (`UXW-34`) lands; without them nothing is shown |
+| 3 | A placed signature could not be removed or changed | A signed field opens a menu: Remove (`DELETE /s/{token}/fields/{f}`, a new `recipient.field_cleared` event; offered only where the server has it, `NOT_ON_SERVER.clearField`, `UXW-35`) and Change signature (adopt anew, then every field signed with that mark gets the new one, each a new field event); More has Change signature once one is adopted | Fixed in the UI; Remove mock only until `UXW-35` |
+| 4 | Initials needed a second adopt step | The dialog asks for full name and initials together, previews both in each style, draws both on two pads, and adopts both (two `POST /s/{token}/adopt`); an upload is the mark being placed only | Fixed |
+| 5 | Adopt panel inherited the 18 rem field list (85 px draw pad) | A side panel of 34 rem (30 to 48, resizable), pads 3:1; the field list it covers is hidden while it is open | Fixed |
+| 6 | Adopt errors only as toasts; upload a bare file input | One `role="alert"` line under the controls; a drop zone (drop or choose, guidance, the cleaned image shown in it) | Fixed |
+| 7 | Only 2 typed styles (this page promises 4) | Not done: two more OFL script faces need a provenance-checked download (and the flattener's copy, docs/30) | Returned row |
+| 8 | Arrival landed mid-page | First arrival opens at the top of page 1 with the Start flag beside the first required field; coming back still goes to the next field | Fixed |
+| 9 | Phone fit width: label tabs and fixed-size text overflowed small fields | Below 48em only the next field (or the one in use) shows its tab, and field text is sized in container units of the field until it is in use | Partly: DocuSign-style compact markers that expand on Next are a returned row |
+| 10 | Radio groups needed a panel and Save | A popover on the field: a click, Space or Enter picks and saves; arrow keys move. A dropdown that takes a typed value keeps its panel | Fixed (radios drawn at their own placements need option placements, docs/22: returned row) |
+| 11 | Phone review put Finish above the document | The pages full height; a bottom bar "Review values (n)" (the values as a sheet) and Finish; desktop shows one heading (the panel head is gone) and the adopted mark in the values list | Fixed |
+| 12 | Required looked like an error | Required: a strong neutral outline and a red asterisk; optional: a dashed neutral outline; red outlines only for an invalid value; the in-field placeholder hides while the tab shows; the field list's icons are neutral | Fixed |
+| 13 | Finish looked disabled but acted | Full contrast: an outlined secondary until every required field is done, then the filled primary; `aria-disabled` and its reason kept | Fixed |
+| 14 | Consent had no full disclosure and no visible alternative | "Read the full disclosure" opens the account's text by version (`GET /s/{token}/disclosure`, offered only where the server has it); "Other actions" opens More | Fixed in the UI; the text is the mock's until `UXW-34` |
+| 15 | History printed raw types, times without a zone | Every audit type the server can send has words; an unknown type is left out; times carry their zone | Fixed |
+| 16 | Finish later left stale progress | The bar's progress is cleared on every closing screen; "This envelope expires on <date>" when it does | Fixed |
+| 17 | Done page: Verify named not linked, no Print, brand copy | A link to `/verify.html`, a Print button, "The completed documents are sealed…" | Fixed |
+| 18 | Print had an external-link icon and opened a tab unannounced | A printer icon and "Print (opens the PDF)" | Fixed |
+
+Also: `playwright.config.mjs` runs `sign-layout.spec.mjs` with the signer specs; `docview.js` (shared) gained the
+`padLeft` function form, additive.

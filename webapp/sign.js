@@ -7,11 +7,11 @@
 // The link token is a secret: it is never logged or put in a message; the server
 // binds it to this browser with an HttpOnly cookie on `POST /s/{token}/session`.
 
-import { h, clear, skipTo, download, fmtDate } from "./dom.js";
+import { h, clear, skipTo, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, errorMessage, locationFrom, ApiError } from "./api.js";
-import { button, busy, emptyState, toast, toastError, openDialog, noServerState, dockPanel, openPanel, closePanel } from "./ui/index.js";
+import { button, busy, emptyState, toast, toastError, openDialog, noServerState, dockPanel, openPanel, closePanel, placeMenu } from "./ui/index.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
 import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN } from "./signfields.js";
@@ -69,6 +69,8 @@ function message({ illus, title, text, action = null, testId }) {
   guide.hidden = true;
   moreBtn.hidden = true;
   setTools(false);
+  // UX-06: no progress from the signing view left over a closing screen.
+  document.getElementById("bar-progress").textContent = "";
   screen(emptyState({ illus, title, text, action, testId }));
 }
 
@@ -227,22 +229,87 @@ function geolocate() {
   });
 }
 
+/// Who sent this, as the signer can check it (UX-06): "<Name> (<email>) sent you
+/// documents to review and sign", and the account on whose behalf when it differs.
+/// From the view's `sender` (docs/40 §6; the mock's until `NOT_ON_SERVER.disclosure`
+/// lands on the server): nothing is shown without it, never a guess.
+function senderLine() {
+  const s = view?.sender;
+  if (!s?.name && !s?.email) return null;
+  const who = s.name && s.email ? t("sign.sender", { name: s.name, email: s.email }) : t("sign.sender-one", { who: s.name || s.email });
+  const org = s.organisation && s.organisation !== s.name ? t("sign.sender-org", { org: s.organisation }) : "";
+  return h("p", { class: "os-sign__sender", attrs: { "data-testid": "sign-sender" } }, icon("user", { size: 16 }), h("span", { text: org ? `${who} ${org}` : who }));
+}
+
+/// "Sign by 15 Nov 2026" when the envelope expires (`envelope.expires_at`).
+function signByLine() {
+  const d = dateOnly(view?.envelope?.expires_at);
+  return d ? h("p", { class: "os-sign__signby", attrs: { "data-testid": "sign-by" } }, icon("clock", { size: 16 }), h("span", { text: t("sign.sign-by", { date: d }) })) : null;
+}
+
+/// A date without the time ("15 Nov 2026"), or "" for none.
+function dateOnly(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/// A date and time with its zone ("12 Nov 2026, 19:35 CET"): counterparties read it
+/// in other zones (UX-06).
+function dateTimeZone(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+}
+
+/// The full disclosure the signer consents to (UX-06; `GET /s/{token}/disclosure`,
+/// `NOT_ON_SERVER.disclosure`), in a side panel: the account's text as it is, with
+/// its version.
+function disclosure() {
+  openPanel({
+    id: "disclosure",
+    title: t("sign.consent.disclosure-title"),
+    width: 34,
+    build(body) {
+      const text = h("div", { class: "os-sign__disclosure", attrs: { "aria-busy": "true", "data-testid": "disclosure-text" } });
+      body.append(text);
+      api.ceremony.disclosure(token).then((r) => {
+        text.removeAttribute("aria-busy");
+        text.append(h("p", { class: "os-muted os-small", text: t("sign.consent.version", { v: r?.version || view.consent_required?.version || "" }) }),
+          h("p", { class: "os-sign__disclosure-text", text: String(r?.text || "") }));
+      }).catch((err) => {
+        text.removeAttribute("aria-busy");
+        text.append(h("p", { class: "os-field-error", attrs: { role: "alert" }, text: errorMessage(err) }));
+      });
+    },
+    actions: [{ label: t("action.close"), value: null }],
+  });
+}
+
 function consent() {
   guide.hidden = true;
   const box = h("input", { id: "consent-box", type: "checkbox", attrs: { "aria-describedby": "consent-err" } });
   const err = h("p", { id: "consent-err", class: "os-field-error", attrs: { role: "alert" } });
   const go = button(t("sign.consent.continue"), { variant: "primary", size: "lg", type: "submit" });
+  // The full text when this server serves it; else the summary and version only.
+  const read = api.available("disclosure") ? button(t("sign.consent.read"), { icon: "file-text", variant: "ghost", onClick: disclosure, attrs: { "data-testid": "consent-read" } }) : null;
+  read?.classList.add("os-sign__linkbtn");
+  // A visible alternative to Continue: the More menu (Decline, Finish later, Help).
+  const other = button(t("sign.consent.other"), { variant: "ghost", onClick: (e) => { e.stopPropagation(); moreBtn.click(); }, attrs: { "data-testid": "consent-other" } });
+  other.classList.add("os-sign__linkbtn");
   const form = h("form", { class: "os-sign__card", attrs: { novalidate: true } },
     icon("shield-check", { size: 24 }),
     h("h1", { class: "os-sign__title", text: t("sign.consent.title") }),
+    senderLine(), signByLine(),
     h("p", { class: "os-muted", text: t("sign.consent.text") }),
     h("ul", { class: "os-sign__list" },
       h("li", { text: t("sign.consent.point1") }),
       h("li", { text: t("sign.consent.point2") }),
       h("li", { text: t("sign.consent.point3") })),
     h("p", { class: "os-muted os-small", text: t("sign.consent.version", { v: view.consent_required.version }) }),
+    read,
     h("label", { class: "os-check os-check--lg", attrs: { for: "consent-box" } }, box, h("span", { text: t("sign.consent.agree") })),
-    err, go);
+    err, go, other);
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!box.checked) { err.textContent = t("sign.consent.need"); box.focus(); return; }
@@ -346,28 +413,18 @@ async function documents() {
   enlarge();
   zc.sync();
   updateGuide();
-  // Arrival (G-S1): the view goes to the first required field, flagged, without taking
-  // focus (no keyboard pops up on a phone). Coming back (A36): to the next required
-  // field, focused, not the top of page 1.
+  // Arrival (UX-06, after DocuSign): the top of page 1, where the document begins,
+  // with the Start flag beside the first required field; Start goes there. Coming
+  // back (A36): to the next required field, focused, not the top of page 1.
   const first = nextField();
-  if (first) setTimeout(() => (values.size ? focusField(first.id, false) : revealField(first.id)), 50);
+  if (first && values.size) setTimeout(() => focusField(first.id, false), 50);
+  else requestAnimationFrame(placeTag);
 }
 
 /// The px the pages' left padding adds to the usual margin: the Start flag's room.
 function tagRoom(view_) {
   const pad = parseFloat(getComputedStyle(view_.inner).paddingLeft) || 0;
   return Math.max(0, pad - remPx(1.5));
-}
-
-/// Scroll field `id` into the middle of the view and flag it, leaving focus and zoom.
-function revealField(id) {
-  const f = myFields().find((x) => x.id === id);
-  const el = main.querySelector(`[data-field-id="${CSS.escape(id)}"]`);
-  if (!f || !el || !dv) return;
-  dv.scrollToBox(dv.pages.findIndex((p) => p.key === f.document_id && p.n === f.p.page), f.p);
-  el.classList.add("is-flagged");
-  setTimeout(() => el.classList.remove("is-flagged"), 1200);
-  requestAnimationFrame(placeTag);
 }
 
 function myFields() {
@@ -420,9 +477,16 @@ function renderFieldList() {
   const fields = myFields().filter(fills);
   const next = nextField();
   clear(listBody);
-  if (view.envelope?.message) {
+  // UX-06: who sent it, above what they wrote, and by when.
+  const s = view.sender;
+  const from = s?.name || s?.email ? h("p", { class: "os-small os-sign__from", attrs: { "data-testid": "fieldlist-sender" }, text: s.name && s.email ? t("sign.from", { name: s.name, email: s.email }) : t("sign.from-one", { who: s.name || s.email }) }) : null;
+  const by = dateOnly(view.envelope?.expires_at);
+  if (view.envelope?.message || from || by) {
     listBody.append(h("div", { class: "os-sign__message os-sign__message--panel" },
-      h("p", { class: "os-small os-muted", text: t("sign.message") }), h("p", { text: view.envelope.message })));
+      from,
+      view.envelope?.message ? h("p", { class: "os-small os-muted", text: t("sign.message") }) : null,
+      view.envelope?.message ? h("p", { text: view.envelope.message }) : null,
+      by ? h("p", { class: "os-small os-muted", text: t("sign.sign-by", { date: by }) }) : null));
   }
   listBody.append(h("p", { class: "os-muted os-small", text: t("sign.fields.text") }));
   const ol = h("ol", { class: "os-fieldlist", attrs: { "data-testid": "field-list" } });
@@ -430,7 +494,7 @@ function renderFieldList() {
     const done = isDone(f) && values.has(f.id);
     const state = done ? t("sign.fields.done") : f.required ? t("sign.required") : t("sign.fields.optional");
     const b = h("button", { type: "button", class: `os-fieldlist__item${done ? " is-done" : ""}${next?.id === f.id ? " is-next" : ""}` },
-      icon(done ? "circle-check" : f.required ? "circle-alert" : "pen-line", { size: 20 }),
+      icon(done ? "circle-check" : f.required ? "circle-alert" : "circle-dashed", { size: 20 }),
       h("span", { class: "os-fieldlist__main" }, h("strong", { class: "os-trunc", title: f.label || t(`ftype.${f.type}`), text: f.label || t(`ftype.${f.type}`) }), h("span", { class: "os-muted os-small", text: t("sign.fields.page", { n: f.p.page, type: t(`ftype.${f.type}`) }) })),
       h("span", { class: "os-fieldlist__state", text: state }));
     b.addEventListener("click", () => { listDock?.closeSheet(); focusField(f.id); });
@@ -553,15 +617,19 @@ function fieldNode(f, pg) {
       // The accessible name starts with the words shown (SC 2.5.3, label in name).
       const shown = v?.signature ? t("sign.signed") : t(f.type === "signature" ? "sign.sign-here" : "sign.initial-here");
       b.setAttribute("aria-label", `${shown}: ${label}${req}`);
+      if (v?.signature) b.setAttribute("aria-haspopup", "menu"); else b.removeAttribute("aria-haspopup");
       const a = Object.values(adoptions).find((x) => x.id === v?.signature);
       if (a) b.append(h("img", { src: a.dataUrl, alt: t("sign.signed-alt", { what: label }) }));
       else if (v?.signature) b.append(icon("circle-check", { size: 16 }), h("span", { text: t("sign.signed") }));
       else b.append(icon(f.type === "signature" ? "signature" : "pen-line", { size: 16 }), h("span", { text: t(f.type === "signature" ? "sign.sign-here" : "sign.initial-here") }));
       box.classList.toggle("is-done", isDone(f));
     };
-    b.addEventListener("click", () => signField(f, paint));
+    // UX-06: a signed field offers Remove and Change (DocuSign: a placed signature can
+    // be cleared or changed); an empty one signs with the adopted mark.
+    b.addEventListener("click", () => (values.get(f.id)?.signature ? signedMenu(f, b) : signField(f)));
     hit.addEventListener("click", () => b.click());
     box.append(b);
+    paints.set(f.id, paint);
     paint();
   } else if (TYPED.has(f.type)) {
     const id = `sf-${f.id}`;
@@ -633,7 +701,9 @@ function fieldNode(f, pg) {
       b.replaceChildren(h("span", { class: "os-trunc", text: c || t("sign.choose") }), icon("chevron-down", { size: 16 }));
       box.classList.toggle("is-done", isDone(f));
     };
-    b.addEventListener("click", () => choiceSheet(f, label, paint));
+    // UX-06: a radio group's options in a popover on the field, saved on selection;
+    // a dropdown that also takes a typed value keeps its panel (it needs a Save).
+    b.addEventListener("click", () => (f.type === "radio_group" ? choicePopover(f, label, b, paint) : choiceSheet(f, label, paint)));
     hit.addEventListener("click", () => b.click());
     box.append(b);
     paint();
@@ -782,29 +852,182 @@ async function attachFile(f, input, btn, paint) {
   updateGuide();
 }
 
-async function signField(f, paint) {
-  const mark = f.type === "initials" ? "initials" : "signature";
-  let a = adoptions[mark];
-  if (!a) {
-    const res = await adoptDialog({ mark, name: view.recipient?.name || "", host: listDock?.isCollapsed() ? null : listDock?.el });
-    if (!res) return;
-    try {
-      const r = await api.ceremony.adopt(token, mark, res.method, res.base64, location_);
-      if (!r?.adoption_id) throw new ApiError({ status: 0, code: "CS-API-0010", title: t("sign.no-adoption-id") });
-      a = adoptions[mark] = { id: r.adoption_id, dataUrl: res.dataUrl };
-    } catch (err) { toastError(err); return; }
-  }
+/// The paint function of each signature or initials field on screen, by field id.
+const paints = new Map();
+
+/// The mark a field takes: "initials" or "signature".
+const markOf = (f) => (f.type === "initials" ? "initials" : "signature");
+
+/// Adopt marks (UX-06: name and initials together, as DocuSign's adopt dialog). `want`:
+/// the mark the signer is placing; the other is adopted in the same step when it has
+/// not been yet (two `POST /s/{token}/adopt`, each its own audit event). `change`: a
+/// new mark for `want` only. Answers the adoption of `want`, or null.
+async function adopt(want, { change = false } = {}) {
+  const other = want === "signature" ? "initials" : "signature";
+  const res = await adoptDialog({ mark: want, name: view.recipient?.name || "", both: !change && !adoptions[other] });
+  if (!res) return null;
   try {
-    const v = { signature: a.id };
-    await api.ceremony.fill(token, f.id, v);
-    values.set(f.id, v);
-    paint();
+    for (const [mark, m] of Object.entries(res.marks)) {
+      if (!m) continue;
+      const r = await api.ceremony.adopt(token, mark, m.method, m.base64, location_);
+      if (!r?.adoption_id) throw new ApiError({ status: 0, code: "CS-API-0010", title: t("sign.no-adoption-id") });
+      adoptions[mark] = { id: r.adoption_id, dataUrl: m.dataUrl };
+    }
+  } catch (err) { toastError(err); return null; }
+  buildMenu("open"); // More now offers "Change signature"
+  return adoptions[want] || null;
+}
+
+/// Put the adopted mark `a` on field `f`.
+async function placeMark(f, a) {
+  const v = { signature: a.id };
+  await api.ceremony.fill(token, f.id, v);
+  values.set(f.id, v);
+  paints.get(f.id)?.();
+  const el = main.querySelector(`[data-field-id="${CSS.escape(f.id)}"]`);
+  el?.classList.add("is-stamped");
+  setTimeout(() => el?.classList.remove("is-stamped"), 300);
+}
+
+async function signField(f) {
+  const mark = markOf(f);
+  const a = adoptions[mark] || await adopt(mark);
+  if (!a) return;
+  try {
+    await placeMark(f, a);
     savedChip();
-    const el = main.querySelector(`[data-field-id="${CSS.escape(f.id)}"]`);
-    el?.classList.add("is-stamped");
-    setTimeout(() => el?.classList.remove("is-stamped"), 300);
   } catch (err) { toastError(err); }
   updateGuide();
+}
+
+/// Remove this signer's value from field `f` (`DELETE /s/{token}/fields/{field}`, a new
+/// audit event; `NOT_ON_SERVER.clearField`, so offered only where the server has it).
+async function clearValue(f) {
+  try {
+    await api.ceremony.clearField(token, f.id);
+    values.delete(f.id);
+    paints.get(f.id)?.();
+    savedChip();
+  } catch (err) { toastError(err); }
+  updateGuide();
+}
+
+/// Change the adopted signature (or initials): adopt anew, then put the new mark on
+/// every field already signed with that mark (DocuSign's behaviour), each fill a new
+/// field event in the audit trail.
+async function changeMark(mark) {
+  const a = await adopt(mark, { change: true });
+  if (!a) return;
+  try {
+    for (const f of myFields().filter((x) => (x.type === "signature" || x.type === "initials") && markOf(x) === mark && values.get(x.id)?.signature)) await placeMark(f, a);
+    savedChip();
+  } catch (err) { toastError(err); }
+  updateGuide();
+}
+
+/// The menu on a signed field: Remove (where the server can) and Change.
+function signedMenu(f, anchor) {
+  const label = f.label || t(`ftype.${f.type}`);
+  const mark = markOf(f);
+  const items = [];
+  if (api.available("clearField")) items.push({ label: t("sign.field.remove"), icon: "eraser", run: () => clearValue(f), testId: "field-remove" });
+  items.push({ label: t(mark === "initials" ? "sign.field.change-initials" : "sign.field.change-signature"), icon: "pencil", run: () => changeMark(mark), testId: "field-change" });
+  floatingMenu(anchor, label, items);
+}
+
+/// A small menu floating beside `anchor`: role menu, arrow keys, Home and End; Escape
+/// and Tab close it; placed by the component library's `placeMenu`.
+function floatingMenu(anchor, label, items) {
+  const list = h("div", { class: "os-menu os-menu--floating os-sign__floating", attrs: { role: "menu", "aria-label": label } });
+  let close = null;
+  for (const it of items) {
+    const b = h("button", { type: "button", class: "os-menu__item", attrs: { role: "menuitem", tabindex: "-1", ...(it.testId ? { "data-testid": it.testId } : {}) } }, icon(it.icon, { size: 16 }), h("span", { text: it.label }));
+    b.addEventListener("click", (e) => { e.stopPropagation(); close?.(false); it.run(); });
+    list.append(b);
+  }
+  const entries = [...list.querySelectorAll('[role="menuitem"]')];
+  close = floatBeside(anchor, list, {
+    onKey(e) {
+      const i = entries.indexOf(document.activeElement);
+      if (e.key === "ArrowDown") { e.preventDefault(); entries[(i + 1) % entries.length].focus(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); entries[(i - 1 + entries.length) % entries.length].focus(); }
+      else if (e.key === "Home") { e.preventDefault(); entries[0].focus(); }
+      else if (e.key === "End") { e.preventDefault(); entries[entries.length - 1].focus(); }
+    },
+  });
+  entries[0]?.focus({ preventScroll: true });
+}
+
+/// Show `el` floating beside `anchor` until a choice, Escape, Tab, a press elsewhere, or
+/// its field scrolling out of view. Answers its close function, `close(focusBack)`.
+let floating = null;
+function floatBeside(anchor, el, { onKey = null } = {}) {
+  floating?.(false);
+  document.body.append(el);
+  const place = () => {
+    const root = document.documentElement;
+    const p = placeMenu(anchor.getBoundingClientRect(), { width: el.offsetWidth, height: el.scrollHeight }, { width: root.clientWidth, height: root.clientHeight }, "start");
+    el.style.left = `${p.left}px`;
+    el.style.top = `${p.top}px`;
+    el.style.maxHeight = `${p.maxHeight}px`;
+  };
+  place();
+  anchor.setAttribute("aria-expanded", "true");
+  const outside = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) close(false); };
+  const key = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); return; }
+    if (e.key === "Tab") { close(false); return; }
+    onKey?.(e);
+  };
+  // A scroll moves it with its field, and closes it once the field has left the view.
+  const scrolled = (e) => {
+    if (el.contains(e.target)) return;
+    const r = anchor.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight || !anchor.isConnected) close(false); else place();
+  };
+  function close(focusBack) {
+    if (floating !== close) return;
+    floating = null;
+    el.remove();
+    anchor.removeAttribute("aria-expanded");
+    document.removeEventListener("pointerdown", outside, true);
+    document.removeEventListener("scroll", scrolled, true);
+    window.removeEventListener("resize", place);
+    if (focusBack && anchor.isConnected) anchor.focus({ preventScroll: true });
+  }
+  el.addEventListener("keydown", key);
+  document.addEventListener("pointerdown", outside, true);
+  document.addEventListener("scroll", scrolled, true);
+  window.addEventListener("resize", place);
+  floating = close;
+  return close;
+}
+
+/// A radio group's options in a popover on its field (UX-06): a click, Space or Enter
+/// picks and saves; arrow keys move between them; nothing else to confirm.
+function choicePopover(f, label, anchor, paint) {
+  const current = values.get(f.id)?.choice || "";
+  const name = `choice-${f.id}`;
+  const group = h("div", { class: "os-radios os-sign__choices", attrs: { role: "radiogroup", "aria-label": label } });
+  const pop = h("div", { class: "os-menu os-menu--floating os-sign__floating" }, group);
+  let close = null;
+  const pick = async (o) => {
+    close?.(true);
+    await saveChoice(f, o, main.querySelector(`[data-field-id="${CSS.escape(f.id)}"]`));
+    paint();
+  };
+  for (const [i, o] of (f.options || []).entries()) {
+    const id = `${name}-${i}`;
+    const r = h("input", { type: "radio", id, name, value: o, checked: o === current });
+    // A pointer's click (detail > 0) on the option picks it; the click the browser
+    // forwards from the label, or makes for an arrow key, does not (detail 0).
+    const opt = h("label", { class: "os-radio os-radio--lg", attrs: { for: id } }, r, h("span", { text: o }));
+    opt.addEventListener("click", (e) => { if (e.detail > 0) pick(o); });
+    r.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(o); } });
+    group.append(opt);
+  }
+  close = floatBeside(anchor, pop);
+  (group.querySelector("input:checked") || group.querySelector("input"))?.focus({ preventScroll: true });
 }
 
 const myInputs = () => (view.fields || []).filter((f) => fills(f) && fromWire(f.placement));
@@ -828,6 +1051,10 @@ function updateGuide() {
     if (left.length) { b.setAttribute("aria-disabled", "true"); b.title = reason; } else { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); }
     b.setAttribute("aria-describedby", "finish-reason");
     b.classList.toggle("is-ready", left.length === 0);
+    // UX-06: readable at full contrast all along, outlined until it can finish (it
+    // acts before then: it goes to the next required field), then the primary action.
+    b.classList.toggle("os-btn--primary", left.length === 0);
+    b.classList.toggle("os-btn--secondary", left.length > 0);
   }
   requestAnimationFrame(placeTag);
   // Start/Next (G-S1, M-02): in the bar on desktop, in the bottom bar on phones, worded.
@@ -870,6 +1097,12 @@ function review() {
   const order = (a, b) => (loaded || []).findIndex((x) => x.doc.id === a.document_id) - (loaded || []).findIndex((x) => x.doc.id === b.document_id) || a.p.page - b.p.page || a.p.y - b.p.y || a.p.x - b.p.x;
   for (const f of [...fields].sort(order)) {
     const v = values.get(f.id);
+    const mark = v?.signature ? Object.values(adoptions).find((x) => x.id === v.signature) : null;
+    if (mark) {
+      // The adopted mark itself, as it will be drawn (UX-06), not the word "Signed".
+      dl.append(h("dt", { text: f.label || t(`ftype.${f.type}`) }), h("dd", {}, h("img", { class: "os-review__mark", src: mark.dataUrl, alt: t("sign.signed-alt", { what: f.label || t(`ftype.${f.type}`) }) })));
+      continue;
+    }
     let shown;
     if (isFixed(f)) shown = fixedText(f);
     else if (!fills(f)) shown = AUTO[f.type]?.() || "";
@@ -890,20 +1123,36 @@ function review() {
       done(everyoneSigned(view.envelope?.status), true);
     } catch (err) { toastError(err); }
   });
-  // The values panel beside the pages: on desktop a docked panel, on phones above them.
+  // The values panel beside the pages on desktop. On phones (UX-06) the document comes
+  // first, full height, with a bottom bar: "Review values (n)" opens the values as a
+  // sheet, and Finish; there is no screen where Finish comes before the document.
+  const onPhone = phone();
   const side = dockPanel({ id: "sign-review", side: "right", title: t("sign.review.values"), width: 20, min: 16, max: 32, testId: "panel-review" });
-  side.el.classList.add("os-dock--static");
+  if (!onPhone) side.el.classList.add("os-dock--static");
   if (side.isCollapsed()) side.collapse(false);
+  const title = h("h1", { class: onPhone ? "os-sr-only" : "os-sign__title", text: t("sign.review.title") });
+  if (!onPhone) side.body.append(title);
   side.body.append(
-    h("h1", { class: "os-sign__title", text: t("sign.review.title") }),
     h("p", { class: "os-muted", text: t("sign.review.text") }),
     dl,
     h("p", { class: "os-small", text: t("sign.review.legal") }));
-  // The one Finish of this step, pinned below the values so it is always in view.
-  side.el.append(h("div", { class: "os-review__actions os-stack" }, go, back));
-  screen(h("div", { class: "os-signframe os-signframe--review" },
+  // The one Finish of this step: pinned below the values on desktop, in the bottom bar
+  // on phones, so it is always in view.
+  const actions = h("div", { class: "os-review__actions os-stack" }, go, back);
+  let phoneBar = null;
+  if (onPhone) {
+    const n = dl.querySelectorAll("dt").length;
+    const valuesBtn = button(t("sign.review.values-button", { n }), { icon: "list-checks", size: "lg", onClick: () => side.openSheet(), attrs: { "data-testid": "review-values-btn" } });
+    actions.classList.add("os-review__actions--bar");
+    actions.replaceChildren(valuesBtn, go);
+    side.body.append(h("div", { class: "os-stack" }, back));
+    phoneBar = actions;
+  } else {
+    side.el.append(actions);
+  }
+  screen(onPhone ? title : null, h("div", { class: `os-signframe os-signframe--review${onPhone ? " is-phone" : ""}` },
     h("div", { class: "os-signframe__centre" }, rv.scroller, h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, rzc.el)),
-    side.el), rv.live);
+    side.el, phoneBar), rv.live);
   main.classList.add("is-frame-host");
   dv = rv;
   rv.setPages((loaded || []).flatMap(({ doc: d, pdf }) => pdf.pages.map((pg, i) => ({ key: d.id, n: i + 1, total: pdf.pages.length, name: d.name, width: pg.width, height: pg.height, pdf }))));
@@ -920,7 +1169,7 @@ function review() {
   const top = () => { rv.scroller.scrollTop = 0; rv.scroller.scrollLeft = 0; side.body.scrollTop = 0; main.scrollTop = 0; };
   top();
   requestAnimationFrame(top);
-  go.focus({ preventScroll: true });
+  if (!onPhone) go.focus({ preventScroll: true });
 }
 
 /// A field as it will look on the signed page: the value only, no field chrome. Sized
@@ -966,17 +1215,22 @@ function done(everyone, celebrate = false) {
   // G-S3: a copy now, and what happens next.
   const copy = button(t("sign.done.download"), { icon: "download", variant: "primary", size: "lg", attrs: { "data-testid": "done-download" } });
   copy.addEventListener("click", () => busy(copy, () => downloadCopy()));
+  // UX-06: Print beside the copy, and the Verify page a link, not only a name.
+  const print = button(t("sign.done.print"), { icon: "printer", size: "lg", attrs: { "data-testid": "done-print" } });
+  print.addEventListener("click", () => busy(print, () => downloadCopy(true)));
+  const MARK = "\u0001";
+  const [before, after = ""] = t("sign.done.next-verify", { link: MARK }).split(MARK);
   const steps = h("ol", { class: "os-done__steps" },
     h("li", { text: everyone ? t("sign.done.next-sealed") : t("sign.done.next-others") }),
     h("li", { text: t("sign.done.next-email") }),
-    h("li", { text: t("sign.done.next-verify") }));
+    h("li", {}, before, h("a", { class: "os-sign__inlink", href: "/verify.html", text: t("sign.done.verify-link") }), after));
   screen(h("div", { class: "os-empty os-done", attrs: { "data-testid": "sign-done" } },
     seal,
     h("h1", { class: "os-empty__title", text: t("sign.done.title") }),
     h("p", { class: "os-empty__text", attrs: { role: "status" }, text: everyone ? t("sign.done.everyone") : t("sign.done.waiting") }),
     h("h2", { class: "os-done__next", text: t("sign.done.next") }),
     steps,
-    h("div", { class: "os-done__actions" }, copy)));
+    h("div", { class: "os-done__actions" }, copy, print)));
 }
 
 // ---- Other actions ------------------------------------------------------------------------------
@@ -1056,7 +1310,8 @@ async function finishLater() {
     await api.ceremony.finishLater(token);
     // G-S4: the way back in is right here, not only in the email.
     const again = button(t("sign.later.continue"), { icon: "arrow-right", variant: "primary", size: "lg", onClick: () => start(), attrs: { "data-testid": "later-continue" } });
-    message({ illus: "inbox", title: t("sign.later.title"), text: t("sign.later.text"), action: again, testId: "sign-later" });
+    const until = dateOnly(view?.envelope?.expires_at);
+    message({ illus: "inbox", title: t("sign.later.title"), text: until ? `${t("sign.later.text")} ${t("sign.later.expires", { date: until })}` : t("sign.later.text"), action: again, testId: "sign-later" });
   } catch (err) { toastError(err); }
 }
 
@@ -1113,7 +1368,7 @@ function help() {
         sec(t("sign.help.how"), h("ol", { class: "os-sign__list" },
           h("li", { text: t("sign.help.step1") }), h("li", { text: t("sign.help.step2") }),
           h("li", { text: t("sign.help.step3") }), h("li", { text: t("sign.help.step4") }))),
-        sec(t("sign.help.questions"), h("p", { text: t("sign.help.questions-text") })),
+        sec(t("sign.help.questions"), h("p", { text: view?.sender?.name && view?.sender?.email ? t("sign.help.questions-sender", { name: view.sender.name, email: view.sender.email }) : t("sign.help.questions-text") })),
         sec(t("sign.help.trouble"), h("p", { text: t("sign.help.trouble-text") })));
     },
     actions: [{ label: t("action.close"), value: null }],
@@ -1124,6 +1379,7 @@ function help() {
 // WEB-07), each as this recipient reads it. `by` says who acted: `you`, `sender`,
 // `recipient` (another, never named), `user`, `host` or `system`.
 const HISTORY = {
+  "envelope.created": "sign.history.created",
   "envelope.sent": "sign.history.sent",
   "envelope.corrected": "sign.history.corrected",
   "envelope.voided": "sign.history.voided",
@@ -1131,7 +1387,13 @@ const HISTORY = {
   "envelope.expired": "sign.history.expired",
   "envelope.completing": "sign.history.completing",
   "envelope.completed": "sign.history.envelope-completed",
+  "recipient.sent": "sign.history.sent-you",
   "recipient.delivered": "sign.history.opened",
+  "recipient.auth_challenged": "sign.history.challenged",
+  "recipient.consent_withdrawn": "sign.history.consent-withdrawn",
+  "recipient.field_cleared": "sign.history.cleared",
+  "recipient.in_person_hosted": "sign.history.hosted",
+  "recipient.bounced": "sign.history.bounced",
   "recipient.auth_passed": "sign.history.authenticated",
   "recipient.auth_failed": "sign.history.auth-failed",
   "recipient.consented": "sign.history.consented",
@@ -1145,6 +1407,7 @@ const HISTORY = {
   "recipient.declined": "sign.history.declined",
   "recipient.reassigned": "sign.history.reassigned",
   "document.sealed": "sign.history.sealed",
+  "document.downloaded": "sign.history.downloaded",
 };
 /// Who acted, for an event someone other than this recipient did.
 const BY = { sender: "sign.history.by-sender", recipient: "sign.history.by-recipient", user: "sign.history.by-user", host: "sign.history.by-host" };
@@ -1160,15 +1423,16 @@ function history() {
       body.append(h("p", { class: "os-muted", text: t("sign.history.text") }), list);
       api.ceremony.history(token).then((r) => {
         list.removeAttribute("aria-busy");
-        const events = [...(r?.events || [])].reverse();
+        // An event type this page has no words for is left out, never printed raw.
+        const events = [...(r?.events || [])].filter((e) => HISTORY[e.type]).reverse();
         if (!events.length) { list.append(h("li", { class: "os-muted", text: t("sign.history.none") })); return; }
         for (const e of events) {
           const key = HISTORY[e.type];
           const by = BY[e.by];
           list.append(h("li", { class: "os-history__item", attrs: { "data-type": String(e.type || "") } },
-            h("span", { class: "os-history__what", text: key ? t(key) : String(e.type || "").replace(/[._]/g, " ") }),
+            h("span", { class: "os-history__what", text: t(key) }),
             by ? h("span", { class: "os-history__by os-muted os-small", text: t(by) }) : null,
-            h("time", { class: "os-history__when os-muted os-small", attrs: { datetime: e.at || "" }, text: fmtDate(e.at) })));
+            h("time", { class: "os-history__when os-muted os-small", attrs: { datetime: e.at || "" }, text: dateTimeZone(e.at) })));
         }
       }).catch((err) => {
         list.removeAttribute("aria-busy");
@@ -1199,8 +1463,10 @@ function buildMenu(stage = "open") {
   if (stage === "auth") { moreMenu.replaceChildren(help_); return; }
   const items = [
     item("download", t("sign.menu.download"), () => downloadCopy(), { testId: "menu-download" }),
-    item("external-link", t("sign.menu.print"), () => downloadCopy(true), { testId: "menu-print" }),
+    item("printer", t("sign.menu.print"), () => downloadCopy(true), { testId: "menu-print" }),
   ];
+  // UX-06: change the adopted signature from anywhere, once there is one.
+  if (stage === "open" && adoptions.signature) items.push(item("pencil", t("sign.field.change-signature"), () => { closeMore(); changeMark("signature"); }, { testId: "menu-change-signature" }));
   if (stage === "open" && opts.allow_reassign === true) items.push(item("user-plus", t("sign.menu.reassign"), reassign, { testId: "menu-reassign" }));
   items.push(item("list-ordered", t("sign.menu.history"), history, { testId: "menu-history" }));
   items.push(help_);

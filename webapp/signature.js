@@ -1,15 +1,19 @@
-// Adopt a signature or initials (WEB-01; docs/47 §Signer ceremony): Type (one of the
-// bundled OFL script fonts, the accessible default), Draw (pointer and touch, with
-// undo and clear), Upload (PNG or JPEG; near-white made transparent here, re-checked
-// by the server). The result is a PNG for `POST /s/{token}/adopt`.
+// Adopt a signature and initials (WEB-01; UX-06; docs/47 §Signer ceremony): Type (one
+// of the bundled OFL script fonts, the accessible default), Draw (pointer and touch,
+// with undo and clear), Upload (PNG or JPEG in a drop zone; near-white made transparent
+// here, re-checked by the server). Each result is a PNG for `POST /s/{token}/adopt`.
+// UX-06, after DocuSign's adopt dialog: the full name and the initials are adopted in
+// one step when both are wanted, previewed together in each style; a problem is said
+// beside the control (role alert), not in a toast.
 
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { openPanel, button, toast } from "./ui/index.js";
+import { openPanel, button } from "./ui/index.js";
 
 const W = 600;
 const H = 200;
+const INK = "#0b1f4b";
 const FONTS = [
   ["OpenSeal Great Vibes", "Great Vibes"],
   ["OpenSeal Allura", "Allura"],
@@ -21,20 +25,36 @@ export function initialsOf(name) {
   return String(name || "").trim().split(/\s+/).filter(Boolean).map((p) => [...p][0].toUpperCase()).slice(0, 3).join("");
 }
 
-/// Open the adopt dialog. Resolves `{method, png: Uint8Array, dataUrl}` or null.
-export function adoptDialog({ mark = "signature", name = "", host = null }) {
+/// The marks the dialog asks for: `mark` ("signature" or "initials") always, and the
+/// other one too when `both`. Pure, for the tests.
+export function marksFor(mark, both) {
+  const want = mark === "initials" ? "initials" : "signature";
+  if (!both) return [want];
+  return want === "signature" ? ["signature", "initials"] : ["initials", "signature"];
+}
+
+/// Open the adopt panel. Resolves `{marks: {signature?, initials?}}`, each
+/// `{method, dataUrl, base64}`, or null when cancelled. `mark` is always in it; with
+/// `both`, the other mark too when the signer gave it (typed initials, or drawn ones).
+export function adoptDialog({ mark = "signature", name = "", both = false }) {
+  const marks = marksFor(mark, both);
+  const want = marks[0];
   let mode = "type";
-  let typed = mark === "initials" ? initialsOf(name) : name;
+  const typed = { signature: name, initials: initialsOf(name) };
   let font = 0;
-  const strokes = [];
   let uploaded = null;
+  const pads = {};
+  let err = null;
+  const say = (key) => { err.textContent = key ? t(key) : ""; };
 
   let leaveFull = () => {};
+  const title = both ? (want === "signature" ? "adopt.title-both" : "adopt.title-both-initials") : want === "initials" ? "adopt.title-initials" : "adopt.title";
   return openPanel({
     id: "adopt",
-    host,
-    width: 30,
-    title: t(mark === "initials" ? "adopt.title-initials" : "adopt.title"),
+    width: 34,
+    min: 30,
+    max: 48,
+    title: t(title),
     className: "os-adopt",
     build(body) {
       const tabs = h("div", { class: "os-tabs", attrs: { role: "tablist", "aria-label": t("adopt.how") } });
@@ -60,114 +80,77 @@ export function adoptDialog({ mark = "signature", name = "", host = null }) {
       }
       function select(m) {
         mode = m;
+        say(null);
         for (const k of Object.keys(panels)) {
           panels[k].hidden = k !== m;
           tabBtns[k].setAttribute("aria-selected", String(k === m));
           tabBtns[k].tabIndex = k === m ? 0 : -1;
         }
-        if (m === "draw") redraw();
+        if (m === "draw") for (const p of Object.values(pads)) p.redraw();
       }
 
-      // Type
-      const nameId = "adopt-name";
-      const input = h("input", { id: nameId, class: "os-input", value: typed, maxLength: 80, autocomplete: "name", attrs: { autofocus: true } });
+      // Type: the name and the initials, previewed together in each style.
+      const inputs = {};
+      for (const [i, m] of marks.entries()) {
+        const id = m === "initials" ? "adopt-initials" : "adopt-name";
+        inputs[m] = h("input", { id, class: "os-input", value: typed[m], maxLength: m === "initials" ? 8 : 80, autocomplete: m === "initials" ? "off" : "name", attrs: { ...(i === 0 ? { autofocus: true } : {}), "aria-describedby": "adopt-err" } });
+        inputs[m].addEventListener("input", () => { typed[m] = inputs[m].value; say(null); renderPreviews(); });
+        panels.type.append(h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: t(m === "initials" ? "adopt.your-initials" : "adopt.your-name") }), inputs[m]));
+      }
+      if (marks.length > 1) panels.type.classList.add("os-adopt__type--both");
       const previews = h("div", { class: "os-adopt__fonts", attrs: { role: "radiogroup", "aria-label": t("adopt.style") } });
-      const renderPreviews = () => {
+      function renderPreviews() {
         previews.replaceChildren(...FONTS.map(([family, label], i) => {
           const id = `adopt-font-${i}`;
           const radio = h("input", { type: "radio", name: "adopt-font", id, checked: i === font, class: "os-sr-only" });
           radio.addEventListener("change", () => { font = i; });
-          const sample = h("span", { class: `os-adopt__sample os-script-${i + 1}`, text: typed || " " });
-          return h("label", { class: "os-adopt__font", attrs: { for: id } }, radio, sample, h("span", { class: "os-sr-only", text: t("adopt.style-n", { name: label }) }));
+          const samples = marks.map((m) => h("span", { class: `os-adopt__sample os-adopt__sample--${m} os-script-${i + 1}`, text: typed[m] || " " }));
+          return h("label", { class: "os-adopt__font", attrs: { for: id } }, radio, ...samples, h("span", { class: "os-sr-only", text: t("adopt.style-n", { name: label }) }));
         }));
-      };
-      input.addEventListener("input", () => { typed = input.value; renderPreviews(); });
-      renderPreviews();
-      panels.type.append(h("label", { class: "os-label", attrs: { for: nameId }, text: t(mark === "initials" ? "adopt.your-initials" : "adopt.your-name") }), input, previews);
-
-      // Draw
-      const canvas = h("canvas", { class: "os-adopt__pad", width: W, height: H, attrs: { "aria-label": t("adopt.pad"), role: "img", "data-testid": "signature-pad" } });
-      const g = canvas.getContext("2d");
-      function redraw() {
-        g.clearRect(0, 0, W, H);
-        g.strokeStyle = "#0b1f4b";
-        g.lineWidth = 3;
-        g.lineCap = "round";
-        g.lineJoin = "round";
-        for (const s of strokes) {
-          g.beginPath();
-          s.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-          if (s.length === 1) g.lineTo(s[0][0] + 0.1, s[0][1]);
-          g.stroke();
-        }
       }
-      let current = null;
-      // Full screen on an upright phone turns the pad a quarter clockwise (app.css), so
-      // the signature is drawn along the long side; the pad's x then runs down the screen.
-      const turned = () => canvas.parentElement?.classList.contains("is-full") && matchMedia("(orientation: portrait)").matches;
-      const pos = (e) => {
-        const b = canvas.getBoundingClientRect();
-        if (turned()) return [((e.clientY - b.top) / b.height) * W, ((b.right - e.clientX) / b.width) * H];
-        return [((e.clientX - b.left) / b.width) * W, ((e.clientY - b.top) / b.height) * H];
-      };
-      canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); current = [pos(e)]; strokes.push(current); redraw(); });
-      canvas.addEventListener("pointermove", (e) => { if (!current) return; current.push(pos(e)); redraw(); });
-      const end = () => { current = null; };
-      canvas.addEventListener("pointerup", end);
-      canvas.addEventListener("pointercancel", end);
-      // M-03: on phones the pad can fill the screen (landscape-friendly); the strokes
-      // are kept in pad units, so they survive going in and out of full screen.
-      const pad = h("div", { class: "os-adopt__padwrap" });
-      const fullHint = h("p", { class: "os-adopt__fullhint", text: t("adopt.full-hint") });
-      const fullBtn = button(t("adopt.full"), { icon: "maximize", size: "lg", attrs: { "data-testid": "adopt-full" } });
-      fullBtn.classList.add("os-adopt__fullbtn");
-      const doneBtn = button(t("adopt.full-done"), { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "adopt-full-done" } });
-      doneBtn.classList.add("os-adopt__fulldone");
-      const setFull = (on) => {
-        pad.classList.toggle("is-full", on);
-        document.body.classList.toggle("has-fullpad", on);
-        for (const [k, v] of Object.entries({ role: "dialog", "aria-modal": "true", "aria-label": t("adopt.pad") })) {
-          if (on) pad.setAttribute(k, v); else pad.removeAttribute(k);
-        }
-        // Escape leaves full screen only; the panel's own Escape (a document capture
-        // listener) must not close the whole panel, so this one listens on window first.
-        if (on) window.addEventListener("keydown", onEsc, true); else window.removeEventListener("keydown", onEsc, true);
-        (on ? doneBtn : fullBtn).focus({ preventScroll: true });
-        redraw();
-      };
-      const onEsc = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setFull(false); } };
-      leaveFull = () => { if (pad.classList.contains("is-full")) setFull(false); };
-      fullBtn.addEventListener("click", () => setFull(true));
-      doneBtn.addEventListener("click", () => setFull(false));
-      pad.append(fullHint, canvas,
-        h("div", { class: "os-actions os-adopt__padtools" },
-          button(t("adopt.undo"), { icon: "undo-2", size: "lg", onClick: () => { strokes.pop(); redraw(); } }),
-          button(t("adopt.clear"), { icon: "eraser", size: "lg", onClick: () => { strokes.length = 0; redraw(); } }),
-          doneBtn));
-      panels.draw.append(
-        h("p", { class: "os-muted os-small", text: t("adopt.draw-help") }),
-        fullBtn,
-        pad);
+      renderPreviews();
+      panels.type.append(previews);
 
-      // Upload
-      const file = h("input", { id: "adopt-file", type: "file", accept: "image/png,image/jpeg", class: "os-input" });
+      // Draw: a pad per mark, 3:1, each with undo and clear and a full-screen mode.
+      panels.draw.append(h("p", { class: "os-muted os-small", text: t("adopt.draw-help") }));
+      for (const m of marks) {
+        pads[m] = drawPad(m, () => say(null));
+        if (marks.length > 1) panels.draw.append(h("p", { class: "os-label", text: t(m === "initials" ? "adopt.your-initials" : "adopt.your-name") }));
+        panels.draw.append(pads[m].el);
+      }
+      leaveFull = () => { for (const p of Object.values(pads)) p.leaveFull(); };
+
+      // Upload: a drop zone for the mark being placed.
+      const file = h("input", { id: "adopt-file", type: "file", accept: "image/png,image/jpeg", class: "os-sr-only", attrs: { "aria-describedby": "adopt-drop-help adopt-err" } });
       const preview = h("img", { class: "os-adopt__upload-preview", alt: "", hidden: true });
-      file.addEventListener("change", async () => {
-        const f = file.files?.[0];
+      const dropTitle = h("span", { class: "os-adopt__drop-title", text: t("adopt.drop") });
+      const zone = h("label", { class: "os-adopt__drop", attrs: { for: "adopt-file", "data-testid": "adopt-drop" } },
+        icon("upload", { size: 24 }), dropTitle,
+        h("span", { id: "adopt-drop-help", class: "os-muted os-small", text: t("adopt.drop-help") }), preview);
+      const take = async (f) => {
+        say(null);
         if (!f) return;
-        if (f.size > MAX_UPLOAD || !/^image\/(png|jpeg)$/.test(f.type)) { toast(t("adopt.bad-image"), "error"); file.value = ""; return; }
+        if (f.size > MAX_UPLOAD || !/^image\/(png|jpeg)$/.test(f.type)) { say("adopt.bad-image"); file.value = ""; return; }
         try {
           uploaded = await cleanImage(f);
           preview.src = uploaded.toDataURL("image/png");
           preview.hidden = false;
           preview.alt = t("adopt.upload-preview");
+          zone.classList.add("has-image");
+          dropTitle.textContent = t("adopt.choose-another");
         } catch {
-          toast(t("adopt.bad-image"), "error");
+          say("adopt.bad-image");
         }
-      });
-      panels.upload.append(h("label", { class: "os-label", attrs: { for: "adopt-file" }, text: t("adopt.upload-label") }), file, preview);
+      };
+      file.addEventListener("change", () => take(file.files?.[0]));
+      zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("is-dropping"); });
+      zone.addEventListener("dragleave", () => zone.classList.remove("is-dropping"));
+      zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("is-dropping"); take(e.dataTransfer?.files?.[0]); });
+      if (marks.length > 1) panels.upload.append(h("p", { class: "os-muted os-small", text: t(want === "initials" ? "adopt.upload-initials-only" : "adopt.upload-signature-only") }));
+      panels.upload.append(file, zone);
 
-      body.append(tabs, panels.type, panels.draw, panels.upload,
+      err = h("p", { id: "adopt-err", class: "os-field-error", attrs: { role: "alert", "data-testid": "adopt-err" } });
+      body.append(tabs, panels.type, panels.draw, panels.upload, err,
         h("p", { class: "os-muted os-small", text: t("adopt.legal") }));
     },
     actions: [
@@ -177,28 +160,98 @@ export function adoptDialog({ mark = "signature", name = "", host = null }) {
         variant: "primary",
         attrs: { "data-testid": "adopt-confirm" },
         onClick: async () => {
-          let c;
+          const out = {};
           if (mode === "type") {
-            if (!typed.trim()) { toast(t("adopt.need-name"), "error"); return undefined; }
-            c = await typedCanvas(typed.trim(), FONTS[font][0]);
+            if (!typed[want].trim()) { say(want === "initials" ? "adopt.need-initials" : "adopt.need-name"); return undefined; }
+            for (const m of marks) if (typed[m].trim()) out[m] = await typedCanvas(typed[m].trim(), FONTS[font][0]);
           } else if (mode === "draw") {
-            if (!strokes.some((s) => s.length > 1)) { toast(t("adopt.need-drawing"), "error"); return undefined; }
-            c = document.createElement("canvas");
-            c.width = W; c.height = H;
-            const g2 = c.getContext("2d");
-            g2.strokeStyle = "#0b1f4b"; g2.lineWidth = 3; g2.lineCap = "round"; g2.lineJoin = "round";
-            for (const s of strokes) { g2.beginPath(); s.forEach(([x, y], i) => (i ? g2.lineTo(x, y) : g2.moveTo(x, y))); g2.stroke(); }
+            if (!pads[want].hasInk()) { say(want === "initials" ? "adopt.need-drawing-initials" : "adopt.need-drawing"); return undefined; }
+            for (const m of marks) if (pads[m].hasInk()) out[m] = pads[m].toCanvas();
           } else {
-            if (!uploaded) { toast(t("adopt.need-image"), "error"); return undefined; }
-            c = uploaded;
+            if (!uploaded) { say("adopt.need-image"); return undefined; }
+            out[want] = uploaded;
           }
           leaveFull();
-          const dataUrl = c.toDataURL("image/png");
-          return { method: mode, dataUrl, base64: dataUrl.slice(dataUrl.indexOf(",") + 1) };
+          const result = {};
+          for (const [m, c] of Object.entries(out)) {
+            const dataUrl = c.toDataURL("image/png");
+            result[m] = { method: mode, dataUrl, base64: dataUrl.slice(dataUrl.indexOf(",") + 1) };
+          }
+          return { marks: result };
         },
       },
     ],
   }).finally(() => leaveFull());
+}
+
+/// A drawing pad for `mark`: strokes kept in pad units (600 × 200), undo and clear, and
+/// full screen on phones (M-03: an upright phone turns the pad a quarter clockwise, so
+/// the signature is drawn along the long side; the pointer is mapped back).
+function drawPad(mark, onInk) {
+  const strokes = [];
+  const sig = mark === "signature";
+  const canvas = h("canvas", { class: "os-adopt__pad", width: W, height: H, attrs: { "aria-label": t(sig ? "adopt.pad" : "adopt.pad-initials"), role: "img", "data-testid": sig ? "signature-pad" : "initials-pad" } });
+  const g = canvas.getContext("2d");
+  const paint = (ctx) => {
+    ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const s of strokes) {
+      ctx.beginPath();
+      s.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      if (s.length === 1) ctx.lineTo(s[0][0] + 0.1, s[0][1]);
+      ctx.stroke();
+    }
+  };
+  const redraw = () => { g.clearRect(0, 0, W, H); paint(g); };
+  let current = null;
+  const wrap = h("div", { class: "os-adopt__padwrap" });
+  const turned = () => wrap.classList.contains("is-full") && matchMedia("(orientation: portrait)").matches;
+  const pos = (e) => {
+    const b = canvas.getBoundingClientRect();
+    if (turned()) return [((e.clientY - b.top) / b.height) * W, ((b.right - e.clientX) / b.width) * H];
+    return [((e.clientX - b.left) / b.width) * W, ((e.clientY - b.top) / b.height) * H];
+  };
+  canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); current = [pos(e)]; strokes.push(current); redraw(); onInk(); });
+  canvas.addEventListener("pointermove", (e) => { if (!current) return; current.push(pos(e)); redraw(); });
+  const end = () => { current = null; };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+  const fullHint = h("p", { class: "os-adopt__fullhint", text: t("adopt.full-hint") });
+  const fullBtn = button(t(sig ? "adopt.full" : "adopt.full-initials"), { icon: "maximize", size: "lg", attrs: { "data-testid": sig ? "adopt-full" : "adopt-full-initials" } });
+  fullBtn.classList.add("os-adopt__fullbtn");
+  const doneBtn = button(t("adopt.full-done"), { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": sig ? "adopt-full-done" : "adopt-full-done-initials" } });
+  doneBtn.classList.add("os-adopt__fulldone");
+  const onEsc = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setFull(false); } };
+  function setFull(on) {
+    wrap.classList.toggle("is-full", on);
+    document.body.classList.toggle("has-fullpad", on);
+    for (const [k, v] of Object.entries({ role: "dialog", "aria-modal": "true", "aria-label": t(sig ? "adopt.pad" : "adopt.pad-initials") })) {
+      if (on) wrap.setAttribute(k, v); else wrap.removeAttribute(k);
+    }
+    // Escape leaves full screen only; the panel's own Escape (a document capture
+    // listener) must not close the whole panel, so this one listens on window first.
+    if (on) window.addEventListener("keydown", onEsc, true); else window.removeEventListener("keydown", onEsc, true);
+    (on ? doneBtn : fullBtn).focus({ preventScroll: true });
+    redraw();
+  }
+  fullBtn.addEventListener("click", () => setFull(true));
+  doneBtn.addEventListener("click", () => setFull(false));
+  wrap.append(fullHint, canvas,
+    h("div", { class: "os-actions os-adopt__padtools" },
+      button(t("adopt.undo"), { icon: "undo-2", onClick: () => { strokes.pop(); redraw(); } }),
+      button(t("adopt.clear"), { icon: "eraser", onClick: () => { strokes.length = 0; redraw(); } }),
+      doneBtn));
+  return {
+    el: h("div", { class: "os-adopt__padblock" }, fullBtn, wrap),
+    redraw,
+    hasInk: () => strokes.some((s) => s.length > 1),
+    leaveFull: () => { if (wrap.classList.contains("is-full")) setFull(false); },
+    toCanvas() {
+      const c = document.createElement("canvas");
+      c.width = W; c.height = H;
+      paint(c.getContext("2d"));
+      return c;
+    },
+  };
 }
 
 async function typedCanvas(text, family) {
@@ -209,7 +262,7 @@ async function typedCanvas(text, family) {
   let size = 96;
   g.font = `${size}px "${family}", cursive`;
   while (g.measureText(text).width > W - 40 && size > 24) { size -= 4; g.font = `${size}px "${family}", cursive`; }
-  g.fillStyle = "#0b1f4b";
+  g.fillStyle = INK;
   g.textBaseline = "middle";
   g.textAlign = "center";
   g.fillText(text, W / 2, H / 2);
