@@ -174,10 +174,10 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       // On phones the palette is a bottom sheet behind "Add field" (WEB-06).
       const palette = async () => { if (vp === "phone") await page.getByTestId("add-field-sheet").click(); };
       await palette();
-      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
       await palette();
       await placingFor(page, 1);
-      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
       await check("09-prepare-fields");
       await editorRules(page, vp, "editor");
       await page.getByTestId("wizard-next").click();

@@ -94,7 +94,7 @@ test("two signers in order sign through emailed links; the sealed PDF and certif
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   for (const who of ["1. Ana Signer", "2. Ben Signer"]) {
     await placingFor(page, who);
-    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   }
   await expect(page.locator(".os-field")).toHaveCount(2);
   await page.getByTestId("wizard-next").click();

@@ -107,3 +107,71 @@ for (const width of [1366, 1440, 1536]) {
     expect(r, `template review at ${width}`).toEqual({ same: true, barHeight: r.barHeight, inside: true });
   });
 }
+
+// ---- Click-to-place ------------------------------------------------------------------------
+
+/// The selected field's rectangle in points, as its properties panel shows it.
+async function rectOf(page) {
+  const adv = page.locator(".os-advanced");
+  if (!(await adv.evaluate((d) => d.open))) await adv.locator("summary").click();
+  const v = async (k) => Number(await page.locator(`#fp-${k}`).inputValue());
+  return { x: await v("x"), y: await v("y"), width: await v("width"), height: await v("height") };
+}
+/// A point on page `n` (1-based) in screen pixels, from points; and back.
+async function pageGeom(page, n = 1) {
+  const ov = page.locator(".os-page__overlay").nth(n - 1);
+  const box = await ov.boundingBox();
+  return { box, scale: box.width / 612 };
+}
+
+test("a clicked field type places its field where the page is clicked; Escape cancels; a double click keeps it armed", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toFields(page);
+  const sig = page.locator(".os-palette").getByRole("button", { name: "Add Signature field" });
+  await sig.click();
+  // Armed, not placed: the type is pressed and the page has no field yet.
+  await expect(sig).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".os-field")).toHaveCount(0);
+  const { box, scale } = await pageGeom(page, 1);
+  // Below the body text, in the part of the page on screen.
+  const at = { x: 400, y: 400 };
+  const px = { x: box.x + at.x * scale, y: box.y + at.y * scale };
+  await page.mouse.move(px.x - 20, px.y - 20);
+  await page.mouse.move(px.x, px.y, { steps: 3 });
+  await expect(page.getByTestId("arm-ghost")).toBeVisible();
+  await snap(page, testInfo, "prepare-armed-1440");
+  await page.mouse.click(px.x, px.y);
+  await expect(page.locator(".os-field")).toHaveCount(1);
+  await expect(sig).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("arm-ghost")).toHaveCount(0);
+  const r = await rectOf(page);
+  // Centred on the clicked point, within 2 points.
+  expect(Math.abs(r.x + r.width / 2 - at.x), `x centre ${JSON.stringify(r)}`).toBeLessThanOrEqual(2);
+  expect(Math.abs(r.y + r.height / 2 - at.y), `y centre ${JSON.stringify(r)}`).toBeLessThanOrEqual(2);
+
+  // Escape disarms: the next click on the page places nothing.
+  const text = page.locator(".os-palette").getByRole("button", { name: "Add Text field" });
+  await text.click();
+  await expect(text).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(text).toHaveAttribute("aria-pressed", "false");
+  await page.mouse.click(box.x + 100 * scale, box.y + 300 * scale);
+  await expect(page.locator(".os-field")).toHaveCount(1);
+
+  // A double click keeps the type armed: two clicks, two fields; Escape ends it.
+  const date = page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" });
+  await date.dblclick();
+  await expect(date).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.click(box.x + 120 * scale, box.y + 460 * scale);
+  await page.mouse.click(box.x + 420 * scale, box.y + 460 * scale);
+  await expect(page.locator('.os-field[data-field="date_signed"]')).toHaveCount(2);
+  await expect(date).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(date).toHaveAttribute("aria-pressed", "false");
+
+  // The keyboard still places on the page in view with Enter.
+  await page.locator(".os-palette").getByRole("button", { name: "Add Initials field" }).press("Enter");
+  await expect(page.locator('.os-field[data-field="initials"]')).toHaveCount(1);
+  await expectAccessible(page, "editor with click-to-place");
+});
+

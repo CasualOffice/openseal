@@ -194,7 +194,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
     docTools.hidden = s !== "fields";
     skipTo(s === "fields" ? "#document" : "#main", t(s === "fields" ? "a11y.skip-doc" : "a11y.skip"));
-    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); }
+    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); disarm(); }
     backBtn.hidden = i === 0;
     nextBtn.hidden = i === STEPS.length - 1;
     if (sendBtn) sendBtn.hidden = s !== "review";
@@ -525,9 +525,19 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const palFor = h("div", { class: "os-palette__for" });
   const palGrid = h("div", { class: "os-palette os-r1" });
   for (const type of FIELD_TYPES) {
-    const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
+    const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-pressed": "false", "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
       icon(FIELD_ICON[type], { size: 20 }), h("span", { text: t(`ftype.${type}`) }));
-    b.addEventListener("click", () => { addFieldInView(type); leftDock.closeSheet(); });
+    // A pointer click arms the type (UX-05, DocuSign's and SignNow's click-to-place): the
+    // next click on a page places it there. A double click keeps it armed for several.
+    // Enter or Space (a click with no pointer, `detail` 0) places it on the page in view,
+    // so the keyboard keeps its one-key placement.
+    b.addEventListener("click", (e) => {
+      if (e.detail === 0) { disarm(); addFieldInView(type); leftDock.closeSheet(); return; }
+      if (e.detail > 1) return;
+      if (armed?.type === type && !armed.sticky) disarm(true); else arm(type, false);
+      leftDock.closeSheet();
+    });
+    b.addEventListener("dblclick", () => arm(type, true));
     b.addEventListener("dragstart", (e) => {
       e.dataTransfer.setData("application/x-openseal-field", type);
       e.dataTransfer.effectAllowed = "copy";
@@ -539,7 +549,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   palettePanel.append(
     palFor,
     h("h3", { id: "pal-h", class: "os-panel__title", text: t("prepare.field-types") }),
-    palGrid, h("p", { class: "os-muted os-small", text: t("prepare.palette-hint") }));
+    // Touch screens get touch words (UX-05): no Enter, arrows or Shift there.
+    palGrid, h("p", { class: "os-muted os-small", attrs: { "data-testid": "palette-hint" }, text: t(matchMedia("(pointer: coarse)").matches ? "prepare.palette-hint-touch" : "prepare.palette-hint") }));
   // Detect fields (WEB-09): the server's suggestions as ghost fields. Envelopes only:
   // the API detects on an envelope's documents.
   const detectBtn = TPL ? null : button(t("prepare.detect"), { icon: "scan", command: "field.detect", onClick: () => run("field.detect"), attrs: { "data-testid": "detect-fields", "aria-describedby": "detect-help" } });
@@ -710,7 +721,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         const box = overlay.getBoundingClientRect();
         addField(type, d, p.n, (e.clientX - box.left) / dv.scale, (e.clientY - box.top) / dv.scale);
       });
-      overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) startMarquee(e, overlay, p.key, p.n); });
+      // Armed (UX-05): the click places; a press neither draws a marquee nor selects text.
+      // A click, not the press, so a finger that scrolls the page places nothing.
+      overlay.addEventListener("pointerdown", (e) => {
+        if (armed) { if (e.pointerType !== "touch") e.preventDefault(); return; }
+        if (e.target === overlay) startMarquee(e, overlay, p.key, p.n);
+      });
+      overlay.addEventListener("click", (e) => {
+        if (armed && (e.target === overlay || e.target === armGhost || armGhost.contains(e.target))) placeArmed(e, overlay, p.key, p.n);
+      });
     });
     thumbs.build();
     renderFieldsOnly();
@@ -957,6 +976,61 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // Phones: the properties are a bottom sheet, opened from the "Field settings" button.
     propsFab.hidden = !f;
     if (!f) rightDock.closeSheet();
+  }
+
+  // ---- Click-to-place (UX-05) -------------------------------------------------------------
+  // An armed type follows the pointer as a ghost of its default size; a click on a page
+  // places the field centred there. Escape (field.deselect) or a second click on the
+  // type disarms; a double-clicked type stays armed until then.
+  let armed = null; // {type, sticky}
+  const armGhost = h("div", { class: "os-armghost", attrs: { "aria-hidden": "true", "data-testid": "arm-ghost" } });
+  function markArmed() {
+    for (const b of palGrid.querySelectorAll(".os-palette__item")) {
+      const on = armed?.type === b.dataset.fieldType;
+      b.classList.toggle("is-armed", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    stage.classList.toggle("is-armed", !!armed);
+    if (!armed) armGhost.remove();
+  }
+  function arm(type, sticky) {
+    if (!S.docs.length) { toast(t("prepare.add-pdf-first"), "info"); fileInput.click(); return; }
+    armed = { type, sticky };
+    markArmed();
+    armGhost.replaceChildren(icon(FIELD_ICON[type] || "text-cursor-input", { size: 16 }), h("span", { text: t(`ftype.${type}`) }));
+    say(t(sticky ? "prepare.armed-sticky" : "prepare.armed", { type: t(`ftype.${type}`) }));
+  }
+  function disarm(announce = false) {
+    if (!armed) return;
+    armed = null;
+    markArmed();
+    if (announce) say(t("prepare.disarmed"));
+  }
+  /// The ghost under the pointer, on the page it is over (points → % of that page).
+  function moveGhost(e) {
+    if (!armed || e.pointerType === "touch") return;
+    const ov = e.target.closest?.(".os-page__overlay");
+    if (!ov) { armGhost.remove(); return; }
+    const p = dv.pages.find((x) => x.key === ov.dataset.doc && String(x.n) === ov.dataset.page);
+    if (!p) return;
+    const box = ov.getBoundingClientRect();
+    const r = placeAt(armed.type, (e.clientX - box.left) / dv.scale, (e.clientY - box.top) / dv.scale, p);
+    if (armGhost.parentElement !== ov) ov.append(armGhost);
+    place(armGhost, { ...r, docKey: p.key, page: p.n });
+    armGhost.className = `os-armghost os-r${S.active ? colourOf(S.active) : 1}`;
+  }
+  stage.addEventListener("pointermove", moveGhost);
+  stage.addEventListener("pointerleave", () => armGhost.remove());
+  /// A click on an empty part of a page with a type armed: the field, centred there.
+  function placeArmed(e, ov, docKey, pageN) {
+    if (!armed || e.button !== 0) return false;
+    const doc = S.docs.find((d) => d.key === docKey);
+    if (!doc) return false;
+    const box = ov.getBoundingClientRect();
+    const type = armed.type;
+    if (!armed.sticky) disarm();
+    addField(type, doc, pageN, (e.clientX - box.left) / dv.scale, (e.clientY - box.top) / dv.scale);
+    return true;
   }
 
   let lastPlaced = null;
@@ -1749,7 +1823,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     change(() => { S.fields.push(copy); S.selected = copy.key; });
     select(copy.key);
   }, () => !!S.clipboard);
-  reg("field.deselect", t("cmd.field.deselect"), () => { const f = sel(); select(null); if (f) stage.focus(); });
+  // Escape: an armed type first (UX-05), then the selection.
+  reg("field.deselect", t("cmd.field.deselect"), () => { if (armed) { disarm(true); return; } const f = sel(); select(null); if (f) stage.focus(); }, () => !!armed || hasSel());
   reg("edit.undo", t("cmd.edit.undo"), () => { const s = S.undo.pop(); if (!s) return; S.redo.push(snapshot()); restore(s); }, () => S.undo.length > 0);
   reg("edit.redo", t("cmd.edit.redo"), () => { const s = S.redo.pop(); if (!s) return; S.undo.push(snapshot()); restore(s); }, () => S.redo.length > 0);
   if (TPL) {
@@ -1764,7 +1839,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
   reg("recipient.add", t(TPL ? "template.add-role" : "prepare.add-recipient"), () => addRecipient(), () => true);
   reg("document.add", t("prepare.add-pdf"), () => fileInput.click(), () => true);
-  for (const type of FIELD_TYPES) reg(`field.add-${type}`, t("prepare.add-field", { type: t(`ftype.${type}`) }), () => addFieldInView(type), () => true);
+  for (const type of FIELD_TYPES) {
+    reg(`field.add-${type}`, t("prepare.add-field", { type: t(`ftype.${type}`) }), () => addFieldInView(type), () => true);
+    reg(`field.arm-${type}`, t("prepare.arm-field", { type: t(`ftype.${type}`) }), () => arm(type, false), () => S.docs.length > 0);
+  }
+  reg("field.disarm", t("prepare.disarm"), () => disarm(true), () => !!armed);
   for (let n = 1; n <= 9; n++) {
     reg(`recipient.select-${n}`, t("cmd.recipient.select"), () => pick(signers()[n - 1].key), () => signers().length >= n);
   }
