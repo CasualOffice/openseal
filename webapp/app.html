@@ -11,14 +11,18 @@
   <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="shell.css">
+  <link rel="stylesheet" href="prepare.css">
   <link rel="stylesheet" href="manage.css">
+  <link rel="stylesheet" href="admin.css">
   <script type="module" src="app.js"></script>
 </head>
 <body class="os-app">
   <a class="os-skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
   <div id="mock-banner" class="os-mock-banner" role="note" hidden><span data-i18n="mock.banner">Demo mode</span></div>
   <!-- Top navigation (docs/47 §As built: shell): brand, sections, Start, search, help,
-       theme, account. Below 960 px the sections fold into a drawer behind Menu. -->
+       notifications, account. Below 960 px the sections fold into a drawer behind Menu
+       (with a scrim) and search into a button that opens a row under the bar (UX-04). -->
   <header class="os-topbar">
     <button type="button" id="nav-toggle" class="os-btn os-btn--ghost os-btn--md os-btn--icon os-nav-toggle" aria-controls="nav" aria-expanded="false" data-i18n-attr="aria-label:nav.menu;title:nav.menu"></button>
     <a class="os-brand" href="#/home" data-i18n-attr="aria-label:nav.home">
@@ -39,10 +43,11 @@
       <label class="os-sr-only" for="top-search" data-i18n="agreements.search">Search agreements</label>
       <input id="top-search" class="os-input os-topsearch__input" type="search" autocomplete="off" data-i18n-attr="placeholder:top.search-placeholder">
     </form>
-    <button type="button" id="help-btn" class="os-btn os-btn--ghost os-btn--md os-btn--icon" data-i18n-attr="aria-label:help.shortcuts;title:help.shortcuts"></button>
-    <button type="button" id="theme-btn" class="os-btn os-btn--ghost os-btn--md os-btn--icon"></button>
+    <div id="help-slot"></div>
+    <div id="bell-slot"></div>
     <div id="account-slot"></div>
   </header>
+  <div id="nav-scrim" class="os-nav-scrim" hidden></div>
   <main id="main" class="os-main" tabindex="-1"></main>
 </body>
 </html>

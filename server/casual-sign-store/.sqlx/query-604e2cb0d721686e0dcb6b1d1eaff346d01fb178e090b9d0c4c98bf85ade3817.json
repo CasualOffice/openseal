@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET name = $3 WHERE id = $2 AND EXISTS (SELECT 1 FROM account_memberships m WHERE m.account_id = $1 AND m.user_id = $2) AND NOT openseal_user_in_other_account($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "604e2cb0d721686e0dcb6b1d1eaff346d01fb178e090b9d0c4c98bf85ade3817"
+}

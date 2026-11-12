@@ -82,7 +82,9 @@ test("two signers in order sign through emailed links; the sealed PDF and certif
   const started = Date.now() - 5_000;
 
   await signIn(page);
-  await page.getByRole("button", { name: "New envelope" }).first().click();
+  // UX-07: the top bar's Start is the one way in to a new envelope.
+  await page.locator("#start-btn").click();
+  await page.getByRole("menuitem", { name: "Send an envelope" }).click();
   await page.getByTestId("pdf-input").setInputFiles(pdfFile("real-stack.pdf", "Real stack agreement"));
   await expect(page.getByTestId("doc-card")).toHaveCount(1);
   await page.getByTestId("wizard-next").click();

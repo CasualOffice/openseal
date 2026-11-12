@@ -214,7 +214,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | Account | `accounts` (RLS on `id`) | `TenantTx::account` |
 | User, membership, permission profile | `users`, `account_memberships`, `permission_profiles` | `TenantTx::users` |
 | Group | `groups`, `group_members` | schema only |
-| Brand, Settings, ERSD versions | `brands`, `accounts.settings`, `ersd_versions` | settings only |
+| Brand, Settings, ERSD versions | `brands`, `accounts.settings`, `ersd_versions` | settings; `TenantTx::account().disclosure` reads a published ERSD text by its hash (`UXW-34`); no write path yet (`ERSD-01`) |
 | Template, TemplateDocument, Role, role-bound Field, sharing | `templates`, `template_documents`, `template_roles`, `template_fields`, `template_shares` | `TenantTx::templates` (not shares) |
 | Envelope, folders and recycle folder | `envelopes`, `folders` | `TenantTx::envelopes` |
 | Document, DocumentVersion | `documents`, `document_versions` | `TenantTx::documents` |
@@ -239,8 +239,12 @@ the row is visible only through a membership of the current account; enrolling a
 normalized email as well as their id (`add_existing_member`). Repositories are reached only through
 `Store::for_account(id)` → `Tenant::begin()` → `TenantTx`, which binds the account into every statement and sets
 `openseal.account_id` for the transaction. The only cross-account paths are `SECURITY DEFINER` functions, executable by
-the application role alone, that take a secret's hash (recipient token, API key, signing link), a login identity, or a
-supplied lease token (job claim) and return ids. The migrator owns every table; `openseal_app` owns nothing, has no
+the application role alone, that take a secret's hash (recipient token, API key, signing link), a login identity, a
+supplied lease token (job claim), the user's own live session id (`openseal_update_own_user`, 0013) or an open, sent,
+unexpired invitation id (`openseal_accept_user_invitation`, 0013); the two 0013 functions may also end that user's
+sessions in every account, through `openseal_revoke_user_sessions`, which the application role cannot call. One more,
+`openseal_user_in_other_account` (0013), answers only whether a member of the current account also belongs to another
+account, and is false for anyone who is not a member of the current account. The migrator owns every table; `openseal_app` owns nothing, has no
 `BYPASSRLS`, no `TRUNCATE` anywhere, and only `SELECT`, `INSERT` on `audit_events` and `envelope_tombstones`.
 
 **Audit as built.** An event is stored as its RFC 8785 canonical bytes, exactly what its hash covers; an insert
@@ -296,6 +300,19 @@ the row, documents, state and chain stay), and indexes for each list sort with `
 parameterized query per sort key and direction (keyset paging on `(key, id)`), filtered by a set of statuses, a sender,
 a text and a last-change range, excluding removed envelopes. A purged draft's recipient rows are removed by the
 projection instead of being blanked (the name check refused the blanks, so deleting a draft with recipients failed).
+
+`0013_shared_user_guard.sql` (`SEC-ID-01`, docs/07 `SEC-A11`) makes the `users` row the user's own once they belong
+to more than one account. 0002's `member_of_current_account` policy now governs `SELECT` only; a new `UPDATE` policy
+admits a user who is a member of the current account and of no other, through `openseal_user_in_other_account(user)`
+(a `SECURITY DEFINER` boolean, false for a user with no membership here, so it cannot probe other accounts).
+`Users::rename` and `Users::set_password_hash` carry the same condition in their statement (so the repository isolates
+with RLS off too) and answer `CS-DB-0009` with SQLSTATE `OS003` for a shared user. Two more definer functions are the
+user's own doors, each finding the user from something only they hold: `openseal_update_own_user(session, name,
+password_hash, now)` from a live session of the current account (`Users::update_own`), and
+`openseal_accept_user_invitation(invitation, password_hash, now)` from an open, sent, unexpired invitation
+(`Users::accept_invitation_with_password`, which spends it and revokes the member's other open invitations here). A new
+password through either ends the user's staff sessions in every account (`openseal_revoke_user_sessions`, not granted
+to the application role). No table changes.
 
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).

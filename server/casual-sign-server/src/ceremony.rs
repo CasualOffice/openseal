@@ -27,7 +27,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::api::{json as json_resp, request_context, same_id};
-use crate::apply::{Commands, Loaded, load, policy, run, uid};
+use crate::apply::{Commands, Loaded, load, policy_of, run, uid};
 use crate::auth::cookie;
 use crate::crypto::{random_secret, same, sha256, verify_password};
 use crate::dto::{self, parse};
@@ -54,6 +54,41 @@ pub(crate) struct Open {
     /// Whether the cookie says `Secure` (the server's `secure_cookies`, as the staff
     /// session's: off only for plain-HTTP development on localhost).
     secure: bool,
+    /// Who sent the envelope, as the view answers it (UXW-34).
+    sender: Value,
+    /// `/s/{token}`, the path the view's `consent_required.url` extends. The token is
+    /// the caller's own, already resolved (URL-safe base64), so nothing new is revealed.
+    link: String,
+    /// The account's published disclosure text for the policy's ERSD, when there is
+    /// one, with whether its text still hashes to the hash consent records (UXW-34).
+    disclosure: Option<(casual_sign_store::repo::accounts::Disclosure, bool)>,
+}
+
+/// Who sent the envelope, for the recipient to judge whether the request is genuine
+/// (docs/40 §6): the sending user's name and email as the account holds them now
+/// (`null` once they are no longer a member), and the account's brand name, else its
+/// name.
+async fn sender_of(
+    tx: &mut TenantTx,
+    s: &casual_sign_workflow::EnvelopeState,
+    acct: &casual_sign_store::repo::accounts::Account,
+) -> Result<Value, ApiError> {
+    let member = tx
+        .users()
+        .get(casual_sign_store::UserId(uid(&s.sender_user_id)?))
+        .await?;
+    let organisation = acct
+        .settings
+        .pointer("/branding/name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .unwrap_or(acct.name.as_str());
+    Ok(json!({
+        "name": member.as_ref().map(|m| m.name.get().clone()),
+        "email": member.as_ref().map(|m| m.email.get().clone()),
+        "organisation": organisation,
+    }))
 }
 
 fn json_body(method: &Method, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -158,7 +193,17 @@ async fn open(
                 format!("recipient_token:{}", record.id).as_bytes(),
             )),
         );
-        let cmds = Commands::new(None, now, ctx, policy(&mut tx).await?);
+        let acct = tx.account().get().await?;
+        let policy = policy_of(&acct.settings);
+        let sender = sender_of(&mut tx, &l.state, &acct).await?;
+        let disclosure = match &policy.ersd {
+            Some(e) => tx.account().disclosure(&e.hash.0).await?.map(|d| {
+                let intact = same(&sha256(d.body.as_bytes()), &e.hash.0);
+                (d, intact)
+            }),
+            None => None,
+        };
+        let cmds = Commands::new(None, now, ctx, policy);
         let _ = RecipientId(target.recipient_id.0);
         Ok(Open {
             tx,
@@ -170,6 +215,9 @@ async fn open(
             geoip: st.0.geoip.get().cloned(),
             adoption: None,
             secure: st.config().secure_cookies,
+            sender,
+            link: format!("/s/{token}"),
+            disclosure,
         })
     };
     inner.await.map_err(IntoResponse::into_response)
@@ -268,6 +316,8 @@ impl Open {
                 "id": s.id, "status": s.status, "subject": s.subject.0, "message": s.message.0,
                 "signing_options": s.options,
                 "documents": s.documents.iter().map(dto::document).collect::<Vec<_>>(),
+                // When it expires, so the page can say "sign by" (UXW-34).
+                "expires_at": s.expires_at,
             },
             "recipient": me.map(dto::recipient),
             "fields": s.fields.0.iter()
@@ -276,7 +326,16 @@ impl Open {
             // Whether the page asks the device for its location (GEO-01); when false it
             // never asks.
             "capture_location": s.options.capture_location,
-            "consent_required": self.cmds.policy.ersd.as_ref().map(|e| json!({"version": e.version, "sha256": e.hash})),
+            "consent_required": self.cmds.policy.ersd.as_ref().map(|e| {
+                let mut c = json!({"version": e.version, "sha256": e.hash});
+                // Only when the text is published and intact (UXW-34): the page never
+                // links to a disclosure it cannot read.
+                if let (Some((_, true)), Some(o)) = (&self.disclosure, c.as_object_mut()) {
+                    o.insert("url".into(), Value::String(format!("{}/disclosure", self.link)));
+                }
+                c
+            }),
+            "sender": self.sender,
             "auth_required": me.map(|r| r.spec.auth.iter().filter(|m| !r.auth_passed.contains(m)).copied().collect::<Vec<_>>()),
         })
     }
@@ -1250,16 +1309,7 @@ pub(crate) async fn history(
                 .recipient(&o.recipient)
                 .ok_or_else(ApiError::expired)?;
         let who = || o.recipient.clone();
-        if r.auth_locked {
-            return Err(
-                casual_sign_workflow::WorkflowError::AuthLocked { recipient: who() }.into(),
-            );
-        }
-        if !r.auth_satisfied() {
-            return Err(
-                casual_sign_workflow::WorkflowError::AuthRequired { recipient: who() }.into(),
-            );
-        }
+        authenticated(r)?;
         if let Some(ersd) = &o.cmds.policy.ersd {
             let consented = r
                 .consent
@@ -1301,6 +1351,75 @@ pub(crate) async fn history(
         Ok::<_, ApiError>(json!({ "events": items }))
     }
     .await;
+    match result {
+        Ok(v) => json_resp(StatusCode::OK, &v),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// Refuse a recipient who is locked out or has not passed every authentication they
+/// need (`CS-AUTH-0004`, `CS-AUTH-0003`): the engine's `gate_in` rule for consent,
+/// applied to the reads that serve nothing but this recipient's ceremony.
+fn authenticated(r: &casual_sign_workflow::RecipientState) -> Result<(), ApiError> {
+    if r.auth_locked {
+        return Err(casual_sign_workflow::WorkflowError::AuthLocked {
+            recipient: r.id().clone(),
+        }
+        .into());
+    }
+    if !r.auth_satisfied() {
+        return Err(casual_sign_workflow::WorkflowError::AuthRequired {
+            recipient: r.id().clone(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// `GET /s/{token}/disclosure` (UXW-34): the full disclosure (ERSD) the view's
+/// `consent_required` names, `{version, sha256, text}`: `version` the label
+/// `POST …/consent` takes, `sha256` over the text's UTF-8 (the hash consent records),
+/// re-checked as it is read. The account's own published text, found by that hash;
+/// `404 CS-API-0002` when the account requires no disclosure or has published no text
+/// for it, `500 CS-API-0010` when the stored text no longer hashes to it (never served).
+/// Under the rules consent has: only in the browser the link is bound to, and once the
+/// recipient has passed every authentication they need (`403` before); still readable
+/// after they finished or declined, while the link is valid. Records nothing (docs/32
+/// §3 has no access event for reading the disclosure; accepting it is
+/// `recipient.consented`) and changes nothing.
+pub(crate) async fn disclosure(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+) -> Response {
+    let o = match open(&st, &token, &headers, ip, &method, false).await {
+        Ok(o) => o,
+        Err(r) => return r,
+    };
+    let result = (|| {
+        let r =
+            o.l.state
+                .recipient(&o.recipient)
+                .ok_or_else(ApiError::expired)?;
+        authenticated(r)?;
+        let ersd = o
+            .cmds
+            .policy
+            .ersd
+            .as_ref()
+            .ok_or_else(ApiError::not_found)?;
+        let (d, intact) = o.disclosure.as_ref().ok_or_else(ApiError::not_found)?;
+        if !intact {
+            return Err(ApiError::internal("disclosure hash"));
+        }
+        Ok::<_, ApiError>(json!({
+            "version": ersd.version,
+            "sha256": ersd.hash,
+            "text": d.body,
+        }))
+    })();
     match result {
         Ok(v) => json_resp(StatusCode::OK, &v),
         Err(e) => e.into_response(),

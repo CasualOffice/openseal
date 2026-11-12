@@ -7,21 +7,60 @@ import { t } from "../i18n.js";
 import { button } from "./core.js";
 
 const open = new Set();
-document.addEventListener("click", (e) => { for (const m of [...open]) if (!m.contains(e.target)) m.close(); });
+document.addEventListener("click", (e) => { for (const m of [...open]) if (!m.contains(e.target) && !m.menu.contains(e.target)) m.close(); });
 
-/// A menu button. `items()` returns entries `{label, icon, run, danger?}` or nodes
-/// (shown as they are, e.g. a header). The trigger is `trigger` (an existing button)
-/// or a new button from `label`/`buttonOpts`. Returns the wrapper element.
+// Open menus float in the top layer (UX-02): the `popover` attribute where the browser
+// has it, else the menu moves to <body>. Either way no table's scroll box or card's
+// `overflow: hidden` clips it, and it is placed from its button's box: below it, or
+// above when there is more room there; inside the viewport, scrolling when taller.
+const POPOVER = typeof HTMLElement !== "undefined" && typeof HTMLElement.prototype.showPopover === "function";
+const EDGE = 8; // px kept clear of the viewport's edges
+const GAP = 4; // px between the button and its menu
+
+/// Where a menu of `menu` size goes for a button at `anchor` in a `view`-sized
+/// viewport: `{left, top, maxHeight, above}` in px. Pure, for the tests.
+export function placeMenu(anchor, menu, view, align = "end") {
+  const width = Math.min(menu.width, view.width - 2 * EDGE);
+  let left = align === "start" ? anchor.left : anchor.right - width;
+  left = Math.max(EDGE, Math.min(left, view.width - EDGE - width));
+  const below = view.height - anchor.bottom - GAP - EDGE;
+  const above = anchor.top - GAP - EDGE;
+  if (menu.height <= below || below >= above) return { left, top: anchor.bottom + GAP, maxHeight: Math.max(0, below), above: false };
+  const h = Math.min(menu.height, above);
+  return { left, top: anchor.top - GAP - h, maxHeight: Math.max(0, above), above: true };
+}
+
+/// A menu button. `items()` returns entries `{label, icon, run, danger?}`, `"separator"`
+/// (a rule between groups), or nodes (shown as they are, e.g. a header). The trigger is
+/// `trigger` (an existing button) or a new button from `label`/`buttonOpts`. Returns the
+/// wrapper element.
 export function menuButton({ label, items, trigger = null, buttonOpts = {}, align = "end", menuLabel = label, menuClass = "" }) {
   const wrap = h("div", { class: "os-menu-wrap" });
   const btn = trigger || button(label, buttonOpts);
   btn.setAttribute("aria-haspopup", "menu");
   btn.setAttribute("aria-expanded", "false");
-  const list = h("div", { class: `os-menu os-menu--${align} ${menuClass}`.trim(), attrs: { role: "menu", "aria-label": menuLabel }, hidden: true });
+  const list = h("div", { class: `os-menu os-menu--${align} os-menu--floating ${menuClass}`.trim(), attrs: { role: "menu", "aria-label": menuLabel }, hidden: true });
+  if (POPOVER) list.popover = "manual";
   wrap.append(btn, list);
+  wrap.menu = list;
+  const place = () => {
+    list.style.maxHeight = "";
+    const r = btn.getBoundingClientRect();
+    const root = document.documentElement;
+    const p = placeMenu(r, { width: list.offsetWidth, height: list.scrollHeight }, { width: root.clientWidth, height: root.clientHeight }, align);
+    list.style.left = `${p.left}px`;
+    list.style.top = `${p.top}px`;
+    list.style.maxHeight = `${p.maxHeight}px`;
+    list.classList.toggle("is-above", p.above);
+  };
+  const onMove = (e) => { if (!list.contains(e.target)) place(); };
   wrap.close = (focus = false) => {
     if (list.hidden) return;
+    if (POPOVER && list.matches(":popover-open")) list.hidePopover();
     list.hidden = true;
+    if (!POPOVER) wrap.append(list);
+    window.removeEventListener("resize", place);
+    document.removeEventListener("scroll", onMove, true);
     btn.setAttribute("aria-expanded", "false");
     open.delete(wrap);
     if (focus) btn.focus();
@@ -33,6 +72,7 @@ export function menuButton({ label, items, trigger = null, buttonOpts = {}, alig
     clear(list);
     for (const it of items()) {
       if (!it) continue;
+      if (it === "separator") { list.append(h("div", { class: "os-menu__sep", attrs: { role: "separator" } })); continue; }
       if (it instanceof Node) { list.append(it); continue; }
       const b = h("button", { type: "button", class: `os-menu__item${it.danger ? " os-menu__item--danger" : ""}`, attrs: { role: "menuitem", tabindex: "-1" } },
         it.icon ? icon(it.icon, { size: 16 }) : null, h("span", { text: it.label }));
@@ -40,10 +80,15 @@ export function menuButton({ label, items, trigger = null, buttonOpts = {}, alig
       list.append(b);
     }
     list.hidden = false;
+    if (POPOVER) list.showPopover();
+    else document.body.append(list);
+    place();
+    window.addEventListener("resize", place);
+    document.addEventListener("scroll", onMove, true);
     btn.setAttribute("aria-expanded", "true");
     open.add(wrap);
     const entries = [...list.querySelectorAll('[role="menuitem"]')];
-    entries[0]?.focus();
+    entries[0]?.focus({ preventScroll: true });
     list.onkeydown = (ev) => {
       const i = entries.indexOf(document.activeElement);
       if (ev.key === "ArrowDown") { ev.preventDefault(); entries[(i + 1) % entries.length].focus(); }

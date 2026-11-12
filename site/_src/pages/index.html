@@ -57,7 +57,7 @@
 <section class="section-tight" aria-labelledby="product-h">
   <div class="wrap">
     <h2 id="product-h" class="sr-only">The product</h2>
-    <p class="status reveal">{{icon:info}}<span><strong>Pre-alpha.</strong> The PDF and evidence engine is complete and tested against 422 real-world PDFs. The server, worker, key service and web app run together on Docker Compose. Not yet for production agreements; see the <a href="roadmap.html">roadmap</a>.</span></p>
+    <p class="status reveal">{{icon:info}}<span><strong>v0.0.1 pre-release is out.</strong> Send, sign on a phone or a desktop, and download a sealed PDF with its certificate, on one machine with Docker Compose. It is for evaluation, not yet for production agreements; see the <a href="changelog.html">changelog</a> and the <a href="roadmap.html">roadmap</a>.</span></p>
     <figure class="showcase reveal reveal-d1">
       <div class="frame">{{shot:editor|The send editor: a two-page services agreement with signature, date and text fields placed for two signers, a field palette on the left and field properties on the right.}}</div>
       <figcaption>The document-first editor: the page gets the screen, fields go where you drop them.</figcaption>
@@ -119,7 +119,7 @@ curl https://sign.example.com/api/v1/envelopes \
     </div>
     <ol class="steps">
       <li class="reveal"><span class="step-icon">{{icon:file-up:24}}</span><h3>Upload</h3><p>Bring a PDF. Scripts, actions and embedded files are stripped before anyone sees it.</p></li>
-      <li class="reveal reveal-d1"><span class="step-icon">{{icon:pen-line:24}}</span><h3>Place fields</h3><p>Signature, initials, date, text, checkbox and more, dropped on the page or found from text tags.</p></li>
+      <li class="reveal reveal-d1"><span class="step-icon">{{icon:pen-line:24}}</span><h3>Place fields</h3><p>Signature, initials, date, name, text and checkbox, dropped on the page or suggested by Detect fields.</p></li>
       <li class="reveal reveal-d2"><span class="step-icon">{{icon:signature:24}}</span><h3>Sign</h3><p>Each signer is invited in turn, authenticates, consents and signs on any device.</p></li>
       <li class="reveal reveal-d3"><span class="step-icon">{{icon:stamp:24}}</span><h3>Seal</h3><p>A PAdES seal with a trusted timestamp, a certificate of completion and the audit trail inside the PDF.</p></li>
     </ol>
@@ -135,7 +135,7 @@ curl https://sign.example.com/api/v1/envelopes \
         <p>A completed agreement shows which document every party saw, who signed it, when and how. Anyone can check that for decades, with no account and no server.</p>
       </div>
       <ul class="facts">
-        <li><span class="cell-icon">{{icon:stamp}}</span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation and archive renewal are one setting away.</span></li>
+        <li><span class="cell-icon">{{icon:stamp}}</span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation (B-LT, B-LTA) is one setting per envelope; scheduled archive renewal is planned.</span></li>
         <li><span class="cell-icon">{{icon:link}}</span><strong>Hash-chained audit trail</strong><span>Every event is canonical JSON (RFC 8785) linked by SHA-256 to the one before it. Deleting, inserting, reordering or editing any event is detected.</span></li>
         <li><span class="cell-icon">{{icon:badge-check}}</span><strong>Checked by independent validators</strong><span>Our verifier, pyHanko and EU DSS must agree on every sealed and tampered fixture; all 417 admissible PDFs of a 422-file real-world corpus pass all three.</span></li>
         <li><span class="cell-icon">{{icon:key-round}}</span><strong>Keys in your HSM</strong><span>Seals are made by keyd, a separate daemon that holds the key behind PKCS#11 and signs digests, never documents. Cloud KMS backends are planned.</span></li>
@@ -175,7 +175,33 @@ curl https://sign.example.com/api/v1/envelopes \
   </div>
 </section>
 
-<section class="section section-alt" aria-labelledby="selfhost-h">
+<section class="section section-alt" id="next" aria-labelledby="next-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <h2 id="next-h">What is coming next.</h2>
+      <p>Work in progress now, in the open, and tracked on the <a href="roadmap.html">roadmap</a>. None of it is in v0.0.1.</p>
+    </div>
+    <div class="cards">
+      <article class="card reveal">
+        <span class="cell-icon">{{icon:building}}</span>
+        <h3>Workspaces and an admin console</h3>
+        <p>An organization above several workspaces, with organization, workspace and delegated administrators, and a separate console for the operator: plans and limits, keys and certificates, service health. The design is accepted; it is built in stages, aimed at v0.0.2.</p>
+      </article>
+      <article class="card reveal reveal-d1">
+        <span class="cell-icon">{{icon:cpu}}</span>
+        <h3>Assistive features from pretrained models</h3>
+        <p>Text from scanned pages, "is this one of your templates?", key dates and parties, personal-data finding. Self-hosted models in their own process, off by default, suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
+      </article>
+      <article class="card reveal reveal-d2">
+        <span class="cell-icon">{{icon:layers}}</span>
+        <h3>A UI and workflow overhaul</h3>
+        <p>A full pass over the editor, the signing page, the agreement lists, templates and admin; then the workflows a DocuSign or SignNow customer would miss, such as folders, an inbox, bulk send and signing links.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="selfhost-h">
   <div class="wrap split">
     <div class="reveal">
       <div class="sec-head">
@@ -210,7 +236,7 @@ docker compose exec \
   </div>
 </section>
 
-<section class="section" aria-labelledby="oss-h">
+<section class="section section-alt" aria-labelledby="oss-h">
   <div class="wrap os-band">
     <div class="reveal">
       <span class="eyebrow">{{icon:heart-handshake:16}}Open source</span>
@@ -232,14 +258,14 @@ docker compose exec \
   </div>
 </section>
 
-<section class="section section-alt" aria-labelledby="faq-h">
+<section class="section" aria-labelledby="faq-h">
   <div class="wrap faq-grid">
     <div class="sec-head reveal">
       <h2 id="faq-h">Questions people ask.</h2>
       <p>More in the <a href="docs/faq.html">documentation FAQ</a>.</p>
     </div>
     <div class="faq reveal reveal-d1">
-      <details><summary>Can I use it for real agreements today?{{icon:chevron-down}}</summary><div><p>Not yet. OpenSeal is pre-alpha: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what is left for Release 1.</p></div></details>
+      <details><summary>Can I use it for real agreements today?{{icon:chevron-down}}</summary><div><p>Not yet. v0.0.1 is a pre-release for evaluation: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the development stack makes its own certificate authority, and the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what comes next.</p></div></details>
       <details><summary>Are the signatures legally binding?{{icon:chevron-down}}</summary><div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. Whether a given signature is valid depends on your deployment, its configuration, the jurisdiction and the transaction. Nothing here is legal advice.</p></div></details>
       <details><summary>How do I check a document without your servers?{{icon:chevron-down}}</summary><div><p>Open the verify page from any OpenSeal install, or run it locally; the check runs in your browser and the file stays on your machine. The seal is standard PAdES, so independent tools such as pyHanko and EU DSS validate it too.</p></div></details>
       <details><summary>Can I build a commercial product on it?{{icon:chevron-down}}</summary><div><p>Yes. Apache-2.0 allows commercial and proprietary use, embedding, hosting and resale. When you redistribute it, keep the LICENSE and the NOTICE file. See <a href="brand.html">brand and attribution</a>.</p></div></details>
@@ -249,7 +275,7 @@ docker compose exec \
   </div>
 </section>
 
-<section class="section" aria-labelledby="closing-h">
+<section class="section section-alt" aria-labelledby="closing-h">
   <div class="wrap closing reveal">
     <h2 id="closing-h">Run it on your machine in one command.</h2>
     <p class="lede">Docker Compose brings up the server, the worker, the key service, the database, storage, a mail catcher and a timestamp authority.</p>

@@ -628,13 +628,35 @@ components:
     CeremonyView:
       type: object
       properties:
-        envelope: {type: object}
+        envelope:
+          type: object
+          description: '`id`, `status`, `subject`, `message`, `signing_options`, `documents`, and `expires_at` (when it expires, or null; UXW-34)'
         recipient: {$ref: '#/components/schemas/Recipient'}
         fields: {type: array, items: {$ref: '#/components/schemas/Field'}}
         capture_location: {type: boolean, description: 'Whether the page asks the device for its location (GEO-01)'}
         adoption_id: {type: string, description: 'After adopt: the capture a signature or initials field value names ({"signature": "<adoption_id>"})'}
-        consent_required: {type: [object, 'null']}
+        consent_required:
+          type: [object, 'null']
+          description: The account's disclosure the recipient must accept, or null when it requires none.
+          properties:
+            version: {type: string, description: 'The label `POST /s/{token}/consent` takes'}
+            sha256: {type: string, description: '`sha256:<hex>` over the text''s UTF-8, the hash consent records'}
+            url: {type: string, description: '`/s/{token}/disclosure`, present only when the account has published that text (UXW-34)'}
         auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
+        sender:
+          type: object
+          description: Who sent the envelope, so the recipient can judge whether the request is genuine (UXW-34).
+          properties:
+            name: {type: [string, 'null'], description: "The sending user's name as the account holds it now; null once they are no longer a member"}
+            email: {type: [string, 'null'], description: "The sending user's email address; null once they are no longer a member"}
+            organisation: {type: string, description: "The account's brand name (`settings.branding.name`), else the account's name"}
+    CeremonyDisclosure:
+      type: object
+      required: [version, sha256, text]
+      properties:
+        version: {type: string, description: 'The label `POST /s/{token}/consent` takes'}
+        sha256: {type: string, description: '`sha256:<hex>` over the text''s UTF-8, re-checked as it is read'}
+        text: {type: string}
     ConsentRequest:
       type: object
       required: [ersd_version]
@@ -740,8 +762,9 @@ paths:
       summary: "Spend a user invitation's one-time link and set the password (WEB-06)"
       description: >-
         An unknown, expired, spent or revoked link, or a member disabled meanwhile, is
-        `401 CS-AUTH-0002`, all alike. The member then logs in with `/auth/login`.
-        Rate-limited as login.
+        `401 CS-AUTH-0002`, all alike. Setting the password ends the member's sessions
+        in every account they belong to (SEC-ID-01). The member then logs in with
+        `/auth/login`. Rate-limited as login.
       security: []
       x-permission: public
       requestBody:
@@ -892,6 +915,14 @@ paths:
     patch:
       operationId: patchUser
       summary: "Rename a member, set their password, change their profile, disable or enable them"
+      description: >-
+        The name and password belong to the user in every account (SEC-ID-01). An
+        administrator, or any API key (the user's own included), changes them only for a
+        user whose one membership is this account; for a user who also belongs to another
+        account it is `403 CS-API-0015` and nothing in the request is applied. The user
+        changes their own name and password through their own session; a new password
+        ends their sessions in every account. Profile fields and disabling apply to this
+        account's membership only.
       x-permission: "admin:users"
       requestBody:
         required: true
@@ -2512,4 +2543,29 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyHistory'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/disclosure:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyDisclosure
+      summary: "The full disclosure (ERSD) the view's consent_required names (UXW-34)"
+      description: >-
+        The account's published text for its current disclosure, found by the hash consent
+        records and re-checked as it is read. `404` when the account requires no disclosure
+        or has published no text for it. Only in the bound browser, after every required
+        authentication (`403` before), as consent; still readable after finishing or
+        declining while the link is valid. Records nothing.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyDisclosure'}
         default: {$ref: '#/components/responses/Problem'}

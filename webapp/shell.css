@@ -1,0 +1,198 @@
+/* The app shell's styles (UX-02 split of app.css; docs/47 §Design system): the top bar,
+ * its sections and drawer, Start, search, account, the main column and the editor frame,
+ * sign-in, and the verify page. Loaded after app.css by app.html and verify.html. */
+
+/* ---- Shell: one top navigation bar (WEB-02 redesign; DocuSign's information
+ * architecture). Brand, sections, Start, search, help, theme, account on one line;
+ * below 960 px the sections fold into a drawer behind Menu. -------------------------- */
+.os-app { min-height: 100vh; display: grid; grid-template-rows: auto var(--os-topbar-h) 1fr; grid-template-columns: minmax(0, 1fr); background: var(--os-canvas); }
+.os-app > .os-skip { position: absolute; }
+.os-topbar {
+  display: flex; align-items: center; gap: var(--os-s2);
+  padding: 0 var(--os-s6); border-bottom: 1px solid var(--os-border); background: var(--os-bg);
+  position: sticky; top: 0; z-index: 50; box-shadow: var(--os-shadow);
+}
+.os-brand { display: flex; align-items: center; min-height: var(--os-target-min); border-radius: var(--os-radius-sm); margin-right: var(--os-s4); flex: none; }
+.os-nav-toggle { display: none; }
+.os-nav { display: flex; align-items: stretch; align-self: stretch; gap: var(--os-s1); }
+.os-nav__link {
+  position: relative; display: flex; align-items: center; gap: var(--os-s2);
+  padding: 0 var(--os-s3); color: var(--os-muted); text-decoration: none; font-weight: 600;
+  transition: color var(--os-dur-fast) var(--os-ease);
+}
+.os-nav__link > svg { display: none; }
+.os-nav__link:hover { color: var(--os-text); }
+.os-nav__link::after {
+  content: ""; position: absolute; left: var(--os-s3); right: var(--os-s3); bottom: -1px; height: 0.1875rem;
+  border-radius: 0.1875rem 0.1875rem 0 0; background: transparent; transition: background var(--os-dur-fast) var(--os-ease);
+}
+.os-nav__link[aria-current="page"] { color: var(--os-text); }
+.os-nav__link[aria-current="page"]::after { background: var(--os-accent-fill); }
+.os-nav__link--drawer { display: none; }
+.os-start #start-btn { gap: var(--os-s1); padding: 0 var(--os-s3) 0 var(--os-s2); }
+.os-topsearch { position: relative; width: 15rem; margin: 0 var(--os-s2); }
+.os-topsearch > svg { position: absolute; left: var(--os-s3); top: 50%; transform: translateY(-50%); color: var(--os-muted); pointer-events: none; }
+.os-topsearch__input { padding-left: 2.25rem; background: var(--os-surface); border-color: var(--os-border-strong); border-radius: 62.4375rem; }
+.os-account-btn { gap: var(--os-s1); padding: 0 var(--os-s1); }
+.os-main { min-width: 0; width: 100%; max-width: 85rem; margin: 0 auto; padding: var(--os-s8) var(--os-s8) var(--os-s12); outline: none; }
+.is-chromeless .os-topbar { display: none; }
+.is-chromeless.os-app { grid-template-rows: auto 1fr; }
+.is-wide .os-main { padding: 0; max-width: none; }
+.os-view { animation: os-enter var(--os-dur) var(--os-ease); }
+/* Search opens as a row under the bar below 60em (UX-04); above, the button is not shown. */
+.os-search-toggle { display: none; }
+/* Notifications: a dot on the bell for changes since it was last opened. */
+.os-bell { position: relative; }
+.os-bell__dot { position: absolute; top: 0.375rem; right: 0.375rem; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--os-accent-fill); box-shadow: 0 0 0 0.125rem var(--os-bg); }
+.os-bell__dot[hidden] { display: none; }
+.os-menu--notify { width: min(22rem, calc(100vw - 1rem)); }
+.os-menu--notify .os-menu__item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-menu__group { padding: var(--os-s2) var(--os-s3) var(--os-s1); font-size: var(--os-fs-12); font-weight: 600; color: var(--os-muted); }
+.os-menu__empty { margin: 0; padding: var(--os-s2) var(--os-s3) var(--os-s3); font-size: var(--os-fs-14); }
+/* The Keyboard shortcuts panel: one table per context. */
+.os-keys__title { font-size: var(--os-fs-14); margin: var(--os-s4) 0 var(--os-s2); }
+.os-keys__title:first-child { margin-top: 0; }
+.os-keys { margin-bottom: var(--os-s2); }
+.os-keys__keys { white-space: nowrap; }
+.os-keys kbd { display: inline-block; min-width: 1.5rem; padding: 0 var(--os-s1); border: 1px solid var(--os-border-strong); border-bottom-width: 0.125rem; border-radius: var(--os-radius-sm); background: var(--os-surface); font: inherit; font-size: var(--os-fs-12); text-align: center; }
+.os-menu__who { display: grid; padding: var(--os-s2) var(--os-s3); border-bottom: 1px solid var(--os-border); margin-bottom: var(--os-s1); font-size: var(--os-fs-12); overflow-wrap: anywhere; }
+
+/* ---- Sign-in ---------------------------------------------------------------------- */
+.os-signin-wrap { min-height: 80vh; display: grid; place-items: center; align-content: center; gap: var(--os-s4); padding: var(--os-s6) var(--os-s4); }
+.os-signin { width: min(25rem, 100%); padding: var(--os-s8); border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-bg); box-shadow: var(--os-shadow); }
+.os-signin__logo { margin-bottom: var(--os-s6); height: 2.25rem; width: auto; }
+.os-signin__title { font-size: var(--os-fs-24); margin-bottom: var(--os-s1); }
+.os-signin__form .os-btn { width: 100%; margin-top: var(--os-s4); }
+.os-signin__alert { margin: var(--os-s4) 0 0; }
+.os-signin__alert[hidden] { display: none; }
+.os-signin__forgotrow { display: flex; justify-content: flex-end; margin-top: var(--os-s2); }
+.os-signin__forgot { font-size: var(--os-fs-14); font-weight: 600; }
+.os-signin__form .os-signin__link { width: auto; margin: 0; padding: 0; min-height: 1.75rem; display: inline-flex; align-items: center; border: 0; background: none; color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.15em; cursor: pointer; font: inherit; font-size: var(--os-fs-14); font-weight: 600; }
+/* Show password: a toggle beside the field (not inside it, where it would cover typed text). */
+.os-password { display: flex; align-items: stretch; gap: var(--os-s2); }
+.os-password .os-input { flex: 1; min-width: 0; }
+.os-signin__form .os-password__toggle { flex: none; width: auto; margin: 0; min-width: 4rem; min-height: var(--os-target-min); }
+.os-signin__or { display: flex; align-items: center; gap: var(--os-s3); margin: var(--os-s4) 0; color: var(--os-muted); font-size: var(--os-fs-14); }
+.os-signin__or::before, .os-signin__or::after { content: ""; flex: 1; height: 1px; background: var(--os-border); }
+.os-signin__sso { display: grid; gap: var(--os-s2); }
+.os-signin__sso .os-btn { width: 100%; }
+.os-signin__back { margin-top: var(--os-s4); }
+.os-signin__foot { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--os-s2) var(--os-s4); font-size: var(--os-fs-14); }
+.os-signin__footlink { color: var(--os-muted); display: inline-flex; align-items: center; min-height: var(--os-target-min); }
+.os-signin__footlink:hover { color: var(--os-text); }
+.os-signin__hint { margin-top: var(--os-s4); padding: var(--os-s3); border-radius: var(--os-radius); background: var(--os-surface); font-size: var(--os-fs-12); overflow-wrap: anywhere; }
+/* Verify */
+.os-verify { background: var(--os-canvas); color: var(--os-text); min-height: 100vh; }
+.os-verify .os-topbar { position: static; min-height: var(--os-topbar-h); }
+.os-verify__main { max-width: 57.5rem; margin: 0 auto; padding: var(--os-s8) var(--os-s4) var(--os-s12); outline: none; }
+.os-drop { display: grid; justify-items: center; gap: var(--os-s3); padding: var(--os-s8) var(--os-s4); border: 0.125rem dashed var(--os-border-strong); border-radius: var(--os-radius-lg); background: var(--os-raised); text-align: center; }
+.os-drop.is-dropping { border-color: var(--os-accent-fill); background: var(--os-accent-soft); }
+.os-drop__title { font-size: var(--os-fs-20); font-weight: 600; margin: 0; }
+.os-chips { list-style: none; margin: var(--os-s2) 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--os-s2); }
+.os-chip-item { display: inline-flex; align-items: center; gap: var(--os-s1); padding: 0.125rem var(--os-s1) 0.125rem var(--os-s2); border: 1px solid var(--os-border); border-radius: 62.4375rem; background: var(--os-raised); }
+.os-verify__busy { display: flex; gap: var(--os-s3); align-items: center; padding: var(--os-s6) 0; }
+.os-spinner { width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 0.1875rem solid var(--os-border); border-top-color: var(--os-accent-fill); animation: os-spin 0.9s linear infinite; }
+.os-verdict { display: flex; gap: var(--os-s4); align-items: flex-start; padding: var(--os-s4) var(--os-s6); border-radius: var(--os-radius-lg); border: 1px solid var(--os-border); border-left-width: 0.375rem; margin: var(--os-s4) 0; background: var(--os-raised); box-shadow: var(--os-shadow); }
+.os-verdict--valid { border-left-color: var(--os-success); }
+.os-verdict--valid .os-verdict__icon { color: var(--os-success); }
+.os-verdict--invalid, .os-verdict--error { border-left-color: var(--os-danger); }
+.os-verdict--invalid .os-verdict__icon, .os-verdict--error .os-verdict__icon { color: var(--os-danger); }
+.os-verdict--indeterminate, .os-verdict--unsigned { border-left-color: var(--os-warning); }
+.os-verdict--indeterminate .os-verdict__icon, .os-verdict--unsigned .os-verdict__icon { color: var(--os-warning); }
+.os-verdict__title { font-size: var(--os-fs-20); font-weight: 600; margin: 0 0 var(--os-s1); }
+.os-verdict__text { margin: 0; }
+.os-sigs { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--os-s3); }
+.os-sig { border: 1px solid var(--os-border); border-radius: var(--os-radius); padding: var(--os-s3) var(--os-s4); }
+.os-sig__head { display: flex; justify-content: space-between; align-items: center; gap: var(--os-s3); }
+.os-sig__title { font-size: var(--os-fs-16); font-weight: 600; margin: 0; }
+.os-meta--tight { margin-top: var(--os-s2); }
+.os-checks { list-style: none; margin: var(--os-s2) 0 0; padding: 0; display: grid; gap: var(--os-s1); }
+.os-checks li { display: flex; align-items: center; gap: var(--os-s2); }
+.os-checks .is-passed > svg { color: var(--os-success); }
+.os-checks .is-failed > svg { color: var(--os-danger); }
+.os-trail { list-style: none; margin: var(--os-s3) 0 0; padding: 0 0 0 var(--os-s4); border-left: 0.125rem solid var(--os-border); display: grid; gap: var(--os-s3); }
+.os-trail__item { position: relative; }
+.os-trail__dot { position: absolute; left: calc(-1 * var(--os-s4) - 0.375rem); top: 0.375rem; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--os-accent-fill); }
+@media (max-width: 77.5em) {
+  .os-topsearch { width: 11.25rem; }
+}
+/* Below 960 px the sections fold into a drawer behind Menu. */
+@media (max-width: 60em) {
+  .os-topbar { padding: 0 var(--os-s3); }
+  .os-nav-toggle { display: inline-flex; }
+  /* The drawer starts at the bar's bottom as measured when it opens (app.js openNav), so
+   * it never covers the demo banner or the bar; the scrim below it closes it. */
+  .os-nav {
+    position: fixed; z-index: 70; top: var(--os-nav-top, var(--os-topbar-h)); bottom: 0; left: 0; width: min(17.5rem, 85vw);
+    flex-direction: column; gap: var(--os-s1); padding: var(--os-s4) var(--os-s3); background: var(--os-bg); overflow-y: auto;
+    border-right: 1px solid var(--os-border); transform: translateX(-105%); visibility: hidden;
+    transition: transform var(--os-dur) var(--os-ease), visibility 0s linear var(--os-dur); box-shadow: var(--os-shadow-pop);
+  }
+  .nav-open .os-nav { transform: none; visibility: visible; transition: transform var(--os-dur) var(--os-ease); }
+  /* Under the bar (z 50, which holds the drawer), over the page. */
+  .os-nav-scrim { position: fixed; z-index: 45; inset: var(--os-nav-top, var(--os-topbar-h)) 0 0 0; background: var(--os-overlay); animation: os-scrim-in var(--os-dur-fast) var(--os-ease); }
+  @keyframes os-scrim-in { from { opacity: 0; } }
+  .os-search-toggle { display: inline-flex; }
+  .search-open .os-search-toggle { background: var(--os-surface); }
+  .os-nav__link { min-height: var(--os-btn-lg); border-radius: var(--os-radius); color: var(--os-text); }
+  .os-nav__link > svg { display: block; color: var(--os-muted); }
+  .os-nav__link::after { display: none; }
+  .os-nav__link[aria-current="page"] { background: var(--os-accent-soft); color: var(--os-accent); }
+  .os-nav__link--drawer { display: flex; }
+  .os-topsearch { display: none; }
+  .search-open .os-topsearch {
+    display: block; position: absolute; top: 100%; left: 0; right: 0; width: auto; margin: 0;
+    padding: var(--os-s2) var(--os-s3); background: var(--os-bg); border-bottom: 1px solid var(--os-border); box-shadow: var(--os-shadow);
+  }
+  .search-open .os-topsearch > svg { left: calc(var(--os-s3) + var(--os-s3)); }
+  .search-open .os-topsearch__input { min-height: var(--os-btn-lg); font-size: var(--os-fs-16); }
+}
+.os-nav-scrim[hidden] { display: none; }
+@media (min-width: 60.0625em) { .os-nav-scrim { display: none; } }
+@media (max-width: 47.5em) {
+  .os-main { padding: var(--os-s4); }
+  .os-start #start-btn > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-start #start-btn > svg:last-child { display: none; }
+  .os-start #start-btn { padding: 0; width: var(--os-btn); }
+  .os-brand img { width: 6.5rem; height: auto; }
+  .os-signin { padding: var(--os-s6); }
+}
+/* Sign-in fills a small phone edge to edge, as the reference products do. */
+@media (max-width: 30em) {
+  .os-signin-wrap { place-items: stretch; align-content: start; padding: 0; margin: calc(-1 * var(--os-s4)); min-height: 100vh; min-height: 100dvh; background: var(--os-bg); }
+  .os-signin { width: 100%; border: 0; border-radius: 0; box-shadow: none; padding: var(--os-s8) var(--os-s4) var(--os-s4); }
+  .os-signin__foot { padding: 0 var(--os-s4) var(--os-s6); }
+}
+/* On the narrowest phones Help moves into the account menu (Help and shortcuts). */
+@media (max-width: 26.25em) {
+  #help-btn { display: none; }
+  .os-topbar { gap: var(--os-s1); }
+}
+/* At 320 px every control still fits on one line (no sideways scroll). */
+@media (max-width: 22.5em) {
+  .os-topbar { padding: 0 var(--os-s2); gap: 0.125rem; }
+  .os-brand { margin-right: 0; }
+  .os-brand img { width: 5.5rem; }
+  .os-account-btn > svg { display: none; }
+}
+.os-verify__main > .os-page-title { margin-bottom: var(--os-s6); }
+/* The editor frame: the whole viewport, no app bar; the page never scrolls. */
+.is-frame.os-app { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); }
+.is-frame .os-main { height: 100%; min-height: 0; overflow: hidden; padding: 0; max-width: none; }
+.is-frame .os-main > .os-view { height: 100%; min-height: 0; }
+@media (max-height: 31.25em) {
+  .is-frame.os-app { height: auto; min-height: 100dvh; overflow: visible; }
+  .is-frame .os-main, .is-frame .os-main > .os-view { height: auto; overflow: visible; }
+}
+/* Profile and signature panel (UX-04, profile.js). */
+.os-profile__section { padding: var(--os-s4) 0; border-top: 1px solid var(--os-border); }
+.os-profile__section:first-child { padding-top: 0; border-top: 0; }
+.os-profile__h { font-size: var(--os-fs-16); margin: 0 0 var(--os-s2); }
+.os-profile__email { margin: 0; overflow-wrap: anywhere; }
+.os-profile__mark { margin-top: var(--os-s3); }
+.os-profile__mark-head { display: flex; align-items: center; justify-content: space-between; gap: var(--os-s3); }
+.os-profile__mark-head .os-label { margin: 0; }
+/* A saved mark is a black-ink PNG: shown on white in both themes, as it will print. */
+.os-profile__img { display: block; max-width: 100%; height: 4rem; width: auto; margin-top: var(--os-s2); padding: var(--os-s2); border: 1px solid var(--os-border); border-radius: var(--os-radius); background: #fff; }
+.os-profile__section .os-fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: var(--os-s1); }
+.os-profile__section .os-fieldset > legend { margin-top: 0; }

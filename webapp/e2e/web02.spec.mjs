@@ -85,14 +85,17 @@ test("use a template: fill the roles, send, and the envelope has its fields", as
   await expect(page.getByRole("heading", { name: "Use Mutual NDA" })).toBeVisible();
   await expect(page.getByText("4 fields placed for the roles.")).toBeVisible();
   await page.getByTestId("use-send").click();
-  await expect(page.getByLabel("Company: name")).toBeFocused();
-  await expect(page.getByLabel("Company: name")).toHaveAttribute("aria-invalid", "true");
-  await page.getByLabel("Company: name").fill("Avery Chen");
-  await page.getByLabel("Company: email").fill("avery@acme.example");
-  await page.getByLabel("Counterparty: name").fill("Sam Patel");
-  await page.getByLabel("Counterparty: email").fill("sam@globex.example");
-  await page.getByLabel("Legal: name").fill("Legal team");
-  await page.getByLabel("Legal: email").fill("legal@acme.example");
+  // UX-08: each input is labelled Name or Email; its role names it in the description.
+  await expect(page.locator("#use-name-0")).toBeFocused();
+  await expect(page.locator("#use-name-0")).toHaveAccessibleName("Name");
+  await expect(page.locator("#use-name-0")).toHaveAccessibleDescription(/Company/);
+  await expect(page.locator("#use-name-0")).toHaveAttribute("aria-invalid", "true");
+  await page.locator("#use-name-0").fill("Avery Chen");
+  await page.locator("#use-email-0").fill("avery@acme.example");
+  await page.locator("#use-name-1").fill("Sam Patel");
+  await page.locator("#use-email-1").fill("sam@globex.example");
+  await page.locator("#use-name-2").fill("Legal team");
+  await page.locator("#use-email-2").fill("legal@acme.example");
   await expectAccessible(page, "use template");
   await snap(page, testInfo, "web02-template-use");
   await page.getByTestId("use-send").click();
@@ -109,8 +112,8 @@ test("a template without documents continues in the editor", async ({ page }) =>
   await page.getByRole("button", { name: "Use Contractor onboarding" }).click();
   await expect(page.getByTestId("use-no-docs")).toBeVisible();
   await expect(page.getByTestId("use-send")).toHaveCount(0);
-  await page.getByLabel("Contractor: name").fill("Jo Park");
-  await page.getByLabel("Contractor: email").fill("jo@example.com");
+  await page.locator("#use-name-0").fill("Jo Park");
+  await page.locator("#use-email-0").fill("jo@example.com");
   await page.getByTestId("use-edit").click();
   await expect(page.getByTestId("empty-documents")).toBeVisible();
   await expect(page.getByTestId("recipient-name")).toHaveValue("Jo Park");
@@ -157,23 +160,28 @@ test("admin: add and remove a user; an API client's key is shown once, then revo
   mockOnly();
   await signIn(page);
   await page.getByRole("link", { name: "Admin" }).click();
-  await expect(page.getByRole("tab", { name: "Users" })).toHaveAttribute("aria-selected", "true");
+  const rail = page.getByRole("navigation", { name: "Admin sections" });
+  await expect(rail.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("cell", { name: "Robin Sender", exact: true })).toBeVisible();
   await expectAccessible(page, "admin users");
   await snap(page, testInfo, "web02-admin-users");
   await page.getByRole("button", { name: "Add user" }).click();
   const add = page.getByRole("dialog", { name: "Add user" });
-  await add.getByLabel("Name").fill("Kim Lee");
-  await add.getByLabel("Email").fill("kim@example.com");
+  await add.getByLabel("Name", { exact: true }).fill("Kim Lee");
+  await add.getByLabel("Email", { exact: true }).fill("kim@example.com");
   await add.getByRole("button", { name: "Add user" }).click();
   await expect(page.getByRole("cell", { name: "Kim Lee", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Remove Kim Lee" }).click();
+  // UX-08: Remove sits in the row menu, not beside Edit; nobody removes themselves.
+  await page.getByRole("button", { name: "Actions for Kim Lee" }).click();
+  await page.getByRole("menuitem", { name: "Remove" }).click();
   await page.getByRole("dialog", { name: "Remove this user?" }).getByRole("button", { name: "Remove" }).click();
   await expect(page.getByRole("cell", { name: "Kim Lee", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Remove Demo Admin" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Actions for Demo Admin" }).click();
+  await expect(page.getByRole("menuitem", { name: "Remove" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
-  await page.getByRole("tab", { name: "Users" }).press("ArrowRight");
-  await expect(page.getByRole("tab", { name: "API clients" })).toHaveAttribute("aria-selected", "true");
+  await rail.getByRole("link", { name: "API clients" }).click();
+  await expect(rail.getByRole("link", { name: "API clients" })).toHaveAttribute("aria-current", "page");
   await page.getByRole("button", { name: "New API client" }).click();
   const create = page.getByRole("dialog", { name: "New API client" });
   await create.getByLabel("Name").fill("Billing sync");
@@ -182,10 +190,40 @@ test("admin: add and remove a user; an API client's key is shown once, then revo
   await expect(secret.getByTestId("secret-value")).toHaveValue(/^osk_/);
   await snap(page, testInfo, "web02-admin-secret");
   await secret.getByRole("button", { name: "I have copied it" }).click();
-  await page.getByRole("button", { name: "Revoke Billing sync" }).click();
+  await page.getByRole("button", { name: "Actions for Billing sync" }).click();
+  await page.getByRole("menuitem", { name: "Revoke" }).click();
   await page.getByRole("dialog", { name: "Revoke this API client?" }).getByRole("button", { name: "Revoke" }).click();
+  await page.getByText("Show revoked (1)").click();
   await expect(page.getByRole("row", { name: /Billing sync/ })).toContainText("Revoked");
   await expectAccessible(page, "admin api clients");
+});
+
+test("admin: a member of another account too keeps their name; their profile still changes (SEC-ID-01)", async ({ page }) => {
+  mockOnly();
+  await signIn(page);
+  await page.getByRole("link", { name: "Admin" }).click();
+  await page.getByRole("button", { name: "Add user" }).click();
+  const add = page.getByRole("dialog", { name: "Add user" });
+  await add.getByLabel("Name", { exact: true }).fill("Sam Shared");
+  await add.getByLabel("Email", { exact: true }).fill("shared@openseal.test");
+  await add.getByRole("button", { name: "Add user" }).click();
+  await expect(page.getByRole("cell", { name: "Sam Shared", exact: true })).toBeVisible();
+
+  // The profile alone: the unchanged name is not sent, so the server accepts it.
+  await page.getByRole("button", { name: "Edit Sam Shared" }).click();
+  let edit = page.getByRole("dialog", { name: "Edit user" });
+  await edit.getByLabel("Permission profile").selectOption("viewer");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("User saved.")).toBeVisible();
+  await expect(edit).toHaveCount(0);
+
+  // A new name is theirs to choose: the panel stays open with the reason.
+  await page.getByRole("button", { name: "Edit Sam Shared" }).click();
+  edit = page.getByRole("dialog", { name: "Edit user" });
+  await edit.getByLabel("Name").fill("Someone Else");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("only they can change their name or password")).toBeVisible();
+  await expect(edit).toBeVisible();
 });
 
 test.describe("verify", () => {

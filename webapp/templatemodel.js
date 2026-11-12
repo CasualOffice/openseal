@@ -57,6 +57,17 @@ export function peopleProblems(roles, people) {
   return out;
 }
 
+/// What is missing in the people added beyond the roles (UX-08): one entry per
+/// problem, `{index, problem: "name" | "email"}`.
+export function extraProblems(extra) {
+  const out = [];
+  (extra || []).forEach((p, index) => {
+    if (!String(p?.name || "").trim()) out.push({ index, problem: "name" });
+    if (!EMAIL.test(String(p?.email || "").trim())) out.push({ index, problem: "email" });
+  });
+  return out;
+}
+
 /// The `POST /api/v1/envelopes` body for a template filled with `people`.
 ///
 /// - `docs`: `[{id, name, base64}]`, the template's documents with their bytes.
@@ -66,7 +77,11 @@ export function peopleProblems(roles, people) {
 ///
 /// A field whose role or document is not in the template is left out (the template
 /// changed under it), and counted in the returned `dropped`.
-export function envelopeFromTemplate(template, people, { docs = [], fields = [], subject, message, status = "draft", signingOptions = {} } = {}) {
+///
+/// - `extra` (UX-08): people added beyond the roles, `[{name, email, type: "signer" |
+///   "cc"}]`, after every role in routing order (an added signer has no fields; it is
+///   placed in the editor before sending).
+export function envelopeFromTemplate(template, people, { docs = [], fields = [], subject, message, status = "draft", signingOptions = {}, extra = [] } = {}) {
   const roles = rolesOf(template);
   const ref = new Map(roles.map((r, i) => [r.name, `role${i}`]));
   const refById = new Map(roles.filter((r) => r.id).map((r) => [r.id, `role${roles.indexOf(r)}`]));
@@ -87,6 +102,14 @@ export function envelopeFromTemplate(template, people, { docs = [], fields = [],
     })),
     fields: [],
   };
+  const last = Math.max(0, ...roles.map((r) => r.routing_order));
+  (extra || []).forEach((p, i) => body.recipients.push({
+    ref: `extra${i}`,
+    type: p?.type === "signer" ? "signer" : "cc",
+    name: String(p?.name || "").trim(),
+    email: String(p?.email || "").trim(),
+    routing_order: last + 1,
+  }));
   for (const f of fields) {
     const rf = f.role_id != null ? refById.get(f.role_id) : ref.get(f.role);
     const di = docIndex.get(f.document_id);
