@@ -34,7 +34,7 @@ pub mod web;
 
 pub mod api;
 
-pub use api::admin::{Bootstrapped, bootstrap};
+pub use api::admin::{Bootstrapped, bootstrap, bootstrap_workspace};
 pub use api::envelopes::issue_invitation_token;
 pub use auth::{Credential, Principal, SCOPES};
 pub use crypto::JwtKeys;

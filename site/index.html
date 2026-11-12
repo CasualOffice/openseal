@@ -216,24 +216,43 @@ curl https://sign.example.com/api/v1/envelopes \
 <section class="section section-alt" id="next" aria-labelledby="next-h">
   <div class="wrap">
     <div class="sec-head reveal">
-      <h2 id="next-h">What is coming next.</h2>
-      <p>Work in progress now, in the open, and tracked on the <a href="roadmap.html">roadmap</a>. None of it is in v0.0.1.</p>
+      <h2 id="next-h">What is new, and what is coming next.</h2>
+      <p>Merged since v0.0.1 and in the next release, then the work in progress now, in the open and tracked on the <a href="roadmap.html">roadmap</a>. See the <a href="changelog.html">changelog</a> for detail.</p>
     </div>
+    <h3 class="cards-label reveal" id="new-since-v0-0-1">New since v0.0.1</h3>
     <div class="cards">
       <article class="card reveal">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg></span>
+        <h3 id="a-redesigned-web-app">A redesigned web app</h3>
+        <p>A full pass over every screen against what a DocuSign or SignNow user expects: a send editor with click-to-place fields and every field kind, a reworked signing page, clearer agreement lists and envelope pages, templates, reports and an admin section, and an app shell with notifications that works on phones.</p>
+      </article>
+      <article class="card reveal reveal-d1">
         <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M12 6h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/><path d="M8 6h.01"/><path d="M9 22v-3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><rect x="4" y="2" width="16" height="20" rx="2"/></svg></span>
+        <h3 id="organizations-above-workspaces">Organizations above workspaces</h3>
+        <p>An organization now holds its workspaces, with organization owners and the organization boundary enforced in the database. Signers also see who sent the agreement and can read the electronic-records disclosure before they start.</p>
+      </article>
+      <article class="card reveal reveal-d2">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="M13.3 16.3 15 18"/></svg></span>
+        <h3 id="finding-parties-dates-and-personal-data">Finding parties, dates and personal data</h3>
+        <p>The self-hosted model service can now pick out parties, dates and amounts and mark personal data, beside rule-based recognisers that validate card numbers, IBANs, social security numbers and other identifiers. Off by default, suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
+      </article>
+    </div>
+    <h3 class="cards-label cards-label-next reveal" id="coming-next">Coming next</h3>
+    <div class="cards">
+      <article class="card reveal">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span>
         <h3 id="workspaces-and-an-admin-console">Workspaces and an admin console</h3>
-        <p>An organization above several workspaces, with organization, workspace and delegated administrators, and a separate console for the operator: plans and limits, keys and certificates, service health. The design is accepted; it is built in stages, aimed at v0.0.2.</p>
+        <p>Switching between workspaces, organization admin screens and audit logs, delegated administrators, and a separate console for the operator: plans and limits, keys and certificates, service health. Built in stages, aimed at v0.0.2.</p>
       </article>
       <article class="card reveal reveal-d1">
         <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></span>
-        <h3 id="assistive-features-from-pretrained-models">Assistive features from pretrained models</h3>
-        <p>Text from scanned pages, "is this one of your templates?", key dates and parties, personal-data finding. Self-hosted models in their own process, off by default, suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
+        <h3 id="scans-and-templates">Scans and templates</h3>
+        <p>Text from scanned pages, so fields are found on paper forms too, and "is this one of your templates?" when a document is uploaded. In progress, with the same rule: off by default, and never part of the evidence.</p>
       </article>
       <article class="card reveal reveal-d2">
         <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></span>
-        <h3 id="a-ui-and-workflow-overhaul">A UI and workflow overhaul</h3>
-        <p>A full pass over the editor, the signing page, the agreement lists, templates and admin; then the workflows a DocuSign or SignNow customer would miss, such as folders, an inbox, bulk send and signing links.</p>
+        <h3 id="the-workflows-switching-customers-expect">The workflows switching customers expect</h3>
+        <p>Signing in person with a host, folders, an inbox, bulk send and signing links, among the workflows a DocuSign or SignNow customer would miss.</p>
       </article>
     </div>
   </div>

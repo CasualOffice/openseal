@@ -49,7 +49,8 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(11, "0011_envelope_lists.sql"),
     migration!(12, "0012_email_otp.sql"),
     migration!(13, "0013_shared_user_guard.sql"),
-    migration!(14, "0014_in_person_hosting.sql"),
+    migration!(14, "0014_organizations.sql"),
+    migration!(15, "0015_in_person_hosting.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.

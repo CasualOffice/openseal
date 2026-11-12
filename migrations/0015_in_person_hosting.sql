@@ -1,4 +1,4 @@
--- 0014: in-person signing links hosted by a staff user (UXW-36, docs/24 §2, docs/40 §6).
+-- 0015: in-person signing links hosted by a staff user (UXW-36, docs/24 §2, docs/40 §6).
 --
 -- `POST /envelopes/{id}/recipients/{r}/host` records `recipient.in_person_hosted` and
 -- mints a one-time ceremony link for an in-person signer, returned only to the member
