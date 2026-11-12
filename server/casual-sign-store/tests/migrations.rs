@@ -98,8 +98,15 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // Pinned: a new table must be looked at here, not just pass by default. 0008 added
     // `envelope_states` and `job_steps` (stage 2D), both tenant tables; 0009 added
     // `idempotency_keys` and `staff_sessions` (stage 2C); 0010 `user_invitations` (WEB-06);
-    // 0012 `recipient_otp_codes` (SEC-A02), a tenant table.
-    assert_eq!(tables.len(), 42, "{tables:?}");
+    // 0012 `recipient_otp_codes` (SEC-A02), a tenant table; 0014 `organizations`,
+    // `org_permission_sets` and `organization_admins` (ORG-02), organization tables
+    // checked by `organizations.rs` instead of the account rules below.
+    assert_eq!(tables.len(), 45, "{tables:?}");
+    const ORG: &[&str] = &[
+        "organizations",
+        "org_permission_sets",
+        "organization_admins",
+    ];
     let mut problems = Vec::new();
     for t in &tables {
         let row = sqlx::query(
@@ -129,7 +136,7 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
         if truncate {
             problems.push(format!("{t}: app role may TRUNCATE"));
         }
-        if t != "accounts" && t != "users" {
+        if t != "accounts" && t != "users" && !ORG.contains(&t.as_str()) {
             if not_null != Some(true) {
                 problems.push(format!("{t}: account_id missing or nullable"));
             }
@@ -158,6 +165,10 @@ async fn the_application_role_cannot_change_evidence_or_the_ledger() {
         ("envelope_tombstones", "UPDATE", false),
         ("envelope_tombstones", "DELETE", false),
         ("accounts", "DELETE", false),
+        ("accounts", "INSERT", false),
+        ("accounts", "UPDATE", false),
+        ("organizations", "INSERT", false),
+        ("organizations", "DELETE", false),
         ("users", "DELETE", false),
         ("openseal_schema_migrations", "SELECT", false),
         ("openseal_schema_migrations", "INSERT", false),

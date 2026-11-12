@@ -74,6 +74,9 @@ pub enum StoreError {
         /// The SQLSTATE, when there is one.
         sqlstate: Option<String>,
     },
+    /// `CS-DB-0013`: a change to an immutable column was refused: a workspace's
+    /// organization (SQLSTATE `OS004`, docs/23 §2.1).
+    Immutable,
     /// `CS-BLOB-0001`: the blob store failed (I/O, network, or an unexpected answer).
     BlobUnavailable {
         /// The HTTP status or OS error number, when there is one.
@@ -109,6 +112,7 @@ impl StoreError {
             Self::Corrupt { .. } => "CS-DB-0010",
             Self::SchemaAhead { .. } => "CS-DB-0011",
             Self::Database { .. } => "CS-DB-0012",
+            Self::Immutable => "CS-DB-0013",
             Self::BlobUnavailable { .. } => "CS-BLOB-0001",
             Self::BlobNotFound => "CS-BLOB-0002",
             Self::BlobCorrupt => "CS-BLOB-0003",
@@ -128,6 +132,7 @@ impl StoreError {
                     Some("OS002") => Self::ChainBroken {
                         seq: seq.unwrap_or(0),
                     },
+                    Some("OS004") => Self::Immutable,
                     Some("23505") => Self::Conflict {
                         constraint: constraint.unwrap_or_default(),
                     },
@@ -199,6 +204,7 @@ impl fmt::Display for StoreError {
                 "{code}: database error (SQLSTATE {})",
                 sqlstate.as_deref().unwrap_or("?")
             ),
+            Self::Immutable => write!(f, "{code}: change to an immutable column refused"),
             Self::BlobUnavailable { status } => match status {
                 Some(s) => write!(f, "{code}: blob store failed ({s})"),
                 None => write!(f, "{code}: blob store failed"),
@@ -219,4 +225,55 @@ pub type Result<T, E = StoreError> = core::result::Result<T, E>;
 /// Map a sqlx error (closure-friendly).
 pub(crate) fn db(err: sqlx::Error) -> StoreError {
     StoreError::from_sqlx(&err, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::borrow::Cow;
+
+    /// A database error carrying only a SQLSTATE, as PostgreSQL's would.
+    #[derive(Debug)]
+    struct Pg(&'static str);
+
+    impl fmt::Display for Pg {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+
+    impl std::error::Error for Pg {}
+
+    impl sqlx::error::DatabaseError for Pg {
+        fn message(&self) -> &str {
+            self.0
+        }
+        fn code(&self) -> Option<Cow<'_, str>> {
+            Some(Cow::Borrowed(self.0))
+        }
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            sqlx::error::ErrorKind::Other
+        }
+    }
+
+    fn code_of(state: &'static str) -> &'static str {
+        StoreError::from_sqlx(&sqlx::Error::Database(Box::new(Pg(state))), None).code()
+    }
+
+    #[test]
+    fn sqlstates_map_to_their_store_codes() {
+        // ORG-02: a workspace's organization is immutable (catalog test 5, SEC-O10).
+        assert_eq!(code_of("OS004"), "CS-DB-0013");
+        assert_eq!(code_of("42501"), "CS-DB-0009");
+        assert_eq!(code_of("OS001"), "CS-DB-0004");
+    }
 }

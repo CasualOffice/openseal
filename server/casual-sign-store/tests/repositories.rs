@@ -25,7 +25,7 @@ async fn round_trips_concurrency_and_draft_guards() {
     let Some(db) = fresh("round_trips_concurrency_and_draft_guards", Rls::On).await else {
         return;
     };
-    let w = world::seed(&db.store, "alpha").await;
+    let w = world::seed(&db, "alpha").await;
     let t = db.store.for_account(w.account);
 
     let mut tx = t.begin().await.unwrap();
@@ -161,7 +161,7 @@ async fn errors_carry_codes_and_constraint_names_never_values() {
     let Some(db) = fresh("errors_carry_codes_never_values", Rls::On).await else {
         return;
     };
-    let w = world::seed(&db.store, "alpha").await;
+    let w = world::seed(&db, "alpha").await;
     let t = db.store.for_account(w.account);
     // A duplicate email: PostgreSQL's detail quotes the value; the store's error must not.
     let mut tx = t.begin().await.unwrap();

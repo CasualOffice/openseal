@@ -1,6 +1,7 @@
 # 23 — Organizations, workspaces, delegated administration, platform console and plans
 
-**Status: Designed. ADR-028 Accepted (owner, 2026-11-12, instruction 29). Nothing in this document is built yet**; each
+**Status: Designed. ADR-028 Accepted (owner, 2026-11-12, instruction 29). Built so far: the organizations migration
+and the organization scope of the store (`ORG-02`, §2.1 As built)**; each
 part is built by the rows named in §12, and a part counts only when its row's exit is met. Owner instructions 24 and 25
 ([03](03-OWNER-INSTRUCTIONS.md)) set the shape: organization → workspaces; organization admins own SSO, domains and
 policy across workspaces; workspace admins run one; delegated admins hold a scoped subset of admin rights; a separate
@@ -230,6 +231,54 @@ an owner of its organization. An account with none gets an organization with no 
 (§2.2) is deferred and checked only on later changes to `organization_admins`, so the migration does not fail, and the
 console lists such organizations for owner recovery (§5.1). A test migrates a v0.0.1 database containing such an
 account.
+
+#### As built (`ORG-02`, migration `0014_organizations.sql`)
+
+Built as sketched above, with these decisions taken within the design (each tested in
+`server/casual-sign-store/tests/organizations.rs`):
+
+- **Built-in profiles come with the workspace.** `openseal_create_workspace(p_id, p_name, p_admin_profile,
+  p_sender_profile, p_viewer_profile)` and `openseal_bootstrap_organization(p_org, p_account, p_name, …three profile
+  ids)` take the profile ids from the host (no randomness in SQL) and record them in `settings.builtin_profiles`, as
+  `bootstrap` always did. Both share `openseal_insert_workspace`, which is not granted to the application.
+- **The bootstrap is one transaction.** `openseal_bootstrap_organization` runs in the account scope of the workspace it
+  creates (it refuses another `p_account`), under an exclusive lock on `organizations`, so the first administrator is
+  created in the same commit; `openseal_bootstrap_owner(p_user, p_now)` then makes that administrator the owner, only
+  for an organization inserted by the same transaction (the row's `xmin` is the current transaction id), while it has
+  no administrator, has this one workspace, and the user is an enabled member here with the built-in admin profile.
+  An organization that already existed without an owner is never claimable this way, however few admins it has; its
+  owner is named through the console (§5.1). Test:
+  `organizations.rs::bootstrap_owner_refuses_an_organization_made_before_this_transaction` (the ORG-02 review's probe,
+  seen red before the `xmin` check). `casual-sign-server bootstrap` uses both and is refused (`CS-DB-0006`) once any
+  organization exists. `casual_sign_server::bootstrap_workspace` provisions a workspace and its first administrator in
+  an existing organization (no organization role), in one transaction: `OrgTx::into_workspace` continues the
+  organization transaction in the new workspace's account scope (which makes `openseal_current_org()` NULL), so a
+  failing administrator leaves no workspace (test `casual-sign-server/tests/bootstrap.rs`, seen red with two
+  transactions); its callers until ORG-03 are tests and, from CON-03, the console.
+  Until the console exists, a second organization is made by the owner role (as the tests do).
+- **An organization admin is a member.** A `BEFORE INSERT OR UPDATE OF organization_id, user_id` trigger on
+  `organization_admins` refuses a user who is not an enabled member of a workspace of that organization (SQLSTATE
+  `23503`, constraint `organization_admin_is_a_member`, store `CS-DB-0008`); the foreign key to `users` ignores row
+  security, so without it a user of another organization could be named. ORG-03's routes also check it, with their
+  own error code. A membership disabled later leaves the row; removal is ORG-03's. Test:
+  `organizations.rs::an_organization_admin_must_be_a_member_of_one_of_its_workspaces`, seen red without the trigger.
+- **The last-owner constraint** fires on UPDATE or DELETE of an `owner` row and raises SQLSTATE `23514` with
+  constraint `organization_keeps_an_owner` (store `CS-DB-0008`, `StoreError::is_last_owner`; the API code `CS-ORG-0008`
+  is issued with ORG-03's routes). An organization that never had an owner (an account with no admin at migration) can
+  still gain administrators. Disabling an owner's identity (`users.disabled_at`) is not checked here; the platform's
+  identity disable (CON-04) must check it.
+- **Backfill** makes owners of admin-profile members whose membership is enabled; a disabled one is not an owner.
+- **`openseal_login_password_hash(p_user, p_account)`** also requires `p_account` to be the current account.
+- **`openseal_user_workspaces`** also returns each workspace's status and its organization's id, for the switcher.
+- **`organizations` grants:** `openseal_app` may SELECT, and UPDATE `name` and `policy` (org settings, ORG-03 and
+  ORG-08 check who); status is the platform's.
+- **Migrator.** Migrations run as a superuser (as Compose does). A non-superuser CREATEROLE migrator is made an ADMIN
+  member of every role it creates (PostgreSQL 16+) and cannot revoke that grant, which would break catalog test 6; so
+  migration 0014 refuses to finish while `openseal_org_mover` has any member, and such an install has a superuser
+  create the role first (`CREATE ROLE openseal_org_mover NOLOGIN NOINHERIT`). With that, test 6 holds on a
+  non-superuser CREATEROLE migrator (`catalog_6_holds_on_a_non_superuser_createrole_migrator`).
+- **Catalog test 1** names `accounts` (keyed on `id`) beside `account_memberships`; `org_workspace_allocations` does
+  not exist yet. The route half of `SEC-O01` waits for ORG-03's routes.
 
 ### 2.2 Roles and permissions
 

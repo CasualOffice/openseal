@@ -20,8 +20,10 @@
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key, plain-HTTP cookies |
 //! | `OPENSEAL_ADMIN_PASSWORD` (secret) | `bootstrap` only: the first administrator's password |
 //!
-//! `casual-sign-server bootstrap <account name> <admin email> <admin name>` creates an
-//! account, its built-in profiles and its first administrator, and prints their ids.
+//! `casual-sign-server bootstrap <account name> <admin email> <admin name>` creates the
+//! install's first organization and its first workspace (account), the built-in profiles
+//! and the first administrator, who owns the organization, and prints their ids. It is
+//! refused once any organization exists (docs/23 §2.1).
 //!
 //! `casual-sign-server migrate` applies every missing migration as the schema owner
 //! named by `OPENSEAL_MIGRATE_DATABASE_URL` (secret), never the application role (T-2F).
@@ -205,7 +207,10 @@ async fn main() -> ExitCode {
         };
         return match bootstrap(&store, name, email, admin, &pw).await {
             Ok(b) => {
-                println!("account {}\nadmin {}", b.account, b.admin);
+                println!(
+                    "organization {}\naccount {}\nadmin {}",
+                    b.organization, b.account, b.admin
+                );
                 ExitCode::SUCCESS
             }
             Err(e) => fail(e.code()),
