@@ -17,8 +17,8 @@ publish = false
 [features]
 default = ["server"]
 # The daemon: bundle verification at start, the op log, the op handlers. Inference
-# dependencies are added here as `dep:` entries by the pieces that need them.
-server = []
+# dependencies are `dep:` entries here (piece I: ort, tokenizers, image_hasher, image, hayro).
+server = ["dep:ort", "dep:tokenizers", "dep:image_hasher", "dep:image", "dep:hayro"]
 
 [[bin]]
 name = "casual-sign-modeld"
@@ -33,10 +33,25 @@ aws-lc-rs = "1.19.0"
 # no process-wide default. Already in the tree.
 rustls = { version = "0.23.46", default-features = false, features = ["std", "aws_lc_rs", "logging"] }
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
+# Piece I (ML-05; docs/33 §5.2, §5.5), all behind `server`.
+# ONNX Runtime through `ort`, loading the bundle's pinned libonnxruntime.so at start
+# (`load-dynamic`). Defaults off: never `download-binaries`, `tls-native` or `copy-dylibs`.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-27"], optional = true }
+# The e5 tokenizer. Defaults off (no `http`, no `esaxx_fast` C++, no progress bar); `onig`
+# is the regex engine tokenizer.json's normalizer needs, and oar-ocr-core turns it on
+# anyway (docs/33 §5.2, SEC-I01).
+tokenizers = { version = "=0.23.2", default-features = false, features = ["onig"], optional = true }
+# Page hashes: dHash and pHash over raw grey pixels; `image` without any decoder.
+image_hasher = { version = "=3.1.1", optional = true }
+image = { version = "0.25", default-features = false, optional = true }
+# Page rasteriser for HASH while raster.rs (piece C) is a stub; the same caps apply.
+hayro = { version = "=0.8.0", optional = true }
 
 [dev-dependencies]
 # Throwaway TLS PKI for the mTLS tests (as keyd's tests).
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
+# Reads the e5 golden vectors (fixtures/ml/e5-golden). Already in the tree.
+serde_json = "1.0.120"
 
 [lints]
 workspace = true

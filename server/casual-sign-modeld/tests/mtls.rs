@@ -134,7 +134,6 @@ fn ops_not_built_answer_not_installed_and_log_no_text() {
     let results = [
         c.ocr(&call(), pdf.clone(), vec![0], 150, vec!["latin".into()])
             .map(|_| ()),
-        c.hash(&call(), pdf, vec![0]).map(|_| ()),
         c.embed(&call(), EmbedKind::Passage, vec![marker.into()])
             .map(|_| ()),
         c.entities(&call(), span()).map(|_| ()),
@@ -143,9 +142,22 @@ fn ops_not_built_answer_not_installed_and_log_no_text() {
     for r in results {
         assert_eq!(r.unwrap_err(), ModeldError::NotInstalled);
     }
+    // HASH needs no model (piece I): a PDF that does not open is refused as a raster
+    // failure, never a crash, and its bytes are not logged either.
+    assert_eq!(
+        c.hash(&call(), pdf, vec![0]).unwrap_err().code(),
+        "CS-ML-0006"
+    );
     let log = std::fs::read_to_string(&modeld.oplog).unwrap();
     assert_eq!(log.lines().count(), 5, "{log}");
-    assert!(log.lines().all(|l| l.contains("\tCS-ML-0010\t")), "{log}");
+    assert!(
+        log.lines().take(4).all(|l| l.contains("\tCS-ML-0010\t")),
+        "{log}"
+    );
+    assert!(
+        log.lines().nth(4).unwrap().contains("\tCS-ML-0006\t"),
+        "{log}"
+    );
     assert!(
         log.lines()
             .next()
@@ -154,6 +166,35 @@ fn ops_not_built_answer_not_installed_and_log_no_text() {
     );
     assert!(!log.contains("ZQXMARKER"), "{log}");
     assert!(!log.contains("ZQXLABEL"), "labels are not logged: {log}");
+}
+
+/// **HASH over the wire** (piece I, `ML-05`): the same page gives the same hashes on
+/// every call, each page asked for is answered in order, and the op log records the page
+/// count, never a hash.
+#[test]
+fn hash_answers_each_page_and_logs_no_hash() {
+    let (pki, modeld, worker) = setup("modeld-hash");
+    let c = client(&pki.tls_ca.pem(), &modeld, Some(&worker));
+    let pdf = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/ml/vector/latin-services.pdf"),
+    )
+    .unwrap();
+    let a = c.hash(&call(), pdf.clone(), vec![1, 0]).unwrap();
+    let b = c.hash(&call(), pdf, vec![1, 0]).unwrap();
+    assert_eq!(a, b);
+    assert_eq!(a.iter().map(|h| h.page).collect::<Vec<_>>(), [1, 0]);
+    assert_ne!(a[0], a[1], "two different pages");
+    let log = std::fs::read_to_string(&modeld.oplog).unwrap();
+    assert!(
+        log.lines()
+            .all(|l| l.contains("\thash\t") && l.contains("\tok\t")),
+        "{log}"
+    );
+    for h in &a {
+        assert!(!log.contains(&format!("{:016x}", h.dhash)), "{log}");
+        assert!(!log.contains(&h.dhash.to_string()), "{log}");
+    }
 }
 
 /// When every slot is taken, an op is answered busy (`CS-ML-0009`, transient); INFO
