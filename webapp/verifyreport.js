@@ -109,3 +109,48 @@ function b64(u8) {
   for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000));
   return btoa(s);
 }
+
+// ---- Presentation rules (WEB-18 lane E) ------------------------------------------------
+//
+// What the page shows for a report, decided here so the view only renders. None of these
+// adds a check or upgrades a verdict: they name what `summarize` already decided.
+
+/// The real stages of a check, in order: the file is read and its header checked, the
+/// verifier runs, the attached audit trail is read. The scanning screen lists these.
+export const STEPS = ["read", "verify", "trail"];
+
+/// Each stage's state while `current` runs: "done", "active" or "todo". "done" (or any
+/// name that is not a stage) marks them all done.
+export function stepStates(current) {
+  const i = STEPS.indexOf(current);
+  const at = i < 0 ? STEPS.length : i;
+  return STEPS.map((id, n) => ({ id, state: n < at ? "done" : n === at ? "active" : "todo" }));
+}
+
+/// The receipt's colour for an overall state: "ok" (green seal) only for "valid";
+/// "bad" (red) for a broken or unreadable file; "warn" (amber) for the rest.
+export function verdictTone(state) {
+  if (state === "valid") return "ok";
+  if (state === "invalid" || state === "error") return "bad";
+  return "warn";
+}
+
+/// One check's colour: passed → "ok", failed → "bad", anything else (not run) → "none".
+export function checkTone(status) {
+  return status === "passed" ? "ok" : status === "failed" ? "bad" : "none";
+}
+
+/// How many signatures the verifier found valid, invalid and not confirmed.
+export function tally(signatures) {
+  const out = { valid: 0, invalid: 0, indeterminate: 0 };
+  for (const s of Array.isArray(signatures) ? signatures : []) if (s && Object.hasOwn(out, s.verdict)) out[s.verdict] += 1;
+  return out;
+}
+
+/// A file size for people: `{ key, n }`, whole kilobytes under 1 MB (at least 1), else
+/// megabytes to one decimal.
+export function fileSize(bytes) {
+  const b = Math.max(0, Number(bytes) || 0);
+  if (b < 1024 * 1024) return { key: "verify.size-kb", n: Math.max(1, Math.round(b / 1024)) };
+  return { key: "verify.size-mb", n: Math.round((b / (1024 * 1024)) * 10) / 10 };
+}
