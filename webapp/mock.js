@@ -111,7 +111,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   };
   const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; };
   async function load() {
-    ersdSha ||= await sha256hex(MOCK_DISCLOSURE);
+    ersdSha ||= `sha256:${await sha256hex(MOCK_DISCLOSURE)}`;
     if (db) return;
     if (store) {
       try {
@@ -337,8 +337,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     for (const d of env.documents) await audit(env, "document.fixed", { document_id: d.id, delivered_hash: await blobHash(d.id), pages: d.pages }, { by: "sender", at: env.sent_at });
     await route(env, env.sent_at);
   }
-  /// The ceremony view (docs/40 §6), as the server's `view_of`, plus (UX-03, ahead of
-  /// the server row) `sender` {name, email, organisation} and the disclosure's `url`.
+  /// The ceremony view (docs/40 §6), as the server's `view_of`, with (UXW-34) `sender`
+  /// {name, email, organisation}, `envelope.expires_at` and the disclosure's `url`.
   function view(env, rec, token) {
     const sender = db.users.find((u) => u.id === env.sender_user_id);
     const acct = account();
@@ -1441,9 +1441,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, view(env, rec, token));
     }
     if (!db.opened.includes(token)) fail(403, "CS-AUTH-0009", "Ceremony link not opened in this browser");
-    // UX-03, not on the server yet (NOT_ON_SERVER.disclosure): the full disclosure the
-    // view's `consent_required` names, readable while the link is valid.
-    if (sub === "disclosure" && method === "GET") return json(200, { version: MOCK.ersd, sha256: ersdSha, text: MOCK_DISCLOSURE });
+    // UXW-34, as the server: the full disclosure the view's `consent_required` names,
+    // readable once every authentication has passed (consent's rule), while the link is
+    // valid.
+    if (sub === "disclosure" && method === "GET") {
+      if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
+      return json(200, { version: MOCK.ersd, sha256: ersdSha, text: MOCK_DISCLOSURE });
+    }
     // WEB-06: the signer's copy (`GET /s/{token}/document`; in the mock the first
     // document) and history stay available after finishing or declining.
     if ((sub === "document" && parts.length === 4) || sub === "history") {
