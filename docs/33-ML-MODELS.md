@@ -383,6 +383,11 @@ pre- and post-processing onto a newer `ort`.
 
 Every crate passes `deny.toml` as it stands (licences from crates.io); confirming the transitive tree, Oniguruma
 included, with `cargo deny` is part of `ML-09`.
+**Found 2026-11-12 (piece D):** it does not. `cargo deny check licenses` rejects `clipper2-rust` 1.2.0 (BSL-1.0),
+a required dependency of `oar-ocr-core` 0.10.2 (polygon offsetting in its DB post-processing). Owner instruction 32
+admits BSL-1.0 for the ONNX Runtime binary only, so the licence gate fails on any tree with the `server` feature
+until the owner decides (allow BSL-1.0 for this crate in `deny.toml` with an ADR, or replace the unclip step under
+D3(b)); a row is proposed.
 
 Determinism: CPU execution only, one intra-op thread per session, a fixed graph optimisation level, and fixed
 truncation. Output is expected to be bit-identical on the same build and CPU instruction set; across AVX2 and
