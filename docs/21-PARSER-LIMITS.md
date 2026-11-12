@@ -206,6 +206,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | TOTP | 6 digits, 30-second step, the step before and after accepted, each step once per operator | CS-CON-0002 |
 | Sign-in attempts per client address / per e-mail; TOTP attempts per operator | 10 / 5 / 5 per minute | CS-CON-0012 |
 | Requests per session | 600 per minute | CS-CON-0012 |
+| Two-person request; second factor for each step | 24 hours; entered within 5 minutes | CS-CON-0004, CS-CON-0002 |
 | Page size of organizations, operator log, dead letters, alerts | 1–200 | — |
 | Workspaces listed per organization; operators listed | 1,000; 1,000 | — |
 | Organization name | 1–255 characters | CS-CON-0010 |

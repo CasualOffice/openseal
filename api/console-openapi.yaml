@@ -375,7 +375,7 @@ paths:
     patch:
       operationId: patchOrganization
       x-roles: operators
-      description: Rename (1 to 255 characters) or set data-region labels (at most 16, each `[a-z0-9-]`, 1 to 32 characters). Suspend, resume and close are two-person actions (CON-04, not yet served).
+      description: Rename (1 to 255 characters) or set data-region labels (at most 16, each `[a-z0-9-]`, 1 to 32 characters). Suspend and resume are two-person actions (`/approvals`, then `…/suspend` or `…/resume`); close is not yet served.
       parameters:
         - $ref: '#/components/parameters/id'
       requestBody:
@@ -410,6 +410,93 @@ paths:
               properties:
                 data_region: {type: [string, 'null']}
                 status: {type: string, enum: [active, archived]}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/approvals:
+    get:
+      operationId: listApprovals
+      x-roles: operators
+      description: Two-person requests of the last 24 hours, newest first, with approvers and whether each was spent.
+      responses:
+        '200':
+          description: Requests.
+          content:
+            application/json:
+              schema: {type: object}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: requestApproval
+      x-roles: operators
+      description: Step 1 of a two-person action (docs/23 §5.1). Needs a second factor entered within 5 minutes (`CS-CON-0002`). The request lives 24 hours.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, organization]
+              properties:
+                action: {type: string, enum: [organization.suspend, organization.resume]}
+                organization: {type: string, format: uuid}
+      responses:
+        '201':
+          description: Requested.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/approvals/{id}/grant:
+    post:
+      operationId: grantApproval
+      x-roles: operators
+      description: Step 2, by an operator other than the requester (`CS-CON-0004` otherwise), with a second factor entered within 5 minutes.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/organizations/{id}/suspend:
+    post:
+      operationId: suspendOrganization
+      x-roles: operators
+      description: Step 3, by the requester with a second factor entered within 5 minutes, spending an unused approval granted by another operator for this action and organization (`CS-CON-0004` otherwise). New work in the organization is refused; envelopes already sent continue (docs/23 §5.3).
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [approval]
+              properties:
+                approval: {type: string, format: uuid}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/organizations/{id}/resume:
+    post:
+      operationId: resumeOrganization
+      x-roles: operators
+      description: As suspend, for a suspended organization.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [approval]
+              properties:
+                approval: {type: string, format: uuid}
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         default: {$ref: '#/components/responses/Problem'}

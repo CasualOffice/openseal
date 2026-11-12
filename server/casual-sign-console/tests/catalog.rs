@@ -198,6 +198,10 @@ async fn platform_grants_are_exactly_the_designed_ones() {
         "set_organization_regions",
         "set_workspace_region",
         "set_workspace_status",
+        "request_approval",
+        "grant_approval",
+        "apply_suspend_organization",
+        "apply_resume_organization",
     ];
     expected.sort_unstable();
     assert_eq!(callable, expected);

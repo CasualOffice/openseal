@@ -54,6 +54,15 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/console/v1/organizations/{id}", "any"),
     ("PATCH", "/console/v1/organizations/{id}", "operators"),
     ("PATCH", "/console/v1/workspaces/{id}", "operators"),
+    ("GET", "/console/v1/approvals", "operators"),
+    ("POST", "/console/v1/approvals", "operators"),
+    ("POST", "/console/v1/approvals/{id}/grant", "operators"),
+    (
+        "POST",
+        "/console/v1/organizations/{id}/suspend",
+        "operators",
+    ),
+    ("POST", "/console/v1/organizations/{id}/resume", "operators"),
     ("GET", "/console/v1/health", "any"),
     ("GET", "/console/v1/dead-letters", "any"),
     ("GET", "/console/v1/alerts", "any"),
@@ -87,6 +96,22 @@ pub fn app(state: AppState) -> Router {
             get(api::organization).patch(api::patch_organization),
         )
         .route("/console/v1/workspaces/{id}", patch(api::patch_workspace))
+        .route(
+            "/console/v1/approvals",
+            get(api::approvals).post(api::request_approval),
+        )
+        .route(
+            "/console/v1/approvals/{id}/grant",
+            post(api::grant_approval),
+        )
+        .route(
+            "/console/v1/organizations/{id}/suspend",
+            post(api::suspend_organization),
+        )
+        .route(
+            "/console/v1/organizations/{id}/resume",
+            post(api::resume_organization),
+        )
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))
         .route("/console/v1/alerts", get(api::alerts))

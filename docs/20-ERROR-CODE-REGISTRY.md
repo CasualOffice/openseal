@@ -251,9 +251,9 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 | Code | Meaning |
 | --- | --- |
 | CS-CON-0001 | Operator not authenticated: no session cookie, or the session expired (8 hours), idled (30 minutes), was revoked, or its operator is disabled; also a wrong password, an unknown e-mail (the same answer) and an unknown or spent enrolment token (401) |
-| CS-CON-0002 | Second factor required, stale or wrong: a session that has passed only the password, a wrong code, or a code for a time step already used (401) |
+| CS-CON-0002 | Second factor required, stale or wrong: a session that has passed only the password, a wrong code, a code for a time step already used, or a two-person step whose second factor is older than 5 minutes (401) |
 | CS-CON-0003 | Operator role lacks the action, checked by the route and again by the database (403) |
-| CS-CON-0004 | Action needs a second operator's approval; missing, expired, used, by the requester, or for another payload (409). Issued so far for adding a `platform_owner` (refused until approvals exist, `CON-04`) |
+| CS-CON-0004 | Action needs a second operator's approval; missing, expired, used, by the requester, or for another payload (409). Issued for suspending and resuming an organization (`CON-04`, migration 0019) and for adding a `platform_owner` (refused until that action has its approval function) |
 | CS-CON-0005 | Console listener refused: a non-loopback bind without `OPENSEAL_CONSOLE_PUBLIC=1`, or without `OPENSEAL_TRUSTED_PROXIES` (TLS terminates at the proxy), or the console's origin equal to the public application's (start-up) |
 | CS-CON-0007 | Operator log does not verify (names the first bad `seq`): the console refuses to start; the API and health page report it (503) |
 | CS-CON-0010 | Request invalid: malformed JSON or a value out of range; names the field (422) |

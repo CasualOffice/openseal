@@ -742,12 +742,12 @@ workspace (organization admins can too); view usage; and turn self-sign-up on (Q
 - `OperatorAlert` (worker) becomes rows in `platform.alerts` through a definer function, plus an optional outbound
   webhook for paging (slice 20).
 
-### 5.6 As built (`CON-02`, `CON-03`, `CON-04` and `CON-05` first parts; migrations 0016 to 0018)
+### 5.6 As built (`CON-02`, `CON-03`, `CON-04` and `CON-05` first parts; migrations 0016 to 0019)
 
 **What exists.** The separate binary `server/casual-sign-console` and its store `server/casual-sign-platform-store`.
 The console depends on the platform store and `casual-sign-secrets` only, never on `casual-sign-store`, `-host` or
 `-server`. Migrations stay with the store's runner (`casual_sign_store::MIGRATIONS`), so one migrator applies them all;
-the platform store never runs migrations. The numbers were the next free ones when this was built (0016 to 0018);
+the platform store never runs migrations. The numbers were the next free ones when this was built (0016 to 0019);
 §2's order put ORG-05's admin logs first, so whichever merges second renumbers (§2).
 
 - **0016 `platform` schema.** Role `openseal_console` (NOLOGIN; a LOGIN role is granted membership), USAGE on
@@ -766,6 +766,15 @@ the platform store never runs migrations. The numbers were the next free ones wh
   for every role (`OS001`).
 - **0018 single-operator writes** (`operator` or `platform_owner`, re-checked in the database): rename an organization,
   set its data-region labels, set a workspace's label (one of its organization's) and archive or restore it.
+- **0019 the two-person rule**, used first for suspending and resuming an organization. `approval_requests`,
+  `approval_grants`, `approval_uses` (insert-only for every role, `uses` keyed on the request). The functions are
+  `platform.request_approval` and `platform.grant_approval` (§5.1's `request` and `grant`: `GRANT` is a reserved
+  word) and `platform.apply_suspend_organization`, `platform.apply_resume_organization`. The payload hash is SHA-256
+  of `<action>\n<organization id>`, recomputed by the apply function from its own parameters. Each of the three steps
+  needs a second factor entered within 5 minutes (`platform.fresh_operator`, `CS-CON-0002`); the grant must be by
+  another operator and records the approver's second-factor time; the apply is by the requester and spends the
+  approval once (`CS-CON-0004` for every refusal). Requests live 24 hours. The console has no write grant on
+  `organizations.status`, so these functions are its only way to change it (`SEC-X08`).
 
 **Decided while building** (within ADR-028; recorded here as the owning note):
 
@@ -800,19 +809,23 @@ the platform store never runs migrations. The numbers were the next free ones wh
 **API** (`/console/v1`, `api/console-openapi.yaml`): `auth/login`, `auth/totp`, `auth/logout`,
 `auth/enrolment/begin`, `auth/enrolment/finish`, `me`, `operators` (GET, POST), `operators/{id}/disable`,
 `operator-log` and `operator-log/verify`, `organizations` and `organizations/{id}` (GET, PATCH), `workspaces/{id}`
-(PATCH), `health`, `dead-letters`, `alerts`; `/livez`, `/readyz`.
+(PATCH), `approvals` (GET, POST), `approvals/{id}/grant`, `organizations/{id}/suspend` and `…/resume`, `health`,
+`dead-letters`, `alerts`; `/livez`, `/readyz`.
 
 **Tests** (Postgres 17, `server/casual-sign-console/tests/`): `catalog.rs` (`SEC-X01`, `SEC-X02` grants, the exact
 platform grants, `SEC-X04` in the database), `api.rs` (every route's session and second factor, enrolment, single-use
 codes, idle and sign-out, CSRF, roles and the database re-check, reads and writes, the personal-data and content
-scan over every GET route, a tampered log, rate limits), `contract.rs` (route table, OpenAPI and router). Each guard
+scan over every GET route, a tampered log, rate limits), `approvals.rs` (`SEC-X08`: no approval, ungranted,
+self-approval, another action or organization, the approver applying, reuse, stale second factors, direct writes),
+`contract.rs` (route table, OpenAPI and router). Each guard
 was seen red by a mutation (docs/07 `SEC-X01` to `SEC-X04`).
 
 **Not yet built** (rows in docs/14): the console UI (`webapp/console/`, after the web UX overhaul); the Compose
-service and the console's LOGIN role in deployment (`CON-02`); `casual-sign-keyd-client` (`CON-15`); approvals and the
-two-person actions, organization create, suspend, resume, close, owner recovery, identity disable (`CON-04`); copies of
+service and the console's LOGIN role in deployment (`CON-02`); `casual-sign-keyd-client` (`CON-15`); the other
+two-person actions (organization create, close, owner recovery, identity disable, adding a platform owner) and the
+server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); copies of
 operator actions into organization logs through `platform.copy_to_org_log` (`CON-16`, needs `ORG-05`); TOTP re-entry
-for sensitive actions (with them); ops listeners and metrics on server and worker, keyd health (`CON-05`); keys,
+for key and trust actions (`CON-07`); ops listeners and metrics on server and worker, keyd health (`CON-05`); keys,
 certificates and expiry (`CON-06`, `CON-08`); plans and limits (`PLAN-02`).
 
 ## 6. API additions (`/api/v1`, additive)

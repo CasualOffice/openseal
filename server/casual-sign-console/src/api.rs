@@ -11,7 +11,7 @@ use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRequest, Path, Query, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use casual_sign_platform_store::{Detail, EventDraft, NewOperator, Role, StoredEvent};
+use casual_sign_platform_store::{Detail, EventDraft, NewOperator, OrgAction, Role, StoredEvent};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -868,6 +868,148 @@ pub async fn alerts(
             "id": a.id, "at": rfc3339(a.at), "source": a.source, "code": a.code, "resolves": a.resolves,
         })).collect::<Vec<_>>(),
     })))
+}
+
+// Two-person actions -------------------------------------------------------------------
+
+/// `GET /console/v1/approvals`: requests of the last day, newest first.
+pub async fn approvals(
+    State(state): State<AppState>,
+    _op: Authed<Operators>,
+) -> Result<Json<Value>, ConsoleError> {
+    let now = state.now();
+    let list = state.store().approvals(now).await?;
+    Ok(Json(json!({
+        "approvals": list.iter().map(|a| json!({
+            "id": a.id,
+            "requester": a.requester,
+            "action": a.action,
+            "organization": a.target,
+            "created_at": rfc3339(a.created_at),
+            "expires_at": rfc3339(a.expires_at),
+            "approvers": a.approvers,
+            "used": a.used,
+            "live": !a.used && now < a.expires_at,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+/// New approval request body.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApprovalBody {
+    action: String,
+    organization: uuid::Uuid,
+}
+
+/// `POST /console/v1/approvals`: ask a second operator to approve a sensitive action
+/// (step 1 of 3). Needs a second factor entered within 5 minutes.
+pub async fn request_approval(
+    State(state): State<AppState>,
+    op: Authed<Operators>,
+    Body(body): Body<ApprovalBody>,
+) -> Result<Response, ConsoleError> {
+    let action = OrgAction::parse(&body.action).ok_or(ConsoleError::Invalid("action"))?;
+    let now = state.now();
+    if state
+        .store()
+        .organization(body.organization)
+        .await?
+        .is_none()
+    {
+        return Err(ConsoleError::NotFound);
+    }
+    let id = Uuid::now_v7();
+    let mut tx = state.store().begin().await?;
+    tx.request_approval(&op.token_sha256, id, action, body.organization, now)
+        .await?;
+    tx.append(
+        &event("operator.approval.requested", Some(op.id), &op.ctx, now)
+            .with("approval", Detail::Id(id))
+            .with("action", Detail::Code(action.as_str().to_owned()))
+            .with("organization", Detail::Id(body.organization)),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))).into_response())
+}
+
+/// `POST /console/v1/approvals/{id}/grant`: approve another operator's request (step 2).
+pub async fn grant_approval(
+    State(state): State<AppState>,
+    op: Authed<Operators>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ConsoleError> {
+    let now = state.now();
+    let mut tx = state.store().begin().await?;
+    if !tx.grant_approval(&op.token_sha256, id, now).await? {
+        return Err(ConsoleError::NotFound);
+    }
+    tx.append(
+        &event("operator.approval.granted", Some(op.id), &op.ctx, now)
+            .with("approval", Detail::Id(id)),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Apply body: the approval to spend.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplyBody {
+    approval: uuid::Uuid,
+}
+
+async fn apply_org(
+    state: &AppState,
+    op: &Authed<Operators>,
+    org: Uuid,
+    approval: Uuid,
+    action: OrgAction,
+) -> Result<StatusCode, ConsoleError> {
+    let now = state.now();
+    let mut tx = state.store().begin().await?;
+    if !tx
+        .apply_org_action(&op.token_sha256, approval, action, org, now)
+        .await?
+    {
+        return Err(ConsoleError::NotFound);
+    }
+    let name = match action {
+        OrgAction::Suspend => "operator.organization.suspended",
+        OrgAction::Resume => "operator.organization.resumed",
+    };
+    tx.append(
+        &event(name, Some(op.id), &op.ctx, now)
+            .with("organization", Detail::Id(org))
+            .with("approval", Detail::Id(approval)),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /console/v1/organizations/{id}/suspend` (step 3): with an approval granted by
+/// another operator. New work in the organization is refused; envelopes already sent
+/// continue (docs/23 §5.3).
+pub async fn suspend_organization(
+    State(state): State<AppState>,
+    op: Authed<Operators>,
+    Path(id): Path<Uuid>,
+    Body(body): Body<ApplyBody>,
+) -> Result<StatusCode, ConsoleError> {
+    apply_org(&state, &op, id, body.approval, OrgAction::Suspend).await
+}
+
+/// `POST /console/v1/organizations/{id}/resume` (step 3).
+pub async fn resume_organization(
+    State(state): State<AppState>,
+    op: Authed<Operators>,
+    Path(id): Path<Uuid>,
+    Body(body): Body<ApplyBody>,
+) -> Result<StatusCode, ConsoleError> {
+    apply_org(&state, &op, id, body.approval, OrgAction::Resume).await
 }
 
 /// Unknown routes: a problem body, not the framework's text.

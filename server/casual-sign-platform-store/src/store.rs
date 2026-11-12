@@ -223,6 +223,55 @@ pub struct ServiceTarget {
     pub target: String,
 }
 
+/// A two-person action awaiting or past its approval (docs/23 §5.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalRow {
+    /// The request.
+    pub id: Uuid,
+    /// Who asked.
+    pub requester: Uuid,
+    /// `organization.suspend` or `organization.resume`.
+    pub action: String,
+    /// The object it is for.
+    pub target: Uuid,
+    /// When asked.
+    pub created_at: OffsetDateTime,
+    /// When it lapses.
+    pub expires_at: OffsetDateTime,
+    /// Approvers so far.
+    pub approvers: Vec<Uuid>,
+    /// Whether it was spent.
+    pub used: bool,
+}
+
+/// A two-person organization action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrgAction {
+    /// Suspend: new work refused, sent envelopes continue (docs/23 §5.3).
+    Suspend,
+    /// Resume a suspended organization.
+    Resume,
+}
+
+impl OrgAction {
+    /// The stored name.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Suspend => "organization.suspend",
+            Self::Resume => "organization.resume",
+        }
+    }
+
+    /// The action named `s`.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Suspend, Self::Resume]
+            .into_iter()
+            .find(|a| a.as_str() == s)
+    }
+}
+
 /// An alert.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlertRow {
@@ -636,6 +685,41 @@ impl PlatformStore {
             .collect()
     }
 
+    /// Approval requests made in the last 24 hours or still live, newest first (at most
+    /// 200).
+    ///
+    /// # Errors
+    /// A database error.
+    pub async fn approvals(&self, now: OffsetDateTime) -> Result<Vec<ApprovalRow>> {
+        let rows = sqlx::query(
+            "SELECT r.id, r.requester, r.action, r.target, r.created_at, r.expires_at, \
+                    COALESCE((SELECT array_agg(g.approver ORDER BY g.granted_at) FROM platform.approval_grants g \
+                               WHERE g.request_id = r.id), '{}') AS approvers, \
+                    EXISTS (SELECT 1 FROM platform.approval_uses u WHERE u.request_id = r.id) AS used \
+             FROM platform.approval_requests r \
+             WHERE r.expires_at > $1 - interval '24 hours' \
+             ORDER BY r.created_at DESC, r.id LIMIT 200",
+        )
+        .bind(now)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.iter()
+            .map(|r| {
+                Ok(ApprovalRow {
+                    id: r.try_get("id").map_err(db)?,
+                    requester: r.try_get("requester").map_err(db)?,
+                    action: r.try_get("action").map_err(db)?,
+                    target: r.try_get("target").map_err(db)?,
+                    created_at: r.try_get("created_at").map_err(db)?,
+                    expires_at: r.try_get("expires_at").map_err(db)?,
+                    approvers: r.try_get("approvers").map_err(db)?,
+                    used: r.try_get("used").map_err(db)?,
+                })
+            })
+            .collect()
+    }
+
     /// The newest alerts.
     ///
     /// # Errors
@@ -976,6 +1060,78 @@ impl PlatformTx {
             now,
         )
         .await
+    }
+
+    /// Ask for a two-person organization action (step 1); needs a second factor entered
+    /// within 5 minutes.
+    ///
+    /// # Errors
+    /// `CS-CON-0001` to `CS-CON-0003` from the session check, or a database error.
+    pub async fn request_approval(
+        &mut self,
+        session: &[u8; 32],
+        id: Uuid,
+        action: OrgAction,
+        organization: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<Uuid> {
+        sqlx::query_scalar("SELECT platform.request_approval($1, $2, $3, $4, $5)")
+            .bind(session.as_slice())
+            .bind(id)
+            .bind(action.as_str())
+            .bind(organization)
+            .bind(now)
+            .fetch_one(&mut *self.tx)
+            .await
+            .map_err(db)
+    }
+
+    /// Approve another operator's request (step 2); `false` when there is no live,
+    /// unused request with that id.
+    ///
+    /// # Errors
+    /// `CS-CON-0004` for one's own request; the session check's codes.
+    pub async fn grant_approval(
+        &mut self,
+        session: &[u8; 32],
+        request: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<bool> {
+        sqlx::query_scalar("SELECT platform.grant_approval($1, $2, $3)")
+            .bind(session.as_slice())
+            .bind(request)
+            .bind(now)
+            .fetch_one(&mut *self.tx)
+            .await
+            .map_err(db)
+    }
+
+    /// Apply an approved organization action (step 3); `false` when the organization
+    /// is not in the state the action changes.
+    ///
+    /// # Errors
+    /// `CS-CON-0004` without an unused approval by another operator for this action and
+    /// organization; `CS-CON-0002` without a second factor in the last 5 minutes.
+    pub async fn apply_org_action(
+        &mut self,
+        session: &[u8; 32],
+        request: Uuid,
+        action: OrgAction,
+        organization: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<bool> {
+        let sql = match action {
+            OrgAction::Suspend => "SELECT platform.apply_suspend_organization($1, $2, $3, $4)",
+            OrgAction::Resume => "SELECT platform.apply_resume_organization($1, $2, $3, $4)",
+        };
+        sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+            .bind(session.as_slice())
+            .bind(request)
+            .bind(organization)
+            .bind(now)
+            .fetch_one(&mut *self.tx)
+            .await
+            .map_err(db)
     }
 
     /// Call a session-checked definer function `sql` whose parameters are the session,

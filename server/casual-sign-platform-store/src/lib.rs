@@ -19,9 +19,9 @@ mod store;
 pub use error::{PlatformError, Result};
 pub use event::{ChainReport, Detail, EventDraft, StoredEvent};
 pub use store::{
-    AlertRow, DeadJob, JobStat, MAX_PAGE, NewOperator, OperatorLogin, OperatorSummary,
-    OrganizationRow, PlatformStore, PlatformTx, Role, ServiceTarget, Session, WorkspaceRow,
-    remove_service_target, set_service_target,
+    AlertRow, ApprovalRow, DeadJob, JobStat, MAX_PAGE, NewOperator, OperatorLogin, OperatorSummary,
+    OrgAction, OrganizationRow, PlatformStore, PlatformTx, Role, ServiceTarget, Session,
+    WorkspaceRow, remove_service_target, set_service_target,
 };
 
 /// The driver, re-exported so the console builds its pool with the same version.

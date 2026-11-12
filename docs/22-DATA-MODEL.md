@@ -45,13 +45,15 @@ Platform (schema `platform`) ── Operator, OperatorEvent, ApprovalRequest/Gra
 The design and its reasons are in [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md); §8 and §9 below carry the
 persistence notes.
 
-**Platform schema, as built (`CON-02`, `CON-03`, `CON-04` first part; migrations 0016 to 0018; docs/23 §5.6).** Schema
+**Platform schema, as built (`CON-02`, `CON-03`, `CON-04` in part; migrations 0016 to 0019; docs/23 §5.6).** Schema
 `platform`, reached only by the role `openseal_console` (no grant on any `public` table): `settings`,
 `service_targets`, `alerts` (append-only), `operators`, `operator_mfa`, `operator_enrolments`, `operator_sessions`,
-`operator_events` (append-only, hash-chained, head in `operator_chain`). Tenant metadata reaches the console only
+`operator_events` (append-only, hash-chained, head in `operator_chain`), `approval_requests`, `approval_grants`,
+`approval_uses` (insert-only; the two-person rule). Tenant metadata reaches the console only
 through `platform` definer functions returning ids, names, statuses, labels, counts and times; writes to
 `organizations` (name, data-region labels) and `accounts` (data-region label, status) only through session-checked
-definer functions. Approvals, plans, TSA, trust anchors and seal profiles are not built yet.
+definer functions; `organizations.status` only through the two-person apply functions. Plans, TSA, trust anchors and
+seal profiles are not built yet.
 
 ## 2. Identifiers
 
