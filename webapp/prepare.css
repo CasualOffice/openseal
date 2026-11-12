@@ -1,0 +1,234 @@
+/* The prepare editor's styles (UX-02 split of app.css; docs/47 §Design system): the
+ * toolbar and stepper, the wizard steps, documents, recipients and signing steps, the
+ * palette, placed and detected fields, guides, properties. Loaded after app.css (and
+ * shell.css) by app.html. Shared parts (document view, docks, sheets, pages, thumbnails)
+ * stay in app.css, because the signing page uses them too. */
+
+.os-panel .os-empty, .os-prepare__right .os-empty { padding: var(--os-s4) 0; animation: none; }
+.os-panel .os-empty .os-illus { width: 7rem; height: 5.625rem; }
+.os-panel .os-empty__title { font-size: var(--os-fs-16); }
+.os-problems { list-style: none; padding: 0; display: grid; gap: var(--os-s2); }
+.os-problems li { display: flex; gap: var(--os-s2); align-items: flex-start; }
+.os-problems svg { color: var(--os-warning); flex: none; margin-top: 0.125rem; }
+
+/* ---- Prepare: a stepped flow (documents, recipients, fields, review) -------------- */
+.os-prepare__bar { display: flex; align-items: center; gap: var(--os-s3); padding: var(--os-s2) var(--os-s4); border-bottom: 1px solid var(--os-border); background: var(--os-bg); min-height: 3.75rem; }
+.os-prepare__head { display: flex; align-items: center; gap: var(--os-s2); min-width: 0; max-width: 28%; }
+.os-prepare__title { font-size: var(--os-fs-16); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-prepare__status { font-size: var(--os-fs-12); white-space: nowrap; }
+.os-stepper { list-style: none; margin: 0 0 0 var(--os-s4); padding: 0; display: flex; align-items: center; gap: var(--os-s1); }
+.os-stepper li { display: flex; align-items: center; }
+.os-stepper li + li::before { content: ""; width: 1.5rem; height: 0.125rem; margin: 0 var(--os-s1); background: var(--os-border); border-radius: 0.125rem; }
+.os-wizard { min-height: 0; overflow: hidden; display: grid; background: var(--os-canvas); }
+.os-wizard__pane { overflow: auto; padding: var(--os-s8) var(--os-s6); }
+.os-wizard__pane--narrow > * { max-width: 60rem; margin-left: auto; margin-right: auto; }
+.os-step-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--os-s4); margin-bottom: var(--os-s6); }
+.os-step-head__title { font-size: var(--os-fs-20); font-weight: 600; margin-bottom: var(--os-s1); }
+.os-panel--docs > .os-empty, .os-panel--rcpt > .os-empty { background: var(--os-raised); border: 0.125rem dashed var(--os-border-strong); border-radius: var(--os-radius-lg); }
+/* Document cards */
+.os-doccards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(11.25rem, 1fr)); gap: var(--os-s4); }
+.os-doccard { display: grid; grid-template-rows: auto auto auto; height: 100%; border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-raised); box-shadow: var(--os-shadow); overflow: hidden; }
+.os-doccard__frame { display: grid; place-items: center; padding: var(--os-s4); background: var(--os-stage); min-height: 13.125rem; }
+.os-doccard__thumb { box-shadow: var(--os-shadow-md); background: #fff; }
+.os-doccard__meta { display: grid; gap: 0.125rem; padding: var(--os-s3) var(--os-s3) 0; min-width: 0; }
+.os-doccard__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-doccard__actions { display: flex; justify-content: flex-end; gap: 0.125rem; padding: var(--os-s1) var(--os-s2) var(--os-s2); }
+.os-doccard--add { width: 100%; min-height: 18.125rem; place-content: center; justify-items: center; gap: var(--os-s2); border: 0.125rem dashed var(--os-border-strong); box-shadow: none; background: transparent; color: var(--os-muted); font-weight: 600; cursor: pointer; display: grid; }
+.os-doccard--add:hover { border-color: var(--os-accent-fill); color: var(--os-accent); background: var(--os-accent-soft); }
+.os-panel--rcpt .os-rcpt-list { gap: var(--os-s3); }
+.os-panel--rcpt .os-rcpt { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--os-s2) var(--os-s3); padding: var(--os-s4); border-left-width: 0.375rem; box-shadow: var(--os-shadow); background: var(--os-raised); }
+.os-panel--rcpt .os-rcpt__head { grid-column: 1 / -1; gap: var(--os-s2); }
+.os-panel--rcpt .os-rcpt .os-input { height: var(--os-btn); }
+.os-panel--rcpt .os-rcpt [data-testid="recipient-access-code"] { grid-column: 1 / 2; }
+.os-panel--rcpt .os-rcpt__dot { width: 0.875rem; height: 0.875rem; }
+.os-panel + .os-panel { margin-top: var(--os-s6); padding-top: var(--os-s4); border-top: 1px solid var(--os-border); }
+.os-panel__title { flex: 1; font-size: var(--os-fs-12); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--os-muted); }
+.os-prepare__right .os-panel__title { margin-bottom: var(--os-s2); }
+.os-doc-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--os-s1); }
+.os-doc-list li { display: flex; align-items: center; gap: var(--os-s2); }
+.os-doc-list__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Review step */
+.os-panel--review .os-card:first-of-type { margin-top: 0; }
+.os-optgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--os-s4); }
+.os-optgrid .os-label { margin-top: 0; }
+.os-input--num { max-width: 8.75rem; }
+.os-summary__docs { display: flex; align-items: center; gap: var(--os-s2); margin-bottom: var(--os-s3); }
+.os-summary { list-style: none; margin: 0; padding: 0; display: grid; }
+.os-summary__item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--os-s3); align-items: center; padding: var(--os-s3) 0 var(--os-s3) var(--os-s3); border-top: 1px solid var(--os-border); border-left: 0.25rem solid var(--rc); }
+.os-summary__who { display: grid; min-width: 0; }
+.os-rcpt-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--os-s2); }
+.os-rcpt { display: grid; gap: var(--os-s1); padding: var(--os-s2); border: 1px solid var(--os-border); border-left: 0.25rem solid var(--rc); border-radius: var(--os-radius); background: var(--os-bg); transition: box-shadow var(--os-dur-fast) var(--os-ease); }
+.os-rcpt.is-active { box-shadow: 0 0 0 0.125rem var(--rc); }
+.os-rcpt__head { display: flex; align-items: center; gap: var(--os-s1); }
+/* The role select shrinks and the head wraps on narrow screens, so it never sits under the order buttons (e2e visual phone). */
+.os-rcpt__head { flex-wrap: wrap; }
+.os-rcpt__head select, .os-rcpt__head .os-select { flex: 1 1 8rem; min-width: 0; max-width: 100%; }
+.os-rcpt__head select { width: auto; }
+.os-palette { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.375rem; margin-top: var(--os-s3); }
+.os-palette__item {
+  display: flex; align-items: center; gap: var(--os-s3); height: 2.5rem; padding: 0 var(--os-s3); white-space: nowrap; font-weight: 500;
+  border: 1px solid var(--os-border); border-left: 0.25rem solid var(--rc); border-radius: var(--os-radius-sm);
+  background: var(--os-bg); cursor: grab; text-align: left; font-size: var(--os-fs-14);
+  transition: transform var(--os-dur-fast) var(--os-ease), box-shadow var(--os-dur-fast) var(--os-ease);
+}
+.os-palette__item:hover { box-shadow: var(--os-shadow); transform: translateY(-1px); }
+.os-palette__item:active { cursor: grabbing; transform: scale(.98); }
+.os-palette__item svg { color: var(--rc); flex: none; }
+.os-field {
+  position: absolute; display: flex; align-items: center; gap: var(--os-s1); padding: 0 var(--os-s2) 0 0.375rem;
+  min-width: 1rem; min-height: 1rem; overflow: hidden;
+  border: 1.5px dashed var(--rc); border-left: 0.25rem solid var(--rc); border-radius: 0.25rem; background: color-mix(in srgb, var(--rc) 16%, #fff);
+  color: #111827; font-size: var(--os-fs-12); font-weight: 600; cursor: move; touch-action: none; text-align: left;
+  box-shadow: 0 1px 0.125rem rgba(15, 23, 42, .12);
+  transition: box-shadow var(--os-dur-fast) var(--os-ease), transform var(--os-dur-fast) var(--os-ease);
+}
+.os-field.is-required::after { content: "*"; position: absolute; top: 0; right: 0.25rem; color: #b42318; font-weight: 700; }
+.os-field.is-required { border-style: solid; }
+.os-field svg { color: color-mix(in srgb, var(--rc) 70%, #000); flex: none; }
+.os-field__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-field.is-selected { box-shadow: 0 0 0 0.125rem #fff, 0 0 0 0.25rem var(--rc); z-index: 2; }
+.os-field.is-dragging { box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, .25), 0 0 0 0.125rem var(--rc); z-index: 3; opacity: .92; }
+.os-field.is-snapped { box-shadow: 0 0 0 1px var(--rc), 0 0.5rem 1.25rem rgba(0, 0, 0, .25); }
+.os-field.is-new, .os-field.is-dropped { animation: os-drop var(--os-dur-slow) var(--os-ease); }
+.os-field__handle { position: absolute; right: 0; bottom: 0; width: 0.75rem; height: 0.75rem; background: var(--rc); cursor: nwse-resize; border-top-left-radius: 0.1875rem; }
+/* Detected fields (WEB-09): ghosts in the signer's colour, dashed and see-through until accepted. */
+.os-detect { display: grid; gap: var(--os-s1); margin-top: var(--os-s3); }
+.os-ghost { position: absolute; display: flex; min-width: 1rem; min-height: 1rem; border: 1.5px dashed var(--rc); border-radius: 0.25rem; background: color-mix(in srgb, var(--rc) 8%, transparent); z-index: 1; animation: os-fade var(--os-dur) var(--os-ease); }
+.os-ghost__accept { flex: 1; display: flex; align-items: center; gap: var(--os-s1); min-width: 0; padding: 0 1.25rem 0 0.375rem; border: 0; background: none; color: #111827; font-size: var(--os-fs-12); font-weight: 600; font-style: italic; cursor: pointer; text-align: left; }
+.os-ghost__accept svg { color: color-mix(in srgb, var(--rc) 70%, #000); flex: none; }
+.os-ghost:hover, .os-ghost:focus-within { background: color-mix(in srgb, var(--rc) 18%, #fff); border-style: solid; }
+.os-ghost__dismiss { position: absolute; top: 50%; right: 0.125rem; transform: translateY(-50%); display: inline-grid; place-items: center; width: var(--os-target-min); height: var(--os-target-min); padding: 0; border: 0; border-radius: 50%; background: transparent; color: #111827; cursor: pointer; }
+.os-ghost__dismiss:hover { background: color-mix(in srgb, var(--rc) 25%, #fff); }
+.os-suggest { display: grid; gap: var(--os-s2); margin-top: var(--os-s3); padding: var(--os-s3); border: 1px dashed var(--os-border-strong); border-radius: var(--os-radius); }
+/* Snapping guides and the marquee (WEB-09): drawn on the page, never in the way. */
+.os-guide { position: absolute; pointer-events: none; z-index: 4; background: var(--os-focus); }
+.os-guide--x { top: 0; bottom: 0; width: 1px; transform: translateX(-0.5px); }
+.os-guide--y { left: 0; right: 0; height: 1px; transform: translateY(-0.5px); }
+.os-marquee { position: absolute; pointer-events: none; z-index: 4; border: 1px dashed var(--os-focus); background: color-mix(in srgb, var(--os-focus) 10%, transparent); }
+.os-geo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--os-s2); }
+.os-geo__item { display: grid; gap: 0.125rem; font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-celebrate {
+  position: fixed; inset: 0; z-index: var(--os-z-dialog); display: grid; place-content: center; justify-items: center; gap: var(--os-s4);
+  background: color-mix(in srgb, var(--os-bg) 88%, transparent); animation: os-fade var(--os-dur) var(--os-ease);
+}
+.os-celebrate__seal { animation: os-stamp 600ms var(--os-ease) both; }
+.os-celebrate__text { font-size: var(--os-fs-20); font-weight: 700; }
+/* Templates, use, admin */
+.os-badge--template { background: var(--os-surface-2); }
+@media (max-width: 47.5em) {
+  .os-palette { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .os-stepper li + li::before { width: 0.75rem; }
+  .os-wizard__pane { padding: var(--os-s4); }
+  .os-panel--rcpt .os-rcpt { grid-template-columns: minmax(0, 1fr); }
+  .os-optgrid { grid-template-columns: minmax(0, 1fr); }
+  .os-step-head { flex-wrap: wrap; }
+}
+.os-prepare { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; }
+.os-prepare__bar { flex-wrap: wrap; row-gap: var(--os-s1); min-height: 3.5rem; padding: var(--os-s2) var(--os-s3); gap: var(--os-s2); position: relative; z-index: 20; }
+.os-prepare__head { flex: 0 1 auto; max-width: 16rem; }
+.os-prepare__steps { display: flex; min-width: 0; }
+.os-prepare__steps .os-stepper { margin: 0; }
+.os-prepare__doctools { display: flex; align-items: center; gap: 0.125rem; padding-left: var(--os-s2); border-left: 1px solid var(--os-border); }
+.os-savestate { display: inline-flex; align-items: center; gap: var(--os-s1); font-size: var(--os-fs-12); color: var(--os-muted); white-space: nowrap; }
+.os-savestate.is-dirty { color: var(--os-warning); font-weight: 600; }
+.os-savestate__dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; }
+.os-prepare__body { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
+.os-prepare__centre { position: relative; display: grid; min-width: 0; min-height: 0; }
+.os-fabs { display: none; }
+.os-panel--palette { margin: 0; padding: 0; border: 0; }
+.os-dock .os-panel__title { flex: none; }
+.os-palette__for + .os-panel__title { margin-top: var(--os-s4); }
+.os-panel + .os-panel.os-panel--thumbs { margin-top: 0; padding-top: var(--os-s4); border-top: 1px solid var(--os-border); }
+/* Recipient chips (A21) and the list of placed fields. */
+.os-palette__for { display: grid; gap: var(--os-s2); }
+.os-palette__for:empty { display: none; }
+.os-chips-rcpt { display: grid; gap: var(--os-s1); }
+.os-rchip { display: flex; align-items: center; gap: var(--os-s2); min-height: var(--os-btn-sm); padding: 0 var(--os-s2); border: 1px solid var(--os-border); border-radius: var(--os-radius-sm); background: var(--os-bg); cursor: pointer; text-align: left; font-weight: 500; }
+.os-rchip:hover { background: var(--os-surface); }
+.os-rchip[aria-checked="true"] { border-color: var(--rc); box-shadow: inset 0.25rem 0 0 var(--rc); background: color-mix(in srgb, var(--rc) 8%, var(--os-bg)); font-weight: 600; }
+.os-rchip__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-rchip__key { font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-props { display: grid; gap: var(--os-s1); }
+.os-props__head { display: flex; align-items: center; gap: var(--os-s2); }
+.os-props__title { flex: 1; font-size: var(--os-fs-16); font-weight: 600; }
+.os-placed { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--os-s1); }
+.os-placed__item { display: flex; align-items: center; gap: var(--os-s2); width: 100%; min-height: var(--os-btn); padding: var(--os-s1) var(--os-s2); border: 1px solid var(--os-border); border-left: 0.25rem solid var(--rc); border-radius: var(--os-radius-sm); background: var(--os-bg); cursor: pointer; text-align: left; }
+.os-placed__item:hover { background: var(--os-surface); }
+.os-placed__item > svg { color: var(--rc); flex: none; }
+.os-placed__main { flex: 1; min-width: 0; display: grid; }
+.os-placed__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-placed__req { font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-advanced:not([open]) > :not(summary) { display: none; }
+.os-advanced { margin-top: var(--os-s3); }
+.os-field__label { flex: 0 1 auto; }
+.os-field__who { flex: none; margin: 0 0.75rem 0 auto; }
+.os-field__who::before { content: attr(data-who); display: block; padding: 0 0.25rem; border: 1px solid var(--rc); border-radius: 0.25rem; background: #fff; color: #111827; font-size: var(--os-fs-12); font-weight: 700; line-height: 1.4; }
+.os-field__who:not([data-who]), .os-field__who[data-who=""] { display: none; }
+.os-rcpt__err { grid-column: 1 / -1; margin: 0; }
+/* A small field (a checkbox) keeps most of itself visible under its resize handle (F-05). */
+.os-field__handle { width: min(0.75rem, 35%); height: min(0.75rem, 35%); }
+.os-props__danger { margin-top: var(--os-s4); }
+.os-rcpt__grip { display: inline-flex; color: var(--os-muted); cursor: grab; }
+.os-rcpt.is-dragging { opacity: .55; }
+.os-rcpt.is-drop-target { outline: var(--os-focus-width) dashed var(--os-focus); outline-offset: 0.125rem; }
+.os-rcpt__cell { display: grid; gap: var(--os-s1); align-content: start; min-width: 0; }
+/* Signing steps (WEB-09): one box per step; a step of several is tinted and says so. */
+.os-rgroups { list-style: none; margin: 0; padding: 0; display: grid; }
+.os-rgroup-item { list-style: none; }
+.os-rgroup { padding: var(--os-s3); border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-surface-2); }
+.os-rgroup.is-together { border-color: var(--os-border-strong); }
+.os-rgroup.is-drop-target { outline: var(--os-focus-width) dashed var(--os-focus); outline-offset: 0.125rem; }
+.os-rgroup__head { display: flex; align-items: center; gap: var(--os-s2); margin: 0 0 var(--os-s2); min-height: 2rem; }
+.os-rgroup__title { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--os-s2); font-weight: 700; }
+.os-rgroup__n { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--os-text); color: var(--os-bg); font-size: var(--os-fs-12); }
+.os-rgroup__together { display: inline-flex; align-items: center; gap: var(--os-s1); font-weight: 400; font-size: var(--os-fs-12); color: var(--os-muted); }
+.os-rgroup__gap { list-style: none; height: var(--os-s3); border-radius: var(--os-radius); transition: height var(--os-dur-fast) var(--os-ease); }
+.os-rgroup__gap.is-drop-target { height: var(--os-s8); outline: var(--os-focus-width) dashed var(--os-focus); outline-offset: -0.25rem; }
+.os-order-input { width: 3.5rem; flex: none; text-align: center; }
+@media (max-width: 47.999em) {
+  .os-rgroup { padding: var(--os-s2); }
+  .os-rgroup .os-rcpt { padding: var(--os-s3); }
+  .os-rcpt__head { flex-wrap: wrap; row-gap: var(--os-s1); }
+  .os-rcpt__head .os-fieldrow { min-width: 0; flex: 1 1 8rem; }
+}
+.os-rcpt__label { margin: 0; font-size: var(--os-fs-12); color: var(--os-muted); }
+/* Review summary (R-01): the field kinds wrap under the person on narrow screens. */
+.os-summary__fields { text-align: right; }
+.os-panel--review > .os-card:first-of-type { margin-top: 0; }
+@media (max-width: 47.999em) {
+  .os-summary__item { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .os-summary__fields { grid-column: 2 / -1; text-align: left; }
+}
+.os-problems li { align-items: center; }
+.os-problems__text { flex: 1; }
+@media (max-width: 47.999em) {
+  .os-prepare__body { grid-template-columns: minmax(0, 1fr); }
+  .os-fabs { position: absolute; right: var(--os-s3); bottom: var(--os-s3); z-index: 7; display: flex; gap: var(--os-s2); }
+  .os-fab { box-shadow: var(--os-shadow-md); }
+  .os-palette { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .has-sheet .os-fabs { visibility: hidden; }
+  /* Editor toolbar on phones: title and actions, then the steps and undo/redo. */
+  .os-prepare__bar { padding: var(--os-s1) var(--os-s2); gap: var(--os-s1); }
+  .os-prepare__head { flex: 1 1 6rem; max-width: none; }
+  .os-prepare__doctools { border: 0; padding: 0; }
+  .os-prepare__doctools > .os-btn:last-child { display: none; }
+  .os-stepper { justify-content: flex-start; }
+  .os-stepper li + li::before { width: 0.5rem; }
+  .os-wizard__pane { padding: var(--os-s4) var(--os-s3); }
+}
+/* Narrower windows (and 150 % zoom): a compact toolbar — save state as a dot with its
+ * words for assistive technology and as a tooltip, Save and Back as icons. */
+@media (max-width: 89.999em) {
+  .os-savestate > span:not(.os-savestate__dot) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-prepare__bar > .os-btn:not([data-testid="wizard-next"]):not(.os-btn--primary) > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-prepare__bar > .os-btn:not([data-testid="wizard-next"]):not(.os-btn--primary) { width: var(--os-btn); padding: 0; }
+  .os-stepper li + li::before { width: 0.75rem; }
+}
+/* Short windows (400 % zoom, landscape phones): nothing pinned may cover the step (P-03). */
+@media (max-height: 31.25em) {
+  .os-prepare { height: auto; overflow: visible; }
+  .os-prepare { display: block; }
+  .os-prepare__bar { position: static; }
+  .os-wizard, .os-wizard__pane { overflow: visible; }
+  .os-prepare__body { height: 80dvh; }
+}

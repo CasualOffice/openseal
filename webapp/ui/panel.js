@@ -57,7 +57,8 @@ export function dockPanel({ id, side = "right", title, icon: ic = "layers", widt
   function apply() {
     el.style.setProperty("--os-dock-w", `${w}rem`);
     el.classList.toggle("is-collapsed", c);
-    body.hidden = c && !phone();
+    // Collapsed: the body is hidden by `.os-dock.is-collapsed` on desktop only (a phone
+    // shows the panel as a sheet), so no `hidden` attribute that a resize would leave stale.
     handle.hidden = c;
     handle.setAttribute("aria-valuenow", String(w));
     handle.setAttribute("aria-valuetext", t("panel.width", { n: w }));
@@ -142,7 +143,11 @@ let current = null; // the open panel's close function
 
 /// Open a side panel with `openDialog`'s contract. `id` names the remembered width.
 /// Resolves with the value given to `close(value)`, or `null` when dismissed.
-export function openPanel({ id = "side", title, description = null, build = null, actions = [], className = "", width = 26, min = 18, max = 48, host = null }) {
+/// `dismissible: false` (a one-time secret shown once): no close button, Escape and
+/// `closePanel()` leave it open, and another panel cannot replace it; only its own
+/// actions close it.
+export function openPanel({ id = "side", title, description = null, build = null, actions = [], className = "", width = 26, min = 18, max = 48, host = null, dismissible = true }) {
+  if (current?.dismissible === false) return Promise.resolve(null);
   current?.(null);
   return new Promise((resolve) => {
     const returnTo = document.activeElement;
@@ -167,6 +172,7 @@ export function openPanel({ id = "side", title, description = null, build = null
         resolve(value);
       }, reducedMotion() ? 0 : 150);
     };
+    close.dismissible = dismissible;
     current = close;
     const setW = (v) => {
       w = clampWidth(v, min, max, width);
@@ -199,7 +205,7 @@ export function openPanel({ id = "side", title, description = null, build = null
     });
     const head = h("div", { class: "os-sheet__head" },
       h("h2", { id: titleId, class: "os-dialog__title", text: title }),
-      button(t("action.close"), { icon: "x", variant: "ghost", size: "sm", iconOnly: true, onClick: () => close(null) }));
+      dismissible ? button(t("action.close"), { icon: "x", variant: "ghost", size: "sm", iconOnly: true, onClick: () => close(null) }) : null);
     panel.append(handle, head);
     if (description) body.append(h("p", { class: "os-muted", text: description }));
     if (build) build(body, close);
@@ -220,7 +226,7 @@ export function openPanel({ id = "side", title, description = null, build = null
       panel.append(foot);
     }
     const onKey = (e) => {
-      if (e.key !== "Escape" || done) return;
+      if (e.key !== "Escape" || done || !dismissible) return;
       if (!panel.contains(e.target) && document.querySelector("dialog[open]")) return;
       e.preventDefault(); e.stopPropagation();
       close(null);
@@ -246,5 +252,6 @@ export function openPanel({ id = "side", title, description = null, build = null
   });
 }
 
-/// Close the open side panel, if any (dismissed: resolves null).
-export function closePanel() { current?.(null); }
+/// Close the open side panel, if any (dismissed: resolves null); not one opened with
+/// `dismissible: false`.
+export function closePanel() { if (current?.dismissible !== false) current?.(null); }
