@@ -1,7 +1,7 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014` and `CS-AUTH-0001`, `0002`, `0006` to `0010` (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). `CS-PII-0001` (`casual-sign-pii`, `ML-08`). `CS-NET-0001` and `0002` (the web app's API client, `webapp/api.js`; client-side only). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014`, `0015` (`SEC-ID-01`) and `CS-AUTH-0001`, `0002`, `0006` to `0010` (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). `CS-PII-0001` (`casual-sign-pii`, `ML-08`). `CS-NET-0001` and `0002` (the web app's API client, `webapp/api.js`; client-side only). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-DB` persistence, `CS-BLOB` blob storage, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
 `CS-CNV` conversion, `CS-ML` model process and ML jobs (reserved, ADR-029), `CS-PII` personal-data recognisers, `CS-NET` the web app's API client; proposed (ADR-028, not issued): `CS-ORG` organizations, `CS-PLAN` plans, `CS-CON` console.
 
@@ -161,6 +161,7 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-API-0012 | Method not allowed (405) |
 | CS-API-0013 | Webhook URL refused: not HTTPS to a public address (SEC-W01) |
 | CS-API-0014 | Recipient authentication method not available on this server (one-time codes until slice 5) |
+| CS-API-0015 | The user is also a member of another account: only they may change their password or name (403, `SEC-ID-01`); from the store's `CS-DB-0009` with SQLSTATE `OS003` |
 | CS-AUTH-0001 | Not authenticated |
 | CS-AUTH-0002 | Token expired or revoked |
 | CS-AUTH-0003 | Recipient authentication failed |
@@ -191,7 +192,7 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 Messages carry the code, a SQLSTATE, a constraint name, an entity name or a count, never a database error's text,
 which can quote the offending value (an email in a unique violation). Cross-tenant calls answer `CS-DB-0003`,
 `CS-DB-0008` or `CS-DB-0009`, never `CS-DB-0006`: keys lead with `account_id`, so no answer reveals that another
-account's row exists. The server maps `CS-DB-0003` to `CS-API-0002` and `CS-DB-0007` to `CS-WF-0002`.
+account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007` to `CS-WF-0002`, and `CS-DB-0009` with `OS003` to `CS-API-0015`.
 
 | Code | Meaning |
 | --- | --- |
@@ -203,7 +204,7 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002` and `CS-DB-0
 | CS-DB-0006 | Already exists (a unique constraint, named) |
 | CS-DB-0007 | Stale version: the object changed since it was read |
 | CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object |
-| CS-DB-0009 | Refused by the database: missing privilege, or a row row-level security does not admit |
+| CS-DB-0009 | Refused by the database: missing privilege, or a row row-level security does not admit; SQLSTATE `OS003` (the store's own) when the user to change is also a member of another account (`SEC-ID-01`, served as `CS-API-0015`) |
 | CS-DB-0010 | A stored value could not be read back as its type |
 | CS-DB-0011 | The database has a migration this build does not know |
 | CS-DB-0012 | Any other database error, by SQLSTATE |

@@ -25,6 +25,9 @@ export const MOCK = {
   accessCode: "2468",
   // The emailed one-time code every mock `POST /s/{token}/otp` "sends" (SEC-A02).
   emailCode: "135790",
+  // A member with this email also belongs to another account (SEC-ID-01): only they may
+  // change their name or password, so an administrator's change is 403 CS-API-0015.
+  sharedEmail: "shared@openseal.test",
 };
 
 const KEY = "openseal.mock.v1";
@@ -1365,6 +1368,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!u) fail(404, "CS-API-0002", "Not found");
     if (method === "GET") return json(200, { ...u, invitation: u.invitation ?? null });
     if (method === "PATCH") {
+      // As the server (SEC-ID-01): nothing in the request is applied.
+      if ((body?.name != null || body?.password != null) && u.id !== "user-demo" && u.email.toLowerCase() === MOCK.sharedEmail) {
+        fail(403, "CS-API-0015", "The user belongs to another account too");
+      }
       if (body?.name != null) {
         if (!String(body.name).trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
         u.name = String(body.name).trim();

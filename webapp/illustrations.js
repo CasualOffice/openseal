@@ -1,6 +1,6 @@
 // Empty-state illustrations (WEB-01): original line drawings for OpenSeal, built from
 // SVG nodes (no markup strings), in Lucide-weight strokes. Colours are classes bound to
-// tokens (`.il-line`, `.il-fill`, `.il-accent`, `.il-paper` in app.css), so light and
+// tokens (`.il-line`, `.il-fill`, `.il-accent`, `.il-danger`, `.il-paper` in app.css), so light and
 // dark follow the theme. Always `aria-hidden`: the title and sentence beside them carry
 // the meaning.
 
@@ -77,8 +77,8 @@ const DRAW = {
   error(g) {
     g.append(s("ellipse", { cx: 80, cy: 112, rx: 56, ry: 8 }, "il-fill"));
     sheet(g, 48, 16, 4);
-    g.append(s("path", { d: "M104 58l20 36H84z" }, "il-paper il-accent-line"));
-    g.append(s("path", { d: "M104 70v10M104 86v1" }, "il-accent"));
+    g.append(s("path", { d: "M104 58l20 36H84z" }, "il-paper il-danger-line"));
+    g.append(s("path", { d: "M104 70v10M104 86v1" }, "il-danger"));
   },
   templates(g) {
     g.append(s("ellipse", { cx: 80, cy: 112, rx: 56, ry: 8 }, "il-fill"));
@@ -106,7 +106,7 @@ const DRAW = {
     g.append(s("ellipse", { cx: 80, cy: 112, rx: 56, ry: 8 }, "il-fill"));
     g.append(s("path", { d: "M40 60a56 56 0 0 1 80 0M52 74a38 38 0 0 1 56 0M66 88a18 18 0 0 1 28 0" }, "il-line il-thick"));
     g.append(s("circle", { cx: 80, cy: 100, r: 3 }, "il-line-fill"));
-    g.append(s("path", { d: "M44 40l72 72" }, "il-accent il-thick"));
+    g.append(s("path", { d: "M44 40l72 72" }, "il-danger il-thick"));
   },
 };
 

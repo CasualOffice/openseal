@@ -290,7 +290,9 @@ function users(panel, ctx) {
           onClick: async () => {
             const name = f.name.value.trim();
             if (!name) { f.err.textContent = t("form.required"); f.name.setAttribute("aria-invalid", "true"); f.name.focus(); return undefined; }
-            await ctx.api.users.patch(u.id, me ? { name } : { name, profile: f.profile.value, disabled: f.disabled.checked });
+            // The name only when changed: a member of another account too keeps theirs (SEC-ID-01).
+            const named = name !== u.name ? { name } : {};
+            await ctx.api.users.patch(u.id, me ? named : { ...named, profile: f.profile.value, disabled: f.disabled.checked });
             return true;
           },
         },

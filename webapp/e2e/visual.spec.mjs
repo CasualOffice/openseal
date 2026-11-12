@@ -22,6 +22,10 @@ async function checkLayout(page, what) {
     const out = [];
     const vw = document.documentElement.clientWidth;
     if (document.documentElement.scrollWidth > vw + 1) out.push(`horizontal overflow: ${document.documentElement.scrollWidth} > ${vw}`);
+    // `hidden` means hidden (UX-02): no component's display rule may override it.
+    for (const el of document.querySelectorAll("body [hidden]")) {
+      if (getComputedStyle(el).display !== "none") out.push(`hidden but shown: ${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ""}.${[...el.classList].join(".")}`);
+    }
     const visible = (el) => {
       const r = el.getBoundingClientRect();
       if (r.width < 1 || r.height < 1) return null;
@@ -249,3 +253,165 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
     });
   });
 }
+
+// Menus open in the top layer, inside the viewport (UX-02): a row menu is never clipped
+// by its table's scroll box or its card, and the Start menu never runs off a phone.
+/// Every item of the open menu is inside the viewport and is what the page shows at
+/// its centre (nothing clips or covers it).
+async function menuInView(page, what) {
+  const menu = page.locator('[role="menu"]:visible').last();
+  await expect(menu, `${what}: a menu is open`).toBeVisible();
+  const bad = await menu.evaluate((m) => {
+    const out = [];
+    const vw = document.documentElement.clientWidth; const vh = document.documentElement.clientHeight;
+    for (const it of m.querySelectorAll('[role="menuitem"]')) {
+      // Scroll the menu itself only (a long menu scrolls inside), never the page or the
+      // table around it: a menu clipped by its table is what this catches.
+      if (m.scrollHeight > m.clientHeight) m.scrollTop = it.offsetTop - m.clientHeight / 2;
+      const r = it.getBoundingClientRect();
+      const name = it.textContent.trim();
+      if (r.left < 0 || r.top < 0 || r.right > vw || r.bottom > vh) { out.push(`${name}: outside the viewport (${Math.round(r.left)},${Math.round(r.top)})-(${Math.round(r.right)},${Math.round(r.bottom)})`); continue; }
+      const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!at || !it.contains(at)) out.push(`${name}: covered or clipped (${at?.className || at?.tagName})`);
+    }
+    return out;
+  });
+  expect(bad, what).toEqual([]);
+}
+
+for (const [vp, size] of [["1440", { width: 1440, height: 900 }], ["1366", { width: 1366, height: 768 }], ["390", { width: 390, height: 844 }]]) {
+  test.describe(`menus at ${vp}`, () => {
+    test.use({ viewport: size });
+    test("row menus, the Start menu and the account menu stay inside the viewport", async ({ page }, testInfo) => {
+      test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+      await signIn(page, "agreements");
+      await expect(page.locator(".os-row__sub").first()).not.toBeEmpty();
+      const rowMenus = page.getByRole("button", { name: /^Actions for / });
+      await rowMenus.last().click();
+      await menuInView(page, `${vp} agreements: last row's menu`);
+      await page.keyboard.press("Escape");
+      await rowMenus.first().click();
+      await menuInView(page, `${vp} agreements: first row's menu`);
+      await page.keyboard.press("Escape");
+      await page.locator("#start-btn").click();
+      await menuInView(page, `${vp} Start menu`);
+      await page.keyboard.press("Escape");
+      await page.locator("#account-btn").click();
+      await menuInView(page, `${vp} account menu`);
+      await page.keyboard.press("Escape");
+      await page.goto(app("#/templates"));
+      const tplMenus = page.getByRole("button", { name: /^Actions for / });
+      await tplMenus.last().click();
+      await menuInView(page, `${vp} templates: last row's menu`);
+    });
+  });
+}
+
+// Status badges (UX-02): Declined alone takes the danger colour; Voided is neutral with
+// a ban icon; Expired is amber; neutral badges keep an outline in dark.
+for (const scheme of ["light", "dark"]) {
+  test.describe(`badges (${scheme})`, () => {
+    test.use({ colorScheme: scheme });
+    test("Declined, Voided and Expired read as three different states", async ({ page }, testInfo) => {
+      test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+      await page.addInitScript((th) => localStorage.setItem("openseal.theme", th), scheme);
+      await signIn(page, "agreements");
+      await expect(page.locator(".os-badge--voided").first()).toBeVisible();
+      const look = (sel) => page.locator(sel).first().evaluate((el) => {
+        const cs = getComputedStyle(el);
+        const probe = document.createElement("span");
+        document.body.append(probe);
+        const paint = (v) => { probe.style.color = `var(${v})`; return getComputedStyle(probe).color; };
+        const out = { color: cs.color, bg: cs.backgroundColor, shadow: cs.boxShadow, danger: paint("--os-danger"), text: paint("--os-text"), warning: paint("--os-warning"), icon: el.querySelector("svg path, svg circle, svg line") ? el.querySelector("svg").outerHTML.length : 0 };
+        probe.remove();
+        return out;
+      });
+      const declined = await look(".os-badge--declined");
+      const voided = await look(".os-badge--voided");
+      expect(declined.color, "Declined is in the danger colour").toBe(declined.danger);
+      expect(voided.color, "Voided is neutral, not the danger colour").toBe(voided.text);
+      expect(voided.bg).not.toBe(declined.bg);
+      await expect(page.locator(".os-badge--voided").first().locator("svg")).toHaveCount(1);
+      // Neutral badges keep an edge in dark, where the grey pill all but disappeared.
+      if (scheme === "dark") expect(voided.shadow, "neutral badge outline in dark").not.toBe("none");
+      const expired = page.locator(".os-badge--expired");
+      if (await expired.count()) expect((await look(".os-badge--expired")).color).toBe(declined.warning);
+    });
+  });
+}
+
+// The UI font and the root size (UX-02): the bundled Inter draws the app and the signing
+// page, and the root size is the same in every window.
+test("the bundled UI font draws the app and the signing page, at one root size", async ({ page }, testInfo) => {
+  test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+  const sizes = [];
+  for (const width of [1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(app("#/signin"));
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    const r = await page.evaluate(async () => {
+      await document.fonts.ready;
+      return { root: getComputedStyle(document.documentElement).fontSize, loaded: document.fonts.check('14px "OpenSeal Inter"', "Agreement"), family: getComputedStyle(document.body).fontFamily };
+    });
+    expect(r.family.startsWith('"OpenSeal Inter"'), `body font at ${width}: ${r.family}`).toBe(true);
+    expect(r.loaded, `Inter loaded at ${width}`).toBe(true);
+    sizes.push(r.root);
+  }
+  expect(new Set(sizes).size, `root size by window: ${sizes.join(", ")}`).toBe(1);
+  await page.goto(signPage(tokens.sign));
+  await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
+  expect(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "OpenSeal Inter"', "Sign"); })).toBe(true);
+});
+
+// Small component defects (UX-02).
+test.describe("components at 390", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+  test("the envelope's details stack in one column on a phone", async ({ page }, testInfo) => {
+    test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+    await signIn(page, "agreements");
+    await page.getByRole("link", { name: "Mutual NDA — Acme and Globex" }).click();
+    const meta = page.locator(".os-meta").first();
+    await expect(meta).toBeVisible();
+    const cols = await meta.evaluate((dl) => getComputedStyle(dl).gridTemplateColumns.split(" ").length);
+    expect(cols, "one column of label, then value").toBe(1);
+  });
+});
+
+test("row checkboxes have a 44 px target (SC 2.5.8 and the touch size)", async ({ page }, testInfo) => {
+  test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page, "agreements");
+  const box = page.locator("tbody .os-checkbox").first();
+  await expect(box).toBeVisible();
+  const r = await box.evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    const cx = b.left + b.width / 2; const cy = b.top + b.height / 2;
+    const hits = [[-19, 0], [19, 0], [0, -19], [0, 19]].map(([dx, dy]) => document.elementFromPoint(cx + dx, cy + dy) === el);
+    return { w: b.width, h: b.height, hits };
+  });
+  expect(Math.min(r.w, r.h), "target size").toBeGreaterThanOrEqual(44);
+  expect(r.hits, "the box answers 19 px from its centre").toEqual([true, true, true, true]);
+});
+
+test("openPanel can refuse dismissal, and view toasts clear on navigation", async ({ page }, testInfo) => {
+  test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+  await signIn(page, "agreements");
+  // A one-time secret: no close button, Escape does nothing, only the action closes it.
+  await page.evaluate(() => import("/ui/index.js").then((ui) => {
+    window.__panel = ui.openPanel({ id: "secret", title: "Secret", dismissible: false, build: (b) => b.append(document.createTextNode("shown once")), actions: [{ label: "I have copied it", variant: "primary", value: "done" }] });
+  }));
+  const sheet = page.getByTestId("sheet-secret");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Close" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeVisible();
+  await page.evaluate(() => import("/ui/index.js").then((ui) => ui.closePanel()));
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "I have copied it" }).click();
+  await expect(sheet).toHaveCount(0);
+  expect(await page.evaluate(() => window.__panel)).toBe("done");
+  // Toasts: a view-scoped one goes when the view does; a global one stays.
+  await page.evaluate(() => import("/ui/index.js").then((ui) => { ui.toast("about this list", "info", { scope: "view" }); ui.toast("saved everywhere", "success"); ui.clearViewToasts(); }));
+  await expect(page.locator(".os-toast", { hasText: "about this list" })).toHaveCount(0);
+  await expect(page.locator(".os-toast", { hasText: "saved everywhere" })).toBeVisible();
+});
