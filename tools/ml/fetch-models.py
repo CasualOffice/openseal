@@ -18,6 +18,10 @@ Rules (each one is exercised by --self-test):
   `[licenses] allow` (ADR-029 review defect 18: that includes NCSA). An SPDX `A OR B` is
   allowed if any alternative is; `A AND B` only if both are. Anything else (CC-BY-NC-4.0,
   GPL, a custom model licence) refuses the whole manifest: a new licence needs an ADR.
+  The one exception is LICENCE_EXCEPTIONS: an owner decision naming entry ids, which an
+  entry opts into with `licence_exception`; any other entry naming it is refused, and a
+  bundle holding it must also hold the notice file it names (owner instruction 32: the
+  ONNX Runtime library's Eigen MPL-2.0 and Boost BSL-1.0, with ThirdPartyNotices.txt).
 - A file is accepted only if its byte count and SHA-256 equal the manifest's. A mismatch
   stops the run, names the entry, and leaves nothing behind in the destination.
 - Source URLs are https and pinned: a Hugging Face URL names a 40-hex commit
@@ -79,6 +83,20 @@ ALLOWED_LICENCES = frozenset({
     "Zlib",
 })
 
+# Scoped licence exceptions, each an owner decision, honoured only for the entry ids it
+# names (an entry elsewhere naming one is refused). owner-instruction-32 (docs/03 row 32,
+# ADR-029, docs/09 §8): the unmodified ONNX Runtime library contains Eigen (MPL-2.0) and
+# Boost (BSL-1.0); those two are allowed inside that binary only, and only in a bundle
+# that also ships its ThirdPartyNotices.txt from the same archive.
+LICENCE_EXCEPTIONS = {
+    "owner-instruction-32": {
+        "ids": frozenset({"onnxruntime-x86_64", "onnxruntime-aarch64"}),
+        "role": "runtime",
+        "licences": frozenset({"MPL-2.0", "BSL-1.0"}),
+        "notice": "runtime/ThirdPartyNotices.txt",
+    },
+}
+
 MAX_FILE_BYTES = 1 << 30            # 1 GiB per bundled file (docs/33 §4)
 MAX_BUNDLE_BYTES = 2 << 30          # 2 GiB per bundle (docs/33 §4)
 MAX_EXPORT_FILE_BYTES = 2 << 30     # an export input (e.g. a 1.16 GB safetensors)
@@ -113,7 +131,7 @@ GH_RE = re.compile(r"^https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/releas
 
 REQUIRED = ("id", "profile", "arch", "role", "dest", "source_url", "sha256", "bytes",
             "licence", "licence_url", "card_url", "provenance")
-OPTIONAL = ("produced_by", "extract", "extract_sha256", "extract_bytes")
+OPTIONAL = ("produced_by", "extract", "extract_sha256", "extract_bytes", "licence_exception")
 ROLES = ("runtime", "notice", "model", "tokenizer", "config", "export-input")
 EXTRACT_ROLES = ("runtime", "notice")
 
@@ -193,7 +211,7 @@ def parse_manifest(text):
 
 # ---- validation ----------------------------------------------------------------------
 
-def licence_allowed(expr):
+def licence_allowed(expr, allowed=ALLOWED_LICENCES):
     """SPDX: one id, or ids joined by a single kind of operator (all OR, or all AND)."""
     parts = expr.split()
     if not parts or any(p in ("(", ")", "WITH") or "(" in p or ")" in p for p in parts):
@@ -204,8 +222,22 @@ def licence_allowed(expr):
     if not all(SPDX_ID_RE.match(i) for i in ids):
         return False
     if ops == {"OR"}:
-        return any(i in ALLOWED_LICENCES for i in ids)
-    return all(i in ALLOWED_LICENCES for i in ids)
+        return any(i in allowed for i in ids)
+    return all(i in allowed for i in ids)
+
+
+def entry_allowed_licences(e, eid):
+    """The allow list for one entry: ALLOWED_LICENCES, widened only for an entry that a
+    LICENCE_EXCEPTIONS item names by id and role."""
+    name = e.get("licence_exception")
+    if name is None:
+        return ALLOWED_LICENCES
+    exc = LICENCE_EXCEPTIONS.get(name)
+    if exc is None:
+        raise Refused(f"{eid}: unknown licence_exception {name}")
+    if eid not in exc["ids"] or e.get("role") != exc["role"]:
+        raise Refused(f"{eid}: licence_exception {name} does not cover this entry")
+    return ALLOWED_LICENCES | exc["licences"]
 
 
 def check_dest(dest, eid):
@@ -235,7 +267,7 @@ def validate(doc):
         if eid in ids:
             raise Refused(f"{eid}: id repeated")
         ids.add(eid)
-        if not licence_allowed(e["licence"]):
+        if not licence_allowed(e["licence"], entry_allowed_licences(e, eid)):
             raise Refused(f"{eid}: licence {e['licence']} is not on the allow list "
                           f"({', '.join(sorted(ALLOWED_LICENCES))}); a new licence needs an ADR")
         if e["profile"] not in PROFILES:
@@ -296,6 +328,12 @@ def select(entries, profiles, arch):
     for p in sorted(want):
         if not any(e["profile"] == p for e in chosen):
             raise Refused(f"profile {p}: no entries for arch {arch}")
+    for e in chosen:
+        exc = LICENCE_EXCEPTIONS.get(e.get("licence_exception", ""))
+        if exc and not any(n["dest"] == exc["notice"] and n["role"] == "notice" and n["sha256"] == e["sha256"]
+                           for n in chosen):
+            raise Refused(f"{e['id']}: licence_exception {e['licence_exception']} ships only with "
+                          f"{exc['notice']} from the same archive")
     pending = [e["id"] for e in chosen if e["sha256"] == ""]
     if pending:
         how = sorted({e["produced_by"] for e in chosen if e["sha256"] == ""})
@@ -427,6 +465,8 @@ def fetch(entries, profiles, arch, dest, cache=None, opener=https_open):
                 files.append({"id": e["id"], "profile": e["profile"], "role": e["role"], "dest": e["dest"],
                               "sha256": sha, "bytes": size, "licence": e["licence"],
                               "source_url": e["source_url"], "source_sha256": e["sha256"]})
+                if "licence_exception" in e:
+                    files[-1]["licence_exception"] = e["licence_exception"]
                 print(f"fetch-models: {e['id']}: {size} bytes, SHA-256 ok, {e['licence']}")
             info = {"schema": 1, "bundle_id": bundle_id(lines), "arch": arch,
                     "profiles": sorted({e["profile"] for e in chosen}),
@@ -517,6 +557,9 @@ def self_test():
         link = tarfile.TarInfo("onnxruntime-linux-x64-0.0.0/lib/libonnxruntime.so")
         link.type, link.linkname = tarfile.SYMTYPE, "libonnxruntime.so.0.0.0"
         tar.addfile(link)
+        notices = tarfile.TarInfo("onnxruntime-linux-x64-0.0.0/ThirdPartyNotices.txt")
+        notices.size = len(b"Eigen MPL-2.0; Boost BSL-1.0")
+        tar.addfile(notices, io.BytesIO(b"Eigen MPL-2.0; Boost BSL-1.0"))
         evil = tarfile.TarInfo("../../etc/evil")
         evil.size = 4
         tar.addfile(evil, io.BytesIO(b"evil"))
@@ -637,6 +680,35 @@ def self_test():
         expect_refused("runtime member a symlink", lambda: fetch(validate(parse_manifest(_manifest(
                        [good, linked]))), ["ocr"], "x86_64", tmp / "link", opener=opener_for(blobs)),
                        "not a regular file")
+        # 5. The scoped licence exception (owner instruction 32): MPL-2.0 and BSL-1.0 only
+        #    inside the named ONNX Runtime library entries, only with their notices.
+        exc_lib = dict(runtime, licence="MIT AND MPL-2.0 AND BSL-1.0", licence_exception="owner-instruction-32")
+        exc_notice = dict(runtime, id="onnxruntime-notices-x86_64", role="notice", dest="runtime/ThirdPartyNotices.txt",
+                          extract="onnxruntime-linux-x64-0.0.0/ThirdPartyNotices.txt",
+                          extract_sha256=hashlib.sha256(b"Eigen MPL-2.0; Boost BSL-1.0").hexdigest(),
+                          extract_bytes=len(b"Eigen MPL-2.0; Boost BSL-1.0"))
+        try:
+            fetch(validate(parse_manifest(_manifest([good, exc_lib, exc_notice]))), ["ocr"], "x86_64",
+                  tmp / "exc", opener=opener_for(blobs))
+        except Refused as err:
+            failures.append(f"licence exception: the covered runtime entry was refused: {err}")
+        expect_refused("exception without its notices", lambda: select(validate(parse_manifest(_manifest(
+                       [good, exc_lib]))), ["ocr"], "x86_64"), "ThirdPartyNotices")
+        expect_refused("MPL-2.0 runtime without the exception", lambda: validate(parse_manifest(_manifest(
+                       [{k: v for k, v in exc_lib.items() if k != "licence_exception"}]))),
+                       "allow list")
+        expect_refused("exception claimed by a model", lambda: validate(parse_manifest(_manifest(
+                       [dict(good, licence="MPL-2.0", licence_exception="owner-instruction-32")]))), "does not cover")
+        expect_refused("exception claimed by another runtime id", lambda: validate(parse_manifest(_manifest(
+                       [dict(exc_lib, id="onnxruntime-riscv64")]))), "does not cover")
+        expect_refused("exception claimed by a notice", lambda: validate(parse_manifest(_manifest(
+                       [dict(exc_notice, licence="MPL-2.0", licence_exception="owner-instruction-32")]))),
+                       "does not cover")
+        expect_refused("exception widened to GPL", lambda: validate(parse_manifest(_manifest(
+                       [dict(exc_lib, licence="MIT AND MPL-2.0 AND GPL-3.0-only")]))), "allow list")
+        expect_refused("unknown exception", lambda: validate(parse_manifest(_manifest(
+                       [dict(exc_lib, licence_exception="owner-instruction-99")]))), "unknown licence_exception")
+
         poisoned = tmp / "cache"
         poisoned.mkdir()
         (poisoned / good["sha256"]).write_bytes(b"poison")
@@ -654,10 +726,15 @@ def self_test():
             expect_refused("verify a flipped byte", lambda: verify(validate(parse_manifest(
                            _manifest([good, runtime]))), tmp / "ok"), "does not match")
 
-    # 5. The committed manifest: valid, every profile known, allow list equal to deny.toml.
+    # 6. The committed manifest: valid, every profile known, allow list equal to deny.toml,
+    #    and the licence exception carried by exactly the entries it names.
     try:
         text = MANIFEST.read_text(encoding="utf8")
         entries = validate(parse_manifest(text))
+        carried = {e["id"] for e in entries if "licence_exception" in e}
+        named = set().union(*(x["ids"] for x in LICENCE_EXCEPTIONS.values()))
+        if carried != named:
+            failures.append(f"models.toml: licence_exception carried by {sorted(carried)}, named for {sorted(named)}")
         try:
             import tomllib
             if tomllib.loads(text) != parse_manifest(text):

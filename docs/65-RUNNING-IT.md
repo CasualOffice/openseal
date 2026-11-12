@@ -71,12 +71,12 @@ for: `docker compose --profile ml up -d --build`.
 The weights and the ONNX Runtime library are fetched once, while the image builds, by `tools/ml/fetch-models.py`.
 Every file is pinned in `tools/ml/models.toml` by source revision, SHA-256 and size. The build fails on any mismatch,
 and on any licence that is not on deny.toml's allow list. Files are baked into the image read-only (`0444`, owned
-by root), and modeld hashes them again at start. `OPENSEAL_ML_PROFILES` chooses the profiles (the default is
+by root), and modeld hashes them again at start. The one licence exception is described below. `OPENSEAL_ML_PROFILES` chooses the profiles (the default is
 `ocr templates personal_data`); `runtime` is always added.
 
 | Profile | What | Size |
 | --- | --- | ---: |
-| `runtime` | ONNX Runtime 1.28.3, CPU (MIT), with its `LICENSE` and `ThirdPartyNotices.txt` | 24.6 MB |
+| `runtime` | ONNX Runtime 1.28.3, CPU (MIT, bundling MPL-2.0 Eigen and BSL-1.0 Boost), with its `LICENSE` and `ThirdPartyNotices.txt` | 24.6 MB |
 | `ocr` | PP-OCRv6 small detection and recognition (Apache-2.0) | 31.2 MB |
 | `templates` | multilingual-e5-small, fp32 (MIT) | 487.4 MB |
 | `templates-small` | all-MiniLM-L6-v2, fp32, English (Apache-2.0) | 90.9 MB |
@@ -90,9 +90,14 @@ The default bundle is 748.6 MB. Caps are 1 GiB per file and 2 GiB per bundle.
 check it there with `python3 -I tools/ml/fetch-models.py --verify DIR`, and mount it read-only at
 `/opt/openseal/models`.
 
-**Licence note (open).** The ONNX Runtime binary is MIT. It also contains third-party code, listed in the
-`ThirdPartyNotices.txt` it ships with, including Eigen (MPL-2.0) and Boost (BSL-1.0). Neither licence is on the allow
-list. A decision on this is recorded as open under `ML-01`.
+**Licence note.** The ONNX Runtime binary is MIT, and bundles third-party code listed in its `ThirdPartyNotices.txt`,
+including Eigen (MPL-2.0) and Boost (BSL-1.0). Neither licence is on the allow list. Owner instruction 32 allows them
+inside the unmodified ONNX Runtime library in the modeld image only. `models.toml` records this as
+`licence = "MIT AND MPL-2.0 AND BSL-1.0"` with `licence_exception = "owner-instruction-32"` on the two library
+entries, and `fetch-models.py` honours that exception for those entry ids alone, and only in a bundle that also holds
+`ThirdPartyNotices.txt` from the same archive. The image carries the notices in `/usr/share/doc/openseal-modeld/`
+(`NOTICE.txt`, which points to the Eigen revision's source; `ThirdPartyNotices.txt`; `ONNXRUNTIME-LICENSE`), and
+beside the library in `/opt/openseal/models/runtime/`.
 
 ## Production checklist
 

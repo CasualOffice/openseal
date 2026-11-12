@@ -96,7 +96,8 @@ ENTRYPOINT ["/usr/local/bin/keyd-entrypoint"]
 # ---- models: the pinned model bundle for modeld (ML-01, ADR-029, docs/33 §8) -------
 # The only network use in the ML path. tools/ml/fetch-models.py downloads the chosen
 # profiles, checks every file's size and SHA-256 against tools/ml/models.toml, refuses
-# any licence outside deny.toml's allow list, and writes bundle.json. A mismatch fails
+# any licence outside deny.toml's allow list (save owner instruction 32's scoped
+# exception for the ONNX Runtime library), and writes bundle.json. A mismatch fails
 # the build. The cache mount only saves downloads; every cached file is re-hashed.
 # `docker build --build-arg OPENSEAL_ML_PROFILES="ocr templates" --target modeld .`
 # picks profiles; `extraction` joins the default once its export is pinned (piece X).
@@ -113,7 +114,10 @@ RUN --mount=type=cache,target=/var/cache/openseal-models \
  && python3 -I /src/tools/ml/fetch-models.py "$@" --arch "${TARGETARCH:-amd64}" \
         --cache /var/cache/openseal-models --dest /out/models \
  && python3 -I /src/tools/ml/fetch-models.py --verify /out/models \
- && mkdir -p /out/state
+ && mkdir -p /out/state /out/doc \
+ && cp /out/models/runtime/ThirdPartyNotices.txt /out/doc/ThirdPartyNotices.txt \
+ && cp /out/models/runtime/LICENSE /out/doc/ONNXRUNTIME-LICENSE
+COPY deploy/modeld/NOTICE.txt /out/doc/NOTICE.txt
 
 # ---- build-modeld: the model daemon, built on its own -------------------------------
 # A separate build so ONNX Runtime's binding, the OCR pipeline and the rasteriser never
@@ -141,6 +145,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM ${RUNTIME_IMAGE} AS modeld
 COPY --from=build-modeld /out/casual-sign-modeld /usr/local/bin/casual-sign-modeld
 COPY --from=models /out/models /opt/openseal/models
+# ONNX Runtime's licence and ThirdPartyNotices (Eigen MPL-2.0 with a pointer to its
+# source, Boost BSL-1.0): owner instruction 32's condition for shipping the binary.
+COPY --from=models /out/doc /usr/share/doc/openseal-modeld
 COPY --from=models --chown=nonroot:nonroot /out/state /var/lib/modeld
 ENV OPENSEAL_MODELD_LISTEN=0.0.0.0:7444 \
     OPENSEAL_MODELD_MODELS=/opt/openseal/models \

@@ -384,7 +384,9 @@ settings show "not installed on this server".
   checks size and SHA-256, writes `bundle.json` (the bundle id is the hash of the manifest entries), and **exits
   non-zero naming the file** on any mismatch or on a licence not in the allowed set. That set is exactly `deny.toml`'s
   allow list (Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MIT, NCSA, Unicode-3.0, Unlicense, Zlib); anything else
-  needs an ADR. It also refuses GLiNER v0 and v1 repository ids (D12(a): the licence check lives in this script, no
+  needs an ADR. The one scoped exception is owner instruction 32: the ONNX Runtime library entries carry
+  `licence_exception = "owner-instruction-32"`, which admits MPL-2.0 (Eigen) and BSL-1.0 (Boost) for those entry
+  ids alone and only in a bundle that holds the archive's `ThirdPartyNotices.txt` (docs/09 §8). It also refuses GLiNER v0 and v1 repository ids (D12(a): the licence check lives in this script, no
   new CI gate).
 - The Dockerfile gets a `models` stage that runs the fetch (the only network use, at build) and a `modeld` target
   that copies the bundle to `/opt/openseal/models`, read-only. Air-gapped operators run the same script elsewhere

@@ -16,6 +16,9 @@
 # asset); sha256 and bytes of the downloaded file; licence (SPDX) with licence_url and
 # card_url; provenance (where it comes from, and its training data, which docs/09's
 # weights register repeats: we rely on the weight licence and claim no clean lineage).
+# licence_exception (optional) names a scoped owner exception that fetch-models.py
+# honours only for the entry ids it lists: owner-instruction-32 lets the ONNX Runtime
+# library carry Eigen's MPL-2.0 and Boost's BSL-1.0, shipped with ThirdPartyNotices.txt.
 # runtime and notice entries name one archive member (extract, extract_sha256,
 # extract_bytes); nothing else in the archive is written. An entry with an empty sha256
 # is pending: produced_by names the offline export that will pin it, and a profile
@@ -38,10 +41,11 @@ dest = "runtime/libonnxruntime.so"
 source_url = "https://github.com/microsoft/onnxruntime/releases/download/v1.28.3/onnxruntime-linux-x64-1.28.3.tgz"
 sha256 = "db14e4863bd37893fc59729d986ab2a0d043d10b7d44da1913c4982b7e3d009c"
 bytes = 9130098
-licence = "MIT"
+licence = "MIT AND MPL-2.0 AND BSL-1.0"
+licence_exception = "owner-instruction-32"
 licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
 card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
-provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), neither on deny.toml's allow list: an open licence decision (ML-01 finding)"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
 extract = "onnxruntime-linux-x64-1.28.3/lib/libonnxruntime.so.1.28.3"
 extract_sha256 = "5a1ce74e56e8c4b278d5a9e9d12b7192d9f70811084dde9616da4fa1710efc5a"
 extract_bytes = 24301616
@@ -58,7 +62,7 @@ bytes = 9130098
 licence = "MIT"
 licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
 card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
-provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), neither on deny.toml's allow list: an open licence decision (ML-01 finding)"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
 extract = "onnxruntime-linux-x64-1.28.3/LICENSE"
 extract_sha256 = "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
 extract_bytes = 1073
@@ -75,7 +79,7 @@ bytes = 9130098
 licence = "MIT"
 licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
 card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
-provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), neither on deny.toml's allow list: an open licence decision (ML-01 finding)"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
 extract = "onnxruntime-linux-x64-1.28.3/ThirdPartyNotices.txt"
 extract_sha256 = "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
 extract_bytes = 325054
@@ -89,10 +93,11 @@ dest = "runtime/libonnxruntime.so"
 source_url = "https://github.com/microsoft/onnxruntime/releases/download/v1.28.3/onnxruntime-linux-aarch64-1.28.3.tgz"
 sha256 = "6c6b1ae96d7b0be9f555092857c6a4f2b0b5587a5298d732d9e52e8253038ce7"
 bytes = 8123797
-licence = "MIT"
+licence = "MIT AND MPL-2.0 AND BSL-1.0"
+licence_exception = "owner-instruction-32"
 licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
 card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
-provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), neither on deny.toml's allow list: an open licence decision (ML-01 finding)"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
 extract = "onnxruntime-linux-aarch64-1.28.3/lib/libonnxruntime.so.1.28.3"
 extract_sha256 = "c17d9c3b522c69594ef2b077d7f27a92ff0635d9df0c68c8997b7cad7bf71c61"
 extract_bytes = 20657248
@@ -109,7 +114,7 @@ bytes = 8123797
 licence = "MIT"
 licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
 card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
-provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), neither on deny.toml's allow list: an open licence decision (ML-01 finding)"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
 extract = "onnxruntime-linux-aarch64-1.28.3/LICENSE"
 extract_sha256 = "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
 extract_bytes = 1073
@@ -126,7 +131,7 @@ bytes = 8123797
 licence = "MIT"
 licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
 card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
-provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), neither on deny.toml's allow list: an open licence decision (ML-01 finding)"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
 extract = "onnxruntime-linux-aarch64-1.28.3/ThirdPartyNotices.txt"
 extract_sha256 = "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
 extract_bytes = 325054
