@@ -279,7 +279,7 @@ The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign us
   envelope, and View all agreements. A dot and "Notifications, n new" mark changes since it was last opened (a
   per-browser convenience in localStorage).
 - **Sign-in** (`signin.js`): a message under each missing field (in that field's `aria-describedby`); a refused
-  sign-in is an alert callout above the fields ("Incorrect email or password."); a Show toggle in the password field
+  sign-in is an alert callout above the fields ("Incorrect email or password."); a Show toggle beside the password field
   (`aria-pressed`); "Forgot password?" opens the reset request in the card (`NOT_ON_SERVER.passwordReset`, `UXW-38`,
   the same answer for any address; without it the card says to ask the administrator); a company sign-in button only
   when the server names an identity provider (`NOT_ON_SERVER.authProviders`, `UXW-39`); a footer (Verify a signed PDF,

@@ -20,8 +20,8 @@ export async function mount(view, ctx) {
   const card = h("section", { class: "os-signin", attrs: { "aria-labelledby": "signin-title" } });
   const mockQ = ctx.mock ? "?mock=1" : "";
   const foot = h("footer", { class: "os-signin__foot" },
-    h("a", { href: `verify.html${mockQ}`, text: t("signin.verify") }),
-    h("a", { href: `index.html${mockQ}`, text: t("signin.about") }));
+    h("a", { class: "os-signin__footlink", href: `verify.html${mockQ}`, text: t("signin.verify") }),
+    h("a", { class: "os-signin__footlink", href: `index.html${mockQ}`, text: t("signin.about") }));
   view.append(h("div", { class: "os-signin-wrap" }, card, foot));
 
   const logo = () => [
@@ -39,7 +39,7 @@ export async function mount(view, ctx) {
     // Show/hide: a toggle button inside the field, its state in aria-pressed.
     // Named by its content ("Show" and a hidden "password"), not aria-label, so the visible word starts the name (SC 2.5.3)
     // and the field labelled "Password" stays the only thing that label finds.
-    const show = h("button", { type: "button", class: "os-btn os-btn--ghost os-btn--sm os-password__toggle", attrs: { "aria-pressed": "false", "aria-controls": "signin-password" } },
+    const show = h("button", { type: "button", class: "os-btn os-btn--secondary os-btn--md os-password__toggle", attrs: { "aria-pressed": "false", "aria-controls": "signin-password" } },
       h("span", { text: t("signin.show") }), h("span", { class: "os-sr-only", text: ` ${t("signin.show-what")}` }));
     show.addEventListener("click", () => {
       const on = password.type === "password";
@@ -54,9 +54,10 @@ export async function mount(view, ctx) {
     const form = h("form", { class: "os-signin__form", attrs: { novalidate: true, "aria-labelledby": "signin-title" } },
       alert,
       h("label", { class: "os-label", attrs: { for: "signin-email" }, text: t("signin.email") }), email, emailErr,
-      h("div", { class: "os-signin__labelrow" },
-        h("label", { class: "os-label", attrs: { for: "signin-password" }, text: t("signin.password") }), forgot),
+      h("label", { class: "os-label", attrs: { for: "signin-password" }, text: t("signin.password") }),
       h("div", { class: "os-password" }, password, show), passwordErr,
+      // After the field, so Tab goes from email straight to password.
+      h("div", { class: "os-signin__forgotrow" }, forgot),
       submit);
     const fieldError = (input, node, text) => {
       node.textContent = text;

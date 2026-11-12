@@ -1681,9 +1681,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     let offline = false;
     try { offline = store?.getItem("openseal.mock.offline") === "1"; } catch { offline = false; }
     if (offline) throw new TypeError("Failed to fetch");
-    await load();
     const url = new URL(typeof input === "string" ? input : input.url, "http://mock.invalid");
     const method = (init.method || "GET").toUpperCase();
+    // UX-04, ahead of the server (NOT_ON_SERVER.authProviders): no session and no state,
+    // so answered before the state is loaded; the sign-in form asks on arrival, and an
+    // early load would let this tab's copy go stale under another writer (the e2e seed).
+    if (url.pathname === "/api/v1/auth/providers" && method === "GET") {
+      // Test hook: `sessionStorage["openseal.mock.idp"] = "Acme SSO"` configures one.
+      let idp = null;
+      try { idp = store?.getItem("openseal.mock.idp") || null; } catch { idp = null; }
+      return json(200, { items: idp ? [{ id: "idp-demo", name: idp, url: "/sso/idp-demo/start" }] : [] });
+    }
+    await load();
     const headers = {};
     for (const [k, v] of Object.entries(init.headers || {})) headers[k.toLowerCase()] = v;
     let body = null;
@@ -1712,18 +1721,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         save();
         return json(200, { account_id: "acct-demo", user_id: u.id });
       }
-      // UX-04, ahead of the server (NOT_ON_SERVER.passwordReset, .authProviders): no
-      // session needed. The reset answers the same for any address (no enumeration).
+      // UX-04, ahead of the server (NOT_ON_SERVER.passwordReset): no session needed. The
+      // answer is the same for any address (no enumeration).
       if (url.pathname === "/api/v1/auth/password-reset" && method === "POST") {
         for (const k of Object.keys(body || {})) if (k !== "email") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
         if (typeof body?.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
         return json(202, {});
-      }
-      if (url.pathname === "/api/v1/auth/providers" && method === "GET") {
-        // Test hook: `sessionStorage["openseal.mock.idp"] = "Acme SSO"` configures one.
-        let idp = null;
-        try { idp = store?.getItem("openseal.mock.idp") || null; } catch { idp = null; }
-        return json(200, { items: idp ? [{ id: "idp-demo", name: idp, url: "/sso/idp-demo/start" }] : [] });
       }
       let res;
       if (parts[1] === "api" && parts[2] === "v1") res = await staff(method, parts, url.searchParams, headers, body);

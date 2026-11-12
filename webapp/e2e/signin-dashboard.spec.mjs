@@ -7,7 +7,7 @@ test("a wrong password is refused with a message, and the right one signs in", a
   await page.getByLabel("Email").fill(creds.email || "nobody@example.com");
   await page.getByLabel("Password").fill("not-the-password");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("alert")).toContainText("not right");
+  await expect(page.getByRole("alert")).toContainText("Incorrect email or password.");
   await signIn(page);
 });
 

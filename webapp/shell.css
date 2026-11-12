@@ -62,24 +62,24 @@
 .os-signin { width: min(25rem, 100%); padding: var(--os-s8); border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-bg); box-shadow: var(--os-shadow); }
 .os-signin__logo { margin-bottom: var(--os-s6); height: 2.25rem; width: auto; }
 .os-signin__title { font-size: var(--os-fs-24); margin-bottom: var(--os-s1); }
-.os-signin__form .os-btn { width: 100%; margin-top: var(--os-s6); }
+.os-signin__form .os-btn { width: 100%; margin-top: var(--os-s4); }
 .os-signin__alert { margin: var(--os-s4) 0 0; }
 .os-signin__alert[hidden] { display: none; }
-.os-signin__labelrow { display: flex; align-items: baseline; justify-content: space-between; gap: var(--os-s3); }
-.os-signin__labelrow .os-label { margin-bottom: var(--os-s1); }
+.os-signin__forgotrow { display: flex; justify-content: flex-end; margin-top: var(--os-s2); }
 .os-signin__forgot { font-size: var(--os-fs-14); font-weight: 600; }
 .os-signin__form .os-signin__link { width: auto; margin: 0; padding: 0; min-height: 1.75rem; display: inline-flex; align-items: center; border: 0; background: none; color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.15em; cursor: pointer; font: inherit; font-size: var(--os-fs-14); font-weight: 600; }
-.os-password { position: relative; }
-.os-password .os-input { padding-right: 4.5rem; }
-.os-signin__form .os-password__toggle { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); width: auto; margin: 0; min-height: 2.75rem; min-width: 2.75rem; }
+/* Show password: a toggle beside the field (not inside it, where it would cover typed text). */
+.os-password { display: flex; align-items: stretch; gap: var(--os-s2); }
+.os-password .os-input { flex: 1; min-width: 0; }
+.os-signin__form .os-password__toggle { flex: none; width: auto; margin: 0; min-width: 4rem; min-height: var(--os-target-min); }
 .os-signin__or { display: flex; align-items: center; gap: var(--os-s3); margin: var(--os-s4) 0; color: var(--os-muted); font-size: var(--os-fs-14); }
 .os-signin__or::before, .os-signin__or::after { content: ""; flex: 1; height: 1px; background: var(--os-border); }
 .os-signin__sso { display: grid; gap: var(--os-s2); }
 .os-signin__sso .os-btn { width: 100%; }
 .os-signin__back { margin-top: var(--os-s4); }
 .os-signin__foot { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--os-s2) var(--os-s4); font-size: var(--os-fs-14); }
-.os-signin__foot a { color: var(--os-muted); display: inline-flex; align-items: center; min-height: var(--os-target-min); }
-.os-signin__foot a:hover { color: var(--os-text); }
+.os-signin__footlink { color: var(--os-muted); display: inline-flex; align-items: center; min-height: var(--os-target-min); }
+.os-signin__footlink:hover { color: var(--os-text); }
 .os-signin__hint { margin-top: var(--os-s4); padding: var(--os-s3); border-radius: var(--os-radius); background: var(--os-surface); font-size: var(--os-fs-12); overflow-wrap: anywhere; }
 /* Verify */
 .os-verify { background: var(--os-canvas); color: var(--os-text); min-height: 100vh; }
@@ -167,6 +167,13 @@
 @media (max-width: 26.25em) {
   #help-btn { display: none; }
   .os-topbar { gap: var(--os-s1); }
+}
+/* At 320 px every control still fits on one line (no sideways scroll). */
+@media (max-width: 22.5em) {
+  .os-topbar { padding: 0 var(--os-s2); gap: 0.125rem; }
+  .os-brand { margin-right: 0; }
+  .os-brand img { width: 5.5rem; }
+  .os-account-btn > svg { display: none; }
 }
 .os-verify__main > .os-page-title { margin-bottom: var(--os-s6); }
 /* The editor frame: the whole viewport, no app bar; the page never scrolls. */
