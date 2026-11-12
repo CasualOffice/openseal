@@ -59,7 +59,7 @@ export const PREPARE = {
   "prepare.label": "Data label",
   "prepare.label-help": "Names the field in exported data and in conditions. Fields with the same label share one value.",
   "prepare.fgroup.sign": "Signing",
-  "prepare.fgroup.auto": "Filled from the recipient",
+  "prepare.fgroup.auto": "About the recipient",
   "prepare.fgroup.input": "Recipient enters",
   "prepare.option-n": "Option {n}",
   "prepare.props-general": "General",
