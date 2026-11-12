@@ -5,7 +5,7 @@ document plays the same role, so the siblings read alike, and are never reused.
 
 Read in this order: 03 → 01 → 02 → 05 → 06 → 14 → 07. Then the pillar you are working on.
 
-Docs are true as of `1163eca` (2026-11-10). **The engine's first half is built** (Phase 1 stages 1A–1D, 1F); no server or UI yet. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
+Docs are true as of `19518fb` (2026-11-12). **Phases D, 0, 1 and 2 are closed and v0.0.1 is published:** engine, server, API, worker, keyd, Compose deployment and web app exist; organizations (ADR-028), ML (ADR-029) and the UI pass are in progress. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
 (what it is and its status), [AGENTS.md](../AGENTS.md) (the contract and current state), [CLAUDE.md](../CLAUDE.md)
 (working rules and engineering standards).
 
@@ -32,7 +32,7 @@ Docs are true as of `1163eca` (2026-11-10). **The engine's first half is built**
 | [30-PDF-PIPELINE](30-PDF-PIPELINE.md) | Admission, normalization, geometry, anchors, formulas, flattening, certificate, writer | Stages 1A–1D built ("As built" notes); flattening and certificate designed |
 | [31-SEALING-AND-SIGNATURES](31-SEALING-AND-SIGNATURES.md) | PAdES profiles, sealing algorithm, keyd, timestamps, verification ladder | Crypto structures built (1F); sealing and keyd designed; validators running |
 | [32-AUDIT-TRAIL-AND-EVIDENCE](32-AUDIT-TRAIL-AND-EVIDENCE.md) | Event shape and types, hash chain, anchoring, certificate of completion, retention | Draft for owner |
-| [33-ML-MODELS](33-ML-MODELS.md) | **Pretrained ML models, no training** (ADR-029): the `casual-sign-modeld` process, OCR for scans, template matching, agreement extraction and search, personal-data detection; protocol, limits, models and licences, weights pinning, threats, fixtures | Accepted (owner, 2026-11-12, instruction 30); designed, nothing built |
+| [33-ML-MODELS](33-ML-MODELS.md) | **Pretrained ML models, no training** (ADR-029): the `casual-sign-modeld` process, OCR for scans, template matching, agreement extraction and search, personal-data detection; protocol, limits, models and licences, weights pinning, threats, fixtures | Accepted (owner, 2026-11-12, instruction 30); built so far: `casual-sign-modeld` skeleton (`ML-09`), `casual-sign-pii` recognisers (`ML-08`), value normalisation (`ML-07`), bundle tooling and fixtures; OCR, template matching and extraction not yet |
 | [40-API-DESIGN](40-API-DESIGN.md) | REST API, auth, resources, webhooks, embedding, SDKs | Draft for owner |
 | [47-UX-AND-FEATURE-MAP](47-UX-AND-FEATURE-MAP.md) | Screens, signer ceremony, emails, keyboard | Draft; recalled, not measured |
 | [48-DOCUSIGN-STUDY](48-DOCUSIGN-STUDY.md) | DocuSign eSignature: surface, flows, recipients, tabs, lifecycle, evidence, API, admin, pricing | Live; public sources, 2026-11-10 |

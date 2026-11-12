@@ -124,7 +124,7 @@ test("envelope: every audit event names who did it, and its dates agree with the
   await signIn(page);
   await page.goto(app(`#/envelopes/${await subjectId(page, "Mutual NDA — Acme and Globex")}`));
   const rows = page.locator(".os-audit tbody tr");
-  await expect(rows).toHaveCount(8);
+  await expect(rows).toHaveCount(18);
   for (const by of await rows.locator("td:nth-child(3)").allTextContents()) expect(by.trim()).not.toBe("");
   await expect(rows.filter({ hasText: "Recipient finished" }).first()).toContainText("Avery Chen");
   await expect(rows.filter({ hasText: "Seal applied" })).toContainText("OpenSeal (system)");

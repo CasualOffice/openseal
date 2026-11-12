@@ -57,11 +57,12 @@ export function statusLine(e) {
 export function actorOf(item, env, senderName = "") {
   const ev = item?.event || {};
   const a = ev.actor;
-  const rid = ev.recipient_id || ev.data?.recipient_id || (a && typeof a === "object" && a.kind === "recipient" ? a.id : null);
   const kind = a && typeof a === "object" ? a.kind : a;
+  // Only an event a recipient made is theirs; the system's invitation to them is not.
+  const rid = kind === "recipient" ? (a.id || ev.data?.recipient_id) : null;
   const sender = () => t("actor.sender", { name: (a && typeof a === "object" && a.name) || senderName || t("agreements.you") });
   if (kind === "sender" || kind === "user" || kind === "api_client") return sender();
-  if (kind === "recipient" || rid) {
+  if (kind === "recipient") {
     const r = (env?.recipients || []).find((x) => x.id === rid);
     return t("actor.recipient", { name: (a && typeof a === "object" && a.name) || who(r) });
   }
