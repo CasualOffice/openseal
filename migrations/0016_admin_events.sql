@@ -1,4 +1,4 @@
--- 0015: admin audit logs (ORG-05, ADR-028, docs/23 §2.5, §12).
+-- 0016: admin audit logs (ORG-05, ADR-028, docs/23 §2.5, §12).
 --
 -- Two logs, separate from envelope evidence and built the same way:
 --

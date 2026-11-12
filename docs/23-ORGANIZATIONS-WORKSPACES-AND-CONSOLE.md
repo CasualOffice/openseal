@@ -183,7 +183,7 @@ GRANT UPDATE (name, settings, data_region) ON accounts TO openseal_app;
   - `openseal_create_workspace(p_id, p_name)`: organization scope only; inserts the account under
     `openseal_current_org()` with its built-in profiles. ORG-02's version writes no event, because the log tables do
     not exist yet; ORG-05's migration, the next one, replaces it (and `openseal_archive_workspace`) with versions that
-    append the admin events (§2.5) in the same transaction (built: migration 0015, §2.5 As built). No route calls
+    append the admin events (§2.5) in the same transaction (built: migration 0016, §2.5 As built). No route calls
     either function before ORG-05 merges: the workspace routes are ORG-03's, which needs ORG-05.
   - `openseal_archive_workspace(p_id)`: organization scope, a workspace of that organization.
   - `openseal_bootstrap_organization(p_org, p_account, p_name)`: succeeds only when no organization exists, so
@@ -491,7 +491,7 @@ values for settings that are not secret (secrets as "rotated"), request id and t
 docs/07, retained as such). Exported as JSON or CSV through `GET /organizations/me/audit` and `GET /admin-events`. This
 meets docs/10's "admin audit log of every configuration change, exportable".
 
-#### As built (`ORG-05`, migration `0015_admin_events.sql`)
+#### As built (`ORG-05`, migration `0016_admin_events.sql`)
 
 Built as above, with these decisions (each tested in `server/casual-sign-store/tests/admin_events.rs`, seen red under a
 mutation of the migration):

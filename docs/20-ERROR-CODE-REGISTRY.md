@@ -199,7 +199,7 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0001 | Database unreachable, connection failed, or pool exhausted |
 | CS-DB-0002 | A migration failed, or an applied migration's text changed (migrations are forward-only) |
 | CS-DB-0003 | Not found in this account (another account's object answers the same) |
-| CS-DB-0004 | Update, delete or truncate of the audit chain, a tombstone, or an admin log (`admin_events`, `org_admin_events`; `ORG-05`, migration 0015) refused (SQLSTATE `OS001`) |
+| CS-DB-0004 | Update, delete or truncate of the audit chain, a tombstone, or an admin log (`admin_events`, `org_admin_events`; `ORG-05`, migration 0016) refused (SQLSTATE `OS001`) |
 | CS-DB-0005 | Audit event does not extend its envelope's chain: hash, `seq` or `prev` (SQLSTATE `OS002`) |
 | CS-DB-0006 | Already exists (a unique constraint, named) |
 | CS-DB-0007 | Stale version: the object changed since it was read |
@@ -209,7 +209,7 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0011 | The database has a migration this build does not know |
 | CS-DB-0012 | Any other database error, by SQLSTATE |
 | CS-DB-0013 | Change to an immutable column refused: a workspace's organization, outside ORG-20's operator link (SQLSTATE `OS004`; `ORG-02`, migration 0014) |
-| CS-DB-0014 | Admin log event does not extend its chain: hash, `seq`, `prev`, or columns that differ from its canonical bytes (SQLSTATE `OS005`; `ORG-05`, migration 0015). The operator log (`CON-03`) will use it too |
+| CS-DB-0014 | Admin log event does not extend its chain: hash, `seq`, `prev`, or columns that differ from its canonical bytes (SQLSTATE `OS005`; `ORG-05`, migration 0016). The operator log (`CON-03`) will use it too |
 | CS-BLOB-0001 | Blob store failed (I/O, network, unexpected status) |
 | CS-BLOB-0002 | No blob under that key |
 | CS-BLOB-0003 | Bytes stored under a key do not hash to it |
@@ -292,7 +292,8 @@ codes above.
 
 The deterministic recognisers refuse only text over their size bound; every other bound truncates and is reported in
 the result, never as an error ([21](21-PARSER-LIMITS.md) §ML). The message carries the byte count and the limit, never
-any of the text (`SEC-D01`), and a test checks that with a marker string.
+any of the text (`SEC-D01`), and a test checks that with a marker string. The validated identifiers of `ML-08C` add
+no code: a candidate whose check fails is simply not a finding.
 
 | Code | Meaning |
 | --- | --- |

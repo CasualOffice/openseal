@@ -173,6 +173,19 @@ pub fn start_modeld(
     limits: ModeldLimits,
     name: &str,
 ) -> RunningModeld {
+    let bundle = test_bundle(&format!("{name}-bundle"));
+    start_modeld_with(pki, server, allowed, limits, name, bundle)
+}
+
+/// A modeld on a loopback port serving `bundle`.
+pub fn start_modeld_with(
+    pki: &Pki,
+    server: &Identity,
+    allowed: &[&str],
+    limits: ModeldLimits,
+    name: &str,
+    bundle: Bundle,
+) -> RunningModeld {
     let dir = scratch(&format!("{name}-run"));
     let (cert, key, _) = server;
     let tls = server_tls(cert.as_bytes(), key.as_bytes(), pki.tls_ca.pem().as_bytes()).unwrap();
@@ -181,7 +194,6 @@ pub fn start_modeld(
         allow.allow(fp, "test");
     }
     let oplog = dir.join("modeld-oplog.tsv");
-    let bundle = test_bundle(&format!("{name}-bundle"));
     let bundle_id = bundle.id.clone();
     let service = ModelService::new(bundle, allow, OpLog::open(&oplog).unwrap(), limits);
     let modeld = Modeld::bind("127.0.0.1:0", tls, service).unwrap();
@@ -208,6 +220,47 @@ pub fn client(trust_ca_pem: &str, modeld: &RunningModeld, id: Option<&Identity>)
         tls,
         connect_timeout: Duration::from_secs(10),
     })
+}
+
+/// The real-weights bundle the model tests read (`OPENSEAL_MODELD_TEST_BUNDLE`), verified
+/// against a manifest listing every file under it, with `known` paths under their
+/// manifest ids; `None` (and a SKIPPED message) when the variable is unset.
+pub fn real_bundle(known: &[(&str, &str)]) -> Option<Bundle> {
+    let Some(dir) = std::env::var_os("OPENSEAL_MODELD_TEST_BUNDLE").map(PathBuf::from) else {
+        eprintln!(
+            "SKIPPED: OPENSEAL_MODELD_TEST_BUNDLE is not set. Fetch a bundle with \
+             `python3 -I tools/ml/fetch-models.py --profile templates --dest DIR` and set it to DIR."
+        );
+        return None;
+    };
+    let mut text = String::new();
+    let mut stack = vec![PathBuf::new()];
+    let mut n = 0;
+    while let Some(rel) = stack.pop() {
+        for item in std::fs::read_dir(dir.join(&rel)).unwrap() {
+            let item = item.unwrap();
+            let r = rel.join(item.file_name());
+            if item.file_type().unwrap().is_dir() {
+                stack.push(r);
+                continue;
+            }
+            let path = r.to_string_lossy().into_owned();
+            let id = known.iter().find(|(p, _)| *p == path).map_or_else(
+                || {
+                    n += 1;
+                    format!("extra-{n}")
+                },
+                |(_, id)| (*id).to_owned(),
+            );
+            let bytes = std::fs::read(dir.join(&r)).unwrap();
+            text.push_str(&format!(
+                "{id}\ttemplates\t{}\t{}\tMIT\t{path}\n",
+                sha_hex(&bytes),
+                bytes.len()
+            ));
+        }
+    }
+    Some(Bundle::verify(&dir, &Manifest::parse(&text).unwrap(), &[]).unwrap())
 }
 
 pub fn call() -> Call {

@@ -54,8 +54,9 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of `19518fb` (2026-11-12). Phases D, 0, 1 and 2 are closed; **v0.0.1**, the first pre-release,
-is published (`REL-01`). Engine, server, API, worker, keyd, Compose deployment and web app exist.
+Docs are true as of `b5f7101` (2026-11-13). Phases D, 0, 1 and 2 are closed; **v0.0.1**, the first pre-release,
+is published (`REL-01`). Engine, server, API, worker, keyd, Compose deployment and web app exist; since v0.0.1 the web
+app has been redesigned (`UX-02` to `UX-08`) and organizations sit above workspaces (`ORG-02`).
 
 | Phase or work | State | Note |
 | --- | --- | --- |
@@ -63,13 +64,13 @@ is published (`REL-01`). Engine, server, API, worker, keyd, Compose deployment a
 | 0 Foundation | **Closed** 2026-11-11 | Owner, instruction 12; `W-2` retired |
 | 1 PDF and evidence core | **Closed** 2026-11-11 | Owner, instruction 18, after clean fuzz run 42907980149; stages `T-1A`–`T-1J` done, leftovers in their own rows |
 | 2 Envelope engine and server | **Closed** 2026-11-12 | Owner, instruction 23; `compose-e2e`, `P2-CRASH`, `P2-THREATS` |
-| Milestones | M0, M1, M2 contents closed | `MS-0`–`MS-2` in [14](14-EXECUTION-TRACKER.md); M3 needs slices 1, 2, 5 and 7 closed |
+| Milestones | M0, M1, M2 **reached** | Owner, instruction 38 (`MS-0`–`MS-2` in [14](14-EXECUTION-TRACKER.md)); M3 needs slices 1, 2, 5 and 7 closed |
 | Release 1 / v0.0.1 | **Published** 2026-11-12 | Tagged at `4780d84` after GitHub CI run 43123420112 was green on all 14 jobs; images with SBOM and provenance; pre-release on GitHub. Left in `REL-01`: GHCR packages public, the manual walkthrough in [65](65-RUNNING-IT.md); the boxes below are ticked by `REL-01` from evidence |
-| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point. [96](96-FEATURE-FIT-GAP.md) counts 39 of 167 rows working |
-| In progress: UI | Packages `UX-02` to `UX-08` of the `UX-01` pass | Enterprise UI and layout fixes; missing workflows are `UXW-01`–`UXW-29` |
-| In progress: organizations, console, plans | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | `ORG-01`, `CON-01`, `PLAN-01` and their rows; built in stages, for v0.0.2 (instruction 29) |
-| In progress: ML | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Built: `casual-sign-modeld` skeleton (`ML-09`), personal-data recognisers `casual-sign-pii` (`ML-08`), value normalisation (`ML-07`), model bundle tooling and fixtures. Next: OCR (`ML-02`), template matching (`ML-05`), extraction (`ML-07`). Every feature off by default; nothing a model says enters the evidence |
-| Security fix | `SEC-ID-01` in progress (P0) | Cross-workspace account takeover through the global `users` row |
+| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point. [96](96-FEATURE-FIT-GAP.md) counts 39 of 167 rows working and 17 in part |
+| UI pass (`UX-01`) | **Done** 2026-11-13 | All seven packages `UX-02` to `UX-08` merged: design system and a distinct destructive colour, send editor (click-to-place, every field kind, recipient types), signing page, Home/Agreements/envelope, Templates/Reports/Admin rail, app shell with notifications and profile. Signer view names the sender and serves the disclosure (`UXW-34`). Follow-ups and missing workflows are `UXW-*` and `UX-09` onward |
+| In progress: organizations, console, plans | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | `ORG-02` merged (migration 0014: organizations, organization scope, bootstrap). Next `ORG-05` (admin audit logs), then switching `ORG-04` and admin screens `ORG-06`; `CON-01`, `PLAN-01` and their rows; for v0.0.2 (instruction 29) |
+| In progress: ML | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Merged: `casual-sign-modeld` skeleton and bundle tooling (`ML-09`), GLiNER spans for extraction and personal data with fp16 parity (`ML-07`, `ML-08`), `casual-sign-pii` recognisers, value normalisation. On worker branches, not merged: OCR (`ML-02`), template matching (`ML-05`). Every feature off by default; nothing a model says enters the evidence |
+| Security | `SEC-ID-01`, `SEC-CER-01` **Done** | Shared-account changes refused across workspaces (migration 0013); signer content and every ceremony write require the recipient's authentication first |
 
 ### Waivers
 

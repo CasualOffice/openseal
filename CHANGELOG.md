@@ -5,20 +5,41 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 ## [Unreleased]
 
 ### Added
+- A redesigned web app from an audit against DocuSign and SignNow (`UX-01`, all seven packages `UX-02` to `UX-08`):
+  - a design system, with destructive actions in a colour distinct from the seal red, and the Inter font bundled;
+  - a send editor with click-to-place fields, every field kind the signing page fills with its properties, recipient
+    types and per-row options, contacts, a review step, starting from a template, a pages rail and a phone layout;
+  - a reworked signing page;
+  - Home, Agreements and the envelope page with clearer hierarchy, density and access to the evidence;
+  - Templates, Reports (sample sizes, custom ranges) and an Admin section rail with webhooks;
+  - an app shell that works on phones, with search on every screen, notifications, profile, account and help menus.
+- The signer's page names the sender and the expiry, and serves the electronic-records disclosure
+  (`GET /s/{token}/disclosure`, `UXW-34`).
+- Organizations above workspaces (`ORG-02`, migration 0014): each existing account becomes a workspace in its own
+  organization, with organization owners and an organization scope enforced in the database; server bootstrap makes
+  the first organization. Switching between workspaces and the organization admin screens are still to come.
 - `casual-sign-modeld`, the separate process that will host pretrained models (ADR-029): mutual TLS, a bounded wire
   protocol, an operation log and a hash-checked model bundle; the server and worker do not call it yet (`ML-09`).
-- `casual-sign-pii`: personal-data recognisers that find structured identifiers by pattern plus validation (Luhn,
-  IBAN mod-97 and other check digits), with a fuzz target (`ML-08`).
+- GLiNER span extraction and personal-data detection in `casual-sign-modeld`, with fp16 exports matching the
+  reference spans (`ML-07`, `ML-08`). Off by default; nothing a model says enters the evidence.
+- `casual-sign-pii`: personal-data recognisers that find structured identifiers by pattern plus validation (payment
+  cards by Luhn, IBAN mod-97, US SSN, UK NI, Indian PAN and Aadhaar, and others), with a fuzz target (`ML-08`).
 - Normalisation of extracted dates, durations and amounts in `casual-sign-fields`, with a fuzz target (`ML-07`).
 - Model manifest and hash-checking fetch script, an offline GLiNER export tool, and synthetic scanned-form fixtures
   (`ML-01`, `ML-02`, `ML-05`).
+
+### Security
+- Security hardening of the signing ceremony and of accounts shared between workspaces.
+
+### In progress
+- OCR for scanned pages (`ML-02`) and template matching on upload (`ML-05`).
+- Organization admin audit logs, workspace switching and the organization admin screens (ADR-028).
 
 ### Designed
 - Organizations above workspaces, delegated administration, a platform console and plans: ADR-028 accepted
   ([docs/23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)).
 - Pretrained ML models, off by default and never part of the evidence: ADR-029 accepted
   ([docs/33](docs/33-ML-MODELS.md)).
-- A UI and workflow pass from an audit against DocuSign and SignNow (`UX-01` to `UX-08`, `UXW-01` to `UXW-29`).
 
 ## [0.0.1] - 2026-11-12 (pre-release)
 

@@ -66,18 +66,34 @@ and open <http://127.0.0.1:8130/app.html?mock=1> (demo mode; sign in as `demo@op
 
 ## Status
 
-Docs are true as of `19518fb` (2026-11-12). **Pre-alpha.** **v0.0.1**, the first pre-release, is
+Docs are true as of `b5f7101` (2026-11-13). **Pre-alpha.** **v0.0.1**, the first pre-release, is
 [published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1): usable end to end on one machine with Docker
-Compose, not yet for production agreements. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12).
-The engine, workflow engine, persistence, key service, API server, job worker and web app are built and merged; a
-sender uploads, places fields and sends; signers sign on a phone or a desktop; everyone downloads a sealed PDF and
-certificate that pyHanko accepts, in CI on the Compose stack.
+Compose, not yet for production agreements. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12),
+and the owner has declared milestones M0, M1 and M2 reached. The engine, workflow engine, persistence, key service,
+API server, job worker and web app are built and merged; a sender uploads, places fields and sends; signers sign on a
+phone or a desktop; everyone downloads a sealed PDF and certificate that pyHanko accepts, in CI on the Compose stack.
 
-**In progress now:** a UI and workflow pass towards DocuSign and SignNow parity (`UX-02` to `UX-08`); organizations,
-workspaces, delegated administration, a platform console and plans (ADR-028); assistive features from pretrained
-models, off by default and never part of the evidence (ADR-029: the model process skeleton, personal-data recognisers
-and value normalisation are merged; OCR for scans, template matching and agreement extraction are being built); and
-a security fix for cross-workspace accounts (`SEC-ID-01`).
+**On `main` since v0.0.1** (not yet in a release):
+
+- **A redesigned web app**, all seven packages of the `UX-01` audit against DocuSign and SignNow (`UX-02` to
+  `UX-08`): a design system with a destructive colour distinct from the seal red; a send editor with click-to-place
+  fields, every field kind with its properties, recipient types and contacts; a reworked signing page; Home,
+  Agreements and the envelope page; Templates, Reports and an Admin section rail; an app shell with notifications,
+  profile and help menus that works on phones.
+- **The signer's page names the sender** and serves the electronic-records disclosure (`UXW-34`).
+- **Organizations above workspaces** (`ORG-02`, migration 0014): each existing account becomes a workspace in its
+  own organization, with organization owners, an organization scope enforced in the database, and server bootstrap
+  that makes the first organization.
+- **Text recognition in the model service** (`ML-07`, `ML-08`): GLiNER span extraction and personal-data detection
+  in `casual-sign-modeld`, beside the validated recognisers in `casual-sign-pii` (cards by Luhn, IBAN mod-97, US SSN,
+  UK NI, Indian PAN and Aadhaar, and others). Off by default; nothing a model says enters the evidence.
+- **Security hardening** of signer authentication and of shared accounts (`SEC-CER-01`, `SEC-ID-01`).
+
+**In progress now:** OCR for scanned pages (`ML-02`), template matching on upload (`ML-05`) and hosting an
+in-person signer (`UXW-36`), each being built on a worker branch and not yet merged. **Next for organizations:** the
+admin audit logs (`ORG-05`), then switching between workspaces (`ORG-04`) and the organization admin screens
+(`ORG-06`), followed by delegated administration, a platform console and plans (ADR-028, aimed at v0.0.2). Model
+features stay off by default and never part of the evidence (ADR-029).
 
 | Phase | Exit gate | State |
 | --- | --- | --- |
@@ -125,7 +141,7 @@ The design, research and plan:
 | Research: DocuSign, SignNow, open-source competitors, law and standards | [docs/48](docs/48-DOCUSIGN-STUDY.md), [49](docs/49-SIGNNOW-STUDY.md), [52](docs/52-COMPETITOR-STUDY.md), [09](docs/09-LEGAL-AND-COMPLIANCE.md) |
 | Security | [docs/07](docs/07-SECURITY-THREAT-MODEL.md) |
 | Roadmap and tracker | [docs/06](docs/06-ROADMAP-AND-DELIVERY.md), [docs/14](docs/14-EXECUTION-TRACKER.md) |
-| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; 39 work end to end, 22 more have their engine built |
+| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; 39 work end to end, 17 in part, 15 more have their engine built |
 
 The plan: the headless engine (Phase 1) and the envelope engine, server and API (Phase 2) are done; **35 vertical
 slices** now deliver user-visible features, starting with send-and-sign. Milestones: M0 ready to build, M1

@@ -378,6 +378,13 @@ pub fn table() -> Vec<Route> {
         ),
         r(
             "POST",
+            "/api/v1/envelopes/{id}/recipients/{r}/host",
+            es,
+            JSON,
+            env::host_in_person,
+        ),
+        r(
+            "POST",
             "/api/v1/envelopes/{id}/views/signing",
             es,
             JSON,

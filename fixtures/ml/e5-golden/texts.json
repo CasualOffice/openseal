@@ -1,0 +1,146 @@
+[
+ {
+  "id": "en-consent",
+  "kind": "passage",
+  "lang": "en",
+  "text": "Consent form. I agree to the terms of service described above. Signature: ______ Date: ______"
+ },
+ {
+  "id": "en-nda",
+  "kind": "passage",
+  "lang": "en",
+  "text": "Mutual non-disclosure agreement between Example Holdings Ltd and Sample Widgets Inc., effective on the date of the last signature."
+ },
+ {
+  "id": "en-lease",
+  "kind": "passage",
+  "lang": "en",
+  "text": "Residential lease. The tenant shall pay rent of 1,250.00 USD on the first day of each month. Initial here: ____"
+ },
+ {
+  "id": "en-query",
+  "kind": "query",
+  "lang": "en",
+  "text": "employment contract with a non-compete clause"
+ },
+ {
+  "id": "en-short",
+  "kind": "query",
+  "lang": "en",
+  "text": "invoice"
+ },
+ {
+  "id": "en-empty",
+  "kind": "passage",
+  "lang": "en",
+  "text": ""
+ },
+ {
+  "id": "en-punct",
+  "kind": "passage",
+  "lang": "en",
+  "text": "Name:\n\tAddress:   \n\nPhone: +1 555-0100  //  E-mail: ana.example@example.com ✓ ☐ ☒"
+ },
+ {
+  "id": "de-vertrag",
+  "kind": "passage",
+  "lang": "de",
+  "text": "Dienstleistungsvertrag zwischen der Muster GmbH und Frau Erika Beispiel. Ort, Datum, Unterschrift."
+ },
+ {
+  "id": "fr-bail",
+  "kind": "passage",
+  "lang": "fr",
+  "text": "Contrat de bail : le locataire s'engage à régler le loyer avant le cinquième jour du mois. Lu et approuvé."
+ },
+ {
+  "id": "es-poder",
+  "kind": "query",
+  "lang": "es",
+  "text": "poder notarial para la venta de un inmueble"
+ },
+ {
+  "id": "pt-termo",
+  "kind": "passage",
+  "lang": "pt",
+  "text": "Termo de consentimento livre e esclarecido. Declaro que li e compreendi as informações acima."
+ },
+ {
+  "id": "ar-application",
+  "kind": "passage",
+  "lang": "ar",
+  "text": "طلب توظيف. الاسم الكامل: ________ التوقيع: ________ التاريخ: ________"
+ },
+ {
+  "id": "ar-query",
+  "kind": "query",
+  "lang": "ar",
+  "text": "عقد إيجار سكني"
+ },
+ {
+  "id": "hi-application",
+  "kind": "passage",
+  "lang": "hi",
+  "text": "आवेदन पत्र। पूरा नाम: ________ हस्ताक्षर: ________ दिनांक: ________"
+ },
+ {
+  "id": "hi-query",
+  "kind": "query",
+  "lang": "hi",
+  "text": "किराया समझौता"
+ },
+ {
+  "id": "zh-contract",
+  "kind": "passage",
+  "lang": "zh",
+  "text": "本合同由甲方与乙方于签署之日起生效。甲方签字：________ 日期：________"
+ },
+ {
+  "id": "ja-consent",
+  "kind": "passage",
+  "lang": "ja",
+  "text": "同意書。私は上記の内容を理解し、これに同意します。署名：________"
+ },
+ {
+  "id": "ru-dogovor",
+  "kind": "passage",
+  "lang": "ru",
+  "text": "Договор оказания услуг. Исполнитель обязуется выполнить работы в срок до тридцатого числа."
+ },
+ {
+  "id": "tr-sozlesme",
+  "kind": "query",
+  "lang": "tr",
+  "text": "iş sözleşmesi fesih maddesi"
+ },
+ {
+  "id": "vi-hopdong",
+  "kind": "passage",
+  "lang": "vi",
+  "text": "Hợp đồng lao động. Người lao động cam kết tuân thủ nội quy của công ty."
+ },
+ {
+  "id": "combining",
+  "kind": "passage",
+  "lang": "en",
+  "text": "Café résumé naïve — decomposed accents, and the composed café résumé naïve."
+ },
+ {
+  "id": "mixed",
+  "kind": "passage",
+  "lang": "mixed",
+  "text": "Agreement / Vereinbarung / Accord / اتفاقية / समझौता / 協議 — signed in four languages."
+ },
+ {
+  "id": "en-long",
+  "kind": "passage",
+  "lang": "en",
+  "text": "This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution. This Master Services Agreement sets out the terms on which the Supplier provides services to the Customer, including the scope of work, fees, payment terms, confidentiality, intellectual property, warranties, limitation of liability, termination and dispute resolution."
+ },
+ {
+  "id": "ar-long",
+  "kind": "passage",
+  "lang": "ar",
+  "text": "يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد. يلتزم الطرف الأول بتقديم الخدمات المتفق عليها وفقا للشروط والأحكام الواردة في هذا العقد."
+ }
+]

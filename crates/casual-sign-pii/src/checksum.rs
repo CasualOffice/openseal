@@ -3,7 +3,8 @@
 //!
 //! Luhn and Verhoeff follow Presidio's `CreditCardRecognizer` and
 //! `InAadhaarRecognizer`; mod-97 follows ISO 13616 as Presidio's `IbanRecognizer` does,
-//! computed piecewise so no big integer is needed.
+//! computed piecewise so no big integer is needed. The rest (`ML-08C`) are written from
+//! each identifier's published specification, named on each function.
 
 /// Luhn (ISO/IEC 7812-1) over ASCII digits, check digit last.
 pub(crate) fn luhn(digits: &[u8]) -> bool {
@@ -94,7 +95,109 @@ pub(crate) fn verhoeff(digits: &[u8]) -> bool {
     c == 0
 }
 
-fn digit(b: u8) -> Option<u32> {
+/// ABA routing number (American Bankers Association): weights 3, 7, 1 repeated over
+/// nine digits, sum divisible by 10.
+pub(crate) fn aba(digits: &[u8]) -> bool {
+    weighted(digits, &[3, 7, 1, 3, 7, 1, 3, 7, 1]).is_some_and(|s| s.is_multiple_of(10))
+}
+
+/// UK NHS number (NHS Data Dictionary): weights 10 down to 2 over the first nine
+/// digits; the check is 11 minus the sum mod 11, where 11 means 0 and 10 is never
+/// issued.
+pub(crate) fn nhs(digits: &[u8]) -> bool {
+    let [body @ .., last] = digits else {
+        return false;
+    };
+    let Some(sum) = weighted(body, &[10, 9, 8, 7, 6, 5, 4, 3, 2]) else {
+        return false;
+    };
+    let check = match 11u32.wrapping_sub(sum % 11) {
+        11 => 0,
+        10 => return false,
+        c => c,
+    };
+    digit(*last) == Some(check)
+}
+
+/// A weighted digit sum divisible by `modulus`: Australian TFN (mod 11), Dutch BSN
+/// (the "11-test", whose last weight of -1 is written as 10, the same residue mod 11),
+/// and several VAT numbers.
+pub(crate) fn weighted_zero(digits: &[u8], weights: &[u32], modulus: u32) -> bool {
+    modulus != 0 && weighted(digits, weights).is_some_and(|s| s.is_multiple_of(modulus))
+}
+
+/// The weighted digit sum mod `modulus`, for check digits computed from a remainder.
+pub(crate) fn weighted_rem(digits: &[u8], weights: &[u32], modulus: u32) -> Option<u32> {
+    weighted(digits, weights).and_then(|s| s.checked_rem(modulus))
+}
+
+/// Australian Medicare card number (Services Australia): weights 1, 3, 7, 9, 1, 3, 7,
+/// 9 over the first eight digits, sum mod 10 equals the ninth; the tenth is the issue
+/// number.
+pub(crate) fn medicare(digits: &[u8]) -> bool {
+    if digits.len() != 10 || !digits.iter().all(u8::is_ascii_digit) {
+        return false;
+    }
+    let sum = digits
+        .get(..8)
+        .and_then(|b| weighted(b, &[1, 3, 7, 9, 1, 3, 7, 9]));
+    let check = digits.get(8).copied().and_then(digit);
+    sum.is_some_and(|s| Some(s % 10) == check)
+}
+
+/// ISO 7064 MOD 11,10 (German Steuer-ID and VAT number): check digit last.
+pub(crate) fn iso7064_mod11_10(digits: &[u8]) -> bool {
+    let [body @ .., last] = digits else {
+        return false;
+    };
+    if body.is_empty() {
+        return false;
+    }
+    let mut product: u32 = 10;
+    for &b in body {
+        let Some(d) = digit(b) else { return false };
+        let mut sum = d.wrapping_add(product) % 10;
+        if sum == 0 {
+            sum = 10;
+        }
+        product = sum.wrapping_mul(2) % 11;
+    }
+    let check = match 11u32.wrapping_sub(product) {
+        10 => 0,
+        c => c,
+    };
+    digit(*last) == Some(check)
+}
+
+/// The decimal value of 1 to 18 ASCII digits; `None` for anything else.
+pub(crate) fn value(digits: &[u8]) -> Option<u64> {
+    if digits.is_empty() || digits.len() > 18 {
+        return None;
+    }
+    let mut v: u64 = 0;
+    for &b in digits {
+        // At most 18 digits: below 10^18, no overflow.
+        v = v.wrapping_mul(10).wrapping_add(u64::from(digit(b)?));
+    }
+    Some(v)
+}
+
+/// The sum of digit times weight over equal-length inputs; `None` on a length
+/// mismatch or a non-digit.
+fn weighted(digits: &[u8], weights: &[u32]) -> Option<u32> {
+    if digits.len() != weights.len() {
+        return None;
+    }
+    let mut sum: u32 = 0;
+    for (&b, &w) in digits.iter().zip(weights) {
+        // Weights are at most 10 and inputs at most 12 digits: no overflow.
+        sum = sum.wrapping_add(digit(b)?.wrapping_mul(w));
+    }
+    Some(sum)
+}
+
+/// An ASCII digit's value.
+pub(crate) fn digit(b: u8) -> Option<u32> {
     b.is_ascii_digit().then(|| u32::from(b.wrapping_sub(b'0')))
 }
 
@@ -128,5 +231,45 @@ mod tests {
         assert!(!verhoeff(b"2364"));
         assert!(!verhoeff(b""));
         assert!(!verhoeff(b"23a3"));
+    }
+
+    #[test]
+    fn aba_known_values() {
+        // Federal Reserve Bank routing numbers, published by the Federal Reserve.
+        assert!(aba(b"011000015"));
+        assert!(aba(b"021000021"));
+        assert!(!aba(b"011000016"));
+        assert!(!aba(b"01100001"));
+    }
+
+    #[test]
+    fn nhs_known_values() {
+        // NHS Digital's documented example.
+        assert!(nhs(b"9434765919"));
+        assert!(!nhs(b"9434765918"));
+        assert!(!nhs(b"943476591"));
+        assert!(!nhs(b""));
+    }
+
+    #[test]
+    fn mod11_10_known_values() {
+        assert!(iso7064_mod11_10(b"86095742719"));
+        assert!(!iso7064_mod11_10(b"86095742718"));
+        assert!(!iso7064_mod11_10(b"8"));
+    }
+
+    #[test]
+    fn medicare_known_values() {
+        assert!(medicare(b"2123456701"));
+        assert!(!medicare(b"2123456711"));
+        assert!(!medicare(b"212345670"));
+    }
+
+    #[test]
+    fn value_bounds() {
+        assert_eq!(value(b"0042"), Some(42));
+        assert_eq!(value(b""), None);
+        assert_eq!(value(b"1234567890123456789"), None);
+        assert_eq!(value(b"12a"), None);
     }
 }

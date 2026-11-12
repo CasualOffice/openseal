@@ -335,7 +335,12 @@ WorkspaceOf`, `create_workspace`, `archive_workspace`, `into_workspace(&Workspac
 `Accounts::make_first_owner`; `EntryPoints::user_workspaces`. `Store::create_account` is gone: the application can no
 longer create an account outside those functions. Forty-five tables.
 
-`0015_admin_events.sql` (`ORG-05`, ADR-028, docs/23 §2.5) adds the **admin audit logs**: `admin_events` (a tenant
+`0015_in_person_hosting.sql` (`UXW-36`) lets `recipient_tokens.purpose` be `in_person` and adds
+`recipient_tokens.host_user_id` (a user), set exactly when the purpose is `in_person` (a check). An in-person link
+acts as its host hosting the signer (docs/40 As built); the host is a user rather than a membership so that removing
+the member is not refused, and the server refuses the link once the host is no longer an enabled member.
+
+`0016_admin_events.sql` (`ORG-05`, ADR-028, docs/23 §2.5) adds the **admin audit logs**: `admin_events` (a tenant
 table, chained per workspace, head in `accounts.admin_chain_head`) and `org_admin_events` (an organization table,
 chained per organization, head in `organizations.admin_chain_head`). Columns: owner id, `seq`, `prev_hash`, `hash`,
 `action`, `at`, `canonical` (RFC 8785 bytes, at most 64 KiB), `xact` (the top-level transaction that appended it, set

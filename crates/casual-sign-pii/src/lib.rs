@@ -3,8 +3,13 @@
 //! Finds structured personal data in a document's text: email addresses, phone
 //! numbers, IBANs, payment card numbers, US Social Security numbers, UK National
 //! Insurance numbers, Indian PAN and Aadhaar numbers, IP addresses, and dates of birth
-//! (a date only when a context word such as "born" or "date of birth" precedes it).
-//! Each result is a [`Span`]: byte offsets into the text, a [`Kind`] and a score.
+//! (a date only when a context word such as "born" or "date of birth" precedes it);
+//! and, each kept only when its check digits or structural rules hold (`ML-08C`, owner
+//! instruction 33: validation before models), US ITIN and EIN, ABA routing numbers,
+//! Canadian SIN, UK NHS numbers, Australian TFN and Medicare numbers, the German
+//! Steuer-ID, French NIR, Spanish DNI and NIE, Italian codice fiscale, Dutch BSN, EU
+//! VAT numbers of twelve member states, passport MRZ lines, SWIFT/BIC codes, IMEIs, MAC
+//! addresses and Bitcoin addresses. Each result is a [`Span`]: byte offsets into the text, a [`Kind`] and a score.
 //! Spans never carry the matched text, so a result can be logged or sent across a
 //! process boundary without carrying the personal data it points at.
 //!
@@ -20,11 +25,15 @@
 #![forbid(unsafe_code)]
 
 mod checksum;
+mod coin;
 mod context;
 mod error;
 mod iban;
+mod ids;
+mod mrz;
 mod phone;
 mod recognise;
+mod vat;
 
 pub use error::PiiError;
 
@@ -72,11 +81,49 @@ pub enum Kind {
     IpAddress,
     /// A date preceded by a birth context word (`DATE_OF_BIRTH`).
     DateOfBirth,
+    /// A US Individual Taxpayer Identification Number: 9XX-XX-XXXX with an IRS middle group (`US_ITIN`).
+    UsItin,
+    /// A US Employer Identification Number with an IRS-assigned prefix (`US_EIN`).
+    UsEin,
+    /// An ABA routing number with a Federal Reserve prefix and the 3-7-1 check (`ABA_ROUTING_NUMBER`).
+    AbaRouting,
+    /// A Canadian Social Insurance Number passing Luhn (`CA_SIN`).
+    CaSin,
+    /// A UK NHS number passing its mod-11 check (`UK_NHS`).
+    UkNhs,
+    /// An Australian Tax File Number passing its weighted mod-11 check (`AU_TFN`).
+    AuTfn,
+    /// An Australian Medicare card number passing its check digit (`AU_MEDICARE`).
+    AuMedicare,
+    /// A German tax identification number (Steuer-ID): digit rule and ISO 7064 MOD 11,10 (`DE_TAX_ID`).
+    DeTaxId,
+    /// A French social security number (NIR) with its mod-97 key (`FR_NIR`).
+    FrNir,
+    /// A Spanish DNI/NIF with its mod-23 check letter (`ES_NIF`).
+    EsNif,
+    /// A Spanish NIE with its mod-23 check letter (`ES_NIE`).
+    EsNie,
+    /// An Italian codice fiscale with its check letter (`IT_FISCAL_CODE`).
+    ItFiscalCode,
+    /// A Dutch citizen service number (BSN) passing the 11-test (`NL_BSN`).
+    NlBsn,
+    /// An EU VAT number of a covered member state with its check digits (`EU_VAT`).
+    EuVat,
+    /// A passport's machine-readable zone, second line, with every 7-3-1 check digit holding (`PASSPORT_MRZ`).
+    PassportMrz,
+    /// A SWIFT/BIC code with an ISO 3166 country (structure only) (`SWIFT_BIC`).
+    SwiftBic,
+    /// A mobile device's IMEI passing Luhn (`IMEI`).
+    Imei,
+    /// A MAC-48 hardware address (`MAC_ADDRESS`).
+    MacAddress,
+    /// A Bitcoin address with a valid Base58Check or Bech32/Bech32m checksum (`CRYPTO`).
+    Crypto,
 }
 
 impl Kind {
     /// Every kind, in a fixed order.
-    pub const ALL: [Kind; 10] = [
+    pub const ALL: [Kind; 29] = [
         Kind::EmailAddress,
         Kind::PhoneNumber,
         Kind::Iban,
@@ -87,6 +134,25 @@ impl Kind {
         Kind::InAadhaar,
         Kind::IpAddress,
         Kind::DateOfBirth,
+        Kind::UsItin,
+        Kind::UsEin,
+        Kind::AbaRouting,
+        Kind::CaSin,
+        Kind::UkNhs,
+        Kind::AuTfn,
+        Kind::AuMedicare,
+        Kind::DeTaxId,
+        Kind::FrNir,
+        Kind::EsNif,
+        Kind::EsNie,
+        Kind::ItFiscalCode,
+        Kind::NlBsn,
+        Kind::EuVat,
+        Kind::PassportMrz,
+        Kind::SwiftBic,
+        Kind::Imei,
+        Kind::MacAddress,
+        Kind::Crypto,
     ];
 
     /// Presidio's entity name for this kind; stable, used on the wire and in reports.
@@ -103,6 +169,25 @@ impl Kind {
             Kind::InAadhaar => "IN_AADHAAR",
             Kind::IpAddress => "IP_ADDRESS",
             Kind::DateOfBirth => "DATE_OF_BIRTH",
+            Kind::UsItin => "US_ITIN",
+            Kind::UsEin => "US_EIN",
+            Kind::AbaRouting => "ABA_ROUTING_NUMBER",
+            Kind::CaSin => "CA_SIN",
+            Kind::UkNhs => "UK_NHS",
+            Kind::AuTfn => "AU_TFN",
+            Kind::AuMedicare => "AU_MEDICARE",
+            Kind::DeTaxId => "DE_TAX_ID",
+            Kind::FrNir => "FR_NIR",
+            Kind::EsNif => "ES_NIF",
+            Kind::EsNie => "ES_NIE",
+            Kind::ItFiscalCode => "IT_FISCAL_CODE",
+            Kind::NlBsn => "NL_BSN",
+            Kind::EuVat => "EU_VAT",
+            Kind::PassportMrz => "PASSPORT_MRZ",
+            Kind::SwiftBic => "SWIFT_BIC",
+            Kind::Imei => "IMEI",
+            Kind::MacAddress => "MAC_ADDRESS",
+            Kind::Crypto => "CRYPTO",
         }
     }
 }

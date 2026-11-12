@@ -125,6 +125,7 @@ PROFILES = {
     "export-gliner-multi": "export input: gliner_multi-v2.1 safetensors and mDeBERTa tokenizer",
     "export-gliner-small": "export input: gliner_small-v2.1 (pickle; weights_only, no network)",
     "export-paddle": "export input: Paddle-format OCR packs for paddle2onnx",
+    "export-e5": "export input: multilingual-e5-small safetensors and sentence-transformers configs (fp16 export, golden vectors)",
 }
 ARCHES = ("x86_64", "aarch64")
 ARCH_ALIASES = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}

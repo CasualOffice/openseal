@@ -210,11 +210,34 @@ Stage 1 is layout: render each page at 72 DPI greyscale, then compute dHash and 
 3.1.1 (MIT OR Apache-2.0, https://crates.io/api/v1/crates/image_hasher; `image` without decoders, fed raw pixels).
 They are stored as `BIGINT` and compared by Hamming distance. No model is needed.
 
+**Built (piece I, `ML-05`), `server/casual-sign-modeld/src/hash.rs`:** dHash is `image_hasher`'s `Gradient` over a 9×8
+resize, pHash its `Median` over the 8×8 low frequencies of a 16×16 DCT; pages are rendered on white and converted to
+grey by Rec. 601 luma. A page over 4,096 px a side renders at a lower resolution (docs/21). Because piece C's raster
+child is not built yet, HASH renders with `hayro` **in process**: a panic is caught and answered `CS-ML-0006`, but there
+is no per-page time cap, decoded-image budget or `RLIMIT_AS` until `render_each` is replaced by piece C's raster call
+(`SEC-I01`, a recorded gap). Pages are rendered one at a time, each hashed and its raster dropped before the next, so
+a request holds one page raster, not all of its up to 200; the request deadline is checked before every page. Measured on fixtures/ml (scan against its vector original, dHash / pHash Hamming
+distance): blank-form scans at 150–300 DPI with JPEG q60–q75 or fax and skew up to ±2° are 1–9 / 0–6, and the one
+turned 90° is 5 / 2; filled scans are 3–15 / 2–8 (dHash over 10 on `latin-acroform` filled at 150 DPI, 15, and
+`latin-consent` filled, 11); a scan turned 180° is 26 / 34, so an upside-down scan does not match until orientation is corrected first. The acceptance pair
+(`latin-consent` at 200 DPI, q75, +0.6°) is 4 / 2, and another form is over 10.
+
 Stage 2 is text: one passage embedding per page from text-layer or OCR text.
+
+**Built (piece I), `src/embed.rs`:** e5's `query: ` or `passage: ` prefix is added by modeld from the request's kind;
+each text is tokenized and run alone (512 tokens with `<s>` and `</s>`, cut at the end, no padding, so a vector never
+depends on the other texts of a call); the last hidden state is mean-pooled and L2-normalised, as the checkpoint's
+sentence-transformers pipeline declares. ONNX Runtime runs CPU only, one intra- and one inter-op thread, sequential,
+full graph optimisation (`src/runtime.rs`, loading the bundle's `runtime/libonnxruntime.so`). **fp16 (owner
+instruction 34):** `tools/ml/export-e5.py` converts the pinned fp32 ONNX to fp16 (fp32 inputs and outputs) and writes
+golden vectors from the fp32 PyTorch reference over 24 synthetic texts in 15 languages (`fixtures/ml/e5-golden`). In
+modeld the token ids equal the reference's exactly, the fp32 file's lowest cosine is 1.0000000 and the fp16 file's
+0.9999999, so the fp16 file passes the 1e-3 bound and modeld prefers it (`e5-small-fp16`) when a bundle holds it; until
+it is hosted (`ML-15`) bundles carry fp32.
 
 | Model | Weights licence (source) | ONNX file | Size | CPU (est.) | Languages | Verdict |
 | --- | --- | --- | --- | --- | --- | --- |
-| intfloat/multilingual-e5-small (`passage: ` prefix) | MIT (https://huggingface.co/intfloat/multilingual-e5-small) | **fp32 `onnx/model.onnx`** (CPU-portable). The repository's only int8 file, `model_qint8_avx512_vnni.onnx` (118,346,824 B), is quantized for AVX-512 VNNI, slow and numerically different on AVX2; `model_O4.onnx` is a GPU fp16 optimisation. Neither is used. A portable int8 export of our own (piece X) replaces fp32 only once its match results equal fp32's on the fixtures | 470 MB fp32 | 10–40 ms per 512-token page (est.) | about 100 | default (D4) |
+| intfloat/multilingual-e5-small (`passage: ` prefix) | MIT (https://huggingface.co/intfloat/multilingual-e5-small) | **fp32 `onnx/model.onnx`** (CPU-portable); our fp16 conversion of it passes the 1e-3 cosine bound and replaces it once hosted (above). The repository's only int8 file, `model_qint8_avx512_vnni.onnx` (118,346,824 B), is quantized for AVX-512 VNNI, slow and numerically different on AVX2; `model_O4.onnx` is a GPU fp16 optimisation. Neither is used. A portable int8 export of our own (piece X) replaces fp32 only once its match results equal fp32's on the fixtures | 470 MB fp32 | 10–40 ms per 512-token page (est.) | about 100 | default (D4) |
 | sentence-transformers/all-MiniLM-L6-v2 | Apache-2.0 (https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | official fp32; any int8 file is checked for CPU-specific quantization first | about 90 MB fp32 (unverified) | a few ms (est.) | English | "small" profile |
 
 The tokenizer is `tokenizers` 0.23.2 (Apache-2.0, https://crates.io/api/v1/crates/tokenizers) with
@@ -287,17 +310,59 @@ wrong for PT, MU, PS and QA and is corrected to the SWIFT registry; Mastercard's
 checks in code; a match that is the tail of a longer grouped number (a preceding digit group as wide as its own first
 group, or a chain back to an IBAN's country and check digits) is not reported, so an IBAN whose check fails does not
 yield a card or an Aadhaar number, while a row number or quantity before a value ("Row 1 4111 …") does not hide it.
-Scores are integers in thousandths. Not yet built: the other national ids below and URLs.
+Scores are integers in thousandths.
+
+**Built (`ML-08C`, owner instruction 33: validation before models):** each kept only when its check or structural
+rule holds, written from the identifier's published specification (not ported): US ITIN (IRS middle groups) and EIN
+(IRS-assigned prefixes); ABA routing numbers (Federal Reserve prefix, 3-7-1); Canadian SIN (Luhn); UK NHS number
+(mod 11); Australian TFN (weighted mod 11, nine and legacy eight digits) and Medicare (ten digits, check ninth);
+German Steuer-ID (one digit twice or three times, never three in a row, ISO 7064 MOD 11,10); French NIR (mod-97 key,
+Corsica 2A/2B); Spanish DNI and NIE (mod-23 letter); Italian codice fiscale (check letter, day 1–31 or 41–71,
+omocodia); Dutch BSN (11-test); EU VAT for AT, BE, DE, DK, ES (NIF, NIE, CIF), FI, FR (numeric key), IT (Luhn and
+office code), NL (11-test or the 2020 mod-97), PL, PT and SE; passport MRZ, TD3 second line (all five 7-3-1 check
+digits); SWIFT/BIC (ISO 3166 country, location and branch rules); IMEI (Luhn); MAC-48 (one separator throughout, or
+Cisco's dotted form; all-zero and broadcast refused); Bitcoin addresses, Base58Check (double SHA-256, version 0x00 or
+0x05) and Bech32/Bech32m (BIP 173, 350). Labels follow Presidio's where it has the entity (`US_ITIN`,
+`ABA_ROUTING_NUMBER`, `UK_NHS`, `AU_TFN`, `AU_MEDICARE`, `ES_NIF`, `ES_NIE`, `IT_FISCAL_CODE`, `CRYPTO`,
+`MAC_ADDRESS`) and are ours otherwise (`US_EIN`, `CA_SIN`, `DE_TAX_ID`, `FR_NIR`, `NL_BSN`, `EU_VAT`, `PASSPORT_MRZ`,
+`SWIFT_BIC`, `IMEI`).
+
+Scoring rule: a check that random strings of the same shape pass less than about one time in a hundred (two check
+digits, a check letter, a check plus a structural rule, a cryptographic checksum, a country prefix plus a check)
+scores 1.0. A single check digit over a bare string of nine to fifteen digits (ABA, SIN, NHS, TFN, Medicare, BSN,
+IMEI) scores 0.4, below the 0.5 callers display, and 0.75 after a context word, because about one random number in
+ten passes it. No check at all keeps a pattern score as Presidio's do: ITIN 0.5 separated and 0.3 bare, EIN 0.3, MAC
+0.6, SWIFT/BIC 0.1 all letters (it reads like an upper-case word) and 0.3 with a digit. A digit identifier is not
+reported after "+<country code> " (a phone number), after a group of two or more digits (the tail of a longer
+number), before a separator and a digit (the head of one), or touching the `<` filler of an MRZ line; a card number
+touching that filler is not a card either. Our departure from Presidio's SSN rules: area 900–999 is refused (never
+issued as an SSN; it is the ITIN's space).
+
+Measured (`tests/validated.rs`, `--nocapture`), on a held-out synthetic set from its own seed, 300 values per kind,
+half with a context word: every kind detected 300/300 (100%), and 0 false positives on the same values with their
+check broken (for ITIN, EIN, BIC and MAC, a broken structural rule). On 2,000 random tokens holding no personal data
+(1,500 bare numbers of 8 to 16 digits, 500 upper-case 8- and 11-letter words), the weak kinds find what their check
+allows, all below 0.5: TFN 1.6%, IMEI 1.0%, SIN 0.8%, BSN 0.7%, NHS 0.6%, Medicare 0.6%, ABA 0.45%, ITIN 0.45% of the
+tokens; SWIFT/BIC 177 of the 500 letter tokens at 0.1; no `ML-08C` kind at 0.5 or more. The synthetic set is ours, so
+these rates say the checks behave as specified, not how real documents score (§15).
+
+Not yet built: URLs; PL PESEL, AU ABN, SE personnummer and SG NRIC (below); US driver's licence formats with context
+(named in `ML-08C`); the other fifteen EU VAT schemes and XI, France's alphanumeric VAT keys; MRZ TD1 and TD2
+(identity cards, visas) and Medicare's eleventh digit; Ethereum addresses, whose EIP-55 checksum needs Keccak-256, a
+hash not in the workspace (skipped rather than matched unchecked).
 
 **Engine dependency (ADR-029 names it; recorded here as the repository records engine dependencies):** `phonenumber`
-=0.3.10+9.0.33 (Apache-2.0) is the crate's only dependency beyond `regex`. Reason: libphonenumber's per-region metadata
+=0.3.10+9.0.33 (Apache-2.0) is the crate's only new dependency beyond `regex` (`sha2`, below, was already in the
+engine). Reason: libphonenumber's per-region metadata
 is the only sound way to tell a phone number from an order number, and no Rust alternative carries it. It is pure (its
 metadata is compiled in by its build script; nothing is read at run time), builds for wasm32-unknown-unknown, and is
 handed only short ASCII candidates, never document text. Its tree adds `postcard`, `heapless` 0.7, `quick-xml`,
 `strum`, `regex-cache`, `nom` and smaller crates, all MIT or Apache-2.0; `heapless` 0.7 depends on `atomic-polyfill`
 (RUSTSEC-2023-0089, unmaintained) for targets we do not build, ignored in `.cargo/audit.toml` under owner
 instruction 32 and removed under `DEP-05`. `email_address` and `iban_validate` are not used: the email domain check
-and the IBAN table and mod-97 are our own, short and tested.
+and the IBAN table and mod-97 are our own, short and tested. `sha2` =0.11.1 (RustCrypto, MIT OR Apache-2.0, ADR-006)
+computes Base58Check's double SHA-256 for Bitcoin addresses (`ML-08C`); it was already in the engine through
+`casual-sign-pdf` and `casual-sign-crypto`, same version, no default features, so it adds nothing to the tree.
 
 - Email: pattern plus our own domain check (stands in for Presidio's `tldextract`, which needs the Public Suffix List).
 - Phone: `phonenumber` 0.3.10 (Apache-2.0, https://crates.io/api/v1/crates/phonenumber).
@@ -306,7 +371,8 @@ and the IBAN table and mod-97 are our own, short and tested.
 - IP address and URL.
 - Dates, shared with the field detector.
 - National ids with checksums for launch markets: US SSN, UK NINO and NHS, ES NIF and NIE, IT codice fiscale,
-  PL PESEL, DE Steuer-ID, IN Aadhaar (Verhoeff) and PAN, AU TFN and ABN, CA SIN, SE personnummer, SG NRIC.
+  PL PESEL, DE Steuer-ID, IN Aadhaar (Verhoeff) and PAN, AU TFN and ABN, CA SIN, SE personnummer, SG NRIC. Built:
+  all but PL PESEL, AU ABN, SE personnummer and SG NRIC.
 - Low-specificity types need a checksum or a context word.
 
 **Layer 2: optional, off by default.** Names, addresses and organizations come from a pretrained GLiNER-PII model
@@ -342,6 +408,7 @@ Never claim GDPR or other compliance (docs/09).
 | `image_hasher` | 3.1.1 | MIT OR Apache-2.0 |
 | `hayro` | 0.8.0 | Apache-2.0 OR MIT |
 | `phonenumber` (in `casual-sign-pii`; `email_address` and `iban_validate` not used, §5.4) | =0.3.10 | Apache-2.0 |
+| `sha2` (in `casual-sign-pii` for Base58Check, `ML-08C`; already in the engine, ADR-006) | =0.11.1 | MIT OR Apache-2.0 |
 
 **`unsafe`:** the `hayro` crate itself forbids `unsafe`; its dependencies do not (`zune-jpeg`, `fearless_simd`,
 `pic-scale`, `bytemuck`, `vello_cpu`). Its JBIG2, JPX and CCITT decoders are fuzzed specifically (`SEC-I01`).

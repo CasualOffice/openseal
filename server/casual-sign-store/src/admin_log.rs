@@ -3,7 +3,7 @@
 //!
 //! Two logs, separate from envelope evidence and built the same way: `admin_events`,
 //! chained per workspace, and `org_admin_events`, chained per organization (migration
-//! 0015). Each event is stored as its RFC 8785 canonical bytes, written here with
+//! 0016). Each event is stored as its RFC 8785 canonical bytes, written here with
 //! [`casual_sign_audit::jcs`], exactly what its SHA-256 covers. The database recomputes
 //! the hash, checks that the columns are what the bytes say and that `seq` and `prev`
 //! extend the chain under a lock on the head (`CS-DB-0014`), refuses UPDATE, DELETE and

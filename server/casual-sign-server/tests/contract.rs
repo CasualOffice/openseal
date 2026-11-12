@@ -330,6 +330,21 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     .await;
     let (_, h) = open(&api, &ceremony_path(view["url"].as_str().unwrap())).await;
     assert!(!h.is_empty());
+    // Hosting in person (UXW-36) is for an in-person signer only; tests/in_person.rs
+    // signs one to the end.
+    let not_in_person = api
+        .call(
+            "POST",
+            &format!("/api/v1/envelopes/{emb_id}/recipients/{emb_r}/host"),
+            &bearer,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (not_in_person.status, not_in_person.code().as_str()),
+        (StatusCode::CONFLICT, "CS-WF-0001")
+    );
     ok(
         api.call(
             "DELETE",

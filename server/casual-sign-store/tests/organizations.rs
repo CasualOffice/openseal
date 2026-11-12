@@ -1353,8 +1353,11 @@ async fn a_database_with_an_account_without_admin_migrates() {
             .unwrap();
     }
     let report = Store::from_pool(db.admin.clone()).migrate().await.unwrap();
-    // 0014 and every later migration (ORG-05's 0015, ...).
-    assert_eq!(report.applied.first(), Some(&14));
+    assert_eq!(
+        report.applied.first(),
+        Some(&14),
+        "migration 0014 applies first; later ones (0015, ORG-05's 0016, ...) follow"
+    );
     for (i, acct) in accounts.iter().enumerate() {
         let (org, oname, ostatus): (uuid::Uuid, String, String) = sqlx::query_as(
             "SELECT a.organization_id, o.name, o.status FROM accounts a \

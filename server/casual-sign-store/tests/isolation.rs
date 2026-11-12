@@ -203,6 +203,7 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
             recipient_id: a.recipient,
             token_sha256: world::hash("forged"),
             purpose: TokenPurpose::Invitation,
+            host_user_id: None,
             expires_at: now(),
         })
         .await,);

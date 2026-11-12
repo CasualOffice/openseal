@@ -198,7 +198,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 Designed in [33](33-ML-MODELS.md) §4. Built so far: span normalisation (`casual-sign-fields::normalize`, `ML-07`), the
 deterministic personal-data recognisers (`casual-sign-pii`, `ML-08`), whose rows name their tests, and the `casual-sign-modeld`
 skeleton, which enforces the 64 MiB frame cap (not yet the 4 MiB cap on other frames), the id bounds and the pre-admission
-bound; the rest has no hostile fixture yet (the `ml_*` fixtures of `SEC-I02` come with `ML-02`). Values marked
+bound, and the HASH and EMBED ops (piece I: the raster size cap for hashes, the EMBED text bounds, e5's 512-token window); the rest has no hostile fixture yet (the `ml_*` fixtures of `SEC-I02` come with `ML-02`). Values marked
 provisional are re-set from measurement before an exit is claimed.
 
 | Limit | Default | Code |
@@ -209,6 +209,8 @@ provisional are re-set from measurement before an exit is claimed.
 | Model ids, account and job ids in a frame | 1–64 bytes, `[A-Za-z0-9._-]` | CS-ML-0004 |
 | Pages OCR'd per document | 200; later pages are not read (`truncated`) | — (report) |
 | Render resolution | 150 DPI (host may set 100–200) | CS-ML-0001 |
+| Render resolution for page hashes (HASH, built) | 72 DPI, fixed (docs/33 §5.2); a page over the raster size cap renders smaller; `hash::tests::a_page_over_the_pixel_cap_renders_smaller_never_larger` | — |
+| Page rasters held per HASH request (built) | One: each page is hashed and its raster dropped before the next is rendered; the deadline is checked before every page; `hash::tests::hashing_holds_at_most_one_page_raster_at_a_time`, `hash::tests::a_passed_deadline_stops_between_pages` | CS-ML-0007 (deadline) |
 | Extracted span normalised (date, duration, amount; `casual-sign-fields::normalize`, built) | 256 bytes; longer spans are not read | — (`None`: suggestions only, no error) |
 | Duration count | 100,000 units | — (`None`) |
 | Amount digits | 28 | — (`None`) |
@@ -216,6 +218,7 @@ provisional are re-set from measurement before an exit is claimed.
 | Candidates examined per recogniser per call (`casual-sign-pii`) | 20,000; further candidates of that kind are not examined, reported as `Truncation::Candidates` | — (report); `tests/hostile.rs` |
 | Spans returned per call (`casual-sign-pii`) | 5,000 (= personal-data suggestions per document below); the rest reported as `Truncation::Spans` | — (report); `tests/hostile.rs` |
 | Phone candidate (`casual-sign-pii`) | 7 to 15 digits (E.164), at most 28 characters by its pattern; only that short ASCII candidate reaches `phonenumber` | — (not a phone) |
+| Validated-identifier candidate (`casual-sign-pii`, `ML-08C`) | Bounded by each pattern: at most 44 ASCII characters (MRZ line) for ids, 35 for a Base58 address (decoded into at most 25 bytes, longer refused before arithmetic) and 90 for a Bech32 address (BIP 173); the 20,000-candidate budget above applies per kind | — (not that identifier); `tests/validated.rs`, `tests/hostile.rs` |
 | Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI | CS-ML-0005 |
 | Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`) | CS-ML-0005 |
 | Rasterise time per page | 10 s, enforced by killing the raster child | CS-ML-0006 |
@@ -227,7 +230,7 @@ provisional are re-set from measurement before an exit is claimed.
 | Windows | e5: 512 tokens; GLiNER (built, piece K): at most the config's `max_len` words (multi and small 384, PII 2,048) and 2,048 tokens per window, prompt and special tokens included; each next window starts 64 words (at most half a window) before the last ended; a word whose tokens alone overflow a window is skipped; candidates of all windows pooled and decoded once; 2,000 windows per call | — (truncated, deterministic) |
 | Labels per call; label length | 32; 64 bytes | CS-ML-0004 |
 | GLiNER label prompt (labels, their markers and special tokens) | 1,024 tokens, half a window, so the text always has the other half (`ML-17`); a larger prompt is refused rather than answering no spans | CS-ML-0005 |
-| Texts per EMBED call | 64, each 8 KiB at most | CS-ML-0004 |
+| Texts per EMBED call | 64, each 8 KiB at most; checked again by the embedder (built, piece I; `embed::tests::a_passed_deadline_stops_between_texts`) | CS-ML-0004 |
 | Suggestions per document | fields 500 (existing); entities 2,000; personal-data spans 5,000 | — (truncated) |
 | Fingerprints searched per account | 50,000 page vectors in process | — |
 | Concurrent slots | `min(max(1, cores ÷ 2), floor((memory limit − model RSS) ÷ per-slot peak))`, per-slot peak 512 MiB (provisional) | CS-ML-0001, CS-ML-0009 |
