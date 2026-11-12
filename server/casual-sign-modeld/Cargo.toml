@@ -16,10 +16,25 @@ publish = false
 # tests/feature_gate.rs proves the client-only tree holds none of them.
 [features]
 default = ["server"]
-# The daemon: bundle verification at start, the op log, the op handlers. Inference
-# dependencies are `dep:` entries here (piece I: ort, tokenizers, image_hasher, image, hayro;
-# GLiNER: regex, serde_json, unicode-normalization).
-server = ["dep:ort", "dep:tokenizers", "dep:image_hasher", "dep:image", "dep:hayro", "dep:regex", "dep:serde_json", "dep:unicode-normalization"]
+# The daemon: bundle verification at start, the op log, the op handlers, and every
+# inference dependency (`dep:` entries), so none reaches a client-only build.
+server = [
+    "raster",
+    "dep:image",
+    "dep:image_hasher",
+    "dep:oar-ocr",
+    "dep:ort",
+    "dep:regex",
+    "dep:serde_json",
+    "dep:tokenizers",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+    "dep:unicode-bidi",
+    "dep:unicode-normalization",
+]
+# The page rasteriser alone (src/raster.rs: hayro and the child's rlimits), without the
+# inference stack: what the `rasterise` fuzz target links. Part of `server`.
+raster = ["dep:hayro", "dep:rustix"]
 
 [[bin]]
 name = "casual-sign-modeld"
@@ -35,10 +50,10 @@ aws-lc-rs = "1.19.0"
 rustls = { version = "0.23.46", default-features = false, features = ["std", "aws_lc_rs", "logging"] }
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
 # ONNX Runtime bindings (ADR-029 D3, docs/33 §5.5): the one `ort` version oar-ocr also
-# pins. `load-dynamic` opens the bundle's hash-checked libonnxruntime.so at start; the
+# pins, never `download-binaries` or `tls-native` (`SEC-I09`). `load-dynamic` opens the bundle's hash-checked libonnxruntime.so at start; the
 # default features (`download-binaries`, `tls-native`, `copy-dylibs`, `ndarray`) stay
 # off, so a build never fetches anything.
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-27"], optional = true }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-27", "tracing"], optional = true }
 # GLiNER's DeBERTa tokenizer.json (docs/33 §5.3). Default features (progress bar, the C++
 # suffix array) are off; `onig` is the regex engine its pre-tokenizers need, the same one
 # oar-ocr-core brings (§5.2).
@@ -50,19 +65,42 @@ regex = { version = "1.13.1", default-features = false, features = ["std", "unic
 serde_json = { version = "1.0.154", optional = true }
 # A span request's text must already be NFC (docs/33 §3.2): checked, never changed.
 # Already in the tree through casual-sign-fields.
-unicode-normalization = { version = "0.1.24", default-features = false, features = ["std"], optional = true }
-# Piece I (ML-05; docs/33 §5.2): the e5 tokenizer shares `tokenizers` above.
-# Page hashes: dHash and pHash over raw grey pixels; `image` without any decoder.
-image_hasher = { version = "=3.1.1", optional = true }
-image = { version = "=0.25.10", default-features = false, optional = true }
-# Page rasteriser for HASH while raster.rs (piece C) is a stub; the same caps apply.
+unicode-normalization = { version = "0.1.26", default-features = false, features = ["std"], optional = true }
+
+# ---- server only (ADR-029; docs/33 §5.1, §5.5) ----
+# The rasteriser (piece C, `ML-02`, `PDF-REN-01`): pure Rust, forbids `unsafe` itself;
+# runs only in the raster child (src/raster.rs). 0.9.0 (2026-11-02) is too new.
 hayro = { version = "=0.8.0", optional = true }
+# Grey and RGB rasters handed to the OCR pipeline: the version oar-ocr uses. Our own
+# entry asks for no codec features, but `oar-ocr-core` depends on `imageproc` with its
+# defaults, which turn on `image`'s `default-formats`, so every codec (avif with the
+# `rav1e` encoder, exr, tiff, gif, webp, hdr, dds, qoi and the rest) is compiled into
+# the daemon. None is reached: modeld never decodes an image file (no `image::open`,
+# `load_from_memory` or `ImageReader` in src), only raw pixels. Trimming this is a row.
+image = { version = "=0.25.10", default-features = false, optional = true }
+# The PaddleOCR pipeline (piece D). Its defaults are `download-binaries` (fetches ONNX
+# Runtime at build) and `simd`: only `simd` is kept, and `auto-download` stays off
+# (review defect 2, `SEC-I09`). Model files come from the verified bundle only.
+oar-ocr = { version = "=0.10.2", default-features = false, features = ["simd"], optional = true }
+# Address-space and CPU-time limits the raster child sets on itself (`setrlimit`),
+# without `unsafe` in this crate.
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "process"], optional = true }
+# The one fixed log subscriber (`SEC-I05`): third-party targets capped at WARN whatever
+# RUST_LOG says (src/logging.rs). Both already in the tree.
+tracing = { version = "0.1.44", optional = true }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "registry"], optional = true }
+# OCR text leaves modeld in NFC (unicode-normalization, above), right-to-left lines in
+# logical order (docs/33 §3.2, §5.1). Already in the tree.
+unicode-bidi = { version = "0.3.18", optional = true }
+# Piece I (ML-05; docs/33 §5.2): page hashes, dHash and pHash over raw grey pixels.
+image_hasher = { version = "=3.1.1", optional = true }
 
 [dev-dependencies]
 # Throwaway TLS PKI for the mTLS tests (as keyd's tests).
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
-# Reads the GLiNER golden spans (fixtures/ml/gliner-golden/) and the e5 golden vectors
-# (fixtures/ml/e5-golden).
+# Reads the fixtures' ground truth (fixtures/ml/truth/*.json), a fetched bundle's
+# bundle.json, the GLiNER golden spans (fixtures/ml/gliner-golden/) and the e5 golden
+# vectors (fixtures/ml/e5-golden) in tests.
 serde_json = "1.0.154"
 
 [lints]

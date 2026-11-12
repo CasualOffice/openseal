@@ -14,10 +14,13 @@
 //! - With the default `server` feature: [`Modeld`] (the mTLS daemon, slots, an op log of
 //!   counts and ids only), [`Manifest`] and [`Bundle`] (weights pinned by SHA-256 in a
 //!   manifest compiled into the binary; modeld does not start on a one-byte change), and
-//!   the op modules the later pieces fill: `raster`, `rules` (piece C), `ocr` (D),
-//!   `hash`, `embed` (I), and [`Gliner`] with `entities` and `personal` (K: ENTITIES and
-//!   PERSONAL through GLiNER on ONNX Runtime, [`SpanModels`]). An op whose model is not
-//!   installed answers `CS-ML-0010`.
+//!   the op modules: [`raster`] (piece C: `hayro` in a per-document child process, the
+//!   pixel, decoded-image and time caps), `rules` (C: rules and boxes found on scans),
+//!   `ocr` (D: PP-OCRv6 through `oar-ocr`), [`logging`] (the fixed third-party log
+//!   filter), [`Gliner`] with `entities` and `personal` (K: ENTITIES and PERSONAL
+//!   through GLiNER on ONNX Runtime, [`SpanModels`]), and those still to fill: `hash`,
+//!   `embed` (I). An op whose model is not installed answers `CS-ML-0010`.
+//! - With only the `raster` feature: the rasteriser, for the `rasterise` fuzz target.
 //!
 //! Every output is a suggestion a person accepts; none enters a sealed document, the
 //! audit chain or the evidence (docs/33 invariant 2). Errors are [`ModeldError`] with
@@ -36,6 +39,8 @@ mod gliner;
 #[cfg(feature = "server")]
 mod hash;
 #[cfg(feature = "server")]
+pub mod logging;
+#[cfg(feature = "server")]
 mod manifest;
 #[cfg(feature = "server")]
 mod ocr;
@@ -43,16 +48,16 @@ mod ocr;
 pub mod oplog;
 #[cfg(feature = "server")]
 mod personal;
+#[cfg(feature = "raster")]
+pub mod raster;
 #[cfg(feature = "server")]
-mod raster;
-#[cfg(feature = "server")]
-mod rules;
+pub mod rules;
 #[cfg(feature = "server")]
 mod runtime;
 #[cfg(feature = "server")]
 mod server;
 
-pub use client::{Call, DEADLINE_GRACE, Endpoint, ModelClient, client_tls};
+pub use client::{Call, DEADLINE_GRACE, Endpoint, ModelClient, Session, client_tls};
 pub use error::{BundleProblem, ModelRefusal, ModeldError};
 
 #[cfg(feature = "server")]
@@ -66,6 +71,7 @@ pub use manifest::{ALLOWED_LICENCES, Bundle, Entry, MAX_BUNDLE, MAX_FILE, Manife
 pub use oplog::{OpLog, OpRecord};
 #[cfg(feature = "server")]
 pub use server::{
-    AllowList, DEFAULT_MEMORY_LIMIT, ModelService, Modeld, ModeldLimits, NO_RUNTIME, PER_SLOT_PEAK,
-    SlotSettings, configured_slots, default_slots, fingerprint, resident_bytes, server_tls,
+    AllowList, ConnectionState, DEFAULT_MEMORY_LIMIT, ModelService, Modeld, ModeldLimits,
+    NO_RUNTIME, PER_SLOT_PEAK, SlotSettings, configured_slots, default_slots, fingerprint,
+    resident_bytes, server_tls,
 };

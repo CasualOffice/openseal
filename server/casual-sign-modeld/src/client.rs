@@ -125,9 +125,19 @@ impl ModelClient {
     /// `CS-ML-0004` for a request over a bound or a malformed answer, `CS-ML-0008` when
     /// modeld cannot be reached or the handshake fails, or the code modeld answered.
     pub fn call(&self, req: &Request) -> Result<Response, ModeldError> {
-        let body = req.encode()?;
-        // The same decoder modeld runs: a request it would refuse is never sent.
-        Request::decode(&body)?;
+        let mut session = self.session()?;
+        let resp = session.exchange(req);
+        session.close();
+        resp
+    }
+
+    /// Open an mTLS connection that stays open across requests: a document opened on it
+    /// (DOC_OPEN) can be read page by page and is closed with the connection (docs/33
+    /// §3.1).
+    ///
+    /// # Errors
+    /// `CS-ML-0008` when modeld cannot be reached or the handshake fails.
+    pub fn session(&self) -> Result<Session, ModeldError> {
         let name = ServerName::try_from(self.endpoint.server_name.clone())
             .map_err(|_| ModeldError::TlsConfig("server name".into()))?;
         let addr = self
@@ -139,21 +149,10 @@ impl ModelClient {
             .ok_or_else(|| transport("address does not resolve"))?;
         let sock =
             TcpStream::connect_timeout(&addr, self.endpoint.connect_timeout).map_err(transport)?;
-        let wait = Duration::from_millis(u64::from(req.deadline_ms)).saturating_add(DEADLINE_GRACE);
-        sock.set_read_timeout(Some(wait)).map_err(transport)?;
-        sock.set_write_timeout(Some(wait)).map_err(transport)?;
         let conn = ClientConnection::new(self.endpoint.tls.clone(), name).map_err(transport)?;
-        let mut s = StreamOwned::new(conn, sock);
-        write_frame(&mut s, &body)?;
-        let answer =
-            read_frame(&mut s)?.ok_or_else(|| transport("modeld closed the connection"))?;
-        let resp = Response::decode(&answer, req)?;
-        s.conn.send_close_notify();
-        let _ = s.conn.complete_io(&mut s.sock);
-        match resp {
-            Response::Error(n) => Err(ModeldError::from_number(n)),
-            ok => Ok(ok),
-        }
+        Ok(Session {
+            stream: StreamOwned::new(conn, sock),
+        })
     }
 
     fn request(call: &Call, op: Op) -> Request {
@@ -172,30 +171,6 @@ impl ModelClient {
     pub fn info(&self, call: &Call) -> Result<Info, ModeldError> {
         match self.call(&Self::request(call, Op::Info))? {
             Response::Info(i) => Ok(i),
-            _ => Err(unexpected()),
-        }
-    }
-
-    /// OCR `pages` (zero-based) of `pdf` at `dpi` with the `scripts` packs.
-    ///
-    /// # Errors
-    /// As [`ModelClient::call`].
-    pub fn ocr(
-        &self,
-        call: &Call,
-        pdf: Vec<u8>,
-        pages: Vec<u16>,
-        dpi: u16,
-        scripts: Vec<String>,
-    ) -> Result<Vec<OcrPage>, ModeldError> {
-        let op = Op::Ocr {
-            pdf,
-            pages,
-            dpi,
-            scripts,
-        };
-        match self.call(&Self::request(call, op))? {
-            Response::Ocr(p) => Ok(p),
             _ => Err(unexpected()),
         }
     }
@@ -252,5 +227,98 @@ impl ModelClient {
             Response::Spans(s) => Ok(s),
             _ => Err(unexpected()),
         }
+    }
+}
+
+/// An open connection to modeld (from [`ModelClient::session`]). A document opened on it
+/// lives until [`Session::close_document`] or the end of the session, never longer.
+pub struct Session {
+    stream: StreamOwned<ClientConnection, TcpStream>,
+}
+
+impl core::fmt::Debug for Session {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Session").finish_non_exhaustive()
+    }
+}
+
+impl Session {
+    /// Send one request on this connection and read its answer.
+    ///
+    /// # Errors
+    /// As [`ModelClient::call`].
+    pub fn exchange(&mut self, req: &Request) -> Result<Response, ModeldError> {
+        let body = req.encode()?;
+        Request::decode(&body)?;
+        let wait = Duration::from_millis(u64::from(req.deadline_ms)).saturating_add(DEADLINE_GRACE);
+        self.stream
+            .sock
+            .set_read_timeout(Some(wait))
+            .map_err(transport)?;
+        self.stream
+            .sock
+            .set_write_timeout(Some(wait))
+            .map_err(transport)?;
+        write_frame(&mut self.stream, &body)?;
+        let answer = read_frame(&mut self.stream)?
+            .ok_or_else(|| transport("modeld closed the connection"))?;
+        match Response::decode(&answer, req)? {
+            Response::Error(n) => Err(ModeldError::from_number(n)),
+            ok => Ok(ok),
+        }
+    }
+
+    /// Open `pdf` on this connection: its handle and page count.
+    ///
+    /// # Errors
+    /// As [`ModelClient::call`]; `CS-ML-0006` when the PDF cannot be opened.
+    pub fn open_document(&mut self, call: &Call, pdf: Vec<u8>) -> Result<(u32, u32), ModeldError> {
+        match self.exchange(&ModelClient::request(call, Op::DocOpen { pdf }))? {
+            Response::Opened { doc, pages } => Ok((doc, pages)),
+            _ => Err(unexpected()),
+        }
+    }
+
+    /// Close the document `doc`.
+    ///
+    /// # Errors
+    /// As [`ModelClient::call`]; `CS-ML-0004` for a handle this connection does not hold.
+    pub fn close_document(&mut self, call: &Call, doc: u32) -> Result<(), ModeldError> {
+        match self.exchange(&ModelClient::request(call, Op::DocClose { doc }))? {
+            Response::Closed => Ok(()),
+            _ => Err(unexpected()),
+        }
+    }
+
+    /// OCR page `page` (zero-based) of the open document `doc` at `dpi`, with the
+    /// `scripts` packs besides the default recogniser. A page that cannot be read comes
+    /// back with its `status` set, not as an error.
+    ///
+    /// # Errors
+    /// As [`ModelClient::call`].
+    pub fn ocr(
+        &mut self,
+        call: &Call,
+        doc: u32,
+        page: u16,
+        dpi: u16,
+        scripts: Vec<String>,
+    ) -> Result<OcrPage, ModeldError> {
+        let op = Op::Ocr {
+            doc,
+            page,
+            dpi,
+            scripts,
+        };
+        match self.exchange(&ModelClient::request(call, op))? {
+            Response::Ocr(p) => Ok(p),
+            _ => Err(unexpected()),
+        }
+    }
+
+    /// End the session with a TLS close.
+    pub fn close(mut self) {
+        self.stream.conn.send_close_notify();
+        let _ = self.stream.conn.complete_io(&mut self.stream.sock);
     }
 }

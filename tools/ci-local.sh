@@ -20,7 +20,7 @@ step "checks: fixtures";   python3 -I fixtures/tools/generate.py --check
 step "commit messages";    python3 tools/check-commits.py --range "$(git rev-list --max-parents=0 HEAD | tail -1)..HEAD"
 step "test";               cargo fetch --locked
                            cargo test --workspace --all-features --locked --no-fail-fast -q
-step "msrv 1.94";          cargo +1.94.0 check --workspace --locked -q
+step "msrv 1.95";          cargo +1.95.0 check --workspace --locked -q
 step "dependency policy";  cargo deny check bans licenses sources
                            cargo audit --deny warnings
 step "validators"

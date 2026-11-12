@@ -26,6 +26,7 @@ members = [
     "server/casual-sign-host",
     "server/casual-sign-worker",
     "server/casual-sign-server",
+    "server/clipper2-rust",
 ]
 # The fuzz workspace is separate: cargo-fuzz needs nightly-only dependencies that must
 # stay out of the product dependency graph (as OpenCalc and OpenPresent).
@@ -35,7 +36,7 @@ exclude = ["fuzz"]
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/CasualOffice/openseal"
-rust-version = "1.94.0"
+rust-version = "1.95.0"
 
 # Copied from OpenPresent's Cargo.toml (docs/19 §Provenance).
 [workspace.lints.rust]
@@ -54,6 +55,12 @@ expect_used = "warn"
 indexing_slicing = "warn"
 arithmetic_side_effects = "warn"
 panic = "warn"
+
+# `oar-ocr-core` (modeld's OCR, ML-02) depends on `clipper2-rust`, which is BSL-1.0: owner
+# instruction 32 allows that licence only inside the ONNX Runtime binary. Our own
+# Apache-2.0 crate of the same name stands in for it (server/clipper2-rust, ML-02C).
+[patch.crates-io]
+clipper2-rust = { path = "server/clipper2-rust" }
 
 [profile.release]
 lto = "thin"

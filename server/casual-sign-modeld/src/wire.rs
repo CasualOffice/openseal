@@ -9,19 +9,24 @@
 //! wrong count is refused (`CS-ML-0004`), never handed to the worker.
 //!
 //! ```text
-//! frame    = len:u32be body                          (len <= MAX_FRAME)
+//! frame    = len:u32be body       (len <= MAX_FRAME; a request other than DOC_OPEN and HASH
+//!                                   <= MAX_FRAME_OP)
 //! request  = 0x01 op:u8 deadline_ms:u32be account:id8 job:id8 body
 //!   0x01 INFO      (no body)
-//!   0x02 OCR       pdf:bytes32 pages:list16(u16) dpi:u16 scripts:list8(id8)
+//!   0x07 DOC_OPEN  pdf:bytes32                      (one open document per connection)
+//!   0x08 DOC_CLOSE doc:u32be
+//!   0x02 OCR       doc:u32be page:u16 dpi:u16 scripts:list8(id8)
 //!   0x03 HASH      pdf:bytes32 pages:list16(u16)
 //!   0x04 EMBED     kind:u8 (0 query | 1 passage) texts:list8(text32)
 //!   0x05 ENTITIES  text:text32 labels:list8(text8) threshold:u16
 //!   0x06 PERSONAL  as ENTITIES
 //! response = 0x01 0x00 ok-body | 0x01 0x01 code:u16be
 //!   INFO     bundle:id8 runtime:id8 models:list16(id:id8 sha256:32B)
-//!   OCR      list16(page:u16 status:u16 width:u16 height:u16
-//!                   words:list16(text:text16 quad conf:u16)
-//!                   lines:list16(quad) rules:list16(rect) boxes:list16(rect))
+//!   DOC_OPEN doc:u32be pages:u32be
+//!   DOC_CLOSE (no body)
+//!   OCR      page:u16 status:u16 width:u16 height:u16 dpi:u16 rotate:u16 crop:rect
+//!            words:list16(text:text16 quad conf:u16)
+//!            lines:list16(quad) rules:list16(rect) boxes:list16(rect)
 //!   HASH     list16(page:u16 dhash:u64be phash:u64be)
 //!   EMBED    dim:u16 list8(f32be × dim)
 //!   SPANS    list16(start:u32be end:u32be label:u8 score:u16)    (ENTITIES, PERSONAL)
@@ -33,7 +38,15 @@
 //! Span offsets are **UTF-8 byte offsets into exactly the text the worker sent** (which
 //! the worker has put in NFC); review defect 19 of ADR-029. Scores and confidences are in
 //! ten-thousandths ([`SCORE_SCALE`]). Pixel coordinates are in the raster's space, top
-//! left, at the request's DPI; the worker maps them to page space (docs/33 §2 step 3).
+//! left, at the resolution the page was rendered at ([`OcrPage::dpi`], which is lower than
+//! the request's when the page would exceed the raster cap). Each OCR page carries the
+//! geometry the rasteriser used (its crop box in PDF user space and its `/Rotate`), so
+//! the worker maps a pixel to displayed page space ([`OcrPage::to_displayed`], ADR-019) or
+//! to PDF user space ([`OcrPage::to_user`]) without re-reading the PDF (docs/33 §2 step
+//! 3).
+//!
+//! A document handle from DOC_OPEN is valid on its own connection only; nothing outlives
+//! the connection (docs/33 §3.1).
 
 use std::io::{Read, Write};
 
@@ -44,6 +57,8 @@ pub const VERSION: u8 = 1;
 /// Largest frame either side reads: a 50 MiB upload plus headers (docs/33 §4,
 /// `CS-ML-0004`).
 pub const MAX_FRAME: usize = 64 << 20;
+/// The largest request frame other than DOC_OPEN and HASH, which carry a PDF (docs/33 §4).
+pub const MAX_FRAME_OP: usize = 4 << 20;
 /// Largest PDF in an OCR or HASH request: the upload cap.
 pub const MAX_PDF: usize = 50 << 20;
 /// Longest identifier (account, job, script, model, bundle, runtime version).
@@ -89,6 +104,8 @@ const OP_HASH: u8 = 3;
 const OP_EMBED: u8 = 4;
 const OP_ENTITIES: u8 = 5;
 const OP_PERSONAL: u8 = 6;
+const OP_DOC_OPEN: u8 = 7;
+const OP_DOC_CLOSE: u8 = 8;
 
 /// Which embedding prefix the model is given (e5's `query:` and `passage:`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,15 +134,27 @@ pub struct Request {
 pub enum Op {
     /// The installed bundle: its id, the runtime version and each model's hash.
     Info,
-    /// Rasterise and read pages.
-    Ocr {
-        /// The stored, normalized PDF.
+    /// Open the stored, normalized PDF on this connection (it crosses the wire once per
+    /// job). Answered with a handle and the page count.
+    DocOpen {
+        /// The PDF.
         pdf: Vec<u8>,
-        /// Zero-based page indexes.
-        pages: Vec<u16>,
-        /// Render resolution.
+    },
+    /// Close a document this connection opened; its raster child is ended.
+    DocClose {
+        /// The handle DOC_OPEN gave.
+        doc: u32,
+    },
+    /// Rasterise and read one page of an open document.
+    Ocr {
+        /// The handle DOC_OPEN gave on this connection.
+        doc: u32,
+        /// Zero-based page index.
+        page: u16,
+        /// Render resolution asked for (the page may render lower, see [`OcrPage::dpi`]).
         dpi: u16,
-        /// OCR script packs to use (installed pack ids).
+        /// OCR script packs to use besides the default recogniser (`arabic`,
+        /// `devanagari`, ...).
         scripts: Vec<String>,
     },
     /// Perceptual hashes of pages.
@@ -164,8 +193,17 @@ pub struct SpanRequest {
 pub enum Response {
     /// INFO.
     Info(Info),
-    /// OCR, one entry per page asked for, in order.
-    Ocr(Vec<OcrPage>),
+    /// DOC_OPEN: the handle, valid on this connection, and the document's page count.
+    Opened {
+        /// The handle.
+        doc: u32,
+        /// Pages in the document.
+        pages: u32,
+    },
+    /// DOC_CLOSE.
+    Closed,
+    /// OCR of the page asked for.
+    Ocr(OcrPage),
     /// HASH, one entry per page asked for, in order.
     Hash(Vec<PageHash>),
     /// EMBED, one vector per text, in order.
@@ -189,7 +227,7 @@ pub struct Info {
 
 /// Four corners, clockwise from top left, in raster pixels.
 pub type Quad = [(f32, f32); 4];
-/// `x0, y0, x1, y1` in raster pixels.
+/// `x0, y0, x1, y1` in raster pixels (for an OCR page's `crop`: in PDF user space).
 pub type Rect = [f32; 4];
 
 /// One OCR'd page.
@@ -197,13 +235,21 @@ pub type Rect = [f32; 4];
 pub struct OcrPage {
     /// The page index asked for.
     pub page: u16,
-    /// `0`, or the `CS-ML-` number this page failed with (5 or 6); then nothing else is
-    /// filled in.
+    /// `0`, or the `CS-ML-` number this page failed with (5, 6 or 14); then nothing else
+    /// is filled in.
     pub status: u16,
     /// Raster width in pixels.
     pub width: u16,
     /// Raster height in pixels.
     pub height: u16,
+    /// The resolution the page was rendered at: the one asked for, or lower when the page
+    /// would exceed the raster cap (docs/33 §4).
+    pub dpi: u16,
+    /// The page's `/Rotate` the raster includes: 0, 90, 180 or 270.
+    pub rotate: u16,
+    /// The page's crop box (intersected with its media box) in PDF user space, `x0, y0,
+    /// x1, y1`, which the raster covers.
+    pub crop: Rect,
     /// Words read.
     pub words: Vec<Word>,
     /// Text lines found.
@@ -249,12 +295,46 @@ pub struct Span {
     pub score: u16,
 }
 
+impl OcrPage {
+    /// Points per pixel at this page's resolution.
+    fn pt_per_px(&self) -> f32 {
+        72.0 / f32::from(self.dpi.max(1))
+    }
+
+    /// A raster pixel position as displayed page space (ADR-019: points, origin top left
+    /// of the page as shown, `/Rotate` applied).
+    #[must_use]
+    pub fn to_displayed(&self, (x, y): (f32, f32)) -> (f32, f32) {
+        let s = self.pt_per_px();
+        (x * s, y * s)
+    }
+
+    /// A raster pixel position as PDF user space (origin bottom left, unrotated), the
+    /// inverse of the rasteriser's page transform: the crop box offset and `/Rotate`
+    /// undone.
+    #[must_use]
+    pub fn to_user(&self, px: (f32, f32)) -> (f32, f32) {
+        let (xd, yd) = self.to_displayed(px);
+        let [x0, y0, x1, y1] = self.crop;
+        let (cw, ch) = (x1 - x0, y1 - y0);
+        let (a, b) = match self.rotate {
+            90 => (yd, xd),
+            180 => (cw - xd, yd),
+            270 => (cw - yd, ch - xd),
+            _ => (xd, ch - yd),
+        };
+        (a + x0, b + y0)
+    }
+}
+
 impl Op {
     /// The op's name in the op log.
     #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Info => "info",
+            Self::DocOpen { .. } => "doc_open",
+            Self::DocClose { .. } => "doc_close",
             Self::Ocr { .. } => "ocr",
             Self::Hash { .. } => "hash",
             Self::Embed { .. } => "embed",
@@ -546,6 +626,8 @@ impl Request {
         let mut w = Writer(vec![VERSION]);
         w.u8(match &self.op {
             Op::Info => OP_INFO,
+            Op::DocOpen { .. } => OP_DOC_OPEN,
+            Op::DocClose { .. } => OP_DOC_CLOSE,
             Op::Ocr { .. } => OP_OCR,
             Op::Hash { .. } => OP_HASH,
             Op::Embed { .. } => OP_EMBED,
@@ -557,14 +639,16 @@ impl Request {
         w.bytes8(self.job.as_bytes())?;
         match &self.op {
             Op::Info => {}
+            Op::DocOpen { pdf } => w.bytes32(pdf)?,
+            Op::DocClose { doc } => w.u32(*doc),
             Op::Ocr {
-                pdf,
-                pages,
+                doc,
+                page,
                 dpi,
                 scripts,
             } => {
-                w.bytes32(pdf)?;
-                w.pages(pages)?;
+                w.u32(*doc);
+                w.u16(*page);
                 w.u16(*dpi);
                 w.count8(scripts.len())?;
                 for s in scripts {
@@ -600,6 +684,9 @@ impl Request {
             return Err(malformed("unknown protocol version"));
         }
         let op = r.u8()?;
+        if body.len() > MAX_FRAME_OP && op != OP_DOC_OPEN && op != OP_HASH {
+            return Err(malformed("frame over the limit for its operation"));
+        }
         let deadline_ms = r.u32()?;
         if deadline_ms == 0 || deadline_ms > MAX_DEADLINE_MS {
             return Err(malformed("deadline outside 1 ms to 15 minutes"));
@@ -608,10 +695,16 @@ impl Request {
         let job = r.id()?;
         let op = match op {
             OP_INFO => Op::Info,
-            OP_OCR => {
+            OP_DOC_OPEN => {
                 let n = r.len32(MAX_PDF)?;
-                let pdf = r.take(n)?.to_vec();
-                let pages = r.pages()?;
+                Op::DocOpen {
+                    pdf: r.take(n)?.to_vec(),
+                }
+            }
+            OP_DOC_CLOSE => Op::DocClose { doc: r.u32()? },
+            OP_OCR => {
+                let doc = r.u32()?;
+                let page = r.u16()?;
                 let dpi = r.u16()?;
                 if !(MIN_DPI..=MAX_DPI).contains(&dpi) {
                     return Err(malformed("resolution outside 100 to 200 DPI"));
@@ -619,8 +712,8 @@ impl Request {
                 let k = r.count8(MAX_SCRIPTS)?;
                 let scripts = (0..k).map(|_| r.id()).collect::<Result<Vec<_>, _>>()?;
                 Op::Ocr {
-                    pdf,
-                    pages,
+                    doc,
+                    page,
                     dpi,
                     scripts,
                 }
@@ -684,31 +777,36 @@ impl Response {
                     w.0.extend_from_slice(sha);
                 }
             }
-            Self::Ocr(pages) => {
-                w.count16(pages.len())?;
-                for p in pages {
-                    w.u16(p.page);
-                    w.u16(p.status);
-                    w.u16(p.width);
-                    w.u16(p.height);
-                    w.count16(p.words.len())?;
-                    for word in &p.words {
-                        w.bytes16(word.text.as_bytes())?;
-                        w.quad(&word.quad);
-                        w.u16(word.conf);
-                    }
-                    w.count16(p.lines.len())?;
-                    for q in &p.lines {
-                        w.quad(q);
-                    }
-                    w.count16(p.rules.len())?;
-                    for r in &p.rules {
-                        w.rect(r);
-                    }
-                    w.count16(p.boxes.len())?;
-                    for r in &p.boxes {
-                        w.rect(r);
-                    }
+            Self::Opened { doc, pages } => {
+                w.u32(*doc);
+                w.u32(*pages);
+            }
+            Self::Closed => {}
+            Self::Ocr(p) => {
+                w.u16(p.page);
+                w.u16(p.status);
+                w.u16(p.width);
+                w.u16(p.height);
+                w.u16(p.dpi);
+                w.u16(p.rotate);
+                w.rect(&p.crop);
+                w.count16(p.words.len())?;
+                for word in &p.words {
+                    w.bytes16(word.text.as_bytes())?;
+                    w.quad(&word.quad);
+                    w.u16(word.conf);
+                }
+                w.count16(p.lines.len())?;
+                for q in &p.lines {
+                    w.quad(q);
+                }
+                w.count16(p.rules.len())?;
+                for r in &p.rules {
+                    w.rect(r);
+                }
+                w.count16(p.boxes.len())?;
+                for r in &p.boxes {
+                    w.rect(r);
                 }
             }
             Self::Hash(pages) => {
@@ -760,7 +858,16 @@ impl Response {
             1 => Self::Error(r.u16()?),
             0 => match &request.op {
                 Op::Info => Self::Info(decode_info(&mut r)?),
-                Op::Ocr { pages, .. } => Self::Ocr(decode_ocr(&mut r, pages)?),
+                Op::DocOpen { .. } => {
+                    let doc = r.u32()?;
+                    let pages = r.u32()?;
+                    if pages == 0 {
+                        return Err(malformed("an opened document has no pages"));
+                    }
+                    Self::Opened { doc, pages }
+                }
+                Op::DocClose { .. } => Self::Closed,
+                Op::Ocr { page, dpi, .. } => Self::Ocr(decode_ocr(&mut r, *page, *dpi)?),
                 Op::Hash { pages, .. } => Self::Hash(decode_hash(&mut r, pages)?),
                 Op::Embed { texts, .. } => Self::Embed(decode_embed(&mut r, texts.len())?),
                 Op::Entities(req) | Op::Personal(req) => Self::Spans(decode_spans(&mut r, req)?),
@@ -783,52 +890,61 @@ fn decode_info(r: &mut Reader<'_>) -> Result<Info, ModeldError> {
     })
 }
 
-fn decode_ocr(r: &mut Reader<'_>, asked: &[u16]) -> Result<Vec<OcrPage>, ModeldError> {
-    let n = r.count16(MAX_PAGES)?;
-    if n != asked.len() {
-        return Err(malformed("OCR answer is not one entry per page asked for"));
+fn decode_ocr(r: &mut Reader<'_>, asked: u16, asked_dpi: u16) -> Result<OcrPage, ModeldError> {
+    let page = r.u16()?;
+    if page != asked {
+        return Err(malformed("OCR answer is not for the page asked for"));
     }
-    let mut out = Vec::with_capacity(n);
-    for want in asked {
-        let page = r.u16()?;
-        if page != *want {
-            return Err(malformed("OCR answer pages are not those asked for"));
-        }
-        let status = r.u16()?;
-        let width = r.u16()?;
-        let height = r.u16()?;
-        if width > MAX_RASTER_SIDE || height > MAX_RASTER_SIDE {
-            return Err(malformed("raster side over its bound"));
-        }
-        let words = r.list16(MAX_PAGE_ITEMS, |r| {
-            let text = r.text16(MAX_WORD)?;
-            let quad = r.quad()?;
-            let conf = r.u16()?;
-            if conf > SCORE_SCALE {
-                return Err(malformed("confidence over 10000"));
-            }
-            Ok(Word { text, quad, conf })
-        })?;
-        let lines = r.list16(MAX_PAGE_ITEMS, Reader::quad)?;
-        let rules = r.list16(MAX_PAGE_ITEMS, Reader::rect)?;
-        let boxes = r.list16(MAX_PAGE_ITEMS, Reader::rect)?;
-        if status != 0
-            && (!words.is_empty() || !lines.is_empty() || !rules.is_empty() || !boxes.is_empty())
-        {
-            return Err(malformed("a failed page carries results"));
-        }
-        out.push(OcrPage {
-            page,
-            status,
-            width,
-            height,
-            words,
-            lines,
-            rules,
-            boxes,
-        });
+    let status = r.u16()?;
+    let width = r.u16()?;
+    let height = r.u16()?;
+    if width > MAX_RASTER_SIDE || height > MAX_RASTER_SIDE {
+        return Err(malformed("raster side over its bound"));
     }
-    Ok(out)
+    let dpi = r.u16()?;
+    let rotate = r.u16()?;
+    let crop = r.rect()?;
+    if status == 0 {
+        if dpi == 0 || dpi > asked_dpi {
+            return Err(malformed("OCR answer resolution outside what was asked"));
+        }
+        if !matches!(rotate, 0 | 90 | 180 | 270) {
+            return Err(malformed("OCR answer rotation"));
+        }
+        if !(crop[2] > crop[0] && crop[3] > crop[1]) {
+            return Err(malformed("OCR answer crop box"));
+        }
+    }
+    let words = r.list16(MAX_PAGE_ITEMS, |r| {
+        let text = r.text16(MAX_WORD)?;
+        let quad = r.quad()?;
+        let conf = r.u16()?;
+        if conf > SCORE_SCALE {
+            return Err(malformed("confidence over 10000"));
+        }
+        Ok(Word { text, quad, conf })
+    })?;
+    let lines = r.list16(MAX_PAGE_ITEMS, Reader::quad)?;
+    let rules = r.list16(MAX_PAGE_ITEMS, Reader::rect)?;
+    let boxes = r.list16(MAX_PAGE_ITEMS, Reader::rect)?;
+    if status != 0
+        && (!words.is_empty() || !lines.is_empty() || !rules.is_empty() || !boxes.is_empty())
+    {
+        return Err(malformed("a failed page carries results"));
+    }
+    Ok(OcrPage {
+        page,
+        status,
+        width,
+        height,
+        dpi,
+        rotate,
+        crop,
+        words,
+        lines,
+        rules,
+        boxes,
+    })
 }
 
 fn decode_hash(r: &mut Reader<'_>, asked: &[u16]) -> Result<Vec<PageHash>, ModeldError> {
@@ -978,8 +1094,8 @@ mod tests {
         vec![
             req(Op::Info),
             req(Op::Ocr {
-                pdf: b"%PDF-1.7 synthetic".to_vec(),
-                pages: vec![0, 2],
+                doc: 1,
+                page: 2,
                 dpi: 150,
                 scripts: vec!["latin".into(), "arabic".into()],
             }),
@@ -993,7 +1109,27 @@ mod tests {
             }),
             req(Op::Entities(span_req())),
             req(Op::Personal(span_req())),
+            req(Op::DocOpen {
+                pdf: b"%PDF-1.7 synthetic".to_vec(),
+            }),
+            req(Op::DocClose { doc: 1 }),
         ]
+    }
+
+    fn page(status: u16) -> OcrPage {
+        OcrPage {
+            page: 2,
+            status,
+            width: 1275,
+            height: 1650,
+            dpi: 150,
+            rotate: 90,
+            crop: [0.0, 0.0, 792.0, 612.0],
+            words: vec![],
+            lines: vec![],
+            rules: vec![],
+            boxes: vec![],
+        }
     }
 
     fn quad(v: f32) -> Quad {
@@ -1008,32 +1144,17 @@ mod tests {
                 runtime: "none".into(),
                 models: vec![("pp-ocrv6-det".into(), [7; 32])],
             }),
-            Response::Ocr(vec![
-                OcrPage {
-                    page: 0,
-                    status: 0,
-                    width: 1275,
-                    height: 1650,
-                    words: vec![Word {
-                        text: "Signature".into(),
-                        quad: quad(10.0),
-                        conf: 9_731,
-                    }],
-                    lines: vec![quad(9.0)],
-                    rules: vec![[100.0, 700.0, 400.0, 701.5]],
-                    boxes: vec![[50.0, 50.0, 62.0, 62.0]],
-                },
-                OcrPage {
-                    page: 2,
-                    status: 6,
-                    width: 0,
-                    height: 0,
-                    words: vec![],
-                    lines: vec![],
-                    rules: vec![],
-                    boxes: vec![],
-                },
-            ]),
+            Response::Ocr(OcrPage {
+                words: vec![Word {
+                    text: "Signature".into(),
+                    quad: quad(10.0),
+                    conf: 9_731,
+                }],
+                lines: vec![quad(9.0)],
+                rules: vec![[100.0, 700.0, 400.0, 701.5]],
+                boxes: vec![[50.0, 50.0, 62.0, 62.0]],
+                ..page(0)
+            }),
             Response::Hash(vec![PageHash {
                 page: 1,
                 dhash: u64::MAX,
@@ -1047,6 +1168,8 @@ mod tests {
                 score: 9_100,
             }]),
             Response::Spans(vec![]),
+            Response::Opened { doc: 1, pages: 3 },
+            Response::Closed,
         ]
     }
 
@@ -1183,8 +1306,8 @@ mod tests {
             (
                 "dpi low",
                 Op::Ocr {
-                    pdf: vec![],
-                    pages: vec![0],
+                    doc: 1,
+                    page: 0,
                     dpi: MIN_DPI - 1,
                     scripts: vec![],
                 },
@@ -1192,8 +1315,8 @@ mod tests {
             (
                 "dpi high",
                 Op::Ocr {
-                    pdf: vec![],
-                    pages: vec![0],
+                    doc: 1,
+                    page: 0,
                     dpi: MAX_DPI + 1,
                     scripts: vec![],
                 },
@@ -1201,8 +1324,8 @@ mod tests {
             (
                 "scripts",
                 Op::Ocr {
-                    pdf: vec![],
-                    pages: vec![0],
+                    doc: 1,
+                    page: 0,
                     dpi: 150,
                     scripts: vec!["l".into(); MAX_SCRIPTS + 1],
                 },
@@ -1210,8 +1333,8 @@ mod tests {
             (
                 "script id",
                 Op::Ocr {
-                    pdf: vec![],
-                    pages: vec![0],
+                    doc: 1,
+                    page: 0,
                     dpi: 150,
                     scripts: vec!["a b".into()],
                 },
@@ -1336,16 +1459,39 @@ mod tests {
         assert!(Response::decode(&body, &rq).is_ok());
 
         let ocr = every_request().remove(1);
-        let mut pages = match every_response().remove(1) {
-            Response::Ocr(p) => p,
-            _ => unreachable!(),
-        };
-        pages.swap(0, 1);
-        let body = Response::Ocr(pages.clone()).encode().unwrap();
-        assert!(Response::decode(&body, &ocr).is_err(), "pages out of order");
-        pages.truncate(1);
-        let body = Response::Ocr(pages).encode().unwrap();
-        assert!(Response::decode(&body, &ocr).is_err(), "a page missing");
+        let other_page = OcrPage { page: 3, ..page(0) };
+        let bad_pages = [
+            ("another page", other_page),
+            (
+                "a higher resolution",
+                OcrPage {
+                    dpi: 151,
+                    ..page(0)
+                },
+            ),
+            ("no resolution", OcrPage { dpi: 0, ..page(0) }),
+            (
+                "rotation",
+                OcrPage {
+                    rotate: 45,
+                    ..page(0)
+                },
+            ),
+            (
+                "empty crop box",
+                OcrPage {
+                    crop: [10.0, 0.0, 10.0, 600.0],
+                    ..page(0)
+                },
+            ),
+        ];
+        for (what, p) in bad_pages {
+            let body = Response::Ocr(p).encode().unwrap();
+            assert!(Response::decode(&body, &ocr).is_err(), "{what}");
+        }
+        let opened = every_request().remove(6);
+        let body = Response::Opened { doc: 1, pages: 0 }.encode().unwrap();
+        assert!(Response::decode(&body, &opened).is_err(), "no pages");
 
         let embed = every_request().remove(3);
         let body = Response::Embed(vec![vec![0.0; 384]]).encode().unwrap();
@@ -1358,37 +1504,77 @@ mod tests {
             .unwrap();
         assert!(Response::decode(&body, &embed).is_err(), "not finite");
 
-        let failed_with_words = Response::Ocr(vec![
-            OcrPage {
-                page: 0,
-                status: 5,
-                width: 0,
-                height: 0,
-                words: vec![Word {
-                    text: "x".into(),
-                    quad: quad(0.0),
-                    conf: 1,
-                }],
-                lines: vec![],
-                rules: vec![],
-                boxes: vec![],
-            },
-            OcrPage {
-                page: 2,
-                status: 0,
-                width: 1,
-                height: 1,
-                words: vec![],
-                lines: vec![],
-                rules: vec![],
-                boxes: vec![],
-            },
-        ]);
+        let failed_with_words = Response::Ocr(OcrPage {
+            words: vec![Word {
+                text: "x".into(),
+                quad: quad(0.0),
+                conf: 1,
+            }],
+            ..page(5)
+        });
         let body = failed_with_words.encode().unwrap();
         assert!(
             Response::decode(&body, &ocr).is_err(),
             "a failed page with words"
         );
+    }
+
+    /// A request that carries no PDF is held to 4 MiB; DOC_OPEN (and HASH, which still
+    /// carries its PDF) to the 64 MiB frame (docs/33 §4).
+    #[test]
+    fn only_a_request_carrying_a_pdf_may_exceed_four_mebibytes() {
+        let big = "a".repeat(MAX_EMBED_TEXT);
+        let embed = req(Op::Embed {
+            kind: EmbedKind::Passage,
+            texts: vec![big; MAX_EMBED_TEXTS],
+        });
+        let body = embed.encode().unwrap();
+        assert!(body.len() < MAX_FRAME_OP);
+        assert!(Request::decode(&body).is_ok());
+        // An OCR request padded past the bound is refused for its size, not its padding.
+        let mut ocr = every_request()[1].encode().unwrap();
+        ocr.resize(MAX_FRAME_OP + 1, 0);
+        assert_eq!(
+            Request::decode(&ocr).unwrap_err(),
+            ModeldError::Malformed("frame over the limit for its operation")
+        );
+        let pdf = vec![b'%'; MAX_FRAME_OP + 1];
+        let open = req(Op::DocOpen { pdf: pdf.clone() });
+        assert_eq!(Request::decode(&open.encode().unwrap()).unwrap(), open);
+        let hash = req(Op::Hash {
+            pdf,
+            pages: vec![0],
+        });
+        assert_eq!(Request::decode(&hash.encode().unwrap()).unwrap(), hash);
+    }
+
+    /// The pixel-to-page mapping undoes the crop box offset and every `/Rotate` (the
+    /// rasteriser's transform; checked against real rasters in tests/raster.rs).
+    #[test]
+    fn raster_pixels_map_back_to_user_space_for_every_rotation() {
+        // A 200 x 100 pt crop box at (50, 20), rendered at 144 DPI (2 px per pt).
+        let at = |rotate| OcrPage {
+            dpi: 144,
+            rotate,
+            crop: [50.0, 20.0, 250.0, 120.0],
+            ..page(0)
+        };
+        // The user-space point (60, 110): 10 pt right of the crop's left edge, 10 pt
+        // below its top edge.
+        let cases = [
+            (0, (20.0, 20.0)),
+            (90, (180.0, 20.0)),
+            (180, (380.0, 180.0)),
+            (270, (20.0, 380.0)),
+        ];
+        for (rotate, px) in cases {
+            let (u, v) = at(rotate).to_user(px);
+            assert!(
+                (u - 60.0).abs() < 1e-3 && (v - 110.0).abs() < 1e-3,
+                "{rotate}: {u},{v}"
+            );
+        }
+        assert_eq!(at(0).to_displayed((20.0, 30.0)), (10.0, 15.0));
     }
 
     #[test]

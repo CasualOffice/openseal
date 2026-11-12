@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -28,8 +29,12 @@ use crate::client::tls_certificates;
 use crate::error::ModeldError;
 use crate::gliner::SpanModels;
 use crate::manifest::Bundle;
+use crate::ocr::OcrEngine;
 use crate::oplog::{OpLog, OpRecord, hex};
-use crate::wire::{Info, Op, Request, Response, read_frame, read_frame_length, write_frame};
+use crate::raster::{Document, RasterLimits};
+use crate::wire::{
+    Info, OcrPage, Op, Request, Response, read_frame, read_frame_length, write_frame,
+};
 
 /// The largest read made for a caller not yet admitted: its frame is discarded through a
 /// buffer this size, never held (review D2).
@@ -234,6 +239,14 @@ impl Drop for Slot<'_> {
     }
 }
 
+/// What one connection holds: at most one open document (docs/33 §3.1, §4). Dropping it
+/// ends the document's raster child; nothing outlives the connection.
+#[derive(Debug, Default)]
+pub struct ConnectionState {
+    open: Option<(u32, Document)>,
+    next: u32,
+}
+
 /// The bundle, the allow list, the slots and the log: everything that decides an answer,
 /// apart from TLS.
 pub struct ModelService {
@@ -244,6 +257,8 @@ pub struct ModelService {
     log: Mutex<OpLog>,
     busy: AtomicUsize,
     limits: ModeldLimits,
+    raster: Option<(PathBuf, RasterLimits)>,
+    ocr: Option<OcrEngine>,
 }
 
 impl core::fmt::Debug for ModelService {
@@ -253,6 +268,8 @@ impl core::fmt::Debug for ModelService {
             .field("models", &self.bundle.installed.len())
             .field("allowed", &self.allow.len())
             .field("limits", &self.limits)
+            .field("raster", &self.raster.is_some())
+            .field("ocr", &self.ocr)
             .finish_non_exhaustive()
     }
 }
@@ -281,7 +298,38 @@ impl ModelService {
             log: Mutex::new(log),
             busy: AtomicUsize::new(0),
             limits,
+            raster: None,
+            ocr: None,
         }
+    }
+
+    /// Replace the limits (the slot count is set once the models are loaded).
+    #[must_use]
+    pub fn with_limits(mut self, limits: ModeldLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Rasterise in child processes started from `exe` (the modeld binary, which runs as
+    /// a raster child given [`crate::raster::CHILD_ARG`]) under `limits`. Without this,
+    /// DOC_OPEN answers `CS-ML-0010`.
+    #[must_use]
+    pub fn with_raster(mut self, exe: &Path, limits: RasterLimits) -> Self {
+        self.raster = Some((exe.to_owned(), limits));
+        self
+    }
+
+    /// Load the OCR models the bundle holds (none: OCR answers `CS-ML-0010`). INFO then
+    /// reports the ONNX Runtime version.
+    ///
+    /// # Errors
+    /// `CS-ML-0002` or `CS-ML-0013` when the installed models do not load.
+    pub fn with_ocr(mut self) -> Result<Self, ModeldError> {
+        self.ocr = OcrEngine::load(&self.bundle)?;
+        if let Some(engine) = &self.ocr {
+            engine.runtime().clone_into(&mut self.runtime);
+        }
+        Ok(self)
     }
 
     /// The service answering ENTITIES and PERSONAL with `models` (loaded from this
@@ -340,17 +388,20 @@ impl ModelService {
         Err(err)
     }
 
-    /// Answer one request from an admitted `caller`, recording it. A request whose record
-    /// cannot be written is answered with the log's error.
-    pub fn answer(&self, caller: &str, req: &Request) -> Response {
+    /// Answer one request from an admitted `caller` on a connection holding `conn`,
+    /// recording it. A request whose record cannot be written is answered with the log's
+    /// error. An OCR page that failed is recorded with its page's code.
+    pub fn answer(&self, caller: &str, req: &Request, conn: &mut ConnectionState) -> Response {
         let started = Instant::now();
-        let result = self.handle(req, started);
+        let result = self.handle(req, started, conn);
         let (outcome, items) = match &result {
+            Ok(Response::Ocr(p)) if p.status != 0 => (ModeldError::from_number(p.status).code(), 0),
             Ok(r) => ("ok", items(r)),
             Err(e) => (e.code(), 0),
         };
         let pages = match &req.op {
-            Op::Ocr { pages, .. } | Op::Hash { pages, .. } => count(pages.len()),
+            Op::Hash { pages, .. } => count(pages.len()),
+            Op::Ocr { .. } => 1,
             _ => 0,
         };
         let rec = OpRecord {
@@ -371,7 +422,12 @@ impl ModelService {
         result.unwrap_or_else(|e| Response::Error(e.number()))
     }
 
-    fn handle(&self, req: &Request, started: Instant) -> Result<Response, ModeldError> {
+    fn handle(
+        &self,
+        req: &Request,
+        started: Instant,
+        conn: &mut ConnectionState,
+    ) -> Result<Response, ModeldError> {
         if let Op::Info = req.op {
             return Ok(Response::Info(Info {
                 bundle_id: self.bundle.id.clone(),
@@ -384,14 +440,54 @@ impl ModelService {
                     .collect(),
             }));
         }
+        if let Op::DocClose { doc } = req.op {
+            return match conn.open.take() {
+                Some((handle, d)) if handle == doc => {
+                    drop(d);
+                    Ok(Response::Closed)
+                }
+                other => {
+                    conn.open = other;
+                    Err(ModeldError::Malformed("unknown document handle"))
+                }
+            };
+        }
         let _slot = self.take_slot().ok_or(ModeldError::Busy)?;
         let b = &self.bundle;
         let deadline = started
             .checked_add(Duration::from_millis(u64::from(req.deadline_ms)))
             .unwrap_or(started);
         let resp = match &req.op {
-            Op::Info => return Err(ModeldError::Malformed("unreachable")),
-            Op::Ocr { .. } => Response::Ocr(crate::ocr::run(b, req)?),
+            Op::Info | Op::DocClose { .. } => return Err(ModeldError::Malformed("unreachable")),
+            Op::DocOpen { pdf } => {
+                let (exe, limits) = self.raster.as_ref().ok_or(ModeldError::NotInstalled)?;
+                if conn.open.is_some() {
+                    return Err(ModeldError::Malformed(
+                        "a document is already open on this connection",
+                    ));
+                }
+                let doc = Document::open(exe, pdf.clone(), *limits)?;
+                conn.next = conn.next.wrapping_add(1).max(1);
+                let pages = doc.pages();
+                conn.open = Some((conn.next, doc));
+                Response::Opened {
+                    doc: conn.next,
+                    pages,
+                }
+            }
+            Op::Ocr {
+                doc,
+                page,
+                dpi,
+                scripts,
+            } => {
+                let open = match conn.open.as_mut() {
+                    Some((handle, d)) if handle == doc => d,
+                    _ => return Err(ModeldError::Malformed("unknown document handle")),
+                };
+                let engine = self.ocr.as_ref().ok_or(ModeldError::NotInstalled)?;
+                Response::Ocr(read_page(engine, open, *page, *dpi, scripts)?)
+            }
             Op::Hash { .. } => Response::Hash(crate::hash::run(b, req)?),
             Op::Embed { .. } => Response::Embed(crate::embed::run(b, req)?),
             Op::Entities(r) => Response::Spans(crate::entities::run(&self.spans, r, deadline)?),
@@ -404,11 +500,62 @@ impl ModelService {
     }
 }
 
+/// Rasterise and read one page. A page that cannot be rasterised (over a cap, damaged,
+/// over its time, or its child died) is answered with that page's code, not as an error:
+/// the document stays open for its other pages.
+fn read_page(
+    engine: &OcrEngine,
+    doc: &mut Document,
+    page: u16,
+    dpi: u16,
+    scripts: &[String],
+) -> Result<OcrPage, ModeldError> {
+    let failed = |e: &ModeldError| OcrPage {
+        page,
+        status: e.number(),
+        width: 0,
+        height: 0,
+        dpi: 0,
+        rotate: 0,
+        crop: [0.0; 4],
+        words: Vec::new(),
+        lines: Vec::new(),
+        rules: Vec::new(),
+        boxes: Vec::new(),
+    };
+    let raster = match doc.render(page, dpi) {
+        Ok(r) => r,
+        Err(
+            e @ (ModeldError::OverBound(_) | ModeldError::Raster(_) | ModeldError::RasterChild),
+        ) => {
+            return Ok(failed(&e));
+        }
+        Err(e) => return Err(e),
+    };
+    let reading = engine.read(&raster, scripts)?;
+    let found = crate::rules::find(&raster);
+    Ok(OcrPage {
+        page,
+        status: 0,
+        width: raster.width,
+        height: raster.height,
+        dpi: raster.dpi,
+        rotate: raster.rotate,
+        crop: raster.crop,
+        words: reading.words,
+        lines: reading.lines,
+        rules: found.rules,
+        boxes: found.boxes,
+    })
+}
+
 /// How many items an answer carries, for the log.
 fn items(r: &Response) -> u32 {
     match r {
         Response::Info(i) => count(i.models.len()),
-        Response::Ocr(pages) => count(pages.iter().map(|p| p.words.len()).sum()),
+        Response::Opened { pages, .. } => *pages,
+        Response::Closed => 0,
+        Response::Ocr(p) => count(p.words.len()),
         Response::Hash(h) => count(h.len()),
         Response::Embed(v) => count(v.len()),
         Response::Spans(s) => count(s.len()),
@@ -538,9 +685,10 @@ fn connection(
         let _ = s.conn.complete_io(&mut s.sock);
         return admitted;
     }
+    let mut state = ConnectionState::default();
     while let Some(body) = read_frame(&mut s)? {
         let response = match Request::decode(&body) {
-            Ok(req) => service.answer(&caller, &req),
+            Ok(req) => service.answer(&caller, &req, &mut state),
             Err(e) => Response::Error(e.number()),
         };
         write_frame(&mut s, &response.encode()?)?;

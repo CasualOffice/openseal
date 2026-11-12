@@ -1,6 +1,8 @@
 # 33 — ML models (pretrained, no training)
 
-Status: **Accepted** (ADR-029; owner, 2026-11-12, instruction 30). **Designed; nothing is built.** Owner instructions
+Status: **Accepted** (ADR-029; owner, 2026-11-12, instruction 30). **Partly built:** the modeld skeleton (`ML-09`),
+and pieces C and D (2026-11-12): the rasteriser in a killable child, the rule and box finder, OCR with PP-OCRv6
+measured on the synthetic scans (§5.1), DOC_OPEN and OCR on the wire, the fixed log filter. Owner instructions
 27, 28 and 30: ML before LLM, PaddleOCR for OCR, and for now only pretrained models that need no training, built now
 in parallel with the UI and workspace work. Rows: `ML-01` (seam), `ML-09` (the model process), `ML-02` (OCR),
 `ML-02B` (rules and boxes on scans), `ML-05` (template matching), `ML-07` (pretrained extraction and search;
@@ -94,16 +96,18 @@ These are advisory jobs in the `jobs` table (ADR-012) beside the effect jobs (AD
 
 Mutual TLS 1.3 as keyd (worker identity on modeld's allow list). Frames as keyd's `wire.rs`:
 
-    frame    = len:u32be body        (len <= MAX_FRAME_DOC = 64 MiB for DOC_OPEN, MAX_FRAME = 4 MiB otherwise)
+    frame    = len:u32be body        (len <= 64 MiB for DOC_OPEN and, while it carries its PDF, HASH; 4 MiB otherwise)
     request  = 0x01 op deadline_ms:u32be account:str8 job:str8 body
       op 0x01 INFO        → bundle_id:str8, n:(model_id:str8 sha256:32B)*, ort_version:str8
-      op 0x07 DOC_OPEN    pdf:bytes32 → doc:u32       (valid on this connection only; tmpfs; wiped on close)
-      op 0x08 DOC_CLOSE   doc:u32
+      op 0x07 DOC_OPEN    pdf:bytes32 → doc:u32 pages:u32   (valid on this connection only; one per connection)
+      op 0x08 DOC_CLOSE   doc:u32 → (empty)
       op 0x02 OCR         doc:u32 page:u16 dpi:u16 scripts:(str8)*
-                          → status:u16 code, width:u16, height:u16,
+                          → page:u16 status:u16 code, width:u16, height:u16, dpi:u16 (as rendered),
+                            rotate:u16, crop:(x0,y0,x1,y1:f32 user space),
                             words:(text:str16 quad:4×(f32,f32) conf:u16)*, lines:(quad)*,
                             rules:(x0,y0,x1,y1:f32)*, boxes:(x0,y0,x1,y1:f32)*
       op 0x03 HASH        doc:u32 page:u16 → dhash:u64 phash:u64
+                          (built today as pdf:bytes32 pages:(u16)*; moves to a handle with piece I)
       op 0x04 EMBED       kind:u8 (query|passage) texts:(str32)*  → vectors (f32 × 384, L2-normalized)*
       op 0x05 ENTITIES    text:str32 labels:(str8)* threshold:u16 → spans (start:u32 end:u32 label:u8 score:u16)*
       op 0x06 PERSONAL    text:str32 labels:(str8)* threshold:u16 → spans as ENTITIES
@@ -113,7 +117,17 @@ Mutual TLS 1.3 as keyd (worker identity on modeld's allow list). Frames as keyd'
 ### 3.1 Document handles
 
 A handle names a PDF this connection opened. It is never shared across connections, accounts or jobs, and nothing
-survives a connection: modeld keeps no cache keyed across requests (`SEC-I06`). An unknown handle is `CS-ML-0004`.
+survives a connection: modeld keeps no cache keyed across requests (`SEC-I06`). An unknown handle is `CS-ML-0004`, as
+is a second DOC_OPEN while one is open. Built (`src/server.rs` `ConnectionState`): the daemon holds the PDF in memory
+for its connection and hands it to the raster child over a pipe (no file is written, so no tmpfs is needed); DOC_CLOSE
+or the end of the connection drops it and ends the child. The handle is checked before the model, so a wrong handle
+is `CS-ML-0004` even where OCR is not installed (`tests/mtls.rs`).
+
+Every OCR page carries the geometry the rasteriser used: the resolution it rendered at (lower than asked when the
+page exceeds the raster cap), `/Rotate`, and the crop box (intersected with the media box) in user space. The worker
+maps a pixel to displayed page space with `OcrPage::to_displayed` (`x_pt = x_px × 72 / dpi`) or to user space with
+`OcrPage::to_user`, without parsing the PDF itself (`src/wire.rs`; tested against real rasters within 1 pt for every
+`/Rotate` with a crop box offset).
 
 ### 3.2 Span offsets
 
@@ -132,9 +146,17 @@ combining marks.
   restarted for the next page, and after three kills in one document the remaining pages are reported `truncated`. A
   child that dies otherwise (signal, memory limit) reports `CS-ML-0014` and is counted in the op log, since it can
   mark an exploit attempt.
+  **Built** (`src/raster.rs`): the child is the modeld binary run as `raster-child <address-space> <cpu-seconds>`,
+  with an empty environment and stderr discarded; it sets `RLIMIT_AS` (1 GiB), `RLIMIT_CPU` (30 min, a backstop),
+  `RLIMIT_CORE` 0 and `RLIMIT_NOFILE` 16 before reading the PDF. Writes to and reads from the child run on a helper
+  thread so a child that stops reading cannot block the daemon; the page time also bounds opening the PDF. Deaths
+  count toward the three kills. A page after the third is answered `CS-ML-0006` without starting a child (the
+  worker counts it as `truncated`). The child also renders no annotations: OCR reads what the scanner produced.
 - **Inference deadline:** the client sets a deadline per op (§4). modeld cancels at the deadline with ONNX Runtime's
   run terminate flag (`RunOptions::terminate()` in `ort` 2.0.0-rc.13). A watchdog ends the process at 2× deadline,
-  and Compose restarts it. The worker's socket timeout is the deadline plus 5 s.
+  and Compose restarts it. The worker's socket timeout is the deadline plus 5 s. **Not built yet:** `oar-ocr` 0.10.2
+  does not expose its sessions' run options, so today an op that overruns is answered `CS-ML-0007` only after it
+  ends, and no watchdog runs (a finding row; the fallback is D3(b), our own pre- and post-processing).
 - **Concurrency:** a semaphore of `OPENSEAL_MODELD_SLOTS`. Its default is derived from memory, not only cores:
   `min(max(1, cores ÷ 2), floor((memory_limit − model_rss) ÷ per_slot_peak))`, where `model_rss` is measured at start
   after every session loads and `per_slot_peak` is provisional 512 MiB (a raster child's cap plus ORT working memory;
@@ -154,6 +176,11 @@ combining marks.
   targets**. ONNX Runtime's own logger is set to `error`. The log-scrubber test (`SEC-I05`) runs every op at trace
   level with a marker string in the input and fails if the marker appears in any output stream; it is seen red with
   the filter removed.
+- **Built** (`src/logging.rs`): a `tracing_subscriber::filter::Targets` with every target at WARN by default and
+  `ort` (ONNX Runtime's log, routed through `ort`'s `tracing` feature) at ERROR; `RUST_LOG` is read once and may only
+  raise `casual_sign_modeld*` (a bare level is read as modeld's), so no directive reaches a third-party target. The
+  scrubber (`tests/log_scrub.rs`) runs with the real OCR weights, checks that OCR read the marker, and fails on the
+  marker or on any third-party event below its cap; with the filter opened the marker reached the log.
 
 ## 4. Bounds and limits (docs/21 §ML)
 
@@ -196,6 +223,27 @@ the weight licence; code licences are in §5.5; training-data notes are in the w
 | Script packs (operator-chosen, D10(a)) | PP-OCRv5 mobile rec: arabic, devanagari, and others as needed | Apache-2.0 (https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec, https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec; other packs checked per card when added) | **Paddle format only: exported by us** with PaddlePaddle and `paddle2onnx`, offline, hash-pinned (piece X); third-party re-hosts are not a source | 7.5–14 MB each (est.) | 21 ms per line (docs table) | per pack |
 | Line orientation | PP-LCNet_x1_0_textline_ori | Apache-2.0 (https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori) | Paddle format only: exported by us as above | 0.96 MB | ms per line (est.) | — |
 | Rules and boxes on scans (`ML-02B`) | Our code in modeld: binarise, morphological horizontal and vertical runs ≥ 36 pt, rectangles 2.5–100 pt tall (the `Shape` definition in `-fields`) | n/a | n/a | — | < 50 ms per page (est.) | — |
+
+**Built and measured (2026-11-12, pieces C and D).** `src/raster.rs` renders with `hayro` 0.8.0 in the raster child
+(§3.3); `src/rules.rs` finds rules and boxes (Otsu threshold; rules from ink runs of at least 8 pt joined across
+neighbouring rows, so a rule skewed by 2° or touched by typed text stays one; boxes as two horizontal and two vertical
+lines closing a rectangle 2.5–100 pt tall, whose edges are not also rules); `src/ocr.rs` runs `oar-ocr` with ONNX
+Runtime loaded from the bundle, the recogniser's dictionary read from its pinned `inference.yml`, CPU only and one
+thread per session, `return_word_box` on, lines split into words whose quads follow the line. A page whose median
+line confidence is below 0.75 is read again turned half round and the more confident reading kept (an upside-down
+scan; no model needed). Measured on the 15 scans of `fixtures/ml` rendered at 200 DPI through DOC_OPEN and OCR:
+
+| Measure | Result |
+| --- | --- |
+| Latin word recall (11 scans, 1,476 words; script-font signatures not counted) | **99.25%** (1,465); per file 96.7% (the upside-down page) to 100% |
+| Arabic word recall (2 scans, 38 words) | 0%: PP-OCRv6 small has no Arabic characters; the `arabic` pack awaits its export (piece X) |
+| Devanagari word recall (2 scans, 38 words) | 0%: as Arabic, the `devanagari` pack awaits its export |
+| Drawn field evidence found (rules, underscore runs, boxes; 126 fields on all 15 scans, at each scan's resolution) | **99.2%** (125); the miss is one entry box on a filled 150 DPI scan |
+| A rule mapped back to PDF user space, every `/Rotate`, crop box offset, 100–200 DPI | within 1 pt |
+| OCR time per page, debug build, this development machine | 4–12 s (not the reference machine, not a release build; §15 stays open) |
+
+Text-line orientation (PP-LCNet) and the script packs are loaded when the bundle holds them; neither is exported yet,
+so neither is measured.
 
 OCR words become `TextRun`s (characters spaced across the word box when per-character positions are missing) with
 `size` set to the box height. Arabic output gets bidi reordering to logical order, and all text gets NFC, before
@@ -419,6 +467,34 @@ pre- and post-processing onto a newer `ort`.
 
 Every crate passes `deny.toml` as it stands (licences from crates.io); confirming the transitive tree, Oniguruma
 included, with `cargo deny` is part of `ML-09`.
+**Found 2026-11-12 (piece D):** it does not. `cargo deny check licenses` rejects `clipper2-rust` 1.2.0 (BSL-1.0),
+a required dependency of `oar-ocr-core` 0.10.2 (polygon offsetting in its DB post-processing). Owner instruction 32
+admits BSL-1.0 for the ONNX Runtime binary only, so the licence gate fails on any tree with the `server` feature
+until the owner decides (allow BSL-1.0 for this crate in `deny.toml` with an ADR, or replace the unclip step under
+D3(b)); a row is proposed.
+**Resolved 2026-11-13 (`ML-02`), under D3(b):** the unclip step is replaced, not the licence admitted. The workspace
+`[patch.crates-io]` puts our own Apache-2.0 crate `server/clipper2-rust` in place of the BSL-1.0 one; it provides
+only the five items `oar-ocr-core` calls (round-joined outward offset of a closed polygon, taken over its convex
+hull, and the shoelace area), written from that call, not from Clipper2's source. For the quad boxes modeld's
+detector produces the hull is the box itself. `cargo deny check bans licenses sources` passes; the real-weight
+recall test (`tests/ocr.rs`, Latin word recall at least 95%) passes with it and reads nothing when the offset is
+disabled. `deny.toml` is unchanged.
+**Also found:** `oar-ocr` 0.10.2 and its `-core` and `-derive` crates declare `rust-version = 1.95`, above the
+workspace's pinned 1.94.0, so the CI list's `cargo +1.94.0 check --workspace` fails with the `server` feature until
+the MSRV moves to 1.95 (the toolchain in use is 1.96) or an older `oar-ocr` is pinned; a row is proposed. No
+older `oar-ocr` avoids either: 0.7.0 onward all declare 1.95 and use `clipper2-rust` (BSL-1.0 in every version),
+and 0.6.x uses `clipper2`, a binding to the same BSL-1.0 C++ library.
+**Still open (2026-11-13, `ML-02`):** the 1.95 declaration is metadata only: `cargo +1.94.0 check -p
+casual-sign-modeld --all-features --all-targets --ignore-rust-version` compiles, but the CI list's `cargo +1.94.0
+check --workspace --locked` refuses on the declaration. Clearing it needs the owner: move the MSRV to 1.95
+(instruction 14 sets 1.94), or patch the three `oar-ocr` crates in as vendored copies declaring 1.94 (D3(b)).
+**Lockfile ages (2026-11-13, review of piece D):** four crates the tree locked were under the two-week rule of §5;
+they are pinned back to `bit_field` 0.10.3, `exr` 1.74.0 (1.74.1 and 1.74.2 bring `pulp` and the unmaintained
+`paste`), `hayro-cmap` 0.1.0 and `hayro-postscript` 0.1.0 (the fuzz lockfile too). `rustix` moves to 1.1.6
+(2026-10-27) for RUSTSEC-2026-0486. `cargo audit` ignores, each with its reason in `.cargo/audit.toml` and pending
+the owner's confirmation: the four `zip` 8.6 `extract` advisories (`oar-ocr` requires `^8.6`, reads one archive
+with `by_name` only and never extracts; `DEP-06`) and the unmaintained `paste` and `ttf-parser`, which arrive only
+through `imageproc`'s default features turning on every `image` codec and `ab_glyph` (`DEP-07`).
 
 Determinism: CPU execution only, one intra-op thread per session, a fixed graph optimisation level, and fixed
 truncation. Output is expected to be bit-identical on the same build and CPU instruction set; across AVX2 and
@@ -574,7 +650,8 @@ the wasm exclude list in `tools/ci-local.sh`, `.github/workflows/ci.yml` and CLA
 - modeld resident memory with each profile; `per_slot_peak`; the raster child's `RLIMIT_AS`.
 - The int8 GLiNER exports' sizes and accuracy loss; the bundle and per-file caps set from them.
 - hayro fidelity on JBIG2, JPX and CCITT scans (`PDF-REN-01`).
-- PP-OCRv6 script list.
+- PP-OCRv6 script list. (Its small recogniser's 18,708-entry dictionary holds no Arabic or Devanagari character, checked 2026-11-12: those scripts need their packs.)
+- Latin word recall on the synthetic scans at 200 DPI: 99.25% (§5.1, 2026-11-12). Still to measure: the same on the reference machine's release build, and with the textline orientation model.
 - ~~Whether `phonenumber` builds for wasm32 (decides `casual-sign-pii`).~~ It does (piece J, 2026-11-12).
 - Cross-ISA equality after thresholding, on the shipped files.
 
