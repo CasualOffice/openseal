@@ -56,7 +56,12 @@ Each claim below was checked against the migrations and code at that commit.
   (`casual-sign-store/src/repo/accounts.rs`), whose only guard is a membership of the *acting* account, and
   `Sessions::revoke_all` (`repo/sessions.rs`) revokes sessions in the acting account only. B's admin can then sign in as
   that person in A. This document does not fix it; `SEC-ID-01` does, before stage A ships switching. §2.3 states the
-  rule the fix must meet, so the organization design builds on it rather than around it.
+  rule the fix must meet, so the organization design builds on it rather than around it. **The fix is in progress**
+  (unmerged at the time of writing): migration `0013_shared_user_guard` makes `member_of_current_account` `FOR SELECT`,
+  adds an UPDATE policy admitting only a user whose sole membership is the current account, and adds the user's own
+  definer doors (`openseal_update_own_user`, `openseal_accept_user_invitation`), which end the user's sessions in every
+  account on a new password. It refuses with store `CS-DB-0009` and the store's own SQLSTATE `OS003`, answered as
+  `403 CS-API-0015`. This design therefore takes `OS004` and `OS005` for its own SQLSTATEs (§8).
 - Permission profiles are `admin`, `sender`, `viewer` and `custom`. `auth.rs::profile_scopes` maps them onto ten OAuth
   scopes (`SCOPES`); `admin` means every scope plus view-all. There is no delegated admin, organization, operator, plan,
   meter or admin audit log.
@@ -92,9 +97,12 @@ Each claim below was checked against the migrations and code at that commit.
 
 ## 2. Data model
 
-Migration numbers are fixed in merge order (§12): `SEC-ID-01`'s fix first, then the organizations migration, then the
-platform schema, then plans and usage, then the admin logs. A worker whose expected number is taken renumbers before
-merge; a merged migration is never edited.
+Migration numbers are fixed in merge order (§12, which is the one list): `SEC-ID-01`'s fix (`0013`), then ORG-02 (the
+organizations migration, which also creates `organization_admins`, `org_permission_sets`, the owner backfill and the
+last-owner constraint), then ORG-05 (the admin logs), then CON-02 (the `platform` schema), then CON-03, CON-04, PLAN-02
+and PLAN-03. Every later row that changes the schema (ORG-07, ORG-09 to ORG-12, ORG-14, ORG-18, ORG-20, ORG-22, ORG-23,
+CON-07, CON-09, CON-10, PLAN-07 among those planned) takes the next free number when it merges, after all of those. A
+worker whose expected number is taken renumbers before merge; a merged migration is never edited.
 
 ### 2.1 Organizations and their scope
 
@@ -127,9 +135,20 @@ ALTER TABLE accounts ALTER COLUMN organization_id SET NOT NULL;
 CREATE INDEX accounts_organization ON accounts (organization_id);
 
 -- A workspace never changes organization (review finding 2). RLS cannot see the old row, so a trigger does.
+-- The one exception is the operator's two-person link (ORG-20): the trigger function admits the change only when
+-- current_user is openseal_org_mover, a NOLOGIN role with no members that owns exactly one SECURITY DEFINER
+-- function, platform.apply_link_workspaces (ORG-20's migration). No session can SET ROLE to it, the owner role is
+-- not it, and a GUC would not do: any role may set a custom setting.
+CREATE ROLE openseal_org_mover NOLOGIN NOINHERIT;           -- created here, granted nothing until ORG-20
+CREATE FUNCTION openseal_refuse_org_change() RETURNS trigger LANGUAGE plpgsql
+    SET search_path = pg_catalog AS $$
+BEGIN
+    IF current_user = 'openseal_org_mover' THEN RETURN NEW; END IF;
+    RAISE EXCEPTION 'organization of a workspace is fixed' USING ERRCODE = 'OS004';   -- CS-DB-0013
+END $$;
 CREATE TRIGGER accounts_organization_fixed BEFORE UPDATE OF organization_id ON accounts
     FOR EACH ROW WHEN (OLD.organization_id IS DISTINCT FROM NEW.organization_id)
-    EXECUTE FUNCTION openseal_refuse_immutable();          -- CS-DB-0013, SQLSTATE OS003
+    EXECUTE FUNCTION openseal_refuse_org_change();
 -- Workspaces are created only through definer functions; the app updates only these columns.
 REVOKE INSERT, UPDATE ON accounts FROM openseal_app;
 GRANT UPDATE (name, settings, data_region) ON accounts TO openseal_app;
@@ -161,7 +180,10 @@ GRANT UPDATE (name, settings, data_region) ON accounts TO openseal_app;
 - **Definer functions** (`SECURITY DEFINER`, `SET search_path`, executable by `openseal_app` only; none takes an
   account or organization id that is not derived from the current scope or a secret's hash):
   - `openseal_create_workspace(p_id, p_name)`: organization scope only; inserts the account under
-    `openseal_current_org()` with its built-in profiles, and writes the admin events (§2.5).
+    `openseal_current_org()` with its built-in profiles. ORG-02's version writes no event, because the log tables do
+    not exist yet; ORG-05's migration, the next one, replaces it (and `openseal_archive_workspace`) with versions that
+    append the admin events (§2.5) in the same transaction. No route calls either function before ORG-05 merges:
+    the workspace routes are ORG-03's, which needs ORG-05.
   - `openseal_archive_workspace(p_id)`: organization scope, a workspace of that organization.
   - `openseal_bootstrap_organization(p_org, p_account, p_name)`: succeeds only when no organization exists, so
     `casual-sign-server bootstrap` creates the first organization and workspace of a self-hosted install and nothing
@@ -172,9 +194,12 @@ GRANT UPDATE (name, settings, data_region) ON accounts TO openseal_app;
     tenant parameter; the organization is derived from the current account or organization.
 - **Store API.** `Store::for_organization(org) → OrgScope::begin() → OrgTx` mirrors `TenantTx`.
   - `OrgTx::workspace(id) -> Result<WorkspaceOf>` returns a proof value only for a workspace of that organization;
-    because `organization_id` cannot change (trigger above), a proof cannot be obtained for a re-parented workspace.
+    because `organization_id` changes only through ORG-20's operator link (trigger above), a proof cannot be obtained
+    for a workspace re-parented by any other path.
   - `Store::for_workspace_of(&WorkspaceOf)` opens an ordinary single-account `TenantTx`; it is how organization routes
-    write to a workspace.
+    write to a workspace. It first reads the workspace's own `organization_id` in that transaction and refuses
+    (404, as for another organization's workspace) when it no longer equals the proof's, so a proof taken before an ORG-20 link is useless after
+    it.
   - `Store::for_account` remains the door for principals whose account came from their own credential.
   - RLS never sees two accounts, or an account and an organization, in one transaction.
 - **Catalog tests** (extending the one that finds undeclared tenant tables), **scoped to schema `public`** (review
@@ -187,22 +212,31 @@ GRANT UPDATE (name, settings, data_region) ON accounts TO openseal_app;
   3. every `public` table with `organization_id` is declared through `openseal_org_table`, `accounts` excepted;
   4. setting both settings makes `openseal_current_org()` NULL;
   5. `openseal_app` has no INSERT on `accounts`, UPDATE only on the three named columns, and no SELECT on
-     `users.password_hash`; an UPDATE of `accounts.organization_id` by the owner role is refused.
+     `users.password_hash`; an UPDATE of `accounts.organization_id` by `openseal_app` and by the owner role is
+     refused (`CS-DB-0013`);
+  6. `openseal_org_mover` cannot log in, has no members, and owns no function or only
+     `platform.apply_link_workspaces` (red when a second function is given to it, or a role is granted it).
 
 **Migration path that never weakens RLS.** The migration runs in one transaction as the owner: create the function and
 table, add the column as nullable, backfill, set NOT NULL, add the trigger, change the grants, then add the new
 `FOR SELECT` policies. Every predicate that existed before is unchanged. The isolation suite as it stands (RLS on and
 off, every repository method with another account's ids, `SEC-A04`'s generated route test) must stay green unchanged,
-except where `create_account` and the users `UPDATE` path move to definer functions, which is a code change in the same
-row. The organization isolation suite runs the same way in organization scope (§9, `SEC-O01`).
+except where `create_account` moves to a definer function, which is a code change in the same row. (The users `UPDATE`
+path has already moved, in `SEC-ID-01`'s migration.) The organization isolation suite runs the same way in organization scope (§9, `SEC-O01`).
 
-**An account with no admin.** The backfill makes every member holding the built-in `admin` profile an owner of its
-organization. An account with none gets an organization with no owner and status `active`; the last-owner constraint
+**An account with no admin.** The organizations migration creates `org_permission_sets` and `organization_admins`
+(§2.2) and the deferred last-owner constraint, and its backfill makes every member holding the built-in `admin` profile
+an owner of its organization. An account with none gets an organization with no owner and status `active`; the last-owner constraint
 (§2.2) is deferred and checked only on later changes to `organization_admins`, so the migration does not fail, and the
 console lists such organizations for owner recovery (§5.1). A test migrates a v0.0.1 database containing such an
 account.
 
 ### 2.2 Roles and permissions
+
+The two organization tables below, and the deferred last-owner constraint, are created by ORG-02's migration (§2.1),
+so the backfill has somewhere to write; ORG-03 builds the routes over them and adds no migration.
+`permission_profiles.admin_scope_group_ids` belongs to delegated workspace administration and is added by ORG-07's
+migration.
 
 ```sql
 CREATE TABLE org_permission_sets (
@@ -222,6 +256,7 @@ CREATE TABLE organization_admins (
 -- A deferred constraint trigger refuses a commit that leaves an active organization with no owner whose
 -- identity is enabled (users.disabled_at IS NULL; review finding 21): CS-ORG-0008.
 
+-- ORG-07's migration:
 ALTER TABLE permission_profiles ADD COLUMN admin_scope_group_ids uuid[];  -- NULL = whole workspace
 ```
 
@@ -334,9 +369,13 @@ password hash, MFA factors, `disabled_at`) is shared by every workspace the pers
 3. a workspace admin, **only while the person's sole membership, enabled or disabled, is that workspace**;
 4. the platform, for an identity disable only, through the console's two-person path (§5.1).
 
-Everything else answers `403 CS-ORG-0012` (or whatever code `SEC-ID-01` issues, recorded in docs/20 at its merge).
-`openseal_app` loses UPDATE on `users`; the `member_of_current_account` policy becomes `FOR SELECT`; every change goes
-through definer functions that apply the rule. A password change, an MFA reset or an identity disable revokes the
+Everything else answers `403 CS-API-0015`, the code `SEC-ID-01` issues (store `CS-DB-0009`, SQLSTATE `OS003`).
+
+**What applies when.** Rule 2 needs verified domain claims (ORG-11, stage F, after v0.0.3) and rule 4 needs the
+console's two-person path (CON-04). Until each merges, only rules 1 and 3 apply, and that is what `SEC-ID-01`'s fix
+implements: the user's own definer doors for rule 1, and for rule 3 an UPDATE policy on `users` that admits only a
+user whose sole membership is the current account (`member_of_current_account` becomes `FOR SELECT`). ORG-11 and CON-04
+each add a definer function for their rule; neither widens the UPDATE policy. A password change, an MFA reset or an identity disable revokes the
 person's sessions **in every workspace**, through a definer function, as does a platform-wide disable. A workspace
 admin can always disable or remove the *membership* in their own workspace (`account_memberships.disabled_at`), which
 is per workspace and harms no other.
@@ -782,7 +821,7 @@ them. Messages carry codes, ids and counts only.
 | CS-ORG-0009 | Envelopes do not move between workspaces; transfer within one, or export the evidence package (422) |
 | CS-ORG-0010 | Workspace archived: no new envelopes, members or settings (409) |
 | CS-ORG-0011 | Identity-provider assertion for an identity outside the provider organization's verified domains, or with no binding (401) |
-| CS-ORG-0012 | Identity attribute change refused: the identity belongs to another workspace and its domain is not this organization's (403) |
+| CS-ORG-0012 | *Withdrawn before issue:* the identity-attribute refusal is `CS-API-0015`, issued by `SEC-ID-01`. Never reused |
 | CS-ORG-0013 | Action reserved to an organization owner, or awaiting an owner's approval (403) |
 | CS-ORG-0014 | Sensitive action needs a fresh sign-in (401) |
 | CS-ORG-0015 | Organization closed: read-only (409) |
@@ -804,8 +843,8 @@ them. Messages carry codes, ids and counts only.
 | CS-CON-0007 | Operator log does not verify; the console refuses writes (start-up and per write) |
 | CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
 | CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no signature (alert) |
-| CS-DB-0013 | Change to an immutable column refused (a workspace's organization) (SQLSTATE `OS003`) |
-| CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq` or `prev` (SQLSTATE `OS004`) |
+| CS-DB-0013 | Change to an immutable column refused (a workspace's organization, outside ORG-20's operator link) (SQLSTATE `OS004`) |
+| CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq` or `prev` (SQLSTATE `OS005`) |
 
 ## 9. Threats this adds (rows in [07](07-SECURITY-THREAT-MODEL.md), status Designed)
 
@@ -819,8 +858,8 @@ them. Messages carry codes, ids and counts only.
 | SEC-O06 | Stale rights after removal or role change | Rights resolved per request; no cache | Removed organization admin's next request → 403 |
 | SEC-O07 | Organization admin reading agreements silently | No content right from a role; only owners and admins join, visibly and notified; no self-grants | Owner with no membership → 404 on an envelope; join writes `admin.member_added` (`via: organization`); a delegated admin's join → `CS-AUTH-0006` |
 | SEC-O08 | IdP of organization A asserting an identity it does not govern | Assertion accepted only with a `user_identities` binding and a verified claim of the IdP's organization on the identity's domain | Assertion for another organization's or an unclaimed domain → `CS-ORG-0011`; binding present but claim lapsed → `CS-ORG-0011` |
-| SEC-O09 | Cross-workspace takeover through the shared identity (an admin of B changes the password, name, MFA or disabled state of a member of A) — `SEC-ID-01` | §2.3 rule: self, domain-claiming organization, or sole-membership workspace admin; definer functions; no UPDATE grant on `users`; sessions revoked in every workspace | B's admin sets password or name of a member of A and B → `CS-ORG-0012` (red on `5657c8e`); user's own change ends sessions in A and B |
-| SEC-O10 | Workspace re-parented into another organization, then read through `WorkspaceOf` | Trigger refuses changes to `organization_id`; no INSERT on `accounts` for the app; column grants; moves between organizations only by an operator two-person function (`ORG-20`) | UPDATE of `organization_id` in account scope and as owner → `CS-DB-0013`; INSERT into `accounts` as `openseal_app` → denied |
+| SEC-O09 | Cross-workspace takeover through the shared identity (an admin of B changes the password, name, MFA or disabled state of a member of A) — `SEC-ID-01` | §2.3 rule: self, domain-claiming organization, or sole-membership workspace admin (rules 2 and 4 only once ORG-11 and CON-04 merge); definer functions; the `users` UPDATE policy admits sole members only (migration 0013); sessions revoked in every workspace | B's admin sets password or name of a member of A and B → `CS-API-0015` (red on `5657c8e`); user's own change ends sessions in A and B |
+| SEC-O10 | Workspace re-parented into another organization, then read through `WorkspaceOf` | Trigger refuses changes to `organization_id`; no INSERT on `accounts` for the app; column grants; the trigger admits only `openseal_org_mover`, a NOLOGIN role without members owning one two-person definer function, `platform.apply_link_workspaces` (`ORG-20`) | UPDATE of `organization_id` in account scope and as owner → `CS-DB-0013`; INSERT into `accounts` as `openseal_app` → denied; catalog test 6 red when `openseal_org_mover` gains a member or a second function |
 | SEC-O11 | Delegated or non-owner admin capturing the owner through configuration (own IdP plus SSO-required, MFA or password policy loosened) | IdP, SSO enforcement and security loosening owner-only or owner-approved; all owners notified; IdP never signs in a higher org role than its configurer | Admin and delegated admin creating an IdP, enforcing SSO or unlocking MFA → `CS-ORG-0013` |
 | SEC-O12 | Indirect escalation through sensitive workspace actions (webhooks exporting recipient data, short retention, weaker recipient auth, `frame-ancestors`) | Sensitive actions: fresh sign-in, admin event, organization floors, never group-scoped | Group-scoped profile granted `webhooks.manage` → `CS-ORG-0005`; retention below the floor → `CS-ORG-0002`; stale sign-in → `CS-ORG-0014` |
 | SEC-X01 | Operator reads agreement content or personal data | `openseal_console` has no grant on `public`; metadata only through definer functions returning ids, names, statuses, counts; console crate graph has no tenant store; no blob or keyd-sign configuration | Catalog-driven SELECT as `openseal_console` on every `public` table → denied (red after one GRANT); console e2e scans responses for seeded e-mails and names |
@@ -880,7 +919,7 @@ Rows are in docs/14 (the main session adds them). Each stage is usable end to en
 
 | Stage | Rows | Ships in | Exit |
 | --- | --- | --- | --- |
-| **0. Identity defect** | `SEC-ID-01` | before A's switching | §2.3 rule; `SEC-O09` red on `5657c8e` |
+| **0. Identity defect** | `SEC-ID-01` (fix in progress) | before A's switching | §2.3 rules 1 and 3 (rules 2 and 4 arrive with ORG-11 and CON-04); `SEC-O09` red on `5657c8e` |
 | **A. Organizations exist** | ORG-02, ORG-03, ORG-04, ORG-05, ORG-06 | v0.0.2 | Organizations migration on a v0.0.1 database with isolation suites green; organization admin creates a second workspace and switches; admin logs at both levels |
 | **B. Console exists** | CON-15, CON-02, CON-03, CON-04, CON-05 | v0.0.2 | Operator with TOTP creates an organization and suspends it with approval; `SEC-X01`, `X02`, `X08` seen red; dashboard reads health and dead letters |
 | **C. Plans enforced** | PLAN-02, PLAN-03, PLAN-04, PLAN-05 | v0.0.2 | `envelopes_sent`, `seats`, `storage_bytes` metered and enforced at both levels; `SEC-U01`, `U02` seen red; usage CSV |
@@ -894,13 +933,18 @@ Rows are in docs/14 (the main session adds them). Each stage is usable end to en
 **Sequencing** (review finding 9; CLAUDE.md: two workers never touch one invariant). The stages are not independent at
 the database: B's console role and C's counters both need the `organizations` table. So:
 
-1. Start at once, in parallel: `SEC-ID-01`; ORG-02 (the organizations migration and `OrgTx`); the parts of B and C that
+1. Start at once, in parallel: `SEC-ID-01`; ORG-02 (the organizations migration, including `organization_admins`,
+   `org_permission_sets`, the owner backfill and the last-owner constraint, and `OrgTx`); the parts of B and C that
    touch no migration: the `casual-sign-policy`, `casual-sign-platform-store` and `casual-sign-keyd-client` crates
    (CON-15, CON-02's crate work, PLAN-02's pure part), the ops listeners (CON-05), and the screens against
    the mock server.
-2. After ORG-02 merges: CON-02's platform migration, then PLAN-02 and PLAN-03's migration, then ORG-05's, each in that
-   number order, one at a time.
-3. Files every stage touches (`api/openapi.yaml`, `routes.rs`, docs/07, docs/20, Compose) are merged by the main
+2. Migrations then merge one at a time, in this number order, each after the one before it: `SEC-ID-01` (`0013`),
+   ORG-02, ORG-05 (admin logs; replaces the workspace definer functions with event-writing versions), CON-02 (`platform`
+   schema), CON-03 (operators and the operator log, which copies into ORG-05's organization log), CON-04 (approvals),
+   PLAN-02, PLAN-03. ORG-03, ORG-04 and ORG-06 add no migration; ORG-03 and ORG-04 merge after ORG-05, so stage A exits
+   as soon as ORG-05 and its routes are in, without waiting for stage B or C.
+3. Every later row that changes the schema takes the next free number at its merge (§2), after step 2's list.
+4. Files every stage touches (`api/openapi.yaml`, `routes.rs`, docs/07, docs/20, Compose) are merged by the main
    session only, each stage appending to its own sections.
 
 ## 13. Review findings and where each is answered
@@ -908,14 +952,14 @@ the database: B's console role and C's counters both need the `organizations` ta
 | # | Severity | Finding | Answer |
 | --- | --- | --- | --- |
 | 1 | CRITICAL | Cross-workspace takeover through the shared `users` row | §0 (existing defect, `SEC-ID-01`); §2.3 rule; `SEC-O09` |
-| 2 | HIGH | `accounts.organization_id` not guarded; app can INSERT accounts | §2.1 trigger, revoked INSERT, column grants, catalog test 5; `SEC-O10`; operator move `ORG-20` |
+| 2 | HIGH | `accounts.organization_id` not guarded; app can INSERT accounts | §2.1 trigger, revoked INSERT, column grants, catalog tests 5 and 6; `SEC-O10`; operator move `ORG-20` through the one function the trigger admits (`openseal_org_mover`) |
 | 3 | HIGH | Delegated identity rights capture the owner | §2.2 owner-only configuration, owner approval, notices, IdP role rule; `SEC-O11` |
 | 4 | HIGH | Org-to-workspace grants undefined | §2.2 `held()` per level, `org.workspaces.join`, no self-grants; `SEC-O02`, `SEC-O07` |
 | 5 | HIGH | Console depends on host, which reaches `TenantTx` | §5.2 `casual-sign-policy` and `casual-sign-platform-store`; console depends on neither store nor host |
 | 6 | HIGH | Console depends on the whole keyd | §5.2 `casual-sign-keyd-client` |
 | 7 | HIGH | "No engine changes" false | §11 lists them; import made host-only (§2.4) |
 | 8 | HIGH | Organization quotas not atomic | §7.2 `org_usage_counters`; §7.3 `openseal_consume_quota`, seat lock; `SEC-U01` across workspaces |
-| 9 | HIGH | Catalog rules, plan tables and staging contradict | §2.1 catalog scoped to `public` with named exceptions; §7.1 `workspace_id` in `platform`; migration order in §2 and §12; no copy step needed (§7.1) |
+| 9 | HIGH | Catalog rules, plan tables and staging contradict | §2.1 catalog scoped to `public` with named exceptions; §7.1 `workspace_id` in `platform`; one migration order (§2, §12 step 2) matching what each row's migration contains; no copy step needed (§7.1) |
 | 10 | MEDIUM | Two-person rule only in application code | §5.1 definer functions, insert-only approvals, single use, worker check; residual stated; `SEC-X08` |
 | 11 | MEDIUM | Reconciliation cannot run in the console | §5.4 `seal_signatures` and `platform.seal_digests`; alternatives rejected with reasons |
 | 12 | MEDIUM | Organization creation is an oracle | §5.1 uniform answer, invitation bound on acceptance, no attribute set |

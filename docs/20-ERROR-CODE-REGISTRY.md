@@ -243,8 +243,8 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 **Proposed, not issued.** Reserved by ADR-028 (Accepted 2026-11-12) and [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)
 §8; nothing issues them yet. Each moves to the issued list above when the row that builds it merges. New ranges:
 `CS-ORG` (organizations, workspaces, delegated administration, identity), `CS-PLAN` (plans and quotas), `CS-CON`
-(platform console). `CS-ORG-0012` is reserved for the identity-attribute refusal of `SEC-ID-01`; if that fix issues a
-different code, this row records it at its merge. Also proposed: widening `CS-DB-0004` to cover the admin and operator
+(platform console). `CS-ORG-0012` is withdrawn before issue: `SEC-ID-01`'s fix issues `CS-API-0015` (store `CS-DB-0009`,
+SQLSTATE `OS003`) for the identity-attribute refusal, so this design's SQLSTATEs are `OS004` and `OS005`. Also proposed: widening `CS-DB-0004` to cover the admin and operator
 logs (`admin_events`, `org_admin_events`, `platform.operator_events`), which use the same append-only trigger.
 
 | Code | Meaning |
@@ -260,7 +260,7 @@ logs (`admin_events`, `org_admin_events`, `platform.operator_events`), which use
 | CS-ORG-0009 | Envelopes do not move between workspaces; transfer within one, or export the evidence package (422) |
 | CS-ORG-0010 | Workspace archived: no new envelopes, members or settings (409) |
 | CS-ORG-0011 | Identity-provider assertion for an identity outside the provider organization's verified domains, or with no binding (401) |
-| CS-ORG-0012 | Identity attribute change refused: the identity belongs to another workspace and its domain is not this organization's (403) |
+| CS-ORG-0012 | *Withdrawn before issue:* the identity-attribute refusal is `CS-API-0015` (`SEC-ID-01`). Never reused |
 | CS-ORG-0013 | Action reserved to an organization owner, or awaiting an owner's approval (403) |
 | CS-ORG-0014 | Sensitive action needs a fresh sign-in (401) |
 | CS-ORG-0015 | Organization closed: read-only (409) |
@@ -282,8 +282,8 @@ logs (`admin_events`, `org_admin_events`, `platform.operator_events`), which use
 | CS-CON-0007 | Operator log does not verify; the console refuses writes (start-up and per write) |
 | CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
 | CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no signature (alert) |
-| CS-DB-0013 | Change to an immutable column refused (a workspace's organization) (SQLSTATE `OS003`) |
-| CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq` or `prev` (SQLSTATE `OS004`) |
+| CS-DB-0013 | Change to an immutable column refused (a workspace's organization, outside ORG-20's operator link) (SQLSTATE `OS004`) |
+| CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq` or `prev` (SQLSTATE `OS005`) |
 
 ## Personal data (`casual-sign-pii`, `ML-08`)
 

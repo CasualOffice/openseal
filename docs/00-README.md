@@ -18,7 +18,7 @@ Docs are true as of `1163eca` (2026-11-10). **The engine's first half is built**
 | [05-PHASES-AND-TASKS](05-PHASES-AND-TASKS.md) | What a phase, stage, slice and task are; how each opens and closes; Definition of Done | Draft for owner |
 | [06-ROADMAP-AND-DELIVERY](06-ROADMAP-AND-DELIVERY.md) | **The only roadmap**: milestones M0–M8, Phases D, 0, 1, 2 and 35 slices, with exit gates and parallel lanes | Draft for owner |
 | [07-SECURITY-THREAT-MODEL](07-SECURITY-THREAT-MODEL.md) | Adversaries, threats, controls, data classification | Live; PDF, field and crypto threats Tested, server threats Planned, inference threats (`SEC-I*`) Designed |
-| [08-ADR-REGISTER](08-ADR-REGISTER.md) | Decisions ADR-001 to ADR-029 | ADR-001 to 027 and 029 Accepted; ADR-028 cited in [03](03-OWNER-INSTRUCTIONS.md), not yet registered |
+| [08-ADR-REGISTER](08-ADR-REGISTER.md) | Decisions ADR-001 to ADR-029 | ADR-001 to ADR-029 Accepted (ADR-028 by owner instruction 29) |
 | [09-LEGAL-AND-COMPLIANCE](09-LEGAL-AND-COMPLIANCE.md) | ESIGN, UETA, eIDAS, Part 11, privacy, AATL; requirement → mechanism. Not legal advice | Draft for owner |
 | [10-ENTERPRISE-REQUIREMENTS](10-ENTERPRISE-REQUIREMENTS.md) | The enterprise bar | Draft for owner |
 | [14-EXECUTION-TRACKER](14-EXECUTION-TRACKER.md) | **The only tracker**, with owner decisions | Live |

@@ -324,16 +324,19 @@ the rules above, and what does not:
 - **Organization reach into tenant tables** is three `FOR SELECT` policies only (`accounts`, `account_memberships`,
   `users`); every write goes through `for_workspace_of` or a `SECURITY DEFINER` function.
 - **Grants tighten:** `openseal_app` loses INSERT on `accounts` and keeps UPDATE only on `name`, `settings`,
-  `data_region`; a trigger refuses any change to `accounts.organization_id`; `openseal_app` loses UPDATE on `users` and
-  SELECT on `users.password_hash` (read at login through a definer function).
+  `data_region`; a trigger refuses any change to `accounts.organization_id` except by `openseal_org_mover`, the role
+  owning only ORG-20's two-person operator link; the `users` UPDATE policy admits only a sole member's workspace
+  (`SEC-ID-01`, migration 0013), with the other identity rules as definer functions; `openseal_app` loses SELECT on
+  `users.password_hash` (read at login through a definer function).
 - **New tenant tables:** `admin_events` (append-only, chained per workspace, head `accounts.admin_chain_head`),
   `archived_agreements`, `seal_signatures` (operational hashes for keyd reconciliation), `usage_ledger` (append-only,
   idempotent by source), `usage_counters`.
 - **Schema `platform`** (operators, approvals, plans, TSA, trust anchors, seal profiles, alerts) is reached by the
   console's role `openseal_console`, which has no grant on any `public` table.
 - **Catalog tests** are scoped to `public` and name their exceptions; the `platform` schema has its own.
-- **Migration order** is fixed in merge order: `SEC-ID-01`'s fix, organizations, platform schema, plans and usage, admin
-  logs. Forward-only as ever.
+- **Migration order** is fixed in merge order (docs/23 §12): `SEC-ID-01`'s fix, organizations (with organization admins
+  and the owner backfill), admin logs, platform schema, operators, approvals, plans, usage; later schema rows take the
+  next free number. Forward-only as ever.
 
 ## 10. Engine types versus rows
 
