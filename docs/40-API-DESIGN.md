@@ -225,6 +225,13 @@ A DocuSign-shaped compatibility endpoint (`/compat/docusign/v2.1/…`, envelopes
 payloads) would make migration a configuration change for integrators. It is attractive and has trademark and legal
 questions; `DEC-10` decides, and nothing is built before the owner answers.
 
+## Platform console API (not `/api/v1`)
+
+The platform console (docs/23 §5) has its own API, `/console/v1`, served only by the separate `casual-sign-console`
+binary on a private listener, with operator sessions (`__Host-os_op`, TOTP) instead of staff sessions or tokens. Its
+contract is `api/console-openapi.yaml`, kept equal to the console's route table by its own contract test; nothing in it
+is part of the public API or its compatibility promise. As built: docs/23 §5.6.
+
 ## As built (stage 2C, `casual-sign-server`)
 
 The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 87 operations (68 at stage 2C, 19 added by `WEB-06`), each with its `x-permission`

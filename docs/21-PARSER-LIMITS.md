@@ -193,6 +193,26 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | API client expiry | 1–3,650 days | CS-API-0001 |
 | Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 
+## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, built)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| JSON request body | 64 KiB | CS-CON-0010 |
+| Operator session / idle | 8 hours (the database refuses longer) / 30 minutes | CS-CON-0001 |
+| Session cookie value | 64 characters | CS-CON-0001 |
+| Enrolment link | 256 random bits, 24 hours (the database refuses more than 7 days), once | CS-CON-0001 |
+| Operator password | 12 characters to 1 KiB (Argon2id input bound) | CS-CON-0010 |
+| Operator e-mail | 3–254 bytes | CS-CON-0010 |
+| TOTP | 6 digits, 30-second step, the step before and after accepted, each step once per operator | CS-CON-0002 |
+| Sign-in attempts per client address / per e-mail; TOTP attempts per operator | 10 / 5 / 5 per minute | CS-CON-0012 |
+| Requests per session | 600 per minute | CS-CON-0012 |
+| Page size of organizations, operator log, dead letters, alerts | 1–200 | — |
+| Workspaces listed per organization; operators listed | 1,000; 1,000 | — |
+| Organization name | 1–255 characters | CS-CON-0010 |
+| Data-region labels | 16 per organization, each `[a-z0-9-]`, 1–32 characters | CS-CON-0010 |
+| Operator event | 64 KiB canonical; 32 details; codes and labels 64 characters of `[A-Za-z0-9_.:-]` | CS-DB-0008 |
+| Service targets probed; probe timeout | 64; 2 seconds | — |
+
 ## ML (`casual-sign-modeld`, the worker's ML jobs; designed, ADR-029)
 
 Designed in [33](33-ML-MODELS.md) §4. Built so far: span normalisation (`casual-sign-fields::normalize`, `ML-07`), the

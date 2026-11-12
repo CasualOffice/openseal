@@ -27,7 +27,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
       # Engine crates only: hosts under server/ are native (docs/19).
-      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-secrets --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --locked
+      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-secrets --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked
       - run: python3 tools/check-repo.py
       - run: python3 -I fixtures/tools/generate.py --check
       - run: python3 -I fixtures/corpus/fetch.py --check
@@ -175,7 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
-      - run: cargo test -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server --locked
+      - run: cargo test -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server -p casual-sign-platform-store -p casual-sign-console --locked
       # P2-CRASH (Phase 2 exit item 2): the real server and worker binaries, built with the
       # test-only crash points, SIGKILLed at every effect boundary and restarted.
       - run: cargo build -p casual-sign-server --features crash-points --locked

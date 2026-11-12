@@ -1,7 +1,9 @@
 # 23 — Organizations, workspaces, delegated administration, platform console and plans
 
 **Status: Designed. ADR-028 Accepted (owner, 2026-11-12, instruction 29). Built so far: the organizations migration
-and the organization scope of the store (`ORG-02`, §2.1 As built)**; each
+and the organization scope of the store (`ORG-02`, §2.1 As built); the console's server side: the `platform` schema
+and role, operator identity with mandatory TOTP, the operator log, organization and workspace reads and first writes,
+and health reads (`CON-02`, `CON-03`, parts of `CON-04` and `CON-05`; §5.6 As built)**; each
 part is built by the rows named in §12, and a part counts only when its row's exit is met. Owner instructions 24 and 25
 ([03](03-OWNER-INSTRUCTIONS.md)) set the shape: organization → workspaces; organization admins own SSO, domains and
 policy across workspaces; workspace admins run one; delegated admins hold a scoped subset of admin rights; a separate
@@ -739,6 +741,79 @@ workspace (organization admins can too); view usage; and turn self-sign-up on (Q
   `operator` can retry one (attempts reset, operator event).
 - `OperatorAlert` (worker) becomes rows in `platform.alerts` through a definer function, plus an optional outbound
   webhook for paging (slice 20).
+
+### 5.6 As built (`CON-02`, `CON-03`, `CON-04` and `CON-05` first parts; migrations 0016 to 0018)
+
+**What exists.** The separate binary `server/casual-sign-console` and its store `server/casual-sign-platform-store`.
+The console depends on the platform store and `casual-sign-secrets` only, never on `casual-sign-store`, `-host` or
+`-server`. Migrations stay with the store's runner (`casual_sign_store::MIGRATIONS`), so one migrator applies them all;
+the platform store never runs migrations. The numbers were the next free ones when this was built (0016 to 0018);
+§2's order put ORG-05's admin logs first, so whichever merges second renumbers (§2).
+
+- **0016 `platform` schema.** Role `openseal_console` (NOLOGIN; a LOGIN role is granted membership), USAGE on
+  `platform` only. Tables `settings` (self-sign-up `false`), `service_targets` (deployment configuration, written by
+  `casual-sign-console set-service-target` as the migrator, `SEC-X06`) and `alerts` (append-only). Definer functions
+  returning ids, names, statuses, labels, counts and times only: `organizations_page`, `organization`,
+  `organization_workspaces` (members, templates, envelopes by draft, in progress, completed), `job_stats` (queued,
+  running, dead by kind; oldest queued age), `dead_jobs` (no payload), `pool_stats`. Each migration ends by revoking
+  EXECUTE on every `platform` function from PUBLIC, so the console runs only the functions granted by name.
+- **0017 operators.** `operators` (e-mail, Argon2id hash, roles, disabled), `operator_mfa` (sealed seed, last used
+  step), `operator_enrolments`, `operator_sessions` (hashes of the token and CSRF token, `mfa_at`), `operator_events`
+  and `operator_chain`. Writes only through definer functions that take the operator from a live session row:
+  `open_session`, `confirm_mfa`, `resolve_session`, `revoke_session`, `bootstrap_operator`, `create_operator`,
+  `begin_enrolment`, `finish_enrolment`, `disable_operator`. The chain trigger checks the hash, `seq`, `prev`, and that
+  the canonical JSON names the row's seq, prev, action and operator (`OS005`); UPDATE, DELETE and TRUNCATE are refused
+  for every role (`OS001`).
+- **0018 single-operator writes** (`operator` or `platform_owner`, re-checked in the database): rename an organization,
+  set its data-region labels, set a workspace's label (one of its organization's) and archive or restore it.
+
+**Decided while building** (within ADR-028; recorded here as the owning note):
+
+1. **Operators enrol themselves.** §5.1 said the console never sets a password or MFA factor on a tenant identity;
+   the same now holds between operators. `bootstrap-operator <email>` and `POST /operators` create an operator with no
+   password and no factor and return a one-time enrolment token (24 hours; the database refuses more than 7 days).
+   The operator opens it, receives a fresh TOTP seed once (`otpauth://`, labelled with the operator id, never the
+   e-mail), then sets their password and proves the seed with a code. Whoever created them never knows either. The
+   same link is what `recover-operator` will mint (`CON-14`).
+2. **Sign-in is two requests.** `POST /auth/login` checks the password (Argon2id on a blocking thread; an unknown
+   e-mail is checked against a dummy hash, and both answer `CS-CON-0001`) and opens a session with `mfa_at` NULL;
+   `POST /auth/totp` checks the code against steps −1, 0 and +1 and the database accepts the step only if it is later
+   than the operator's last, so a code is single-use. A session without its second factor reaches nothing else
+   (`CS-CON-0002`, every route tested).
+3. **TOTP** is RFC 6238 over `aws-lc-rs` HMAC (SHA-1, 6 digits, 30 s), test-vectored against RFC 6238 Appendix B and
+   RFC 4226 Appendix D. Seeds are sealed with AES-256-GCM under `OPENSEAL_CONSOLE_MFA_KEY` with the operator id as
+   associated data.
+4. **Deny by default in the type system.** A handler gets an operator only through `Authed<N>`, whose `N` names the
+   roles; `ROUTES` lists each route's `x-roles`, and the contract test keeps it equal to `api/console-openapi.yaml`.
+   Writes are re-checked by the database (`platform.acting_operator`).
+5. **Operator events carry ids, codes, labels and counts only** (`EventDraft` refuses free text): never an
+   organization's name, an e-mail or a value. They record the operator's own address and the request id (§5.1).
+   Refused sign-ins are recorded too (with the operator id when the e-mail is an operator's).
+6. **Listener.** Loopback by default; a non-loopback bind needs `OPENSEAL_CONSOLE_PUBLIC=1` and
+   `OPENSEAL_TRUSTED_PROXIES` (TLS terminates at the proxy; no TLS in the binary yet), and the console's origin may not
+   equal the application's (`CS-CON-0005`). The console verifies the whole operator log at start and refuses to start
+   when it does not verify (`CS-CON-0007`).
+7. **Health probes** read `platform.service_targets`: `http` (GET, healthy on 2xx, no redirects, plain HTTP on the
+   private network) or `tcp` (connect), 2-second timeout, at most 64. keyd and TLS endpoints (TSA) are `tcp` targets
+   until keyd's admin `health` and `list-keys` (`CON-06`) and the servers' ops listeners (`CON-05`) exist.
+
+**API** (`/console/v1`, `api/console-openapi.yaml`): `auth/login`, `auth/totp`, `auth/logout`,
+`auth/enrolment/begin`, `auth/enrolment/finish`, `me`, `operators` (GET, POST), `operators/{id}/disable`,
+`operator-log` and `operator-log/verify`, `organizations` and `organizations/{id}` (GET, PATCH), `workspaces/{id}`
+(PATCH), `health`, `dead-letters`, `alerts`; `/livez`, `/readyz`.
+
+**Tests** (Postgres 17, `server/casual-sign-console/tests/`): `catalog.rs` (`SEC-X01`, `SEC-X02` grants, the exact
+platform grants, `SEC-X04` in the database), `api.rs` (every route's session and second factor, enrolment, single-use
+codes, idle and sign-out, CSRF, roles and the database re-check, reads and writes, the personal-data and content
+scan over every GET route, a tampered log, rate limits), `contract.rs` (route table, OpenAPI and router). Each guard
+was seen red by a mutation (docs/07 `SEC-X01` to `SEC-X04`).
+
+**Not yet built** (rows in docs/14): the console UI (`webapp/console/`, after the web UX overhaul); the Compose
+service and the console's LOGIN role in deployment (`CON-02`); `casual-sign-keyd-client` (`CON-15`); approvals and the
+two-person actions, organization create, suspend, resume, close, owner recovery, identity disable (`CON-04`); copies of
+operator actions into organization logs through `platform.copy_to_org_log` (`CON-16`, needs `ORG-05`); TOTP re-entry
+for sensitive actions (with them); ops listeners and metrics on server and worker, keyd health (`CON-05`); keys,
+certificates and expiry (`CON-06`, `CON-08`); plans and limits (`PLAN-02`).
 
 ## 6. API additions (`/api/v1`, additive)
 
