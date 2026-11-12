@@ -117,7 +117,7 @@ fn a_client_not_on_the_allow_list_is_refused_and_logged() {
     );
 }
 
-/// Every op whose model is not built yet answers `CS-ML-0010`, and the op log records
+/// Every op whose model is not installed (here: no raster child, no models) answers `CS-ML-0010`, and the op log records
 /// it by code. **No text sent reaches the log** (a first, narrow `SEC-I05` check; piece M
 /// runs it over every output stream).
 #[test]
@@ -132,7 +132,8 @@ fn ops_not_built_answer_not_installed_and_log_no_text() {
     };
     let pdf = b"%PDF-1.7 ZQXMARKER".to_vec();
     let results = [
-        c.ocr(&call(), pdf.clone(), vec![0], 150, vec!["latin".into()])
+        c.session()
+            .and_then(|mut s| s.open_document(&call(), pdf.clone()))
             .map(|_| ()),
         c.hash(&call(), pdf, vec![0]).map(|_| ()),
         c.embed(&call(), EmbedKind::Passage, vec![marker.into()])
@@ -150,7 +151,7 @@ fn ops_not_built_answer_not_installed_and_log_no_text() {
         log.lines()
             .next()
             .unwrap()
-            .contains("\tocr\tacc-0001\tjob-0001\t1\t0\t")
+            .contains("\tdoc_open\tacc-0001\tjob-0001\t0\t0\t")
     );
     assert!(!log.contains("ZQXMARKER"), "{log}");
     assert!(!log.contains("ZQXLABEL"), "labels are not logged: {log}");

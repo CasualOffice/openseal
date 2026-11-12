@@ -218,6 +218,8 @@ provisional are re-set from measurement before an exit is claimed.
 | Phone candidate (`casual-sign-pii`) | 7 to 15 digits (E.164), at most 28 characters by its pattern; only that short ASCII candidate reaches `phonenumber` | — (not a phone) |
 | Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI | CS-ML-0005 |
 | Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`) | CS-ML-0005 |
+| Form XObject nesting while rasterising | 32 levels | CS-ML-0005 |
+| XObjects visited per page while rasterising | 10,000 | CS-ML-0005 |
 | Rasterise time per page | 10 s, enforced by killing the raster child | CS-ML-0006 |
 | Raster child kills per document | 3; remaining pages `truncated` | — (report) |
 | Raster child address space | 1 GiB (provisional) | CS-ML-0014 |

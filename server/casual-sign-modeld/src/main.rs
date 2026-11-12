@@ -12,14 +12,16 @@
 //! | `OPENSEAL_MODELD_BUNDLE` | The bundle directory, read-only (default `/opt/openseal/models`) |
 //! | `OPENSEAL_MODELD_PROFILES` | Comma-separated profiles that must be complete (`ocr,templates,...`; default none) |
 //! | `OPENSEAL_MODELD_MEMORY_LIMIT` | modeld's memory limit: bytes, or `KiB`/`MiB`/`GiB` (default: the cgroup's `memory.max`, else 4 GiB) |
+//! | `RUST_LOG` | modeld's own log level only; third-party targets stay at WARN (ONNX Runtime at ERROR) whatever it says (`SEC-I05`) |
 //! | `OPENSEAL_MODELD_SLOTS` | Operations at once (default: half the cores, at least 1, but no more than `(memory limit - resident memory after loading) / 512 MiB`; a value above that bound, or a bound of zero, stops modeld) |
 
 use std::path::Path;
 use std::process::ExitCode;
 
+use casual_sign_modeld::raster::{CHILD_ARG, RasterLimits, child_main};
 use casual_sign_modeld::{
     AllowList, Bundle, Manifest, ModelService, Modeld, ModeldError, ModeldLimits, OpLog,
-    SlotSettings, configured_slots, resident_bytes, server_tls,
+    SlotSettings, configured_slots, logging, resident_bytes, server_tls,
 };
 
 fn var(name: &'static str) -> Option<String> {
@@ -35,6 +37,7 @@ fn read(name: &'static str, path: &str) -> Result<Vec<u8>, ModeldError> {
 }
 
 fn run() -> Result<(), ModeldError> {
+    logging::init();
     // The bundle first: a tampered or incomplete bundle stops modeld before it listens.
     let manifest = Manifest::embedded()?;
     let dir = var("OPENSEAL_MODELD_BUNDLE").unwrap_or_else(|| "/opt/openseal/models".into());
@@ -72,6 +75,11 @@ fn run() -> Result<(), ModeldError> {
         return Err(ModeldError::Setting("OPENSEAL_MODELD_ALLOW_LIST (empty)"));
     }
     let log = OpLog::open(Path::new(&need("OPENSEAL_MODELD_OPLOG")?))?;
+    // The raster child is this binary; the models load before resident memory is read.
+    let exe = std::env::current_exe().map_err(|_| ModeldError::Setting("current_exe"))?;
+    let service = ModelService::new(bundle, allow, log, ModeldLimits::default())
+        .with_raster(&exe, RasterLimits::default())
+        .with_ocr()?;
     // Slots are bounded by memory as well as cores (docs/33 §3.3). Resident memory is read
     // once the bundle is verified; when inference sessions are loaded they load before this.
     let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
@@ -92,9 +100,9 @@ fn run() -> Result<(), ModeldError> {
         })?,
         ..ModeldLimits::default()
     };
-    let installed = bundle.installed.len();
-    let id = bundle.id.clone();
-    let service = ModelService::new(bundle, allow, log, limits);
+    let installed = service.bundle().installed.len();
+    let id = service.bundle().id.clone();
+    let service = service.with_limits(limits);
     let listen = var("OPENSEAL_MODELD_LISTEN").unwrap_or_else(|| "127.0.0.1:7444".into());
     let modeld = Modeld::bind(&listen, tls, service)?;
     eprintln!(
@@ -107,6 +115,13 @@ fn run() -> Result<(), ModeldError> {
 }
 
 fn main() -> ExitCode {
+    // A raster child (src/raster.rs) does nothing else: no settings, no bundle, no log.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some((first, rest)) = args.split_first()
+        && first == CHILD_ARG
+    {
+        return child_main(rest);
+    }
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

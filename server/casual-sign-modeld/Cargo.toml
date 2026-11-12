@@ -19,16 +19,18 @@ default = ["server"]
 # The daemon: bundle verification at start, the op log, the op handlers, and every
 # inference dependency (`dep:` entries), so none reaches a client-only build.
 server = [
-    "dep:hayro",
+    "raster",
     "dep:image",
     "dep:oar-ocr",
     "dep:ort",
-    "dep:rustix",
     "dep:tracing",
     "dep:tracing-subscriber",
     "dep:unicode-bidi",
     "dep:unicode-normalization",
 ]
+# The page rasteriser alone (src/raster.rs: hayro and the child's rlimits), without the
+# inference stack: what the `rasterise` fuzz target links. Part of `server`.
+raster = ["dep:hayro", "dep:rustix"]
 
 [[bin]]
 name = "casual-sign-modeld"
@@ -64,7 +66,7 @@ rustix = { version = "=1.1.5", default-features = false, features = ["std", "pro
 # The one fixed log subscriber (`SEC-I05`): third-party targets capped at WARN whatever
 # RUST_LOG says (src/logging.rs). Both already in the tree.
 tracing = { version = "0.1.44", optional = true }
-tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "std", "registry"], optional = true }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "registry"], optional = true }
 # OCR text leaves modeld in NFC, right-to-left lines in logical order (docs/33 §3.2,
 # §5.1). Both already in the tree.
 unicode-bidi = { version = "0.3.18", optional = true }
@@ -73,6 +75,9 @@ unicode-normalization = { version = "0.1.26", optional = true }
 [dev-dependencies]
 # Throwaway TLS PKI for the mTLS tests (as keyd's tests).
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
+# Reads the fixtures' ground truth (fixtures/ml/truth/*.json) and a fetched bundle's
+# bundle.json in tests. Already in the tree.
+serde_json = "1.0.154"
 
 [lints]
 workspace = true

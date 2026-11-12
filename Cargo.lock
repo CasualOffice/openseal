@@ -702,6 +702,7 @@ dependencies = [
  "rustix",
  "rustls",
  "rustls-pki-types",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
  "unicode-bidi",

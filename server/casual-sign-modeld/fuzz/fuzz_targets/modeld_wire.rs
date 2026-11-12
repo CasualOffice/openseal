@@ -17,9 +17,11 @@ fn requests() -> Vec<Request> {
     };
     [
         Op::Info,
+        Op::DocOpen { pdf: vec![] },
+        Op::DocClose { doc: 1 },
         Op::Ocr {
-            pdf: vec![],
-            pages: vec![0, 1],
+            doc: 1,
+            page: 0,
             dpi: 150,
             scripts: vec![],
         },

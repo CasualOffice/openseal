@@ -3,6 +3,12 @@
 
     python3 -I fixtures/tools/generate.py            # writes fixtures/hostile/*.pdf
     python3 -I fixtures/tools/generate.py --check    # manifest and docs/21 agree with this script
+    python3 -I fixtures/tools/generate.py --ml       # writes only fixtures/hostile/ml/*.pdf
+
+The `ml_*` files (`SEC-I02`, docs/33 §4) are for the modeld rasteriser, not the PDF reader:
+they are valid PDFs whose pages are too large or draw too much to rasterise. They have their
+own manifest, `fixtures/hostile/ml/manifest.tsv` (file, docs/21 §ML limit, code, note),
+asserted by `server/casual-sign-modeld/tests/raster.rs`.
 
 Standard library only; every file is synthetic and nothing is downloaded. The PDFs are
 not committed (several are tens of megabytes, and zlib's bytes may differ between
@@ -28,6 +34,8 @@ MANIFEST = OUT / "manifest.tsv"
 LIMITS_DOC = ROOT / "docs" / "21-PARSER-LIMITS.md"
 HEADER = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n"
 MIB = 1 << 20
+OUT_ML = OUT / "ml"
+ML_MANIFEST = OUT_ML / "manifest.tsv"
 
 # docs/21 PDF limits that have no fixture file, and why.
 NO_FIXTURE = {
@@ -581,6 +589,88 @@ def builders():
     return b
 
 
+def ml_page(content, resources=b"", media=b"[0 0 612 792]", extra=()):
+    """One page with `content` (uncompressed) and `resources`, plus extra objects from 5 on."""
+    objs = [(1, b"<</Type/Catalog/Pages 2 0 R>>"),
+            (2, b"<</Type/Pages/Kids[3 0 R]/Count 1>>"),
+            (3, b"<</Type/Page/Parent 2 0 R/MediaBox%s/Resources<<%s>>/Contents 4 0 R>>" % (media, resources)),
+            (4, stream_obj(b"", content))]
+    objs.extend(extra)
+    return classic(objs)[0]
+
+
+def ml_image(dict_body, data):
+    """A page that draws one image XObject (object 5) over the whole page."""
+    return ml_page(b"q 612 0 0 792 0 0 cm /Im0 Do Q", b"/XObject<</Im0 5 0 R>>",
+                   extra=[(5, stream_obj(b"/Type/XObject/Subtype/Image" + dict_body, data))])
+
+
+def jbig2_page_bomb(w, h):
+    """An embedded JBIG2 stream (no file header): a page information segment declaring a
+    w x h page, then end of page. Decoding it allocates the whole page bitmap."""
+    info = w.to_bytes(4, "big") + h.to_bytes(4, "big") + bytes(8) + b"\x00" + bytes(2)
+    seg = lambda num, kind, data: num.to_bytes(4, "big") + bytes([kind, 0, 1]) + len(data).to_bytes(4, "big") + data
+    return seg(0, 48, info) + seg(1, 49, b"")
+
+
+def ml_builders():
+    """name -> bytes for the modeld rasteriser's hostile fixtures (SEC-I02)."""
+    b = {}
+    rule_and_box = b"0 g 72 600 m 400 600 l S 72 500 12 12 re S"
+    b["ml_valid.pdf"] = lambda: ml_page(rule_and_box)
+    b["ml_mediabox_huge.pdf"] = lambda: ml_page(rule_and_box, media=b"[0 0 200000 200000]")
+    b["ml_image_100k.pdf"] = lambda: ml_image(
+        b"/Width 100000/Height 100000/ColorSpace/DeviceGray/BitsPerComponent 8/Filter/FlateDecode",
+        zlib.compress(bytes(4096)))
+    b["ml_jbig2_bomb.pdf"] = lambda: ml_image(
+        b"/Width 60000/Height 60000/ColorSpace/DeviceGray/BitsPerComponent 1/Filter/JBIG2Decode",
+        jbig2_page_bomb(60000, 60000))
+    b["ml_flate_image_bomb.pdf"] = lambda: ml_image(
+        b"/Width 10000/Height 10000/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/FlateDecode",
+        zeros_deflate(b"", 10000 * 10000 * 3))
+
+    def xobject_deep(depth=64):
+        forms = []
+        for i in range(depth):
+            num = 5 + i
+            if i + 1 < depth:
+                body, res = b"/Fm Do", b"/Resources<</XObject<</Fm %d 0 R>>>>" % (num + 1)
+            else:
+                body, res = b"0 g 72 600 m 400 600 l S", b""
+            forms.append((num, stream_obj(b"/Type/XObject/Subtype/Form/BBox[0 0 612 792]" + res, body)))
+        return ml_page(b"/Fm Do", b"/XObject<</Fm 5 0 R>>", extra=forms)
+    b["ml_xobject_deep.pdf"] = xobject_deep
+    return b
+
+
+def read_ml_manifest():
+    rows = []
+    for line in ML_MANIFEST.read_text(encoding="utf8").splitlines()[1:]:
+        if line.strip():
+            rows.append(line.split("\t"))
+    return rows
+
+
+def check_ml():
+    problems = []
+    names = list(ml_builders())
+    rows = read_ml_manifest()
+    listed = [r[0] for r in rows]
+    ml = LIMITS_DOC.read_text(encoding="utf8").split("## ML", 1)[1].split("\n## ", 1)[0]
+    for r in rows:
+        if len(r) != 4:
+            problems.append(f"ml manifest row has {len(r)} columns, not 4: {r[0]}")
+        elif r[1] != "control" and f"| {r[1]} |" not in ml:
+            problems.append(f"{r[0]}: limit {r[1]!r} is not a docs/21 §ML row")
+    for n in names:
+        if n not in listed:
+            problems.append(f"{n}: written by the generator, missing from the ml manifest")
+    for n in listed:
+        if n not in names:
+            problems.append(f"{n}: in the ml manifest, not written by the generator")
+    return problems
+
+
 def read_manifest():
     rows = []
     for line in MANIFEST.read_text(encoding="utf8").splitlines()[1:]:
@@ -609,17 +699,23 @@ def check():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) == 4 and cells[2].startswith("CS-") and cells[0] not in covered and cells[0] not in NO_FIXTURE:
             problems.append(f"docs/21 limit has no fixture and no reason: {cells[0]}")
+    problems.extend(check_ml())
     if problems:
         print("hostile fixtures out of step (fixtures/tools/generate.py --check):", file=sys.stderr)
         for p in problems:
             print(f"  {p}", file=sys.stderr)
         return 1
-    print(f"hostile fixtures: {len(names)} files, manifest and docs/21 agree")
+    print(f"hostile fixtures: {len(names)} files and {len(ml_builders())} ml files, manifests and docs/21 agree")
     return 0
 
 
 def main(argv):
     if argv[1:] == ["--check"]:
+        return check()
+    if argv[1:] == ["--ml"]:
+        OUT_ML.mkdir(parents=True, exist_ok=True)
+        for name, build in ml_builders().items():
+            (OUT_ML / name).write_bytes(build())
         return check()
     if len(argv) > 1:
         print(__doc__, file=sys.stderr)
@@ -629,6 +725,11 @@ def main(argv):
         data = build()
         (OUT / name).write_bytes(data)
         print(f"{name:28} {len(data):>12,}")
+    OUT_ML.mkdir(parents=True, exist_ok=True)
+    for name, build in ml_builders().items():
+        data = build()
+        (OUT_ML / name).write_bytes(data)
+        print(f"ml/{name:25} {len(data):>12,}")
     return check()
 
 

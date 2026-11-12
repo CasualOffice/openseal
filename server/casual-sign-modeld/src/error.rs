@@ -47,6 +47,10 @@ pub enum ModeldError {
     /// `CS-ML-0001` on the TLS side: the certificates or keys do not load. Kept apart from
     /// [`ModeldError::Setting`] because rustls names the failure, never a value.
     TlsConfig(String),
+    /// `CS-ML-0014`: the raster child ended abnormally (a signal, its memory limit), not by
+    /// the time cap. Reported for that page and counted in the op log: it can mark an
+    /// exploit attempt.
+    RasterChild,
     /// `CS-ML-0015`: the caller's certificate chains to the client CA but its fingerprint
     /// is not on the allow list. Final: retrying cannot succeed until the operator adds it.
     NotAuthorized,
@@ -110,6 +114,7 @@ impl ModeldError {
             Self::FeatureOff => "CS-ML-0011",
             Self::Stale => "CS-ML-0012",
             Self::Inference => "CS-ML-0013",
+            Self::RasterChild => "CS-ML-0014",
             Self::NotAuthorized => "CS-ML-0015",
         }
     }
@@ -131,6 +136,7 @@ impl ModeldError {
             Self::FeatureOff => 11,
             Self::Stale => 12,
             Self::Inference => 13,
+            Self::RasterChild => 14,
             Self::NotAuthorized => 15,
         }
     }
@@ -151,6 +157,7 @@ impl ModeldError {
             9 => Self::Busy,
             10 => Self::NotInstalled,
             13 => Self::Inference,
+            14 => Self::RasterChild,
             15 => Self::NotAuthorized,
             _ => Self::Transport(format!("modeld answered with unknown error {n}")),
         }
@@ -208,6 +215,7 @@ impl fmt::Display for ModeldError {
             Self::FeatureOff => f.write_str("the feature is off or not in the plan"),
             Self::Stale => f.write_str("suggestion stale or already decided"),
             Self::Inference => f.write_str("inference failed"),
+            Self::RasterChild => f.write_str("the raster child ended abnormally"),
             Self::TlsConfig(why) => write!(f, "TLS configuration: {why}"),
             Self::NotAuthorized => f.write_str("caller not authorized"),
             Self::OperationLog(why) => write!(f, "operation log: {why}"),
@@ -237,6 +245,7 @@ mod tests {
             ModeldError::Busy,
             ModeldError::NotInstalled,
             ModeldError::Inference,
+            ModeldError::RasterChild,
         ];
         for e in all {
             let back = ModeldError::from_number(e.number());
