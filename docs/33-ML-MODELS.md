@@ -53,8 +53,8 @@ an exit is claimed.
   `cargo tree -p casual-sign-worker -e normal` and fails if `ort`, `oar-ocr`, `hayro`, `tokenizers` or `onig_sys`
   appears (`SEC-I14`).
 - **Deterministic personal-data recognisers** (§5.4 layer 1) are not models. They live in a new pure engine crate,
-  **`casual-sign-pii`** (owner decision D7(a)), if `phonenumber` builds for wasm32 without I/O (unverified; checked
-  first in piece J). If it does not, they become a module in the worker, and the crate is not created. The browser
+  **`casual-sign-pii`** (owner decision D7(a)). `phonenumber` builds for wasm32-unknown-unknown with no I/O (checked
+  in piece J, 2026-11-12), so the crate exists and no worker module is needed. The browser
   can then preview redactions with the same code.
 - **Date, money and duration normalisation** is rules in Rust, in the worker. A relative date resolves against a
   supplied base (the envelope's recorded time), never the clock.
@@ -262,11 +262,29 @@ and the same exact cosine search through the tenancy-scoped repository. No new m
 
 **Layer 1: deterministic, needs no model, ships first** (`casual-sign-pii`, §1). This rebuilds Presidio's pattern,
 checksum and context approach (MIT; https://github.com/data-privacy-stack/presidio, formerly microsoft/presidio).
-Ported logic cites the commit in PROVENANCE.md.
+Ported logic cites the commit in PROVENANCE.md: tag 2.2.364, commit `779dbd286d5ef4d1fbe2514275fb1bce358f2417`.
 
-- Email: pattern plus `email_address` 0.2.9 (MIT).
+**Built (piece J):** email, phone, IBAN, card, US SSN, UK NINO, IN PAN and Aadhaar, IP address, and a date of birth
+(a date only after a birth context word, which Presidio lacks). Departures from Presidio, each tested: its IBAN table is
+wrong for PT, MU, PS and QA and is corrected to the SWIFT registry; Mastercard's 2-series is added; look-arounds became
+checks in code; a match that is the tail of a longer grouped number (a preceding digit group as wide as its own first
+group, or a chain back to an IBAN's country and check digits) is not reported, so an IBAN whose check fails does not
+yield a card or an Aadhaar number, while a row number or quantity before a value ("Row 1 4111 …") does not hide it.
+Scores are integers in thousandths. Not yet built: the other national ids below and URLs.
+
+**Engine dependency (ADR-029 names it; recorded here as the repository records engine dependencies):** `phonenumber`
+=0.3.10+9.0.33 (Apache-2.0) is the crate's only dependency beyond `regex`. Reason: libphonenumber's per-region metadata
+is the only sound way to tell a phone number from an order number, and no Rust alternative carries it. It is pure (its
+metadata is compiled in by its build script; nothing is read at run time), builds for wasm32-unknown-unknown, and is
+handed only short ASCII candidates, never document text. Its tree adds `postcard`, `heapless` 0.7, `quick-xml`,
+`strum`, `regex-cache`, `nom` and smaller crates, all MIT or Apache-2.0; `heapless` 0.7 depends on `atomic-polyfill`
+(RUSTSEC-2023-0089, unmaintained) for targets we do not build, ignored in `.cargo/audit.toml` under owner
+instruction 32 and removed under `DEP-05`. `email_address` and `iban_validate` are not used: the email domain check
+and the IBAN table and mod-97 are our own, short and tested.
+
+- Email: pattern plus our own domain check (stands in for Presidio's `tldextract`, which needs the Public Suffix List).
 - Phone: `phonenumber` 0.3.10 (Apache-2.0, https://crates.io/api/v1/crates/phonenumber).
-- IBAN: mod-97, with `iban_validate` 5.0.1 (MIT OR Apache-2.0) or our own.
+- IBAN: mod-97 and the registry's per-country format, our own.
 - Card: Luhn, written inline (ten lines; the `luhn` crate 1.0.2 of 2026-10-04 is old enough but not needed).
 - IP address and URL.
 - Dates, shared with the field detector.
@@ -306,7 +324,7 @@ Never claim GDPR or other compliance (docs/09).
 | `tokenizers` | =0.23.2, `default-features = false` (Oniguruma comes in through `oar-ocr-core`, §5.2) | Apache-2.0 |
 | `image_hasher` | 3.1.1 | MIT OR Apache-2.0 |
 | `hayro` | 0.8.0 | Apache-2.0 OR MIT |
-| `phonenumber`, `email_address`, `iban_validate` | 0.3.10, 0.2.9, 5.0.1 | Apache-2.0; MIT; MIT OR Apache-2.0 |
+| `phonenumber` (in `casual-sign-pii`; `email_address` and `iban_validate` not used, §5.4) | =0.3.10 | Apache-2.0 |
 
 **`unsafe`:** the `hayro` crate itself forbids `unsafe`; its dependencies do not (`zune-jpeg`, `fearless_simd`,
 `pic-scale`, `bytemuck`, `vello_cpu`). Its JBIG2, JPX and CCITT decoders are fuzzed specifically (`SEC-I01`).
@@ -473,7 +491,7 @@ the wasm exclude list in `tools/ci-local.sh`, `.github/workflows/ci.yml` and CLA
 - The int8 GLiNER exports' sizes and accuracy loss; the bundle and per-file caps set from them.
 - hayro fidelity on JBIG2, JPX and CCITT scans (`PDF-REN-01`).
 - PP-OCRv6 script list.
-- Whether `phonenumber` builds for wasm32 (decides `casual-sign-pii`).
+- ~~Whether `phonenumber` builds for wasm32 (decides `casual-sign-pii`).~~ It does (piece J, 2026-11-12).
 - Cross-ISA equality after thresholding, on the shipped files.
 
 ## 16. Review defects and where each is fixed

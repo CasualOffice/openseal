@@ -8,6 +8,7 @@ members = [
     "crates/casual-sign-pdf",
     "crates/casual-sign-crypto",
     "crates/casual-sign-fields",
+    "crates/casual-sign-pii",
     "crates/casual-sign-verify",
     "crates/casual-sign-flatten",
     "crates/casual-sign-seal",
