@@ -348,7 +348,7 @@ export function evidenceSection(ctx, env, audit) {
 /// count per view. `current` is marked; `onPick(id)` switches in place on Agreements,
 /// else the links navigate. Views that need the Inbox are left out where the server has
 /// none.
-export function renderNavViews(ctx, { current = null, counts = null, onPick = null } = {}) {
+export function renderNavViews(ctx, { current = null, counts = null, onPick = null, q = "" } = {}) {
   const host = document.getElementById("nav-views");
   if (!host) return;
   const inbox = ctx.api.available ? ctx.api.available("inbox") : true;
@@ -357,10 +357,10 @@ export function renderNavViews(ctx, { current = null, counts = null, onPick = nu
   for (const v of views) {
     const n = counts ? counts[v.id] : null;
     const a = h("a", {
-      class: "os-nav__link os-navview", href: agreementsHash(v.id),
-      attrs: { "data-view": v.id, "aria-current": current === v.id ? "page" : null, "aria-label": n == null ? null : t("agreements.nav.count", { view: t(`agreements.nav.${v.id}`), n }) },
+      class: "os-nav__link os-navview", href: agreementsHash(v.id, q),
+      attrs: { "data-view": v.id, "aria-current": current === v.id ? "page" : null },
     }, h("span", { class: `os-dot os-dot--${v.dot}`, attrs: { "aria-hidden": "true" } }), h("span", { text: t(`agreements.nav.${v.id}`) }),
-      n == null ? null : h("span", { class: "os-navview__n", attrs: { "aria-hidden": "true" }, text: String(n) }));
+      n == null ? null : h("span", { class: "os-navview__n", text: String(n) }));
     if (onPick) a.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); onPick(v.id); });
     host.append(a);
   }

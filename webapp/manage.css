@@ -333,13 +333,6 @@
 .os-main > .os-view:has(> .os-agr) { height: 100%; }
 .os-agr { display: flex; height: 100%; min-height: 0; position: relative; font-size: var(--os-fs-14); }
 .os-agr__main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; container: agrmain / inline-size; }
-/* A narrower list keeps every tab: Filter and Display drop to their icons, then the N hint. */
-@container agrmain (max-width: 56rem) {
-  .os-agr__tools .os-agr__hbtn > span:not(.os-count-badge) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .os-agr__tools .os-agr__hbtn { width: 1.875rem; padding: 0; }
-  .os-agr__new kbd { display: none; }
-  .os-agr__new { padding: 0 0.75rem; }
-}
 .os-agr__head { display: flex; align-items: center; gap: 0.75rem; min-height: 3.25rem; padding: 0 1.25rem; border-bottom: 1px solid var(--os-hairline); }
 .os-agr__title { margin: 0; font-size: var(--os-fs-15); font-weight: 600; letter-spacing: 0; white-space: nowrap; flex: none; }
 .os-agr__head > .os-tabs--pill { margin-left: 0.5rem; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
@@ -369,6 +362,21 @@
 .os-agr__scroll { min-height: 100%; display: flex; flex-direction: column; }
 .os-agr__scroll > .os-empty { flex: 1; min-height: 24rem; }
 .os-agr__scroll > .os-empty .os-actions { justify-content: center; }
+
+/* A narrower list keeps every tab: Filter and Display drop to their icons, then the N hint. */
+@container agrmain (max-width: 56rem) {
+  .os-agr__tools .os-agr__hbtn > span:not(.os-count-badge) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .os-agr__tools .os-agr__hbtn { width: 1.875rem; padding: 0; }
+  .os-agr__new kbd { display: none; }
+  .os-agr__new { padding: 0 0.75rem; }
+}
+@container agrmain (max-width: 50rem) {
+  .os-agr__new { width: 1.875rem; padding: 0; }
+  .os-agr__new > svg { display: inline; }
+  .os-agr__new .os-agr__btnlabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .os-agr__head .os-tabs--pill .os-tab { padding: 0 0.625rem; }
+  .os-agr__head { gap: 0.5rem; }
+}
 
 /* Rows: thumbnail and name | recipients | progress | status | time (canvas grid). */
 .os-agr-grid { display: block; }

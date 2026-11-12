@@ -93,6 +93,7 @@ export function mount(view, ctx, _match, params) {
   const people = new Map(); // user id → name
   let mlOn = false;
   let gone = false;
+  let navCounts = null; // the sidebar Views' counts, from the last unsearched load
 
   // ---- Header ------------------------------------------------------------------------
   const inboxOn = ctx.api.available ? ctx.api.available("inbox") : true;
@@ -344,7 +345,9 @@ export function mount(view, ctx, _match, params) {
   const rowEl = (id) => (id ? listHost.querySelector(`[role="row"][data-id="${CSS.escape(id)}"]`) : null);
 
   function renderNav() {
-    renderNavViews(ctx, { current: s.view, counts: s.ready ? viewCounts(s.rows, s.mine) : null, onPick: (id) => { setView(id); syncTabFocus(); } });
+    // The counts are the whole account's: a search keeps the last ones it had.
+    if (s.ready && !s.q) navCounts = viewCounts(s.rows, s.mine);
+    renderNavViews(ctx, { current: s.view, q: s.q, counts: navCounts, onPick: (id) => { setView(id); syncTabFocus(); } });
   }
   function syncTabFocus() { tablist.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }
 
@@ -660,6 +663,6 @@ export function mount(view, ctx, _match, params) {
     inspector.destroy();
     mq.removeEventListener("change", onMq);
     unregisterPrefix("list.");
-    renderNavViews(ctx, { current: null, counts: s.ready ? viewCounts(s.rows, s.mine) : null });
+    renderNavViews(ctx, { current: null, counts: navCounts });
   };
 }
