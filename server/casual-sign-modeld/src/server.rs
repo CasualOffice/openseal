@@ -6,7 +6,7 @@
 //! configuration and the connection loop are keyd's; the service is modeld's.
 //!
 //! A caller whose certificate does not chain to the client CA never completes the
-//! handshake; one that chains but is not on the allow list is answered `CS-ML-0008` and
+//! handshake; one that chains but is not on the allow list is answered `CS-ML-0015` and
 //! recorded. Blocking I/O, one thread per connection, at most
 //! [`ModeldLimits::max_connections`] at once, with read and write timeouts. modeld holds
 //! no database, SMTP, webhook or keyd credential (ADR-029).

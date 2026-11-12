@@ -110,7 +110,7 @@ fn a_client_not_on_the_allow_list_is_refused_and_logged() {
     let log = std::fs::read_to_string(&modeld.oplog).unwrap();
     assert!(
         log.contains(&format!(
-            "\t{}\tconnect\t-\t-\t0\t0\t0\tCS-ML-0008\t",
+            "\t{}\tconnect\t-\t-\t0\t0\t0\tCS-ML-0015\t",
             stranger.2
         )),
         "{log}"

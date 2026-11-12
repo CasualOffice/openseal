@@ -261,3 +261,4 @@ a dead ML job means only "no suggestions" and never blocks sending or sealing.
 | CS-ML-0012 | Suggestion stale or already decided (API `409`) |
 | CS-ML-0013 | Inference failed inside the runtime, or a span would not fall on a UTF-8 boundary of the text sent |
 | CS-ML-0014 | The raster child exited abnormally (signal, memory limit) other than by the time cap; counted in the op log. Reported per page |
+| CS-ML-0015 | The caller's client certificate chains to the client CA but its SHA-256 fingerprint is not on modeld's allow list; recorded in the op log as a `connect` refusal. *Final* (an operator must add the fingerprint) |

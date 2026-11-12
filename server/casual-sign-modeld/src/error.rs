@@ -47,7 +47,8 @@ pub enum ModeldError {
     /// `CS-ML-0001` on the TLS side: the certificates or keys do not load. Kept apart from
     /// [`ModeldError::Setting`] because rustls names the failure, never a value.
     TlsConfig(String),
-    /// `CS-ML-0008` for a caller whose certificate is not on the allow list.
+    /// `CS-ML-0015`: the caller's certificate chains to the client CA but its fingerprint
+    /// is not on the allow list. Final: retrying cannot succeed until the operator adds it.
     NotAuthorized,
     /// `CS-ML-0001` on the op log: it cannot be opened, read back or written.
     OperationLog(String),
@@ -103,12 +104,13 @@ impl ModeldError {
             Self::OverBound(_) => "CS-ML-0005",
             Self::Raster(_) => "CS-ML-0006",
             Self::Deadline => "CS-ML-0007",
-            Self::Transport(_) | Self::NotAuthorized => "CS-ML-0008",
+            Self::Transport(_) => "CS-ML-0008",
             Self::Busy => "CS-ML-0009",
             Self::NotInstalled => "CS-ML-0010",
             Self::FeatureOff => "CS-ML-0011",
             Self::Stale => "CS-ML-0012",
             Self::Inference => "CS-ML-0013",
+            Self::NotAuthorized => "CS-ML-0015",
         }
     }
 
@@ -123,12 +125,13 @@ impl ModeldError {
             Self::OverBound(_) => 5,
             Self::Raster(_) => 6,
             Self::Deadline => 7,
-            Self::Transport(_) | Self::NotAuthorized => 8,
+            Self::Transport(_) => 8,
             Self::Busy => 9,
             Self::NotInstalled => 10,
             Self::FeatureOff => 11,
             Self::Stale => 12,
             Self::Inference => 13,
+            Self::NotAuthorized => 15,
         }
     }
 
@@ -144,10 +147,11 @@ impl ModeldError {
             5 => Self::OverBound("reported by modeld"),
             6 => Self::Raster("reported by modeld"),
             7 => Self::Deadline,
-            8 => Self::NotAuthorized,
+            8 => Self::Transport("reported by modeld".into()),
             9 => Self::Busy,
             10 => Self::NotInstalled,
             13 => Self::Inference,
+            15 => Self::NotAuthorized,
             _ => Self::Transport(format!("modeld answered with unknown error {n}")),
         }
     }
@@ -240,6 +244,22 @@ mod tests {
             assert_eq!(back.is_transient(), e.is_transient(), "{e}");
         }
         assert_eq!(ModeldError::Busy.code(), "CS-ML-0009");
+    }
+
+    /// A caller refused by the allow list is final; a transport failure is retried. The
+    /// two must not share a number, or the client cannot tell them apart (review D4).
+    #[test]
+    fn a_refused_caller_has_its_own_final_code_apart_from_transport() {
+        let refused = ModeldError::NotAuthorized;
+        let transport = ModeldError::Transport("reset".into());
+        assert_ne!(refused.code(), transport.code());
+        assert_ne!(refused.number(), transport.number());
+        assert_eq!(refused.code(), "CS-ML-0015");
+        assert!(!refused.is_transient());
+        let back = ModeldError::from_number(transport.number());
+        assert_eq!(back.code(), "CS-ML-0008");
+        assert!(back.is_transient(), "{back}");
+        assert_eq!(ModeldError::from_number(refused.number()), refused);
         assert!(ModeldError::Busy.is_transient());
         assert!(!ModeldError::NotInstalled.is_transient());
     }

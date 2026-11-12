@@ -436,7 +436,7 @@ The rows, controls and tests are in [07](07-SECURITY-THREAT-MODEL.md) §Inferenc
 
 ## 12. Codes (docs/20 §ML)
 
-Reserved in [20](20-ERROR-CODE-REGISTRY.md) §ML: `CS-ML-0001` to `CS-ML-0014`.
+Reserved in [20](20-ERROR-CODE-REGISTRY.md) §ML: `CS-ML-0001` to `CS-ML-0015` (`CS-ML-0015`: a caller not on the allow list, final, kept apart from the transport code `CS-ML-0008`, which is retried).
 
 ## 13. Data model (docs/22; migration number reserved in docs/14, forward-only)
 
