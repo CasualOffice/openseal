@@ -493,7 +493,7 @@ pub fn eu_vat(r: &mut Rng) -> Pair {
     }
 }
 
-fn mrz_check(s: &str) -> u32 {
+pub fn mrz_check(s: &str) -> u32 {
     s.bytes()
         .enumerate()
         .map(|(i, c)| {

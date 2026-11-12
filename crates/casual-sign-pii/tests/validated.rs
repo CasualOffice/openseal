@@ -228,6 +228,20 @@ fn passport_mrz_needs_every_check_digit() {
     );
     // Inside a longer run of MRZ characters it is not a line of its own.
     assert!(found(&format!("X{good}"), Kind::PassportMrz).is_empty());
+    // A field's own check digit wrong while the composite is recomputed to match: each
+    // field check is needed, not only the composite.
+    for at in [9, 19, 27, 42] {
+        let mut line = good.as_bytes().to_vec();
+        line[at] = if line[at] == b'1' { b'2' } else { b'1' };
+        let composite: Vec<u8> = [&line[0..10], &line[13..20], &line[21..43]].concat();
+        let c = v::mrz_check(std::str::from_utf8(&composite).unwrap());
+        line[43] = b'0' + c as u8;
+        let bad = String::from_utf8(line).unwrap();
+        assert!(
+            found(&format!("Value {bad} on file."), Kind::PassportMrz).is_empty(),
+            "field check at {at} ignored: {bad}"
+        );
+    }
 }
 
 #[test]
