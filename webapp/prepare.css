@@ -401,7 +401,7 @@
 .os-prepare .os-thumb { width: 3.5rem; padding: 0; border: 0; border-radius: 0.25rem; background: var(--os-illus-paper); box-shadow: 0 0 0 1px rgba(24, 24, 27, .12); overflow: visible; }
 .os-prepare .os-thumb canvas { box-shadow: none; border-radius: 0.25rem; }
 .os-prepare .os-thumb[aria-current="page"] { border: 0; box-shadow: 0 0 0 2px var(--os-accent-fill); }
-.os-prepare .os-thumb__n { position: absolute; top: calc(100% + 0.125rem); left: 0; right: 0; bottom: auto; padding: 0; background: none; color: var(--os-muted); font-size: var(--os-fs-11); font-weight: 400; text-align: center; }
+.os-prepare .os-thumb__n { position: absolute; top: calc(100% + 0.125rem); left: 0; right: 0; bottom: auto; padding: 0; background: none; color: var(--os-muted); font-size: var(--os-fs-12); font-weight: 400; text-align: center; }
 .os-prepare .os-thumb[aria-current="page"] .os-thumb__n { background: none; color: var(--os-text); }
 .os-prepare .os-thumbs__list { row-gap: 1.5rem; padding-bottom: 1rem; }
 .os-prepare .os-thumb.is-scanned { background: #f7f6f2; }

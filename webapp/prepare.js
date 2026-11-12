@@ -1470,7 +1470,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     del.addEventListener("click", () => run("field.delete"));
     props.append(h("div", { class: `os-props__head os-r${colourOf(f.recipientKey)}` },
       h("span", { class: "os-props__chip", attrs: { "aria-hidden": "true" }, text: KIND_GLYPH[f.type] || "T" }),
-      h("h3", { class: "os-props__title", text: t(`ftype.${f.type}`) }), del));
+      h("h3", { class: "os-props__title" }, t(`ftype.${f.type}`), h("span", { class: "os-sr-only", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }).slice(t(`ftype.${f.type}`).length) })), del));
     // A member set or cleared (blank removes it, as the server stores it), one undo step.
     const setM = (k, v) => {
       const blank = v == null || v === false || v === "" || (Array.isArray(v) && !v.length);
