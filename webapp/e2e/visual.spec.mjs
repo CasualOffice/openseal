@@ -249,3 +249,56 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
     });
   });
 }
+
+// Menus open in the top layer, inside the viewport (UX-02): a row menu is never clipped
+// by its table's scroll box or its card, and the Start menu never runs off a phone.
+/// Every item of the open menu is inside the viewport and is what the page shows at
+/// its centre (nothing clips or covers it).
+async function menuInView(page, what) {
+  const menu = page.locator('[role="menu"]:visible').last();
+  await expect(menu, `${what}: a menu is open`).toBeVisible();
+  const bad = await menu.evaluate((m) => {
+    const out = [];
+    const vw = document.documentElement.clientWidth; const vh = document.documentElement.clientHeight;
+    for (const it of m.querySelectorAll('[role="menuitem"]')) {
+      // Scroll the menu itself only (a long menu scrolls inside), never the page or the
+      // table around it: a menu clipped by its table is what this catches.
+      if (m.scrollHeight > m.clientHeight) m.scrollTop = it.offsetTop - m.clientHeight / 2;
+      const r = it.getBoundingClientRect();
+      const name = it.textContent.trim();
+      if (r.left < 0 || r.top < 0 || r.right > vw || r.bottom > vh) { out.push(`${name}: outside the viewport (${Math.round(r.left)},${Math.round(r.top)})-(${Math.round(r.right)},${Math.round(r.bottom)})`); continue; }
+      const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!at || !it.contains(at)) out.push(`${name}: covered or clipped (${at?.className || at?.tagName})`);
+    }
+    return out;
+  });
+  expect(bad, what).toEqual([]);
+}
+
+for (const [vp, size] of [["1440", { width: 1440, height: 900 }], ["1366", { width: 1366, height: 768 }], ["390", { width: 390, height: 844 }]]) {
+  test.describe(`menus at ${vp}`, () => {
+    test.use({ viewport: size });
+    test("row menus, the Start menu and the account menu stay inside the viewport", async ({ page }, testInfo) => {
+      test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+      await signIn(page, "agreements");
+      await expect(page.locator(".os-row__sub").first()).not.toBeEmpty();
+      const rowMenus = page.getByRole("button", { name: /^Actions for / });
+      await rowMenus.last().click();
+      await menuInView(page, `${vp} agreements: last row's menu`);
+      await page.keyboard.press("Escape");
+      await rowMenus.first().click();
+      await menuInView(page, `${vp} agreements: first row's menu`);
+      await page.keyboard.press("Escape");
+      await page.locator("#start-btn").click();
+      await menuInView(page, `${vp} Start menu`);
+      await page.keyboard.press("Escape");
+      await page.locator("#account-btn").click();
+      await menuInView(page, `${vp} account menu`);
+      await page.keyboard.press("Escape");
+      await page.goto(app("#/templates"));
+      const tplMenus = page.getByRole("button", { name: /^Actions for / });
+      await tplMenus.last().click();
+      await menuInView(page, `${vp} templates: last row's menu`);
+    });
+  });
+}

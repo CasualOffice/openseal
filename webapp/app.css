@@ -139,6 +139,11 @@ select.os-input {
   animation: os-pop var(--os-dur-fast) var(--os-ease);
 }
 .os-menu[hidden] { display: none; }
+/* A menu from menuButton floats in the top layer (UX-02; ui/menus.js places it from its
+ * button): fixed, inside the viewport, scrolling when taller than the room it has. */
+.os-menu--floating { position: fixed; inset: auto; right: auto; margin: 0; color: var(--os-text); overflow-y: auto; overscroll-behavior: contain; max-width: calc(100vw - 1rem); }
+.os-menu--floating.is-above { animation-name: os-pop-up; }
+@keyframes os-pop-up { from { opacity: 0; transform: translateY(0.25rem) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes os-pop { from { opacity: 0; transform: translateY(-0.25rem) scale(.98); } to { opacity: 1; transform: none; } }
 .os-menu__item {
   display: flex; align-items: center; gap: var(--os-s2); width: 100%; min-height: var(--os-btn);
