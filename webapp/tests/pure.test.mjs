@@ -273,9 +273,10 @@ test("status badges' words meet 4.5:1 on their own tint, in both themes (UX-02)"
   assert.deepEqual(report, []);
 });
 
-test("the UI font is bundled and the root size does not follow the window (UX-02)", () => {
-  // Without a bundled face Linux drew the app in DejaVu Sans; with a vw term in the
-  // root size, density changed with every window width.
+test("the UI font is bundled and the root size is the canvas's bounded fluid scale (UX-02, WEB-17)", () => {
+  // Without a bundled face Linux drew the app in DejaVu Sans. The root size follows the
+  // window only as owner instruction 44 set it: 15 px at 1280 to 18 px from 2560, never
+  // outside those bounds, and a fixed 16 px on phones.
   const tokensCss = fs.readFileSync(path.join(WEBAPP, "tokens.css"), "utf8");
   const family = /--os-font:\s*"([^"]+)"/.exec(tokensCss)?.[1];
   assert.ok(family, "--os-font starts with a bundled family");
@@ -285,11 +286,14 @@ test("the UI font is bundled and the root size does not follow the window (UX-02
     const src = /url\("([^"]+)"\)/.exec(f)?.[1];
     assert.ok(src?.startsWith("fonts/ui/") && fs.existsSync(path.join(WEBAPP, src)), `font file ${src}`);
   }
-  assert.ok(fs.existsSync(path.join(WEBAPP, "fonts/ui/OFL-1.1-Inter.txt")), "the font's licence beside it");
+  assert.ok(fs.existsSync(path.join(WEBAPP, "fonts/ui/OFL-1.1-Geist.txt")), "the font's licence beside it");
   const appCss = fs.readFileSync(path.join(WEBAPP, "app.css"), "utf8");
-  const rootSizes = [...appCss.matchAll(/html\s*{[^}]*font-size:\s*([^;]+);/g)].map((m) => m[1]);
-  assert.ok(rootSizes.length > 0);
-  for (const v of rootSizes) assert.ok(!/vw|vh|vmin|vmax/.test(v), `root font-size follows the viewport: ${v}`);
+  const rootSizes = [...appCss.matchAll(/html\s*{[^}]*font-size:\s*([^;]+);/g)].map((m) => m[1].trim());
+  assert.deepEqual(rootSizes, ["clamp(15px, calc(11.5px + .3vw), 18px)", "16px"]);
+  // The fluid part at the widths instruction 44 names.
+  const at = (vw) => Math.min(18, Math.max(15, 11.5 + 0.003 * vw));
+  assert.deepEqual([1280, 1440, 1920, 2560].map((w) => Math.round(at(w) * 10) / 10), [15.3, 15.8, 17.3, 18]);
+  assert.match(appCss, /@media \(max-width: 48em\) {\s*html { font-size: 16px; }/);
 });
 
 test("the icons later packages need are vendored (UX-02)", () => {
