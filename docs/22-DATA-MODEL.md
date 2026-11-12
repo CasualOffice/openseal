@@ -330,7 +330,7 @@ named `organization_scope`; content tables are untouched. Definer functions: `op
 `openseal_bootstrap_organization` and `openseal_bootstrap_owner` (the install's first organization only, in the transaction that created it),
 `openseal_login_password_hash` (login) and `openseal_user_workspaces` (switching, from a live session). Store:
 `Store::for_organization(org)` → `OrgScope::begin()` → `OrgTx` (`organization`, `workspaces`, `workspace(id) →
-WorkspaceOf`, `create_workspace`, `archive_workspace`); `Store::for_workspace_of(&WorkspaceOf)` → a single-account
+WorkspaceOf`, `create_workspace`, `archive_workspace`, `into_workspace(&WorkspaceOf) → TenantTx` in the same transaction); `Store::for_workspace_of(&WorkspaceOf)` → a single-account
 `TenantTx` that re-reads the workspace's organization; `Store::bootstrap_organization` and
 `Accounts::make_first_owner`; `EntryPoints::user_workspaces`. `Store::create_account` is gone: the application can no
 longer create an account outside those functions. Forty-five tables.

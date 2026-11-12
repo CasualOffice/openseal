@@ -131,6 +131,12 @@ pub struct TenantTx {
 }
 
 impl TenantTx {
+    /// Bind an open transaction, whose `openseal.account_id` is already `account`, as
+    /// that account's transaction ([`crate::OrgTx::into_workspace`]).
+    pub(crate) fn bound(tx: Transaction<'static, Postgres>, account: AccountId) -> Self {
+        Self { tx, account }
+    }
+
     /// The account every statement in this transaction is bound to.
     #[must_use]
     pub fn account_id(&self) -> AccountId {

@@ -291,6 +291,44 @@ impl OrgTx {
         }
     }
 
+    /// Continue this same transaction as an ordinary single-account transaction on
+    /// `workspace`, so what was written in organization scope (a new workspace) and
+    /// what follows in the workspace (its first administrator) commit or roll back
+    /// together. From here the organization scope is gone: setting the account makes
+    /// `openseal_current_org()` NULL. As [`Store::for_workspace_of`], the workspace's
+    /// organization is read again and must still be the proof's.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when `workspace` is not a workspace of this organization;
+    /// `CS-DB-0001`.
+    pub async fn into_workspace(mut self, workspace: &WorkspaceOf) -> Result<TenantTx> {
+        if workspace.organization != self.org {
+            return Err(StoreError::NotFound {
+                entity: "workspace",
+            });
+        }
+        let acct = workspace.account.0;
+        sqlx::query!(
+            "SELECT set_config('openseal.account_id', $1, true)",
+            acct.to_string()
+        )
+        .fetch_one(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        let org = sqlx::query_scalar!("SELECT organization_id FROM accounts WHERE id = $1", acct)
+            .fetch_optional(&mut *self.tx)
+            .await
+            .map_err(db)?;
+        if org == Some(workspace.organization.0) {
+            Ok(TenantTx::bound(self.tx, workspace.account))
+        } else {
+            Err(StoreError::NotFound {
+                entity: "workspace",
+            })
+        }
+    }
+
     /// Commit.
     ///
     /// # Errors

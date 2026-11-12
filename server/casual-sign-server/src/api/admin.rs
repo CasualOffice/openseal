@@ -1027,7 +1027,7 @@ pub async fn bootstrap(
 }
 
 /// A new workspace of an existing organization, with its built-in profiles and a first
-/// administrator of the workspace (who gets no organization role). The caller must have
+/// administrator of the workspace (who gets no organization role), in one transaction. The caller must have
 /// established its right to create workspaces in `organization`; until ORG-03's routes,
 /// tests and the console's organization creation are the callers.
 ///
@@ -1048,10 +1048,11 @@ pub async fn bootstrap_workspace(
     let phc = phc_of(password).await?;
     let account = AccountId(Uuid::now_v7());
     let profiles = new_profiles();
+    // One transaction: a failing first administrator (a duplicate email, say) leaves no
+    // workspace behind (ORG-02 review).
     let mut org = store.for_organization(organization).begin().await?;
     let proof = org.create_workspace(account, name, &profiles).await?;
-    org.commit().await?;
-    let tx = store.for_workspace_of(&proof).await?;
+    let tx = org.into_workspace(&proof).await?;
     first_admin(
         tx,
         organization,

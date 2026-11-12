@@ -251,7 +251,10 @@ Built as sketched above, with these decisions taken within the design (each test
   `organizations.rs::bootstrap_owner_refuses_an_organization_made_before_this_transaction` (the ORG-02 review's probe,
   seen red before the `xmin` check). `casual-sign-server bootstrap` uses both and is refused (`CS-DB-0006`) once any
   organization exists. `casual_sign_server::bootstrap_workspace` provisions a workspace and its first administrator in
-  an existing organization (no organization role); its callers until ORG-03 are tests and, from CON-03, the console.
+  an existing organization (no organization role), in one transaction: `OrgTx::into_workspace` continues the
+  organization transaction in the new workspace's account scope (which makes `openseal_current_org()` NULL), so a
+  failing administrator leaves no workspace (test `casual-sign-server/tests/bootstrap.rs`, seen red with two
+  transactions); its callers until ORG-03 are tests and, from CON-03, the console.
   Until the console exists, a second organization is made by the owner role (as the tests do).
 - **An organization admin is a member.** A `BEFORE INSERT OR UPDATE OF organization_id, user_id` trigger on
   `organization_admins` refuses a user who is not an enabled member of a workspace of that organization (SQLSTATE
