@@ -47,7 +47,9 @@ test("prepare: no documents, no recipients, no fields", async ({ page }, testInf
   await signIn(page);
   await page.goto(app("#/prepare"));
   await check(page.getByTestId("empty-documents"), testInfo, "no-documents");
-  await page.getByTestId("wizard-next").click();
+  // Next waits for a document (UX-05); the step bar still opens the next step.
+  await expect(page.getByTestId("wizard-next")).toBeDisabled();
+  await page.locator(".os-stepper__btn", { hasText: "Recipients" }).click();
   await check(page.getByTestId("empty-recipients"), testInfo, "no-recipients");
   await page.getByTestId("pdf-input").setInputFiles(pdfFile());
   await page.locator(".os-stepper__btn", { hasText: "Fields" }).click();

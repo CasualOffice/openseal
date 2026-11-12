@@ -188,17 +188,18 @@ test("use a template: the document beside a panel holding the roles and Send", a
 test("admin: invite by email, edit a user's profile and disable them, settings and branding in side panels", async ({ page }) => {
   await signIn(page);
   await page.goto(app("#/admin"));
-  await page.getByRole("button", { name: "Invite user" }).click();
-  const inv = page.getByRole("dialog", { name: "Invite user" });
+  // UX-08: one Add user panel, sending an invitation by default.
+  await page.getByRole("button", { name: "Add user" }).click();
+  const inv = page.getByRole("dialog", { name: "Add user" });
   await expect(page.locator("dialog[open]")).toHaveCount(0);
-  await inv.getByRole("button", { name: "Invite user" }).click();
-  await expect(inv.getByText("Enter a valid email.")).toBeVisible();
-  await inv.getByLabel("Email").fill("lee@example.com");
   // WEB-10: the server needs a name (UserCreate), so the form asks for one first.
-  await inv.getByRole("button", { name: "Invite user" }).click();
+  await inv.getByRole("button", { name: "Add user" }).click();
   await expect(inv.getByLabel("Name", { exact: true })).toHaveAttribute("aria-invalid", "true");
   await inv.getByLabel("Name", { exact: true }).fill("Lee Park");
-  await inv.getByRole("button", { name: "Invite user" }).click();
+  await inv.getByRole("button", { name: "Add user" }).click();
+  await expect(inv.getByText("Enter a valid email.")).toBeVisible();
+  await inv.getByLabel("Email", { exact: true }).fill("lee@example.com");
+  await inv.getByRole("button", { name: "Add user" }).click();
   await expect(page.locator(".os-toast").last()).toContainText("Invitation sent to lee@example.com.");
   await expect(page.getByRole("row", { name: /lee@example.com/ })).toContainText("Invited");
 
@@ -216,13 +217,13 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
   await expect(page.getByRole("dialog", { name: "Edit user" }).getByRole("switch", { name: "Disable sign-in" })).toBeDisabled();
   await page.keyboard.press("Escape");
 
-  await page.getByRole("tab", { name: "Account" }).click();
+  await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Account" }).click();
   await page.getByTestId("account-branding").getByRole("button", { name: "Edit branding" }).click();
   const br = page.getByRole("dialog", { name: "Branding" });
-  await br.getByLabel("Accent colour").fill("red");
+  await br.getByLabel("Accent colour", { exact: true }).fill("red");
   await br.getByRole("button", { name: "Save" }).click();
   await expect(br.getByText("Enter a colour as # and six hex digits.")).toBeVisible();
-  await br.getByLabel("Accent colour").fill("#0E7490");
+  await br.getByLabel("Accent colour", { exact: true }).fill("#0E7490");
   await br.getByLabel("Name shown to recipients").fill("Acme Legal");
   await br.getByRole("button", { name: "Save" }).click();
   await expect(page.getByTestId("account-branding")).toContainText("Acme Legal");
@@ -241,12 +242,13 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
 test("an invited member sets a password from the emailed link, once", async ({ page }) => {
   await signIn(page);
   await page.goto(app("#/admin"));
-  await page.getByRole("button", { name: "Invite user" }).click();
-  const inv = page.getByRole("dialog", { name: "Invite user" });
-  await inv.getByLabel("Email").fill("kai@example.com");
+  await page.getByRole("button", { name: "Add user" }).click();
+  const inv = page.getByRole("dialog", { name: "Add user" });
+  await inv.getByLabel("Email", { exact: true }).fill("kai@example.com");
   await inv.getByLabel("Name", { exact: true }).fill("Kai Moreno");
-  await inv.getByRole("button", { name: "Invite user" }).click();
-  await page.getByRole("button", { name: "Resend invitation to kai@example.com" }).click();
+  await inv.getByRole("button", { name: "Add user" }).click();
+  await page.getByRole("button", { name: "Actions for Kai Moreno" }).click();
+  await page.getByRole("menuitem", { name: "Resend invitation" }).click();
   await expect(page.locator(".os-toast").last()).toContainText("Invitation sent again to kai@example.com.");
   const token = await page.evaluate(() => Object.keys(JSON.parse(sessionStorage.getItem("openseal.mock.v1")).invites)[0]);
   await page.getByRole("button", { name: "Account" }).click();

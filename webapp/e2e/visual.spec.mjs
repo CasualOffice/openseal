@@ -174,10 +174,10 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       // On phones the palette is a bottom sheet behind "Add field" (WEB-06).
       const palette = async () => { if (vp === "phone") await page.getByTestId("add-field-sheet").click(); };
       await palette();
-      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
       await palette();
       await placingFor(page, 1);
-      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
       await check("09-prepare-fields");
       await editorRules(page, vp, "editor");
       await page.getByTestId("wizard-next").click();
@@ -197,7 +197,7 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       await page.goto(app("#/admin"));
       await expect(page.getByRole("cell", { name: "Robin Sender", exact: true })).toBeVisible();
       await check("14-admin-users");
-      await page.getByRole("tab", { name: "API clients" }).click();
+      await page.goto(app("#/admin?section=api"));
       await expect(page.getByText("CRM integration")).toBeVisible();
       await check("15-admin-api");
     });

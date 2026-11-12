@@ -364,7 +364,7 @@ function iconBtn(ic, label, onClick, size) {
 
 /// The page thumbnails for a view in `container` (a list that scrolls on its own): drawn
 /// lazily, the current one marked and kept in view, a click jumps to its page.
-export function thumbnails(view, container, { width = 96 } = {}) {
+export function thumbnails(view, container, { width = 96, byDocument = false } = {}) {
   const ol = h("ol", { class: "os-thumbs__list" });
   container.append(ol);
   const btns = [];
@@ -385,6 +385,8 @@ export function thumbnails(view, container, { width = 96 } = {}) {
       c.style.aspectRatio = `${p.width} / ${p.height}`;
       const b = h("button", { type: "button", class: "os-thumb", attrs: { "data-index": String(i), "aria-label": t("prepare.page-of", { n: p.n, total: p.total, name: p.name }), title: t("doc.go-page", { n: i + 1 }) } }, c, h("span", { class: "os-thumb__n", text: String(i + 1) }));
       b.addEventListener("click", () => { view.scrollToPage(i); mark(i); });
+      // Grouped by document (UX-05, the editor): each document's name heads its pages.
+      if (byDocument && p.n === 1) ol.append(h("li", { class: "os-thumbs__doc", attrs: { "data-testid": "thumbs-doc" } }, h("span", { class: "os-trunc", title: p.name, text: p.name })));
       ol.append(h("li", {}, b));
       btns.push(b);
       if (io) io.observe(b); else if (p.pdf) p.pdf.render(p.n, c, width / p.width).catch(() => {});
