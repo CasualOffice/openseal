@@ -7,9 +7,13 @@
 // up to 200 per status, shown as "200+" past that. "Declined or expired" (WEB-06 A-04;
 // it was "Action required", which DocuSign uses for "waiting for you") is the sender's
 // own to-do: envelopes that ended without completing and need a new copy or a word with
-// the recipient. "Expiring soon" reads `expires_at` from the waiting envelopes (at most
-// 50) and counts those ending within 7 days. Envelopes waiting for *this user's*
-// signature need a recipient filter the API lacks (row in the WEB-02 report).
+// the recipient. "Expiring soon" reads each waiting list item's `expires_at` and counts
+// those ending within 7 days; its card opens the matching quick view (UX-07). Envelopes
+// waiting for *this user's* signature need the Inbox (UXW-01, NOT_ON_SERVER.inbox).
+//
+// UX-07: each recent envelope says who it went to ("To: …"), where it stands (the
+// status line) and when it last changed, and the whole row opens it; the drop zone is
+// one slim line, so the list starts above the fold; a Drafts counter.
 
 import { h, clear, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
@@ -17,12 +21,15 @@ import { t } from "./i18n.js";
 import { button, emptyState, skeletonRows, statusBadge, errorState, toast } from "./ui/index.js";
 import { countLabel } from "./templatemodel.js";
 import { handFiles } from "./handoff.js";
+import { statusLine, shortDate } from "./envactions.js";
+import { rowHref } from "./dashboard.js";
+import { expiringSoon } from "./managemodel.js";
 
-const SOON_DAYS = 7;
-const CARDS = [
+export const CARDS = [
   { key: "action", icon: "circle-alert", href: "#/agreements?folder=action" },
   { key: "waiting", icon: "hourglass", href: "#/agreements?folder=waiting" },
-  { key: "expiring", icon: "clock", href: "#/agreements?folder=waiting" },
+  { key: "expiring", icon: "clock", href: "#/agreements?folder=expiring" },
+  { key: "drafts", icon: "file-pen-line", href: "#/agreements?folder=drafts" },
   { key: "completed", icon: "circle-check", href: "#/agreements?folder=completed" },
 ];
 
@@ -90,22 +97,22 @@ export function mount(view, ctx) {
     const parts = await Promise.all(statuses.map((s) => ctx.api.countEnvelopes(s)));
     return { n: parts.reduce((s, p) => s + p.n, 0), more: parts.some((p) => p.more) };
   }
+  /// Waiting envelopes expiring within 7 days, from each list item's `expires_at`.
   async function expiring() {
-    const pages = await Promise.all(["sent", "delivered"].map((s) => ctx.api.listEnvelopes({ status: s, limit: 25 })));
-    const ids = pages.flatMap((p) => p.items || []).map((r) => r.id);
-    const soon = Date.now() + SOON_DAYS * 86_400_000;
-    const envs = await Promise.all(ids.map((id) => ctx.api.getEnvelope(id).then((x) => x.envelope).catch(() => null)));
-    return { n: envs.filter((e) => e?.expires_at && Date.parse(e.expires_at) <= soon).length, more: false };
+    const pages = await Promise.all(["sent", "delivered"].map((s) => ctx.api.listEnvelopes({ status: s, limit: 200 })));
+    return { n: pages.flatMap((p) => p.items || []).filter((r) => expiringSoon(r.expires_at)).length, more: pages.some((p) => p.next_cursor) };
   }
 
   async function load() {
     try {
-      const [action, waiting, soon, completed, page] = await Promise.all([
-        count(["declined", "expired"]), count(["sent", "delivered"]), expiring(), count(["completed"]), ctx.api.listEnvelopes({ limit: 6 }),
+      const [action, waiting, soon, drafts, completed, page] = await Promise.all([
+        count(["declined", "expired"]), count(["sent", "delivered"]), expiring(), count(["draft"]), count(["completed"]), ctx.api.listEnvelopes({ limit: 6, sort: "updated_at" }),
       ]);
-      for (const [k, v] of [["action", action], ["waiting", waiting], ["expiring", soon], ["completed", completed]]) cells.get(k).replaceChildren(countLabel(v));
+      for (const [k, v] of [["action", action], ["waiting", waiting], ["expiring", soon], ["drafts", drafts], ["completed", completed]]) cells.get(k).replaceChildren(countLabel(v));
       counters.removeAttribute("aria-busy");
-      renderRecent(page.items || []);
+      const items = page.items || [];
+      const envs = await Promise.all(items.map((r) => ctx.api.getEnvelope(r.id).then((x) => x.envelope).catch(() => null)));
+      renderRecent(items, envs);
     } catch (err) {
       counters.removeAttribute("aria-busy");
       recent.removeAttribute("aria-busy");
@@ -141,7 +148,9 @@ export function mount(view, ctx) {
     }
   }
 
-  function renderRecent(items) {
+  /// The recent envelopes (UX-07): subject, who it went to, where it stands and when it
+  /// last changed; the whole row opens it (a draft in the editor, A-02).
+  function renderRecent(items, envs = []) {
     clear(recent);
     recent.removeAttribute("aria-busy");
     if (!items.length) {
@@ -149,16 +158,24 @@ export function mount(view, ctx) {
       return;
     }
     const ul = h("ul", { class: "os-recent" });
-    for (const r of items) {
-      // A draft opens in the editor (A-02); anything sent opens its details.
-      const href = r.status === "draft" ? `#/prepare/${encodeURIComponent(r.id)}` : `#/envelopes/${encodeURIComponent(r.id)}`;
-      ul.append(h("li", { class: "os-recent__item" },
+    items.forEach((r, i) => {
+      const e = envs[i];
+      const href = rowHref(r);
+      const recs = [...(e?.recipients || [])].sort((a, b) => a.routing_order - b.routing_order).map((x) => x.name || x.email);
+      const when = r.updated_at || e?.ended_at || e?.sent_at || r.created_at;
+      const line = e ? statusLine(e) : "";
+      const li = h("li", { class: "os-recent__item os-recent__item--env", attrs: { "data-testid": "recent-row" } },
         h("span", { class: "os-recent__icon" }, icon("file-text", { size: 20 })),
         h("span", { class: "os-recent__main" },
           h("a", { class: "os-row-link", href, text: r.subject || t("envelope.untitled") }),
-          h("span", { class: "os-muted os-small" }, h("span", { text: `${t("dates.created")} ` }), h("time", { attrs: { datetime: r.created_at }, text: fmtDate(r.created_at) }))),
-        statusBadge(r.status)));
-    }
+          h("span", { class: "os-muted os-small os-recent__to", text: recs.length ? t("agreements.to", { names: recs.join(", ") }) : t("agreements.no-recipients") })),
+        h("span", { class: "os-recent__state" },
+          statusBadge(r.status),
+          line ? h("span", { class: "os-muted os-small os-recent__line", text: line }) : null),
+        h("time", { class: "os-muted os-small os-recent__when", attrs: { datetime: when, title: fmtDate(when) }, text: shortDate(when) }));
+      li.addEventListener("click", (ev) => { if (ev.target.closest("a, button")) return; ctx.navigate(href); });
+      ul.append(li);
+    });
     recent.append(ul);
   }
 

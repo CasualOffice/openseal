@@ -93,9 +93,12 @@ test("the ceremony view names the sender and the disclosure it asks consent to",
   assert.deepEqual(v.sender, { name: "Demo Admin", email: MOCK.email, organisation: "Demo account" });
   assert.equal(v.capture_location, true);
   assert.equal(v.consent_required.version, MOCK.ersd);
-  assert.equal(v.consent_required.sha256, await sha256hex(MOCK_DISCLOSURE));
+  assert.equal(v.consent_required.sha256, `sha256:${await sha256hex(MOCK_DISCLOSURE)}`);
   assert.equal(v.consent_required.url, `/s/${MOCK.ceremonyToken}/disclosure`);
   assert.ok(v.envelope.expires_at);
+  // As consent: only once every authentication has passed (UXW-34).
+  await assert.rejects(c.ceremony.disclosure(MOCK.ceremonyToken), (e) => e.code === "CS-AUTH-0003");
+  await c.ceremony.authenticate(MOCK.ceremonyToken, "access_code", MOCK.accessCode);
   const d = await c.ceremony.disclosure(MOCK.ceremonyToken);
   assert.deepEqual(d, { version: MOCK.ersd, sha256: v.consent_required.sha256, text: MOCK_DISCLOSURE });
   // The brand name, when the account has one, is the organisation.
@@ -298,13 +301,16 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   const refused = [
     c.inbox(), c.listFolders(), c.createFolder("x"), c.moveEnvelopes("f", ["e"]), c.restoreEnvelope("e"),
     c.updateWebhook("w", { active: false }), c.testWebhook("w"), c.redeliver("w", "d"), c.hostInPerson("e", "r"),
-    c.signLink("e"), c.ceremony.disclosure("t"), c.ceremony.clearField("t", "f"),
+    c.signLink("e"), c.ceremony.clearField("t", "f"),
     c.listEnvelopes({ recipient: "ann" }), c.listEnvelopes({ date_field: "sent_at" }), c.listEnvelopes({ folder: "f" }), c.listEnvelopes({ deleted: true }),
   ];
   for (const p of refused) await assert.rejects(p, (e) => e.status === 501 && e.code === "CS-NET-0002" && Object.hasOwn(NOT_ON_SERVER, e.detail));
   assert.deepEqual(seen, []);
   await c.listEnvelopes({ status: ["sent", "delivered"] });
   assert.deepEqual(seen, ["/api/v1/envelopes?status=sent%2Cdelivered&limit=25"]);
+  // UXW-34: the disclosure is served, so the call reaches the server.
+  await c.ceremony.disclosure("t");
+  assert.equal(seen.at(-1), "/s/t/disclosure");
   for (const [name, { needs }] of Object.entries(NOT_ON_SERVER)) assert.ok(needs.length > 10, name);
 });
 
