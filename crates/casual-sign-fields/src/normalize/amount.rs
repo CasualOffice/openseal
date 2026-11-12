@@ -32,8 +32,8 @@ impl Amount {
 
     /// True when one separator followed by exactly three digits could be either a
     /// thousands separator or a decimal point ("1,250", "1.250"). The value follows the
-    /// text's style (English unless the currency is written after the number) and a
-    /// person should confirm it.
+    /// text's style (continental when a decimal-comma currency such as EUR is written
+    /// after the number, English otherwise) and a person should confirm it.
     #[must_use]
     pub fn ambiguous(&self) -> bool {
         self.ambiguous
@@ -59,6 +59,11 @@ const CODES: [&str; 32] = [
     "AED", "AUD", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "EUR", "GBP", "HKD", "HUF", "IDR",
     "ILS", "INR", "JPY", "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PLN", "RON", "SAR", "SEK",
     "SGD", "THB", "TRY", "TWD", "USD", "ZAR",
+];
+
+/// Currencies whose home locales write a decimal comma.
+const DECIMAL_COMMA: [&str; 12] = [
+    "BRL", "CZK", "DKK", "EUR", "HUF", "IDR", "NOK", "PLN", "RON", "SEK", "TRY", "ZAR",
 ];
 
 /// Symbols, longest first so "US$" wins over "$".
@@ -182,7 +187,11 @@ fn numeral(text: &str) -> Option<Amount> {
             }
         }
     }
-    let (magnitude, ambiguous) = body(rest, suffixed)?;
+    // The text's style decides a lone separator before three digits: continental when
+    // the currency follows the number and is one whose home locales write a decimal
+    // comma ("1.250 €", "1.250 EUR"); English otherwise ("1,250 USD", "EUR 1.250").
+    let continental = suffixed && currency.is_some_and(|c| DECIMAL_COMMA.contains(&c.as_str()));
+    let (magnitude, ambiguous) = body(rest, continental)?;
     let value = if negative && !magnitude.is_zero() {
         Decimal::ZERO.checked_sub(magnitude)?
     } else {
@@ -201,10 +210,9 @@ fn is_space_group(c: char) -> bool {
     matches!(c, ' ' | '\u{a0}' | '\u{202f}' | '\'' | '’')
 }
 
-/// The number itself, with its separators resolved. `continental` is the hint that the
-/// currency was written after the number, which decides a lone separator followed by
-/// exactly three digits ("1.250 €" is 1250; "USD 1.250" is 1.25), and marks it
-/// ambiguous either way.
+/// The number itself, with its separators resolved. `continental` is the hint from the
+/// currency (see [`numeral`]) that decides a lone separator followed by exactly three
+/// digits ("1.250 €" is 1250; "USD 1.250" is 1.25), marked ambiguous either way.
 fn body(text: &str, continental: bool) -> Option<(Decimal, bool)> {
     if !text.starts_with(|c: char| c.is_ascii_digit())
         || !text.ends_with(|c: char| c.is_ascii_digit())

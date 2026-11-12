@@ -45,6 +45,8 @@ March the 15th, 2026	en-US	2026-11-12	2026-03-15	-	=
 15-Mar-2026	en-US	2026-11-12	2026-03-15	-	=
 1 Jan 2027	en-GB	2026-11-12	2027-01-01	-	=
 Monday, March 16, 2026	en-US	2026-11-12	2026-03-16	-	=
+Mon. March 16, 2026	en-US	2026-11-12	2026-03-16	-	=
+Monday, March 15, 2026	en-US	2026-11-12	-	-	dateparser ignores a weekday that contradicts the date; we refuse
 on March 15, 2026	en-US	2026-11-12	2026-03-15	-	=
 dated as of March 15, 2026	en-US	2026-11-12	2026-03-15	-	dateparser does not skip 'dated as of'
 as of January 1, 2027	en-US	2026-11-12	2027-01-01	-	dateparser does not skip 'as of'

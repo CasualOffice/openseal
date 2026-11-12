@@ -106,6 +106,11 @@ impl Date {
         )
     }
 
+    /// The day of the week, 0 for Monday to 6 for Sunday (1970-01-01 was a Thursday).
+    fn weekday(self) -> Option<usize> {
+        usize::try_from(self.day_number()?.checked_add(3)?.rem_euclid(7)).ok()
+    }
+
     /// This date moved by `days` (negative goes back). `None` outside years 1..=9999.
     #[must_use]
     pub fn add_days(self, days: i64) -> Option<Self> {
@@ -368,6 +373,9 @@ fn written(lower: &str) -> Option<Date> {
         .collect();
     let mut tokens: Vec<&str> = cleaned.split_whitespace().collect();
     // Leading words that carry no date: "on", "dated", "as of", a weekday, "the", "this".
+    // A weekday is kept to check against the date: "Monday, March 15, 2026" is refused,
+    // since March 15, 2026 is a Sunday and one of the two is wrong.
+    let mut weekday = None;
     loop {
         match tokens.first() {
             Some(&("on" | "dated" | "the" | "this")) => {
@@ -377,11 +385,24 @@ fn written(lower: &str) -> Option<Date> {
                 tokens.drain(..2);
             }
             Some(w) if WEEKDAYS.contains(w) => {
+                weekday = WEEKDAYS
+                    .iter()
+                    .position(|d| d == w)
+                    .and_then(|i| i.checked_div(2));
                 tokens.remove(0);
             }
             _ => break,
         }
     }
+    let date = day_month_year(&tokens)?;
+    match weekday {
+        Some(stated) if Some(stated) != date.weekday() => None,
+        _ => Some(date),
+    }
+}
+
+/// The date in `tokens`, leading words already removed.
+fn day_month_year(tokens: &[&str]) -> Option<Date> {
     let (&year_text, rest) = tokens.split_last()?;
     let year = u16::try_from(words::digits(year_text, 4)?).ok()?;
     if year_text.len() != 4 {
