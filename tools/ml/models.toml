@@ -1,0 +1,704 @@
+# The pinned model bundle for casual-sign-modeld (ML-01, ADR-029, docs/33 §8-9).
+#
+# Every file modeld may load, and the ONNX Runtime library it runs them on, is listed
+# here with a revision-pinned source URL, its SHA-256 and byte count, and its licence.
+# tools/ml/fetch-models.py downloads the profiles asked for, refuses any mismatch or any
+# licence outside deny.toml's allow list, and writes bundle.json; modeld embeds this
+# file and re-hashes every listed file at start. Nothing else is ever loaded.
+#
+# Pinned 2026-11-12 by downloading each file once and hashing it; for the Hugging Face
+# LFS files the hash also equals the hub's own LFS object id, and for ONNX Runtime the
+# digest GitHub publishes for the release asset. Every revision is older than two weeks.
+#
+# Fields: id ([A-Za-z0-9._-], modeld's id alphabet); profile; arch (x86_64, aarch64 or
+# any); role (runtime, notice, model, tokenizer, config, export-input); dest (path in
+# the bundle); source_url (a Hugging Face /resolve/<commit>/ URL or a GitHub release
+# asset); sha256 and bytes of the downloaded file; licence (SPDX) with licence_url and
+# card_url; provenance (where it comes from, and its training data, which docs/09's
+# weights register repeats: we rely on the weight licence and claim no clean lineage).
+# licence_exception (optional) names a scoped owner exception that fetch-models.py
+# honours only for the entry ids it lists: owner-instruction-32 lets the ONNX Runtime
+# library carry Eigen's MPL-2.0 and Boost's BSL-1.0, shipped with ThirdPartyNotices.txt.
+# runtime and notice entries name one archive member (extract, extract_sha256,
+# extract_bytes); nothing else in the archive is written. An entry with an empty sha256
+# is pending: produced_by names the offline export that will pin it, and a profile
+# holding one is refused until then. Profiles named export-* are inputs to those
+# exports, never bundled. Size caps: 1 GiB per bundled file, 2 GiB per bundle.
+#
+# Weights in bundled profiles are ONNX only; pickle (.bin, .pt) is never bundled.
+# Rejected for their licences (docs/33 §5): GLiNER v0 and v1 (CC-BY-NC-4.0),
+# iiiorg/piiranha-v1 (CC-BY-NC-ND-4.0), nvidia/gliner-PII (NVIDIA Open Model License).
+
+schema = 1
+
+# ---- runtime -----------------------------------------------------------------
+[[file]]
+id = "onnxruntime-x86_64"
+profile = "runtime"
+arch = "x86_64"
+role = "runtime"
+dest = "runtime/libonnxruntime.so"
+source_url = "https://github.com/microsoft/onnxruntime/releases/download/v1.28.3/onnxruntime-linux-x64-1.28.3.tgz"
+sha256 = "db14e4863bd37893fc59729d986ab2a0d043d10b7d44da1913c4982b7e3d009c"
+bytes = 9130098
+licence = "MIT AND MPL-2.0 AND BSL-1.0"
+licence_exception = "owner-instruction-32"
+licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
+card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
+extract = "onnxruntime-linux-x64-1.28.3/lib/libonnxruntime.so.1.28.3"
+extract_sha256 = "5a1ce74e56e8c4b278d5a9e9d12b7192d9f70811084dde9616da4fa1710efc5a"
+extract_bytes = 24301616
+
+[[file]]
+id = "onnxruntime-licence-x86_64"
+profile = "runtime"
+arch = "x86_64"
+role = "notice"
+dest = "runtime/LICENSE"
+source_url = "https://github.com/microsoft/onnxruntime/releases/download/v1.28.3/onnxruntime-linux-x64-1.28.3.tgz"
+sha256 = "db14e4863bd37893fc59729d986ab2a0d043d10b7d44da1913c4982b7e3d009c"
+bytes = 9130098
+licence = "MIT"
+licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
+card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
+extract = "onnxruntime-linux-x64-1.28.3/LICENSE"
+extract_sha256 = "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+extract_bytes = 1073
+
+[[file]]
+id = "onnxruntime-notices-x86_64"
+profile = "runtime"
+arch = "x86_64"
+role = "notice"
+dest = "runtime/ThirdPartyNotices.txt"
+source_url = "https://github.com/microsoft/onnxruntime/releases/download/v1.28.3/onnxruntime-linux-x64-1.28.3.tgz"
+sha256 = "db14e4863bd37893fc59729d986ab2a0d043d10b7d44da1913c4982b7e3d009c"
+bytes = 9130098
+licence = "MIT"
+licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
+card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
+extract = "onnxruntime-linux-x64-1.28.3/ThirdPartyNotices.txt"
+extract_sha256 = "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+extract_bytes = 325054
+
+[[file]]
+id = "onnxruntime-aarch64"
+profile = "runtime"
+arch = "aarch64"
+role = "runtime"
+dest = "runtime/libonnxruntime.so"
+source_url = "https://github.com/microsoft/onnxruntime/releases/download/v1.28.3/onnxruntime-linux-aarch64-1.28.3.tgz"
+sha256 = "6c6b1ae96d7b0be9f555092857c6a4f2b0b5587a5298d732d9e52e8253038ce7"
+bytes = 8123797
+licence = "MIT AND MPL-2.0 AND BSL-1.0"
+licence_exception = "owner-instruction-32"
+licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
+card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
+extract = "onnxruntime-linux-aarch64-1.28.3/lib/libonnxruntime.so.1.28.3"
+extract_sha256 = "c17d9c3b522c69594ef2b077d7f27a92ff0635d9df0c68c8997b7cad7bf71c61"
+extract_bytes = 20657248
+
+[[file]]
+id = "onnxruntime-licence-aarch64"
+profile = "runtime"
+arch = "aarch64"
+role = "notice"
+dest = "runtime/LICENSE"
+source_url = "https://github.com/microsoft/onnxruntime/releases/download/v1.28.3/onnxruntime-linux-aarch64-1.28.3.tgz"
+sha256 = "6c6b1ae96d7b0be9f555092857c6a4f2b0b5587a5298d732d9e52e8253038ce7"
+bytes = 8123797
+licence = "MIT"
+licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
+card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
+extract = "onnxruntime-linux-aarch64-1.28.3/LICENSE"
+extract_sha256 = "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+extract_bytes = 1073
+
+[[file]]
+id = "onnxruntime-notices-aarch64"
+profile = "runtime"
+arch = "aarch64"
+role = "notice"
+dest = "runtime/ThirdPartyNotices.txt"
+source_url = "https://github.com/microsoft/onnxruntime/releases/download/v1.28.3/onnxruntime-linux-aarch64-1.28.3.tgz"
+sha256 = "6c6b1ae96d7b0be9f555092857c6a4f2b0b5587a5298d732d9e52e8253038ce7"
+bytes = 8123797
+licence = "MIT"
+licence_url = "https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE"
+card_url = "https://github.com/microsoft/onnxruntime/releases/tag/v1.28.3"
+provenance = "ONNX Runtime 1.28.3 (2026-10-02), the 1.28 line ort 2.0.0-rc.13 targets (review defect 17); CPU build, loaded with ort `load-dynamic`. The binary also contains third-party code listed in ThirdPartyNotices.txt, shipped beside it; that includes Eigen (MPL-2.0) and Boost (BSL-1.0), allowed for this unmodified binary only by owner instruction 32 (licence_exception on the library entries)"
+extract = "onnxruntime-linux-aarch64-1.28.3/ThirdPartyNotices.txt"
+extract_sha256 = "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+extract_bytes = 325054
+
+# ---- ocr ---------------------------------------------------------------------
+[[file]]
+id = "ppocrv6-small-det"
+profile = "ocr"
+arch = "any"
+role = "model"
+dest = "ocr/det/inference.onnx"
+source_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.onnx"
+sha256 = "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e"
+bytes = 9880512
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx"
+provenance = "PaddlePaddle official ONNX, PP-OCRv6 (2026-06-18). Pretrained; used as shipped. Training data: PaddleOCR's, not itemised on the card; text detection, script-independent"
+
+[[file]]
+id = "ppocrv6-small-det-config"
+profile = "ocr"
+arch = "any"
+role = "config"
+dest = "ocr/det/inference.yml"
+source_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.yml"
+sha256 = "193f435274bf9f0b5f71a929bbfbcf148282df7e633b34e7c373e8f44741b516"
+bytes = 885
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx"
+provenance = "Pre- and post-processing parameters for the detector"
+
+[[file]]
+id = "ppocrv6-small-rec"
+profile = "ocr"
+arch = "any"
+role = "model"
+dest = "ocr/rec/inference.onnx"
+source_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx"
+sha256 = "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634"
+bytes = 21159378
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx"
+provenance = "PaddlePaddle official ONNX, PP-OCRv6 (2026-06-18). Pretrained; used as shipped. Training data: PaddleOCR's, not itemised on the card; recognition, 50 languages per the card (list unverified)"
+
+[[file]]
+id = "ppocrv6-small-rec-config"
+profile = "ocr"
+arch = "any"
+role = "config"
+dest = "ocr/rec/inference.yml"
+source_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.yml"
+sha256 = "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1"
+bytes = 150579
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx"
+provenance = "Recogniser parameters and its character dictionary"
+
+# ---- ocr-arabic --------------------------------------------------------------
+[[file]]
+id = "ppocrv5-arabic-rec"
+profile = "ocr-arabic"
+arch = "any"
+role = "model"
+dest = "ocr/arabic/inference.onnx"
+source_url = ""
+sha256 = ""
+bytes = 0
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec"
+provenance = "Paddle-format upstream; ONNX by paddle2onnx offline with hash-pinned tooling (review defect 15). Pending"
+produced_by = "tools/ml/export-paddle.py"
+
+[[file]]
+id = "ppocrv5-arabic-rec-config"
+profile = "ocr-arabic"
+arch = "any"
+role = "config"
+dest = "ocr/arabic/inference.yml"
+source_url = "https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec/resolve/33d91636a65dca87f5562cc48860332ae367ee1b/inference.yml"
+sha256 = "21368419e6c016c31db55d316d59e11c128e1913e6e6fe10287084710043d3a6"
+bytes = 6165
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec"
+provenance = "Model parameters (and, for recognition, the character dictionary)"
+
+# ---- export-paddle -----------------------------------------------------------
+[[file]]
+id = "ppocrv5-arabic-rec-src-json"
+profile = "export-paddle"
+arch = "any"
+role = "export-input"
+dest = "paddle/ppocrv5-arabic-rec/inference.json"
+source_url = "https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec/resolve/33d91636a65dca87f5562cc48860332ae367ee1b/inference.json"
+sha256 = "d43832804d89c0e18d59f8446a3babd0ef60c44bc335efddac3176caf71d50af"
+bytes = 217712
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec"
+provenance = "Paddle inference program and parameters, input to paddle2onnx"
+
+[[file]]
+id = "ppocrv5-arabic-rec-src-pdiparams"
+profile = "export-paddle"
+arch = "any"
+role = "export-input"
+dest = "paddle/ppocrv5-arabic-rec/inference.pdiparams"
+source_url = "https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec/resolve/33d91636a65dca87f5562cc48860332ae367ee1b/inference.pdiparams"
+sha256 = "4b4271fd1dd89a40b2056e1a42e58de7c0df2fdcf1a97ca9a8916d7ec45f9143"
+bytes = 7922839
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/arabic_PP-OCRv5_mobile_rec"
+provenance = "Paddle inference program and parameters, input to paddle2onnx"
+
+# ---- ocr-devanagari ----------------------------------------------------------
+[[file]]
+id = "ppocrv5-devanagari-rec"
+profile = "ocr-devanagari"
+arch = "any"
+role = "model"
+dest = "ocr/devanagari/inference.onnx"
+source_url = ""
+sha256 = ""
+bytes = 0
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec"
+provenance = "Paddle-format upstream; ONNX by paddle2onnx offline with hash-pinned tooling (review defect 15). Pending"
+produced_by = "tools/ml/export-paddle.py"
+
+[[file]]
+id = "ppocrv5-devanagari-rec-config"
+profile = "ocr-devanagari"
+arch = "any"
+role = "config"
+dest = "ocr/devanagari/inference.yml"
+source_url = "https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec/resolve/99dcce6d196bd4aaf268c7a5c72c3cc9f3ea4932/inference.yml"
+sha256 = "9bd172dd26440c8ce94d1cde5d5baea6aefdc7cf3c5c8492e0beedef656d4e54"
+bytes = 5027
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec"
+provenance = "Model parameters (and, for recognition, the character dictionary)"
+
+# ---- export-paddle -----------------------------------------------------------
+[[file]]
+id = "ppocrv5-devanagari-rec-src-json"
+profile = "export-paddle"
+arch = "any"
+role = "export-input"
+dest = "paddle/ppocrv5-devanagari-rec/inference.json"
+source_url = "https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec/resolve/99dcce6d196bd4aaf268c7a5c72c3cc9f3ea4932/inference.json"
+sha256 = "20d3b121184ec6b7de1705015022f4b22117990f6e5728a5d21c314bac9c1444"
+bytes = 217712
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec"
+provenance = "Paddle inference program and parameters, input to paddle2onnx"
+
+[[file]]
+id = "ppocrv5-devanagari-rec-src-pdiparams"
+profile = "export-paddle"
+arch = "any"
+role = "export-input"
+dest = "paddle/ppocrv5-devanagari-rec/inference.pdiparams"
+source_url = "https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec/resolve/99dcce6d196bd4aaf268c7a5c72c3cc9f3ea4932/inference.pdiparams"
+sha256 = "719be7d20bfe9530e2deae324c999e9911087496bce5e70846767c448d023a01"
+bytes = 7836203
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/devanagari_PP-OCRv5_mobile_rec"
+provenance = "Paddle inference program and parameters, input to paddle2onnx"
+
+# ---- ocr-orientation ---------------------------------------------------------
+[[file]]
+id = "pplcnet-textline-ori"
+profile = "ocr-orientation"
+arch = "any"
+role = "model"
+dest = "ocr/textline-ori/inference.onnx"
+source_url = ""
+sha256 = ""
+bytes = 0
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori"
+provenance = "Paddle-format upstream; ONNX by paddle2onnx offline with hash-pinned tooling (review defect 15). Pending"
+produced_by = "tools/ml/export-paddle.py"
+
+[[file]]
+id = "pplcnet-textline-ori-config"
+profile = "ocr-orientation"
+arch = "any"
+role = "config"
+dest = "ocr/textline-ori/inference.yml"
+source_url = "https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori/resolve/cd237a44b0e359d4fe38310a416203cf7403faa5/inference.yml"
+sha256 = "8d5120d0e1a30a9df7ed46aa9119da3796ed066777089d1c1d705f132d5e90f9"
+bytes = 735
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori"
+provenance = "Model parameters (and, for recognition, the character dictionary)"
+
+# ---- export-paddle -----------------------------------------------------------
+[[file]]
+id = "pplcnet-textline-ori-src-json"
+profile = "export-paddle"
+arch = "any"
+role = "export-input"
+dest = "paddle/pplcnet-textline-ori/inference.json"
+source_url = "https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori/resolve/cd237a44b0e359d4fe38310a416203cf7403faa5/inference.json"
+sha256 = "b81929eeaff8e52db0fafb49c9fbfc5bc0572f81641fe0179cc52096323fb4d4"
+bytes = 104399
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori"
+provenance = "Paddle inference program and parameters, input to paddle2onnx"
+
+[[file]]
+id = "pplcnet-textline-ori-src-pdiparams"
+profile = "export-paddle"
+arch = "any"
+role = "export-input"
+dest = "paddle/pplcnet-textline-ori/inference.pdiparams"
+source_url = "https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori/resolve/cd237a44b0e359d4fe38310a416203cf7403faa5/inference.pdiparams"
+sha256 = "0de2bcf996cf553e2b848dd7b1769dafffc6917b1ccdf55c1d8efe7909fbf743"
+bytes = 6743918
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_textline_ori"
+provenance = "Paddle inference program and parameters, input to paddle2onnx"
+
+# ---- templates ---------------------------------------------------------------
+[[file]]
+id = "e5-small"
+profile = "templates"
+arch = "any"
+role = "model"
+dest = "templates/e5-small/model.onnx"
+source_url = "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/onnx/model.onnx"
+sha256 = "ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665"
+bytes = 470268510
+licence = "MIT"
+licence_url = "https://huggingface.co/intfloat/multilingual-e5-small/blob/614241f622f53c4eeff9890bdc4f31cfecc418b3/README.md"
+card_url = "https://huggingface.co/intfloat/multilingual-e5-small"
+provenance = "multilingual-e5-small, fp32 ONNX: the only int8 upstream file is AVX-512-VNNI-specific (review defect 10), so the CPU-portable fp32 file is pinned; a portable int8 export may replace it (piece X). Training data includes MS MARCO (non-commercial research licence): we rely on the weight licence (review defect 13, owner decision D13)"
+
+[[file]]
+id = "e5-small-tokenizer"
+profile = "templates"
+arch = "any"
+role = "tokenizer"
+dest = "templates/e5-small/tokenizer.json"
+source_url = "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/onnx/tokenizer.json"
+sha256 = "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+bytes = 17082730
+licence = "MIT"
+licence_url = "https://huggingface.co/intfloat/multilingual-e5-small/blob/614241f622f53c4eeff9890bdc4f31cfecc418b3/README.md"
+card_url = "https://huggingface.co/intfloat/multilingual-e5-small"
+provenance = "XLM-R sentencepiece tokenizer as tokenizer.json"
+
+# ---- templates-small ---------------------------------------------------------
+[[file]]
+id = "minilm-l6"
+profile = "templates-small"
+arch = "any"
+role = "model"
+dest = "templates/minilm-l6/model.onnx"
+source_url = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/onnx/model.onnx"
+sha256 = "6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452"
+bytes = 90405214
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2"
+provenance = "all-MiniLM-L6-v2 fp32 ONNX, English. Training data includes MS MARCO (non-commercial research licence): we rely on the weight licence (D13)"
+
+[[file]]
+id = "minilm-l6-tokenizer"
+profile = "templates-small"
+arch = "any"
+role = "tokenizer"
+dest = "templates/minilm-l6/tokenizer.json"
+source_url = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/tokenizer.json"
+sha256 = "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037"
+bytes = 466247
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2"
+provenance = "WordPiece tokenizer"
+
+# ---- personal_data -----------------------------------------------------------
+[[file]]
+id = "gliner-pii-base"
+profile = "personal_data"
+arch = "any"
+role = "model"
+dest = "personal_data/gliner-pii-base/model.onnx"
+source_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0/resolve/61726e0ad791dcab3e29339bbec3ad42ded65641/onnx/model_quint8.onnx"
+sha256 = "0514c8fd86d0513ce5351a3267f132b57d5bcd8f99a90d43cde1228092881d19"
+bytes = 196757174
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0"
+provenance = "GLiNER-PII base v1.0, official uint8 ONNX. Encoder microsoft/deberta-v3-small (MIT), English vocabulary: English-only despite the card's tag (review defect 7). Training data undisclosed; the card names only an evaluation set. max_len 2048 per its gliner_config.json (D13)"
+
+[[file]]
+id = "gliner-pii-base-tokenizer"
+profile = "personal_data"
+arch = "any"
+role = "tokenizer"
+dest = "personal_data/gliner-pii-base/tokenizer.json"
+source_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0/resolve/61726e0ad791dcab3e29339bbec3ad42ded65641/tokenizer.json"
+sha256 = "ee028763434d18611c1c36356ea1d050e90a9fa94ede57fac48b39f85f818ad1"
+bytes = 8649232
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0"
+provenance = "DeBERTa-v3 tokenizer with GLiNER's added tokens"
+
+[[file]]
+id = "gliner-pii-base-config"
+profile = "personal_data"
+arch = "any"
+role = "config"
+dest = "personal_data/gliner-pii-base/gliner_config.json"
+source_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0/resolve/61726e0ad791dcab3e29339bbec3ad42ded65641/gliner_config.json"
+sha256 = "e33d3da38e0d369fa7574668d3798ca6c7d2b23cba7d628507112eeb426aaccb"
+bytes = 3902
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0"
+provenance = "Span width, max_len, class token ids"
+
+# ---- extraction --------------------------------------------------------------
+[[file]]
+id = "gliner-multi"
+profile = "extraction"
+arch = "any"
+role = "model"
+dest = "extraction/gliner-multi/model.onnx"
+source_url = ""
+sha256 = ""
+bytes = 0
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/urchade/gliner_multi-v2.1"
+provenance = "GLiNER v2.1 (Apache-2.0; v0 and v1 are CC-BY-NC-4.0 and never used). Training data: LLM-annotated Pile-derived urchade/pile-mistral-v0.1 (D13); int8 export of model.safetensors with the gliner library, offline (piece X); size unverified, est. 0.6-0.8 GB (review defect 6). Pending"
+produced_by = "tools/ml/export-gliner.py"
+
+[[file]]
+id = "gliner-multi-tokenizer"
+profile = "extraction"
+arch = "any"
+role = "tokenizer"
+dest = "extraction/gliner-multi/tokenizer.json"
+source_url = ""
+sha256 = ""
+bytes = 0
+licence = "MIT"
+licence_url = "https://huggingface.co/microsoft/mdeberta-v3-base"
+card_url = "https://huggingface.co/urchade/gliner_multi-v2.1"
+provenance = "tokenizer.json written by the export from the base encoder's spm.model. Pending"
+produced_by = "tools/ml/export-gliner.py"
+
+[[file]]
+id = "gliner-multi-config"
+profile = "extraction"
+arch = "any"
+role = "config"
+dest = "extraction/gliner-multi/gliner_config.json"
+source_url = "https://huggingface.co/urchade/gliner_multi-v2.1/resolve/443d26d654e0324125a96bebd8e796c14ff2efe6/gliner_config.json"
+sha256 = "e25f61d91620df84aae8076811ee592e926e94d341b82e7bc1be359718f83017"
+bytes = 477
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/urchade/gliner_multi-v2.1"
+provenance = "max_len 384, max_width 12, span_mode markerV0"
+
+# ---- extraction-en -----------------------------------------------------------
+[[file]]
+id = "gliner-small"
+profile = "extraction-en"
+arch = "any"
+role = "model"
+dest = "extraction/gliner-small/model.onnx"
+source_url = ""
+sha256 = ""
+bytes = 0
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/urchade/gliner_small-v2.1"
+provenance = "GLiNER v2.1 (Apache-2.0; v0 and v1 are CC-BY-NC-4.0 and never used). Training data: LLM-annotated Pile-derived urchade/pile-mistral-v0.1 (D13); int8 export of pytorch_model.bin (pickle: torch.load weights_only=True, network off; review defect 9). Pending"
+produced_by = "tools/ml/export-gliner.py"
+
+[[file]]
+id = "gliner-small-tokenizer"
+profile = "extraction-en"
+arch = "any"
+role = "tokenizer"
+dest = "extraction/gliner-small/tokenizer.json"
+source_url = ""
+sha256 = ""
+bytes = 0
+licence = "MIT"
+licence_url = "https://huggingface.co/microsoft/deberta-v3-small"
+card_url = "https://huggingface.co/urchade/gliner_small-v2.1"
+provenance = "tokenizer.json written by the export from the base encoder's spm.model. Pending"
+produced_by = "tools/ml/export-gliner.py"
+
+[[file]]
+id = "gliner-small-config"
+profile = "extraction-en"
+arch = "any"
+role = "config"
+dest = "extraction/gliner-small/gliner_config.json"
+source_url = "https://huggingface.co/urchade/gliner_small-v2.1/resolve/4e091416cf7c3481db542c2a3d26156916f3a47f/gliner_config.json"
+sha256 = "eb963bd7182a1eaed4d170a87348ab62de6fc4eb30cfa7130c80846fee43d0ac"
+bytes = 477
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/urchade/gliner_small-v2.1"
+provenance = "max_len 384, max_width 12, span_mode markerV0"
+
+# ---- export-gliner-multi -----------------------------------------------------
+[[file]]
+id = "gliner-multi-src"
+profile = "export-gliner-multi"
+arch = "any"
+role = "export-input"
+dest = "gliner-multi/model.safetensors"
+source_url = "https://huggingface.co/urchade/gliner_multi-v2.1/resolve/443d26d654e0324125a96bebd8e796c14ff2efe6/model.safetensors"
+sha256 = "2100142f31627531497850659dcb3821c99d5e71c08a8e01a98e4b11ef32a199"
+bytes = 1155830112
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/urchade/gliner_multi-v2.1"
+provenance = "GLiNER v2.1 (Apache-2.0; v0 and v1 are CC-BY-NC-4.0 and never used). Training data: LLM-annotated Pile-derived urchade/pile-mistral-v0.1 (D13); safetensors (no pickle), 289M parameters, fp32"
+
+[[file]]
+id = "gliner-multi-src-config"
+profile = "export-gliner-multi"
+arch = "any"
+role = "export-input"
+dest = "gliner-multi/gliner_config.json"
+source_url = "https://huggingface.co/urchade/gliner_multi-v2.1/resolve/443d26d654e0324125a96bebd8e796c14ff2efe6/gliner_config.json"
+sha256 = "e25f61d91620df84aae8076811ee592e926e94d341b82e7bc1be359718f83017"
+bytes = 477
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/urchade/gliner_multi-v2.1"
+provenance = "GLiNER configuration"
+
+[[file]]
+id = "mdeberta-v3-base-spm"
+profile = "export-gliner-multi"
+arch = "any"
+role = "export-input"
+dest = "mdeberta-v3-base/spm.model"
+source_url = "https://huggingface.co/microsoft/mdeberta-v3-base/resolve/a0484667b22365f84929a935b5e50a51f71f159d/spm.model"
+sha256 = "13c8d666d62a7bc4ac8f040aab68e942c861f93303156cc28f5c7e885d86d6e3"
+bytes = 4305025
+licence = "MIT"
+licence_url = "https://huggingface.co/microsoft/mdeberta-v3-base"
+card_url = "https://huggingface.co/microsoft/mdeberta-v3-base"
+provenance = "Base encoder files the gliner export loads (weights not needed)"
+
+[[file]]
+id = "mdeberta-v3-base-config"
+profile = "export-gliner-multi"
+arch = "any"
+role = "export-input"
+dest = "mdeberta-v3-base/config.json"
+source_url = "https://huggingface.co/microsoft/mdeberta-v3-base/resolve/a0484667b22365f84929a935b5e50a51f71f159d/config.json"
+sha256 = "bcffcd343dc5efa5ef2d5a58d2b405eed108f01cc45b48d0a907b333ec41801f"
+bytes = 579
+licence = "MIT"
+licence_url = "https://huggingface.co/microsoft/mdeberta-v3-base"
+card_url = "https://huggingface.co/microsoft/mdeberta-v3-base"
+provenance = "Base encoder files the gliner export loads (weights not needed)"
+
+[[file]]
+id = "mdeberta-v3-base-tokenizer-config"
+profile = "export-gliner-multi"
+arch = "any"
+role = "export-input"
+dest = "mdeberta-v3-base/tokenizer_config.json"
+source_url = "https://huggingface.co/microsoft/mdeberta-v3-base/resolve/a0484667b22365f84929a935b5e50a51f71f159d/tokenizer_config.json"
+sha256 = "3f3978e0c036f2c2588cac34a6047cbb0af0b0dc1814254e291028529805496d"
+bytes = 52
+licence = "MIT"
+licence_url = "https://huggingface.co/microsoft/mdeberta-v3-base"
+card_url = "https://huggingface.co/microsoft/mdeberta-v3-base"
+provenance = "Base encoder files the gliner export loads (weights not needed)"
+
+# ---- export-gliner-small -----------------------------------------------------
+[[file]]
+id = "gliner-small-src"
+profile = "export-gliner-small"
+arch = "any"
+role = "export-input"
+dest = "gliner-small/pytorch_model.bin"
+source_url = "https://huggingface.co/urchade/gliner_small-v2.1/resolve/4e091416cf7c3481db542c2a3d26156916f3a47f/pytorch_model.bin"
+sha256 = "1d4e83e4e4ae4ae0a4fbc81a32ee6de480fb341650d73e808088bb2800312de4"
+bytes = 610652234
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/urchade/gliner_small-v2.1"
+provenance = "GLiNER v2.1 (Apache-2.0; v0 and v1 are CC-BY-NC-4.0 and never used). Training data: LLM-annotated Pile-derived urchade/pile-mistral-v0.1 (D13); pickle only upstream: load with torch.load(weights_only=True) in a network-off sandbox"
+
+[[file]]
+id = "gliner-small-src-config"
+profile = "export-gliner-small"
+arch = "any"
+role = "export-input"
+dest = "gliner-small/gliner_config.json"
+source_url = "https://huggingface.co/urchade/gliner_small-v2.1/resolve/4e091416cf7c3481db542c2a3d26156916f3a47f/gliner_config.json"
+sha256 = "eb963bd7182a1eaed4d170a87348ab62de6fc4eb30cfa7130c80846fee43d0ac"
+bytes = 477
+licence = "Apache-2.0"
+licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
+card_url = "https://huggingface.co/urchade/gliner_small-v2.1"
+provenance = "GLiNER configuration"
+
+[[file]]
+id = "deberta-v3-small-spm"
+profile = "export-gliner-small"
+arch = "any"
+role = "export-input"
+dest = "deberta-v3-small/spm.model"
+source_url = "https://huggingface.co/microsoft/deberta-v3-small/resolve/a36c739020e01763fe789b4b85e2df55d6180012/spm.model"
+sha256 = "c679fbf93643d19aab7ee10c0b99e460bdbc02fedf34b92b05af343b4af586fd"
+bytes = 2464616
+licence = "MIT"
+licence_url = "https://huggingface.co/microsoft/deberta-v3-small"
+card_url = "https://huggingface.co/microsoft/deberta-v3-small"
+provenance = "Base encoder files the gliner export loads (weights not needed)"
+
+[[file]]
+id = "deberta-v3-small-config"
+profile = "export-gliner-small"
+arch = "any"
+role = "export-input"
+dest = "deberta-v3-small/config.json"
+source_url = "https://huggingface.co/microsoft/deberta-v3-small/resolve/a36c739020e01763fe789b4b85e2df55d6180012/config.json"
+sha256 = "b0bb1caf90a50aa67d1085130508dfbf8646ac5a11928305e280b07a36e100ae"
+bytes = 578
+licence = "MIT"
+licence_url = "https://huggingface.co/microsoft/deberta-v3-small"
+card_url = "https://huggingface.co/microsoft/deberta-v3-small"
+provenance = "Base encoder files the gliner export loads (weights not needed)"
+
+[[file]]
+id = "deberta-v3-small-tokenizer-config"
+profile = "export-gliner-small"
+arch = "any"
+role = "export-input"
+dest = "deberta-v3-small/tokenizer_config.json"
+source_url = "https://huggingface.co/microsoft/deberta-v3-small/resolve/a36c739020e01763fe789b4b85e2df55d6180012/tokenizer_config.json"
+sha256 = "3f3978e0c036f2c2588cac34a6047cbb0af0b0dc1814254e291028529805496d"
+bytes = 52
+licence = "MIT"
+licence_url = "https://huggingface.co/microsoft/deberta-v3-small"
+card_url = "https://huggingface.co/microsoft/deberta-v3-small"
+provenance = "Base encoder files the gliner export loads (weights not needed)"

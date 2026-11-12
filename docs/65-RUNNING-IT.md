@@ -34,6 +34,7 @@ Ports bind to `127.0.0.1` only: `OPENSEAL_HTTP_PORT` (default 8080) and `OPENSEA
 | `tsa` | `deploy/devtools/Dockerfile` | A development RFC 3161 time-stamping authority (`openssl ts -reply`) |
 | `server` | `deploy/Dockerfile` target `server` (distroless, `nonroot`) | The API, the ceremony and the web app (`webapp/`) on port 8080 |
 | `worker` | `deploy/Dockerfile` target `worker` (distroless, `nonroot`) | Email through Mailpit, sealing through keyd and the TSA, webhooks |
+| `modeld` (profile `ml` only) | `deploy/Dockerfile` target `modeld` (distroless, `nonroot`) | Pretrained models, on an internal network; see §Pretrained models. Not built yet |
 
 Every image is pinned by digest (docs/04 rule 31). **This stack is for evaluation and development only:** its keys are
 generated on the machine, its CA is trusted by nothing else, its seals are development seals, and the server sends
@@ -52,6 +53,52 @@ OPENSEAL_E2E_BASE_URL=http://localhost:8080 OPENSEAL_E2E_EMAIL=e2e@openseal.test
 cd ../.. && docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
 target/tools-venv/bin/python tools/verify-sealed.py target/e2e-sealed     # pyHanko over the sealed PDF and certificate
 ```
+
+## Pretrained models (optional, Compose profile `ml`)
+
+**Status:** the bundle tooling is built and checked (`ML-01`); the daemon `casual-sign-modeld` is not yet in the
+workspace, so the `modeld` image does not build yet, and the worker does not call it (ADR-029, docs/33).
+
+Assistive features (OCR of scanned pages, template matching, personal-data highlights) run in a separate process,
+`modeld`. It holds no secrets other than its own TLS identity: it never mounts the shared `secrets` volume, only its
+own `modeld-secrets`, into which `pki` writes modeld's certificate chain and key, the root certificate and its allow
+list (the worker's certificate), nothing else. `python3 -I tools/ml/check-modeld-isolation.py` checks the Compose
+mounts and what `dev-pki` writes. It sits only on the Compose network `ml`, which is
+`internal: true` and so has no route out. Its root filesystem is read-only, it has a 4 GiB memory limit and a limit
+of 256 processes, core dumps are off, and every capability is dropped. All of it is off unless the profile is asked
+for: `docker compose --profile ml up -d --build`.
+
+The weights and the ONNX Runtime library are fetched once, while the image builds, by `tools/ml/fetch-models.py`.
+Every file is pinned in `tools/ml/models.toml` by source revision, SHA-256 and size. The build fails on any mismatch,
+and on any licence that is not on deny.toml's allow list. Files are baked into the image read-only (`0444`, owned
+by root), and modeld hashes them again at start. The one licence exception is described below. `OPENSEAL_ML_PROFILES` chooses the profiles (the default is
+`ocr templates personal_data`); `runtime` is always added.
+
+| Profile | What | Size |
+| --- | --- | ---: |
+| `runtime` | ONNX Runtime 1.28.3, CPU (MIT, bundling MPL-2.0 Eigen and BSL-1.0 Boost), with its `LICENSE` and `ThirdPartyNotices.txt` | 24.6 MB |
+| `ocr` | PP-OCRv6 small detection and recognition (Apache-2.0) | 31.2 MB |
+| `templates` | multilingual-e5-small, fp32 (MIT) | 487.4 MB |
+| `templates-small` | all-MiniLM-L6-v2, fp32, English (Apache-2.0) | 90.9 MB |
+| `personal_data` | knowledgator GLiNER-PII base, uint8, English (Apache-2.0) | 205.4 MB |
+| `extraction`, `extraction-en`, `ocr-arabic`, `ocr-devanagari`, `ocr-orientation` | Pending: built by offline exports, not yet pinned; asking for them fails | — |
+
+The default bundle is 748.6 MB. Caps are 1 GiB per file and 2 GiB per bundle.
+
+**Air-gapped hosts.** On a connected machine, run
+`python3 -I tools/ml/fetch-models.py --profile ocr --profile templates --arch x86_64 --dest DIR`. Copy `DIR` across,
+check it there with `python3 -I tools/ml/fetch-models.py --verify DIR`, and mount it read-only at
+`/opt/openseal/models`. `--verify` re-hashes every file against the manifest, and refuses a symlink, a file the bundle
+does not list, and a bundle missing any manifest file of the profiles it names; modeld checks the same again at start.
+
+**Licence note.** The ONNX Runtime binary is MIT, and bundles third-party code listed in its `ThirdPartyNotices.txt`,
+including Eigen (MPL-2.0) and Boost (BSL-1.0). Neither licence is on the allow list. Owner instruction 32 allows them
+inside the unmodified ONNX Runtime library in the modeld image only. `models.toml` records this as
+`licence = "MIT AND MPL-2.0 AND BSL-1.0"` with `licence_exception = "owner-instruction-32"` on the two library
+entries, and `fetch-models.py` honours that exception for those entry ids alone, and only in a bundle that also holds
+`ThirdPartyNotices.txt` from the same archive. The image carries the notices in `/usr/share/doc/openseal-modeld/`
+(`NOTICE.txt`, which points to the Eigen revision's source; `ThirdPartyNotices.txt`; `ONNXRUNTIME-LICENSE`), and
+beside the library in `/opt/openseal/models/runtime/`.
 
 ## Production checklist
 

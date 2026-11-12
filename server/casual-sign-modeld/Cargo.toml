@@ -1,0 +1,42 @@
+[package]
+name = "casual-sign-modeld"
+version = "0.0.1"
+description = "OpenSeal model daemon: pretrained ML models (OCR, page hashes, embeddings, entity and personal-data spans) served over mTLS, with no secrets and no egress (ADR-029, docs/33, ML-01, ML-09)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# ADR-029 review defect 4: everything that runs a model (ONNX Runtime through `ort`,
+# `oar-ocr`, `hayro`, `tokenizers`, `image_hasher`) belongs to the daemon, behind the
+# `server` feature. A caller (the worker) depends on this crate with
+# `default-features = false` and links only the client and the wire protocol, so no
+# inference runtime and no hostile-raster decoder sits next to the worker's secrets.
+# tests/feature_gate.rs proves the client-only tree holds none of them.
+[features]
+default = ["server"]
+# The daemon: bundle verification at start, the op log, the op handlers. Inference
+# dependencies are added here as `dep:` entries by the pieces that need them.
+server = []
+
+[[bin]]
+name = "casual-sign-modeld"
+path = "src/main.rs"
+required-features = ["server"]
+
+[dependencies]
+# SHA-256 (bundle files, certificate fingerprints) and the TLS provider (ADR-006: hosts
+# use aws-lc-rs). Already in the tree through keyd.
+aws-lc-rs = "1.19.0"
+# mTLS between modeld and the worker, as keyd: TLS 1.3 only, the aws-lc-rs provider,
+# no process-wide default. Already in the tree.
+rustls = { version = "0.23.46", default-features = false, features = ["std", "aws_lc_rs", "logging"] }
+rustls-pki-types = { version = "1.15.1", features = ["std"] }
+
+[dev-dependencies]
+# Throwaway TLS PKI for the mTLS tests (as keyd's tests).
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
+
+[lints]
+workspace = true
