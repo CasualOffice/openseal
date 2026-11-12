@@ -309,7 +309,7 @@ export function insightsSection(ctx, env) {
 /// or "unchanged": no hash is recomputed in the page), the chain head, the document
 /// fingerprint when the server recorded one, and the certificate and Verify for a
 /// completed agreement.
-export function evidenceSection(ctx, env, audit) {
+export function evidenceSection(ctx, env, audit, { certificate = true } = {}) {
   const wrap = h("div", { class: "os-evid", attrs: { "data-testid": "evidence" } });
   const links = auditLinks(audit);
   if (!links.n) wrap.append(h("p", { class: "os-muted os-insp__none", text: t("evidence.none") }));
@@ -333,7 +333,7 @@ export function evidenceSection(ctx, env, audit) {
       h("code", { class: "os-evid__hash", attrs: { "data-testid": "evidence-fingerprint" }, text: groupHex(fp) })));
   }
   const acts = h("div", { class: "os-evid__actions" });
-  if (hasCertificate(ctx, env.status)) acts.append(button(t("evidence.certificate"), { icon: "file-check", size: "sm", variant: "subtle", onClick: (ev) => busy(ev.currentTarget, async () => { try { await downloadCertificate(ctx, env.id); } catch (err) { if (!ctx.failed(err)) toastError(err); } }) }));
+  if (certificate && hasCertificate(ctx, env.status)) acts.append(button(t("evidence.certificate"), { icon: "file-check", size: "sm", variant: "subtle", onClick: (ev) => busy(ev.currentTarget, async () => { try { await downloadCertificate(ctx, env.id); } catch (err) { if (!ctx.failed(err)) toastError(err); } }) }));
   if (env.status === "completed") {
     acts.append(h("a", { class: "os-btn os-btn--subtle os-btn--sm", href: "verify.html", target: "_blank", rel: "noopener", attrs: { "data-testid": "evidence-verify" } },
       icon("shield-check", { size: 16 }), h("span", { text: t("envelope.verify") }), h("span", { class: "os-sr-only", text: t("action.new-tab") })));

@@ -473,7 +473,7 @@
 /* Recipients in signing order. */
 .os-ordl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.875rem; }
 .os-ord { display: flex; gap: 0.75rem; align-items: flex-start; }
-.os-ord__badge { width: 1.5rem; height: 1.5rem; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: var(--os-fs-11); font-weight: 600; background: #f4f4f5; color: #71717a; }
+.os-ord__badge { width: 1.5rem; height: 1.5rem; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: var(--os-fs-11); font-weight: 600; background: #f4f4f5; color: var(--os-muted); }
 .os-ord__badge.is-done { background: var(--os-st-done-soft); color: var(--os-st-done); }
 .os-ord__badge.is-you { background: var(--os-accent-fill); color: var(--os-on-accent); }
 .os-ord__badge.is-wait { background: var(--os-st-wait-soft); color: var(--os-st-wait); box-shadow: 0 0 0 1.5px #f2c98f; }
@@ -538,9 +538,10 @@
 @media (max-width: 74.999em) {
   .os-insp {
     position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; width: min(23.5rem, 100%); box-shadow: var(--os-shadow-pop);
-    transform: translateX(105%); visibility: hidden; transition: transform var(--os-dur-slow) var(--os-ease-out), visibility 0s linear var(--os-dur-slow);
+    display: none;
   }
-  .os-agr.is-inspecting .os-insp { transform: none; visibility: visible; transition: transform var(--os-dur-slow) var(--os-ease-out); }
+  /* It slides in (os-slide on the element) each time it is shown; closed, it takes no room. */
+  .os-agr.is-inspecting .os-insp { display: flex; }
   .os-agr.is-inspecting .os-agr__scrim { display: block; position: absolute; inset: 0; z-index: 19; background: var(--os-overlay); animation: os-fade var(--os-dur-fast) var(--os-ease-state); }
   .os-insp__close { display: inline-flex !important; }
   .os-insp__head { padding-right: 3.25rem; }
@@ -562,7 +563,7 @@
 }
 @media (max-width: 47.999em) {
   .os-agr__head { flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem 1rem 0.5rem; }
-  .os-agr__head > .os-tabs--pill { order: 3; flex: 1 0 100%; margin: 0 -1rem; padding: 0 1rem; }
+  .os-agr__head > .os-tabs--pill { order: 3; flex: 1 1 100%; min-width: 0; margin: 0; padding: 0; }
   .os-agr__btnlabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .os-agr__new { padding: 0 0.5rem; }
   .os-agr__new > svg { display: inline; }
@@ -583,6 +584,9 @@
   .os-agr-cell--people, .os-agr-cell--progress { display: none; }
   .os-agr-group { top: var(--os-topbar-h); }
   .os-agr__searchrow, .os-agr__note, .os-agr__filters { padding-left: 1rem; padding-right: 1rem; }
+  .os-insp__actions .os-btn { height: 2.75rem; } .os-insp__actions .os-btn--icon { width: 2.75rem; }
+  .os-insp__tabset > .os-tabs .os-tab { height: 2.75rem; }
+  .os-agr__tools .os-btn--icon { width: 2.75rem; height: 2.75rem; }
 }
 
 /* ---- The envelope page in the same language (WEB-17) ------------------------------------ */

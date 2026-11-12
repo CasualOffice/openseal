@@ -419,7 +419,7 @@ export function mount(view, ctx, _match, params) {
       h("span", { class: "os-agr-cell os-agr-cell--people", attrs: { role: "gridcell" } }, env ? recipientAvatars(env) : null),
       h("span", { class: "os-agr-cell os-agr-cell--progress", attrs: { role: "gridcell" } }, env ? progressSegments(signingProgress(env), r.status) : null),
       h("span", { class: "os-agr-cell os-agr-cell--status", attrs: { role: "gridcell" } }, statusPillFor(r, env, s.mine),
-        n ? h("span", { class: "os-sugg-chip", attrs: { title: t("agreements.sugg-chip", { n }), "data-testid": "sugg-chip" } }, icon("os-sparkle", { size: 12 }), h("span", { attrs: { "aria-hidden": "true" }, text: String(n) }), h("span", { class: "os-sr-only", text: t("agreements.sugg-chip", { n }) })) : null),
+        n ? h("span", { class: "os-sugg-chip", attrs: { title: t("agreements.sugg-chip", { n }), "data-testid": "sugg-chip" } }, icon("os-sparkle", { size: 12 }), h("span", { class: "os-sugg-chip__n", attrs: { "aria-hidden": "true" }, text: String(n) }), h("span", { class: "os-sr-only", text: t("agreements.sugg-chip", { n }) })) : null),
       h("span", { class: "os-agr-cell os-agr-cell--when", attrs: { role: "gridcell" } }, whenEl(lastChange(r))));
     const row = h("div", {
       class: `os-agr-row${on ? " is-selected" : ""}${s.picked.has(r.id) ? " is-picked" : ""}`,

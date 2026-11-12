@@ -148,7 +148,7 @@ test("agreements: Insights reads suggestions from the model layer; a person save
   await signIn(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   const vendor = row(page, "Vendor services agreement");
-  await expect(vendor.getByTestId("sugg-chip")).toHaveText("3");
+  await expect(vendor.getByTestId("sugg-chip").locator(".os-sugg-chip__n")).toHaveText("3");
   await vendor.click();
   const insp = page.getByTestId("inspector");
   await insp.getByRole("tab", { name: /Insights/ }).click();
@@ -160,7 +160,7 @@ test("agreements: Insights reads suggestions from the model layer; a person save
   await expect(cards.filter({ hasText: "Payment terms" })).toContainText("Saved to agreement details");
   await cards.filter({ hasText: "Governing law" }).getByTestId("suggestion-dismiss").click();
   await expect(cards.filter({ hasText: "Governing law" })).toContainText("Dismissed");
-  await expect(vendor.getByTestId("sugg-chip")).toHaveText("1");
+  await expect(vendor.getByTestId("sugg-chip").locator(".os-sugg-chip__n")).toHaveText("1");
   const decided = await page.evaluate(() => Object.values(JSON.parse(sessionStorage.getItem("openseal.mock.v1")).ml.suggestions).flat().filter((x) => x.state !== "open").map((x) => [x.label, x.state]));
   expect(decided).toEqual(expect.arrayContaining([["Payment terms", "accepted"], ["Governing law", "dismissed"]]));
   // Personal data: one amber card; Review lists each to add to the redaction proposal.
@@ -183,8 +183,8 @@ test("agreements: a refused suggestion goes back as it was, with an error", asyn
   await insp.getByRole("tab", { name: /Insights/ }).click();
   const card = insp.getByTestId("suggestion").filter({ hasText: "Parties" });
   await expect(card).toBeVisible();
-  // Someone else decided it meanwhile: the server refuses (409) and the card rolls back.
-  await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); for (const list of Object.values(db.ml.suggestions)) for (const s of list) if (s.label === "Parties") s.state = "accepted"; sessionStorage.setItem(k, JSON.stringify(db)); });
+  // The server refuses the decision (here: the plan no longer has the feature, 403): the card goes back to open.
+  await page.evaluate(() => sessionStorage.setItem("openseal.mock.ml", "no-plan"));
   await card.getByTestId("suggestion-accept").click();
   await expect(page.locator(".os-toast--error").last()).toContainText("could not be saved");
   await expect(card.getByTestId("suggestion-accept")).toBeVisible();
@@ -451,20 +451,24 @@ test("an invited member sets a password from the emailed link, once", async ({ p
   await expect(page.getByRole("alert")).toContainText("expired or was already used");
 });
 
+// Seven envelopes: the six seeded plus the one another member sent the demo user, which
+// the mock adds when the Inbox is first asked for (Agreements asks for it since WEB-17).
 test("reports: a period, a colour per status, no stray border", async ({ page }) => {
   await signIn(page);
   await page.goto(app("#/reports"));
-  await expect(page.getByTestId("report-note")).toContainText("6 envelopes");
+  await expect(page.getByTestId("report-note")).toContainText("7 envelopes");
   const colours = await page.locator(".os-bars tbody .os-bar").evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
   expect(new Set(colours).size).toBe(colours.length);
   const last = page.locator(".os-bars tbody tr:last-child");
   for (const cell of [last.locator("th"), last.locator("td")]) expect(await cell.evaluate((e) => getComputedStyle(e).borderBottomWidth)).toBe("0px");
   await page.getByLabel("Period").selectOption("7");
-  await expect(page.getByTestId("report-note")).toContainText("6 envelopes");
-  await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); db.envelopes[0].created_at = "2020-01-01T00:00:00.000Z"; sessionStorage.setItem(k, JSON.stringify(db)); });
+  await expect(page.getByTestId("report-note")).toContainText("7 envelopes");
+  // Move one envelope out of the period. (The stored copy is what the page reloads from;
+  // it may or may not hold the Inbox envelope yet, so the count is read from it.)
+  const stored = await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); db.envelopes[0].created_at = "2020-01-01T00:00:00.000Z"; sessionStorage.setItem(k, JSON.stringify(db)); return db.envelopes.length; });
   await page.reload();
   await page.getByLabel("Period").selectOption("30");
-  await expect(page.getByTestId("report-note")).toContainText("5 envelopes");
+  await expect(page.getByTestId("report-note")).toContainText(`${stored - 1} envelopes`);
   await expectAccessible(page, "reports");
 });
 

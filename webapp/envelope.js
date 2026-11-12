@@ -158,7 +158,7 @@ export function mount(view, ctx, [rawId]) {
       live.push(s.destroy);
       side.append(h("section", { class: "os-card os-env__card", attrs: { "aria-label": t("inspector.tab.insights") } }, s.el));
     }
-    if (e.status !== "draft") side.append(sideCard(t("envelope.evidence"), "evidence-h", evidenceSection(ctx, e, audit), "evidence-card"));
+    if (e.status !== "draft") side.append(sideCard(t("envelope.evidence"), "evidence-h", evidenceSection(ctx, e, audit, { certificate: false }), "evidence-card"));
     const mainCol = h("div", { class: "os-env__main" }, summaryCard(e), docCard, auditSection(e, audit));
     body.append(...[back, head, endedCallout(e), h("div", { class: "os-env__grid" }, mainCol, side)].filter(Boolean));
   }
