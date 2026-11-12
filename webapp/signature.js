@@ -5,11 +5,16 @@
 // UX-06, after DocuSign's adopt dialog: the full name and the initials are adopted in
 // one step when both are wanted, previewed together in each style; a problem is said
 // beside the control (role alert), not in a toast.
+// WEB-18 (the approved canvas, Signer.dc.html and SignerPhone.dc.html): a modal dialog
+// with the mode as a segmented control, the styles as tiles (the two script faces the
+// flattener embeds, so the mark on screen is the face in the PDF), a hinted draw pad,
+// the consent line, and Cancel / Adopt and sign; on phones a bottom sheet with a drag
+// handle (drag it down to dismiss).
 
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { openPanel, button } from "./ui/index.js";
+import { openDialog, button } from "./ui/index.js";
 
 const W = 600;
 const H = 200;
@@ -49,20 +54,18 @@ export function adoptDialog({ mark = "signature", name = "", both = false }) {
 
   let leaveFull = () => {};
   const title = both ? (want === "signature" ? "adopt.title-both" : "adopt.title-both-initials") : want === "initials" ? "adopt.title-initials" : "adopt.title";
-  return openPanel({
-    id: "adopt",
-    width: 34,
-    min: 30,
-    max: 48,
+  return openDialog({
     title: t(title),
+    description: t("adopt.subtitle"),
     className: "os-adopt",
-    build(body) {
-      const tabs = h("div", { class: "os-tabs", attrs: { role: "tablist", "aria-label": t("adopt.how") } });
+    build(body, close) {
+      grabHandle(body, close);
+      const tabs = h("div", { class: "os-adopt__modes", attrs: { role: "tablist", "aria-label": t("adopt.how") } });
       const panels = {};
       const tabBtns = {};
       for (const m of ["type", "draw", "upload"]) {
-        const b = h("button", { type: "button", class: "os-tab", id: `adopt-tab-${m}`, attrs: { role: "tab", "aria-controls": `adopt-panel-${m}`, "aria-selected": String(m === mode), tabindex: m === mode ? "0" : "-1" } },
-          icon(m === "type" ? "type" : m === "draw" ? "pen-line" : "upload", { size: 16 }), h("span", { text: t(`adopt.${m}`) }));
+        const b = h("button", { type: "button", class: "os-adopt__mode", id: `adopt-tab-${m}`, attrs: { role: "tab", "aria-controls": `adopt-panel-${m}`, "aria-selected": String(m === mode), tabindex: m === mode ? "0" : "-1" } },
+          h("span", { text: t(`adopt.${m}`) }));
         b.addEventListener("click", () => select(m));
         b.addEventListener("keydown", (e) => {
           const order = ["type", "draw", "upload"];
@@ -76,7 +79,7 @@ export function adoptDialog({ mark = "signature", name = "", both = false }) {
         });
         tabBtns[m] = b;
         tabs.append(b);
-        panels[m] = h("div", { class: "os-tabpanel", id: `adopt-panel-${m}`, attrs: { role: "tabpanel", "aria-labelledby": `adopt-tab-${m}` }, hidden: m !== mode });
+        panels[m] = h("div", { class: `os-tabpanel os-adopt__panel os-adopt__panel--${m}`, id: `adopt-panel-${m}`, attrs: { role: "tabpanel", "aria-labelledby": `adopt-tab-${m}` }, hidden: m !== mode });
       }
       function select(m) {
         mode = m;
@@ -87,15 +90,18 @@ export function adoptDialog({ mark = "signature", name = "", both = false }) {
           tabBtns[k].tabIndex = k === m ? 0 : -1;
         }
         if (m === "draw") for (const p of Object.values(pads)) p.redraw();
+        if (m === "type") requestAnimationFrame(() => fitSamples(panels.type));
       }
 
       // Type: the name and the initials, previewed together in each style.
       const inputs = {};
+      const inputRow = h("div", { class: "os-adopt__inputs" });
+      panels.type.append(inputRow);
       for (const [i, m] of marks.entries()) {
         const id = m === "initials" ? "adopt-initials" : "adopt-name";
         inputs[m] = h("input", { id, class: "os-input", value: typed[m], maxLength: m === "initials" ? 8 : 80, autocomplete: m === "initials" ? "off" : "name", attrs: { ...(i === 0 ? { autofocus: true } : {}), "aria-describedby": "adopt-err" } });
         inputs[m].addEventListener("input", () => { typed[m] = inputs[m].value; say(null); renderPreviews(); });
-        panels.type.append(h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: t(m === "initials" ? "adopt.your-initials" : "adopt.your-name") }), inputs[m]));
+        inputRow.append(h("div", { class: `os-fieldrow os-adopt__input--${m}` }, h("label", { class: "os-label", attrs: { for: id }, text: t(m === "initials" ? "adopt.your-initials" : "adopt.your-name") }), inputs[m]));
       }
       if (marks.length > 1) panels.type.classList.add("os-adopt__type--both");
       const previews = h("div", { class: "os-adopt__fonts", attrs: { role: "radiogroup", "aria-label": t("adopt.style") } });
@@ -107,12 +113,12 @@ export function adoptDialog({ mark = "signature", name = "", both = false }) {
           const samples = marks.map((m) => h("span", { class: `os-adopt__sample os-adopt__sample--${m} os-script-${i + 1}`, text: typed[m] || " " }));
           return h("label", { class: "os-adopt__font", attrs: { for: id } }, radio, ...samples, h("span", { class: "os-sr-only", text: t("adopt.style-n", { name: label }) }));
         }));
+        requestAnimationFrame(() => fitSamples(previews));
       }
       renderPreviews();
       panels.type.append(previews);
 
       // Draw: a pad per mark, 3:1, each with undo and clear and a full-screen mode.
-      panels.draw.append(h("p", { class: "os-muted os-small", text: t("adopt.draw-help") }));
       for (const m of marks) {
         pads[m] = drawPad(m, () => say(null));
         if (marks.length > 1) panels.draw.append(h("p", { class: "os-label", text: t(m === "initials" ? "adopt.your-initials" : "adopt.your-name") }));
@@ -151,10 +157,10 @@ export function adoptDialog({ mark = "signature", name = "", both = false }) {
 
       err = h("p", { id: "adopt-err", class: "os-field-error", attrs: { role: "alert", "data-testid": "adopt-err" } });
       body.append(tabs, panels.type, panels.draw, panels.upload, err,
-        h("p", { class: "os-muted os-small", text: t("adopt.legal") }));
+        h("p", { class: "os-adopt__legal", text: t("adopt.legal") }));
     },
     actions: [
-      { label: t("action.cancel"), value: null },
+      { label: t("action.cancel"), value: null, variant: "ghost" },
       {
         label: t("adopt.adopt"),
         variant: "primary",
@@ -201,7 +207,10 @@ function drawPad(mark, onInk) {
       ctx.stroke();
     }
   };
-  const redraw = () => { g.clearRect(0, 0, W, H); paint(g); };
+  // WEB-18: the pad says how to draw until there is ink, over a dashed baseline.
+  const area = h("div", { class: "os-adopt__padarea" },
+    h("span", { class: "os-adopt__padhint", attrs: { "aria-hidden": "true" }, text: t("adopt.draw-help") }), canvas);
+  const redraw = () => { g.clearRect(0, 0, W, H); paint(g); area.classList.toggle("has-ink", strokes.length > 0); };
   let current = null;
   const wrap = h("div", { class: "os-adopt__padwrap" });
   const turned = () => wrap.classList.contains("is-full") && matchMedia("(orientation: portrait)").matches;
@@ -235,7 +244,7 @@ function drawPad(mark, onInk) {
   }
   fullBtn.addEventListener("click", () => setFull(true));
   doneBtn.addEventListener("click", () => setFull(false));
-  wrap.append(fullHint, canvas,
+  wrap.append(fullHint, area,
     h("div", { class: "os-actions os-adopt__padtools" },
       button(t("adopt.undo"), { icon: "undo-2", onClick: () => { strokes.pop(); redraw(); } }),
       button(t("adopt.clear"), { icon: "eraser", onClick: () => { strokes.length = 0; redraw(); } }),
@@ -283,4 +292,49 @@ async function cleanImage(file) {
   for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) d[i + 3] = 0;
   g.putImageData(img, 0, 0);
   return c;
+}
+
+/// The bottom sheet's drag handle (phones, the canvas's SignerPhone): put at the top of
+/// the dialog `body` will sit in once it is shown; dragging it down by more than a
+/// quarter of the sheet dismisses it, as a native sheet does. Decorative for assistive
+/// technology, which has the dialog's Close and Cancel.
+function grabHandle(body, close) {
+  const grab = h("span", { class: "os-adopt__grab", attrs: { "aria-hidden": "true", "data-testid": "adopt-grab" } });
+  queueMicrotask(() => body.parentElement?.prepend(grab));
+  grab.addEventListener("pointerdown", (e) => {
+    const sheet = body.parentElement;
+    if (!sheet) return;
+    e.preventDefault();
+    grab.setPointerCapture?.(e.pointerId);
+    const y0 = e.clientY;
+    const move = (ev) => sheet.style.setProperty("translate", `0 ${Math.max(0, ev.clientY - y0)}px`);
+    const up = (ev) => {
+      grab.removeEventListener("pointermove", move);
+      grab.removeEventListener("pointerup", up);
+      grab.removeEventListener("pointercancel", up);
+      const far = ev.type === "pointerup" && ev.clientY - y0 > sheet.offsetHeight / 4;
+      sheet.style.removeProperty("translate");
+      if (far) close(null);
+    };
+    grab.addEventListener("pointermove", move);
+    grab.addEventListener("pointerup", up);
+    grab.addEventListener("pointercancel", up);
+  });
+}
+
+
+/// Shrink each style tile's sample until it fits its tile (WEB-18: a signature preview
+/// is never cut off). The font size is set through the CSSOM; 12 px is the floor.
+function fitSamples(root) {
+  for (const el of root.querySelectorAll(".os-adopt__sample")) {
+    el.style.removeProperty("font-size");
+    const room = el.parentElement?.clientWidth - 24;
+    if (!(room > 0)) continue;
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollWidth > room && size > 12) {
+      size -= 1;
+      el.style.setProperty("font-size", `${(size / rem).toFixed(3)}rem`);
+    }
+  }
 }

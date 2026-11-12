@@ -54,16 +54,16 @@ for (const width of [1024, 1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await toDocuments(page);
     await expect.poll(async () => { const w = await widths(page, "signer-doc"); return w.scroll - w.client; }, { message: "signing: no horizontal overflow" }).toBeLessThanOrEqual(0);
-    // The Start flag sits in the margin, fully inside the scroller.
-    const tag = await page.getByTestId("guide-tag").boundingBox();
+    // WEB-18: the page is never wider than the canvas's page, and centred.
+    const pg = await page.locator(".os-page").first().boundingBox();
     const sc = await page.getByTestId("signer-doc").boundingBox();
-    expect(tag.x).toBeGreaterThanOrEqual(sc.x);
+    expect(Math.abs(pg.x - sc.x - (sc.x + sc.width - pg.x - pg.width))).toBeLessThanOrEqual(24);
     // To review: fill the two required fields.
     await page.getByRole("textbox", { name: /Job title/ }).fill("Engineer");
     await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
     await page.getByRole("button", { name: /^Sign: Signature/ }).click();
     await adoptTyped(page);
-    await page.locator("#bar-finish").click();
+    await page.locator("#guide-finish").click();
     await expect(page.getByRole("heading", { name: "Review and finish" })).toBeVisible();
     await expect.poll(async () => { const w = await widths(page, "review-doc"); return w.scroll - w.client; }, { message: "review: no horizontal overflow" }).toBeLessThanOrEqual(0);
     if (width === 1440) await shot(page, "review-1440");
@@ -87,8 +87,13 @@ test("the consent card names the sender and the deadline, and opens the full dis
   // The sender is named beside the message and in Help too.
   await page.getByLabel("I agree to use electronic records and signatures.").check();
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByTestId("field-list")).toBeVisible();
-  await expect(page.getByTestId("panel-fieldlist")).toContainText("Demo Admin");
+  await expect(page.locator(".os-page canvas").first()).toBeVisible();
+  // WEB-18: the header says who asked; the field list (More) names them too.
+  await expect(page.getByTestId("ask-line")).toContainText("Demo Admin");
+  await page.locator("#more-btn").click();
+  await page.getByTestId("menu-fields").click();
+  await expect(page.getByTestId("sheet-fields")).toContainText("Demo Admin");
+  await page.keyboard.press("Escape");
   await page.locator("#more-btn").click();
   await page.getByTestId("menu-help").click();
   await expect(page.getByTestId("sheet-help")).toContainText("demo@openseal.test");
@@ -99,7 +104,9 @@ test("first arrival opens at the top of page 1", async ({ page }) => {
   await toDocuments(page);
   await page.waitForTimeout(300);
   expect(await page.getByTestId("signer-doc").evaluate((el) => el.scrollTop)).toBe(0);
-  await expect(page.getByTestId("guide-tag")).toBeVisible();
+  // The next field is ringed (WEB-18), the guide bar names it.
+  await expect(page.locator(".os-sfield.is-next")).toHaveCount(1);
+  await expect(page.locator("#guide-title")).toHaveText("Fill in Job title");
   await shot(page, "documents-1440");
 });
 
@@ -126,7 +133,9 @@ test("a signed field can be removed and changed, and the history records both", 
   await page.getByRole("button", { name: /^Signed: Signature/ }).click();
   await page.getByRole("menu", { name: "Signature" }).getByRole("menuitem", { name: "Change signature" }).click();
   const dlg = page.getByRole("dialog", { name: /Adopt your signature/ });
-  await dlg.getByRole("radio", { name: /Style Allura/ }).check({ force: true });
+  // The style tile is what a person chooses (WEB-18); its radio follows.
+  await dlg.locator("label", { has: page.getByRole("radio", { name: /Style Allura/ }) }).click();
+  await expect(dlg.getByRole("radio", { name: /Style Allura/ })).toBeChecked();
   await dlg.getByTestId("adopt-confirm").click();
   await expect(dlg).toBeHidden();
   await expect.poll(() => field.locator("img").getAttribute("src")).not.toBe(first);
@@ -189,12 +198,13 @@ test("a radio group is chosen in a popover on the field, saved on selection", as
   await expect(page.locator('[data-field="radio_group"]')).toHaveClass(/is-done/);
 });
 
-test("Finish reads as a secondary action until ready; required is not error-red", async ({ page }) => {
+test("Finish shows once nothing required is left; required is not error-red", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await toDocuments(page);
-  const fin = page.locator("#bar-finish");
-  await expect(fin).toHaveClass(/os-btn--secondary/);
-  expect(await fin.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  const fin = page.locator("#guide-finish");
+  // WEB-18 (the canvas): Start / Next until every required field is done, then Finish.
+  await expect(fin).toBeHidden();
+  await expect(page.locator("#guide-next")).toBeVisible();
   const req = page.locator(".os-sfield.is-required").first();
   // The danger colour as the browser writes it (rgb), against the required outline.
   const err = await page.evaluate(() => { const s = document.createElement("span"); s.style.color = "var(--os-danger)"; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; });
@@ -204,7 +214,9 @@ test("Finish reads as a secondary action until ready; required is not error-red"
   await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
   await page.getByRole("button", { name: /^Sign: Signature/ }).click();
   await adoptTyped(page);
-  await expect(fin).toHaveClass(/os-btn--primary/);
+  await expect(fin).toBeVisible();
+  await expect(fin).toHaveClass(/is-ready/);
+  await expect(page.locator("#guide-next")).toBeHidden();
 });
 
 test("finish later clears the progress; the done page links Verify and prints", async ({ page }) => {
@@ -221,12 +233,55 @@ test("finish later clears the progress; the done page links Verify and prints", 
   await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
   await page.getByRole("button", { name: /^Sign: Signature/ }).click();
   await adoptTyped(page);
-  await page.locator("#bar-finish").click();
+  await page.locator("#guide-finish").click();
   await page.getByTestId("review-finish").click();
   const done = page.getByTestId("sign-done");
   await expect(done.getByRole("link", { name: "Verify page" })).toHaveAttribute("href", "/verify.html");
   await expect(done.getByRole("button", { name: "Print" })).toBeVisible();
   await shot(page, "done-1440");
+});
+
+// WEB-18 review: nothing floats over a field, no tile cuts a signature off.
+test("Next brings a field above the floating guide bar; tiles show the whole name", async ({ page, isMobile }) => {
+  test.skip(isMobile, "the floating guide bar is the desktop layout; Tab is a keyboard path");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toDocuments(page);
+  await page.getByRole("textbox", { name: /Job title/ }).fill("Engineer");
+  await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
+  await expect(page.locator("#guide-progress")).toHaveText("1 of 2 required");
+  const sig = page.locator('[data-field="signature"]');
+  const isClear = async () => {
+    const f = await sig.boundingBox();
+    const g = await page.locator("#guide").boundingBox();
+    const z = await page.locator(".os-docbar").boundingBox();
+    const clear = (o) => f.x + f.width <= o.x || f.x >= o.x + o.width || f.y + f.height <= o.y;
+    return clear(g) && clear(z);
+  };
+  // The focused checkbox's label tab does not cover the Job title field above it.
+  await expect(page.locator('[data-field="checkbox"] input')).toBeFocused();
+  await expect.poll(async () => {
+    const tip = await page.locator('[data-field="checkbox"] .os-sfield__tip').boundingBox();
+    const job = await page.locator('[data-field="text"]').boundingBox();
+    return !tip || tip.y >= job.y + job.height || tip.y + tip.height <= job.y || tip.x >= job.x + job.width || tip.x + tip.width <= job.x;
+  }, { message: "the label tab covers no other field" }).toBe(true);
+  // The next field (the signature) is brought clear of the guide bar once it is next.
+  await expect.poll(isClear, { message: "next: clear of the guide bar and the zoom pill" }).toBe(true);
+  // Tabbing onto it (at the bottom of the view, where the bar floats) and Next alike.
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: /^Sign: Signature/ })).toBeFocused();
+  await expect.poll(isClear, { message: "tabbed to: clear of the guide bar and the zoom pill" }).toBe(true);
+  await page.getByTestId("signer-doc").evaluate((el) => { el.scrollTop = 0; });
+  await page.locator("#guide-next").click();
+  await expect(page.getByRole("button", { name: /^Sign: Signature/ })).toBeFocused();
+  await expect.poll(isClear, { message: "Next: clear of the guide bar and the zoom pill" }).toBe(true);
+  // No label tab is on show over the page until a field is hovered or focused.
+  await page.mouse.move(5, 300);
+  await page.locator("#guide-next").focus();
+  for (const tip of await page.locator(".os-sfield__tip").all()) await expect(tip).toHaveCSS("opacity", "0");
+  await page.getByRole("button", { name: /^Sign: Signature/ }).click();
+  const dlg = page.getByRole("dialog", { name: /Adopt your signature/ });
+  await dlg.getByLabel("Your full name").fill("Maximilian Alexander Featherstonehaugh");
+  await expect.poll(() => dlg.locator(".os-adopt__sample").evaluateAll((els) => els.every((el) => el.scrollWidth <= el.parentElement.clientWidth))).toBe(true);
 });
 
 test.describe("phone", () => {
@@ -243,6 +298,12 @@ test.describe("phone", () => {
     await adoptTyped(page);
     // Nothing is left to do, so there is no dead Next in the bottom bar.
     await expect(page.locator("#guide-next")).toBeHidden();
+    // WEB-18: the page fits the width again with a gutter; no pill sits on the page.
+    await expect(page.locator(".os-docbar")).toBeHidden();
+    await expect.poll(async () => {
+      const p = await page.locator(".os-page").first().boundingBox();
+      return p.x >= 8 && p.x + p.width <= 390 - 8;
+    }, { message: "the page is fitted with a gutter" }).toBe(true);
     await page.locator("#guide-finish").click();
     await expect(page.getByRole("heading", { name: "Review and finish" })).toBeAttached();
     const pages = await page.getByTestId("review-doc").boundingBox();

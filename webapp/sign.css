@@ -1,357 +1,570 @@
-/* The signing page's styles (UX-02 split of app.css; docs/47 §Design system): 16 px body,
- * 44 px targets (SC 2.5.5), the bar, the guide tag and bottom guide, signing fields, the
- * field list, review, done, and adopting a signature. Loaded after app.css by sign.html. */
+/* The signing page (WEB-18; docs/47 §As built: signing ceremony). The approved canvas
+ * (docs/assets/design-canvas/Signer.dc.html, SignerPhone.dc.html) is the spec: its
+ * inline styles and renderVals() strings give the sizes, colours, radii, shadows,
+ * spacing and motion below. Colours come from the --os-* tokens; the few the canvas
+ * draws that no token names (the guide bar's ink, the seal's gradient, the field tint,
+ * the signature ink) are local custom properties on .os-sign. Loaded after app.css.
+ * 44 px targets on phones (SC 2.5.5); every animation stops under reduced motion. */
 
-/* On phones the signing page's bottom bar holds the guide: toasts sit above it. */
-/* The signing page's toasts sit top centre, under its bar, never over the guide. */
-.os-sign .os-toasts { top: 4.75rem; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); }
-.os-statuschip { display: inline-flex; align-items: center; gap: 0.25rem; height: 1.75rem; padding: 0 0.625rem; border-radius: 62.4375rem; background: var(--os-surface); color: var(--os-muted); font-size: var(--os-fs-12); font-weight: 600; white-space: nowrap; }
-@media (max-width: 47.5em) {
-  .os-statuschip > span { position: absolute; width: 0.0625em; height: 0.0625em; overflow: hidden; clip: rect(0 0 0 0); }
-  .os-statuschip { padding: 0 0.375em; }
+/* Geist, the canvas's face, until the design foundation (WEB-17) serves it from
+ * tokens.css; the family name is this page's own, so the two never clash. */
+@font-face {
+  font-family: "OpenSeal Sign Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/ui/geist-1.3.1-variable.woff2") format("woff2");
 }
-.os-done__seal.is-stamping { animation: os-stamp 600ms var(--os-ease) both; }
+@font-face {
+  font-family: "OpenSeal Sign Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/ui/geist-mono-1.3.1-variable.woff2") format("woff2");
+}
 
-/* ---- Signing page (16 px body, 44 px targets: SC 2.5.5) ----------------------------
- * WEB-02 redesign, after DocuSign's signer view: a bar with the document's name,
- * progress, zoom, the field list and Finish; a yellow Start/Next tag in the left margin
- * beside the next required field; on phones the guide and Finish are a bottom bar. */
-.os-sign { --os-fs-body: var(--os-fs-16); min-height: 100vh; display: flex; flex-direction: column; background: var(--os-stage); }
-.os-sign__bar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: var(--os-s3); padding: var(--os-s2) var(--os-s6); background: var(--os-bg); border-bottom: 1px solid var(--os-border); min-height: 4rem; box-shadow: var(--os-shadow); }
-.os-sign__titles { flex: 1; min-width: 0; display: grid; }
-.os-sign__subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.os-sign__barprogress { font-size: var(--os-fs-14); color: var(--os-muted); }
-.os-sign__barprogress:empty { display: none; }
-.os-sign__tools { display: flex; align-items: center; gap: var(--os-s1); }
-.os-sign__barfinish.is-ready { animation: os-ready var(--os-dur-slow) var(--os-ease); }
-.os-sign__main { flex: 1; padding: var(--os-s6) var(--os-s2) 7.5rem; outline: none; }
-.os-sign__screen { animation: os-enter var(--os-dur) var(--os-ease); }
-.os-sign__card { width: min(30rem, 100%); margin: var(--os-s6) auto; padding: var(--os-s8) var(--os-s6); background: var(--os-bg); border-radius: var(--os-radius-lg); box-shadow: var(--os-shadow-md); display: grid; gap: var(--os-s2); }
-.os-sign__card > svg { color: var(--os-accent); }
-.os-sign__card .os-btn { width: 100%; margin-top: var(--os-s3); }
-.os-sign__card .os-stack .os-btn { margin-top: 0; }
-.os-sign__title { font-size: var(--os-fs-24); font-weight: 600; }
-.os-sign__list { margin: 0; padding-left: var(--os-s6); display: grid; gap: var(--os-s1); }
-.os-sign__message { width: min(60rem, 100%); margin: 0 auto var(--os-s4); padding: var(--os-s3) var(--os-s4); background: var(--os-bg); border-radius: var(--os-radius); border-left: 0.25rem solid var(--os-border-strong); overflow-wrap: anywhere; }
-.os-sign__stage { position: relative; width: min(68.75rem, 100%); margin: 0 auto; }
-.os-sign__pages { display: flex; flex-direction: column; align-items: center; gap: var(--os-s4); touch-action: pan-x pan-y; transform-origin: 50% 0; }
-/* The Start/Next tag: a yellow flag pointing at the next required field. */
-.os-guidetag {
-  position: absolute; left: 0; z-index: 4; transform: translateY(-50%); display: inline-flex; align-items: center;
-  height: 2.5rem; padding: 0 var(--os-s3) 0 var(--os-s4); border: 1px solid var(--os-tag-edge); border-right: 0; border-radius: 0.375rem 0 0 0.375rem;
-  background: var(--os-tag); color: var(--os-text); font-weight: 700; cursor: pointer; box-shadow: var(--os-shadow-md);
-  transition: top var(--os-dur-slow) var(--os-ease);
+.os-sign {
+  --os-sign-bg: var(--os-canvas);
+  --os-sign-wash: #fdf3f3;
+  --os-sign-paper: #fafaf9;
+  --os-sign-hair: rgba(24, 24, 27, .07);
+  --os-sign-ink: #1e3a8a;
+  --os-sign-guide: #18181b;
+  --os-sign-guide-ink: #ffffff;
+  --os-sign-guide-muted: rgba(255, 255, 255, .65);
+  --os-sign-ring: #f43f4e;
+  --os-sign-seal-hi: #e0434c;
+  --os-sign-seal-lo: #8e0b14;
+  --os-sign-field: color-mix(in srgb, var(--os-accent-fill) 4%, #ffffff);
+  --os-sign-field-edge: color-mix(in srgb, var(--os-accent-fill) 35%, transparent);
+  --os-sign-filled-edge: rgba(37, 99, 235, .25);
+  --os-sign-ease: cubic-bezier(.2, .8, .2, 1);
+  --os-sign-spring: cubic-bezier(.16, 1, .3, 1);
+  font-family: "OpenSeal Sign Geist", var(--os-font);
+  font-size: 0.875rem;
+  -webkit-font-smoothing: antialiased;
+  background: var(--os-sign-bg);
+  height: 100vh; height: 100dvh; min-height: 0; overflow: hidden;
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr);
 }
-.os-guidetag::after { content: ""; position: absolute; right: -1.25rem; top: -1px; border-style: solid; border-width: 1.25rem 0 1.25rem 1.25rem; border-color: transparent transparent transparent var(--os-tag-edge); }
-.os-guidetag::before { content: ""; position: absolute; right: -1.125rem; top: 0; z-index: 1; border-style: solid; border-width: 1.1875rem 0 1.1875rem 1.1875rem; border-color: transparent transparent transparent var(--os-tag); }
-.os-guidetag:focus-visible { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: 0.25rem; }
-.os-sign__guide {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; align-items: center; gap: var(--os-s2);
-  padding: var(--os-s3) var(--os-s4) calc(var(--os-s3) + env(safe-area-inset-bottom)); background: var(--os-bg); border-top: 1px solid var(--os-border); box-shadow: 0 -0.25rem 1rem rgba(0, 0, 0, .08);
+:root[data-theme="dark"] .os-sign { --os-sign-wash: color-mix(in srgb, var(--os-accent-fill) 14%, var(--os-sign-bg)); --os-sign-hair: rgba(255, 255, 255, .08); --os-sign-guide: #27272a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .os-sign { --os-sign-wash: color-mix(in srgb, var(--os-accent-fill) 14%, var(--os-sign-bg)); --os-sign-hair: rgba(255, 255, 255, .08); --os-sign-guide: #27272a; }
 }
-.os-sign__progress { flex: 1; font-weight: 600; }
-#guide-finish.is-ready { animation: os-ready var(--os-dur-slow) var(--os-ease); }
-@keyframes os-ready { 50% { transform: scale(1.04); } }
+.os-sign > .os-skip { position: absolute; }
+.os-sign > .os-mock-banner { grid-row: 1; }
+.os-sign > .os-sign__bar { grid-row: 2; }
+.os-sign > .os-sign__main { grid-row: 3; }
+.os-sign > .os-guide { grid-row: 4; }
+.os-sign button { font-family: inherit; }
+/* The page's toasts sit top centre under its header, never over the guide bar. */
+.os-sign .os-toasts { top: 4.5rem; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); }
+
+/* ---- Motion (the canvas's keyframes) ------------------------------------------------ */
+@keyframes os-sign-pop { from { opacity: 0; transform: translateY(0.75rem) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes os-sign-guide-in { from { opacity: 0; transform: translate(-50%, 0.75rem) scale(.98); } to { opacity: 1; transform: translateX(-50%); } }
+@keyframes os-sign-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes os-sign-out { to { opacity: 0; visibility: hidden; } }
+@keyframes os-sign-ink { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes os-sign-seal { 0% { opacity: 0; transform: scale(.6) rotate(-20deg); } 60% { opacity: 1; transform: scale(1.06) rotate(4deg); } 100% { transform: none; } }
+@keyframes os-sign-pulse { 0% { box-shadow: 0 0 0 0 rgba(192, 22, 34, .35); } 70% { box-shadow: 0 0 0 0.625rem rgba(192, 22, 34, 0); } 100% { box-shadow: 0 0 0 0 rgba(192, 22, 34, 0); } }
+@keyframes os-sign-rise { from { opacity: 0; transform: translateY(0.375rem); } to { opacity: 1; transform: none; } }
+@keyframes os-sign-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+@keyframes os-sign-orbit { to { transform: rotate(360deg); } }
+@keyframes os-sign-sheet { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes os-sign-lift { from { opacity: 0; transform: translateY(0.75rem); } to { opacity: 1; transform: none; } }
+@keyframes os-sign-flag { 0%, 100% { transform: none; } 20%, 60% { transform: scale(1.06); } }
+
+/* ---- Header -------------------------------------------------------------------------- */
+.os-sign__bar {
+  position: relative; z-index: 50; display: flex; align-items: center; gap: 0.875rem;
+  min-height: 3.5rem; padding: 0 1.25rem; background: var(--os-bg); box-shadow: 0 1px 0 var(--os-sign-hair);
+}
+.os-sign__org {
+  width: 2rem; height: 2rem; flex: none; border-radius: 0.5rem; background: var(--os-text); color: var(--os-bg);
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.75rem; letter-spacing: -0.02em;
+}
+.os-sign__org[hidden], .os-sign__mark[hidden] { display: none; }
+.os-sign__mark { width: 2rem; height: 2rem; flex: none; }
+.os-sign__titles { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.os-sign__subject, .os-sign__ask { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-sign__subject { font-weight: 600; }
+.os-sign__ask { font-size: 0.75rem; color: var(--os-muted); }
+.os-sign__subject:empty, .os-sign__ask:empty { display: none; }
+.os-sign__actions { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; flex: none; }
+.os-sign__chip {
+  display: inline-flex; align-items: center; gap: 0.375rem; height: 1.75rem; padding: 0 0.625rem; border-radius: 0.875rem;
+  background: var(--os-sign-bg); color: var(--os-muted); font-size: 0.75rem; white-space: nowrap;
+}
+.os-sign__chip[hidden] { display: none; }
+.os-sign__chip > svg { width: 0.8125rem; height: 0.8125rem; flex: none; }
+.os-sign__savechip { font-size: 0.75rem; color: var(--os-muted); white-space: nowrap; }
+.os-sign__savechip:empty { display: none; }
+.os-sign__ghost {
+  display: inline-flex; align-items: center; justify-content: center; height: 2rem; padding: 0 0.75rem; border: 0; border-radius: 0.4375rem;
+  background: transparent; color: inherit; font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; flex: none;
+  transition: transform 160ms var(--os-sign-ease), background 160ms var(--os-sign-ease);
+}
+.os-sign__ghost[hidden] { display: none; }
+.os-sign__ghost:hover { background: color-mix(in srgb, var(--os-text) 6%, transparent); }
+.os-sign__ghost:active { transform: scale(.97); }
+.os-sign__ghost:focus-visible, .os-guide__cta:focus-visible { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
+.os-sign__more { width: 2rem; padding: 0; }
+.os-sign__more > svg { width: 1.125rem; height: 1.125rem; }
 .os-menu--end { right: 0; }
-/* Desktop: the tag and the bar's Finish guide; the bottom bar is for phones. */
-@media (min-width: 47.5625em) {
-  .is-signing .os-sign__guide { display: none; }
-  .os-sign__stage { padding-left: 7.5rem; }
+.os-sign__segments { display: none; }
+
+/* ---- Main and the card steps (identity, location, consent) ---------------------------- */
+.os-sign__main { min-height: 0; overflow: auto; padding: 1.5rem 0.75rem; outline: none; display: flex; flex-direction: column; }
+.os-sign__main.is-frame-host { overflow: hidden; padding: 0; }
+.os-sign__main.is-frame-host > .os-sign__screen { height: 100%; }
+.os-sign__screen { flex: 1 0 auto; display: flex; flex-direction: column; animation: os-sign-fade 220ms var(--os-sign-ease) both; }
+/* The card sits in the canvas's tinted frame (a 0.375 rem ring) on a soft wash. */
+.os-sign__card {
+  width: min(30rem, calc(100% - 0.75rem)); margin: 1.5rem auto; padding: 2.25rem 2.25rem 1.75rem; box-sizing: border-box;
+  display: grid; gap: 0.625rem; background: var(--os-bg); border-radius: 0.9375rem;
+  box-shadow: 0 0 0 0.375rem color-mix(in srgb, var(--os-text) 3%, transparent), 0 0 0 calc(0.375rem + 1px) color-mix(in srgb, var(--os-text) 6%, transparent), 0 1px 2px rgba(24, 24, 27, .05), 0 24px 48px -24px rgba(24, 24, 27, .22);
+  animation: os-sign-lift 340ms var(--os-sign-spring) both;
 }
-@media (max-width: 47.5em) {
-  .os-guidetag, .os-sign__barfinish, .os-sign__barprogress { display: none !important; }
-  .os-sign__bar { padding: var(--os-s2) var(--os-s3); }
-  #fields-btn > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  #fields-btn { width: var(--os-btn-lg); padding: 0; }
+.os-sign__card > svg { width: 2.75rem; height: 2.75rem; padding: 0.625rem; box-sizing: border-box; border-radius: 50%; color: var(--os-accent); background: color-mix(in srgb, var(--os-accent-fill) 8%, var(--os-bg)); }
+.os-sign__title { margin: 0.25rem 0 0; font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; }
+.os-sign__card .os-muted { line-height: 1.55; }
+.os-sign__card .os-btn { width: 100%; height: var(--os-target-touch); margin-top: 0.5rem; border-radius: 0.625rem; font-weight: 500; }
+.os-sign__card .os-stack .os-btn { margin-top: 0; }
+.os-sign__card .os-input--lg { border-radius: 0.625rem; }
+.os-sign__list { margin: 0; padding-left: 1.25rem; display: grid; gap: 0.25rem; color: var(--os-muted); line-height: 1.55; }
+.os-sign__message { padding: 0.75rem 1rem; border-radius: 0.75rem; background: var(--os-sign-paper); box-shadow: inset 0 0 0 1px var(--os-sign-hair); overflow-wrap: anywhere; display: grid; gap: 0.25rem; }
+:root[data-theme="dark"] .os-sign__message { background: var(--os-surface); }
+.os-sign__sender, .os-sign__signby { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; overflow-wrap: anywhere; }
+.os-sign__sender { font-weight: 600; }
+.os-sign__signby { color: var(--os-muted); }
+.os-sign__sender > svg, .os-sign__signby > svg { flex: none; margin-top: 0.125rem; color: var(--os-muted); }
+.os-sign__card .os-btn.os-sign__linkbtn { width: auto; height: var(--os-target-touch); min-height: var(--os-target-touch); justify-self: start; margin-top: 0; padding: 0 0.25rem; color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.1875rem; }
+.os-sign__card .os-btn.os-sign__linkbtn:last-child { justify-self: center; }
+.os-sign__disclosure-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0.5rem; }
+.os-sign__inlink { color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.1875rem; }
+
+/* ---- The secure-open loader ------------------------------------------------------------- */
+.os-loader {
+  position: fixed; inset: 0; z-index: calc(var(--os-z-dialog) + 20); box-sizing: border-box; padding: 1.5rem;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(36rem 22rem at 50% 38%, var(--os-sign-wash), var(--os-sign-bg) 70%);
+  font-family: "OpenSeal Sign Geist", var(--os-font); font-size: 0.875rem; color: var(--os-text);
 }
-.os-sfield { position: absolute; display: flex; border-radius: 0.25rem; transform-origin: 0 50%; transition: transform var(--os-dur) var(--os-ease), box-shadow var(--os-dur-fast) var(--os-ease); }
-.os-sfield.is-required { box-shadow: 0 0 0 0.125rem #b42318; }
-.os-sfield:not(.is-required):not(.is-auto) { box-shadow: 0 0 0 0.125rem var(--os-info); outline: 1px dashed var(--os-info); outline-offset: 0.125rem; }
-.os-sfield.is-done { box-shadow: 0 0 0 0.125rem var(--os-success); }
-.os-sfield.is-flagged { animation: os-flag 1.2s var(--os-ease); }
-@keyframes os-flag { 0%, 100% { transform: none; } 20%, 60% { transform: scale(1.06); } }
-.os-sfield.is-stamped { animation: os-drop var(--os-dur-slow) var(--os-ease); }
-/* Phones: the field in use grows to a usable size (zoom.js sets --os-enlarge). */
-@media (max-width: 47.5em) {
-  .os-sfield:focus-within { transform: scale(var(--os-enlarge, 1)); z-index: 6; box-shadow: 0 0 0 0.125rem var(--os-focus), var(--os-shadow-pop); }
-  .os-sfield__input { font-size: 1rem; }
+.os-loader.is-leaving { animation: os-sign-out 240ms var(--os-sign-ease) forwards; }
+.os-loader__box { width: min(24rem, 100%); display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+.os-loader__seal { position: relative; width: 5.5rem; height: 5.5rem; animation: os-sign-breathe 2.4s cubic-bezier(.45, 0, .55, 1) infinite; }
+.os-loader__orbit { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 50% 50%; animation: os-sign-orbit 1.6s cubic-bezier(.5, .1, .5, .9) infinite; }
+.os-loader__track { stroke: color-mix(in srgb, var(--os-accent-fill) 12%, transparent); }
+.os-loader__arc { stroke: var(--os-accent-fill); }
+.os-loader__core {
+  position: absolute; inset: 0.875rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #ffffff;
+  background: radial-gradient(circle at 35% 30%, var(--os-sign-seal-hi), var(--os-sign-seal-lo));
+  box-shadow: inset 0 2px 2px rgba(255, 255, 255, .3), 0 10px 20px -8px rgba(142, 11, 20, .5);
 }
+.os-loader__head { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; text-align: center; }
+.os-loader__title { font-size: 1.0625rem; font-weight: 600; }
+.os-loader__sub { color: var(--os-muted); font-size: 0.8125rem; }
+.os-loader__sub:empty { display: none; }
+.os-loader__steps {
+  list-style: none; margin: 0; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 0.625rem; padding: 1rem;
+  border-radius: 0.875rem; background: var(--os-bg); box-shadow: 0 0 0 1px var(--os-sign-hair), 0 12px 32px -16px rgba(24, 24, 27, .25);
+}
+.os-loader__step { display: flex; align-items: center; gap: 0.625rem; font-size: 0.8125rem; animation: os-sign-rise 360ms var(--os-sign-spring) both; }
+.os-loader__step.is-todo { color: var(--os-muted); }
+.os-loader__dot {
+  width: 1.125rem; height: 1.125rem; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--os-surface); box-shadow: inset 0 0 0 1px var(--os-border); transition: background 240ms var(--os-sign-ease);
+}
+.is-active > .os-loader__dot { background: var(--os-bg); box-shadow: inset 0 0 0 2px var(--os-accent-fill); }
+.is-done > .os-loader__dot { background: var(--os-success); color: #ffffff; box-shadow: none; }
+.os-loader__dot > svg { width: 0.6875rem; height: 0.6875rem; stroke-width: 3; }
+
+/* ---- The signing frame: rail, pages, margin -------------------------------------------- */
+.os-signframe { display: grid; grid-template-columns: 6rem minmax(0, 1fr) 6rem; height: 100%; min-height: 0; }
+.os-signframe__centre { position: relative; display: grid; min-width: 0; min-height: 0; }
+.os-sign .os-docview { background: transparent; }
+.os-signframe .os-docview__pages { padding: 1.75rem 1.5rem 8rem; gap: 1.75rem; }
+/* Focus moving into a field keeps it clear of the floating guide bar (WEB-18). */
+.os-sign__pages { scroll-padding: 1rem 0 7rem; }
+.os-docview.os-sign__pages, .os-docview.os-review__pages { display: block; }
+.os-sign__pages .os-docview__pages { position: relative; }
+.os-sign .os-page { border-radius: 0.125rem; box-shadow: 0 0 0 1px rgba(24, 24, 27, .06), 0 2px 4px rgba(24, 24, 27, .04), 0 24px 48px -24px rgba(24, 24, 27, .25); }
+/* The page rail: 3.25 × 4.25 rem thumbnails, the current one ringed, a red count of
+ * the required fields left on each page. */
+.os-sign__rail { min-height: 0; overflow: auto; padding: 1.25rem 0; scrollbar-width: none; }
+.os-sign__rail .os-thumbs__list { display: flex; flex-direction: column; align-items: center; gap: 1rem; margin: 0; padding: 0.375rem 0; }
+.os-sign__rail .os-thumb {
+  width: 3.25rem; padding: 0; border: 0; border-radius: 0.25rem; background: #ffffff; overflow: visible;
+  box-shadow: 0 0 0 1px rgba(24, 24, 27, .1); transition: box-shadow 160ms var(--os-sign-ease);
+}
+.os-sign__rail .os-thumb:hover { box-shadow: 0 0 0 1px rgba(24, 24, 27, .3); }
+.os-sign__rail .os-thumb[aria-current="page"] { border: 0; box-shadow: 0 0 0 2px var(--os-text); }
+.os-sign__rail .os-thumb canvas { display: block; border-radius: 0.25rem; box-shadow: none; }
+.os-sign__rail .os-thumb__n { display: none; }
+.os-sign__rail .os-thumb__count {
+  left: auto; right: -0.5rem; top: -0.5rem; min-width: 1.25rem; height: 1.25rem; padding: 0 0.25rem; box-sizing: border-box; border-radius: 0.625rem;
+  background: var(--os-accent-fill); color: var(--os-on-accent); font-size: var(--os-fs-12); font-weight: 700; line-height: 1.25rem; text-align: center;
+}
+/* The zoom controls: a small pill bottom right, clear of the guide bar. */
+.os-sign .os-docbar { left: auto; right: 1rem; bottom: 1.5rem; transform: none; border: 0; border-radius: 0.75rem; box-shadow: 0 0 0 1px var(--os-sign-hair), var(--os-shadow-md); }
+@media (max-width: 79.999em) {
+  .os-signframe { grid-template-columns: 6rem minmax(0, 1fr) 0; }
+}
+
+/* ---- Fields on the page ------------------------------------------------------------------ */
+.os-sfield {
+  position: absolute; display: flex; border-radius: 0.5rem; transform-origin: 0 50%; color: var(--os-text);
+  transition: transform var(--os-dur) var(--os-ease), box-shadow 220ms var(--os-sign-ease), background 220ms var(--os-sign-ease);
+}
+/* Required and to do: a light red tint, a red hairline; the next one ringed. */
+.os-sfield.is-required:not(.is-auto) { background: var(--os-sign-field); color: var(--os-accent-fill); box-shadow: inset 0 0 0 1.5px var(--os-sign-field-edge); }
+.os-sfield.is-next:not(.is-done):not(.is-auto) { box-shadow: inset 0 0 0 1.5px var(--os-accent-fill), 0 0 0 4px color-mix(in srgb, var(--os-accent-fill) 12%, transparent); }
+/* Optional: a quiet dashed outline. */
+.os-sfield:not(.is-required):not(.is-auto):not(.is-done) { background: color-mix(in srgb, var(--os-info) 4%, #ffffff); color: var(--os-info); outline: 1px dashed color-mix(in srgb, var(--os-info) 55%, transparent); outline-offset: -1px; }
+/* Filled: the value in ink on the page, a faint blue hairline. */
+.os-sfield.is-done:not(.is-auto) { background: transparent; color: var(--os-sign-ink); box-shadow: inset 0 0 0 1px var(--os-sign-filled-edge); outline: 0; }
+/* An invalid value: the danger colour, said beside the field. */
+.os-sfield:has([aria-invalid="true"]) { box-shadow: inset 0 0 0 1.5px var(--os-danger), 0 0 0 4px color-mix(in srgb, var(--os-danger) 14%, transparent); outline: 0; }
+.os-sfield.is-flagged { animation: os-sign-flag 1.2s var(--os-ease); }
 .os-sfield__btn {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: var(--os-s1);
-  min-height: var(--os-target-min); border: 0; border-radius: 0.25rem; cursor: pointer;
-  background: #fff1b8; color: #111827; font-size: var(--os-fs-12); font-weight: 700; overflow: hidden;
+  position: relative; flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.375rem; min-width: 0;
+  min-height: var(--os-target-min); border: 0; border-radius: 0.5rem; background: transparent; color: inherit; cursor: pointer;
+  font-size: var(--os-fs-12); font-weight: 600; overflow: hidden; white-space: nowrap;
 }
-.os-sfield__btn:hover { background: #ffe680; }
-.os-sfield.is-done .os-sfield__btn { background: transparent; }
+.os-sfield__btn:hover { background: color-mix(in srgb, currentColor 6%, transparent); }
+.os-sfield__btn:focus-visible, .os-sfield__input:focus-visible, .os-sfield__select:focus-visible { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: 0.125rem; }
 .os-sfield__btn img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.os-sfield__input { width: 100%; border: 0; border-radius: 0.25rem; padding: 0 var(--os-s2); background: #fff1b8; color: #111827; font-size: var(--os-fs-12); font-weight: 600; min-height: 0; }
-.os-sfield__input::placeholder { color: #6b4e00; opacity: 1; font-weight: 600; }
-.os-sfield.is-done .os-sfield__input { background: rgba(255, 255, 255, .7); }
-.os-sfield__check { width: 100%; height: 100%; margin: 0; accent-color: #b3141f; }
-/* Auto-filled fields (date signed, name, email): shown filled, as a quiet tab that
- * cannot be edited, so every kind of field reads as a tab. */
-.os-sfield.is-auto { box-shadow: 0 0 0 1px #9ca3af; background: #f1f5f9; border-left: 0.1875rem solid #6b7280; }
-.os-sfield__auto { font-size: var(--os-fs-12); color: #374151; align-self: center; padding: 0 var(--os-s2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
-/* Small fields get a 44 px touch area without moving their drawn box (SC 2.5.5). */
+.os-sfield__btn img.is-inking { animation: os-sign-ink 700ms cubic-bezier(.5, 0, .2, 1) both; }
 .os-sfield__btn::after, .os-sfield__check::after { content: ""; position: absolute; inset: -0.75rem; }
-.os-sfield__btn, .os-sfield__check { position: relative; }
-/* Field list */
-.os-fieldlist { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--os-s1); }
-.os-fieldlist__item { display: flex; align-items: center; gap: var(--os-s3); width: 100%; min-height: var(--os-target-touch); padding: var(--os-s2) var(--os-s3); border: 1px solid var(--os-border); border-radius: var(--os-radius); background: var(--os-raised); cursor: pointer; text-align: left; }
+.os-sfield__input, .os-sfield__select {
+  width: 100%; min-height: 0; border: 0; border-radius: 0.5rem; padding: 0 0.5rem; background: transparent; color: var(--os-sign-ink);
+  font: inherit; font-size: var(--os-fs-12); font-weight: 600;
+}
+.os-sfield__input::placeholder { color: color-mix(in srgb, currentColor 80%, transparent); opacity: 1; font-weight: 600; }
+.os-sfield.is-required:not(.is-done) .os-sfield__input::placeholder { color: var(--os-accent-fill); }
+.os-sfield:not(.is-required) .os-sfield__input::placeholder { color: var(--os-info); }
+.os-sfield__select { cursor: pointer; padding: 0 0.25rem; }
+.os-sfield__check { position: relative; width: 100%; height: 100%; margin: 0; accent-color: #18181b; }
+.os-sfield__choice { justify-content: space-between; padding: 0 0.25rem 0 0.5rem; }
+.os-sfield__choice > .os-trunc { min-width: 0; }
+/* Automatic fields (date signed, name, email) and the sender's fixed values. */
+.os-sfield.is-auto { background: transparent; box-shadow: none; }
+.os-sfield__auto { align-self: center; padding: 0 0.25rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--os-fs-12); color: #3f3f46; }
+.os-sfield.is-auto.is-pending .os-sfield__auto { color: var(--os-muted); font-style: italic; }
+.os-sfield.is-fixed { background: #f4f4f5; box-shadow: inset 0 0 0 1px rgba(24, 24, 27, .08); }
+.os-sfield__err { position: absolute; left: 0; top: 100%; margin-top: 0.125rem; padding: 0.125rem 0.25rem; border-radius: 0.25rem; background: var(--os-danger-fill); color: var(--os-on-danger); font-size: var(--os-fs-12); white-space: nowrap; z-index: 7; }
+.os-sfield__err:empty { display: none; }
+/* G-S8: every field's label as a tab above it: on hover, on focus, and for the next one. */
+.os-sfield__tip {
+  position: absolute; left: 0; bottom: calc(100% + 0.375rem); z-index: 8; max-width: 16rem; padding: 0.125rem 0.5rem; border-radius: 0.375rem;
+  background: var(--os-sign-guide); color: var(--os-sign-guide-ink); font-size: var(--os-fs-12); font-weight: 600; line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+  opacity: 0; transform: translateY(0.125rem); transition: opacity var(--os-dur-fast) var(--os-ease), transform var(--os-dur-fast) var(--os-ease);
+}
+/* WEB-18 (the canvas shows no floating tags): the tab shows on hover and focus only;
+ * the next field is ringed instead, so a tab never sits over another field. */
+.os-sfield:hover > .os-sfield__tip, .os-sfield:focus-within > .os-sfield__tip { opacity: 1; transform: none; }
+/* The label tab says what the field is; the placeholder does not repeat it then. */
+.os-sfield.os-sfield:is(:hover, :focus-within) .os-sfield__input::placeholder { color: transparent; }
+.os-sfield.tip-below > .os-sfield__tip { bottom: auto; top: calc(100% + 0.375rem); }
+.os-sfield.tip-none > .os-sfield__tip { display: none; }
+.os-sfield.tip-none .os-sfield__input::placeholder { color: inherit; }
+/* P-05: on phones a touch area of at least 44 px under each field's control. */
+.os-sfield__hit { display: none; }
+
+/* ---- The guide bar ------------------------------------------------------------------------ */
+.os-guide {
+  position: fixed; left: 50%; bottom: 1.5rem; z-index: 60; transform: translateX(-50%); max-width: calc(100vw - 2rem); box-sizing: border-box;
+  display: flex; align-items: center; gap: 1rem; padding: 0.5rem 0.5rem 0.5rem 0.75rem; border-radius: 1rem;
+  background: var(--os-sign-guide); color: var(--os-sign-guide-ink);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .06) inset, 0 20px 40px -12px rgba(24, 24, 27, .55);
+  animation: os-sign-guide-in 340ms var(--os-sign-spring) both;
+}
+.os-guide[hidden] { display: none; }
+.os-guide__ring { flex: none; display: block; width: 2.25rem; height: 2.25rem; }
+.os-guide__svg { display: block; width: 100%; height: 100%; }
+.os-guide__track { stroke: rgba(255, 255, 255, .14); }
+.os-guide__arc { stroke: var(--os-sign-ring); transition: stroke-dasharray 500ms var(--os-sign-ease); }
+.os-guide__count { fill: currentColor; font-family: inherit; }
+.os-guide__text { display: flex; flex-direction: column; min-width: 12rem; line-height: 1.3; }
+.os-guide__title { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.os-guide__sub { font-size: 0.75rem; color: var(--os-sign-guide-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.os-guide__cta {
+  flex: none; display: inline-flex; align-items: center; gap: 0.5rem; height: 2.5rem; padding: 0 1rem; border: 0; border-radius: 0.6875rem;
+  background: #ffffff; color: #18181b; font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer;
+  transition: transform 160ms var(--os-sign-ease), background 160ms var(--os-sign-ease);
+}
+.os-guide__cta[hidden] { display: none; }
+.os-guide__cta:active { transform: scale(.97); }
+.os-guide__cta > svg { width: 0.875rem; height: 0.875rem; }
+.os-guide__cta--finish { background: var(--os-accent-fill); color: var(--os-on-accent); animation: os-sign-pulse 1.8s var(--os-sign-ease) infinite; }
+.os-guide__cta--finish:hover { background: var(--os-accent-hover-fill); }
+.os-guide .os-guide__cta:focus-visible { outline-color: #ffffff; }
+
+/* ---- Field list, choices and floating menus ---------------------------------------------- */
+.os-fieldlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
+.os-fieldlist__item { display: flex; align-items: center; gap: 0.75rem; width: 100%; min-height: var(--os-target-touch); padding: 0.5rem 0.75rem; border: 0; border-radius: 0.625rem; background: var(--os-raised); box-shadow: inset 0 0 0 1px var(--os-sign-hair); cursor: pointer; text-align: left; color: inherit; font: inherit; }
 .os-fieldlist__item:hover { background: var(--os-surface); }
-.os-fieldlist__item > svg { color: #b42318; flex: none; }
+.os-fieldlist__item > svg { flex: none; color: var(--os-muted); }
 .os-fieldlist__item.is-done > svg { color: var(--os-success); }
-.os-fieldlist__main { flex: 1; display: grid; }
-.os-fieldlist__state { font-size: var(--os-fs-12); font-weight: 600; color: var(--os-muted); }
-/* Review (ADR-020): the pages as signed, values listed, an explicit Finish. */
-.os-reviewscreen { width: min(73.75rem, 100%); margin: 0 auto; }
-.os-reviewscreen__head { margin-bottom: var(--os-s4); display: grid; gap: var(--os-s1); }
-.os-reviewscreen__grid { display: grid; grid-template-columns: minmax(0, 1fr) 21.25rem; gap: var(--os-s6); align-items: start; }
-.os-review__pages { display: flex; flex-direction: column; align-items: center; gap: var(--os-s4); }
-.os-reviewscreen__side { position: sticky; top: calc(4rem + var(--os-s4)); background: var(--os-bg); border-radius: var(--os-radius-lg); padding: var(--os-s6); box-shadow: var(--os-shadow-md); display: grid; gap: var(--os-s3); }
-.os-reviewscreen__side .os-stack .os-btn { width: 100%; }
+.os-fieldlist__item.is-next { box-shadow: inset 0 0 0 1.5px var(--os-accent-fill); }
+.os-fieldlist__main { flex: 1; display: grid; min-width: 0; }
+.os-fieldlist__state { font-size: var(--os-fs-12); font-weight: 600; color: var(--os-muted); white-space: nowrap; }
+.os-sign__message--panel { margin-bottom: 0.75rem; }
+.os-sign__from { font-weight: 600; overflow-wrap: anywhere; }
+.os-sign__floating { position: fixed; z-index: calc(var(--os-z-dialog) + 5); min-width: 12rem; }
+.os-sign__choices { display: grid; padding: 0.25rem 0.5rem; }
+.os-sign__choices .os-radio { padding: 0 0.25rem; border-radius: var(--os-radius-sm); }
+.os-sign__choices .os-radio:hover { background: var(--os-surface); }
+.os-history { list-style: none; margin: 0.75rem 0 0; padding: 0; display: grid; }
+.os-history__item { display: grid; gap: 0.125rem; padding: 0.5rem 0; border-bottom: 1px solid var(--os-border); }
+.os-help-sec + .os-help-sec { margin-top: 1rem; }
+.os-help-sec__title { font-size: var(--os-fs-16); font-weight: 600; margin-bottom: 0.5rem; }
+
+/* ---- Review (ADR-020): the pages as signed, the values, one Finish ------------------------ */
+.os-signframe--review { grid-template-columns: minmax(0, 1fr) auto; }
+.os-signframe--review .os-docview__pages { padding-bottom: 2rem; }
+.os-signframe--review .os-page__overlay { container-type: size; }
 .os-flat { position: absolute; display: flex; align-items: center; overflow: hidden; color: #0b1f4b; line-height: 1; white-space: nowrap; }
 .os-flat img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .os-flat--checkbox { justify-content: center; }
-@media (max-width: 56.25em) {
-  .os-reviewscreen__grid { grid-template-columns: minmax(0, 1fr); }
-  .os-reviewscreen__side { position: static; order: -1; }
-}
-.os-done { box-shadow: var(--os-shadow-md); }
-.os-done__seal { margin-bottom: var(--os-s2); }
-.os-review { display: grid; grid-template-columns: max-content 1fr; gap: var(--os-s1) var(--os-s4); margin: 0 0 var(--os-s3); }
+.os-flat--checkbox svg { width: 100%; height: 100%; }
+.os-review { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 0.25rem 1rem; margin: 0 0 0.75rem; }
 .os-review dt { color: var(--os-muted); }
 .os-review dd { margin: 0; overflow-wrap: anywhere; }
-.os-adopt__fonts { display: grid; gap: var(--os-s2); margin-top: var(--os-s3); }
-.os-adopt__font { display: block; padding: var(--os-s2) var(--os-s4); border: 1px solid var(--os-border-strong); border-radius: var(--os-radius); cursor: pointer; background: #fff; color: #0b1f4b; min-height: var(--os-target-touch); }
-.os-adopt__font:has(input:checked) { border-color: var(--os-accent); box-shadow: 0 0 0 0.125rem var(--os-accent); }
+.os-review__mark { display: block; max-width: 100%; max-height: 2.75rem; background: #ffffff; border-radius: var(--os-radius-sm); }
+.os-review__actions { padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--os-border); background: var(--os-bg); }
+.os-review__actions .os-btn { width: 100%; border-radius: 0.625rem; }
+.os-dock--static .os-dock__toggle { display: none; }
+.os-dock--static .os-dock__body { gap: 0.75rem; }
+@media (min-width: 48em) {
+  .os-dock--static .os-dock__head { display: none; }
+}
+
+/* ---- Closing states and the receipt ------------------------------------------------------ */
+.os-state {
+  flex: 1 0 auto; box-sizing: border-box; padding: 1.5rem 1rem; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(40rem 24rem at 50% 30%, var(--os-sign-wash), transparent 70%);
+}
+.os-state__frame {
+  width: min(32rem, 100%); padding: 0.375rem; box-sizing: border-box; border-radius: 1.25rem;
+  background: color-mix(in srgb, var(--os-text) 3%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--os-text) 6%, transparent);
+  animation: os-sign-pop 340ms var(--os-sign-spring) both;
+}
+.os-state__card {
+  display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 2.25rem 2.25rem 1.75rem; text-align: center;
+  border-radius: 0.9375rem; background: var(--os-bg); box-shadow: 0 1px 2px rgba(24, 24, 27, .05), 0 24px 48px -24px rgba(24, 24, 27, .22);
+}
+.os-state__mark {
+  width: 4.5rem; height: 4.5rem; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: var(--os-surface); color: var(--os-muted); box-shadow: 0 0 0 0.375rem var(--os-sign-bg);
+}
+.os-state--warn .os-state__mark { color: var(--os-danger); }
+.os-state__mark--seal {
+  color: #ffffff; background: radial-gradient(circle at 35% 30%, var(--os-sign-seal-hi), var(--os-sign-seal-lo));
+  box-shadow: inset 0 2px 2px rgba(255, 255, 255, .3), 0 0 0 0.375rem color-mix(in srgb, var(--os-accent-fill) 7%, var(--os-bg)), 0 12px 24px -8px rgba(142, 11, 20, .5);
+}
+.os-state__mark--seal > svg { stroke-width: 2.4; }
+.os-state__mark.is-popping { animation: os-sign-seal 700ms cubic-bezier(.34, 1.56, .64, 1) both; }
+.os-state__title { margin: 0.5rem 0 0; font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; }
+.os-state__text { margin: 0; max-width: 44ch; color: var(--os-muted); line-height: 1.55; }
+.os-state__facts {
+  width: 100%; box-sizing: border-box; margin: 0.75rem 0 0; padding: 0.875rem 1rem; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem 1rem;
+  border-radius: 0.75rem; background: var(--os-sign-paper); box-shadow: inset 0 0 0 1px var(--os-sign-hair); text-align: left; font-size: 0.8125rem;
+}
+:root[data-theme="dark"] .os-state__facts { background: var(--os-surface); }
+.os-state__facts dt { color: var(--os-muted); }
+.os-state__facts dd { margin: 0; overflow-wrap: anywhere; }
+.os-state__note { margin: 0; font-size: 0.8125rem; color: var(--os-muted); line-height: 1.55; }
+.os-state__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
+.os-state__actions .os-btn { height: 2.5rem; padding: 0 1.125rem; border-radius: 0.625rem; font-weight: 500; }
+.os-state__actions .os-btn.os-state__primary { background: var(--os-text); border-color: var(--os-text); color: var(--os-bg); }
+.os-state__actions .os-btn.os-state__secondary { background: var(--os-sign-bg); border-color: transparent; }
+.os-sign .noserver, .os-sign .os-empty { background: var(--os-bg); border-radius: 0.9375rem; width: min(35rem, 100%); margin: 1.5rem auto; box-shadow: var(--os-shadow); }
+
+/* ---- Adopt your signature (dialog; a bottom sheet on phones) ----------------------------- */
+.os-dialog.os-adopt {
+  width: min(34rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); border-radius: 1rem; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(24, 24, 27, .08), 0 32px 64px -16px rgba(24, 24, 27, .4);
+  animation: os-sign-pop 340ms var(--os-sign-spring) both; font-family: "OpenSeal Sign Geist", var(--os-font); font-size: 0.875rem;
+}
+.os-adopt[open] { display: flex; flex-direction: column; }
+.os-adopt::backdrop { background: rgba(24, 24, 27, .32); backdrop-filter: blur(3px); }
+.os-adopt .os-dialog__head { flex: none; padding: 1.25rem 1.25rem 0 1.5rem; align-items: flex-start; }
+.os-adopt .os-dialog__title { font-size: 1.0625rem; font-weight: 600; }
+.os-adopt .os-dialog__body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.25rem 1.5rem 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.os-adopt .os-dialog__body > * + * { margin-top: 0; }
+.os-adopt .os-dialog__body > p.os-muted:first-child { margin: 0; font-size: 0.8125rem; }
+.os-adopt__grab { display: none; }
+.os-adopt__modes { display: flex; gap: 0.125rem; margin-top: 0.25rem; }
+.os-adopt__mode {
+  height: 2rem; padding: 0 0.875rem; border: 0; border-radius: 0.5rem; background: transparent; color: var(--os-muted);
+  font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background 160ms var(--os-sign-ease), color 160ms var(--os-sign-ease);
+}
+.os-adopt__mode:hover { color: var(--os-text); }
+.os-adopt__mode[aria-selected="true"] { background: var(--os-text); color: var(--os-bg); }
+.os-adopt__mode:focus-visible { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
+.os-adopt__panel[hidden] { display: none; }
+.os-adopt__panel { display: flex; flex-direction: column; gap: 0.75rem; }
+.os-adopt__inputs { display: grid; grid-template-columns: minmax(0, 1fr) 7rem; gap: 0.75rem; }
+.os-adopt__inputs:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }
+.os-adopt__inputs .os-fieldrow { display: grid; gap: 0.25rem; }
+.os-adopt__inputs .os-input { border-radius: 0.5rem; }
+/* The style tiles: paper in both themes, so the ink reads as it will on the PDF. */
+.os-adopt__fonts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.os-adopt__font {
+  position: relative; min-height: 5.5rem; padding: 0.5rem 0.75rem; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; min-width: 0;
+  border-radius: 0.75rem; background: var(--os-sign-paper); color: var(--os-sign-ink); box-shadow: inset 0 0 0 1px rgba(24, 24, 27, .08); cursor: pointer;
+  transition: background 160ms var(--os-sign-ease), box-shadow 160ms var(--os-sign-ease);
+}
+.os-adopt__font:has(input:checked) { background: #f5f8ff; box-shadow: inset 0 0 0 2px #2563eb; }
 .os-adopt__font:has(input:focus-visible) { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
-.os-adopt__sample { font-size: 2.25rem; line-height: 1.4; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.os-adopt__sample { display: block; max-width: 100%; line-height: 1.35; white-space: nowrap; }
+.os-adopt__sample--signature { font-size: 2rem; }
+.os-adopt__sample--initials { font-size: 1.375rem; }
 .os-script-1 { font-family: var(--os-font-script-1); }
 .os-script-2 { font-family: var(--os-font-script-2); }
-.os-adopt__pad { width: 100%; height: auto; aspect-ratio: 3 / 1; background: #fff; border: 1px dashed var(--os-border-strong); border-radius: var(--os-radius); touch-action: none; cursor: crosshair; margin: var(--os-s2) 0; }
-.os-adopt__upload-preview { max-width: 100%; max-height: 10rem; margin-top: var(--os-s3); background: #fff; border-radius: var(--os-radius); }
-@media (max-width: 47.5em) {
-  .os-sign__guide .os-btn { padding: 0 var(--os-s4); }
+/* The draw pad: paper, a hint until there is ink, a dashed baseline. */
+.os-adopt__padarea { position: relative; border-radius: 0.75rem; background: var(--os-sign-paper); box-shadow: inset 0 0 0 1px rgba(24, 24, 27, .08); }
+.os-adopt__padarea::after { content: ""; position: absolute; left: 1.5rem; right: 1.5rem; bottom: 24%; border-top: 1px dashed #d4d4d8; pointer-events: none; }
+.os-adopt__padhint { position: absolute; inset: 0 2rem 30%; display: flex; align-items: center; justify-content: center; text-align: center; color: #71717a; font-size: 0.8125rem; pointer-events: none; }
+.os-adopt__padarea.has-ink .os-adopt__padhint { display: none; }
+.os-adopt__pad { position: relative; z-index: 1; display: block; width: 100%; height: auto; aspect-ratio: 3 / 1; touch-action: none; cursor: crosshair; background: transparent; border: 0; }
+.os-adopt__padtools { display: flex; flex-wrap: nowrap; gap: 0.5rem; margin-top: 0.5rem; }
+.os-adopt__padblock + .os-label { margin-top: 0.75rem; }
+/* The upload drop zone. */
+.os-adopt__drop {
+  display: grid; justify-items: center; align-content: center; gap: 0.375rem; min-height: 8.5rem; padding: 1rem; box-sizing: border-box; text-align: center; cursor: pointer;
+  border-radius: 0.75rem; background: var(--os-sign-paper); box-shadow: inset 0 0 0 1.5px rgba(24, 24, 27, .1); color: #52525b;
 }
-@media (max-width: 26.25em) {
-  .os-sign__progress { font-size: var(--os-fs-14); }
-  .os-sign__guide #guide-next > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .os-sign__guide #guide-next { width: var(--os-btn-lg); padding: 0; }
+.os-adopt__drop:hover, .os-adopt__drop.is-dropping { background: #f5f8ff; box-shadow: inset 0 0 0 2px #2563eb; }
+.os-adopt__drop > svg { color: #71717a; }
+.os-adopt__drop-title { font-weight: 500; color: #18181b; }
+.os-adopt__drop .os-muted { color: #71717a; }
+.os-adopt__drop .os-adopt__upload-preview { max-width: 100%; max-height: 8rem; margin-top: 0.5rem; background: #ffffff; border-radius: 0.5rem; }
+#adopt-file:focus-visible + .os-adopt__drop { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
+#adopt-err:empty { display: none; }
+.os-adopt__legal { margin: 0; font-size: 0.75rem; color: var(--os-muted); line-height: 1.55; }
+.os-adopt .os-dialog__foot {
+  flex: none; flex-wrap: nowrap; justify-content: flex-end; gap: 0.5rem; padding: 0.875rem 1.5rem;
+  background: color-mix(in srgb, var(--os-text) 2%, var(--os-bg)); box-shadow: inset 0 1px 0 var(--os-sign-hair);
 }
-.os-sign__stage > .os-sign__message { width: auto; max-width: 59rem; margin: 0 auto var(--os-s4); }
-@media (max-width: 47.999em) {
-  .has-side-sheet .os-sign__guide, .has-sheet .os-sign__guide { visibility: hidden; }
-}
-@media (max-height: 31.25em) {
-  .os-sign { height: auto; min-height: 100dvh; overflow: visible; }
-}
-
-/* ---- Signing page frame -------------------------------------------------------------- */
-.os-sign { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); }
-.os-sign > .os-skip { position: absolute; }
-.os-sign__bar { position: relative; flex-wrap: wrap; row-gap: var(--os-s1); }
-.os-sign__main { min-height: 0; overflow: auto; padding: var(--os-s6) var(--os-s3); }
-.os-sign__main.is-frame-host { overflow: hidden; padding: 0; }
-.os-sign__main.is-frame-host > .os-sign__screen { height: 100%; }
-.os-signframe { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
-.os-signframe__centre { position: relative; display: grid; min-width: 0; min-height: 0; }
-.os-signframe .os-docview__pages { padding-left: calc(var(--os-s6) + var(--os-tag-room, 0rem)); }
-.os-sign__guide { position: static; }
-.os-sign__savechip { font-size: var(--os-fs-12); color: var(--os-muted); white-space: nowrap; }
-.os-sign__savechip:empty { display: none; }
-.os-sign__message--panel { width: auto; margin: 0; border-left-width: 0.25rem; background: var(--os-surface); }
-.os-fieldlist__item.is-next { border-color: var(--os-tag-edge); box-shadow: inset 0.25rem 0 0 var(--os-tag-edge); }
-.os-sfield__err { position: absolute; left: 0; top: 100%; margin-top: 0.125rem; padding: 0.125rem var(--os-s1); border-radius: 0.25rem; background: var(--os-danger-fill); color: var(--os-on-danger); font-size: var(--os-fs-12); white-space: nowrap; z-index: 7; }
-.os-sfield__err:empty { display: none; }
-.os-review__side { display: grid; gap: var(--os-s3); align-content: start; }
-.os-review__side .os-stack .os-btn { width: 100%; }
-.os-signframe--review { grid-template-columns: minmax(0, 1fr) auto; }
-/* UX-06: review has no Start flag, so no room for one (fit width then fits). */
-.os-signframe.os-signframe--review { --os-tag-room: 0rem; }
-.os-signframe--review .os-page__overlay { container-type: size; }
-.os-flat--checkbox svg { width: 100%; height: 100%; }
-.os-dock--static .os-dock__toggle { display: none; }
-.os-dock--static .os-dock__body { gap: var(--os-s3); }
-.os-sign__pages .os-docview__pages { position: relative; }
-@media (min-width: 48em) {
-  .os-signframe { --os-tag-room: 6.5rem; }
-  .is-signing .os-sign__guide { display: none; }
-}
-@media (max-width: 47.999em) {
-  .os-signframe { grid-template-columns: minmax(0, 1fr); }
-  .os-sign__main:not(.is-frame-host) { padding: var(--os-s4) var(--os-s3); }
-  /* Review on phones: the values and Finish above the pages, never a hidden sheet. */
-  .os-signframe--review { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .os-dock.os-dock--static { position: static; order: -1; transform: none; visibility: visible; transition: none; max-height: 45dvh; border-radius: 0; box-shadow: var(--os-shadow); }
-  .os-dock--static .os-dock__head { display: none; }
-  .os-dock--static .os-dock__body { padding: var(--os-s3); }
-  .os-dock--static .os-stack { grid-template-columns: 1fr 1fr; }
-  .os-guidetag { display: none !important; }
-}
-/* Short windows on the signing page too (P-03, 400 % zoom): the bar and the guide stop
- * being pinned; the page scrolls and the document view takes the full window height. */
-@media (max-height: 31.25em) {
-  .os-sign { display: block; height: auto; min-height: 100dvh; overflow: visible; }
-  .os-sign__main { overflow: visible; }
-  .os-sign__main.is-frame-host { height: 100dvh; overflow: hidden; }
-}
-
-/* ---- Signer findings (WEB-06: P-05, M-01..M-03, G-S1..G-S8) ------------------------- */
-/* G-S1: Start/Next in the bar, styled as the guide tag it stands for. */
-.os-btn--tag { background: var(--os-tag); border-color: var(--os-tag-edge); color: var(--os-text); font-weight: 700; }
-.os-btn--tag:hover { background: color-mix(in srgb, var(--os-tag) 75%, var(--os-tag-edge)); }
-/* G-S8: every field's label as a tab above it: on hover, on focus, and for the next one. */
-.os-sfield__tip {
-  position: absolute; left: 0; bottom: calc(100% + 0.25rem); z-index: 8; max-width: 16rem; padding: 0.125rem 0.375rem; border-radius: 0.25rem;
-  background: var(--os-text); color: var(--os-bg); font-size: 0.75rem; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  pointer-events: none; opacity: 0; transform: translateY(0.125rem); transition: opacity var(--os-dur-fast) var(--os-ease), transform var(--os-dur-fast) var(--os-ease);
-}
-.os-sfield:hover > .os-sfield__tip, .os-sfield:focus-within > .os-sfield__tip, .os-sfield.is-next > .os-sfield__tip { opacity: 1; transform: none; }
-/* P-05: on phones a touch area of at least 44 px under each field's control. */
-.os-sfield__hit { display: none; }
-/* G-S7: the review's Finish, pinned under the values. */
-.os-review__actions { padding: var(--os-s3) var(--os-s4) calc(var(--os-s3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--os-border); background: var(--os-bg); }
-.os-review__actions .os-btn { width: 100%; }
-/* G-S3: the done screen's next steps and copy. */
-.os-done__next { font-size: var(--os-fs-16); font-weight: 600; margin-top: var(--os-s4); }
-.os-done__steps { text-align: left; margin: 0 auto; padding-left: var(--os-s6); display: grid; gap: var(--os-s2); max-width: 30rem; }
-.os-done__actions { margin-top: var(--os-s6); display: flex; justify-content: center; }
-/* G-S2: history and help panels. */
-.os-history { list-style: none; margin: var(--os-s3) 0 0; padding: 0; display: grid; }
-.os-history__item { display: grid; gap: 0.125rem; padding: var(--os-s2) 0; border-bottom: 1px solid var(--os-border); }
-.os-help-sec + .os-help-sec { margin-top: var(--os-s4); }
-.os-help-sec__title { font-size: var(--os-fs-16); font-weight: 600; margin-bottom: var(--os-s2); }
-/* M-03: drawing a signature full screen on a phone. */
+.os-adopt .os-dialog__foot .os-btn { height: 2.375rem; padding: 0 1rem; border-radius: 0.5625rem; font-weight: 500; white-space: nowrap; }
+.os-adopt .os-dialog__foot .os-btn--primary { padding: 0 1.125rem; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 1px 2px rgba(142, 11, 20, .35); }
+/* M-03: drawing full screen on a phone. */
 .os-adopt__fullbtn, .os-adopt__fullhint, .os-adopt__fulldone { display: none; }
-.os-adopt__padtools { flex-wrap: wrap; }
 .os-adopt__padwrap.is-full {
-  position: fixed; inset: 0; z-index: calc(var(--os-z-dialog) + 10); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: var(--os-s3);
-  background: var(--os-raised); padding: calc(var(--os-s4) + env(safe-area-inset-top)) calc(var(--os-s4) + env(safe-area-inset-right)) calc(var(--os-s4) + env(safe-area-inset-bottom)) calc(var(--os-s4) + env(safe-area-inset-left));
+  position: fixed; inset: 0; z-index: calc(var(--os-z-dialog) + 10); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 0.75rem;
+  background: var(--os-raised); padding: calc(1rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right)) calc(1rem + env(safe-area-inset-bottom)) calc(1rem + env(safe-area-inset-left));
 }
-.os-adopt__padwrap.is-full .os-adopt__pad { width: min(100%, calc((100dvh - 9rem) * 3)); margin: 0; }
+.os-adopt__padwrap.is-full .os-adopt__padarea { width: min(100%, calc((100dvh - 9rem) * 3)); }
 .os-adopt__padwrap.is-full .os-adopt__padtools { width: min(100%, calc((100dvh - 9rem) * 3)); justify-content: flex-end; margin: 0; }
 .os-adopt__padwrap.is-full .os-adopt__fulldone { display: inline-flex; margin-left: auto; }
 /* An upright phone: the whole pad turns a quarter clockwise, so the signature runs
  * along the screen's long side (signature.js maps the pointer back). */
 @media (orientation: portrait) {
   .os-adopt__padwrap.is-full { inset: auto; top: 0; left: 100vw; width: 100dvh; height: 100vw; transform-origin: 0 0; transform: rotate(90deg); }
-  .os-adopt__padwrap.is-full .os-adopt__pad, .os-adopt__padwrap.is-full .os-adopt__padtools { width: min(100%, calc((100vw - 9rem) * 3)); }
+  .os-adopt__padwrap.is-full .os-adopt__padarea, .os-adopt__padwrap.is-full .os-adopt__padtools { width: min(100%, calc((100vw - 9rem) * 3)); }
   .os-adopt__padwrap.is-full .os-adopt__fullhint { display: block; color: var(--os-muted); text-align: center; }
 }
 @media (max-width: 47.999em), (pointer: coarse) {
-  .os-adopt__fullbtn { display: inline-flex; width: 100%; margin: var(--os-s2) 0; }
-}
-@media (max-width: 47.999em) {
-  #bar-next { display: none !important; }
-  .os-sfield__hit { display: block; position: absolute; left: 50%; top: 50%; width: max(100%, 2.75rem); height: max(100%, 2.75rem); transform: translate(-50%, -50%); z-index: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  .os-sfield > .os-sfield__btn, .os-sfield > .os-sfield__input, .os-sfield > .os-sfield__check { position: relative; z-index: 1; }
-  .os-sfield__tip { z-index: 9; }
-  /* M-02: the bar keeps words: a two-line title, Fields and Start/Next labelled. */
-  .os-sign__subject { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: var(--os-fs-14); line-height: 1.25; overflow-wrap: anywhere; }
-  #fields-btn > span, .os-sign__guide #guide-next > span { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
-  #fields-btn { width: auto; padding: 0 var(--os-s3); gap: var(--os-s1); }
-  .os-sign__guide #guide-next { width: auto; padding: 0 var(--os-s4); }
-  .os-sign__savechip { display: none; }
-  /* G-S6: the field list leaves the document visible above it. */
-  .os-dock[data-panel="sign-fields"] { max-height: 55dvh; }
-}
-@media (max-width: 26.25em) {
-  .os-sign__mark { display: none; }
-  .os-sign__bar { gap: var(--os-s2); }
-  #more-btn { width: var(--os-btn-lg); padding: 0; }
-  #more-btn > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .os-sign__guide { gap: var(--os-s2); padding-left: var(--os-s3); padding-right: var(--os-s3); }
-  .os-sign__guide .os-btn { padding: 0 var(--os-s3); }
-}
-/* The signer's and the review's scrollers are document views: no flex centring of
- * their (max-content) page column, or a page zoomed wider than the view overflows to
- * the left where it cannot be scrolled to (P-05: zoom-to-field cut the field off). */
-.os-docview.os-sign__pages, .os-docview.os-review__pages { display: block; }
-/* The adopt panel in the field list's place: tabs and actions fit its width. */
-.os-adopt .os-tab { flex: 1 1 auto; justify-content: center; padding: 0 var(--os-s2); }
-.os-sheet--hosted.os-adopt .os-sheet__body { padding-left: var(--os-s4); padding-right: var(--os-s4); }
-.os-sheet--hosted.os-adopt .os-sheet__foot { padding-left: var(--os-s4); padding-right: var(--os-s4); flex-wrap: nowrap; }
-.os-sheet--hosted.os-adopt .os-sheet__foot .os-btn { flex: 1 1 auto; }
-@media (max-width: 47.999em) {
-  .os-review__actions.os-stack { grid-template-columns: minmax(0, 1fr); }
-}
-/* WEB-06 field kinds in the ceremony: a native select, a choice button, fixed values. */
-.os-sfield__select { width: 100%; min-height: 0; border: 0; border-radius: 0.25rem; padding: 0 var(--os-s1); background: #fff1b8; color: #111827; font-size: var(--os-fs-12); font-weight: 600; cursor: pointer; }
-.os-sfield.is-done .os-sfield__select { background: rgba(255, 255, 255, .7); }
-.os-sfield__choice { justify-content: space-between; padding: 0 var(--os-s1) 0 var(--os-s2); min-width: 0; }
-.os-sfield__choice > .os-trunc { min-width: 0; }
-.os-sfield.is-fixed { background: #f8fafc; border-left-color: #94a3b8; }
-@media (max-width: 47.999em) {
-  .os-sfield > .os-sfield__select { position: relative; z-index: 1; font-size: 1rem; }
+  .os-adopt__fullbtn { display: inline-flex; width: 100%; }
 }
 
-/* ---- UX-06: the signer ceremony package of the UX audit ------------------------------ */
-/* Who sent it and by when, on the consent card and in the field list. */
-.os-sign__sender, .os-sign__signby { display: flex; align-items: flex-start; gap: var(--os-s2); margin: 0; overflow-wrap: anywhere; }
-.os-sign__sender { font-weight: 600; }
-.os-sign__signby { color: var(--os-muted); font-size: var(--os-fs-14); }
-.os-sign__sender > svg, .os-sign__signby > svg { flex: none; margin-top: 0.1875rem; color: var(--os-muted); }
-.os-sign__from { font-weight: 600; margin-bottom: var(--os-s1); overflow-wrap: anywhere; }
-/* Quiet text buttons on the card: the disclosure and the other actions. */
-.os-sign__card .os-btn.os-sign__linkbtn { width: auto; justify-self: start; margin-top: 0; padding-left: var(--os-s1); padding-right: var(--os-s1); color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.1875rem; }
-.os-sign__card .os-btn.os-sign__linkbtn:last-child { justify-self: center; }
-.os-sign__disclosure-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: var(--os-s2); }
-/* A menu or a choice floating on a field (signed-field menu, radio popover). */
-.os-sign__floating { position: fixed; z-index: calc(var(--os-z-dialog) + 5); min-width: 12rem; }
-.os-sign__choices { display: grid; padding: var(--os-s1) var(--os-s2); }
-.os-sign__choices .os-radio { padding: 0 var(--os-s1); border-radius: var(--os-radius-sm); }
-.os-sign__choices .os-radio:hover { background: var(--os-surface); }
-/* Required is a neutral strong outline and a red asterisk; a red outline means an
- * error only; optional is a lighter dashed outline. */
-.os-sfield.is-required { box-shadow: 0 0 0 0.125rem var(--os-text); }
-.os-sfield.is-required:not(.is-done):not(.is-auto)::after { content: "*"; position: absolute; top: -0.625rem; right: -0.5rem; z-index: 3; min-width: 1rem; height: 1rem; border-radius: 50%; background: var(--os-bg); color: var(--os-danger); font-size: 0.875rem; font-weight: 700; line-height: 1.15; text-align: center; pointer-events: none; }
-.os-sfield:not(.is-required):not(.is-auto) { box-shadow: none; outline: 0.125rem dashed var(--os-border-strong); outline-offset: 0; }
-.os-sfield.is-done { box-shadow: 0 0 0 0.125rem var(--os-success); outline: 0; }
-.os-sfield:has([aria-invalid="true"]) { box-shadow: 0 0 0 0.125rem var(--os-danger); outline: 0; }
-.os-fieldlist__item > svg { color: var(--os-muted); }
-/* The label tab says what the field is; the placeholder does not repeat it then. */
-.os-sfield:is(:hover, :focus-within, .is-next) .os-sfield__input::placeholder { color: transparent; }
-/* Finish: full contrast all along (it acts: it goes to the next required field). */
-#bar-finish[aria-disabled="true"], #guide-finish[aria-disabled="true"] { opacity: 1; cursor: pointer; }
-/* Review: the adopted mark in the values list; short values do not wrap needlessly. */
-.os-review { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
-.os-review__mark { display: block; max-width: 100%; max-height: 2.75rem; background: #fff; border-radius: var(--os-radius-sm); }
-@media (min-width: 48em) {
-  /* One heading: the panel's h1, not its head as well. */
-  .os-dock--static .os-dock__head { display: none; }
-}
-/* Review on phones: the document full height, a bottom bar with the values and Finish. */
+/* ---- Phones (≤ 48 em): SignerPhone.dc.html ------------------------------------------------ */
 @media (max-width: 47.999em) {
-  .os-signframe--review.is-phone { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .os-review__actions--bar.os-stack { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--os-s2); }
-  .os-review__actions--bar .os-btn { padding: 0 var(--os-s3); }
-  /* Compact fields at fit width: the tab only for the next field or the one in use,
-   * the text sized to the field (container units) until it is in use. */
-  .os-sfield:not(.is-next):not(:focus-within) > .os-sfield__tip { display: none; }
+  .os-sign__bar { flex-wrap: wrap; row-gap: 0.625rem; gap: 0.75rem; min-height: 0; padding: 0.875rem 1rem 0.75rem; background: color-mix(in srgb, var(--os-bg) 92%, transparent); }
+  .os-sign__org { font-size: 0.6875rem; }
+  .os-sign__actions { gap: 0.25rem; }
+  #secured-chip, .os-sign__savechip, #decline-btn { display: none; }
+  .os-sign__chip--status > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-sign__chip--status { padding: 0 0.375rem; }
+  .os-sign__more { width: var(--os-target-touch); height: var(--os-target-touch); border-radius: 0.75rem; }
+  .os-sign__segments:not([hidden]) { display: flex; flex-basis: 100%; gap: 0.25rem; }
+  .os-sign__segments > span { flex: 1; height: 0.25rem; border-radius: 2px; background: var(--os-border); transition: background 400ms var(--os-sign-ease); }
+  .os-sign__segments > span.is-on { background: var(--os-accent-fill); }
+  .os-signframe { grid-template-columns: minmax(0, 1fr); }
+  .os-sign__rail, .os-signframe__margin { display: none; }
+  .os-signframe .os-docview__pages { padding: 1rem 1rem 2rem; gap: 1rem; }
+  .os-sign__main:not(.is-frame-host) { padding: 1rem 0.75rem; }
+  .os-sign__card { padding: 1.75rem 1.375rem 1.5rem; }
+  /* The bottom action bar: status text, then Start / Next or Finish. */
+  .os-guide {
+    position: static; transform: none; left: auto; bottom: auto; max-width: none; border-radius: 0; gap: 0.75rem;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--os-bg) 95%, transparent);
+    color: var(--os-text); box-shadow: 0 -1px 0 var(--os-sign-hair); animation: none;
+  }
+  .os-guide__ring { display: none; }
+  .os-guide__text { flex: 1; min-width: 0; }
+  .os-guide__title { max-width: none; }
+  .os-guide__sub { color: var(--os-muted); }
+  .os-guide__cta { height: 3rem; padding: 0 1.5rem; border-radius: 0.875rem; background: var(--os-text); color: var(--os-bg); }
+  .os-guide__cta > svg { display: none; }
+  .os-guide__cta--finish { background: var(--os-accent-fill); color: var(--os-on-accent); }
+  .os-guide .os-guide__cta:focus-visible { outline-color: var(--os-focus); }
+  .has-side-sheet .os-guide, .has-sheet .os-guide { visibility: hidden; }
+  /* The field list leaves the document visible above it (G-S6). */
+  .os-sheet.os-sign__fieldsheet { max-height: 55dvh; }
+  /* Fields: a 44 px touch area; the one in use grows to a usable size (zoom.js). */
+  .os-sfield__hit { display: block; position: absolute; left: 50%; top: 50%; width: max(100%, 2.75rem); height: max(100%, 2.75rem); transform: translate(-50%, -50%); z-index: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .os-sfield > .os-sfield__btn, .os-sfield > .os-sfield__input, .os-sfield > .os-sfield__check, .os-sfield > .os-sfield__select { position: relative; z-index: 1; }
+  /* Only a field being typed into grows (a signature opens its dialog instead). */
+  .os-sfield:has(.os-sfield__input:focus, .os-sfield__select:focus) { transform: scale(var(--os-enlarge, 1)); z-index: 6; box-shadow: 0 0 0 0.125rem var(--os-focus), var(--os-shadow-pop); }
+  .os-sfield__input, .os-sfield > .os-sfield__select { font-size: 1rem; }
+  .os-sfield__tip { z-index: 9; }
+  .os-sfield:not(:focus-within) > .os-sfield__tip { display: none; }
+  /* The page indicator and zoom pill would sit on the page: pinch zooms here. */
+  .os-sign .os-signframe .os-docbar { display: none; }
   .os-sfield { container-type: size; }
   .os-sfield:not(:focus-within) > :is(.os-sfield__btn, .os-sfield__input, .os-sfield__select, .os-sfield__auto) { font-size: clamp(0.4375rem, 62cqh, 1rem); min-height: 0; }
   .os-sfield:not(:focus-within) > .os-sfield__btn > svg { width: clamp(0.5rem, 70cqh, 1rem); height: auto; }
+  /* The receipt and states: no frame, the card on the page, full-width actions. */
+  .os-state { align-items: center; padding: 2rem 1.5rem; }
+  .os-state__frame { padding: 0; background: transparent; box-shadow: none; }
+  .os-state__card { padding: 0; background: transparent; box-shadow: none; }
+  .os-state__actions { width: 100%; flex-direction: column; margin-top: 1rem; }
+  .os-state__actions .os-btn { width: 100%; height: 3rem; border-radius: 0.875rem; font-weight: 600; }
+  /* Review: the document full height, a bottom bar with the values and Finish. */
+  .os-signframe--review { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .os-signframe--review.is-phone { grid-template-rows: minmax(0, 1fr) auto; }
+  .os-dock.os-dock--static { position: static; order: -1; transform: none; visibility: visible; transition: none; max-height: 45dvh; border-radius: 0; box-shadow: var(--os-shadow); }
+  .os-dock--static .os-dock__head { display: none; }
+  .os-dock--static .os-dock__body { padding: 0.75rem; }
+  .os-dock--static .os-stack { grid-template-columns: 1fr 1fr; }
+  .os-review__actions.os-stack { grid-template-columns: minmax(0, 1fr); }
+  .os-review__actions--bar.os-stack { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; }
+  .os-review__actions--bar .os-btn { padding: 0 0.75rem; }
+  /* Adopt as a bottom sheet with a drag handle; Adopt and sign full width, Cancel under. */
+  .os-dialog.os-adopt {
+    width: 100%; max-width: 100%; max-height: 92dvh; margin: auto 0 0; border-radius: 1.25rem 1.25rem 0 0;
+    box-shadow: 0 -12px 32px -12px rgba(24, 24, 27, .3); animation: os-sign-sheet 420ms cubic-bezier(.32, .72, 0, 1) both;
+  }
+  .os-adopt::backdrop { background: rgba(24, 24, 27, .35); backdrop-filter: none; }
+  .os-adopt__grab { display: block; position: relative; flex: none; align-self: center; width: 2.25rem; height: 0.3125rem; margin-top: 0.625rem; border-radius: 0.25rem; background: #d4d4d8; cursor: grab; touch-action: none; }
+  .os-adopt__grab::before { content: ""; position: absolute; inset: -1rem -2rem; }
+  .os-adopt .os-dialog__head { padding: 0.75rem 1rem 0 1.25rem; }
+  .os-adopt .os-dialog__head .os-btn { width: var(--os-target-touch); height: var(--os-target-touch); }
+  .os-adopt .os-dialog__body { padding: 0.25rem 1.25rem 0.75rem; }
+  .os-adopt__modes { padding: 0.1875rem; border-radius: 0.625rem; background: var(--os-sign-bg); }
+  .os-adopt__mode { flex: 1; height: 2.25rem; }
+  .os-adopt__mode[aria-selected="true"] { background: var(--os-bg); color: var(--os-text); box-shadow: 0 1px 2px rgba(24, 24, 27, .08); }
+  .os-adopt__font { min-height: 6.5rem; border-radius: 0.875rem; }
+  .os-adopt .os-dialog__foot { flex-direction: column-reverse; gap: 0.25rem; padding: 0.5rem 1.25rem calc(1rem + env(safe-area-inset-bottom)); background: var(--os-bg); box-shadow: none; }
+  .os-adopt .os-dialog__foot .os-btn { width: 100%; height: 2.75rem; border-radius: 0.875rem; }
+  .os-adopt .os-dialog__foot .os-btn--primary { height: 3.25rem; font-size: 0.9375rem; font-weight: 600; }
 }
-.os-done__actions { gap: var(--os-s2); flex-wrap: wrap; }
-/* The adopt panel: wide enough to draw in (30 rem or more), the pads 3:1. */
-.os-adopt__padblock + .os-label { margin-top: var(--os-s4); }
-.os-adopt__padtools { flex-wrap: nowrap; }
-.os-adopt__type--both .os-adopt__font { display: flex; align-items: center; gap: var(--os-s4); }
-.os-adopt__type--both .os-adopt__sample--signature { flex: 1; min-width: 0; }
-.os-adopt__sample--initials { flex: none; max-width: 30%; }
-.os-adopt__drop { display: grid; justify-items: center; align-content: center; gap: var(--os-s1); padding: var(--os-s6) var(--os-s4); border: 0.125rem dashed var(--os-border-strong); border-radius: var(--os-radius-lg); background: var(--os-surface); text-align: center; cursor: pointer; aspect-ratio: 3 / 1; }
-.os-adopt__drop:hover, .os-adopt__drop.is-dropping { border-color: var(--os-accent-fill); background: var(--os-accent-soft); }
-.os-adopt__drop > svg { color: var(--os-muted); }
-.os-adopt__drop-title { font-weight: 600; }
-.os-adopt__drop.has-image { aspect-ratio: auto; }
-.os-adopt__drop .os-adopt__upload-preview { margin-top: var(--os-s2); max-height: 8rem; }
-#adopt-file:focus-visible + .os-adopt__drop { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
-#adopt-err:empty { display: none; }
-/* An inline link in running text (the done page's Verify page). */
-.os-sign__inlink { color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.1875rem; }
-/* A side panel (adopt, help, history) covers the field list on desktop; what it covers
- * is hidden, so nothing behind it can be reached or read through it. */
-@media (min-width: 48em) {
-  .has-side-sheet .os-signframe > .os-dock--right { visibility: hidden; }
+@media (max-width: 26.25em) {
+  .os-sign__mark { display: none; }
+  .os-adopt__inputs { grid-template-columns: minmax(0, 1fr) 5.5rem; }
+}
+/* Short windows (P-03, 400 % zoom): the header and the guide stop being pinned; the
+ * page scrolls and the document view takes the full window height. */
+@media (max-height: 31.25em) {
+  .os-sign { display: block; height: auto; min-height: 100dvh; overflow: visible; }
+  .os-sign__main { overflow: visible; }
+  .os-sign__main.is-frame-host { height: 100dvh; overflow: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .os-sign *, .os-loader, .os-loader *, .os-adopt, .os-adopt * { animation: none !important; transition: none !important; }
 }

@@ -970,3 +970,56 @@ receipt frame, the warm glow) are `--auth-*` in that file, with dark values.
   scanning stage, the green receipt with seven checks, and the red receipt with its failing check. The hand-over test
   in `e2e/shell.spec.mjs` now asserts that no build tool is named anywhere on the page (it failed whenever the verifier
   was installed, because it asserted on an element that is then absent).
+## As built: signing ceremony on the approved canvas (WEB-18, lane C, 2026-11-13)
+
+The signer page rebuilt on `docs/assets/design-canvas/Signer.dc.html` and `SignerPhone.dc.html`. Files: `sign.html`,
+`sign.js`, `sign.css`, `signature.js`, `signfields.js`, `strings/sign.en.js`.
+
+- **Model and view.** What the page shows is computed by pure functions in `signfields.js` (`guideState`, `nextAction`,
+  `ringDash`, `loaderSteps`, `pageCounts`, `pageTotal`, `filledKinds`, `firstName`, `orgMark`, `askLine`, `dateField`,
+  `phoneSegments`), unit-tested in `webapp/tests/signfields.test.mjs`; `sign.js` renders from them.
+- **Secure-open loader.** A seal with an orbiting ring over the page and three steps ticked only when they happen: the
+  signing session opened (`POST /s/{token}/session` answered), the document bytes arrived, the first page was drawn
+  (its canvas painted, or after 4 s). The canvas's "Checking the document is unchanged since it was sent" step is
+  **not** shown: the page compares no hash. Its title is "Opening your document" (not "securely": the page cannot
+  verify that).
+- **Header.** The organisation's two-letter mark, the subject, "<sender> at <org> asked you to sign" (only from the
+  view's `sender`; nothing when absent), a neutral "Secured by OpenSeal" chip, Decline (ghost) and More (⋯). Phones:
+  the compact header with a two-segment progress bar (fields done, finished).
+- **Document.** A 6 rem thumbnail rail (current page ringed, a red count of required fields left per page), the pages
+  at fit width capped at 48 rem and centred, a 6 rem right margin at 80 em and wider, zoom in a small pill bottom
+  right. Required fields are tinted light red, the next one ringed; filled values in ink with a blue hairline; a placed
+  mark inks in left to right; the date-signed field says "Fills in when you sign" until a mark is placed. The yellow
+  Start flag of WEB-06 is gone (the ring and the guide bar replace it). The field list moved to More → All fields (a
+  side panel; a bottom sheet capped at 55 dvh on phones); the sender's message is also on the consent card.
+- **Nothing covers a field.** The document view keeps 7 rem of scroll padding under the floating guide bar; Next
+  centres the field in the part of the view the bar does not cover, and a field that is focused or becomes next is
+  scrolled clear of the bar and the zoom pill (`keepClear`). Label tabs show on hover and focus only (the next field is
+  ringed instead), below the field when another field is above, and not at all when both would cover one. Style tiles
+  stack the signature over the initials and shrink the sample until it fits (never cut off). On phones the page pill is
+  hidden, only a field being typed into grows, and the page is fitted to the width again once everything is filled.
+- **Guide bar.** Dark, floating, bottom centre: a progress ring "n/N", the next action ("Sign the agreement", "Initial
+  page 1", "Fill in Job title", …), "n required fields left", and Start / Next; once nothing required is left, Finish
+  (red, pulsing). Phones: the white bottom action bar. `#guide-progress` keeps the "n of N required" status for
+  assistive technology. Finish still goes through review (ADR-020).
+- **Adopt dialog.** A modal (`openDialog`: focus trap, Escape, focus returned) with Type / Draw / Upload as a segmented
+  tablist (arrow keys), name and initials inputs, two style tiles in Great Vibes and Allura (the faces the flattener
+  embeds; the canvas shows three, a third would need a font the PDF does not have), a hinted draw pad on a dashed
+  baseline, the drop zone, the consent line, Cancel / Adopt and sign. Phones: a bottom sheet with a drag handle (drag
+  down a quarter of its height to dismiss); Adopt and sign full width above Cancel; full-screen drawing kept.
+- **Receipt and states.** A tinted frame around a white card: the seal pops in, "Signed. Thank you, <first name>.",
+  what happens next, when they signed (with its zone) and the kinds of field filled, the Verify page link, Download a
+  copy and Print. The document fingerprint row is not shown: the ceremony view carries none (a row when the API adds
+  it). Declined, closed (voided), expired, reassigned, saved for later, not found and error use the same card with a
+  quieter disc.
+- **Commands.** Every verb is registered in `commands.js` as `signer.*` (`next`, `finish`, `fields`, `download`,
+  `print`, `change-signature`, `reassign`, `history`, `help`, `finish-later`, `decline`); the guide bar, the header and
+  More run them.
+- **Not matched to the canvas.** Two style tiles, not three (fonts); no fingerprint (API); the loader's integrity step
+  (not verified); the review step stays between Finish and the receipt (ADR-020); zoom controls kept (a small pill);
+  the thumbnail count is 12 px, not the canvas's 9 px (the 12 px floor). Geist is declared in `sign.css` under the
+  page's own family name until the foundation serves it.
+- **Tests.** `ceremony`, `guided-ceremony`, `decline`, `sign-layout` and `a11y-sign` specs updated to the new UI with
+  their behavioural assertions kept (Finish hidden until ready instead of `aria-disabled`; the field list through More;
+  the page centred instead of the Start flag; the receipt's facts and Verify link instead of the "What happens next"
+  list); `decline.spec` scopes the sender's "Reason given" to the callout (it matched twice on the sender's page).
