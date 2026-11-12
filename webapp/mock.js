@@ -733,6 +733,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       items: page.map((e) => ({
         id: e.id, status: e.status, subject: e.subject, sender_user_id: e.sender_user_id, created_at: e.created_at,
         updated_at: updatedAt(e), expires_at: e.expires_at,
+        // As the server's summary (envelopes.rs list): when it was sent and completed (UX-08).
+        sent_at: e.sent_at || null, completed_at: e.status === "completed" ? e.ended_at || null : null,
         ...(e.folder_id ? { folder_id: e.folder_id } : {}), ...(waiting ? { my_recipient_id: myRecipient(e).id } : {}),
       })),
       next_cursor: start + limit < all.length ? String(start + limit) : null,

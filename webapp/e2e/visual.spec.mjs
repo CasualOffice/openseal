@@ -197,7 +197,7 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       await page.goto(app("#/admin"));
       await expect(page.getByRole("cell", { name: "Robin Sender", exact: true })).toBeVisible();
       await check("14-admin-users");
-      await page.getByRole("tab", { name: "API clients" }).click();
+      await page.goto(app("#/admin?section=api"));
       await expect(page.getByText("CRM integration")).toBeVisible();
       await check("15-admin-api");
     });
