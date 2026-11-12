@@ -652,11 +652,10 @@ components:
             organisation: {type: string, description: "The account's brand name (`settings.branding.name`), else the account's name"}
     CeremonyDisclosure:
       type: object
-      required: [version, sha256, language, text]
+      required: [version, sha256, text]
       properties:
         version: {type: string, description: 'The label `POST /s/{token}/consent` takes'}
         sha256: {type: string, description: '`sha256:<hex>` over the text''s UTF-8, re-checked as it is read'}
-        language: {type: string, description: 'The text''s language tag'}
         text: {type: string}
     ConsentRequest:
       type: object

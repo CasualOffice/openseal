@@ -1377,7 +1377,7 @@ fn authenticated(r: &casual_sign_workflow::RecipientState) -> Result<(), ApiErro
 }
 
 /// `GET /s/{token}/disclosure` (UXW-34): the full disclosure (ERSD) the view's
-/// `consent_required` names, `{version, sha256, language, text}`: `version` the label
+/// `consent_required` names, `{version, sha256, text}`: `version` the label
 /// `POST …/consent` takes, `sha256` over the text's UTF-8 (the hash consent records),
 /// re-checked as it is read. The account's own published text, found by that hash;
 /// `404 CS-API-0002` when the account requires no disclosure or has published no text
@@ -1417,7 +1417,6 @@ pub(crate) async fn disclosure(
         Ok::<_, ApiError>(json!({
             "version": ersd.version,
             "sha256": ersd.hash,
-            "language": d.language,
             "text": d.body,
         }))
     })();

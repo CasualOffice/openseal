@@ -201,7 +201,7 @@ async fn the_disclosure_is_served_after_authentication_in_the_bound_browser_and_
     let d = ok(get(&api, &path, &h).await, StatusCode::OK, "disclosure");
     assert_eq!(
         d,
-        json!({"version": "2026-1", "sha256": hash_of(ALPHA_TEXT), "language": "en", "text": ALPHA_TEXT})
+        json!({"version": "2026-1", "sha256": hash_of(ALPHA_TEXT), "text": ALPHA_TEXT})
     );
     assert_eq!(d["sha256"], view["consent_required"]["sha256"]);
     assert_eq!(
