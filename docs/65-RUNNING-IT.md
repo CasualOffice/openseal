@@ -60,7 +60,10 @@ target/tools-venv/bin/python tools/verify-sealed.py target/e2e-sealed     # pyHa
 workspace, so the `modeld` image does not build yet, and the worker does not call it (ADR-029, docs/33).
 
 Assistive features (OCR of scanned pages, template matching, personal-data highlights) run in a separate process,
-`modeld`. It holds no secrets other than its own TLS identity, and it sits only on the Compose network `ml`, which is
+`modeld`. It holds no secrets other than its own TLS identity: it never mounts the shared `secrets` volume, only its
+own `modeld-secrets`, into which `pki` writes modeld's certificate chain and key, the root certificate and its allow
+list (the worker's certificate), nothing else. `python3 -I tools/ml/check-modeld-isolation.py` checks the Compose
+mounts and what `dev-pki` writes. It sits only on the Compose network `ml`, which is
 `internal: true` and so has no route out. Its root filesystem is read-only, it has a 4 GiB memory limit and a limit
 of 256 processes, core dumps are off, and every capability is dropped. All of it is off unless the profile is asked
 for: `docker compose --profile ml up -d --build`.
