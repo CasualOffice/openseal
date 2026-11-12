@@ -15,20 +15,55 @@
 </head>
 <body class="os-site">
   <a class="os-skip" href="#main">Skip to content</a>
+  <!-- UX-04: one primary per view (the hero's), the brand is a link, a feature row and
+       a footer; the theme follows the app's default (site.js runs theme.js). -->
   <header class="os-site__bar">
-    <img class="os-logo--light" src="assets/logo.svg" alt="OpenSeal" width="150" height="29">
-    <img class="os-logo--dark" src="assets/logo-dark.svg" alt="OpenSeal" width="150" height="29">
+    <a class="os-site__brand" href="index.html" aria-label="OpenSeal home">
+      <img class="os-logo--light" src="assets/logo.svg" alt="" width="150" height="29">
+      <img class="os-logo--dark" src="assets/logo-dark.svg" alt="" width="150" height="29">
+    </a>
     <span class="os-spacer"></span>
-    <a class="os-btn os-btn--primary os-btn--md" href="app.html">Sign in</a>
+    <a class="os-btn os-btn--ghost os-btn--md" href="verify.html">Verify a PDF</a>
+    <a class="os-btn os-btn--secondary os-btn--md" href="app.html">Sign in</a>
   </header>
-  <main id="main" class="os-site__main">
-    <h1 class="os-site__title">Agreements, signed and provable.</h1>
-    <p class="os-site__lede">OpenSeal is an open-source electronic-signature platform under Apache-2.0: upload a PDF, place fields, send, and get back a sealed document with its audit trail that anyone can verify offline. Self-hostable, embeddable and API-first.</p>
-    <p class="os-site__note">Pre-release: designed to support e-signature laws such as ESIGN and eIDAS; no legal or compliance claim is made (docs/09).</p>
-    <div class="os-actions">
-      <a class="os-btn os-btn--primary os-btn--lg" href="app.html">Open the app</a>
-      <a class="os-btn os-btn--secondary os-btn--lg" href="verify.html">Verify a signed PDF</a>
-    </div>
+  <main id="main" class="os-site__main" tabindex="-1">
+    <section class="os-site__hero" aria-labelledby="site-title">
+      <h1 id="site-title" class="os-site__title">Agreements, signed and provable.</h1>
+      <p class="os-site__lede">OpenSeal is an open-source electronic-signature platform: upload a PDF, place fields, send, and get back a sealed document with its audit trail that anyone can verify offline. Self-hostable, embeddable and API-first.</p>
+      <div class="os-actions">
+        <a class="os-btn os-btn--primary os-btn--lg" href="app.html">Open the app</a>
+        <a class="os-btn os-btn--secondary os-btn--lg" href="verify.html">Verify a signed PDF</a>
+      </div>
+      <p class="os-site__note">Pre-release. Designed to support e-signature laws such as ESIGN and eIDAS; no legal or compliance claim is made.</p>
+    </section>
+    <section class="os-site__features" aria-labelledby="features-title">
+      <h2 id="features-title" class="os-sr-only">What OpenSeal does</h2>
+      <ul class="os-site__grid">
+        <li class="os-site__feature">
+          <h3>Send and track</h3>
+          <p>Upload documents, add recipients in signing order, place fields, and follow every envelope from sent to completed.</p>
+        </li>
+        <li class="os-site__feature">
+          <h3>Sign anywhere</h3>
+          <p>Recipients sign in the browser on a phone or a desktop, with no account and no download, guided field by field.</p>
+        </li>
+        <li class="os-site__feature">
+          <h3>Verify offline</h3>
+          <p>Each completed document is sealed with its audit trail inside, so anyone can check who signed and that nothing changed.</p>
+        </li>
+        <li class="os-site__feature">
+          <h3>Self-host and API</h3>
+          <p>Run it on your own servers, embed signing in your product, and drive everything through the same API the app uses.</p>
+        </li>
+      </ul>
+    </section>
   </main>
+  <footer class="os-site__foot">
+    <p>OpenSeal is open source under the Apache License 2.0.</p>
+    <nav class="os-site__links" aria-label="Site">
+      <a href="app.html">Sign in</a>
+      <a href="verify.html">Verify a signed PDF</a>
+    </nav>
+  </footer>
 </body>
 </html>
