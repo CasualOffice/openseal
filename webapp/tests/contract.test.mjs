@@ -10,6 +10,8 @@ import {
   RECIPIENT_TYPES, FIELD_TYPES, FIELD_MEMBERS,
 } from "../api.js";
 import { makePdf } from "../mockpdf.js";
+import { EN } from "../strings.en.js";
+import { readFileSync } from "node:fs";
 
 const PNG = btoa("\x89PNG\r\n\x1a\n" + "x".repeat(16));
 const b64 = (bytes) => btoa(String.fromCharCode(...bytes));
@@ -396,4 +398,23 @@ test("ahead of the server: a signer clears a value, and staff host an in-person 
   const { url } = await c.hostInPerson(env.id, ina.id);
   assert.equal(url, `/s/${ina.mock_token}`);
   await c.ceremony.consent(ina.mock_token, MOCK.ersd);
+});
+
+test("every client-side error code api.js raises has an English string and a docs/20 entry", () => {
+  const src = readFileSync(new URL("../api.js", import.meta.url), "utf8");
+  const registry = readFileSync(new URL("../../docs/20-ERROR-CODE-REGISTRY.md", import.meta.url), "utf8");
+  const codes = [...new Set(src.match(/CS-NET-\d{4}/g))];
+  assert.deepEqual(codes.sort(), ["CS-NET-0001", "CS-NET-0002"]);
+  for (const c of codes) {
+    assert.ok(EN[`error.${c}`], `no English string for ${c}`);
+    assert.match(registry, new RegExp(`\\| ${c} \\|`), `${c} not in docs/20`);
+  }
+});
+
+test("every call not on the server names the tracker row that builds it, and docs/40 lists it", () => {
+  const doc = readFileSync(new URL("../../docs/40-API-DESIGN.md", import.meta.url), "utf8");
+  for (const [name, { row }] of Object.entries(NOT_ON_SERVER)) {
+    assert.match(String(row), /^[A-Z]+-\d+$/, `${name} has no tracker row`);
+    assert.ok(doc.includes(`\`${row}\``), `${name}'s row ${row} is not in docs/40`);
+  }
 });

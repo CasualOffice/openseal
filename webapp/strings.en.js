@@ -189,6 +189,7 @@ export const EN = {
 
   "error.unexpected": "Something went wrong.",
   "error.CS-NET-0001": "The server could not be reached. Check your connection and try again.",
+  "error.CS-NET-0002": "This is not available on this server yet.",
   "error.CS-API-0001": "The request was not accepted. Check the highlighted values.",
   "error.CS-API-0002": "This was not found. It may have been deleted, or you may not have access.",
   "error.CS-API-0003": "Too many requests. Wait a moment and try again.",

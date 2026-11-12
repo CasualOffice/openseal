@@ -179,7 +179,7 @@ export const WEBHOOK_EVENT_TYPES = Object.freeze([
 ]);
 
 /// Calls the UI may make that the server does not serve yet (UX-03), each with the
-/// tracker row that builds it (`null`: a row is still to be opened) and what it needs.
+/// tracker row that builds it and what it needs.
 /// The mock serves them as designed; against a server they fail at once with
 /// `CS-NET-0002` (501), so the UI can say "not available yet" instead of hiding the
 /// control. `client.available(name)` tells which.
@@ -188,13 +188,13 @@ export const NOT_ON_SERVER = Object.freeze({
   envelopeFilters: { row: "UXW-03", needs: "GET /envelopes?recipient=&date_field=sent_at|completed_at|created_at|updated_at" },
   folders: { row: "UXW-02", needs: "GET/POST /folders, PATCH/DELETE /folders/{id}, POST /folders/{id}/envelopes; GET /envelopes?folder=" },
   deleted: { row: "UXW-02", needs: "GET /envelopes?deleted=true and POST /envelopes/{id}/restore (deleted envelopes kept, restorable)" },
-  certificateEnded: { row: null, needs: "GET /envelopes/{id}/certificate for declined, voided and expired envelopes (409 today)" },
-  updateWebhook: { row: null, needs: "PATCH /webhooks/{id} {url?, event_types?, active?} (pause, resume, edit)" },
-  testWebhook: { row: null, needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
-  redeliver: { row: null, needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
-  disclosure: { row: null, needs: "GET /s/{token}/disclosure {version, sha256, text} and consent_required.url" },
-  clearField: { row: null, needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit event)" },
-  hostInPerson: { row: null, needs: "POST /envelopes/{id}/recipients/{r}/host (staff hosts an in-person signer)" },
+  certificateEnded: { row: "UXW-30", needs: "GET /envelopes/{id}/certificate for declined, voided and expired envelopes (409 today)" },
+  updateWebhook: { row: "UXW-31", needs: "PATCH /webhooks/{id} {url?, event_types?, active?} (pause, resume, edit)" },
+  testWebhook: { row: "UXW-32", needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
+  redeliver: { row: "UXW-33", needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
+  disclosure: { row: "UXW-34", needs: "GET /s/{token}/disclosure {version, sha256, text} and consent_required.url" },
+  clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit event)" },
+  hostInPerson: { row: "UXW-36", needs: "POST /envelopes/{id}/recipients/{r}/host (staff hosts an in-person signer)" },
 });
 
 /// Make a client. `baseUrl` is prepended to every path ("" = same origin). `store`

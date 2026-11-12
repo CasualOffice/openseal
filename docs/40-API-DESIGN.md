@@ -383,17 +383,17 @@ with what it needs and its tracker row. The mock serves them as designed; agains
 once with `CS-NET-0002` (status 501, client-side only like `CS-NET-0001`; the `detail` names the call), and
 `client.available(name)` lets a screen show the control as "not available yet" rather than hide it:
 
-| Name | Needs on the server |
-| --- | --- |
-| `inbox` | `GET /envelopes?waiting_for=me` (items with `my_recipient_id`) and `POST /envelopes/{id}/sign-link` → `{url}` |
-| `envelopeFilters` | `GET /envelopes?recipient=&date_field=updated_at\|created_at\|sent_at\|completed_at` |
-| `folders` | `GET`/`POST /folders`, `PATCH`/`DELETE /folders/{id}`, `POST /folders/{id\|none}/envelopes {envelope_ids}`, `GET /envelopes?folder=` |
-| `deleted` | `GET /envelopes?deleted=true`, `POST /envelopes/{id}/restore` |
-| `certificateEnded` | `GET …/certificate` for declined, voided and expired envelopes (`409` today) |
-| `updateWebhook`, `testWebhook`, `redeliver` | `PATCH /webhooks/{id} {url?, event_types?, active?}`, `POST …/test`, `POST …/deliveries/{d}/redeliver` |
-| `disclosure` | `GET /s/{token}/disclosure` and the view's `sender`, `consent_required.url`, `envelope.expires_at` (§6) |
-| `clearField` | `DELETE /s/{token}/fields/{field}`: a signer removes a value before finishing, recorded by a new audit type |
-| `hostInPerson` | `POST /envelopes/{id}/recipients/{r}/host` → `{url}`: a staff user hosts an in-person signer |
+| Name | Needs on the server | Row |
+| --- | --- | --- |
+| `inbox` | `GET /envelopes?waiting_for=me` (items with `my_recipient_id`) and `POST /envelopes/{id}/sign-link` → `{url}` | `UXW-01` |
+| `envelopeFilters` | `GET /envelopes?recipient=&date_field=updated_at\|created_at\|sent_at\|completed_at` | `UXW-03` |
+| `folders` | `GET`/`POST /folders`, `PATCH`/`DELETE /folders/{id}`, `POST /folders/{id\|none}/envelopes {envelope_ids}`, `GET /envelopes?folder=` | `UXW-02` |
+| `deleted` | `GET /envelopes?deleted=true`, `POST /envelopes/{id}/restore` | `UXW-02` |
+| `certificateEnded` | `GET …/certificate` for declined, voided and expired envelopes (`409` today) | `UXW-30` |
+| `updateWebhook`, `testWebhook`, `redeliver` | `PATCH /webhooks/{id} {url?, event_types?, active?}`, `POST …/test`, `POST …/deliveries/{d}/redeliver` | `UXW-31`, `UXW-32`, `UXW-33` |
+| `disclosure` | `GET /s/{token}/disclosure` and the view's `sender`, `consent_required.url`, `envelope.expires_at` (§6), and `openapi.yaml` listing them | `UXW-34` |
+| `clearField` | `DELETE /s/{token}/fields/{field}`: a signer removes a value before finishing, recorded by a new audit type | `UXW-35` |
+| `hostInPerson` | `POST /envelopes/{id}/recipients/{r}/host` → `{url}`: a staff user hosts an in-person signer | `UXW-36` |
 
 **The mock follows the server** where it had drifted: every engine recipient type is taken and routed (everyone but a
 copy is waited for; an approver approves, a viewer completes by viewing every document to the end, an in-person signer

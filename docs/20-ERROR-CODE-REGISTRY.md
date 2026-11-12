@@ -1,9 +1,9 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014` and `CS-AUTH-0001`, `0002`, `0006` to `0010` (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). `CS-PII-0001` (`casual-sign-pii`, `ML-08`). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014` and `CS-AUTH-0001`, `0002`, `0006` to `0010` (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). `CS-PII-0001` (`casual-sign-pii`, `ML-08`). `CS-NET-0001` and `0002` (the web app's API client, `webapp/api.js`; client-side only). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-DB` persistence, `CS-BLOB` blob storage, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
-`CS-CNV` conversion, `CS-ML` model process and ML jobs (reserved, ADR-029), `CS-PII` personal-data recognisers.
+`CS-CNV` conversion, `CS-ML` model process and ML jobs (reserved, ADR-029), `CS-PII` personal-data recognisers, `CS-NET` the web app's API client.
 
 ## Reading (`casual-sign-pdf`)
 
@@ -247,6 +247,17 @@ any of the text (`SEC-D01`), and a test checks that with a marker string.
 | Code | Meaning |
 | --- | --- |
 | CS-PII-0001 | Text over the bound for one detection call (`Options::max_text_bytes`, default 4 MiB). *Final* for that text |
+
+## Web app API client (`webapp/api.js`, `UX-03`)
+
+Raised by the browser's API client, never sent by the server, so no problem-details response carries them. The
+`detail` holds at most the client call's name, never request or document content. Each has an English string in
+`webapp/strings.en.js` (`error.CS-NET-…`).
+
+| Code | Meaning |
+| --- | --- |
+| CS-NET-0001 | The request did not reach the server or no answer came back (network failure); status 0 |
+| CS-NET-0002 | The call is not served by this server yet (listed in `NOT_ON_SERVER`); refused at once with status 501 and no request sent; `detail` is the call's name |
 
 ## ML (`casual-sign-modeld`, the worker's ML jobs; reserved, ADR-029)
 
