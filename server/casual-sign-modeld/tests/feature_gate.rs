@@ -111,6 +111,29 @@ fn the_client_only_tree_has_no_inference_stack() {
     assert!(found.is_empty(), "client-only tree links {found:?}");
 }
 
+/// **The worker links no inference stack** (`SEC-I14`): whatever it depends on, the
+/// secret-holding worker's own tree holds no ONNX Runtime binding, OCR pipeline,
+/// rasteriser, tokenizer or image decoder.
+#[test]
+fn the_worker_links_no_inference_stack() {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let out = Command::new(cargo)
+        .args(["tree", "-p", "casual-sign-worker", "--locked", "--offline"])
+        .args(["--prefix", "none", "--target", "all", "-e", "normal,build"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("cargo runs");
+    let tree = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "cargo tree -p casual-sign-worker failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(crate_names(&tree).contains(&"casual-sign-worker"), "{tree}");
+    let found = server_only_present(&tree);
+    assert!(found.is_empty(), "the worker links {found:?}");
+}
+
 /// **No dependency downloads binaries or models** (review defect 2, `SEC-I09`).
 #[test]
 fn no_dependency_has_a_fetching_feature() {
