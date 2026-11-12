@@ -5,6 +5,7 @@ use casual_sign_audit::Personal;
 use time::OffsetDateTime;
 
 use super::{affected, text_enum};
+use crate::admin_log::{AdminChange, Change, settings_changes};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{
     AccountId, OrganizationId, PermissionProfileId, StaffSessionId, UserId, UserInvitationId,
@@ -65,13 +66,23 @@ impl Accounts<'_> {
         })
     }
 
-    /// Replace this account's settings.
+    /// Replace this account's settings, appending `workspace.settings_changed` with
+    /// every changed key's old and new value (secrets as `"rotated"`) to the admin log.
     ///
     /// # Errors
     ///
-    /// `CS-DB-0003` when the account does not exist; `CS-DB-0008` when not an object.
+    /// `CS-DB-0003` when the account does not exist; `CS-DB-0008` when not an object;
+    /// `CS-DB-0014` when the event cannot be appended.
     pub async fn set_settings(&mut self, settings: &serde_json::Value) -> Result<()> {
         let acct = self.tx.acct();
+        let old = sqlx::query_scalar!(
+            "SELECT settings FROM accounts WHERE id = $1 FOR UPDATE",
+            acct
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound { entity: "account" })?;
         let done = sqlx::query!(
             "UPDATE accounts SET settings = $2 WHERE id = $1",
             acct,
@@ -80,7 +91,12 @@ impl Accounts<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        affected(done.rows_affected(), "account")
+        affected(done.rows_affected(), "account")?;
+        let mut change = AdminChange::new("workspace.settings_changed").target("workspace", acct);
+        for c in settings_changes(&old, settings) {
+            change = change.change(c);
+        }
+        self.tx.admin_event(change).await
     }
 
     /// Make `user`, the first administrator of a just-bootstrapped install, the owner of
@@ -102,13 +118,18 @@ impl Accounts<'_> {
         .fetch_one(self.tx.conn())
         .await
         .map_err(db)?;
-        if done {
-            Ok(())
-        } else {
-            Err(StoreError::NotFound {
+        if !done {
+            return Err(StoreError::NotFound {
                 entity: "organization",
-            })
+            });
         }
+        self.tx
+            .org_admin_event(
+                AdminChange::new("organization.admin_added")
+                    .target("user", user.0)
+                    .change(Change::new("role", None, Some("owner".into()))),
+            )
+            .await
     }
 
     /// The published disclosure (ERSD, docs/22 §1) whose text hashes to `sha256`: the
@@ -265,7 +286,22 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        Ok(())
+        self.tx
+            .admin_event(
+                AdminChange::new("profile.created")
+                    .target("profile", profile.id.0)
+                    .change(Change::new(
+                        "kind",
+                        None,
+                        Some(profile.kind.as_str().into()),
+                    ))
+                    .change(Change::new(
+                        "permissions",
+                        None,
+                        Some(serde_json::json!(profile.permissions)),
+                    )),
+            )
+            .await
     }
 
     /// A permission profile of this account.
@@ -336,7 +372,17 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        Ok(())
+        self.tx
+            .admin_event(
+                AdminChange::new("member.added")
+                    .target("user", user.id.0)
+                    .change(Change::new(
+                        "profile",
+                        None,
+                        Some(profile.0.to_string().into()),
+                    )),
+            )
+            .await
     }
 
     /// Make an existing user, of another account, a member of this one. The caller must
@@ -363,11 +409,20 @@ impl Users<'_> {
         .fetch_one(self.tx.conn())
         .await
         .map_err(db)?;
-        if added {
-            Ok(())
-        } else {
-            Err(StoreError::NotFound { entity: "user" })
+        if !added {
+            return Err(StoreError::NotFound { entity: "user" });
         }
+        self.tx
+            .admin_event(
+                AdminChange::new("member.added")
+                    .target("user", user.0)
+                    .change(Change::new(
+                        "profile",
+                        None,
+                        Some(profile.0.to_string().into()),
+                    )),
+            )
+            .await
     }
 
     /// A member of this account.
@@ -432,7 +487,15 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        self.sole_member_written(user, done.rows_affected()).await
+        self.sole_member_written(user, done.rows_affected()).await?;
+        // The name is personal data: the event names the key, not the values.
+        self.tx
+            .admin_event(
+                AdminChange::new("member.renamed")
+                    .target("user", user.0)
+                    .change(Change::new("name", None, None)),
+            )
+            .await
     }
 
     /// Remove a member from this account (the user remains for their other accounts).
@@ -450,7 +513,10 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        affected(done.rows_affected(), "user")
+        affected(done.rows_affected(), "user")?;
+        self.tx
+            .admin_event(AdminChange::new("member.removed").target("user", user.0))
+            .await
     }
 }
 
@@ -493,7 +559,14 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        self.sole_member_written(user, done.rows_affected()).await
+        self.sole_member_written(user, done.rows_affected()).await?;
+        self.tx
+            .admin_event(
+                AdminChange::new("member.password_set")
+                    .target("user", user.0)
+                    .change(Change::new("password", None, Some("rotated".into()))),
+            )
+            .await
     }
 
     /// After an update of a user row guarded by sole membership: done, refused for a
@@ -586,6 +659,16 @@ impl Users<'_> {
     /// `CS-DB-0003` when not a member; `CS-DB-0008` for a profile of another account.
     pub async fn set_profile(&mut self, user: UserId, profile: PermissionProfileId) -> Result<()> {
         let acct = self.tx.acct();
+        let old = sqlx::query_scalar!(
+            "SELECT permission_profile_id FROM account_memberships \
+             WHERE account_id = $1 AND user_id = $2 FOR UPDATE",
+            acct,
+            user.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound { entity: "user" })?;
         let done = sqlx::query!(
             "UPDATE account_memberships SET permission_profile_id = $3 \
              WHERE account_id = $1 AND user_id = $2",
@@ -596,7 +679,18 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        affected(done.rows_affected(), "user")
+        affected(done.rows_affected(), "user")?;
+        self.tx
+            .admin_event(
+                AdminChange::new("member.profile_changed")
+                    .target("user", user.0)
+                    .change(Change::new(
+                        "profile",
+                        Some(old.to_string().into()),
+                        Some(profile.0.to_string().into()),
+                    )),
+            )
+            .await
     }
 
     /// Disable (`Some(at)`) or enable (`None`) a member in this account only; their
@@ -617,7 +711,15 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        affected(done.rows_affected(), "user")
+        affected(done.rows_affected(), "user")?;
+        let action = if at.is_some() {
+            "member.disabled"
+        } else {
+            "member.enabled"
+        };
+        self.tx
+            .admin_event(AdminChange::new(action).target("user", user.0))
+            .await
     }
 
     /// Record an invitation for a member; the worker sends it.

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT permission_profile_id FROM account_memberships WHERE account_id = $1 AND user_id = $2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "permission_profile_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "account_memberships",
+            "name": "permission_profile_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1eabb432b8452df154bd8c12c29377b8a91657a4afcc45df1f900f568a432af5"
+}

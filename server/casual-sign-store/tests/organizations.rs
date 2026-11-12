@@ -26,7 +26,7 @@ use casual_sign_store::repo::accounts::{LoginKind, NewUser};
 use casual_sign_store::repo::sessions::{LoginMethod, NewSession};
 use casual_sign_store::*;
 use common::world::{self, World, hash, id, now};
-use common::{Rls, TestDb, builtin_profiles, fresh};
+use common::{Rls, TestDb, builtin_profiles, fresh, org_event};
 use sqlx::{Executor, PgPool, Row};
 
 /// The SQLSTATE of a failed statement.
@@ -67,7 +67,11 @@ async fn policies(admin: &PgPool, table: &str) -> Vec<(String, String, String, S
 
 /// Organization tables: declared through `openseal_org_table` (`organizations` by hand,
 /// keyed on `id`).
-const ORG_TABLES: &[&str] = &["org_permission_sets", "organization_admins"];
+const ORG_TABLES: &[&str] = &[
+    "org_admin_events",
+    "org_permission_sets",
+    "organization_admins",
+];
 
 // Catalog tests (docs/23 §2.1) -----------------------------------------------------------
 
@@ -518,6 +522,7 @@ async fn organization_scope_reaches_no_content(rls: Rls) {
             "organizations",
             "organization_admins",
             "org_permission_sets",
+            "org_admin_events",
         ];
         for t in &tables {
             let truth_sql = match t.as_str() {
@@ -736,15 +741,18 @@ async fn an_organization_creates_and_archives_its_workspaces_only() {
                 .await
                 .unwrap();
         }
-        let created: bool =
-            sqlx::query_scalar("SELECT openseal_create_workspace($1, 'x', $2, $3, $4)")
-                .bind(id())
-                .bind(id())
-                .bind(id())
-                .bind(id())
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap();
+        let created: bool = sqlx::query_scalar(
+            "SELECT openseal_create_workspace($1, 'x', $2, $3, $4, 0, NULL, $5, now(), $6)",
+        )
+        .bind(id())
+        .bind(id())
+        .bind(id())
+        .bind(id())
+        .bind(vec![0_u8; 32])
+        .bind(b"{}".to_vec())
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
         assert!(!created, "{scope:?}");
         conn.rollback().await.unwrap();
     }
@@ -894,7 +902,10 @@ async fn bootstrap_owner_refuses_an_older_org_whose_row_was_touched_in_this_tran
     let admin = UserId(id());
     let mut tx = db.store.for_account(account).begin().await.unwrap();
     tx.users()
-        .create_member(&admin_user(admin, "touched"), PermissionProfileId(admin_profile))
+        .create_member(
+            &admin_user(admin, "touched"),
+            PermissionProfileId(admin_profile),
+        )
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -905,7 +916,10 @@ async fn bootstrap_owner_refuses_an_older_org_whose_row_was_touched_in_this_tran
         .await
         .unwrap();
     let mut conn = db.app.begin().await.unwrap();
-    for (k, v) in [("openseal.organization_id", org.0), ("openseal.account_id", account.0)] {
+    for (k, v) in [
+        ("openseal.organization_id", org.0),
+        ("openseal.account_id", account.0),
+    ] {
         sqlx::query("SELECT set_config($1, $2, true)")
             .bind(k)
             .bind(v.to_string())
@@ -918,6 +932,7 @@ async fn bootstrap_owner_refuses_an_older_org_whose_row_was_touched_in_this_tran
                 .execute(&mut *conn)
                 .await
                 .unwrap();
+            org_event(&mut conn, org).await;
         }
     }
     let done: bool = sqlx::query_scalar("SELECT openseal_bootstrap_owner($1, now())")
@@ -925,7 +940,10 @@ async fn bootstrap_owner_refuses_an_older_org_whose_row_was_touched_in_this_tran
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-    assert!(!done, "touching the organization row let an existing organization be claimed");
+    assert!(
+        !done,
+        "touching the organization row let an existing organization be claimed"
+    );
     conn.commit().await.unwrap();
     let owners: i64 =
         sqlx::query_scalar("SELECT count(*) FROM organization_admins WHERE organization_id = $1")
@@ -1026,6 +1044,7 @@ async fn an_organization_admin_must_be_a_member_of_one_of_its_workspaces() {
             .bind(user.0)
             .execute(&mut *conn)
             .await?;
+            org_event(&mut conn, org).await;
             conn.commit().await
         }
     };
@@ -1081,6 +1100,7 @@ async fn an_active_organization_keeps_an_enabled_owner() {
             .unwrap();
         let hit = sqlx::query(sql).execute(&mut *conn).await.unwrap();
         assert_eq!(hit.rows_affected(), 1, "{sql}");
+        org_event(&mut conn, a.organization).await;
         let err = conn.commit().await.unwrap_err();
         assert_eq!(sqlstate(&err), "23514", "{sql}: {err}");
         assert_eq!(
@@ -1117,6 +1137,7 @@ async fn an_active_organization_keeps_an_enabled_owner() {
         .execute(&mut *conn)
         .await
         .unwrap();
+    org_event(&mut conn, a.organization).await;
     conn.commit().await.unwrap();
     // A disabled identity does not count as an owner.
     sqlx::query("UPDATE users SET disabled_at = now() WHERE id = $1")
@@ -1144,8 +1165,13 @@ async fn an_active_organization_keeps_an_enabled_owner() {
         .execute(&mut *conn)
         .await
         .unwrap();
+    org_event(&mut conn, a.organization).await;
     let err = conn.commit().await.unwrap_err();
     assert_eq!(sqlstate(&err), "23514", "{err}");
+    assert_eq!(
+        err.as_database_error().and_then(|e| e.constraint()),
+        Some(LAST_OWNER_CONSTRAINT)
+    );
     db.drop().await;
 }
 
@@ -1327,7 +1353,8 @@ async fn a_database_with_an_account_without_admin_migrates() {
             .unwrap();
     }
     let report = Store::from_pool(db.admin.clone()).migrate().await.unwrap();
-    assert_eq!(report.applied, vec![14]);
+    // 0014 and every later migration (ORG-05's 0015, ...).
+    assert_eq!(report.applied.first(), Some(&14));
     for (i, acct) in accounts.iter().enumerate() {
         let (org, oname, ostatus): (uuid::Uuid, String, String) = sqlx::query_as(
             "SELECT a.organization_id, o.name, o.status FROM accounts a \

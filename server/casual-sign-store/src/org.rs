@@ -14,6 +14,10 @@ use sqlx::{Postgres, Transaction};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use crate::admin_log::{
+    AdminActor, AdminChange, Owner, StoredAdminEvent, append_error, seal, stored,
+    verify_admin_chain,
+};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{AccountId, OrganizationId, PermissionProfileId};
 use crate::repo::text_enum;
@@ -132,7 +136,11 @@ impl OrgScope<'_> {
         .fetch_one(&mut *tx)
         .await
         .map_err(db)?;
-        Ok(OrgTx { tx, org: self.org })
+        Ok(OrgTx {
+            tx,
+            org: self.org,
+            actor: None,
+        })
     }
 }
 
@@ -142,6 +150,7 @@ impl OrgScope<'_> {
 pub struct OrgTx {
     tx: Transaction<'static, Postgres>,
     org: OrganizationId,
+    actor: Option<AdminActor>,
 }
 
 impl OrgTx {
@@ -153,6 +162,118 @@ impl OrgTx {
 
     fn org(&self) -> Uuid {
         self.org.0
+    }
+
+    /// Who acts in this transaction: every admin event it appends records them, and
+    /// [`OrgTx::into_workspace`] carries them on. Without it, events record the server
+    /// itself.
+    pub fn act_as(&mut self, actor: AdminActor) {
+        self.actor = Some(actor);
+    }
+
+    fn actor(&self) -> AdminActor {
+        self.actor
+            .clone()
+            .unwrap_or_else(|| AdminActor::system(OffsetDateTime::now_utc()))
+    }
+
+    /// The next event of this organization's log for `change`, its head locked.
+    async fn next_event(&mut self, change: &AdminChange) -> Result<crate::admin_log::Sealed> {
+        let tip =
+            sqlx::query!(r#"SELECT next_seq AS "next_seq!", head FROM openseal_admin_chain_tip()"#)
+                .fetch_one(&mut *self.tx)
+                .await
+                .map_err(db)?;
+        let actor = self.actor();
+        seal(
+            Owner::Organization(self.org),
+            tip.next_seq,
+            tip.head,
+            &actor,
+            change,
+        )
+    }
+
+    /// Append `change` to this organization's admin log.
+    #[allow(dead_code)] // The organization routes (ORG-03) are its first callers.
+    pub(crate) async fn admin_event(&mut self, change: AdminChange) -> Result<()> {
+        let e = self.next_event(&change).await?;
+        let org = self.org();
+        sqlx::query!(
+            "INSERT INTO org_admin_events (organization_id, seq, prev_hash, hash, action, at, \
+             canonical) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            org,
+            e.seq,
+            e.prev,
+            e.hash,
+            e.action,
+            e.at,
+            e.canonical
+        )
+        .execute(&mut *self.tx)
+        .await
+        .map_err(append_error(e.seq))?;
+        Ok(())
+    }
+
+    /// This organization's admin log, from `after` (exclusive; `None` from the start), at
+    /// most `limit` events (1 to [`crate::ADMIN_EVENTS_MAX_PAGE`]).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn admin_events(
+        &mut self,
+        after: Option<u64>,
+        limit: i64,
+    ) -> Result<Vec<StoredAdminEvent>> {
+        let org = self.org();
+        let from = after.map_or(Ok(-1), i64::try_from).unwrap_or(i64::MAX);
+        let rows = sqlx::query!(
+            "SELECT seq, prev_hash, hash, action, at, canonical FROM org_admin_events \
+             WHERE organization_id = $1 AND seq > $2 ORDER BY seq LIMIT $3",
+            org,
+            from,
+            limit.clamp(1, crate::admin_log::MAX_PAGE)
+        )
+        .fetch_all(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| stored(r.seq, r.prev_hash, r.hash, r.action, r.at, r.canonical))
+            .collect()
+    }
+
+    /// This organization's whole admin log, re-verified; the stored head must be the
+    /// last event's hash.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0014` naming the first event that does not verify.
+    pub async fn verified_admin_log(&mut self) -> Result<Vec<StoredAdminEvent>> {
+        let mut all = Vec::new();
+        let mut after = None;
+        loop {
+            let page = self.admin_events(after, crate::admin_log::MAX_PAGE).await?;
+            let Some(last) = page.last() else { break };
+            after = Some(last.seq);
+            all.extend(page);
+        }
+        let head = verify_admin_chain(&all)?;
+        let org = self.org();
+        let at = sqlx::query_scalar!(
+            "SELECT admin_chain_head FROM organizations WHERE id = $1",
+            org
+        )
+        .fetch_one(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        if at.as_deref() != head.as_ref().map(<[u8; 32]>::as_slice) {
+            return Err(StoreError::AdminChainBroken {
+                seq: all.last().map_or(0, |e| e.seq),
+            });
+        }
+        Ok(all)
     }
 
     /// The organization's own row.
@@ -241,17 +362,32 @@ impl OrgTx {
         name: &str,
         profiles: &BuiltinProfiles,
     ) -> Result<WorkspaceOf> {
+        let e = self
+            .next_event(
+                &AdminChange::new("workspace.created")
+                    .target("workspace", id.0)
+                    .target("admin_profile", profiles.admin.0)
+                    .target("sender_profile", profiles.sender.0)
+                    .target("viewer_profile", profiles.viewer.0),
+            )
+            .await?;
         let created = sqlx::query_scalar!(
-            r#"SELECT openseal_create_workspace($1, $2, $3, $4, $5) AS "created!""#,
+            r#"SELECT openseal_create_workspace($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               AS "created!""#,
             id.0,
             name,
             profiles.admin.0,
             profiles.sender.0,
-            profiles.viewer.0
+            profiles.viewer.0,
+            e.seq,
+            e.prev,
+            e.hash,
+            e.at,
+            e.canonical
         )
         .fetch_one(&mut *self.tx)
         .await
-        .map_err(db)?;
+        .map_err(append_error(e.seq))?;
         if created {
             Ok(WorkspaceOf {
                 organization: self.org,
@@ -275,13 +411,23 @@ impl OrgTx {
                 entity: "workspace",
             });
         }
+        let e = self
+            .next_event(
+                &AdminChange::new("workspace.archived").target("workspace", workspace.account.0),
+            )
+            .await?;
         let done = sqlx::query_scalar!(
-            r#"SELECT openseal_archive_workspace($1) AS "done!""#,
-            workspace.account.0
+            r#"SELECT openseal_archive_workspace($1, $2, $3, $4, $5, $6) AS "done!""#,
+            workspace.account.0,
+            e.seq,
+            e.prev,
+            e.hash,
+            e.at,
+            e.canonical
         )
         .fetch_one(&mut *self.tx)
         .await
-        .map_err(db)?;
+        .map_err(append_error(e.seq))?;
         if done {
             Ok(())
         } else {
@@ -321,7 +467,7 @@ impl OrgTx {
             .await
             .map_err(db)?;
         if org == Some(workspace.organization.0) {
-            Ok(TenantTx::bound(self.tx, workspace.account))
+            Ok(TenantTx::bound(self.tx, workspace.account, self.actor))
         } else {
             Err(StoreError::NotFound {
                 entity: "workspace",
@@ -426,6 +572,12 @@ impl Store {
         .await
         .map_err(db)?;
         if created {
+            tx.org_admin_event(
+                AdminChange::new("organization.created")
+                    .target("organization", org.0)
+                    .target("workspace", account.0),
+            )
+            .await?;
             Ok(tx)
         } else {
             Err(StoreError::Conflict {
