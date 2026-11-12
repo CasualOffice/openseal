@@ -1,0 +1,333 @@
+{
+ "coordinates": "displayed page space, points, origin top left (ADR-019); form_rect is the clean form",
+ "degradation": {
+  "binarised": true,
+  "blur": null,
+  "ink": 30,
+  "jpeg_quality": null,
+  "page_rotate": 0,
+  "paper": 241,
+  "rotated_180": false,
+  "seed": "61717151785:arabic-application--300dpi-fax-skew+0.5",
+  "skew_degrees": 0.5,
+  "speckles_per_page": 200
+ },
+ "file": "scans/arabic-application--300dpi-fax-skew+0.5.pdf",
+ "filled": false,
+ "form": "arabic-application",
+ "image": {
+  "bits_per_component": 1,
+  "dpi": 300,
+  "filter": "RunLengthDecode",
+  "height_px": 3300,
+  "width_px": 2550
+ },
+ "pages": [
+  {
+   "fields": [
+    {
+     "drawn": "rule",
+     "form_rect": [
+      300.0,
+      188.0,
+      201.84,
+      16.0
+     ],
+     "kind": "name",
+     "label": "الاسم",
+     "name": "name",
+     "rect": [
+      301.44,
+      188.0,
+      202.32,
+      17.68
+     ]
+    },
+    {
+     "drawn": "rule",
+     "form_rect": [
+      300.0,
+      240.0,
+      196.17,
+      16.0
+     ],
+     "kind": "company",
+     "label": "الشركة",
+     "name": "company",
+     "rect": [
+      301.44,
+      240.0,
+      196.17,
+      17.68
+     ]
+    },
+    {
+     "drawn": "rule",
+     "form_rect": [
+      300.0,
+      292.0,
+      142.24,
+      16.0
+     ],
+     "kind": "title",
+     "label": "المسمى الوظيفي",
+     "name": "title",
+     "rect": [
+      300.96,
+      292.0,
+      142.24,
+      17.2
+     ]
+    },
+    {
+     "drawn": "rule",
+     "form_rect": [
+      300.0,
+      344.0,
+      198.19,
+      16.0
+     ],
+     "kind": "date_signed",
+     "label": "التاريخ",
+     "name": "date_signed",
+     "rect": [
+      300.48,
+      344.0,
+      198.19,
+      17.68
+     ]
+    },
+    {
+     "drawn": "rule",
+     "form_rect": [
+      300.0,
+      388.0,
+      194.98,
+      24.0
+     ],
+     "kind": "signature",
+     "label": "التوقيع",
+     "name": "signature",
+     "rect": [
+      300.0,
+      388.0,
+      194.98,
+      25.68
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      530.0,
+      461.0,
+      10.0,
+      10.0
+     ],
+     "kind": "checkbox",
+     "label": "أوافق على الشروط",
+     "name": "agree",
+     "rect": [
+      529.52,
+      462.92,
+      10.0,
+      10.24
+     ]
+    }
+   ],
+   "page": 0,
+   "words": [
+    {
+     "rect": [
+      501.0,
+      74.2,
+      41.88,
+      42.72
+     ],
+     "role": "title",
+     "script": "Arab",
+     "text": "طلب"
+    },
+    {
+     "rect": [
+      437.42,
+      73.72,
+      58.86,
+      42.72
+     ],
+     "role": "title",
+     "script": "Arab",
+     "text": "توظيف"
+    },
+    {
+     "rect": [
+      518.64,
+      121.43,
+      23.76,
+      25.58
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "يرجى"
+    },
+    {
+     "rect": [
+      491.62,
+      121.19,
+      23.9,
+      25.58
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "تعبئة"
+    },
+    {
+     "rect": [
+      472.37,
+      120.95,
+      16.13,
+      25.58
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "هذا"
+    },
+    {
+     "rect": [
+      433.16,
+      120.71,
+      36.08,
+      25.58
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "النموذج"
+    },
+    {
+     "rect": [
+      409.2,
+      120.47,
+      20.84,
+      25.34
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "بخط"
+    },
+    {
+     "rect": [
+      379.24,
+      120.23,
+      26.84,
+      25.58
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "واضح"
+    },
+    {
+     "rect": [
+      513.28,
+      184.06,
+      28.64,
+      27.7
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "الاسم"
+    },
+    {
+     "rect": [
+      507.13,
+      235.82,
+      34.31,
+      27.94
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "الشركة"
+    },
+    {
+     "rect": [
+      498.36,
+      287.82,
+      42.6,
+      27.94
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "المسمى"
+    },
+    {
+     "rect": [
+      452.72,
+      287.34,
+      42.74,
+      27.94
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "الوظيفي"
+    },
+    {
+     "rect": [
+      508.67,
+      339.82,
+      31.81,
+      27.94
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "التاريخ"
+    },
+    {
+     "rect": [
+      504.98,
+      391.82,
+      35.02,
+      27.94
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "التوقيع"
+    },
+    {
+     "rect": [
+      494.94,
+      455.19,
+      26.58,
+      25.58
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "أوافق"
+    },
+    {
+     "rect": [
+      473.35,
+      454.95,
+      18.95,
+      25.58
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "على"
+    },
+    {
+     "rect": [
+      434.48,
+      454.71,
+      36.23,
+      25.58
+     ],
+     "role": "label",
+     "script": "Arab",
+     "text": "الشروط"
+    }
+   ]
+  }
+ ],
+ "schema": 1,
+ "source": "vector/arabic-application.pdf",
+ "synthetic": true,
+ "template": "arabic-application"
+}

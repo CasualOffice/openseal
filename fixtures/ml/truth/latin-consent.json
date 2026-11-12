@@ -1,0 +1,1192 @@
+{
+ "coordinates": "displayed page space, points, origin top left (ADR-019)",
+ "file": "vector/latin-consent.pdf",
+ "filled": false,
+ "form": "latin-consent",
+ "pages": [
+  {
+   "fields": [
+    {
+     "drawn": "underscores",
+     "form_rect": [
+      159.71,
+      215.5,
+      198.55,
+      16.0
+     ],
+     "kind": "name",
+     "label": "Participant name",
+     "name": "participant_name",
+     "rect": [
+      159.71,
+      215.5,
+      198.55,
+      16.0
+     ]
+    },
+    {
+     "drawn": "underscores",
+     "form_rect": [
+      138.11,
+      249.5,
+      128.47,
+      16.0
+     ],
+     "kind": "text",
+     "label": "Date of birth",
+     "name": "date_of_birth",
+     "rect": [
+      138.11,
+      249.5,
+      128.47,
+      16.0
+     ]
+    },
+    {
+     "drawn": "underscores",
+     "form_rect": [
+      199.98,
+      283.5,
+      175.19,
+      16.0
+     ],
+     "kind": "name",
+     "label": "Emergency contact name",
+     "name": "contact_name",
+     "rect": [
+      199.98,
+      283.5,
+      175.19,
+      16.0
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      329.0,
+      10.0,
+      10.0
+     ],
+     "kind": "checkbox",
+     "label": "I have read the information above.",
+     "name": "consent_1",
+     "rect": [
+      72.0,
+      329.0,
+      10.0,
+      10.0
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      351.0,
+      10.0,
+      10.0
+     ],
+     "kind": "checkbox",
+     "label": "I agree to take part.",
+     "name": "consent_2",
+     "rect": [
+      72.0,
+      351.0,
+      10.0,
+      10.0
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      373.0,
+      10.0,
+      10.0
+     ],
+     "kind": "checkbox",
+     "label": "I agree that photographs may be taken.",
+     "name": "consent_3",
+     "rect": [
+      72.0,
+      373.0,
+      10.0,
+      10.0
+     ]
+    },
+    {
+     "drawn": "underscores",
+     "form_rect": [
+      125.87,
+      411.5,
+      175.19,
+      24.0
+     ],
+     "kind": "signature",
+     "label": "Signature",
+     "name": "signature",
+     "rect": [
+      125.87,
+      411.5,
+      175.19,
+      24.0
+     ]
+    },
+    {
+     "drawn": "underscores",
+     "form_rect": [
+      356.15,
+      419.5,
+      93.43,
+      16.0
+     ],
+     "kind": "date_signed",
+     "label": "Date",
+     "name": "date_signed",
+     "rect": [
+      356.15,
+      419.5,
+      93.43,
+      16.0
+     ]
+    },
+    {
+     "drawn": "underscores",
+     "form_rect": [
+      110.68,
+      451.5,
+      58.4,
+      24.0
+     ],
+     "kind": "initials",
+     "label": "Initials",
+     "name": "initials",
+     "rect": [
+      110.68,
+      451.5,
+      58.4,
+      24.0
+     ]
+    }
+   ],
+   "page": 0,
+   "words": [
+    {
+     "rect": [
+      72.0,
+      79.71,
+      67.04,
+      20.11
+     ],
+     "role": "title",
+     "script": "Latn",
+     "text": "Consent"
+    },
+    {
+     "rect": [
+      144.04,
+      79.71,
+      30.03,
+      20.11
+     ],
+     "role": "title",
+     "script": "Latn",
+     "text": "and"
+    },
+    {
+     "rect": [
+      179.08,
+      79.71,
+      66.04,
+      20.11
+     ],
+     "role": "title",
+     "script": "Latn",
+     "text": "Release"
+    },
+    {
+     "rect": [
+      250.12,
+      79.71,
+      41.99,
+      20.11
+     ],
+     "role": "title",
+     "script": "Latn",
+     "text": "Form"
+    },
+    {
+     "rect": [
+      72.0,
+      122.49,
+      18.09,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "The"
+    },
+    {
+     "rect": [
+      93.01,
+      122.49,
+      48.44,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "participant"
+    },
+    {
+     "rect": [
+      144.37,
+      122.49,
+      32.1,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "named"
+    },
+    {
+     "rect": [
+      179.39,
+      122.49,
+      27.43,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "below"
+    },
+    {
+     "rect": [
+      209.75,
+      122.49,
+      32.1,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "agrees"
+    },
+    {
+     "rect": [
+      244.77,
+      122.49,
+      8.76,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "to"
+    },
+    {
+     "rect": [
+      256.44,
+      122.49,
+      19.85,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "take"
+    },
+    {
+     "rect": [
+      279.21,
+      122.49,
+      18.09,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "part"
+    },
+    {
+     "rect": [
+      300.22,
+      122.49,
+      8.17,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "in"
+    },
+    {
+     "rect": [
+      311.31,
+      122.49,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      328.82,
+      122.49,
+      32.09,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "activity"
+    },
+    {
+     "rect": [
+      363.83,
+      122.49,
+      45.53,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "described"
+    },
+    {
+     "rect": [
+      412.27,
+      122.49,
+      8.17,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "in"
+    },
+    {
+     "rect": [
+      423.36,
+      122.49,
+      16.34,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "this"
+    },
+    {
+     "rect": [
+      442.62,
+      122.49,
+      21.0,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "form"
+    },
+    {
+     "rect": [
+      466.53,
+      122.49,
+      17.52,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "and"
+    },
+    {
+     "rect": [
+      72.0,
+      137.49,
+      39.67,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "confirms"
+    },
+    {
+     "rect": [
+      114.59,
+      137.49,
+      17.51,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "that"
+    },
+    {
+     "rect": [
+      135.02,
+      137.49,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      152.53,
+      137.49,
+      43.77,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "organiser"
+    },
+    {
+     "rect": [
+      199.23,
+      137.49,
+      16.93,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "has"
+    },
+    {
+     "rect": [
+      219.07,
+      137.49,
+      44.95,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "explained"
+    },
+    {
+     "rect": [
+      266.94,
+      137.49,
+      10.5,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "its"
+    },
+    {
+     "rect": [
+      280.36,
+      137.49,
+      40.86,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "purpose,"
+    },
+    {
+     "rect": [
+      324.14,
+      137.49,
+      10.5,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "its"
+    },
+    {
+     "rect": [
+      337.56,
+      137.49,
+      37.94,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "duration"
+    },
+    {
+     "rect": [
+      378.42,
+      137.49,
+      17.52,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "and"
+    },
+    {
+     "rect": [
+      398.85,
+      137.49,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      416.37,
+      137.49,
+      21.58,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "risks"
+    },
+    {
+     "rect": [
+      440.86,
+      137.49,
+      5.25,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "it"
+    },
+    {
+     "rect": [
+      449.03,
+      137.49,
+      34.42,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "carries."
+    },
+    {
+     "rect": [
+      72.0,
+      152.49,
+      18.09,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "The"
+    },
+    {
+     "rect": [
+      93.01,
+      152.49,
+      48.44,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "participant"
+    },
+    {
+     "rect": [
+      144.37,
+      152.49,
+      19.84,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "may"
+    },
+    {
+     "rect": [
+      167.13,
+      152.49,
+      41.43,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "withdraw"
+    },
+    {
+     "rect": [
+      211.47,
+      152.49,
+      8.76,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "at"
+    },
+    {
+     "rect": [
+      223.15,
+      152.49,
+      16.93,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "any"
+    },
+    {
+     "rect": [
+      242.99,
+      152.49,
+      19.84,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "time"
+    },
+    {
+     "rect": [
+      265.75,
+      152.49,
+      11.09,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "by"
+    },
+    {
+     "rect": [
+      279.75,
+      152.49,
+      27.43,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "telling"
+    },
+    {
+     "rect": [
+      310.11,
+      152.49,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      327.62,
+      152.49,
+      46.69,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "organiser,"
+    },
+    {
+     "rect": [
+      377.23,
+      152.49,
+      33.27,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "without"
+    },
+    {
+     "rect": [
+      413.41,
+      152.49,
+      27.43,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "giving"
+    },
+    {
+     "rect": [
+      443.77,
+      152.49,
+      5.84,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "a"
+    },
+    {
+     "rect": [
+      452.52,
+      152.49,
+      35.02,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "reason."
+    },
+    {
+     "rect": [
+      72.0,
+      167.49,
+      39.1,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Records"
+    },
+    {
+     "rect": [
+      114.02,
+      167.49,
+      26.27,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "made"
+    },
+    {
+     "rect": [
+      143.2,
+      167.49,
+      29.19,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "during"
+    },
+    {
+     "rect": [
+      175.3,
+      167.49,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      192.82,
+      167.49,
+      32.09,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "activity"
+    },
+    {
+     "rect": [
+      227.82,
+      167.49,
+      15.18,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "are"
+    },
+    {
+     "rect": [
+      245.92,
+      167.49,
+      19.85,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "kept"
+    },
+    {
+     "rect": [
+      268.68,
+      167.49,
+      12.25,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "for"
+    },
+    {
+     "rect": [
+      283.85,
+      167.49,
+      29.76,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "twelve"
+    },
+    {
+     "rect": [
+      316.53,
+      167.49,
+      34.43,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "months"
+    },
+    {
+     "rect": [
+      353.88,
+      167.49,
+      17.52,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "and"
+    },
+    {
+     "rect": [
+      374.32,
+      167.49,
+      20.44,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "then"
+    },
+    {
+     "rect": [
+      397.67,
+      167.49,
+      49.03,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "destroyed."
+    },
+    {
+     "rect": [
+      72.0,
+      220.49,
+      49.61,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Participant"
+    },
+    {
+     "rect": [
+      124.53,
+      220.49,
+      29.18,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "name:"
+    },
+    {
+     "rect": [
+      72.0,
+      254.49,
+      22.18,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Date"
+    },
+    {
+     "rect": [
+      97.1,
+      254.49,
+      8.76,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "of"
+    },
+    {
+     "rect": [
+      108.77,
+      254.49,
+      23.34,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "birth:"
+    },
+    {
+     "rect": [
+      72.0,
+      288.49,
+      53.1,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Emergency"
+    },
+    {
+     "rect": [
+      128.02,
+      288.49,
+      33.85,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "contact"
+    },
+    {
+     "rect": [
+      164.79,
+      288.49,
+      29.18,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "name:"
+    },
+    {
+     "rect": [
+      90.0,
+      328.49,
+      2.92,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "I"
+    },
+    {
+     "rect": [
+      95.83,
+      328.49,
+      22.77,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "have"
+    },
+    {
+     "rect": [
+      121.52,
+      328.49,
+      21.02,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "read"
+    },
+    {
+     "rect": [
+      145.45,
+      328.49,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      162.97,
+      328.49,
+      51.94,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "information"
+    },
+    {
+     "rect": [
+      217.83,
+      328.49,
+      31.53,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "above."
+    },
+    {
+     "rect": [
+      90.0,
+      350.49,
+      2.92,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "I"
+    },
+    {
+     "rect": [
+      95.83,
+      350.49,
+      26.85,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "agree"
+    },
+    {
+     "rect": [
+      125.61,
+      350.49,
+      8.76,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "to"
+    },
+    {
+     "rect": [
+      137.28,
+      350.49,
+      19.85,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "take"
+    },
+    {
+     "rect": [
+      160.04,
+      350.49,
+      21.01,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "part."
+    },
+    {
+     "rect": [
+      90.0,
+      372.49,
+      2.92,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "I"
+    },
+    {
+     "rect": [
+      95.83,
+      372.49,
+      26.85,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "agree"
+    },
+    {
+     "rect": [
+      125.61,
+      372.49,
+      17.51,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "that"
+    },
+    {
+     "rect": [
+      146.04,
+      372.49,
+      58.38,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "photographs"
+    },
+    {
+     "rect": [
+      207.34,
+      372.49,
+      19.84,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "may"
+    },
+    {
+     "rect": [
+      230.09,
+      372.49,
+      11.68,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "be"
+    },
+    {
+     "rect": [
+      244.69,
+      372.49,
+      28.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "taken."
+    },
+    {
+     "rect": [
+      72.0,
+      424.49,
+      47.87,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Signature:"
+    },
+    {
+     "rect": [
+      325.05,
+      424.49,
+      25.1,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Date:"
+    },
+    {
+     "rect": [
+      72.0,
+      464.49,
+      32.68,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Initials:"
+    }
+   ]
+  }
+ ],
+ "schema": 1,
+ "synthetic": true,
+ "template": "latin-consent"
+}

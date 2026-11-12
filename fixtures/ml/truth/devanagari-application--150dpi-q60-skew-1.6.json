@@ -1,0 +1,355 @@
+{
+ "coordinates": "displayed page space, points, origin top left (ADR-019); form_rect is the clean form",
+ "degradation": {
+  "binarised": false,
+  "blur": "[1 2 1] x and y",
+  "ink": 25,
+  "jpeg_quality": 60,
+  "page_rotate": 0,
+  "paper": 239,
+  "rotated_180": false,
+  "seed": "61717151785:devanagari-application--150dpi-q60-skew-1.6",
+  "skew_degrees": -1.6,
+  "speckles_per_page": 120
+ },
+ "file": "scans/devanagari-application--150dpi-q60-skew-1.6.pdf",
+ "filled": false,
+ "form": "devanagari-application",
+ "image": {
+  "bits_per_component": 8,
+  "dpi": 150,
+  "filter": "DCTDecode",
+  "height_px": 1650,
+  "width_px": 1275
+ },
+ "pages": [
+  {
+   "fields": [
+    {
+     "drawn": "rule",
+     "form_rect": [
+      150.0,
+      188.0,
+      210.0,
+      16.0
+     ],
+     "kind": "name",
+     "label": "नाम",
+     "name": "name",
+     "rect": [
+      144.24,
+      186.56,
+      210.0,
+      21.76
+     ]
+    },
+    {
+     "drawn": "rule",
+     "form_rect": [
+      150.0,
+      240.0,
+      210.0,
+      16.0
+     ],
+     "kind": "company",
+     "label": "कंपनी",
+     "name": "company",
+     "rect": [
+      145.68,
+      238.56,
+      210.48,
+      21.76
+     ]
+    },
+    {
+     "drawn": "rule",
+     "form_rect": [
+      150.0,
+      292.0,
+      210.0,
+      16.0
+     ],
+     "kind": "title",
+     "label": "पद",
+     "name": "title",
+     "rect": [
+      147.12,
+      290.56,
+      210.0,
+      21.76
+     ]
+    },
+    {
+     "drawn": "rule",
+     "form_rect": [
+      150.0,
+      344.0,
+      210.0,
+      16.0
+     ],
+     "kind": "date_signed",
+     "label": "दिनांक",
+     "name": "date_signed",
+     "rect": [
+      148.56,
+      342.56,
+      210.48,
+      21.76
+     ]
+    },
+    {
+     "drawn": "rule",
+     "form_rect": [
+      150.0,
+      388.0,
+      210.0,
+      24.0
+     ],
+     "kind": "signature",
+     "label": "हस्ताक्षर",
+     "name": "signature",
+     "rect": [
+      150.0,
+      386.56,
+      210.0,
+      29.76
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      461.0,
+      10.0,
+      10.0
+     ],
+     "kind": "checkbox",
+     "label": "मैं शर्तों से सहमत हूँ",
+     "name": "agree",
+     "rect": [
+      73.92,
+      467.24,
+      10.0,
+      10.48
+     ]
+    }
+   ],
+   "page": 0,
+   "words": [
+    {
+     "rect": [
+      63.36,
+      87.36,
+      54.24,
+      27.52
+     ],
+     "role": "title",
+     "script": "Deva",
+     "text": "आवेदन"
+    },
+    {
+     "rect": [
+      121.84,
+      86.4,
+      23.36,
+      26.56
+     ],
+     "role": "title",
+     "script": "Deva",
+     "text": "पत्र"
+    },
+    {
+     "rect": [
+      64.32,
+      131.01,
+      27.06,
+      16.61
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "कृपया"
+    },
+    {
+     "rect": [
+      93.54,
+      130.53,
+      14.29,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "यह"
+    },
+    {
+     "rect": [
+      109.99,
+      130.05,
+      20.5,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "फ़ॉर्म"
+    },
+    {
+     "rect": [
+      132.65,
+      129.57,
+      21.43,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "साफ़"
+    },
+    {
+     "rect": [
+      156.24,
+      128.61,
+      26.75,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "अक्षरों"
+    },
+    {
+     "rect": [
+      185.15,
+      128.13,
+      8.14,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "में"
+    },
+    {
+     "rect": [
+      195.44,
+      127.65,
+      14.3,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "भरें"
+    },
+    {
+     "rect": [
+      66.24,
+      194.59,
+      18.84,
+      17.43
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "नाम"
+    },
+    {
+     "rect": [
+      67.68,
+      246.11,
+      28.43,
+      17.91
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "कंपनी"
+    },
+    {
+     "rect": [
+      69.12,
+      298.59,
+      14.77,
+      17.43
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "पद"
+    },
+    {
+     "rect": [
+      70.56,
+      350.11,
+      31.32,
+      17.91
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "दिनांक"
+    },
+    {
+     "rect": [
+      72.0,
+      401.63,
+      38.33,
+      18.39
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "हस्ताक्षर"
+    },
+    {
+     "rect": [
+      91.92,
+      465.01,
+      7.18,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "मैं"
+    },
+    {
+     "rect": [
+      102.22,
+      464.53,
+      18.11,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "शर्तों"
+    },
+    {
+     "rect": [
+      123.44,
+      464.05,
+      8.11,
+      16.13
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "से"
+    },
+    {
+     "rect": [
+      134.68,
+      463.09,
+      28.5,
+      16.61
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "सहमत"
+    },
+    {
+     "rect": [
+      166.3,
+      463.09,
+      6.37,
+      15.65
+     ],
+     "role": "label",
+     "script": "Deva",
+     "text": "हूँ"
+    }
+   ]
+  }
+ ],
+ "schema": 1,
+ "source": "vector/devanagari-application.pdf",
+ "synthetic": true,
+ "template": "devanagari-application"
+}
