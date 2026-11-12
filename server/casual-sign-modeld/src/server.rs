@@ -477,6 +477,12 @@ fn refuse(s: &mut (impl Read + Write), err: &ModeldError) -> Result<(), ModeldEr
 
 #[cfg(test)]
 mod tests {
+    // Test code: a panic is the failure report.
+    #![allow(
+        clippy::unwrap_used,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects
+    )]
     use super::*;
 
     /// A stream that announces a frame of `MAX_FRAME` bytes and then supplies zeros,
