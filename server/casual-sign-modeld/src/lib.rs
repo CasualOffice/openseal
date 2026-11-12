@@ -48,6 +48,8 @@ mod raster;
 #[cfg(feature = "server")]
 mod rules;
 #[cfg(feature = "server")]
+mod runtime;
+#[cfg(feature = "server")]
 mod server;
 
 pub use client::{Call, DEADLINE_GRACE, Endpoint, ModelClient, client_tls};

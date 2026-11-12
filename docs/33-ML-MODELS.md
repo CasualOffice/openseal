@@ -210,11 +210,34 @@ Stage 1 is layout: render each page at 72 DPI greyscale, then compute dHash and 
 3.1.1 (MIT OR Apache-2.0, https://crates.io/api/v1/crates/image_hasher; `image` without decoders, fed raw pixels).
 They are stored as `BIGINT` and compared by Hamming distance. No model is needed.
 
+**Built (piece I, `ML-05`), `server/casual-sign-modeld/src/hash.rs`:** dHash is `image_hasher`'s `Gradient` over a 9×8
+resize, pHash its `Median` over the 8×8 low frequencies of a 16×16 DCT; pages are rendered on white and converted to
+grey by Rec. 601 luma. A page over 4,096 px a side renders at a lower resolution (docs/21). Because piece C's raster
+child is not built yet, HASH renders with `hayro` **in process**: a panic is caught and answered `CS-ML-0006`, but there
+is no per-page time cap, decoded-image budget or `RLIMIT_AS` until `render_each` is replaced by piece C's raster call
+(`SEC-I01`, a recorded gap). Pages are rendered one at a time, each hashed and its raster dropped before the next, so
+a request holds one page raster, not all of its up to 200; the request deadline is checked before every page. Measured on fixtures/ml (scan against its vector original, dHash / pHash Hamming
+distance): blank-form scans at 150–300 DPI with JPEG q60–q75 or fax and skew up to ±2° are 1–9 / 0–6, and the one
+turned 90° is 5 / 2; filled scans are 3–15 / 2–8 (dHash over 10 on `latin-acroform` filled at 150 DPI, 15, and
+`latin-consent` filled, 11); a scan turned 180° is 26 / 34, so an upside-down scan does not match until orientation is corrected first. The acceptance pair
+(`latin-consent` at 200 DPI, q75, +0.6°) is 4 / 2, and another form is over 10.
+
 Stage 2 is text: one passage embedding per page from text-layer or OCR text.
+
+**Built (piece I), `src/embed.rs`:** e5's `query: ` or `passage: ` prefix is added by modeld from the request's kind;
+each text is tokenized and run alone (512 tokens with `<s>` and `</s>`, cut at the end, no padding, so a vector never
+depends on the other texts of a call); the last hidden state is mean-pooled and L2-normalised, as the checkpoint's
+sentence-transformers pipeline declares. ONNX Runtime runs CPU only, one intra- and one inter-op thread, sequential,
+full graph optimisation (`src/runtime.rs`, loading the bundle's `runtime/libonnxruntime.so`). **fp16 (owner
+instruction 34):** `tools/ml/export-e5.py` converts the pinned fp32 ONNX to fp16 (fp32 inputs and outputs) and writes
+golden vectors from the fp32 PyTorch reference over 24 synthetic texts in 15 languages (`fixtures/ml/e5-golden`). In
+modeld the token ids equal the reference's exactly, the fp32 file's lowest cosine is 1.0000000 and the fp16 file's
+0.9999999, so the fp16 file passes the 1e-3 bound and modeld prefers it (`e5-small-fp16`) when a bundle holds it; until
+it is hosted (`ML-15`) bundles carry fp32.
 
 | Model | Weights licence (source) | ONNX file | Size | CPU (est.) | Languages | Verdict |
 | --- | --- | --- | --- | --- | --- | --- |
-| intfloat/multilingual-e5-small (`passage: ` prefix) | MIT (https://huggingface.co/intfloat/multilingual-e5-small) | **fp32 `onnx/model.onnx`** (CPU-portable). The repository's only int8 file, `model_qint8_avx512_vnni.onnx` (118,346,824 B), is quantized for AVX-512 VNNI, slow and numerically different on AVX2; `model_O4.onnx` is a GPU fp16 optimisation. Neither is used. A portable int8 export of our own (piece X) replaces fp32 only once its match results equal fp32's on the fixtures | 470 MB fp32 | 10–40 ms per 512-token page (est.) | about 100 | default (D4) |
+| intfloat/multilingual-e5-small (`passage: ` prefix) | MIT (https://huggingface.co/intfloat/multilingual-e5-small) | **fp32 `onnx/model.onnx`** (CPU-portable); our fp16 conversion of it passes the 1e-3 cosine bound and replaces it once hosted (above). The repository's only int8 file, `model_qint8_avx512_vnni.onnx` (118,346,824 B), is quantized for AVX-512 VNNI, slow and numerically different on AVX2; `model_O4.onnx` is a GPU fp16 optimisation. Neither is used. A portable int8 export of our own (piece X) replaces fp32 only once its match results equal fp32's on the fixtures | 470 MB fp32 | 10–40 ms per 512-token page (est.) | about 100 | default (D4) |
 | sentence-transformers/all-MiniLM-L6-v2 | Apache-2.0 (https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | official fp32; any int8 file is checked for CPU-specific quantization first | about 90 MB fp32 (unverified) | a few ms (est.) | English | "small" profile |
 
 The tokenizer is `tokenizers` 0.23.2 (Apache-2.0, https://crates.io/api/v1/crates/tokenizers) with
