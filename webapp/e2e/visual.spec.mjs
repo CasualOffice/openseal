@@ -63,6 +63,9 @@ async function checkLayout(page, what) {
         const a = live[i]; const b = live[j];
         if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
         if (a.el.closest("label") && a.el.closest("label") === b.el.closest("label")) continue;
+        // A control drawn inside its field on purpose (the password reveal), whose input is padded to clear it.
+        const inset = (el) => el.closest(".os-auth__secret");
+        if (inset(a.el) && inset(a.el) === inset(b.el)) continue;
         const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
         const hgt = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
         if (w > 2 && hgt > 2) out.push(`overlap: ${a.el.tagName}(${(a.el.getAttribute("aria-label") || a.el.textContent).trim().slice(0, 30)}) × ${b.el.tagName}(${(b.el.getAttribute("aria-label") || b.el.textContent).trim().slice(0, 30)})`);
