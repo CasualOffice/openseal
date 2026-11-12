@@ -47,6 +47,7 @@ by saying so.
 | 36 | 2026-11-12 | "Finish small fixes and push them; don't keep things on local for long. Also update the README and other docs; keep them updated, as well as the marketing site." Each verified batch is pushed as soon as it is merged and its one full CI run (instruction 31) passes; README, AGENTS.md "Current state", docs/06 "Where things stand", docs/96 status and the marketing site in `site/` are brought up to date in the same batch as the work they describe | `DOC-004`, `SITE-01`, [CLAUDE.md](../CLAUDE.md) |
 | 37 | 2026-11-12 | "Continue, but reduce the system resource utilization of this system." Work runs within the machine's memory: one Rust build at a time with two jobs and a shared build directory, at most one light agent beside it, the full CI alone | [04](04-MISTAKES-AND-RULES.md) rule 33 |
 | 38 | 2026-11-12 | Chose, from options: declare milestones M0 (Ready to build), M1 (Engine alpha) and M2 (Service alpha) reached; every phase they contain (D, 0, 1, 2) is closed | `MS-0`, `MS-1`, `MS-2` in [14](14-EXECUTION-TRACKER.md) |
+| 39 | 2026-11-12 | "Ask him to complete but don't run CI; you run it after it's done." Workers and reviewers finish their pieces without running the full CI list; they run only the targeted tests that prove their own change (red then green). The main session runs the full CI once after the batch is merged, then pushes | [CLAUDE.md](../CLAUDE.md) §The list CI runs; instruction 31 |
 
 ## Inherited working rules
 
