@@ -30,6 +30,21 @@ Account (tenant) ─┬─ User ── membership(role, permission profile) ─�
                   └─ RetentionPolicy
 ```
 
+**Designed (ADR-028), not built:** an **Organization** sits above the account, which the UI calls a **workspace**
+(`account` stays in the database and API v1). Every account belongs to exactly one organization, for good:
+
+```
+Organization ─┬─ Account (workspace) …as above, plus AdminEvent, ArchivedAgreement, UsageLedger, UsageCounter
+              ├─ OrganizationAdmin (owner, admin, delegated + OrgPermissionSet, workspace scope)
+              ├─ DomainClaim, IdentityProvider ── UserIdentity (IdP binding of a User), ScimToken
+              ├─ OrgAdminEvent, OrgUsageCounter, OrgWorkspaceAllocation
+              └─ (platform) PlanAssignment, PlanOverride
+Platform (schema `platform`) ── Operator, OperatorEvent, ApprovalRequest/Grant, Plan, TsaEndpoint, TrustAnchor, SealProfile
+```
+
+The design and its reasons are in [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md); §8 and §9 below carry the
+persistence notes.
+
 ## 2. Identifiers
 
 - Every entity has a **UUIDv7** id (time-ordered, index-friendly), minted by the host and supplied to the engine
@@ -157,6 +172,23 @@ have owners, sharing (user, group, account), folders and versions.
 - Recipients are **not users**. A recipient who also has an account sees the envelope in their inbox through a match
   on verified email, never through a shared identity.
 
+**Designed (ADR-028), not built** ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §2–§4, §7):
+
+- **Organization**: above accounts; status `active` → `suspended` ⇄ `active`, `suspended` → `closed` (read-only after a
+  notice period; evidence kept under each workspace's retention, never purged by closing). Typed policy with locked
+  and tighten-only keys; data-region labels (no residency claim).
+- **Account (workspace)**: gains `organization_id` (never changes; a trigger refuses it) and status `active` →
+  `archived` (no new envelopes, members or settings; envelopes already sent still complete and seal). Plan limits leave
+  the settings comment; plans live in the `platform` schema.
+- **User**: one identity shared by every workspace it belongs to. Its attributes change only by the person, by an
+  organization whose verified domain covers the email, or by a workspace admin while that workspace is the only
+  membership (`SEC-ID-01` fixes today's code to this rule). IdP bindings move to `UserIdentity` (one per provider).
+- **Organization admin** (owner, admin, delegated with a permission set and workspace scope); **permission profiles**
+  split into named admin actions, a delegated workspace admin optionally limited to groups.
+- **Admin event** (per workspace) and **organization admin event**: append-only, hash-chained like audit events, but
+  not envelope evidence.
+- **Archived agreement**: an imported evidence package, read-only, verified on import; not an envelope.
+
 ## 9. Persistence rules
 
 - Every tenant table has `account_id NOT NULL`, a composite index leading with it, and an RLS policy
@@ -274,6 +306,37 @@ that freezes an envelope's documents after `sent` (the workflow engine enforces 
 (value, its SHA-256, time), not a column of `fields`; the field properties other than type, geometry, flags and label
 are one `spec` JSON object as the model serializes them. "Forgetting the filter does not compile" holds in the sense
 that no other door exists; the isolation tests, not the compiler, prove each method filters.
+
+### Designed (ADR-028): tenancy with organizations
+
+Not built; each part lands with the row named in [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §12. What changes in
+the rules above, and what does not:
+
+- **Unchanged:** every content table keeps exactly one policy, `account_id = openseal_current_account()`; envelopes,
+  their chains and blobs never change account.
+- **A second scope.** `openseal.organization_id`, read by `openseal_current_org()`, which is NULL whenever
+  `openseal.account_id` is set, so no transaction is in both scopes. `Store::for_organization → OrgTx`; an organization
+  reaches a workspace only through a `WorkspaceOf` proof and an ordinary single-account `TenantTx`.
+- **Organization tables** (`organizations`, `organization_admins`, `org_permission_sets`, `domain_claims`,
+  `identity_providers`, `user_identities`, `scim_tokens`, `org_admin_events`, `org_usage_counters`,
+  `org_workspace_allocations`) are declared through `openseal_org_table()` with the policy
+  `organization_id = openseal_current_org()`.
+- **Organization reach into tenant tables** is three `FOR SELECT` policies only (`accounts`, `account_memberships`,
+  `users`); every write goes through `for_workspace_of` or a `SECURITY DEFINER` function.
+- **Grants tighten:** `openseal_app` loses INSERT on `accounts` and keeps UPDATE only on `name`, `settings`,
+  `data_region`; a trigger refuses any change to `accounts.organization_id` except by `openseal_org_mover`, the role
+  owning only ORG-20's two-person operator link; the `users` UPDATE policy admits only a sole member's workspace
+  (`SEC-ID-01`, migration 0013), with the other identity rules as definer functions; `openseal_app` loses SELECT on
+  `users.password_hash` (read at login through a definer function).
+- **New tenant tables:** `admin_events` (append-only, chained per workspace, head `accounts.admin_chain_head`),
+  `archived_agreements`, `seal_signatures` (operational hashes for keyd reconciliation), `usage_ledger` (append-only,
+  idempotent by source), `usage_counters`.
+- **Schema `platform`** (operators, approvals, plans, TSA, trust anchors, seal profiles, alerts) is reached by the
+  console's role `openseal_console`, which has no grant on any `public` table.
+- **Catalog tests** are scoped to `public` and name their exceptions; the `platform` schema has its own.
+- **Migration order** is fixed in merge order (docs/23 §12): `SEC-ID-01`'s fix, organizations (with organization admins
+  and the owner backfill), admin logs, platform schema, operators, approvals, plans, usage; later schema rows take the
+  next free number. Forward-only as ever.
 
 ## 10. Engine types versus rows
 
