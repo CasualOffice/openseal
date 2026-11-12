@@ -10,6 +10,7 @@ import { FIELD_TYPES, FIELD_GROUPS, takesInput, requiredByDefault, validationFro
 import { FIELD_TYPES_READY, createClient } from "../api.js";
 import { createMockFetch, MOCK } from "../mock.js";
 import { makePdf } from "../mockpdf.js";
+import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary } from "../preparemodel.js";
 
 // ---- signing steps ---------------------------------------------------------------------------
 test("orders stay compact; the API's are read leniently", () => {
@@ -176,4 +177,93 @@ test("options typed one per line: trimmed, blanks and repeats dropped, at most 5
   assert.deepEqual(optionsFrom(" Red\r\n\nGreen\nRed \nBlue"), ["Red", "Green", "Blue"]);
   assert.equal(optionsFrom(Array.from({ length: 600 }, (_, i) => `o${i}`).join("\n")).length, 500);
   assert.deepEqual(optionsFrom(""), []);
+});
+
+// ---- the editor on the approved canvas (WEB-17 lane B; preparemodel.js) -----------------------
+test("the library holds every kind once: the canvas's eight with keys, then the rest", () => {
+  const all = [...LIBRARY.map(([k]) => k), ...LIBRARY_MORE];
+  assert.deepEqual([...all].sort(), [...FIELD_TYPES].sort());
+  assert.deepEqual(LIBRARY.map(([, key]) => key), ["S", "I", "D", "N", "E", "O", "T", "C"]);
+  assert.deepEqual(TOOLBAR, ["select", "signature", "initials", "date_signed", "name", "email", "checkbox"]);
+});
+
+test("a bare letter picks a tool; a modifier or a non-letter does not", () => {
+  assert.equal(toolForKey({ key: "s" }), "signature");
+  assert.equal(toolForKey({ key: "V" }), "select");
+  assert.equal(toolForKey({ key: "o" }), "company");
+  assert.equal(toolForKey({ key: "s", ctrlKey: true }), null);
+  assert.equal(toolForKey({ key: "S", shiftKey: true }), null);
+  assert.equal(toolForKey({ key: "x" }), null);
+  assert.equal(toolForKey({ key: "Enter" }), null);
+});
+
+test("steps before the current one are done", () => {
+  assert.deepEqual(stepStates(["documents", "recipients", "fields", "review"], "fields").map((s) => [s.done, s.current]),
+    [[true, false], [true, false], [false, true], [false, false]]);
+});
+
+const people = [
+  { key: "a", name: "Jordan Rivera", type: "signer", order: 1 },
+  { key: "b", name: "Sam Patel", type: "signer", order: 2 },
+  { key: "c", name: "Legal", type: "cc", order: 3 },
+];
+
+test("Continue on the fields step waits for undecided suggestions, then for every signer to have a field", () => {
+  assert.equal(continueState({ step: "fields", recipients: people, fields: [], ghosts: 2 }).reason.key, "prepare.why-suggestions");
+  const bare = continueState({ step: "fields", recipients: people, fields: [{ recipientKey: "a", type: "signature" }] });
+  assert.equal(bare.blocked, true);
+  assert.deepEqual(bare.keys, ["b"]);
+  // A copy recipient never holds it.
+  assert.equal(continueState({ step: "fields", recipients: people, fields: [{ recipientKey: "a", type: "date_signed" }, { recipientKey: "b", type: "signature" }] }).blocked, false);
+  assert.equal(continueState({ step: "recipients", recipients: people }).blocked, false);
+  assert.equal(continueState({ step: "documents", docs: 0 }).blocked, true);
+});
+
+test("the send checks name each signer, then suggestions, then OCR pages", () => {
+  const checks = sendChecks({ recipients: people, fields: [{ recipientKey: "a", type: "signature" }, { recipientKey: "b", type: "text" }], ghosts: 0, ocrPages: [3] });
+  assert.deepEqual(checks.map((c) => [c.ok, c.key]), [[true, "prepare.check-sig"], [false, "prepare.check-no-sig"], [true, "prepare.check-no-ghosts"], [true, "prepare.check-ocr"]]);
+  assert.equal(sendChecks({ recipients: people, fields: [], ghosts: 1 })[0].key, "prepare.check-none");
+  assert.equal(sendChecks({ recipients: people, fields: [], ghosts: 1 })[2].key, "prepare.check-ghost-one");
+});
+
+test("the recipients list numbers signers by their place and counts their fields", () => {
+  const rows = recipientRows(people, [{ recipientKey: "b" }, { recipientKey: "b" }]);
+  assert.deepEqual(rows.map((r) => [r.key, r.n, r.count, r.role.params.n]), [["a", 1, 0, 1], ["b", 2, 2, 2]]);
+});
+
+test("the template offer is the best open template suggestion with a template", () => {
+  assert.equal(templateOffer([{ kind: "template", score: 0.7, template_id: "t1", state: "open" }, { kind: "template", score: 0.96, template_id: "t2", state: "open" }, { kind: "template", score: 0.99, template_id: "t3", state: "dismissed" }]).template_id, "t2");
+  assert.equal(templateOffer([{ kind: "template", score: 0.9, template_id: null }]), null);
+  assert.equal(templateOffer([{ kind: "entity", score: 0.9 }]), null);
+});
+
+test("a template lands on the draft: roles take the draft's people in order, fields go on the same document and page", () => {
+  let n = 0;
+  const key = (p) => `${p}${++n}`;
+  const docs = [{ key: "d1", pages: [{ width: 612, height: 792 }, { width: 612, height: 792 }] }];
+  const tpl = {
+    roles: [{ id: "r2", name: "Client", type: "signer", routing_order: 2 }, { id: "r1", name: "Company", type: "signer", routing_order: 1 }],
+    documents: [{ id: "td", ord: 0 }],
+    fields: [
+      { role_id: "r1", document_id: "td", type: "signature", placement: { page: 1, x: "72", y: "600", width: "160", height: "44" }, required: true },
+      { role_id: "r2", document_id: "td", type: "date_signed", placement: { page: 2, x: "340", y: "780", width: "110", height: "22" } },
+      { role_id: "r2", document_id: "td", type: "signature", placement: { page: 3, x: "1", y: "1", width: "10", height: "10" } },
+      { role_id: "r9", document_id: "td", type: "signature", placement: { page: 1, x: "1", y: "1", width: "10", height: "10" } },
+    ],
+  };
+  const out = applyTemplatePlan(tpl, { docs, recipients: [{ key: "a", name: "Ana", email: "ana@x.test", type: "signer", order: 1 }] }, key);
+  assert.equal(out.recipients.length, 2);
+  assert.equal(out.recipients[0].name, "Ana"); // the draft's person keeps their name
+  assert.equal(out.recipients[1].name, "Client");
+  assert.equal(out.fields.length, 2);
+  assert.equal(out.dropped, 2); // a page the draft lacks; a role the template lacks
+  assert.equal(out.fields[0].recipientKey, "a"); // Company (order 1) is the first person
+  assert.equal(out.fields[1].y + out.fields[1].height <= 792, true); // clamped to the page
+});
+
+test("OCR pages are numbered as laid out; personal data groups by its busiest page", () => {
+  assert.deepEqual(ocrPagesFrom([{ status: "done", ocr_pages: [3] }, null, { status: "running", ocr_pages: [1] }, { status: "done", ocr_pages: [1, 2] }], [0, 3, 5, 6]), [3, 7, 8]);
+  const p = piiSummary([{ kind: "personal_data", label: "Email address", page: 3 }, { kind: "personal_data", label: "Email address", page: 3 }, { kind: "personal_data", label: "Phone number", page: 3 }, { kind: "personal_data", label: "Phone number", page: 1 }, { kind: "personal_data", label: "x", page: 3, state: "dismissed" }]);
+  assert.deepEqual(p, { page: 3, total: 3, pages: 2, labels: [["Email address", 2], ["Phone number", 1]] });
+  assert.equal(piiSummary([]), null);
 });
