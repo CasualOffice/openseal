@@ -11,7 +11,10 @@
     clippy::arithmetic_side_effects
 )]
 
+pub mod validated;
+
 /// splitmix64: deterministic, seedable, no dependency.
+#[derive(Debug)]
 pub struct Rng(pub u64);
 
 impl Rng {

@@ -216,6 +216,7 @@ provisional are re-set from measurement before an exit is claimed.
 | Candidates examined per recogniser per call (`casual-sign-pii`) | 20,000; further candidates of that kind are not examined, reported as `Truncation::Candidates` | — (report); `tests/hostile.rs` |
 | Spans returned per call (`casual-sign-pii`) | 5,000 (= personal-data suggestions per document below); the rest reported as `Truncation::Spans` | — (report); `tests/hostile.rs` |
 | Phone candidate (`casual-sign-pii`) | 7 to 15 digits (E.164), at most 28 characters by its pattern; only that short ASCII candidate reaches `phonenumber` | — (not a phone) |
+| Validated-identifier candidate (`casual-sign-pii`, `ML-08C`) | Bounded by each pattern: at most 44 ASCII characters (MRZ line) for ids, 35 for a Base58 address (decoded into at most 25 bytes, longer refused before arithmetic) and 90 for a Bech32 address (BIP 173); the 20,000-candidate budget above applies per kind | — (not that identifier); `tests/validated.rs`, `tests/hostile.rs` |
 | Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI | CS-ML-0005 |
 | Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`) | CS-ML-0005 |
 | Rasterise time per page | 10 s, enforced by killing the raster child | CS-ML-0006 |
