@@ -224,6 +224,19 @@ async fn open(
 }
 
 impl Open {
+    /// The engine's `gate_ready` rule, checked before a write that would store or parse
+    /// what the request carries (SEC-CER-01): a link alone never has an image, a file or
+    /// a value stored, nor a PDF parsed, and never learns which field or document ids
+    /// exist; the engine checks again when the command runs.
+    fn ready(&self) -> Result<(), ApiError> {
+        let r = self
+            .l
+            .state
+            .recipient(&self.recipient)
+            .ok_or_else(ApiError::expired)?;
+        ready(r, &self.cmds.policy)
+    }
+
     async fn run(&mut self, cmd: Command) -> Result<(), ApiError> {
         let ctx = self.cmds.ctx(
             WfPrincipal::Recipient {
@@ -893,6 +906,7 @@ pub(crate) async fn viewed(
     body: Bytes,
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
+        o.ready()?;
         let req: ViewedIn = parse(&body)?;
         o.locate(req.location.as_ref());
         if req.pages_seen.len() > 5_000 {
@@ -943,6 +957,7 @@ pub(crate) async fn adopt(
 ) -> Response {
     let max = st.config().max_image_bytes;
     ceremony!(st, token, headers, ip, method, false, |o| {
+        o.ready()?;
         let req: AdoptIn = parse(&body)?;
         o.locate(req.location.as_ref());
         if req.image_base64.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
@@ -989,6 +1004,7 @@ pub(crate) async fn fill(
     body: Bytes,
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
+        o.ready()?;
         let f =
             o.l.state
                 .fields
@@ -1038,6 +1054,7 @@ pub(crate) async fn attach(
     body: Bytes,
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
+        o.ready()?;
         let f =
             o.l.state
                 .fields

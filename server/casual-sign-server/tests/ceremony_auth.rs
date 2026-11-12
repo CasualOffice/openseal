@@ -229,3 +229,72 @@ async fn a_recipient_without_a_code_is_served_the_document_on_opening() {
     assert!(r.body.starts_with(b"%PDF-"));
     api.db.drop().await;
 }
+
+/// Every ceremony endpoint but the view, the session and the authentication itself
+/// refuses a link holder who has not passed the access code (`403 CS-AUTH-0003`), before
+/// it stores an image or a file, parses a PDF, or says whether a field or document id
+/// exists, and nothing they send changes the envelope (withdrawing consent, which
+/// declines, included).
+#[tokio::test]
+async fn every_ceremony_endpoint_refuses_before_the_access_code() {
+    let Some(api) = Api::new("ceremony_auth_all", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let (doc, token) = sent(&api, &a, json!(["access_code"])).await;
+    let (_, h) = open(&api, &token).await;
+    let unknown = "0190f000-0000-7000-8000-000000000000";
+    let s = format!("/s/{token}");
+    let calls: Vec<(&str, String, Option<Value>)> = vec![
+        ("GET", format!("{s}/documents/{doc}/content"), None),
+        ("GET", format!("{s}/document"), None),
+        ("GET", format!("{s}/history"), None),
+        ("GET", format!("{s}/disclosure"), None),
+        (
+            "POST",
+            format!("{s}/documents/{unknown}/viewed"),
+            Some(json!({"pages_seen": [1]})),
+        ),
+        (
+            "POST",
+            format!("{s}/adopt"),
+            Some(
+                json!({"mark": "signature", "method": "drawn", "image_base64": "bm90IGFuIGltYWdl"}),
+            ),
+        ),
+        (
+            "PUT",
+            format!("{s}/fields/{unknown}"),
+            Some(json!({"value": {"text": "x"}})),
+        ),
+        (
+            "PUT",
+            format!("{s}/fields/{unknown}/attachment"),
+            Some(json!({"content_base64": "JVBERi0="})),
+        ),
+        ("POST", format!("{s}/finish"), Some(json!({}))),
+        ("POST", format!("{s}/approve"), Some(json!({}))),
+        ("POST", format!("{s}/decline"), Some(json!({}))),
+        ("POST", format!("{s}/withdraw-consent"), Some(json!({}))),
+        ("POST", format!("{s}/finish-later"), Some(json!({}))),
+        (
+            "POST",
+            format!("{s}/reassign"),
+            Some(json!({"name": "Other", "email": "other@example.test"})),
+        ),
+    ];
+    for (method, path, body) in calls {
+        let r = call(&api, method, &path, &h, body).await;
+        let shown = path.replace(&token, "{token}");
+        assert_eq!(
+            (r.status, r.code()),
+            (StatusCode::FORBIDDEN, "CS-AUTH-0003".to_owned()),
+            "{method} {shown}"
+        );
+        assert!(!r.body.starts_with(b"%PDF-"), "{method} {shown}");
+    }
+    let view = call(&api, "GET", &s, &h, None).await.json();
+    assert_eq!(view["envelope"]["status"], json!("delivered"), "{view}");
+    assert_eq!(view["recipient"]["status"], json!("delivered"), "{view}");
+    api.db.drop().await;
+}
