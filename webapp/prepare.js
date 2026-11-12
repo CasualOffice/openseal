@@ -21,7 +21,7 @@
 // documents, roles and fields; saving brings the server's template into line with
 // the editor (removals, changes and additions, each with If-Match).
 
-import { h, clear, reducedMotion, skipTo } from "./dom.js";
+import { h, append, clear, reducedMotion, skipTo } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix, run } from "./commands.js";
@@ -116,7 +116,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const sendBtn = TPL ? null : button(t("prepare.send"), { icon: "send", variant: "primary", command: "envelope.send", onClick: () => run("envelope.send") });
   const newTitle = () => t(TPL_ID ? "templates.edit-title" : TPL ? "template.new-title" : "prepare.title");
   const title = h("h1", { class: "os-prepare__title", text: newTitle() });
-  const steps = stepControl(STEPS, stepLabel, (s) => go(s));
+  // The canvas names the last step "Review"; its full name ("Review and send") stays for
+  // assistive technology, so the visible word is part of the accessible name.
+  const steps = stepControl(STEPS, stepLabel, (s) => go(s), (s) => (s === "review" && !TPL ? "wizard.step.review-short" : null));
   const status = h("span", { class: "os-savestate", attrs: { "aria-live": "polite", id: "save-status", "data-testid": "save-status" } });
 
   // The document: one scroll container (docview.js) on a dotted canvas, the floating
@@ -256,7 +258,6 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   function stepLabel(s) {
     // A template is saved, not sent (UX-05): its last step is "Review and save".
     if (TPL && s === "review") return "wizard.review-template";
-    if (s === "review") return "wizard.step.review-short";
     return s === "recipients" && TPL ? "wizard.step.roles" : `wizard.step.${s}`;
   }
   /// Open step `s`: show its pane, mark the step control, set the bar's buttons.
@@ -270,6 +271,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     steps.sync(stepStates(STEPS, s));
     skipTo(s === "fields" ? "#document" : "#main", t(s === "fields" ? "a11y.skip-doc" : "a11y.skip"));
     if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); disarm(); if (previewKey) previewAs(null); }
+    if (s !== "fields") renderFloats(); // the hint and the suggestion bar belong to the fields step
     nextBtn.hidden = i === STEPS.length - 1;
     if (previewBtn) previewBtn.hidden = s !== "fields" && s !== "review";
     if (sendBtn) sendBtn.hidden = s !== "review";
@@ -709,7 +711,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     toolDetect?.classList.toggle("is-busy", detecting);
   }
   syncDetect();
-  palettePanel.append(
+  append(palettePanel, [
     h("div", { class: "os-prep-h" }, h("h3", { id: "rcpt-list-h", text: t(TPL ? "template.roles" : "prepare.recipients") }), addPerson),
     palFor,
     detectBtn ? h("div", { class: "os-detect" }, detectBtn, h("p", { id: "detect-help", class: "os-sr-only", text: t("prepare.detect-help") })) : null,
@@ -718,7 +720,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     palGrid,
     // Touch screens get touch words (UX-05): no Enter, arrows or Shift there. Phones only;
     // a desktop has the hint chip over the page.
-    h("p", { class: "os-muted os-small os-palette__hint", attrs: { "data-testid": "palette-hint" }, text: t(matchMedia("(pointer: coarse)").matches ? "prepare.palette-hint-touch" : "prepare.palette-hint") }));
+    h("p", { class: "os-muted os-small os-palette__hint", attrs: { "data-testid": "palette-hint" }, text: t(matchMedia("(pointer: coarse)").matches ? "prepare.palette-hint-touch" : "prepare.palette-hint") })]);
 
   /// The recipients list (canvas): each signer's colour chip with their number, name, role
   /// line and field count; the one fields are being placed for is tinted. Only signers take
@@ -1841,7 +1843,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!dirty || saving || !frame.isConnected) return;
     const a = document.activeElement;
     const typing = a && (a.matches?.("input, textarea, select") || a.isContentEditable);
-    if (typing || document.querySelector(".os-field.is-dragging, dialog[open]") || !savable()) { scheduleAutosave(); return; }
+    // Not while suggestions wait for a decision (WEB-17): a save reloads the draft and
+    // empties undo, which would take back the undo of an accept or a dismiss.
+    if (typing || S.ghosts.length || document.querySelector(".os-field.is-dragging, dialog[open]") || !savable()) { scheduleAutosave(); return; }
     // Keep the selection and focus across the reload of state that a save does.
     const sel = S.fields.find((f) => f.key === S.selected);
     const hadFocus = sel && a?.dataset?.fkey === sel.key;
@@ -2343,6 +2347,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   if (opening) {
     for (const [k, pane] of Object.entries(panes)) pane.hidden = k !== "fields";
     frame.dataset.step = "fields";
+    for (const b of [nextBtn, sendBtn, previewBtn, TPL ? saveBtn : null]) if (b) b.hidden = true;
     showPreparing(0);
   } else {
     dv.inner.append(h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } }));

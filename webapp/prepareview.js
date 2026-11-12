@@ -48,13 +48,15 @@ export const KIND_GLYPH = {
 
 /// The segmented step control: one button per step, done ones ticked, the current one
 /// raised (`aria-current="step"`). `onPick(step)`.
-export function stepControl(steps, labelOf, onPick) {
+export function stepControl(steps, labelOf, onPick, shortOf = () => null) {
   const btns = new Map();
   const ol = h("ol", { class: "os-stepper os-segsteps", attrs: { "aria-label": t("wizard.steps") } });
   steps.forEach((s, i) => {
     const b = h("button", { type: "button", class: "os-stepper__btn", attrs: { "data-step": s, title: t(labelOf(s)) } },
       h("span", { class: "os-stepper__n", attrs: { "aria-hidden": "true" } }),
-      h("span", { class: "os-stepper__label", text: t(labelOf(s)) }),
+      shortOf(s)
+        ? h("span", { class: "os-stepper__label" }, t(shortOf(s)), h("span", { class: "os-sr-only", text: t(labelOf(s)).slice(t(shortOf(s)).length) }))
+        : h("span", { class: "os-stepper__label", text: t(labelOf(s)) }),
       h("span", { class: "os-sr-only os-stepper__state" }));
     b.dataset.n = String(i + 1);
     b.addEventListener("click", () => onPick(s));
@@ -92,9 +94,11 @@ export function recipientRow({ key, n, colour, name, role, count, on, onPick, on
 /// key. The button is named "Add <kind> field" (the visible name inside it).
 export function libraryItem(type, key) {
   return h("button", { type: "button", class: "os-palette__item os-lib", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-pressed": "false", "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }), "aria-keyshortcuts": key || null } },
-    h("span", { class: "os-lib__chip", attrs: { "aria-hidden": "true" }, text: KIND_GLYPH[type] || "T" }),
+    // The chip's glyph and the key are drawn by CSS from data attributes, so the button's
+    // text is the kind's name alone and its accessible name contains it (SC 2.5.3).
+    h("span", { class: "os-lib__chip", attrs: { "aria-hidden": "true", "data-glyph": KIND_GLYPH[type] || "T" } }),
     h("span", { class: "os-lib__label", text: t(`ftype.${type}`) }),
-    key ? h("kbd", { class: "os-lib__key", attrs: { "aria-hidden": "true" }, text: key }) : null);
+    key ? h("span", { class: "os-lib__key", attrs: { "aria-hidden": "true", "data-key": key } }) : null);
 }
 
 /// One tool on the floating bar (Select or a kind), named with its key.
@@ -102,7 +106,7 @@ export function toolButton(tool, onClick) {
   const name = tool === "select" ? t("prepare.tool-select") : t(`ftype.${tool}`);
   const label = t("prepare.tool-key", { name, key: TOOL_KEYS[tool] });
   const b = h("button", { type: "button", class: "os-tool", attrs: { "aria-label": label, title: label, "aria-pressed": "false", "data-tool": tool, "aria-keyshortcuts": TOOL_KEYS[tool] } },
-    h("span", { attrs: { "aria-hidden": "true" }, text: KIND_GLYPH[tool] }));
+    h("span", { class: "os-tool__glyph", attrs: { "aria-hidden": "true", "data-glyph": KIND_GLYPH[tool] } }));
   b.addEventListener("click", onClick);
   return b;
 }
@@ -203,7 +207,8 @@ export function markOcr(thumbsBox, pages) {
     const on = pages.includes(i);
     let tag = b.querySelector(".os-thumb__ocr");
     if (on && !tag) {
-      tag = h("span", { class: "os-thumb__ocr", text: t("prepare.ocr"), attrs: { title: t("prepare.ocr-tip") } });
+      // Drawn from an attribute so the thumbnail's text stays its name (SC 2.5.3).
+      tag = h("span", { class: "os-thumb__ocr", attrs: { "aria-hidden": "true", "data-tag": t("prepare.ocr") } });
       b.append(tag);
       b.setAttribute("aria-label", `${b.getAttribute("aria-label") || ""}, ${t("prepare.ocr-tip")}`);
     } else if (!on && tag) tag.remove();
