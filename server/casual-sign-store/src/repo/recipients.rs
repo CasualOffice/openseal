@@ -82,6 +82,9 @@ text_enum!(
         Embedded = "embedded",
         /// The completed copy.
         CompletedCopy = "completed_copy",
+        /// An in-person signing hosted by a staff user (UXW-36): the link acts as its
+        /// host, never as the signer alone.
+        InPerson = "in_person",
     }
 );
 
@@ -136,6 +139,9 @@ pub struct NewToken {
     pub token_sha256: [u8; 32],
     /// Purpose.
     pub purpose: TokenPurpose,
+    /// The member hosting an in-person signing: set exactly when `purpose` is
+    /// [`TokenPurpose::InPerson`] (migration 0014 checks it).
+    pub host_user_id: Option<UserId>,
     /// Expiry.
     pub expires_at: OffsetDateTime,
 }
@@ -296,14 +302,15 @@ impl Recipients<'_> {
         let acct = self.tx.acct();
         sqlx::query!(
             "INSERT INTO recipient_tokens (id, account_id, envelope_id, recipient_id, token_sha256, \
-             purpose, expires_at) VALUES ($2, $1, $3, $4, $5, $6, $7)",
+             purpose, expires_at, host_user_id) VALUES ($2, $1, $3, $4, $5, $6, $7, $8)",
             acct,
             t.id.0,
             t.envelope_id.0,
             t.recipient_id.0,
             t.token_sha256.as_slice(),
             t.purpose.as_str(),
-            t.expires_at
+            t.expires_at,
+            t.host_user_id.map(|u| u.0)
         )
         .execute(self.tx.conn())
         .await
@@ -348,6 +355,8 @@ pub struct TokenRecord {
     pub recipient_id: RecipientId,
     /// What it is for.
     pub purpose: TokenPurpose,
+    /// The hosting member, for an in-person link.
+    pub host_user_id: Option<UserId>,
     /// SHA-256 of the browser session it was bound to on first use, once bound.
     pub session_sha256: Option<[u8; 32]>,
     /// Expiry.
@@ -441,8 +450,8 @@ impl Recipients<'_> {
     pub async fn token(&mut self, token_sha256: &[u8; 32]) -> Result<Option<TokenRecord>> {
         let acct = self.tx.acct();
         let row = sqlx::query!(
-            "SELECT id, envelope_id, recipient_id, purpose, session_sha256, expires_at, revoked_at \
-             FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
+            "SELECT id, envelope_id, recipient_id, purpose, host_user_id, session_sha256, expires_at, \
+             revoked_at FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
             acct,
             token_sha256.as_slice()
         )
@@ -455,6 +464,7 @@ impl Recipients<'_> {
                 envelope_id: EnvelopeId(r.envelope_id),
                 recipient_id: RecipientId(r.recipient_id),
                 purpose: TokenPurpose::parse(&r.purpose, "purpose")?,
+                host_user_id: r.host_user_id.map(UserId),
                 session_sha256: super::opt_hash32(r.session_sha256, "session_sha256")?,
                 expires_at: r.expires_at,
                 revoked_at: r.revoked_at,

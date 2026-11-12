@@ -18,6 +18,11 @@ regex = { version = "1.10", default-features = false, features = ["std", "unicod
 # for wasm32-unknown-unknown (checked 2026-11-12, ADR-029 D7). It is handed only short
 # ASCII candidates of digits and separators, never document text (src/phone.rs).
 phonenumber = { version = "=0.3.10", default-features = false }
+# Base58Check's double SHA-256 for legacy Bitcoin addresses (src/coin.rs, ML-08C). The
+# RustCrypto digest already in the engine through casual-sign-pdf and -crypto (ADR-006),
+# same version, no default features; pure and wasm32-clean. A checksum, not a security
+# use: nothing here signs or verifies.
+sha2 = { version = "=0.11.1", default-features = false }
 
 [dev-dependencies]
 proptest = { version = "1.5", default-features = false, features = ["std"] }

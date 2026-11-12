@@ -12,7 +12,8 @@ use axum::body::{Body, Bytes};
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderMap, Method, Request, StatusCode};
 use casual_sign_server::{
-    AppState, Blobs, Bootstrapped, Config, JwtKeys, ManualClock, app, bootstrap, table,
+    AppState, Blobs, Bootstrapped, Config, JwtKeys, ManualClock, app, bootstrap,
+    bootstrap_workspace, table,
 };
 use casual_sign_store::blob::FsBlobStore;
 use http_body_util::BodyExt;
@@ -207,9 +208,29 @@ impl Api {
     /// A new account: bootstrap, log in, and make an administrator's API key.
     pub async fn tenant(&self, name: &str) -> Tenant {
         let email = format!("admin@{name}.example.test");
-        let boot = bootstrap(self.st_store(), name, &email, "Admin", PASSWORD)
+        // The install's first organization comes from `bootstrap`; later ones as the
+        // platform console makes them (the owner role), each with a workspace made
+        // through the application's organization scope.
+        let any: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM organizations)")
+            .fetch_one(&self.db.admin)
             .await
             .unwrap();
+        let boot = if any {
+            let org = casual_sign_store::OrganizationId(uuid::Uuid::now_v7());
+            sqlx::query("INSERT INTO organizations (id, name) VALUES ($1, $2)")
+                .bind(org.0)
+                .bind(name)
+                .execute(&self.db.admin)
+                .await
+                .unwrap();
+            bootstrap_workspace(self.st_store(), org, name, &email, "Admin", PASSWORD)
+                .await
+                .unwrap()
+        } else {
+            bootstrap(self.st_store(), name, &email, "Admin", PASSWORD)
+                .await
+                .unwrap()
+        };
         let login = self
             .call(
                 "POST",

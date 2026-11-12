@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, envelope_id, recipient_id, purpose, session_sha256, expires_at, revoked_at FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
+  "query": "SELECT id, organization_id, status, name, settings, data_region, created_at FROM accounts WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -9,82 +9,81 @@
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "recipient_tokens",
+            "table": "accounts",
             "name": "id"
           }
         }
       },
       {
         "ordinal": 1,
-        "name": "envelope_id",
+        "name": "organization_id",
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "recipient_tokens",
-            "name": "envelope_id"
+            "table": "accounts",
+            "name": "organization_id"
           }
         }
       },
       {
         "ordinal": 2,
-        "name": "recipient_id",
-        "type_info": "Uuid",
+        "name": "status",
+        "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "recipient_tokens",
-            "name": "recipient_id"
+            "table": "accounts",
+            "name": "status"
           }
         }
       },
       {
         "ordinal": 3,
-        "name": "purpose",
+        "name": "name",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "recipient_tokens",
-            "name": "purpose"
+            "table": "accounts",
+            "name": "name"
           }
         }
       },
       {
         "ordinal": 4,
-        "name": "session_sha256",
-        "type_info": "Bytea",
+        "name": "settings",
+        "type_info": "Jsonb",
         "origin": {
           "Table": {
-            "table": "recipient_tokens",
-            "name": "session_sha256"
+            "table": "accounts",
+            "name": "settings"
           }
         }
       },
       {
         "ordinal": 5,
-        "name": "expires_at",
-        "type_info": "Timestamptz",
+        "name": "data_region",
+        "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "recipient_tokens",
-            "name": "expires_at"
+            "table": "accounts",
+            "name": "data_region"
           }
         }
       },
       {
         "ordinal": 6,
-        "name": "revoked_at",
+        "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "recipient_tokens",
-            "name": "revoked_at"
+            "table": "accounts",
+            "name": "created_at"
           }
         }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Bytea"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -92,10 +91,10 @@
       false,
       false,
       false,
-      true,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "fabcd84ce6a736579e46f795c25773c16cc36ed9506466d15110fe075f082153"
+  "hash": "f15a4ee0d941ed48757cffea9c888f17a3920172d22b80eaa292493129cf1f38"
 }

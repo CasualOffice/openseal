@@ -24,6 +24,7 @@ use uuid::Uuid;
 /// Ids of everything seeded for one account.
 #[derive(Debug, Clone)]
 pub struct World {
+    pub organization: OrganizationId,
     pub account: AccountId,
     pub profile: PermissionProfileId,
     pub user: UserId,
@@ -171,11 +172,13 @@ pub fn new_job(id: JobId, envelope: Option<EnvelopeId>, key: &str) -> NewJob {
     }
 }
 
-/// Seed one account through the repositories.
-pub async fn seed(store: &Store, name: &str) -> World {
-    let account = AccountId(id());
-    store.create_account(account, name).await.unwrap();
+/// Seed one account, a workspace of an organization of its own, through the
+/// repositories.
+pub async fn seed(db: &super::TestDb, name: &str) -> World {
+    let store = &db.store;
+    let (organization, account) = db.account(name).await;
     let w = World {
+        organization,
         account,
         profile: PermissionProfileId(id()),
         user: UserId(id()),
@@ -262,6 +265,7 @@ pub async fn seed(store: &Store, name: &str) -> World {
             recipient_id: w.recipient,
             token_sha256: w.token_sha256,
             purpose: TokenPurpose::Invitation,
+            host_user_id: None,
             expires_at: now() + time::Duration::days(30),
         })
         .await

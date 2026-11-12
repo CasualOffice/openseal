@@ -1,7 +1,7 @@
 //! The recipient ceremony (docs/40 §6), under `/s/{token}`: not public API.
 //!
-//! The token is the invitation's (or an embedded view's) 256-bit secret; only its
-//! SHA-256 is stored (SEC-A01). Its first use (`POST /s/{token}/session`) binds it to
+//! The token is the invitation's (or an embedded view's, or an in-person host's) 256-bit
+//! secret; only its SHA-256 is stored (SEC-A01). Its first use (`POST /s/{token}/session`) binds it to
 //! this browser with a second secret in an `HttpOnly`, `SameSite=Strict` cookie; every
 //! later call must carry that cookie (`CS-AUTH-0009` otherwise), so a forwarded or
 //! leaked link opens nothing in another browser. Every call is rate-limited per token
@@ -21,6 +21,7 @@ use base64::engine::general_purpose::STANDARD;
 use casual_sign_audit::{AdoptionMethod, AuthMethod, EventData, Hash256, MarkKind};
 use casual_sign_model::{FieldValue, Id};
 use casual_sign_store::repo::documents::VersionKind;
+use casual_sign_store::repo::recipients::TokenPurpose;
 use casual_sign_store::{DocumentId, RecipientId, TenantTx};
 use casual_sign_workflow::{Command, FieldEntry, Principal as WfPrincipal, ReassignTo};
 use serde::Deserialize;
@@ -45,6 +46,9 @@ pub(crate) struct Open {
     tx: TenantTx,
     l: Loaded,
     recipient: Id,
+    /// The member hosting an in-person signing, when the link is theirs (UXW-36):
+    /// every command then runs as `InPersonHost`, never as the signer alone.
+    host: Option<Id>,
     cmds: Commands,
     cookie: Option<String>,
     ip: ClientIp,
@@ -178,13 +182,26 @@ async fn open(
             .state
             .recipient(&recipient)
             .ok_or_else(ApiError::expired)?;
-        let mut auth = vec![AuthMethod::EmailLink];
-        auth.extend(
-            r.auth_passed
-                .iter()
-                .copied()
-                .filter(|m| *m != AuthMethod::EmailLink),
-        );
+        // An in-person link acts as its host, who must still be an enabled member; it
+        // records the host's sign-in, not an emailed link.
+        let host = match (record.purpose, record.host_user_id) {
+            (TokenPurpose::InPerson, Some(h)) => {
+                let member = tx.users().get(h).await?.ok_or_else(ApiError::expired)?;
+                if member.disabled_at.is_some() {
+                    return Err(ApiError::expired());
+                }
+                Some(crate::apply::eid(h.0)?)
+            }
+            (TokenPurpose::InPerson, None) => return Err(ApiError::expired()),
+            _ => None,
+        };
+        let first = if host.is_some() {
+            AuthMethod::AccountLogin
+        } else {
+            AuthMethod::EmailLink
+        };
+        let mut auth = vec![first];
+        auth.extend(r.auth_passed.iter().copied().filter(|m| *m != first));
         let ctx = request_context(
             headers,
             ip,
@@ -209,6 +226,7 @@ async fn open(
             tx,
             l,
             recipient,
+            host,
             cmds,
             cookie: set_cookie,
             ip,
@@ -224,13 +242,29 @@ async fn open(
 }
 
 impl Open {
+    /// The engine's `gate_ready` rule, checked before a write that would store or parse
+    /// what the request carries (SEC-CER-01): a link alone never has an image, a file or
+    /// a value stored, nor a PDF parsed, and never learns which field or document ids
+    /// exist; the engine checks again when the command runs.
+    fn ready(&self) -> Result<(), ApiError> {
+        let r = self
+            .l
+            .state
+            .recipient(&self.recipient)
+            .ok_or_else(ApiError::expired)?;
+        ready(r, &self.cmds.policy)
+    }
+
     async fn run(&mut self, cmd: Command) -> Result<(), ApiError> {
-        let ctx = self.cmds.ctx(
-            WfPrincipal::Recipient {
+        let principal = match &self.host {
+            Some(user_id) => WfPrincipal::InPersonHost {
+                user_id: user_id.clone(),
+            },
+            None => WfPrincipal::Recipient {
                 recipient_id: self.recipient.clone(),
             },
-            None,
-        )?;
+        };
+        let ctx = self.cmds.ctx(principal, None)?;
         run(&mut self.tx, &mut self.l, &cmd, &ctx).await?;
         Ok(())
     }
@@ -311,18 +345,35 @@ impl Open {
         s: &casual_sign_workflow::EnvelopeState,
         me: Option<&casual_sign_workflow::RecipientState>,
     ) -> Value {
+        // SEC-CER-01: until the recipient has passed every authentication they need, the
+        // view names no document and no field (only what the invitation already said,
+        // and what the page needs to ask for the code).
+        let shown = me.is_some_and(|r| !r.auth_locked && r.auth_satisfied());
+        let documents: Vec<Value> = if shown {
+            s.documents.iter().map(dto::document).collect()
+        } else {
+            Vec::new()
+        };
+        let fields: Vec<Value> = if shown {
+            s.fields
+                .0
+                .iter()
+                .filter(|f| f.recipient_id.as_ref() == Some(&self.recipient))
+                .map(dto::field)
+                .collect()
+        } else {
+            Vec::new()
+        };
         json!({
             "envelope": {
                 "id": s.id, "status": s.status, "subject": s.subject.0, "message": s.message.0,
                 "signing_options": s.options,
-                "documents": s.documents.iter().map(dto::document).collect::<Vec<_>>(),
+                "documents": documents,
                 // When it expires, so the page can say "sign by" (UXW-34).
                 "expires_at": s.expires_at,
             },
             "recipient": me.map(dto::recipient),
-            "fields": s.fields.0.iter()
-                .filter(|f| f.recipient_id.as_ref() == Some(&self.recipient))
-                .map(dto::field).collect::<Vec<_>>(),
+            "fields": fields,
             // Whether the page asks the device for its location (GEO-01); when false it
             // never asks.
             "capture_location": s.options.capture_location,
@@ -723,6 +774,9 @@ pub(crate) async fn otp_verify(
 }
 
 /// `GET /s/{token}/documents/{doc}/content`: the document as delivered (normalized).
+/// Only in the browser the link is bound to, once the recipient has passed every
+/// authentication they need and, when the account has a disclosure, consented to it
+/// (`403` before, SEC-CER-01): the link alone never yields the document.
 pub(crate) async fn document(
     State(st): State<AppState>,
     axum::Extension(ip): axum::Extension<ClientIp>,
@@ -735,6 +789,13 @@ pub(crate) async fn document(
         Err(r) => return r,
     };
     let result = async {
+        // SEC-CER-01: the link alone never yields the document.
+        ready(
+            o.l.state
+                .recipient(&o.recipient)
+                .ok_or_else(ApiError::expired)?,
+            &o.cmds.policy,
+        )?;
         let d =
             o.l.state
                 .documents
@@ -793,10 +854,12 @@ pub(crate) async fn download(
         Err(r) => return r,
     };
     let result = async {
-        let finished =
+        let me =
             o.l.state
                 .recipient(&o.recipient)
-                .is_some_and(|r| r.status == casual_sign_model::RecipientStatus::Completed);
+                .ok_or_else(ApiError::expired)?;
+        authenticated(me)?;
+        let finished = me.status == casual_sign_model::RecipientStatus::Completed;
         if !finished {
             return Err(ApiError::not_available(
                 "the document can be downloaded once you have finished",
@@ -864,6 +927,7 @@ pub(crate) async fn viewed(
     body: Bytes,
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
+        o.ready()?;
         let req: ViewedIn = parse(&body)?;
         o.locate(req.location.as_ref());
         if req.pages_seen.len() > 5_000 {
@@ -914,6 +978,7 @@ pub(crate) async fn adopt(
 ) -> Response {
     let max = st.config().max_image_bytes;
     ceremony!(st, token, headers, ip, method, false, |o| {
+        o.ready()?;
         let req: AdoptIn = parse(&body)?;
         o.locate(req.location.as_ref());
         if req.image_base64.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
@@ -960,6 +1025,7 @@ pub(crate) async fn fill(
     body: Bytes,
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
+        o.ready()?;
         let f =
             o.l.state
                 .fields
@@ -1009,6 +1075,7 @@ pub(crate) async fn attach(
     body: Bytes,
 ) -> Response {
     ceremony!(st, token, headers, ip, method, false, |o| {
+        o.ready()?;
         let f =
             o.l.state
                 .fields
@@ -1284,7 +1351,8 @@ fn by(actor: &Value, me: &str) -> &'static str {
 /// `GET /s/{token}/history` (WEB-07): the envelope's history as this recipient may see
 /// it: the events they acted in or that concern them (`data.recipient_id`), and the
 /// envelope's milestones (sent, corrected, voided, declined, expired, completing,
-/// completed), oldest first, as `{seq, type, at, by}`: `by` is `you`, `sender`,
+/// completed) from the first `envelope.sent` on, so a draft's own edits never read
+/// as a correction (WEB-14), oldest first, as `{seq, type, at, by}`: `by` is `you`, `sender`,
 /// `recipient` (another, unnamed), `user`, `host` or `system`. Nothing else of any
 /// event is answered: no names, addresses, IPs, user agents, locations or values.
 /// Only in the browser the link is bound to, once the recipient has passed every
@@ -1308,27 +1376,20 @@ pub(crate) async fn history(
             o.l.state
                 .recipient(&o.recipient)
                 .ok_or_else(ApiError::expired)?;
-        let who = || o.recipient.clone();
-        authenticated(r)?;
-        if let Some(ersd) = &o.cmds.policy.ersd {
-            let consented = r
-                .consent
-                .as_ref()
-                .is_some_and(|c| c.ersd_version == ersd.version && c.ersd_hash == ersd.hash);
-            if !consented {
-                return Err(casual_sign_workflow::WorkflowError::ConsentRequired {
-                    recipient: who(),
-                }
-                .into());
-            }
-        }
+        ready(r, &o.cmds.policy)?;
         // `chain` re-verifies every link; a broken chain is an error, never served.
         let _ = o.tx.audit().chain(o.l.id).await?;
         let events = o.tx.audit().events(o.l.id).await?;
         let me = o.recipient.as_str();
+        // Before the first `envelope.sent` the envelope was a draft: the engine records a
+        // draft's own edits as `envelope.corrected` (docs/24 As built), which is no
+        // correction of anything a recipient received, so no milestone shows until it
+        // was sent (WEB-14).
+        let mut sent = false;
         let items: Vec<Value> = events
             .iter()
             .filter_map(|e| {
+                sent |= e.event_type == "envelope.sent";
                 let v: Value = serde_json::from_slice(&e.canonical).ok()?;
                 let actor = v.get("actor").cloned().unwrap_or(Value::Null);
                 let by = by(&actor, me);
@@ -1337,7 +1398,8 @@ pub(crate) async fn history(
                     .and_then(|d| d.get("recipient_id"))
                     .and_then(Value::as_str)
                     == Some(me);
-                let shown = by == "you" || concerns || MILESTONES.contains(&e.event_type.as_str());
+                let milestone = sent && MILESTONES.contains(&e.event_type.as_str());
+                let shown = by == "you" || concerns || milestone;
                 shown.then(|| {
                     json!({
                         "seq": e.seq,
@@ -1372,6 +1434,30 @@ fn authenticated(r: &casual_sign_workflow::RecipientState) -> Result<(), ApiErro
             recipient: r.id().clone(),
         }
         .into());
+    }
+    Ok(())
+}
+
+/// Refuse a recipient who is not [`authenticated`] or, when the account requires a
+/// disclosure, has not consented to its current version (`CS-AUTH-0005`): the engine's
+/// `gate_ready` rule, applied to the reads that serve the envelope's records (history,
+/// the document), which ESIGN-style consent must precede.
+fn ready(
+    r: &casual_sign_workflow::RecipientState,
+    policy: &casual_sign_workflow::Policy,
+) -> Result<(), ApiError> {
+    authenticated(r)?;
+    if let Some(ersd) = &policy.ersd {
+        let consented = r
+            .consent
+            .as_ref()
+            .is_some_and(|c| c.ersd_version == ersd.version && c.ersd_hash == ersd.hash);
+        if !consented {
+            return Err(casual_sign_workflow::WorkflowError::ConsentRequired {
+                recipient: r.id().clone(),
+            }
+            .into());
+        }
     }
     Ok(())
 }

@@ -30,7 +30,7 @@ Account (tenant) ─┬─ User ── membership(role, permission profile) ─�
                   └─ RetentionPolicy
 ```
 
-**Designed (ADR-028), not built:** an **Organization** sits above the account, which the UI calls a **workspace**
+**Designed (ADR-028); the organization level itself is built (`ORG-02`, migration 0014, §9 As built), the rest not yet:** an **Organization** sits above the account, which the UI calls a **workspace**
 (`account` stays in the database and API v1). Every account belongs to exactly one organization, for good:
 
 ```
@@ -314,6 +314,32 @@ password_hash, now)` from a live session of the current account (`Users::update_
 password through either ends the user's staff sessions in every account (`openseal_revoke_user_sessions`, not granted
 to the application role). No table changes.
 
+`0014_organizations.sql` (`ORG-02`, ADR-028, docs/23 §2.1) puts every account under an **organization**. New tables
+`organizations` (RLS on `id = openseal_current_org()`, plus a `FOR SELECT` policy letting a workspace read its own),
+`org_permission_sets` and `organization_admins` (declared through `openseal_org_table()`, policy
+`organization_id = openseal_current_org()`). `accounts` gains `organization_id` (backfilled with the account's own UUID,
+NOT NULL; a trigger refuses any change, SQLSTATE `OS004`, `CS-DB-0013`, except by the NOLOGIN, memberless
+`openseal_org_mover`), `status` (`active`, `archived`) and `admin_chain_head`. `openseal_app` lost INSERT on `accounts`
+and keeps UPDATE only on `name`, `settings`, `data_region`, and lost SELECT on `users.password_hash` (SELECT is
+granted per column; a column added later must be granted). Members holding the built-in `admin` profile, enabled
+there, were backfilled as owners; a deferred constraint trigger refuses a commit that removes or demotes an owner and
+leaves an active organization without an enabled one (`organization_keeps_an_owner`, `CS-DB-0008`). Organization
+scope reads `accounts`, `account_memberships` and `users` of its own workspaces through `FOR SELECT` policies
+named `organization_scope`; content tables are untouched. Definer functions: `openseal_create_workspace` and
+`openseal_archive_workspace` (organization scope; no events until ORG-05 replaces them),
+`openseal_bootstrap_organization` and `openseal_bootstrap_owner` (the install's first organization only, in the transaction that created it),
+`openseal_login_password_hash` (login) and `openseal_user_workspaces` (switching, from a live session). Store:
+`Store::for_organization(org)` → `OrgScope::begin()` → `OrgTx` (`organization`, `workspaces`, `workspace(id) →
+WorkspaceOf`, `create_workspace`, `archive_workspace`, `into_workspace(&WorkspaceOf) → TenantTx` in the same transaction); `Store::for_workspace_of(&WorkspaceOf)` → a single-account
+`TenantTx` that re-reads the workspace's organization; `Store::bootstrap_organization` and
+`Accounts::make_first_owner`; `EntryPoints::user_workspaces`. `Store::create_account` is gone: the application can no
+longer create an account outside those functions. Forty-five tables.
+
+`0015_in_person_hosting.sql` (`UXW-36`) lets `recipient_tokens.purpose` be `in_person` and adds
+`recipient_tokens.host_user_id` (a user), set exactly when the purpose is `in_person` (a check). An in-person link
+acts as its host hosting the signer (docs/40 As built); the host is a user rather than a membership so that removing
+the member is not refused, and the server refuses the link once the host is no longer an enabled member.
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 
@@ -326,7 +352,9 @@ that no other door exists; the isolation tests, not the compiler, prove each met
 
 ### Designed (ADR-028): tenancy with organizations
 
-Not built; each part lands with the row named in [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §12. What changes in
+The second scope, the organization tables `organizations`, `organization_admins` and `org_permission_sets`, the
+three `FOR SELECT` policies, the tightened grants and `openseal_org_mover` are built (`ORG-02`, As built above);
+the rest is not. Each part lands with the row named in [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §12. What changes in
 the rules above, and what does not:
 
 - **Unchanged:** every content table keeps exactly one policy, `account_id = openseal_current_account()`; envelopes,

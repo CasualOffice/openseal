@@ -560,10 +560,12 @@ dependencies = [
  "image_hasher",
  "ort",
  "rcgen",
+ "regex",
  "rustls",
  "rustls-pki-types",
  "serde_json",
  "tokenizers",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -589,6 +591,7 @@ dependencies = [
  "phonenumber",
  "proptest",
  "regex",
+ "sha2 0.11.1",
 ]
 
 [[package]]

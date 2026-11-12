@@ -217,6 +217,7 @@ provisional are re-set from measurement before an exit is claimed.
 | Candidates examined per recogniser per call (`casual-sign-pii`) | 20,000; further candidates of that kind are not examined, reported as `Truncation::Candidates` | — (report); `tests/hostile.rs` |
 | Spans returned per call (`casual-sign-pii`) | 5,000 (= personal-data suggestions per document below); the rest reported as `Truncation::Spans` | — (report); `tests/hostile.rs` |
 | Phone candidate (`casual-sign-pii`) | 7 to 15 digits (E.164), at most 28 characters by its pattern; only that short ASCII candidate reaches `phonenumber` | — (not a phone) |
+| Validated-identifier candidate (`casual-sign-pii`, `ML-08C`) | Bounded by each pattern: at most 44 ASCII characters (MRZ line) for ids, 35 for a Base58 address (decoded into at most 25 bytes, longer refused before arithmetic) and 90 for a Bech32 address (BIP 173); the 20,000-candidate budget above applies per kind | — (not that identifier); `tests/validated.rs`, `tests/hostile.rs` |
 | Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI | CS-ML-0005 |
 | Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`) | CS-ML-0005 |
 | Rasterise time per page | 10 s, enforced by killing the raster child | CS-ML-0006 |
@@ -225,8 +226,9 @@ provisional are re-set from measurement before an exit is claimed.
 | OCR deadline per page / per job | 20 s / 15 min | CS-ML-0007 |
 | Words per OCR page | 20,000 (= `MAX_DETECT_WORDS`) | — (truncated) |
 | Text per ENTITIES or PERSONAL call; per document | 64 KiB; 4 MiB | CS-ML-0005 |
-| Windows | e5: 512 tokens; GLiNER multi: 384 words, stride 64; GLiNER-PII: its config's `max_len` (2,048 tokens), stride 64; 2,000 windows per document | — (truncated, deterministic) |
+| Windows | e5: 512 tokens; GLiNER (built, piece K): at most the config's `max_len` words (multi and small 384, PII 2,048) and 2,048 tokens per window, prompt and special tokens included; each next window starts 64 words (at most half a window) before the last ended; a word whose tokens alone overflow a window is skipped; candidates of all windows pooled and decoded once; 2,000 windows per call | — (truncated, deterministic) |
 | Labels per call; label length | 32; 64 bytes | CS-ML-0004 |
+| GLiNER label prompt (labels, their markers and special tokens) | 1,024 tokens, half a window, so the text always has the other half (`ML-17`); a larger prompt is refused rather than answering no spans | CS-ML-0005 |
 | Texts per EMBED call | 64, each 8 KiB at most; checked again by the embedder (built, piece I; `embed::tests::a_passed_deadline_stops_between_texts`) | CS-ML-0004 |
 | Suggestions per document | fields 500 (existing); entities 2,000; personal-data spans 5,000 | — (truncated) |
 | Fingerprints searched per account | 50,000 page vectors in process | — |

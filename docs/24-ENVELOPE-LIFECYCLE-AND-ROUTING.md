@@ -69,7 +69,9 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - Approvers complete with Approve or decline with Decline; they never sign.
 - Editors (allowed to edit) may change later recipients and fields before signing.
 - Agents (specify recipients) supply the name and email of later recipients.
-- In-person signers are hosted by a staff user who authenticates first; the event records both.
+- In-person signers are hosted by a staff user who authenticates first; the event records both. On the server
+  (`UXW-36`), `POST /envelopes/{id}/recipients/{r}/host` runs `HostInPerson` as `InPersonHost` and returns a one-time
+  link whose every command runs as that host (docs/40 As built); the signer's emailed link cannot act for them.
 - **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
   signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
   `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context
@@ -158,6 +160,12 @@ objects concerned, never their content.
   ids, pending timers, the seal job) do not raise it. `expected_version` is checked when the command carries one.
 - **Correction is one command** (`Correct { changes }`): the "correcting" mode is the client's; saving sends the list,
   applied all or none, and a signer acting meanwhile makes it stale.
+- **A draft's own edits** (`Edit`, including the one the server issues inside create) record `envelope.corrected` with
+  the paths changed, besides a document's `document.added` and `document.admitted`: every observable change must emit
+  an event (the engine's property tests hold it), and docs/32 §3 has no draft type. A correction is meant only after
+  `envelope.sent`, so this is a known defect (`WEB-14`): ADR-030 (Proposed) adds `envelope.edited` for draft edits.
+  Until it is Accepted, the signer's history (`GET /s/{token}/history`, docs/40 As built) shows milestones only from
+  the first `envelope.sent`; the sender's audit list (`GET …/audit`) still shows the draft's `envelope.corrected`.
 - **§6 "its fields changed"** is read as: a completed recipient acts again when a document they acted on is replaced or
   removed, or when **their own** fields change. Changing a not-yet-completed recipient's fields does not send others back.
 - **A changed link** (WEB-06): correcting an active recipient's email, phone, delivery or authentication requirements
@@ -181,7 +189,7 @@ objects concerned, never their content.
   access is still recorded. Any other status, a purged envelope, or a second time is `CS-WF-0001`.
 - **Attachment downloaded** (`Access::AttachmentDownloaded {field, hash}`, `WEB-08`) records `attachment.downloaded`
   only when the field's value names that hash (`CS-WF-0008` otherwise).
-- **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says.
+- **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says. It needs the same gate as declining (`gate_in`: opened, not locked, every authentication passed; `SEC-CER-01`), since consent outlives a correction that clears the authentication.
 - **A signer with no signature field** must still adopt a signature before finishing (free-form signing, intent).
 - **Sending needs a recipient with a required action**; an envelope of carbon copies only is `CS-WF-0004`.
 - **Location (GEO-01)** is checked after the command is decided, against the setting as it stood before the command,

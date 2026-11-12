@@ -54,8 +54,12 @@ LATER_MILESTONES = {"MS-6", "MS-7", "MS-8"}
 # Work after v0.0.1 shown under "Coming next" (owner instruction 36), with its status
 # read from docs/14. The labels are short public names for each row.
 NOW_ROWS = [
-    ("UX-01", "Enterprise UI and layout pass, in packages UX-02 to UX-08"),
+    ("UX-01", "Enterprise UI and layout pass: all seven packages, UX-02 to UX-08"),
+    ("UXW-34", "Signer page names the sender and serves the electronic-records disclosure"),
     ("ORG-01", "Organizations above workspaces, with organization, workspace and delegated admins"),
+    ("ORG-02", "Organizations migration: organization scope in the database, bootstrap"),
+    ("ORG-04", "Switching between workspaces"),
+    ("ORG-06", "Organization admin screens, first cut"),
     ("CON-01", "Platform console for the operator: organizations, plans, keys and certificates, health"),
     ("PLAN-01", "Plans: entitlements, quotas, usage metering and export"),
     ("ML-09", "casual-sign-modeld, the separate process that hosts pretrained models"),
@@ -244,7 +248,7 @@ def render() -> str:
                          f'<span><b>{esc(rid)}</b> {esc(label)} ({esc(st.lower())})</span></li>')
     tl.append(f"""<li class="tl-progress"><span class="tl-dot">{sitelib.icon("loader-circle", 20)}</span>
 <div class="tl-body"><div class="tl-title"><h3>Coming next</h3>{pill("progress", "In progress")}</div>
-<p>Workspaces and an admin console, assistive features from pretrained models, and a UI and workflow overhaul. Model features are off by default and are suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
+<p>Since v0.0.1: the redesigned web app and organizations above workspaces are merged. In progress: workspace switching and an admin console, and assistive features from pretrained models. Model features are off by default and are suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
 <ul class="tl-items">{"".join(now_items)}</ul></div></li>""")
 
     scope = "".join(f'<li>{sitelib.icon("check", 16)}<span>{esc(x)}</span></li>' for x in r1["items"])

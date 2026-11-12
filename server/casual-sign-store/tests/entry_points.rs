@@ -25,8 +25,8 @@ async fn secrets_resolve_to_their_own_account_and_dead_ones_to_nothing() {
     let Some(db) = fresh("secrets_resolve_to_their_own_account", Rls::On).await else {
         return;
     };
-    let a = world::seed(&db.store, "alpha").await;
-    let b = world::seed(&db.store, "bravo").await;
+    let a = world::seed(&db, "alpha").await;
+    let b = world::seed(&db, "bravo").await;
     let ep = db.store.entry_points();
     for w in [&a, &b] {
         let t = ep
@@ -163,8 +163,8 @@ async fn jobs_are_claimed_across_accounts_but_finished_only_in_their_own_with_th
     let Some(db) = fresh("jobs_are_claimed_across_accounts", Rls::On).await else {
         return;
     };
-    let a = world::seed(&db.store, "alpha").await;
-    let b = world::seed(&db.store, "bravo").await;
+    let a = world::seed(&db, "alpha").await;
+    let b = world::seed(&db, "bravo").await;
     // Enqueueing is idempotent per account.
     let mut tx = db.store.for_account(a.account).begin().await.unwrap();
     assert!(

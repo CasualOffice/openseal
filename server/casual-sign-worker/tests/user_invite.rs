@@ -170,8 +170,11 @@ async fn an_invited_user_sets_a_password_once_and_can_be_disabled() {
     )
     .unwrap();
     let app = casual_sign_server::app(st);
-    casual_sign_server::bootstrap(
+    // `Env` already made an organization; this workspace gets one of its own.
+    let org = env.db.organization("Invites").await;
+    casual_sign_server::bootstrap_workspace(
         &env.db.store,
+        org,
         "Invites",
         "admin@inv.example.test",
         "Admin",

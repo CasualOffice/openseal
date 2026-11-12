@@ -51,8 +51,8 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
     let Some(db) = fresh(&name, rls).await else {
         return;
     };
-    let a = world::seed(&db.store, "alpha").await;
-    let b = world::seed(&db.store, "bravo").await;
+    let a = world::seed(&db, "alpha").await;
+    let b = world::seed(&db, "bravo").await;
     let t = db.store.for_account(b.account);
     // Each refused write runs in a transaction of its own (an error aborts a PostgreSQL
     // transaction), which B then commits: a refused call must leave nothing behind.
@@ -203,6 +203,7 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
             recipient_id: a.recipient,
             token_sha256: world::hash("forged"),
             purpose: TokenPurpose::Invitation,
+            host_user_id: None,
             expires_at: now(),
         })
         .await,);
@@ -462,8 +463,8 @@ async fn row_level_security_alone_isolates_every_tenant_table() {
     let Some(db) = fresh("row_level_security_alone_isolates", Rls::On).await else {
         return;
     };
-    let a = world::seed(&db.store, "alpha").await;
-    let b = world::seed(&db.store, "bravo").await;
+    let a = world::seed(&db, "alpha").await;
+    let b = world::seed(&db, "bravo").await;
     let tables = common::rls_tables(&db.admin).await;
     for t in &tables {
         let truth_sql = match t.as_str() {
@@ -472,6 +473,14 @@ async fn row_level_security_alone_isolates_every_tenant_table() {
                 "SELECT count(*) FROM users u WHERE EXISTS (SELECT 1 FROM account_memberships m \
                         WHERE m.user_id = u.id AND m.account_id = $1)"
                     .to_owned()
+            }
+            // A workspace reads its own organization's row; organization tables are
+            // invisible in account scope (ORG-02).
+            "organizations" => "SELECT count(*) FROM organizations o JOIN accounts a \
+                                ON a.organization_id = o.id WHERE a.id = $1"
+                .to_owned(),
+            "organization_admins" | "org_permission_sets" => {
+                "SELECT 0::bigint WHERE $1::uuid IS NOT NULL".to_owned()
             }
             _ => format!("SELECT count(*) FROM {t} WHERE account_id = $1"),
         };

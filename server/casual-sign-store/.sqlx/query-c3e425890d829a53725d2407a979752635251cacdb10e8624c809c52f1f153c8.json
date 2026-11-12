@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, envelope_id, recipient_id, purpose, host_user_id, session_sha256, expires_at, revoked_at FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "envelope_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "envelope_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "recipient_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "recipient_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "purpose",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "purpose"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "host_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "host_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "session_sha256",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "session_sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "revoked_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "revoked_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "c3e425890d829a53725d2407a979752635251cacdb10e8624c809c52f1f153c8"
+}

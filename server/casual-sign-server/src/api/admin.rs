@@ -7,14 +7,16 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use casual_sign_audit::Personal;
-use casual_sign_store::repo::accounts::{LoginKind, NewUser, PermissionProfile, ProfileKind};
+use casual_sign_store::repo::accounts::{LoginKind, NewUser};
 use casual_sign_store::repo::api_clients::{ApiClientKind, NewApiClient};
 use casual_sign_store::repo::sessions::{LoginMethod, NewSession};
 use casual_sign_store::{
-    AccountId, ApiClientId, PermissionProfileId, StaffSessionId, Store, UserId,
+    AccountId, ApiClientId, BuiltinProfiles, OrganizationId, PermissionProfileId, StaffSessionId,
+    Store, TenantTx, UserId,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::envelopes::rfc3339;
@@ -963,10 +965,12 @@ pub(crate) async fn jwks(State(st): State<AppState>) -> Response {
 
 // Bootstrap -----------------------------------------------------------------------------
 
-/// What [`bootstrap`] made.
+/// What [`bootstrap`] or [`bootstrap_workspace`] made.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bootstrapped {
-    /// The account.
+    /// The organization the account is a workspace of.
+    pub organization: OrganizationId,
+    /// The account (workspace).
     pub account: AccountId,
     /// Its first administrator.
     pub admin: UserId,
@@ -974,12 +978,23 @@ pub struct Bootstrapped {
     pub profiles: [PermissionProfileId; 3],
 }
 
-/// Create an account with its built-in permission profiles and a first administrator
-/// who logs in with `password` (the `bootstrap` command of the binary, and tests).
+fn new_profiles() -> BuiltinProfiles {
+    BuiltinProfiles {
+        admin: PermissionProfileId(Uuid::now_v7()),
+        sender: PermissionProfileId(Uuid::now_v7()),
+        viewer: PermissionProfileId(Uuid::now_v7()),
+    }
+}
+
+/// The first organization of an install, its first workspace with the built-in
+/// permission profiles, and a first administrator who logs in with `password` and owns
+/// the organization (the `bootstrap` command of the binary). Refused once any
+/// organization exists (docs/23 §2.1): later ones come from the platform console.
 ///
 /// # Errors
 ///
-/// Store errors; `CS-API-0001` for a password outside 12 to 256 characters.
+/// Store errors (`CS-DB-0006` when an organization exists); `CS-API-0001` for a password
+/// outside 12 to 256 characters.
 pub async fn bootstrap(
     store: &Store,
     name: &str,
@@ -989,38 +1004,89 @@ pub async fn bootstrap(
 ) -> Result<Bootstrapped, ApiError> {
     check_password(password)?;
     let email = normalize_email(admin_email)?;
+    let phc = phc_of(password).await?;
+    let organization = OrganizationId(Uuid::now_v7());
     let account = AccountId(Uuid::now_v7());
-    store.create_account(account, name).await?;
-    let profiles = [
-        PermissionProfileId(Uuid::now_v7()),
-        PermissionProfileId(Uuid::now_v7()),
-        PermissionProfileId(Uuid::now_v7()),
-    ];
-    let admin = UserId(Uuid::now_v7());
-    let pw = password.to_owned();
-    let phc = tokio::task::spawn_blocking(move || hash_password(&pw))
-        .await
-        .map_err(|_| ApiError::internal("argon2"))??;
-    let mut tx = store.for_account(account).begin().await?;
-    for (id, (n, kind)) in profiles.iter().zip([
-        ("Administrator", ProfileKind::Admin),
-        ("Sender", ProfileKind::Sender),
-        ("Viewer", ProfileKind::Viewer),
-    ]) {
-        tx.users()
-            .create_profile(&PermissionProfile {
-                id: *id,
-                name: n.to_owned(),
-                kind,
-                permissions: Vec::new(),
-            })
-            .await?;
-    }
-    tx.account()
-        .set_settings(&json!({ "builtin_profiles": {
-            "admin": profiles[0].to_string(), "sender": profiles[1].to_string(), "viewer": profiles[2].to_string(),
-        }}))
+    let profiles = new_profiles();
+    let tx = store
+        .bootstrap_organization(organization, account, name, &profiles)
         .await?;
+    let b = first_admin(
+        tx,
+        organization,
+        account,
+        profiles,
+        admin_email,
+        email,
+        admin_name,
+        phc,
+        true,
+    )
+    .await?;
+    Ok(b)
+}
+
+/// A new workspace of an existing organization, with its built-in profiles and a first
+/// administrator of the workspace (who gets no organization role), in one transaction. The caller must have
+/// established its right to create workspaces in `organization`; until ORG-03's routes,
+/// tests and the console's organization creation are the callers.
+///
+/// # Errors
+///
+/// Store errors (`CS-DB-0003` when the organization is not active); `CS-API-0001` for a
+/// password outside 12 to 256 characters.
+pub async fn bootstrap_workspace(
+    store: &Store,
+    organization: OrganizationId,
+    name: &str,
+    admin_email: &str,
+    admin_name: &str,
+    password: &str,
+) -> Result<Bootstrapped, ApiError> {
+    check_password(password)?;
+    let email = normalize_email(admin_email)?;
+    let phc = phc_of(password).await?;
+    let account = AccountId(Uuid::now_v7());
+    let profiles = new_profiles();
+    // One transaction: a failing first administrator (a duplicate email, say) leaves no
+    // workspace behind (ORG-02 review).
+    let mut org = store.for_organization(organization).begin().await?;
+    let proof = org.create_workspace(account, name, &profiles).await?;
+    let tx = org.into_workspace(&proof).await?;
+    first_admin(
+        tx,
+        organization,
+        account,
+        profiles,
+        admin_email,
+        email,
+        admin_name,
+        phc,
+        false,
+    )
+    .await
+}
+
+async fn phc_of(password: &str) -> Result<String, ApiError> {
+    let pw = password.to_owned();
+    tokio::task::spawn_blocking(move || hash_password(&pw))
+        .await
+        .map_err(|_| ApiError::internal("argon2"))?
+}
+
+#[allow(clippy::too_many_arguments)] // One private helper of the two bootstrap paths.
+async fn first_admin(
+    mut tx: TenantTx,
+    organization: OrganizationId,
+    account: AccountId,
+    profiles: BuiltinProfiles,
+    admin_email: &str,
+    email: String,
+    admin_name: &str,
+    phc: String,
+    owner: bool,
+) -> Result<Bootstrapped, ApiError> {
+    let admin = UserId(Uuid::now_v7());
     tx.users()
         .create_member(
             &NewUser {
@@ -1031,15 +1097,21 @@ pub async fn bootstrap(
                 login_kind: LoginKind::Local,
                 idp: None,
             },
-            profiles[0],
+            profiles.admin,
         )
         .await?;
     tx.users().set_password_hash(admin, &Personal(phc)).await?;
+    if owner {
+        tx.account()
+            .make_first_owner(admin, OffsetDateTime::now_utc())
+            .await?;
+    }
     tx.commit().await?;
     Ok(Bootstrapped {
+        organization,
         account,
         admin,
-        profiles,
+        profiles: [profiles.admin, profiles.sender, profiles.viewer],
     })
 }
 

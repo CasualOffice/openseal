@@ -25,8 +25,8 @@ use common::{Rls, TestDb, fresh};
 
 /// A and B, with A's user also a member of B.
 async fn shared(db: &TestDb) -> (World, World) {
-    let a = world::seed(&db.store, "alpha").await;
-    let b = world::seed(&db.store, "bravo").await;
+    let a = world::seed(db, "alpha").await;
+    let b = world::seed(db, "bravo").await;
     let mut tx = db.store.for_account(a.account).begin().await.unwrap();
     tx.users()
         .set_password_hash(a.user, &Personal("$argon2id$a".into()))

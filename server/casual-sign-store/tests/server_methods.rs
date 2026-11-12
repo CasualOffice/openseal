@@ -45,8 +45,8 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
     let Some(db) = fresh("server_methods_refuse_cross_tenant", rls).await else {
         return;
     };
-    let a = world::seed(&db.store, "alpha").await;
-    let b = world::seed(&db.store, "bravo").await;
+    let a = world::seed(&db, "alpha").await;
+    let b = world::seed(&db, "bravo").await;
 
     // A's own: an envelope with engine state, a session, an idempotency record.
     let a_env = EnvelopeId(id());
@@ -380,7 +380,7 @@ async fn engine_state_tokens_and_sessions_behave() {
     let Some(db) = fresh("engine_state_tokens_and_sessions", Rls::On).await else {
         return;
     };
-    let a = world::seed(&db.store, "alpha").await;
+    let a = world::seed(&db, "alpha").await;
     let env = EnvelopeId(id());
     let mut tx = db.store.for_account(a.account).begin().await.unwrap();
     tx.envelopes()

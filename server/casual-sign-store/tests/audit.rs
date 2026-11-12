@@ -45,7 +45,7 @@ async fn appended_events_read_back_as_a_verified_chain_and_set_the_envelope_head
     let Some(db) = fresh("appended_events_read_back", Rls::On).await else {
         return;
     };
-    let w = world::seed(&db.store, "alpha").await;
+    let w = world::seed(&db, "alpha").await;
     let mut tx = db.store.for_account(w.account).begin().await.unwrap();
     // The seed appended two; append a third that continues them.
     let all = events(w.envelope, 3);
@@ -69,7 +69,7 @@ async fn an_event_that_does_not_extend_the_chain_is_refused() {
     let Some(db) = fresh("an_event_that_does_not_extend_the_chain", Rls::On).await else {
         return;
     };
-    let w = world::seed(&db.store, "alpha").await;
+    let w = world::seed(&db, "alpha").await;
     let t = db.store.for_account(w.account);
     let all = events(w.envelope, 4);
     // A replay of an existing event, a gap, and an event for another envelope.
@@ -134,7 +134,7 @@ async fn update_delete_and_truncate_of_audit_events_are_refused_for_owner_and_ap
         let Some(db) = fresh("update_delete_and_truncate_of_audit_events", rls).await else {
             return;
         };
-        let w = world::seed(&db.store, "alpha").await;
+        let w = world::seed(&db, "alpha").await;
         db.admin
             .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(
                 format!(
@@ -208,7 +208,7 @@ async fn the_app_role_is_refused_by_privilege_even_without_the_trigger() {
     let Some(db) = fresh("the_app_role_is_refused_by_privilege", Rls::On).await else {
         return;
     };
-    let w = world::seed(&db.store, "alpha").await;
+    let w = world::seed(&db, "alpha").await;
     db.admin
         .execute("DROP TRIGGER audit_events_no_update_delete ON audit_events; DROP TRIGGER audit_events_no_truncate ON audit_events")
         .await
