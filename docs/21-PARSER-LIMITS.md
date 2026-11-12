@@ -195,8 +195,9 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 
 ## ML (`casual-sign-modeld`, the worker's ML jobs; designed, ADR-029)
 
-Designed in [33](33-ML-MODELS.md) §4; nothing is built, and no row has a hostile fixture yet (the `ml_*` fixtures of
-`SEC-I02` come with `ML-02`). Values marked provisional are re-set from measurement before an exit is claimed.
+Designed in [33](33-ML-MODELS.md) §4. Built so far: span normalisation (`casual-sign-fields::normalize`, `ML-07`) and the
+deterministic personal-data recognisers (`casual-sign-pii`, `ML-08`), whose rows name their tests; the rest has no hostile
+fixture yet (the `ml_*` fixtures of `SEC-I02` come with `ML-02`). Values marked provisional are re-set from measurement before an exit is claimed.
 
 | Limit | Default | Code |
 | --- | ---: | --- |
@@ -208,6 +209,10 @@ Designed in [33](33-ML-MODELS.md) §4; nothing is built, and no row has a hostil
 | Extracted span normalised (date, duration, amount; `casual-sign-fields::normalize`, built) | 256 bytes; longer spans are not read | — (`None`: suggestions only, no error) |
 | Duration count | 100,000 units | — (`None`) |
 | Amount digits | 28 | — (`None`) |
+| Text per personal-data detection call (`casual-sign-pii`, built; `Options::max_text_bytes`) | 4 MiB (the per-document text bound below); larger text is refused, never cut | CS-PII-0001; `tests/hostile.rs`, fuzz target `pii` |
+| Candidates examined per recogniser per call (`casual-sign-pii`) | 20,000; further candidates of that kind are not examined, reported as `Truncation::Candidates` | — (report); `tests/hostile.rs` |
+| Spans returned per call (`casual-sign-pii`) | 5,000 (= personal-data suggestions per document below); the rest reported as `Truncation::Spans` | — (report); `tests/hostile.rs` |
+| Phone candidate (`casual-sign-pii`) | 7 to 15 digits (E.164), at most 28 characters by its pattern; only that short ASCII candidate reaches `phonenumber` | — (not a phone) |
 | Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI | CS-ML-0005 |
 | Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`) | CS-ML-0005 |
 | Rasterise time per page | 10 s, enforced by killing the raster child | CS-ML-0006 |
