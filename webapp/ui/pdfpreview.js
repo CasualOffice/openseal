@@ -11,8 +11,10 @@ import { openPdf, fitScale } from "../pdfview.js";
 import { button } from "./core.js";
 
 /// `load()` resolves the PDF's bytes (a Uint8Array) or a Blob. `name` labels the pages.
+/// `decorate(pageEl, pageNo, scale)` (UX-08), when given, adds to each drawn page (a
+/// template's role outlines), `scale` being CSS pixels per PDF point.
 /// Returns `{el, destroy()}`; the pages paint as soon as the bytes arrive.
-export function pdfPreview({ load, name = "", height = 640, testId = "pdf-preview" }) {
+export function pdfPreview({ load, name = "", height = 640, testId = "pdf-preview", decorate = null }) {
   let pdf = null;
   let zoom = 1;
   const label = h("span", { class: "os-zoom__label", attrs: { "aria-live": "polite" } });
@@ -45,6 +47,7 @@ export function pdfPreview({ load, name = "", height = 640, testId = "pdf-previe
       page.style.width = `${p.width * scale}px`;
       page.style.height = `${p.height * scale}px`;
       pages.append(page);
+      decorate?.(page, i + 1, scale);
       pdf.render(i + 1, canvas, scale).then(() => page.classList.remove("is-loading")).catch(() => page.classList.add("is-error"));
       const tc = h("canvas", { attrs: { "aria-hidden": "true" } });
       pdf.render(i + 1, tc, 64 / p.width).catch(() => {});

@@ -827,6 +827,15 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "auth",
     )
     .await;
+    // UXW-34: this account published no text for its disclosure's hash (the view says
+    // so by leaving out `consent_required.url`); tests/disclosure.rs serves one.
+    let ersd = api
+        .call("GET", &format!("{s1}/disclosure"), &Auth::None, None, &h1)
+        .await;
+    assert_eq!(
+        (ersd.status, ersd.code().as_str()),
+        (StatusCode::NOT_FOUND, "CS-API-0002")
+    );
     ok(
         api.call(
             "POST",

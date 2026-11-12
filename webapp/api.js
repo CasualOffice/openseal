@@ -192,7 +192,6 @@ export const NOT_ON_SERVER = Object.freeze({
   updateWebhook: { row: "UXW-31", needs: "PATCH /webhooks/{id} {url?, event_types?, active?} (pause, resume, edit)" },
   testWebhook: { row: "UXW-32", needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
   redeliver: { row: "UXW-33", needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
-  disclosure: { row: "UXW-34", needs: "GET /s/{token}/disclosure {version, sha256, text} and consent_required.url" },
   clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit event)" },
   hostInPerson: { row: "UXW-36", needs: "POST /envelopes/{id}/recipients/{r}/host (staff hosts an in-person signer)" },
 });
@@ -475,10 +474,11 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     },
 
     // ---- Ceremony (docs/40 §6; not public API) ----------------------------
-    // The view: `{envelope, recipient, fields, capture_location, consent_required:
-    // {version, sha256, url?} | null, auth_required, sender?: {name, email,
-    // organisation}}`. `sender` and `consent_required.url` are the mock's until the
-    // server row lands (docs/40 §6); the page works without them.
+    // The view: `{envelope (with expires_at), recipient, fields, capture_location,
+    // consent_required: {version, sha256, url?} | null, auth_required, sender: {name,
+    // email, organisation}}` (UXW-34). `url` is there only when the account has
+    // published the disclosure's text; `sender.name` and `.email` are null once the
+    // sending user has left the account.
     ceremony: {
       view: (token) => data(request("GET", S(token), { ceremony: true })),
       /// An approver approves (`recipient.approved`); a signer is refused (409).
@@ -486,8 +486,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// Withdraw consent to electronic records: declines a required action.
       withdrawConsent: (token, location) => data(request("POST", `${S(token)}/withdraw-consent`, { body: withLocation({}, location), ceremony: true })),
       /// The full disclosure the recipient consents to, `{version, sha256, text}` (`sha256`
-      /// over the text's UTF-8; the one `consent_required` names) (`NOT_ON_SERVER.disclosure`).
-      disclosure: unbuilt("disclosure", (token) => data(request("GET", `${S(token)}/disclosure`, { ceremony: true }))),
+      /// over the text's UTF-8; the one `consent_required` names), once every
+      /// authentication has passed (UXW-34; 404 when the account published no text).
+      disclosure: (token) => data(request("GET", `${S(token)}/disclosure`, { ceremony: true })),
       /// Remove this recipient's value from a field before finishing (`NOT_ON_SERVER.clearField`).
       clearField: unbuilt("clearField", (token, field) => data(request("DELETE", `${S(token)}/fields/${encodeURIComponent(field)}`, { ceremony: true }))),
       open: (token) => data(request("POST", `${S(token)}/session`, { body: {}, ceremony: true })),

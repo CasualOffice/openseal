@@ -76,14 +76,16 @@ test("resend and void act on a sent envelope", async ({ page }) => {
   await page.getByRole("link", { name: "Vendor services agreement" }).click();
   await page.getByRole("button", { name: "Resend", exact: true }).click();
   await expect(page.getByText("Resent to everyone who has not finished.")).toBeVisible();
-  await page.getByRole("button", { name: "Void", exact: true }).click();
+  // UX-07: Void is in the More menu, destructive items last.
+  await page.getByTestId("envelope-more").click();
+  await page.getByRole("menuitem", { name: "Void", exact: true }).click();
   const dlg = page.getByRole("dialog", { name: "Void this envelope?" });
   await dlg.getByRole("button", { name: "Void", exact: true }).click();
   await expect(dlg.getByText("This is required.")).toBeVisible();
   await dlg.getByLabel("Reason (recipients will see it)").fill("Terms changed");
   await dlg.getByRole("button", { name: "Void", exact: true }).click();
   await expect(page.locator(".os-page-head .os-badge")).toHaveText("Voided");
-  await expect(page.getByText("Terms changed")).toBeVisible();
+  await expect(page.getByTestId("decline-callout")).toContainText("Terms changed");
 });
 
 test("signing out returns to sign-in, and the app then asks to sign in again", async ({ page }) => {
