@@ -124,6 +124,20 @@ fn iban_needs_mod97_and_the_country_format() {
         texts("PT50 0002 0123 1234 5678 9015 4", Kind::Iban),
         ["PT50 0002 0123 1234 5678 9015 4"]
     );
+    // The registry's examples for Mauritius, Qatar and Palestine, whose Presidio
+    // 2.2.364 lengths (28, 25, 25) are wrong; compact and grouped.
+    for iban in [
+        "MU17BOMM0101101030300200000MUR",
+        "QA58DOHB00001234567890ABCDEFG",
+        "PS92PALS000000000400123456702",
+    ] {
+        assert_eq!(texts(&format!("IBAN {iban}."), Kind::Iban), [iban]);
+        let spaced = common::group4(iban, " ");
+        assert_eq!(
+            texts(&format!("IBAN {spaced}."), Kind::Iban),
+            [spaced.as_str()]
+        );
+    }
     // Wrong check digits; right checksum but wrong length for the country; run-on text.
     assert!(texts("DE88 3704 0044 0532 0130 00", Kind::Iban).is_empty());
     assert!(texts("DE893704004405320130001", Kind::Iban).is_empty());

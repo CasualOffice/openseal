@@ -175,6 +175,10 @@ const IBAN_COUNTRIES: &[(&str, &str)] = &[
     ("AT", "nnnnnnnnnnnnnnnn"),
     ("IE", "aaaannnnnnnnnnnnnn"),
     ("NO", "nnnnnnnnnnn"),
+    // The three Presidio 2.2.364 had wrong (review of ML-08).
+    ("MU", "aaaannnnnnnnnnnnnnnnnnnaaa"),
+    ("QA", "aaaaccccccccccccccccccccc"),
+    ("PS", "aaaaccccccccccccccccccccc"),
 ];
 
 pub fn iban_compact(r: &mut Rng) -> String {

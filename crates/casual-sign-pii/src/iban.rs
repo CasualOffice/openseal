@@ -2,9 +2,11 @@
 //! of a character class: `n` digit, `a` upper-case letter, `c` letter or digit, `z` the
 //! digit 0. Each spec covers the BBAN, after the country code and check digits.
 //!
-//! Departure: Presidio 2.2.364 gives Portugal 17 digits; the IBAN registry gives 21
-//! (`PT50 0002 0123 1234 5678 9015 4`), so PT is corrected here. Every other length was
-//! checked against the registry's IBAN lengths.
+//! Departures, each corrected to the SWIFT IBAN registry's BBAN format: Presidio
+//! 2.2.364 gives Portugal 17 digits (registry `21!n`), Mauritius `4a19n1a` (registry
+//! `4!a2!n2!n12!n3!n3!a`, 30 in all), and Palestine `4c17n` and Qatar `4a17c` (registry
+//! `4!a21!c`, 29 in all), so its table misses every IBAN of those four countries. The
+//! test below checks every country's length against the registry.
 
 const FORMATS: &[(&[u8; 2], &str)] = &[
     (b"AL", "8n16c"),
@@ -50,7 +52,7 @@ const FORMATS: &[(&[u8; 2], &str)] = &[
     (b"LU", "3n13c"),
     (b"MT", "4a5n18c"),
     (b"MR", "23n"),
-    (b"MU", "4a19n1a"),
+    (b"MU", "4a19n3a"),
     (b"MD", "20c"),
     (b"MC", "10n11c2n"),
     (b"ME", "18n"),
@@ -58,10 +60,10 @@ const FORMATS: &[(&[u8; 2], &str)] = &[
     (b"MK", "3n10c2n"),
     (b"NO", "11n"),
     (b"PK", "4c16n"),
-    (b"PS", "4c17n"),
+    (b"PS", "4a21c"),
     (b"PL", "24n"),
     (b"PT", "21n"),
-    (b"QA", "4a17c"),
+    (b"QA", "4a21c"),
     (b"RO", "4a16c"),
     (b"SM", "1a10n12c"),
     (b"SA", "2n18c"),
@@ -144,35 +146,103 @@ pub(crate) fn format_ok(iban: &[u8]) -> bool {
 mod tests {
     use super::*;
 
+    /// IBAN lengths per country from the SWIFT IBAN registry, for every country the
+    /// table holds: a wrong entry here drops every IBAN of that country.
+    const REGISTRY: &[(&[u8; 2], usize)] = &[
+        (b"AD", 24),
+        (b"AE", 23),
+        (b"AL", 28),
+        (b"AT", 20),
+        (b"AZ", 28),
+        (b"BA", 20),
+        (b"BE", 16),
+        (b"BG", 22),
+        (b"BH", 22),
+        (b"BR", 29),
+        (b"BY", 28),
+        (b"CH", 21),
+        (b"CR", 22),
+        (b"CY", 28),
+        (b"CZ", 24),
+        (b"DE", 22),
+        (b"DK", 18),
+        (b"DO", 28),
+        (b"EE", 20),
+        (b"EG", 29),
+        (b"ES", 24),
+        (b"FI", 18),
+        (b"FO", 18),
+        (b"FR", 27),
+        (b"GB", 22),
+        (b"GE", 22),
+        (b"GI", 23),
+        (b"GL", 18),
+        (b"GR", 27),
+        (b"GT", 28),
+        (b"HR", 21),
+        (b"HU", 28),
+        (b"IE", 22),
+        (b"IL", 23),
+        (b"IQ", 23),
+        (b"IS", 26),
+        (b"IT", 27),
+        (b"JO", 30),
+        (b"KW", 30),
+        (b"KZ", 20),
+        (b"LB", 28),
+        (b"LC", 32),
+        (b"LI", 21),
+        (b"LT", 20),
+        (b"LU", 20),
+        (b"LV", 21),
+        (b"LY", 25),
+        (b"MC", 27),
+        (b"MD", 24),
+        (b"ME", 22),
+        (b"MK", 19),
+        (b"MR", 27),
+        (b"MT", 31),
+        (b"MU", 30),
+        (b"NL", 18),
+        (b"NO", 15),
+        (b"PK", 24),
+        (b"PL", 28),
+        (b"PS", 29),
+        (b"PT", 25),
+        (b"QA", 29),
+        (b"RO", 24),
+        (b"RS", 22),
+        (b"SA", 24),
+        (b"SC", 31),
+        (b"SE", 24),
+        (b"SI", 19),
+        (b"SK", 24),
+        (b"SM", 27),
+        (b"TL", 23),
+        (b"TN", 24),
+        (b"TR", 26),
+        (b"UA", 29),
+        (b"VA", 22),
+        (b"VG", 24),
+        (b"XK", 20),
+    ];
+
     #[test]
-    fn lengths_match_the_iban_registry() {
-        let registry: &[(&[u8], usize)] = &[
-            (b"AL", 28),
-            (b"AD", 24),
-            (b"AT", 20),
-            (b"BE", 16),
-            (b"BR", 29),
-            (b"CH", 21),
-            (b"CR", 22),
-            (b"DE", 22),
-            (b"ES", 24),
-            (b"FR", 27),
-            (b"GB", 22),
-            (b"IE", 22),
-            (b"IT", 27),
-            (b"LC", 32),
-            (b"MT", 31),
-            (b"NL", 18),
-            (b"NO", 15),
-            (b"PL", 28),
-            (b"PT", 25),
-            (b"SC", 31),
-            (b"SE", 24),
-            (b"UA", 29),
-        ];
-        for (cc, len) in registry {
-            assert_eq!(length(cc), Some(*len), "{}", String::from_utf8_lossy(cc));
-        }
+    fn lengths_match_the_iban_registry_for_every_country() {
+        assert_eq!(REGISTRY.len(), 76);
+        assert_eq!(FORMATS.len(), REGISTRY.len());
+        let wrong: Vec<String> = REGISTRY
+            .iter()
+            .filter(|(cc, len)| length(cc.as_slice()) != Some(*len))
+            .map(|(cc, len)| {
+                format!(
+                    "{}: {:?}, registry {len}",
+                    String::from_utf8_lossy(*cc),
+                    length(cc.as_slice())
+                )
+            })
+            .collect();
+        assert!(wrong.is_empty(), "{wrong:?}");
         assert_eq!(length(b"US"), None);
     }
 
