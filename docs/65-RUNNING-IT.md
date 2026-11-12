@@ -88,7 +88,8 @@ The default bundle is 748.6 MB. Caps are 1 GiB per file and 2 GiB per bundle.
 **Air-gapped hosts.** On a connected machine, run
 `python3 -I tools/ml/fetch-models.py --profile ocr --profile templates --arch x86_64 --dest DIR`. Copy `DIR` across,
 check it there with `python3 -I tools/ml/fetch-models.py --verify DIR`, and mount it read-only at
-`/opt/openseal/models`.
+`/opt/openseal/models`. `--verify` re-hashes every file against the manifest, and refuses a symlink, a file the bundle
+does not list, and a bundle missing any manifest file of the profiles it names; modeld checks the same again at start.
 
 **Licence note.** The ONNX Runtime binary is MIT, and bundles third-party code listed in its `ThirdPartyNotices.txt`,
 including Eigen (MPL-2.0) and Boost (BSL-1.0). Neither licence is on the allow list. Owner instruction 32 allows them

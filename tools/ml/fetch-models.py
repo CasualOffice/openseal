@@ -13,7 +13,8 @@ connected machine for an air-gapped install; modeld itself never fetches.
     python3 -I tools/ml/fetch-models.py --verify DIR          # re-hash a bundle against the manifest
     python3 -I tools/ml/fetch-models.py --self-test           # proves it refuses what it must
 
-Rules (each one is exercised by --self-test):
+Rules (each one is exercised by --self-test, which also fails if any one check is taken
+out; the one exception is noted where it applies):
 - A licence is allowed only if it is on ALLOWED_LICENCES, the same set as deny.toml's
   `[licenses] allow` (ADR-029 review defect 18: that includes NCSA). An SPDX `A OR B` is
   allowed if any alternative is; `A AND B` only if both are. Anything else (CC-BY-NC-4.0,
@@ -23,7 +24,9 @@ Rules (each one is exercised by --self-test):
   bundle holding it must also hold the notice file it names (owner instruction 32: the
   ONNX Runtime library's Eigen MPL-2.0 and Boost BSL-1.0, with ThirdPartyNotices.txt).
 - A file is accepted only if its byte count and SHA-256 equal the manifest's. A mismatch
-  stops the run, names the entry, and leaves nothing behind in the destination.
+  stops the run, names the entry, and leaves nothing behind in the destination (files
+  are staged in a temporary directory and moved only when all pass; the clean-up of the
+  destination after a failed move is defence in depth that no self-test case reaches).
 - Source URLs are https and pinned: a Hugging Face URL names a 40-hex commit
   (`/resolve/<commit>/`), a GitHub URL a release tag. Redirects must stay on https.
 - Bundled files (profiles other than `export-*`) are never pickle (`.bin`, `.pt`, `.pth`,
@@ -32,6 +35,10 @@ Rules (each one is exercised by --self-test):
   the offline exports in tools/ml/export-*.py and are never put in an image.
 - An entry whose `sha256` is empty is pending: it is produced by an offline export
   (`produced_by`) that has not been pinned yet. A profile with a pending entry is refused.
+- `--verify DIR` refuses any symlink in DIR, any file bundle.json does not list, a
+  bundle.json that lacks (or adds to) the manifest's entries for the profiles and arch it
+  names, a file whose size or SHA-256 differs from the manifest, and a bundle_id that is
+  not the hash of those files.
 - The `runtime` profile (the ONNX Runtime shared library) is added to every bundle that
   holds a model profile. Its archive is checked, then one named member is extracted
   (`extract`, checked against `extract_sha256`); no other archive path is ever written.
@@ -484,8 +491,29 @@ def fetch(entries, profiles, arch, dest, cache=None, opener=https_open):
 
 def verify(entries, bundle_dir):
     """Re-hash a fetched bundle against bundle.json and the manifest (an operator's
-    mounted directory, before modeld does the same at start)."""
+    mounted directory, before modeld does the same at start). Refuses any symlink in the
+    bundle, any file the bundle does not list, and a bundle that lacks any manifest entry
+    of the profiles it names: bundle.json's own file list is never the measure of what
+    must be there."""
+    for here, dirs, files in os.walk(bundle_dir, followlinks=False):
+        for name in dirs + files:
+            p = pathlib.Path(here) / name
+            if p.is_symlink():
+                raise Refused(f"{p.relative_to(bundle_dir)}: a symlink in the bundle")
     info = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf8"))
+    if info.get("arch") not in ARCHES or not isinstance(info.get("profiles"), list) or \
+            not all(p in PROFILES for p in info["profiles"]):
+        raise Refused("bundle.json: arch or profiles not ones the manifest knows")
+    expected = {e["dest"] for e in select(entries, info["profiles"], info["arch"])}
+    listed_dests = [f["dest"] for f in info["files"]]
+    if len(set(listed_dests)) != len(listed_dests):
+        raise Refused("bundle.json: a file listed twice")
+    missing = sorted(expected - set(listed_dests))
+    if missing:
+        raise Refused(f"bundle.json: missing {', '.join(missing)}, which its profiles need")
+    extra = sorted(set(listed_dests) - expected)
+    if extra:
+        raise Refused(f"bundle.json: lists {', '.join(extra)}, which its profiles do not hold")
     by_dest = {(e["dest"], e["arch"]): e for e in entries}
     lines = []
     for f in info["files"]:
@@ -495,7 +523,7 @@ def verify(entries, bundle_dir):
         want = (e.get("extract_sha256", e["sha256"]), e.get("extract_bytes", e["bytes"]))
         path = bundle_dir / f["dest"]
         check_dest(f["dest"], e["id"])
-        if not path.is_file() or path.stat().st_size != want[1] or sha256_file(path) != want[0]:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size != want[1] or sha256_file(path) != want[0]:
             raise Refused(f"{e['id']}: {f['dest']} does not match the manifest")
         lines.append((want[0], want[1], f["dest"]))
     listed = {f["dest"] for f in info["files"]} | {"bundle.json"}
@@ -708,6 +736,54 @@ def self_test():
                        [dict(exc_lib, licence="MIT AND MPL-2.0 AND GPL-3.0-only")]))), "allow list")
         expect_refused("unknown exception", lambda: validate(parse_manifest(_manifest(
                        [dict(exc_lib, licence_exception="owner-instruction-99")]))), "unknown licence_exception")
+
+        # 6. Bundle cap, redirects, OR of two disallowed licences.
+        big = [dict(good, id=f"big{i}", dest=f"big{i}/model.onnx", bytes=MAX_FILE_BYTES) for i in range(3)]
+        expect_refused("bundle over the cap", lambda: select(validate(parse_manifest(_manifest(big + [runtime]))),
+                       ["ocr"], "x86_64"), "byte cap")
+        req = urllib.request.Request("https://huggingface.co/acme/x")
+        expect_refused("redirect to http", lambda: _HttpsOnly().redirect_request(
+                       req, io.BytesIO(), 302, "Found", {}, "http://huggingface.co/acme/y"), "non-https")
+        try:
+            if _HttpsOnly().redirect_request(req, io.BytesIO(), 302, "Found", {}, "https://cdn.example/y") is None:
+                failures.append("redirect to https: not followed")
+        except Refused as err:
+            failures.append(f"redirect to https: refused: {err}")
+        for lic in ("GPL-3.0-only OR LGPL-2.1-only", "CC-BY-NC-4.0 OR MPL-2.0"):
+            expect_refused(f"licence {lic!r}", lambda lic=lic: validate(parse_manifest(_manifest(
+                           [dict(good, licence=lic)]))), "allow list")
+
+        # 7. --verify: a stray file, a missing entry with a consistent bundle.json, a symlink.
+        both = validate(parse_manifest(_manifest([good, runtime])))
+
+        def fresh(name):
+            d = tmp / name
+            fetch(both, ["ocr"], "x86_64", d, opener=opener_for(blobs))
+            return d
+
+        def rewrite(d, keep):
+            info = json.loads((d / "bundle.json").read_text(encoding="utf8"))
+            info["files"] = [f for f in info["files"] if keep(f)]
+            info["bundle_id"] = bundle_id([(f["sha256"], f["bytes"], f["dest"]) for f in info["files"]])
+            (d / "bundle.json").chmod(0o644)
+            (d / "bundle.json").write_text(json.dumps(info), encoding="utf8")
+
+        try:
+            stray = fresh("stray")
+            (stray / "ocr-det" / "extra.onnx").write_bytes(b"x")
+            expect_refused("verify a stray file", lambda: verify(both, stray), "not in the bundle")
+            missing = fresh("missing")
+            (missing / "ocr-det" / "model.onnx").unlink()
+            rewrite(missing, lambda f: f["dest"] != "ocr-det/model.onnx")
+            expect_refused("verify a missing entry", lambda: verify(both, missing), "missing")
+            linked_dir = fresh("linked")
+            model = linked_dir / "ocr-det" / "model.onnx"
+            (tmp / "elsewhere.onnx").write_bytes(payload)
+            model.unlink()
+            model.symlink_to(tmp / "elsewhere.onnx")
+            expect_refused("verify a symlink", lambda: verify(both, linked_dir), "symlink")
+        except Refused as err:
+            failures.append(f"verify cases: setup refused: {err}")
 
         poisoned = tmp / "cache"
         poisoned.mkdir()
