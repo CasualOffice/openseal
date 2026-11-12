@@ -288,7 +288,7 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
 
     test("reports: each figure says how many envelopes it rests on; a custom range, a sender, rows to the list", async ({ page }, testInfo) => {
       await page.goto(app("#/reports"));
-      await expect(page.getByTestId("tile-sent")).toContainText("of 6 envelopes loaded");
+      await expect(page.getByTestId("tile-sent")).toContainText("of 7 envelopes loaded");
       await expect(page.getByTestId("tile-median")).toContainText(/from \d+ completed/);
       await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
       await expect(page.getByText("computed from the envelopes list")).toHaveCount(0);

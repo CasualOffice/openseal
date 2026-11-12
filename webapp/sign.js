@@ -28,6 +28,7 @@ import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
 import { initTheme } from "./theme.js";
+import { illustration } from "./illustrations.js";
 
 const store = (() => { try { return sessionStorage; } catch { return null; } })();
 const mock = isMockMode();
@@ -185,8 +186,16 @@ function stateMark(ic, { seal = false, pop = false } = {}) {
   return h("div", { class: `os-state__mark${seal ? " os-state__mark--seal" : ""}${pop ? " is-popping" : ""}`, attrs: { "aria-hidden": "true" } }, icon(ic, { size: 28 }));
 }
 
-/// The icon of each closing state.
-const STATE_ICONS = { declined: "circle-x", reassigned: "user-plus", closed: "ban", expired: "hourglass", later: "clock", "not-found": "shield-question", error: "triangle-alert", offline: "wifi-off" };
+/// The illustration of each closing state: every closing screen shows an illustration, a
+/// title and one sentence, like every empty state in the app (WEB-01, owner 2026-11-11).
+const STATE_ILLUS = { declined: "error", reassigned: "recipients", closed: "error", expired: "calendar", later: "documents", "not-found": "search", error: "error", offline: "offline" };
+
+/// The illustrated mark of a closing state (decorative: the title says what happened).
+function stateIllus(kind) {
+  const art = illustration(STATE_ILLUS[kind] || "inbox");
+  art.setAttribute("aria-hidden", "true");
+  return h("div", { class: "os-state__illus" }, art);
+}
 
 /// End the signing view and show a closing state (declined, closed, error…): no guide,
 /// no progress left over (UX-06), More only where it still applies.
@@ -198,7 +207,7 @@ function message({ kind = "closed", title, text, action = null, testId }) {
   setTools(false);
   // UX-06: no progress from the signing view left over a closing screen.
   document.getElementById("bar-progress").textContent = "";
-  screen(stateCard({ mark: stateMark(STATE_ICONS[kind] || "inbox"), title, text, actions: action ? [action] : [], testId, tone: kind === "error" || kind === "offline" ? "warn" : "neutral" }));
+  screen(stateCard({ mark: stateIllus(kind), title, text, actions: action ? [action] : [], testId, tone: kind === "error" || kind === "offline" ? "warn" : "neutral" }));
 }
 
 function fail(err) {

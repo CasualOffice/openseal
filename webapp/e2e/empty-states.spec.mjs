@@ -8,8 +8,9 @@ import { signIn, app, pdfFile, snap, signPage, tokens, REAL } from "./helpers.mj
 async function check(empty, testInfo, name) {
   await expect(empty).toBeVisible();
   await expect(empty.locator("svg.os-illus")).toHaveAttribute("aria-hidden", "true");
-  await expect(empty.locator(".os-empty__title")).not.toBeEmpty();
-  await expect(empty.locator(".os-empty__text")).not.toBeEmpty();
+  // The app's empty states and the signer's closing cards (os-state) share the four parts.
+  await expect(empty.locator(".os-empty__title, .os-state__title")).not.toBeEmpty();
+  await expect(empty.locator(".os-empty__text, .os-state__text")).not.toBeEmpty();
   await snap(empty, testInfo, `empty-${name}`);
 }
 
