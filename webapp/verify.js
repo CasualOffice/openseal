@@ -20,6 +20,9 @@ import { summarize, coverage, certificatesFrom } from "./verifyreport.js";
 import { parseTrail, TRAIL_NAME, MAX_TRAIL_BYTES, eventLabel } from "./trail.js";
 import { readAttachment } from "./pdfview.js";
 import { has } from "./i18n.js";
+import { createClient, isMockMode } from "./api.js";
+
+const mock = isMockMode();
 
 const MAX_PDF = 50 * 1024 * 1024; // docs/21: 50 MiB
 const main = document.getElementById("main");
@@ -240,8 +243,63 @@ function syncTheme() {
   b.title = b.getAttribute("aria-label");
 }
 
+/// Demo mode (UX-04): the banner the app shows, and the bar's links keep `?mock=1`, so
+/// going back to the app never lands on a page that calls a server that is not there.
+function chrome() {
+  if (!mock) return;
+  const banner = document.getElementById("mock-banner");
+  if (banner) { banner.hidden = false; banner.prepend(icon("info", { size: 16 })); }
+  for (const a of document.querySelectorAll("header a[href$='.html']")) a.href = `${a.getAttribute("href")}?mock=1`;
+}
+
+// ---- A sealed document handed over by the envelope page (UX-04) -------------------------
+//
+// `verify.html?envelope={id}&document={id}`: the envelope page's "Verify" opens this page
+// with the sealed document named; it is read with the user's session (same origin) and
+// checked here as if chosen. Nothing is uploaded; without a session, or for a document
+// the user may not read, the server refuses and the page says so and offers the picker.
+
+const ID = /^[A-Za-z0-9._~-]{1,128}$/;
+
+/// The envelope and document named in the address, or null.
+export function handoffOf(search) {
+  const q = new URLSearchParams(search || "");
+  const envelope = q.get("envelope") || "";
+  const doc = q.get("document") || "";
+  return ID.test(envelope) && ID.test(doc) ? { envelope, document: doc } : null;
+}
+
+async function handoff(ref) {
+  clear(main);
+  main.append(h("h1", { class: "os-page-title", text: t("verify.title") }),
+    h("div", { class: "os-verify__busy", attrs: { role: "status", "aria-busy": "true" } },
+      h("span", { class: "os-spinner", attrs: { "aria-hidden": "true" } }), h("p", { text: t("verify.handoff") })));
+  let api;
+  if (mock) {
+    const { createMockFetch } = await import("./mock.js");
+    const store = (() => { try { return globalThis.sessionStorage; } catch { return null; } })();
+    api = createClient({ fetch: createMockFetch({ store }), store });
+  } else {
+    api = createClient({ baseUrl: document.querySelector('meta[name="openseal-api-base"]')?.content || "" });
+  }
+  try {
+    const blob = await api.currentDocument(ref.envelope, ref.document);
+    let name = "sealed.pdf";
+    try {
+      const { envelope } = await api.getEnvelope(ref.envelope);
+      const doc = envelope?.documents?.find((d) => d.id === ref.document);
+      if (doc?.name) name = /\.pdf$/i.test(doc.name) ? doc.name : `${doc.name}.pdf`;
+    } catch { /* the name is only shown */ }
+    await check(new File([blob], name.slice(0, 200), { type: "application/pdf" }));
+  } catch {
+    problem(t("verify.handoff-failed"));
+  }
+}
+
 initTheme();
 applyI18n(document);
+chrome();
 document.getElementById("theme-btn").addEventListener("click", () => { toggleTheme(); syncTheme(); });
 syncTheme();
-start();
+const ref = handoffOf(location.search);
+if (ref) handoff(ref); else start();
