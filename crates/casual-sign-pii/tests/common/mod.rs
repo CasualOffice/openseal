@@ -139,7 +139,7 @@ pub fn email(r: &mut Rng) -> String {
         "example.org",
         "mail.example.net",
         "example-corp.test",
-        "sub.example.co.uk",
+        "sub.example.co.test",
     ]);
     format!("{first}{}{tag}@{domain}", r.range(1, 9999))
 }

@@ -42,8 +42,8 @@ fn email_found_with_its_domain_checked() {
         [("j.doe+nda@mail.example.org", MAX_SCORE)]
     );
     assert_eq!(
-        texts("Écrire à josé@exemple.fr.", Kind::EmailAddress),
-        ["josé@exemple.fr"]
+        texts("Écrire à josé@exemple.example.", Kind::EmailAddress),
+        ["josé@exemple.example"]
     );
     // No top-level domain, a numeric one, or a label ending in a hyphen: not an address.
     assert!(
@@ -330,6 +330,9 @@ fn digit_groups_inside_a_longer_grouped_number_are_not_cards_or_aadhaar() {
         format!("XX00 {aadhaar} 00"),
         format!("GB00 WEST {aadhaar} 12"),
         "GB00 WEST 4111 1111 1111 1111".to_string(),
+        // A group as wide as the match's first group: the match is a tail.
+        "Order 9876 4111 1111 1111 1111".to_string(),
+        format!("Order 9876 {aadhaar}"),
     ] {
         let all = spans(&text);
         assert!(
@@ -344,4 +347,39 @@ fn digit_groups_inside_a_longer_grouped_number_are_not_cards_or_aadhaar() {
         1
     );
     assert_eq!(texts(&format!("ref {aadhaar}"), Kind::InAadhaar).len(), 1);
+}
+
+#[test]
+fn a_row_number_or_quantity_before_a_value_does_not_hide_it() {
+    // Tables in agreements put a row number or a quantity before the value.
+    assert_eq!(
+        texts("Row 1 4111 1111 1111 1111", Kind::PaymentCard),
+        ["4111 1111 1111 1111"]
+    );
+    assert_eq!(
+        texts("Ref 12 +44 20 7946 0958", Kind::PhoneNumber),
+        ["+44 20 7946 0958"]
+    );
+    let mut r = common::Rng(11);
+    let aadhaar = common::group4(&common::aadhaar_compact(&mut r), " ");
+    assert_eq!(
+        texts(&format!("Pay 5 {aadhaar}"), Kind::InAadhaar),
+        [aadhaar.as_str()]
+    );
+    assert_eq!(
+        texts("Pay 5 2345 6789 0124", Kind::InAadhaar),
+        ["2345 6789 0124"]
+    );
+}
+
+#[test]
+fn a_stray_digit_before_a_number_is_not_joined_into_a_phone() {
+    // "Item 3" then an SSN: the 3 is not the first digit of a phone number.
+    assert!(texts("Item 3 078-05-1121", Kind::PhoneNumber).is_empty());
+    assert_eq!(texts("Item 3 078-05-1121", Kind::UsSsn), ["078-05-1121"]);
+    // A leading country code 1 written without '+' still joins (NANP).
+    assert_eq!(
+        texts("Call 1 202 555 0123", Kind::PhoneNumber),
+        ["1 202 555 0123"]
+    );
 }

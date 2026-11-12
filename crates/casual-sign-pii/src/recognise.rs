@@ -148,11 +148,24 @@ fn word_bounded(text: &str, start: usize, end: usize) -> bool {
 }
 
 /// Whether the match is the tail of a longer grouped number: a space or hyphen before
-/// it and a digit before that ("1234 5678 …"), or a chain of four-character groups
+/// it and, before that, a group of digits as wide as the match's own first group, of
+/// three or more ("1234 5678 …", "123 456 …"), or a chain of four-character groups
 /// back to an IBAN's country and check digits ("GB88 CODL 7849 …"). Not Presidio's:
 /// without it, the digit groups inside an IBAN whose check fails are read as a card or
 /// an Aadhaar number whenever their own check digit happens to hold (one time in ten).
+///
+/// The width test keeps a row number or a quantity ("Row 1 4111 …", "Pay 5 2345 …")
+/// from hiding the value after it, and a match that opens with `+` or `(` starts a
+/// number of its own, as no account number holds either.
 fn continues_group(text: &str, start: usize) -> bool {
+    let tail = text.get(start..).unwrap_or("").as_bytes();
+    if matches!(tail.first(), Some(b'+' | b'(')) {
+        return false;
+    }
+    let width = tail
+        .iter()
+        .take_while(|b| b.is_ascii_digit() || b.is_ascii_uppercase())
+        .count();
     let head = text.get(..start).unwrap_or("").as_bytes();
     let mut end = head.len();
     // At most the 8 groups of the longest IBAN before the match.
@@ -173,7 +186,7 @@ fn continues_group(text: &str, start: usize) -> bool {
         let Some(token) = head.get(sep.saturating_sub(from)..sep) else {
             return false;
         };
-        if hop == 0 && token.last().is_some_and(u8::is_ascii_digit) {
+        if hop == 0 && from >= 3 && from == width && token.iter().all(u8::is_ascii_digit) {
             return true;
         }
         if let [a, b, c, d] = token {
@@ -245,6 +258,13 @@ fn email_ok(address: &str) -> bool {
 fn phone(scan: &mut Scan<'_>) {
     each(scan, Kind::PhoneNumber, &PHONE, |scan, start, end| {
         let text = scan.text;
+        // A lone digit and a space opening the candidate ("Item 3 078-05-1121") is a
+        // row number or a quantity, not part of the number: only NANP's country code 1
+        // is written that way ("1 202 555 0123"). The number is then read without it.
+        let start = match text.as_bytes().get(start..start.saturating_add(2)) {
+            Some([d, b' ']) if d.is_ascii_digit() && *d != b'1' => start.saturating_add(2),
+            _ => start,
+        };
         // A sign or digit before means the candidate began mid-number; a chain of groups
         // before it means it is the tail of an account number.
         if before(text, start).is_some_and(|c| is_word(c) || c == '+')
@@ -603,7 +623,7 @@ mod tests {
     fn email_domain_rules() {
         assert!(email_ok("a@example.com"));
         assert!(email_ok("a@example.xn--p1ai"));
-        assert!(email_ok("josé@exemple.fr"));
+        assert!(email_ok("josé@exemple.example"));
         assert!(!email_ok("a@example.c"));
         assert!(!email_ok("a@10.0.0.1"));
         assert!(!email_ok("a@-x.com"));
