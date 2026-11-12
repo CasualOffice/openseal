@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use super::{affected, text_enum};
 use crate::error::{Result, StoreError, db};
-use crate::ids::{AccountId, PermissionProfileId, UserId, UserInvitationId};
+use crate::ids::{AccountId, PermissionProfileId, StaffSessionId, UserId, UserInvitationId};
 use crate::store::TenantTx;
 
 /// The current account's row.
@@ -334,16 +334,20 @@ impl Users<'_> {
         rows.into_iter().map(|r| member!(r)).collect()
     }
 
-    /// Change a member's name. Only a member of this account can be changed.
+    /// Change a member's name. Only a member of this account, and of no other, can be
+    /// changed (SEC-ID-01): the user row is every account's, so a user of several
+    /// accounts renames themselves through [`Users::update_own`].
     ///
     /// # Errors
     ///
-    /// `CS-DB-0003` when not a member.
+    /// `CS-DB-0003` when not a member; `CS-DB-0009` ([`StoreError::is_shared_user`])
+    /// when also a member of another account.
     pub async fn rename(&mut self, user: UserId, name: &Personal<String>) -> Result<()> {
         let acct = self.tx.acct();
         let done = sqlx::query!(
             "UPDATE users SET name = $3 WHERE id = $2 AND EXISTS (\
-             SELECT 1 FROM account_memberships m WHERE m.account_id = $1 AND m.user_id = $2)",
+             SELECT 1 FROM account_memberships m WHERE m.account_id = $1 AND m.user_id = $2) \
+             AND NOT openseal_user_in_other_account($2)",
             acct,
             user.0,
             name.get()
@@ -351,7 +355,7 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        affected(done.rows_affected(), "user")
+        self.sole_member_written(user, done.rows_affected()).await
     }
 
     /// Remove a member from this account (the user remains for their other accounts).
@@ -396,15 +400,20 @@ impl Users<'_> {
     }
 
     /// Set a member's Argon2id PHC string (computed by the caller; never a password).
+    /// Only a member of this account, and of no other, can be changed (SEC-ID-01); a
+    /// user of several accounts sets their own through [`Users::update_own`] or an
+    /// invitation ([`Users::accept_invitation_with_password`]).
     ///
     /// # Errors
     ///
-    /// `CS-DB-0003` when not a member.
+    /// `CS-DB-0003` when not a member; `CS-DB-0009` ([`StoreError::is_shared_user`])
+    /// when also a member of another account.
     pub async fn set_password_hash(&mut self, user: UserId, phc: &Personal<String>) -> Result<()> {
         let acct = self.tx.acct();
         let done = sqlx::query!(
             "UPDATE users SET password_hash = $3 WHERE id = $2 AND EXISTS (\
-             SELECT 1 FROM account_memberships m WHERE m.account_id = $1 AND m.user_id = $2)",
+             SELECT 1 FROM account_memberships m WHERE m.account_id = $1 AND m.user_id = $2) \
+             AND NOT openseal_user_in_other_account($2)",
             acct,
             user.0,
             phc.get()
@@ -412,7 +421,71 @@ impl Users<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        affected(done.rows_affected(), "user")
+        self.sole_member_written(user, done.rows_affected()).await
+    }
+
+    /// After an update of a user row guarded by sole membership: done, refused for a
+    /// user of another account too, or not a member here.
+    async fn sole_member_written(&mut self, user: UserId, rows: u64) -> Result<()> {
+        if rows > 0 {
+            return Ok(());
+        }
+        let shared = sqlx::query_scalar!(
+            r#"SELECT openseal_user_in_other_account($1) AS "shared!""#,
+            user.0
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        if shared {
+            Err(StoreError::Refused {
+                sqlstate: SHARED_USER_SQLSTATE.to_owned(),
+            })
+        } else {
+            affected(rows, "user")
+        }
+    }
+
+    /// The user of `session`, a live session of this account, changes their own name
+    /// and/or password (an Argon2id PHC string); `None` leaves either as it is. A new
+    /// password ends their sessions in every account they belong to (SEC-ID-01).
+    /// Returns the user, or `None` when the session is not live here or its member is
+    /// disabled.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` for a name the schema refuses.
+    pub async fn update_own(
+        &mut self,
+        session: StaffSessionId,
+        name: Option<&Personal<String>>,
+        phc: Option<&Personal<String>>,
+        now: OffsetDateTime,
+    ) -> Result<Option<UserId>> {
+        let user = sqlx::query_scalar!(
+            "SELECT openseal_update_own_user($1, $2, $3, $4)",
+            session.0,
+            name.map(|n| n.get().as_str()),
+            phc.map(|p| p.get().as_str()),
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(user.map(UserId))
+    }
+}
+
+/// The SQLSTATE a [`StoreError::Refused`] carries when the user to change is also a
+/// member of another account (SEC-ID-01, docs/20 `CS-DB-0009`).
+pub const SHARED_USER_SQLSTATE: &str = "OS003";
+
+impl StoreError {
+    /// Whether this refuses a change to a user who is also a member of another account
+    /// (SEC-ID-01): only the user themselves may change their password or name.
+    #[must_use]
+    pub fn is_shared_user(&self) -> bool {
+        matches!(self, Self::Refused { sqlstate } if sqlstate == SHARED_USER_SQLSTATE)
     }
 }
 
@@ -611,6 +684,34 @@ impl Users<'_> {
         .await
         .map_err(db)?;
         Ok(done.rows_affected() == 1)
+    }
+
+    /// Spend an open, sent, unexpired invitation of this account and set its member's
+    /// password (an Argon2id PHC string). The link reached the member's own address, so
+    /// this is the member setting their own password, even when they belong to other
+    /// accounts too. Their other open invitations here are revoked and their sessions
+    /// end in every account (SEC-ID-01). Returns the member, or `None` when the
+    /// invitation was not open (a second use of the link).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn accept_invitation_with_password(
+        &mut self,
+        id: UserInvitationId,
+        phc: &Personal<String>,
+        now: OffsetDateTime,
+    ) -> Result<Option<UserId>> {
+        let user = sqlx::query_scalar!(
+            "SELECT openseal_accept_user_invitation($1, $2, $3)",
+            id.0,
+            phc.get(),
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(user.map(UserId))
     }
 
     /// Revoke a member's open invitations (sent again, disabled, or set up otherwise).

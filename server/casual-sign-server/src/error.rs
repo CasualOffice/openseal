@@ -161,6 +161,12 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, "CS-API-0014")
     }
 
+    /// `CS-API-0015` 403: the user is also a member of another account, so only they
+    /// may change their password or name (SEC-ID-01).
+    pub fn shared_user() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-API-0015")
+    }
+
     /// `CS-AUTH-0001` 401.
     pub fn unauthenticated() -> Self {
         Self::new(StatusCode::UNAUTHORIZED, "CS-AUTH-0001")
@@ -213,6 +219,7 @@ impl ApiError {
             "CS-API-0012" => "Method not allowed",
             "CS-API-0013" => "Webhook URL refused",
             "CS-API-0014" => "Authentication method not available",
+            "CS-API-0015" => "User belongs to another account too",
             "CS-AUTH-0001" => "Not authenticated",
             "CS-AUTH-0002" => "Credential expired or revoked",
             "CS-AUTH-0003" => "Recipient authentication required or failed",
@@ -282,6 +289,7 @@ impl IntoResponse for ApiError {
 impl From<StoreError> for ApiError {
     fn from(e: StoreError) -> Self {
         match e {
+            e if e.is_shared_user() => Self::shared_user(),
             StoreError::NotFound { .. } | StoreError::BlobNotFound => Self::not_found(),
             StoreError::StaleVersion { .. } => {
                 Self::new(StatusCode::PRECONDITION_FAILED, "CS-WF-0002")

@@ -265,6 +265,19 @@ parameterized query per sort key and direction (keyset paging on `(key, id)`), f
 a text and a last-change range, excluding removed envelopes. A purged draft's recipient rows are removed by the
 projection instead of being blanked (the name check refused the blanks, so deleting a draft with recipients failed).
 
+`0013_shared_user_guard.sql` (`SEC-ID-01`, docs/07 `SEC-A11`) makes the `users` row the user's own once they belong
+to more than one account. 0002's `member_of_current_account` policy now governs `SELECT` only; a new `UPDATE` policy
+admits a user who is a member of the current account and of no other, through `openseal_user_in_other_account(user)`
+(a `SECURITY DEFINER` boolean, false for a user with no membership here, so it cannot probe other accounts).
+`Users::rename` and `Users::set_password_hash` carry the same condition in their statement (so the repository isolates
+with RLS off too) and answer `CS-DB-0009` with SQLSTATE `OS003` for a shared user. Two more definer functions are the
+user's own doors, each finding the user from something only they hold: `openseal_update_own_user(session, name,
+password_hash, now)` from a live session of the current account (`Users::update_own`), and
+`openseal_accept_user_invitation(invitation, password_hash, now)` from an open, sent, unexpired invitation
+(`Users::accept_invitation_with_password`, which spends it and revokes the member's other open invitations here). A new
+password through either ends the user's staff sessions in every account (`openseal_revoke_user_sessions`, not granted
+to the application role). No table changes.
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 
