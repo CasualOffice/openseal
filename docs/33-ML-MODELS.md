@@ -170,8 +170,9 @@ combining marks.
 | OCR deadline per page / per job | 20 s / 15 min | CS-ML-0007 |
 | Words per OCR page | 20,000 (= `MAX_DETECT_WORDS`) | — (truncated) |
 | Text per ENTITIES/PERSONAL call; per document | 64 KiB; 4 MiB | CS-ML-0005 |
-| Window | e5: 512 tokens; GLiNER multi: 384 words, stride 64; GLiNER-PII: its own `max_len` from its config (2,048 tokens), stride 64; windows per document 2,000 | — (truncated, deterministic) |
+| Window | e5: 512 tokens; GLiNER (built, piece K): at most the config's `max_len` words (multi and small 384, PII 2,048) and 2,048 tokens per window, prompt and special tokens included; each next window starts 64 words (at most half a window) before the last ended; a word whose tokens alone overflow a window is skipped; candidates of all windows pooled and decoded once; 2,000 windows per call | — (truncated, deterministic) |
 | Labels per call; label length | 32; 64 bytes | CS-ML-0004 |
+| GLiNER label prompt | 1,024 tokens (half a window; `ML-17`) | CS-ML-0005 |
 | Texts per EMBED call | 64, each ≤ 8 KiB | CS-ML-0004 |
 | Suggestions per document | fields 500 (existing); entities 2,000; personal-data spans 5,000 | — (truncated) |
 | Fingerprints searched per account | 50,000 page vectors in process (more need pgvector) | — |
@@ -242,6 +243,22 @@ Labels are passed at inference: `party organization`, `person`, `effective date`
 CC-BY-NC-4.0, and the fetch script refuses them by repository id. Decoding is our own on the shared `ort`; `gline-rs`
 1.1.0 (Apache-2.0, https://crates.io/api/v1/crates/gline-rs) is the reference for the span logic, not a dependency
 (it requires `ort =2.0.0-rc.9`).
+
+**Built (piece K, `server/casual-sign-modeld/src/gliner.rs`):** our own decoder on `ort =2.0.0-rc.13`
+(`load-dynamic`), reproducing `gliner` 0.2.29: its whitespace word splitter (`\w+(?:[-_]\w+)*|\S` with Python's
+`\w` and `\s`), the `<<ENT>>`/`<<SEP>>` prompt encoded as pre-split words by the model's `tokenizer.json`
+(`tokenizers =0.23.2`), the first-sub-token word mask, every span up to `max_width`, sigmoid over the threshold, and
+stable greedy flat decoding. Spans are UTF-8 byte offsets into the NFC text sent (a text not in NFC is refused
+`CS-ML-0004`); scores are ten-thousandths. Windows are as §4. The run is cancelled at the deadline through ONNX
+Runtime's terminate flag (`CS-ML-0007`); ONNX Runtime's logger is replaced by one that writes only the level and
+category of an error, never its message. modeld loads `gliner-multi` (else `gliner-small`) for ENTITIES and
+`gliner-pii-base` for PERSONAL at start; an op whose model is absent answers `CS-ML-0010`. **Files: the fp16 exports**
+(owner instruction 34): the quint8 exports lose spans (`ML-14`) and are not used until `ML-14` passes. Measured
+parity (`tests/gliner_golden.rs`, run with `OPENSEAL_MODELD_TEST_BUNDLE`): spans equal the golden fp16 spans of
+`fixtures/ml/gliner-golden/` on all 50 texts for `gliner_multi-v2.1` (185 spans), `gliner_small-v2.1` (159) and
+`gliner-pii-base-v1.0` (57), and the feeds equal the reference's `input_ids`, `words_mask` and `text_lengths`.
+fp16 sizes: multi 579,687,008 B, small 306,237,114 B, PII 332,987,248 B. `tools/ml/models.toml` still lists the
+quint8 and int8 files; switching it to the fp16 exports is open.
 
 **Parity is checked in two separate steps** (`tools/ml/`, offline): our Rust decoder's spans equal those of Python
 `onnxruntime` running **the same quantized file** through `gliner` 0.2.29's decoding (exact, after threshold); and
