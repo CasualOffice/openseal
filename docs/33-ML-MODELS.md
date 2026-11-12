@@ -270,17 +270,59 @@ wrong for PT, MU, PS and QA and is corrected to the SWIFT registry; Mastercard's
 checks in code; a match that is the tail of a longer grouped number (a preceding digit group as wide as its own first
 group, or a chain back to an IBAN's country and check digits) is not reported, so an IBAN whose check fails does not
 yield a card or an Aadhaar number, while a row number or quantity before a value ("Row 1 4111 …") does not hide it.
-Scores are integers in thousandths. Not yet built: the other national ids below and URLs.
+Scores are integers in thousandths.
+
+**Built (`ML-08C`, owner instruction 33: validation before models):** each kept only when its check or structural
+rule holds, written from the identifier's published specification (not ported): US ITIN (IRS middle groups) and EIN
+(IRS-assigned prefixes); ABA routing numbers (Federal Reserve prefix, 3-7-1); Canadian SIN (Luhn); UK NHS number
+(mod 11); Australian TFN (weighted mod 11, nine and legacy eight digits) and Medicare (ten digits, check ninth);
+German Steuer-ID (one digit twice or three times, never three in a row, ISO 7064 MOD 11,10); French NIR (mod-97 key,
+Corsica 2A/2B); Spanish DNI and NIE (mod-23 letter); Italian codice fiscale (check letter, day 1–31 or 41–71,
+omocodia); Dutch BSN (11-test); EU VAT for AT, BE, DE, DK, ES (NIF, NIE, CIF), FI, FR (numeric key), IT (Luhn and
+office code), NL (11-test or the 2020 mod-97), PL, PT and SE; passport MRZ, TD3 second line (all five 7-3-1 check
+digits); SWIFT/BIC (ISO 3166 country, location and branch rules); IMEI (Luhn); MAC-48 (one separator throughout, or
+Cisco's dotted form; all-zero and broadcast refused); Bitcoin addresses, Base58Check (double SHA-256, version 0x00 or
+0x05) and Bech32/Bech32m (BIP 173, 350). Labels follow Presidio's where it has the entity (`US_ITIN`,
+`ABA_ROUTING_NUMBER`, `UK_NHS`, `AU_TFN`, `AU_MEDICARE`, `ES_NIF`, `ES_NIE`, `IT_FISCAL_CODE`, `CRYPTO`,
+`MAC_ADDRESS`) and are ours otherwise (`US_EIN`, `CA_SIN`, `DE_TAX_ID`, `FR_NIR`, `NL_BSN`, `EU_VAT`, `PASSPORT_MRZ`,
+`SWIFT_BIC`, `IMEI`).
+
+Scoring rule: a check that random strings of the same shape pass less than about one time in a hundred (two check
+digits, a check letter, a check plus a structural rule, a cryptographic checksum, a country prefix plus a check)
+scores 1.0. A single check digit over a bare string of nine to fifteen digits (ABA, SIN, NHS, TFN, Medicare, BSN,
+IMEI) scores 0.4, below the 0.5 callers display, and 0.75 after a context word, because about one random number in
+ten passes it. No check at all keeps a pattern score as Presidio's do: ITIN 0.5 separated and 0.3 bare, EIN 0.3, MAC
+0.6, SWIFT/BIC 0.1 all letters (it reads like an upper-case word) and 0.3 with a digit. A digit identifier is not
+reported after "+<country code> " (a phone number), after a group of two or more digits (the tail of a longer
+number), before a separator and a digit (the head of one), or touching the `<` filler of an MRZ line; a card number
+touching that filler is not a card either. Our departure from Presidio's SSN rules: area 900–999 is refused (never
+issued as an SSN; it is the ITIN's space).
+
+Measured (`tests/validated.rs`, `--nocapture`), on a held-out synthetic set from its own seed, 300 values per kind,
+half with a context word: every kind detected 300/300 (100%), and 0 false positives on the same values with their
+check broken (for ITIN, EIN, BIC and MAC, a broken structural rule). On 2,000 random tokens holding no personal data
+(1,500 bare numbers of 8 to 16 digits, 500 upper-case 8- and 11-letter words), the weak kinds find what their check
+allows, all below 0.5: TFN 1.6%, IMEI 1.0%, SIN 0.8%, BSN 0.7%, NHS 0.6%, Medicare 0.6%, ABA 0.45%, ITIN 0.45% of the
+tokens; SWIFT/BIC 177 of the 500 letter tokens at 0.1; no `ML-08C` kind at 0.5 or more. The synthetic set is ours, so
+these rates say the checks behave as specified, not how real documents score (§15).
+
+Not yet built: URLs; PL PESEL, AU ABN, SE personnummer and SG NRIC (below); US driver's licence formats with context
+(named in `ML-08C`); the other fifteen EU VAT schemes and XI, France's alphanumeric VAT keys; MRZ TD1 and TD2
+(identity cards, visas) and Medicare's eleventh digit; Ethereum addresses, whose EIP-55 checksum needs Keccak-256, a
+hash not in the workspace (skipped rather than matched unchecked).
 
 **Engine dependency (ADR-029 names it; recorded here as the repository records engine dependencies):** `phonenumber`
-=0.3.10+9.0.33 (Apache-2.0) is the crate's only dependency beyond `regex`. Reason: libphonenumber's per-region metadata
+=0.3.10+9.0.33 (Apache-2.0) is the crate's only new dependency beyond `regex` (`sha2`, below, was already in the
+engine). Reason: libphonenumber's per-region metadata
 is the only sound way to tell a phone number from an order number, and no Rust alternative carries it. It is pure (its
 metadata is compiled in by its build script; nothing is read at run time), builds for wasm32-unknown-unknown, and is
 handed only short ASCII candidates, never document text. Its tree adds `postcard`, `heapless` 0.7, `quick-xml`,
 `strum`, `regex-cache`, `nom` and smaller crates, all MIT or Apache-2.0; `heapless` 0.7 depends on `atomic-polyfill`
 (RUSTSEC-2023-0089, unmaintained) for targets we do not build, ignored in `.cargo/audit.toml` under owner
 instruction 32 and removed under `DEP-05`. `email_address` and `iban_validate` are not used: the email domain check
-and the IBAN table and mod-97 are our own, short and tested.
+and the IBAN table and mod-97 are our own, short and tested. `sha2` =0.11.1 (RustCrypto, MIT OR Apache-2.0, ADR-006)
+computes Base58Check's double SHA-256 for Bitcoin addresses (`ML-08C`); it was already in the engine through
+`casual-sign-pdf` and `casual-sign-crypto`, same version, no default features, so it adds nothing to the tree.
 
 - Email: pattern plus our own domain check (stands in for Presidio's `tldextract`, which needs the Public Suffix List).
 - Phone: `phonenumber` 0.3.10 (Apache-2.0, https://crates.io/api/v1/crates/phonenumber).
@@ -289,7 +331,8 @@ and the IBAN table and mod-97 are our own, short and tested.
 - IP address and URL.
 - Dates, shared with the field detector.
 - National ids with checksums for launch markets: US SSN, UK NINO and NHS, ES NIF and NIE, IT codice fiscale,
-  PL PESEL, DE Steuer-ID, IN Aadhaar (Verhoeff) and PAN, AU TFN and ABN, CA SIN, SE personnummer, SG NRIC.
+  PL PESEL, DE Steuer-ID, IN Aadhaar (Verhoeff) and PAN, AU TFN and ABN, CA SIN, SE personnummer, SG NRIC. Built:
+  all but PL PESEL, AU ABN, SE personnummer and SG NRIC.
 - Low-specificity types need a checksum or a context word.
 
 **Layer 2: optional, off by default.** Names, addresses and organizations come from a pretrained GLiNER-PII model
@@ -325,6 +368,7 @@ Never claim GDPR or other compliance (docs/09).
 | `image_hasher` | 3.1.1 | MIT OR Apache-2.0 |
 | `hayro` | 0.8.0 | Apache-2.0 OR MIT |
 | `phonenumber` (in `casual-sign-pii`; `email_address` and `iban_validate` not used, §5.4) | =0.3.10 | Apache-2.0 |
+| `sha2` (in `casual-sign-pii` for Base58Check, `ML-08C`; already in the engine, ADR-006) | =0.11.1 | MIT OR Apache-2.0 |
 
 **`unsafe`:** the `hayro` crate itself forbids `unsafe`; its dependencies do not (`zune-jpeg`, `fearless_simd`,
 `pic-scale`, `bytemuck`, `vello_cpu`). Its JBIG2, JPX and CCITT decoders are fuzzed specifically (`SEC-I01`).

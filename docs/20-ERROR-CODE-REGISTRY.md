@@ -242,7 +242,8 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 
 The deterministic recognisers refuse only text over their size bound; every other bound truncates and is reported in
 the result, never as an error ([21](21-PARSER-LIMITS.md) §ML). The message carries the byte count and the limit, never
-any of the text (`SEC-D01`), and a test checks that with a marker string.
+any of the text (`SEC-D01`), and a test checks that with a marker string. The validated identifiers of `ML-08C` add
+no code: a candidate whose check fails is simply not a finding.
 
 | Code | Meaning |
 | --- | --- |
