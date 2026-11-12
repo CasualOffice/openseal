@@ -95,7 +95,7 @@
 <section class="section-tight" aria-labelledby="product-h">
   <div class="wrap">
     <h2 id="product-h" class="sr-only">The product</h2>
-    <p class="status reveal"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span><strong>Pre-alpha.</strong> The PDF and evidence engine is complete and tested against 422 real-world PDFs. The server, worker, key service and web app run together on Docker Compose. Not yet for production agreements; see the <a href="roadmap.html">roadmap</a>.</span></p>
+    <p class="status reveal"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span><strong>v0.0.1 pre-release is out.</strong> Send, sign on a phone or a desktop, and download a sealed PDF with its certificate, on one machine with Docker Compose. It is for evaluation, not yet for production agreements; see the <a href="changelog.html">changelog</a> and the <a href="roadmap.html">roadmap</a>.</span></p>
     <figure class="showcase reveal reveal-d1">
       <div class="frame"><span class="shot"><picture class="shot__light"><source type="image/webp" srcset="assets/screens/editor-light.webp"><img src="assets/screens/editor-light.png" width="1280" height="800" alt="The send editor: a two-page services agreement with signature, date and text fields placed for two signers, a field palette on the left and field properties on the right." loading="lazy" decoding="async"></picture><picture class="shot__dark"><source type="image/webp" srcset="assets/screens/editor-dark.webp"><img src="assets/screens/editor-dark.png" width="1280" height="800" alt="The send editor: a two-page services agreement with signature, date and text fields placed for two signers, a field palette on the left and field properties on the right." loading="lazy" decoding="async"></picture></span></div>
       <figcaption>The document-first editor: the page gets the screen, fields go where you drop them.</figcaption>
@@ -157,7 +157,7 @@ curl https://sign.example.com/api/v1/envelopes \
     </div>
     <ol class="steps">
       <li class="reveal"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/></svg></span><h3 id="upload">Upload</h3><p>Bring a PDF. Scripts, actions and embedded files are stripped before anyone sees it.</p></li>
-      <li class="reveal reveal-d1"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><h3 id="place-fields">Place fields</h3><p>Signature, initials, date, text, checkbox and more, dropped on the page or found from text tags.</p></li>
+      <li class="reveal reveal-d1"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><h3 id="place-fields">Place fields</h3><p>Signature, initials, date, name, text and checkbox, dropped on the page or suggested by Detect fields.</p></li>
       <li class="reveal reveal-d2"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 17-2.156-1.868A.5.5 0 0 0 18 15.5v.5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1c0-2.545-3.991-3.97-8.5-4a1 1 0 0 0 0 5c4.153 0 4.745-11.295 5.708-13.5a2.5 2.5 0 1 1 3.31 3.284"/><path d="M3 21h18"/></svg></span><h3 id="sign">Sign</h3><p>Each signer is invited in turn, authenticates, consents and signs on any device.</p></li>
       <li class="reveal reveal-d3"><span class="step-icon"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-6 0c0 2 1 2 1 3.5V13"/><path d="M20 15.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1z"/><path d="M5 22h14"/></svg></span><h3 id="seal">Seal</h3><p>A PAdES seal with a trusted timestamp, a certificate of completion and the audit trail inside the PDF.</p></li>
     </ol>
@@ -173,7 +173,7 @@ curl https://sign.example.com/api/v1/envelopes \
         <p>A completed agreement shows which document every party saw, who signed it, when and how. Anyone can check that for decades, with no account and no server.</p>
       </div>
       <ul class="facts">
-        <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-6 0c0 2 1 2 1 3.5V13"/><path d="M20 15.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1z"/><path d="M5 22h14"/></svg></span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation and archive renewal are one setting away.</span></li>
+        <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-6 0c0 2 1 2 1 3.5V13"/><path d="M20 15.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1z"/><path d="M5 22h14"/></svg></span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation (B-LT, B-LTA) is one setting per envelope; scheduled archive renewal is planned.</span></li>
         <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span><strong>Hash-chained audit trail</strong><span>Every event is canonical JSON (RFC 8785) linked by SHA-256 to the one before it. Deleting, inserting, reordering or editing any event is detected.</span></li>
         <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m16 9-5.5 5.5L8 12"/></svg></span><strong>Checked by independent validators</strong><span>Our verifier, pyHanko and EU DSS must agree on every sealed and tampered fixture; all 417 admissible PDFs of a 422-file real-world corpus pass all three.</span></li>
         <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg></span><strong>Keys in your HSM</strong><span>Seals are made by keyd, a separate daemon that holds the key behind PKCS#11 and signs digests, never documents. Cloud KMS backends are planned.</span></li>
@@ -213,7 +213,33 @@ curl https://sign.example.com/api/v1/envelopes \
   </div>
 </section>
 
-<section class="section section-alt" aria-labelledby="selfhost-h">
+<section class="section section-alt" id="next" aria-labelledby="next-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <h2 id="next-h">What is coming next.</h2>
+      <p>Work in progress now, in the open, and tracked on the <a href="roadmap.html">roadmap</a>. None of it is in v0.0.1.</p>
+    </div>
+    <div class="cards">
+      <article class="card reveal">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M12 6h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/><path d="M8 6h.01"/><path d="M9 22v-3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><rect x="4" y="2" width="16" height="20" rx="2"/></svg></span>
+        <h3 id="workspaces-and-an-admin-console">Workspaces and an admin console</h3>
+        <p>An organization above several workspaces, with organization, workspace and delegated administrators, and a separate console for the operator: plans and limits, keys and certificates, service health. The design is accepted; it is built in stages, aimed at v0.0.2.</p>
+      </article>
+      <article class="card reveal reveal-d1">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></span>
+        <h3 id="assistive-features-from-pretrained-models">Assistive features from pretrained models</h3>
+        <p>Text from scanned pages, "is this one of your templates?", key dates and parties, personal-data finding. Self-hosted models in their own process, off by default, suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
+      </article>
+      <article class="card reveal reveal-d2">
+        <span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></span>
+        <h3 id="a-ui-and-workflow-overhaul">A UI and workflow overhaul</h3>
+        <p>A full pass over the editor, the signing page, the agreement lists, templates and admin; then the workflows a DocuSign or SignNow customer would miss, such as folders, an inbox, bulk send and signing links.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="selfhost-h">
   <div class="wrap split">
     <div class="reveal">
       <div class="sec-head">
@@ -248,7 +274,7 @@ docker compose exec \
   </div>
 </section>
 
-<section class="section" aria-labelledby="oss-h">
+<section class="section section-alt" aria-labelledby="oss-h">
   <div class="wrap os-band">
     <div class="reveal">
       <span class="eyebrow"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762"/></svg>Open source</span>
@@ -270,14 +296,14 @@ docker compose exec \
   </div>
 </section>
 
-<section class="section section-alt" aria-labelledby="faq-h">
+<section class="section" aria-labelledby="faq-h">
   <div class="wrap faq-grid">
     <div class="sec-head reveal">
       <h2 id="faq-h">Questions people ask.</h2>
       <p>More in the <a href="docs/faq.html">documentation FAQ</a>.</p>
     </div>
     <div class="faq reveal reveal-d1">
-      <details><summary>Can I use it for real agreements today?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>Not yet. OpenSeal is pre-alpha: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what is left for Release 1.</p></div></details>
+      <details><summary>Can I use it for real agreements today?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>Not yet. v0.0.1 is a pre-release for evaluation: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the development stack makes its own certificate authority, and the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what comes next.</p></div></details>
       <details><summary>Are the signatures legally binding?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. Whether a given signature is valid depends on your deployment, its configuration, the jurisdiction and the transaction. Nothing here is legal advice.</p></div></details>
       <details><summary>How do I check a document without your servers?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>Open the verify page from any OpenSeal install, or run it locally; the check runs in your browser and the file stays on your machine. The seal is standard PAdES, so independent tools such as pyHanko and EU DSS validate it too.</p></div></details>
       <details><summary>Can I build a commercial product on it?<svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></summary><div><p>Yes. Apache-2.0 allows commercial and proprietary use, embedding, hosting and resale. When you redistribute it, keep the LICENSE and the NOTICE file. See <a href="brand.html">brand and attribution</a>.</p></div></details>
@@ -287,7 +313,7 @@ docker compose exec \
   </div>
 </section>
 
-<section class="section" aria-labelledby="closing-h">
+<section class="section section-alt" aria-labelledby="closing-h">
   <div class="wrap closing reveal">
     <h2 id="closing-h">Run it on your machine in one command.</h2>
     <p class="lede">Docker Compose brings up the server, the worker, the key service, the database, storage, a mail catcher and a timestamp authority.</p>

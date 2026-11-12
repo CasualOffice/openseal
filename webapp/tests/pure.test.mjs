@@ -131,8 +131,9 @@ test("every message key used in code and HTML has an English string", () => {
       const k = m[0].slice(1);
       if (commandIds.has(k) || k.endsWith(".") || k.endsWith("-")) continue;
       // The server's audit event types (casual-sign-audit, `recipient.signed`) are data,
-      // not message keys: sign.js maps them to strings and the mock answers them.
-      if ((f === "sign.js" || f === "mock.js") && /^(envelope|recipient|document|reminder)\.[a-z_]+$/.test(k)) continue;
+      // not message keys: sign.js maps them to strings and the mock answers them. So are
+      // the webhook event types (`template.created`) api.js and the mock list (UX-03).
+      if (["sign.js", "mock.js", "api.js", "envelope.js"].includes(f) && /^(envelope|recipient|document|reminder|template)\.[a-z_]+$/.test(k)) continue;
       if (!(k in EN)) missing.push(`${f}: ${k}`);
     }
   }
