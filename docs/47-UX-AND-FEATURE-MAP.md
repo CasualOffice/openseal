@@ -128,21 +128,33 @@ and a key lives in exactly one part. Light and dark by `data-theme` or the OS.
 
 | Token family | Values |
 | --- | --- |
-| Brand | seal red: accent text `#b3141f` (light) / `#ff8a92` (dark); fill `#b3141f` with white text; logo gradient `#c01622 → #8e0b14`. Focus ring blue, distinct from the accent and from errors |
-| Type | system UI stack; 12 / 14 / 16 / 20 / 24 / 32 px; body 14 px in the app, 16 px on the signing page and below 760 px; line height 1.5 body, 1.25 headings |
+| Brand | seal red: accent text `#b3141f` (light) / `#ff8a92` (dark); fill `#b3141f` with white text, `#8e0b14` under the pointer (`--os-accent-hover-fill`); logo gradient `#c01622 → #8e0b14`. Focus ring blue, distinct from the accent and from errors |
+| Danger | destructive, declined and error: burnt orange, a different hue from the seal red (UX-02, owner instruction 26): text `#ad4609` (light) / `#fb923c` (dark); fill `#ad4609` with white text, `#8c3a06` under the pointer (`--os-danger-fill`, `--os-on-danger`, `--os-danger-hover`). Outlined danger buttons fill on hover; a destructive dialog's confirming button is the filled danger button with an icon, and its consequence is a warning callout. Error toasts and field errors use the fill |
+| Selection | a selected row is tinted info blue (`--os-select-soft`), never accent-soft |
+| Status badges | icon and word on a 10–12 % tint of the colour: Completed green, Sent / Delivered / Completing blue, Expired amber, Declined danger, Voided and Draft neutral (Voided with its ban icon); neutral badges keep a `--os-border-strong` outline in dark |
+| Type | Inter (OFL, `fonts/ui/`, Latin and Latin Extended, variable weight) then the system UI stack; 12 / 14 / 16 / 20 / 24 / 32 px at a 16 px root; body 14 px in the app, 16 px on the signing page and below 760 px; line height 1.5 body, 1.25 headings |
+| Root size | the user's default (100 %) below 64em; 93.75 % (15 px at the default) from 64em, the same in every desktop window (UX-02: it followed the viewport before) |
 | Space | 4 px grid: 4, 8, 12, 16, 24, 32, 48 |
 | Radius | 6, 8, 12 |
-| Icons | Lucide (ISC), inlined by `icon(name, {size, label})`: 16 dense, 20 default, 24 toolbars and empty states; stroke 2 (1.75 at 24); `aria-hidden` unless labelled |
-| Controls | buttons 32 / 36 / 44 px; targets ≥ 24 px (SC 2.5.8), ≥ 44 px on the signing page and phones (SC 2.5.5); focus ring 2 px, offset 2 px |
+| Icons | Lucide (ISC), inlined by `icon(name, {size, label})`: 16 dense, 20 default, 24 toolbars and empty states; stroke 2 (1.75 at 24); `aria-hidden` unless labelled. Aliases: `align-start/end/top/bottom`, `help-circle` |
+| Controls | buttons 32 / 36 / 44 px; targets ≥ 24 px (SC 2.5.8) and ≥ 44 px on the signing page and phones (SC 2.5.5), as `max(rem, px)` so a smaller root never shrinks them; row checkboxes are drawn 18 px in a 44 px target; focus ring 2 px, offset 2 px |
 | Motion | 150 / 200 / 250 ms, `cubic-bezier(.2,0,0,1)`; all zero under `prefers-reduced-motion: reduce` |
 | Recipients | six colours, each ≥ 3:1 against the page as an outline |
 
 Rules: status is never colour alone (badge = icon + word); every list and first-run screen has an empty state
 (illustration, one-line title, one sentence, the primary action; illustrations are original line drawings in
-`illustrations.js`, `aria-hidden`); lists and pages show skeletons while loading; dialogs and toasts enter and leave
-in 150–200 ms; a sent envelope and a finished signing show the seal stamping in once; no looping animation except
-loading shimmer and spinners. Contrast is measured, not asserted: `webapp/tests/pure.test.mjs` fails if any text
-colour falls under 4.5:1 or a control edge, focus ring or recipient colour under 3:1 in either theme.
+`illustrations.js`, `aria-hidden`; error drawings use `.il-danger`); lists and pages show skeletons while loading;
+dialogs and toasts enter and leave in 150–200 ms; a sent envelope and a finished signing show the seal stamping in
+once; no looping animation except loading shimmer and spinners. The `hidden` attribute always hides
+(`[hidden] { display: none !important }`). Menus from `menuButton` open in the top layer (a popover), placed from
+their button inside the viewport, above it when there is more room, scrolling when taller; items may include a
+separator. `openPanel({ dismissible: false })` is for a secret shown once (only its actions close it);
+`toast(…, { scope: "view" })` toasts go when the router calls `clearViewToasts()`. Contrast is measured, not
+asserted: `webapp/tests/pure.test.mjs` fails if any text colour falls under 4.5:1 (also each status colour on its
+own badge tint, and white on the accent and danger fills), a control edge, focus ring or recipient colour under 3:1,
+or the accent and danger colours (and fills, and danger and warning) are less than CIEDE2000 10 apart, in either
+theme. `webapp/e2e/visual.spec.mjs` checks menus stay in the viewport at 1440, 1366 and 390, hidden elements are not
+shown, the badge colours, the font, checkbox targets, and the panel and toast options.
 
 ### Tests
 
