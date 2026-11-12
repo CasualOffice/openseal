@@ -342,10 +342,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   function view(env, rec, token) {
     const sender = db.users.find((u) => u.id === env.sender_user_id);
     const acct = account();
+    // SEC-CER-01: no document and no field until every authentication is passed.
+    const shown = rec.auth.every((m) => rec.auth_passed.includes(m));
     return {
-      envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: env.documents, expires_at: env.expires_at },
+      envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: shown ? env.documents : [], expires_at: env.expires_at },
       recipient: publicRecipient(rec),
-      fields: env.fields.filter((f) => f.recipient_id === rec.id),
+      fields: shown ? env.fields.filter((f) => f.recipient_id === rec.id) : [],
       capture_location: !!env.signing_options?.capture_location,
       consent_required: { version: MOCK.ersd, sha256: ersdSha, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
@@ -1021,12 +1023,15 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (subSub === "detect-fields" && method === "POST") {
         // As `POST …/detect-fields` (nothing changed or recorded): the mock's documents
         // put their signature lines low on each page, so it suggests a signature, a date
-        // and a name there, ordered by page, top, left.
+        // and a name there, ordered by page, top, left. As the server's detector does
+        // (casual-sign-fields detect.rs), a field on a line sits on it: its bottom is the
+        // line (mockpdf.js draws them at PDF y 150, so 642 from the top of a 792 page;
+        // UX-05, they were below the lines).
         const items = [];
         for (let page = 1; page <= d.pages; page++) {
           items.push(
-            { document_id: d.id, type: "signature", page, x: "72", y: "680", width: "180", height: "40", source: "underline", cue: "Signature", confidence: 82 },
-            { document_id: d.id, type: "date_signed", page, x: "330", y: "698", width: "120", height: "22", source: "label", cue: "Date", confidence: 74 },
+            { document_id: d.id, type: "signature", page, x: "72", y: "602", width: "180", height: "40", source: "underline", cue: "Signature", confidence: 82 },
+            { document_id: d.id, type: "date_signed", page, x: "340", y: "620", width: "120", height: "22", source: "underline", cue: "Date", confidence: 74 },
             { document_id: d.id, type: "name", page, x: "72", y: "730", width: "180", height: "22", source: "label", cue: "Print name", confidence: 61 },
           );
         }

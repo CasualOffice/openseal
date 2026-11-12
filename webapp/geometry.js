@@ -23,15 +23,88 @@ export const DEFAULT_SIZE = {
   checkbox: { width: 16, height: 16 },
   name: { width: 160, height: 22 },
   email: { width: 190, height: 22 },
+  company: { width: 160, height: 22 },
+  title: { width: 160, height: 22 },
+  number: { width: 100, height: 22 },
+  radio_group: { width: 120, height: 60 },
+  dropdown: { width: 140, height: 22 },
+  attachment: { width: 140, height: 30 },
+  note: { width: 180, height: 44 },
 };
 
-/// The field types the Release 1 editor places, in palette order (wire names of
-/// casual-sign-model `FieldType`).
-export const FIELD_TYPES = ["signature", "initials", "date_signed", "name", "email", "text", "checkbox"];
+/// The field types the editor places, in palette order (wire names of casual-sign-model
+/// `FieldType`): every type the ceremony fills or shows and the flattener draws
+/// (api.js `FIELD_TYPES_READY`, UX-05).
+export const FIELD_TYPES = ["signature", "initials", "date_signed", "name", "email", "company", "title", "text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note"];
 
-/// Types the recipient fills (others are stamped by the server or auto-filled).
+/// The palette's groups (UX-05, as DocuSign's "Standard fields" and SignNow's tool
+/// groups): signing, what the recipient's details fill, and what they type or choose.
+export const FIELD_GROUPS = [
+  ["sign", ["signature", "initials", "date_signed"]],
+  ["auto", ["name", "email", "company", "title"]],
+  ["input", ["text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note"]],
+];
+
+/// Types the recipient fills (signfields.js `FILLABLE`); the others are stamped by the
+/// server, filled from the recipient, or (a note) shown as the sender wrote it.
+const FILLED = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
 export function takesInput(type) {
-  return type === "signature" || type === "initials" || type === "text" || type === "checkbox";
+  return FILLED.has(type);
+}
+
+/// Types a new field is required by default (UX-05: DocuSign and SignNow make text and
+/// choices required; a checkbox or an attachment is a choice to make optional or not).
+const REQUIRED_BY_DEFAULT = new Set(["signature", "initials", "text", "company", "title", "number", "radio_group", "dropdown"]);
+export const requiredByDefault = (type) => REQUIRED_BY_DEFAULT.has(type);
+
+/// Types typed as text, which take a sender's value, formatting and validation.
+export const TYPED = new Set(["text", "company", "title", "number"]);
+/// Types that choose from the sender's options.
+export const CHOICE = new Set(["radio_group", "dropdown"]);
+
+/// The engine's `validation` for a preset and its settings (UX-05), or null for none.
+/// `kind`: "" | email | phone | zip | ssn | number | length | regex; `opts`:
+/// `{min, max, pattern, maxLength, message}` as typed (strings). Numbers stay decimal
+/// strings as the engine's `Decimal` takes them; empty settings are left out.
+export function validationFrom(kind, opts = {}) {
+  if (!kind) return null;
+  const msg = String(opts.message || "").trim();
+  const out = { kind };
+  const dec = (v) => (/^-?\d+(\.\d+)?$/.test(String(v ?? "").trim()) ? String(v).trim() : null);
+  const int = (v) => (/^\d+$/.test(String(v ?? "").trim()) ? Number(v) : null);
+  if (kind === "number") {
+    const min = dec(opts.min);
+    const max = dec(opts.max);
+    if (min !== null) out.min = min;
+    if (max !== null) out.max = max;
+  } else if (kind === "length") {
+    const max = int(opts.maxLength);
+    if (max === null) return null;
+    out.max = max;
+  } else if (kind === "regex") {
+    const p = String(opts.pattern || "");
+    if (!p) return null;
+    out.pattern = p;
+  } else if (!["email", "phone", "zip", "ssn"].includes(kind)) {
+    return null;
+  }
+  if (msg) out.message = msg;
+  return out;
+}
+
+/// Options from a list typed one per line: trimmed, blanks and repeats dropped (the
+/// engine refuses a repeat), at most 500 (its limit).
+export function optionsFrom(text) {
+  const seen = new Set();
+  const out = [];
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const v = line.trim();
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+    if (out.length === 500) break;
+  }
+  return out;
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;
