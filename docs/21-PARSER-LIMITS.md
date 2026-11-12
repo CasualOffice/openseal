@@ -224,7 +224,7 @@ provisional are re-set from measurement before an exit is claimed.
 | OCR deadline per page / per job | 20 s / 15 min | CS-ML-0007 |
 | Words per OCR page | 20,000 (= `MAX_DETECT_WORDS`) | — (truncated) |
 | Text per ENTITIES or PERSONAL call; per document | 64 KiB; 4 MiB | CS-ML-0005 |
-| Windows | e5: 512 tokens; GLiNER multi: 384 words, stride 64; GLiNER-PII: its config's `max_len` (2,048 tokens), stride 64; 2,000 windows per document | — (truncated, deterministic) |
+| Windows | e5: 512 tokens; GLiNER (built, piece K): at most the config's `max_len` words (multi and small 384, PII 2,048) and 2,048 tokens per window, prompt and special tokens included; each next window starts 64 words (at most half a window) before the last ended; a word whose tokens alone overflow a window is skipped; candidates of all windows pooled and decoded once; 2,000 windows per call | — (truncated, deterministic) |
 | Labels per call; label length | 32; 64 bytes | CS-ML-0004 |
 | Texts per EMBED call | 64, each 8 KiB at most | CS-ML-0004 |
 | Suggestions per document | fields 500 (existing); entities 2,000; personal-data spans 5,000 | — (truncated) |
