@@ -108,7 +108,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
 cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-secrets --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --locked   # engine only
-cargo +1.94.0 check --workspace --locked
+cargo +1.95.0 check --workspace --locked
 cargo deny check bans licenses sources && cargo audit --deny warnings
 python3 tools/check-repo.py
 python3 -I fixtures/tools/generate.py --check

@@ -35,7 +35,7 @@ exclude = ["fuzz"]
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/CasualOffice/openseal"
-rust-version = "1.94.0"
+rust-version = "1.95.0"
 
 # Copied from OpenPresent's Cargo.toml (docs/19 §Provenance).
 [workspace.lints.rust]
