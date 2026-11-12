@@ -2,6 +2,8 @@
  * Every size, colour and duration is a token from tokens.css. Shell geometry follows
  * the sisters' (top bar, left rail, content), not their ribbon: this app has none. */
 *, *::before, *::after { box-sizing: border-box; }
+/* `hidden` always hides (UX-02): no component's display rule may show a hidden element. */
+[hidden] { display: none !important; }
 /* Root size (WEB-06, docs/47 §Root size): the browser's default (100 %) on phones and
  * small windows; from 64em it follows the viewport gently, 15 px at 1280, 16 at 1440,
  * 18 from 1760. rem in a root font-size and em in media queries are the user's default
@@ -51,7 +53,6 @@ a:hover { color: var(--os-accent-hover); }
   padding: var(--os-s1) var(--os-s4); font-size: var(--os-fs-12); font-weight: 600;
   background: var(--os-surface-2); color: var(--os-text); border-bottom: 1px solid var(--os-border);
 }
-.os-mock-banner[hidden] { display: none; }
 
 /* ---- Logos per theme --------------------------------------------------------------- */
 .os-logo--dark { display: none; }
@@ -138,7 +139,6 @@ select.os-input {
   border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); box-shadow: var(--os-shadow-pop);
   animation: os-pop var(--os-dur-fast) var(--os-ease);
 }
-.os-menu[hidden] { display: none; }
 /* A menu from menuButton floats in the top layer (UX-02; ui/menus.js places it from its
  * button): fixed, inside the viewport, scrolling when taller than the room it has. */
 .os-menu--floating { position: fixed; inset: auto; right: auto; margin: 0; color: var(--os-text); overflow-y: auto; overscroll-behavior: contain; max-width: calc(100vw - 1rem); }
@@ -473,13 +473,12 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 .os-dock__title { flex: 1; min-width: 0; font-size: var(--os-fs-14); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .os-dock__close { display: none; }
 .os-dock__body { flex: 1; min-height: 0; overflow: auto; padding: var(--os-s4); display: flex; flex-direction: column; gap: var(--os-s4); }
-.os-dock__body[hidden] { display: none; }
+.os-dock.is-collapsed > .os-dock__body { display: none; }
 .os-dock__handle { position: absolute; top: 0; bottom: 0; width: 0.75rem; z-index: 8; cursor: col-resize; touch-action: none; }
 .os-dock--left .os-dock__handle { right: -0.375rem; }
 .os-dock--right .os-dock__handle { left: -0.375rem; }
 .os-dock__handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: calc(50% - 1px); width: 0.125rem; background: transparent; transition: background var(--os-dur-fast) var(--os-ease); }
 .os-dock__handle:hover::after, .os-dock.is-resizing .os-dock__handle::after, .os-dock__handle:focus-visible::after { background: var(--os-focus); }
-.os-dock__handle[hidden] { display: none; }
 .os-dock.is-resizing { user-select: none; }
 .os-dock.is-collapsed { width: 3rem; }
 .os-dock.is-collapsed .os-dock__head { flex-direction: column-reverse; justify-content: flex-end; gap: var(--os-s3); padding: var(--os-s2) 0; border-bottom: 0; height: 100%; }
@@ -526,7 +525,7 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
   .os-dock.is-collapsed { width: auto; }
   .os-dock.is-collapsed .os-dock__head { flex-direction: row; height: auto; padding: var(--os-s1) var(--os-s2) var(--os-s1) var(--os-s4); border-bottom: 1px solid var(--os-border); }
   .os-dock.is-collapsed .os-dock__title { writing-mode: horizontal-tb; transform: none; color: var(--os-text); flex: 1; }
-  .os-dock__body[hidden] { display: flex; }
+  .os-dock.is-collapsed > .os-dock__body { display: flex; }
   .os-dock__handle, .os-dock__toggle { display: none !important; }
   .os-dock__close { display: inline-flex; }
   .os-dock .os-panel--thumbs { display: none; }

@@ -6,7 +6,6 @@
 /* The signing page's toasts sit top centre, under its bar, never over the guide. */
 .os-sign .os-toasts { top: 4.75rem; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); }
 .os-statuschip { display: inline-flex; align-items: center; gap: 0.25rem; height: 1.75rem; padding: 0 0.625rem; border-radius: 62.4375rem; background: var(--os-surface); color: var(--os-muted); font-size: var(--os-fs-12); font-weight: 600; white-space: nowrap; }
-.os-statuschip[hidden] { display: none; }
 @media (max-width: 47.5em) {
   .os-statuschip > span { position: absolute; width: 0.0625em; height: 0.0625em; overflow: hidden; clip: rect(0 0 0 0); }
   .os-statuschip { padding: 0 0.375em; }
@@ -24,7 +23,6 @@
 .os-sign__barprogress { font-size: var(--os-fs-14); color: var(--os-muted); }
 .os-sign__barprogress:empty { display: none; }
 .os-sign__tools { display: flex; align-items: center; gap: var(--os-s1); }
-.os-sign__tools[hidden], .os-sign__barfinish[hidden] { display: none; }
 .os-sign__barfinish.is-ready { animation: os-ready var(--os-dur-slow) var(--os-ease); }
 .os-sign__main { flex: 1; padding: var(--os-s6) var(--os-s2) 7.5rem; outline: none; }
 .os-sign__screen { animation: os-enter var(--os-dur) var(--os-ease); }
@@ -46,13 +44,11 @@
 }
 .os-guidetag::after { content: ""; position: absolute; right: -1.25rem; top: -1px; border-style: solid; border-width: 1.25rem 0 1.25rem 1.25rem; border-color: transparent transparent transparent var(--os-tag-edge); }
 .os-guidetag::before { content: ""; position: absolute; right: -1.125rem; top: 0; z-index: 1; border-style: solid; border-width: 1.1875rem 0 1.1875rem 1.1875rem; border-color: transparent transparent transparent var(--os-tag); }
-.os-guidetag[hidden] { display: none; }
 .os-guidetag:focus-visible { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: 0.25rem; }
 .os-sign__guide {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; align-items: center; gap: var(--os-s2);
   padding: var(--os-s3) var(--os-s4) calc(var(--os-s3) + env(safe-area-inset-bottom)); background: var(--os-bg); border-top: 1px solid var(--os-border); box-shadow: 0 -0.25rem 1rem rgba(0, 0, 0, .08);
 }
-.os-sign__guide[hidden] { display: none; }
 .os-sign__progress { flex: 1; font-weight: 600; }
 #guide-finish.is-ready { animation: os-ready var(--os-dur-slow) var(--os-ease); }
 @keyframes os-ready { 50% { transform: scale(1.04); } }
@@ -203,7 +199,6 @@
 /* G-S1: Start/Next in the bar, styled as the guide tag it stands for. */
 .os-btn--tag { background: var(--os-tag); border-color: var(--os-tag-edge); color: var(--os-text); font-weight: 700; }
 .os-btn--tag:hover { background: color-mix(in srgb, var(--os-tag) 75%, var(--os-tag-edge)); }
-.os-btn--tag[hidden] { display: none; }
 /* G-S8: every field's label as a tab above it: on hover, on focus, and for the next one. */
 .os-sfield__tip {
   position: absolute; left: 0; bottom: calc(100% + 0.25rem); z-index: 8; max-width: 16rem; padding: 0.125rem 0.375rem; border-radius: 0.25rem;
@@ -279,7 +274,6 @@
 @media (max-width: 47.999em) {
   .os-review__actions.os-stack { grid-template-columns: minmax(0, 1fr); }
 }
-#more-btn[hidden] { display: none; }
 /* WEB-06 field kinds in the ceremony: a native select, a choice button, fixed values. */
 .os-sfield__select { width: 100%; min-height: 0; border: 0; border-radius: 0.25rem; padding: 0 var(--os-s1); background: #fff1b8; color: #111827; font-size: var(--os-fs-12); font-weight: 600; cursor: pointer; }
 .os-sfield.is-done .os-sfield__select { background: rgba(255, 255, 255, .7); }

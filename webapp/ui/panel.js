@@ -57,7 +57,8 @@ export function dockPanel({ id, side = "right", title, icon: ic = "layers", widt
   function apply() {
     el.style.setProperty("--os-dock-w", `${w}rem`);
     el.classList.toggle("is-collapsed", c);
-    body.hidden = c && !phone();
+    // Collapsed: the body is hidden by `.os-dock.is-collapsed` on desktop only (a phone
+    // shows the panel as a sheet), so no `hidden` attribute that a resize would leave stale.
     handle.hidden = c;
     handle.setAttribute("aria-valuenow", String(w));
     handle.setAttribute("aria-valuetext", t("panel.width", { n: w }));

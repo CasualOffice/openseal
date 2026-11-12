@@ -22,6 +22,10 @@ async function checkLayout(page, what) {
     const out = [];
     const vw = document.documentElement.clientWidth;
     if (document.documentElement.scrollWidth > vw + 1) out.push(`horizontal overflow: ${document.documentElement.scrollWidth} > ${vw}`);
+    // `hidden` means hidden (UX-02): no component's display rule may override it.
+    for (const el of document.querySelectorAll("body [hidden]")) {
+      if (getComputedStyle(el).display !== "none") out.push(`hidden but shown: ${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ""}.${[...el.classList].join(".")}`);
+    }
     const visible = (el) => {
       const r = el.getBoundingClientRect();
       if (r.width < 1 || r.height < 1) return null;

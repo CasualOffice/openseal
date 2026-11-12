@@ -29,7 +29,6 @@
 .os-nav__link[aria-current="page"] { color: var(--os-text); }
 .os-nav__link[aria-current="page"]::after { background: var(--os-accent-fill); }
 .os-nav__link--drawer { display: none; }
-.os-nav__link[hidden] { display: none; }
 .os-start #start-btn { gap: var(--os-s1); padding: 0 var(--os-s3) 0 var(--os-s2); }
 .os-topsearch { position: relative; width: 15rem; margin: 0 var(--os-s2); }
 .os-topsearch > svg { position: absolute; left: var(--os-s3); top: 50%; transform: translateY(-50%); color: var(--os-muted); pointer-events: none; }
