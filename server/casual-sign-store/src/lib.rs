@@ -11,6 +11,11 @@
 //! referencing another account's row impossible in the database itself. The only
 //! cross-account reads are the [`EntryPoints`] (secret hash → ids, and the job claim).
 //!
+//! **Organizations (ADR-028).** Every account is a workspace of one organization.
+//! [`Store::for_organization`] → [`OrgScope::begin`] → [`OrgTx`] reaches organization
+//! tables and, read-only, its workspaces' rows; it sees no content table. It writes to a
+//! workspace only through [`Store::for_workspace_of`] with a [`WorkspaceOf`] proof.
+//!
 //! **Evidence (docs/32).** The audit table is append-only three ways: the application
 //! role has only `SELECT` and `INSERT`; triggers refuse `UPDATE`, `DELETE` and
 //! `TRUNCATE` for every role; and an insert trigger recomputes each event's SHA-256 from
@@ -27,6 +32,7 @@
 mod error;
 mod ids;
 mod migrate;
+mod org;
 mod store;
 
 pub mod blob;
@@ -35,6 +41,11 @@ pub mod repo;
 pub use error::{Result, StoreError};
 pub use ids::*;
 pub use migrate::{MIGRATIONS, Migration, MigrationReport, migrate};
+pub use org::{
+    BuiltinProfiles, LAST_OWNER_CONSTRAINT, OrgScope, OrgTx, Organization, OrganizationStatus,
+    Workspace, WorkspaceOf, WorkspaceStatus,
+};
 pub use store::{
     ClaimedJob, EntryPoints, RecipientTokenTarget, StaffSessionTarget, Store, Tenant, TenantTx,
+    UserWorkspace,
 };

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, settings, data_region, created_at FROM accounts WHERE id = $1",
+  "query": "SELECT id, organization_id, status, name, settings, data_region, created_at FROM accounts WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,28 @@
       },
       {
         "ordinal": 1,
+        "name": "organization_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "organization_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "name",
         "type_info": "Text",
         "origin": {
@@ -26,7 +48,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 4,
         "name": "settings",
         "type_info": "Jsonb",
         "origin": {
@@ -37,7 +59,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 5,
         "name": "data_region",
         "type_info": "Text",
         "origin": {
@@ -48,7 +70,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -68,9 +90,11 @@
       false,
       false,
       false,
+      false,
+      false,
       true,
       false
     ]
   },
-  "hash": "b785b1645658847e7705ec1aecf8ffa7db0dcc67215d432fe9a4188c98e64a84"
+  "hash": "f15a4ee0d941ed48757cffea9c888f17a3920172d22b80eaa292493129cf1f38"
 }

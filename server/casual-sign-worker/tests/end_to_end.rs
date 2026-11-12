@@ -261,8 +261,11 @@ async fn api_and_worker_take_two_signers_to_completed_with_a_verified_seal() {
     )
     .unwrap();
     let app = casual_sign_server::app(st);
-    casual_sign_server::bootstrap(
+    // `Env` already made an organization; this workspace gets one of its own.
+    let org = env.db.organization("End to End").await;
+    casual_sign_server::bootstrap_workspace(
         &env.db.store,
+        org,
         "End to End",
         "admin@e2e.example.test",
         "Admin",

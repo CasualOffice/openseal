@@ -18,7 +18,7 @@
 
 pub mod world;
 
-use casual_sign_store::Store;
+use casual_sign_store::{AccountId, BuiltinProfiles, OrganizationId, PermissionProfileId, Store};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Executor, PgPool, Row};
 
@@ -121,6 +121,15 @@ fn app_options(server: &PgConnectOptions, db: &str) -> PgConnectOptions {
         .password(APP_PASSWORD)
 }
 
+/// Fresh ids for a workspace's three built-in profiles.
+pub fn builtin_profiles() -> BuiltinProfiles {
+    BuiltinProfiles {
+        admin: PermissionProfileId(uuid::Uuid::now_v7()),
+        sender: PermissionProfileId(uuid::Uuid::now_v7()),
+        viewer: PermissionProfileId(uuid::Uuid::now_v7()),
+    }
+}
+
 /// Turn row-level security off on every table that has it.
 pub async fn disable_rls(admin: &PgPool) {
     let tables = rls_tables(admin).await;
@@ -154,6 +163,38 @@ pub async fn rls_tables(admin: &PgPool) -> Vec<String> {
 }
 
 impl TestDb {
+    /// A new organization, made as the platform console will make one: by the owner
+    /// role, since the application role cannot (docs/23 §5.3).
+    pub async fn organization(&self, name: &str) -> OrganizationId {
+        let id = OrganizationId(uuid::Uuid::now_v7());
+        sqlx::query("INSERT INTO organizations (id, name) VALUES ($1, $2)")
+            .bind(id.0)
+            .bind(name)
+            .execute(&self.admin)
+            .await
+            .unwrap();
+        id
+    }
+
+    /// A new workspace, through the application's organization scope, of a new
+    /// organization of its own.
+    pub async fn account(&self, name: &str) -> (OrganizationId, AccountId) {
+        let org = self.organization(name).await;
+        let account = self.workspace(org, name).await;
+        (org, account)
+    }
+
+    /// A new workspace of `org`, through the application's organization scope.
+    pub async fn workspace(&self, org: OrganizationId, name: &str) -> AccountId {
+        let account = AccountId(uuid::Uuid::now_v7());
+        let mut tx = self.store.for_organization(org).begin().await.unwrap();
+        tx.create_workspace(account, name, &builtin_profiles())
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        account
+    }
+
     /// Drop the database.
     pub async fn drop(self) {
         self.admin.close().await;
