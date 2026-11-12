@@ -1,0 +1,3 @@
+# casual-sign-modeld bundle manifest, compiled into the binary (src/manifest.rs, docs/33 §8).
+# Written by tools/ml/fetch-models.py from tools/ml/models.toml; never edited by hand.
+# id	profile	sha256	bytes	licence	path
