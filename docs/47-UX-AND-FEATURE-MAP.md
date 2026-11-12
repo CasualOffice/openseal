@@ -124,6 +124,11 @@ separate API origin is added to `connect-src` by the server that serves the page
 
 ### Design system
 
+**Superseded in part by owner instruction 44 (2026-11-13):** the approved canvas in
+[assets/design-canvas](assets/design-canvas/) is the design of record (Geist, warm neutrals, seal red for the one
+primary action, violet for model suggestions, a fluid rem root); `WEB-17` rebuilds the screens on it. Where this section
+disagrees with the canvas, the canvas holds.
+
 One tokens file, `webapp/tokens.css`; shared components in `webapp/app.css`. Each part of the app has its own
 stylesheet loaded after it (UX-02): `shell.css` (top bar, sections, sign-in, verify), `prepare.css` (the editor),
 `sign.css` (the signing page), `manage.css` (Home, Agreements, envelope) and `admin.css` (Templates, Reports, Admin).
