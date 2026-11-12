@@ -27,6 +27,7 @@ Docs are true as of `1163eca` (2026-11-10). **The engine's first half is built**
 | [20-ERROR-CODE-REGISTRY](20-ERROR-CODE-REGISTRY.md) | Every diagnostic code | Live; PDF, writer, field, seal and verify codes issued |
 | [21-PARSER-LIMITS](21-PARSER-LIMITS.md) | Every input limit, its default and code | Live: PDF and crypto limits built; field limits partly built (marked per row) |
 | [22-DATA-MODEL](22-DATA-MODEL.md) | Entities, fields, persistence and tenancy rules | Draft for owner |
+| [23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) | Organizations above workspaces, delegated administration, identity and SSO frame, the platform console, plans, metering and enforcement (ADR-028) | Designed; ADR-028 Accepted 2026-11-12; nothing built |
 | [24-ENVELOPE-LIFECYCLE-AND-ROUTING](24-ENVELOPE-LIFECYCLE-AND-ROUTING.md) | Commands, state machines, routing, correction, timers, bulk, links | Draft for owner |
 | [30-PDF-PIPELINE](30-PDF-PIPELINE.md) | Admission, normalization, geometry, anchors, formulas, flattening, certificate, writer | Stages 1A–1D built ("As built" notes); flattening and certificate designed |
 | [31-SEALING-AND-SIGNATURES](31-SEALING-AND-SIGNATURES.md) | PAdES profiles, sealing algorithm, keyd, timestamps, verification ladder | Crypto structures built (1F); sealing and keyd designed; validators running |
