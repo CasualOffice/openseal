@@ -21,6 +21,8 @@
 //!
 //! **Windows.** A text longer than one window is read in windows of at most the model's
 //! `max_len` words and [`MAX_WINDOW_TOKENS`] tokens (prompt and special tokens included).
+//! The label prompt may take at most [`MAX_PROMPT_TOKENS`] of them; a larger one is
+//! refused, so the text always has half a window.
 //! Each next window starts [`WINDOW_OVERLAP`] words (at most half the previous window)
 //! before the previous one ended. A word whose tokens alone overflow a window is skipped
 //! (no window reads it and no span covers it). At most [`MAX_WINDOWS`] windows are read;
@@ -58,6 +60,10 @@ pub const WINDOW_OVERLAP: usize = 64;
 pub const MAX_WINDOW_TOKENS: usize = 2048;
 /// Most windows read from one text; later words are not read (docs/33 §4).
 pub const MAX_WINDOWS: usize = 2000;
+/// Most tokens the label prompt (with the special tokens) may take of a window, so at
+/// least half of every window is left for the text (`ML-17`). A prompt over it is
+/// refused (`CS-ML-0005`) rather than leaving the text unread and answering no spans.
+pub const MAX_PROMPT_TOKENS: usize = MAX_WINDOW_TOKENS / 2;
 /// Largest `gliner_config.json` read.
 const MAX_CONFIG: u64 = 64 * 1024;
 /// Widest span a config may ask for.
@@ -404,7 +410,8 @@ impl Gliner {
     ///
     /// # Errors
     /// `CS-ML-0004` for a text not in NFC or a bad label; `CS-ML-0005` for a text over
-    /// [`MAX_SPAN_TEXT`]; `CS-ML-0013` when the tokenizer fails.
+    /// [`MAX_SPAN_TEXT`] or labels whose prompt is over [`MAX_PROMPT_TOKENS`];
+    /// `CS-ML-0013` when the tokenizer fails.
     pub fn feeds(&self, text: &str, labels: &[String]) -> Result<Vec<WindowFeeds>, ModeldError> {
         let labels = self.labels(labels)?;
         let words = self.checked_words(text)?;
@@ -457,6 +464,9 @@ impl Gliner {
             .unwrap_or_default()
             .iter()
             .fold(specials, |a, c| a.saturating_add(*c));
+        if fixed > MAX_PROMPT_TOKENS {
+            return Err(ModeldError::OverBound("label prompt tokens"));
+        }
         let budget = MAX_WINDOW_TOKENS.saturating_sub(fixed);
         let word_counts = counts.get(prompt_len..).unwrap_or_default();
 

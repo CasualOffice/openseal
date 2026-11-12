@@ -346,6 +346,36 @@ fn bad_requests_are_refused_with_their_codes() {
         .unwrap_err();
     assert_eq!(late.code(), "CS-ML-0007");
     assert!(gliner.spans(&req("   ", "name"), later).unwrap().is_empty());
+
+    // ML-17: 32 labels of 64 bytes of punctuation tokenize to nearly one token a byte,
+    // and their prompt leaves no room for the text. Before the fix every word was
+    // skipped and the call answered no spans, as if nothing had matched.
+    let heavy: Vec<String> = (0..32)
+        .map(|i| {
+            let mut s = format!("{i}");
+            while s.len() < 64 {
+                s.push_str(".,");
+            }
+            s.truncate(64);
+            s
+        })
+        .collect();
+    let crowded = SpanRequest {
+        text: "Ann Lee lives in Leeds.".to_owned(),
+        labels: heavy,
+        threshold: 5000,
+    };
+    assert_eq!(
+        gliner.spans(&crowded, later).unwrap_err().code(),
+        "CS-ML-0005"
+    );
+    assert_eq!(
+        gliner
+            .feeds(&crowded.text, &crowded.labels)
+            .unwrap_err()
+            .code(),
+        "CS-ML-0005"
+    );
 }
 
 /// Hard-link (or copy) `files` of the test bundle into a scratch bundle.

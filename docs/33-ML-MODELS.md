@@ -172,6 +172,7 @@ combining marks.
 | Text per ENTITIES/PERSONAL call; per document | 64 KiB; 4 MiB | CS-ML-0005 |
 | Window | e5: 512 tokens; GLiNER (built, piece K): at most the config's `max_len` words (multi and small 384, PII 2,048) and 2,048 tokens per window, prompt and special tokens included; each next window starts 64 words (at most half a window) before the last ended; a word whose tokens alone overflow a window is skipped; candidates of all windows pooled and decoded once; 2,000 windows per call | — (truncated, deterministic) |
 | Labels per call; label length | 32; 64 bytes | CS-ML-0004 |
+| GLiNER label prompt | 1,024 tokens (half a window; `ML-17`) | CS-ML-0005 |
 | Texts per EMBED call | 64, each ≤ 8 KiB | CS-ML-0004 |
 | Suggestions per document | fields 500 (existing); entities 2,000; personal-data spans 5,000 | — (truncated) |
 | Fingerprints searched per account | 50,000 page vectors in process (more need pgvector) | — |

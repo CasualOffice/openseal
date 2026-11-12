@@ -55,8 +55,8 @@ pub use error::{BundleProblem, ModelRefusal, ModeldError};
 
 #[cfg(feature = "server")]
 pub use gliner::{
-    Gliner, MAX_WINDOW_TOKENS, MAX_WINDOWS, RUNTIME_PATH, SpanModels, WINDOW_OVERLAP, WindowFeeds,
-    init_runtime, split_words,
+    Gliner, MAX_PROMPT_TOKENS, MAX_WINDOW_TOKENS, MAX_WINDOWS, RUNTIME_PATH, SpanModels,
+    WINDOW_OVERLAP, WindowFeeds, init_runtime, split_words,
 };
 #[cfg(feature = "server")]
 pub use manifest::{ALLOWED_LICENCES, Bundle, Entry, MAX_BUNDLE, MAX_FILE, Manifest};
