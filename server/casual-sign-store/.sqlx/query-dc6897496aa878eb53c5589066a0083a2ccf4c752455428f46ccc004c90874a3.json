@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT openseal_user_in_other_account($1) AS \"shared!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "shared!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dc6897496aa878eb53c5589066a0083a2ccf4c752455428f46ccc004c90874a3"
+}
