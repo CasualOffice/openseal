@@ -54,15 +54,22 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of `1163eca` (2026-11-10). The engine's first half is built; no server or UI.
+Docs are true as of `19518fb` (2026-11-12). Phases D, 0, 1 and 2 are closed; **v0.0.1**, the first pre-release,
+is published (`REL-01`). Engine, server, API, worker, keyd, Compose deployment and web app exist.
 
-| Phase | State | Note |
+| Phase or work | State | Note |
 | --- | --- | --- |
-| D Design | **Open** 2026-11-10 | This document set. Owner decisions in [14](14-EXECUTION-TRACKER.md) §Owner decisions |
-| 0 Foundation | **Open** 2026-11-10 | 3 of the 4 non-sign-off exit items met (corpus and fixtures; validators on GitHub CI; spikes and ADRs). Left: seeded violations seen failing on GitHub's runners, owner sign-off |
-| 1 PDF and evidence core | **Open** 2026-11-10 under `W-2` | Built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors and tags, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I audit and certificate (each with leftovers in its row); reader completion (417 of 422 corpus PDFs open). In progress, for the exit gate: 1J SDK and CLI with the corpus pipeline (`P1-GATE-01`), `WASM-01`, `VER-03`, `FUZZ-01`. Corpus run: 422 real PDFs, no panic, 387 admitted with correct page counts, 31 encrypted refused, 4 wrongly refused (`PDF-REAL-*`) |
-| 2 Envelope engine and server | Not opened | May open once stages 1A and 1B close (`W-1` proposed, `DEC-13`) |
-| Slices 1–35 | Not opened | Slice 1 needs Phases 1 and 2 |
+| D Design | **Closed** 2026-11-11 | Owner, instruction 13 |
+| 0 Foundation | **Closed** 2026-11-11 | Owner, instruction 12; `W-2` retired |
+| 1 PDF and evidence core | **Closed** 2026-11-11 | Owner, instruction 18, after clean fuzz run 42907980149; stages `T-1A`–`T-1J` done, leftovers in their own rows |
+| 2 Envelope engine and server | **Closed** 2026-11-12 | Owner, instruction 23; `compose-e2e`, `P2-CRASH`, `P2-THREATS` |
+| Milestones | M0, M1, M2 contents closed | `MS-0`–`MS-2` in [14](14-EXECUTION-TRACKER.md); M3 needs slices 1, 2, 5 and 7 closed |
+| Release 1 / v0.0.1 | **Published** 2026-11-12 | Tagged at `4780d84` after GitHub CI run 43123420112 was green on all 14 jobs; images with SBOM and provenance; pre-release on GitHub. Left in `REL-01`: GHCR packages public, the manual walkthrough in [65](65-RUNNING-IT.md); the boxes below are ticked by `REL-01` from evidence |
+| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point. [96](96-FEATURE-FIT-GAP.md) counts 39 of 167 rows working |
+| In progress: UI | Packages `UX-02` to `UX-08` of the `UX-01` pass | Enterprise UI and layout fixes; missing workflows are `UXW-01`–`UXW-29` |
+| In progress: organizations, console, plans | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | `ORG-01`, `CON-01`, `PLAN-01` and their rows; built in stages, for v0.0.2 (instruction 29) |
+| In progress: ML | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Built: `casual-sign-modeld` skeleton (`ML-09`), personal-data recognisers `casual-sign-pii` (`ML-08`), value normalisation (`ML-07`), model bundle tooling and fixtures. Next: OCR (`ML-02`), template matching (`ML-05`), extraction (`ML-07`). Every feature off by default; nothing a model says enters the evidence |
+| Security fix | `SEC-ID-01` in progress (P0) | Cross-workspace account takeover through the global `users` row |
 
 ### Waivers
 
