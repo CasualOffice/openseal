@@ -20,24 +20,55 @@ export const MOCK = {
   ceremonyToken: "demo-sign",
   declineToken: "demo-decline",
   fieldsToken: "demo-fields",
+  // The demo user's own link to an envelope another member sent them (the Inbox, UX-03).
+  inboxToken: "demo-inbox",
   accessCode: "2468",
   // The emailed one-time code every mock `POST /s/{token}/otp` "sends" (SEC-A02).
   emailCode: "135790",
+  // A member with this email also belongs to another account (SEC-ID-01): only they may
+  // change their name or password, so an administrator's change is 403 CS-API-0015.
+  sharedEmail: "shared@openseal.test",
 };
 
 const KEY = "openseal.mock.v1";
 const TERMINAL = new Set(["completed", "declined", "voided", "expired"]);
-/// The mock's audit names → casual-sign-audit's (the server's) for `GET /s/{token}/history`.
-const AUDIT_TYPES = {
-  envelope_created: "envelope.created", envelope_sent: "envelope.sent", envelope_corrected: "envelope.corrected",
-  envelope_voided: "envelope.voided", envelope_completed: "envelope.completed", seal_applied: "document.sealed",
-  recipient_opened: "recipient.delivered", recipient_auth_challenged: "recipient.auth_challenged", recipient_authenticated: "recipient.auth_passed", recipient_auth_failed: "recipient.auth_failed",
-  recipient_consented: "recipient.consented", document_viewed: "recipient.viewed_document", signature_adopted: "recipient.signature_adopted",
-  field_filled: "recipient.field_completed", recipient_finish_later: "recipient.finish_later", recipient_completed: "recipient.signed",
-  recipient_declined: "recipient.declined", recipient_reassigned: "recipient.reassigned", notification_resent: "reminder.sent",
-};
-const SIGNING_TYPES = new Set(["signer", "in_person_signer", "approver"]);
+/// The events every recipient may see in their history (server ceremony.rs `MILESTONES`).
+const MILESTONES = new Set(["envelope.sent", "envelope.corrected", "envelope.voided", "envelope.declined", "envelope.expired", "envelope.completing", "envelope.completed"]);
+/// Recipients the envelope waits for: everyone but a copy (the engine's
+/// `has_required_action`); routing reaches them in order.
+const ACTING = (r) => r.type !== "cc";
+/// Recipient types that sign (the engine's `signs()`): they may hold any field, and the
+/// mock asks each for at least one before sending.
+const SIGNS = new Set(["signer", "in_person_signer", "editor", "witness", "seal", "notary"]);
 const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
+const RECIPIENT_TYPES = ["signer", "in_person_signer", "approver", "viewer", "cc", "editor", "intermediary", "agent", "witness", "seal", "notary"];
+const FIELD_TYPES = new Set([
+  "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
+  "envelope_id", "text", "number", "date", "email_address", "phone", "ssn", "zip", "checkbox", "radio_group",
+  "dropdown", "multi_select", "formula", "attachment", "note", "approve", "decline", "hyperlink", "payment", "drawing",
+]);
+/// The members of an engine `Field` besides its ids, type and place (api.js `FIELD_MEMBERS`).
+const FIELD_MEMBERS = ["required", "read_only", "locked", "label", "value", "default", "validation", "format", "group", "conditional", "formula", "options", "allow_custom", "tooltip", "placeholder"];
+/// Which fields a recipient type may hold (the engine's `field_allowed`).
+function fieldAllowed(rtype, ftype) {
+  if (SIGNS.has(rtype)) return true;
+  if (rtype === "approver") return !["signature", "initials", "stamp", "date_signed"].includes(ftype);
+  return ftype === "note" || ftype === "hyperlink";
+}
+const WEBHOOK_EVENTS = [
+  "envelope.sent", "envelope.delivered", "envelope.completed", "envelope.declined", "envelope.voided", "envelope.expired",
+  "envelope.corrected", "envelope.purged", "recipient.sent", "recipient.delivered", "recipient.auth_failed",
+  "recipient.completed", "recipient.declined", "recipient.reassigned", "recipient.finish_later", "recipient.bounced",
+  "template.created", "template.updated", "template.deleted", "bulk_send.completed",
+];
+/// The demo disclosure (ERSD) every mock recipient consents to. Not legal text.
+export const MOCK_DISCLOSURE = [
+  "Electronic record and signature disclosure (mock mode demo text).",
+  "",
+  "Demo account will send you agreements electronically. You may ask for a paper copy, and withdraw your consent to",
+  "electronic records at any time, from the signing page's Other actions menu or by writing to the sender; withdrawing",
+  "declines the agreement. There is no fee. You need a current web browser and a way to keep or print a PDF.",
+].join("\n");
 
 let counter = 0;
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${++counter}`);
@@ -72,33 +103,70 @@ const fail = (status, code, title, errors) => { throw new Problem(status, code, 
 /// Make the fake. Returns `fetch(url, init)` answering `Response`s, plus `state()` for tests.
 export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   let db = null;
+  let ersdSha = null;
 
   const save = () => {
     if (!store) return;
     try { store.setItem(KEY, JSON.stringify(db)); } catch { /* full or off: memory only */ }
   };
+  const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; };
   async function load() {
+    ersdSha ||= await sha256hex(MOCK_DISCLOSURE);
     if (db) return;
     if (store) {
       try {
         const s = store.getItem(KEY);
-        if (s) { db = JSON.parse(s); db.templates ||= []; db.users ||= []; db.apiClients ||= []; return; }
+        if (s) { db = JSON.parse(s); fill(); return; }
       } catch { db = null; }
     }
-    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [] };
+    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [] };
     await seed();
     save();
   }
+  const account = () => {
+    db.account ||= { id: "acct-demo", name: "Demo account", settings: {}, data_region: null, created_at: iso(-60 * 24 * 30) };
+    return db.account;
+  };
 
   const iso = (offsetMin = 0) => new Date(now().getTime() + offsetMin * 60000).toISOString();
 
-  async function audit(env, type, extra = {}) {
+  /// Append an event to the envelope's chain, shaped as the server's `GET …/audit` item
+  /// (WEB-12): `{seq, type, at, hash, prev, event}`, `seq` from 0, `type` casual-sign-audit's
+  /// dotted name, `event` the whole event of docs/32 §2 (`v`, `envelope_id`, `seq`, `prev`,
+  /// `at`, `type`, `actor {kind, id?, name?, email?}`, `context`, `data`), the recipient it
+  /// concerns in `data.recipient_id`. `by` is who acted: `sender`, `user`, `recipient`
+  /// (the default for a `recipient.*` event naming one) or `system`. The hash is SHA-256
+  /// of the mock's own JSON, not RFC 8785: the mock is not evidence.
+  async function audit(env, type, data = {}, { by, at, location } = {}) {
     const list = (db.audit[env.id] ||= []);
     const prev = list.length ? list[list.length - 1].hash : null;
-    const event = { type, at: extra.at || iso(), envelope_id: env.id, ...extra };
-    delete event.at_override;
-    const hash = await sha256hex(JSON.stringify({ prev, event }));
-    list.push({ seq: list.length + 1, type, at: event.at, hash, prev, event });
+    const seq = list.length;
+    const kind = by || (type.startsWith("recipient.") && data.recipient_id ? "recipient" : "system");
+    const actor = { kind };
+    if (kind === "sender") actor.id = env.sender_user_id;
+    else if (kind === "user") actor.id = "user-demo";
+    else if (kind === "recipient") {
+      // As the engine's `actor_for`: a recipient is named as they were at the time.
+      const r = env.recipients.find((x) => x.id === data.recipient_id);
+      actor.id = data.recipient_id;
+      if (r) { actor.name = r.name; actor.email = r.email; }
+    }
+    const when = at || iso();
+    const event = { v: 1, envelope_id: env.id, seq, prev, at: when, type, actor, context: location ? { location } : {}, data };
+    const hash = await sha256hex(JSON.stringify(event));
+    list.push({ seq, type, at: when, hash, prev, event });
+    notify(env, type);
+  }
+  const blobHash = (id, salt = "") => sha256hex(`${db.blobs[id] || ""}${salt}`);
+  const docHashes = async (env) => Promise.all(env.documents.map(async (d) => ({ document_id: d.id, hash: await blobHash(d.id) })));
+  /// A webhook delivery to every active subscription that names the topic (the worker's
+  /// `deliver_webhook`; the mock "delivers" at once, answered 200).
+  function notify(env, topic) {
+    if (!WEBHOOK_EVENTS.includes(topic)) return;
+    for (const w of db.webhooks || []) {
+      if (!w.active || !w.event_types.includes(topic) || (w.envelope_id && w.envelope_id !== env.id)) continue;
+      (db.deliveries[w.id] ||= []).unshift({ id: uid(), event_id: uid(), event_type: topic, status: "delivered", attempts: 1, last_status_code: 200 });
+    }
   }
 
   // ---- Model helpers -----------------------------------------------------------
@@ -125,13 +193,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   function addRecipient(env, r) {
     if (!r || typeof r.name !== "string" || !r.name.trim()) fail(400, "CS-API-0001", "Recipient name required", [{ pointer: "/name", code: "required" }]);
     const type = r.type || "signer";
-    if (!["signer", "cc", "approver", "viewer", "in_person_signer"].includes(type)) fail(400, "CS-API-0001", "Unknown recipient type", [{ pointer: "/type", code: "enum" }]);
+    // Every engine `RecipientType`, as the server takes them (UX-03).
+    if (!RECIPIENT_TYPES.includes(type)) fail(400, "CS-API-0001", "Unknown recipient type", [{ pointer: "/type", code: "enum" }]);
     if (r.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
+    if (r.routing_order != null && (!Number.isInteger(r.routing_order) || r.routing_order < 1 || r.routing_order > 999)) fail(422, "CS-WF-0004", "Routing order out of range", [{ pointer: "/routing_order", code: "range" }]);
+    if (r.delivery != null && !["email", "sms", "none"].includes(r.delivery)) fail(400, "CS-API-0001", "Unknown delivery", [{ pointer: "/delivery", code: "enum" }]);
     const rec = {
-      id: uid(), type, routing_order: Number.isInteger(r.routing_order) ? r.routing_order : 1, name: r.name.trim(), email: r.email || "",
-      delivery: "email", auth: Array.isArray(r.auth) ? r.auth : [], status: "created", completed_at: null, declined_reason: null,
+      id: r.id || uid(), type, routing_order: Number.isInteger(r.routing_order) ? r.routing_order : 1, name: r.name.trim(), email: r.email || "",
+      delivery: r.delivery || "email", auth: Array.isArray(r.auth) ? r.auth : [], status: "created", completed_at: null, declined_reason: null,
       consented: false, authenticated: false, auth_passed: [], access_code: r.access_code || null,
     };
+    for (const k of ["phone", "embedded_client_user_id", "date_format", "witness_for"]) if (r[k] != null && r[k] !== "") rec[k] = r[k];
+    if (Number.isInteger(r.time_zone_offset_minutes)) rec.time_zone_offset_minutes = r.time_zone_offset_minutes;
     env.recipients.push(rec);
     return rec;
   }
@@ -151,63 +224,137 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     let did = f.document ?? f.document_id;
     if (Number.isInteger(did)) did = docIds[did];
     if (!env.documents.some((d) => d.id === did)) fail(422, "CS-WF-0008", "Unknown document", [{ pointer: "/document", code: "unknown" }]);
-    const field = { id: uid(), document_id: did, recipient_id: rid, type: String(f.type || "text"), placement: placementOf(f) };
-    if (f.required) field.required = true;
-    if (f.label) field.label = String(f.label);
-    // WEB-06 field kinds: options, validation, a sender's value, locked, read-only.
-    if (Array.isArray(f.options)) field.options = f.options.map(String);
-    if (f.allow_custom) field.allow_custom = true;
-    if (f.validation && typeof f.validation === "object") field.validation = { ...f.validation };
-    if (f.value && typeof f.value === "object") field.value = { ...f.value };
-    if (f.locked) field.locked = true;
-    if (f.read_only) field.read_only = true;
+    const field = { id: f.id || uid(), document_id: did, recipient_id: rid, type: fieldType(f.type), placement: placementOf(f) };
+    setMembers(field, f);
     env.fields.push(field);
     return field;
   }
+  function fieldType(t) {
+    const type = String(t || "text");
+    if (!FIELD_TYPES.has(type)) fail(422, "CS-FLD-0002", "Unknown field type", [{ pointer: "/type", code: "CS-FLD-0002" }]);
+    return type;
+  }
+  /// The engine field's members from a request (UX-03; the WEB-06 kinds' options,
+  /// validation, a sender's value, locked, read-only, and format, group, conditional,
+  /// formula, tooltip, placeholder, default). Unset, null, false or empty members are
+  /// absent, as the server writes them; a given one is checked for its JSON kind only.
+  function setMembers(field, f, at = "") {
+    const kinds = { options: "array", validation: "object", value: "object", default: "object", format: "object", group: "object", conditional: "object", formula: "object" };
+    for (const k of FIELD_MEMBERS) {
+      if (!(k in f)) continue;
+      const v = f[k];
+      if (v == null || v === false || v === "" || (Array.isArray(v) && !v.length)) { delete field[k]; continue; }
+      const want = kinds[k] || (["required", "read_only", "locked", "allow_custom"].includes(k) ? "boolean" : "string");
+      const got = Array.isArray(v) ? "array" : typeof v;
+      // A conditional's `when` may be a bare string ("checked"); the object holds it.
+      if (got !== want) fail(422, "CS-FLD-0002", "Malformed field", [{ pointer: `${at}/${k}`, code: "CS-FLD-0002" }]);
+      field[k] = want === "array" ? v.map(String) : want === "object" ? structuredClone(v) : v;
+    }
+  }
   function signersAt(env) {
-    const pending = env.recipients.filter((r) => SIGNING_TYPES.has(r.type) && r.status !== "completed");
+    const pending = env.recipients.filter((r) => ACTING(r) && !["completed", "reassigned"].includes(r.status));
     if (!pending.length) return null;
     return Math.min(...pending.map((r) => r.routing_order));
   }
-  function route(env) {
+  /// Send to everyone routing has reached (`invitation.sent`, as the worker records it
+  /// once the email is out). Answers the routing order reached, `null` when none is left.
+  async function route(env, at = null) {
     const order = signersAt(env);
     for (const r of env.recipients) {
-      if (SIGNING_TYPES.has(r.type) && r.routing_order === order && r.status === "created") {
+      if (ACTING(r) && r.routing_order === order && r.status === "created") {
         r.status = "sent";
         const token = r.token || `tok-${r.id}`;
         r.token = token;
         db.tokens[token] = { env: env.id, rid: r.id };
+        await audit(env, "invitation.sent", { recipient_id: r.id, channel: "email" }, { by: "system", at });
       }
     }
     return order;
   }
+  const viewedAll = (env, rec) => env.documents.every((d) => (rec.viewed_to_end || []).includes(d.id));
+  /// Required input fields of this recipient left empty refuse finishing or approving.
+  function checkRequired(env, rec) {
+    const missing = env.fields.filter((f) => f.recipient_id === rec.id && f.required && INPUT_TYPES.has(f.type) && (f.value == null || f.value.text === "" || f.value.choice === "" || f.value.checked === false));
+    if (missing.length) fail(422, "CS-WF-0004", "Required fields are empty", missing.map((f) => ({ pointer: `/fields/${f.id}`, code: "required" })));
+  }
+  /// A recipient finished their part: routing moves on, and when nobody is left the
+  /// envelope completes and is "sealed".
+  /// As the engine: a signer's `recipient.signed` (documents and value hashes) or an
+  /// approver's `recipient.approved`, then `recipient.completed`; a viewer only the last.
+  async function complete(env, rec, loc = {}, how = "signed", at = null) {
+    rec.status = "completed"; rec.completed_at = at || iso();
+    const opts = { ...loc, at: rec.completed_at };
+    if (how === "signed") {
+      const field_value_hashes = {};
+      for (const f of env.fields) if (f.recipient_id === rec.id && f.value != null) field_value_hashes[f.id] = await sha256hex(JSON.stringify(f.value));
+      await audit(env, "recipient.signed", { recipient_id: rec.id, documents: await docHashes(env), field_value_hashes }, opts);
+    } else if (how === "approved") await audit(env, "recipient.approved", { recipient_id: rec.id, documents: await docHashes(env) }, opts);
+    await audit(env, "recipient.completed", { recipient_id: rec.id }, { at: rec.completed_at });
+    const next = await route(env, rec.completed_at);
+    if (next == null) await seal(env, rec.completed_at);
+    env.version++;
+  }
+  /// Every required recipient finished: completing, each document flattened and sealed
+  /// (the seal job), completed. The mock's "sealed" document is the delivered one.
+  async function seal(env, at = null) {
+    env.status = "completed"; env.ended_at = at || iso(); env.sealed = true;
+    for (const r of env.recipients) if (r.type === "cc") { r.status = "completed"; r.completed_at ||= env.ended_at; }
+    const when = { at: env.ended_at };
+    await audit(env, "envelope.completing", {}, when);
+    const sealed = [];
+    for (const d of env.documents) {
+      await audit(env, "document.flattened", { document_id: d.id, flattened_hash: await blobHash(d.id, ":flattened") }, when);
+      const sealed_hash = await blobHash(d.id, ":sealed");
+      await audit(env, "document.sealed", { document_id: d.id, sealed_hash, profile: env.seal_profile, certificate_fingerprint: await sha256hex("mock-certificate") }, when);
+      sealed.push({ document_id: d.id, hash: sealed_hash });
+    }
+    await audit(env, "envelope.completed", { sealed }, when);
+  }
+  async function decline(env, rec, reason, loc = {}, at = null) {
+    rec.status = "declined"; rec.declined_reason = reason || null;
+    env.status = "declined"; env.ended_at = at || iso(); env.version++;
+    await audit(env, "recipient.declined", { recipient_id: rec.id, ...(reason ? { reason } : {}) }, { ...loc, at: env.ended_at });
+    await audit(env, "envelope.declined", { recipient_id: rec.id }, { by: "recipient", at: env.ended_at });
+  }
   async function send(env, at = null) {
     const violations = [];
     if (!env.documents.length) violations.push({ pointer: "/documents", code: "required" });
-    const signers = env.recipients.filter((r) => SIGNING_TYPES.has(r.type));
-    if (!signers.length) violations.push({ pointer: "/recipients", code: "no_signer" });
+    if (!env.recipients.some(ACTING)) violations.push({ pointer: "/recipients", code: "no_signer" });
     for (const r of env.recipients) if (!r.email) violations.push({ pointer: `/recipients/${r.id}/email`, code: "required" });
-    for (const s of signers) if (!env.fields.some((f) => f.recipient_id === s.id)) violations.push({ pointer: `/recipients/${s.id}`, code: "no_fields" });
+    for (const s of env.recipients.filter((r) => SIGNS.has(r.type))) if (!env.fields.some((f) => f.recipient_id === s.id)) violations.push({ pointer: `/recipients/${s.id}`, code: "no_fields" });
+    // A field its recipient's type may not hold (the engine's `FieldNotAllowedForType`):
+    // an approver never signs; a viewer or copy holds only notes and links.
+    for (const f of env.fields) {
+      const r = env.recipients.find((x) => x.id === f.recipient_id);
+      if (r && !fieldAllowed(r.type, f.type)) violations.push({ pointer: `/fields/${f.id}`, code: "field_not_allowed" });
+    }
     if (violations.length) fail(422, "CS-WF-0004", "Envelope invalid for sending", violations);
     env.status = "sent";
     env.sent_at = at || iso();
     env.version++;
     for (const d of env.documents) d.fixed = true;
-    await audit(env, "envelope_sent", { actor: "sender", at: env.sent_at });
-    route(env);
+    await audit(env, "envelope.sent", { recipients: env.recipients.length, documents: env.documents.length }, { by: "sender", at: env.sent_at });
+    for (const d of env.documents) await audit(env, "document.fixed", { document_id: d.id, delivered_hash: await blobHash(d.id), pages: d.pages }, { by: "sender", at: env.sent_at });
+    await route(env, env.sent_at);
   }
-  function view(env, rec) {
+  /// The ceremony view (docs/40 §6), as the server's `view_of`, plus (UX-03, ahead of
+  /// the server row) `sender` {name, email, organisation} and the disclosure's `url`.
+  function view(env, rec, token) {
+    const sender = db.users.find((u) => u.id === env.sender_user_id);
+    const acct = account();
     return {
-      envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: env.documents },
+      envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: env.documents, expires_at: env.expires_at },
       recipient: publicRecipient(rec),
       fields: env.fields.filter((f) => f.recipient_id === rec.id),
-      consent_required: { version: MOCK.ersd, sha256: "0".repeat(64) },
+      capture_location: !!env.signing_options?.capture_location,
+      consent_required: { version: MOCK.ersd, sha256: ersdSha, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
+      sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
     };
   }
   const publicRecipient = (r) => {
-    const { access_code, auth_passed, token, otp_open, ...rest } = r;
-    void access_code; void auth_passed; void token; void otp_open;
+    const { access_code, auth_passed, token, otp_open, viewed_to_end, hosted, ...rest } = r;
+    void access_code; void auth_passed; void token; void otp_open; void viewed_to_end; void hosted;
     return { ...rest, authenticated: r.auth.every((m) => r.auth_passed.includes(m)) };
   };
   const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
@@ -226,10 +373,16 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     })));
     const mk = async (subject, minutesAgo, recipients, fieldsFor, after) => {
       const env = newEnvelope({ subject, message: "Please review and sign.", created_at: iso(-minutesAgo) });
-      await audit(env, "envelope_created", { actor: "sender", at: iso(-minutesAgo) });
+      await audit(env, "envelope.created", { subject_hash: await sha256hex(subject) }, { by: "sender", at: iso(-minutesAgo) });
       addDocument(env, `${subject.split(" ")[0].toLowerCase()}.pdf`, doc(subject));
       const recs = recipients.map((r) => addRecipient(env, r));
       for (const [i, list] of fieldsFor.entries()) for (const f of list) addField(env, { ...f, recipient: recs[i].id, document: env.documents[0].id });
+      const when = { by: "sender", at: iso(-minutesAgo) };
+      for (const d of env.documents) {
+        await audit(env, "document.added", { document_id: d.id, upload_hash: await blobHash(d.id), bytes: d.bytes }, when);
+        await audit(env, "document.admitted", { document_id: d.id, report_hash: await blobHash(d.id, ":admission"), findings: 0 }, when);
+      }
+      await audit(env, "envelope.corrected", { changed: [...env.documents.map((d) => `documents.${d.id}`), ...recs.map((r) => `recipients.${r.id}`), ...env.fields.map((f) => `fields.${f.id}`)] }, when);
       if (after) await after(env, recs);
       return env;
     };
@@ -261,25 +414,21 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     // Seeded histories carry their own times (WEB-06 E-05): the audit trail's dates
     // agree with the envelope's sent, opened, signed and ended dates.
-    const complete = async (env, recs) => {
+    const completeAll = async (env, recs) => {
       await send(env, iso(-60 * 24 * 2)); // sent two days before it was signed
       let at = -60 * 24 * 2;
-      for (const r of recs.filter((x) => SIGNING_TYPES.has(x.type))) {
+      for (const r of recs.filter((x) => ACTING(x))) {
         at += 60 * 3;
-        await audit(env, "recipient_opened", { recipient_id: r.id, actor: "recipient", at: iso(at) });
+        r.status = "delivered";
+        await audit(env, "recipient.delivered", { recipient_id: r.id }, { at: iso(at) });
         at += 20;
-        r.status = "completed"; r.completed_at = iso(at); r.consented = true;
-        await audit(env, "recipient_completed", { recipient_id: r.id, actor: "recipient", at: iso(at) });
-        route(env);
+        r.consented = true;
+        await complete(env, r, {}, "signed", iso(at));
       }
-      env.status = "completed"; env.ended_at = iso(at); env.sealed = true; env.version++;
-      for (const r of recs) if (r.type === "cc") { r.status = "completed"; r.completed_at = iso(at); }
-      await audit(env, "envelope_completed", { actor: "system", at: iso(at) });
-      await audit(env, "seal_applied", { actor: "system", profile: "pades-b-t", at: iso(at) });
     };
     await mk("Mutual NDA — Acme and Globex", 60 * 24 * 3,
       [{ name: "Avery Chen", email: "avery@acme.example", routing_order: 1 }, { name: "Sam Patel", email: "sam@globex.example", routing_order: 2 }],
-      [sigFields(560), sigFields(640)], complete);
+      [sigFields(560), sigFields(640)], completeAll);
     const offer = await mk("Offer letter — Jordan Rivera", 60 * 5,
       [
         { name: "Jordan Rivera", email: "jordan@example.com", routing_order: 1, auth: ["access_code"], access_code: MOCK.accessCode },
@@ -306,15 +455,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       [{ name: "Taylor Kim", email: "taylor@example.com", routing_order: 1 }], [sigFields(600)]);
     await mk("Consulting SOW — Q1", 60 * 24 * 6,
       [{ name: "Casey Lee", email: "casey@example.com", routing_order: 1 }], [sigFields(600)],
-      async (env) => { await send(env, iso(-60 * 24 * 6 + 60)); env.status = "voided"; env.void_reason = "Replaced by a new version"; env.ended_at = iso(-60 * 24 * 5); env.version++; await audit(env, "envelope_voided", { actor: "sender", reason: env.void_reason, at: env.ended_at }); });
+      async (env) => { await send(env, iso(-60 * 24 * 6 + 60)); env.status = "voided"; env.void_reason = "Replaced by a new version"; env.ended_at = iso(-60 * 24 * 5); env.version++; await audit(env, "envelope.voided", { reason: env.void_reason }, { by: "sender", at: env.ended_at }); });
     await mk("Board consent — November", 60 * 24 * 2,
       [{ name: "Morgan Diaz", email: "morgan@example.com", routing_order: 1 }], [sigFields(600)],
       async (env, recs) => {
         await send(env, iso(-60 * 24 * 2 + 30));
-        await audit(env, "recipient_opened", { recipient_id: recs[0].id, actor: "recipient", at: iso(-60 * 25) });
-        recs[0].status = "declined"; recs[0].declined_reason = "Wrong meeting date";
-        env.status = "declined"; env.ended_at = iso(-60 * 24); env.version++;
-        await audit(env, "recipient_declined", { recipient_id: recs[0].id, actor: "recipient", reason: recs[0].declined_reason, at: env.ended_at });
+        recs[0].status = "delivered";
+        await audit(env, "recipient.delivered", { recipient_id: recs[0].id }, { at: iso(-60 * 25) });
+        await decline(env, recs[0], "Wrong meeting date", {}, iso(-60 * 24));
       });
 
     // Templates (WEB-02): one with a document and fields, one with roles only.
@@ -332,9 +480,17 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
 
     db.users.push(
       { id: "user-demo", email: MOCK.email, name: "Demo Admin", login_kind: "local", permission_profile_id: "profile-admin", disabled: false },
-      { id: uid(), email: "sender@openseal.test", name: "Robin Sender", login_kind: "local", permission_profile_id: "profile-sender", disabled: false },
+      { id: "user-robin", email: "sender@openseal.test", name: "Robin Sender", login_kind: "local", permission_profile_id: "profile-sender", disabled: false },
     );
     db.apiClients.push({ id: uid(), kind: "api_key", name: "CRM integration", owner_user_id: "user-demo", key_prefix: "osk_3f9a12c0", scopes: ["envelopes:read", "envelopes:write", "envelopes:send"], expires_at: null, revoked: false });
+    // One webhook subscription with a delivered and a failed delivery (UX-03), so the
+    // Admin webhooks screen has rows to show.
+    const hook = { id: uid(), envelope_id: null, url: "https://hooks.example.com/openseal", event_types: ["envelope.completed", "envelope.declined", "recipient.completed"], secret_refs: ["crm_signing_secret"], active: true };
+    db.webhooks.push(hook);
+    db.deliveries[hook.id] = [
+      { id: uid(), event_id: uid(), event_type: "envelope.declined", status: "failed", attempts: 6, last_status_code: 503 },
+      { id: uid(), event_id: uid(), event_type: "envelope.completed", status: "delivered", attempts: 1, last_status_code: 200 },
+    ];
   }
 
   // ---- HTTP plumbing ---------------------------------------------------------
@@ -358,6 +514,337 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   const draftOnly = (env) => { if (env.status !== "draft") fail(409, "CS-WF-0001", "Not allowed in the current state"); };
   const withEtag = (env, status = 200) => json(status, publicEnvelope(env), { ETag: `"v${env.version}"` });
 
+  // ---- Corrections (docs/24 §6; the engine's `apply_changes` in the Correct scope) -------
+  /// Whether a change to recipients or fields corrects a sent envelope (`true`) or edits a
+  /// draft (`false`); any other state refuses it.
+  function editable(env) {
+    if (env.status === "draft") return false;
+    if (["sent", "delivered"].includes(env.status)) return true;
+    fail(409, "CS-WF-0001", "Not allowed in the current state");
+  }
+  /// A recipient no correction may change: completed, declined or handed over.
+  const settled = (r) => ["completed", "declined", "reassigned"].includes(r.status);
+  /// A correction may touch a field of a recipient who has not declined or handed over;
+  /// one who completed acts again (the engine's `redo`).
+  function fieldOwnerOk(env, rid) {
+    const r = env.recipients.find((x) => x.id === rid);
+    if (!r) return;
+    if (["declined", "reassigned"].includes(r.status)) fail(409, "CS-WF-0001", "Recipient has already acted");
+    if (r.status === "completed") { r.status = "created"; r.completed_at = null; r.redo = true; }
+  }
+  function removeRecipient(env, r) {
+    if (r.token) delete db.tokens[r.token];
+    env.recipients = env.recipients.filter((x) => x !== r);
+    env.fields = env.fields.filter((f) => f.recipient_id !== r.id);
+  }
+  /// After a correction: the version, `envelope.corrected` with the paths changed, and
+  /// routing (a recipient added or put back at the current order is invited).
+  async function corrected(env, changed) {
+    env.version++;
+    await audit(env, "envelope.corrected", { changed }, { by: "sender" });
+    for (const r of env.recipients) if (r.redo) { delete r.redo; if (r.token) delete db.tokens[r.token]; r.token = null; }
+    await route(env);
+  }
+  /// A draft's edit: the server's `Edit` records `envelope.corrected` too (engine.rs).
+  async function edited(env, changed) {
+    env.version++;
+    if (changed.length) await audit(env, "envelope.corrected", { changed }, { by: "sender" });
+  }
+  /// An uploaded document, as `AddDocument` records it: added, then admitted.
+  async function documentAdded(env, d) {
+    await audit(env, "document.added", { document_id: d.id, upload_hash: await blobHash(d.id), bytes: d.bytes }, { by: "sender" });
+    await audit(env, "document.admitted", { document_id: d.id, report_hash: await blobHash(d.id, ":admission"), findings: d.admission_findings }, { by: "sender" });
+  }
+  const SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for"];
+  /// An engine `RecipientSpec`: its members only, the four it needs present.
+  function checkSpec(n, at) {
+    if (!n || typeof n !== "object") fail(400, "CS-API-0001", "Malformed request", [{ pointer: at, code: "type" }]);
+    for (const k of Object.keys(n)) if (!SPEC.includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `${at}/${k}`, code: "unknown" }]);
+    for (const k of ["id", "type", "routing_order", "name", "email"]) if (!(k in n)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: `${at}/${k}`, code: "required" }]);
+    if (typeof n.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(n.id)) fail(422, "CS-FLD-0005", "Invalid id", [{ pointer: `${at}/id`, code: "CS-FLD-0005" }]);
+    if (typeof n.name !== "string" || !n.name.trim()) fail(400, "CS-API-0001", "Recipient name required", [{ pointer: `${at}/name`, code: "required" }]);
+    if (typeof n.email !== "string" || (n.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n.email))) fail(400, "CS-API-0001", "Invalid email", [{ pointer: `${at}/email`, code: "format" }]);
+    if (!RECIPIENT_TYPES.includes(n.type)) fail(400, "CS-API-0001", "Unknown recipient type", [{ pointer: `${at}/type`, code: "enum" }]);
+  }
+  /// One `Change` of a correction (the engine's `apply_changes`, `Scope::Correct`).
+  function applyChange(env, c, at, changed) {
+    const unknownId = (kind) => fail(422, "CS-WF-0008", `Unknown ${kind}`, [{ pointer: `${at}/id`, code: "unknown" }]);
+    switch (c?.op) {
+      case "add_recipient": {
+        checkSpec(c.recipient, `${at}/recipient`);
+        if (env.recipients.some((r) => r.id === c.recipient.id)) fail(409, "CS-WF-0010", "Id already used", [{ pointer: `${at}/recipient/id`, code: "duplicate" }]);
+        addRecipient(env, c.recipient);
+        changed.push(`recipients.${c.recipient.id}`);
+        return;
+      }
+      case "update_recipient": {
+        const n = c.recipient;
+        checkSpec(n, `${at}/recipient`);
+        const r = env.recipients.find((x) => x.id === n.id) || unknownId("recipient");
+        // Not one who has acted, and never a change of type (the engine's `refused`).
+        if (settled(r) || r.type !== n.type) fail(409, "CS-WF-0001", "Recipient has already acted", [{ pointer: `${at}/recipient/id`, code: "acted" }]);
+        Object.assign(r, { routing_order: n.routing_order, name: n.name.trim(), email: n.email, delivery: n.delivery || "email", auth: Array.isArray(n.auth) ? n.auth : [] });
+        for (const k of ["phone", "embedded_client_user_id", "date_format", "witness_for", "time_zone_offset_minutes"]) { if (n[k] != null) r[k] = n[k]; else delete r[k]; }
+        if (!r.auth.includes("access_code")) r.access_code = null;
+        changed.push(`recipients.${r.id}`);
+        return;
+      }
+      case "remove_recipient": {
+        const r = env.recipients.find((x) => x.id === c.id) || unknownId("recipient");
+        if (settled(r)) fail(409, "CS-WF-0001", "Recipient has already acted", [{ pointer: `${at}/id`, code: "acted" }]);
+        removeRecipient(env, r);
+        changed.push(`recipients.${r.id}`);
+        return;
+      }
+      case "add_field":
+      case "update_field": {
+        const f = c.field;
+        if (!f || typeof f !== "object" || typeof f.id !== "string" || !f.placement) fail(400, "CS-API-0001", "Malformed request", [{ pointer: `${at}/field`, code: "type" }]);
+        const i = env.fields.findIndex((x) => x.id === f.id);
+        if (c.op === "add_field" && i >= 0) fail(409, "CS-WF-0010", "Id already used", [{ pointer: `${at}/field/id`, code: "duplicate" }]);
+        if (c.op === "update_field" && i < 0) unknownId("field");
+        if (i >= 0) fieldOwnerOk(env, env.fields[i].recipient_id);
+        fieldOwnerOk(env, f.recipient_id);
+        const { placement, ...rest } = f;
+        const made = addField(env, { ...rest, ...placement });
+        env.fields.pop();
+        if (i >= 0) env.fields[i] = made; else env.fields.push(made);
+        changed.push(`fields.${f.id}`);
+        return;
+      }
+      case "remove_field": {
+        const i = env.fields.findIndex((x) => x.id === c.id);
+        if (i < 0) unknownId("field");
+        fieldOwnerOk(env, env.fields[i].recipient_id);
+        env.fields.splice(i, 1);
+        changed.push(`fields.${c.id}`);
+        return;
+      }
+      case "remove_document": {
+        if (!env.documents.some((d) => d.id === c.id)) unknownId("document");
+        env.documents = env.documents.filter((d) => d.id !== c.id);
+        env.fields = env.fields.filter((f) => f.document_id !== c.id);
+        changed.push(`documents.${c.id}`);
+        return;
+      }
+      case "set_subject": env.subject = String(c.subject ?? ""); changed.push("subject"); return;
+      case "set_message": env.message = String(c.message ?? ""); changed.push("message"); return;
+      case "set_expiry": {
+        if (c.expires_at != null && !(new Date(c.expires_at).getTime() > now().getTime())) fail(422, "CS-WF-0004", "Envelope invalid", [{ pointer: `${at}/expires_at`, code: "expiry_in_past" }]);
+        env.expires_at = c.expires_at == null ? null : new Date(c.expires_at).toISOString();
+        changed.push("expires_at");
+        return;
+      }
+      case "set_reminders": {
+        const r = c.reminders || {};
+        const ok = (v) => v == null || (Number.isInteger(v) && v >= 0 && v <= 999);
+        if (!ok(r.first_after_days) || !ok(r.then_every_days)) fail(422, "CS-WF-0004", "Reminder step out of range", [{ pointer: `${at}/reminders`, code: "range" }]);
+        env.reminders = { first_after_days: r.first_after_days || 0, then_every_days: r.then_every_days || 0 };
+        changed.push("reminders");
+        return;
+      }
+      case "set_signing_options": env.signing_options = { ...(c.options || {}) }; changed.push("signing_options"); return;
+      case "set_seal_profile": fail(409, "CS-WF-0001", "Not allowed in the current state", [{ pointer: `${at}/op`, code: "draft_only" }]);
+      // falls through: fail throws
+      default: fail(422, "CS-API-0001", "Malformed request", [{ pointer: `${at}/op`, code: "CS-API-0001" }]);
+    }
+  }
+
+  // ---- The envelope list (WEB-04, WEB-08, UX-03) --------------------------------------
+  const LIFECYCLE = ["draft", "sent", "delivered", "completing", "completed", "declined", "voided", "expired"];
+  /// The last change, as the server's `updated_at`: the latest of its dates and events.
+  function updatedAt(e) {
+    const last = (db.audit[e.id] || []).at(-1)?.at;
+    return [e.created_at, e.sent_at, e.ended_at, e.deleted_at, last].filter(Boolean).sort().at(-1);
+  }
+  /// The recipient the signed-in user is, when routing has reached them (the Inbox).
+  function myRecipient(e) {
+    const me = db.users.find((u) => u.id === "user-demo");
+    if (!me || !["sent", "delivered"].includes(e.status) || e.deleted_at) return null;
+    return e.recipients.find((r) => r.email.toLowerCase() === me.email.toLowerCase() && ["sent", "delivered"].includes(r.status) && r.token) || null;
+  }
+  /// One envelope sent to the demo user by another member, made the first time the
+  /// Inbox is asked for, so the seeded lists and counts stay as they were.
+  async function seedInbox() {
+    if (db.inboxSeeded) return;
+    db.inboxSeeded = true;
+    const env = newEnvelope({ subject: "Expense policy acknowledgement", message: "Please read and sign by Friday.", created_at: iso(-90) });
+    env.sender_user_id = "user-robin";
+    await audit(env, "envelope.created", { subject_hash: await sha256hex(env.subject) }, { by: "sender", at: iso(-90) });
+    addDocument(env, "expense-policy.pdf", makePdf([{ title: "Expense policy", lines: ["Demo document generated in mock mode."] }]));
+    const r = addRecipient(env, { name: "Demo Admin", email: MOCK.email, routing_order: 1 });
+    addField(env, { type: "signature", page: 1, x: 72, y: 600, width: 160, height: 44, required: true, recipient: r.id, document: env.documents[0].id });
+    r.token = MOCK.inboxToken;
+    await send(env, iso(-80));
+  }
+  async function listEnvelopes(query) {
+    const limit = Math.min(Math.max(Number(query.get("limit")) || 50, 1), 200);
+    const start = Number(query.get("cursor") || 0) || 0;
+    const bad = (k) => fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/query/${k}`, code: "CS-API-0001" }]);
+    // `status`: one or several, comma-separated (WEB-08).
+    const statuses = (query.get("status") || "").split(",").filter(Boolean);
+    if (statuses.some((x) => !LIFECYCLE.includes(x))) bad("status");
+    // `q` (WEB-04): the subject or a recipient's name or email contains it, any case.
+    const text = (query.get("q") || "").trim().toLowerCase();
+    const has = (v, t) => (v || "").toLowerCase().includes(t);
+    const matches = (e) => !text || [e.subject, ...(e.recipients || []).flatMap((r) => [r.name, r.email])].some((v) => has(v, text));
+    const sort = query.get("sort") || "created_at";
+    if (!["created_at", "updated_at", "expires_at", "subject", "status"].includes(sort)) bad("sort");
+    const order = query.get("order") || (["subject", "status"].includes(sort) ? "asc" : "desc");
+    if (!["asc", "desc"].includes(order)) bad("order");
+    const senderQ = query.get("sender");
+    const sender = senderQ === "me" ? "user-demo" : senderQ;
+    // UX-03, ahead of the server (NOT_ON_SERVER): `recipient`, `date_field`, `folder`,
+    // `deleted`, `waiting_for=me`.
+    const recipient = (query.get("recipient") || "").trim().toLowerCase();
+    const dateField = query.get("date_field") || "updated_at";
+    if (!["updated_at", "created_at", "sent_at", "completed_at"].includes(dateField)) bad("date_field");
+    const folder = query.get("folder");
+    const deleted = query.get("deleted") === "true";
+    const waiting = query.get("waiting_for");
+    if (waiting != null && waiting !== "me") bad("waiting_for");
+    if (waiting) await seedInbox();
+    const dateOf = (e) => (dateField === "updated_at" ? updatedAt(e) : dateField === "completed_at" ? (e.status === "completed" ? e.ended_at : null) : e[dateField]);
+    const from = query.get("from");
+    const to = query.get("to");
+    const inRange = (e) => {
+      if (!from && !to) return true;
+      const d = dateOf(e);
+      return !!d && (!from || d >= new Date(from).toISOString()) && (!to || d < new Date(to).toISOString());
+    };
+    const key = (e) => (sort === "updated_at" ? updatedAt(e) : sort === "status" ? LIFECYCLE.indexOf(e.status) : sort === "subject" ? (e.subject || "").toLowerCase() : e[sort]);
+    const cmp = (a, b) => {
+      const x = key(a);
+      const y = key(b);
+      // No expiry sorts after every date, whichever the direction.
+      if (x == null || y == null) return x == null && y == null ? a.id.localeCompare(b.id) : x == null ? 1 : -1;
+      const c = x < y ? -1 : x > y ? 1 : a.id.localeCompare(b.id);
+      return order === "asc" ? c : -c;
+    };
+    const all = db.envelopes.filter((e) => !!e.deleted_at === deleted
+      && (!statuses.length || statuses.includes(e.status)) && matches(e)
+      && (!sender || e.sender_user_id === sender)
+      && (!recipient || (e.recipients || []).some((r) => has(r.name, recipient) || has(r.email, recipient)))
+      && (folder == null || (e.folder_id || null) === (folder === "none" ? null : folder))
+      && (!waiting || myRecipient(e))
+      && inRange(e)).sort(cmp);
+    const page = all.slice(start, start + limit);
+    return json(200, {
+      items: page.map((e) => ({
+        id: e.id, status: e.status, subject: e.subject, sender_user_id: e.sender_user_id, created_at: e.created_at,
+        updated_at: updatedAt(e), expires_at: e.expires_at,
+        ...(e.folder_id ? { folder_id: e.folder_id } : {}), ...(waiting ? { my_recipient_id: myRecipient(e).id } : {}),
+      })),
+      next_cursor: start + limit < all.length ? String(start + limit) : null,
+    });
+  }
+
+  // ---- Webhooks (docs/40 §4, server api/webhooks.rs) --------------------------------------
+  /// The server's registration check (SEC-W01): https://, a host, no credentials, not a
+  /// local name or a private, loopback or link-local address.
+  function webhookUrlOk(url) {
+    const m = /^https:\/\/([^/?#]*)/.exec(url);
+    if (!m || url.length > 2048 || /[\s\x00-\x1f]/.test(url)) return false;
+    const authority = m[1];
+    if (!authority || authority.includes("@")) return false;
+    let host = authority.startsWith("[") ? authority.slice(1, authority.indexOf("]")) : authority.replace(/:\d*$/, "");
+    host = host.replace(/\.$/, "").toLowerCase();
+    if (host.includes(":")) return !/^(::1?|fe[89ab]|f[cd]|::ffff:)/.test(host);
+    const v4 = host.split(".").map(Number);
+    if (host.split(".").every((l) => /^\d+$/.test(l))) {
+      if (v4.length !== 4) return false;
+      const [a, b] = v4;
+      return !(a === 10 || a === 127 || a === 0 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b < 32) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b < 128) || (a === 198 && (b === 18 || b === 19)));
+    }
+    return host.includes(".") && !/(^|\.)(localhost|local|internal)$/.test(host);
+  }
+  const publicWebhook = (w) => ({ id: w.id, envelope_id: w.envelope_id, url: w.url, event_types: w.event_types, secret_refs: w.secret_refs, active: w.active });
+  function webhooks(method, id, sub, subId, subSub, body) {
+    const checkEvents = (types) => {
+      if (!Array.isArray(types) || !types.length || types.length > WEBHOOK_EVENTS.length || types.some((e) => !WEBHOOK_EVENTS.includes(e))) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/event_types", code: "CS-API-0001" }]);
+    };
+    const checkUrl = (url) => { if (typeof url !== "string" || !webhookUrlOk(url)) fail(422, "CS-API-0013", "Webhook URL refused", [{ pointer: "/url", code: "CS-API-0013" }]); };
+    if (!id) {
+      if (method === "GET") return json(200, { items: db.webhooks.map(publicWebhook) });
+      if (method === "POST") {
+        for (const k of Object.keys(body || {})) if (!["url", "event_types", "secret_refs", "envelope_id"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        checkUrl(body?.url);
+        checkEvents(body.event_types);
+        const refs = body.secret_refs;
+        if (!Array.isArray(refs) || !refs.length || refs.length > 4 || refs.some((r) => typeof r !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(r))) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/secret_refs", code: "CS-API-0001" }]);
+        if (body.envelope_id != null && !db.envelopes.some((e) => e.id === body.envelope_id)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/envelope_id", code: "CS-API-0001" }]);
+        const w = { id: uid(), envelope_id: body.envelope_id ?? null, url: body.url, event_types: [...body.event_types], secret_refs: [...refs], active: true };
+        db.webhooks.push(w);
+        return json(201, publicWebhook(w));
+      }
+    }
+    const w = db.webhooks.find((x) => x.id === id);
+    if (!w) fail(404, "CS-API-0002", "Not found");
+    if (!sub) {
+      if (method === "GET") return json(200, publicWebhook(w));
+      if (method === "DELETE") { w.active = false; return json(204, null); }
+      // UX-03, not on the server yet (NOT_ON_SERVER.updateWebhook): edit, pause, resume.
+      if (method === "PATCH") {
+        for (const k of Object.keys(body || {})) if (!["url", "event_types", "active"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        if (body && "url" in body) checkUrl(body.url);
+        if (body && "event_types" in body) checkEvents(body.event_types);
+        if (body && "active" in body && typeof body.active !== "boolean") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/active", code: "CS-API-0001" }]);
+        if (body?.url) w.url = body.url;
+        if (body?.event_types) w.event_types = [...body.event_types];
+        if (body && "active" in body) w.active = body.active;
+        return json(200, publicWebhook(w));
+      }
+    }
+    if (sub === "deliveries" && !subId && method === "GET") return json(200, { items: (db.deliveries[w.id] || []).slice(0, 100) });
+    // UX-03, not on the server yet (NOT_ON_SERVER.testWebhook, .redeliver).
+    if (sub === "test" && method === "POST") {
+      if (!w.active) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      const d = { id: uid(), event_id: uid(), event_type: "webhook.test", status: "delivered", attempts: 1, last_status_code: 200 };
+      (db.deliveries[w.id] ||= []).unshift(d);
+      return json(202, d);
+    }
+    if (sub === "deliveries" && subId && subSub === "redeliver" && method === "POST") {
+      const d = (db.deliveries[w.id] || []).find((x) => x.id === subId);
+      if (!d) fail(404, "CS-API-0002", "Not found");
+      Object.assign(d, { status: "delivered", attempts: d.attempts + 1, last_status_code: 200 });
+      return json(202, d);
+    }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+
+  // ---- Folders (UX-03, not on the server yet: NOT_ON_SERVER.folders) ---------------------
+  function folders(method, id, sub, body) {
+    const named = () => {
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      if (!name || name.length > 100) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
+      if (db.folders.some((f) => f.id !== id && f.name.toLowerCase() === name.toLowerCase())) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "exists" }]);
+      return name;
+    };
+    const out = (f) => ({ ...f, count: db.envelopes.filter((e) => e.folder_id === f.id && !e.deleted_at).length });
+    if (!id) {
+      if (method === "GET") return json(200, { items: db.folders.map(out) });
+      if (method === "POST") { const f = { id: uid(), name: named() }; db.folders.push(f); return json(201, out(f)); }
+    }
+    if (sub === "envelopes" && method === "POST") {
+      const target = id === "none" ? null : db.folders.find((f) => f.id === id);
+      if (target === undefined) fail(404, "CS-API-0002", "Not found");
+      const ids = body?.envelope_ids;
+      if (!Array.isArray(ids) || !ids.length || ids.length > 200) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/envelope_ids", code: "CS-API-0001" }]);
+      const envs = ids.map((x) => envOr404(x));
+      for (const e of envs) { if (target) e.folder_id = target.id; else delete e.folder_id; }
+      return json(200, { moved: envs.length });
+    }
+    const f = db.folders.find((x) => x.id === id);
+    if (!f) fail(404, "CS-API-0002", "Not found");
+    if (method === "PATCH") { f.name = named(); return json(200, out(f)); }
+    if (method === "DELETE") {
+      for (const e of db.envelopes) if (e.folder_id === f.id) delete e.folder_id;
+      db.folders = db.folders.filter((x) => x !== f);
+      return json(204, null);
+    }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+
   async function staff(method, parts, query, headers, body) {
     if (!db.session) fail(401, "CS-AUTH-0001", "Not authenticated");
     if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
@@ -370,7 +857,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       // Settings and branding (WEB-06 AD-01), as the server (`AccountPatch`): `PATCH
       // {settings}` only, merged, `null` removing a key; answers `{settings}`. The
       // server's own `builtin_profiles` (profile name → id) cannot be changed.
-      db.account ||= { id: "acct-demo", name: "Demo account", settings: {}, data_region: null, created_at: iso(-60 * 24 * 30) };
+      account();
       db.account.settings.builtin_profiles ||= { admin: "profile-admin", sender: "profile-sender", viewer: "profile-viewer" };
       if (method === "PATCH") {
         for (const k of Object.keys(body || {})) if (k !== "settings") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
@@ -401,23 +888,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
     if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
+    if (res === "webhooks") return webhooks(method, id, sub, subId, subSub, body);
+    if (res === "folders") return folders(method, id, sub, body);
     if (res !== "envelopes") fail(404, "CS-API-0002", "Not found");
 
     if (!id) {
-      if (method === "GET") {
-        const limit = Math.min(Math.max(Number(query.get("limit")) || 50, 1), 200);
-        const status = query.get("status");
-        const start = Number(query.get("cursor") || 0) || 0;
-        // `q` (WEB-04): the subject or a recipient's name or email contains it, any case.
-        const text = (query.get("q") || "").trim().toLowerCase();
-        const matches = (e) => !text || [e.subject, ...(e.recipients || []).flatMap((r) => [r.name, r.email])].some((v) => (v || "").toLowerCase().includes(text));
-        const all = db.envelopes.filter((e) => (!status || e.status === status) && matches(e)).sort((a, b) => b.created_at.localeCompare(a.created_at));
-        const page = all.slice(start, start + limit);
-        return json(200, {
-          items: page.map((e) => ({ id: e.id, status: e.status, subject: e.subject, sender_user_id: e.sender_user_id, created_at: e.created_at })),
-          next_cursor: start + limit < all.length ? String(start + limit) : null,
-        });
-      }
+      if (method === "GET") return listEnvelopes(query);
       if (method === "POST") {
         const b = body || {};
         const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
@@ -427,7 +903,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         const refs = {};
         for (const r of b.recipients || []) { const rec = addRecipient(env, r); if (r.ref) refs[r.ref] = rec.id; }
         for (const f of b.fields || []) addField(env, f, refs, docIds);
-        await audit(env, "envelope_created", { actor: "sender" });
+        // As the server: `Create`, then one `Edit` with every change the body made.
+        await audit(env, "envelope.created", { subject_hash: await sha256hex(env.subject) }, { by: "sender" });
+        const changed = [
+          ...docIds.map((d) => `documents.${d}`), ...env.recipients.map((r) => `recipients.${r.id}`), ...env.fields.map((f) => `fields.${f.id}`),
+          ...(b.reminders ? ["reminders"] : []), ...(Number.isInteger(b.expires_in_days) ? ["expires_at"] : []), ...(b.signing_options ? ["signing_options"] : []),
+        ];
+        for (const d of env.documents) await documentAdded(env, d);
+        if (changed.length) await audit(env, "envelope.corrected", { changed }, { by: "sender" });
         if (b.status === "sent") await send(env);
         return withEtag(env, 201);
       }
@@ -437,49 +920,60 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "GET") return withEtag(env);
       if (method === "PATCH") {
         checkIfMatch(env, headers); draftOnly(env);
-        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) env[k] = body[k];
-        if (body && "expires_in_days" in body) env.expires_at = Number.isInteger(body.expires_in_days) ? iso(body.expires_in_days * 24 * 60) : null;
-        env.version++;
+        const changed = [];
+        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) { env[k] = body[k]; changed.push(k); }
+        if (body && "expires_in_days" in body) { env.expires_at = Number.isInteger(body.expires_in_days) ? iso(body.expires_in_days * 24 * 60) : null; changed.push("expires_at"); }
+        await edited(env, changed);
         return withEtag(env);
       }
       if (method === "DELETE") {
-        // A draft, or an envelope that ended without completing (WEB-06 A-03; today's
-        // server deletes drafts only). A completed agreement is never deleted here.
+        // As the server (WEB-08): a draft is removed; an envelope that ended without
+        // completing leaves every list and stays readable by id with its chain
+        // (`envelope.deleted`); a completed or in-flight one, or a second delete, is 409.
         checkIfMatch(env, headers);
-        if (!["draft", "voided", "declined", "expired"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
-        db.envelopes = db.envelopes.filter((e) => e !== env);
+        if (!["draft", "voided", "declined", "expired"].includes(env.status) || env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
+        if (env.status === "draft") db.envelopes = db.envelopes.filter((e) => e !== env);
+        else { env.deleted_at = iso(); env.version++; await audit(env, "envelope.deleted", {}, { by: "sender" }); }
         return json(204, null);
       }
     }
+    // UX-03, not on the server yet (api.js NOT_ON_SERVER.deleted): back to the lists.
+    if (sub === "restore" && method === "POST") {
+      if (!env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      delete env.deleted_at;
+      env.version++;
+      // Not a casual-sign-audit type yet: the restore row adds it (NOT_ON_SERVER.deleted).
+      await audit(env, "envelope.restored", {}, { by: "sender" });
+      return withEtag(env);
+    }
+    // UX-03, not on the server yet (NOT_ON_SERVER.inbox): the signing page for the
+    // signed-in user, when routing has reached them.
+    if (sub === "sign-link" && method === "POST") {
+      const r = myRecipient(env);
+      if (!r) fail(409, "CS-WF-0007", "Routing has not reached the recipient yet");
+      return json(200, { url: `/s/${encodeURIComponent(r.token)}` });
+    }
     if (sub === "correct" && method === "POST") {
       // `POST …/correct {changes}` (docs/40, docs/24 §6), as the server: the engine's change
-      // list, all or none, If-Match. The mock takes `update_recipient`, whose `recipient`
-      // is a whole engine `RecipientSpec` (unknown members refused, so no `access_code`),
-      // for a recipient who has not acted yet.
+      // list (casual-sign-workflow `Change`, api.js `corrections`), all or none, If-Match.
       checkIfMatch(env, headers);
       if (!["sent", "delivered"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
       for (const k of Object.keys(body || {})) if (k !== "changes") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
       const changes = body?.changes;
       if (!Array.isArray(changes) || !changes.length) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/changes", code: "required" }]);
-      const SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for"];
-      const plan = changes.map((c, i) => {
-        if (c?.op !== "update_recipient" || !c.recipient?.id) fail(422, "CS-WF-0008", "Unsupported change", [{ pointer: `/changes/${i}/op`, code: "unsupported" }]);
-        const n = c.recipient;
-        for (const k of Object.keys(n)) if (!SPEC.includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/changes/${i}/recipient/${k}`, code: "unknown" }]);
-        for (const k of ["type", "routing_order", "name", "email"]) if (!(k in n)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: `/changes/${i}/recipient/${k}`, code: "required" }]);
-        const r = env.recipients.find((x) => x.id === n.id);
-        if (!r) fail(422, "CS-WF-0008", "Unknown recipient", [{ pointer: `/changes/${i}/recipient/id`, code: "unknown" }]);
-        if (["completed", "declined"].includes(r.status)) fail(409, "CS-WF-0001", "Recipient has already acted", [{ pointer: `/changes/${i}/recipient/id`, code: "acted" }]);
-        if (typeof n.name !== "string" || !n.name.trim()) fail(400, "CS-API-0001", "Recipient name required", [{ pointer: `/changes/${i}/recipient/name`, code: "required" }]);
-        if (typeof n.email !== "string" || (n.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n.email))) fail(400, "CS-API-0001", "Invalid email", [{ pointer: `/changes/${i}/recipient/email`, code: "format" }]);
-        return [r, n];
-      });
-      for (const [r, n] of plan) {
-        Object.assign(r, { type: n.type, routing_order: n.routing_order, name: n.name.trim(), email: n.email, delivery: n.delivery || "email", auth: Array.isArray(n.auth) ? n.auth : [] });
-        if (!r.auth.includes("access_code")) r.access_code = null;
+      if (changes.length > 500) fail(422, "CS-WF-0004", "Too many changes", [{ pointer: "/changes", code: "too_many" }]);
+      // Documents arrive through `/documents`, which admits them (as the server).
+      if (changes.some((c) => ["add_document", "replace_document"].includes(c?.op))) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/changes", code: "CS-API-0001" }]);
+      const before = structuredClone(env);
+      const changed = [];
+      try {
+        changes.forEach((c, i) => applyChange(env, c, `/changes/${i}`, changed));
+      } catch (e) {
+        for (const k of Object.keys(env)) delete env[k];
+        Object.assign(env, before);
+        throw e;
       }
-      env.version++;
-      await audit(env, "envelope_corrected", { actor: "sender", recipient_ids: plan.map(([r]) => r.id) });
+      await corrected(env, changed);
       return withEtag(env);
     }
     if (sub === "send" && method === "POST") { draftOnly(env); await send(env); return withEtag(env); }
@@ -487,13 +981,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (TERMINAL.has(env.status) || env.status === "draft") fail(409, "CS-WF-0001", "Not allowed in the current state");
       if (!body?.reason) fail(400, "CS-API-0001", "Reason required", [{ pointer: "/reason", code: "required" }]);
       env.status = "voided"; env.void_reason = body.reason; env.ended_at = iso(); env.version++;
-      await audit(env, "envelope_voided", { actor: "sender", reason: body.reason });
+      await audit(env, "envelope.voided", { reason: body.reason }, { by: "sender" });
       return withEtag(env);
     }
     if (sub === "resend" && method === "POST") {
       if (!["sent", "delivered"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
       const ids = body?.recipient_ids || env.recipients.filter((r) => ["sent", "delivered"].includes(r.status)).map((r) => r.id);
-      for (const rid of ids) await audit(env, "notification_resent", { actor: "sender", recipient_id: rid });
+      for (const rid of ids) await audit(env, "reminder.sent", { recipient_id: rid, channel: "email" }, { by: "sender" });
       return withEtag(env);
     }
     if (sub === "status" && method === "GET") return json(200, { id: env.id, status: env.status, version: env.version, recipients: env.recipients.map((r) => ({ id: r.id, status: r.status })) });
@@ -502,14 +996,22 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, { items, chain_head: items.length ? items[items.length - 1].hash : null });
     }
     if (sub === "certificate" && method === "GET") {
-      if (env.status !== "completed") fail(409, "CS-API-0009", "Not available in the object's state");
-      const lines = [`Envelope ${env.id}`, `Subject: ${env.subject}`, ""];
+      // A completed envelope's, as the server; a declined, voided or expired one's
+      // ahead of it (UX-03, NOT_ON_SERVER.certificateEnded).
+      if (!["completed", "declined", "voided", "expired"].includes(env.status)) fail(409, "CS-API-0009", "Not available in the object's state");
+      const lines = [`Envelope ${env.id}`, `Subject: ${env.subject}`, `Outcome: ${env.status}`, ""];
       for (const r of env.recipients) lines.push(`${r.name} <${r.email}> - ${r.type} - ${r.status} ${r.completed_at || ""}`);
       lines.push("", "Mock mode: not a real certificate.");
-      return pdf(makePdf([{ title: "Certificate of completion", lines }]));
+      return pdf(makePdf([{ title: env.status === "completed" ? "Certificate of completion" : "Envelope certificate", lines }]));
     }
     if (sub === "documents") {
-      if (!subId && method === "POST") { draftOnly(env); const d = addDocument(env, body?.name, unb64(body?.content_base64 || "")); env.version++; return json(201, d); }
+      if (!subId && method === "POST") {
+        draftOnly(env);
+        const d = addDocument(env, body?.name, unb64(body?.content_base64 || ""));
+        await documentAdded(env, d);
+        await edited(env, [`documents.${d.id}`]);
+        return json(201, d);
+      }
       if (!subId && method === "GET") return json(200, { items: env.documents });
       const d = env.documents.find((x) => x.id === subId);
       if (!d) fail(404, "CS-API-0002", "Not found");
@@ -538,29 +1040,37 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         checkIfMatch(env, headers); draftOnly(env);
         env.documents = env.documents.filter((x) => x !== d);
         env.fields = env.fields.filter((f) => f.document_id !== d.id);
-        env.version++;
+        await edited(env, [`documents.${d.id}`]);
         return json(204, null);
       }
     }
     if (sub === "recipients") {
       if (!subId && method === "POST") {
-        draftOnly(env);
+        const correcting = editable(env);
         const items = body?.items || [body];
         const out = items.map((r) => addRecipient(env, r));
-        env.version++;
+        if (correcting) await corrected(env, out.map((r) => `recipients.${r.id}`));
+        else await edited(env, out.map((r) => `recipients.${r.id}`));
         return json(201, { items: out.map(publicRecipient) });
       }
       if (!subId && method === "GET") return json(200, { items: env.recipients.map(publicRecipient) });
       const r = env.recipients.find((x) => x.id === subId);
       if (!r) fail(404, "CS-API-0002", "Not found");
+      // UX-03, not on the server yet (NOT_ON_SERVER.hostInPerson): a staff user hosts an
+      // in-person signer once routing has reached them, on this device.
+      if (subSub === "host" && method === "POST") {
+        if (r.type !== "in_person_signer" || !["sent", "delivered"].includes(r.status) || !r.token) fail(409, "CS-WF-0001", "Not allowed in the current state");
+        r.hosted = "user-demo";
+        await audit(env, "recipient.in_person_hosted", { recipient_id: r.id, host_user_id: "user-demo" }, { by: "user" });
+        return json(200, { url: `/s/${encodeURIComponent(r.token)}` });
+      }
       if (method === "PATCH") {
         // As the server: a draft, or a correction of a sent envelope for a recipient who
         // has not acted. The access code follows the methods: one given needs
         // `access_code` among them; newly requiring it needs one; dropping it clears it.
         checkIfMatch(env, headers);
-        const correcting = ["sent", "delivered"].includes(env.status);
-        if (!correcting) draftOnly(env);
-        if (correcting && ["completed", "declined"].includes(r.status)) fail(409, "CS-WF-0001", "Recipient has already acted");
+        const correcting = editable(env);
+        if (correcting && settled(r)) fail(409, "CS-WF-0001", "Recipient has already acted");
         for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "auth", "access_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
         if (body?.name != null && !String(body.name).trim()) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
         if (body?.email != null && !String(body.email).includes("@")) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/email", code: "CS-API-0001" }]);
@@ -574,44 +1084,64 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (body?.routing_order != null) r.routing_order = body.routing_order;
         r.auth = auth;
         if (code) { r.access_code = code; r.auth_passed = []; } else if (had && !wants) r.access_code = null;
-        env.version++;
-        if (correcting) await audit(env, "envelope_corrected", { actor: "sender", recipient_ids: [r.id] });
+        if (correcting) await corrected(env, [`recipients.${r.id}`]);
+        else await edited(env, [`recipients.${r.id}`]);
         return json(200, publicRecipient(r), { ETag: `"v${env.version}"` });
       }
       if (method === "DELETE") {
-        checkIfMatch(env, headers); draftOnly(env);
-        if (env.fields.some((f) => f.recipient_id === r.id)) fail(409, "CS-WF-0001", "Recipient still has fields");
-        env.recipients = env.recipients.filter((x) => x !== r);
-        env.version++;
+        checkIfMatch(env, headers);
+        const correcting = editable(env);
+        if (!correcting && env.fields.some((f) => f.recipient_id === r.id)) fail(409, "CS-WF-0001", "Recipient still has fields");
+        if (correcting) {
+          // As the engine's `RemoveRecipient`: not one who has acted; their fields go too.
+          if (settled(r)) fail(409, "CS-WF-0001", "Recipient has already acted");
+          removeRecipient(env, r);
+          await corrected(env, [`recipients.${r.id}`]);
+        } else {
+          env.recipients = env.recipients.filter((x) => x !== r);
+          await edited(env, [`recipients.${r.id}`]);
+        }
         return json(204, null);
       }
     }
     if (sub === "fields") {
       if (!subId && method === "POST") {
-        draftOnly(env);
+        const correcting = editable(env);
         const items = body?.items || [body];
+        if (correcting) for (const f of items) fieldOwnerOk(env, f?.recipient ?? f?.recipient_id);
         const out = items.map((f) => addField(env, f));
-        env.version++;
+        if (correcting) await corrected(env, out.map((f) => `fields.${f.id}`));
+        else await edited(env, out.map((f) => `fields.${f.id}`));
         return json(201, { items: out });
       }
       if (!subId && method === "GET") return json(200, { items: env.fields });
       const f = env.fields.find((x) => x.id === subId);
       if (!f) fail(404, "CS-API-0002", "Not found");
       if (method === "PATCH") {
-        checkIfMatch(env, headers); draftOnly(env);
+        checkIfMatch(env, headers);
+        const correcting = editable(env);
+        if (correcting) fieldOwnerOk(env, f.recipient_id);
+        if (body && "id" in body) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/id", code: "read_only" }]);
         if (body?.placement || body?.page) f.placement = placementOf(body);
-        for (const k of ["required", "label", "type"]) if (body && k in body) { if (body[k] === null || body[k] === false || body[k] === "") delete f[k]; else f[k] = body[k]; }
+        if (body?.type != null) f.type = fieldType(body.type);
+        // Every member the engine's `Field` has (UX-03); null, false or empty removes one.
+        setMembers(f, body || {});
         if (body?.recipient_id) {
           if (!env.recipients.some((r) => r.id === body.recipient_id)) fail(422, "CS-WF-0008", "Unknown recipient");
+          if (correcting) fieldOwnerOk(env, body.recipient_id);
           f.recipient_id = body.recipient_id;
         }
-        env.version++;
+        if (correcting) await corrected(env, [`fields.${f.id}`]);
+        else await edited(env, [`fields.${f.id}`]);
         return json(200, f);
       }
       if (method === "DELETE") {
-        checkIfMatch(env, headers); draftOnly(env);
+        checkIfMatch(env, headers);
+        const correcting = editable(env);
+        if (correcting) fieldOwnerOk(env, f.recipient_id);
         env.fields = env.fields.filter((x) => x !== f);
-        env.version++;
+        if (correcting) await corrected(env, [`fields.${f.id}`]);
+        else await edited(env, [`fields.${f.id}`]);
         return json(204, null);
       }
     }
@@ -664,9 +1194,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!doc) fail(400, "CS-API-0001", "Unknown document", [{ pointer: `${at}/document_id`, code: "unknown" }]);
     const placement = placementOf(f.placement || f);
     if (placement.page > doc.pages) fail(400, "CS-API-0001", "Page out of range", [{ pointer: `${at}/page`, code: "range" }]);
-    const field = { id, document_id: doc.id, role_id: role, type: String(f.type || "text"), placement };
-    if (f.required) field.required = true;
-    if (f.label) field.label = String(f.label);
+    const field = { id, document_id: doc.id, role_id: role, type: fieldType(f.type), placement };
+    // The envelope field's members (UX-03), as the server's template fields take them.
+    setMembers(field, f, at);
     return field;
   }
   const tplWhole = (tp, status = 200) => json(status, publicTemplate(tp), { ETag: `"v${tp.version}"` });
@@ -838,6 +1368,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!u) fail(404, "CS-API-0002", "Not found");
     if (method === "GET") return json(200, { ...u, invitation: u.invitation ?? null });
     if (method === "PATCH") {
+      // As the server (SEC-ID-01): nothing in the request is applied.
+      if ((body?.name != null || body?.password != null) && u.id !== "user-demo" && u.email.toLowerCase() === MOCK.sharedEmail) {
+        fail(403, "CS-API-0015", "The user belongs to another account too");
+      }
       if (body?.name != null) {
         if (!String(body.name).trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
         u.name = String(body.name).trim();
@@ -894,28 +1428,32 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const rec = env.recipients.find((r) => r.id === t.rid);
     if (!rec) fail(404, "CS-API-0002", "Not found");
     const loc = body?.location ? { location: body.location } : {};
-    if (!sub && method === "GET") return json(200, view(env, rec));
+    if (!sub && method === "GET") return json(200, view(env, rec, token));
     if (sub === "session" && method === "POST") {
       if (!db.opened.includes(token)) db.opened.push(token);
       if (rec.status === "sent") {
         rec.status = "delivered";
         if (env.status === "sent") env.status = "delivered";
-        await audit(env, "recipient_opened", { recipient_id: rec.id });
+        await audit(env, "recipient.delivered", { recipient_id: rec.id });
       }
-      return json(200, view(env, rec));
+      return json(200, view(env, rec, token));
     }
     if (!db.opened.includes(token)) fail(403, "CS-AUTH-0009", "Ceremony link not opened in this browser");
+    // UX-03, not on the server yet (NOT_ON_SERVER.disclosure): the full disclosure the
+    // view's `consent_required` names, readable while the link is valid.
+    if (sub === "disclosure" && method === "GET") return json(200, { version: MOCK.ersd, sha256: ersdSha, text: MOCK_DISCLOSURE });
     // WEB-06: the signer's copy (`GET /s/{token}/document`; in the mock the first
     // document) and history stay available after finishing or declining.
     if ((sub === "document" && parts.length === 4) || sub === "history") {
       if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
       if (sub === "history") {
-        // As the server (WEB-07): `{seq, type, at, by}`, the type as casual-sign-audit
-        // names it (the mock records its own underscore names), `by` without names.
-        const mine = (db.audit[env.id] || []).filter((e) => !e.event.recipient_id || e.event.recipient_id === rec.id);
-        const by = (e) => (e.event.actor === "recipient" ? (e.event.recipient_id === rec.id ? "you" : "recipient") : e.event.actor === "sender" ? "sender" : "system");
-        return json(200, { events: mine.map((e) => ({ seq: e.seq, type: AUDIT_TYPES[e.type] || e.type, at: e.at, by: by(e) })) });
+        // As the server (WEB-07, ceremony.rs `history`): `{seq, type, at, by}`, the events
+        // this recipient made or that name them in `data.recipient_id`, and the milestones;
+        // `by` without names.
+        const by = (a) => (a.kind === "recipient" ? (a.id === rec.id ? "you" : "recipient") : ["sender", "user", "host"].includes(a.kind) ? a.kind : "system");
+        const shown = (db.audit[env.id] || []).filter((e) => by(e.event.actor) === "you" || e.event.data?.recipient_id === rec.id || MILESTONES.has(e.type));
+        return json(200, { events: shown.map((e) => ({ seq: e.seq, type: e.type, at: e.at, by: by(e.event.actor) })) });
       }
       // As the server: only after this recipient finished (409 before), `doc` optional
       // for one document; the mock serves the delivered bytes (no preview banner).
@@ -931,12 +1469,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
       if (body?.method !== "access_code" || body?.code !== rec.access_code) {
         db.attempts[token] = n + 1;
-        await audit(env, "recipient_auth_failed", { recipient_id: rec.id, method: "access_code" });
+        await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "access_code", attempt: n + 1 });
         fail(401, "CS-AUTH-0003", "Recipient authentication failed");
       }
       if (!rec.auth_passed.includes("access_code")) rec.auth_passed.push("access_code");
-      await audit(env, "recipient_authenticated", { recipient_id: rec.id, method: "access_code" });
-      return json(200, view(env, rec));
+      await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: "access_code" });
+      return json(200, view(env, rec, token));
     }
     // The emailed one-time code (SEC-A02): "sent" is MOCK.emailCode; a wrong code answers
     // 403 with the view, as the server does; five failures lock.
@@ -944,35 +1482,45 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!rec.auth.includes("email_otp")) fail(409, "CS-API-0014", "Method not available");
       if (rec.auth_passed.includes("email_otp")) fail(409, "CS-API-0009", "Already authenticated");
       rec.otp_open = true;
-      await audit(env, "recipient_auth_challenged", { recipient_id: rec.id, method: "email_otp" });
-      return json(202, view(env, rec));
+      await audit(env, "recipient.auth_challenged", { recipient_id: rec.id, method: "email_otp" });
+      return json(202, view(env, rec, token));
     }
     if (sub === "otp" && parts[4] === "verify" && method === "POST") {
       const n = (db.attempts[token] || 0);
       if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
       if (!rec.auth.includes("email_otp") || !rec.otp_open || body?.code !== MOCK.emailCode) {
         db.attempts[token] = n + 1;
-        await audit(env, "recipient_auth_failed", { recipient_id: rec.id, method: "email_otp" });
-        return json(403, view(env, rec));
+        await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "email_otp", attempt: n + 1 });
+        return json(403, view(env, rec, token));
       }
       rec.otp_open = false;
       if (!rec.auth_passed.includes("email_otp")) rec.auth_passed.push("email_otp");
-      await audit(env, "recipient_authenticated", { recipient_id: rec.id, method: "email_otp" });
-      return json(200, view(env, rec));
+      await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: "email_otp" });
+      return json(200, view(env, rec, token));
     }
     if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
+    // An in-person signer signs only in a session a staff user hosts (the engine's `gate_in`).
+    if (rec.type === "in_person_signer" && !rec.hosted) fail(409, "CS-WF-0001", "Not allowed in the current state");
     if (sub === "consent" && method === "POST") {
       if (body?.ersd_version !== MOCK.ersd) fail(400, "CS-API-0001", "Unknown disclosure version", [{ pointer: "/ersd_version", code: "mismatch" }]);
       rec.consented = true;
-      await audit(env, "recipient_consented", { recipient_id: rec.id, ersd_version: body.ersd_version, ...loc });
-      return json(200, view(env, rec));
+      await audit(env, "recipient.consented", { recipient_id: rec.id, ersd_version: body.ersd_version, ersd_hash: ersdSha }, loc);
+      return json(200, view(env, rec, token));
+    }
+    // Withdrawing consent declines a required action, whatever `allow_decline` says (the
+    // engine's `WithdrawConsent`: a right, ESIGN §7001(c)(1)(B)).
+    if (sub === "withdraw-consent" && method === "POST") {
+      if (!rec.consented) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      rec.consented = false;
+      await audit(env, "recipient.consent_withdrawn", { recipient_id: rec.id, ersd_version: MOCK.ersd }, loc);
+      if (ACTING(rec)) await decline(env, rec, null, loc);
+      return json(200, view(env, rec, token));
     }
     if (sub === "decline" && method === "POST") {
+      if (!ACTING(rec)) fail(409, "CS-WF-0001", "Not allowed in the current state");
       if (env.signing_options?.allow_decline === false) fail(409, "CS-WF-0012", "Decline not allowed");
-      rec.status = "declined"; rec.declined_reason = body?.reason || null;
-      env.status = "declined"; env.ended_at = iso(); env.version++;
-      await audit(env, "recipient_declined", { recipient_id: rec.id, reason: body?.reason || null, ...loc });
-      return json(200, view(env, rec));
+      await decline(env, rec, body?.reason, loc);
+      return json(200, view(env, rec, token));
     }
     if (!rec.consented) fail(403, "CS-AUTH-0005", "Consent required");
     const order = signersAt(env);
@@ -982,8 +1530,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!d) fail(404, "CS-API-0002", "Not found");
       if (parts[5] === "content" && method === "GET") return pdf(unb64(db.blobs[d.id]));
       if (parts[5] === "viewed" && method === "POST") {
-        await audit(env, "document_viewed", { recipient_id: rec.id, document_id: d.id, pages_seen: body?.pages_seen || [], ...loc });
-        return json(200, view(env, rec));
+        const seen = body?.pages_seen || [];
+        if (!Array.isArray(seen) || seen.some((n) => !Number.isInteger(n) || n < 1 || n > d.pages)) fail(422, "CS-WF-0015", "Viewed document does not match", [{ pointer: "/pages_seen", code: "range" }]);
+        await audit(env, "recipient.viewed_document", { recipient_id: rec.id, document: { document_id: d.id, hash: await blobHash(d.id) }, pages_seen: [...new Set(seen)].sort((x, y) => x - y) }, loc);
+        // A viewer completes by viewing every document to the end (docs/24 §3).
+        if (seen.includes(d.pages)) rec.viewed_to_end = [...new Set([...(rec.viewed_to_end || []), d.id])];
+        if (rec.type === "viewer" && viewedAll(env, rec)) await complete(env, rec, loc, "viewed");
+        return json(200, view(env, rec, token));
       }
     }
     if (sub === "adopt" && method === "POST") {
@@ -995,8 +1548,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!(isPng || isJpeg) || bytes.length > 5 * 1024 * 1024) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/image_base64", code: "image" }]);
       const id = uid();
       db.adoptions[id] = { rid: rec.id, mark: body.mark };
-      await audit(env, "signature_adopted", { recipient_id: rec.id, mark: body.mark, method: body.method, image_sha256: await sha256hex(body.image_base64), ...loc });
-      return json(200, { ...view(env, rec), adoption_id: id });
+      await audit(env, "recipient.signature_adopted", { recipient_id: rec.id, mark: body.mark, method: body.method, image_hash: await sha256hex(body.image_base64) }, loc);
+      return json(200, { ...view(env, rec, token), adoption_id: id });
     }
     if (sub === "fields" && parts[5] === "attachment" && method === "PUT") {
       const f = env.fields.find((x) => x.id === parts[4]);
@@ -1011,8 +1564,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const sha = await sha256hex(body.content_base64);
       (db.attachments ||= {})[`${rec.id}:${sha}`] = true;
       f.value = { attachment: sha };
-      await audit(env, "field_filled", { recipient_id: rec.id, field_id: f.id });
-      return json(200, view(env, rec));
+      await audit(env, "recipient.field_completed", { recipient_id: rec.id, field_id: f.id, value_hash: await sha256hex(JSON.stringify(f.value)) });
+      return json(200, view(env, rec, token));
     }
     if (sub === "fields" && method === "PUT") {
       const f = env.fields.find((x) => x.id === parts[4]);
@@ -1036,24 +1589,38 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (checkText(f, v.text)) bad("invalid");
       }
       f.value = v;
-      await audit(env, "field_filled", { recipient_id: rec.id, field_id: f.id });
-      return json(200, view(env, rec));
+      await audit(env, "recipient.field_completed", { recipient_id: rec.id, field_id: f.id, value_hash: await sha256hex(JSON.stringify(f.value)) });
+      return json(200, view(env, rec, token));
     }
     if (sub === "finish" && method === "POST") {
-      const missing = env.fields.filter((f) => f.recipient_id === rec.id && f.required && INPUT_TYPES.has(f.type) && (f.value == null || f.value.text === "" || f.value.choice === "" || f.value.checked === false));
-      if (missing.length) fail(422, "CS-WF-0004", "Required fields are empty", missing.map((f) => ({ pointer: `/fields/${f.id}`, code: "required" })));
+      // As the engine's `finish`: an approver approves and a copy has nothing to finish;
+      // a viewer finishes once every document was viewed to the end.
+      if (rec.type === "approver" || rec.type === "cc") fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      if (rec.type === "viewer" && !viewedAll(env, rec)) fail(409, "CS-WF-0014", "Viewer has not viewed every document to the end");
+      checkRequired(env, rec);
       for (const f of env.fields) if (f.recipient_id === rec.id && f.type === "date_signed") f.value = { text: iso().slice(0, 10) };
-      rec.status = "completed"; rec.completed_at = iso();
-      await audit(env, "recipient_completed", { recipient_id: rec.id, ...loc });
-      const next = route(env);
-      if (next == null) {
-        env.status = "completed"; env.ended_at = iso(); env.sealed = true;
-        for (const r of env.recipients) if (r.type === "cc") r.status = "completed";
-        await audit(env, "envelope_completed");
-        await audit(env, "seal_applied", { profile: env.seal_profile });
-      }
-      env.version++;
-      return json(200, view(env, rec));
+      await complete(env, rec, loc, rec.type === "viewer" ? "viewed" : "signed");
+      return json(200, view(env, rec, token));
+    }
+    // An approver approves (`recipient.approved`, then completed), their own data fields
+    // checked as at finish.
+    if (sub === "approve" && method === "POST") {
+      if (rec.type !== "approver") fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      checkRequired(env, rec);
+      await complete(env, rec, loc, "approved");
+      return json(200, view(env, rec, token));
+    }
+    // UX-03, not on the server yet (NOT_ON_SERVER.clearField): a signer removes a value
+    // they gave, before finishing; recorded as a new event (no value, no hash).
+    if (sub === "fields" && parts[4] && !parts[5] && method === "DELETE") {
+      const f = env.fields.find((x) => x.id === parts[4]);
+      if (!f) fail(404, "CS-API-0002", "Not found");
+      if (f.recipient_id !== rec.id || f.locked || f.read_only || f.type === "date_signed" || f.type === "note") fail(409, "CS-WF-0016", "Field not editable by this recipient");
+      if (f.value == null) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      delete f.value;
+      // Not a casual-sign-audit type yet: the clear-field row adds it (NOT_ON_SERVER.clearField).
+      await audit(env, "recipient.field_cleared", { recipient_id: rec.id, field_id: f.id });
+      return json(200, view(env, rec, token));
     }
     if (sub === "reassign" && method === "POST") {
       if (env.signing_options?.allow_reassign !== true) fail(409, "CS-WF-0001", "Not allowed in the current state");
@@ -1064,12 +1631,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const nr = { ...rec, id: uid(), name, email, status: "sent", auth: [], auth_passed: [], consented: false, token: null };
       env.recipients.push(nr);
       for (const f of env.fields) if (f.recipient_id === rec.id) f.recipient_id = nr.id;
-      await audit(env, "recipient_reassigned", { recipient_id: rec.id, new_recipient_id: nr.id, ...loc });
-      return json(200, view(env, rec));
+      await audit(env, "recipient.reassigned", { recipient_id: rec.id, to_recipient_id: nr.id, ...(body?.reason ? { reason: String(body.reason) } : {}) }, loc);
+      return json(200, view(env, rec, token));
     }
     if (sub === "finish-later" && method === "POST") {
-      await audit(env, "recipient_finish_later", { recipient_id: rec.id });
-      return json(200, view(env, rec));
+      await audit(env, "recipient.finish_later", { recipient_id: rec.id });
+      return json(200, view(env, rec, token));
     }
     fail(405, "CS-API-0012", "Method not allowed");
   }
@@ -1123,6 +1690,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
   }
 
+  /// This backend also serves the calls api.js lists in `NOT_ON_SERVER` (UX-03).
+  handle.ahead = true;
   handle.state = () => db;
   handle.reset = () => { db = null; try { store?.removeItem(KEY); } catch { /* off */ } };
   return handle;

@@ -14,8 +14,10 @@
 
 import { t, has } from "./i18n.js";
 
-/// A problem-details error from the API, or a network failure (`code` CS-NET-0001,
-/// client-side only, never sent by the server).
+/// A problem-details error from the API, a network failure (`code` CS-NET-0001), or a
+/// call the server does not serve yet (`CS-NET-0002`, status 501, `detail` the call's
+/// name in `NOT_ON_SERVER`). Both `CS-NET` codes are client-side only, never sent by
+/// the server.
 export class ApiError extends Error {
   constructor({ status = 0, code = "CS-NET-0001", title = "", detail = "", request_id = null, errors = [] } = {}) {
     super(`${code}${title ? `: ${title}` : ""}`);
@@ -50,9 +52,155 @@ export function toBase64(bytes) {
   return btoa(s);
 }
 
+// ---- Shapes the UI builds (UX-03) ------------------------------------------------------
+
+/// Every recipient type the API takes: the engine's `RecipientType` (docs/22 §5,
+/// casual-sign-model `envelope.rs`), in wire spelling.
+export const RECIPIENT_TYPES = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "cc", "editor", "intermediary", "agent", "witness", "seal", "notary"]);
+/// The types a recipient can complete end to end today: through the ceremony (`signer`,
+/// `approver` by `POST /s/{token}/approve`, `viewer` by viewing every document to the
+/// end), or none (`cc`). `in_person_signer` waits for a staff hosting call
+/// (`NOT_ON_SERVER.hostInPerson`); the others are the engine's, their ceremony a later
+/// slice (editor, agent and intermediary edit later recipients; witness 16, seal 18,
+/// notary 31).
+export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "approver", "viewer", "cc"]);
+
+/// Every field type the API takes: the engine's `FieldType` (docs/22 §6), in wire spelling.
+export const FIELD_TYPES = Object.freeze([
+  "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
+  "envelope_id", "text", "number", "date", "email_address", "phone", "ssn", "zip", "checkbox", "radio_group",
+  "dropdown", "multi_select", "formula", "attachment", "note", "approve", "decline", "hyperlink", "payment", "drawing",
+]);
+/// The types the ceremony fills or shows and the flattener draws today (docs/40 As built,
+/// `WEB-06`); the rest are taken and stored, their signer side a later row.
+export const FIELD_TYPES_READY = Object.freeze([
+  "signature", "initials", "date_signed", "name", "email", "company", "title", "text", "number", "checkbox",
+  "radio_group", "dropdown", "attachment", "note",
+]);
+
+/// The members of a field the API takes besides its place and owner, as the engine's
+/// `Field` names them (casual-sign-model `field.rs`): `label` is the data label formulas
+/// and conditions refer to; `value` a sender's value (`{text}`, `{checked}`, `{choice}`),
+/// with `locked` nobody changes it; `validation` `{kind: email|phone|zip|ssn|regex|length|
+/// number|date, …, message?}`; `format` `{font_family, font_size, color, align,
+/// date_format, mask}`; `group` `{id, rule: {rule: select_at_least|…, min|max|count}}`;
+/// `conditional` `{parent_label, when: {value: "…"} | "checked" | "unchecked" | "any"}`;
+/// `formula` `{expression, precision}`; `options` for radio groups, dropdowns and
+/// multi-selects, `allow_custom` for a dropdown.
+export const FIELD_MEMBERS = Object.freeze([
+  "required", "read_only", "locked", "label", "value", "default", "validation", "format", "group", "conditional",
+  "formula", "options", "allow_custom", "tooltip", "placeholder",
+]);
+const PLACE = ["page", "x", "y", "width", "height"];
+
+const blank = (v) => v == null || v === false || v === "" || (Array.isArray(v) && !v.length);
+
+/// A field as `POST …/fields` (and an envelope's `fields` on create) takes it: the owner
+/// as `recipient` (an id, or a `ref` in the same create) and `document` (an id, or an
+/// index in the same create), the rectangle flat, and the members of `FIELD_MEMBERS`
+/// that are set. Unset, false and empty members are left out, as the server's own
+/// output leaves them out. A template field takes `role_id` instead of `recipient`.
+export function fieldWire(f) {
+  const out = {};
+  if (f.role_id != null) out.role_id = f.role_id;
+  else if (f.recipient != null || f.recipient_id != null) out.recipient = f.recipient ?? f.recipient_id;
+  if (f.document != null || f.document_id != null) out[f.role_id != null ? "document_id" : "document"] = f.document ?? f.document_id;
+  out.type = f.type;
+  const p = f.placement || f;
+  for (const k of PLACE) if (p[k] != null) out[k] = p[k];
+  for (const k of FIELD_MEMBERS) if (!blank(f[k])) out[k] = f[k];
+  return out;
+}
+
+/// A recipient as `POST …/recipients` (and an envelope's `recipients` on create) takes
+/// it. `access_code` only with `access_code` among `auth`; `ref` names it for fields in
+/// the same create.
+export function recipientWire(r) {
+  const out = { type: r.type || "signer", name: r.name, email: r.email || "" };
+  for (const k of ["ref", "phone", "routing_order", "delivery", "auth", "access_code", "embedded_client_user_id", "time_zone_offset_minutes", "date_format"]) {
+    if (!blank(r[k])) out[k] = r[k];
+  }
+  return out;
+}
+
+const newId = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : null);
+const instantOf = (d) => (d instanceof Date ? d.toISOString() : d);
+const RECIPIENT_SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for"];
+
+/// The engine's `RecipientSpec` from a recipient as the API shows it (or a new one): only
+/// the members it has, since it refuses any other (no `status`, no `access_code`; an
+/// access code is set by `patchRecipient`).
+export function recipientSpec(r) {
+  const out = { id: r.id, type: r.type || "signer", routing_order: r.routing_order ?? 1, name: r.name, email: r.email || "" };
+  for (const k of RECIPIENT_SPEC) if (!(k in out) && !blank(r[k])) out[k] = r[k];
+  return out;
+}
+
+/// The engine's `Field` (whole, with its `id`, `document_id`, `recipient_id` and a
+/// nested `placement`) from a field as the API shows it, or a new one.
+export function fieldSpec(f) {
+  const p = f.placement || f;
+  const out = { id: f.id, document_id: f.document_id ?? f.document, type: f.type, placement: {} };
+  if (f.recipient_id != null || f.recipient != null) out.recipient_id = f.recipient_id ?? f.recipient;
+  for (const k of PLACE) out.placement[k] = p[k];
+  for (const k of FIELD_MEMBERS) if (!blank(f[k])) out[k] = f[k];
+  return out;
+}
+
+/// The change list `POST /envelopes/{id}/correct` takes: casual-sign-workflow `Change`,
+/// tagged by `op`, applied all or none (docs/24 §6). A correction may change recipients
+/// who have not completed, declined or handed over (not their type), their fields,
+/// documents (removal only: new ones arrive through `/documents`), subject, message,
+/// expiry, reminders and signing options; never the seal profile. New recipients and
+/// fields get an id minted here (a UUID, as the server's projection needs).
+export const corrections = Object.freeze({
+  addRecipient: (r) => ({ op: "add_recipient", recipient: recipientSpec({ ...r, id: r.id || newId() }) }),
+  updateRecipient: (r) => ({ op: "update_recipient", recipient: recipientSpec(r) }),
+  removeRecipient: (id) => ({ op: "remove_recipient", id }),
+  addField: (f) => ({ op: "add_field", field: fieldSpec({ ...f, id: f.id || newId() }) }),
+  updateField: (f) => ({ op: "update_field", field: fieldSpec(f) }),
+  removeField: (id) => ({ op: "remove_field", id }),
+  removeDocument: (id) => ({ op: "remove_document", id }),
+  setSubject: (subject) => ({ op: "set_subject", subject }),
+  setMessage: (message) => ({ op: "set_message", message }),
+  /// A Date or RFC 3339 instant; `null` clears the expiry.
+  setExpiry: (at) => ({ op: "set_expiry", expires_at: at == null ? null : instantOf(at) }),
+  setReminders: ({ first_after_days = 0, then_every_days = 0 } = {}) => ({ op: "set_reminders", reminders: { first_after_days, then_every_days } }),
+  setSigningOptions: (options) => ({ op: "set_signing_options", options }),
+});
+
+/// The webhook event types a subscription may name (server `api/webhooks.rs` `EVENT_TYPES`,
+/// docs/40 §4).
+export const WEBHOOK_EVENT_TYPES = Object.freeze([
+  "envelope.sent", "envelope.delivered", "envelope.completed", "envelope.declined", "envelope.voided", "envelope.expired",
+  "envelope.corrected", "envelope.purged", "recipient.sent", "recipient.delivered", "recipient.auth_failed",
+  "recipient.completed", "recipient.declined", "recipient.reassigned", "recipient.finish_later", "recipient.bounced",
+  "template.created", "template.updated", "template.deleted", "bulk_send.completed",
+]);
+
+/// Calls the UI may make that the server does not serve yet (UX-03), each with the
+/// tracker row that builds it and what it needs.
+/// The mock serves them as designed; against a server they fail at once with
+/// `CS-NET-0002` (501), so the UI can say "not available yet" instead of hiding the
+/// control. `client.available(name)` tells which.
+export const NOT_ON_SERVER = Object.freeze({
+  inbox: { row: "UXW-01", needs: "GET /envelopes?waiting_for=me (envelopes waiting for the signed-in user to act, with my_recipient_id)" },
+  envelopeFilters: { row: "UXW-03", needs: "GET /envelopes?recipient=&date_field=sent_at|completed_at|created_at|updated_at" },
+  folders: { row: "UXW-02", needs: "GET/POST /folders, PATCH/DELETE /folders/{id}, POST /folders/{id}/envelopes; GET /envelopes?folder=" },
+  deleted: { row: "UXW-02", needs: "GET /envelopes?deleted=true and POST /envelopes/{id}/restore (deleted envelopes kept, restorable)" },
+  certificateEnded: { row: "UXW-30", needs: "GET /envelopes/{id}/certificate for declined, voided and expired envelopes (409 today)" },
+  updateWebhook: { row: "UXW-31", needs: "PATCH /webhooks/{id} {url?, event_types?, active?} (pause, resume, edit)" },
+  testWebhook: { row: "UXW-32", needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
+  redeliver: { row: "UXW-33", needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
+  disclosure: { row: "UXW-34", needs: "GET /s/{token}/disclosure {version, sha256, text} and consent_required.url" },
+  clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit event)" },
+  hostInPerson: { row: "UXW-36", needs: "POST /envelopes/{id}/recipients/{r}/host (staff hosts an in-person signer)" },
+});
+
 /// Make a client. `baseUrl` is prepended to every path ("" = same origin). `store`
 /// keeps the CSRF token across reloads of this tab (sessionStorage in the browser).
-export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch?.bind(globalThis), store = null } = {}) {
+/// `ahead`: the backend also serves `NOT_ON_SERVER` (the mock says so itself).
+export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch?.bind(globalThis), store = null, ahead = fetchImpl?.ahead === true } = {}) {
   let csrf = null;
   try { csrf = store?.getItem("openseal.csrf") || null; } catch { csrf = null; }
   const setCsrf = (v) => {
@@ -107,10 +255,20 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
   const S = (token) => `/s/${encodeURIComponent(token)}`;
   const T = (tp) => `/api/v1/templates/${encodeURIComponent(tp)}`;
   const etagOf = (env) => (env && Number.isInteger(env.version) ? `"v${env.version}"` : null);
+  const W = (w) => `/api/v1/webhooks/${encodeURIComponent(w)}`;
+  const F = (f) => `/api/v1/folders/${encodeURIComponent(f)}`;
+  const available = (name) => ahead || !Object.hasOwn(NOT_ON_SERVER, name);
+  /// A call in `NOT_ON_SERVER`: made when the backend serves it, else refused here.
+  const unbuilt = (name, call) => (...args) => (available(name)
+    ? call(...args)
+    : Promise.reject(new ApiError({ status: 501, code: "CS-NET-0002", title: "Not available on this server yet", detail: name })));
+  const list = (query) => data(request("GET", "/api/v1/envelopes", { query }));
 
   return {
     request,
     hasCsrf: () => !!csrf,
+    /// Whether a call of `NOT_ON_SERVER` (by its name there) works on this backend.
+    available,
 
     // ---- Session -----------------------------------------------------------
     async login(email, password) {
@@ -131,15 +289,32 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// `order` `asc` or `desc` (the server's default when left out); `sender` a user id
     /// or `"me"`; `from`/`to` a last-change range (Date or RFC 3339; `to` exclusive).
     /// A `cursor` is only valid with the sort and order it came with.
-    listEnvelopes: ({ status, cursor, limit = 25, q, sort, order, sender, from, to } = {}) => {
-      const instant = (d) => (d instanceof Date ? d.toISOString() : d);
-      return data(request("GET", "/api/v1/envelopes", {
-        query: {
-          status: Array.isArray(status) ? status.join(",") : status,
-          cursor, limit, q, sort, order, sender, from: instant(from), to: instant(to),
-        },
-      }));
+    /// Not on the server yet (`NOT_ON_SERVER`), refused with `CS-NET-0002` there:
+    /// `recipient` (a recipient's email or name contains it) and `date_field` (which
+    /// date `from`/`to` bound: `updated_at`, the default, `created_at`, `sent_at`,
+    /// `completed_at`) are `envelopeFilters`; `folder` (a folder id) is `folders`;
+    /// `deleted: true` (the Deleted view) is `deleted`.
+    listEnvelopes: ({ status, cursor, limit = 25, q, sort, order, sender, from, to, recipient, date_field, folder, deleted } = {}) => {
+      const query = {
+        status: Array.isArray(status) ? status.join(",") : status,
+        cursor, limit, q, sort, order, sender, from: instantOf(from), to: instantOf(to),
+      };
+      const extra = [["envelopeFilters", { recipient, date_field }], ["folders", { folder }], ["deleted", { deleted: deleted ? "true" : null }]];
+      for (const [name, members] of extra) {
+        const given = Object.entries(members).filter(([, v]) => !blank(v));
+        if (!given.length) continue;
+        if (!available(name)) return unbuilt(name, null)();
+        Object.assign(query, Object.fromEntries(given));
+      }
+      return list(query);
     },
+    /// Envelopes waiting for the signed-in user to sign, approve or view (the Inbox,
+    /// `NOT_ON_SERVER.inbox`): `{items, next_cursor}` as `listEnvelopes`, each item with
+    /// `my_recipient_id`, the recipient the user is.
+    inbox: unbuilt("inbox", ({ cursor, limit = 25 } = {}) => list({ waiting_for: "me", cursor, limit })),
+    /// The signing page for the signed-in user on an Inbox envelope, `{url}`
+    /// (`NOT_ON_SERVER.inbox`); 409 `CS-WF-0007` before routing reaches them.
+    signLink: unbuilt("inbox", (id) => data(request("POST", `${E(id)}/sign-link`))),
     /// `{envelope, etag}`; the ETag falls back to the version when a proxy drops it.
     async getEnvelope(id) {
       const r = await request("GET", E(id));
@@ -148,11 +323,18 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     createEnvelope: (body) => data(request("POST", "/api/v1/envelopes", { body })),
     patchEnvelope: (id, etag, body) => data(request("PATCH", E(id), { body, ifMatch: etag })),
     deleteEnvelope: (id, etag) => data(request("DELETE", E(id), { ifMatch: etag })),
+    /// Bring a deleted envelope back to the lists (`NOT_ON_SERVER.deleted`).
+    restoreEnvelope: unbuilt("deleted", (id) => data(request("POST", `${E(id)}/restore`))),
     sendEnvelope: (id) => data(request("POST", `${E(id)}/send`)),
     voidEnvelope: (id, reason) => data(request("POST", `${E(id)}/void`, { body: { reason } })),
     resend: (id, recipientIds) => data(request("POST", `${E(id)}/resend`, { body: recipientIds ? { recipient_ids: recipientIds } : {} })),
     status: (id) => data(request("GET", `${E(id)}/status`)),
+    /// `{items: [{seq, type, at, hash, prev, event}], chain_head}`: `type` the dotted
+    /// audit type (`recipient.delivered`), `event` the whole event of docs/32 §2 with
+    /// `actor {kind, id?, name?}` and `data` (its `recipient_id`, …); `seq` from 0.
     audit: (id) => data(request("GET", `${E(id)}/audit`)),
+    /// The certificate of completion: a completed envelope's; a declined, voided or
+    /// expired one's is `NOT_ON_SERVER.certificateEnded` (the server answers 409).
     certificate: async (id) => (await request("GET", `${E(id)}/certificate`, { raw: true })).blob,
     /// WEB-08: a signer's attachment by the SHA-256 its field's value names (recorded
     /// in the audit trail as `attachment.downloaded`).
@@ -177,7 +359,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
 
     // ---- Correct, preview, detection, contacts (WEB-06 server) ----------------
     /// `POST …/correct {changes}` (If-Match): the engine's change list (casual-sign-workflow
-    /// `Change`, tagged by `op`), all or none. `update_recipient` replaces the whole
+    /// `Change`, tagged by `op`, built with `corrections`), all or none. The per-element
+    /// recipient and field calls (`addRecipients`, `deleteRecipient`, `addFields`, …)
+    /// correct a sent envelope too, one change each. `update_recipient` replaces the whole
     /// `RecipientSpec`, which refuses unknown members (so no `access_code`), and the API
     /// does not show every member of it (`date_format`); a correction of one recipient's
     /// name, email or access code is therefore `patchRecipient`, which keeps the rest and
@@ -189,7 +373,45 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// Suggested fields `{items: [{document_id, type, page, x, y, width, height, source,
     /// cue?, confidence}], truncated}`; nothing is changed or recorded on the server.
     detectFields: (id, doc) => data(request("POST", `${E(id)}/documents/${encodeURIComponent(doc)}/detect-fields`)),
+    /// Past recipients for autocomplete, `{items: [{name, email, last_used_at}]}`, most
+    /// recently used first; `limit` 1 to 50.
     contacts: (q, limit = 10) => data(request("GET", "/api/v1/contacts", { query: { q, limit } })),
+    listContacts: ({ q, limit = 10 } = {}) => data(request("GET", "/api/v1/contacts", { query: { q, limit } })),
+    /// A staff user hosts an in-person signer: answers `{url}`, the signing page to open
+    /// on this device (`NOT_ON_SERVER.hostInPerson`).
+    hostInPerson: unbuilt("hostInPerson", (id, r) => data(request("POST", `${E(id)}/recipients/${encodeURIComponent(r)}/host`))),
+
+    // ---- Folders (`NOT_ON_SERVER.folders`) -------------------------------------
+    /// The signed-in user's folders, `{items: [{id, name, count}]}`.
+    listFolders: unbuilt("folders", () => data(request("GET", "/api/v1/folders"))),
+    createFolder: unbuilt("folders", (name) => data(request("POST", "/api/v1/folders", { body: { name } }))),
+    renameFolder: unbuilt("folders", (f, name) => data(request("PATCH", F(f), { body: { name } }))),
+    /// Remove a folder; its envelopes go back to no folder.
+    deleteFolder: unbuilt("folders", (f) => data(request("DELETE", F(f)))),
+    /// File envelopes in a folder (`null`: in none).
+    moveEnvelopes: unbuilt("folders", (f, envelopeIds) =>
+      data(request("POST", f == null ? "/api/v1/folders/none/envelopes" : `${F(f)}/envelopes`, { body: { envelope_ids: envelopeIds } }))),
+
+    // ---- Webhooks (docs/40 §4; scope webhooks:manage) ---------------------------
+    /// `{items: [{id, envelope_id, url, event_types, secret_refs, active}]}`.
+    listWebhooks: () => data(request("GET", "/api/v1/webhooks")),
+    getWebhook: (w) => data(request("GET", W(w))),
+    /// `{url, event_types, secret_refs, envelope_id?}`: `url` https:// to a public address
+    /// (`422 CS-API-0013` otherwise); `event_types` from `WEBHOOK_EVENT_TYPES`;
+    /// `secret_refs` 1 to 4 names of signing secrets the operator provisioned (the secret
+    /// never passes through the API, so there is nothing to show once).
+    createWebhook: (body) => data(request("POST", "/api/v1/webhooks", { body })),
+    /// Disable a subscription (`active: false`); its deliveries stay readable.
+    deleteWebhook: (w) => data(request("DELETE", W(w))),
+    /// The latest 100 deliveries, `{items: [{id, event_id, event_type, status: pending|
+    /// delivered|failed, attempts, last_status_code}]}`.
+    listDeliveries: (w) => data(request("GET", `${W(w)}/deliveries`)),
+    /// `{url?, event_types?, active?}`: edit, pause or resume (`NOT_ON_SERVER.updateWebhook`).
+    updateWebhook: unbuilt("updateWebhook", (w, body) => data(request("PATCH", W(w), { body }))),
+    /// Send a test event now (`NOT_ON_SERVER.testWebhook`).
+    testWebhook: unbuilt("testWebhook", (w) => data(request("POST", `${W(w)}/test`))),
+    /// Deliver one delivery's event again (`NOT_ON_SERVER.redeliver`).
+    redeliver: unbuilt("redeliver", (w, d) => data(request("POST", `${W(w)}/deliveries/${encodeURIComponent(d)}/redeliver`))),
 
     // ---- Account and members (Admin) -------------------------------------------
     /// `PATCH /accounts/me {settings}`: merged into the account's settings (`null`
@@ -253,8 +475,21 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     },
 
     // ---- Ceremony (docs/40 §6; not public API) ----------------------------
+    // The view: `{envelope, recipient, fields, capture_location, consent_required:
+    // {version, sha256, url?} | null, auth_required, sender?: {name, email,
+    // organisation}}`. `sender` and `consent_required.url` are the mock's until the
+    // server row lands (docs/40 §6); the page works without them.
     ceremony: {
       view: (token) => data(request("GET", S(token), { ceremony: true })),
+      /// An approver approves (`recipient.approved`); a signer is refused (409).
+      approve: (token, location) => data(request("POST", `${S(token)}/approve`, { body: withLocation({}, location), ceremony: true })),
+      /// Withdraw consent to electronic records: declines a required action.
+      withdrawConsent: (token, location) => data(request("POST", `${S(token)}/withdraw-consent`, { body: withLocation({}, location), ceremony: true })),
+      /// The full disclosure the recipient consents to, `{version, sha256, text}` (`sha256`
+      /// over the text's UTF-8; the one `consent_required` names) (`NOT_ON_SERVER.disclosure`).
+      disclosure: unbuilt("disclosure", (token) => data(request("GET", `${S(token)}/disclosure`, { ceremony: true }))),
+      /// Remove this recipient's value from a field before finishing (`NOT_ON_SERVER.clearField`).
+      clearField: unbuilt("clearField", (token, field) => data(request("DELETE", `${S(token)}/fields/${encodeURIComponent(field)}`, { ceremony: true }))),
       open: (token) => data(request("POST", `${S(token)}/session`, { body: {}, ceremony: true })),
       consent: (token, ersdVersion, location) =>
         data(request("POST", `${S(token)}/consent`, { body: withLocation({ ersd_version: ersdVersion }, location), ceremony: true })),

@@ -63,16 +63,25 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `40b9429` (2026-11-11).
+Docs are true as of `19518fb` (2026-11-12).
 
-**Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11; Phase 1 after clean fuzz run 42907980149). Phase 2 is open early under waiver `W-1`**
-(`DEC-13`). `W-2` is retired. The repository is public; GitHub CI runs, and `tools/ci-local.sh` stays the pre-push gate.
+**Phases D, 0, 1 and 2 are closed** (owner: D and 0 on 2026-11-11, 1 on 2026-11-11 after clean fuzz run 42907980149,
+2 on 2026-11-12). **v0.0.1, the first pre-release, is published** (tag at `4780d84`, GitHub CI run 43123420112 green on
+all 14 jobs; `REL-01` keeps the GHCR packages' visibility and the manual walkthrough). The repository is public; GitHub
+CI runs, and `tools/ci-local.sh` runs once per batch before a push (instruction 31). Work runs within this machine's
+memory: one Rust build at a time (instruction 37).
 
-- **Phase 1:** built and merged: 1A reader, 1B writer and normalizer, 1C geometry, text, anchors, tags and AcroForm
-  conversion, 1D field rules, 1E flattening and fill-in-place, 1F crypto structures, 1G sealing, 1H verifier, 1I
-  audit chain and certificate (leftovers in their rows), and reader completion (decryption, LZW, the four wrongly
-  refused corpus files), 1J SDK and `openseal` CLI. Exit item 2 met: every admitted corpus PDF passes fill, flatten,
-  seal and verify in ours, pyHanko and EU DSS (`P1-GATE-01`); items 4 and 6 met (`VER-03`, `WASM-01`). Left for
-  the exit gate: 24 h fuzzing per target, 12 parallel jobs × 4 workers on GitHub, about 3.5 h (`FUZZ-01`), owner sign-off.
-- **No server, API or UI exists yet.** The roadmap has 35 slices and milestones M0–M8; the fit-gap has 167 rows, none
-  working end to end yet.
+- **Built:** the Rust engine (PDF reader, writer and normalizer, fields, flattening, crypto, PAdES sealing B-B to
+  B-LTA, verifier, audit chain and certificate, SDK and `openseal` CLI, WebAssembly verifier); the workflow engine,
+  Postgres store, API server (`api/openapi.yaml`), job worker, `casual-sign-keyd` (PKCS#11) and the single-node Compose
+  deployment; the web app (sign-in, home, agreements, document-first send editor, templates, reports, admin, signer
+  ceremony on phone and desktop, verify page), tested by Playwright in mock mode and against the Compose stack
+  (`compose-e2e`). [96](docs/96-FEATURE-FIT-GAP.md) counts 39 of 167 rows working end to end.
+- **In progress:** the UI pass in packages `UX-02` to `UX-08` (`UX-01`; missing workflows `UXW-01`–`UXW-29`);
+  organizations, workspaces, delegated admin, the platform console and plans (ADR-028 Accepted,
+  [23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md), `ORG-*`, `CON-*`, `PLAN-*`); pretrained ML models (ADR-029
+  Accepted, [33](docs/33-ML-MODELS.md)): the `casual-sign-modeld` skeleton (`ML-09`), personal-data recognisers
+  `casual-sign-pii` (`ML-08`) and value normalisation (`ML-07`) are merged; OCR (`ML-02`), template matching (`ML-05`)
+  and extraction (`ML-07`) are being built. The P0 fix `SEC-ID-01` (cross-workspace account takeover) is in progress.
+- **Next:** slices 1, 2, 5 and 7 to their end points for M3, then v0.0.2 (organizations and switching, the console with
+  health, plans with three meters; instruction 29).

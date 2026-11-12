@@ -328,13 +328,17 @@ async fn accept_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respon
         .map_err(|_| ApiError::internal("argon2").into_response())?
         .map_err(IntoResponse::into_response)?;
     let inner = async {
+        // The link reached the member's own address: they set their own password, even
+        // when they belong to other accounts too, and their sessions end in every one
+        // (SEC-ID-01).
         let mut tx = st.store().for_account(account).begin().await?;
-        if !tx.users().accept_invitation(invitation, now).await? {
+        let who = tx
+            .users()
+            .accept_invitation_with_password(invitation, &Personal(phc), now)
+            .await?;
+        if who != Some(user) {
             return Ok(None);
         }
-        tx.users().set_password_hash(user, &Personal(phc)).await?;
-        tx.users().revoke_invitations(user, now).await?;
-        tx.sessions().revoke_all(user, now).await?;
         tx.commit().await?;
         Ok::<_, casual_sign_store::StoreError>(Some(()))
     };
@@ -366,6 +370,12 @@ struct UserPatch {
 /// `PATCH /users/{id} {name?, password?, profile?, disabled?}`. A new password ends the
 /// member's sessions; so does disabling them, which also revokes their open
 /// invitations. An administrator cannot change their own profile or disable themselves.
+///
+/// The name and password are the user's in every account (SEC-ID-01): an administrator
+/// changes them only for a user who belongs to this account alone, and a user of other
+/// accounts too is `403 CS-API-0015`. The user changes their own through their session,
+/// and a new password then ends their sessions in every account. Profile and disabling
+/// are this account's membership only.
 pub(crate) async fn patch_user(
     c: Call,
     Path(id): Path<String>,
@@ -394,20 +404,49 @@ pub(crate) async fn patch_user(
             tx.users().revoke_invitations(id, now).await?;
         }
     }
-    if let Some(n) = &req.name {
-        let n = n.trim();
-        if n.is_empty() || n.chars().count() > 255 {
-            return Err(ApiError::invalid("/name"));
+    let name = match &req.name {
+        Some(n) => {
+            let n = n.trim();
+            if n.is_empty() || n.chars().count() > 255 {
+                return Err(ApiError::invalid("/name"));
+            }
+            Some(Personal(n.to_owned()))
         }
-        tx.users().rename(id, &Personal(n.to_owned())).await?;
-    }
-    if let Some(p) = req.password {
-        check_password(&p)?;
-        let phc = tokio::task::spawn_blocking(move || hash_password(&p))
-            .await
-            .map_err(|_| ApiError::internal("argon2"))??;
-        tx.users().set_password_hash(id, &Personal(phc)).await?;
-        tx.sessions().revoke_all(id, c.st.now()).await?;
+        None => None,
+    };
+    let phc = match req.password {
+        Some(p) => {
+            check_password(&p)?;
+            let phc = tokio::task::spawn_blocking(move || hash_password(&p))
+                .await
+                .map_err(|_| ApiError::internal("argon2"))??;
+            Some(Personal(phc))
+        }
+        None => None,
+    };
+    let now = c.st.now();
+    match c.p.credential {
+        // The user, through their own session: the store derives the user from it.
+        Credential::Session(session) if id == c.p.user && (name.is_some() || phc.is_some()) => {
+            let who = tx
+                .users()
+                .update_own(session, name.as_ref(), phc.as_ref(), now)
+                .await?;
+            if who != Some(id) {
+                return Err(ApiError::expired());
+            }
+        }
+        // An administrator (or an API key, even the user's own): this account's sole
+        // members only; the store refuses a user of another account too.
+        _ => {
+            if let Some(n) = &name {
+                tx.users().rename(id, n).await?;
+            }
+            if let Some(phc) = &phc {
+                tx.users().set_password_hash(id, phc).await?;
+                tx.sessions().revoke_all(id, now).await?;
+            }
+        }
     }
     let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
     tx.commit().await?;

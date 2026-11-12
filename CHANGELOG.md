@@ -2,7 +2,25 @@
 
 All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.0.1] - pre-release
+## [Unreleased]
+
+### Added
+- `casual-sign-modeld`, the separate process that will host pretrained models (ADR-029): mutual TLS, a bounded wire
+  protocol, an operation log and a hash-checked model bundle; the server and worker do not call it yet (`ML-09`).
+- `casual-sign-pii`: personal-data recognisers that find structured identifiers by pattern plus validation (Luhn,
+  IBAN mod-97 and other check digits), with a fuzz target (`ML-08`).
+- Normalisation of extracted dates, durations and amounts in `casual-sign-fields`, with a fuzz target (`ML-07`).
+- Model manifest and hash-checking fetch script, an offline GLiNER export tool, and synthetic scanned-form fixtures
+  (`ML-01`, `ML-02`, `ML-05`).
+
+### Designed
+- Organizations above workspaces, delegated administration, a platform console and plans: ADR-028 accepted
+  ([docs/23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)).
+- Pretrained ML models, off by default and never part of the evidence: ADR-029 accepted
+  ([docs/33](docs/33-ML-MODELS.md)).
+- A UI and workflow pass from an audit against DocuSign and SignNow (`UX-01` to `UX-08`, `UXW-01` to `UXW-29`).
+
+## [0.0.1] - 2026-11-12 (pre-release)
 
 The first pre-release of OpenSeal: the common send-and-sign case works end to end on one machine. **Not for production
 agreements yet:** the bundled stack uses a generated certificate authority, a software HSM and a development timestamp
@@ -10,7 +28,9 @@ authority, so seals validate only against that CA.
 
 ### What works
 - Upload a PDF, add signers in order or in parallel and carbon copies, place signature, initials, date, name, email,
-  text, checkbox, company, title, number, radio, dropdown, attachment and note fields (with field detection), and send.
+  text and checkbox fields (with field detection), and send. Signers can also fill company, title, number, radio,
+  dropdown, attachment and note fields that come from a template or a converted PDF form; the editor cannot yet place
+  those (corrected 2026-11-12, `DOC-007`).
 - Signing on desktop and phone: access code, consent, guided Start/Next, draw, type or upload a signature, review,
   finish, decline, finish later, reassign when allowed; optional signer location (device or IP approximation).
 - Every completed envelope is sealed as PAdES (B-T by default) and verified before it completes; a certificate of

@@ -56,6 +56,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # modeld's feature_gate test runs `cargo tree --offline --target all`, which needs every
+      # platform's crates in the cache, not only the host's (CI-01).
+      - run: cargo fetch --locked
       - run: cargo test --workspace --all-features --locked --no-fail-fast
 
   msrv:

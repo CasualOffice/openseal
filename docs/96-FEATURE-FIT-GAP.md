@@ -10,13 +10,13 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 0 of 167 rows work end to end; 32 have their engine built and tested** (counted with `grep`). Docs are true as of `1163eca` (2026-11-10).
+**Today: 39 of 167 rows work end to end; 22 more have their engine built and tested; 58 are designed, 4 are partial (`FG-131`, `FG-132`, `FG-133`, `FG-140`) and 44 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-001 | Upload PDF | DS, SN | Build | 1 | Engine |
+| FG-001 | Upload PDF | DS, SN | Build | 1 | Works |
 | FG-002 | Upload Word, Excel, PowerPoint, images (converted) | DS, SN | Build | 6 | Designed |
 | FG-003 | Import from URL | SN | Build | 8 | — |
 | FG-004 | Import from cloud storage (Drive, OneDrive, Dropbox, Box) | DS | Plugin | 24 | — |
@@ -29,15 +29,15 @@ instructions 8 and 9).
 | FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
 | FG-010 | Document visibility per recipient | DS | Build | 6 | — |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
-| FG-012 | Template matching on upload | DS | Build | 3 | — |
+| FG-012 | Template matching on upload | DS | Build | 3 | Designed |
 | FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | — |
 
 ## Recipients and routing
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-020 | Signer | DS, SN | Build | 1 | Designed |
-| FG-021 | Carbon copy | DS, SN | Build | 2 | Designed |
+| FG-020 | Signer | DS, SN | Build | 1 | Works |
+| FG-021 | Carbon copy | DS, SN | Build | 2 | Works |
 | FG-022 | Needs to view (viewer) | DS, SN | Build | 2 | Designed |
 | FG-023 | Approver | SN | Build | 2 | Designed |
 | FG-024 | Specify recipients (agent) | DS | Build | 2 | Designed |
@@ -47,7 +47,7 @@ instructions 8 and 9).
 | FG-028 | Witness | DS | Build | 16 | — |
 | FG-029 | Notary (remote online notarization) | DS, SN | Build, with provider plugins | 31 | — |
 | FG-030 | Electronic seal recipient | DS | Plugin | 18 | — |
-| FG-031 | Sequential, parallel and mixed routing order | DS, SN | Build | 2 | Designed |
+| FG-031 | Sequential, parallel and mixed routing order | DS, SN | Build | 2 | Works |
 | FG-032 | Conditional routing | DS | Build | 29 | Designed |
 | FG-033 | Signing groups | DS | Build | 29 | — |
 | FG-034 | Scheduled sending; delayed routing | DS | Build | 29 | — |
@@ -63,11 +63,11 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-050 | Signature (draw, type, upload) | DS, SN | Build | 1 | Engine |
-| FG-051 | Initials | DS, SN | Build | 1 | Engine |
+| FG-050 | Signature (draw, type, upload) | DS, SN | Build | 1 | Works |
+| FG-051 | Initials | DS, SN | Build | 1 | Works |
 | FG-052 | Optional signature | DS | Build | 4 | Designed |
 | FG-053 | Stamp | DS, SN | Build | 4 | Engine |
-| FG-054 | Date signed | DS | Build | 1 | Engine |
+| FG-054 | Date signed | DS | Build | 1 | Works |
 | FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Designed |
 | FG-056 | Envelope id field | DS | Build | 4 | Designed |
 | FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Engine |
@@ -101,13 +101,13 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-090 | Recipients-first preparation | DS | Build | 2 | Designed |
-| FG-091 | Document-first editor with roles assigned in place | SN | Build | 1 | Designed |
+| FG-090 | Recipients-first preparation | DS | Build | 2 | Works |
+| FG-091 | Document-first editor with roles assigned in place | SN | Build | 1 | Works |
 | FG-092 | Preview as recipient | DS | Build | 2 | — |
-| FG-093 | Custom subject and message | DS, SN | Build | 1 | Designed |
-| FG-094 | Reminders | DS, SN | Build | 2 | Designed |
+| FG-093 | Custom subject and message | DS, SN | Build | 1 | Works |
+| FG-094 | Reminders | DS, SN | Build | 2 | Works |
 | FG-095 | Expiration and warning | DS, SN | Build | 2 | Designed |
-| FG-096 | Templates with roles | DS, SN | Build | 3 | Designed |
+| FG-096 | Templates with roles | DS, SN | Build | 3 | Works |
 | FG-097 | Composite templates (several into one envelope) | DS | Build | 3 | Designed |
 | FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Designed |
 | FG-099 | Document group templates | SN | Build | 3 | Designed |
@@ -121,20 +121,20 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-110 | Email invitation with one-time link | DS, SN | Build | 1 | Designed |
-| FG-111 | ERSD consent, versioned | DS | Build | 5 | Designed |
-| FG-112 | Start / Next guided navigation | DS | Build | 1 | Designed |
-| FG-113 | Adopt signature (style, draw, upload) | DS, SN | Build | 1 | Designed |
-| FG-114 | Review flattened result before finishing | — (ours) | Build | 1 | Designed |
-| FG-115 | Finish later | DS | Build | 2 | Designed |
-| FG-116 | Decline with reason | DS, SN | Build | 2 | Designed |
-| FG-117 | Access code | DS, SN | Build | 5 | Designed |
-| FG-118 | Email OTP | — | Build | 5 | Designed |
+| FG-110 | Email invitation with one-time link | DS, SN | Build | 1 | Works |
+| FG-111 | ERSD consent, versioned | DS | Build | 5 | Works |
+| FG-112 | Start / Next guided navigation | DS | Build | 1 | Works |
+| FG-113 | Adopt signature (style, draw, upload) | DS, SN | Build | 1 | Works |
+| FG-114 | Review flattened result before finishing | — (ours) | Build | 1 | Works |
+| FG-115 | Finish later | DS | Build | 2 | Works |
+| FG-116 | Decline with reason | DS, SN | Build | 2 | Works |
+| FG-117 | Access code | DS, SN | Build | 5 | Works |
+| FG-118 | Email OTP | — | Build | 5 | Works |
 | FG-119 | SMS OTP, phone call | DS, SN | Plugin | 5 | Designed |
 | FG-120 | Knowledge-based authentication | DS | Plugin | 18 | — |
 | FG-121 | ID verification (document + selfie, eID) | DS | Plugin | 18 | — |
 | FG-122 | Kiosk mode | SN | Build | 14 | — |
-| FG-123 | Mobile-first signing | DS, SN | Build | 1 | Designed |
+| FG-123 | Mobile-first signing | DS, SN | Build | 1 | Works |
 | FG-124 | Accessible signing (WCAG 2.2 AA) | DS | Build | 1 | Designed |
 | FG-125 | Signer language choice | DS, SN | Build | 12 | — |
 | FG-126 | Comments during signing | DS | Build | 26 | — |
@@ -145,30 +145,30 @@ instructions 8 and 9).
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
 | FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Designed |
-| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Designed |
+| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (7 days, filtered in the page), completed, with counts on Home and the rail (`UX-07`); waiting for me needs the Inbox (`UXW-01`); auth failed not yet |
 | FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search, status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
-| FG-133 | Correct | DS | Build | 6 | Designed |
-| FG-134 | Void with reason | DS, SN | Build | 2 | Designed |
-| FG-135 | Resend | DS, SN | Build | 2 | Designed |
-| FG-136 | Copy; save as template | DS | Build | 6 | — |
-| FG-137 | Transfer ownership | DS | Build | 10 | — |
+| FG-133 | Correct | DS | Build | 6 | Partial: a side panel changes name, email, access code and signing order of recipients who have not acted, adds and removes them, and sets expiry and reminders (`POST /correct` and `PATCH …/recipients/{r}`; `UX-07`, tested in mock mode); fields and documents are `UXW-19` |
+| FG-134 | Void with reason | DS, SN | Build | 2 | Works |
+| FG-135 | Resend | DS, SN | Build | 2 | Works |
+| FG-136 | Copy; save as template | DS | Build | 6 | Works |
+| FG-137 | Transfer ownership | DS | Build | 10 | Designed |
 | FG-138 | History view | DS, SN | Build | 6 | Works (staff audit view; the signer's own `GET /s/{token}/history`, `WEB-07`) |
 | FG-139 | Envelope custom fields | DS | Build | 6 | Designed |
-| FG-140 | Reports and CSV export | DS | Build | 6 | — |
+| FG-140 | Reports and CSV export | DS | Build | 6 | Partial: Agreements exports the selected envelopes as CSV, formula-safe (`UX-07`); server reports are `UXW-25` |
 | FG-141 | Insights dashboard | DS | Build | 6 | — |
 
 ## Evidence and verification
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Engine |
-| FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Engine |
-| FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Engine |
-| FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Engine |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works |
+| FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
+| FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
+| FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |
 | FG-154 | Long-term validation (B-LT, B-LTA) | — | Build | 7, 17 | Engine |
-| FG-155 | Audit trail embedded in the PDF | — (ours) | Build | 1 | Engine |
-| FG-156 | Hash-chained audit events | — (ours) | Build | Phase 1 | Engine |
-| FG-157 | Offline verification page and CLI | — (ours) | Build | 7 | Engine |
+| FG-155 | Audit trail embedded in the PDF | — (ours) | Build | 1 | Works |
+| FG-156 | Hash-chained audit events | — (ours) | Build | Phase 1 | Works |
+| FG-157 | Offline verification page and CLI | — (ours) | Build | 7 | Works |
 | FG-158 | Public anchoring of chain heads | — (ours) | Build | 7 | Designed |
 | FG-159 | Per-signer seals; certification signature | — | Build | 16 | Engine |
 | FG-160 | PDF/A-3 output | — | Build | 17 | Designed |
@@ -179,12 +179,12 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-170 | Users, CSV import, close, reactivate | DS | Build | 10 | — |
+| FG-170 | Users, CSV import, close, reactivate | DS | Build | 10 | Designed |
 | FG-171 | Permission profiles (built-in and custom) | DS | Build | 10 | Designed |
 | FG-172 | Groups | DS | Build | 10 | Designed |
-| FG-173 | SSO: SAML 2.0 and OIDC; require SSO; JIT provisioning | DS, SN | Build | 10 | — |
-| FG-174 | Domain claims | DS | Build | 10 | — |
-| FG-175 | SCIM provisioning | DS | Build | 10 | — |
+| FG-173 | SSO: SAML 2.0 and OIDC; require SSO; JIT provisioning | DS, SN | Build | 10 | Designed |
+| FG-174 | Domain claims | DS | Build | 10 | Designed |
+| FG-175 | SCIM provisioning | DS | Build | 10 | Designed |
 | FG-176 | Brands (logo, colours, emails, landing pages) | DS, SN | Build | 12 | — |
 | FG-177 | ERSD editing | DS | Build | 5 | Designed |
 | FG-178 | Retention and purge policies | DS | Build | 15 | Designed |
@@ -192,25 +192,25 @@ instructions 8 and 9).
 | FG-180 | Data residency (region tags) | DS | Build | 15 | — |
 | FG-181 | BYOK per-tenant keys | — | Build | 15 | — |
 | FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | — |
-| FG-183 | Admin audit log | DS | Build | 10 | — |
-| FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | — |
+| FG-183 | Admin audit log | DS | Build | 10 | Designed |
+| FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Designed |
 
 ## Developer surface
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-190 | REST API with OpenAPI document | DS, SN | Build | 8 | Designed |
+| FG-190 | REST API with OpenAPI document | DS, SN | Build | 8 | Works |
 | FG-191 | OAuth authorization code with PKCE | DS, SN | Build | 8 | Designed |
 | FG-192 | JWT bearer grant (service integrations) | DS | Build | 8 | Designed |
-| FG-193 | API keys | — | Build | Phase 2 | Designed |
-| FG-194 | Webhooks: account and per-envelope, HMAC, rotation | DS, SN | Build | 8 | Designed |
+| FG-193 | API keys | — | Build | Phase 2 | Works |
+| FG-194 | Webhooks: account and per-envelope, HMAC, rotation | DS, SN | Build | 8 | Works |
 | FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Designed |
 | FG-196 | Embedded signing view | DS, SN | Build | 9 | Designed |
 | FG-197 | Embedded sending / prepare view | DS, SN | Build | 9 | Designed |
 | FG-198 | Embedded correct and template edit views | DS, SN | Build | 9 | Designed |
 | FG-199 | SDKs (TS, Python, then Java, C#, Go, PHP, Ruby) | DS | Build | 8 | Designed |
 | FG-200 | Sandbox / demo environment | DS, SN | Build | 8 | — |
-| FG-201 | Rate limit headers | DS | Build | Phase 2 | Designed |
+| FG-201 | Rate limit headers | DS | Build | Phase 2 | Works |
 | FG-202 | DocuSign-compatible API | — | Build, subject to counsel (`DEC-10`) | 25 | — |
 | FG-203 | MCP agent access | — (sisters) | Build | 22 | — |
 | FG-204 | Integrations: Salesforce, Microsoft 365, Google Workspace, HubSpot, Zapier | DS, SN | Plugin | 24 | — |
@@ -221,7 +221,7 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-210 | Self-hosting: Docker Compose | — | Build | Phase 2 | Designed |
+| FG-210 | Self-hosting: Docker Compose | — | Build | Phase 2 | Works |
 | FG-211 | Kubernetes Helm chart, HA | — | Build | 20 | — |
 | FG-212 | HSM and cloud KMS key custody | — | Build | Phase 2, 20 | Designed |
 | FG-213 | Mobile apps (iOS, Android), with offline signing that syncs | DS, SN | Build | 30 | — |

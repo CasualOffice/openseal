@@ -12,7 +12,7 @@ import { illustration } from "../illustrations.js";
 import { t } from "../i18n.js";
 import { errorMessage } from "../api.js";
 
-/// A button. `variant`: primary | secondary | ghost | danger; `size`: sm | md | lg.
+/// A button. `variant`: primary | secondary | ghost | danger | danger-fill; `size`: sm | md | lg.
 /// `command` adds `data-os-command`, so the registry can find and run it.
 export function button(label, { icon: ic = null, variant = "secondary", size = "md", command = null, onClick = null, type = "button", iconOnly = false, attrs = {} } = {}) {
   const b = h("button", {
@@ -40,10 +40,14 @@ export async function busy(btn, work) {
 
 // ---- Toasts ----------------------------------------------------------------------
 
+const viewToasts = new Set(); // close functions of the toasts about the current view
+
 /// Show a short message. `kind`: info | success | error. Errors stay until dismissed.
 /// `action`: `{label, onClick}` adds one button (Undo after a delete, A24); a toast
-/// with an action stays 8 s so it can be reached.
-export function toast(message, kind = "info", { action = null } = {}) {
+/// with an action stays 8 s so it can be reached. `scope: "view"` ties the toast to
+/// the screen it is about: `clearViewToasts()` (the router, on navigation) removes it;
+/// the default, `"app"`, outlives navigation (a send confirmed, a session ended).
+export function toast(message, kind = "info", { action = null, scope = "app" } = {}) {
   let region = document.getElementById("os-toasts");
   if (!region) {
     region = h("div", { id: "os-toasts", class: "os-toasts", attrs: { role: "status", "aria-live": "polite" } });
@@ -54,14 +58,24 @@ export function toast(message, kind = "info", { action = null } = {}) {
     h("span", { class: "os-toast__text", text: message }),
   );
   const close = () => {
+    viewToasts.delete(close);
     node.classList.add("is-leaving");
     setTimeout(() => node.remove(), reducedMotion() ? 0 : 200);
   };
+  if (scope === "view") {
+    node.dataset.scope = "view";
+    viewToasts.add(close);
+  }
   if (action) node.append(button(action.label, { variant: "ghost", size: "sm", onClick: () => { close(); action.onClick(); }, attrs: { "data-testid": "toast-action" } }));
   node.append(button(t("action.dismiss"), { icon: "x", variant: "ghost", size: "sm", iconOnly: true, onClick: close }));
   region.append(node);
   if (kind !== "error") setTimeout(close, action ? 8000 : 5000);
   return close;
+}
+
+/// Remove every toast shown with `scope: "view"` (the view it was about has gone).
+export function clearViewToasts() {
+  for (const close of [...viewToasts]) close();
 }
 
 /// Toast an API error by its code (docs/20), with the request id when there is one.
@@ -121,32 +135,44 @@ export function openDialog({ title, description = null, build = null, actions = 
     dlg.addEventListener("click", (e) => { if (e.target === dlg) close(null); });
     document.body.append(dlg);
     dlg.showModal();
-    const first = body.querySelector("[autofocus], input, textarea, select") || dlg.querySelector(".os-dialog__foot .os-btn--primary, .os-dialog__foot .os-btn--danger");
+    const first = body.querySelector("[autofocus], input, textarea, select") || dlg.querySelector(".os-dialog__foot .os-btn--primary, .os-dialog__foot .os-btn--danger, .os-dialog__foot .os-btn--danger-fill");
     first?.focus();
   });
 }
 
-/// Ask a yes/no question. Resolves true or false.
-export async function confirmDialog(title, text, { confirm = t("action.confirm"), danger = false } = {}) {
+/// The consequence of a destructive action, as a callout with a warning icon (UX-02).
+function consequenceLine(text) {
+  return h("div", { class: "os-callout os-callout--danger", attrs: { "data-testid": "dialog-consequence" } },
+    icon("triangle-alert", { size: 20 }), h("p", { text }));
+}
+
+/// Ask a yes/no question. Resolves true or false. With `danger`, the text is shown as
+/// the consequence (a warning callout) and the confirming button is the filled danger
+/// button with an icon (`icon`, default a warning sign), never the seal-red primary.
+export async function confirmDialog(title, text, { confirm = t("action.confirm"), danger = false, icon: ic = "triangle-alert" } = {}) {
   const v = await openDialog({
     title,
-    description: text,
+    description: danger ? null : text,
+    build: danger && text ? (body) => body.append(consequenceLine(text)) : null,
     actions: [
       { label: t("action.cancel"), value: false },
-      { label: confirm, variant: danger ? "danger" : "primary", onClick: () => true },
+      { label: confirm, variant: danger ? "danger-fill" : "primary", icon: danger ? ic : undefined, onClick: () => true },
     ],
   });
   return v === true;
 }
 
-/// Ask for a reason (void, decline). Resolves the trimmed text, or null.
-export async function reasonDialog(title, label, { confirm, danger = true, required = true, maxLength = 10000 } = {}) {
+/// Ask for a reason (void, decline). Resolves the trimmed text, or null. A `danger`
+/// one (the default) confirms with the filled danger button and its `icon`, and shows
+/// `consequence`, when given, as a warning callout above the reason.
+export async function reasonDialog(title, label, { confirm, danger = true, required = true, maxLength = 10000, consequence = null, icon: ic = "ban" } = {}) {
   let area;
   let err;
   return openDialog({
     title,
     build(body) {
       const id = `r-${Math.random().toString(36).slice(2)}`;
+      if (consequence) body.append(consequenceLine(consequence));
       body.append(
         h("label", { class: "os-label", attrs: { for: id }, text: label }),
         (area = h("textarea", { id, class: "os-input os-textarea", rows: 4, maxLength, attrs: { autofocus: true, "aria-describedby": `${id}-err`, ...(required ? { required: true } : {}) } })),
@@ -157,7 +183,8 @@ export async function reasonDialog(title, label, { confirm, danger = true, requi
       { label: t("action.cancel"), value: null },
       {
         label: confirm,
-        variant: danger ? "danger" : "primary",
+        variant: danger ? "danger-fill" : "primary",
+        icon: danger ? ic : undefined,
         onClick: () => {
           const v = area.value.trim();
           if (required && !v) {
