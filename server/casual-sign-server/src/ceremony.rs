@@ -311,18 +311,35 @@ impl Open {
         s: &casual_sign_workflow::EnvelopeState,
         me: Option<&casual_sign_workflow::RecipientState>,
     ) -> Value {
+        // SEC-CER-01: until the recipient has passed every authentication they need, the
+        // view names no document and no field (only what the invitation already said,
+        // and what the page needs to ask for the code).
+        let shown = me.is_some_and(|r| !r.auth_locked && r.auth_satisfied());
+        let documents: Vec<Value> = if shown {
+            s.documents.iter().map(dto::document).collect()
+        } else {
+            Vec::new()
+        };
+        let fields: Vec<Value> = if shown {
+            s.fields
+                .0
+                .iter()
+                .filter(|f| f.recipient_id.as_ref() == Some(&self.recipient))
+                .map(dto::field)
+                .collect()
+        } else {
+            Vec::new()
+        };
         json!({
             "envelope": {
                 "id": s.id, "status": s.status, "subject": s.subject.0, "message": s.message.0,
                 "signing_options": s.options,
-                "documents": s.documents.iter().map(dto::document).collect::<Vec<_>>(),
+                "documents": documents,
                 // When it expires, so the page can say "sign by" (UXW-34).
                 "expires_at": s.expires_at,
             },
             "recipient": me.map(dto::recipient),
-            "fields": s.fields.0.iter()
-                .filter(|f| f.recipient_id.as_ref() == Some(&self.recipient))
-                .map(dto::field).collect::<Vec<_>>(),
+            "fields": fields,
             // Whether the page asks the device for its location (GEO-01); when false it
             // never asks.
             "capture_location": s.options.capture_location,
@@ -723,6 +740,9 @@ pub(crate) async fn otp_verify(
 }
 
 /// `GET /s/{token}/documents/{doc}/content`: the document as delivered (normalized).
+/// Only in the browser the link is bound to, once the recipient has passed every
+/// authentication they need and, when the account has a disclosure, consented to it
+/// (`403` before, SEC-CER-01): the link alone never yields the document.
 pub(crate) async fn document(
     State(st): State<AppState>,
     axum::Extension(ip): axum::Extension<ClientIp>,
@@ -735,6 +755,13 @@ pub(crate) async fn document(
         Err(r) => return r,
     };
     let result = async {
+        // SEC-CER-01: the link alone never yields the document.
+        ready(
+            o.l.state
+                .recipient(&o.recipient)
+                .ok_or_else(ApiError::expired)?,
+            &o.cmds.policy,
+        )?;
         let d =
             o.l.state
                 .documents
@@ -793,10 +820,12 @@ pub(crate) async fn download(
         Err(r) => return r,
     };
     let result = async {
-        let finished =
+        let me =
             o.l.state
                 .recipient(&o.recipient)
-                .is_some_and(|r| r.status == casual_sign_model::RecipientStatus::Completed);
+                .ok_or_else(ApiError::expired)?;
+        authenticated(me)?;
+        let finished = me.status == casual_sign_model::RecipientStatus::Completed;
         if !finished {
             return Err(ApiError::not_available(
                 "the document can be downloaded once you have finished",
@@ -1308,20 +1337,7 @@ pub(crate) async fn history(
             o.l.state
                 .recipient(&o.recipient)
                 .ok_or_else(ApiError::expired)?;
-        let who = || o.recipient.clone();
-        authenticated(r)?;
-        if let Some(ersd) = &o.cmds.policy.ersd {
-            let consented = r
-                .consent
-                .as_ref()
-                .is_some_and(|c| c.ersd_version == ersd.version && c.ersd_hash == ersd.hash);
-            if !consented {
-                return Err(casual_sign_workflow::WorkflowError::ConsentRequired {
-                    recipient: who(),
-                }
-                .into());
-            }
-        }
+        ready(r, &o.cmds.policy)?;
         // `chain` re-verifies every link; a broken chain is an error, never served.
         let _ = o.tx.audit().chain(o.l.id).await?;
         let events = o.tx.audit().events(o.l.id).await?;
@@ -1372,6 +1388,30 @@ fn authenticated(r: &casual_sign_workflow::RecipientState) -> Result<(), ApiErro
             recipient: r.id().clone(),
         }
         .into());
+    }
+    Ok(())
+}
+
+/// Refuse a recipient who is not [`authenticated`] or, when the account requires a
+/// disclosure, has not consented to its current version (`CS-AUTH-0005`): the engine's
+/// `gate_ready` rule, applied to the reads that serve the envelope's records (history,
+/// the document), which ESIGN-style consent must precede.
+fn ready(
+    r: &casual_sign_workflow::RecipientState,
+    policy: &casual_sign_workflow::Policy,
+) -> Result<(), ApiError> {
+    authenticated(r)?;
+    if let Some(ersd) = &policy.ersd {
+        let consented = r
+            .consent
+            .as_ref()
+            .is_some_and(|c| c.ersd_version == ersd.version && c.ersd_hash == ersd.hash);
+        if !consented {
+            return Err(casual_sign_workflow::WorkflowError::ConsentRequired {
+                recipient: r.id().clone(),
+            }
+            .into());
+        }
     }
     Ok(())
 }

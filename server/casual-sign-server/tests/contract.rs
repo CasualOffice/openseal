@@ -769,7 +769,8 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "view",
     )
     .await;
-    let pdfb = api
+    // SEC-CER-01: not the document before the access code.
+    let early = api
         .call(
             "GET",
             &format!("{s1}/documents/{doc}/content"),
@@ -778,7 +779,10 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             &h1,
         )
         .await;
-    assert!(pdfb.body.starts_with(b"%PDF-"));
+    assert_eq!(
+        (early.status, early.code().as_str()),
+        (StatusCode::FORBIDDEN, "CS-AUTH-0003")
+    );
     let wrong = api
         .call(
             "POST",
@@ -827,6 +831,20 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "auth",
     )
     .await;
+    // SEC-CER-01: nor after it, before consent to the account's disclosure.
+    let early = api
+        .call(
+            "GET",
+            &format!("{s1}/documents/{doc}/content"),
+            &Auth::None,
+            None,
+            &h1,
+        )
+        .await;
+    assert_eq!(
+        (early.status, early.code().as_str()),
+        (StatusCode::FORBIDDEN, "CS-AUTH-0005")
+    );
     // UXW-34: this account published no text for its disclosure's hash (the view says
     // so by leaving out `consent_required.url`); tests/disclosure.rs serves one.
     let ersd = api
@@ -849,6 +867,16 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "consent",
     )
     .await;
+    let pdfb = api
+        .call(
+            "GET",
+            &format!("{s1}/documents/{doc}/content"),
+            &Auth::None,
+            None,
+            &h1,
+        )
+        .await;
+    assert!(pdfb.body.starts_with(b"%PDF-"));
     ok(
         api.call(
             "POST",
