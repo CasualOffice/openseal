@@ -1,0 +1,45 @@
+file	sha256	bytes	origin	licence	provenance
+fonts/NotoSansArabic-Regular.ttf	bd86ca02f087d7f3c3788ba458fb6b73744c7639ed276b8d870dba6def6c40d0	142140	third-party	OFL-1.1	https://github.com/notofonts/arabic/releases/download/NotoSansArabic-v2.013/NotoSansArabic-v2.013.zip (zip sha256 1301aceaea84c501cf2e6dcfb3182e2328c8eae5725817fcb239672bda7154f1), NotoSansArabic/unhinted/ttf/NotoSansArabic-Regular.ttf
+fonts/NotoSansDevanagari-Regular.ttf	9c7d935139ea6a1e6ad9dbac4f6d27ece1e04bca8123c8888d00a0f9df4724cd	184228	third-party	OFL-1.1	https://github.com/notofonts/devanagari/releases/download/NotoSansDevanagari-v2.007/NotoSansDevanagari-v2.007.zip (zip sha256 820c7da45b1e63562cb41c0a8cac5d9a4202312043a3a040ed1325857ef469b1), NotoSansDevanagari/unhinted/ttf/NotoSansDevanagari-Regular.ttf
+fonts/OFL-1.1-NotoSansArabic.txt	a7a5a25eb188bf1cd96982030d53e23c33485c69b1044a562254226857ee13af	4382	third-party	OFL-1.1	OFL.txt from the NotoSansArabic-v2.013 zip
+fonts/OFL-1.1-NotoSansDevanagari.txt	a216f6f8d85c7228093e0ee5e258d9d377e6671f68acb4db1930b29583d0f331	4386	third-party	OFL-1.1	OFL.txt from the NotoSansDevanagari-v2.007 zip
+scans/arabic-application--300dpi-fax-skew+0.5.pdf	9352b3ed0177d80a1b928315277bef21f0da10f28e400ebb5e09bd2f6a7add1f	29217	synthetic	Apache-2.0	make-scans.py form=arabic-application variant=300dpi-fax-skew+0.5
+scans/arabic-application--filled-200dpi-q75-skew-0.8.pdf	cb055860ed9310ab07179b5963dc2130e99c3708ae3a6e003d303a265495d356	65894	synthetic	Apache-2.0	make-scans.py form=arabic-application variant=filled-200dpi-q75-skew-0.8
+scans/devanagari-application--150dpi-q60-skew-1.6.pdf	494c49cc78afd2bdbcc48cec93ba53708f4d2260cec9a369f11dbc94bcbaf1da	38180	synthetic	Apache-2.0	make-scans.py form=devanagari-application variant=150dpi-q60-skew-1.6
+scans/devanagari-application--filled-200dpi-q70-skew+1.0.pdf	f3bbffd7d117eb2eafb1c3cf47125709e2fe3b678048a401f1f4855bd682ba3b	64254	synthetic	Apache-2.0	make-scans.py form=devanagari-application variant=filled-200dpi-q70-skew+1.0
+scans/latin-acroform--200dpi-q75-skew+1.5.pdf	08b7d790be111c3322d344fa322b4c2ebdaa24034ffd367bf2099837645225ed	87961	synthetic	Apache-2.0	make-scans.py form=latin-acroform variant=200dpi-q75-skew+1.5
+scans/latin-acroform--300dpi-fax-skew-0.7.pdf	01e9eba523114ca9efcc21076685d59211fbb9f9495d83485ad1e5f43390e8bd	40102	synthetic	Apache-2.0	make-scans.py form=latin-acroform variant=300dpi-fax-skew-0.7
+scans/latin-acroform--filled-150dpi-q60-skew+0.8.pdf	4f22aacdce038a4643fa68e2f8888d5d2cc02afb0c5f5fff46f37d5bf325181b	57900	synthetic	Apache-2.0	make-scans.py form=latin-acroform variant=filled-150dpi-q60-skew+0.8
+scans/latin-consent--150dpi-q60-skew-2.0.pdf	0cbba3fbe98bc880b109774d01c92046bf190bdb55187f3d6aedb27d6bffc175	59113	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=150dpi-q60-skew-2.0
+scans/latin-consent--200dpi-q60-rot180.pdf	b4501ea8ba18f1a072aa91ee16a33d8f2d06ae4a0f0d46d80702a2ee5970a8f6	93648	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=200dpi-q60-rot180
+scans/latin-consent--200dpi-q75-skew+0.6.pdf	08d33f898b84c30eba147fb50533807a4256aca90645b7c3fbccb30a044eb70f	102481	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=200dpi-q75-skew+0.6
+scans/latin-consent--300dpi-fax-skew+1.2.pdf	c2a1acf15e0cf4f220610d74d1699cc3ebae42c4db43eb965c6ecf5454d88a91	60727	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=300dpi-fax-skew+1.2
+scans/latin-consent--filled-200dpi-q70-skew-0.9.pdf	f3f390170f895c2061c7d1f6efa4415f86cee0582346d73c59d12dc5a055ace0	109235	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=filled-200dpi-q70-skew-0.9
+scans/latin-services--200dpi-q75-rot90.pdf	2f4ecedbd31ccd576559df27b4ce6a79137543cbb7a21da0b1a0d96b24dd2694	258139	synthetic	Apache-2.0	make-scans.py form=latin-services variant=200dpi-q75-rot90
+scans/latin-services--200dpi-q75-skew-1.1.pdf	eac199480efa0986b2786ff26733744fb9a662ab79098a7fd155bb68c278698b	261631	synthetic	Apache-2.0	make-scans.py form=latin-services variant=200dpi-q75-skew-1.1
+scans/latin-services--filled-200dpi-q60-skew+0.5.pdf	11de4a09495012b0aa2c4a9318dc2e18f189cf86a7d20579a02eb1eddbb35908	240693	synthetic	Apache-2.0	make-scans.py form=latin-services variant=filled-200dpi-q60-skew+0.5
+truth/arabic-application--300dpi-fax-skew+0.5.json	30aee58839d71ce52398d8170c14875d2ce359340d8fee5f1be367c0b81ce661	5152	synthetic	Apache-2.0	make-scans.py form=arabic-application variant=300dpi-fax-skew+0.5 (truth)
+truth/arabic-application--filled-200dpi-q75-skew-0.8.json	451afd7528538da74a6015dbd3f15b6afcb33384aaa286ce5415495741e6f07e	5803	synthetic	Apache-2.0	make-scans.py form=arabic-application variant=filled-200dpi-q75-skew-0.8 (truth)
+truth/arabic-application.json	025723883afadb1b5978484f1c895941eb8ba10500dcebcec769b4bfacbbe2df	4649	synthetic	Apache-2.0	make-scans.py form=arabic-application (truth)
+truth/devanagari-application--150dpi-q60-skew-1.6.json	9ebf86876aa1ce570373054ce6b0016b50c9b7cde42fbe746f1d888495cbb09d	5565	synthetic	Apache-2.0	make-scans.py form=devanagari-application variant=150dpi-q60-skew-1.6 (truth)
+truth/devanagari-application--filled-200dpi-q70-skew+1.0.json	055da3330189244fd0b7df5a6755d79034ec8f0275f184ad23b0965688808d69	5733	synthetic	Apache-2.0	make-scans.py form=devanagari-application variant=filled-200dpi-q70-skew+1.0 (truth)
+truth/devanagari-application.json	f9a1fc8edb2b90168dabb965b6218cd665955acd6f963754a9b069b8941df964	5034	synthetic	Apache-2.0	make-scans.py form=devanagari-application (truth)
+truth/latin-acroform--200dpi-q75-skew+1.5.json	963ba9e7d5a0fa0718bb22234d5321a036b1f439f1b6829edfa59c4b6f055f8b	8272	synthetic	Apache-2.0	make-scans.py form=latin-acroform variant=200dpi-q75-skew+1.5 (truth)
+truth/latin-acroform--300dpi-fax-skew-0.7.json	95cc8ac09065b932f47e07e2f368303e527e1b56fbdc9ef8823f2ab87388bb97	8268	synthetic	Apache-2.0	make-scans.py form=latin-acroform variant=300dpi-fax-skew-0.7 (truth)
+truth/latin-acroform--filled-150dpi-q60-skew+0.8.json	bc4c7591fa2f832817010888401666e2ec364d52b230882e66bef51c6f2dd621	10318	synthetic	Apache-2.0	make-scans.py form=latin-acroform variant=filled-150dpi-q60-skew+0.8 (truth)
+truth/latin-acroform.json	cb7c69993ab5f460eac82094fe1765339d33daeb19dc1eb415cd4db5d42ce463	7745	synthetic	Apache-2.0	make-scans.py form=latin-acroform (truth)
+truth/latin-consent--150dpi-q60-skew-2.0.json	6f9e64b99ea48280384928e85fb6840c1a4634e95f4e58ee412c51169812b723	17519	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=150dpi-q60-skew-2.0 (truth)
+truth/latin-consent--200dpi-q60-rot180.json	559125f419d50a1a3423e40e02489e2b8751568fad2f7a45b54aa01979eee49b	17541	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=200dpi-q60-rot180 (truth)
+truth/latin-consent--200dpi-q75-skew+0.6.json	5cdc4d48813204c11043d38ea639268ca4c680a1db31eef1d33b6af4805603a5	17515	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=200dpi-q75-skew+0.6 (truth)
+truth/latin-consent--300dpi-fax-skew+1.2.json	916eb071823dd4bcf8ff96152fe3c138e806c64aaab776ee6dcf2328e0d68041	17514	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=300dpi-fax-skew+1.2 (truth)
+truth/latin-consent--filled-200dpi-q70-skew-0.9.json	fe5b3283f1509b245a616aa126fac6db5bf661f770d9708b10f3f0c9174611f1	18961	synthetic	Apache-2.0	make-scans.py form=latin-consent variant=filled-200dpi-q70-skew-0.9 (truth)
+truth/latin-consent.json	5b47beec8928791c0625dd6b94830a8b387a353d490899a3c90e0c63d179678d	17007	synthetic	Apache-2.0	make-scans.py form=latin-consent (truth)
+truth/latin-services--200dpi-q75-rot90.json	70a706fc36e0325aee800666fc182279ab8b33886b2f559b97d535d00fe4fd72	49057	synthetic	Apache-2.0	make-scans.py form=latin-services variant=200dpi-q75-rot90 (truth)
+truth/latin-services--200dpi-q75-skew-1.1.json	a52300b28305f9c2edd1eff2aefd6d133ccc611534e938f0fd4c1fd95ca401c8	49076	synthetic	Apache-2.0	make-scans.py form=latin-services variant=200dpi-q75-skew-1.1 (truth)
+truth/latin-services--filled-200dpi-q60-skew+0.5.json	3fb677752b65a86de0a62ab035b6340b54b5c2798adbfef7ec98a1c16258454a	51904	synthetic	Apache-2.0	make-scans.py form=latin-services variant=filled-200dpi-q60-skew+0.5 (truth)
+truth/latin-services.json	da455d1bec1accd09564e85cb3b0163ae71dfff3a6eb5e140be262bc6662a2a9	48528	synthetic	Apache-2.0	make-scans.py form=latin-services (truth)
+vector/arabic-application.pdf	6fe41578ac95bc14b3e721e40a3814e0a8177cdb482207941b754c7130d54860	150201	synthetic	Apache-2.0	make-scans.py form=arabic-application (vector)
+vector/devanagari-application.pdf	f8460c3aa90b6e88c03dae9b528d2ff891a7b5f4d8c60d32a4b53873a6802db5	190116	synthetic	Apache-2.0	make-scans.py form=devanagari-application (vector)
+vector/latin-acroform.pdf	dca3757d65781abb0b1ac5105700398b7f448137851c5abe2eaec0ba6ce9aaa5	4687	synthetic	Apache-2.0	make-scans.py form=latin-acroform (vector)
+vector/latin-consent.pdf	5d4565d585ff1cfebe007746f6514b44fcf5d3c6426fecba0b659d50b0770889	5931	synthetic	Apache-2.0	make-scans.py form=latin-consent (vector)
+vector/latin-services.pdf	6a06020340fb79e79b6a1a7b37bf91ecd0d34d8d963d6f525ad8a0ec4b855fa7	16063	synthetic	Apache-2.0	make-scans.py form=latin-services (vector)
