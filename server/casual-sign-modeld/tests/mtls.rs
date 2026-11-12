@@ -197,6 +197,119 @@ fn hash_answers_each_page_and_logs_no_hash() {
     }
 }
 
+/// **EMBED over the wire** (piece I, `ML-05`), with real weights
+/// (`OPENSEAL_MODELD_TEST_BUNDLE`; skipped when unset): one unit vector of 384 per text,
+/// in order, equal to the Python reference within 1e-3 cosine, the same bits on a second
+/// call, and the op log holds the count, never the text.
+#[test]
+fn embed_over_the_wire_equals_the_reference_and_logs_no_text() {
+    let Some(bundle) = real_bundle(&[
+        ("runtime/libonnxruntime.so", "onnxruntime-x86_64"),
+        ("templates/e5-small/model.onnx", "e5-small"),
+        ("templates/e5-small/model.fp16.onnx", "e5-small-fp16"),
+        ("templates/e5-small/tokenizer.json", "e5-small-tokenizer"),
+    ]) else {
+        return;
+    };
+    let pki = Pki::new();
+    let worker = pki.client_identity("worker");
+    let modeld = start_modeld_with(
+        &pki,
+        &pki.server_identity(),
+        &[&worker.2],
+        ModeldLimits::default(),
+        "modeld-embed",
+        bundle,
+    );
+    let c = client(&pki.tls_ca.pem(), &modeld, Some(&worker));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/ml/e5-golden");
+    let texts: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("texts.json")).unwrap()).unwrap();
+    let golden: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("e5-small.json")).unwrap())
+            .unwrap();
+    let ids = ["en-nda", "en-query", "de-vertrag", "ar-application"];
+    let text_of = |id: &str| -> String {
+        texts
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == id)
+            .unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let mut kinds = Vec::new();
+    for id in ids {
+        let rec = golden["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == id)
+            .unwrap();
+        kinds.push(rec["kind"].as_str().unwrap().to_owned());
+    }
+    // One call per kind present, so each text gets the prefix the reference used.
+    for kind in ["query", "passage"] {
+        let chosen: Vec<&str> = ids
+            .iter()
+            .zip(&kinds)
+            .filter(|(_, k)| *k == kind)
+            .map(|(id, _)| *id)
+            .collect();
+        if chosen.is_empty() {
+            continue;
+        }
+        let ek = if kind == "query" {
+            EmbedKind::Query
+        } else {
+            EmbedKind::Passage
+        };
+        let input: Vec<String> = chosen.iter().map(|id| text_of(id)).collect();
+        let mut long = call();
+        long.deadline = std::time::Duration::from_secs(120);
+        let a = c.embed(&long, ek, input.clone()).unwrap();
+        let b = c.embed(&long, ek, input).unwrap();
+        assert_eq!(a, b, "the same input gives the same bits");
+        assert_eq!(a.len(), chosen.len());
+        for (v, id) in a.iter().zip(&chosen) {
+            assert_eq!(v.len(), 384);
+            let want: Vec<f64> = golden["texts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == *id)
+                .unwrap()["vector"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_f64().unwrap())
+                .collect();
+            let dot: f64 = v.iter().zip(&want).map(|(x, y)| f64::from(*x) * y).sum();
+            let nv = v.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
+            let nw = want.iter().map(|y| y * y).sum::<f64>().sqrt();
+            assert!((nv - 1.0).abs() < 1e-5, "{id}: not a unit vector ({nv})");
+            assert!(
+                1.0 - dot / (nv * nw) <= 1e-3,
+                "{id}: cosine {}",
+                dot / (nv * nw)
+            );
+        }
+    }
+    let log = std::fs::read_to_string(&modeld.oplog).unwrap();
+    assert!(
+        log.lines()
+            .all(|l| l.contains("\tembed\t") && l.contains("\tok\t")),
+        "{log}"
+    );
+    for id in ids {
+        let t = text_of(id);
+        let word = t.split_whitespace().next().unwrap();
+        assert!(!log.contains(word), "text reached the op log: {log}");
+    }
+}
+
 /// When every slot is taken, an op is answered busy (`CS-ML-0009`, transient); INFO
 /// takes no slot.
 #[test]

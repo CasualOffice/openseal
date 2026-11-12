@@ -5,13 +5,14 @@
 //! 16×16 DCT). The worker stores both as `BIGINT` and compares them by Hamming distance.
 //!
 //! **Rendering.** `raster.rs` (piece C) is still a stub, so this module renders with
-//! `hayro` directly, in process, behind the same caps: the page box is checked against
-//! [`MAX_RASTER_SIDE`] before anything is allocated, an encrypted or unreadable PDF and a
-//! page outside the document are refused (`CS-ML-0006`), and a panic inside the
-//! rasteriser is caught and reported as `CS-ML-0006`, never passed on. What it does not
-//! have yet is piece C's killable child process (the per-page time cap, `RLIMIT_AS`):
-//! when piece C lands, [`render_grey`] is replaced by its raster call and the hashing
-//! below stays as it is. Recorded for the merge.
+//! `hayro` directly, in process: the page box is checked against [`MAX_RASTER_SIDE`]
+//! before anything is allocated (a larger page renders at a lower resolution, docs/21
+//! §ML), an encrypted or unreadable PDF and a page outside the document are refused
+//! (`CS-ML-0006`), and a panic inside the rasteriser is caught and reported as
+//! `CS-ML-0006`, never passed on. **What it does not have yet** is piece C's killable
+//! child process: no per-page time cap, no decoded-image budget, no `RLIMIT_AS`
+//! (`SEC-I01`). When piece C lands, [`render_grey`] is replaced by its raster call and
+//! the hashing below stays as it is. Recorded for the merge.
 //!
 //! Hashes are of the rendered pixels only; no text is read, and nothing here is logged.
 
@@ -49,8 +50,8 @@ pub(crate) struct GreyPage {
 /// # Errors
 /// `CS-ML-0004` if `request` is not a HASH request or names more than [`MAX_PAGES`]
 /// pages; `CS-ML-0006` for a PDF that does not open, is encrypted, or lacks a page asked
-/// for, or a page the rasteriser fails on; `CS-ML-0005` for a page whose raster would
-/// exceed [`MAX_RASTER_SIDE`] pixels on a side.
+/// for, a page box under one pixel, or a page the rasteriser fails on. A page over
+/// [`MAX_RASTER_SIDE`] pixels on a side is rendered smaller, not refused.
 pub(crate) fn run(bundle: &Bundle, request: &Request) -> Result<Vec<PageHash>, ModeldError> {
     let _ = bundle;
     let Op::Hash { pdf, pages } = &request.op else {
@@ -132,16 +133,10 @@ fn render_inner(pdf: &[u8], pages: &[u16], scale: f32) -> Result<Vec<GreyPage>, 
             .get(usize::from(index))
             .ok_or(ModeldError::Raster("page not in document"))?;
         // The pixel cap is checked from the page box before anything is allocated
-        // (hayro would otherwise saturate a huge box to 65,535 pixels a side).
-        let (w, h) = page.render_dimensions();
-        let (pw, ph) = (w * scale, h * scale);
-        let side = f32::from(MAX_RASTER_SIDE);
-        if !(pw.is_finite() && ph.is_finite()) || pw < 1.0 || ph < 1.0 {
-            return Err(ModeldError::Raster("page box"));
-        }
-        if pw > side || ph > side {
-            return Err(ModeldError::OverBound("page pixels"));
-        }
+        // (hayro would otherwise saturate a huge box to 65,535 pixels a side). A page
+        // over it renders at a lower resolution (docs/21 §ML), which a hash does not
+        // notice: it is taken over a 9×8 or 16×16 resize anyway.
+        let scale = fit_scale(page.render_dimensions(), scale)?;
         let pixmap = hayro::render(
             page,
             &cache,
@@ -178,6 +173,27 @@ fn render_inner(pdf: &[u8], pages: &[u16], scale: f32) -> Result<Vec<GreyPage>, 
         });
     }
     Ok(out)
+}
+
+/// The scale to render a page box of `(w, h)` points at: `scale`, lowered so neither
+/// side exceeds [`MAX_RASTER_SIDE`] pixels.
+///
+/// # Errors
+/// `CS-ML-0006` for a page box that is not finite or would be under one pixel.
+fn fit_scale((w, h): (f32, f32), scale: f32) -> Result<f32, ModeldError> {
+    let side = f32::from(MAX_RASTER_SIDE);
+    let long = w.max(h) * scale;
+    // One pixel of margin, so a rasteriser rounding up still stays within the cap.
+    let scale = if long > side {
+        scale * (side - 1.0) / long
+    } else {
+        scale
+    };
+    let (pw, ph) = (w * scale, h * scale);
+    if !(pw.is_finite() && ph.is_finite()) || pw < 1.0 || ph < 1.0 {
+        return Err(ModeldError::Raster("page box"));
+    }
+    Ok(scale)
 }
 
 #[cfg(test)]
@@ -279,16 +295,38 @@ mod tests {
     }
 
     #[test]
-    fn a_page_over_the_pixel_cap_is_refused_before_rendering() {
-        // 4,097 pt wide: 4,097 px at 72 DPI, one over the cap (and small to render, so the
-        // test stays cheap if the check is ever removed). 4,096 is allowed.
-        let pdf = minimal_pdf("0 0 4097 100");
-        assert_eq!(
-            page_hashes(&pdf, &[0]).unwrap_err(),
-            ModeldError::OverBound("page pixels")
+    fn a_page_over_the_pixel_cap_renders_smaller_never_larger() {
+        // 4,097 pt wide is 4,097 px at 72 DPI, one over the cap: it renders at 4,096 or
+        // fewer. 4,096 renders as is. A page box of 200,000 pt a side (far past hayro's
+        // own 65,535-pixel saturation) renders within the cap too.
+        for (media_box, max_w) in [
+            ("0 0 4097 100", 4096),
+            ("0 0 4096 100", 4096),
+            ("0 0 200000 200000", 4096),
+            ("0 0 600 800", 600),
+        ] {
+            let pdf = minimal_pdf(media_box);
+            let g = render_grey(&pdf, &[0], HASH_DPI).unwrap();
+            assert!(
+                g[0].width <= max_w && g[0].height <= 4096,
+                "{media_box}: {}x{}",
+                g[0].width,
+                g[0].height
+            );
+            assert_eq!(g[0].pixels.len(), (g[0].width * g[0].height) as usize);
+            assert_eq!(page_hashes(&pdf, &[0]).unwrap().len(), 1);
+        }
+        assert!(
+            render_grey(&minimal_pdf("0 0 4097 100"), &[0], HASH_DPI).unwrap()[0].width >= 4090
         );
-        let ok = minimal_pdf("0 0 4096 100");
-        assert_eq!(page_hashes(&ok, &[0]).unwrap().len(), 1);
+        assert_eq!(
+            fit_scale((f32::INFINITY, 10.0), 1.0).unwrap_err(),
+            ModeldError::Raster("page box")
+        );
+        assert_eq!(
+            fit_scale((1e9, 1.0), 1.0).unwrap_err(),
+            ModeldError::Raster("page box")
+        );
     }
 
     /// A one-page PDF with an empty content stream and this media box, offsets computed.

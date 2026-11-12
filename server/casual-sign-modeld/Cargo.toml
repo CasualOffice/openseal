@@ -43,7 +43,7 @@ ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "
 tokenizers = { version = "=0.23.2", default-features = false, features = ["onig"], optional = true }
 # Page hashes: dHash and pHash over raw grey pixels; `image` without any decoder.
 image_hasher = { version = "=3.1.1", optional = true }
-image = { version = "0.25", default-features = false, optional = true }
+image = { version = "=0.25.10", default-features = false, optional = true }
 # Page rasteriser for HASH while raster.rs (piece C) is a stub; the same caps apply.
 hayro = { version = "=0.8.0", optional = true }
 
