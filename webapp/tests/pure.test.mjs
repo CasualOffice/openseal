@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import * as geo from "../geometry.js";
 import * as cmd from "../commands.js";
 import { combo, commandFor, SHORTCUTS } from "../keys.js";
-import { EN } from "../strings.en.js";
+import { EN, PARTS } from "../strings.en.js";
 import { t } from "../i18n.js";
 import { locationFrom, isMockMode, toBase64 } from "../api.js";
 import { makePdf, countPages } from "../mockpdf.js";
@@ -123,7 +123,7 @@ test("every message key used in code and HTML has an English string", () => {
   const files = [...fs.readdirSync(WEBAPP), ...fs.readdirSync(path.join(WEBAPP, "ui")).map((f) => `ui/${f}`)].filter((f) => /\.(js|html)$/.test(f) && f !== "strings.en.js");
   const missing = [];
   const prefixes = "a11y|account|action|adopt|admin|agreements|audit|cmd|empty|error|event|form|ftype|help|home|mock|nav|prepare|recipient|reports|rtype|send|sign|signin|start|status|template|templates|theme|timeline|top|use|verify|wizard|preview";
-  const commandIds = new Set(["envelope.new", "envelope.refresh", "envelope.save", "envelope.send", "envelope.edit", "envelope.resend", "envelope.void", "envelope.download", "envelope.certificate", "theme.toggle", "recipient.add", "recipient.select", "recipient.select-", "help.shortcuts", "document.add", "template.new", "verify.html", "verify.js"]);
+  const commandIds = new Set(["envelope.new", "envelope.refresh", "envelope.save", "envelope.send", "envelope.edit", "envelope.resend", "envelope.void", "envelope.download", "envelope.certificate", "theme.toggle", "recipient.add", "recipient.select", "recipient.select-", "help.shortcuts", "document.add", "template.new", "verify.html", "verify.js", "prepare.css", "sign.css", "admin.css"]);
   for (const f of files) {
     const text = fs.readFileSync(path.join(WEBAPP, f), "utf8");
     for (const m of text.matchAll(new RegExp(`["':](${prefixes}|envelope)\\.[A-Za-z0-9.\\-]+(?=["';])`, "g"))) {
@@ -143,6 +143,19 @@ test("every message key used in code and HTML has an English string", () => {
   for (const k of ["type", "draw", "upload"]) if (!(`adopt.${k}` in EN)) missing.push(`adopt.${k}`);
   for (const k of ["voided", "declined", "expired"]) if (!(`sign.closed.${k}` in EN)) missing.push(`sign.closed.${k}`);
   assert.deepEqual(missing, []);
+});
+
+test("every message key is defined in exactly one strings/ part (UX-02)", () => {
+  const seen = new Map();
+  const twice = [];
+  for (const [part, map] of Object.entries(PARTS)) {
+    for (const k of Object.keys(map)) {
+      if (seen.has(k)) twice.push(`${k}: ${seen.get(k)} and ${part}`);
+      seen.set(k, part);
+    }
+  }
+  assert.deepEqual(twice, []);
+  assert.equal(seen.size, Object.keys(EN).length);
 });
 
 test("t fills placeholders as text and leaves unknown ones", () => {

@@ -119,7 +119,12 @@ separate API origin is added to `connect-src` by the server that serves the page
 
 ### Design system
 
-One tokens file, `webapp/tokens.css`; components in `webapp/app.css`. Light and dark by `data-theme` or the OS.
+One tokens file, `webapp/tokens.css`; shared components in `webapp/app.css`. Each part of the app has its own
+stylesheet loaded after it (UX-02): `shell.css` (top bar, sections, sign-in, verify), `prepare.css` (the editor),
+`sign.css` (the signing page), `manage.css` (Home, Agreements, envelope) and `admin.css` (Templates, Reports, Admin).
+`app.html` loads app, shell, prepare, manage and admin; `sign.html` app and sign; `verify.html` app and shell.
+Messages are split the same way: `strings.en.js` merges `strings/{common,shell,prepare,sign,manage,admin}.en.js`,
+and a key lives in exactly one part. Light and dark by `data-theme` or the OS.
 
 | Token family | Values |
 | --- | --- |
