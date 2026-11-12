@@ -314,6 +314,11 @@ password_hash, now)` from a live session of the current account (`Users::update_
 password through either ends the user's staff sessions in every account (`openseal_revoke_user_sessions`, not granted
 to the application role). No table changes.
 
+`0014_in_person_hosting.sql` (`UXW-36`) lets `recipient_tokens.purpose` be `in_person` and adds
+`recipient_tokens.host_user_id` (a user), set exactly when the purpose is `in_person` (a check). An in-person link
+acts as its host hosting the signer (docs/40 As built); the host is a user rather than a membership so that removing
+the member is not refused, and the server refuses the link once the host is no longer an enabled member.
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 

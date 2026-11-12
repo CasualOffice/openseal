@@ -1056,13 +1056,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!subId && method === "GET") return json(200, { items: env.recipients.map(publicRecipient) });
       const r = env.recipients.find((x) => x.id === subId);
       if (!r) fail(404, "CS-API-0002", "Not found");
-      // UX-03, not on the server yet (NOT_ON_SERVER.hostInPerson): a staff user hosts an
-      // in-person signer once routing has reached them, on this device.
+      // A staff user hosts an in-person signer once routing has reached them, on this
+      // device (UXW-36). The server mints a new one-hour link acting as the host; the
+      // mock answers the signer's own token.
       if (subSub === "host" && method === "POST") {
         if (r.type !== "in_person_signer" || !["sent", "delivered"].includes(r.status) || !r.token) fail(409, "CS-WF-0001", "Not allowed in the current state");
         r.hosted = "user-demo";
         await audit(env, "recipient.in_person_hosted", { recipient_id: r.id, host_user_id: "user-demo" }, { by: "user" });
-        return json(200, { url: `/s/${encodeURIComponent(r.token)}` });
+        return json(201, { url: `/s/${encodeURIComponent(r.token)}`, expires_at: iso(60) });
       }
       if (method === "PATCH") {
         // As the server: a draft, or a correction of a sent envelope for a recipient who

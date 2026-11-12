@@ -300,7 +300,7 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   assert.equal(c.available("listWebhooks"), true, "a call the server serves is available");
   const refused = [
     c.inbox(), c.listFolders(), c.createFolder("x"), c.moveEnvelopes("f", ["e"]), c.restoreEnvelope("e"),
-    c.updateWebhook("w", { active: false }), c.testWebhook("w"), c.redeliver("w", "d"), c.hostInPerson("e", "r"),
+    c.updateWebhook("w", { active: false }), c.testWebhook("w"), c.redeliver("w", "d"),
     c.signLink("e"), c.ceremony.clearField("t", "f"),
     c.listEnvelopes({ recipient: "ann" }), c.listEnvelopes({ date_field: "sent_at" }), c.listEnvelopes({ folder: "f" }), c.listEnvelopes({ deleted: true }),
   ];

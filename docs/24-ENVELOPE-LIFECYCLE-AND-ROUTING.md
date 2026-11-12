@@ -69,7 +69,9 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - Approvers complete with Approve or decline with Decline; they never sign.
 - Editors (allowed to edit) may change later recipients and fields before signing.
 - Agents (specify recipients) supply the name and email of later recipients.
-- In-person signers are hosted by a staff user who authenticates first; the event records both.
+- In-person signers are hosted by a staff user who authenticates first; the event records both. On the server
+  (`UXW-36`), `POST /envelopes/{id}/recipients/{r}/host` runs `HostInPerson` as `InPersonHost` and returns a one-time
+  link whose every command runs as that host (docs/40 As built); the signer's emailed link cannot act for them.
 - **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
   signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
   `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context

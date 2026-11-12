@@ -262,6 +262,7 @@ pub async fn seed(store: &Store, name: &str) -> World {
             recipient_id: w.recipient,
             token_sha256: w.token_sha256,
             purpose: TokenPurpose::Invitation,
+            host_user_id: None,
             expires_at: now() + time::Duration::days(30),
         })
         .await

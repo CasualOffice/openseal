@@ -1678,6 +1678,31 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Object'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/recipients/{r}/host:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+      - name: r
+        in: path
+        required: true
+        description: Recipient id
+        schema: {type: string}
+    post:
+      operationId: hostInPersonSigner
+      summary: "Host an in-person signer: records recipient.in_person_hosted and returns a one-hour signing link that acts as the caller hosting the signer (UXW-36)"
+      x-permission: "envelopes:send"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningView'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/views/signing:
     parameters:
       - name: id

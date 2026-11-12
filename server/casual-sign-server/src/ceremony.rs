@@ -1,7 +1,7 @@
 //! The recipient ceremony (docs/40 §6), under `/s/{token}`: not public API.
 //!
-//! The token is the invitation's (or an embedded view's) 256-bit secret; only its
-//! SHA-256 is stored (SEC-A01). Its first use (`POST /s/{token}/session`) binds it to
+//! The token is the invitation's (or an embedded view's, or an in-person host's) 256-bit
+//! secret; only its SHA-256 is stored (SEC-A01). Its first use (`POST /s/{token}/session`) binds it to
 //! this browser with a second secret in an `HttpOnly`, `SameSite=Strict` cookie; every
 //! later call must carry that cookie (`CS-AUTH-0009` otherwise), so a forwarded or
 //! leaked link opens nothing in another browser. Every call is rate-limited per token
@@ -21,6 +21,7 @@ use base64::engine::general_purpose::STANDARD;
 use casual_sign_audit::{AdoptionMethod, AuthMethod, EventData, Hash256, MarkKind};
 use casual_sign_model::{FieldValue, Id};
 use casual_sign_store::repo::documents::VersionKind;
+use casual_sign_store::repo::recipients::TokenPurpose;
 use casual_sign_store::{DocumentId, RecipientId, TenantTx};
 use casual_sign_workflow::{Command, FieldEntry, Principal as WfPrincipal, ReassignTo};
 use serde::Deserialize;
@@ -45,6 +46,9 @@ pub(crate) struct Open {
     tx: TenantTx,
     l: Loaded,
     recipient: Id,
+    /// The member hosting an in-person signing, when the link is theirs (UXW-36):
+    /// every command then runs as `InPersonHost`, never as the signer alone.
+    host: Option<Id>,
     cmds: Commands,
     cookie: Option<String>,
     ip: ClientIp,
@@ -178,13 +182,26 @@ async fn open(
             .state
             .recipient(&recipient)
             .ok_or_else(ApiError::expired)?;
-        let mut auth = vec![AuthMethod::EmailLink];
-        auth.extend(
-            r.auth_passed
-                .iter()
-                .copied()
-                .filter(|m| *m != AuthMethod::EmailLink),
-        );
+        // An in-person link acts as its host, who must still be an enabled member; it
+        // records the host's sign-in, not an emailed link.
+        let host = match (record.purpose, record.host_user_id) {
+            (TokenPurpose::InPerson, Some(h)) => {
+                let member = tx.users().get(h).await?.ok_or_else(ApiError::expired)?;
+                if member.disabled_at.is_some() {
+                    return Err(ApiError::expired());
+                }
+                Some(crate::apply::eid(h.0)?)
+            }
+            (TokenPurpose::InPerson, None) => return Err(ApiError::expired()),
+            _ => None,
+        };
+        let first = if host.is_some() {
+            AuthMethod::AccountLogin
+        } else {
+            AuthMethod::EmailLink
+        };
+        let mut auth = vec![first];
+        auth.extend(r.auth_passed.iter().copied().filter(|m| *m != first));
         let ctx = request_context(
             headers,
             ip,
@@ -209,6 +226,7 @@ async fn open(
             tx,
             l,
             recipient,
+            host,
             cmds,
             cookie: set_cookie,
             ip,
@@ -225,12 +243,15 @@ async fn open(
 
 impl Open {
     async fn run(&mut self, cmd: Command) -> Result<(), ApiError> {
-        let ctx = self.cmds.ctx(
-            WfPrincipal::Recipient {
+        let principal = match &self.host {
+            Some(user_id) => WfPrincipal::InPersonHost {
+                user_id: user_id.clone(),
+            },
+            None => WfPrincipal::Recipient {
                 recipient_id: self.recipient.clone(),
             },
-            None,
-        )?;
+        };
+        let ctx = self.cmds.ctx(principal, None)?;
         run(&mut self.tx, &mut self.l, &cmd, &ctx).await?;
         Ok(())
     }

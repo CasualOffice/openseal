@@ -59,11 +59,10 @@ export function toBase64(bytes) {
 export const RECIPIENT_TYPES = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "cc", "editor", "intermediary", "agent", "witness", "seal", "notary"]);
 /// The types a recipient can complete end to end today: through the ceremony (`signer`,
 /// `approver` by `POST /s/{token}/approve`, `viewer` by viewing every document to the
-/// end), or none (`cc`). `in_person_signer` waits for a staff hosting call
-/// (`NOT_ON_SERVER.hostInPerson`); the others are the engine's, their ceremony a later
-/// slice (editor, agent and intermediary edit later recipients; witness 16, seal 18,
-/// notary 31).
-export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "approver", "viewer", "cc"]);
+/// end, `in_person_signer` on the link a staff user's `hostInPerson` returns, UXW-36),
+/// or none (`cc`); the others are the engine's, their ceremony a later slice (editor,
+/// agent and intermediary edit later recipients; witness 16, seal 18, notary 31).
+export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "cc"]);
 
 /// Every field type the API takes: the engine's `FieldType` (docs/22 §6), in wire spelling.
 export const FIELD_TYPES = Object.freeze([
@@ -193,7 +192,6 @@ export const NOT_ON_SERVER = Object.freeze({
   testWebhook: { row: "UXW-32", needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
   redeliver: { row: "UXW-33", needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
   clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit event)" },
-  hostInPerson: { row: "UXW-36", needs: "POST /envelopes/{id}/recipients/{r}/host (staff hosts an in-person signer)" },
 });
 
 /// Make a client. `baseUrl` is prepended to every path ("" = same origin). `store`
@@ -376,9 +374,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// recently used first; `limit` 1 to 50.
     contacts: (q, limit = 10) => data(request("GET", "/api/v1/contacts", { query: { q, limit } })),
     listContacts: ({ q, limit = 10 } = {}) => data(request("GET", "/api/v1/contacts", { query: { q, limit } })),
-    /// A staff user hosts an in-person signer: answers `{url}`, the signing page to open
-    /// on this device (`NOT_ON_SERVER.hostInPerson`).
-    hostInPerson: unbuilt("hostInPerson", (id, r) => data(request("POST", `${E(id)}/recipients/${encodeURIComponent(r)}/host`))),
+    /// A staff user hosts an in-person signer (UXW-36): answers `{url, expires_at}`, a
+    /// one-time signing page to open on this device, acting as this user hosting them.
+    hostInPerson: (id, r) => data(request("POST", `${E(id)}/recipients/${encodeURIComponent(r)}/host`)),
 
     // ---- Folders (`NOT_ON_SERVER.folders`) -------------------------------------
     /// The signed-in user's folders, `{items: [{id, name, count}]}`.

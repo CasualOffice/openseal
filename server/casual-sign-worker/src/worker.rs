@@ -763,6 +763,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                 recipient_id: recipient,
                 token_sha256: *Hash256::digest(token.as_bytes()).as_bytes(),
                 purpose,
+                host_user_id: None,
                 expires_at,
             })
             .await?;
