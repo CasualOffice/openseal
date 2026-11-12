@@ -110,10 +110,11 @@ pub(crate) fn run_all(scan: &mut Scan<'_>) {
     aadhaar(scan);
     ip(scan);
     date_of_birth(scan);
+    crate::ids::run_all(scan);
 }
 
 /// Matches of `re` in the text, within the kind's candidate budget.
-fn each(
+pub(crate) fn each(
     scan: &mut Scan<'_>,
     kind: Kind,
     re: &LazyLock<Option<Regex>>,
@@ -129,21 +130,21 @@ fn each(
     }
 }
 
-fn is_word(c: char) -> bool {
+pub(crate) fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-fn before(text: &str, at: usize) -> Option<char> {
+pub(crate) fn before(text: &str, at: usize) -> Option<char> {
     text.get(..at).and_then(|s| s.chars().next_back())
 }
 
-fn after(text: &str, at: usize) -> Option<char> {
+pub(crate) fn after(text: &str, at: usize) -> Option<char> {
     text.get(at..).and_then(|s| s.chars().next())
 }
 
 /// Presidio's `\b…\b` under Unicode rules, for a match whose first and last characters
 /// are word characters.
-fn word_bounded(text: &str, start: usize, end: usize) -> bool {
+pub(crate) fn word_bounded(text: &str, start: usize, end: usize) -> bool {
     !before(text, start).is_some_and(is_word) && !after(text, end).is_some_and(is_word)
 }
 
@@ -157,7 +158,7 @@ fn word_bounded(text: &str, start: usize, end: usize) -> bool {
 /// The width test keeps a row number or a quantity ("Row 1 4111 …", "Pay 5 2345 …")
 /// from hiding the value after it, and a match that opens with `+` or `(` starts a
 /// number of its own, as no account number holds either.
-fn continues_group(text: &str, start: usize) -> bool {
+pub(crate) fn continues_group(text: &str, start: usize) -> bool {
     let tail = text.get(start..).unwrap_or("").as_bytes();
     if matches!(tail.first(), Some(b'+' | b'(')) {
         return false;
@@ -205,8 +206,15 @@ fn continues_group(text: &str, start: usize) -> bool {
     false
 }
 
+/// Whether the match touches the `<` filler of a machine-readable zone: its digits are
+/// a field of a travel document's MRZ line (recognised as a whole, `ML-08C`), not a
+/// value of their own. Not Presidio's.
+pub(crate) fn in_mrz(text: &str, start: usize, end: usize) -> bool {
+    before(text, start) == Some('<') || after(text, end) == Some('<')
+}
+
 /// A pattern score, raised when a context word precedes the match.
-fn scored(scan: &Scan<'_>, start: usize, base: u16, words: &[&str]) -> u16 {
+pub(crate) fn scored(scan: &Scan<'_>, start: usize, base: u16, words: &[&str]) -> u16 {
     if context::supports(&context::window(scan.text, start), words) {
         context::boosted(base)
     } else {
@@ -214,7 +222,7 @@ fn scored(scan: &Scan<'_>, start: usize, base: u16, words: &[&str]) -> u16 {
     }
 }
 
-fn digits_of(s: &str) -> Vec<u8> {
+pub(crate) fn digits_of(s: &str) -> Vec<u8> {
     s.bytes().filter(u8::is_ascii_digit).collect()
 }
 
@@ -322,7 +330,10 @@ fn iban(scan: &mut Scan<'_>) {
 fn card(scan: &mut Scan<'_>) {
     each(scan, Kind::PaymentCard, &CARD, |scan, start, end| {
         let text = scan.text;
-        if !word_bounded(text, start, end) || continues_group(text, start) {
+        if !word_bounded(text, start, end)
+            || continues_group(text, start)
+            || in_mrz(text, start, end)
+        {
             return;
         }
         // Presidio's `(?!1\d{12}(?!\d))`: thirteen digits starting with 1 are refused.
@@ -367,7 +378,9 @@ fn ssn(scan: &mut Scan<'_>) {
     }
 }
 
-/// Presidio's `UsSsnRecognizer.invalidate_result`.
+/// Presidio's `UsSsnRecognizer.invalidate_result`, plus one rule of ours (`ML-08C`):
+/// area numbers 900 to 999 are never issued as SSNs (the SSA's numbering rules) and
+/// are the ITIN's space, found by its own recogniser.
 fn ssn_invalid(found: &str) -> bool {
     let delimiters = [b'.', b'-', b' ']
         .iter()
@@ -383,6 +396,7 @@ fn ssn_invalid(found: &str) -> bool {
     d.get(3..5) == Some(b"00".as_slice())
         || d.get(5..) == Some(b"0000".as_slice())
         || matches!(d.get(..3), Some(b"000" | b"666"))
+        || d.first() == Some(&b'9')
         || matches!(d.as_slice(), b"123456789" | b"987654320" | b"078051120")
 }
 

@@ -15,7 +15,34 @@
 mod common;
 
 use casual_sign_pii::{Kind, Options, detect};
+use common::validated::{self as v, Pair};
 use common::*;
+
+/// The `ML-08C` generator for `kind`.
+pub fn validated_value(kind: Kind, r: &mut Rng) -> Pair {
+    match kind {
+        Kind::UsItin => v::itin(r),
+        Kind::UsEin => v::ein(r),
+        Kind::AbaRouting => v::aba(r),
+        Kind::CaSin => v::ca_sin(r),
+        Kind::UkNhs => v::uk_nhs(r),
+        Kind::AuTfn => v::au_tfn(r),
+        Kind::AuMedicare => v::au_medicare(r),
+        Kind::DeTaxId => v::de_tax_id(r),
+        Kind::FrNir => v::fr_nir(r),
+        Kind::EsNif => v::es_nif(r),
+        Kind::EsNie => v::es_nie(r),
+        Kind::ItFiscalCode => v::it_fiscal_code(r),
+        Kind::NlBsn => v::nl_bsn(r),
+        Kind::EuVat => v::eu_vat(r),
+        Kind::PassportMrz => v::passport_mrz(r),
+        Kind::SwiftBic => v::swift_bic(r),
+        Kind::Imei => v::imei(r),
+        Kind::MacAddress => v::mac(r),
+        Kind::Crypto => v::crypto(r),
+        other => panic!("{} has no ML-08C generator", other.label()),
+    }
+}
 
 const PER_KIND: usize = 200;
 
@@ -31,6 +58,25 @@ fn sentence(kind: Kind, value: &str, with_context: bool) -> (String, usize) {
         (Kind::InPan, true) => "PAN: ",
         (Kind::InAadhaar, true) => "Aadhaar no. ",
         (Kind::IpAddress, true) => "Signed from IP ",
+        (Kind::UsItin, true) => "ITIN: ",
+        (Kind::UsEin, true) => "Employer Identification Number ",
+        (Kind::AbaRouting, true) => "ABA routing number ",
+        (Kind::CaSin, true) => "Social Insurance Number ",
+        (Kind::UkNhs, true) => "NHS number ",
+        (Kind::AuTfn, true) => "TFN ",
+        (Kind::AuMedicare, true) => "Medicare card ",
+        (Kind::DeTaxId, true) => "Steuer-ID ",
+        (Kind::FrNir, true) => "numéro de sécurité sociale ",
+        (Kind::EsNif, true) => "DNI ",
+        (Kind::EsNie, true) => "NIE ",
+        (Kind::ItFiscalCode, true) => "codice fiscale ",
+        (Kind::NlBsn, true) => "BSN ",
+        (Kind::EuVat, true) => "VAT number ",
+        (Kind::PassportMrz, true) => "Passport MRZ:\n",
+        (Kind::SwiftBic, true) => "SWIFT code ",
+        (Kind::Imei, true) => "Device IMEI ",
+        (Kind::MacAddress, true) => "MAC address ",
+        (Kind::Crypto, true) => "Bitcoin address ",
         (Kind::DateOfBirth, _) => [
             "Date of birth: ",
             "The tenant was born on ",
@@ -55,7 +101,7 @@ fn value(kind: Kind, r: &mut Rng) -> String {
         Kind::InAadhaar => aadhaar(r),
         Kind::IpAddress => ip(r),
         Kind::DateOfBirth => date(r),
-        _ => unreachable!(),
+        other => validated_value(other, r).valid,
     }
 }
 
@@ -94,7 +140,16 @@ fn negatives(r: &mut Rng) -> Vec<String> {
         out.push(format!("Order {}{} shipped.", &a[..11], (d + 1) % 10));
         // A date with no birth context.
         out.push(format!("Signed on {}.", date(r)));
+        // ML-08C: each validated identifier with its check broken.
+        for kind in Kind::ALL.into_iter().skip(10) {
+            out.push(format!(
+                "Reference {} applies.",
+                validated_value(kind, r).broken
+            ));
+        }
     }
+    out.push("THIS AGREEMENT between the LANDLORD and the TENANT covers the PROPERTY.".into());
+    out.push("WHEREAS the PURCHASER and the GUARANTOR agree; NOTWITHSTANDING clause 4.".into());
     out
 }
 
