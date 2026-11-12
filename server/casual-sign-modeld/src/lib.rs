@@ -15,8 +15,9 @@
 //!   counts and ids only), [`Manifest`] and [`Bundle`] (weights pinned by SHA-256 in a
 //!   manifest compiled into the binary; modeld does not start on a one-byte change), and
 //!   the op modules the later pieces fill: `raster`, `rules` (piece C), `ocr` (D),
-//!   `hash`, `embed` (I), `gliner`, `entities`, `personal` (K). Until filled, each op
-//!   answers `CS-ML-0010` (not installed).
+//!   `hash`, `embed` (I), and [`Gliner`] with `entities` and `personal` (K: ENTITIES and
+//!   PERSONAL through GLiNER on ONNX Runtime, [`SpanModels`]). An op whose model is not
+//!   installed answers `CS-ML-0010`.
 //!
 //! Every output is a suggestion a person accepts; none enters a sealed document, the
 //! audit chain or the evidence (docs/33 invariant 2). Errors are [`ModeldError`] with
@@ -52,6 +53,11 @@ mod server;
 pub use client::{Call, DEADLINE_GRACE, Endpoint, ModelClient, client_tls};
 pub use error::{BundleProblem, ModelRefusal, ModeldError};
 
+#[cfg(feature = "server")]
+pub use gliner::{
+    Gliner, MAX_WINDOW_TOKENS, MAX_WINDOWS, RUNTIME_PATH, SpanModels, WINDOW_OVERLAP, WindowFeeds,
+    init_runtime, split_words,
+};
 #[cfg(feature = "server")]
 pub use manifest::{ALLOWED_LICENCES, Bundle, Entry, MAX_BUNDLE, MAX_FILE, Manifest};
 #[cfg(feature = "server")]
