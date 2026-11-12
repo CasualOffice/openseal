@@ -54,16 +54,16 @@ for (const width of [1024, 1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await toDocuments(page);
     await expect.poll(async () => { const w = await widths(page, "signer-doc"); return w.scroll - w.client; }, { message: "signing: no horizontal overflow" }).toBeLessThanOrEqual(0);
-    // The Start flag sits in the margin, fully inside the scroller.
-    const tag = await page.getByTestId("guide-tag").boundingBox();
+    // WEB-18: the page is never wider than the canvas's page, and centred.
+    const pg = await page.locator(".os-page").first().boundingBox();
     const sc = await page.getByTestId("signer-doc").boundingBox();
-    expect(tag.x).toBeGreaterThanOrEqual(sc.x);
+    expect(Math.abs(pg.x - sc.x - (sc.x + sc.width - pg.x - pg.width))).toBeLessThanOrEqual(24);
     // To review: fill the two required fields.
     await page.getByRole("textbox", { name: /Job title/ }).fill("Engineer");
     await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
     await page.getByRole("button", { name: /^Sign: Signature/ }).click();
     await adoptTyped(page);
-    await page.locator("#bar-finish").click();
+    await page.locator("#guide-finish").click();
     await expect(page.getByRole("heading", { name: "Review and finish" })).toBeVisible();
     await expect.poll(async () => { const w = await widths(page, "review-doc"); return w.scroll - w.client; }, { message: "review: no horizontal overflow" }).toBeLessThanOrEqual(0);
     if (width === 1440) await shot(page, "review-1440");
@@ -87,8 +87,13 @@ test("the consent card names the sender and the deadline, and opens the full dis
   // The sender is named beside the message and in Help too.
   await page.getByLabel("I agree to use electronic records and signatures.").check();
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByTestId("field-list")).toBeVisible();
-  await expect(page.getByTestId("panel-fieldlist")).toContainText("Demo Admin");
+  await expect(page.locator(".os-page canvas").first()).toBeVisible();
+  // WEB-18: the header says who asked; the field list (More) names them too.
+  await expect(page.getByTestId("ask-line")).toContainText("Demo Admin");
+  await page.locator("#more-btn").click();
+  await page.getByTestId("menu-fields").click();
+  await expect(page.getByTestId("sheet-fields")).toContainText("Demo Admin");
+  await page.keyboard.press("Escape");
   await page.locator("#more-btn").click();
   await page.getByTestId("menu-help").click();
   await expect(page.getByTestId("sheet-help")).toContainText("demo@openseal.test");
@@ -99,7 +104,9 @@ test("first arrival opens at the top of page 1", async ({ page }) => {
   await toDocuments(page);
   await page.waitForTimeout(300);
   expect(await page.getByTestId("signer-doc").evaluate((el) => el.scrollTop)).toBe(0);
-  await expect(page.getByTestId("guide-tag")).toBeVisible();
+  // The next field is ringed (WEB-18), the guide bar names it.
+  await expect(page.locator(".os-sfield.is-next")).toHaveCount(1);
+  await expect(page.locator("#guide-title")).toHaveText("Fill in Job title");
   await shot(page, "documents-1440");
 });
 
@@ -126,7 +133,9 @@ test("a signed field can be removed and changed, and the history records both", 
   await page.getByRole("button", { name: /^Signed: Signature/ }).click();
   await page.getByRole("menu", { name: "Signature" }).getByRole("menuitem", { name: "Change signature" }).click();
   const dlg = page.getByRole("dialog", { name: /Adopt your signature/ });
-  await dlg.getByRole("radio", { name: /Style Allura/ }).check({ force: true });
+  // The style tile is what a person chooses (WEB-18); its radio follows.
+  await dlg.locator("label", { has: page.getByRole("radio", { name: /Style Allura/ }) }).click();
+  await expect(dlg.getByRole("radio", { name: /Style Allura/ })).toBeChecked();
   await dlg.getByTestId("adopt-confirm").click();
   await expect(dlg).toBeHidden();
   await expect.poll(() => field.locator("img").getAttribute("src")).not.toBe(first);
@@ -189,12 +198,13 @@ test("a radio group is chosen in a popover on the field, saved on selection", as
   await expect(page.locator('[data-field="radio_group"]')).toHaveClass(/is-done/);
 });
 
-test("Finish reads as a secondary action until ready; required is not error-red", async ({ page }) => {
+test("Finish shows once nothing required is left; required is not error-red", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await toDocuments(page);
-  const fin = page.locator("#bar-finish");
-  await expect(fin).toHaveClass(/os-btn--secondary/);
-  expect(await fin.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  const fin = page.locator("#guide-finish");
+  // WEB-18 (the canvas): Start / Next until every required field is done, then Finish.
+  await expect(fin).toBeHidden();
+  await expect(page.locator("#guide-next")).toBeVisible();
   const req = page.locator(".os-sfield.is-required").first();
   // The danger colour as the browser writes it (rgb), against the required outline.
   const err = await page.evaluate(() => { const s = document.createElement("span"); s.style.color = "var(--os-danger)"; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; });
@@ -204,7 +214,9 @@ test("Finish reads as a secondary action until ready; required is not error-red"
   await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
   await page.getByRole("button", { name: /^Sign: Signature/ }).click();
   await adoptTyped(page);
-  await expect(fin).toHaveClass(/os-btn--primary/);
+  await expect(fin).toBeVisible();
+  await expect(fin).toHaveClass(/is-ready/);
+  await expect(page.locator("#guide-next")).toBeHidden();
 });
 
 test("finish later clears the progress; the done page links Verify and prints", async ({ page }) => {
@@ -221,7 +233,7 @@ test("finish later clears the progress; the done page links Verify and prints", 
   await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
   await page.getByRole("button", { name: /^Sign: Signature/ }).click();
   await adoptTyped(page);
-  await page.locator("#bar-finish").click();
+  await page.locator("#guide-finish").click();
   await page.getByTestId("review-finish").click();
   const done = page.getByTestId("sign-done");
   await expect(done.getByRole("link", { name: "Verify page" })).toHaveAttribute("href", "/verify.html");

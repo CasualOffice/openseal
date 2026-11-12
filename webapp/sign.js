@@ -4,17 +4,26 @@
 // and a Next-field guide → review → Finish. Decline and Finish later are always
 // available. Mobile first: one primary action, a bottom bar, 44 px targets.
 //
+// WEB-18 (the approved canvas, docs/assets/design-canvas/Signer.dc.html and
+// SignerPhone.dc.html): a secure-open loader that ticks off real steps only, a header
+// naming who asked, the pages beside a thumbnail rail, a floating guide bar (progress
+// ring, the next action, Start / Next / Finish), the adopt dialog (a bottom sheet on
+// phones), a sealed receipt, and full-page states in the same style. What the guide,
+// the rail, the loader and the receipt show is computed by the pure model in
+// signfields.js; this file renders it. Every verb is a command (commands.js).
+//
 // The link token is a secret: it is never logged or put in a message; the server
 // binds it to this browser with an HttpOnly cookie on `POST /s/{token}/session`.
 
-import { h, clear, skipTo, download } from "./dom.js";
+import { h, clear, skipTo, download, reducedMotion } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, errorMessage, locationFrom, ApiError } from "./api.js";
-import { button, busy, emptyState, toast, toastError, openDialog, noServerState, dockPanel, openPanel, closePanel, placeMenu } from "./ui/index.js";
+import { button, busy, toast, toastError, openDialog, noServerState, dockPanel, openPanel, closePanel, placeMenu } from "./ui/index.js";
+import { register, run } from "./commands.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
-import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN } from "./signfields.js";
+import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments } from "./signfields.js";
 import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
@@ -43,12 +52,105 @@ const guide = document.getElementById("guide");
 const subjectEl = document.getElementById("subject");
 const moreBtn = document.getElementById("more-btn");
 const moreMenu = document.getElementById("more-menu");
+const declineBtn = document.getElementById("decline-btn");
 
 let view = null;          // the CeremonyView
 let location_ = null;     // GEO-01 member, once asked
 const adoptions = {};     // mark → {id, dataUrl}
 const values = new Map(); // field id → value as sent
 let pdfHandles = [];
+
+// ---- The secure-open loader (WEB-18) ----------------------------------------------------------
+// A seal with an orbiting ring over the page while the ceremony opens, with a step list
+// that ticks off only what has really happened (signfields.js `loaderSteps`): the
+// signing session was opened, the document bytes arrived, the first page was drawn.
+// It never claims a check this page does not make.
+
+const loader = (() => {
+  let el = null;
+  let list = null;
+  let sub = null;
+  let reached = 0;
+  let pages = null;
+  function paint() {
+    if (!list) return;
+    list.replaceChildren(...loaderSteps(reached, pages).map((s) => h("li", { class: `os-loader__step is-${s.state}` },
+      h("span", { class: "os-loader__dot", attrs: { "aria-hidden": "true" } }, s.state === "done" ? icon("check", { size: 12 }) : null),
+      h("span", { text: t(s.key, s.vars || {}) }),
+      s.state === "done" ? h("span", { class: "os-sr-only", text: t("sign.loader.done") }) : null)));
+  }
+  function subtitle() {
+    if (!sub) return;
+    const org = view?.sender?.organisation || "";
+    const subject = view?.envelope?.subject || "";
+    sub.textContent = [org, subject].filter(Boolean).join(" · ");
+  }
+  return {
+    /// Show the loader at step `r` (0 before the session is open).
+    show(r = 0) {
+      reached = r;
+      pages = pageTotal(view?.envelope?.documents);
+      if (!el) {
+        list = h("ol", { class: "os-loader__steps" });
+        sub = h("span", { class: "os-loader__sub" });
+        el = h("div", { class: "os-loader", attrs: { "aria-busy": "true", role: "status", "aria-live": "polite", "data-testid": "sign-loader" } },
+          h("div", { class: "os-loader__box" },
+            h("div", { class: "os-loader__seal", attrs: { "aria-hidden": "true" } },
+              orbitRing(),
+              h("span", { class: "os-loader__core" }, icon("lock", { size: 24 }))),
+            h("div", { class: "os-loader__head" }, h("b", { class: "os-loader__title", text: t("sign.loader.title") }), sub),
+            list));
+        document.body.append(el);
+      }
+      subtitle();
+      paint();
+    },
+    /// Tick off up to step `r`.
+    reach(r) {
+      reached = Math.max(reached, r);
+      pages = pageTotal(view?.envelope?.documents);
+      subtitle();
+      paint();
+    },
+    /// Fade out and remove.
+    hide() {
+      const old = el;
+      el = null; list = null; sub = null; reached = 0;
+      if (!old) return;
+      if (reducedMotion()) { old.remove(); return; }
+      old.classList.add("is-leaving");
+      setTimeout(() => old.remove(), 240);
+    },
+    get open() { return !!el; },
+  };
+})();
+
+/// The loader's orbiting ring (the canvas's 88-unit SVG): a faint track and a quarter arc.
+function orbitRing() {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 88 88");
+  svg.setAttribute("class", "os-loader__orbit");
+  const track = document.createElementNS(NS, "circle");
+  for (const [k, v] of Object.entries({ cx: 44, cy: 44, r: 41, fill: "none", "stroke-width": 3, class: "os-loader__track" })) track.setAttribute(k, String(v));
+  const arc = document.createElementNS(NS, "path");
+  for (const [k, v] of Object.entries({ d: "M44 3a41 41 0 0 1 41 41", fill: "none", "stroke-width": 3, "stroke-linecap": "round", class: "os-loader__arc" })) arc.setAttribute(k, String(v));
+  svg.append(track, arc);
+  return svg;
+}
+
+/// Resolve once the first page of view `v` is drawn (its canvas painted), or after
+/// `ms` in any case, so the loader never stays up on a page that fails to draw.
+function firstPageDrawn(v, ms = 4000) {
+  return new Promise((resolve) => {
+    const el = v?.els?.[0]?.el;
+    if (!el || !el.classList.contains("is-loading")) return resolve();
+    const done = () => { obs.disconnect(); clearTimeout(timer); resolve(); };
+    const obs = new MutationObserver(() => { if (!el.classList.contains("is-loading")) done(); });
+    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+    const timer = setTimeout(done, ms);
+  });
+}
 
 // ---- Screens ------------------------------------------------------------------------------
 
@@ -65,16 +167,42 @@ function screen(...children) {
   return s;
 }
 
-function message({ illus, title, text, action = null, testId }) {
+/// The card every closing screen and the receipt sit in (the canvas's receipt: a
+/// tinted frame around a white card), centred on a soft radial wash.
+function stateCard({ mark, title, text = null, children = [], actions = [], testId, tone = "neutral" }) {
+  return h("div", { class: `os-state os-state--${tone}` },
+    h("div", { class: "os-state__frame", attrs: { "data-testid": testId } },
+      h("div", { class: "os-state__card" },
+        mark,
+        h("h1", { class: "os-state__title", text: title }),
+        text ? h("p", { class: "os-state__text", attrs: { role: "status" }, text }) : null,
+        ...children,
+        actions.length ? h("div", { class: "os-state__actions" }, ...actions) : null)));
+}
+
+/// A round mark for a state: the seal (red, a tick) or a quieter disc with an icon.
+function stateMark(ic, { seal = false, pop = false } = {}) {
+  return h("div", { class: `os-state__mark${seal ? " os-state__mark--seal" : ""}${pop ? " is-popping" : ""}`, attrs: { "aria-hidden": "true" } }, icon(ic, { size: 28 }));
+}
+
+/// The icon of each closing state.
+const STATE_ICONS = { declined: "circle-x", reassigned: "user-plus", closed: "ban", expired: "hourglass", later: "clock", "not-found": "shield-question", error: "triangle-alert", offline: "wifi-off" };
+
+/// End the signing view and show a closing state (declined, closed, error…): no guide,
+/// no progress left over (UX-06), More only where it still applies.
+function message({ kind = "closed", title, text, action = null, testId }) {
+  loader.hide();
   guide.hidden = true;
   moreBtn.hidden = true;
+  declineBtn.hidden = true;
   setTools(false);
   // UX-06: no progress from the signing view left over a closing screen.
   document.getElementById("bar-progress").textContent = "";
-  screen(emptyState({ illus, title, text, action, testId }));
+  screen(stateCard({ mark: stateMark(STATE_ICONS[kind] || "inbox"), title, text, actions: action ? [action] : [], testId, tone: kind === "error" || kind === "offline" ? "warn" : "neutral" }));
 }
 
 function fail(err) {
+  loader.hide();
   if (!mock && isNoServer(err)) {
     guide.hidden = true;
     moreBtn.hidden = true;
@@ -83,20 +211,38 @@ function fail(err) {
   // The server answers an unknown, expired or revoked link alike (CS-AUTH-0002, so a
   // link cannot be probed); the mock answers CS-API-0002.
   if (err instanceof ApiError && (err.code === "CS-API-0002" || err.code === "CS-AUTH-0002")) {
-    return message({ illus: "error", title: t("sign.not-found.title"), text: t("sign.not-found.text"), testId: "sign-not-found" });
+    return message({ kind: "not-found", title: t("sign.not-found.title"), text: t("sign.not-found.text"), testId: "sign-not-found" });
   }
   const offline = err?.code === "CS-NET-0001";
-  message({ illus: offline ? "offline" : "error", title: offline ? t("empty.offline.title") : t("empty.error.title"), text: errorMessage(err), action: button(t("action.retry"), { icon: "refresh-cw", variant: "primary", size: "lg", onClick: start }), testId: "sign-error" });
+  message({ kind: offline ? "offline" : "error", title: offline ? t("empty.offline.title") : t("empty.error.title"), text: errorMessage(err), action: button(t("action.retry"), { icon: "refresh-cw", variant: "primary", size: "lg", onClick: start }), testId: "sign-error" });
 }
 
 async function start() {
-  if (!token) return message({ illus: "error", title: t("sign.not-found.title"), text: t("sign.no-token"), testId: "sign-not-found" });
-  screen(h("div", { class: "os-sign__loading", attrs: { "aria-busy": "true" } }, h("div", { class: "os-page os-skeleton-page" })), h("p", { class: "os-sr-only", attrs: { role: "status" }, text: t("sign.loading") }));
+  if (!token) return message({ kind: "not-found", title: t("sign.not-found.title"), text: t("sign.no-token"), testId: "sign-not-found" });
+  clear(main);
+  loader.show(0);
   try {
     view = await api.ceremony.open(token);
   } catch (err) { return fail(err); }
-  subjectEl.textContent = view.envelope?.subject || "";
+  loader.reach(1);
+  fillHeader();
   next();
+}
+
+/// The header from the view: the organisation's mark, the title, and who asked
+/// (signfields.js `askLine`; nothing when the view names no sender).
+function fillHeader() {
+  subjectEl.textContent = view.envelope?.subject || "";
+  subjectEl.title = subjectEl.textContent;
+  const mark = orgMark(view.sender?.organisation);
+  const markEl = document.getElementById("org-mark");
+  markEl.textContent = mark;
+  markEl.hidden = !mark;
+  document.getElementById("brand-mark").hidden = !!mark;
+  const ask = askLine(view.sender);
+  const askEl = document.getElementById("ask-line");
+  askEl.textContent = ask ? t(ask.key, ask.vars) : "";
+  askEl.title = askEl.textContent;
 }
 
 /// Go to whichever step this recipient is at.
@@ -104,18 +250,25 @@ function next() {
   const r = view.recipient || {};
   const env = view.envelope || {};
   if (r.status === "completed") return done(everyoneSigned(env.status));
-  if (r.status === "declined") return message({ illus: "inbox", title: t("sign.declined.title"), text: t("sign.declined.text"), testId: "sign-declined" });
-  if (r.status === "reassigned") return message({ illus: "inbox", title: t("sign.reassigned.title"), text: t("sign.reassigned.done"), testId: "sign-reassigned" });
-  if (["voided", "declined", "expired"].includes(env.status)) return message({ illus: "inbox", title: t("sign.closed.title"), text: t(`sign.closed.${env.status}`), testId: "sign-closed" });
+  if (r.status === "declined") return message({ kind: "declined", title: t("sign.declined.title"), text: t("sign.declined.text"), testId: "sign-declined" });
+  if (r.status === "reassigned") return message({ kind: "reassigned", title: t("sign.reassigned.title"), text: t("sign.reassigned.done"), testId: "sign-reassigned" });
+  if (["voided", "declined", "expired"].includes(env.status)) return message({ kind: env.status === "expired" ? "expired" : "closed", title: t("sign.closed.title"), text: t(`sign.closed.${env.status}`), testId: "sign-closed" });
   const pending = view.auth_required || [];
   const authing = pending.includes("access_code") || pending.includes("email_otp");
   buildMenu(authing ? "auth" : "open");
   moreBtn.hidden = false;
-  if (pending.includes("access_code")) return accessCode();
-  if (pending.includes("email_otp")) return emailCode();
-  if (env.signing_options?.capture_location && !location_) return askLocation();
-  if (view.consent_required && !r.consented) return consent();
+  declineBtn.hidden = authing || env.signing_options?.allow_decline === false;
+  if (pending.includes("access_code")) return asCard(accessCode);
+  if (pending.includes("email_otp")) return asCard(emailCode);
+  if (env.signing_options?.capture_location && !location_) return asCard(askLocation);
+  if (view.consent_required && !r.consented) return asCard(consent);
   return documents();
+}
+
+/// A step shown as a card (identity, location, consent): the loader leaves first.
+function asCard(show) {
+  loader.hide();
+  show();
 }
 
 function accessCode() {
@@ -301,6 +454,10 @@ function consent() {
     icon("shield-check", { size: 24 }),
     h("h1", { class: "os-sign__title", text: t("sign.consent.title") }),
     senderLine(), signByLine(),
+    // WEB-18: the sender's message, here before the documents (the field list that
+    // also shows it is opened from More).
+    view.envelope?.message ? h("div", { class: "os-sign__message", attrs: { "data-testid": "consent-message" } },
+      h("p", { class: "os-small os-muted", text: t("sign.message") }), h("p", { text: view.envelope.message })) : null,
     h("p", { class: "os-muted", text: t("sign.consent.text") }),
     h("ul", { class: "os-sign__list" },
       h("li", { text: t("sign.consent.point1") }),
@@ -323,86 +480,93 @@ function consent() {
 
 // ---- Documents and fields -------------------------------------------------------------------
 
-const AUTO = { date_signed: () => new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }), name: () => view.recipient?.name || "", email: () => view.recipient?.email || "" };
+const today = () => new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const AUTO = { date_signed: () => dateText(), name: () => view.recipient?.name || "", email: () => view.recipient?.email || "" };
 
-// WEB-06 (docs/47 §Layout spec): the pages fill a full-height frame between the page
-// thumbnails (left) and the field list (right); one scroll container (docview.js) with
-// fit width, fit page, 50–200 %, Ctrl/Cmd +/−/0 and pinch, painted near the view only.
-// The PDFs are fetched once and kept.
+/// The date-signed field's words (WEB-18, the canvas): it fills itself in once this
+/// signer has placed a signature or initials.
+function dateText() {
+  const d = dateField(signedAny(), today());
+  return t(d.key, d.vars || {});
+}
+const signedAny = () => myFields().some((f) => (f.type === "signature" || f.type === "initials") && values.get(f.id)?.signature);
+
+// WEB-06 (docs/47 §Layout spec), as WEB-18 draws it: the pages in one full-height scroll
+// container (docview.js: fit width, 50–200 %, Ctrl/Cmd +/−/0 and pinch, painted near the
+// view only) between a thumbnail rail (left) and a matching margin (right); the field
+// list is a panel opened from More. The PDFs are fetched once and kept.
 let dv = null;            // the document view on screen, if any
 let zc = null;            // its zoom controls
+let thumbs = null;        // its thumbnail rail
 let loaded = null;        // [{doc, pdf}] once fetched
-let listDock = null;      // the field list panel
-let listBody = null;
 let seenObserver = null;
 const seen = new Map();
 const phone = () => matchMedia("(max-width: 47.999em)").matches;
+/// The widest a page is drawn at fit width (the canvas's page: 46 rem plus its shadow).
+const PAGE_MAX_REM = 48;
+
+/// Fetch every document of the envelope once (the loader's second step).
+async function loadDocuments() {
+  const list = [];
+  for (const d of view.envelope?.documents || []) {
+    const blob = await api.ceremony.document(token, d.id);
+    list.push({ doc: d, pdf: await openPdf(new Uint8Array(await blob.arrayBuffer())) });
+  }
+  return list;
+}
+
+/// Record each page this signer has seen (half of it in view), batched.
+function watchSeen() {
+  if (seenObserver || typeof IntersectionObserver !== "function") return;
+  seenObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const { doc, page } = e.target.dataset;
+      const set = seen.get(doc) || new Set();
+      if (!set.has(Number(page))) { set.add(Number(page)); seen.set(doc, set); reportViewed(doc, set); }
+    }
+  }, { threshold: 0.5 });
+}
 
 async function documents() {
   const fields = myFields();
   // The signer's own values so far (a sender's locked value is not theirs: it stays on
   // the field and does not turn Start into Next).
   for (const f of fields) if (fills(f) && f.value && !values.has(f.id)) values.set(f.id, f.value);
-  if (!loaded) {
-    screen(h("div", { class: "os-sign__loading", attrs: { "aria-busy": "true" } }, h("div", { class: "os-page os-skeleton-page" })), h("p", { class: "os-sr-only", attrs: { role: "status" }, text: t("sign.loading") }));
-    const list = [];
-    for (const d of view.envelope?.documents || []) {
-      try {
-        const blob = await api.ceremony.document(token, d.id);
-        list.push({ doc: d, pdf: await openPdf(new Uint8Array(await blob.arrayBuffer())) });
-      } catch (err) { return fail(err); }
-    }
-    loaded = list;
-    pdfHandles = list.map((x) => x.pdf);
+  const opening = !loaded;
+  if (opening) {
+    if (!loader.open) { clear(main); loader.show(1); }
+    try { loaded = await loadDocuments(); } catch (err) { return fail(err); }
+    pdfHandles = loaded.map((x) => x.pdf);
+    loader.reach(2);
   }
-  if (!seenObserver && typeof IntersectionObserver === "function") {
-    seenObserver = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        const { doc, page } = e.target.dataset;
-        const set = seen.get(doc) || new Set();
-        if (!set.has(Number(page))) { set.add(Number(page)); seen.set(doc, set); reportViewed(doc, set); }
-      }
-    }, { threshold: 0.5 });
-  }
-  // The tag points at the next field; the bar's Start/Next button (G-S1) is the same
-  // action for the keyboard and assistive technology, so the tag is a pointer only.
-  const tag = h("button", { type: "button", id: "guide-tag", class: "os-guidetag", tabIndex: -1, attrs: { "data-testid": "guide-tag", "aria-hidden": "true" } },
-    h("span", { class: "os-guidetag__text", text: t("sign.start") }));
-  tag.addEventListener("click", goNext);
+  watchSeen();
   const v = docView({
     label: t("sign.documents-title"),
     testId: "signer-doc",
-    // UX-06: fit width leaves the Start flag's room in the left margin (the pages'
-    // padding beyond the usual 1.5 rem, set by sign.css per width), so the page never
-    // runs under the field list and the view never scrolls sideways.
-    padLeft: () => tagRoom(v),
-    onLayout: () => { enlarge(); zc?.sync(); requestAnimationFrame(placeTag); },
+    // WEB-18: fit width, but never wider than the canvas's page, centred.
+    padLeft: () => Math.max(0, v.scroller.clientWidth - remPx(3) - remPx(PAGE_MAX_REM)),
+    onLayout: () => { enlarge(); zc?.sync(); },
     onZoom: () => { enlarge(); zc?.sync(); },
-    onPage: (i) => { zc?.sync(); thumbs.mark(i); },
+    onPage: (i) => { zc?.sync(); thumbs?.mark(i); },
   });
   v.scroller.classList.add("os-sign__pages");
-  const thumbsBox = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
-  const thumbs = thumbnails(v, thumbsBox, { width: 96 });
-  const pagesDock = dockPanel({ id: "sign-pages", side: "left", title: t("prepare.thumbs"), width: 9, min: 7, max: 16, collapsed: matchMedia("(max-width: 79.999em)").matches, testId: "panel-pages" });
-  pagesDock.body.append(h("div", { class: "os-panel--thumbs" }, thumbsBox));
-  listDock = dockPanel({ id: "sign-fields", side: "right", title: t("sign.fields.title"), width: 18, min: 14, max: 30, testId: "panel-fieldlist" });
-  listBody = listDock.body;
+  const rail = h("nav", { class: "os-sign__rail", attrs: { "aria-label": t("prepare.thumbs"), "data-testid": "page-rail" } });
+  thumbs = thumbnails(v, rail, { width: 52 });
   const zoomCtl = zoomControls(v, { size: "sm" });
   const frame = h("div", { class: "os-signframe" },
-    pagesDock.el,
+    rail,
     h("div", { class: "os-signframe__centre" }, v.scroller, h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoomCtl.el)),
-    listDock.el);
+    h("div", { class: "os-signframe__margin", attrs: { "aria-hidden": "true" } }));
   screen(h("h1", { class: "os-sr-only", text: t("sign.documents-title") }), frame, v.live);
   main.classList.add("is-frame-host");
   dv = v;
   zc = zoomCtl;
   skipTo("#document", t("a11y.skip-doc"));
   guide.hidden = false;
-  document.body.classList.add("is-signing");
   setTools(true);
+  buildMenu("open"); // More now offers the field list
   dv.setPages(loaded.flatMap(({ doc: d, pdf }) => pdf.pages.map((pg, i) => ({ key: d.id, n: i + 1, total: pdf.pages.length, name: d.name, width: pg.width, height: pg.height, pdf }))));
-  dv.inner.append(tag);
   dv.els.forEach(({ el, overlay }, i) => {
     const p = dv.pages[i];
     seenObserver?.observe(el);
@@ -413,18 +577,18 @@ async function documents() {
   enlarge();
   zc.sync();
   updateGuide();
-  // Arrival (UX-06, after DocuSign): the top of page 1, where the document begins,
-  // with the Start flag beside the first required field; Start goes there. Coming
-  // back (A36): to the next required field, focused, not the top of page 1.
+  // Arrival (UX-06, after DocuSign): the top of page 1, where the document begins, the
+  // next field ringed; Start goes there. Coming back (A36): to the next required
+  // field, focused, not the top of page 1.
   const first = nextField();
   if (first && values.size) setTimeout(() => focusField(first.id, false), 50);
-  else requestAnimationFrame(placeTag);
-}
-
-/// The px the pages' left padding adds to the usual margin: the Start flag's room.
-function tagRoom(view_) {
-  const pad = parseFloat(getComputedStyle(view_.inner).paddingLeft) || 0;
-  return Math.max(0, pad - remPx(1.5));
+  if (opening) {
+    await firstPageDrawn(v);
+    loader.reach(3);
+    setTimeout(() => loader.hide(), reducedMotion() ? 0 : 280);
+  } else {
+    loader.hide(); // back in (Continue signing): the documents were already here
+  }
 }
 
 function myFields() {
@@ -448,67 +612,54 @@ function enlarge() {
   }
 }
 
-/// The Start/Next tag in the left margin, beside the next required field.
-function placeTag() {
-  const tag = document.getElementById("guide-tag");
-  if (!tag || !dv) return;
-  const next = nextField();
-  tag.querySelector(".os-guidetag__text").textContent = values.size ? t("sign.next") : t("sign.start");
-  if (!next) { tag.hidden = true; return; }
-  tag.hidden = false;
-  const el = main.querySelector(`[data-field-id="${CSS.escape(next.id)}"]`);
-  const page = el?.closest(".os-page");
-  if (!el || !page) return;
-  const a = el.getBoundingClientRect();
-  const s = dv.inner.getBoundingClientRect();
-  tag.style.top = `${a.top - s.top + a.height / 2}px`;
-  tag.style.left = `${Math.max(4, page.offsetLeft - tag.offsetWidth - 28)}px`;
-}
-
 function nextField() {
   const order = [...main.querySelectorAll(".os-sfield")].map((n) => n.dataset.fieldId);
   return remaining().sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))[0] || null;
 }
 
-/// The field list in the right panel (A7): every field of this signer with its state;
-/// choosing one goes there. The sender's message sits above it.
-function renderFieldList() {
-  if (!listBody || !listBody.isConnected) return;
+/// The field list (A7), from More or the command palette: every field of this signer
+/// with its state; choosing one goes there. Who sent it, their message and the
+/// deadline sit above it. A side panel on desktop, a bottom sheet on phones.
+function fieldList() {
+  closeMore();
+  if (!dv) return;
+  openPanel({
+    id: "fields",
+    title: t("sign.fields.title"),
+    className: "os-sign__fieldsheet",
+    width: 20,
+    build(body, close) { renderFieldList(body, close); },
+    actions: [],
+  });
+}
+
+function renderFieldList(body, close) {
   const fields = myFields().filter(fills);
   const next = nextField();
-  clear(listBody);
-  // UX-06: who sent it, above what they wrote, and by when.
   const s = view.sender;
   const from = s?.name || s?.email ? h("p", { class: "os-small os-sign__from", attrs: { "data-testid": "fieldlist-sender" }, text: s.name && s.email ? t("sign.from", { name: s.name, email: s.email }) : t("sign.from-one", { who: s.name || s.email }) }) : null;
   const by = dateOnly(view.envelope?.expires_at);
   if (view.envelope?.message || from || by) {
-    listBody.append(h("div", { class: "os-sign__message os-sign__message--panel" },
+    body.append(h("div", { class: "os-sign__message os-sign__message--panel" },
       from,
       view.envelope?.message ? h("p", { class: "os-small os-muted", text: t("sign.message") }) : null,
       view.envelope?.message ? h("p", { text: view.envelope.message }) : null,
       by ? h("p", { class: "os-small os-muted", text: t("sign.sign-by", { date: by }) }) : null));
   }
-  listBody.append(h("p", { class: "os-muted os-small", text: t("sign.fields.text") }));
+  body.append(h("p", { class: "os-muted os-small", text: t("sign.fields.text") }));
   const ol = h("ol", { class: "os-fieldlist", attrs: { "data-testid": "field-list" } });
   for (const f of fields) {
-    const done = isDone(f) && values.has(f.id);
-    const state = done ? t("sign.fields.done") : f.required ? t("sign.required") : t("sign.fields.optional");
-    const b = h("button", { type: "button", class: `os-fieldlist__item${done ? " is-done" : ""}${next?.id === f.id ? " is-next" : ""}` },
-      icon(done ? "circle-check" : f.required ? "circle-alert" : "circle-dashed", { size: 20 }),
-      h("span", { class: "os-fieldlist__main" }, h("strong", { class: "os-trunc", title: f.label || t(`ftype.${f.type}`), text: f.label || t(`ftype.${f.type}`) }), h("span", { class: "os-muted os-small", text: t("sign.fields.page", { n: f.p.page, type: t(`ftype.${f.type}`) }) })),
+    const done_ = isDone(f) && values.has(f.id);
+    const state = done_ ? t("sign.fields.done") : f.required ? t("sign.required") : t("sign.fields.optional");
+    const name = f.label || t(`ftype.${f.type}`);
+    const b = h("button", { type: "button", class: `os-fieldlist__item${done_ ? " is-done" : ""}${next?.id === f.id ? " is-next" : ""}` },
+      icon(done_ ? "circle-check" : f.required ? "circle-alert" : "circle-dashed", { size: 20 }),
+      h("span", { class: "os-fieldlist__main" }, h("strong", { class: "os-trunc", title: name, text: name }), h("span", { class: "os-muted os-small", text: t("sign.fields.page", { n: f.p.page, type: t(`ftype.${f.type}`) }) })),
       h("span", { class: "os-fieldlist__state", text: state }));
-    b.addEventListener("click", () => { listDock?.closeSheet(); focusField(f.id); });
+    b.addEventListener("click", () => { close(null); setTimeout(() => focusField(f.id), 0); });
     ol.append(h("li", {}, b));
   }
-  listBody.append(ol);
-}
-
-/// The Fields button: on phones the list is a bottom sheet; on desktop it shows the panel.
-function fieldList() {
-  if (!listDock) return;
-  if (phone()) { listDock.openSheet(); return; }
-  if (listDock.isCollapsed()) listDock.collapse(false);
-  listBody.querySelector("button")?.focus();
+  body.append(ol);
 }
 
 /// Bring field `id` into the middle of the view and focus it. On phones a field too
@@ -524,8 +675,7 @@ function focusField(id, flag = true) {
     el.classList.add("is-flagged");
     setTimeout(() => el.classList.remove("is-flagged"), 1200);
   }
-  el.querySelector("button, input")?.focus({ preventScroll: true });
-  requestAnimationFrame(placeTag);
+  el.querySelector("button, input, select")?.focus({ preventScroll: true });
 }
 
 /// Phones (P-05, M-01; DocuSign's guided zoom): the view zooms until the field is a
@@ -539,10 +689,11 @@ function zoomToField(f) {
   if (want > dv.scale * 1.02) dv.setZoom(want);
 }
 
+/// The signing view's chrome on or off: the phone's progress segments and the body
+/// class the styles key on.
 function setTools(on) {
-  document.getElementById("sign-tools").hidden = !on;
-  document.getElementById("bar-finish").hidden = !on;
-  if (!on) document.body.classList.remove("is-signing");
+  document.body.classList.toggle("is-signing", on);
+  document.getElementById("phone-progress").hidden = !on;
 }
 
 let viewedTimer = null;
@@ -727,7 +878,18 @@ function fieldNode(f, pg) {
   } else {
     box.classList.add("is-auto");
     hit.remove();
-    box.append(h("span", { class: "os-sfield__auto", attrs: { "aria-label": `${label}: ${AUTO[f.type]?.() || ""}` }, text: AUTO[f.type]?.() || label }));
+    const shown = h("span", { class: "os-sfield__auto" });
+    // The date signed fills itself in once a mark is placed (WEB-18); repainted then.
+    const paint = () => {
+      const text = AUTO[f.type]?.() || label;
+      shown.textContent = text;
+      shown.title = text;
+      shown.setAttribute("aria-label", `${label}: ${AUTO[f.type]?.() || ""}`);
+      box.classList.toggle("is-pending", f.type === "date_signed" && !signedAny());
+    };
+    autoPaints.set(f.id, paint);
+    paint();
+    box.append(shown);
   }
   return box;
 }
@@ -854,6 +1016,8 @@ async function attachFile(f, input, btn, paint) {
 
 /// The paint function of each signature or initials field on screen, by field id.
 const paints = new Map();
+/// The paint function of each automatic field (date signed, name, email), by field id.
+const autoPaints = new Map();
 
 /// The mark a field takes: "initials" or "signature".
 const markOf = (f) => (f.type === "initials" ? "initials" : "signature");
@@ -884,9 +1048,9 @@ async function placeMark(f, a) {
   await api.ceremony.fill(token, f.id, v);
   values.set(f.id, v);
   paints.get(f.id)?.();
-  const el = main.querySelector(`[data-field-id="${CSS.escape(f.id)}"]`);
-  el?.classList.add("is-stamped");
-  setTimeout(() => el?.classList.remove("is-stamped"), 300);
+  // WEB-18: the mark is inked in from left to right (the canvas's `ink`; none with
+  // reduced motion, sign.css).
+  main.querySelector(`[data-field-id="${CSS.escape(f.id)}"] img`)?.classList.add("is-inking");
 }
 
 async function signField(f) {
@@ -1035,36 +1199,54 @@ function remaining() {
   return myInputs().filter((f) => f.required && !isDone(f));
 }
 
+/// Bring the guide bar, the rail's counts, the phone's segments, the next-field ring
+/// and the automatic fields in line with the values (the model: `guideState`).
 function updateGuide() {
   const req = myInputs().filter((f) => f.required);
   const left = remaining();
-  const progress = document.getElementById("guide-progress");
-  progress.textContent = req.length ? t("sign.progress", { done: req.length - left.length, total: req.length }) : t("sign.progress-none");
-  const barProgress = document.getElementById("bar-progress");
-  barProgress.textContent = progress.textContent;
-  // Finish says why it cannot finish yet (A18): aria-disabled keeps it focusable and
-  // hoverable for its reason; choosing it goes to the next required field.
-  const reason = left.length === 1 ? t("sign.finish-reason-one") : t("sign.finish-reason", { n: left.length });
-  const reasonEl = document.getElementById("finish-reason");
-  if (reasonEl) reasonEl.textContent = left.length ? reason : "";
-  for (const b of [document.getElementById("bar-finish"), document.getElementById("guide-finish")]) {
-    if (left.length) { b.setAttribute("aria-disabled", "true"); b.title = reason; } else { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); }
-    b.setAttribute("aria-describedby", "finish-reason");
-    b.classList.toggle("is-ready", left.length === 0);
-    // UX-06: readable at full contrast all along, outlined until it can finish (it
-    // acts before then: it goes to the next required field), then the primary action.
-    b.classList.toggle("os-btn--primary", left.length === 0);
-    b.classList.toggle("os-btn--secondary", left.length > 0);
-  }
-  requestAnimationFrame(placeTag);
-  // Start/Next (G-S1, M-02): in the bar on desktop, in the bottom bar on phones, worded.
-  for (const nextBtn of [document.getElementById("guide-next"), document.getElementById("bar-next")]) {
-    nextBtn.hidden = left.length === 0;
-    nextBtn.querySelector("span").textContent = values.size ? t("sign.next") : t("sign.start");
-  }
   const nf = nextField();
+  const g = guideState({ total: req.length, left: left.length, started: values.size > 0, next: nf ? { ...nf, p: fromWire(nf.placement) } : null, label: nf ? nf.label || t(`ftype.${nf.type}`) : "" });
+  const progress = document.getElementById("guide-progress");
+  progress.textContent = req.length ? t("sign.progress", { done: g.done, total: g.total }) : t("sign.progress-none");
+  document.getElementById("bar-progress").textContent = progress.textContent;
+  // Finish shows once nothing required is left (the canvas); until then the bar says
+  // how many are left (A18), and Start / Next goes to the next one.
+  document.getElementById("finish-reason").textContent = g.ready ? "" : t(g.sub.key, g.sub.vars);
+  paintGuide(g);
   for (const node of main.querySelectorAll(".os-sfield")) node.classList.toggle("is-next", node.dataset.fieldId === nf?.id);
-  renderFieldList();
+  for (const paint of autoPaints.values()) paint();
+  const leftPlaced = left.map((f) => ({ ...f, p: fromWire(f.placement) }));
+  const counts = dv ? pageCounts(dv.pages, leftPlaced) : [];
+  thumbs?.badges((i) => counts[i] || 0, (n) => t(n === 1 ? "sign.rail.left-one" : "sign.rail.left", { n }));
+  paintSegments(phoneSegments(g.ready, false));
+}
+
+/// The guide bar from its state: the ring, the next action, how many are left, and
+/// Start / Next or Finish (red, pulsing, once everything required is done).
+function paintGuide(g) {
+  const ring = document.getElementById("guide-ring");
+  ring.querySelector(".os-guide__arc")?.setAttribute("stroke-dasharray", ringDash(g.fraction));
+  const count = ring.querySelector(".os-guide__count");
+  if (count) count.textContent = t("sign.guide.count", { done: g.done, total: g.total });
+  document.getElementById("guide-title").textContent = t(g.title.key, g.title.vars || {});
+  document.getElementById("guide-sub").textContent = t(g.sub.key, g.sub.vars || {});
+  const nextBtn = document.getElementById("guide-next");
+  const finishBtn = document.getElementById("guide-finish");
+  nextBtn.hidden = g.ready;
+  nextBtn.querySelector("span").textContent = t(g.cta === "start" ? "sign.start" : "sign.next");
+  nextBtn.classList.toggle("is-start", g.cta === "start");
+  const wasReady = !finishBtn.hidden;
+  finishBtn.hidden = !g.ready;
+  finishBtn.classList.toggle("is-ready", g.ready);
+  // Focus follows the action that replaced it, so the keyboard is not left on nothing.
+  if (g.ready && !wasReady && document.activeElement === nextBtn) finishBtn.focus({ preventScroll: true });
+}
+
+/// The phone header's two segments (fields done, finished).
+function paintSegments([a, b]) {
+  const [s1, s2] = document.querySelectorAll("#phone-progress > span");
+  s1?.classList.toggle("is-on", a);
+  s2?.classList.toggle("is-on", b);
 }
 
 function goNext() {
@@ -1084,6 +1266,7 @@ async function finish() {
 function review() {
   guide.hidden = true;
   setTools(false);
+  buildMenu("open"); // no field list while reviewing
   const fields = myFields();
   // The pages in the same document view as signing (fit width, zoom, one scroller).
   const rv = docView({ label: t("sign.review.pages"), testId: "review-doc", onLayout: () => rzc?.sync(), onZoom: () => rzc?.sync(), onPage: () => rzc?.sync() });
@@ -1204,33 +1387,53 @@ function everyoneSigned(status) {
   return status === "completing" || status === "completed";
 }
 
+/// The receipt (WEB-18, the canvas's sealed card): the seal (popping in when this signer
+/// has just finished), "Signed. Thank you, <name>.", what happens next, when they signed
+/// and what they filled, the Verify page, and a copy. The document's fingerprint is
+/// shown only when the view carries one; today's view does not, so it is not shown.
 function done(everyone, celebrate = false) {
+  loader.hide();
   guide.hidden = true;
   // Finished: More keeps what still applies (a copy, history, help).
   buildMenu("ended");
   moreBtn.hidden = false;
+  declineBtn.hidden = true;
   document.getElementById("bar-progress").textContent = "";
   setTools(false);
-  const seal = h("img", { class: `os-done__seal${celebrate ? " is-stamping" : ""}`, src: "/assets/mark.svg", alt: "", width: 96, height: 96 });
-  // G-S3: a copy now, and what happens next.
-  const copy = button(t("sign.done.download"), { icon: "download", variant: "primary", size: "lg", attrs: { "data-testid": "done-download" } });
+  document.getElementById("phone-progress").hidden = false;
+  paintSegments(phoneSegments(true, true));
+  const copy = button(t("sign.done.download"), { icon: "download", variant: "primary", size: "lg", attrs: { "data-testid": "done-download", "data-os-command": "signer.download" } });
+  copy.classList.add("os-state__primary");
   copy.addEventListener("click", () => busy(copy, () => downloadCopy()));
   // UX-06: Print beside the copy, and the Verify page a link, not only a name.
-  const print = button(t("sign.done.print"), { icon: "printer", size: "lg", attrs: { "data-testid": "done-print" } });
+  const print = button(t("sign.done.print"), { icon: "printer", variant: "ghost", size: "lg", attrs: { "data-testid": "done-print" } });
+  print.classList.add("os-state__secondary");
   print.addEventListener("click", () => busy(print, () => downloadCopy(true)));
   const MARK = "\u0001";
   const [before, after = ""] = t("sign.done.next-verify", { link: MARK }).split(MARK);
-  const steps = h("ol", { class: "os-done__steps" },
-    h("li", { text: everyone ? t("sign.done.next-sealed") : t("sign.done.next-others") }),
-    h("li", { text: t("sign.done.next-email") }),
-    h("li", {}, before, h("a", { class: "os-sign__inlink", href: "/verify.html", text: t("sign.done.verify-link") }), after));
-  screen(h("div", { class: "os-empty os-done", attrs: { "data-testid": "sign-done" } },
-    seal,
-    h("h1", { class: "os-empty__title", text: t("sign.done.title") }),
-    h("p", { class: "os-empty__text", attrs: { role: "status" }, text: everyone ? t("sign.done.everyone") : t("sign.done.waiting") }),
-    h("h2", { class: "os-done__next", text: t("sign.done.next") }),
-    steps,
-    h("div", { class: "os-done__actions" }, copy, print)));
+  const name = firstName(view?.recipient?.name);
+  const title = celebrate || !name ? t(name ? "sign.done.thanks" : "sign.done.thanks-anon", { name }) : t("sign.done.already", { name });
+  screen(stateCard({
+    mark: stateMark("check", { seal: true, pop: celebrate }),
+    title,
+    text: everyone ? t("sign.done.everyone") : t("sign.done.waiting"),
+    children: [receiptRows(), h("p", { class: "os-state__note" }, before, h("a", { class: "os-sign__inlink", href: "/verify.html", text: t("sign.done.verify-link") }), after)],
+    actions: [copy, print],
+    testId: "sign-done",
+    tone: "seal",
+  }));
+}
+
+/// The receipt's facts: when this signer signed (with its zone) and the kinds of field
+/// they filled. A row is left out when the view does not say it.
+function receiptRows() {
+  const rows = [];
+  const at = dateTimeZone(view?.recipient?.completed_at);
+  if (at) rows.push([t("sign.receipt.signed"), at]);
+  const kinds = filledKinds(myFields().filter(fills), (f) => isFilled(f, values.get(f.id) || f.value));
+  if (kinds.length) rows.push([t("sign.receipt.fields"), kinds.map((k, i) => (i ? t(`ftype.${k}`).toLowerCase() : t(`ftype.${k}`))).join(", ")]);
+  if (!rows.length) return null;
+  return h("dl", { class: "os-state__facts", attrs: { "data-testid": "receipt-facts" } }, ...rows.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: v })]));
 }
 
 // ---- Other actions ------------------------------------------------------------------------------
@@ -1300,7 +1503,7 @@ async function decline() {
   if (!reason) return;
   try {
     view = await api.ceremony.decline(token, reason, location_);
-    message({ illus: "inbox", title: t("sign.declined.title"), text: t("sign.declined.text"), testId: "sign-declined" });
+    message({ kind: "declined", title: t("sign.declined.title"), text: t("sign.declined.text"), testId: "sign-declined" });
   } catch (ex) { toastError(ex); }
 }
 
@@ -1311,7 +1514,7 @@ async function finishLater() {
     // G-S4: the way back in is right here, not only in the email.
     const again = button(t("sign.later.continue"), { icon: "arrow-right", variant: "primary", size: "lg", onClick: () => start(), attrs: { "data-testid": "later-continue" } });
     const until = dateOnly(view?.envelope?.expires_at);
-    message({ illus: "inbox", title: t("sign.later.title"), text: until ? `${t("sign.later.text")} ${t("sign.later.expires", { date: until })}` : t("sign.later.text"), action: again, testId: "sign-later" });
+    message({ kind: "later", title: t("sign.later.title"), text: until ? `${t("sign.later.text")} ${t("sign.later.expires", { date: until })}` : t("sign.later.text"), action: again, testId: "sign-later" });
   } catch (err) { toastError(err); }
 }
 
@@ -1353,7 +1556,7 @@ async function reassign() {
     ],
   });
   if (!res) return;
-  message({ illus: "inbox", title: t("sign.reassigned.title"), text: t("sign.reassigned.text", { name: res }), testId: "sign-reassigned" });
+  message({ kind: "reassigned", title: t("sign.reassigned.title"), text: t("sign.reassigned.text", { name: res }), testId: "sign-reassigned" });
 }
 
 /// Help (G-S2): how signing works here, and who to ask about the document.
@@ -1450,32 +1653,68 @@ function closeMore() {
 
 /// The More menu (G-S2), built for this envelope's options once the view is known.
 /// `stage`: "auth" (before the access code: help only, as nothing else is open yet),
-/// "open" (signing), "ended" (this recipient finished: copy, history, help).
-function buildMenu(stage = "open") {
+/// "open" (signing), "ended" (this recipient finished: copy, history, help). Each item
+/// runs its command (commands.js), so the menu, the header and ⌘K do the same thing.
+let stage = "auth";
+function buildMenu(stage_ = "open") {
+  stage = stage_;
   const opts = view?.envelope?.signing_options || {};
-  const item = (ic, label, onClick, { danger = false, testId = null } = {}) => {
+  const item = (ic, label, id, { danger = false, testId = null } = {}) => {
     const b = h("button", { type: "button", class: `os-menu__item${danger ? " os-menu__item--danger" : ""}`, attrs: { role: "menuitem", ...(testId ? { "data-testid": testId } : {}) } }, icon(ic, { size: 16 }), h("span", { text: label }));
-    b.addEventListener("click", onClick);
+    b.addEventListener("click", () => { closeMore(); run(id); });
     return b;
   };
   const sep = () => h("div", { class: "os-menu__sep", attrs: { role: "separator" } });
-  const help_ = item("circle-help", t("sign.menu.help"), help, { testId: "menu-help" });
+  const help_ = item("circle-help", t("sign.menu.help"), "signer.help", { testId: "menu-help" });
   if (stage === "auth") { moreMenu.replaceChildren(help_); return; }
-  const items = [
-    item("download", t("sign.menu.download"), () => downloadCopy(), { testId: "menu-download" }),
-    item("printer", t("sign.menu.print"), () => downloadCopy(true), { testId: "menu-print" }),
-  ];
+  const items = [];
+  if (stage === "open" && dv && !guide.hidden) items.push(item("list-checks", t("sign.fields.menu"), "signer.fields", { testId: "menu-fields" }));
+  items.push(
+    item("download", t("sign.menu.download"), "signer.download", { testId: "menu-download" }),
+    item("printer", t("sign.menu.print"), "signer.print", { testId: "menu-print" }),
+  );
   // UX-06: change the adopted signature from anywhere, once there is one.
-  if (stage === "open" && adoptions.signature) items.push(item("pencil", t("sign.field.change-signature"), () => { closeMore(); changeMark("signature"); }, { testId: "menu-change-signature" }));
-  if (stage === "open" && opts.allow_reassign === true) items.push(item("user-plus", t("sign.menu.reassign"), reassign, { testId: "menu-reassign" }));
-  items.push(item("list-ordered", t("sign.menu.history"), history, { testId: "menu-history" }));
+  if (stage === "open" && adoptions.signature) items.push(item("pencil", t("sign.field.change-signature"), "signer.change-signature", { testId: "menu-change-signature" }));
+  if (stage === "open" && opts.allow_reassign === true) items.push(item("user-plus", t("sign.menu.reassign"), "signer.reassign", { testId: "menu-reassign" }));
+  items.push(item("list-ordered", t("sign.menu.history"), "signer.history", { testId: "menu-history" }));
   items.push(help_);
   if (stage === "open") {
     items.push(sep());
-    if (opts.allow_finish_later !== false) items.push(item("clock", t("sign.later"), finishLater));
-    if (opts.allow_decline !== false) items.push(item("circle-x", t("sign.decline"), decline, { danger: true }));
+    if (opts.allow_finish_later !== false) items.push(item("clock", t("sign.later"), "signer.finish-later"));
+    if (opts.allow_decline !== false) items.push(item("circle-x", t("sign.decline"), "signer.decline", { danger: true }));
   }
   moreMenu.replaceChildren(...items);
+}
+
+/// Every verb of the signing page, as a command (docs/47 principle 4): the guide bar,
+/// the header, the More menu and the command palette all run these.
+function registerCommands() {
+  const opts = () => view?.envelope?.signing_options || {};
+  const signing = () => stage === "open" && !!dv && !guide.hidden;
+  register("signer.next", { label: t("sign.next"), run: goNext, enabled: () => signing() && remaining().length > 0 });
+  register("signer.finish", { label: t("sign.finish"), run: finish, enabled: signing });
+  register("signer.fields", { label: t("sign.fields.menu"), run: fieldList, enabled: signing });
+  register("signer.download", { label: t("sign.menu.download"), run: () => downloadCopy(), enabled: () => stage !== "auth" });
+  register("signer.print", { label: t("sign.menu.print"), run: () => downloadCopy(true), enabled: () => stage !== "auth" });
+  register("signer.change-signature", { label: t("sign.field.change-signature"), run: () => changeMark("signature"), enabled: () => stage === "open" && !!adoptions.signature });
+  register("signer.reassign", { label: t("sign.menu.reassign"), run: reassign, enabled: () => stage === "open" && opts().allow_reassign === true });
+  register("signer.history", { label: t("sign.menu.history"), run: history, enabled: () => stage !== "auth" });
+  register("signer.help", { label: t("sign.menu.help"), run: help });
+  register("signer.finish-later", { label: t("sign.later"), run: finishLater, enabled: () => stage === "open" && opts().allow_finish_later !== false });
+  register("signer.decline", { label: t("sign.decline"), run: decline, enabled: () => stage === "open" && opts().allow_decline !== false });
+}
+
+/// The guide bar's progress ring (the canvas's 36-unit SVG): a faint track, the arc
+/// done so far, and "n/N" in the middle.
+function guideRing() {
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, a) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(a)) n.setAttribute(k, String(v)); return n; };
+  const svg = el("svg", { viewBox: "0 0 36 36", class: "os-guide__svg" });
+  svg.append(
+    el("circle", { cx: 18, cy: 18, r: 15, fill: "none", "stroke-width": 3, class: "os-guide__track" }),
+    el("circle", { cx: 18, cy: 18, r: 15, fill: "none", "stroke-width": 3, "stroke-linecap": "round", "stroke-dasharray": ringDash(0), transform: "rotate(-90 18 18)", class: "os-guide__arc" }),
+    el("text", { x: 18, y: 22, "text-anchor": "middle", "font-size": 11, "font-weight": 600, class: "os-guide__count" }));
+  return svg;
 }
 
 function buildChrome() {
@@ -1485,7 +1724,9 @@ function buildChrome() {
     b.hidden = false;
     b.prepend(icon("info", { size: 16 }));
   }
-  moreBtn.append(icon("ellipsis"), h("span", { text: t("sign.more") }));
+  registerCommands();
+  document.getElementById("secured-chip").prepend(icon("lock", { size: 14 }));
+  moreBtn.append(icon("ellipsis"));
   moreBtn.addEventListener("click", () => {
     const open = moreMenu.hidden;
     moreMenu.hidden = !open;
@@ -1502,23 +1743,14 @@ function buildChrome() {
     if (e.key === "Escape") { closeMore(); moreBtn.focus(); }
   });
   document.addEventListener("click", (e) => { if (!e.target.closest?.("#more-menu, #more-btn")) closeMore(); });
-  for (const id of ["guide-next", "bar-next"]) {
-    const nextBtn = document.getElementById(id);
-    nextBtn.prepend(icon("arrow-right", { size: 20 }));
-    nextBtn.addEventListener("click", goNext);
-  }
+  declineBtn.addEventListener("click", () => run("signer.decline"));
+  document.getElementById("guide-ring").append(guideRing());
+  const nextBtn = document.getElementById("guide-next");
+  nextBtn.append(icon("arrow-right", { size: 16 }));
+  nextBtn.addEventListener("click", () => run("signer.next"));
   const fin = document.getElementById("guide-finish");
-  fin.prepend(icon("check", { size: 20 }));
-  fin.addEventListener("click", finish);
-  const barFin = document.getElementById("bar-finish");
-  barFin.prepend(icon("check", { size: 20 }));
-  barFin.addEventListener("click", finish);
-  const fl = document.getElementById("fields-btn");
-  fl.prepend(icon("list-checks", { size: 20 }));
-  fl.addEventListener("click", fieldList);
-  // The document view relays itself out on resize; the tag follows.
-  let resizeTimer = null;
-  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(placeTag, 250); });
+  fin.append(icon("arrow-right", { size: 16 }));
+  fin.addEventListener("click", () => run("signer.finish"));
 }
 
 initTheme();

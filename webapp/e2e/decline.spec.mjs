@@ -23,5 +23,5 @@ test("decline needs a reason, ends the ceremony, and the sender sees it", async 
   await signIn(page);
   await page.getByRole("navigation", { name: "Folders" }).getByRole("link", { name: /^Declined\s*\d*$/ }).click();
   await page.getByRole("link", { name: "Vendor services agreement" }).click();
-  await expect(page.getByText("Reason given: The fee is wrong")).toBeVisible();
+  await expect(page.getByTestId("decline-callout").getByText("Reason given: The fee is wrong")).toBeVisible();
 });
