@@ -205,6 +205,9 @@ Designed in [33](33-ML-MODELS.md) §4; nothing is built, and no row has a hostil
 | Model ids, account and job ids in a frame | 1–64 bytes, `[A-Za-z0-9._-]` | CS-ML-0004 |
 | Pages OCR'd per document | 200; later pages are not read (`truncated`) | — (report) |
 | Render resolution | 150 DPI (host may set 100–200) | CS-ML-0001 |
+| Extracted span normalised (date, duration, amount; `casual-sign-fields::normalize`, built) | 256 bytes; longer spans are not read | — (`None`: suggestions only, no error) |
+| Duration count | 100,000 units | — (`None`) |
+| Amount digits | 28 | — (`None`) |
 | Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI | CS-ML-0005 |
 | Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`) | CS-ML-0005 |
 | Rasterise time per page | 10 s, enforced by killing the raster child | CS-ML-0006 |
