@@ -1,9 +1,9 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014` and `CS-AUTH-0001`, `0002`, `0006` to `0010` (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014` and `CS-AUTH-0001`, `0002`, `0006` to `0010` (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). `CS-PII-0001` (`casual-sign-pii`, `ML-08`). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-DB` persistence, `CS-BLOB` blob storage, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
-`CS-CNV` conversion.
+`CS-CNV` conversion, `CS-ML` model process and ML jobs (reserved, ADR-029), `CS-PII` personal-data recognisers; proposed (ADR-028, not issued): `CS-ORG` organizations, `CS-PLAN` plans, `CS-CON` console.
 
 ## Reading (`casual-sign-pdf`)
 
@@ -237,3 +237,85 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 | CS-WRK-0014 | No payment gateway configured (slice 13). *Final* |
 | CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job |
 | CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |
+
+## Organizations, plans and console (proposed, ADR-028)
+
+**Proposed, not issued.** Reserved by ADR-028 (Accepted 2026-11-12) and [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)
+§8; nothing issues them yet. Each moves to the issued list above when the row that builds it merges. New ranges:
+`CS-ORG` (organizations, workspaces, delegated administration, identity), `CS-PLAN` (plans and quotas), `CS-CON`
+(platform console). `CS-ORG-0012` is withdrawn before issue: `SEC-ID-01`'s fix issues `CS-API-0015` (store `CS-DB-0009`,
+SQLSTATE `OS003`) for the identity-attribute refusal, so this design's SQLSTATEs are `OS004` and `OS005`. Also proposed: widening `CS-DB-0004` to cover the admin and operator
+logs (`admin_events`, `org_admin_events`, `platform.operator_events`), which use the same append-only trigger.
+
+| Code | Meaning |
+| --- | --- |
+| CS-ORG-0001 | Not a member of that workspace, or the membership is disabled (switch, 403) |
+| CS-ORG-0002 | Setting locked or tightened by the organization's policy (422; names the key) |
+| CS-ORG-0003 | Domain not verified (TXT record absent or wrong) (422) |
+| CS-ORG-0004 | Domain cannot be claimed (already claimed, or a public e-mail domain); never says by whom (409) |
+| CS-ORG-0005 | Grant refused: exceeds the granting admin's own rights or scope, or grants to itself (403) |
+| CS-ORG-0006 | Sign-in method not allowed for this identity by its governing organization's policy (401) |
+| CS-ORG-0007 | Switching needs a fresh sign-in satisfying the target organization's policy (401; names the method) |
+| CS-ORG-0008 | The organization must keep at least one enabled owner (409) |
+| CS-ORG-0009 | Envelopes do not move between workspaces; transfer within one, or export the evidence package (422) |
+| CS-ORG-0010 | Workspace archived: no new envelopes, members or settings (409) |
+| CS-ORG-0011 | Identity-provider assertion for an identity outside the provider organization's verified domains, or with no binding (401) |
+| CS-ORG-0012 | *Withdrawn before issue:* the identity-attribute refusal is `CS-API-0015` (`SEC-ID-01`). Never reused |
+| CS-ORG-0013 | Action reserved to an organization owner, or awaiting an owner's approval (403) |
+| CS-ORG-0014 | Sensitive action needs a fresh sign-in (401) |
+| CS-ORG-0015 | Organization closed: read-only (409) |
+| CS-ORG-0016 | Cross-workspace template copy not allowed by the organization's policy (403) |
+| CS-ORG-0017 | Imported evidence package does not verify (422; names the failing check) |
+| CS-PLAN-0001 | Feature not in the plan (403; names the feature) |
+| CS-PLAN-0002 | Quota for the period reached (403; meter, limit, used, period end) |
+| CS-PLAN-0003 | Seat limit reached (403) |
+| CS-PLAN-0004 | Storage limit reached (403) |
+| CS-PLAN-0005 | Organization suspended by the platform: new work refused, sent envelopes continue (403) |
+| CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422) |
+| CS-PLAN-0007 | Workspace allocations exceed the organization's quota (422) |
+| CS-CON-0001 | Operator not authenticated, or the session expired (401) |
+| CS-CON-0002 | Second factor required, stale or wrong (401) |
+| CS-CON-0003 | Operator role lacks the action (403) |
+| CS-CON-0004 | Action needs a second operator's approval; missing, expired, used, by the requester, or for another payload (409) |
+| CS-CON-0005 | Console listener refused: public bind without `OPENSEAL_CONSOLE_PUBLIC=1` and TLS or trusted proxies (start-up) |
+| CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422) |
+| CS-CON-0007 | Operator log does not verify; the console refuses writes (start-up and per write) |
+| CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
+| CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no signature (alert) |
+| CS-DB-0013 | Change to an immutable column refused (a workspace's organization, outside ORG-20's operator link) (SQLSTATE `OS004`) |
+| CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq` or `prev` (SQLSTATE `OS005`) |
+
+## Personal data (`casual-sign-pii`, `ML-08`)
+
+The deterministic recognisers refuse only text over their size bound; every other bound truncates and is reported in
+the result, never as an error ([21](21-PARSER-LIMITS.md) §ML). The message carries the byte count and the limit, never
+any of the text (`SEC-D01`), and a test checks that with a marker string.
+
+| Code | Meaning |
+| --- | --- |
+| CS-PII-0001 | Text over the bound for one detection call (`Options::max_text_bytes`, default 4 MiB). *Final* for that text |
+
+## ML (`casual-sign-modeld`, the worker's ML jobs; reserved, ADR-029)
+
+Reserved by [33](33-ML-MODELS.md); none issued yet. Messages carry codes, ids, page numbers and counts, never document
+text, OCR text, entity or personal-data values, labels' matches, boxes, hashes or vectors (`SEC-I05`). A runtime's or
+third-party crate's own error text is never passed on. An ML job failing with a code marked *final* is dead-lettered;
+a dead ML job means only "no suggestions" and never blocks sending or sealing.
+
+| Code | Meaning |
+| --- | --- |
+| CS-ML-0001 | A modeld or ML setting missing or invalid (named, never its value), including a slot count of zero once derived from memory or one set above it. *Final* |
+| CS-ML-0002 | Model bundle: a file missing, unlisted, over its size or not matching its SHA-256; modeld does not start. *Final* |
+| CS-ML-0003 | A model file refused: external data, custom op domain, pickle format, or licence not allowed. *Final* |
+| CS-ML-0004 | A frame malformed or over a bound (length, count, id alphabet, UTF-8 or NFC), or a document handle unknown on this connection |
+| CS-ML-0005 | Input over its bound: page pixels, decoded image data, text bytes. *Final* for that page or call |
+| CS-ML-0006 | A page could not be rasterised: encrypted, unsupported, damaged, or over its time (the raster child was killed). Reported per page |
+| CS-ML-0007 | Inference deadline passed |
+| CS-ML-0008 | modeld unreachable, TLS refused, or the connection closed |
+| CS-ML-0009 | modeld busy; retry |
+| CS-ML-0010 | The model for this op is not installed in the bundle. *Final* |
+| CS-ML-0011 | The feature is off for the workspace or not in its plan (API `403`) |
+| CS-ML-0012 | Suggestion stale or already decided (API `409`) |
+| CS-ML-0013 | Inference failed inside the runtime, or a span would not fall on a UTF-8 boundary of the text sent |
+| CS-ML-0014 | The raster child exited abnormally (signal, memory limit) other than by the time cap; counted in the op log. Reported per page |
+| CS-ML-0015 | The caller's client certificate chains to the client CA but its SHA-256 fingerprint is not on modeld's allow list; recorded in the op log as a `connect` refusal; its first frame is never held (docs/21 §ML). *Final* (an operator must add the fingerprint) |
