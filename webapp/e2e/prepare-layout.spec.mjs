@@ -46,7 +46,7 @@ const widen = (page) => page.route(/\/fonts\//, (route) => route.abort());
 /// and the bar is one row high.
 async function onFirstRow(page, btn) {
   const bar = await page.locator(".os-prepare__bar").boundingBox();
-  const back = await page.locator(".os-prepare__bar > a").first().boundingBox();
+  const back = await page.locator(".os-prepare__lead > a").first().boundingBox();
   const b = await btn.boundingBox();
   const mid = (r) => r.y + r.height / 2;
   // Inside the window too: a bar wider than the window (a nowrap bar that could not
@@ -57,7 +57,7 @@ async function onFirstRow(page, btn) {
 }
 
 for (const [width, wide] of [1366, 1440, 1536].flatMap((w) => [[w, false], [w, true]])) {
-  test(`at ${width} px${wide ? " in the system font" : ""} Back and Next, then Send, stay on the toolbar's first row`, async ({ page }, testInfo) => {
+  test(`at ${width} px${wide ? " in the system font" : ""} Preview, Continue and Save, then Send, stay on the toolbar's first row (canvas bar)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await toFields(page, undefined, { wide });
     // The fullest bar: a saved draft (its subject as the title, "Saved at …"), on the
@@ -66,7 +66,7 @@ for (const [width, wide] of [1366, 1440, 1536].flatMap((w) => [[w, false], [w, t
     await page.getByTestId("save-draft").click();
     await expect(page.getByTestId("save-status")).toContainText("Saved");
     await expect(page.locator(".os-prepare__title")).toHaveText("Please sign: contract");
-    for (const [name, btn] of [["fields next", page.getByTestId("wizard-next")], ["fields back", page.getByTestId("wizard-back")], ["save", page.getByTestId("save-draft")]]) {
+    for (const [name, btn] of [["fields next", page.getByTestId("wizard-next")], ["preview", page.getByTestId("preview-signer")], ["save", page.getByTestId("save-draft")]]) {
       const r = await onFirstRow(page, btn);
       expect(r, `${name} at ${width}`).toEqual({ same: true, barHeight: r.barHeight, inside: true });
       expect(r.barHeight, `bar height at ${width}`).toBeLessThan(72);
@@ -82,7 +82,7 @@ for (const [width, wide] of [1366, 1440, 1536].flatMap((w) => [[w, false], [w, t
 }
 
 for (const width of [1366, 1440, 1536]) {
-  test(`at ${width} px in the system font a template's toolbar keeps Back, Next and Save template on its first row`, async ({ page }, testInfo) => {
+  test(`at ${width} px in the system font a template's toolbar keeps Continue and Save template on its first row`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await widen(page);
     await signIn(page);
@@ -95,7 +95,7 @@ for (const width of [1366, 1440, 1536]) {
     await page.getByTestId("wizard-next").click();
     await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
     await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
-    for (const btn of [page.getByTestId("wizard-next"), page.getByTestId("wizard-back")]) {
+    for (const btn of [page.getByTestId("wizard-next"), page.locator(".os-segsteps")]) {
       const r = await onFirstRow(page, btn);
       expect(r, `template fields at ${width}`).toEqual({ same: true, barHeight: r.barHeight, inside: true });
       expect(r.barHeight).toBeLessThan(72);
@@ -183,8 +183,9 @@ const pick = (page, type) => page.locator(`.os-field[data-field="${type}"]`).fir
 test("the ceremony's field kinds are placed and configured, and come back from the server as set", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await toFields(page);
-  // The palette is grouped, and has every kind the ceremony fills.
-  await expect(page.locator(".os-palette__group")).toHaveCount(3);
+  // The library (canvas): every kind the ceremony fills, the canvas's eight with their keys first.
+  await expect(page.locator(".os-palette .os-lib")).toHaveCount(14);
+  await expect(page.locator(".os-palette .os-lib[aria-keyshortcuts]")).toHaveCount(8);
   for (const type of ["Company", "Title", "Number", "Radio group", "Dropdown", "Attachment", "Note"]) await add(page, type);
   await add(page, "Text");
   await expect(page.locator(".os-field")).toHaveCount(8);
@@ -325,16 +326,20 @@ test("review: a signer without fields is a warning with its fix; preview as a re
   await dlg.getByRole("button", { name: "Cancel" }).click();
 });
 
-test("suggested fields left undecided stop Send, and their toast goes when the step is left", async ({ page }) => {
+test("suggested fields left undecided hold Continue and stop Send; their bar goes when the step is left", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await toFields(page);
   await add(page, "Signature");
   await page.getByTestId("detect-fields").click();
   await expect(page.getByTestId("ghost").first()).toBeVisible();
-  const toastNode = page.locator(".os-toast", { hasText: "suggested fields" });
-  await expect(toastNode).toBeVisible();
+  const bar = page.getByTestId("suggestions");
+  await expect(bar).toContainText("suggested fields");
+  // Continue is held, and says why when pressed (canvas).
+  await page.getByTestId("wizard-next").click({ force: true });
+  await expect(page.getByTestId("continue-why")).toHaveText(/Accept or dismiss the \d+ suggested fields first/);
+  await expect(page.locator('.os-stepper__btn[aria-current="step"]')).toContainText("Fields");
   await step(page, "Review");
-  await expect(toastNode).toHaveCount(0);
+  await expect(bar).toHaveCount(0);
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByText(/suggested fields are neither accepted nor dismissed/)).toBeVisible();
 });

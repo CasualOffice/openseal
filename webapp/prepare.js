@@ -21,14 +21,14 @@
 // documents, roles and fields; saving brings the server's template into line with
 // the editor (removals, changes and additions, each with If-Match).
 
-import { h, clear, reducedMotion, skipTo, initials } from "./dom.js";
+import { h, append, clear, reducedMotion, skipTo } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix, run } from "./commands.js";
-import { button, busy, emptyState, toast, toastError, confirmDialog, selectField, dockPanel, openPanel, closePanel } from "./ui/index.js";
+import { button, busy, emptyState, toast, toastError, confirmDialog, selectField, switchButton, dockPanel, openPanel, closePanel } from "./ui/index.js";
 import { openPdf } from "./pdfview.js";
 import { docView, zoomControls, thumbnails } from "./docview.js";
-import { FIELD_TYPES, FIELD_GROUPS, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput, requiredByDefault, validationFrom, optionsFrom } from "./geometry.js";
+import { FIELD_TYPES, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput, requiredByDefault, validationFrom, optionsFrom } from "./geometry.js";
 import { errorMessage, RECIPIENT_TYPES } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate } from "./templatesync.js";
@@ -37,6 +37,9 @@ import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from ".
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
 import { sendSummary } from "./people.js";
+import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary } from "./preparemodel.js";
+import { stepControl, recipientRow, libraryItem, toolButton, armHint, ghostBar, templateBanner, appliedChip, loadingPage, checksList, piiCard, assignList, markOcr, sparkle, spinner, KIND_GLYPH } from "./prepareview.js";
+import { mlStatus, featureOn, loadSuggestions, acceptSuggestion, dismissSuggestion, suggestions as mlSuggestions, percent, isUnavailable } from "./ml.js";
 
 const FIELD_ICON = {
   signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", company: "layers", title: "type",
@@ -103,25 +106,23 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let step = "documents";
   const subject = h("input", { id: "env-subject", class: "os-input", placeholder: t(TPL ? "template.name-placeholder" : "prepare.subject-placeholder"), maxLength: 255 });
   subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; title.textContent = S.subject.trim() || newTitle(); title.title = title.textContent; });
+  // The top bar (canvas): back, breadcrumb, title and the save state on the left; the
+  // segmented step control in the middle; Preview as signer and the one primary action
+  // (Continue, then Send or Save template) on the right. Saving is automatic for a draft;
+  // the save button beside the state saves now (Ctrl/Cmd+S).
   const saveBtn = TPL
     ? button(t("template.save"), { icon: "save", variant: "primary", command: "template.save", onClick: () => run("template.save") })
-    : button(t("prepare.save"), { icon: "save", command: "envelope.save", onClick: () => run("envelope.save"), attrs: { "data-testid": "save-draft", title: t("prepare.save-tip") } });
+    : button(t("prepare.save"), { icon: "save", size: "sm", variant: "ghost", iconOnly: true, command: "envelope.save", onClick: () => run("envelope.save"), attrs: { "data-testid": "save-draft", title: t("prepare.save-tip") } });
   const sendBtn = TPL ? null : button(t("prepare.send"), { icon: "send", variant: "primary", command: "envelope.send", onClick: () => run("envelope.send") });
   const newTitle = () => t(TPL_ID ? "templates.edit-title" : TPL ? "template.new-title" : "prepare.title");
   const title = h("h1", { class: "os-prepare__title", text: newTitle() });
-  const stepper = h("ol", { class: "os-stepper", attrs: { "aria-label": t("wizard.steps") } });
-  const stepBtns = new Map();
-  STEPS.forEach((s, i) => {
-    const b = h("button", { type: "button", class: "os-stepper__btn", attrs: { "data-step": s, title: t(stepLabel(s)) } },
-      h("span", { class: "os-stepper__n", text: String(i + 1) }), h("span", { class: "os-stepper__label", text: t(stepLabel(s)) }));
-    b.addEventListener("click", () => go(s));
-    stepBtns.set(s, b);
-    stepper.append(h("li", {}, b));
-  });
+  // The canvas names the last step "Review"; its full name ("Review and send") stays for
+  // assistive technology, so the visible word is part of the accessible name.
+  const steps = stepControl(STEPS, stepLabel, (s) => go(s), (s) => (s === "review" && !TPL ? "wizard.step.review-short" : null));
   const status = h("span", { class: "os-savestate", attrs: { "aria-live": "polite", id: "save-status", "data-testid": "save-status" } });
 
-  // The document: one scroll container (docview.js), the zoom and page controls, and
-  // the thumbnails, all on the fields step.
+  // The document: one scroll container (docview.js) on a dotted canvas, the floating
+  // tool bar, and the thumbnails in the left panel.
   const live = h("div", { class: "os-sr-only", attrs: { "aria-live": "polite" } });
   const dv = docView({
     label: t("prepare.pages"),
@@ -129,62 +130,81 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // Phones open at a readable size (UX-05: 1 CSS px a point, 11 pt body text at 11 px;
     // fit width was about 5 px) and pan; two fingers zoom, as on any page.
     mode: matchMedia("(max-width: 47.999em)").matches ? 1 : "fit-width",
-    onLayout: () => { zoom.sync(); },
-    onZoom: () => zoom.sync(),
+    onLayout: () => { zoom.sync(); syncZoomPct(); },
+    onZoom: () => { zoom.sync(); syncZoomPct(); },
     onPage: (i) => { zoom.sync(); thumbs.mark(i); },
   });
   const stage = dv.scroller;
   stage.classList.add("os-stage");
   const zoom = zoomControls(dv);
+  // The tool bar shows the zoom as the canvas does ("100%"); the select under it stays
+  // the control (fit width, fit page, presets), transparent over the number.
+  const zoomPct = h("span", { class: "os-zoompct", attrs: { "aria-hidden": "true" } });
+  const zoomSel = zoom.el.querySelector("select");
+  zoomSel?.before(h("span", { class: "os-zoomwrap" }, zoomPct));
+  zoomPct.parentElement?.append(zoomSel);
+  const syncZoomPct = () => { zoomPct.textContent = dv.pages.length ? `${dv.percent()}%` : "—"; };
   const undoBtn = button(t("cmd.edit.undo"), { icon: "undo-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => run("edit.undo"), attrs: { "aria-keyshortcuts": "Control+Z", "data-testid": "undo" } });
   const redoBtn = button(t("cmd.edit.redo"), { icon: "redo-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => run("edit.redo"), attrs: { "aria-keyshortcuts": "Control+Shift+Z", "data-testid": "redo" } });
-  const keysBtn = button(t("help.shortcuts"), { icon: "keyboard", size: "sm", variant: "ghost", iconOnly: true, onClick: () => run("help.shortcuts") });
-  const docTools = h("div", { class: "os-prepare__doctools", attrs: { role: "group", "aria-label": t("prepare.doc-tools") } }, undoBtn, redoBtn, keysBtn);
 
-  const backBtn = button(t("action.back"), { icon: "chevron-left", size: "md", onClick: () => go(STEPS[STEPS.indexOf(step) - 1]), attrs: { "data-testid": "wizard-back", title: t("action.back") } });
-  const nextBtn = button(t("wizard.next"), { icon: "arrow-right", variant: "primary", attrs: { "data-testid": "wizard-next" }, onClick: () => go(STEPS[STEPS.indexOf(step) + 1]) });
+  // Continue: the next step, held on the fields step while a signer has no field or a
+  // suggestion is undecided (preparemodel.js continueState); held, it stays focusable and
+  // a press says why beside it.
+  const whyId = "prepare-why";
+  const why = h("div", { id: whyId, class: "os-why", attrs: { role: "status", "data-testid": "continue-why" } });
+  why.hidden = true;
+  const nextBtn = button(t("wizard.continue"), { icon: "arrow-right", variant: "primary", attrs: { "data-testid": "wizard-next" }, onClick: () => continueNow() });
+  nextBtn.classList.add("os-btn--trail");
+  const previewBtn = TPL ? null : button(t("prepare.preview-signer"), { variant: "ghost", command: "editor.preview", onClick: () => run("editor.preview"), attrs: { "data-testid": "preview-signer" } });
   const bar = h("header", { class: "os-prepare__bar", attrs: { "aria-label": t(TPL ? "template.new-title" : "prepare.title") } },
-    h("a", { href: TPL ? "#/templates" : "#/agreements", class: "os-btn os-btn--ghost os-btn--md os-btn--icon", attrs: { "aria-label": t(TPL ? "template.back" : "prepare.back"), title: t(TPL ? "template.back" : "prepare.back") } }, icon("chevron-left")),
-    h("div", { class: "os-prepare__head" },
+    h("div", { class: "os-prepare__lead" },
+      h("a", { href: TPL ? "#/templates" : "#/agreements", class: "os-btn os-btn--ghost os-btn--md os-btn--icon", attrs: { "aria-label": t(TPL ? "template.back" : "prepare.back"), title: t(TPL ? "template.back" : "prepare.back") } }, icon("chevron-left")),
+      h("span", { class: "os-crumb", attrs: { "aria-hidden": "true" } }, h("span", { text: t(TPL ? "nav.templates" : "nav.agreements") }), h("span", { class: "os-crumb__sep", text: "/" })),
       TPL ? h("span", { class: "os-badge os-badge--template" }, icon("layout-template", { size: 16 }), h("span", { text: t("template.badge") })) : null,
-      title),
-    h("nav", { class: "os-prepare__steps", attrs: { "aria-label": t("wizard.steps") } }, stepper),
-    docTools,
-    // The step's actions keep their place at the bar's end on every step (UX-05): the
-    // title and the step labels give way first, never Back, Next or Send.
-    h("div", { class: "os-prepare__actions" },
-      status,
-      TPL ? null : saveBtn,
-      backBtn, nextBtn, sendBtn, TPL ? saveBtn : null));
+      title, status, TPL ? null : saveBtn),
+    h("nav", { class: "os-prepare__steps", attrs: { "aria-label": t("wizard.steps") } }, steps.el),
+    h("div", { class: "os-prepare__actions" }, previewBtn, h("div", { class: "os-why-anchor" }, nextBtn, why), sendBtn, TPL ? saveBtn : null));
 
+  // Left panel: recipients, Detect fields, the fields library, the pages.
   const docsPanel = h("section", { class: "os-panel os-panel--docs", attrs: { "aria-labelledby": "docs-h" } });
   const rcptPanel = h("section", { class: "os-panel os-panel--rcpt", attrs: { "aria-labelledby": "rcpt-h" } });
   const palettePanel = h("section", { class: "os-panel os-panel--palette", attrs: { "aria-labelledby": "pal-h" } });
   const thumbsBox = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
-  const thumbs = thumbnails(dv, thumbsBox, { width: 64, byDocument: true });
-  const leftDock = dockPanel({ id: "editor-fields", side: "left", title: t("prepare.fields"), icon: "signature", width: 13.5, min: 11, max: 24, testId: "panel-fields" });
+  const thumbs = thumbnails(dv, thumbsBox, { width: 56, byDocument: true });
+  const leftDock = dockPanel({ id: "editor-fields", side: "left", title: t("prepare.fields"), icon: "signature", width: 16.5, min: 13, max: 24, testId: "panel-fields" });
+  leftDock.el.classList.add("os-prepdock");
   leftDock.body.append(palettePanel);
   leftDock.body.classList.add("os-dock__body--split");
-  // The pages, pinned under the palette so they are always in view (UX-05: they came
-  // after it and fell below the fold), grouped by document. Phones show the page indicator.
   const rail = h("section", { class: "os-prepare__rail os-panel--thumbs", attrs: { "aria-labelledby": "thumbs-h", "data-testid": "thumbs-rail" } },
-    h("h3", { id: "thumbs-h", class: "os-panel__title", text: t("prepare.pages") }), thumbsBox);
+    h("h3", { id: "thumbs-h", class: "os-prep-h", text: t("prepare.pages-short") }), thumbsBox);
   leftDock.body.append(rail);
   const props = h("div", { class: "os-props" });
-  const rightDock = dockPanel({ id: "editor-props", side: "right", title: t("prepare.properties"), icon: "settings", width: 15, min: 13, max: 30, testId: "panel-props", collapsed: matchMedia("(max-width: 74.999em)").matches });
+  const rightDock = dockPanel({ id: "editor-props", side: "right", title: t("prepare.properties"), icon: "settings", width: 17.5, min: 14, max: 30, testId: "panel-props", collapsed: matchMedia("(max-width: 74.999em)").matches });
+  rightDock.el.classList.add("os-prepdock");
   rightDock.body.append(props);
   // Phones: the palette and the properties are bottom sheets; this opens the palette.
   const addFab = button(t("prepare.add-field-short"), { icon: "plus", variant: "primary", size: "lg", onClick: () => leftDock.openSheet(), attrs: { "data-testid": "add-field-sheet" } });
   const propsFab = button(t("prepare.field-settings"), { icon: "settings", size: "lg", onClick: () => rightDock.openSheet(), attrs: { "data-testid": "props-sheet", title: t("prepare.field-settings") } });
   propsFab.hidden = true;
-  // The document's own bar floats at the bottom of the pages: zoom and "Page n of N".
-  // Phones (UX-05): one bottom bar, the zoom and page with Add field and Field settings,
-  // instead of floating buttons over the page indicator.
+  // The floating tool bar (canvas): Select and six kinds, Detect fields, zoom, undo and
+  // redo. Phones: the same bar holds the page indicator, Field settings and Add field.
+  const toolBtns = new Map(TOOLBAR.map((k) => [k, toolButton(k, () => (k === "select" ? run("field.disarm-select") : toggleArm(k)))]));
+  const toolDetect = TPL ? null : h("button", { type: "button", class: "os-tool os-tool--ml", attrs: { "aria-label": t("prepare.detect"), title: t("prepare.detect"), "data-testid": "tool-detect" } }, sparkle("1rem"));
+  toolDetect?.addEventListener("click", () => run("field.detect"));
+  const toolbar = h("div", { class: "os-docbar os-toolbar", attrs: { role: "toolbar", "aria-label": t("prepare.tools") } },
+    h("div", { class: "os-toolbar__tools" }, ...toolBtns.values()),
+    h("span", { class: "os-toolbar__sep", attrs: { "aria-hidden": "true" } }),
+    toolDetect, zoom.el,
+    h("span", { class: "os-toolbar__sep os-toolbar__sep--hist", attrs: { "aria-hidden": "true" } }),
+    h("div", { class: "os-toolbar__hist" }, undoBtn, redoBtn),
+    h("div", { class: "os-docbar__actions" }, propsFab, addFab));
   const previewBar = h("div", { class: "os-previewbar", attrs: { role: "status", "data-testid": "preview-as" } });
   previewBar.hidden = true;
-  const centre = h("div", { class: "os-prepare__centre" }, stage, previewBar,
-    h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoom.el,
-      h("div", { class: "os-docbar__actions" }, propsFab, addFab)));
+  // Floating layers over the page: the template banner (top), the hint or the suggestion
+  // bar (bottom, above the tool bar).
+  const topLayer = h("div", { class: "os-floattop" });
+  const bottomLayer = h("div", { class: "os-floatbottom", attrs: { "aria-live": "polite" } });
+  const centre = h("div", { class: "os-prepare__centre" }, stage, previewBar, topLayer, bottomLayer, toolbar);
   /// Preview as a recipient (UX-05, DocuSign's "Preview"): on the fields step, their
   /// fields stand out and everyone else's fade, with a bar saying whose view it is.
   let previewKey = null;
@@ -197,6 +217,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       previewBar.append(icon("eye", { size: 16 }), h("span", { text: t("prepare.previewing", { name: displayName(r, S.recipients.indexOf(r)) }) }),
         button(t("prepare.preview-end"), { size: "sm", onClick: () => { previewAs(null); stage.focus(); } }));
     }
+    previewBtn?.setAttribute("aria-pressed", String(!!r));
     renderFieldsOnly();
   }
   const reviewPanel = h("section", { class: "os-panel os-panel--review", attrs: { "aria-labelledby": "review-h" } });
@@ -239,7 +260,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (TPL && s === "review") return "wizard.review-template";
     return s === "recipients" && TPL ? "wizard.step.roles" : `wizard.step.${s}`;
   }
-  /// Open step `s`: show its pane, mark the step bar, set the toolbar's buttons.
+  /// Open step `s`: show its pane, mark the step control, set the bar's buttons.
   async function go(s) {
     if (!STEPS.includes(s)) return;
     const prevStep = step;
@@ -247,51 +268,71 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     frame.dataset.step = s;
     const i = STEPS.indexOf(s);
     for (const [k, pane] of Object.entries(panes)) pane.hidden = k !== s;
-    for (const [k, b] of stepBtns) {
-      if (k === s) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
-      const doneStep = STEPS.indexOf(k) < i;
-      b.classList.toggle("is-done", doneStep);
-      // Steps behind are ticked (R-04); the number stays for the screen reader.
-      const n = b.querySelector(".os-stepper__n");
-      n.replaceChildren(doneStep ? icon("check", { size: 16 }) : String(STEPS.indexOf(k) + 1), doneStep ? h("span", { class: "os-sr-only", text: `${STEPS.indexOf(k) + 1} ${t("wizard.step-done")}` }) : "");
-    }
-    docTools.hidden = s !== "fields";
+    steps.sync(stepStates(STEPS, s));
     skipTo(s === "fields" ? "#document" : "#main", t(s === "fields" ? "a11y.skip-doc" : "a11y.skip"));
-    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); disarm(); closeDetectToast?.(); closeDetectToast = null; if (previewKey) previewAs(null); }
-    backBtn.hidden = i === 0;
+    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); disarm(); if (previewKey) previewAs(null); }
+    if (s !== "fields") renderFloats(); // the hint and the suggestion bar belong to the fields step
     nextBtn.hidden = i === STEPS.length - 1;
-    syncNext();
+    if (previewBtn) previewBtn.hidden = s !== "fields" && s !== "review";
     if (sendBtn) sendBtn.hidden = s !== "review";
     if (TPL) saveBtn.hidden = s !== "review";
+    hideWhy();
+    syncNext();
     say(t("wizard.where", { n: i + 1, total: STEPS.length, label: t(stepLabel(s)) }));
     if (s === "fields") {
       // Fields start with the first signer (P-01), whoever was edited last on step 2.
       if (prevStep !== "fields") { S.active = signers()[0]?.key || null; renderPalette(); }
       if (stageKey !== S.docs.map((d) => d.key).join()) await renderStage();
       else { dv.relayout(); renderFieldsOnly(); }
+      renderFloats();
     }
     if (s === "review") renderReview();
   }
 
-  /// Next on the documents step waits for a document (UX-05): with none there is nothing
-  /// to place fields on. The reason is its tooltip and is said under the drop zone.
+  /// Continue's state (preparemodel.js continueState): on the documents step it waits for
+  /// a document (disabled, as before); on the fields step it is held while a signer has no
+  /// field or a suggestion is undecided, and says why when pressed.
+  let held = { blocked: false, reason: null };
   function syncNext() {
-    const need = step === "documents" && !S.docs.length;
+    held = continueState({ step, recipients: S.recipients, fields: S.fields, ghosts: S.ghosts.length, docs: S.docs.length });
+    const need = step === "documents" && held.blocked;
     nextBtn.disabled = need;
-    if (need) nextBtn.title = t("wizard.need-doc"); else nextBtn.removeAttribute("title");
+    const soft = step !== "documents" && held.blocked;
+    nextBtn.classList.toggle("is-held", soft);
+    if (soft) { nextBtn.setAttribute("aria-disabled", "true"); nextBtn.setAttribute("aria-describedby", whyId); } else { nextBtn.removeAttribute("aria-disabled"); nextBtn.removeAttribute("aria-describedby"); }
+    const reason = held.reason ? t(held.reason.key, held.reason.params) : "";
+    if (reason) nextBtn.title = reason; else nextBtn.removeAttribute("title");
+    why.textContent = reason;
+    if (!soft) hideWhy();
   }
-  let closeDetectToast = null; // the "suggested fields" toast, closed on leaving the step
+  function hideWhy() { why.hidden = true; }
+  /// Continue pressed: the next step, or, held, the reason beside it and the recipient who
+  /// still needs a field picked, so the next tool places for them.
+  function continueNow() {
+    syncNext();
+    if (held.blocked) {
+      if (step === "documents") return;
+      why.hidden = false;
+      say(why.textContent);
+      if (held.keys?.length) pick(held.keys[0]);
+      return;
+    }
+    go(STEPS[STEPS.indexOf(step) + 1]);
+  }
+  const onDocDown = (e) => { if (!why.hidden && !e.target.closest?.(".os-why-anchor")) hideWhy(); };
+  document.addEventListener("pointerdown", onDocDown, true);
 
   const say = (msg) => { live.textContent = ""; setTimeout(() => { live.textContent = msg; }, 30); };
 
-  /// The save state beside Save (A13) and the undo and redo buttons (A14).
+  /// The save state in the bar (A13: canvas "Saved" with its dot) and undo and redo (A14).
   function syncStatus() {
     status.replaceChildren();
-    if (saving) status.append(h("span", { text: t("prepare.saving") }));
+    if (saving) status.append(spinner("0.75rem"), h("span", { text: t("prepare.saving") }));
     else if (dirty) status.append(h("span", { class: "os-savestate__dot", attrs: { "aria-hidden": "true" } }), h("span", { text: t("prepare.unsaved") }));
-    else if (savedAt) status.append(icon("circle-check", { size: 16 }), h("span", { text: t("prepare.saved-at", { time: savedAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) }) }));
+    else if (savedAt) status.append(h("span", { class: "os-savestate__dot", attrs: { "aria-hidden": "true" } }), h("span", { text: t("prepare.saved-state") }));
     status.classList.toggle("is-dirty", dirty && !saving);
-    status.title = status.textContent;
+    status.classList.toggle("is-saved", !dirty && !saving && !!savedAt);
+    status.title = savedAt && !dirty && !saving ? t("prepare.saved-at", { time: savedAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) }) : status.textContent;
     syncHistory();
   }
   function syncHistory() {
@@ -624,19 +665,21 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     });
   }
 
-  // ---- Palette --------------------------------------------------------------------------
-  // The buttons are built once and never replaced: a re-render between a button's
-  // mousedown and its click (a name committed on blur) would swallow the click.
-  const palFor = h("div", { class: "os-palette__for" });
+  // ---- Left panel: recipients, Detect fields, the fields library -------------------------
+  let detecting = false; // Detect fields is reading the pages
+  // The canvas's left panel. The library's buttons are built once and never replaced: a
+  // re-render between a button's mousedown and its click (a name committed on blur) would
+  // swallow the click. The recipients list is rebuilt on change; it is the radio group
+  // "Placing fields for" (A21): arrows move, the choice follows focus, keys 1–9 pick.
+  const palFor = h("div", { class: "os-prc-list", attrs: { role: "radiogroup", "aria-label": t("prepare.placing-for") } });
+  const addPerson = h("button", { type: "button", class: "os-prep-add", attrs: { "aria-label": t(TPL ? "template.add-role" : "prepare.add-recipient"), title: t(TPL ? "template.add-role" : "prepare.add-recipient") } }, icon("plus", { size: 16 }));
+  addPerson.addEventListener("click", async () => { await go("recipients"); addRecipient(); });
   const palGrid = h("div", { class: "os-palette os-r1" });
-  const groupBox = new Map(FIELD_GROUPS.map(([g]) => [g, h("div", { class: "os-palette__items" })]));
-  for (const [g] of FIELD_GROUPS) {
-    palGrid.append(h("div", { class: "os-palette__group", attrs: { role: "group", "aria-labelledby": `pal-g-${g}` } },
-      h("p", { id: `pal-g-${g}`, class: "os-palette__gtitle", text: t(`prepare.fgroup.${g}`) }), groupBox.get(g)));
-  }
-  for (const type of FIELD_TYPES) {
-    const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-pressed": "false", "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
-      icon(FIELD_ICON[type], { size: 20 }), h("span", { text: t(`ftype.${type}`) }));
+  const libItems = [...LIBRARY, ...LIBRARY_MORE.map((k) => [k, null])];
+  const moreAt = LIBRARY.length;
+  const palForName = h("span", { class: "os-prep-h__aside" });
+  libItems.forEach(([type, key], n) => {
+    const b = libraryItem(type, key);
     // A pointer click arms the type (UX-05, DocuSign's and SignNow's click-to-place): the
     // next click on a page places it there. A double click keeps it armed for several.
     // Enter or Space (a click with no pointer, `detail` 0) places it on the page in view,
@@ -644,7 +687,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     b.addEventListener("click", (e) => {
       if (e.detail === 0) { disarm(); addFieldInView(type); leftDock.closeSheet(); return; }
       if (e.detail > 1) return;
-      if (armed?.type === type && !armed.sticky) disarm(true); else arm(type, false);
+      toggleArm(type);
       leftDock.closeSheet();
     });
     b.addEventListener("dblclick", () => arm(type, true));
@@ -654,64 +697,73 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       stage.classList.add("is-dropping");
     });
     b.addEventListener("dragend", () => stage.classList.remove("is-dropping"));
-    groupBox.get(FIELD_GROUPS.find(([, ts]) => ts.includes(type))[0]).append(b);
+    if (n === moreAt) palGrid.append(h("p", { class: "os-lib__more", text: t("prepare.more-fields") }));
+    palGrid.append(b);
+  });
+  // Detect fields (WEB-09): the server's suggestions as ghost fields, in violet (model
+  // work). Envelopes only: the API detects on an envelope's documents.
+  const detectBtn = TPL ? null : h("button", { type: "button", class: "os-detectbtn", attrs: { "data-testid": "detect-fields", "aria-describedby": "detect-help", "data-os-command": "field.detect" } });
+  detectBtn?.addEventListener("click", () => run("field.detect"));
+  function syncDetect() {
+    if (!detectBtn) return;
+    detectBtn.replaceChildren(detecting ? spinner() : sparkle(), h("span", { text: t(detecting ? "prepare.detecting" : "prepare.detect") }));
+    detectBtn.setAttribute("aria-busy", String(detecting));
+    toolDetect?.classList.toggle("is-busy", detecting);
   }
-  palettePanel.append(
+  syncDetect();
+  append(palettePanel, [
+    h("div", { class: "os-prep-h" }, h("h3", { id: "rcpt-list-h", text: t(TPL ? "template.roles" : "prepare.recipients") }), addPerson),
     palFor,
-    h("h3", { id: "pal-h", class: "os-panel__title", text: t("prepare.field-types") }),
-    // Touch screens get touch words (UX-05): no Enter, arrows or Shift there.
-    palGrid, h("p", { class: "os-muted os-small", attrs: { "data-testid": "palette-hint" }, text: t(matchMedia("(pointer: coarse)").matches ? "prepare.palette-hint-touch" : "prepare.palette-hint") }));
-  // Detect fields (WEB-09): the server's suggestions as ghost fields. Envelopes only:
-  // the API detects on an envelope's documents.
-  const detectBtn = TPL ? null : button(t("prepare.detect"), { icon: "scan", command: "field.detect", onClick: () => run("field.detect"), attrs: { "data-testid": "detect-fields", "aria-describedby": "detect-help" } });
-  if (detectBtn) palettePanel.append(h("div", { class: "os-detect" }, detectBtn, h("p", { id: "detect-help", class: "os-muted os-small", text: t("prepare.detect-help") })));
+    detectBtn ? h("div", { class: "os-detect" }, detectBtn, h("p", { id: "detect-help", class: "os-sr-only", text: t("prepare.detect-help") })) : null,
+    h("div", { class: "os-prep-sep", attrs: { "aria-hidden": "true" } }),
+    h("div", { class: "os-prep-h" }, h("h3", { id: "pal-h", text: t("prepare.fields") }), palForName),
+    palGrid,
+    // Touch screens get touch words (UX-05): no Enter, arrows or Shift there. Phones only;
+    // a desktop has the hint chip over the page.
+    h("p", { class: "os-muted os-small os-palette__hint", attrs: { "data-testid": "palette-hint" }, text: t(matchMedia("(pointer: coarse)").matches ? "prepare.palette-hint-touch" : "prepare.palette-hint") })]);
 
-  /// The recipient chips (A21): who the next field is for, by colour, number and key 1–9.
-  /// A radio group with roving focus; arrows move, the choice follows focus.
-  /// Only signers take fields (P-01): copies are never offered, and the choice falls
-  /// back to the first signer whenever it is not one.
+  /// The recipients list (canvas): each signer's colour chip with their number, name, role
+  /// line and field count; the one fields are being placed for is tinted. Only signers take
+  /// fields (P-01): the choice falls back to the first signer whenever it is not one.
   function renderPalette() {
     const sg = signers();
     if (!sg.some((r) => r.key === S.active)) S.active = sg[0]?.key || null;
     const active = recipient(S.active);
-    const idx = S.recipients.indexOf(active);
     const focused = palFor.contains(document.activeElement);
-    clear(palFor);
-    if (sg.length > 1) {
-      const group = h("div", { class: "os-chips-rcpt", attrs: { role: "radiogroup", "aria-labelledby": "pal-for-h" } });
-      const chips = sg.map((r, j) => {
-        const i = S.recipients.indexOf(r);
-        const on = r.key === S.active;
-        const chip = h("button", { type: "button", class: `os-rchip os-r${colourOf(r.key)}`, attrs: { role: "radio", "aria-checked": String(on), tabindex: on ? "0" : "-1", "data-rkey": r.key, title: t("prepare.placing-key", { n: j + 1 }) } },
-          h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
-          h("span", { class: "os-rchip__name", text: displayName(r, i) }),
-          j < 9 ? h("kbd", { class: "os-rchip__key", attrs: { "aria-hidden": "true" }, text: String(j + 1) }) : null);
-        chip.addEventListener("click", () => pick(r.key));
-        chip.addEventListener("keydown", (e) => {
+    const rows = recipientRows(S.recipients, S.fields, { order: orderOf, ordered: S.ordered });
+    palFor.replaceChildren(...rows.map((row, j) => {
+      const r = recipient(row.key);
+      return recipientRow({
+        key: row.key, n: row.n, colour: colourOf(row.key), name: displayName(r, row.n - 1),
+        role: t(row.role.key, { type: t(`rtype.${r.type}`), n: row.role.params.n }), count: row.count, on: row.key === S.active,
+        onPick: () => pick(row.key),
+        onKey: (e) => {
           const d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
           if (!d) return;
           e.preventDefault();
-          pick(sg[(j + d + sg.length) % sg.length].key, true);
-        });
-        return chip;
+          pick(rows[(j + d + rows.length) % rows.length].key, true);
+        },
       });
-      group.append(...chips);
-      palFor.append(h("p", { id: "pal-for-h", class: "os-panel__title", text: t("prepare.placing-for") }), group);
-      if (focused) palFor.querySelector('[aria-checked="true"]')?.focus();
-    } else if (active) {
-      palFor.append(h("p", { class: "os-muted os-small", text: t("prepare.placing-for-name", { name: displayName(active, idx) }) }));
-    }
+    }));
+    if (!rows.length) palFor.append(h("p", { class: "os-muted os-small", text: t(TPL ? "empty.roles.title" : "empty.recipients.title") }));
+    if (focused) palFor.querySelector('[aria-checked="true"]')?.focus();
+    palForName.textContent = active ? t("prepare.for-name", { name: firstName(displayName(active, S.recipients.indexOf(active))) }) : "";
     palGrid.className = `os-palette os-r${active ? colourOf(active.key) : 1}`;
+    for (const b of toolBtns.values()) b.className = `os-tool os-r${active ? colourOf(active.key) : 1}`;
+    markArmed();
   }
   function pick(key, focus = false) {
     S.active = key;
     markActive();
     renderPalette();
-    if (S.ghosts.length) { renderGhosts(); renderProps(); }
+    if (S.ghosts.length) { renderGhosts(); renderFloats(); }
+    if (armed) renderFloats();
     if (focus) palFor.querySelector('[aria-checked="true"]')?.focus();
     const i = S.recipients.findIndex((r) => r.key === key);
     say(t("prepare.placing-for-name", { name: displayName(S.recipients[i], i) }));
   }
+  /// The name the canvas uses in its short lines ("for Jordan"): the first word.
+  const firstName = (name) => String(name).trim().split(/\s+/)[0] || name;
 
   // ---- Documents ---------------------------------------------------------------------------
   /// Step 1: each document as a card with its first page, page count, order and remove.
@@ -851,10 +903,33 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       });
     });
     thumbs.build();
+    rail.classList.toggle("is-single", S.docs.length === 1);
+    markOcr(thumbsBox, ocrPages);
     renderFieldsOnly();
-    // The placed-fields list numbers pages by the laid-out view, so it follows the stage.
     renderProps();
     zoom.sync();
+    showPreparing(dv.pages.length);
+  }
+  /// The canvas's loading page: a skeleton with "Preparing n pages…" over the stage until
+  /// the first page has painted (docview drops `is-loading` from it), so the stage is
+  /// never blank and nothing shifts when the page arrives.
+  let preparing = null;
+  let preparingWatch = null;
+  function showPreparing(n) {
+    preparingWatch?.disconnect();
+    preparing?.remove();
+    const first = dv.els[0]?.el;
+    if (n && first && !first.classList.contains("is-loading")) { preparing = null; return; }
+    preparing = h("div", { class: "os-prepload-wrap" }, loadingPage(n));
+    centre.append(preparing);
+    if (!first) return;
+    preparingWatch = new MutationObserver(() => {
+      if (first.classList.contains("is-loading") && first.isConnected) return;
+      preparingWatch.disconnect();
+      preparing?.remove();
+      preparing = null;
+    });
+    preparingWatch.observe(first, { attributes: true, attributeFilter: ["class"] });
   }
   const pageIndex = (docKey, page) => dv.pages.findIndex((p) => p.key === docKey && p.n === page);
 
@@ -876,9 +951,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const el = h("button", { type: "button", class: `os-field os-r${colourOf(f.recipientKey)}${f.required ? " is-required" : ""}${previewKey && f.recipientKey !== previewKey ? " is-other" : ""}${S.selected === f.key ? " is-selected" : ""}`, attrs: { "data-fkey": f.key, "data-field": f.type, "aria-label": fieldLabel(f), "aria-pressed": String(S.selected === f.key) } },
         icon(FIELD_ICON[f.type] || "text-cursor-input", { size: 16 }),
         h("span", { class: "os-field__label", text: f.label || t(`ftype.${f.type}`) }),
-        // Whose field it is, beside its colour (F-02): the recipient's initials, drawn by CSS
+        // Whose field it is, beside its colour (F-02): the recipient's first name, drawn by CSS
         // from data-who so the visible text stays the field's label (SC 2.5.3).
-        h("span", { class: "os-field__who", attrs: { "aria-hidden": "true", "data-who": initials(displayName(recipient(f.recipientKey), S.recipients.findIndex((r) => r.key === f.recipientKey))) } }),
+        h("span", { class: "os-field__who", attrs: { "aria-hidden": "true", "data-who": firstName(displayName(recipient(f.recipientKey), S.recipients.findIndex((r) => r.key === f.recipientKey))) } }),
         h("span", { class: "os-field__handle", attrs: { "aria-hidden": "true" } }));
       place(el, f);
       el.addEventListener("focus", () => { if (S.selected !== f.key && !multi.has(f.key)) select(f.key, false); });
@@ -1099,9 +1174,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!f) rightDock.closeSheet();
   }
 
-  // ---- Click-to-place (UX-05) -------------------------------------------------------------
-  // An armed type follows the pointer as a ghost of its default size; a click on a page
-  // places the field centred there. Escape (field.deselect) or a second click on the
+  // ---- Click-to-place (UX-05; canvas: pick a tool, then click the page) -------------------
+  // An armed type follows the pointer as a ghost of its default size, the page takes a
+  // crosshair, and a dark chip says what the next click does; a click on a page places
+  // the field centred there. Escape (field.deselect), Select (V) or a second click on the
   // type disarms; a double-clicked type stays armed until then.
   let armed = null; // {type, sticky}
   const armGhost = h("div", { class: "os-armghost", attrs: { "aria-hidden": "true", "data-testid": "arm-ghost" } });
@@ -1109,6 +1185,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const b of palGrid.querySelectorAll(".os-palette__item")) {
       const on = armed?.type === b.dataset.fieldType;
       b.classList.toggle("is-armed", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    for (const [k, b] of toolBtns) {
+      const on = k === "select" ? !armed : armed?.type === k;
+      b.classList.toggle("is-on", on);
       b.setAttribute("aria-pressed", String(on));
     }
     stage.classList.toggle("is-armed", !!armed);
@@ -1120,12 +1201,43 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     markArmed();
     armGhost.replaceChildren(icon(FIELD_ICON[type] || "text-cursor-input", { size: 16 }), h("span", { text: t(`ftype.${type}`) }));
     say(t(sticky ? "prepare.armed-sticky" : "prepare.armed", { type: t(`ftype.${type}`) }));
+    renderFloats();
+  }
+  /// A tool or library row pressed: arms its kind, or disarms it when it is armed already.
+  function toggleArm(type) {
+    if (armed?.type === type && !armed.sticky) disarm(true); else arm(type, false);
   }
   function disarm(announce = false) {
     if (!armed) return;
     armed = null;
     markArmed();
     if (announce) say(t("prepare.disarmed"));
+    renderFloats();
+  }
+
+  // ---- Floating layers (canvas): template banner on top; hint or suggestions at the foot --
+  let tplState = "none"; // none | offer | applied | done
+  let tplOffer = null; // {suggestion, template, roles, fields}
+  let tplApplied = null; // {name, n}
+  let tplTimer = null;
+  function renderFloats() {
+    const onFields = step === "fields";
+    const top = [];
+    if (onFields && tplState === "offer" && tplOffer) {
+      top.push(templateBanner({
+        name: tplOffer.suggestion.label || tplOffer.template.name || "", pct: percent(tplOffer.suggestion),
+        roles: tplOffer.roles, fields: tplOffer.fields, onApply: () => run("editor.apply-template"), onSkip: () => run("editor.skip-template"),
+      }));
+    } else if (onFields && tplState === "applied" && tplApplied) {
+      top.push(appliedChip({ name: tplApplied.name, n: tplApplied.n, onUndo: () => undoTemplate() }));
+    }
+    topLayer.replaceChildren(...top);
+    const who = signerFor();
+    const whoName = who ? firstName(displayName(who, S.recipients.indexOf(who))) : t("prepare.recipient-n", { n: S.recipients.length + 1 });
+    const bottom = [];
+    if (onFields && armed) bottom.push(armHint({ kind: t(`ftype.${armed.type}`), who: whoName, colour: who ? colourOf(who.key) : 1, onCancel: () => disarm(true) }));
+    else if (onFields && S.ghosts.length) bottom.push(ghostBar({ n: S.ghosts.length, who: whoName, onAccept: () => run("field.accept-suggestions"), onDismiss: () => run("field.dismiss-suggestions") }));
+    bottomLayer.replaceChildren(...bottom);
   }
   /// The ghost under the pointer, on the page it is over (points → % of that page).
   function moveGhost(e) {
@@ -1217,12 +1329,14 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     addField(type, doc, page, spot.x + size.width / 2, spot.y + size.height / 2);
   }
 
-  // ---- Detected fields (WEB-09) -----------------------------------------------------------
+  // ---- Detected fields (WEB-09; canvas: dashed ghosts with ✓ and ×) ------------------------
   // The server's suggestions (`POST …/documents/{doc}/detect-fields`, detect.js) are drawn
-  // as ghost fields in the colour of the signer fields are being placed for. Each can be
-  // accepted (click, Enter) or dismissed (its ×, Delete); the properties panel accepts or
-  // dismisses them all. Each of these is one undo step. A draft is saved first, since
-  // detection reads the stored documents.
+  // as dashed ghosts in the colour of the signer fields are being placed for, each with its
+  // kind, its cue and an accept (✓) and a dismiss (×) button; a floating bar accepts or
+  // dismisses them all. Each of these is one undo step. While detection runs, a violet
+  // sweep crosses the pages and the button says "Reading the page…". A draft is saved
+  // first, since detection reads the stored documents. A suggestion whose source is a
+  // scan's text (`source: "ocr"`) says so; the server's detector has no such source today.
   /// Who accepted suggestions are for: the signer being placed for, else the first.
   const signerFor = () => { const r = recipient(S.active); return takesFields(r) ? r : signers()[0] || null; };
   const ghostLabel = (g) => (g.label || t(`ftype.${g.type}`));
@@ -1233,11 +1347,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const g of S.ghosts) {
       const ov = overlayFor(g);
       if (!ov) continue;
-      const accept = h("button", { type: "button", class: "os-ghost__accept", attrs: { "aria-label": t("prepare.ghost-accept", { type: ghostLabel(g), page: pageIndex(g.docKey, g.page) + 1 }), "data-testid": "ghost" } },
-        icon(FIELD_ICON[g.type] || "text-cursor-input", { size: 16 }), h("span", { class: "os-field__label", text: ghostLabel(g) }));
-      const dismiss = h("button", { type: "button", class: "os-ghost__dismiss", attrs: { "aria-label": t("prepare.ghost-dismiss", { type: ghostLabel(g), page: pageIndex(g.docKey, g.page) + 1 }), title: t("prepare.dismiss") } }, icon("x", { size: 16 }));
-      accept.addEventListener("click", () => acceptGhosts([g]));
-      dismiss.addEventListener("click", () => dismissGhosts([g]));
+      const where = { type: ghostLabel(g), page: pageIndex(g.docKey, g.page) + 1 };
+      const accept = h("button", { type: "button", class: "os-ghost__accept", attrs: { "aria-label": t("prepare.ghost-accept", where), title: t("prepare.accept"), "data-testid": "ghost" } }, "✓");
+      const dismiss = h("button", { type: "button", class: "os-ghost__dismiss", attrs: { "aria-label": t("prepare.ghost-dismiss", where), title: t("prepare.dismiss") } }, "×");
+      accept.addEventListener("click", (e) => { e.stopPropagation(); acceptGhosts([g]); });
+      dismiss.addEventListener("click", (e) => { e.stopPropagation(); dismissGhosts([g]); });
       for (const b of [accept, dismiss]) {
         b.addEventListener("keydown", (e) => {
           if (e.key !== "Delete" && e.key !== "Backspace") return;
@@ -1246,7 +1360,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           dismissGhosts([g]);
         });
       }
-      const el = h("div", { class: `os-ghost os-r${colour}`, attrs: { "data-gkey": g.key, "data-field": g.type } }, accept, dismiss);
+      const cue = g.source === "ocr" ? t("prepare.from-scan") : g.cue && g.cue !== ghostLabel(g) ? g.cue : "";
+      const el = h("div", { class: `os-ghost os-r${colour}`, attrs: { "data-gkey": g.key, "data-field": g.type } },
+        h("span", { class: "os-ghost__text", attrs: { "aria-hidden": "true" } }, h("span", { class: "os-ghost__label", text: ghostLabel(g) }), cue ? h("span", { class: "os-ghost__cue", text: cue }) : null),
+        h("span", { class: "os-ghost__btns" }, accept, dismiss));
       place(el, g);
       ov.append(el);
     }
@@ -1276,36 +1393,50 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     say(t(list.length === 1 ? "prepare.ghost-dismissed" : "prepare.ghosts-dismissed", { n: list.length }));
     if (list.length === 1) focusNextGhost(i);
   }
+  /// The sweep over every laid-out page while detection runs (decorative; reduced motion
+  /// keeps a still tint).
+  function setDetecting(on) {
+    detecting = on;
+    syncDetect();
+    stage.classList.toggle("is-detecting", on);
+    for (const n of stage.querySelectorAll(".os-sweepbox")) n.remove();
+    if (on) for (const { overlay } of dv.els) overlay.append(h("div", { class: "os-sweepbox", attrs: { "aria-hidden": "true" } }, h("div", { class: "os-sweepbox__bar os-sweep" })));
+  }
   async function detect() {
     if (!S.docs.length) { toast(t("prepare.add-pdf-first"), "info"); fileInput.click(); return; }
-    await busy(detectBtn, async () => {
-      try {
-        // Detection reads the stored documents: save the draft first when any is new.
-        if (!S.id || S.docs.some((d) => !d.id)) await save();
-        const items = [];
-        let truncated = false;
-        for (const d of S.docs.filter((x) => x.id)) {
-          const out = await ctx.api.detectFields(S.id, d.id);
-          items.push(...(out?.items || []));
-          truncated ||= !!out?.truncated;
-        }
-        const ghosts = suggestionsFrom(items, S.docs, S.fields, () => newKey("g"));
-        if (!ghosts.length) { toast(t("prepare.detect-none"), "info"); say(t("prepare.detect-none")); return; }
-        change(() => { S.ghosts = ghosts; S.selected = null; });
-        const who = signerFor();
-        const msg = t("prepare.detect-found", { n: ghosts.length, name: who ? displayName(who, S.recipients.indexOf(who)) : t("prepare.recipient-n", { n: S.recipients.length + 1 }) });
-        closeDetectToast = toast(truncated ? `${msg} ${t("prepare.detect-truncated")}` : msg, "info");
-        say(msg);
-        const first = ghosts[0];
-        dv.scrollToBox(pageIndex(first.docKey, first.page), first);
-      } catch (err) {
-        if (!ctx.failed(err)) showSaveError(err);
+    if (detecting) return;
+    disarm();
+    setDetecting(true);
+    say(t("prepare.detecting"));
+    try {
+      // Detection reads the stored documents: save the draft first when any is new.
+      if (!S.id || S.docs.some((d) => !d.id)) await save();
+      setDetecting(true); // a save re-lays the pages
+      const items = [];
+      let truncated = false;
+      for (const d of S.docs.filter((x) => x.id)) {
+        const out = await ctx.api.detectFields(S.id, d.id);
+        items.push(...(out?.items || []));
+        truncated ||= !!out?.truncated;
       }
-    });
+      const ghosts = suggestionsFrom(items, S.docs, S.fields, () => newKey("g"));
+      if (!ghosts.length) { toast(t("prepare.detect-none"), "info"); say(t("prepare.detect-none")); return; }
+      change(() => { S.ghosts = ghosts; S.selected = null; });
+      const who = signerFor();
+      const msg = t("prepare.detect-found", { n: ghosts.length, name: who ? displayName(who, S.recipients.indexOf(who)) : t("prepare.recipient-n", { n: S.recipients.length + 1 }) });
+      say(truncated ? `${msg} ${t("prepare.detect-truncated")}` : msg);
+      if (truncated) toast(t("prepare.detect-truncated"), "info");
+      const first = ghosts[0];
+      dv.scrollToBox(pageIndex(first.docKey, first.page), first);
+    } catch (err) {
+      if (!ctx.failed(err)) showSaveError(err);
+    } finally {
+      setDetecting(false);
+    }
   }
 
   // ---- Properties ------------------------------------------------------------------------
-  let advancedOpen = false;
+  let advancedOpen = true;
   const propOpen = {}; // section → open, while the editor is open (UX-05)
   // A validation preset chosen whose settings are not typed yet (a pattern, a length):
   // field key → kind, so the panel shows its inputs before there is a rule to store.
@@ -1326,47 +1457,20 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       return;
     }
     const f = S.fields.find((x) => x.key === S.selected);
-    if (!f) {
-      props.append(h("p", { class: "os-muted os-small", text: t("prepare.props-none") }));
-      if (S.ghosts.length) {
-        const who = signerFor();
-        props.append(h("section", { class: "os-suggest", attrs: { "aria-labelledby": "suggest-h", "data-testid": "suggestions" } },
-          h("h3", { id: "suggest-h", class: "os-panel__title", text: t(S.ghosts.length === 1 ? "prepare.suggestions-one" : "prepare.suggestions", { n: S.ghosts.length }) }),
-          h("p", { class: "os-muted os-small", text: who ? t("prepare.suggestions-for", { name: displayName(who, S.recipients.indexOf(who)) }) : t("prepare.suggestions-new") }),
-          h("div", { class: "os-actions" },
-            button(t("prepare.accept-all"), { icon: "check", size: "sm", variant: "primary", command: "field.accept-suggestions", onClick: () => run("field.accept-suggestions"), attrs: { "data-testid": "accept-all" } }),
-            button(t("prepare.dismiss-all"), { icon: "x", size: "sm", command: "field.dismiss-suggestions", onClick: () => run("field.dismiss-suggestions"), attrs: { "data-testid": "dismiss-all" } }))));
-      }
-      if (S.docs.length && !S.fields.length && !S.ghosts.length) {
-        props.append(emptyState({ illus: "fields", title: t("empty.fields.title"), text: t("empty.fields.text"), action: button(t("prepare.add-field", { type: t("ftype.signature") }), { icon: "signature", variant: "primary", onClick: () => addFieldInView("signature") }), testId: "empty-fields" }));
-      } else if (S.fields.length) {
-        // Every placed field, in page order: choosing one selects it and scrolls to it.
-        props.append(h("h3", { class: "os-panel__title", text: t(S.fields.length === 1 ? "prepare.fields-count-one" : "prepare.fields-count", { n: S.fields.length }) }));
-        const order = [...S.fields].sort((a, b) => pageIndex(a.docKey, a.page) - pageIndex(b.docKey, b.page) || a.y - b.y || a.x - b.x);
-        const ul = h("ul", { class: "os-placed" });
-        for (const x of order) {
-          const r = recipient(x.recipientKey);
-          const i = S.recipients.indexOf(r);
-          const b = h("button", { type: "button", class: `os-placed__item os-r${colourOf(x.recipientKey)}`, attrs: { "data-testid": "placed-field" } },
-            icon(FIELD_ICON[x.type] || "text-cursor-input", { size: 16 }),
-            h("span", { class: "os-placed__main" }, h("span", { class: "os-placed__name", text: x.label || t(`ftype.${x.type}`) }), h("span", { class: "os-muted os-small os-trunc", text: t("prepare.placed-meta", { name: displayName(r, i), page: pageIndex(x.docKey, x.page) + 1 }) })),
-            x.required ? h("span", { class: "os-placed__req", text: t("prepare.required") }) : null);
-          b.addEventListener("click", () => select(x.key));
-          ul.append(h("li", {}, b));
-        }
-        props.append(ul);
-      }
-      return;
-    }
+    if (!f) { renderOverview(); return; }
     const pg = pageOf(f);
     const set = (k, v) => {
       S.undo.push(snapshot()); S.redo = [];
       f[k] = v; S.dirty = true;
       renderFieldsOnly();
+      syncNext();
     };
-    props.append(h("div", { class: "os-props__head" },
-      h("h3", { class: "os-props__title", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }) }),
-      button(t("prepare.back-to-list"), { icon: "list", size: "sm", variant: "ghost", iconOnly: true, onClick: () => { select(null); props.querySelector("button")?.focus({ preventScroll: true }); } })));
+    // The canvas's head: the kind's chip in its recipient's colour, its name, Delete.
+    const del = h("button", { type: "button", class: "os-props__delete", text: t("prepare.delete-field"), attrs: { "aria-label": t("prepare.delete-this-field") } });
+    del.addEventListener("click", () => run("field.delete"));
+    props.append(h("div", { class: `os-props__head os-r${colourOf(f.recipientKey)}` },
+      h("span", { class: "os-props__chip", attrs: { "aria-hidden": "true" }, text: KIND_GLYPH[f.type] || "T" }),
+      h("h3", { class: "os-props__title" }, t(`ftype.${f.type}`), h("span", { class: "os-sr-only", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }).slice(t(`ftype.${f.type}`).length) })), del));
     // A member set or cleared (blank removes it, as the server stores it), one undo step.
     const setM = (k, v) => {
       const blank = v == null || v === false || v === "" || (Array.isArray(v) && !v.length);
@@ -1394,11 +1498,21 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       d.addEventListener("toggle", () => { propOpen[key] = d.open; });
       return d;
     };
-    const general = [
-      selectField(t(TPL ? "template.assigned-to" : "prepare.assigned-to"), S.recipients.map((r, i) => [r, i]).filter(([r]) => takesFields(r) || r.key === f.recipientKey).map(([r, i]) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "fp-recipient", value: f.recipientKey, onChange: (v) => set("recipientKey", v) }).el,
-    ];
-    if (takesInput(f.type)) general.push(check("fp-required", "prepare.required", f.required, (v) => set("required", v)));
-    else general.push(h("p", { class: "os-muted os-small", text: t(`prepare.auto-${f.type}`) }));
+    // Assigned to (canvas): one row per recipient who can take the field, the owner ticked.
+    const owners = S.recipients.map((r, i) => [r, i]).filter(([r]) => takesFields(r) || r.key === f.recipientKey)
+      .map(([r, i]) => ({ key: r.key, name: displayName(r, i), colour: colourOf(r.key), on: r.key === f.recipientKey }));
+    props.append(h("div", { class: "os-props__group" },
+      h("span", { id: "fp-assign-h", class: "os-props__cap", text: t(TPL ? "template.assigned-to" : "prepare.assigned-to") }),
+      assignList(owners, (key) => { if (key !== f.recipientKey) { set("recipientKey", key); renderProps(); renderPalette(); } })));
+    // Behaviour: Required (a switch) and the tooltip.
+    const behaviour = [h("span", { class: "os-props__cap", text: t("prepare.behaviour") })];
+    if (takesInput(f.type)) {
+      const sw = switchButton(t("prepare.required"), { checked: f.required, onChange: (v) => { set("required", v); } , attrs: { id: "fp-required" } });
+      behaviour.push(h("div", { class: "os-props__switch" }, h("span", { attrs: { "aria-hidden": "true" }, text: t("prepare.required") }), sw.el));
+    } else behaviour.push(h("p", { class: "os-muted os-small", text: t(`prepare.auto-${f.type}`) }));
+    if (!TPL) behaviour.push(textIn("fp-tooltip", "prepare.tooltip", f.tooltip, (v) => setM("tooltip", v.trim()), { max: 1000 }));
+    props.append(h("div", { class: "os-props__group" }, ...behaviour));
+    const general = [];
     if (!TPL && f.type === "note") {
       // A note is the sender's text, shown to the recipient as written.
       general.push(textIn("fp-note", "prepare.note-text", f.value?.text, (v) => setM("value", v.trim() ? { text: v.trim() } : null), { max: 2000, area: true }));
@@ -1413,7 +1527,6 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // A template keeps only Required and Label until templatesync.js sends the rest (UX-11); the
     // panel offers nothing that would vanish on save (UX-05 review).
     if (TPL) general.push(h("p", { class: "os-muted os-small", text: t("prepare.template-settings-later"), attrs: { "data-testid": "props-template-note" } }));
-    if (!TPL) general.push(textIn("fp-tooltip", "prepare.tooltip", f.tooltip, (v) => setM("tooltip", v.trim()), { max: 1000 }));
     if (!TPL && TYPED.has(f.type)) general.push(textIn("fp-placeholder", "prepare.placeholder", f.placeholder, (v) => setM("placeholder", v.trim())));
     props.append(section("general", ...general));
     if (!TPL && CHOICE.has(f.type)) {
@@ -1458,10 +1571,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (kindNow) body.push(textIn("fp-vmsg", "prepare.validate-message", opts.message, (x) => apply("message", x.trim()), { max: 500 }));
       props.append(section("validation", ...body));
     }
+    // Position (canvas: X and Y in points), with the size, open by default (UX-05's
+    // Advanced): typed coordinates are clamped to the page.
     const geo = h("div", { class: "os-geo" });
     for (const k of ["x", "y", "width", "height"]) {
       const id = `fp-${k}`;
-      const inp = h("input", { id, class: "os-input os-input--sm", type: "number", step: "1", min: "0", value: String(Math.round(f[k] * 100) / 100) });
+      const inp = h("input", { id, class: "os-geo__input", type: "number", step: "1", min: "0", value: String(Math.round(f[k] * 100) / 100), attrs: { "aria-label": t(`prepare.geo-${k}`) } });
       inp.addEventListener("change", () => {
         const v = Number.parseFloat(inp.value);
         if (!Number.isFinite(v)) { inp.value = String(f[k]); return; }
@@ -1470,17 +1585,36 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         S.dirty = true;
         renderFieldsOnly(); renderProps();
       });
-      geo.append(h("label", { class: "os-geo__item", attrs: { for: id } }, h("span", { text: t(`prepare.geo-${k}`) }), inp));
+      geo.append(h("label", { class: "os-geo__item", attrs: { for: id } }, h("span", { class: "os-geo__k", text: t(`prepare.geo-${k}-short`) }), inp, h("span", { class: "os-geo__unit", attrs: { "aria-hidden": "true" }, text: "pt" })));
     }
-    // Coordinates are for the few who need them (F-07): under Advanced, closed by default.
-    const adv = h("details", { class: "os-details os-advanced", open: advancedOpen },
-      h("summary", { text: t("prepare.advanced") }),
-      h("p", { class: "os-label", text: t("prepare.position") }), geo, h("p", { class: "os-muted os-small", text: t("prepare.position-help", { page: f.page }) }));
+    const adv = h("details", { class: "os-details os-advanced os-props__sec", open: advancedOpen },
+      h("summary", { text: t("prepare.position") }), geo, h("p", { class: "os-muted os-small", text: t("prepare.position-help", { page: pageIndex(f.docKey, f.page) + 1 }) }));
     adv.addEventListener("toggle", () => { advancedOpen = adv.open; });
     props.append(adv);
-    props.append(h("div", { class: "os-actions" },
-      button(t("prepare.duplicate"), { icon: "copy", size: "sm", onClick: () => run("field.duplicate") }),
-      button(t("prepare.delete-field"), { icon: "trash-2", size: "sm", variant: "danger", onClick: () => run("field.delete") })));
+    props.append(h("div", { class: "os-actions os-props__foot" },
+      button(t("prepare.duplicate"), { icon: "copy", size: "sm", onClick: () => run("field.duplicate") })));
+  }
+
+  /// The right panel with no field selected (canvas): "No fields yet" with Detect fields
+  /// and Place a signature; otherwise "Ready to send?" with the checks (preparemodel.js
+  /// sendChecks) and, when the model found personal data, the amber card.
+  function renderOverview() {
+    if (!S.docs.length) { props.append(h("p", { class: "os-muted os-small", text: t("prepare.props-none") })); return; }
+    if (!S.fields.length && !S.ghosts.length) {
+      const detectNow = TPL ? null : h("button", { type: "button", class: "os-btn os-btn--ml os-btn--md os-btn--block", text: t("prepare.detect"), attrs: { "data-testid": "empty-detect" } });
+      detectNow?.addEventListener("click", () => run("field.detect"));
+      const sig = h("button", { type: "button", class: "os-btn os-btn--subtle os-btn--md os-btn--block", text: t("prepare.place-signature"), attrs: { "data-testid": "empty-place-signature" } });
+      sig.addEventListener("click", () => { arm("signature", false); stage.focus({ preventScroll: true }); });
+      const empty = emptyState({ illus: "fields", title: t("prepare.no-fields"), text: t(tplState === "offer" ? "prepare.empty-fields-tpl" : TPL ? "prepare.empty-fields-template" : "prepare.empty-fields"), action: h("div", { class: "os-empty__actions" }, detectNow, sig), testId: "empty-fields" });
+      empty.classList.add("os-rise");
+      props.append(empty);
+      return;
+    }
+    const checks = sendChecks({ recipients: S.recipients, fields: S.fields, ghosts: S.ghosts.length, ocrPages }, (r) => displayName(r, S.recipients.indexOf(r)));
+    props.append(h("div", { class: "os-props__headrow" }, h("h3", { class: "os-props__title", text: t(TPL ? "prepare.ready-save" : "prepare.ready-send") })),
+      h("div", { class: "os-props__body" }, checksList(checks),
+        pii ? piiCard(pii) : null,
+        mlOn ? h("p", { class: "os-props__fine", text: t("prepare.ml-fine") }) : null));
   }
 
   function renderAll() {
@@ -1489,6 +1623,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     renderPalette();
     renderFieldsOnly();
     renderProps();
+    syncNext();
+    renderFloats();
     if (step === "review") renderReview();
   }
 
@@ -1681,9 +1817,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   async function save() {
     saving = true;
     syncStatus();
+    const had = !!S.id;
     try { await saveNow(); savedAt = new Date(); } finally { saving = false; syncStatus(); }
     renderAll();
     await renderStage();
+    // A new draft now has an id: the model's results for it can be read.
+    if (!had && S.id) loadIntelligence();
   }
 
   // ---- Autosave (P-04) -----------------------------------------------------------------
@@ -1704,7 +1843,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!dirty || saving || !frame.isConnected) return;
     const a = document.activeElement;
     const typing = a && (a.matches?.("input, textarea, select") || a.isContentEditable);
-    if (typing || document.querySelector(".os-field.is-dragging, dialog[open]") || !savable()) { scheduleAutosave(); return; }
+    // Not while suggestions wait for a decision (WEB-17): a save reloads the draft and
+    // empties undo, which would take back the undo of an accept or a dismiss.
+    if (typing || S.ghosts.length || document.querySelector(".os-field.is-dragging, dialog[open]") || !savable()) { scheduleAutosave(); return; }
     // Keep the selection and focus across the reload of state that a save does.
     const sel = S.fields.find((f) => f.key === S.selected);
     const hadFocus = sel && a?.dataset?.fkey === sel.key;
@@ -1925,6 +2066,98 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     toast(t("send.sent"), "success");
   }
 
+  // ---- Document intelligence on the editor (WEB-18; ml.js) ------------------------------
+  // Read when a draft is saved and opened: the template match (the banner), scanned pages
+  // read by OCR (thumbnail badges and a check) and personal data (the amber card). When
+  // the server has no model service (404, CS-ML-0011) nothing here shows. A suggestion is
+  // only ever applied by a person's click.
+  let mlOn = false;
+  let ocrPages = [];
+  let pii = null;
+  let mlSeq = 0;
+  async function loadIntelligence() {
+    if (TPL || !S.id) return;
+    const seq = ++mlSeq;
+    const st = await mlStatus();
+    if (seq !== mlSeq) return;
+    mlOn = st.available;
+    if (!mlOn) return;
+    let items = [];
+    try { items = await loadSuggestions(S.id, { refresh: true }); } catch (err) { if (!isUnavailable(err)) items = []; }
+    if (seq !== mlSeq) return;
+    pii = featureOn(st, "personal_data") ? piiSummary(items) : null;
+    const offer = featureOn(st, "template_matching") && tplState === "none" ? templateOffer(items) : null;
+    if (offer) await prepareOffer(offer);
+    if (featureOn(st, "ocr")) ocrPages = await readOcrPages();
+    if (seq !== mlSeq) return;
+    markOcr(thumbsBox, ocrPages);
+    renderProps();
+    renderFloats();
+  }
+  /// The offer is shown only when the template can place something on this draft.
+  async function prepareOffer(offer) {
+    try {
+      const { template } = await ctx.api.templates.get(offer.template_id);
+      const plan = applyTemplatePlan(template, { docs: S.docs, recipients: S.recipients }, newKey);
+      if (!plan.fields.length) return;
+      tplOffer = { suggestion: offer, template, roles: (template.roles || []).length, fields: plan.fields.length, accepted: false };
+      tplState = "offer";
+    } catch { /* no template to apply: no offer */ }
+  }
+  async function readOcrPages() {
+    const offsets = [];
+    let before = 0;
+    for (const d of S.docs) { offsets.push(before); before += d.pages.length; }
+    const analyses = await Promise.all(S.docs.map((d) => (d.id ? ctx.api.getAnalysis(S.id, d.id).catch(() => null) : null)));
+    return ocrPagesFrom(analyses, offsets);
+  }
+  /// Apply the matched template (the person's click): its roles and fields land on this
+  /// draft as one undo step; the suggestion is recorded as accepted.
+  function applyMatchedTemplate() {
+    const o = tplOffer;
+    if (!o || tplState !== "offer") return;
+    const plan = applyTemplatePlan(o.template, { docs: S.docs, recipients: S.recipients }, newKey);
+    change(() => {
+      S.recipients = plan.recipients;
+      setOrders(compact(orders()));
+      S.fields.push(...plan.fields);
+      S.selected = null;
+      if (!S.recipients.some((r) => r.key === S.active)) S.active = signers()[0]?.key || null;
+    });
+    tplApplied = { name: o.suggestion.label || o.template.name || "", n: plan.fields.length };
+    tplState = "applied";
+    say(t("prepare.tpl-applied", tplApplied));
+    renderAll();
+    clearTimeout(tplTimer);
+    tplTimer = setTimeout(() => { if (tplState === "applied") { tplState = "done"; renderFloats(); } }, 6000);
+    if (!o.accepted) {
+      o.accepted = true;
+      acceptSuggestion(S.id, o.suggestion.id).catch((err) => { o.accepted = false; if (!isUnavailable(err)) toastError(err); });
+    }
+  }
+  /// Undo on the applied chip: the edit before the template, and the offer again.
+  function undoTemplate() {
+    run("edit.undo");
+    tplState = "offer";
+    clearTimeout(tplTimer);
+    renderAll();
+  }
+
+  /// Single-key tools on the fields step (canvas: V, S, I, D, N, E, O, T, C): a bare letter
+  /// while nothing is being typed and no dialog is open. Runs before the global table so
+  /// N picks Full name here rather than a new envelope.
+  function onToolKey(e) {
+    if (step !== "fields" || !frame.isConnected || e.defaultPrevented) return;
+    if (document.querySelector("dialog[open]") || document.body.classList.contains("has-sheet")) return;
+    const a = document.activeElement;
+    if (a && (a.matches?.("input, textarea, select") || a.isContentEditable)) return;
+    const tool = toolForKey(e);
+    if (!tool) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    run(tool === "select" ? "field.disarm-select" : `field.arm-${tool}`);
+  }
+  window.addEventListener("keydown", onToolKey, true);
   // ---- Commands -----------------------------------------------------------------------------
   const sel = () => S.fields.find((f) => f.key === S.selected);
   /// Run `fn` on every selected field (one, or the Shift-selected group), as one undo step.
@@ -2073,6 +2306,19 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     reg(`field.arm-${type}`, t("prepare.arm-field", { type: t(`ftype.${type}`) }), () => arm(type, false), () => S.docs.length > 0);
   }
   reg("field.disarm", t("prepare.disarm"), () => disarm(true), () => !!armed);
+  // Select (V) on the tool bar: always available on the fields step; disarms if armed.
+  reg("field.disarm-select", t("prepare.tool-select"), () => disarm(true), () => step === "fields");
+  if (!TPL) {
+    reg("editor.preview", t("prepare.preview-signer"), async () => {
+      if (previewKey) { previewAs(null); return; }
+      const first = signerFor();
+      if (!first) return;
+      if (step !== "fields") await go("fields");
+      previewAs(first.key);
+    }, () => signers().length > 0 && S.docs.length > 0);
+    reg("editor.apply-template", t("prepare.tpl-apply"), () => applyMatchedTemplate(), () => tplState === "offer" && !!tplOffer);
+    reg("editor.skip-template", t("prepare.tpl-skip"), () => { tplState = "dismissed"; renderFloats(); renderProps(); }, () => tplState === "offer");
+  }
   for (let n = 1; n <= 9; n++) {
     reg(`recipient.select-${n}`, t("cmd.recipient.select"), () => pick(signers()[n - 1].key), () => signers().length >= n);
   }
@@ -2095,7 +2341,17 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // ---- Start ---------------------------------------------------------------------------------
   renderAll();
   syncStatus();
-  dv.inner.append(h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } }));
+  // A saved draft or template opens on the canvas's loading page (the fields pane, a page
+  // skeleton and "Preparing pages…") while its documents are fetched, never a blank screen.
+  const opening = !!(S.id || TPL_ID);
+  if (opening) {
+    for (const [k, pane] of Object.entries(panes)) pane.hidden = k !== "fields";
+    frame.dataset.step = "fields";
+    for (const b of [nextBtn, sendBtn, previewBtn, TPL ? saveBtn : null]) if (b) b.hidden = true;
+    showPreparing(0);
+  } else {
+    dv.inner.append(h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } }));
+  }
   if (TPL_ID) {
     try {
       const { template } = await ctx.api.templates.get(TPL_ID);
@@ -2117,15 +2373,22 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
   const handed = !TPL && !S.id ? takeFiles() : null;
   if (handed) await addFiles(handed);
+  if (opening && !S.docs.length) { preparing?.remove(); preparing = null; }
   // A saved draft with documents and people opens on its fields; anything else starts
   // at the documents, or at the people when the documents are already there.
   await go(S.docs.length && S.recipients.length ? "fields" : S.docs.length ? "recipients" : "documents");
   if (step === "documents") docsPanel.querySelector(".os-btn--primary")?.focus();
+  loadIntelligence();
 
   return () => {
     window.removeEventListener("beforeunload", beforeUnload);
+    window.removeEventListener("keydown", onToolKey, true);
+    document.removeEventListener("pointerdown", onDocDown, true);
     ctx.leaveGuard = null;
     clearTimeout(autosaveTimer);
+    clearTimeout(tplTimer);
+    preparingWatch?.disconnect();
+    mlSeq++;
     dv.destroy();
     thumbs.destroy();
     closePanel();
@@ -2133,6 +2396,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     skipTo("#main", t("a11y.skip"));
     unregisterPrefix("field.");
     unregisterPrefix("edit.");
+    unregisterPrefix("editor.");
     unregisterPrefix("envelope.save");
     unregisterPrefix("envelope.send");
     unregisterPrefix("template.");

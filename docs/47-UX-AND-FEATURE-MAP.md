@@ -1112,3 +1112,60 @@ Spec: `docs/assets/design-canvas/Main.dc.html`. Replaces the UX-07 folder rail a
   me and Sign now, Expiring empty, Insights accept/dismiss and PII review, rollback on a refused suggestion, ML
   unavailable hides every ML surface, ⌘K by meaning, the reading state, the More menu, bulk, phone inspector page,
   plus the UX-07 behaviours moved to the new UI), `e2e/signin-dashboard.spec.mjs`, `e2e/empty-states.spec.mjs`.
+
+## As built: the prepare editor on the approved canvas (WEB-17 lane B, 2026-11-13)
+
+The send editor and template authoring rebuilt on `docs/assets/design-canvas/Editor.dc.html` (owner instruction 44),
+one frame for both. **Pattern**: `preparemodel.js` decides (pure, Node-tested: the library and tool bar with their
+keys, step done marks, when Continue is held and why, the Ready-to-send checks, the recipients list, the template
+offer and how a template lands on a draft, OCR pages, the personal-data summary); `prepareview.js` builds the canvas's
+pieces from data and callbacks (step control, recipient row, library row, tool, hint chip, suggestion bar, template
+banner and applied chip, loading page, checks, personal-data card, assign list, OCR badges); `prepare.js` wires state,
+commands and the server, as before.
+
+- **Top bar**: back, "Agreements /" breadcrumb, title, the save state (a green dot and "Saved", amber "Unsaved
+  changes", a spinner while saving; the time is its tooltip) with a save icon; the segmented step control, done steps
+  ticked; **Preview as signer** (`editor.preview`) and one primary **Continue**. On the fields step Continue is held
+  (`aria-disabled`, the canvas's pink) while a signer has no field or a suggestion is undecided, the existing send
+  rules; a press says why in a popover beside it and picks the signer who still needs a field. Steps stay clickable,
+  so Review is reachable (it still lists a signer without fields). The Back button is gone (the canvas has none).
+- **Left panel**: Recipients (colour chip with the number, name, "Needs to sign · step n", field count; the radio group
+  "Placing fields for"; + opens the recipients step and adds one), **Detect fields** in violet ("Reading the page…"
+  with a spinner while it runs), the library (the canvas's eight kinds with keys S I D N E O T C, then "More fields"),
+  and Pages pinned at the foot with an **OCR** tag on pages the analysis read by OCR (`ocr_pages`).
+- **Centre**: pages on the dotted canvas with the canvas's shadow; the dark floating tool bar (Select V, six kinds,
+  Detect, zoom as "105%" over the fit/preset select, undo, redo). Pick a tool (click or key), the page takes a crosshair
+  and the dark chip says "Click on the page to place Signature for Jordan · Esc". Placed fields are tinted in the
+  recipient's colour with the label over the first name; the selected one has the canvas's blue ring and corner
+  handles (bottom-right resizes). Drag, resize, snapping, marquee and every keyboard command are unchanged.
+- **Detect fields** (`detect.js`, the server's detector): dashed ghosts in the current signer's colour with the cue, a ✓
+  and a × each, a violet sweep over the pages while it runs, and the floating "N suggested fields for Jordan · Accept
+  all · Dismiss all" bar (it replaces the old toast). A suggestion whose source is a scan's text (`source: "ocr"`) says
+  "from scanned text"; the server's detector has no such source today, so the note never shows yet. Autosave waits while
+  suggestions are undecided: a save reloads the draft and empties undo, which took back the undo of an accept or a
+  dismiss (found by the detect spec).
+- **Template match (ML)**: the open `template` suggestion with the best score, offered only when its template places
+  at least one field on this draft: "Looks like your “MSA v4” template · 96% match · apply its 3 roles and 4 fields".
+  **Apply template** maps the template's roles onto the draft's people in routing order (extra roles become new
+  recipients named after the role) and its fields onto the same document and page (`applyTemplatePlan`, the
+  `envelopeFromTemplate` path for a draft that already has documents), as one undo step, and records the suggestion
+  accepted (rolled back with an error toast if refused); the dark chip "Applied … Undo" undoes it and offers it again.
+  **Not now** hides it for this visit without dismissing it on the server.
+- **Right panel**: a selected field shows the canvas's head (chip, kind, Delete), Assigned to (a radio list), Behaviour
+  (Required as a switch, Tooltip), the existing General, Options, Formatting and Validation sections, and Position (X,
+  Y, W, H in points, editable). With nothing selected: "No fields yet" (Detect fields, Place a signature), else
+  "Ready to send?" (each signer's signature field, suggestions waiting, scanned pages read by OCR) and, when the model
+  found personal data, the amber card by label and count (never the values). The canvas's "Review for redaction" is not
+  shown: there is no redaction feature to open.
+- **Loading**: a saved draft or template opens on the canvas's page skeleton with "Preparing pages…" until its first
+  page paints; never a blank stage.
+- **ML hidden when unavailable**: everything model-made (banner, OCR tags and check, personal-data card, the fine print)
+  reads `ml.js`; with the mock's `openseal.mock.ml = off` (the real server's 404 today) none of it appears.
+- **Phones**: the bar is two rows (title and Continue, then the steps); the tool bar becomes the bottom bar with the page
+  indicator, Field settings and Add field; the library and properties are bottom sheets as before.
+
+Tests: `tests/editor.test.mjs` (10 new: library and keys, key to tool, step marks, Continue held, checks, recipients
+list, template offer, template plan, OCR pages, personal data). `e2e/editor.spec.mjs` adds three canvas specs
+(single-key tools, hint and held Continue; template match apply, undo and the model's results; nothing ML with the
+model service absent); `prepare-layout.spec.mjs` and `editor.spec.mjs` were updated to the new bar, library, checks and
+suggestion bar with their behavioural assertions kept.

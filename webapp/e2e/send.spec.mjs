@@ -216,7 +216,9 @@ test("a draft saves itself after a pause, keeps the selection, and then leaves w
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page).toHaveURL(/#\/prepare$/);
   // Autosave (P-04): quietly, a few seconds after the last change.
-  await expect(page.getByTestId("save-status")).toContainText("Saved at", { timeout: 15_000 });
+  // The canvas's state: "Saved" (the time is its tooltip).
+  await expect(page.getByTestId("save-status")).toContainText("Saved", { timeout: 15_000 });
+  await expect(page.getByTestId("save-status")).toHaveAttribute("title", /Saved at/);
   await expect(page).toHaveURL(/#\/prepare\/.+/);
   await expect(page.locator(".os-field.is-selected")).toHaveCount(1);
   await page.goto(app("#/agreements"));
