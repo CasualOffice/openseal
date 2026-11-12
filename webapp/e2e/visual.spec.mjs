@@ -339,3 +339,26 @@ for (const scheme of ["light", "dark"]) {
     });
   });
 }
+
+// The UI font and the root size (UX-02): the bundled Inter draws the app and the signing
+// page, and the root size is the same in every window.
+test("the bundled UI font draws the app and the signing page, at one root size", async ({ page }, testInfo) => {
+  test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+  const sizes = [];
+  for (const width of [1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(app("#/signin"));
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    const r = await page.evaluate(async () => {
+      await document.fonts.ready;
+      return { root: getComputedStyle(document.documentElement).fontSize, loaded: document.fonts.check('14px "OpenSeal Inter"', "Agreement"), family: getComputedStyle(document.body).fontFamily };
+    });
+    expect(r.family.startsWith('"OpenSeal Inter"'), `body font at ${width}: ${r.family}`).toBe(true);
+    expect(r.loaded, `Inter loaded at ${width}`).toBe(true);
+    sizes.push(r.root);
+  }
+  expect(new Set(sizes).size, `root size by window: ${sizes.join(", ")}`).toBe(1);
+  await page.goto(signPage(tokens.sign));
+  await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
+  expect(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "OpenSeal Inter"', "Sign"); })).toBe(true);
+});

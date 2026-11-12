@@ -4,14 +4,16 @@
 *, *::before, *::after { box-sizing: border-box; }
 /* `hidden` always hides (UX-02): no component's display rule may show a hidden element. */
 [hidden] { display: none !important; }
-/* Root size (WEB-06, docs/47 §Root size): the browser's default (100 %) on phones and
- * small windows; from 64em it follows the viewport gently, 15 px at 1280, 16 at 1440,
- * 18 from 1760. rem in a root font-size and em in media queries are the user's default
- * size, so a larger default and browser zoom both scale everything. Every size below
- * is rem (1 px hairlines excepted); field boxes on PDF pages are points × zoom. */
+/* Root size (WEB-06, UX-02; docs/47 §Root size): the browser's default (100 %) on phones
+ * and small windows; from 64em one step denser, 93.75 % (15 px at the default 16), the
+ * same in every desktop window. It used to follow the viewport (15 px at 1280, 16 at
+ * 1440, 18 from 1760), so density changed with the window. rem in a root font-size and
+ * em in media queries are the user's default size, so a larger default and browser
+ * zoom both scale everything. Every size below is rem (1 px hairlines excepted); field
+ * boxes on PDF pages are points × zoom. */
 html { -webkit-text-size-adjust: 100%; font-size: 100%; }
 @media (min-width: 64em) {
-  html { font-size: clamp(0.9375rem, 0.4375rem + 0.625vw, 1.125rem); }
+  html { font-size: 93.75%; }
 }
 body {
   margin: 0;

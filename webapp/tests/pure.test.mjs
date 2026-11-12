@@ -271,6 +271,25 @@ test("status badges' words meet 4.5:1 on their own tint, in both themes (UX-02)"
   assert.deepEqual(report, []);
 });
 
+test("the UI font is bundled and the root size does not follow the window (UX-02)", () => {
+  // Without a bundled face Linux drew the app in DejaVu Sans; with a vw term in the
+  // root size, density changed with every window width.
+  const tokensCss = fs.readFileSync(path.join(WEBAPP, "tokens.css"), "utf8");
+  const family = /--os-font:\s*"([^"]+)"/.exec(tokensCss)?.[1];
+  assert.ok(family, "--os-font starts with a bundled family");
+  const faces = [...tokensCss.matchAll(/@font-face\s*{([^}]*)}/g)].map((m) => m[1]).filter((f) => f.includes(`"${family}"`));
+  assert.ok(faces.length > 0, `an @font-face for ${family}`);
+  for (const f of faces) {
+    const src = /url\("([^"]+)"\)/.exec(f)?.[1];
+    assert.ok(src?.startsWith("fonts/ui/") && fs.existsSync(path.join(WEBAPP, src)), `font file ${src}`);
+  }
+  assert.ok(fs.existsSync(path.join(WEBAPP, "fonts/ui/OFL-1.1-Inter.txt")), "the font's licence beside it");
+  const appCss = fs.readFileSync(path.join(WEBAPP, "app.css"), "utf8");
+  const rootSizes = [...appCss.matchAll(/html\s*{[^}]*font-size:\s*([^;]+);/g)].map((m) => m[1]);
+  assert.ok(rootSizes.length > 0);
+  for (const v of rootSizes) assert.ok(!/vw|vh|vmin|vmax/.test(v), `root font-size follows the viewport: ${v}`);
+});
+
 test("the OS-preference dark block is the explicit dark block", () => {
   const css = fs.readFileSync(path.join(WEBAPP, "tokens.css"), "utf8");
   const dark = tokens(css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf("@media (prefers-color-scheme: dark)")));
