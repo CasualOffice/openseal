@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Document intelligence settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+html{font-size:clamp(15px,calc(11.5px + .3vw),18px)}
+@media (max-width:48em){html{font-size:16px}}
+body{margin:0;font-family:"Geist",system-ui,sans-serif;color:#18181b;background:#f4f3f0;-webkit-font-smoothing:antialiased}
+a{color:#18181b}a:hover{color:#c01622}
+button{font:inherit;color:inherit;cursor:pointer}
+button,a,kbd{white-space:nowrap}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #c01622;outline-offset:2px}
+.btn{flex-shrink:0;transition:transform 160ms cubic-bezier(.2,.8,.2,1),background 160ms cubic-bezier(.2,.8,.2,1)}
+.btn:active{transform:scale(.97)}
+.nav:hover{background:rgba(24,24,27,.05)}
+.card{transition:opacity 260ms cubic-bezier(.2,.8,.2,1),box-shadow 260ms cubic-bezier(.2,.8,.2,1)}
+@keyframes rise{from{opacity:0;transform:translateY(.5rem)}to{opacity:1;transform:none}}
+.rise{animation:rise 420ms cubic-bezier(.16,1,.3,1) both}
+.d1{animation-delay:60ms}.d2{animation-delay:120ms}.d3{animation-delay:180ms}.d4{animation-delay:240ms}.d5{animation-delay:300ms}
+@keyframes stripes{to{background-position:1rem 0}}
+.stripes{background-image:repeating-linear-gradient(-45deg,#8b5cf6 0 .375rem,#a78bfa .375rem .75rem);background-size:1.0625rem 100%;animation:stripes .8s linear infinite}
+@media (prefers-reduced-motion:reduce){.rise,.stripes{animation:none}}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 40rem; display: flex; background: #f4f3f0; font-size: 0.875rem">
+  <nav aria-label="Admin" style="width: 15.5rem; flex: none; padding: 0.75rem 0.625rem; display: flex; flex-direction: column; gap: 0.125rem; color: #52525b">
+    <a href="Main.dc.html" class="nav" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>Back to agreements</a>
+    <span style="margin: 1rem 0.5rem 0.375rem; font-size: 0.75rem; font-weight: 500; color: #71717a">Acme Inc · Admin</span>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b">Organization</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b">Members and roles</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b">Security and sign-in</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b">Signing and seals</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b">Branding</a>
+    <a href="#" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; background: #fff; color: #18181b; font-weight: 500; box-shadow: 0 0 0 1px rgba(24,24,27,.06), 0 1px 2px rgba(24,24,27,.05)">Document intelligence<svg style="margin-left: auto" width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="#6d28d9" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"></path></svg></a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b">Retention</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b">API and webhooks</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b">Audit log</a>
+  </nav>
+  <div style="flex: 1; min-width: 0; margin: 0.5rem 0.5rem 0.5rem 0; background: #fff; border-radius: 0.75rem; box-shadow: 0 0 0 1px rgba(24,24,27,.06); overflow: auto">
+    <div style="max-width: 72rem; margin: 0 auto; padding: 2rem 2.5rem 3rem; display: flex; flex-direction: column; gap: 1.5rem">
+      <div class="rise" style="display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap">
+        <div style="display: flex; flex-direction: column; gap: 0.375rem"><h1 style="margin: 0; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em">Document intelligence</h1><span style="color: #71717a; white-space: normal">Let OpenSeal read documents to suggest fields, templates, details and personal data. People decide; nothing is applied on its own.</span></div>
+        <span style="{{ countStyle }}">{{ countText }}</span>
+      </div>
+      <div class="rise d1" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem">
+        <div style="padding: 1rem; border-radius: 0.75rem; background: #faf9ff; box-shadow: inset 0 0 0 1px rgba(109,40,217,.12); display: flex; gap: 0.75rem"><svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" stroke-width="1.6" aria-hidden="true" style="flex: none"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg><span style="display: flex; flex-direction: column; gap: 0.25rem"><b style="font-weight: 600">Runs on your servers</b><span style="color: #52525b; font-size: 0.8125rem; white-space: normal; line-height: 1.45">No document is sent to an outside service.</span></span></div>
+        <div style="padding: 1rem; border-radius: 0.75rem; background: #faf9ff; box-shadow: inset 0 0 0 1px rgba(109,40,217,.12); display: flex; gap: 0.75rem"><svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" stroke-width="1.6" aria-hidden="true" style="flex: none"><path d="M12 3 4 6v6c0 4.5 3.3 8 8 9 4.7-1 8-4.5 8-9V6z"></path><path d="M9 12h6"></path></svg><span style="display: flex; flex-direction: column; gap: 0.25rem"><b style="font-weight: 600">Never learns from you</b><span style="color: #52525b; font-size: 0.8125rem; white-space: normal; line-height: 1.45">Pretrained models only. Your documents train nothing.</span></span></div>
+        <div style="padding: 1rem; border-radius: 0.75rem; background: #faf9ff; box-shadow: inset 0 0 0 1px rgba(109,40,217,.12); display: flex; gap: 0.75rem"><svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" stroke-width="1.6" aria-hidden="true" style="flex: none"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c1-3.6 3.8-5.5 7-5.5s6 1.9 7 5.5"></path></svg><span style="display: flex; flex-direction: column; gap: 0.25rem"><b style="font-weight: 600">A person decides</b><span style="color: #52525b; font-size: 0.8125rem; white-space: normal; line-height: 1.45">Suggestions never enter a sealed document or the audit trail.</span></span></div>
+      </div>
+      <div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.25rem; align-items: start">
+        <div style="display: flex; flex-direction: column; gap: 0.625rem">
+          <sc-for list="{{ features }}" as="f" hint-placeholder-count="5">
+            <div class="card rise" style="{{ f.card }}">
+              <span style="{{ f.icon }}">{{ f.glyph }}</span>
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem">
+                <div style="display: flex; align-items: center; gap: 0.5rem"><b style="font-weight: 600">{{ f.title }}</b><span style="font-size: 0.6875rem; color: #71717a; font-family: 'Geist Mono', monospace">{{ f.model }}</span></div>
+                <span style="color: #52525b; font-size: 0.8125rem; white-space: normal; line-height: 1.5">{{ f.desc }}</span>
+                <sc-if value="{{ f.isOcr }}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; gap: 0.375rem; flex-wrap: wrap; margin-top: 0.375rem">
+                    <span style="display: inline-flex; align-items: center; gap: 0.3125rem; height: 1.5rem; padding: 0 0.5rem; border-radius: 0.75rem; background: #eff8f2; color: #15803d; font-size: 0.75rem; font-weight: 500">✓ Latin, Cyrillic, Greek, CJK</span>
+                    <span style="display: inline-flex; align-items: center; gap: 0.375rem; height: 1.5rem; padding: 0 0.5rem; border-radius: 0.75rem; background: #f5f3ff; color: #6d28d9; font-size: 0.75rem; font-weight: 500">Arabic · installing<span style="width: 2.5rem; height: 0.3125rem; border-radius: 0.25rem; overflow: hidden; background: #ede9fe"><span class="stripes" style="display: block; width: 60%; height: 100%"></span></span></span>
+                    <span style="display: inline-flex; align-items: center; height: 1.5rem; padding: 0 0.5rem; border-radius: 0.75rem; background: #f4f4f5; color: #52525b; font-size: 0.75rem; font-weight: 500">Devanagari · ask your operator</span>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ f.isPii }}" hint-placeholder-val="{{ false }}">
+                  <span style="margin-top: 0.25rem; font-size: 0.75rem; color: #92400e; white-space: normal; line-height: 1.45">Names and addresses: English only for now. Emails, phone numbers, IBANs and card numbers: every language.</span>
+                </sc-if>
+              </div>
+              <button onClick="{{ f.toggle }}" role="switch" aria-checked="{{ f.aria }}" aria-label="{{ f.title }}" class="btn" style="{{ f.track }}"><span style="{{ f.knob }}"></span></button>
+            </div>
+          </sc-for>
+          <span style="color: #71717a; font-size: 0.8125rem; padding: 0.25rem 0.25rem 0; white-space: normal">With everything off, OpenSeal works exactly as it does without models, and no document is read.</span>
+        </div>
+        <div class="rise d3" style="border-radius: 0.75rem; box-shadow: inset 0 0 0 1px rgba(24,24,27,.08); overflow: hidden">
+          <div style="padding: 0.875rem 1rem; display: flex; align-items: center; background: #fafaf9; box-shadow: inset 0 -1px 0 rgba(24,24,27,.06)"><b style="font-weight: 600">Models on this server</b><span style="margin-left: auto; font-size: 0.75rem; color: #71717a">set by your operator</span></div>
+          <sc-for list="{{ models }}" as="m" hint-placeholder-count="5">
+            <div style="padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.25rem; box-shadow: inset 0 -1px 0 rgba(24,24,27,.05)">
+              <div style="display: flex; align-items: center; gap: 0.5rem"><span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0">{{ m.name }}</span><span style="{{ m.chip }}">{{ m.status }}</span></div>
+              <span style="font-size: 0.75rem; color: #71717a">{{ m.meta }}</span>
+              <code style="font-family: 'Geist Mono', monospace; font-size: 0.6875rem; color: #52525b">sha256 {{ m.hash }}</code>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { on: { ocr: true, detect: true, tpl: true, extract: true, pii: false } }; }
+  renderVals() {
+    const s = this.state;
+    const feats = [
+      ['ocr', 'Read scanned pages', 'PP-OCRv6', 'Turns scans and photos into searchable text, so fields can be detected and details found on them too.', '◫'],
+      ['detect', 'Detect fields on upload', 'rules + OCR', 'Suggests signature, date and name fields where the document has lines, boxes and labels for them.', '✍'],
+      ['tpl', 'Match templates', 'multilingual-e5-small', 'Recognises a document that matches one of your templates and offers to apply its roles and fields.', '▦'],
+      ['extract', 'Extract agreement details', 'gliner_multi-v2.1', 'Suggests parties, dates, term, amounts and governing law, and powers search by meaning.', 'Aa'],
+      ['pii', 'Find personal data', 'gliner-pii-base', 'Flags personal data so it can be reviewed for redaction or a shorter retention period.', '◉'],
+    ];
+    const n = feats.filter((f) => s.on[f[0]]).length;
+    return {
+      countText: n + ' of 5 on',
+      countStyle: 'margin-left:auto;display:inline-flex;align-items:center;height:1.75rem;padding:0 0.75rem;border-radius:0.875rem;font-size:0.8125rem;font-weight:500;background:' + (n ? '#f5f3ff' : '#f4f4f5') + ';color:' + (n ? '#6d28d9' : '#52525b'),
+      features: feats.map(([id, title, model, desc, glyph], i) => { const on = !!s.on[id]; return {
+        title, model, desc, glyph, isOcr: id === 'ocr' && on, isPii: id === 'pii' && on, aria: on ? 'true' : 'false',
+        toggle: () => { const o = Object.assign({}, s.on); o[id] = !on; this.setState({ on: o }); },
+        card: 'display:flex;align-items:flex-start;gap:0.875rem;padding:1rem;border-radius:0.75rem;animation-delay:' + (i * 60) + 'ms;' + (on ? 'background:#fff;box-shadow:inset 0 0 0 1px rgba(24,24,27,.08),0 1px 2px rgba(24,24,27,.04)' : 'background:#fafaf9;box-shadow:inset 0 0 0 1px rgba(24,24,27,.05);opacity:.72'),
+        icon: 'width:2.25rem;height:2.25rem;flex:none;border-radius:0.625rem;display:inline-flex;align-items:center;justify-content:center;font-size:0.8125rem;font-weight:600;transition:background 260ms cubic-bezier(.2,.8,.2,1);' + (on ? 'background:#f5f3ff;color:#6d28d9' : 'background:#f4f4f5;color:#a1a1aa'),
+        track: 'width:2.5rem;height:1.375rem;border:0;border-radius:0.6875rem;padding:0.1875rem;box-sizing:border-box;display:flex;transition:background 220ms cubic-bezier(.2,.8,.2,1);background:' + (on ? '#6d28d9' : '#d4d4d8'),
+        knob: 'width:1rem;height:1rem;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform 260ms cubic-bezier(.34,1.56,.64,1);transform:translateX(' + (on ? '1.125rem' : '0') + ')' }; }),
+      models: [
+        ['PP-OCRv6 small (detect + recognise)', 'Ready', 'Apache-2.0 · 30 MB · OCR', '9c41…e07a', 'ok'],
+        ['Arabic OCR pack (PP-OCRv5)', 'Installing', 'Apache-2.0 · 11 MB · OCR', 'pending', 'busy'],
+        ['multilingual-e5-small', 'Ready', 'MIT · 470 MB · templates, search', '1f8b…44d2', 'ok'],
+        ['gliner_multi-v2.1 (int8)', 'Ready', 'Apache-2.0 · 0.7 GB · details', 'a03e…9b15', 'ok'],
+        ['gliner-pii-base-v1.0', 'Ready', 'Apache-2.0 · 197 MB · personal data', '5d27…c3f0', 'ok'],
+      ].map(([name, status, meta, hash, k]) => ({ name, status, meta, hash,
+        chip: 'margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:0.25rem;height:1.25rem;padding:0 0.4375rem;border-radius:0.375rem;font-size:0.6875rem;font-weight:500;' + (k === 'ok' ? 'background:#eff8f2;color:#15803d' : 'background:#f5f3ff;color:#6d28d9') })),
+    };
+  }
+}
+</script>
+</body>
+</html>

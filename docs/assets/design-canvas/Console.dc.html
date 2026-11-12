@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Platform console</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+html{font-size:clamp(15px,calc(11.5px + .3vw),18px)}
+@media (max-width:48em){html{font-size:16px}}
+body{margin:0;font-family:"Geist",system-ui,sans-serif;color:#18181b;background:#18181b;-webkit-font-smoothing:antialiased}
+a{color:#e4e4e7}a:hover{color:#fff}
+button{font:inherit;color:inherit;cursor:pointer}
+button,a,kbd{white-space:nowrap}
+button:focus-visible,a:focus-visible{outline:2px solid #f43f4e;outline-offset:2px}
+.btn{flex-shrink:0;transition:transform 160ms cubic-bezier(.2,.8,.2,1),background 160ms cubic-bezier(.2,.8,.2,1),opacity 260ms cubic-bezier(.2,.8,.2,1)}
+.btn:active{transform:scale(.97)}
+.nav:hover{background:rgba(255,255,255,.06);color:#fff}
+@keyframes rise{from{opacity:0;transform:translateY(.5rem)}to{opacity:1;transform:none}}
+.rise{animation:rise 420ms cubic-bezier(.16,1,.3,1) both}
+@keyframes draw{from{stroke-dashoffset:400}to{stroke-dashoffset:0}}
+.draw{stroke-dasharray:400;animation:draw 1.4s cubic-bezier(.2,.8,.2,1) both}
+@keyframes ping{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.6);opacity:0}}
+.ping{animation:ping 1.6s cubic-bezier(0,0,.2,1) infinite}
+@keyframes shimmer{from{background-position:150% 0}to{background-position:-50% 0}}
+.sk{border-radius:.25rem;background:linear-gradient(90deg,#f1f0ed 0%,#f8f7f5 40%,#f1f0ed 80%);background-size:200% 100%;animation:shimmer 1.4s cubic-bezier(.4,0,.2,1) infinite}
+@media (prefers-reduced-motion:reduce){.rise,.draw,.ping,.sk{animation:none}}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 40rem; display: flex; background: #18181b; font-size: 0.875rem">
+  <nav aria-label="Console" style="width: 14.5rem; flex: none; padding: 0.875rem 0.625rem; display: flex; flex-direction: column; gap: 0.125rem; color: #a1a1aa">
+    <div style="display: flex; align-items: center; gap: 0.625rem; padding: 0.25rem 0.5rem 1rem"><span style="width: 1.5rem; height: 1.5rem; flex: none; border-radius: 0.4375rem; background: linear-gradient(145deg, #d42a35, #8e0b14); display: inline-flex; align-items: center; justify-content: center"><svg width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" aria-hidden="true"><path d="M5 12.5 10 17 19 7"></path></svg></span><span style="display: flex; flex-direction: column; line-height: 1.2"><b style="color: #fff; font-weight: 600">OpenSeal</b><span style="font-size: 0.75rem">Platform console</span></span></div>
+    <a href="#" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; background: rgba(255,255,255,.08); color: #fff; font-weight: 500">Health</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #a1a1aa">Organizations</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #a1a1aa">Approvals<span style="float: right; color: #fbbf24">1</span></a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #a1a1aa">Keys and certificates</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #a1a1aa">Models</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #a1a1aa">Operators</a>
+    <a href="#" class="nav" style="padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #a1a1aa">Operator log</a>
+    <div style="margin-top: auto; padding: 0.75rem 0.5rem 0; border-top: 1px solid rgba(255,255,255,.08); display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem"><span style="color: #e4e4e7">ops@acme-hosting.example</span><span>Platform owner · TOTP verified</span></div>
+  </nav>
+  <div style="flex: 1; min-width: 0; margin: 0.5rem 0.5rem 0.5rem 0; background: #f4f3f0; border-radius: 0.75rem; overflow: auto; color: #18181b">
+    <div style="padding: 1.5rem 2rem 2.5rem; display: flex; flex-direction: column; gap: 1.25rem; max-width: 90rem; margin: 0 auto">
+      <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap">
+        <h1 style="margin: 0; font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em">Health</h1>
+        <span style="display: inline-flex; align-items: center; gap: 0.5rem; height: 1.75rem; padding: 0 0.75rem; border-radius: 0.875rem; background: #fff; box-shadow: 0 0 0 1px rgba(24,24,27,.06); font-size: 0.8125rem"><span style="position: relative; width: 0.5rem; height: 0.5rem"><span class="ping" style="position: absolute; inset: 0; border-radius: 50%; background: #f59e0b"></span><span style="position: absolute; inset: 0; border-radius: 50%; background: #f59e0b"></span></span>{{ summary }}</span>
+        <span style="margin-left: auto; font-size: 0.75rem; color: #71717a">Live · updated 4 s ago</span>
+      </div>
+      <sc-if value="{{ loading }}" hint-placeholder-val="{{ false }}">
+        <div aria-busy="true" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem">
+          <sc-for list="{{ skel }}" as="k" hint-placeholder-count="4"><div style="height: 8.5rem; border-radius: 0.875rem; background: #fff; padding: 1rem; box-sizing: border-box; display: flex; flex-direction: column; gap: 0.625rem"><span class="sk" style="width: 50%; height: 0.625rem"></span><span class="sk" style="width: 35%; height: 1.5rem"></span><span class="sk" style="height: 2.5rem; margin-top: auto"></span></div></sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ ready }}" hint-placeholder-val="{{ true }}">
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem">
+          <sc-for list="{{ tiles }}" as="t" hint-placeholder-count="4">
+            <div class="rise" style="{{ t.box }}">
+              <div style="display: flex; align-items: center; gap: 0.5rem"><span style="font-size: 0.8125rem; color: #52525b">{{ t.label }}</span><sc-if value="{{ t.alert }}" hint-placeholder-val="{{ false }}"><span style="margin-left: auto; height: 1.25rem; padding: 0 0.4375rem; border-radius: 0.375rem; background: #fef3c7; color: #92400e; font-size: 0.6875rem; font-weight: 600; display: inline-flex; align-items: center">Unusual</span></sc-if></div>
+              <div style="display: flex; align-items: baseline; gap: 0.375rem"><b style="font-size: 1.625rem; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums">{{ t.value }}</b><span style="font-size: 0.75rem; color: #71717a">{{ t.unit }}</span></div>
+              <svg width="100%" height="2.75rem" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true" style="margin-top: auto"><rect x="0" y="{{ t.bandY }}" width="200" height="{{ t.bandH }}" fill="{{ t.bandFill }}"></rect><polyline class="draw" points="{{ t.points }}" fill="none" stroke="{{ t.stroke }}" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline></svg>
+              <span style="font-size: 0.6875rem; color: #71717a">{{ t.note }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <div style="display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 0.75rem; align-items: start">
+        <div class="rise" style="border-radius: 0.875rem; background: #fff; box-shadow: 0 0 0 1px rgba(24,24,27,.05); overflow: hidden">
+          <div style="padding: 0.875rem 1rem; display: flex; align-items: center; gap: 0.5rem; box-shadow: inset 0 -1px 0 rgba(24,24,27,.06)"><b style="font-weight: 600">Alerts</b><span style="font-size: 0.75rem; color: #71717a">flagged when a metric leaves its usual range (median ± 3 MAD, last 14 days)</span></div>
+          <sc-for list="{{ alerts }}" as="a" hint-placeholder-count="2">
+            <div style="{{ a.row }}">
+              <span style="{{ a.dot }}"></span>
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem"><b style="font-weight: 500; white-space: normal">{{ a.title }}</b><span style="font-size: 0.8125rem; color: #52525b; white-space: normal; line-height: 1.45">{{ a.detail }}</span><span style="font-size: 0.75rem; color: #71717a">{{ a.when }}</span></div>
+              <sc-if value="{{ a.open }}" hint-placeholder-val="{{ true }}"><button onClick="{{ a.ack }}" class="btn" style="height: 1.875rem; padding: 0 0.75rem; border: 0; border-radius: 0.4375rem; background: #18181b; color: #fff; font-weight: 500">Acknowledge</button></sc-if>
+              <sc-if value="{{ a.done }}" hint-placeholder-val="{{ false }}"><span style="font-size: 0.75rem; color: #15803d; font-weight: 500">✓ Acknowledged</span></sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{ allClear }}" hint-placeholder-val="{{ false }}">
+            <div class="rise" style="padding: 2rem 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center">
+              <svg width="6rem" height="4.5rem" viewBox="0 0 96 72" fill="none" aria-hidden="true"><path d="M8 52 26 40l14 8 18-20 14 10 16-14" stroke="#d4d4d8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path><rect x="4" y="30" width="88" height="22" rx="3" fill="#15803d" opacity=".08"></rect><circle cx="72" cy="20" r="12" fill="#15803d"></circle><path d="m66.5 20 4 4 7.5-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              <b style="font-weight: 600">Everything is in its usual range</b>
+              <span style="font-size: 0.8125rem; color: #71717a">New alerts appear here as they happen.</span>
+            </div>
+          </sc-if>
+        </div>
+        <div class="rise" style="border-radius: 0.875rem; background: #fff; box-shadow: 0 0 0 1px rgba(24,24,27,.05); overflow: hidden">
+          <div style="padding: 0.875rem 1rem; display: flex; align-items: center; box-shadow: inset 0 -1px 0 rgba(24,24,27,.06)"><b style="font-weight: 600">Model service</b><span style="margin-left: auto; display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; color: #15803d; font-weight: 500"><span style="width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: #15803d"></span>Healthy</span></div>
+          <div style="padding: 0.875rem 1rem; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem 1rem; font-size: 0.8125rem">
+            <span style="color: #71717a">Bundle</span><code style="font-family: 'Geist Mono', monospace; font-size: 0.75rem">b-2026.11.12-7c3e</code>
+            <span style="color: #71717a">Slots busy</span><span style="display: flex; align-items: center; gap: 0.5rem"><span style="display: flex; gap: 0.1875rem"><span style="width: 0.875rem; height: 0.5rem; border-radius: 2px; background: #6d28d9"></span><span style="width: 0.875rem; height: 0.5rem; border-radius: 2px; background: #6d28d9"></span><span style="width: 0.875rem; height: 0.5rem; border-radius: 2px; background: #6d28d9"></span><span style="width: 0.875rem; height: 0.5rem; border-radius: 2px; background: #e4e4e7"></span></span>3 of 4</span>
+            <span style="color: #71717a">Analysis queue</span><span>12 documents · oldest 40 s</span>
+            <span style="color: #71717a">OCR pages today</span><span>1,284 · 3 cut short at the page limit</span>
+            <span style="color: #71717a">Weights</span><span style="color: #15803d">✓ 5 of 5 match their pinned SHA-256</span>
+          </div>
+          <div style="padding: 0.75rem 1rem; background: #fafaf9; box-shadow: inset 0 1px 0 rgba(24,24,27,.06); font-size: 0.75rem; color: #71717a; white-space: normal; line-height: 1.5">Shows counts only. Document content and per-person data never reach the console.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { loading: true, ack: {} }; }
+  componentDidMount() { this.t = setTimeout(() => this.setState({ loading: false }), 1000); }
+  componentWillUnmount() { clearTimeout(this.t); }
+  renderVals() {
+    const s = this.state;
+    const pts = (arr) => arr.map((v, i) => (i * 200 / (arr.length - 1)).toFixed(1) + ',' + (44 - v).toFixed(1)).join(' ');
+    const tiles = [
+      ['Job queue depth', '18', 'jobs', [10, 12, 9, 14, 11, 13, 12, 15, 12, 14, 13, 16], 8, 12, false, 'Usual: 8 to 24'],
+      ['Error rate', '2.4', '%', [8, 9, 7, 9, 8, 10, 9, 8, 12, 20, 30, 36], 6, 8, true, 'Usual: 0.3% to 0.9%'],
+      ['Signing p95', '410', 'ms', [18, 20, 17, 19, 21, 18, 20, 19, 22, 20, 19, 21], 14, 12, false, 'Usual: 340 to 520 ms'],
+      ['Active organizations', '214', 'today', [12, 16, 20, 18, 24, 26, 22, 28, 30, 27, 32, 34], 14, 22, false, '+6 this week'],
+    ];
+    const alerts = [
+      ['err', 'Error rate is outside its usual range', '2.4% of requests failed in the last 15 minutes; usually 0.3% to 0.9%. Most are CS-STORE-0003 (database timeouts).', '6 min ago', 'warn'],
+      ['ml', 'Model analysis is slower than usual', 'Median analysis time is 48 s per document; usually 9 to 22 s. Three OCR pages hit the 20 s limit.', '22 min ago', 'warn'],
+    ];
+    const open = alerts.filter((a) => !s.ack[a[0]]).length;
+    return {
+      loading: s.loading, ready: !s.loading,
+      skel: [1, 2, 3, 4],
+      summary: open ? open + ' alert' + (open > 1 ? 's' : '') + ' need attention' : 'All systems normal',
+      tiles: tiles.map(([label, value, unit, data, bandY, bandH, alert, note]) => ({ label, value, unit, alert, note,
+        points: pts(data), bandY: String(44 - bandY - bandH), bandH: String(bandH),
+        bandFill: alert ? 'rgba(245,158,11,.12)' : 'rgba(24,24,27,.05)', stroke: alert ? '#d97706' : '#18181b',
+        box: 'height:8.5rem;border-radius:0.875rem;background:#fff;padding:1rem;box-sizing:border-box;display:flex;flex-direction:column;gap:0.25rem;box-shadow:' + (alert ? 'inset 0 0 0 1.5px rgba(217,119,6,.45)' : '0 0 0 1px rgba(24,24,27,.05)') })),
+      alerts: alerts.filter((a) => !s.ack[a[0]] || true).map(([id, title, detail, when]) => { const done = !!s.ack[id]; return { title, detail, when, open: !done, done,
+        ack: () => { const ack = Object.assign({}, s.ack); ack[id] = true; this.setState({ ack }); },
+        dot: 'width:0.625rem;height:0.625rem;flex:none;margin-top:0.375rem;border-radius:50%;background:' + (done ? '#d4d4d8' : '#f59e0b'),
+        row: 'display:flex;align-items:flex-start;gap:0.75rem;padding:0.875rem 1rem;box-shadow:inset 0 -1px 0 rgba(24,24,27,.05);transition:opacity 260ms cubic-bezier(.2,.8,.2,1);opacity:' + (done ? '.55' : '1') }; }),
+      allClear: open === 0,
+    };
+  }
+}
+</script>
+</body>
+</html>

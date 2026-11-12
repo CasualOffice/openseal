@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agreements</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+html{font-size:clamp(15px,calc(11.5px + .3vw),18px)}
+@media (max-width:48em){html{font-size:16px}}
+body{margin:0;font-family:"Geist",system-ui,sans-serif;color:#18181b;background:#f4f3f0;-webkit-font-smoothing:antialiased}
+a{color:#18181b}a:hover{color:#c01622}
+button{font:inherit;color:inherit;cursor:pointer}
+button,a,kbd{white-space:nowrap}
+.btn{flex-shrink:0}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #c01622;outline-offset:2px}
+.nav{transition:background 180ms cubic-bezier(.2,.8,.2,1),color 180ms cubic-bezier(.2,.8,.2,1)}
+.nav:hover{background:rgba(24,24,27,.05);color:#18181b}
+.row{transition:background 160ms cubic-bezier(.2,.8,.2,1)}
+.row:hover{background:#fafaf9}
+.btn{transition:transform 160ms cubic-bezier(.2,.8,.2,1),background 160ms cubic-bezier(.2,.8,.2,1),box-shadow 160ms cubic-bezier(.2,.8,.2,1)}
+.btn:active{transform:scale(.97)}
+.ghost:hover{background:rgba(24,24,27,.06)}
+.primary:hover{background:#a8121d}
+@keyframes pop{from{opacity:0;transform:translateY(-.5rem) scale(.98)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes slide{from{opacity:0;transform:translateX(.75rem)}to{opacity:1;transform:none}}
+.pop{animation:pop 260ms cubic-bezier(.16,1,.3,1) both}
+.fade{animation:fade 200ms cubic-bezier(.2,.8,.2,1) both}
+.slide{animation:slide 320ms cubic-bezier(.16,1,.3,1) both}
+.cmd:hover{background:#f4f3f0}
+mark{background:#ede9fe;color:#4c1d95;border-radius:.1875rem;padding:0 .125rem}
+@keyframes shimmer{from{background-position:150% 0}to{background-position:-50% 0}}
+.sk{border-radius:.25rem;background:linear-gradient(90deg,#f1f0ed 0%,#f8f7f5 40%,#f1f0ed 80%);background-size:200% 100%;animation:shimmer 1.4s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes rise{from{opacity:0;transform:translateY(.375rem)}to{opacity:1;transform:none}}
+.rise{animation:rise 360ms cubic-bezier(.16,1,.3,1) both}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-.375rem)}}
+.float{animation:float 4s cubic-bezier(.45,0,.55,1) infinite}
+@keyframes scan{0%{transform:translateY(0)}50%{transform:translateY(5.25rem)}100%{transform:translateY(0)}}
+.scan{animation:scan 2.2s cubic-bezier(.45,0,.55,1) infinite}
+@keyframes indet{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
+.indet{animation:indet 1.3s cubic-bezier(.4,0,.2,1) infinite}
+@media (prefers-reduced-motion:reduce){.pop,.fade,.slide,.sk,.rise,.float,.scan,.indet{animation:none}}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 40rem; display: flex; position: relative; background: #f4f3f0; font-size: 0.875rem">
+
+  <nav aria-label="Workspace" style="width: 15.5rem; flex: none; display: flex; flex-direction: column; padding: 0.75rem 0.625rem; gap: 0.125rem; color: #52525b">
+    <button class="btn ghost" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.375rem 0.5rem; border: 0; background: transparent; border-radius: 0.5rem; text-align: left">
+      <span style="width: 1.5rem; height: 1.5rem; flex: none; border-radius: 0.4375rem; background: linear-gradient(145deg, #d42a35, #8e0b14); box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 1px 2px rgba(142,11,20,.4); display: inline-flex; align-items: center; justify-content: center"><svg width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" aria-hidden="true"><path d="M5 12.5 10 17 19 7"></path></svg></span>
+      <span style="display: flex; flex-direction: column; line-height: 1.2"><b style="color: #18181b; font-weight: 600">Acme Inc</b><span style="font-size: 0.75rem; color: #71717a">OpenSeal · Business</span></span>
+      <svg style="margin-left: auto" width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="1.6" aria-hidden="true"><path d="m8 10 4-4 4 4M8 14l4 4 4-4"></path></svg>
+    </button>
+    <button onClick="{{ openPalette }}" class="btn" style="margin: 0.625rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem; height: 2rem; padding: 0 0.625rem; border: 0; border-radius: 0.5rem; background: #ffffff; box-shadow: 0 0 0 1px rgba(24,24,27,.07), 0 1px 2px rgba(24,24,27,.04); color: #71717a; text-align: left">
+      <svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4-4"></path></svg>Search or jump to…<kbd style="margin-left: auto; font-family: 'Geist Mono', monospace; font-size: 0.6875rem; padding: 0.0625rem 0.3125rem; border-radius: 0.25rem; background: #f4f3f0; color: #71717a">⌘K</kbd>
+    </button>
+    <a class="nav" href="#" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 13h4l1.5 3h5L16 13h4M4 13l2.5-7h11L20 13v5H4z"></path></svg>Inbox<span style="margin-left: auto; min-width: 1.25rem; height: 1.25rem; padding: 0 0.3125rem; box-sizing: border-box; border-radius: 0.625rem; background: #c01622; color: #fff; font-size: 0.6875rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">2</span></a>
+    <a class="nav" href="#" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; background: #ffffff; color: #18181b; font-weight: 500; box-shadow: 0 0 0 1px rgba(24,24,27,.06), 0 1px 2px rgba(24,24,27,.05)"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"></path><path d="M14 3v5h5M10 13h6M10 17h4"></path></svg>Agreements</a>
+    <a class="nav" href="#" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg>Templates</a>
+    <a class="nav" href="#" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="9" cy="9" r="3.5"></circle><path d="M3 20c.8-3.4 3.2-5 6-5s5.2 1.6 6 5M16 5.5a3.5 3.5 0 0 1 0 7M18 15c1.6.6 2.6 2.2 3 5"></path></svg>Contacts</a>
+    <a class="nav" href="#" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg>Reports</a>
+    <span style="margin: 1.25rem 0.5rem 0.375rem; font-size: 0.75rem; font-weight: 500; color: #71717a">Views</span>
+    <sc-for list="{{ views }}" as="v" hint-placeholder-count="4">
+      <button onClick="{{ v.pick }}" class="nav" style="{{ v.style }}"><span style="{{ v.dot }}"></span>{{ v.label }}<span style="margin-left: auto; font-size: 0.75rem; color: #71717a; font-variant-numeric: tabular-nums">{{ v.count }}</span></button>
+    </sc-for>
+    <div style="margin-top: auto; display: flex; flex-direction: column; gap: 0.125rem">
+      <a class="nav" href="Intelligence.dc.html" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.4375rem 0.5rem; border-radius: 0.5rem; text-decoration: none; color: #52525b"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3 4 6v6c0 4.5 3.3 8 8 9 4.7-1 8-4.5 8-9V6z"></path></svg>Admin</a>
+      <div style="display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem; border-top: 1px solid rgba(24,24,27,.06); margin-top: 0.375rem; padding-top: 0.75rem"><span style="width: 1.5rem; height: 1.5rem; flex: none; border-radius: 50%; background: #3f3f46; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 0.625rem; font-weight: 600">DA</span><span style="color: #18181b; font-weight: 500">Dana Admin</span></div>
+    </div>
+  </nav>
+
+  <div style="flex: 1; min-width: 0; margin: 0.5rem 0.5rem 0.5rem 0; display: flex; background: #ffffff; border-radius: 0.75rem; box-shadow: 0 0 0 1px rgba(24,24,27,.06), 0 1px 3px rgba(24,24,27,.04); overflow: hidden">
+    <main style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+      <header style="display: flex; align-items: center; gap: 0.75rem; min-height: 3.25rem; padding: 0 1.25rem; border-bottom: 1px solid rgba(24,24,27,.06)">
+        <b style="font-weight: 600; font-size: 0.9375rem">Agreements</b>
+        <div role="tablist" style="display: flex; gap: 0.125rem; margin-left: 0.5rem; min-width: 0; overflow: hidden">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+            <button role="tab" onClick="{{ t.pick }}" class="btn" style="{{ t.style }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 0.375rem">
+          <button class="btn ghost" style="height: 1.875rem; padding: 0 0.625rem; border: 0; border-radius: 0.4375rem; background: transparent; color: #52525b; display: inline-flex; align-items: center; gap: 0.375rem"><svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"></path></svg>Filter</button>
+          <button class="btn ghost" style="height: 1.875rem; padding: 0 0.625rem; border: 0; border-radius: 0.4375rem; background: transparent; color: #52525b; display: inline-flex; align-items: center; gap: 0.375rem"><svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"></path><circle cx="16" cy="7" r="2"></circle><circle cx="8" cy="17" r="2"></circle></svg>Display</button>
+          <a href="Editor.dc.html" class="btn primary" style="margin-left: 0.25rem; height: 1.875rem; padding: 0 0.375rem 0 0.75rem; border-radius: 0.4375rem; background: #c01622; color: #ffffff; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 1px 2px rgba(142,11,20,.35)">New agreement<kbd style="font-family: 'Geist Mono', monospace; font-size: 0.6875rem; padding: 0.0625rem 0.3125rem; border-radius: 0.25rem; background: rgba(255,255,255,.18)">N</kbd></a>
+        </div>
+      </header>
+      <div style="flex: 1; overflow: auto">
+        <sc-if value="{{ loading }}" hint-placeholder-val="{{ false }}">
+          <div aria-busy="true" aria-label="Loading agreements">
+            <div style="height: 2.25rem; padding: 0 1.25rem; display: flex; align-items: center; background: #fafaf9; border-bottom: 1px solid rgba(24,24,27,.05)"><span class="sk" style="width: 9rem; height: 0.625rem"></span></div>
+            <sc-for list="{{ skeleton }}" as="k" hint-placeholder-count="7">
+              <div style="display: grid; grid-template-columns: minmax(0,3fr) 5.5rem minmax(0,1fr) minmax(0,1.9fr) 4.5rem; align-items: center; gap: 1rem; height: 3.5rem; padding: 0 1.25rem; border-bottom: 1px solid rgba(24,24,27,.05)">
+                <span style="display: flex; align-items: center; gap: 0.75rem"><span class="sk" style="width: 1.75rem; height: 2.125rem; flex: none"></span><span style="display: flex; flex-direction: column; gap: 0.375rem; flex: 1"><span class="sk" style="{{ k.w1 }}"></span><span class="sk" style="{{ k.w2 }}"></span></span></span>
+                <span style="display: flex"><span class="sk" style="width: 1.5rem; height: 1.5rem; border-radius: 50%"></span><span class="sk" style="width: 1.5rem; height: 1.5rem; border-radius: 50%; margin-left: -0.375rem"></span></span>
+                <span class="sk" style="width: 3.5rem; height: 0.5rem"></span>
+                <span class="sk" style="width: 7rem; height: 1.375rem; border-radius: 0.375rem"></span>
+                <span class="sk" style="width: 3rem; height: 0.625rem; justify-self: end"></span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}">
+          <div class="rise" style="height: 100%; min-height: 24rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; text-align: center; padding: 2rem">
+            <svg class="float" width="10rem" height="7.5rem" viewBox="0 0 160 120" fill="none" aria-hidden="true">
+              <ellipse cx="80" cy="110" rx="46" ry="5" fill="#18181b" opacity=".06"></ellipse>
+              <rect x="38" y="18" width="84" height="80" rx="10" fill="#fff" stroke="#d4d4d8" stroke-width="1.5"></rect>
+              <path d="M38 38h84" stroke="#d4d4d8" stroke-width="1.5"></path>
+              <rect x="38" y="18" width="84" height="20" rx="10" fill="#fdf0f1"></rect>
+              <path d="M58 12v12M102 12v12" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round"></path>
+              <g fill="#e4e4e7"><rect x="50" y="48" width="10" height="8" rx="2"></rect><rect x="66" y="48" width="10" height="8" rx="2"></rect><rect x="82" y="48" width="10" height="8" rx="2"></rect><rect x="98" y="48" width="10" height="8" rx="2"></rect><rect x="50" y="62" width="10" height="8" rx="2"></rect><rect x="66" y="62" width="10" height="8" rx="2"></rect><rect x="98" y="62" width="10" height="8" rx="2"></rect><rect x="50" y="76" width="10" height="8" rx="2"></rect><rect x="66" y="76" width="10" height="8" rx="2"></rect></g>
+              <circle cx="112" cy="84" r="17" fill="#15803d"></circle>
+              <path d="m104.5 84 5 5 10-10" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              <circle cx="28" cy="40" r="3" fill="#f2c98f"></circle><circle cx="136" cy="30" r="2.5" fill="#c4b5fd"></circle><path d="M132 100l3 3m0-3-3 3" stroke="#fca5a5" stroke-width="1.5" stroke-linecap="round"></path>
+            </svg>
+            <b style="font-size: 1rem; font-weight: 600">Nothing is about to expire</b>
+            <span style="color: #71717a; max-width: 22rem; white-space: normal; line-height: 1.5">Agreements that expire within 7 days show up here, and their senders get a reminder automatically.</span>
+            <button onClick="{{ showAll }}" class="btn ghost" style="margin-top: 0.25rem; height: 2rem; padding: 0 0.875rem; border: 0; border-radius: 0.4375rem; background: #f4f3f0; font-weight: 500">See all agreements</button>
+          </div>
+        </sc-if>
+        <sc-for list="{{ rows }}" as="r" hint-placeholder-count="8">
+          <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; gap: 0.5rem; height: 2.25rem; padding: 0 1.25rem; background: #fafaf9; border-bottom: 1px solid rgba(24,24,27,.05); font-size: 0.8125rem; font-weight: 500; color: #3f3f46"><span style="{{ r.dot }}"></span>{{ r.label }}<span style="color: #71717a; font-weight: 400">{{ r.count }}</span></div>
+          </sc-if>
+          <sc-if value="{{ r.isRow }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ r.pick }}" class="row rise" style="{{ r.style }}">
+              <span style="display: flex; align-items: center; gap: 0.75rem; min-width: 0">
+                <span aria-hidden="true" style="width: 1.75rem; height: 2.125rem; flex: none; border-radius: 0.25rem; background: #ffffff; box-shadow: 0 0 0 1px rgba(24,24,27,.1), 0 1px 2px rgba(24,24,27,.06); display: flex; flex-direction: column; gap: 0.1875rem; padding: 0.375rem 0.3125rem; box-sizing: border-box"><span style="height: 0.125rem; background: #d4d4d8; border-radius: 1px"></span><span style="height: 0.125rem; width: 70%; background: #e4e4e7; border-radius: 1px"></span><span style="height: 0.125rem; background: #e4e4e7; border-radius: 1px"></span><span style="{{ r.sigLine }}"></span></span>
+                <span style="display: flex; flex-direction: column; min-width: 0; text-align: left"><span style="font-weight: 500; color: #18181b; overflow: hidden; text-overflow: ellipsis">{{ r.name }}</span><span style="font-size: 0.75rem; color: #71717a; overflow: hidden; text-overflow: ellipsis">{{ r.sub }}</span></span>
+              </span>
+              <span style="display: flex; align-items: center">
+                <sc-for list="{{ r.people }}" as="p" hint-placeholder-count="2"><span style="{{ p.style }}">{{ p.ini }}</span></sc-for>
+              </span>
+              <span style="display: flex; align-items: center; gap: 0.5rem"><span style="display: flex; gap: 0.1875rem"><sc-for list="{{ r.steps }}" as="s" hint-placeholder-count="2"><span style="{{ s.style }}"></span></sc-for></span><span style="font-size: 0.75rem; color: #71717a; font-variant-numeric: tabular-nums">{{ r.progress }}</span></span>
+              <span style="display: flex; align-items: center; gap: 0.375rem; min-width: 0"><span style="{{ r.statusStyle }}">{{ r.status }}</span><sc-if value="{{ r.hasSug }}" hint-placeholder-val="{{ false }}"><span title="Suggested details to review" style="display: inline-flex; align-items: center; gap: 0.25rem; height: 1.375rem; padding: 0 0.4375rem; border-radius: 0.375rem; background: #f5f3ff; color: #6d28d9; font-size: 0.75rem; font-weight: 500"><svg width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"></path></svg>{{ r.sug }}</span></sc-if></span>
+              <span style="font-size: 0.8125rem; color: #71717a; text-align: right; font-variant-numeric: tabular-nums">{{ r.when }}</span>
+            </button>
+          </sc-if>
+        </sc-for>
+      </div>
+    </main>
+
+    <aside aria-label="Agreement details" class="slide" style="width: 23.5rem; flex: none; border-left: 1px solid rgba(24,24,27,.06); display: flex; flex-direction: column; background: #ffffff">
+      <div style="padding: 1.125rem 1.25rem 0.875rem; display: flex; flex-direction: column; gap: 0.625rem">
+        <span style="{{ sel.statusStyle }}">{{ sel.status }}</span>
+        <b style="font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3">{{ sel.name }}</b>
+        <span style="font-size: 0.8125rem; color: #71717a">{{ sel.sub }}</span>
+        <div style="display: flex; gap: 0.375rem; margin-top: 0.25rem">
+          <button class="btn" style="height: 2rem; padding: 0 0.75rem; border: 0; border-radius: 0.4375rem; background: #18181b; color: #fff; font-weight: 500">{{ sel.action }}</button>
+          <button class="btn ghost" style="height: 2rem; padding: 0 0.75rem; border: 0; border-radius: 0.4375rem; background: #f4f3f0; font-weight: 500">Open</button>
+          <button class="btn ghost" aria-label="More actions" style="width: 2rem; height: 2rem; border: 0; border-radius: 0.4375rem; background: #f4f3f0">⋯</button>
+        </div>
+      </div>
+      <div role="tablist" style="display: flex; gap: 1.125rem; padding: 0 1.25rem; border-bottom: 1px solid rgba(24,24,27,.06)">
+        <sc-for list="{{ itabs }}" as="t" hint-placeholder-count="4"><button role="tab" onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.label }}<sc-if value="{{ t.hasBadge }}" hint-placeholder-val="{{ false }}"><span style="margin-left: 0.3125rem; min-width: 1rem; height: 1rem; padding: 0 0.25rem; box-sizing: border-box; border-radius: 0.5rem; background: #6d28d9; color: #fff; font-size: 0.625rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">{{ t.badge }}</span></sc-if></button></sc-for>
+      </div>
+      <div style="flex: 1; overflow: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.875rem">
+        <sc-if value="{{ showPeople }}" hint-placeholder-val="{{ true }}">
+          <sc-for list="{{ sel.order }}" as="o" hint-placeholder-count="3">
+            <div style="display: flex; gap: 0.75rem; align-items: flex-start">
+              <span style="{{ o.badge }}">{{ o.mark }}</span>
+              <span style="display: flex; flex-direction: column; gap: 0.125rem"><span style="font-weight: 500">{{ o.name }}</span><span style="font-size: 0.75rem; color: #71717a">{{ o.detail }}</span></span>
+            </div>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{ showActivity }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ sel.activity }}" as="a" hint-placeholder-count="3">
+            <div style="display: flex; gap: 0.75rem; font-size: 0.8125rem"><span style="width: 3rem; flex: none; color: #71717a; font-variant-numeric: tabular-nums">{{ a.t }}</span><span>{{ a.text }}</span></div>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{ showInsights }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; align-items: center; gap: 0.5rem"><span style="width: 1.5rem; height: 1.5rem; flex: none; border-radius: 0.4375rem; background: #f5f3ff; color: #6d28d9; display: inline-flex; align-items: center; justify-content: center"><svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"></path></svg></span><span style="display: flex; flex-direction: column; line-height: 1.3"><b style="font-weight: 600">Suggested from the document</b><span style="font-size: 0.75rem; color: #71717a">Read on your servers · never used for training</span></span></div>
+          <sc-if value="{{ sel.analyzing }}" hint-placeholder-val="{{ false }}">
+            <div class="rise" style="border-radius: 0.75rem; background: #faf9ff; box-shadow: inset 0 0 0 1px rgba(109,40,217,.14); padding: 1.25rem; display: flex; flex-direction: column; align-items: center; gap: 0.875rem; text-align: center">
+              <div aria-hidden="true" style="position: relative; width: 5.5rem; height: 7rem; border-radius: 0.375rem; background: #fff; box-shadow: 0 0 0 1px rgba(24,24,27,.1), 0 8px 20px -10px rgba(109,40,217,.35); overflow: hidden; padding: 0.75rem 0.625rem; box-sizing: border-box; display: flex; flex-direction: column; gap: 0.4375rem">
+                <span style="height: 0.25rem; width: 60%; background: #d4d4d8; border-radius: 1px"></span><span style="height: 0.1875rem; background: #e4e4e7; border-radius: 1px"></span><span style="height: 0.1875rem; width: 85%; background: #e4e4e7; border-radius: 1px"></span><span style="height: 0.1875rem; background: #e4e4e7; border-radius: 1px"></span><span style="height: 0.1875rem; width: 70%; background: #ddd6fe; border-radius: 1px"></span><span style="height: 0.1875rem; background: #e4e4e7; border-radius: 1px"></span><span style="height: 0.1875rem; width: 50%; background: #ddd6fe; border-radius: 1px"></span>
+                <span class="scan" style="position: absolute; left: 0; right: 0; top: 0.375rem; height: 1.25rem; background: linear-gradient(180deg, rgba(139,92,246,0), rgba(139,92,246,.22), rgba(139,92,246,0)); border-bottom: 1.5px solid #8b5cf6"></span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 0.25rem"><b style="font-weight: 600">Reading the document</b><span style="font-size: 0.8125rem; color: #71717a">Page 2 is scanned, reading it with OCR</span></div>
+              <div style="width: 100%; height: 0.25rem; border-radius: 2px; background: #ede9fe; overflow: hidden"><span class="indet" style="display: block; width: 40%; height: 100%; border-radius: 2px; background: #8b5cf6"></span></div>
+            </div>
+          </sc-if>
+          <sc-for list="{{ sel.insights }}" as="i" hint-placeholder-count="4">
+            <div style="{{ i.box }}">
+              <div style="display: flex; align-items: baseline; gap: 0.5rem"><span style="font-size: 0.75rem; color: #71717a">{{ i.label }}</span><span style="{{ i.confStyle }}">{{ i.conf }}</span></div>
+              <span style="font-weight: 500; white-space: normal; line-height: 1.4">{{ i.value }}</span>
+              <sc-if value="{{ i.open }}" hint-placeholder-val="{{ true }}"><div style="display: flex; gap: 0.375rem; margin-top: 0.25rem"><button onClick="{{ i.accept }}" class="btn" style="height: 1.625rem; padding: 0 0.625rem; border: 0; border-radius: 0.375rem; background: #18181b; color: #fff; font-size: 0.75rem; font-weight: 500">Save to details</button><button onClick="{{ i.dismiss }}" class="btn ghost" style="height: 1.625rem; padding: 0 0.625rem; border: 0; border-radius: 0.375rem; background: transparent; font-size: 0.75rem; font-weight: 500; color: #52525b">Dismiss</button><span style="margin-left: auto; font-size: 0.6875rem; color: #71717a; align-self: center">page {{ i.page }}</span></div></sc-if>
+              <sc-if value="{{ i.decided }}" hint-placeholder-val="{{ false }}"><span style="font-size: 0.75rem; color: #71717a">{{ i.decidedText }}</span></sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{ sel.hasPii }}" hint-placeholder-val="{{ true }}">
+          <div style="border-radius: 0.625rem; background: #fffbeb; box-shadow: inset 0 0 0 1px rgba(180,83,9,.18); padding: 0.75rem 0.875rem; display: flex; flex-direction: column; gap: 0.375rem">
+            <b style="font-weight: 600; color: #92400e">Personal data found</b>
+            <span style="font-size: 0.8125rem; color: #78350f; white-space: normal; line-height: 1.45">{{ sel.pii }}</span>
+            <button class="btn" style="align-self: flex-start; height: 1.75rem; padding: 0 0.625rem; border: 0; border-radius: 0.375rem; background: #ffffff; box-shadow: inset 0 0 0 1px rgba(180,83,9,.25); color: #92400e; font-size: 0.75rem; font-weight: 500">Review for redaction</button>
+          </div>
+          </sc-if>
+        </sc-if>
+        <sc-if value="{{ showEvidence }}" hint-placeholder-val="{{ false }}">
+          <div style="border-radius: 0.625rem; background: #f6faf7; box-shadow: 0 0 0 1px rgba(21,128,61,.15); padding: 0.875rem; display: flex; flex-direction: column; gap: 0.5rem">
+            <span style="display: flex; align-items: center; gap: 0.5rem; color: #15803d; font-weight: 600"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3 4 6v6c0 4.5 3.3 8 8 9 4.7-1 8-4.5 8-9V6z"></path><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg>Audit trail intact</span>
+            <span style="font-size: 0.8125rem; color: #3f3f46; line-height: 1.5; white-space: normal">{{ sel.events }} events, hash-chained. Nothing has been changed since each was recorded.</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.25rem"><span style="font-size: 0.75rem; color: #71717a">Document fingerprint (SHA-256)</span><code style="font-family: 'Geist Mono', monospace; font-size: 0.75rem; color: #3f3f46; word-break: break-all; background: #f4f3f0; padding: 0.5rem 0.625rem; border-radius: 0.375rem">{{ sel.hash }}</code></div>
+          <button class="btn ghost" style="align-self: flex-start; height: 2rem; padding: 0 0.75rem; border: 0; border-radius: 0.4375rem; background: #f4f3f0; font-weight: 500">Download evidence package</button>
+        </sc-if>
+      </div>
+    </aside>
+  </div>
+
+  <sc-if value="{{ palette }}" hint-placeholder-val="{{ false }}">
+    <div class="fade" style="position: absolute; inset: 0; background: rgba(24,24,27,.28); backdrop-filter: blur(2px); display: flex; justify-content: center; align-items: flex-start; padding-top: 6rem">
+      <div role="dialog" aria-label="Command menu" class="pop" style="width: min(40rem, calc(100% - 2rem)); background: #ffffff; border-radius: 0.875rem; box-shadow: 0 0 0 1px rgba(24,24,27,.08), 0 24px 60px -12px rgba(24,24,27,.35); overflow: hidden">
+        <div style="display: flex; align-items: center; gap: 0.625rem; padding: 0 1rem; height: 3.25rem; border-bottom: 1px solid rgba(24,24,27,.06)">
+          <svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4-4"></path></svg>
+          <input aria-label="Type a command or search" value="payment within 30 days" style="flex: 1; min-width: 0; border: 0; outline: 0; font: inherit; font-size: 0.9375rem; background: transparent">
+          <button onClick="{{ closePalette }}" class="btn" style="border: 0; background: #f4f3f0; border-radius: 0.25rem; font-family: 'Geist Mono', monospace; font-size: 0.6875rem; padding: 0.125rem 0.375rem; color: #71717a">esc</button>
+        </div>
+        <div style="padding: 0.5rem">
+          <span style="display: flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.625rem; font-size: 0.75rem; color: #6d28d9; font-weight: 500"><svg width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"></path></svg>Matches by meaning<span style="color: #71717a; font-weight: 400">· finds the clause even when the words differ</span></span>
+          <button onClick="{{ pickMsa }}" class="cmd btn" style="width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; padding: 0.5rem 0.625rem; border: 0; border-radius: 0.5rem; background: #f4f3f0; text-align: left"><span style="display: flex; width: 100%"><b style="font-weight: 500">Master services agreement — Acme</b><span style="margin-left: auto; font-size: 0.75rem; color: #71717a">page 1</span></span><span style="font-size: 0.8125rem; color: #52525b">…Client will <mark>pay the fees</mark> in each Statement of Work <mark>within 30 days of invoice</mark>…</span></button>
+          <button onClick="{{ pickVendor }}" class="cmd btn" style="width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; padding: 0.5rem 0.625rem; border: 0; border-radius: 0.5rem; background: transparent; text-align: left"><span style="display: flex; width: 100%"><b style="font-weight: 500">Vendor onboarding — Initech</b><span style="margin-left: auto; font-size: 0.75rem; color: #71717a">page 4</span></span><span style="font-size: 0.8125rem; color: #52525b">…invoices are <mark>settled net thirty</mark> from receipt…</span></button>
+          <span style="display: block; padding: 0.625rem 0.625rem 0.375rem; font-size: 0.75rem; color: #71717a">Actions</span>
+          <a href="Editor.dc.html" class="cmd" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.625rem; border-radius: 0.5rem; text-decoration: none">New agreement from a PDF<kbd style="margin-left: auto; font-family: 'Geist Mono', monospace; font-size: 0.6875rem; color: #71717a">N</kbd></a>
+          <button onClick="{{ closePalette }}" class="cmd" style="width: 100%; display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.625rem; border: 0; border-radius: 0.5rem; background: transparent; text-align: left">Verify a sealed PDF</button>
+          <a href="Signer.dc.html" class="cmd" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.625rem; border-radius: 0.5rem; text-decoration: none">Sign: Offer letter — Taylor Kim<span style="margin-left: auto; font-size: 0.75rem; color: #c01622; font-weight: 500">Needs your signature</span></a>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { sel: 'msa', tab: 'all', itab: 'insights', palette: false, dec: {}, loading: true }; }
+  componentDidMount() { this.timer = setTimeout(() => this.setState({ loading: false }), 1200); }
+  componentWillUnmount() { clearTimeout(this.timer); }
+  renderVals() {
+    const s = this.state;
+    const tone = { you: ['#c01622', '#fdf0f1'], wait: ['#b45309', '#fdf6ec'], done: ['#15803d', '#eff8f2'], draft: ['#52525b', '#f4f4f5'] };
+    const docs = [
+      { id: 'offer', g: 'you', name: 'Offer letter — Taylor Kim', sub: 'From People Ops · 2 pages', people: ['TK', 'DA'], signed: 0, total: 2, status: 'Needs your signature', when: '2h ago', action: 'Sign now', events: 6, hash: '4c1e 9a07 33bd 1f62 e8a0 75cc 0d91 b2f4 6e38 a1c5 92d7 0f4b 18e6 c3a9 7b20 5d1f',
+        order: [['1', 'You', 'Your turn', 'you'], ['2', 'Taylor Kim', 'Waiting for you', 'next']], activity: [['09:02', 'People Ops sent it to you'], ['09:02', 'Delivered by email']],
+        insights: [['Start date', 'December 1, 2026', 97, 1], ['Annual salary', 'EUR 84,000', 95, 1], ['Notice period', '1 month', 88, 2]], pii: '1 home address, 1 phone number, 1 date of birth.' },
+      { id: 'board', g: 'you', name: 'Board consent — November', sub: 'From Morgan Diaz · 4 pages', people: ['MD', 'DA', 'JR'], signed: 1, total: 3, status: 'Needs your signature', when: 'Yesterday', action: 'Sign now', events: 9, hash: '9f02 6c1a 44e7 b3d0 12aa 8f5e 70c4 d961 3be8 05f1 c27a 9e44 6d03 a8b1 f5c9 2e70',
+        order: [['✓', 'Morgan Diaz', 'Signed yesterday 16:20', 'done'], ['2', 'You', 'Your turn', 'you'], ['3', 'Jordan Rivera', 'After you', 'next']], activity: [['16:20', 'Morgan Diaz signed'], ['16:02', 'Sent to 3 signers']],
+        insights: [['Resolution', 'Approve FY2027 budget', 90, 1], ['Effective date', 'November 12, 2026', 93, 1]], pii: '3 email addresses.' },
+      { id: 'msa', g: 'wait', name: 'Master services agreement — Acme', sub: 'Sent today 09:12 · 3 pages', people: ['JR', 'SP'], signed: 1, total: 2, status: 'Waiting for Sam Patel', when: '09:41', action: 'Remind Sam', events: 11, hash: '7f3a 0b9e 51c4 d2e8 a613 9fb0 4c7d e258 13a6 0f9b 7ce2 d4a1 9b05 3e6f 82c0 1ad7',
+        order: [['✓', 'Jordan Rivera', 'Signed today 09:30 · Lisbon, PT', 'done'], ['2', 'Sam Patel', 'Opened 09:35 · reviewing now', 'wait'], ['cc', 'Legal team', 'Receives the sealed copy', 'next']], activity: [['09:35', 'Sam Patel opened the document'], ['09:30', 'Jordan Rivera signed'], ['09:12', 'You sent it to 2 signers']],
+        insights: [['Parties', 'Acme Corporation and Sam Patel (Client)', 98, 1], ['Term', '24 months from the last signature', 96, 1], ['Payment terms', 'Net 30 from invoice', 94, 1], ['Governing law', 'Portugal', 64, 3]], pii: '2 email addresses and 1 phone number, on page 3.' },
+      { id: 'vendor', g: 'wait', name: 'Vendor onboarding — Initech', sub: 'Sent Nov 10 · 6 pages · page 5 scanned', people: ['PL', 'RB', 'AC'], signed: 0, total: 3, status: 'Waiting for Peter Lee', when: 'Nov 10', action: 'Remind Peter', events: 4, hash: '22d8 f04a 9c61 7e3b 05a9 d1c7 b84e 6f02 a37d 18c5 e90b 4f26 7a13 c5d8 0e9f b261',
+        order: [['1', 'Peter Lee', 'Not opened yet · sent 3 days ago', 'wait'], ['2', 'Rob Baker', 'After Peter', 'next'], ['3', 'Avery Chen', 'After Rob', 'next']], activity: [['Nov 10', 'You sent it to 3 signers'], ['Nov 10', 'Page 5 read by OCR (scanned)']],
+        insights: [['Payment terms', 'Net 30 from receipt', 91, 4], ['Bank account', 'IBAN ending 4417', 89, 5]], pii: '1 IBAN and 2 phone numbers, on page 5 (scanned, read by OCR).' },
+      { id: 'nda', g: 'done', name: 'Mutual NDA — Globex', sub: 'Sealed Nov 10 · PAdES B-LT', people: ['AC', 'DA'], signed: 2, total: 2, status: 'Completed', when: 'Nov 10', action: 'Download', events: 14, hash: 'b8e1 34c9 0a7f 52d6 e1b3 8c40 97fa 2d65 c018 4be7 a39d 61f2 0c84 e57b 9da3 4f10',
+        order: [['✓', 'Avery Chen', 'Signed Nov 10 11:04', 'done'], ['✓', 'You', 'Signed Nov 10 10:58', 'done']], activity: [['11:05', 'Sealed and timestamped'], ['11:04', 'Avery Chen signed'], ['10:58', 'You signed']],
+        insights: [['Confidentiality period', '3 years', 95, 2]], pii: '2 email addresses.' },
+      { id: 'lease', g: 'draft', name: 'Lease renewal 2027', sub: 'Draft · edited Nov 9', people: ['DA'], signed: 0, total: 1, status: 'Draft', when: 'Nov 9', action: 'Continue editing', events: 1, hash: 'Not sealed yet',
+        order: [['1', 'Not set', 'Add recipients to send', 'next']], activity: [['Nov 9', 'You created the draft']],
+        insights: [], analyzing: true, pii: '' },
+    ];
+    const open = (d) => d.insights.filter((x, i) => !s.dec[d.id + i]).length;
+    const groups = [['you', 'Needs your signature'], ['wait', 'Waiting on others'], ['done', 'Completed'], ['draft', 'Drafts']];
+    const filter = { all: null, me: 'you', waiting: 'wait', done: 'done', drafts: 'draft', expiring: 'none' }[s.tab];
+    const dotS = (g) => 'width:0.5rem;height:0.5rem;border-radius:50%;flex:none;background:' + tone[g][0];
+    const pill = (g) => 'align-self:flex-start;display:inline-flex;align-items:center;height:1.375rem;padding:0 0.5rem;border-radius:0.375rem;font-size:0.75rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;color:' + tone[g][0] + ';background:' + tone[g][1];
+    const rows = [];
+    groups.forEach(([g, label]) => {
+      if (filter && filter !== g) return;
+      const list = docs.filter((d) => d.g === g);
+      rows.push({ isHead: true, isRow: false, label, count: String(list.length), dot: dotS(g) });
+      list.forEach((d) => {
+        const on = s.sel === d.id; const n = open(d);
+        rows.push({ isHead: false, isRow: true, name: d.name, sub: d.sub, status: d.status, when: d.when,
+          hasSug: n > 0, sug: String(n),
+          progress: d.g === 'draft' ? '—' : d.signed + '/' + d.total,
+          statusStyle: pill(g),
+          sigLine: 'height:0.1875rem;width:55%;margin-top:auto;border-radius:1px;background:' + tone[g][0],
+          people: d.people.map((ini, i) => ({ ini, style: 'width:1.5rem;height:1.5rem;flex:none;border-radius:50%;margin-left:' + (i ? '-0.375rem' : '0') + ';box-shadow:0 0 0 2px #fff;display:inline-flex;align-items:center;justify-content:center;font-size:0.5625rem;font-weight:600;color:#fff;background:' + ['#3f3f46', '#6d28d9', '#0e7490', '#b45309'][i % 4] })),
+          steps: Array.from({ length: d.total }, (_, i) => ({ style: 'width:0.875rem;height:0.25rem;border-radius:2px;background:' + (i < d.signed ? '#15803d' : '#e4e4e7') })),
+          pick: () => this.setState({ sel: d.id }),
+          style: 'width:100%;display:grid;grid-template-columns:minmax(0,3fr) 5.5rem minmax(0,1fr) minmax(0,1.9fr) 4.5rem;align-items:center;gap:1rem;height:3.5rem;padding:0 1.25rem;border:0;border-bottom:1px solid rgba(24,24,27,.05);text-align:left;background:' + (on ? '#fdf6f6' : 'transparent') + ';box-shadow:' + (on ? 'inset 2px 0 0 #c01622' : 'none') });
+      });
+    });
+    const d = docs.find((x) => x.id === s.sel) || docs[0];
+    const badge = (k) => 'width:1.5rem;height:1.5rem;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.6875rem;font-weight:600;' + ({ done: 'background:#eff8f2;color:#15803d', you: 'background:#c01622;color:#fff', wait: 'background:#fdf6ec;color:#b45309;box-shadow:0 0 0 1.5px #f2c98f', next: 'background:#f4f4f5;color:#71717a' }[k]);
+    const tabs = [['all', 'All'], ['me', 'Needs me'], ['waiting', 'Waiting'], ['done', 'Completed'], ['drafts', 'Drafts'], ['expiring', 'Expiring']];
+    const views = [['me', 'Needs my signature', 'you'], ['waiting', 'Waiting on others', 'wait'], ['done', 'Completed', 'done'], ['drafts', 'Drafts', 'draft'], ['expiring', 'Expiring soon', 'draft']];
+    const nOpen = open(d);
+    const setDec = (k, v) => { const dec = Object.assign({}, s.dec); dec[k] = v; this.setState({ dec }); };
+    return {
+      rows: s.loading ? [] : rows,
+      loading: s.loading, empty: !s.loading && rows.length === 0,
+      skeleton: [62, 48, 70, 55, 66, 44, 58].map((w) => ({ w1: 'height:0.625rem;width:' + w + '%', w2: 'height:0.5rem;width:' + Math.round(w * 0.6) + '%' })),
+      showAll: () => this.setState({ tab: 'all' }),
+      sel: { name: d.name, sub: d.sub, status: d.status, statusStyle: pill(d.g), action: d.action, events: d.events, hash: d.hash, pii: d.pii, hasPii: !!d.pii, analyzing: !!d.analyzing,
+        order: d.order.map(([mark, name, detail, k]) => ({ mark, name, detail, badge: badge(k) })),
+        activity: d.activity.map(([t, text]) => ({ t, text })),
+        insights: d.insights.map(([label, value, conf, page], i) => { const k = d.id + i; const st = s.dec[k]; const low = conf < 75; return {
+          label, value, page: String(page), conf: low ? conf + '% · check this' : conf + '%',
+          confStyle: 'margin-left:auto;font-size:0.6875rem;font-weight:500;color:' + (low ? '#b45309' : '#71717a'),
+          open: !st, decided: !!st, decidedText: st === 'acc' ? '✓ Saved to agreement details' : 'Dismissed',
+          accept: () => setDec(k, 'acc'), dismiss: () => setDec(k, 'dis'),
+          box: 'display:flex;flex-direction:column;gap:0.25rem;padding:0.75rem 0.875rem;border-radius:0.625rem;transition:opacity 200ms cubic-bezier(.2,.8,.2,1);' + (st === 'dis' ? 'opacity:.5;background:#fafaf9' : st === 'acc' ? 'background:#fafaf9;box-shadow:inset 0 0 0 1px rgba(24,24,27,.06)' : 'background:#ffffff;box-shadow:inset 0 0 0 1px rgba(109,40,217,.22),0 1px 2px rgba(24,24,27,.04)') }; }) },
+      tabs: tabs.map(([id, label]) => ({ label, pick: () => this.setState({ tab: id }),
+        style: 'height:1.75rem;padding:0 0.75rem;border:0;border-radius:0.875rem;font-size:0.8125rem;font-weight:500;' + (s.tab === id ? 'background:#18181b;color:#fff' : 'background:transparent;color:#52525b') })),
+      views: views.map(([id, label, g]) => ({ label, count: id === 'expiring' ? '0' : String(docs.filter((x) => x.g === g).length), dot: dotS(g), pick: () => this.setState({ tab: id }),
+        style: 'width:100%;display:flex;align-items:center;gap:0.625rem;padding:0.4375rem 0.5rem;border:0;border-radius:0.5rem;text-align:left;background:' + (s.tab === id ? 'rgba(24,24,27,.06)' : 'transparent') + ';color:' + (s.tab === id ? '#18181b' : '#52525b') })),
+      itabs: [['people', 'Recipients'], ['activity', 'Activity'], ['insights', 'Insights'], ['evidence', 'Evidence']].map(([id, label]) => ({ label,
+        hasBadge: id === 'insights' && nOpen > 0, badge: String(nOpen),
+        pick: () => this.setState({ itab: id }),
+        style: 'height:2.5rem;padding:0;border:0;background:transparent;font-size:0.8125rem;font-weight:500;margin-bottom:-1px;display:inline-flex;align-items:center;' + (s.itab === id ? 'color:#18181b;box-shadow:inset 0 -2px 0 #18181b' : 'color:#71717a') })),
+      showPeople: s.itab === 'people', showActivity: s.itab === 'activity', showInsights: s.itab === 'insights', showEvidence: s.itab === 'evidence',
+      palette: s.palette,
+      openPalette: () => this.setState({ palette: true }),
+      closePalette: () => this.setState({ palette: false }),
+      pickMsa: () => this.setState({ palette: false, sel: 'msa', tab: 'all', itab: 'insights' }),
+      pickVendor: () => this.setState({ palette: false, sel: 'vendor', tab: 'all', itab: 'insights' }),
+    };
+  }
+}
+</script>
+</body>
+</html>

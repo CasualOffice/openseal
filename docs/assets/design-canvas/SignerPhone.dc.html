@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign on a phone</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Source+Serif+4:wght@400;600&amp;family=Mrs+Saint+Delafield&amp;display=swap" rel="stylesheet">
+<style>
+html{font-size:clamp(15px,calc(11.5px + .3vw),18px)}
+@media (max-width:48em){html{font-size:16px}}
+body{margin:0;font-family:"Geist",system-ui,sans-serif;color:#18181b;-webkit-font-smoothing:antialiased}
+a{color:#18181b}a:hover{color:#c01622}
+button{font:inherit;color:inherit;cursor:pointer}
+.btn{transition:transform 160ms cubic-bezier(.2,.8,.2,1),background 160ms cubic-bezier(.2,.8,.2,1)}
+.btn:active{transform:scale(.97)}
+@keyframes sheet{from{transform:translateY(100%)}to{transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes ink{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes seal{0%{opacity:0;transform:scale(.6) rotate(-20deg)}60%{opacity:1;transform:scale(1.06) rotate(4deg)}100%{transform:none}}
+.sheet{animation:sheet 420ms cubic-bezier(.32,.72,0,1) both}
+.fade{animation:fade 220ms cubic-bezier(.2,.8,.2,1) both}
+.ink{animation:ink 700ms cubic-bezier(.5,0,.2,1) both}
+.seal{animation:seal 700ms cubic-bezier(.34,1.56,.64,1) both}
+@media (prefers-reduced-motion:reduce){.sheet,.fade,.ink,.seal{animation:none}}
+button,a,kbd{white-space:nowrap}
+.btn{flex-shrink:0}
+@keyframes ldrise{from{opacity:0;transform:translateY(.375rem)}to{opacity:1;transform:none}}
+.ldrise{animation:ldrise 360ms cubic-bezier(.16,1,.3,1) both}
+@keyframes ring{to{stroke-dashoffset:0}}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+.breathe{animation:breathe 2.4s cubic-bezier(.45,0,.55,1) infinite}
+@keyframes orbit{to{transform:rotate(360deg)}}
+.orbit{animation:orbit 1.6s cubic-bezier(.5,.1,.5,.9) infinite;transform-origin:50% 50%}
+@keyframes ldout{to{opacity:0;visibility:hidden}}
+@media (prefers-reduced-motion:reduce){.ldrise,.breathe,.orbit{animation:none}}
+</style>
+</helmet>
+<div style="width: 100%; max-width: 24.375rem; height: 100vh; min-height: 40rem; margin: 0 auto; position: relative; overflow: hidden; background: #f4f3f0; display: flex; flex-direction: column; font-size: 0.875rem">
+  <header style="flex: none; padding: 0.875rem 1rem 0.75rem; background: rgba(255,255,255,.92); box-shadow: 0 1px 0 rgba(24,24,27,.07); display: flex; flex-direction: column; gap: 0.625rem">
+    <div style="display: flex; align-items: center; gap: 0.75rem">
+      <span style="width: 2rem; height: 2rem; border-radius: 0.5rem; background: #18181b; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.6875rem">AC</span>
+      <div style="display: flex; flex-direction: column; min-width: 0; line-height: 1.25"><b style="font-weight: 600">Master services agreement</b><span style="font-size: 0.75rem; color: #71717a">From Dana Admin · Acme</span></div>
+      <button class="btn" aria-label="More options" style="margin-left: auto; width: 2.75rem; height: 2.75rem; border: 0; border-radius: 0.75rem; background: transparent; font-size: 1.125rem">⋯</button>
+    </div>
+    <div aria-hidden="true" style="display: flex; gap: 0.25rem"><sc-for list="{{ bars }}" as="b" hint-placeholder-count="2"><span style="{{ b.style }}"></span></sc-for></div>
+  </header>
+
+  <sc-if value="{{ done }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 2rem 1.5rem; text-align: center">
+      <div class="seal" style="width: 4.5rem; height: 4.5rem; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e0434c, #8e0b14); box-shadow: inset 0 2px 2px rgba(255,255,255,.3), 0 0 0 0.375rem #fdf0f1, 0 12px 24px -8px rgba(142,11,20,.5); display: flex; align-items: center; justify-content: center"><svg width="1.75rem" height="1.75rem" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" aria-hidden="true"><path d="M5 12.5 10 17 19 7"></path></svg></div>
+      <b style="font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em; margin-top: 0.5rem">Signed. Thank you.</b>
+      <span style="color: #52525b; line-height: 1.55">Sam Patel signs next. You'll get the sealed PDF by email when everyone has signed.</span>
+      <button class="btn" style="margin-top: 1rem; width: 100%; height: 3rem; border: 0; border-radius: 0.875rem; background: #18181b; color: #fff; font-weight: 600">Download a copy</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ notDone }}" hint-placeholder-val="{{ true }}">
+    <div style="flex: 1; overflow: auto; padding: 1rem">
+      <div style="background: #fff; border-radius: 0.25rem; box-shadow: 0 0 0 1px rgba(24,24,27,.06), 0 16px 32px -20px rgba(24,24,27,.3); padding: 1.75rem 1.375rem; display: flex; flex-direction: column; gap: 0.875rem; font-family: 'Source Serif 4', Georgia, serif; color: #27272a">
+        <span style="font-size: 0.625rem; letter-spacing: 0.16em; text-transform: uppercase; color: #71717a">Acme Corporation</span>
+        <b style="font-size: 1.25rem; font-weight: 600">Master Services Agreement</b>
+        <span style="line-height: 1.65; font-size: 0.9375rem">This agreement is entered into between Acme Corporation and the Client identified below, and governs the services in each Statement of Work.</span>
+        <span style="line-height: 1.65; font-size: 0.9375rem"><b>1. Services.</b> Acme will provide the services with reasonable skill and care. <b>2. Fees.</b> Payable within 30 days of invoice.</span>
+        <span style="font-family: 'Geist', sans-serif; font-size: 0.75rem; color: #71717a; margin-top: 0.75rem">Acme Corporation · Jordan Rivera, COO</span>
+        <button onClick="{{ open }}" aria-label="Signature, required" style="{{ sigStyle }}">
+          <sc-if value="{{ signed }}" hint-placeholder-val="{{ false }}"><span class="ink" style="font-family: 'Mrs Saint Delafield', cursive; font-size: 2.5rem; color: #1e3a8a; line-height: 1">Jordan Rivera</span></sc-if>
+          <sc-if value="{{ unsigned }}" hint-placeholder-val="{{ true }}"><span style="font-family: 'Geist', sans-serif; font-weight: 600">Tap to sign</span></sc-if>
+        </button>
+        <span style="font-family: 'Geist', sans-serif; font-size: 0.75rem; color: #3f3f46">{{ dateText }}</span>
+      </div>
+    </div>
+    <footer style="flex: none; padding: 0.75rem 1rem 1.75rem; background: rgba(255,255,255,.95); box-shadow: 0 -1px 0 rgba(24,24,27,.07); display: flex; align-items: center; gap: 0.75rem">
+      <div style="display: flex; flex-direction: column; line-height: 1.3"><b style="font-weight: 600">{{ guideTitle }}</b><span style="font-size: 0.75rem; color: #71717a">{{ guideSub }}</span></div>
+      <button onClick="{{ act }}" class="btn" style="{{ ctaStyle }}">{{ cta }}</button>
+    </footer>
+  </sc-if>
+
+  <sc-if value="{{ tray }}" hint-placeholder-val="{{ false }}">
+    <div class="fade" style="position: absolute; inset: 0; background: rgba(24,24,27,.35); display: flex; align-items: flex-end">
+      <div role="dialog" aria-label="Adopt your signature" class="sheet" style="width: 100%; background: #fff; border-radius: 1.25rem 1.25rem 0 0; padding: 0.625rem 1.25rem 1.75rem; display: flex; flex-direction: column; gap: 1rem; box-shadow: 0 -12px 32px -12px rgba(24,24,27,.3)">
+        <span style="align-self: center; width: 2.25rem; height: 0.3125rem; border-radius: 0.25rem; background: #d4d4d8"></span>
+        <div style="display: flex; flex-direction: column; gap: 0.25rem"><b style="font-size: 1.0625rem; font-weight: 600">Adopt your signature</b><span style="font-size: 0.8125rem; color: #71717a">Used wherever you sign in this agreement.</span></div>
+        <div style="display: flex; padding: 0.1875rem; border-radius: 0.625rem; background: #f4f3f0"><span style="flex: 1; height: 2.25rem; border-radius: 0.5rem; background: #fff; box-shadow: 0 1px 2px rgba(24,24,27,.08); display: flex; align-items: center; justify-content: center; font-weight: 500">Type</span><span style="flex: 1; height: 2.25rem; display: flex; align-items: center; justify-content: center; color: #52525b">Draw</span><span style="flex: 1; height: 2.25rem; display: flex; align-items: center; justify-content: center; color: #52525b">Upload</span></div>
+        <div style="height: 6.5rem; border-radius: 0.875rem; background: #f5f8ff; box-shadow: inset 0 0 0 2px #2563eb; display: flex; align-items: center; justify-content: center; font-family: 'Mrs Saint Delafield', cursive; font-size: 2.75rem; color: #1e3a8a">Jordan Rivera</div>
+        <span style="font-size: 0.75rem; color: #71717a; line-height: 1.5">By tapping Adopt and sign, I agree this is my electronic signature for this agreement.</span>
+        <button onClick="{{ adopt }}" class="btn" style="height: 3.25rem; border: 0; border-radius: 0.875rem; background: #c01622; color: #fff; font-weight: 600; font-size: 0.9375rem">Adopt and sign</button>
+        <button onClick="{{ close }}" class="btn" style="height: 2.75rem; border: 0; background: transparent; font-weight: 500; color: #52525b">Cancel</button>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ loading }}" hint-placeholder-val="{{ false }}">
+    <div aria-busy="true" aria-live="polite" style="position: absolute; inset: 0; z-index: 3; background: radial-gradient(36rem 22rem at 50% 38%, #fdf3f3, #f4f3f0 70%); display: flex; align-items: center; justify-content: center; padding: 1.5rem; box-sizing: border-box">
+      <div style="width: 100%; max-width: 24rem; display: flex; flex-direction: column; align-items: center; gap: 1.5rem">
+        <div class="breathe" style="position: relative; width: 5.5rem; height: 5.5rem">
+          <svg class="orbit" width="5.5rem" height="5.5rem" viewBox="0 0 88 88" fill="none" aria-hidden="true" style="position: absolute; inset: 0"><circle cx="44" cy="44" r="41" stroke="rgba(192,22,34,.12)" stroke-width="3"></circle><path d="M44 3a41 41 0 0 1 41 41" stroke="#c01622" stroke-width="3" stroke-linecap="round"></path></svg>
+          <span style="position: absolute; inset: 0.875rem; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e0434c, #8e0b14); box-shadow: inset 0 2px 2px rgba(255,255,255,.3), 0 10px 20px -8px rgba(142,11,20,.5); display: flex; align-items: center; justify-content: center"><svg width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg></span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem; text-align: center"><b style="font-size: 1.0625rem; font-weight: 600">Opening your document securely</b><span style="color: #71717a; font-size: 0.8125rem">Acme Corporation · Master services agreement</span></div>
+        <div style="width: 100%; display: flex; flex-direction: column; gap: 0.625rem; padding: 1rem; border-radius: 0.875rem; background: #ffffff; box-shadow: 0 0 0 1px rgba(24,24,27,.06), 0 12px 32px -16px rgba(24,24,27,.25); box-sizing: border-box">
+          <sc-for list="{{ steps }}" as="st" hint-placeholder-count="3"><div class="ldrise" style="display: flex; align-items: center; gap: 0.625rem; font-size: 0.8125rem"><span style="{{ st.dot }}">{{ st.mark }}</span><span style="{{ st.text }}">{{ st.label }}</span></div></sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { step: 0, signed: false, tray: false, done: false }; }
+  componentDidMount() { this.timers = [500, 1050, 1600].map((ms, i) => setTimeout(() => this.setState({ step: i + 1 }), ms)); }
+  componentWillUnmount() { (this.timers || []).forEach(clearTimeout); }
+  renderVals() {
+    const s = this.state;
+    return {
+      loading: s.step < 3,
+      steps: [['Verifying your signing link'], ['Checking the document is unchanged since it was sent'], ['Loading 3 pages']].map(([label], i) => ({ label,
+        mark: s.step > i ? '✓' : '',
+        dot: 'width:1.125rem;height:1.125rem;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.625rem;font-weight:700;transition:background 240ms cubic-bezier(.2,.8,.2,1);' + (s.step > i ? 'background:#15803d;color:#fff' : s.step === i ? 'background:#fff;box-shadow:inset 0 0 0 2px #c01622' : 'background:#f4f4f5;box-shadow:inset 0 0 0 1px #e4e4e7'),
+        text: s.step >= i ? 'color:#18181b' : 'color:#a1a1aa' })),
+      signed: s.signed, unsigned: !s.signed, tray: s.tray, done: s.done, notDone: !s.done,
+      bars: [0, 1].map((i) => ({ style: 'flex:1;height:0.25rem;border-radius:2px;transition:background 400ms cubic-bezier(.2,.8,.2,1);background:' + ((i === 0 && s.signed) || (i === 1 && s.done) ? '#c01622' : '#e4e4e7') })),
+      guideTitle: s.signed ? 'All fields done' : 'Sign the agreement',
+      guideSub: s.signed ? 'Review, then finish' : '1 required field left',
+      cta: s.signed ? 'Finish' : 'Start',
+      ctaStyle: 'margin-left:auto;height:3rem;padding:0 1.5rem;border:0;border-radius:0.875rem;font-weight:600;color:#fff;background:' + (s.signed ? '#c01622' : '#18181b'),
+      act: () => s.signed ? this.setState({ done: true }) : this.setState({ tray: true }),
+      dateText: s.signed ? 'Date: Nov 13, 2026' : 'Date fills in when you sign',
+      sigStyle: 'height:5rem;border:0;border-radius:0.625rem;display:flex;align-items:center;justify-content:center;' + (s.signed ? 'background:transparent;box-shadow:inset 0 0 0 1px rgba(37,99,235,.25)' : 'background:#fff7f7;color:#c01622;box-shadow:inset 0 0 0 1.5px #c01622,0 0 0 4px rgba(192,22,34,.12)'),
+      open: () => s.signed ? null : this.setState({ tray: true }),
+      close: () => this.setState({ tray: false }),
+      adopt: () => this.setState({ signed: true, tray: false }),
+    };
+  }
+}
+</script>
+</body>
+</html>
