@@ -57,7 +57,6 @@ export const MANAGE = {
   "agreements.nav.completed": "Completed",
   "agreements.nav.drafts": "Drafts",
   "agreements.nav.expiring": "Expiring soon",
-  "agreements.nav.count": "{view}, {n}",
   "agreements.grp.you": "Needs your signature",
   "agreements.grp.wait": "Waiting on others",
   "agreements.grp.done": "Completed",
