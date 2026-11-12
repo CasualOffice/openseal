@@ -27,3 +27,34 @@ export function recipientCorrection(r, { name, email, requireCode, code }) {
   if (requireCode && code) body.access_code = code;
   return Object.keys(body).length ? body : null;
 }
+
+/// Recipient types that fill fields (UX-05): a signer, and an in-person signer whom
+/// staff host. An approver and a viewer act in their turn and fill nothing; a copy only
+/// receives the completed envelope.
+export const FIELD_TAKERS = new Set(["signer", "in_person_signer"]);
+const ACTING = new Set(["signer", "in_person_signer", "approver", "viewer"]);
+
+/// What the send confirmation says (R-02, UX-05), as `[key, params]` for `t`:
+/// `people` are `{name, type, order}` (order: the routing step). With one step for
+/// everyone who acts, all get it now; with several, only the first step gets it now
+/// and the rest in turn ("A → B & C"). Then who reviews without signing, then copies.
+export function sendSummary(people, subject) {
+  const acting = people.filter((r) => ACTING.has(r.type));
+  const signing = acting.filter((r) => FIELD_TAKERS.has(r.type));
+  const reviewers = acting.filter((r) => !FIELD_TAKERS.has(r.type));
+  const copies = people.filter((r) => !ACTING.has(r.type));
+  const names = (list) => list.map((r) => r.name).join(", ");
+  const steps = [...new Set(acting.map((r) => r.order))].sort((a, b) => a - b);
+  const out = [];
+  if (steps.length <= 1) {
+    out.push([signing.length === 1 ? "send.confirm-one" : "send.confirm-text", { n: signing.length, subject }]);
+    if (signing.length > 1) out.push(["send.confirm-together", {}]);
+  } else {
+    const at = (o) => acting.filter((r) => r.order === o).map((r) => r.name).join(" & ");
+    out.push(["send.confirm-first", { names: at(steps[0]), subject }]);
+    out.push(["send.confirm-order", { order: steps.map(at).join(" → ") }]);
+  }
+  if (reviewers.length) out.push(["send.confirm-reviewers", { names: names(reviewers) }]);
+  if (copies.length) out.push(["send.confirm-copies", { names: names(copies) }]);
+  return out;
+}

@@ -761,3 +761,68 @@ menu; branding contrast and preview; Reports sample sizes, custom range, sender,
 use with role labels, outlines, an added copy recipient sent. The webhook, secret and Reports tests fail on the code
 before UX-08; the Escape check was also seen to fail with the panel made dismissible. `manage.spec.mjs`,
 `web02.spec.mjs` and `visual.spec.mjs` follow the rail, the single Add user panel and the row menus.
+
+## As built (UX-05, 2026-11-13): the prepare editor and template authoring
+
+**Toolbar** (`prepare.js`, `prepare.css`): Back and Next, then Send or Save template, are one group at the bar's end
+that never shrinks or wraps; the title and the step labels give way first. The bar compacts by the editor's own width
+(container queries in `rem`, because `em` inside a container query is the container's 13 px text): under 100 rem the
+save state is a dot (words for assistive technology and as a tooltip), under 90 rem Save and Back are icons, under
+80 rem the steps not open lose their names. On phones the bar is two rows on purpose: title and actions, then steps.
+The audit's wrap reproduced at 1440 px in the system font (the web font blocked); the spec checks 1366, 1440 and 1536
+in both fonts, for envelopes and templates.
+
+**Placing fields**: a click on a field type arms it, a ghost of its default size follows the pointer, and the next
+click on a page places the field centred there; a double click keeps the type armed; Escape (`field.deselect`) or a
+second click disarms (commands `field.arm-*`, `field.disarm`). Enter or Space on a type still places on the page in
+view, now in the visible part of the page across as well as down. Touch screens get touch help text.
+
+**Field kinds**: the palette places the 14 kinds the ceremony fills or shows (`api.js` `FIELD_TYPES_READY`), in three
+groups: Signing (signature, initials, date signed), About the recipient (name, email, company, title), Recipient
+enters (text, number, checkbox, radio group, dropdown, attachment, note). Text, company, title, number and choices
+start required. **Properties** are sections: General (recipient, required, read only with the sender's value or a
+checkbox checked when sent, a note's text, data label, tooltip, placeholder), Options (one per line, repeats and
+blanks dropped, a dropdown's typed answer), Formatting (font, size, alignment, hide on the document) and Validation
+(email, phone, ZIP, SSN, number with range, at most N characters, pattern, with a message). Members travel by their
+wire names on create and as a JSON merge on change (`null` removes one); reopening reads them back. A choice with no
+options is a send problem. A field's accessible name starts with the label it shows. Required is a corner flag; focus
+is an outline outside the selection ring; a field narrower than its words shows its icon only, and smaller still
+loses its handle (container queries on the field).
+
+**Recipients**: each row offers Needs to sign, Approver, Viewer and Receives a copy, and In-person signer where staff
+can host one (`client.available("hostInPerson")`: the mock only until `UXW-36`). A row is one line (type and step,
+name, email, move and remove) with **More options**: a labelled access code and the emailed code. Name and email
+suggest contacts (`GET /contacts`); choosing one fills the other box. Approvers and viewers act in their turn and take
+no fields; with signing order off everyone who acts is step 1 and copies come after. Not built: a per-recipient
+private message and language (no API member yet; row proposed).
+
+**Pages and documents**: the thumbnails are pinned at the foot of the fields panel, always in view, grouped by
+document (`thumbnails({byDocument})`); several documents get a name band above each one's first page. Next on the
+documents step waits for a PDF.
+
+**Review**: a signer with no fields is a warning with **Place fields**; **Preview as** opens the fields step with
+that recipient's fields standing out and the others faded, under a bar that ends it. The send confirmation follows the
+routing (`people.js` `sendSummary`): with steps, only the first step is emailed now, then "A → B & C"; approvers and
+viewers review in their turn; copies last. Suggestions neither accepted nor dismissed stop Send, and the detection
+toast closes when the step is left. Template mode: the last step is **Review and save**, and the documents step has
+the template lede and **Name this template**.
+
+**Detection**: the server's detector sits a field on its line (`detect.rs`: bottom on the line) and `detect.js` keeps
+that geometry; the mock had suggested fields below its own PDF's lines and now matches the server.
+
+**Phones**: the editor opens at 1 CSS px a point (fit width drew 11 pt text at about 6 px) and pans; one bottom bar
+holds the page indicator, Field settings (an icon) and Add field.
+
+Tests: `e2e/prepare-layout.spec.mjs` (19 tests; 1440 and 390 px screenshots): the toolbar at three widths in two
+fonts, click-to-place within 2 pt, every new kind configured and round-tripped through the mock, Next waiting for a
+PDF, template Review and save, the review warning, preview and order-aware confirmation, undecided suggestions, the
+pages panel, the phone editor, recipients at 1440 and 390. Each change's tests were seen to fail on the code before
+it (the toolbar at 1440 px in the system font; the toolbar at 1366 and 1536 and the template bar passed before and
+stay as guards). Node
+`tests/editor.test.mjs`: the palette's kinds and groups, validation presets, options, and a detected field's bottom
+on the mock PDF's line. Specs that placed fields by clicking a palette button now press Enter on it (the keyboard path
+that keeps their meaning); `empty-states.spec.mjs` opens Recipients from the step bar.
+
+Not done in UX-05 (rows proposed): a context menu on fields from the command registry; resize dots outside the field;
+schedule send (waits on its server row); the field members in template mode (`templatesync.js` sends required and
+label only); a recipient's type change after the draft is saved (the API's recipient patch has no type).

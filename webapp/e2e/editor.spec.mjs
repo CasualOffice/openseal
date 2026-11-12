@@ -43,7 +43,7 @@ test("Edit reopens a template's document, roles and fields, and Save brings the 
   await expect(page.getByTestId("role-name")).toHaveCount(2);
   await step(page, "Fields");
   await placingFor(page, "Partner");
-  await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).press("Enter");
   await expect(page.locator(".os-field")).toHaveCount(5);
   await page.locator('.os-field[data-field="date_signed"]').first().click();
   await page.keyboard.press("Delete");
@@ -87,7 +87,7 @@ test("a template's document can be removed in the editor, and the server drops i
   await page.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
   await expect(page.getByTestId("doc-card")).toHaveCount(1);
   await step(page, "Fields");
-  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   await step(page, "Review");
   await page.getByRole("button", { name: "Save template" }).click();
   await expect(page.locator(".os-toast").last()).toContainText("Template saved.");
@@ -158,7 +158,7 @@ test("recipients sharing a step sign at the same time: grouped by number, drag a
   await page.getByTestId("wizard-next").click();
   for (const who of ["Dev", "Ana", "Ben", "Cleo"]) {
     await placingFor(page, who);
-    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+    await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   }
   await page.getByTestId("save-draft").click();
   await expect(page.getByTestId("save-status")).toContainText("Saved");
@@ -191,7 +191,7 @@ async function threeFields(page) {
   await newWithRecipients(page, [["Ana", "ana@example.com"]]);
   await page.getByTestId("wizard-next").click();
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
-  for (const type of ["Signature", "Date signed", "Text"]) await page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).click();
+  for (const type of ["Signature", "Date signed", "Text"]) await page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).press("Enter");
   await expect(page.locator(".os-field")).toHaveCount(3);
 }
 /// The selected field's x, as its properties panel shows it (points).

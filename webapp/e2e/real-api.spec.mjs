@@ -115,7 +115,7 @@ test("the editor on the server: a template saved, reopened and saved back; a par
   await page.getByTestId("role-name").fill("Client");
   await page.getByTestId("wizard-next").click();
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
-  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   await page.locator(".os-stepper__btn", { hasText: "Review" }).click();
   await page.getByLabel("Template name").fill(name);
   await page.getByRole("button", { name: "Save template" }).click();
@@ -131,7 +131,7 @@ test("the editor on the server: a template saved, reopened and saved back; a par
   await page.getByLabel("Signing step for Witness").press("Enter");
   await page.locator(".os-stepper__btn", { hasText: "Fields" }).click();
   await placingFor(page, "Witness");
-  await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).press("Enter");
   await page.locator(".os-stepper__btn", { hasText: "Review" }).click();
   await page.getByRole("button", { name: "Save template" }).click();
   // Saved when the editor hands back to the list.
