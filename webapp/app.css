@@ -196,7 +196,14 @@ select.os-input {
   background: var(--os-surface-2); color: var(--os-text);
 }
 .os-badge--completed { background: color-mix(in srgb, var(--os-success) 12%, var(--os-bg)); color: var(--os-success); }
-.os-badge--declined, .os-badge--voided { background: color-mix(in srgb, var(--os-danger) 10%, var(--os-bg)); color: var(--os-danger); }
+.os-badge--declined { background: color-mix(in srgb, var(--os-danger) 10%, var(--os-bg)); color: var(--os-danger); }
+/* Voided is a neutral end, not an error (UX-02): the plain pill, with its ban icon. */
+.os-badge--voided { background: var(--os-surface-2); color: var(--os-text); }
+/* Neutral pills keep an edge in dark, where surface-2 is close to the page. */
+:root[data-theme="dark"] .os-badge--draft, :root[data-theme="dark"] .os-badge--voided, :root[data-theme="dark"] .os-badge--template { box-shadow: inset 0 0 0 1px var(--os-border-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .os-badge--draft, :root:not([data-theme="light"]) .os-badge--voided, :root:not([data-theme="light"]) .os-badge--template { box-shadow: inset 0 0 0 1px var(--os-border-strong); }
+}
 .os-badge--sent, .os-badge--delivered, .os-badge--completing { background: color-mix(in srgb, var(--os-info) 10%, var(--os-bg)); color: var(--os-info); }
 .os-badge--expired { background: color-mix(in srgb, var(--os-warning) 12%, var(--os-bg)); color: var(--os-warning); }
 .os-card { border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); padding: var(--os-s6); margin-top: var(--os-s4); background: var(--os-raised); box-shadow: var(--os-shadow); }

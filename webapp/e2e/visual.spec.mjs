@@ -306,3 +306,36 @@ for (const [vp, size] of [["1440", { width: 1440, height: 900 }], ["1366", { wid
     });
   });
 }
+
+// Status badges (UX-02): Declined alone takes the danger colour; Voided is neutral with
+// a ban icon; Expired is amber; neutral badges keep an outline in dark.
+for (const scheme of ["light", "dark"]) {
+  test.describe(`badges (${scheme})`, () => {
+    test.use({ colorScheme: scheme });
+    test("Declined, Voided and Expired read as three different states", async ({ page }, testInfo) => {
+      test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+      await page.addInitScript((th) => localStorage.setItem("openseal.theme", th), scheme);
+      await signIn(page, "agreements");
+      await expect(page.locator(".os-badge--voided").first()).toBeVisible();
+      const look = (sel) => page.locator(sel).first().evaluate((el) => {
+        const cs = getComputedStyle(el);
+        const probe = document.createElement("span");
+        document.body.append(probe);
+        const paint = (v) => { probe.style.color = `var(${v})`; return getComputedStyle(probe).color; };
+        const out = { color: cs.color, bg: cs.backgroundColor, shadow: cs.boxShadow, danger: paint("--os-danger"), text: paint("--os-text"), warning: paint("--os-warning"), icon: el.querySelector("svg path, svg circle, svg line") ? el.querySelector("svg").outerHTML.length : 0 };
+        probe.remove();
+        return out;
+      });
+      const declined = await look(".os-badge--declined");
+      const voided = await look(".os-badge--voided");
+      expect(declined.color, "Declined is in the danger colour").toBe(declined.danger);
+      expect(voided.color, "Voided is neutral, not the danger colour").toBe(voided.text);
+      expect(voided.bg).not.toBe(declined.bg);
+      await expect(page.locator(".os-badge--voided").first().locator("svg")).toHaveCount(1);
+      // Neutral badges keep an edge in dark, where the grey pill all but disappeared.
+      if (scheme === "dark") expect(voided.shadow, "neutral badge outline in dark").not.toBe("none");
+      const expired = page.locator(".os-badge--expired");
+      if (await expired.count()) expect((await look(".os-badge--expired")).color).toBe(declined.warning);
+    });
+  });
+}
