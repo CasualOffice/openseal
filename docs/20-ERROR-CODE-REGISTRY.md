@@ -3,7 +3,7 @@
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
 counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014` and `CS-AUTH-0001`, `0002`, `0006` to `0010` (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-DB` persistence, `CS-BLOB` blob storage, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
-`CS-CNV` conversion.
+`CS-CNV` conversion, `CS-ML` model process and ML jobs (reserved, ADR-029).
 
 ## Reading (`casual-sign-pdf`)
 
@@ -237,3 +237,27 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 | CS-WRK-0014 | No payment gateway configured (slice 13). *Final* |
 | CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job |
 | CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |
+
+## ML (`casual-sign-modeld`, the worker's ML jobs, `casual-sign-pii`; reserved, ADR-029)
+
+Reserved by [33](33-ML-MODELS.md); none issued yet. Messages carry codes, ids, page numbers and counts, never document
+text, OCR text, entity or personal-data values, labels' matches, boxes, hashes or vectors (`SEC-I05`). A runtime's or
+third-party crate's own error text is never passed on. An ML job failing with a code marked *final* is dead-lettered;
+a dead ML job means only "no suggestions" and never blocks sending or sealing.
+
+| Code | Meaning |
+| --- | --- |
+| CS-ML-0001 | A modeld or ML setting missing or invalid (named, never its value), including a slot count of zero once derived from memory or one set above it. *Final* |
+| CS-ML-0002 | Model bundle: a file missing, unlisted, over its size or not matching its SHA-256; modeld does not start. *Final* |
+| CS-ML-0003 | A model file refused: external data, custom op domain, pickle format, or licence not allowed. *Final* |
+| CS-ML-0004 | A frame malformed or over a bound (length, count, id alphabet, UTF-8 or NFC), or a document handle unknown on this connection |
+| CS-ML-0005 | Input over its bound: page pixels, decoded image data, text bytes. *Final* for that page or call |
+| CS-ML-0006 | A page could not be rasterised: encrypted, unsupported, damaged, or over its time (the raster child was killed). Reported per page |
+| CS-ML-0007 | Inference deadline passed |
+| CS-ML-0008 | modeld unreachable, TLS refused, or the connection closed |
+| CS-ML-0009 | modeld busy; retry |
+| CS-ML-0010 | The model for this op is not installed in the bundle. *Final* |
+| CS-ML-0011 | The feature is off for the workspace or not in its plan (API `403`) |
+| CS-ML-0012 | Suggestion stale or already decided (API `409`) |
+| CS-ML-0013 | Inference failed inside the runtime, or a span would not fall on a UTF-8 boundary of the text sent |
+| CS-ML-0014 | The raster child exited abnormally (signal, memory limit) other than by the time cap; counted in the op log. Reported per page |

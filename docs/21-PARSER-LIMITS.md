@@ -193,6 +193,35 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | API client expiry | 1–3,650 days | CS-API-0001 |
 | Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 
+## ML (`casual-sign-modeld`, the worker's ML jobs; designed, ADR-029)
+
+Designed in [33](33-ML-MODELS.md) §4; nothing is built, and no row has a hostile fixture yet (the `ml_*` fixtures of
+`SEC-I02` come with `ML-02`). Values marked provisional are re-set from measurement before an exit is claimed.
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| modeld frame: `DOC_OPEN`; every other frame | 64 MiB (a 50 MiB upload plus headers); 4 MiB | CS-ML-0004 |
+| Open documents per connection | 1 | CS-ML-0004 |
+| Model ids, account and job ids in a frame | 1–64 bytes, `[A-Za-z0-9._-]` | CS-ML-0004 |
+| Pages OCR'd per document | 200; later pages are not read (`truncated`) | — (report) |
+| Render resolution | 150 DPI (host may set 100–200) | CS-ML-0001 |
+| Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI | CS-ML-0005 |
+| Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`) | CS-ML-0005 |
+| Rasterise time per page | 10 s, enforced by killing the raster child | CS-ML-0006 |
+| Raster child kills per document | 3; remaining pages `truncated` | — (report) |
+| Raster child address space | 1 GiB (provisional) | CS-ML-0014 |
+| OCR deadline per page / per job | 20 s / 15 min | CS-ML-0007 |
+| Words per OCR page | 20,000 (= `MAX_DETECT_WORDS`) | — (truncated) |
+| Text per ENTITIES or PERSONAL call; per document | 64 KiB; 4 MiB | CS-ML-0005 |
+| Windows | e5: 512 tokens; GLiNER multi: 384 words, stride 64; GLiNER-PII: its config's `max_len` (2,048 tokens), stride 64; 2,000 windows per document | — (truncated, deterministic) |
+| Labels per call; label length | 32; 64 bytes | CS-ML-0004 |
+| Texts per EMBED call | 64, each 8 KiB at most | CS-ML-0004 |
+| Suggestions per document | fields 500 (existing); entities 2,000; personal-data spans 5,000 | — (truncated) |
+| Fingerprints searched per account | 50,000 page vectors in process | — |
+| Concurrent slots | `min(max(1, cores ÷ 2), floor((memory limit − model RSS) ÷ per-slot peak))`, per-slot peak 512 MiB (provisional) | CS-ML-0001, CS-ML-0009 |
+| modeld memory | 4 GiB container limit (provisional) | (process restarts) |
+| Model bundle; each file | 2 GiB; 1 GiB (provisional, re-set from the measured int8 exports) | CS-ML-0002 |
+
 ## Bulk and links
 
 | Limit | Default | Code |
