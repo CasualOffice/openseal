@@ -160,6 +160,12 @@ objects concerned, never their content.
   ids, pending timers, the seal job) do not raise it. `expected_version` is checked when the command carries one.
 - **Correction is one command** (`Correct { changes }`): the "correcting" mode is the client's; saving sends the list,
   applied all or none, and a signer acting meanwhile makes it stale.
+- **A draft's own edits** (`Edit`, including the one the server issues inside create) record `envelope.corrected` with
+  the paths changed, besides a document's `document.added` and `document.admitted`: every observable change must emit
+  an event (the engine's property tests hold it), and docs/32 §3 has no draft type. A correction is meant only after
+  `envelope.sent`, so this is a known defect (`WEB-14`): ADR-030 (Proposed) adds `envelope.edited` for draft edits.
+  Until it is Accepted, the signer's history (`GET /s/{token}/history`, docs/40 As built) shows milestones only from
+  the first `envelope.sent`; the sender's audit list (`GET …/audit`) still shows the draft's `envelope.corrected`.
 - **§6 "its fields changed"** is read as: a completed recipient acts again when a document they acted on is replaced or
   removed, or when **their own** fields change. Changing a not-yet-completed recipient's fields does not send others back.
 - **A changed link** (WEB-06): correcting an active recipient's email, phone, delivery or authentication requirements

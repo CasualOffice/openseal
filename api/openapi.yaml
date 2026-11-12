@@ -2555,7 +2555,8 @@ paths:
       summary: "The envelope's history as this recipient may see it (WEB-07)"
       description: >-
         Events this recipient acted in or that concern them, and the envelope's milestones
-        (sent, corrected, voided, declined, expired, completing, completed), oldest first,
+        (sent, corrected, voided, declined, expired, completing, completed) from the first
+        `envelope.sent` on, so a draft's own edits never show as a correction, oldest first,
         as `{seq, type, at, by}` only: no other person's name, address, IP, user agent or
         location, and no values. Only in the bound browser, after every required
         authentication and, when the account has a disclosure, consent (`403` before).

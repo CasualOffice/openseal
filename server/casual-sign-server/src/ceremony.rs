@@ -1305,7 +1305,8 @@ fn by(actor: &Value, me: &str) -> &'static str {
 /// `GET /s/{token}/history` (WEB-07): the envelope's history as this recipient may see
 /// it: the events they acted in or that concern them (`data.recipient_id`), and the
 /// envelope's milestones (sent, corrected, voided, declined, expired, completing,
-/// completed), oldest first, as `{seq, type, at, by}`: `by` is `you`, `sender`,
+/// completed) from the first `envelope.sent` on, so a draft's own edits never read
+/// as a correction (WEB-14), oldest first, as `{seq, type, at, by}`: `by` is `you`, `sender`,
 /// `recipient` (another, unnamed), `user`, `host` or `system`. Nothing else of any
 /// event is answered: no names, addresses, IPs, user agents, locations or values.
 /// Only in the browser the link is bound to, once the recipient has passed every
@@ -1347,9 +1348,15 @@ pub(crate) async fn history(
         let _ = o.tx.audit().chain(o.l.id).await?;
         let events = o.tx.audit().events(o.l.id).await?;
         let me = o.recipient.as_str();
+        // Before the first `envelope.sent` the envelope was a draft: the engine records a
+        // draft's own edits as `envelope.corrected` (docs/24 As built), which is no
+        // correction of anything a recipient received, so no milestone shows until it
+        // was sent (WEB-14).
+        let mut sent = false;
         let items: Vec<Value> = events
             .iter()
             .filter_map(|e| {
+                sent |= e.event_type == "envelope.sent";
                 let v: Value = serde_json::from_slice(&e.canonical).ok()?;
                 let actor = v.get("actor").cloned().unwrap_or(Value::Null);
                 let by = by(&actor, me);
@@ -1358,7 +1365,8 @@ pub(crate) async fn history(
                     .and_then(|d| d.get("recipient_id"))
                     .and_then(Value::as_str)
                     == Some(me);
-                let shown = by == "you" || concerns || MILESTONES.contains(&e.event_type.as_str());
+                let milestone = sent && MILESTONES.contains(&e.event_type.as_str());
+                let shown = by == "you" || concerns || milestone;
                 shown.then(|| {
                     json!({
                         "seq": e.seq,

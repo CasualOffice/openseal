@@ -357,3 +357,117 @@ async fn reassign_hands_over_only_when_allowed_and_before_finishing() {
     assert_eq!(late.status, StatusCode::CONFLICT, "{:?}", late.json());
     api.db.drop().await;
 }
+
+/// The types in a history or audit list, in order.
+fn types_of(items: &Value) -> Vec<String> {
+    items
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["type"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_drafts_own_edits_never_show_as_a_correction_in_a_signers_history() {
+    // WEB-14: the edit inside create and a draft's later edits are not corrections of
+    // anything a signer received; the signer's first milestone is `envelope.sent`.
+    let Some(api) = Api::new("draft_edits_not_corrected", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    with_disclosure(&api, &a).await;
+    let env = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(json!({
+                "subject": "WEB-14", "expires_in_days": 30,
+                "documents": [{"name": "h.pdf", "content_base64": b64(&pdf(1))}],
+                "recipients": [
+                    {"ref": "s1", "type": "signer", "name": "Sig One", "email": "one@example.test", "routing_order": 1},
+                ],
+                "fields": [
+                    {"recipient": "s1", "document": 0, "type": "signature", "page": 1, "x": 72, "y": 100, "width": 180, "height": 40, "required": true},
+                ],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create",
+    );
+    let id = env["id"].as_str().unwrap();
+    let r1 = env["recipients"][0]["id"].as_str().unwrap();
+    let base = format!("/api/v1/envelopes/{id}");
+    // A later draft edit, then send.
+    let g = api.call("GET", &base, &a.auth, None, &[]).await;
+    let tag = g.etag();
+    ok(
+        api.call(
+            "PATCH",
+            &base,
+            &a.auth,
+            Some(json!({"subject": "WEB-14 v2"})),
+            &[("if-match", &tag)],
+        )
+        .await,
+        StatusCode::OK,
+        "patch draft",
+    );
+    ok(
+        api.call("POST", &format!("{base}/send"), &a.auth, None, &[])
+            .await,
+        StatusCode::OK,
+        "send",
+    );
+
+    // The signer's history: sent is the first milestone, no correction.
+    let s1 = format!("/s/{}", invite(&api, &a, id, r1).await);
+    let (_, h1) = open(&api, &s1[3..]).await;
+    ok(
+        post(
+            &api,
+            &format!("{s1}/consent"),
+            &h1,
+            json!({"ersd_version": "2026-1"}),
+        )
+        .await,
+        StatusCode::OK,
+        "consent",
+    );
+    let r = history(&api, &s1, &h1).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    let seen = types_of(&r.json()["events"]);
+    assert_eq!(
+        seen.first().map(String::as_str),
+        Some("envelope.sent"),
+        "{seen:?}"
+    );
+    assert!(
+        seen.iter().all(|t| t != "envelope.corrected"),
+        "a signer sees a draft edit as a correction: {seen:?}"
+    );
+    // A correction after sending is still a milestone.
+    let g = api.call("GET", &base, &a.auth, None, &[]).await;
+    let tag = g.etag();
+    ok(
+        api.call(
+            "POST",
+            &format!("{base}/correct"),
+            &a.auth,
+            Some(json!({"changes": [{"op": "set_subject", "subject": "WEB-14 v3"}]})),
+            &[("if-match", &tag)],
+        )
+        .await,
+        StatusCode::OK,
+        "correct",
+    );
+    let r = history(&api, &s1, &h1).await;
+    let seen = types_of(&r.json()["events"]);
+    let sent = seen.iter().position(|t| t == "envelope.sent").unwrap();
+    let corrected = seen.iter().position(|t| t == "envelope.corrected");
+    assert!(corrected.is_some_and(|c| c > sent), "{seen:?}");
+    api.db.drop().await;
+}
