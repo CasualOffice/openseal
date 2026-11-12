@@ -26,6 +26,10 @@
 //! - [`convert_acroform`]: existing AcroForm fields to OpenSeal fields;
 //!   [`radio_choices`]: a radio group's options and the states they write, shared with
 //!   flattening; [`annotation_pages`]: the page of a widget without `/P`.
+//!
+//! Extraction (`ML-07`, docs/33 §5.3):
+//! - [`normalize`]: dates, durations and amounts found in agreement text to ISO 8601
+//!   and amount plus ISO 4217 currency, relative dates against a supplied base.
 
 mod acroform;
 mod anchor;
@@ -37,6 +41,7 @@ mod error;
 mod font;
 mod formula;
 pub mod geometry;
+pub mod normalize;
 mod parse;
 mod tables;
 mod tags;

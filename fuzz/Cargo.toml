@@ -4,6 +4,7 @@
 #   cargo +nightly fuzz run admit -- -max_total_time=600 -dict=fuzz/pdf.dict
 #   cargo +nightly fuzz run normalize -- -max_total_time=300 -dict=fuzz/pdf.dict
 #   cargo +nightly fuzz run content -- -max_total_time=120 -dict=fuzz/pdf.dict
+#   cargo +nightly fuzz run extract_normalize -- -max_total_time=120
 #   cargo +nightly fuzz run verify_chain fuzz/seeds/verify_chain -- -max_total_time=300 -dict=fuzz/json.dict
 #   cargo +nightly fuzz run seal fixtures/sealed fixtures/signed -- -max_total_time=300 -dict=fuzz/pdf.dict
 #   cargo +nightly fuzz run pii -- -max_total_time=300
@@ -25,6 +26,8 @@ casual-sign-audit = { path = "../crates/casual-sign-audit" }
 casual-sign-seal = { path = "../crates/casual-sign-seal" }
 casual-sign-crypto = { path = "../crates/casual-sign-crypto" }
 casual-sign-pii = { path = "../crates/casual-sign-pii" }
+# Date, duration and amount normalisation for the `extract_normalize` target (ML-07).
+casual-sign-fields = { path = "../crates/casual-sign-fields" }
 der = { version = "0.8.3", default-features = false, features = ["alloc"] }
 # A throwaway signing key made at start (never written), for the `seal` target.
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto"] }
@@ -77,6 +80,13 @@ bench = false
 [[bin]]
 name = "pii"
 path = "fuzz_targets/pii.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "extract_normalize"
+path = "fuzz_targets/extract_normalize.rs"
 test = false
 doc = false
 bench = false
