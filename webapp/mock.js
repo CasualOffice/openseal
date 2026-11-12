@@ -29,17 +29,8 @@ export const MOCK = {
 
 const KEY = "openseal.mock.v1";
 const TERMINAL = new Set(["completed", "declined", "voided", "expired"]);
-/// The mock's audit names → casual-sign-audit's (the server's) for `GET /s/{token}/history`.
-const AUDIT_TYPES = {
-  envelope_created: "envelope.created", envelope_sent: "envelope.sent", envelope_corrected: "envelope.corrected",
-  envelope_voided: "envelope.voided", envelope_completed: "envelope.completed", seal_applied: "document.sealed",
-  recipient_opened: "recipient.delivered", recipient_auth_challenged: "recipient.auth_challenged", recipient_authenticated: "recipient.auth_passed", recipient_auth_failed: "recipient.auth_failed",
-  recipient_consented: "recipient.consented", document_viewed: "recipient.viewed_document", signature_adopted: "recipient.signature_adopted",
-  field_filled: "recipient.field_completed", recipient_finish_later: "recipient.finish_later", recipient_completed: "recipient.signed",
-  recipient_declined: "recipient.declined", recipient_reassigned: "recipient.reassigned", notification_resent: "reminder.sent",
-  recipient_approved: "recipient.approved", recipient_consent_withdrawn: "recipient.consent_withdrawn", recipient_in_person_hosted: "recipient.in_person_hosted",
-  envelope_deleted: "envelope.deleted", envelope_restored: "envelope.restored", recipient_field_cleared: "recipient.field_cleared",
-};
+/// The events every recipient may see in their history (server ceremony.rs `MILESTONES`).
+const MILESTONES = new Set(["envelope.sent", "envelope.corrected", "envelope.voided", "envelope.declined", "envelope.expired", "envelope.completing", "envelope.completed"]);
 /// Recipients the envelope waits for: everyone but a copy (the engine's
 /// `has_required_action`); routing reaches them in order.
 const ACTING = (r) => r.type !== "cc";
@@ -136,16 +127,35 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
 
   const iso = (offsetMin = 0) => new Date(now().getTime() + offsetMin * 60000).toISOString();
 
-  async function audit(env, type, extra = {}) {
+  /// Append an event to the envelope's chain, shaped as the server's `GET …/audit` item
+  /// (WEB-12): `{seq, type, at, hash, prev, event}`, `seq` from 0, `type` casual-sign-audit's
+  /// dotted name, `event` the whole event of docs/32 §2 (`v`, `envelope_id`, `seq`, `prev`,
+  /// `at`, `type`, `actor {kind, id?, name?, email?}`, `context`, `data`), the recipient it
+  /// concerns in `data.recipient_id`. `by` is who acted: `sender`, `user`, `recipient`
+  /// (the default for a `recipient.*` event naming one) or `system`. The hash is SHA-256
+  /// of the mock's own JSON, not RFC 8785: the mock is not evidence.
+  async function audit(env, type, data = {}, { by, at, location } = {}) {
     const list = (db.audit[env.id] ||= []);
     const prev = list.length ? list[list.length - 1].hash : null;
-    const event = { type, at: extra.at || iso(), envelope_id: env.id, ...extra };
-    delete event.at_override;
-    const hash = await sha256hex(JSON.stringify({ prev, event }));
-    list.push({ seq: list.length + 1, type, at: event.at, hash, prev, event });
-    const dotted = AUDIT_TYPES[type] || type;
-    notify(env, dotted === "recipient.signed" || dotted === "recipient.approved" ? "recipient.completed" : dotted);
+    const seq = list.length;
+    const kind = by || (type.startsWith("recipient.") && data.recipient_id ? "recipient" : "system");
+    const actor = { kind };
+    if (kind === "sender") actor.id = env.sender_user_id;
+    else if (kind === "user") actor.id = "user-demo";
+    else if (kind === "recipient") {
+      // As the engine's `actor_for`: a recipient is named as they were at the time.
+      const r = env.recipients.find((x) => x.id === data.recipient_id);
+      actor.id = data.recipient_id;
+      if (r) { actor.name = r.name; actor.email = r.email; }
+    }
+    const when = at || iso();
+    const event = { v: 1, envelope_id: env.id, seq, prev, at: when, type, actor, context: location ? { location } : {}, data };
+    const hash = await sha256hex(JSON.stringify(event));
+    list.push({ seq, type, at: when, hash, prev, event });
+    notify(env, type);
   }
+  const blobHash = (id, salt = "") => sha256hex(`${db.blobs[id] || ""}${salt}`);
+  const docHashes = async (env) => Promise.all(env.documents.map(async (d) => ({ document_id: d.id, hash: await blobHash(d.id) })));
   /// A webhook delivery to every active subscription that names the topic (the worker's
   /// `deliver_webhook`; the mock "delivers" at once, answered 200).
   function notify(env, topic) {
@@ -243,7 +253,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!pending.length) return null;
     return Math.min(...pending.map((r) => r.routing_order));
   }
-  function route(env) {
+  /// Send to everyone routing has reached (`invitation.sent`, as the worker records it
+  /// once the email is out). Answers the routing order reached, `null` when none is left.
+  async function route(env, at = null) {
     const order = signersAt(env);
     for (const r of env.recipients) {
       if (ACTING(r) && r.routing_order === order && r.status === "created") {
@@ -251,6 +263,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         const token = r.token || `tok-${r.id}`;
         r.token = token;
         db.tokens[token] = { env: env.id, rid: r.id };
+        await audit(env, "invitation.sent", { recipient_id: r.id, channel: "email" }, { by: "system", at });
       }
     }
     return order;
@@ -263,23 +276,42 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   }
   /// A recipient finished their part: routing moves on, and when nobody is left the
   /// envelope completes and is "sealed".
-  async function complete(env, rec, loc = {}, event = "recipient_completed") {
-    rec.status = "completed"; rec.completed_at = iso();
-    if (event !== "recipient_completed") await audit(env, event, { recipient_id: rec.id, ...loc });
-    await audit(env, "recipient_completed", { recipient_id: rec.id, ...(event === "recipient_completed" ? loc : {}) });
-    const next = route(env);
-    if (next == null) {
-      env.status = "completed"; env.ended_at = iso(); env.sealed = true;
-      for (const r of env.recipients) if (r.type === "cc") r.status = "completed";
-      await audit(env, "envelope_completed");
-      await audit(env, "seal_applied", { profile: env.seal_profile });
-    }
+  /// As the engine: a signer's `recipient.signed` (documents and value hashes) or an
+  /// approver's `recipient.approved`, then `recipient.completed`; a viewer only the last.
+  async function complete(env, rec, loc = {}, how = "signed", at = null) {
+    rec.status = "completed"; rec.completed_at = at || iso();
+    const opts = { ...loc, at: rec.completed_at };
+    if (how === "signed") {
+      const field_value_hashes = {};
+      for (const f of env.fields) if (f.recipient_id === rec.id && f.value != null) field_value_hashes[f.id] = await sha256hex(JSON.stringify(f.value));
+      await audit(env, "recipient.signed", { recipient_id: rec.id, documents: await docHashes(env), field_value_hashes }, opts);
+    } else if (how === "approved") await audit(env, "recipient.approved", { recipient_id: rec.id, documents: await docHashes(env) }, opts);
+    await audit(env, "recipient.completed", { recipient_id: rec.id }, { at: rec.completed_at });
+    const next = await route(env, rec.completed_at);
+    if (next == null) await seal(env, rec.completed_at);
     env.version++;
   }
-  async function decline(env, rec, reason, loc = {}) {
+  /// Every required recipient finished: completing, each document flattened and sealed
+  /// (the seal job), completed. The mock's "sealed" document is the delivered one.
+  async function seal(env, at = null) {
+    env.status = "completed"; env.ended_at = at || iso(); env.sealed = true;
+    for (const r of env.recipients) if (r.type === "cc") { r.status = "completed"; r.completed_at ||= env.ended_at; }
+    const when = { at: env.ended_at };
+    await audit(env, "envelope.completing", {}, when);
+    const sealed = [];
+    for (const d of env.documents) {
+      await audit(env, "document.flattened", { document_id: d.id, flattened_hash: await blobHash(d.id, ":flattened") }, when);
+      const sealed_hash = await blobHash(d.id, ":sealed");
+      await audit(env, "document.sealed", { document_id: d.id, sealed_hash, profile: env.seal_profile, certificate_fingerprint: await sha256hex("mock-certificate") }, when);
+      sealed.push({ document_id: d.id, hash: sealed_hash });
+    }
+    await audit(env, "envelope.completed", { sealed }, when);
+  }
+  async function decline(env, rec, reason, loc = {}, at = null) {
     rec.status = "declined"; rec.declined_reason = reason || null;
-    env.status = "declined"; env.ended_at = iso(); env.version++;
-    await audit(env, "recipient_declined", { recipient_id: rec.id, reason: reason || null, ...loc });
+    env.status = "declined"; env.ended_at = at || iso(); env.version++;
+    await audit(env, "recipient.declined", { recipient_id: rec.id, ...(reason ? { reason } : {}) }, { ...loc, at: env.ended_at });
+    await audit(env, "envelope.declined", { recipient_id: rec.id }, { by: "recipient", at: env.ended_at });
   }
   async function send(env, at = null) {
     const violations = [];
@@ -298,8 +330,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     env.sent_at = at || iso();
     env.version++;
     for (const d of env.documents) d.fixed = true;
-    await audit(env, "envelope_sent", { actor: "sender", at: env.sent_at });
-    route(env);
+    await audit(env, "envelope.sent", { recipients: env.recipients.length, documents: env.documents.length }, { by: "sender", at: env.sent_at });
+    for (const d of env.documents) await audit(env, "document.fixed", { document_id: d.id, delivered_hash: await blobHash(d.id), pages: d.pages }, { by: "sender", at: env.sent_at });
+    await route(env, env.sent_at);
   }
   /// The ceremony view (docs/40 §6), as the server's `view_of`, plus (UX-03, ahead of
   /// the server row) `sender` {name, email, organisation} and the disclosure's `url`.
@@ -337,10 +370,16 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     })));
     const mk = async (subject, minutesAgo, recipients, fieldsFor, after) => {
       const env = newEnvelope({ subject, message: "Please review and sign.", created_at: iso(-minutesAgo) });
-      await audit(env, "envelope_created", { actor: "sender", at: iso(-minutesAgo) });
+      await audit(env, "envelope.created", { subject_hash: await sha256hex(subject) }, { by: "sender", at: iso(-minutesAgo) });
       addDocument(env, `${subject.split(" ")[0].toLowerCase()}.pdf`, doc(subject));
       const recs = recipients.map((r) => addRecipient(env, r));
       for (const [i, list] of fieldsFor.entries()) for (const f of list) addField(env, { ...f, recipient: recs[i].id, document: env.documents[0].id });
+      const when = { by: "sender", at: iso(-minutesAgo) };
+      for (const d of env.documents) {
+        await audit(env, "document.added", { document_id: d.id, upload_hash: await blobHash(d.id), bytes: d.bytes }, when);
+        await audit(env, "document.admitted", { document_id: d.id, report_hash: await blobHash(d.id, ":admission"), findings: 0 }, when);
+      }
+      await audit(env, "envelope.corrected", { changed: [...env.documents.map((d) => `documents.${d.id}`), ...recs.map((r) => `recipients.${r.id}`), ...env.fields.map((f) => `fields.${f.id}`)] }, when);
       if (after) await after(env, recs);
       return env;
     };
@@ -372,25 +411,21 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     // Seeded histories carry their own times (WEB-06 E-05): the audit trail's dates
     // agree with the envelope's sent, opened, signed and ended dates.
-    const complete = async (env, recs) => {
+    const completeAll = async (env, recs) => {
       await send(env, iso(-60 * 24 * 2)); // sent two days before it was signed
       let at = -60 * 24 * 2;
       for (const r of recs.filter((x) => ACTING(x))) {
         at += 60 * 3;
-        await audit(env, "recipient_opened", { recipient_id: r.id, actor: "recipient", at: iso(at) });
+        r.status = "delivered";
+        await audit(env, "recipient.delivered", { recipient_id: r.id }, { at: iso(at) });
         at += 20;
-        r.status = "completed"; r.completed_at = iso(at); r.consented = true;
-        await audit(env, "recipient_completed", { recipient_id: r.id, actor: "recipient", at: iso(at) });
-        route(env);
+        r.consented = true;
+        await complete(env, r, {}, "signed", iso(at));
       }
-      env.status = "completed"; env.ended_at = iso(at); env.sealed = true; env.version++;
-      for (const r of recs) if (r.type === "cc") { r.status = "completed"; r.completed_at = iso(at); }
-      await audit(env, "envelope_completed", { actor: "system", at: iso(at) });
-      await audit(env, "seal_applied", { actor: "system", profile: "pades-b-t", at: iso(at) });
     };
     await mk("Mutual NDA — Acme and Globex", 60 * 24 * 3,
       [{ name: "Avery Chen", email: "avery@acme.example", routing_order: 1 }, { name: "Sam Patel", email: "sam@globex.example", routing_order: 2 }],
-      [sigFields(560), sigFields(640)], complete);
+      [sigFields(560), sigFields(640)], completeAll);
     const offer = await mk("Offer letter — Jordan Rivera", 60 * 5,
       [
         { name: "Jordan Rivera", email: "jordan@example.com", routing_order: 1, auth: ["access_code"], access_code: MOCK.accessCode },
@@ -417,15 +452,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       [{ name: "Taylor Kim", email: "taylor@example.com", routing_order: 1 }], [sigFields(600)]);
     await mk("Consulting SOW — Q1", 60 * 24 * 6,
       [{ name: "Casey Lee", email: "casey@example.com", routing_order: 1 }], [sigFields(600)],
-      async (env) => { await send(env, iso(-60 * 24 * 6 + 60)); env.status = "voided"; env.void_reason = "Replaced by a new version"; env.ended_at = iso(-60 * 24 * 5); env.version++; await audit(env, "envelope_voided", { actor: "sender", reason: env.void_reason, at: env.ended_at }); });
+      async (env) => { await send(env, iso(-60 * 24 * 6 + 60)); env.status = "voided"; env.void_reason = "Replaced by a new version"; env.ended_at = iso(-60 * 24 * 5); env.version++; await audit(env, "envelope.voided", { reason: env.void_reason }, { by: "sender", at: env.ended_at }); });
     await mk("Board consent — November", 60 * 24 * 2,
       [{ name: "Morgan Diaz", email: "morgan@example.com", routing_order: 1 }], [sigFields(600)],
       async (env, recs) => {
         await send(env, iso(-60 * 24 * 2 + 30));
-        await audit(env, "recipient_opened", { recipient_id: recs[0].id, actor: "recipient", at: iso(-60 * 25) });
-        recs[0].status = "declined"; recs[0].declined_reason = "Wrong meeting date";
-        env.status = "declined"; env.ended_at = iso(-60 * 24); env.version++;
-        await audit(env, "recipient_declined", { recipient_id: recs[0].id, actor: "recipient", reason: recs[0].declined_reason, at: env.ended_at });
+        recs[0].status = "delivered";
+        await audit(env, "recipient.delivered", { recipient_id: recs[0].id }, { at: iso(-60 * 25) });
+        await decline(env, recs[0], "Wrong meeting date", {}, iso(-60 * 24));
       });
 
     // Templates (WEB-02): one with a document and fields, one with roles only.
@@ -504,9 +538,19 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   /// routing (a recipient added or put back at the current order is invited).
   async function corrected(env, changed) {
     env.version++;
-    await audit(env, "envelope_corrected", { actor: "sender", changed });
+    await audit(env, "envelope.corrected", { changed }, { by: "sender" });
     for (const r of env.recipients) if (r.redo) { delete r.redo; if (r.token) delete db.tokens[r.token]; r.token = null; }
-    route(env);
+    await route(env);
+  }
+  /// A draft's edit: the server's `Edit` records `envelope.corrected` too (engine.rs).
+  async function edited(env, changed) {
+    env.version++;
+    if (changed.length) await audit(env, "envelope.corrected", { changed }, { by: "sender" });
+  }
+  /// An uploaded document, as `AddDocument` records it: added, then admitted.
+  async function documentAdded(env, d) {
+    await audit(env, "document.added", { document_id: d.id, upload_hash: await blobHash(d.id), bytes: d.bytes }, { by: "sender" });
+    await audit(env, "document.admitted", { document_id: d.id, report_hash: await blobHash(d.id, ":admission"), findings: d.admission_findings }, { by: "sender" });
   }
   const SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for"];
   /// An engine `RecipientSpec`: its members only, the four it needs present.
@@ -623,7 +667,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     db.inboxSeeded = true;
     const env = newEnvelope({ subject: "Expense policy acknowledgement", message: "Please read and sign by Friday.", created_at: iso(-90) });
     env.sender_user_id = "user-robin";
-    await audit(env, "envelope_created", { actor: "sender", at: iso(-90) });
+    await audit(env, "envelope.created", { subject_hash: await sha256hex(env.subject) }, { by: "sender", at: iso(-90) });
     addDocument(env, "expense-policy.pdf", makePdf([{ title: "Expense policy", lines: ["Demo document generated in mock mode."] }]));
     const r = addRecipient(env, { name: "Demo Admin", email: MOCK.email, routing_order: 1 });
     addField(env, { type: "signature", page: 1, x: 72, y: 600, width: 160, height: 44, required: true, recipient: r.id, document: env.documents[0].id });
@@ -856,7 +900,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         const refs = {};
         for (const r of b.recipients || []) { const rec = addRecipient(env, r); if (r.ref) refs[r.ref] = rec.id; }
         for (const f of b.fields || []) addField(env, f, refs, docIds);
-        await audit(env, "envelope_created", { actor: "sender" });
+        // As the server: `Create`, then one `Edit` with every change the body made.
+        await audit(env, "envelope.created", { subject_hash: await sha256hex(env.subject) }, { by: "sender" });
+        const changed = [
+          ...docIds.map((d) => `documents.${d}`), ...env.recipients.map((r) => `recipients.${r.id}`), ...env.fields.map((f) => `fields.${f.id}`),
+          ...(b.reminders ? ["reminders"] : []), ...(Number.isInteger(b.expires_in_days) ? ["expires_at"] : []), ...(b.signing_options ? ["signing_options"] : []),
+        ];
+        for (const d of env.documents) await documentAdded(env, d);
+        if (changed.length) await audit(env, "envelope.corrected", { changed }, { by: "sender" });
         if (b.status === "sent") await send(env);
         return withEtag(env, 201);
       }
@@ -866,9 +917,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "GET") return withEtag(env);
       if (method === "PATCH") {
         checkIfMatch(env, headers); draftOnly(env);
-        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) env[k] = body[k];
-        if (body && "expires_in_days" in body) env.expires_at = Number.isInteger(body.expires_in_days) ? iso(body.expires_in_days * 24 * 60) : null;
-        env.version++;
+        const changed = [];
+        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) { env[k] = body[k]; changed.push(k); }
+        if (body && "expires_in_days" in body) { env.expires_at = Number.isInteger(body.expires_in_days) ? iso(body.expires_in_days * 24 * 60) : null; changed.push("expires_at"); }
+        await edited(env, changed);
         return withEtag(env);
       }
       if (method === "DELETE") {
@@ -878,7 +930,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         checkIfMatch(env, headers);
         if (!["draft", "voided", "declined", "expired"].includes(env.status) || env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
         if (env.status === "draft") db.envelopes = db.envelopes.filter((e) => e !== env);
-        else { env.deleted_at = iso(); env.version++; await audit(env, "envelope_deleted", { actor: "sender" }); }
+        else { env.deleted_at = iso(); env.version++; await audit(env, "envelope.deleted", {}, { by: "sender" }); }
         return json(204, null);
       }
     }
@@ -887,7 +939,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
       delete env.deleted_at;
       env.version++;
-      await audit(env, "envelope_restored", { actor: "sender" });
+      // Not a casual-sign-audit type yet: the restore row adds it (NOT_ON_SERVER.deleted).
+      await audit(env, "envelope.restored", {}, { by: "sender" });
       return withEtag(env);
     }
     // UX-03, not on the server yet (NOT_ON_SERVER.inbox): the signing page for the
@@ -925,13 +978,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (TERMINAL.has(env.status) || env.status === "draft") fail(409, "CS-WF-0001", "Not allowed in the current state");
       if (!body?.reason) fail(400, "CS-API-0001", "Reason required", [{ pointer: "/reason", code: "required" }]);
       env.status = "voided"; env.void_reason = body.reason; env.ended_at = iso(); env.version++;
-      await audit(env, "envelope_voided", { actor: "sender", reason: body.reason });
+      await audit(env, "envelope.voided", { reason: body.reason }, { by: "sender" });
       return withEtag(env);
     }
     if (sub === "resend" && method === "POST") {
       if (!["sent", "delivered"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
       const ids = body?.recipient_ids || env.recipients.filter((r) => ["sent", "delivered"].includes(r.status)).map((r) => r.id);
-      for (const rid of ids) await audit(env, "notification_resent", { actor: "sender", recipient_id: rid });
+      for (const rid of ids) await audit(env, "reminder.sent", { recipient_id: rid, channel: "email" }, { by: "sender" });
       return withEtag(env);
     }
     if (sub === "status" && method === "GET") return json(200, { id: env.id, status: env.status, version: env.version, recipients: env.recipients.map((r) => ({ id: r.id, status: r.status })) });
@@ -949,7 +1002,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return pdf(makePdf([{ title: env.status === "completed" ? "Certificate of completion" : "Envelope certificate", lines }]));
     }
     if (sub === "documents") {
-      if (!subId && method === "POST") { draftOnly(env); const d = addDocument(env, body?.name, unb64(body?.content_base64 || "")); env.version++; return json(201, d); }
+      if (!subId && method === "POST") {
+        draftOnly(env);
+        const d = addDocument(env, body?.name, unb64(body?.content_base64 || ""));
+        await documentAdded(env, d);
+        await edited(env, [`documents.${d.id}`]);
+        return json(201, d);
+      }
       if (!subId && method === "GET") return json(200, { items: env.documents });
       const d = env.documents.find((x) => x.id === subId);
       if (!d) fail(404, "CS-API-0002", "Not found");
@@ -978,7 +1037,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         checkIfMatch(env, headers); draftOnly(env);
         env.documents = env.documents.filter((x) => x !== d);
         env.fields = env.fields.filter((f) => f.document_id !== d.id);
-        env.version++;
+        await edited(env, [`documents.${d.id}`]);
         return json(204, null);
       }
     }
@@ -988,7 +1047,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         const items = body?.items || [body];
         const out = items.map((r) => addRecipient(env, r));
         if (correcting) await corrected(env, out.map((r) => `recipients.${r.id}`));
-        else env.version++;
+        else await edited(env, out.map((r) => `recipients.${r.id}`));
         return json(201, { items: out.map(publicRecipient) });
       }
       if (!subId && method === "GET") return json(200, { items: env.recipients.map(publicRecipient) });
@@ -999,7 +1058,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (subSub === "host" && method === "POST") {
         if (r.type !== "in_person_signer" || !["sent", "delivered"].includes(r.status) || !r.token) fail(409, "CS-WF-0001", "Not allowed in the current state");
         r.hosted = "user-demo";
-        await audit(env, "recipient_in_person_hosted", { recipient_id: r.id, host_user_id: "user-demo", actor: "user" });
+        await audit(env, "recipient.in_person_hosted", { recipient_id: r.id, host_user_id: "user-demo" }, { by: "user" });
         return json(200, { url: `/s/${encodeURIComponent(r.token)}` });
       }
       if (method === "PATCH") {
@@ -1023,7 +1082,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         r.auth = auth;
         if (code) { r.access_code = code; r.auth_passed = []; } else if (had && !wants) r.access_code = null;
         if (correcting) await corrected(env, [`recipients.${r.id}`]);
-        else env.version++;
+        else await edited(env, [`recipients.${r.id}`]);
         return json(200, publicRecipient(r), { ETag: `"v${env.version}"` });
       }
       if (method === "DELETE") {
@@ -1037,7 +1096,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
           await corrected(env, [`recipients.${r.id}`]);
         } else {
           env.recipients = env.recipients.filter((x) => x !== r);
-          env.version++;
+          await edited(env, [`recipients.${r.id}`]);
         }
         return json(204, null);
       }
@@ -1049,7 +1108,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (correcting) for (const f of items) fieldOwnerOk(env, f?.recipient ?? f?.recipient_id);
         const out = items.map((f) => addField(env, f));
         if (correcting) await corrected(env, out.map((f) => `fields.${f.id}`));
-        else env.version++;
+        else await edited(env, out.map((f) => `fields.${f.id}`));
         return json(201, { items: out });
       }
       if (!subId && method === "GET") return json(200, { items: env.fields });
@@ -1070,7 +1129,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
           f.recipient_id = body.recipient_id;
         }
         if (correcting) await corrected(env, [`fields.${f.id}`]);
-        else env.version++;
+        else await edited(env, [`fields.${f.id}`]);
         return json(200, f);
       }
       if (method === "DELETE") {
@@ -1079,7 +1138,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (correcting) fieldOwnerOk(env, f.recipient_id);
         env.fields = env.fields.filter((x) => x !== f);
         if (correcting) await corrected(env, [`fields.${f.id}`]);
-        else env.version++;
+        else await edited(env, [`fields.${f.id}`]);
         return json(204, null);
       }
     }
@@ -1368,7 +1427,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (rec.status === "sent") {
         rec.status = "delivered";
         if (env.status === "sent") env.status = "delivered";
-        await audit(env, "recipient_opened", { recipient_id: rec.id });
+        await audit(env, "recipient.delivered", { recipient_id: rec.id });
       }
       return json(200, view(env, rec, token));
     }
@@ -1382,11 +1441,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
       if (sub === "history") {
-        // As the server (WEB-07): `{seq, type, at, by}`, the type as casual-sign-audit
-        // names it (the mock records its own underscore names), `by` without names.
-        const mine = (db.audit[env.id] || []).filter((e) => !e.event.recipient_id || e.event.recipient_id === rec.id);
-        const by = (e) => (e.event.actor === "recipient" ? (e.event.recipient_id === rec.id ? "you" : "recipient") : e.event.actor === "sender" ? "sender" : "system");
-        return json(200, { events: mine.map((e) => ({ seq: e.seq, type: AUDIT_TYPES[e.type] || e.type, at: e.at, by: by(e) })) });
+        // As the server (WEB-07, ceremony.rs `history`): `{seq, type, at, by}`, the events
+        // this recipient made or that name them in `data.recipient_id`, and the milestones;
+        // `by` without names.
+        const by = (a) => (a.kind === "recipient" ? (a.id === rec.id ? "you" : "recipient") : ["sender", "user", "host"].includes(a.kind) ? a.kind : "system");
+        const shown = (db.audit[env.id] || []).filter((e) => by(e.event.actor) === "you" || e.event.data?.recipient_id === rec.id || MILESTONES.has(e.type));
+        return json(200, { events: shown.map((e) => ({ seq: e.seq, type: e.type, at: e.at, by: by(e.event.actor) })) });
       }
       // As the server: only after this recipient finished (409 before), `doc` optional
       // for one document; the mock serves the delivered bytes (no preview banner).
@@ -1402,11 +1462,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
       if (body?.method !== "access_code" || body?.code !== rec.access_code) {
         db.attempts[token] = n + 1;
-        await audit(env, "recipient_auth_failed", { recipient_id: rec.id, method: "access_code" });
+        await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "access_code", attempt: n + 1 });
         fail(401, "CS-AUTH-0003", "Recipient authentication failed");
       }
       if (!rec.auth_passed.includes("access_code")) rec.auth_passed.push("access_code");
-      await audit(env, "recipient_authenticated", { recipient_id: rec.id, method: "access_code" });
+      await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: "access_code" });
       return json(200, view(env, rec, token));
     }
     // The emailed one-time code (SEC-A02): "sent" is MOCK.emailCode; a wrong code answers
@@ -1415,7 +1475,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!rec.auth.includes("email_otp")) fail(409, "CS-API-0014", "Method not available");
       if (rec.auth_passed.includes("email_otp")) fail(409, "CS-API-0009", "Already authenticated");
       rec.otp_open = true;
-      await audit(env, "recipient_auth_challenged", { recipient_id: rec.id, method: "email_otp" });
+      await audit(env, "recipient.auth_challenged", { recipient_id: rec.id, method: "email_otp" });
       return json(202, view(env, rec, token));
     }
     if (sub === "otp" && parts[4] === "verify" && method === "POST") {
@@ -1423,12 +1483,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
       if (!rec.auth.includes("email_otp") || !rec.otp_open || body?.code !== MOCK.emailCode) {
         db.attempts[token] = n + 1;
-        await audit(env, "recipient_auth_failed", { recipient_id: rec.id, method: "email_otp" });
+        await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "email_otp", attempt: n + 1 });
         return json(403, view(env, rec, token));
       }
       rec.otp_open = false;
       if (!rec.auth_passed.includes("email_otp")) rec.auth_passed.push("email_otp");
-      await audit(env, "recipient_authenticated", { recipient_id: rec.id, method: "email_otp" });
+      await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: "email_otp" });
       return json(200, view(env, rec, token));
     }
     if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
@@ -1437,7 +1497,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "consent" && method === "POST") {
       if (body?.ersd_version !== MOCK.ersd) fail(400, "CS-API-0001", "Unknown disclosure version", [{ pointer: "/ersd_version", code: "mismatch" }]);
       rec.consented = true;
-      await audit(env, "recipient_consented", { recipient_id: rec.id, ersd_version: body.ersd_version, ...loc });
+      await audit(env, "recipient.consented", { recipient_id: rec.id, ersd_version: body.ersd_version, ersd_hash: ersdSha }, loc);
       return json(200, view(env, rec, token));
     }
     // Withdrawing consent declines a required action, whatever `allow_decline` says (the
@@ -1445,7 +1505,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "withdraw-consent" && method === "POST") {
       if (!rec.consented) fail(409, "CS-WF-0001", "Not allowed in the current state");
       rec.consented = false;
-      await audit(env, "recipient_consent_withdrawn", { recipient_id: rec.id, ersd_version: MOCK.ersd, ...loc });
+      await audit(env, "recipient.consent_withdrawn", { recipient_id: rec.id, ersd_version: MOCK.ersd }, loc);
       if (ACTING(rec)) await decline(env, rec, null, loc);
       return json(200, view(env, rec, token));
     }
@@ -1465,10 +1525,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (parts[5] === "viewed" && method === "POST") {
         const seen = body?.pages_seen || [];
         if (!Array.isArray(seen) || seen.some((n) => !Number.isInteger(n) || n < 1 || n > d.pages)) fail(422, "CS-WF-0015", "Viewed document does not match", [{ pointer: "/pages_seen", code: "range" }]);
-        await audit(env, "document_viewed", { recipient_id: rec.id, document_id: d.id, pages_seen: seen, ...loc });
+        await audit(env, "recipient.viewed_document", { recipient_id: rec.id, document: { document_id: d.id, hash: await blobHash(d.id) }, pages_seen: [...new Set(seen)].sort((x, y) => x - y) }, loc);
         // A viewer completes by viewing every document to the end (docs/24 §3).
         if (seen.includes(d.pages)) rec.viewed_to_end = [...new Set([...(rec.viewed_to_end || []), d.id])];
-        if (rec.type === "viewer" && viewedAll(env, rec)) await complete(env, rec, loc);
+        if (rec.type === "viewer" && viewedAll(env, rec)) await complete(env, rec, loc, "viewed");
         return json(200, view(env, rec, token));
       }
     }
@@ -1481,7 +1541,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!(isPng || isJpeg) || bytes.length > 5 * 1024 * 1024) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/image_base64", code: "image" }]);
       const id = uid();
       db.adoptions[id] = { rid: rec.id, mark: body.mark };
-      await audit(env, "signature_adopted", { recipient_id: rec.id, mark: body.mark, method: body.method, image_sha256: await sha256hex(body.image_base64), ...loc });
+      await audit(env, "recipient.signature_adopted", { recipient_id: rec.id, mark: body.mark, method: body.method, image_hash: await sha256hex(body.image_base64) }, loc);
       return json(200, { ...view(env, rec, token), adoption_id: id });
     }
     if (sub === "fields" && parts[5] === "attachment" && method === "PUT") {
@@ -1497,7 +1557,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const sha = await sha256hex(body.content_base64);
       (db.attachments ||= {})[`${rec.id}:${sha}`] = true;
       f.value = { attachment: sha };
-      await audit(env, "field_filled", { recipient_id: rec.id, field_id: f.id });
+      await audit(env, "recipient.field_completed", { recipient_id: rec.id, field_id: f.id, value_hash: await sha256hex(JSON.stringify(f.value)) });
       return json(200, view(env, rec, token));
     }
     if (sub === "fields" && method === "PUT") {
@@ -1522,7 +1582,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (checkText(f, v.text)) bad("invalid");
       }
       f.value = v;
-      await audit(env, "field_filled", { recipient_id: rec.id, field_id: f.id });
+      await audit(env, "recipient.field_completed", { recipient_id: rec.id, field_id: f.id, value_hash: await sha256hex(JSON.stringify(f.value)) });
       return json(200, view(env, rec, token));
     }
     if (sub === "finish" && method === "POST") {
@@ -1532,7 +1592,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (rec.type === "viewer" && !viewedAll(env, rec)) fail(409, "CS-WF-0014", "Viewer has not viewed every document to the end");
       checkRequired(env, rec);
       for (const f of env.fields) if (f.recipient_id === rec.id && f.type === "date_signed") f.value = { text: iso().slice(0, 10) };
-      await complete(env, rec, loc);
+      await complete(env, rec, loc, rec.type === "viewer" ? "viewed" : "signed");
       return json(200, view(env, rec, token));
     }
     // An approver approves (`recipient.approved`, then completed), their own data fields
@@ -1540,7 +1600,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "approve" && method === "POST") {
       if (rec.type !== "approver") fail(409, "CS-WF-0001", "Not allowed for this recipient");
       checkRequired(env, rec);
-      await complete(env, rec, loc, "recipient_approved");
+      await complete(env, rec, loc, "approved");
       return json(200, view(env, rec, token));
     }
     // UX-03, not on the server yet (NOT_ON_SERVER.clearField): a signer removes a value
@@ -1551,7 +1611,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (f.recipient_id !== rec.id || f.locked || f.read_only || f.type === "date_signed" || f.type === "note") fail(409, "CS-WF-0016", "Field not editable by this recipient");
       if (f.value == null) fail(409, "CS-WF-0001", "Not allowed in the current state");
       delete f.value;
-      await audit(env, "recipient_field_cleared", { recipient_id: rec.id, field_id: f.id });
+      // Not a casual-sign-audit type yet: the clear-field row adds it (NOT_ON_SERVER.clearField).
+      await audit(env, "recipient.field_cleared", { recipient_id: rec.id, field_id: f.id });
       return json(200, view(env, rec, token));
     }
     if (sub === "reassign" && method === "POST") {
@@ -1563,11 +1624,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const nr = { ...rec, id: uid(), name, email, status: "sent", auth: [], auth_passed: [], consented: false, token: null };
       env.recipients.push(nr);
       for (const f of env.fields) if (f.recipient_id === rec.id) f.recipient_id = nr.id;
-      await audit(env, "recipient_reassigned", { recipient_id: rec.id, new_recipient_id: nr.id, ...loc });
+      await audit(env, "recipient.reassigned", { recipient_id: rec.id, to_recipient_id: nr.id, ...(body?.reason ? { reason: String(body.reason) } : {}) }, loc);
       return json(200, view(env, rec, token));
     }
     if (sub === "finish-later" && method === "POST") {
-      await audit(env, "recipient_finish_later", { recipient_id: rec.id });
+      await audit(env, "recipient.finish_later", { recipient_id: rec.id });
       return json(200, view(env, rec, token));
     }
     fail(405, "CS-API-0012", "Method not allowed");

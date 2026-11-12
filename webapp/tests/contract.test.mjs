@@ -239,8 +239,8 @@ test("corrections: one call adds, updates and removes recipients and sets the ex
   assert.equal(out.message, "Updated terms");
   assert.equal(out.fields.find((f) => f.id === addField.field.id).tooltip, "Your title");
   const audit = await c.audit(env.id);
-  const last = audit.items.at(-1);
-  assert.deepEqual(last.event.changed, [`recipients.${one.id}`, `recipients.${changes[1].recipient.id}`, `recipients.${three.id}`, `fields.${addField.field.id}`, "expires_at", "reminders", "message"]);
+  const last = audit.items.findLast((i) => i.type === "envelope.corrected");
+  assert.deepEqual(last.event.data.changed, [`recipients.${one.id}`, `recipients.${changes[1].recipient.id}`, `recipients.${three.id}`, `fields.${addField.field.id}`, "expires_at", "reminders", "message"]);
   ({ etag } = await c.getEnvelope(env.id));
   await assert.rejects(c.correctEnvelope(env.id, etag, [corrections.setExpiry(new Date(Date.now() - 864e5))]), (e) => e.code === "CS-WF-0004");
   await assert.rejects(c.correctEnvelope(env.id, etag, [{ op: "set_seal_profile", profile: "pades-b-lta" }]), (e) => e.code === "CS-WF-0001");
@@ -276,7 +276,9 @@ test("the per-element calls correct a sent envelope too, as the server's", async
   const { envelope } = await c.getEnvelope(env.id);
   assert.deepEqual(envelope.recipients.map((r) => [r.name, r.status]), [["One", "sent"], ["Four", "created"]]);
   assert.equal(envelope.fields.filter((f) => f.recipient_id === env.recipients[1].id).length, 0, "their fields went with them");
-  const corrected = (await c.audit(env.id)).items.filter((i) => i.event.changed);
+  const trail = (await c.audit(env.id)).items;
+  const sentAt = trail.find((i) => i.type === "envelope.sent").seq;
+  const corrected = trail.filter((i) => i.type === "envelope.corrected" && i.seq > sentAt);
   assert.equal(corrected.length, 3);
   ({ etag } = await c.getEnvelope(env.id));
   await c.voidEnvelope(env.id, "done");
