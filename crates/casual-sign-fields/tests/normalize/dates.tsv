@@ -3,26 +3,28 @@
 # dateparser is the cross-check (tools/ml/crosscheck-normalize.py): = when Python dateparser
 # 1.4.3 must give the same date, or a note saying why it differs.
 2026-03-15	en-US	2026-11-12	2026-03-15	-	=
-2026/03/15	en-GB	2026-11-12	2026-03-15	-	=
+2026/03/15	en-GB	2026-11-12	2026-03-15	-	dateparser applies DMY to a year-first date and refuses; year first is always Y-M-D
 2024-02-29	en-US	2026-11-12	2024-02-29	-	=
 2026-02-29	en-US	2026-11-12	-	-	=
-2026-13-01	en-US	2026-11-12	-	-	=
-2026-3-15	en-US	2026-11-12	-	-	=
+2026-13-01	en-US	2026-11-12	-	-	dateparser reads year-day-month; we refuse a year-first date that is not Y-M-D
+2026-3-15	en-US	2026-11-12	2026-03-15	-	=
+2026-2-30	en-US	2026-11-12	-	-	=
+2026-003-15	en-US	2026-11-12	-	-	=
 03/15/2026	en-US	2026-11-12	2026-03-15	-	=
 3/15/2026	en-US	2026-11-12	2026-03-15	-	=
 15/03/2026	en-GB	2026-11-12	2026-03-15	-	=
 15/03/2026	en-US	2026-11-12	2026-03-15	-	=
-03/15/2026	en-GB	2026-11-12	2026-03-15	-	=
+03/15/2026	en-GB	2026-11-12	2026-03-15	-	dateparser refuses under DMY; we take the only valid order
 04/05/2026	en-US	2026-11-12	2026-04-05	a	=
 04/05/2026	en-GB	2026-11-12	2026-05-04	a	=
 05/05/2026	en-GB	2026-11-12	2026-05-05	-	=
 04-05-2026	en-US	2026-11-12	2026-04-05	a	=
 15.03.2026	en-US	2026-11-12	2026-03-15	-	=
-04.05.2026	en-US	2026-11-12	2026-05-04	a	=
-3/15/26	en-US	2026-11-12	2026-03-15	-	=
-15/03/26	en-GB	2026-11-12	2026-03-15	-	=
-1/1/75	en-US	2026-11-12	2075-01-01	-	=
-1/1/76	en-US	2026-11-12	1976-01-01	-	=
+04.05.2026	en-US	2026-11-12	2026-05-04	a	dateparser applies MDY to dots; we read dots day first and flag it
+3/15/26	en-US	2026-11-12	2026-03-15	a	=
+15/03/26	en-GB	2026-11-12	2026-03-15	a	=
+1/1/75	en-US	2026-11-12	2075-01-01	a	dateparser puts 69-99 in the 1900s; we window around the base and flag it
+1/1/76	en-US	2026-11-12	1976-01-01	a	=
 31/31/2026	en-GB	2026-11-12	-	-	=
 1/2/3/2026	en-US	2026-11-12	-	-	=
 12/2026	en-US	2026-11-12	-	-	=
@@ -35,7 +37,7 @@ March 15th, 2026	en-US	2026-11-12	2026-03-15	-	=
 March 1st, 2026	en-US	2026-11-12	2026-03-01	-	=
 March 2nd 2026	en-US	2026-11-12	2026-03-02	-	=
 March 3rd, 2026	en-US	2026-11-12	2026-03-03	-	=
-March fifteenth, 2026	en-US	2026-11-12	2026-03-15	-	=
+March fifteenth, 2026	en-US	2026-11-12	2026-03-15	-	dateparser does not read an ordinal day in words
 March the 15th, 2026	en-US	2026-11-12	2026-03-15	-	=
 15 March 2026	en-GB	2026-11-12	2026-03-15	-	=
 15th March 2026	en-GB	2026-11-12	2026-03-15	-	=
@@ -44,36 +46,36 @@ March the 15th, 2026	en-US	2026-11-12	2026-03-15	-	=
 1 Jan 2027	en-GB	2026-11-12	2027-01-01	-	=
 Monday, March 16, 2026	en-US	2026-11-12	2026-03-16	-	=
 on March 15, 2026	en-US	2026-11-12	2026-03-15	-	=
-dated as of March 15, 2026	en-US	2026-11-12	2026-03-15	-	=
-as of January 1, 2027	en-US	2026-11-12	2027-01-01	-	=
-the 15th day of March, 2026	en-US	2026-11-12	2026-03-15	-	=
-this 1st day of June, 2026	en-US	2026-11-12	2026-06-01	-	=
-the twenty-first day of June, 2026	en-US	2026-11-12	2026-06-21	-	=
-this thirtieth day of April 2026	en-GB	2026-11-12	2026-04-30	-	=
-the first day of January, 2027	en-US	2026-11-12	2027-01-01	-	=
+dated as of March 15, 2026	en-US	2026-11-12	2026-03-15	-	dateparser does not skip 'dated as of'
+as of January 1, 2027	en-US	2026-11-12	2027-01-01	-	dateparser does not skip 'as of'
+the 15th day of March, 2026	en-US	2026-11-12	2026-03-15	-	dateparser does not read the 'day of' form
+this 1st day of June, 2026	en-US	2026-11-12	2026-06-01	-	dateparser does not read the 'day of' form
+the twenty-first day of June, 2026	en-US	2026-11-12	2026-06-21	-	dateparser does not read the 'day of' form
+this thirtieth day of April 2026	en-GB	2026-11-12	2026-04-30	-	dateparser does not read the 'day of' form
+the first day of January, 2027	en-US	2026-11-12	2027-01-01	-	dateparser does not read the 'day of' form
 February 30, 2026	en-US	2026-11-12	-	-	=
 the thirty-first day of April, 2026	en-US	2026-11-12	-	-	=
 March 2026	en-US	2026-11-12	-	-	=
 March 15	en-US	2026-11-12	-	-	=
 Smarch 15, 2026	en-US	2026-11-12	-	-	=
-March 15th, 26	en-US	2026-11-12	-	-	=
+March 15th, 26	en-US	2026-11-12	-	-	dateparser takes a two-digit year in a written date; we refuse it
 March 15xx, 2026	en-US	2026-11-12	-	-	=
 today	en-US	2026-11-12	2026-11-12	r	=
 Today	en-US	2026-02-28	2026-02-28	r	=
 tomorrow	en-US	2026-12-31	2027-01-01	r	=
 yesterday	en-US	2028-03-01	2028-02-29	r	=
 in 30 days	en-US	2026-11-12	2026-12-12	r	=
-in thirty (30) days	en-US	2026-11-12	2026-12-12	r	=
+in thirty (30) days	en-US	2026-11-12	2026-12-12	r	dateparser does not read 'thirty (30)'
 in two (2) weeks	en-US	2026-11-12	2026-11-26	r	=
 in 1 month	en-US	2026-01-31	2026-02-28	r	=
 in one year	en-US	2028-02-29	2029-02-28	r	=
-30 days from today	en-US	2026-11-12	2026-12-12	r	=
+30 days from today	en-US	2026-11-12	2026-12-12	r	dateparser ignores 'from today' and returns the base
 90 days from now	en-US	2026-11-12	2027-02-10	r	=
 two weeks ago	en-US	2026-11-12	2026-10-29	r	=
 3 months ago	en-US	2026-05-31	2026-02-28	r	=
 one year ago	en-US	2026-11-12	2025-11-12	r	=
 in 10 business days	en-US	2026-11-12	-	-	=
-in 48 hours	en-US	2026-11-12	-	-	=
+in 48 hours	en-US	2026-11-12	-	-	dateparser adds hours to its noon base; we have no time of day and refuse
 30 days after the Effective Date	en-US	2026-11-12	-	-	=
 thirty (31) days from today	en-US	2026-11-12	-	-	=
 in 100000 years	en-US	2026-11-12	-	-	=

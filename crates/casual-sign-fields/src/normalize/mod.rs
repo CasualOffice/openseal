@@ -74,7 +74,8 @@ impl NormalizedDate {
     }
 
     /// True when a numeric date reads as a different valid date in the other order
-    /// (`04/05/2026`): the locale decided it, and a person should confirm.
+    /// (`04/05/2026`), so the locale decided it, or has a two-digit year, so the window
+    /// around the base chose the century. A person should confirm either.
     #[must_use]
     pub fn ambiguous(&self) -> bool {
         self.ambiguous

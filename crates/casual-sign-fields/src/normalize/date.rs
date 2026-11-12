@@ -235,8 +235,10 @@ fn numeric(text: &str, base: Date, locale: Locale) -> Option<NormalizedDate> {
         ambiguous: false,
     };
     if a.len() == 4 {
-        // ISO order is unambiguous; a dotted ISO date is not a form anyone writes.
-        if sep == '.' || b.len() != 2 || c.len() != 2 {
+        // Year first is always year-month-day (`2026-3-15` too: dateparser reads
+        // `2026-13-01` as the 13th of January, which we refuse). A dotted year-first
+        // date is not a form anyone writes.
+        if sep == '.' {
             return None;
         }
         let date = Date::new(
@@ -246,10 +248,20 @@ fn numeric(text: &str, base: Date, locale: Locale) -> Option<NormalizedDate> {
         )?;
         return Some(settled(date));
     }
-    let year = match c.len() {
-        4 => u16::try_from(words::digits(c, 4)?).ok()?,
-        2 => two_digit_year(u16::try_from(words::digits(c, 2)?).ok()?, base)?,
+    // A two-digit year is a guess about the century, so it is always for a person to
+    // confirm.
+    let (year, guessed_century) = match c.len() {
+        4 => (u16::try_from(words::digits(c, 4)?).ok()?, false),
+        2 => (
+            two_digit_year(u16::try_from(words::digits(c, 2)?).ok()?, base)?,
+            true,
+        ),
         _ => return None,
+    };
+    let settled = |date| NormalizedDate {
+        date,
+        relative: false,
+        ambiguous: guessed_century,
     };
     let first = u8::try_from(words::digits(a, 2)?).ok()?;
     let second = u8::try_from(words::digits(b, 2)?).ok()?;
@@ -271,7 +283,7 @@ fn numeric(text: &str, base: Date, locale: Locale) -> Option<NormalizedDate> {
         (Some(p), Some(o)) => Some(NormalizedDate {
             date: p,
             relative: false,
-            ambiguous: p != o,
+            ambiguous: p != o || guessed_century,
         }),
         (Some(p), None) => Some(settled(p)),
         // 15/03/2026 read in the US order cannot be a date; the other order is the only
