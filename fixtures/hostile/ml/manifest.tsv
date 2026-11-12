@@ -1,0 +1,7 @@
+file	limit	code	note
+ml_valid.pdf	control	-	A US Letter page with a 328 pt rule and a 12 pt box; renders at the asked resolution
+ml_mediabox_huge.pdf	Raster size per page	CS-ML-0005	MediaBox 200,000 pt square: does not fit 4,096 px even at 50 DPI; refused from the page box before any allocation
+ml_image_100k.pdf	Decoded image data per page while rasterising	CS-ML-0005	A 100,000 x 100,000 grey image (10 GB declared) behind 4 KiB of Flate; refused from its dictionary before decoding
+ml_jbig2_bomb.pdf	Decoded image data per page while rasterising	CS-ML-0005	A JBIG2 page information segment declaring 60,000 x 60,000 (450 MB of bitmap) in 37 bytes; refused from the image dictionary before decoding
+ml_flate_image_bomb.pdf	Decoded image data per page while rasterising	CS-ML-0005	A 10,000 x 10,000 RGB image: 300 MB of zeros in about 290 KiB of Flate; refused from its dictionary before decoding
+ml_xobject_deep.pdf	Form XObject nesting while rasterising	CS-ML-0005	64 Form XObjects each drawing the next; refused past 32 levels before rendering

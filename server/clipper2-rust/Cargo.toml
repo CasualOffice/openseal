@@ -1,0 +1,16 @@
+[package]
+# Named `clipper2-rust` only so `[patch.crates-io]` in the workspace manifest can stand it
+# in for the BSL-1.0 crate of that name that `oar-ocr-core` depends on (ML-02, ML-02C):
+# owner instruction 32 allows BSL-1.0 only inside the ONNX Runtime binary. Our own code,
+# written from the API `oar-ocr-core` calls, never from Clipper2's source.
+name = "clipper2-rust"
+version = "1.2.0"
+description = "OpenSeal's stand-in for the five clipper2-rust items oar-ocr-core uses: round-joined outward offset of one closed polygon (its convex hull), and the shoelace area"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true

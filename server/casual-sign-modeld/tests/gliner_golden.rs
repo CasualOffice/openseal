@@ -29,8 +29,8 @@ use std::time::{Duration, Instant};
 
 use casual_sign_modeld::wire::{Op, Request, Response, Span, SpanRequest};
 use casual_sign_modeld::{
-    AllowList, Bundle, Gliner, Manifest, ModelService, ModeldLimits, OpLog, RUNTIME_PATH,
-    SpanModels, split_words,
+    AllowList, Bundle, ConnectionState, Gliner, Manifest, ModelService, ModeldLimits, OpLog,
+    RUNTIME_PATH, SpanModels, split_words,
 };
 use serde_json::Value;
 
@@ -378,8 +378,9 @@ fn bad_requests_are_refused_with_their_codes() {
     );
 }
 
-/// Hard-link (or copy) `files` of the test bundle into a scratch bundle.
-fn scratch_bundle(root: &Path, name: &str, files: &[&str]) -> PathBuf {
+/// Hard-link (or copy) `files` of the test bundle into a scratch bundle, deleted when the
+/// returned guard drops.
+fn scratch_bundle(root: &Path, name: &str, files: &[&str]) -> common::ScratchDir {
     let dir = common::scratch(name);
     for f in files {
         let to = dir.join(f);
@@ -388,7 +389,7 @@ fn scratch_bundle(root: &Path, name: &str, files: &[&str]) -> PathBuf {
             std::fs::copy(root.join(f), &to).unwrap();
         }
     }
-    dir
+    common::ScratchDir(dir)
 }
 
 /// ENTITIES and PERSONAL through the service: the op log records counts and ids, never
@@ -403,7 +404,8 @@ fn personal_spans_through_the_service_log_no_text() {
         "personal_data/gliner-pii-base/tokenizer.json",
         "personal_data/gliner-pii-base/gliner_config.json",
     ];
-    let dir = scratch_bundle(&root, "gliner-service-bundle", &files);
+    let guard = scratch_bundle(&root, "gliner-service-bundle", &files);
+    let dir = guard.0.clone();
     let ids = [
         "ort",
         "gliner-pii-base",
@@ -447,12 +449,14 @@ fn personal_spans_through_the_service_log_no_text() {
         job: "job-k".into(),
         op,
     };
+    let mut conn = ConnectionState::default();
     let span_req = SpanRequest {
         text: text.clone(),
         labels: vec!["name".into(), "location address".into()],
         threshold: 5000,
     };
-    let Response::Spans(found) = service.answer("caller-k", &req(Op::Personal(span_req.clone())))
+    let Response::Spans(found) =
+        service.answer("caller-k", &req(Op::Personal(span_req.clone())), &mut conn)
     else {
         panic!("PERSONAL did not answer spans");
     };
@@ -462,10 +466,10 @@ fn personal_spans_through_the_service_log_no_text() {
         .collect();
     assert!(named.iter().any(|n| n.contains(marker)), "{named:?}");
     assert_eq!(
-        service.answer("caller-k", &req(Op::Entities(span_req))),
+        service.answer("caller-k", &req(Op::Entities(span_req)), &mut conn),
         Response::Error(10)
     );
-    let Response::Info(info) = service.answer("caller-k", &req(Op::Info)) else {
+    let Response::Info(info) = service.answer("caller-k", &req(Op::Info), &mut conn) else {
         panic!()
     };
     // Microsoft's 1.28.3 build names its commit, not its release.

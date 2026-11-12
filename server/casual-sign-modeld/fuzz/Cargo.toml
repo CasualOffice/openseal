@@ -1,8 +1,11 @@
 # cargo-fuzz workspace for casual-sign-modeld (ML-09; the F-007 pattern of fuzz/): its own
 # workspace, kept out of the product graph because libfuzzer-sys needs nightly. The
-# client-only build (`default-features = false`) is all the wire decoders need.
+# client-only build (`default-features = false`) is all the wire decoders need; the
+# `raster` feature adds the rasteriser (hayro and its JBIG2, JPX and CCITT decoders)
+# without the inference stack.
 #
 #   cd server/casual-sign-modeld/fuzz && cargo +nightly fuzz run modeld_wire -- -max_total_time=300
+#   cd server/casual-sign-modeld/fuzz && cargo +nightly fuzz run rasterise seeds/rasterise -- -max_total_time=600
 [package]
 name = "casual-sign-modeld-fuzz"
 version = "0.0.0"
@@ -18,11 +21,18 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4.13"
-casual-sign-modeld = { path = "..", default-features = false }
+casual-sign-modeld = { path = "..", default-features = false, features = ["raster"] }
 
 [[bin]]
 name = "modeld_wire"
 path = "fuzz_targets/modeld_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rasterise"
+path = "fuzz_targets/rasterise.rs"
 test = false
 doc = false
 bench = false

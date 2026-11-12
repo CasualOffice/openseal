@@ -174,10 +174,11 @@ pub fn start_modeld(
     name: &str,
 ) -> RunningModeld {
     let bundle = test_bundle(&format!("{name}-bundle"));
-    start_modeld_with(pki, server, allowed, limits, name, bundle)
+    start_modeld_with(pki, server, allowed, limits, name, bundle, |s| s)
 }
 
-/// A modeld on a loopback port serving `bundle`.
+/// A modeld on a loopback port serving `bundle`, with the service configured by
+/// `configure` (a raster child, the OCR models).
 pub fn start_modeld_with(
     pki: &Pki,
     server: &Identity,
@@ -185,6 +186,7 @@ pub fn start_modeld_with(
     limits: ModeldLimits,
     name: &str,
     bundle: Bundle,
+    configure: impl FnOnce(ModelService) -> ModelService,
 ) -> RunningModeld {
     let dir = scratch(&format!("{name}-run"));
     let (cert, key, _) = server;
@@ -195,7 +197,12 @@ pub fn start_modeld_with(
     }
     let oplog = dir.join("modeld-oplog.tsv");
     let bundle_id = bundle.id.clone();
-    let service = ModelService::new(bundle, allow, OpLog::open(&oplog).unwrap(), limits);
+    let service = configure(ModelService::new(
+        bundle,
+        allow,
+        OpLog::open(&oplog).unwrap(),
+        limits,
+    ));
     let modeld = Modeld::bind("127.0.0.1:0", tls, service).unwrap();
     let addr = modeld.local_addr().unwrap().to_string();
     std::thread::spawn(move || modeld.serve());
@@ -269,4 +276,52 @@ pub fn call() -> Call {
         job: "job-0001".into(),
         deadline: Duration::from_secs(20),
     }
+}
+
+/// A scratch directory deleted when dropped, so a test leaves nothing behind.
+#[derive(Debug)]
+pub struct ScratchDir(pub PathBuf);
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The model bundle named by `OPENSEAL_MODELD_TEST_BUNDLE` (a directory fetched by
+/// `tools/ml/fetch-models.py`), with only the files its `bundle.json` lists hard-linked
+/// (copied only where a link cannot be made) into a scratch directory, and verified
+/// against a manifest built from that `bundle.json`. The directory is deleted when the
+/// returned [`ScratchDir`] drops, so no copy of the weights outlives the test (rules 34,
+/// 35). `None`, with a message, when the variable is unset: tests that need real weights
+/// are skipped then, never passed.
+pub fn real_profile_bundle(name: &str, profiles: &[&str]) -> Option<(Bundle, ScratchDir)> {
+    let Some(src) = std::env::var_os("OPENSEAL_MODELD_TEST_BUNDLE") else {
+        eprintln!("SKIPPED: OPENSEAL_MODELD_TEST_BUNDLE is unset; no model weights to run");
+        return None;
+    };
+    let src = PathBuf::from(src);
+    let info: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(src.join("bundle.json")).unwrap()).unwrap();
+    let dir = ScratchDir(scratch(name));
+    let mut manifest = String::from("# test bundle from bundle.json\n");
+    for f in info["files"].as_array().unwrap() {
+        let s = |k: &str| f[k].as_str().unwrap().to_owned();
+        let (dest, bytes) = (s("dest"), f["bytes"].as_u64().unwrap());
+        let to = dir.0.join(&dest);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        if std::fs::hard_link(src.join(&dest), &to).is_err() {
+            std::fs::copy(src.join(&dest), &to).unwrap();
+        }
+        manifest.push_str(&format!(
+            "{}\t{}\t{}\t{bytes}\t{}\t{dest}\n",
+            s("id"),
+            s("profile"),
+            s("sha256"),
+            s("licence").split_whitespace().next().unwrap()
+        ));
+    }
+    let profiles: Vec<String> = profiles.iter().map(|p| (*p).to_owned()).collect();
+    let bundle = Bundle::verify(&dir.0, &Manifest::parse(&manifest).unwrap(), &profiles).unwrap();
+    Some((bundle, dir))
 }

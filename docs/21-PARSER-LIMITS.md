@@ -200,12 +200,17 @@ deterministic personal-data recognisers (`casual-sign-pii`, `ML-08`), whose rows
 skeleton, which enforces the 64 MiB frame cap (not yet the 4 MiB cap on other frames), the id bounds and the pre-admission
 bound, and the HASH and EMBED ops (piece I: the raster size cap for hashes, the EMBED text bounds, e5's 512-token window); the rest has no hostile fixture yet (the `ml_*` fixtures of `SEC-I02` come with `ML-02`). Values marked
 provisional are re-set from measurement before an exit is claimed.
+skeleton, which enforces the 64 MiB frame cap, the 4 MiB cap on requests other than DOC_OPEN and HASH, the id bounds and
+the pre-admission bound, and the rasteriser (`ML-02`, `src/raster.rs`), which enforces the raster, decoded-image,
+nesting, time, kill and address-space rows below in its child process. Their hostile fixtures are the `ml_*` files of
+`fixtures/hostile/ml/` (`generate.py --ml`, own manifest), asserted by `server/casual-sign-modeld/tests/raster.rs`.
+Values marked provisional are re-set from measurement before an exit is claimed.
 
 | Limit | Default | Code |
 | --- | ---: | --- |
 | modeld frame: `DOC_OPEN`; every other frame | 64 MiB (a 50 MiB upload plus headers); 4 MiB | CS-ML-0004 |
 | A caller off the allow list: its first frame | length read; at most 64 KiB of the body discarded through a 1 KiB buffer, never held; then refused | CS-ML-0015 |
-| Open documents per connection | 1 | CS-ML-0004 |
+| Open documents per connection | 1 (a second DOC_OPEN, or an unknown handle, is refused) | CS-ML-0004 |
 | Model ids, account and job ids in a frame | 1–64 bytes, `[A-Za-z0-9._-]` | CS-ML-0004 |
 | Pages OCR'd per document | 200; later pages are not read (`truncated`) | — (report) |
 | Render resolution | 150 DPI (host may set 100–200) | CS-ML-0001 |
@@ -221,8 +226,12 @@ provisional are re-set from measurement before an exit is claimed.
 | Validated-identifier candidate (`casual-sign-pii`, `ML-08C`) | Bounded by each pattern: at most 44 ASCII characters (MRZ line) for ids, 35 for a Base58 address (decoded into at most 25 bytes, longer refused before arithmetic) and 90 for a Bech32 address (BIP 173); the 20,000-candidate budget above applies per kind | — (not that identifier); `tests/validated.rs`, `tests/hostile.rs` |
 | Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI | CS-ML-0005 |
 | Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`) | CS-ML-0005 |
+| Raster size per page | 4,096 px on the long side, 16.8 MP, checked from the page box before allocation; larger pages render at a lower DPI, down to 50 DPI; a page that does not fit at 50 DPI is refused | CS-ML-0005 |
+| Decoded image data per page while rasterising | 256 MiB (as `SEC-P01`), summed from the image XObjects' declared width, height, components and bits (each object once) before rendering; inline images are not counted (the child's address space bounds them) | CS-ML-0005 |
+| Form XObject nesting while rasterising | 32 levels | CS-ML-0005 |
+| XObjects visited per page while rasterising | 10,000 | CS-ML-0005 |
 | Rasterise time per page | 10 s, enforced by killing the raster child | CS-ML-0006 |
-| Raster child kills per document | 3; remaining pages `truncated` | — (report) |
+| Raster child kills per document | 3, deaths included; later pages answered `CS-ML-0006` without rendering (`truncated`) | — (report) |
 | Raster child address space | 1 GiB (provisional) | CS-ML-0014 |
 | OCR deadline per page / per job | 20 s / 15 min | CS-ML-0007 |
 | Words per OCR page | 20,000 (= `MAX_DETECT_WORDS`) | — (truncated) |
