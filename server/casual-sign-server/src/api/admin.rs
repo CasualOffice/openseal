@@ -84,6 +84,101 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
     Ok(json(StatusCode::OK, &json!({ "settings": settings })))
 }
 
+// Admin log -----------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AdminEventsQuery {
+    /// The `seq` after which to start (exclusive).
+    #[serde(default)]
+    cursor: Option<u64>,
+    #[serde(default)]
+    limit: Option<i64>,
+    /// `json` (default) or `csv`.
+    #[serde(default)]
+    format: Option<String>,
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// A CSV field, quoted (RFC 4180) when it holds a comma, quote or line break.
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_owned()
+    }
+}
+
+/// `GET /admin-events?cursor&limit&format=json|csv` (ORG-05, docs/23 §2.5): a page of
+/// this workspace's admin log, oldest first, each event with its hash, `prev` and its
+/// canonical bytes as the JSON they are. The whole log is re-verified before any page
+/// is answered, so a broken chain is `500 CS-DB-0014`, never a quiet partial log.
+pub(crate) async fn admin_events(
+    c: Call,
+    axum::extract::Query(q): axum::extract::Query<AdminEventsQuery>,
+) -> Result<Response, ApiError> {
+    let limit = q.limit.unwrap_or(100);
+    if !(1..=casual_sign_store::ADMIN_EVENTS_MAX_PAGE).contains(&limit) {
+        return Err(ApiError::invalid("/query/limit"));
+    }
+    let csv = match q.format.as_deref() {
+        None | Some("json") => false,
+        Some("csv") => true,
+        Some(_) => return Err(ApiError::invalid("/query/format")),
+    };
+    let mut tx = c.tx().await?;
+    tx.verified_admin_log().await?;
+    let page = tx.admin_events(q.cursor, limit).await?;
+    tx.commit().await?;
+    let next = (i64::try_from(page.len()).ok() == Some(limit))
+        .then(|| page.last().map(|e| e.seq))
+        .flatten();
+    if csv {
+        let mut out = String::from("seq,at,action,hash,prev,event\r\n");
+        for e in &page {
+            let event = String::from_utf8_lossy(&e.canonical);
+            out.push_str(&format!(
+                "{},{},{},{},{},{}\r\n",
+                e.seq,
+                rfc3339(e.at),
+                csv_field(&e.action),
+                hex(&e.hash),
+                e.prev.map(|p| hex(&p)).unwrap_or_default(),
+                csv_field(&event)
+            ));
+        }
+        let mut r = (StatusCode::OK, out).into_response();
+        r.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/csv; charset=utf-8"),
+        );
+        if let Some(v) = next.and_then(|n| HeaderValue::from_str(&n.to_string()).ok()) {
+            r.headers_mut().insert("x-next-cursor", v);
+        }
+        return Ok(r);
+    }
+    let items: Vec<Value> = page
+        .iter()
+        .map(|e| {
+            json!({
+                "seq": e.seq,
+                "at": rfc3339(e.at),
+                "action": e.action,
+                "hash": hex(&e.hash),
+                "prev": e.prev.map(|p| hex(&p)),
+                "event": serde_json::from_slice::<Value>(&e.canonical).unwrap_or(Value::Null),
+            })
+        })
+        .collect();
+    Ok(json(
+        StatusCode::OK,
+        &json!({ "items": items, "next_cursor": next }),
+    ))
+}
+
 // Users ---------------------------------------------------------------------------------
 
 fn member_json(m: &casual_sign_store::repo::accounts::Member) -> Value {
