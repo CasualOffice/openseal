@@ -10,6 +10,7 @@ import * as geo from "../geometry.js";
 import * as cmd from "../commands.js";
 import { combo, commandFor, SHORTCUTS } from "../keys.js";
 import { EN, PARTS } from "../strings.en.js";
+import { hasIcon } from "../icons.js";
 import { t } from "../i18n.js";
 import { locationFrom, isMockMode, toBase64 } from "../api.js";
 import { makePdf, countPages } from "../mockpdf.js";
@@ -288,6 +289,11 @@ test("the UI font is bundled and the root size does not follow the window (UX-02
   const rootSizes = [...appCss.matchAll(/html\s*{[^}]*font-size:\s*([^;]+);/g)].map((m) => m[1]);
   assert.ok(rootSizes.length > 0);
   for (const v of rootSizes) assert.ok(!/vw|vh|vmin|vmax/.test(v), `root font-size follows the viewport: ${v}`);
+});
+
+test("the icons later packages need are vendored (UX-02)", () => {
+  const want = ["align-start", "align-top", "align-end", "align-bottom", "printer", "circle-dashed", "bell", "help-circle", "ban", "triangle-alert"];
+  assert.deepEqual(want.filter((n) => !hasIcon(n)), []);
 });
 
 test("the OS-preference dark block is the explicit dark block", () => {
