@@ -1,9 +1,11 @@
 # syntax=docker/dockerfile:1
-# OpenSeal's images (T-2F, docs/65): one build, three targets.
+# OpenSeal's images (T-2F, docs/65): one build, three targets, and a fourth, `modeld`,
+# for the optional pretrained models (ML-01, ADR-029; Compose profile `ml`).
 #
 #   docker build -f deploy/Dockerfile --target server .
 #   docker build -f deploy/Dockerfile --target worker .
 #   docker build -f deploy/Dockerfile --target keyd .
+#   docker build -f deploy/Dockerfile --target modeld .
 #
 # Every base image is pinned by digest (docs/04 rule 31): a floating tag can change what
 # runs under the same name. The runtime images hold the binary and nothing else that
@@ -90,3 +92,60 @@ WORKDIR /var/lib/keyd
 EXPOSE 7443
 HEALTHCHECK --interval=5s --timeout=5s --retries=24 CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/7443"]
 ENTRYPOINT ["/usr/local/bin/keyd-entrypoint"]
+
+# ---- models: the pinned model bundle for modeld (ML-01, ADR-029, docs/33 §8) -------
+# The only network use in the ML path. tools/ml/fetch-models.py downloads the chosen
+# profiles, checks every file's size and SHA-256 against tools/ml/models.toml, refuses
+# any licence outside deny.toml's allow list, and writes bundle.json. A mismatch fails
+# the build. The cache mount only saves downloads; every cached file is re-hashed.
+# `docker build --build-arg OPENSEAL_ML_PROFILES="ocr templates" --target modeld .`
+# picks profiles; `extraction` joins the default once its export is pinned (piece X).
+FROM ${DEBIAN_IMAGE} AS models
+RUN apt-get update -q \
+ && apt-get install -y -q --no-install-recommends python3 ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+ARG TARGETARCH
+ARG OPENSEAL_ML_PROFILES="ocr templates personal_data"
+COPY tools/ml/fetch-models.py tools/ml/models.toml /src/tools/ml/
+RUN --mount=type=cache,target=/var/cache/openseal-models \
+    set -- \
+ && for p in ${OPENSEAL_ML_PROFILES}; do set -- "$@" --profile "$p"; done \
+ && python3 -I /src/tools/ml/fetch-models.py "$@" --arch "${TARGETARCH:-amd64}" \
+        --cache /var/cache/openseal-models --dest /out/models \
+ && python3 -I /src/tools/ml/fetch-models.py --verify /out/models \
+ && mkdir -p /out/state
+
+# ---- build-modeld: the model daemon, built on its own -------------------------------
+# A separate build so ONNX Runtime's binding, the OCR pipeline and the rasteriser never
+# enter the server, worker or keyd builds (ADR-029 review defect 4). The ONNX Runtime
+# library itself comes from the bundle above (`load-dynamic`), never from a build-time
+# download.
+FROM ${RUST_IMAGE} AS build-modeld
+RUN apt-get update -q \
+ && apt-get install -y -q --no-install-recommends cmake perl g++ make \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY . .
+ENV SQLX_OFFLINE=true CARGO_TERM_COLOR=never CARGO_INCREMENTAL=0
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked -p casual-sign-modeld \
+ && mkdir -p /out \
+ && cp target/release/casual-sign-modeld /out/
+
+# ---- modeld: pretrained models over mTLS, no secrets, no egress (ADR-029) ----------
+# The bundle is owned by root and every file is mode 0444, so `nonroot` can read but
+# never change a weight; Compose also mounts the root filesystem read-only. modeld
+# re-hashes the bundle at start and refuses to serve on any mismatch (CS-ML-0002).
+# /var/lib/modeld (the op log) is the only writable path, as a volume.
+FROM ${RUNTIME_IMAGE} AS modeld
+COPY --from=build-modeld /out/casual-sign-modeld /usr/local/bin/casual-sign-modeld
+COPY --from=models /out/models /opt/openseal/models
+COPY --from=models --chown=nonroot:nonroot /out/state /var/lib/modeld
+ENV OPENSEAL_MODELD_LISTEN=0.0.0.0:7444 \
+    OPENSEAL_MODELD_MODELS=/opt/openseal/models \
+    ORT_DYLIB_PATH=/opt/openseal/models/runtime/libonnxruntime.so
+USER nonroot
+WORKDIR /var/lib/modeld
+EXPOSE 7444
+ENTRYPOINT ["/usr/local/bin/casual-sign-modeld"]

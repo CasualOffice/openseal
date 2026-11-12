@@ -154,8 +154,43 @@ services:
       tsa: {condition: service_healthy}
       mailpit: {condition: service_healthy}
 
+  # Optional pretrained models (ML-01, ADR-029, docs/33): `docker compose --profile ml up`.
+  # No secrets beyond its own TLS identity, and only on the `ml` network, which is
+  # internal (no route out); the weights are baked into the image, hash-checked at build
+  # and again at start. OPENSEAL_ML_PROFILES picks the bundle (docs/65 §Pretrained models).
+  modeld:
+    profiles: [ml]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: modeld
+      args: {OPENSEAL_ML_PROFILES: "${OPENSEAL_ML_PROFILES:-ocr templates personal_data}"}
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-modeld:${OPENSEAL_VERSION:-dev}
+    environment:
+      OPENSEAL_MODELD_TLS_CERT: /secrets/modeld-tls-chain.pem
+      OPENSEAL_MODELD_TLS_KEY: /secrets/modeld-tls.key
+      OPENSEAL_MODELD_CLIENT_CA: /secrets/ca.pem
+      OPENSEAL_MODELD_ALLOW_LIST: /secrets/modeld-allow-list
+      OPENSEAL_MODELD_OPLOG: /var/lib/modeld/oplog
+    volumes: [modeld:/var/lib/modeld, *secrets]
+    networks: [ml]
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    mem_limit: 4g
+    pids_limit: 256
+    ulimits: {core: 0}
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: {pki: {condition: service_completed_successfully}}
+
+networks:
+  # internal: no gateway, so nothing on it reaches the internet (docs/33 invariant 4).
+  ml:
+    internal: true
+
 volumes:
   secrets:
   postgres:
   s3:
   keyd:
+  modeld:

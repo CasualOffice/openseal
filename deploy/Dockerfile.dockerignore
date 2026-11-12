@@ -8,6 +8,9 @@
 !migrations
 !webapp
 !deploy
+# The model manifest and its fetch script, for the `models` stage (ML-01).
+!tools/ml/models.toml
+!tools/ml/fetch-models.py
 **/target
 webapp/e2e
 webapp/tests
