@@ -447,3 +447,24 @@ for (const [label, vp] of [["1440", { width: 1440, height: 900 }], ["390", { wid
     expect(env.recipients[0].access_code).toBe("4321");
   });
 }
+
+// UX-05 review defect 1: a template saves only Required and Label (templatesync.js, UX-11), so
+// its field panel must not offer settings that would vanish on save.
+test("a template's field panel offers only what a template saves, and says so", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await page.goto(app("#/templates/new"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await expect(page.getByTestId("doc-card")).toHaveCount(1);
+  await page.getByTestId("wizard-next").click();
+  await page.getByRole("button", { name: "Add role" }).first().click();
+  await page.getByTestId("role-name").first().fill("Client");
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).press("Enter");
+  await expect(page.getByTestId("props-general")).toBeVisible();
+  for (const sec of ["props-format", "props-validation", "props-options"]) await expect(page.getByTestId(sec)).toHaveCount(0);
+  for (const id of ["#fp-tooltip", "#fp-placeholder", "#fp-value", "#fp-readonly"]) await expect(page.locator(id)).toHaveCount(0);
+  await expect(page.locator("#fp-label")).toBeVisible();
+  await expect(page.getByTestId("props-template-note")).toContainText("Templates keep");
+});

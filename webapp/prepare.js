@@ -1399,28 +1399,31 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     ];
     if (takesInput(f.type)) general.push(check("fp-required", "prepare.required", f.required, (v) => set("required", v)));
     else general.push(h("p", { class: "os-muted os-small", text: t(`prepare.auto-${f.type}`) }));
-    if (f.type === "note") {
+    if (!TPL && f.type === "note") {
       // A note is the sender's text, shown to the recipient as written.
       general.push(textIn("fp-note", "prepare.note-text", f.value?.text, (v) => setM("value", v.trim() ? { text: v.trim() } : null), { max: 2000, area: true }));
     }
-    if (TYPED.has(f.type) || f.type === "checkbox") {
+    if (!TPL && (TYPED.has(f.type) || f.type === "checkbox")) {
       // DocuSign's "Read only" with a sender's value: the recipient sees it, cannot change it.
       general.push(check("fp-readonly", "prepare.read-only", f.read_only, (v) => { setM("read_only", v); renderProps(); }));
       if (f.type === "checkbox") general.push(check("fp-checked", "prepare.checked-value", f.value?.checked, (v) => setM("value", v ? { checked: true } : null)));
       else general.push(textIn("fp-value", f.read_only ? "prepare.value-fixed" : "prepare.value-start", f.value?.text, (v) => setM("value", v ? { text: v } : null), { help: "prepare.value-help", max: 4000 }));
     }
     general.push(textIn("fp-label", "prepare.label", f.label, (v) => set("label", v.trim()), { help: "prepare.label-help" }));
-    general.push(textIn("fp-tooltip", "prepare.tooltip", f.tooltip, (v) => setM("tooltip", v.trim()), { max: 1000 }));
-    if (TYPED.has(f.type)) general.push(textIn("fp-placeholder", "prepare.placeholder", f.placeholder, (v) => setM("placeholder", v.trim())));
+    // A template keeps only Required and Label until templatesync.js sends the rest (UX-11); the
+    // panel offers nothing that would vanish on save (UX-05 review).
+    if (TPL) general.push(h("p", { class: "os-muted os-small", text: t("prepare.template-settings-later"), attrs: { "data-testid": "props-template-note" } }));
+    if (!TPL) general.push(textIn("fp-tooltip", "prepare.tooltip", f.tooltip, (v) => setM("tooltip", v.trim()), { max: 1000 }));
+    if (!TPL && TYPED.has(f.type)) general.push(textIn("fp-placeholder", "prepare.placeholder", f.placeholder, (v) => setM("placeholder", v.trim())));
     props.append(section("general", ...general));
-    if (CHOICE.has(f.type)) {
+    if (!TPL && CHOICE.has(f.type)) {
       const opts = textIn("fp-options", "prepare.options", (f.options || []).join("\n"), (v) => { setM("options", optionsFrom(v)); renderProps(); }, { help: "prepare.options-help", max: 50000, area: true });
       const body = [opts];
       if (f.type === "dropdown") body.push(check("fp-custom", "prepare.allow-custom", f.allow_custom, (v) => setM("allow_custom", v)));
       if (!(f.options || []).length) body.push(h("p", { class: "os-field-error", text: t("prepare.options-none") }));
       props.append(section("options", ...body));
     }
-    if (TYPED.has(f.type) || ["name", "email", "date_signed"].includes(f.type)) {
+    if (!TPL && (TYPED.has(f.type) || ["name", "email", "date_signed"].includes(f.type))) {
       const fmt = f.format || {};
       const setF = (k, v) => { const next = { ...(f.format || {}) }; if (v === "" || v == null || v === false) delete next[k]; else next[k] = v; setM("format", Object.keys(next).length ? next : null); };
       const size = h("input", { id: "fp-font-size", class: "os-input os-input--sm", type: "number", min: "6", max: "72", step: "1", inputMode: "numeric", value: fmt.font_size ?? "", placeholder: t("prepare.fmt-auto") });
@@ -1433,7 +1436,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (TYPED.has(f.type)) body.push(check("fp-mask", "prepare.mask", fmt.mask, (v) => setF("mask", v)));
       props.append(section("format", ...body));
     }
-    if (f.type === "text" || f.type === "number") {
+    if (!TPL && (f.type === "text" || f.type === "number")) {
       // Validation (DocuSign's and SignNow's presets): what the recipient's value must be.
       const v = f.validation || {};
       const kind = f.type === "number" ? "number" : (v.kind || kindChosen.get(f.key) || "");
