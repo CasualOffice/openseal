@@ -46,6 +46,7 @@ by saying so.
 | 35 | 2026-11-12 | Chose, from options: OpenSeal's own copy of the pinned model files is published as GitHub release assets on CasualOffice/openseal (a `models-*` tag), each with its licence file; `fetch-models.py` falls back to it under the same SHA-256 when the upstream source is unavailable | `ML-15` |
 | 36 | 2026-11-12 | "Finish small fixes and push them; don't keep things on local for long. Also update the README and other docs; keep them updated, as well as the marketing site." Each verified batch is pushed as soon as it is merged and its one full CI run (instruction 31) passes; README, AGENTS.md "Current state", docs/06 "Where things stand", docs/96 status and the marketing site in `site/` are brought up to date in the same batch as the work they describe | `DOC-004`, `SITE-01`, [CLAUDE.md](../CLAUDE.md) |
 | 37 | 2026-11-12 | "Continue, but reduce the system resource utilization of this system." Work runs within the machine's memory: one Rust build at a time with two jobs and a shared build directory, at most one light agent beside it, the full CI alone | [04](04-MISTAKES-AND-RULES.md) rule 33 |
+| 38 | 2026-11-12 | Chose, from options: declare milestones M0 (Ready to build), M1 (Engine alpha) and M2 (Service alpha) reached; every phase they contain (D, 0, 1, 2) is closed | `MS-0`, `MS-1`, `MS-2` in [14](14-EXECUTION-TRACKER.md) |
 
 ## Inherited working rules
 

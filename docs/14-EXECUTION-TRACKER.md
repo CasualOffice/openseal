@@ -30,13 +30,13 @@ Docs are true as of `19518fb` (2026-11-12).
 
 ## Milestones
 
-Defined in [06](06-ROADMAP-AND-DELIVERY.md) §Milestones. Only the owner declares one reached. MS-0 to MS-2: every phase they contain is closed; awaiting the owner's declaration.
+Defined in [06](06-ROADMAP-AND-DELIVERY.md) §Milestones. Only the owner declares one reached. MS-0 to MS-2 declared reached by the owner, 2026-11-12 (instruction 38).
 
 | ID | Milestone | St | Contains | Size |
 | --- | --- | --- | --- | --- |
-| MS-0 | Ready to build | In progress | Phase D, Phase 0 (open 2026-11-10) | M |
-| MS-1 | Engine alpha | In progress | Phase 1 | XL |
-| MS-2 | Service alpha | In progress | Phase 2 | L |
+| MS-0 | Ready to build | Done | Phase D, Phase 0 (open 2026-11-10) | M |
+| MS-1 | Engine alpha | Done | Phase 1 | XL |
+| MS-2 | Service alpha | Done | Phase 2 | L |
 | MS-3 | First signature (private preview) | Open | VS-01, VS-02, VS-05, VS-07 | L |
 | MS-4 | Team beta | Open | VS-03, VS-04, VS-06, VS-08, VS-09 | XL |
 | MS-5 | 1.0 GA | Open | VS-10, VS-11, VS-12, VS-15, VS-20; release gates | XL |
