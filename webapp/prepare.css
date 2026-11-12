@@ -64,7 +64,17 @@
 .os-rcpt__head { flex-wrap: wrap; }
 .os-rcpt__head select, .os-rcpt__head .os-select { flex: 1 1 8rem; min-width: 0; max-width: 100%; }
 .os-rcpt__head select { width: auto; }
-.os-palette { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.375rem; margin-top: var(--os-s3); }
+.os-palette { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--os-s3); margin-top: var(--os-s3); }
+/* The palette's groups (UX-05): signing, filled from the recipient, entered by them. */
+.os-palette__group { display: grid; gap: var(--os-s1); }
+.os-palette__gtitle { margin: 0; font-size: var(--os-fs-12); color: var(--os-muted); font-weight: 600; }
+.os-palette__items { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.375rem; }
+/* The properties panel's sections (UX-05). */
+.os-props__sec { border-top: 1px solid var(--os-border); padding-top: var(--os-s1); }
+.os-props__sec > summary { margin-top: 0; }
+.os-props__sec:not([open]) > :not(summary) { display: none; }
+.os-props__sec > .os-fieldrow, .os-props__sec > .os-check, .os-props__sec > .os-geo { margin-top: var(--os-s2); }
+.os-props .os-help { margin: 0.125rem 0 0; font-size: var(--os-fs-12); color: var(--os-muted); }
 .os-palette__item {
   display: flex; align-items: center; gap: var(--os-s3); height: 2.5rem; padding: 0 var(--os-s3); white-space: nowrap; font-weight: 500;
   border: 1px solid var(--os-border); border-left: 0.25rem solid var(--rc); border-radius: var(--os-radius-sm);
@@ -122,7 +132,7 @@
 /* Templates, use, admin */
 .os-badge--template { background: var(--os-surface-2); }
 @media (max-width: 47.5em) {
-  .os-palette { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .os-palette__items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .os-stepper li + li::before { width: 0.75rem; }
   .os-wizard__pane { padding: var(--os-s4); }
   .os-panel--rcpt .os-rcpt { grid-template-columns: minmax(0, 1fr); }
@@ -216,7 +226,7 @@
   .os-prepare__body { grid-template-columns: minmax(0, 1fr); }
   .os-fabs { position: absolute; right: var(--os-s3); bottom: var(--os-s3); z-index: 7; display: flex; gap: var(--os-s2); }
   .os-fab { box-shadow: var(--os-shadow-md); }
-  .os-palette { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .os-palette__items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .has-sheet .os-fabs { visibility: hidden; }
   /* Editor toolbar on phones: title and actions, then the steps and undo/redo. */
   .os-prepare__bar { padding: var(--os-s1) var(--os-s2); gap: var(--os-s1); }

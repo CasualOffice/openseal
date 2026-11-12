@@ -28,7 +28,7 @@ import { register, unregisterPrefix, run } from "./commands.js";
 import { button, busy, emptyState, toast, toastError, confirmDialog, selectField, dockPanel, openPanel, closePanel } from "./ui/index.js";
 import { openPdf } from "./pdfview.js";
 import { docView, zoomControls, thumbnails } from "./docview.js";
-import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput } from "./geometry.js";
+import { FIELD_TYPES, FIELD_GROUPS, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput, requiredByDefault, validationFrom, optionsFrom } from "./geometry.js";
 import { errorMessage } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate } from "./templatesync.js";
@@ -37,7 +37,19 @@ import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from ".
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
 
-const FIELD_ICON = { signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", text: "text-cursor-input", checkbox: "square-check" };
+const FIELD_ICON = {
+  signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", company: "layers", title: "type",
+  text: "text-cursor-input", number: "list-ordered", checkbox: "square-check", radio_group: "circle-dashed", dropdown: "chevron-down", attachment: "paperclip", note: "info",
+};
+/// The members of a field the editor sets besides its place, owner, `required` and `label`
+/// (UX-05), by their wire names (api.js `FIELD_MEMBERS`); kept on the editor's field as is.
+const MEMBERS = ["read_only", "value", "tooltip", "placeholder", "validation", "format", "options", "allow_custom"];
+const blankMember = (v) => v == null || v === false || v === "" || (Array.isArray(v) && !v.length);
+/// The members a field has, for the wire and for comparing with the server's copy.
+const membersOf = (f) => Object.fromEntries(MEMBERS.filter((k) => !blankMember(f[k])).map((k) => [k, f[k]]));
+/// What a new field of `type` starts with: a radio group or dropdown has two options to
+/// rename, since one with none cannot be answered.
+const newMembers = (type) => (CHOICE.has(type) ? { options: [t("prepare.option-n", { n: 1 }), t("prepare.option-n", { n: 2 })] } : {});
 const MAX_UPLOAD = 50 * 1024 * 1024; // docs/21: 50 MiB decoded
 const COLOURS = 6;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -255,7 +267,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // step order. With the order off, signers are all step 1 and copies step 2.
   const colourOf = (rk) => (S.recipients.findIndex((r) => r.key === rk) % COLOURS) + 1;
   const recipient = (rk) => S.recipients.find((r) => r.key === rk);
-  const signers = () => S.recipients.filter((r) => r.type === "signer");
+  /// Who fills fields (UX-05): a signer, and an in-person signer whom staff host. An
+  /// approver, a viewer and a copy take none.
+  const takesFields = (r) => r?.type === "signer" || r?.type === "in_person_signer";
+  const signers = () => S.recipients.filter(takesFields);
   const displayName = (r, i) => r?.name?.trim() || t(TPL ? "template.role-n" : "prepare.recipient-n", { n: i + 1 });
   function orderOf(r) {
     if (S.ordered) return r.order || 1;
@@ -524,6 +539,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // mousedown and its click (a name committed on blur) would swallow the click.
   const palFor = h("div", { class: "os-palette__for" });
   const palGrid = h("div", { class: "os-palette os-r1" });
+  const groupBox = new Map(FIELD_GROUPS.map(([g]) => [g, h("div", { class: "os-palette__items" })]));
+  for (const [g] of FIELD_GROUPS) {
+    palGrid.append(h("div", { class: "os-palette__group", attrs: { role: "group", "aria-labelledby": `pal-g-${g}` } },
+      h("p", { id: `pal-g-${g}`, class: "os-palette__gtitle", text: t(`prepare.fgroup.${g}`) }), groupBox.get(g)));
+  }
   for (const type of FIELD_TYPES) {
     const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-pressed": "false", "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
       icon(FIELD_ICON[type], { size: 20 }), h("span", { text: t(`ftype.${type}`) }));
@@ -544,7 +564,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       stage.classList.add("is-dropping");
     });
     b.addEventListener("dragend", () => stage.classList.remove("is-dropping"));
-    palGrid.append(b);
+    groupBox.get(FIELD_GROUPS.find(([, ts]) => ts.includes(type))[0]).append(b);
   }
   palettePanel.append(
     palFor,
@@ -745,7 +765,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   function fieldLabel(f) {
     const r = recipient(f.recipientKey);
     const i = S.recipients.indexOf(r);
-    return t("prepare.field-aria", { type: t(`ftype.${f.type}`), name: displayName(r, i), page: f.page, req: f.required ? t("prepare.required-suffix") : "" });
+    const base = t("prepare.field-aria", { type: t(`ftype.${f.type}`), name: displayName(r, i), page: f.page, req: f.required ? t("prepare.required-suffix") : "" });
+    // The name starts with the label the box shows, when it shows one (SC 2.5.3).
+    return f.label ? `${f.label}, ${base}` : base;
   }
   function renderFieldsOnly() {
     for (const n of stage.querySelectorAll(".os-field")) n.remove();
@@ -1036,11 +1058,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let lastPlaced = null;
   function addField(type, doc, page, cx, cy) {
     let r = recipient(S.active);
-    if (r?.type !== "signer") r = signers()[0];
+    if (!takesFields(r)) r = signers()[0];
     if (!r) r = addRecipient(false);
     const pg = doc.pages[page - 1];
     const rect = placeAt(type, cx, cy, pg);
-    const f = { key: newKey("f"), id: null, docKey: doc.key, recipientKey: r.key, type, page, ...rect, required: type === "signature" || type === "initials", label: "" };
+    const f = { key: newKey("f"), id: null, docKey: doc.key, recipientKey: r.key, type, page, ...rect, required: requiredByDefault(type), label: "", ...newMembers(type) };
     change(() => { S.fields.push(f); S.selected = f.key; });
     lastPlaced = f.key;
     const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`);
@@ -1097,7 +1119,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // dismisses them all. Each of these is one undo step. A draft is saved first, since
   // detection reads the stored documents.
   /// Who accepted suggestions are for: the signer being placed for, else the first.
-  const signerFor = () => { const r = recipient(S.active); return r?.type === "signer" ? r : signers()[0] || null; };
+  const signerFor = () => { const r = recipient(S.active); return takesFields(r) ? r : signers()[0] || null; };
   const ghostLabel = (g) => (g.label || t(`ftype.${g.type}`));
   function renderGhosts() {
     for (const n of stage.querySelectorAll(".os-ghost")) n.remove();
@@ -1135,7 +1157,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const i = S.ghosts.indexOf(list[0]);
     let r = signerFor();
     if (!r) r = addRecipient(false);
-    const made = list.map((g) => ({ key: newKey("f"), id: null, docKey: g.docKey, recipientKey: r.key, type: g.type, page: g.page, x: g.x, y: g.y, width: g.width, height: g.height, required: g.type === "signature" || g.type === "initials", label: g.label || "" }));
+    const made = list.map((g) => ({ key: newKey("f"), id: null, docKey: g.docKey, recipientKey: r.key, type: g.type, page: g.page, x: g.x, y: g.y, width: g.width, height: g.height, required: requiredByDefault(g.type), label: g.label || "", ...newMembers(g.type) }));
     const gone = new Set(list);
     change(() => { S.ghosts = S.ghosts.filter((g) => !gone.has(g)); S.fields.push(...made); });
     say(made.length === 1 ? t("prepare.field-added", { label: fieldLabel(made[0]) }) : t("prepare.ghosts-accepted", { n: made.length, name: displayName(r, S.recipients.indexOf(r)) }));
@@ -1179,6 +1201,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
 
   // ---- Properties ------------------------------------------------------------------------
   let advancedOpen = false;
+  const propOpen = {}; // section → open, while the editor is open (UX-05)
+  // A validation preset chosen whose settings are not typed yet (a pattern, a length):
+  // field key → kind, so the panel shows its inputs before there is a rule to store.
+  const kindChosen = new Map();
   function renderProps() {
     clear(props);
     if (multi.size > 1) {
@@ -1236,17 +1262,94 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     props.append(h("div", { class: "os-props__head" },
       h("h3", { class: "os-props__title", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }) }),
       button(t("prepare.back-to-list"), { icon: "list", size: "sm", variant: "ghost", iconOnly: true, onClick: () => { select(null); props.querySelector("button")?.focus({ preventScroll: true }); } })));
-    props.append(selectField(t(TPL ? "template.assigned-to" : "prepare.assigned-to"), S.recipients.map((r, i) => [r, i]).filter(([r]) => r.type === "signer" || r.key === f.recipientKey).map(([r, i]) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "fp-recipient", value: f.recipientKey, onChange: (v) => set("recipientKey", v) }).el);
-    if (takesInput(f.type)) {
-      const req = h("input", { id: "fp-required", type: "checkbox", checked: !!f.required });
-      req.addEventListener("change", () => set("required", req.checked));
-      props.append(h("label", { class: "os-check", attrs: { for: "fp-required" } }, req, h("span", { text: t("prepare.required") })));
-    } else {
-      props.append(h("p", { class: "os-muted os-small", text: t(`prepare.auto-${f.type}`) }));
+    // A member set or cleared (blank removes it, as the server stores it), one undo step.
+    const setM = (k, v) => {
+      const blank = v == null || v === false || v === "" || (Array.isArray(v) && !v.length);
+      if (blank ? !(k in f) : JSON.stringify(f[k]) === JSON.stringify(v)) return;
+      S.undo.push(snapshot()); S.redo = [];
+      if (blank) delete f[k]; else f[k] = v;
+      S.dirty = true;
+      renderFieldsOnly();
+    };
+    const textIn = (id, labelKey, value, onSet, { help = null, max = 255, type = "text", area = false } = {}) => {
+      const i = h(area ? "textarea" : "input", { id, class: `os-input${area ? " os-textarea" : ""}`, value: value ?? "", maxLength: max, ...(area ? { rows: 3 } : { type }), attrs: help ? { "aria-describedby": `${id}-help` } : {} });
+      i.addEventListener("change", () => onSet(i.value));
+      return h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: t(labelKey) }), i, help ? h("p", { id: `${id}-help`, class: "os-help", text: t(help) }) : null);
+    };
+    const check = (id, labelKey, on, onSet) => {
+      const i = h("input", { id, type: "checkbox", checked: !!on });
+      i.addEventListener("change", () => onSet(i.checked));
+      return h("label", { class: "os-check", attrs: { for: id } }, i, h("span", { text: t(labelKey) }));
+    };
+    /// A section of the panel (UX-05: General, Formatting, Validation, Options), open by
+    /// default, remembered while the editor is open.
+    const section = (key, ...body) => {
+      const d = h("details", { class: "os-details os-props__sec", open: propOpen[key] !== false, attrs: { "data-testid": `props-${key}` } },
+        h("summary", { text: t(`prepare.props-${key}`) }), ...body);
+      d.addEventListener("toggle", () => { propOpen[key] = d.open; });
+      return d;
+    };
+    const general = [
+      selectField(t(TPL ? "template.assigned-to" : "prepare.assigned-to"), S.recipients.map((r, i) => [r, i]).filter(([r]) => takesFields(r) || r.key === f.recipientKey).map(([r, i]) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "fp-recipient", value: f.recipientKey, onChange: (v) => set("recipientKey", v) }).el,
+    ];
+    if (takesInput(f.type)) general.push(check("fp-required", "prepare.required", f.required, (v) => set("required", v)));
+    else general.push(h("p", { class: "os-muted os-small", text: t(`prepare.auto-${f.type}`) }));
+    if (f.type === "note") {
+      // A note is the sender's text, shown to the recipient as written.
+      general.push(textIn("fp-note", "prepare.note-text", f.value?.text, (v) => setM("value", v.trim() ? { text: v.trim() } : null), { max: 2000, area: true }));
     }
-    const label = h("input", { id: "fp-label", class: "os-input", value: f.label || "", maxLength: 255 });
-    label.addEventListener("change", () => set("label", label.value.trim()));
-    props.append(h("label", { class: "os-label", attrs: { for: "fp-label" }, text: t("prepare.label") }), label);
+    if (TYPED.has(f.type) || f.type === "checkbox") {
+      // DocuSign's "Read only" with a sender's value: the recipient sees it, cannot change it.
+      general.push(check("fp-readonly", "prepare.read-only", f.read_only, (v) => { setM("read_only", v); renderProps(); }));
+      if (f.type === "checkbox") general.push(check("fp-checked", "prepare.checked-value", f.value?.checked, (v) => setM("value", v ? { checked: true } : null)));
+      else general.push(textIn("fp-value", f.read_only ? "prepare.value-fixed" : "prepare.value-start", f.value?.text, (v) => setM("value", v ? { text: v } : null), { help: "prepare.value-help", max: 4000 }));
+    }
+    general.push(textIn("fp-label", "prepare.label", f.label, (v) => set("label", v.trim()), { help: "prepare.label-help" }));
+    general.push(textIn("fp-tooltip", "prepare.tooltip", f.tooltip, (v) => setM("tooltip", v.trim()), { max: 1000 }));
+    if (TYPED.has(f.type)) general.push(textIn("fp-placeholder", "prepare.placeholder", f.placeholder, (v) => setM("placeholder", v.trim())));
+    props.append(section("general", ...general));
+    if (CHOICE.has(f.type)) {
+      const opts = textIn("fp-options", "prepare.options", (f.options || []).join("\n"), (v) => { setM("options", optionsFrom(v)); renderProps(); }, { help: "prepare.options-help", max: 50000, area: true });
+      const body = [opts];
+      if (f.type === "dropdown") body.push(check("fp-custom", "prepare.allow-custom", f.allow_custom, (v) => setM("allow_custom", v)));
+      if (!(f.options || []).length) body.push(h("p", { class: "os-field-error", text: t("prepare.options-none") }));
+      props.append(section("options", ...body));
+    }
+    if (TYPED.has(f.type) || ["name", "email", "date_signed"].includes(f.type)) {
+      const fmt = f.format || {};
+      const setF = (k, v) => { const next = { ...(f.format || {}) }; if (v === "" || v == null || v === false) delete next[k]; else next[k] = v; setM("format", Object.keys(next).length ? next : null); };
+      const size = h("input", { id: "fp-font-size", class: "os-input os-input--sm", type: "number", min: "6", max: "72", step: "1", inputMode: "numeric", value: fmt.font_size ?? "", placeholder: t("prepare.fmt-auto") });
+      size.addEventListener("change", () => { const n = Number.parseInt(size.value, 10); setF("font_size", Number.isInteger(n) && n >= 6 && n <= 72 ? String(n) : null); });
+      const body = [
+        selectField(t("prepare.font"), [["", t("prepare.fmt-default")], ["helvetica", "Helvetica"], ["times", "Times"], ["courier", "Courier"]], { id: "fp-font", value: fmt.font_family || "", size: "sm", onChange: (v) => setF("font_family", v) }).el,
+        h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "fp-font-size" }, text: t("prepare.font-size") }), size),
+        selectField(t("prepare.text-align"), [["", t("prepare.fmt-default")], ["left", t("prepare.align-left-text")], ["center", t("prepare.align-center-text")], ["right", t("prepare.align-right-text")]], { id: "fp-align", value: fmt.align || "", size: "sm", onChange: (v) => setF("align", v) }).el,
+      ];
+      if (TYPED.has(f.type)) body.push(check("fp-mask", "prepare.mask", fmt.mask, (v) => setF("mask", v)));
+      props.append(section("format", ...body));
+    }
+    if (f.type === "text" || f.type === "number") {
+      // Validation (DocuSign's and SignNow's presets): what the recipient's value must be.
+      const v = f.validation || {};
+      const kind = f.type === "number" ? "number" : (v.kind || kindChosen.get(f.key) || "");
+      const opts = { min: v.min, max: v.max, pattern: v.pattern, maxLength: v.kind === "length" ? v.max : "", message: v.message };
+      const apply = (k, val) => { opts[k] = val; const next = validationFrom(kindNow, opts); setM("validation", next); };
+      let kindNow = kind;
+      const body = [];
+      if (f.type === "text") {
+        body.push(selectField(t("prepare.validate"), [["", t("prepare.validate-none")], ["email", t("prepare.validate-email")], ["phone", t("prepare.validate-phone")], ["zip", t("prepare.validate-zip")], ["ssn", t("prepare.validate-ssn")], ["number", t("prepare.validate-number")], ["length", t("prepare.validate-length")], ["regex", t("prepare.validate-regex")]],
+          { id: "fp-validate", value: kind, size: "sm", onChange: (k) => { kindNow = k; kindChosen.set(f.key, k); setM("validation", validationFrom(k, opts)); renderProps(); props.querySelector("#fp-validate")?.focus(); } }).el);
+      }
+      if (kindNow === "number") {
+        body.push(h("div", { class: "os-geo" },
+          textIn("fp-min", "prepare.min", opts.min, (x) => apply("min", x), { type: "text" }),
+          textIn("fp-max", "prepare.max", opts.max, (x) => apply("max", x), { type: "text" })));
+      }
+      if (kindNow === "length") body.push(textIn("fp-maxlen", "prepare.max-length", opts.maxLength, (x) => apply("maxLength", x), { type: "number" }));
+      if (kindNow === "regex") body.push(textIn("fp-pattern", "prepare.pattern", opts.pattern, (x) => apply("pattern", x), { help: "prepare.pattern-help", max: 1000 }));
+      if (kindNow) body.push(textIn("fp-vmsg", "prepare.validate-message", opts.message, (x) => apply("message", x.trim()), { max: 500 }));
+      props.append(section("validation", ...body));
+    }
     const geo = h("div", { class: "os-geo" });
     for (const k of ["x", "y", "width", "height"]) {
       const id = `fp-${k}`;
@@ -1382,7 +1485,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.fields = (env.fields || []).map((f) => {
       const p = fromWire(f.placement);
       if (!p || !dkey.has(f.document_id)) return null;
-      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", server: JSON.stringify({ r: f.recipient_id, p: f.placement, q: !!f.required, l: f.label || "" }) };
+      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", ...membersOf(f), server: JSON.stringify({ r: f.recipient_id, p: f.placement, q: !!f.required, l: f.label || "", m: membersOf(f) }) };
     }).filter(Boolean);
     // Keep whom fields are being placed for across a save (the list keeps its order).
     S.active = S.recipients[prevActive]?.key || S.recipients[0]?.key || null;
@@ -1439,6 +1542,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const body = { recipient: recipientRef, document: documentRef, type: f.type, ...toWire(f.page, f) };
     if (f.required && takesInput(f.type)) body.required = true;
     if (f.label) body.label = f.label;
+    Object.assign(body, membersOf(f));
     return body;
   }
   const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}) });
@@ -1532,10 +1636,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const rid = (k) => S.recipients.find((r) => r.key === k)?.id;
       const did = (k) => S.docs.find((d) => d.key === k)?.id;
       for (const f of S.fields.filter((x) => x.id)) {
-        const now = JSON.stringify({ r: rid(f.recipientKey), p: toWire(f.page, f), q: !!f.required, l: f.label || "" });
+        const now = JSON.stringify({ r: rid(f.recipientKey), p: toWire(f.page, f), q: !!f.required, l: f.label || "", m: membersOf(f) });
         if (now === f.server) continue;
         const body = fieldBody(f, rid(f.recipientKey), did(f.docKey));
-        await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null });
+        // Every member named: null removes one the sender cleared (a JSON merge, UX-05).
+        const members = Object.fromEntries(MEMBERS.map((k) => [k, blankMember(f[k]) ? null : f[k]]));
+        await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null, ...members });
       }
       const newFields = S.fields.filter((x) => !x.id);
       if (newFields.length) await ctx.api.addFields(S.id, newFields.map((f) => fieldBody(f, rid(f.recipientKey), did(f.docKey))));
@@ -1557,11 +1663,16 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.recipients.forEach((r, i) => {
       if (!r.name.trim()) out.push({ text: t("send.need-name", { n: i + 1 }), step: "recipients", focus: `#rn-${r.key}` });
       if (!EMAIL.test(r.email)) out.push({ text: t("send.need-email", { name: displayName(r, i) }), step: "recipients", focus: `#re-${r.key}` });
-      if (r.type === "signer" && !S.fields.some((f) => f.recipientKey === r.key)) out.push({ text: t("send.need-field", { name: displayName(r, i) }), step: "fields", recipient: r.key });
+      if (takesFields(r) && !S.fields.some((f) => f.recipientKey === r.key)) out.push({ text: t("send.need-field", { name: displayName(r, i) }), step: "fields", recipient: r.key });
       // A copy recipient signs nothing: fields left on one would be dropped (P-02).
-      const cc = r.type !== "signer" ? S.fields.filter((f) => f.recipientKey === r.key).length : 0;
+      const cc = !takesFields(r) ? S.fields.filter((f) => f.recipientKey === r.key).length : 0;
       if (cc) out.push({ text: t("send.cc-fields", { name: displayName(r, i), n: cc }), step: "fields" });
     });
+    // A radio group or dropdown with no options cannot be answered (UX-05).
+    for (const f of S.fields.filter((x) => CHOICE.has(x.type) && !(x.options || []).length)) {
+      const r = recipient(f.recipientKey);
+      out.push({ text: t("send.need-options", { type: t(`ftype.${f.type}`), name: displayName(r, S.recipients.indexOf(r)) }), step: "fields", field: f.key });
+    }
     return out;
   }
 
@@ -1577,6 +1688,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
             close(null);
             await go(p.step);
             if (p.recipient) pick(p.recipient);
+            if (p.field) select(p.field);
             if (p.focus) setTimeout(() => document.querySelector(p.focus)?.focus(), 0);
           } });
           return h("li", {}, icon("triangle-alert", { size: 16 }), h("span", { class: "os-problems__text", text: p.text }), fix);

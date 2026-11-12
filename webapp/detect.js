@@ -4,7 +4,7 @@
 //
 // A suggestion is in the field endpoints' geometry (ADR-019: displayed page space,
 // points, origin top-left; decimals as strings). The editor's palette places the
-// Release 1 field types; a suggestion of another type (title, company, a form field's
+// field types (geometry.js FIELD_TYPES, UX-05); a suggestion of another type (a form field's
 // own type) becomes a text field labelled with its cue, so nothing suggested is lost.
 
 import { FIELD_TYPES, fromWire, clampRect, overlaps } from "./geometry.js";

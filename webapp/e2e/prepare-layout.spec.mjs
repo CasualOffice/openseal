@@ -175,3 +175,87 @@ test("a clicked field type places its field where the page is clicked; Escape ca
   await expectAccessible(page, "editor with click-to-place");
 });
 
+// ---- Field kinds and their properties -------------------------------------------------------
+
+const add = (page, type) => page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).press("Enter");
+const pick = (page, type) => page.locator(`.os-field[data-field="${type}"]`).first().click();
+
+test("the ceremony's field kinds are placed and configured, and come back from the server as set", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toFields(page);
+  // The palette is grouped, and has every kind the ceremony fills.
+  await expect(page.locator(".os-palette__group")).toHaveCount(3);
+  for (const type of ["Company", "Title", "Number", "Radio group", "Dropdown", "Attachment", "Note"]) await add(page, type);
+  await add(page, "Text");
+  await expect(page.locator(".os-field")).toHaveCount(8);
+
+  // Text: required by default; a pattern, a tooltip and a sender's read-only value.
+  await pick(page, "text");
+  await expect(page.locator("#fp-required")).toBeChecked();
+  await page.locator("#fp-validate").selectOption("regex");
+  await page.locator("#fp-pattern").fill("[A-Z]{3}-\\d{4}");
+  await page.locator("#fp-pattern").blur();
+  await page.locator("#fp-vmsg").fill("Like ABC-1234");
+  await page.locator("#fp-vmsg").blur();
+  await page.locator("#fp-tooltip").fill("Your reference");
+  await page.locator("#fp-tooltip").blur();
+  await page.locator("#fp-label").fill("reference");
+  await page.locator("#fp-label").blur();
+  await snap(page, testInfo, "prepare-props-text-1440");
+  // Number: a range.
+  await pick(page, "number");
+  await page.locator("#fp-min").fill("1");
+  await page.locator("#fp-min").blur();
+  await page.locator("#fp-max").fill("99.5");
+  await page.locator("#fp-max").blur();
+  // Dropdown: its options, and a typed answer allowed.
+  await pick(page, "dropdown");
+  await page.locator("#fp-options").fill("Red\nGreen\n\nRed\nBlue");
+  await page.locator("#fp-options").blur();
+  await page.locator("#fp-custom").check();
+  // Note: the sender's text. Company: read only with a value, formatted.
+  await pick(page, "note");
+  await page.locator("#fp-note").fill("Initial each page.");
+  await page.locator("#fp-note").blur();
+  await pick(page, "company");
+  await page.locator("#fp-readonly").check();
+  await page.locator("#fp-value").fill("Acme Ltd");
+  await page.locator("#fp-value").blur();
+  await page.locator("#fp-font").selectOption("courier");
+  await page.locator("#fp-align").selectOption("center");
+  await expectAccessible(page, "field properties");
+
+  await page.getByTestId("save-draft").click();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+  const env = (await mockDb(page)).envelopes.find((e) => e.fields.some((f) => f.type === "dropdown"));
+  const by = (type) => env.fields.find((f) => f.type === type);
+  expect(env.fields.map((f) => f.type).sort()).toEqual(["attachment", "company", "dropdown", "note", "number", "radio_group", "text", "title"]);
+  expect(by("text")).toMatchObject({ required: true, label: "reference", tooltip: "Your reference", validation: { kind: "regex", pattern: "[A-Z]{3}-\\d{4}", message: "Like ABC-1234" } });
+  expect(by("number").validation).toEqual({ kind: "number", min: "1", max: "99.5" });
+  expect(by("dropdown")).toMatchObject({ options: ["Red", "Green", "Blue"], allow_custom: true, required: true });
+  expect(by("radio_group").options).toEqual(["Option 1", "Option 2"]);
+  expect(by("note").value).toEqual({ text: "Initial each page." });
+  expect(by("company")).toMatchObject({ read_only: true, value: { text: "Acme Ltd" }, format: { font_family: "courier", align: "center" } });
+  expect(by("attachment").required).toBeUndefined();
+
+  // Reopened from the server, the editor shows them as set.
+  await page.reload();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await expect(page.locator(".os-field")).toHaveCount(8);
+  await pick(page, "text");
+  await expect(page.locator("#fp-pattern")).toHaveValue("[A-Z]{3}-\\d{4}");
+  await expect(page.locator("#fp-tooltip")).toHaveValue("Your reference");
+  await pick(page, "dropdown");
+  await expect(page.locator("#fp-options")).toHaveValue("Red\nGreen\nBlue");
+  await expect(page.locator("#fp-custom")).toBeChecked();
+  // A cleared member is removed on the server, not left behind.
+  await page.locator("#fp-custom").uncheck();
+  await pick(page, "text");
+  await page.locator("#fp-validate").selectOption("");
+  await page.getByTestId("save-draft").click();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+  const env2 = (await mockDb(page)).envelopes.find((e) => e.id === env.id);
+  expect(env2.fields.find((f) => f.type === "dropdown").allow_custom).toBeUndefined();
+  expect(env2.fields.find((f) => f.type === "text").validation).toBeUndefined();
+});
+
