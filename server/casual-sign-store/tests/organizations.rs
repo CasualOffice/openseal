@@ -894,7 +894,10 @@ async fn bootstrap_owner_refuses_an_older_org_whose_row_was_touched_in_this_tran
     let admin = UserId(id());
     let mut tx = db.store.for_account(account).begin().await.unwrap();
     tx.users()
-        .create_member(&admin_user(admin, "touched"), PermissionProfileId(admin_profile))
+        .create_member(
+            &admin_user(admin, "touched"),
+            PermissionProfileId(admin_profile),
+        )
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -905,7 +908,10 @@ async fn bootstrap_owner_refuses_an_older_org_whose_row_was_touched_in_this_tran
         .await
         .unwrap();
     let mut conn = db.app.begin().await.unwrap();
-    for (k, v) in [("openseal.organization_id", org.0), ("openseal.account_id", account.0)] {
+    for (k, v) in [
+        ("openseal.organization_id", org.0),
+        ("openseal.account_id", account.0),
+    ] {
         sqlx::query("SELECT set_config($1, $2, true)")
             .bind(k)
             .bind(v.to_string())
@@ -925,7 +931,10 @@ async fn bootstrap_owner_refuses_an_older_org_whose_row_was_touched_in_this_tran
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-    assert!(!done, "touching the organization row let an existing organization be claimed");
+    assert!(
+        !done,
+        "touching the organization row let an existing organization be claimed"
+    );
     conn.commit().await.unwrap();
     let owners: i64 =
         sqlx::query_scalar("SELECT count(*) FROM organization_admins WHERE organization_id = $1")
@@ -1327,7 +1336,11 @@ async fn a_database_with_an_account_without_admin_migrates() {
             .unwrap();
     }
     let report = Store::from_pool(db.admin.clone()).migrate().await.unwrap();
-    assert_eq!(report.applied, vec![14]);
+    assert_eq!(
+        report.applied.first(),
+        Some(&14),
+        "migration 0014 applies first; later ones follow"
+    );
     for (i, acct) in accounts.iter().enumerate() {
         let (org, oname, ostatus): (uuid::Uuid, String, String) = sqlx::query_as(
             "SELECT a.organization_id, o.name, o.status FROM accounts a \

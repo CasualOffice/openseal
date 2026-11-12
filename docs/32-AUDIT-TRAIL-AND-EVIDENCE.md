@@ -86,6 +86,10 @@ recipient action (`recipient.delivered`, `recipient.viewed_document`, `recipient
 | Access | `envelope.viewed_by_sender`, `document.downloaded` (by whom), `certificate.downloaded`, `attachment.downloaded` (a signer's attachment: field and hash, by whom; `WEB-08`) |
 | Integration | `auth.asserted_by_host` (embedded host claims it authenticated the signer), `webhook.delivered` is **not** in the chain (operational log only) |
 
+`envelope.corrected` means a change after `envelope.sent`. As built, the engine also records a draft's own edits with it
+(docs/24 As built, `WEB-14`); ADR-030 (Proposed) gives draft edits their own type, `envelope.edited`. A reader of a
+chain built before then treats an `envelope.corrected` that precedes the first `envelope.sent` as a draft edit.
+
 ### As built (stage 1I)
 
 `prev` is `null` exactly on the first event. The trail file embedded in the PDF is canonical JSON

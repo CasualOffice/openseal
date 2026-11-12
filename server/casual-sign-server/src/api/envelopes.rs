@@ -1755,6 +1755,7 @@ pub(crate) async fn view_signing(
             recipient_id: RecipientId(uid(&rid)?),
             token_sha256: sha256(token.as_bytes()),
             purpose: TokenPurpose::Embedded,
+            host_user_id: None,
             expires_at: expires,
         })
         .await?;
@@ -1767,6 +1768,78 @@ pub(crate) async fn view_signing(
     r.extensions_mut().insert(SecretBearing);
     Ok(r)
 }
+
+/// How long a hosted in-person link lives (UXW-36): one sitting at the host's desk.
+/// Every call checks it, so the signing must finish within it; hosting again mints a
+/// new one.
+const IN_PERSON_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// `POST /envelopes/{id}/recipients/{r}/host` (UXW-36, docs/24 §2): a member who may
+/// send and may see the envelope hosts an in-person signer. The engine records
+/// `recipient.in_person_hosted` with the member as host and actor (their sign-in as
+/// the authentication), every earlier link of that recipient is revoked, and a
+/// one-time ceremony link acting as this member hosting the signer is returned to the
+/// caller only (`SecretBearing`). Another account's envelope is `404`; a recipient who
+/// is not an in-person signer, or whose turn has not come or has passed, is the
+/// engine's refusal.
+pub(crate) async fn host_in_person(
+    c: Call,
+    Path((id, r)): Path<(String, String)>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:send")?;
+    if !body.iter().all(u8::is_ascii_whitespace) {
+        let _: HostIn = parse(&body)?;
+    }
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let rid = rec_in(&l.state, &r)?.id().clone();
+    let mut cmds = c.commands(&mut tx).await?;
+    let ctx = cmds.ctx(
+        WfPrincipal::InPersonHost {
+            user_id: eid(c.p.user.0)?,
+        },
+        None,
+    )?;
+    run(
+        &mut tx,
+        &mut l,
+        &Command::HostInPerson {
+            recipient: rid.clone(),
+        },
+        &ctx,
+    )
+    .await?;
+    let now = c.st.now();
+    let recipient = RecipientId(uid(&rid)?);
+    tx.recipients().revoke_tokens(recipient, now).await?;
+    let token = random_secret()?;
+    let expires = crate::state::plus_std(now, IN_PERSON_TTL)?;
+    tx.recipients()
+        .issue_token(&NewToken {
+            id: RecipientTokenId(Uuid::now_v7()),
+            envelope_id: l.id,
+            recipient_id: recipient,
+            token_sha256: sha256(token.as_bytes()),
+            purpose: TokenPurpose::InPerson,
+            host_user_id: Some(c.p.user),
+            expires_at: expires,
+        })
+        .await?;
+    tx.commit().await?;
+    let url = format!("{}/s/{token}", c.st.config().public_url);
+    let mut resp = json(
+        StatusCode::CREATED,
+        &json!({ "url": url, "expires_at": rfc3339(expires) }),
+    );
+    resp.extensions_mut().insert(SecretBearing);
+    Ok(resp)
+}
+
+/// The body of `…/host`: empty, or an empty object.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostIn {}
 
 /// For tests and the worker's own use: issue an invitation token for a recipient of
 /// an envelope (the worker mints the invitation's token when it sends the email,
@@ -1791,6 +1864,7 @@ pub async fn issue_invitation_token(
             recipient_id: recipient,
             token_sha256: sha256(token.as_bytes()),
             purpose: TokenPurpose::Invitation,
+            host_user_id: None,
             expires_at: crate::state::plus_std(st.now(), ttl)?,
         })
         .await?;

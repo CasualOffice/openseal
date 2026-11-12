@@ -335,6 +335,11 @@ WorkspaceOf`, `create_workspace`, `archive_workspace`, `into_workspace(&Workspac
 `Accounts::make_first_owner`; `EntryPoints::user_workspaces`. `Store::create_account` is gone: the application can no
 longer create an account outside those functions. Forty-five tables.
 
+`0015_in_person_hosting.sql` (`UXW-36`) lets `recipient_tokens.purpose` be `in_person` and adds
+`recipient_tokens.host_user_id` (a user), set exactly when the purpose is `in_person` (a check). An in-person link
+acts as its host hosting the signer (docs/40 As built); the host is a user rather than a membership so that removing
+the member is not refused, and the server refuses the link once the host is no longer an enabled member.
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 
