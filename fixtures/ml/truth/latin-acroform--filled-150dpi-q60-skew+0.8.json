@@ -1,0 +1,706 @@
+{
+ "coordinates": "displayed page space, points, origin top left (ADR-019); form_rect is the clean form",
+ "degradation": {
+  "binarised": false,
+  "blur": "[1 2 1] x and y",
+  "ink": 41,
+  "jpeg_quality": 60,
+  "page_rotate": 0,
+  "paper": 242,
+  "rotated_180": false,
+  "seed": "61717151785:latin-acroform--filled-150dpi-q60-skew+0.8",
+  "skew_degrees": 0.8,
+  "speckles_per_page": 120
+ },
+ "file": "scans/latin-acroform--filled-150dpi-q60-skew+0.8.pdf",
+ "filled": true,
+ "form": "latin-acroform",
+ "image": {
+  "bits_per_component": 8,
+  "dpi": 150,
+  "filter": "DCTDecode",
+  "height_px": 1650,
+  "width_px": 1275
+ },
+ "pages": [
+  {
+   "fields": [
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      166.0,
+      228.0,
+      22.0
+     ],
+     "kind": "first_name",
+     "label": "First name",
+     "name": "first_name",
+     "rect": [
+      74.88,
+      162.64,
+      228.0,
+      25.36
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      312.0,
+      166.0,
+      228.0,
+      22.0
+     ],
+     "kind": "last_name",
+     "label": "Last name",
+     "name": "last_name",
+     "rect": [
+      314.88,
+      166.0,
+      228.0,
+      25.36
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      218.0,
+      228.0,
+      22.0
+     ],
+     "kind": "email_address",
+     "label": "Email",
+     "name": "email_address",
+     "rect": [
+      73.92,
+      214.64,
+      228.96,
+      25.36
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      312.0,
+      218.0,
+      228.0,
+      22.0
+     ],
+     "kind": "phone",
+     "label": "Phone",
+     "name": "phone",
+     "rect": [
+      313.92,
+      218.0,
+      228.96,
+      25.36
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      270.0,
+      228.0,
+      22.0
+     ],
+     "kind": "company",
+     "label": "Company",
+     "name": "company",
+     "rect": [
+      73.92,
+      266.64,
+      228.0,
+      25.36
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      312.0,
+      270.0,
+      228.0,
+      22.0
+     ],
+     "kind": "title",
+     "label": "Title",
+     "name": "title",
+     "rect": [
+      313.92,
+      270.0,
+      228.0,
+      25.36
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      317.0,
+      10.0,
+      10.0
+     ],
+     "kind": "checkbox",
+     "label": "I confirm the information above is correct.",
+     "name": "confirm",
+     "rect": [
+      72.96,
+      313.64,
+      10.0,
+      10.0
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      72.0,
+      372.0,
+      288.0,
+      44.0
+     ],
+     "kind": "signature",
+     "label": "Signature",
+     "name": "signature",
+     "rect": [
+      72.0,
+      368.64,
+      288.0,
+      48.32
+     ]
+    },
+    {
+     "drawn": "box",
+     "form_rect": [
+      384.0,
+      372.0,
+      156.0,
+      22.0
+     ],
+     "kind": "date_signed",
+     "label": "Date",
+     "name": "date_signed",
+     "rect": [
+      384.0,
+      372.96,
+      156.0,
+      24.4
+     ]
+    }
+   ],
+   "page": 0,
+   "words": [
+    {
+     "rect": [
+      75.84,
+      76.35,
+      59.0,
+      21.07
+     ],
+     "role": "title",
+     "script": "Latn",
+     "text": "Vendor"
+    },
+    {
+     "rect": [
+      138.88,
+      77.31,
+      97.01,
+      21.55
+     ],
+     "role": "title",
+     "script": "Latn",
+     "text": "Registration"
+    },
+    {
+     "rect": [
+      75.84,
+      109.13,
+      44.94,
+      12.69
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Complete"
+    },
+    {
+     "rect": [
+      123.69,
+      110.09,
+      25.68,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "every"
+    },
+    {
+     "rect": [
+      152.29,
+      110.09,
+      16.93,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "box"
+    },
+    {
+     "rect": [
+      172.13,
+      110.57,
+      8.17,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "in"
+    },
+    {
+     "rect": [
+      183.22,
+      110.57,
+      24.51,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "block"
+    },
+    {
+     "rect": [
+      210.65,
+      111.05,
+      35.6,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "capitals"
+    },
+    {
+     "rect": [
+      249.17,
+      111.53,
+      17.52,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "and"
+    },
+    {
+     "rect": [
+      269.61,
+      112.01,
+      19.26,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "sign"
+    },
+    {
+     "rect": [
+      291.79,
+      112.49,
+      8.76,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "at"
+    },
+    {
+     "rect": [
+      303.46,
+      112.49,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      320.98,
+      112.49,
+      32.1,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "bottom"
+    },
+    {
+     "rect": [
+      355.99,
+      112.97,
+      8.76,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "of"
+    },
+    {
+     "rect": [
+      367.67,
+      113.45,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      385.18,
+      113.45,
+      26.28,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "page."
+    },
+    {
+     "rect": [
+      74.88,
+      148.49,
+      18.45,
+      10.53
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "First"
+    },
+    {
+     "rect": [
+      94.88,
+      148.97,
+      23.47,
+      10.05
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "name"
+    },
+    {
+     "rect": [
+      79.88,
+      168.68,
+      28.74,
+      12.77
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "Robin"
+    },
+    {
+     "rect": [
+      314.88,
+      151.85,
+      17.97,
+      10.53
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Last"
+    },
+    {
+     "rect": [
+      334.39,
+      152.33,
+      23.47,
+      10.05
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "name"
+    },
+    {
+     "rect": [
+      319.88,
+      172.04,
+      44.63,
+      13.25
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "Testcase"
+    },
+    {
+     "rect": [
+      74.88,
+      200.49,
+      22.5,
+      10.53
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Email"
+    },
+    {
+     "rect": [
+      78.92,
+      220.68,
+      102.0,
+      13.73
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "robin@example.com"
+    },
+    {
+     "rect": [
+      314.88,
+      203.85,
+      26.02,
+      10.53
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Phone"
+    },
+    {
+     "rect": [
+      318.92,
+      224.04,
+      13.02,
+      12.77
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "+1"
+    },
+    {
+     "rect": [
+      334.52,
+      224.52,
+      18.83,
+      12.29
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "555"
+    },
+    {
+     "rect": [
+      355.93,
+      224.52,
+      24.95,
+      12.77
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "0100"
+    },
+    {
+     "rect": [
+      73.92,
+      252.49,
+      38.52,
+      10.53
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Company"
+    },
+    {
+     "rect": [
+      78.92,
+      272.68,
+      42.8,
+      13.25
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "Example"
+    },
+    {
+     "rect": [
+      124.77,
+      273.64,
+      37.3,
+      12.77
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "Trading"
+    },
+    {
+     "rect": [
+      165.13,
+      274.12,
+      14.06,
+      12.29
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "Co"
+    },
+    {
+     "rect": [
+      313.92,
+      255.85,
+      17.0,
+      10.53
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Title"
+    },
+    {
+     "rect": [
+      318.92,
+      276.04,
+      28.74,
+      12.77
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "Buyer"
+    },
+    {
+     "rect": [
+      90.96,
+      313.61,
+      2.92,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "I"
+    },
+    {
+     "rect": [
+      96.79,
+      313.61,
+      34.42,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "confirm"
+    },
+    {
+     "rect": [
+      134.13,
+      314.09,
+      14.6,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "the"
+    },
+    {
+     "rect": [
+      151.65,
+      314.09,
+      51.94,
+      12.69
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "information"
+    },
+    {
+     "rect": [
+      206.51,
+      315.05,
+      28.61,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "above"
+    },
+    {
+     "rect": [
+      238.03,
+      315.53,
+      7.58,
+      11.73
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "is"
+    },
+    {
+     "rect": [
+      248.53,
+      315.53,
+      35.01,
+      12.21
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "correct."
+    },
+    {
+     "rect": [
+      72.0,
+      354.49,
+      39.49,
+      10.53
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Signature"
+    },
+    {
+     "rect": [
+      384.0,
+      358.81,
+      19.97,
+      10.53
+     ],
+     "role": "label",
+     "script": "Latn",
+     "text": "Date"
+    },
+    {
+     "rect": [
+      84.0,
+      380.7,
+      52.97,
+      30.53
+     ],
+     "role": "signature_ink",
+     "script": "Latn",
+     "text": "Robin"
+    },
+    {
+     "rect": [
+      141.07,
+      381.18,
+      67.22,
+      31.01
+     ],
+     "role": "signature_ink",
+     "script": "Latn",
+     "text": "Testcase"
+    },
+    {
+     "rect": [
+      389.0,
+      379.0,
+      56.27,
+      13.25
+     ],
+     "role": "value",
+     "script": "Latn",
+     "text": "2026-05-20"
+    }
+   ]
+  }
+ ],
+ "schema": 1,
+ "source": "vector/latin-acroform.pdf",
+ "synthetic": true,
+ "template": "latin-acroform"
+}
