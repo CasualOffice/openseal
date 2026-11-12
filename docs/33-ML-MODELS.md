@@ -388,6 +388,9 @@ a required dependency of `oar-ocr-core` 0.10.2 (polygon offsetting in its DB pos
 admits BSL-1.0 for the ONNX Runtime binary only, so the licence gate fails on any tree with the `server` feature
 until the owner decides (allow BSL-1.0 for this crate in `deny.toml` with an ADR, or replace the unclip step under
 D3(b)); a row is proposed.
+**Also found:** `oar-ocr` 0.10.2 and its `-core` and `-derive` crates declare `rust-version = 1.95`, above the
+workspace's pinned 1.94.0, so the CI list's `cargo +1.94.0 check --workspace` fails with the `server` feature until
+the MSRV moves to 1.95 (the toolchain in use is 1.96) or an older `oar-ocr` is pinned; a row is proposed.
 
 Determinism: CPU execution only, one intra-op thread per session, a fixed graph optimisation level, and fixed
 truncation. Output is expected to be bit-identical on the same build and CPU instruction set; across AVX2 and
