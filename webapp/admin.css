@@ -293,7 +293,7 @@
 .os-intel__models { border-radius: var(--os-radius-lg); box-shadow: inset 0 0 0 1px var(--os-border); overflow: hidden; min-width: 0; animation-delay: 180ms; }
 .os-intel__models-head { padding: 0.875rem 1rem; display: flex; align-items: center; gap: 0.5rem; background: var(--os-surface); box-shadow: inset 0 -1px 0 var(--os-hairline); }
 .os-intel__models-title { margin: 0; font-size: var(--os-fs-14); font-weight: 600; white-space: nowrap; }
-.os-intel__models-by { margin-left: auto; font-size: var(--os-fs-12); color: var(--os-muted); white-space: nowrap; }
+.os-intel__models-by { margin-left: auto; min-width: 0; font-size: var(--os-fs-12); color: var(--os-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .os-intel__model-list { list-style: none; margin: 0; padding: 0; }
 .os-intel__model-row { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.25rem; box-shadow: inset 0 -1px 0 var(--os-hairline); }
 .os-intel__model-row:last-child { box-shadow: none; }
