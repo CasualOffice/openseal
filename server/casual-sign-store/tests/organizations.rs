@@ -875,6 +875,67 @@ async fn bootstrap_makes_the_first_organization_and_its_owner_once() {
     db.drop().await;
 }
 
+/// The ORG-02 re-review probe: touching an existing organization's row (which moves its
+/// `xmin` to this transaction) and then switching to a workspace's scope must not make the
+/// organization look newly made, so its owner still cannot be claimed.
+#[tokio::test]
+async fn bootstrap_owner_refuses_an_older_org_whose_row_was_touched_in_this_transaction() {
+    let Some(db) = fresh("bootstrap_owner_touched_org", Rls::On).await else {
+        return;
+    };
+    let (org, account) = db.account("touched").await;
+    let admin_profile: uuid::Uuid = sqlx::query_scalar(
+        "SELECT id FROM permission_profiles WHERE account_id = $1 AND kind = 'admin'",
+    )
+    .bind(account.0)
+    .fetch_one(&db.admin)
+    .await
+    .unwrap();
+    let admin = UserId(id());
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    tx.users()
+        .create_member(&admin_user(admin, "touched"), PermissionProfileId(admin_profile))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    // Make the organization visibly older than this transaction.
+    sqlx::query("UPDATE organizations SET created_at = now() - interval '365 days' WHERE id = $1")
+        .bind(org.0)
+        .execute(&db.admin)
+        .await
+        .unwrap();
+    let mut conn = db.app.begin().await.unwrap();
+    for (k, v) in [("openseal.organization_id", org.0), ("openseal.account_id", account.0)] {
+        sqlx::query("SELECT set_config($1, $2, true)")
+            .bind(k)
+            .bind(v.to_string())
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        if k == "openseal.organization_id" {
+            sqlx::query("UPDATE organizations SET name = name WHERE id = $1")
+                .bind(org.0)
+                .execute(&mut *conn)
+                .await
+                .unwrap();
+        }
+    }
+    let done: bool = sqlx::query_scalar("SELECT openseal_bootstrap_owner($1, now())")
+        .bind(admin.0)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert!(!done, "touching the organization row let an existing organization be claimed");
+    conn.commit().await.unwrap();
+    let owners: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM organization_admins WHERE organization_id = $1")
+            .bind(org.0)
+            .fetch_one(&db.admin)
+            .await
+            .unwrap();
+    assert_eq!(owners, 0);
+}
+
 /// The ORG-02 review probe: an organization that already exists without an owner (the
 /// state the backfill leaves for an account with no admin, or a console-created one
 /// before its owner is named) is not claimable through the bootstrap door by one of its

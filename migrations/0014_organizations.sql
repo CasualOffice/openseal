@@ -386,7 +386,7 @@ DECLARE
 BEGIN
     SELECT a.organization_id INTO org FROM accounts a
       JOIN organizations o ON o.id = a.organization_id
-     WHERE a.id = acct AND o.xmin = pg_current_xact_id()::xid;
+     WHERE a.id = acct AND o.xmin = pg_current_xact_id()::xid AND o.created_at = now();
     IF org IS NULL
        OR EXISTS (SELECT 1 FROM organization_admins oa WHERE oa.organization_id = org)
        OR EXISTS (SELECT 1 FROM accounts a WHERE a.organization_id = org AND a.id <> acct)
