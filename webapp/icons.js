@@ -6,6 +6,17 @@ import { NODES } from "./vendor/lucide/nodes.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 
+/// Names the app uses for Lucide icons that Lucide calls something else (UX-02): the
+/// editor's align commands by the edge they align to, and the older help-circle name.
+const ALIAS = {
+  "align-start": "align-start-vertical", // left edges
+  "align-end": "align-end-vertical", // right edges
+  "align-top": "align-start-horizontal",
+  "align-bottom": "align-end-horizontal",
+  "help-circle": "circle-help",
+};
+const nodesOf = (name) => NODES[ALIAS[name] || name];
+
 /// An icon. With `label` it is an image with that accessible name; without, it is
 /// decorative and hidden from assistive technology (the control around it is named).
 export function icon(name, { size = 20, label = null, className = "" } = {}) {
@@ -26,7 +37,7 @@ export function icon(name, { size = 20, label = null, className = "" } = {}) {
     svg.setAttribute("aria-hidden", "true");
     svg.setAttribute("focusable", "false");
   }
-  for (const [tag, attrs] of NODES[name] || []) {
+  for (const [tag, attrs] of nodesOf(name) || []) {
     const n = document.createElementNS(SVG, tag);
     for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
     svg.appendChild(n);
@@ -36,5 +47,5 @@ export function icon(name, { size = 20, label = null, className = "" } = {}) {
 
 /// Whether `name` is vendored (for tests and for callers that pick one at run time).
 export function hasIcon(name) {
-  return Object.prototype.hasOwnProperty.call(NODES, name);
+  return Object.prototype.hasOwnProperty.call(NODES, ALIAS[name] || name);
 }

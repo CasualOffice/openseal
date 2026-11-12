@@ -81,6 +81,9 @@ def build() -> dict[str, bytes]:
     files: dict[str, bytes] = {}
     # Assets copied from the repository, so the site matches the product and the brand files.
     files["assets/tokens.css"] = (ROOT / "webapp/tokens.css").read_bytes()
+    # tokens.css loads the UI font from fonts/ui/ relative to itself (UX-02), so the site ships it too.
+    for font in sorted((ROOT / "webapp/fonts/ui").iterdir()):
+        files[f"assets/fonts/ui/{font.name}"] = font.read_bytes()
     for name in ("logo.svg", "logo-dark.svg", "mark.svg"):
         files[f"assets/{name}"] = (ROOT / "docs/assets" / name).read_bytes()
 
