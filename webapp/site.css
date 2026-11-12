@@ -1,8 +1,30 @@
-/* The landing page (WEB-01): the sisters' site pages, reduced to one page until the
- * docs, deploy and download pages have content of their own. */
-.os-site { min-height: 100vh; }
-.os-site__bar { display: flex; align-items: center; gap: var(--os-s3); padding: var(--os-s4) var(--os-s6); border-bottom: 1px solid var(--os-border); }
-.os-site__main { width: min(47.5rem, 100%); margin: 0 auto; padding: var(--os-s12) var(--os-s4); display: grid; gap: var(--os-s4); }
-.os-site__title { font-size: var(--os-fs-32); }
-.os-site__lede { font-size: var(--os-fs-20); line-height: var(--os-lh-body); color: var(--os-text); }
-.os-site__note { color: var(--os-muted); }
+/* The landing page (WEB-01; UX-04): the sisters' site pages, reduced to one page until
+ * the docs, deploy and download pages have content of their own. A hero with the one
+ * primary action, a row of four features and a footer. */
+.os-site { min-height: 100vh; display: flex; flex-direction: column; background: var(--os-canvas); color: var(--os-text); }
+.os-site__bar { display: flex; align-items: center; gap: var(--os-s2); min-height: var(--os-topbar-h); padding: 0 var(--os-s6); border-bottom: 1px solid var(--os-border); background: var(--os-bg); }
+.os-site__brand { display: flex; align-items: center; min-height: var(--os-target-min); border-radius: var(--os-radius-sm); }
+.os-site__main { flex: 1; width: min(67.5rem, 100%); margin: 0 auto; padding: var(--os-s12) var(--os-s6); display: grid; gap: var(--os-s12); align-content: start; outline: none; }
+.os-site__hero { max-width: 47.5rem; display: grid; gap: var(--os-s4); }
+.os-site__title { font-size: var(--os-fs-32); margin: 0; }
+.os-site__lede { font-size: var(--os-fs-20); line-height: var(--os-lh-body); color: var(--os-text); margin: 0; }
+.os-site__note { color: var(--os-muted); margin: 0; font-size: var(--os-fs-14); }
+.os-site__grid { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--os-s4); grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.os-site__feature { padding: var(--os-s6); border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-raised); box-shadow: var(--os-shadow); }
+.os-site__feature h3 { font-size: var(--os-fs-16); margin: 0 0 var(--os-s2); }
+.os-site__feature p { margin: 0; color: var(--os-muted); }
+.os-site__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--os-s2) var(--os-s6); padding: var(--os-s6); border-top: 1px solid var(--os-border); background: var(--os-bg); color: var(--os-muted); font-size: var(--os-fs-14); }
+.os-site__foot p { margin: 0; }
+.os-site__links { display: flex; flex-wrap: wrap; gap: var(--os-s4); }
+.os-site__links a { display: inline-flex; align-items: center; min-height: var(--os-target-min); color: var(--os-muted); }
+.os-site__links a:hover { color: var(--os-text); }
+@media (max-width: 47.5em) {
+  .os-site__bar { padding: 0 var(--os-s4); }
+  .os-site__brand img { width: 6.5rem; height: auto; }
+  .os-site__main { padding: var(--os-s8) var(--os-s4); gap: var(--os-s8); }
+  .os-site__foot { padding: var(--os-s4); }
+}
+/* The header's Verify link moves to the hero and footer on the narrowest phones. */
+@media (max-width: 26.25em) {
+  .os-site__bar .os-btn--ghost { display: none; }
+}

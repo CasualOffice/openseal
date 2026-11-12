@@ -223,7 +223,9 @@ test.describe("desktop", () => {
     await page.locator("#bar-finish").click();
     await expect(page.getByRole("heading", { name: "Review and finish" })).toBeVisible();
     const values = page.getByTestId("review-values");
-    for (const v of ["Job title", "Engineer", "Signature", "Signed", "Date signed"]) await expect(values).toContainText(v);
+    for (const v of ["Job title", "Engineer", "Signature", "Date signed"]) await expect(values).toContainText(v);
+    // UX-06: the adopted mark itself, not the word "Signed".
+    await expect(values.getByRole("img", { name: /Signature: your adopted mark/ })).toBeVisible();
     expect(await page.getByTestId("review-doc").evaluate((el) => el.scrollTop)).toBe(0);
     await expect(page.getByRole("button", { name: "Finish" })).toHaveCount(1);
     await expectAccessible(page, "review");
@@ -266,12 +268,12 @@ test.describe("desktop", () => {
     await expect(page.getByText("Enter an email address like name@example.com.")).toBeVisible();
     await page.getByRole("textbox", { name: /Company/ }).fill("Northwind");
     await page.getByRole("textbox", { name: /Company/ }).blur();
-    // A radio group: its choices in a panel.
+    // A radio group: its choices in a popover on the field, saved on selection (UX-06).
     await page.getByRole("button", { name: /Plan, required/ }).click();
-    const plan = page.getByRole("dialog", { name: "Plan" });
-    await plan.getByLabel("Pro").check();
-    await expectAccessible(page, "choice panel");
-    await plan.getByTestId("choice-save").click();
+    const plan = page.getByRole("radiogroup", { name: "Plan" });
+    await expect(plan).toBeVisible();
+    await expectAccessible(page, "choice popover");
+    await plan.getByRole("radio", { name: "Pro" }).click();
     await expect(plan).toBeHidden();
     await expect(page.getByRole("button", { name: /^Pro: Plan/ })).toBeVisible();
     // A dropdown: the platform's select.

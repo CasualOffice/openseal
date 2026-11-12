@@ -58,7 +58,9 @@ export function anchoredScroll({ top, left, height, width }, fx, fy, ax, ay) {
 
 /// Make a document view. `pages`: `[{key, n, total, name, width, height, pdf}]` (points,
 /// pdf: a pdfview.js handle). Callbacks: `onLayout(view)` after a relayout, `onPage(i)`
-/// when the current page changes, `onZoom(view)`.
+/// when the current page changes, `onZoom(view)`. `padLeft`: px the fit leaves free on
+/// the left beyond the usual margin, or a function answering it at each layout (UX-06:
+/// the signer's Start flag room, which a media query sets).
 export function docView({ label, pages = [], mode = "fit-width", onLayout = null, onPage = null, onZoom = null, padLeft = 0, testId = "doc-scroller" }) {
   const live = h("div", { class: "os-sr-only", attrs: { "aria-live": "polite", "data-testid": "doc-live" } });
   const inner = h("div", { class: "os-docview__pages" });
@@ -72,6 +74,7 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
   let paintTimer = null;
   let announceTimer = null;
   const painted = new Map(); // page index → scale painted at
+  const leftRoom = () => Math.max(0, Number(typeof padLeft === "function" ? padLeft() : padLeft) || 0);
 
   const near = typeof IntersectionObserver === "function" ? new IntersectionObserver((entries) => {
     for (const e of entries) {
@@ -109,7 +112,7 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
   function layout() {
     const [mw, mh] = maxSize();
     const pad = remPx(1.5);
-    view.scale = scaleFor(view.mode, mw, mh, scroller.clientWidth - padLeft, scroller.clientHeight, pad);
+    view.scale = scaleFor(view.mode, mw, mh, scroller.clientWidth - leftRoom(), scroller.clientHeight, pad);
     view.els.forEach(({ el }, i) => {
       const p = view.pages[i];
       el.style.width = `${p.width * view.scale}px`;
@@ -221,7 +224,7 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
   function relayout() {
     if (!view.els.length || typeof view.mode === "number") return;
     const [mw, mh] = maxSize();
-    const next = scaleFor(view.mode, mw, mh, scroller.clientWidth - padLeft, scroller.clientHeight, remPx(1.5));
+    const next = scaleFor(view.mode, mw, mh, scroller.clientWidth - leftRoom(), scroller.clientHeight, remPx(1.5));
     if (Math.abs(next - view.scale) < 1e-4) return;
     setZoom(view.mode);
   }
@@ -361,7 +364,7 @@ function iconBtn(ic, label, onClick, size) {
 
 /// The page thumbnails for a view in `container` (a list that scrolls on its own): drawn
 /// lazily, the current one marked and kept in view, a click jumps to its page.
-export function thumbnails(view, container, { width = 96 } = {}) {
+export function thumbnails(view, container, { width = 96, byDocument = false } = {}) {
   const ol = h("ol", { class: "os-thumbs__list" });
   container.append(ol);
   const btns = [];
@@ -382,6 +385,8 @@ export function thumbnails(view, container, { width = 96 } = {}) {
       c.style.aspectRatio = `${p.width} / ${p.height}`;
       const b = h("button", { type: "button", class: "os-thumb", attrs: { "data-index": String(i), "aria-label": t("prepare.page-of", { n: p.n, total: p.total, name: p.name }), title: t("doc.go-page", { n: i + 1 }) } }, c, h("span", { class: "os-thumb__n", text: String(i + 1) }));
       b.addEventListener("click", () => { view.scrollToPage(i); mark(i); });
+      // Grouped by document (UX-05, the editor): each document's name heads its pages.
+      if (byDocument && p.n === 1) ol.append(h("li", { class: "os-thumbs__doc", attrs: { "data-testid": "thumbs-doc" } }, h("span", { class: "os-trunc", title: p.name, text: p.name })));
       ol.append(h("li", {}, b));
       btns.push(b);
       if (io) io.observe(b); else if (p.pdf) p.pdf.render(p.n, c, width / p.width).catch(() => {});

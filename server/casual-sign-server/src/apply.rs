@@ -62,11 +62,15 @@ pub(crate) async fn load(tx: &mut TenantTx, id: EnvelopeId) -> Result<Option<Loa
 /// The account's workflow policy: `settings.workflow_policy`, or the defaults.
 pub(crate) async fn policy(tx: &mut TenantTx) -> Result<Policy, ApiError> {
     let acct = tx.account().get().await?;
-    Ok(acct
-        .settings
+    Ok(policy_of(&acct.settings))
+}
+
+/// The workflow policy in an account's settings, or the defaults.
+pub(crate) fn policy_of(settings: &serde_json::Value) -> Policy {
+    settings
         .get("workflow_policy")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default())
+        .unwrap_or_default()
 }
 
 /// Ids for a request's commands: `<seed>-<n>`.

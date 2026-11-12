@@ -192,9 +192,12 @@ export const NOT_ON_SERVER = Object.freeze({
   updateWebhook: { row: "UXW-31", needs: "PATCH /webhooks/{id} {url?, event_types?, active?} (pause, resume, edit)" },
   testWebhook: { row: "UXW-32", needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
   redeliver: { row: "UXW-33", needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
-  disclosure: { row: "UXW-34", needs: "GET /s/{token}/disclosure {version, sha256, text} and consent_required.url" },
   clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit event)" },
   hostInPerson: { row: "UXW-36", needs: "POST /envelopes/{id}/recipients/{r}/host (staff hosts an in-person signer)" },
+  // UX-04: the shell's account menu and sign-in.
+  profile: { row: "UXW-37", needs: "GET/PATCH /api/v1/users/me {name, email (read-only), notifications {completed, declined, viewed}, signature and initials {image_base64} or null, password with current_password}" },
+  passwordReset: { row: "UXW-38", needs: "POST /api/v1/auth/password-reset {email} (no session; 202 whether or not the email has an account) and the emailed one-time link to set a new password" },
+  authProviders: { row: "UXW-39", needs: "GET /api/v1/auth/providers (no session) answering {items: [{id, name, url}]}, the configured SSO identity providers (FG-173)" },
 });
 
 /// Make a client. `baseUrl` is prepended to every path ("" = same origin). `store`
@@ -281,6 +284,19 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     },
     session: () => data(request("GET", "/api/v1/auth/session")),
     account: () => data(request("GET", "/api/v1/accounts/me")),
+    /// The signed-in user's own profile (`NOT_ON_SERVER.profile`, UX-04): `{id, name,
+    /// email, notifications: {completed, declined, viewed}, signature, initials}`, the
+    /// marks as `{image_base64}` or null.
+    me: unbuilt("profile", () => data(request("GET", "/api/v1/users/me"))),
+    /// Change one's own profile: `{name?, notifications?, signature?, initials?,
+    /// password?, current_password?}` (a new password needs the current one).
+    patchMe: unbuilt("profile", (body) => data(request("PATCH", "/api/v1/users/me", { body }))),
+    /// Ask for a password-reset email (`NOT_ON_SERVER.passwordReset`, UX-04); no
+    /// session. The answer is the same whether or not the address has an account.
+    requestPasswordReset: unbuilt("passwordReset", (email) => data(request("POST", "/api/v1/auth/password-reset", { body: { email } }))),
+    /// The SSO identity providers this server offers on sign-in
+    /// (`NOT_ON_SERVER.authProviders`, UX-04): `{items: [{id, name, url}]}`; no session.
+    authProviders: unbuilt("authProviders", () => data(request("GET", "/api/v1/auth/providers"))),
 
     // ---- Envelopes ---------------------------------------------------------
     /// `q`: text the subject or a recipient's name or email contains (WEB-04).
@@ -475,10 +491,11 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     },
 
     // ---- Ceremony (docs/40 §6; not public API) ----------------------------
-    // The view: `{envelope, recipient, fields, capture_location, consent_required:
-    // {version, sha256, url?} | null, auth_required, sender?: {name, email,
-    // organisation}}`. `sender` and `consent_required.url` are the mock's until the
-    // server row lands (docs/40 §6); the page works without them.
+    // The view: `{envelope (with expires_at), recipient, fields, capture_location,
+    // consent_required: {version, sha256, url?} | null, auth_required, sender: {name,
+    // email, organisation}}` (UXW-34). `url` is there only when the account has
+    // published the disclosure's text; `sender.name` and `.email` are null once the
+    // sending user has left the account.
     ceremony: {
       view: (token) => data(request("GET", S(token), { ceremony: true })),
       /// An approver approves (`recipient.approved`); a signer is refused (409).
@@ -486,8 +503,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// Withdraw consent to electronic records: declines a required action.
       withdrawConsent: (token, location) => data(request("POST", `${S(token)}/withdraw-consent`, { body: withLocation({}, location), ceremony: true })),
       /// The full disclosure the recipient consents to, `{version, sha256, text}` (`sha256`
-      /// over the text's UTF-8; the one `consent_required` names) (`NOT_ON_SERVER.disclosure`).
-      disclosure: unbuilt("disclosure", (token) => data(request("GET", `${S(token)}/disclosure`, { ceremony: true }))),
+      /// over the text's UTF-8; the one `consent_required` names), once every
+      /// authentication has passed (UXW-34; 404 when the account published no text).
+      disclosure: (token) => data(request("GET", `${S(token)}/disclosure`, { ceremony: true })),
       /// Remove this recipient's value from a field before finishing (`NOT_ON_SERVER.clearField`).
       clearField: unbuilt("clearField", (token, field) => data(request("DELETE", `${S(token)}/fields/${encodeURIComponent(field)}`, { ceremony: true }))),
       open: (token) => data(request("POST", `${S(token)}/session`, { body: {}, ceremony: true })),
