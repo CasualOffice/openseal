@@ -251,7 +251,7 @@ test("an invited member sets a password from the emailed link, once", async ({ p
   await page.getByRole("menuitem", { name: "Resend invitation" }).click();
   await expect(page.locator(".os-toast").last()).toContainText("Invitation sent again to kai@example.com.");
   const token = await page.evaluate(() => Object.keys(JSON.parse(sessionStorage.getItem("openseal.mock.v1")).invites)[0]);
-  await page.getByRole("button", { name: "Account" }).click();
+  await page.locator("#account-btn").click();
   await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 

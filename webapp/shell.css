@@ -1,6 +1,6 @@
 /* The app shell's styles (WEB-17; docs/47 §As built: design foundation): the canvas's
  * quiet sidebar and white content card, the phone top row and drawer, the ⌘K command
- * menu, the editor frame, sign-in, and the verify page. Loaded after app.css by
+ * menu, the editor frame, and the verify page's bar (sign-in and Verify's body are auth.css). Loaded after app.css by
  * app.html and verify.html. Geometry is the Main artboard's: sidebar 15.5rem on the
  * window colour, the card inset 0.5rem with a 12 px radius and a hairline ring. */
 
@@ -238,71 +238,8 @@
 @media (max-width: 47.5em) {
   .os-verify > .os-topbar { padding: 0 var(--os-s3); }
   .os-verify > .os-topbar .os-brand img { width: 6.5rem; height: auto; }
-  .os-signin { padding: var(--os-s6); }
 }
-
-/* ---- Sign-in ---------------------------------------------------------------------- */
-.os-signin-wrap { min-height: 80vh; display: grid; place-items: center; align-content: center; gap: var(--os-s4); padding: var(--os-s6) var(--os-s4); }
-.os-signin { width: min(25rem, 100%); padding: var(--os-s8); border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-bg); box-shadow: var(--os-shadow); }
-.os-signin__logo { margin-bottom: var(--os-s6); height: 2.25rem; width: auto; }
-.os-signin__title { font-size: var(--os-fs-24); margin-bottom: var(--os-s1); }
-.os-signin__form .os-btn { width: 100%; margin-top: var(--os-s4); }
-.os-signin__alert { margin: var(--os-s4) 0 0; }
-.os-signin__alert[hidden] { display: none; }
-.os-signin__forgotrow { display: flex; justify-content: flex-end; margin-top: var(--os-s2); }
-.os-signin__forgot { font-size: var(--os-fs-14); font-weight: 600; }
-.os-signin__form .os-signin__link { width: auto; margin: 0; padding: 0; min-height: 1.75rem; display: inline-flex; align-items: center; border: 0; background: none; color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.15em; cursor: pointer; font: inherit; font-size: var(--os-fs-14); font-weight: 600; }
-/* Show password: a toggle beside the field (not inside it, where it would cover typed text). */
-.os-password { display: flex; align-items: stretch; gap: var(--os-s2); }
-.os-password .os-input { flex: 1; min-width: 0; }
-.os-signin__form .os-password__toggle { flex: none; width: auto; margin: 0; min-width: 4rem; min-height: var(--os-target-min); }
-.os-signin__or { display: flex; align-items: center; gap: var(--os-s3); margin: var(--os-s4) 0; color: var(--os-muted); font-size: var(--os-fs-14); }
-.os-signin__or::before, .os-signin__or::after { content: ""; flex: 1; height: 1px; background: var(--os-border); }
-.os-signin__sso { display: grid; gap: var(--os-s2); }
-.os-signin__sso .os-btn { width: 100%; }
-.os-signin__back { margin-top: var(--os-s4); }
-.os-signin__foot { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--os-s2) var(--os-s4); font-size: var(--os-fs-14); }
-.os-signin__footlink { color: var(--os-muted); display: inline-flex; align-items: center; min-height: var(--os-target-min); }
-.os-signin__footlink:hover { color: var(--os-text); }
-.os-signin__hint { margin-top: var(--os-s4); padding: var(--os-s3); border-radius: var(--os-radius); background: var(--os-surface); font-size: var(--os-fs-12); overflow-wrap: anywhere; }
-/* Verify */
-.os-verify { background: var(--os-canvas); color: var(--os-text); min-height: 100vh; }
-.os-verify .os-topbar { position: static; min-height: var(--os-topbar-h); }
 .os-verify__main { max-width: 57.5rem; margin: 0 auto; padding: var(--os-s8) var(--os-s4) var(--os-s12); outline: none; }
-.os-drop { display: grid; justify-items: center; gap: var(--os-s3); padding: var(--os-s8) var(--os-s4); border: 0.125rem dashed var(--os-border-strong); border-radius: var(--os-radius-lg); background: var(--os-raised); text-align: center; }
-.os-drop.is-dropping { border-color: var(--os-accent-fill); background: var(--os-accent-soft); }
-.os-drop__title { font-size: var(--os-fs-20); font-weight: 600; margin: 0; }
-.os-chips { list-style: none; margin: var(--os-s2) 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--os-s2); }
-.os-chip-item { display: inline-flex; align-items: center; gap: var(--os-s1); padding: 0.125rem var(--os-s1) 0.125rem var(--os-s2); border: 1px solid var(--os-border); border-radius: 62.4375rem; background: var(--os-raised); }
-.os-verify__busy { display: flex; gap: var(--os-s3); align-items: center; padding: var(--os-s6) 0; }
-.os-spinner { width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 0.1875rem solid var(--os-border); border-top-color: var(--os-accent-fill); animation: os-spin 0.9s linear infinite; }
-.os-verdict { display: flex; gap: var(--os-s4); align-items: flex-start; padding: var(--os-s4) var(--os-s6); border-radius: var(--os-radius-lg); border: 1px solid var(--os-border); border-left-width: 0.375rem; margin: var(--os-s4) 0; background: var(--os-raised); box-shadow: var(--os-shadow); }
-.os-verdict--valid { border-left-color: var(--os-success); }
-.os-verdict--valid .os-verdict__icon { color: var(--os-success); }
-.os-verdict--invalid, .os-verdict--error { border-left-color: var(--os-danger); }
-.os-verdict--invalid .os-verdict__icon, .os-verdict--error .os-verdict__icon { color: var(--os-danger); }
-.os-verdict--indeterminate, .os-verdict--unsigned { border-left-color: var(--os-warning); }
-.os-verdict--indeterminate .os-verdict__icon, .os-verdict--unsigned .os-verdict__icon { color: var(--os-warning); }
-.os-verdict__title { font-size: var(--os-fs-20); font-weight: 600; margin: 0 0 var(--os-s1); }
-.os-verdict__text { margin: 0; }
-.os-sigs { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--os-s3); }
-.os-sig { border: 1px solid var(--os-border); border-radius: var(--os-radius); padding: var(--os-s3) var(--os-s4); }
-.os-sig__head { display: flex; justify-content: space-between; align-items: center; gap: var(--os-s3); }
-.os-sig__title { font-size: var(--os-fs-16); font-weight: 600; margin: 0; }
-.os-meta--tight { margin-top: var(--os-s2); }
-.os-checks { list-style: none; margin: var(--os-s2) 0 0; padding: 0; display: grid; gap: var(--os-s1); }
-.os-checks li { display: flex; align-items: center; gap: var(--os-s2); }
-.os-checks .is-passed > svg { color: var(--os-success); }
-.os-checks .is-failed > svg { color: var(--os-danger); }
-.os-trail { list-style: none; margin: var(--os-s3) 0 0; padding: 0 0 0 var(--os-s4); border-left: 0.125rem solid var(--os-border); display: grid; gap: var(--os-s3); }
-.os-trail__item { position: relative; }
-.os-trail__dot { position: absolute; left: calc(-1 * var(--os-s4) - 0.375rem); top: 0.375rem; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--os-accent-fill); }
-/* Sign-in fills a small phone edge to edge, as the reference products do. */
-@media (max-width: 30em) {
-  .os-signin-wrap { place-items: stretch; align-content: start; padding: 0; margin: calc(-1 * var(--os-s4)); min-height: 100vh; min-height: 100dvh; background: var(--os-bg); }
-  .os-signin { width: 100%; border: 0; border-radius: 0; box-shadow: none; padding: var(--os-s8) var(--os-s4) var(--os-s4); }
-  .os-signin__foot { padding: 0 var(--os-s4) var(--os-s6); }
-}
 /* Profile and signature panel (UX-04, profile.js). */
 .os-profile__section { padding: var(--os-s4) 0; border-top: 1px solid var(--os-border); }
 .os-profile__section:first-child { padding-top: 0; border-top: 0; }

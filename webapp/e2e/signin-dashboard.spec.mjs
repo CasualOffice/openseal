@@ -1,6 +1,13 @@
 // Scenario 1 (WEB-01): sign in, the dashboard lists envelopes, filters and search work.
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { signIn, app, creds, REAL } from "./helpers.mjs";
+import { signIn, app, creds, REAL, expectAccessible } from "./helpers.mjs";
+
+const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const fixture = (p) => path.join(ROOT, "fixtures", p);
+const WASM = fs.existsSync(path.join(ROOT, "webapp/vendor/openseal-wasm/casual_sign_wasm_bg.wasm"));
 
 test("a wrong password is refused with a message, and the right one signs in", async ({ page }) => {
   await page.goto(app("#/signin"));
@@ -95,4 +102,81 @@ test("signing out returns to sign-in, and the app then asks to sign in again", a
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await page.goto(app("#/agreements"));
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
+// ---- WEB-18 lane E: the signed-out pages and Verify on the approved canvas ------------------
+
+test("sign-in checks the email's shape inline and clears the message once it is fixed", async ({ page }) => {
+  await page.goto(app("#/signin"));
+  const email = page.getByLabel("Email");
+  await email.fill("dana");
+  await page.getByLabel("Password", { exact: true }).fill("x");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator("#signin-email-error")).toHaveText("Enter an email address like name@example.com.");
+  await expect(email).toBeFocused();
+  await email.fill("dana@acme.example");
+  await expect(page.locator("#signin-email-error")).toBeEmpty();
+  await expect(email).not.toHaveAttribute("aria-invalid", "true");
+});
+
+test("sign-in shows its side panel only where there is room for it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(app("#/signin"));
+  const aside = page.getByRole("complementary", { name: "Agreements, signed and proven" });
+  await expect(aside).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(aside).toBeHidden();
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+});
+
+test("accept invite ticks its rules as the person types", async ({ page }) => {
+  test.skip(REAL, "the invitation token comes from the mock");
+  await page.goto(app("#/accept-invite?token=not-a-real-token"));
+  const length = page.locator('[data-rule="length"]');
+  const match = page.locator('[data-rule="match"]');
+  await expect(length).not.toHaveClass(/is-met/);
+  await page.getByLabel("Password", { exact: true }).fill("a-long-enough-password");
+  await expect(length).toHaveClass(/is-met/);
+  await expect(match).not.toHaveClass(/is-met/);
+  await page.getByLabel("Password again").fill("a-long-enough-password");
+  await expect(match).toHaveClass(/is-met/);
+  await expect(page.locator("#inv-error")).toBeEmpty();
+});
+
+test("an invitation link without a token says so and offers sign-in", async ({ page }) => {
+  await page.goto(app("#/accept-invite"));
+  await expect(page.getByTestId("invite-missing")).toContainText("This link has no invitation in it.");
+  await expect(page.getByRole("link", { name: "Go to sign in" }).first()).toBeVisible();
+});
+
+test.describe("verify on the sealed-receipt design", () => {
+  test.skip(!WASM || REAL, "the WASM verifier is built locally by tools/build-webapp-wasm.sh");
+
+  test("the verifier loads behind a skeleton line, then a check scans and ends on the receipt", async ({ page }) => {
+    await page.goto("/verify.html?mock=1");
+    await expect(page.getByTestId("verify-engine")).toHaveAttribute("data-state", "ready");
+    await expect(page.getByTestId("verify-engine")).toContainText("Verifier ready");
+    await page.getByTestId("trust-input").setInputFiles(fixture("sealed/trust-root.pem"));
+    await page.getByTestId("verify-input").setInputFiles(fixture("sealed/p256-approval-blt.pdf"));
+    await expect(page.getByTestId("verify-scanning")).toBeVisible();
+    await expect(page.getByTestId("verify-scanning")).toContainText("Checking each signature against the document");
+    const verdict = page.getByTestId("verdict");
+    await expect(verdict).toHaveAttribute("data-state", "valid");
+    await expect(verdict).toHaveClass(/is-ok/);
+    await expect(verdict).toContainText("1 valid");
+    await expect(page.getByRole("heading", { name: "Signed and unchanged" })).toBeFocused();
+    // Every check the verifier reports, by name: seven rows, none invented.
+    await expect(page.getByTestId("signature").locator(".os-vfy__check")).toHaveCount(7);
+    await expectAccessible(page, "verify receipt");
+  });
+
+  test("a tampered PDF ends on a red receipt with the failing check marked", async ({ page }) => {
+    await page.goto("/verify.html?mock=1");
+    await page.getByTestId("trust-input").setInputFiles(fixture("signed/trust-root.der"));
+    await page.getByTestId("verify-input").setInputFiles(fixture("signed/flip-range1.pdf"));
+    const verdict = page.getByTestId("verdict");
+    await expect(verdict).toHaveAttribute("data-state", "invalid");
+    await expect(verdict).toHaveClass(/is-bad/);
+    await expect(page.locator(".os-vfy__check.is-bad").first()).toBeVisible();
+  });
 });

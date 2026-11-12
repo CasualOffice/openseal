@@ -603,6 +603,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-console"
+version = "0.0.1"
+dependencies = [
+ "argon2",
+ "aws-lc-rs",
+ "axum",
+ "base64 0.22.1",
+ "casual-sign-platform-store",
+ "casual-sign-secrets",
+ "http-body-util",
+ "serde",
+ "serde_json",
+ "serde_norway",
+ "time",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "uuid",
+]
+
+[[package]]
 name = "casual-sign-crypto"
 version = "0.0.1"
 dependencies = [
@@ -736,6 +759,17 @@ dependencies = [
  "proptest",
  "regex",
  "sha2 0.11.1",
+]
+
+[[package]]
+name = "casual-sign-platform-store"
+version = "0.0.1"
+dependencies = [
+ "casual-sign-audit",
+ "sqlx",
+ "time",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

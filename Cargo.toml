@@ -20,6 +20,8 @@ members = [
     "crates/casual-sign-workflow",
     "crates/casual-sign-xfa",
     "server/casual-sign-store",
+    "server/casual-sign-platform-store",
+    "server/casual-sign-console",
     "server/casual-sign-secrets",
     "server/casual-sign-keyd",
     "server/casual-sign-modeld",

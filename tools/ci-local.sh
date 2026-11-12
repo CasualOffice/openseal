@@ -11,7 +11,7 @@ step() { printf '\n== %s\n' "$1"; }
 step "checks: fmt";        cargo fmt --all -- --check
 step "checks: clippy";     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 step "checks: rustdoc";    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked -q
-step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-secrets --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --locked -q   # hosts under server/ are native only
+step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-secrets --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked -q   # hosts under server/ are native only
 step "checks: repository"; python3 tools/check-repo.py
 # One command per line: under `set -e`, a failure on the left of `&&` does not stop the
 # script (docs/04 rule 31).
@@ -38,7 +38,7 @@ trap 'docker stop openseal-ci-pg >/dev/null 2>&1 || true' EXIT
 until docker exec openseal-ci-pg pg_isready -U postgres -q 2>/dev/null; do sleep 1; done
 export OPENSEAL_TEST_DATABASE_URL=postgres://postgres:ci-only@127.0.0.1:55433/postgres SQLX_OFFLINE=true SQLX_CLI_BIN="$PWD/target/sqlx-cli/bin"
 server/casual-sign-store/sqlx-prepare.sh --check
-OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server --locked
+OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-store -p casual-sign-host -p casual-sign-worker -p casual-sign-server -p casual-sign-platform-store -p casual-sign-console --locked
 # P2-CRASH (Phase 2 exit item 2): the real server and worker binaries SIGKILLed at every effect boundary
 cargo build -q -p casual-sign-server --features crash-points --locked
 OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-worker --features crash-points --test process_crash --locked

@@ -932,3 +932,41 @@ by OCR; analysis `running` for about 2 s after it is requested); `sessionStorage
 **Tests.** `tests/ml.test.mjs` (pure decisions, the mock endpoints, the optimistic store; seen red with the rollback
 removed), `tests/pure.test.mjs` (contrast and the dark blocks on the new values; the fluid root; Geist bundled with
 its licence).
+
+## As built: sign-in, accept invite and Verify on the approved canvas (WEB-18 lane E, 2026-11-13)
+
+The signed-out pages and the Verify page rebuilt on the design of record (`docs/assets/design-canvas`: Main's seal
+mark and buttons, Signer's secure-open loader and sealed receipt). Styles are in `webapp/auth.css` (linked from
+`app.html` and `verify.html`); colours use the `--os-*` token names, and the few the tokens lack (seal gradients, the
+receipt frame, the warm glow) are `--auth-*` in that file, with dark values.
+
+- **Model and view apart.** `authmodel.js` (pure) holds every rule: sign-in field errors (missing, and a malformed
+  email), the reset address, the invitation checklist (length at least 12, both fields match) and what stops the form,
+  the invitation token's shape, which company sign-in links are usable (same-origin paths only; `//host` and `/\host`
+  refused), and which refusal gets "Incorrect email or password.". `authview.js` draws the shared pieces: the layout
+  with seal mark and receipt-framed card, a text field and a password field with a reveal toggle (named "Show
+  password", state in `aria-pressed`), field errors in `aria-describedby`, one alert, the green-seal done state, and a
+  restrained side panel (a drawn receipt and three plain lines) shown only at 64em and wider.
+- **Sign-in** (`signin.js`): errors appear on submit and are checked again as the person types (they clear the moment
+  the field is fixed); busy submit; a refused sign-in is one alert above the fields; Forgot password and the reset
+  request in the same card; company sign-in only when the server names a provider; footer links. Verbs carry
+  `data-os-command` (`auth.sign-in`, `auth.forgot-password`, `auth.toggle-password`, `auth.send-reset`,
+  `auth.back-to-sign-in`).
+- **Accept invite** (`acceptinvite.js`): the rules show as a checklist that ticks while typing (polite, not an alert);
+  one `role="alert"` line names what stops the form or the server's refusal; reveal on both fields; success is the
+  green seal with Go to sign in. The token still leaves the address bar at once.
+- **Verify** (`verify.js` flow, `verifyview.js` render, `verifyreport.js` rules): an illustrated drop zone; a line under
+  it that is a skeleton while the WebAssembly verifier loads, then "Verifier ready" or "not available on this server";
+  a scanning screen (the canvas loader: a page with a scan line, and the three stages the page really runs: read the
+  file, run the verifier, read the attached audit trail, each ticked only when it has finished; shown at least 600 ms
+  unless reduced motion); then the sealed receipt: green seal only for the verifier's `valid`, red for invalid or
+  unreadable, amber for not confirmed or unsigned, with file, size, the verifier's tally of signatures, revisions,
+  trusted certificates and the check time. Under it, each signature with all seven checks exactly as the verifier
+  reports them (passed, failed, not run, with its reason and code), changes after signing, the audit trail (links
+  checked; hashes stated as not recomputed here) and the document. Pure presentation helpers: `stepStates`,
+  `verdictTone`, `checkTone`, `tally`, `fileSize`.
+- Tests: `tests/auth.test.mjs`, `tests/verify.test.mjs`; `e2e/signin-dashboard.spec.mjs` adds inline email validation,
+  the side panel at 1440 and not at 390, the invitation checklist, a link with no token, the verifier's ready line and
+  scanning stage, the green receipt with seven checks, and the red receipt with its failing check. The hand-over test
+  in `e2e/shell.spec.mjs` now asserts that no build tool is named anywhere on the page (it failed whenever the verifier
+  was installed, because it asserted on an element that is then absent).
