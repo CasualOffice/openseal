@@ -188,6 +188,34 @@ test("admin: add and remove a user; an API client's key is shown once, then revo
   await expectAccessible(page, "admin api clients");
 });
 
+test("admin: a member of another account too keeps their name; their profile still changes (SEC-ID-01)", async ({ page }) => {
+  mockOnly();
+  await signIn(page);
+  await page.getByRole("link", { name: "Admin" }).click();
+  await page.getByRole("button", { name: "Add user" }).click();
+  const add = page.getByRole("dialog", { name: "Add user" });
+  await add.getByLabel("Name").fill("Sam Shared");
+  await add.getByLabel("Email").fill("shared@openseal.test");
+  await add.getByRole("button", { name: "Add user" }).click();
+  await expect(page.getByRole("cell", { name: "Sam Shared", exact: true })).toBeVisible();
+
+  // The profile alone: the unchanged name is not sent, so the server accepts it.
+  await page.getByRole("button", { name: "Edit Sam Shared" }).click();
+  let edit = page.getByRole("dialog", { name: "Edit user" });
+  await edit.getByLabel("Permission profile").selectOption("viewer");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("User saved.")).toBeVisible();
+  await expect(edit).toHaveCount(0);
+
+  // A new name is theirs to choose: the panel stays open with the reason.
+  await page.getByRole("button", { name: "Edit Sam Shared" }).click();
+  edit = page.getByRole("dialog", { name: "Edit user" });
+  await edit.getByLabel("Name").fill("Someone Else");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("only they can change their name or password")).toBeVisible();
+  await expect(edit).toBeVisible();
+});
+
 test.describe("verify", () => {
   test.skip(!WASM || REAL, "the WASM verifier is built locally by tools/build-webapp-wasm.sh; the server image does not ship it yet");
 

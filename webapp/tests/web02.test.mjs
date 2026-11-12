@@ -320,6 +320,17 @@ test("a template becomes one envelope on the envelope API", async () => {
   assert.equal(env.fields.length, template.fields.length);
 });
 
+test("a member of another account too keeps their name and password; the profile is still this account's (SEC-ID-01)", async () => {
+  const api = await signedIn();
+  const u = await api.users.create({ name: "Sam", email: MOCK.sharedEmail, profile: "viewer" });
+  await assert.rejects(api.users.patch(u.id, { name: "Sam B", profile: "sender" }), (e) => e.code === "CS-API-0015" && e.status === 403);
+  const after = await api.users.get(u.id);
+  assert.equal(after.name, "Sam");
+  assert.equal(after.permission_profile_id, "profile-viewer");
+  assert.equal((await api.users.patch(u.id, { profile: "sender" })).permission_profile_id, "profile-sender");
+  assert.ok(EN["error.CS-API-0015"]);
+});
+
 test("users and API clients: list, add, rename, remove; a secret is returned once", async () => {
   const api = await signedIn();
   const u = await api.users.create({ name: "Kim", email: "kim@example.com", profile: "viewer" });

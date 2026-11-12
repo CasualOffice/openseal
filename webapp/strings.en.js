@@ -198,6 +198,7 @@ export const EN = {
   "error.CS-API-0009": "This is not ready yet. The signed PDF and certificate appear once sealing finishes.",
   "error.CS-API-0010": "The server had a problem.",
   "error.CS-API-0014": "That sign-in method for recipients is not available on this server.",
+  "error.CS-API-0015": "This person also belongs to another account, so only they can change their name or password.",
   "error.CS-AUTH-0001": "Your session has ended. Sign in again.",
   "error.CS-AUTH-0002": "Your session has expired. Sign in again.",
   "error.CS-AUTH-0003": "That code is not right.",
