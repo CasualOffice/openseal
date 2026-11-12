@@ -138,7 +138,9 @@ combining marks.
 - **Concurrency:** a semaphore of `OPENSEAL_MODELD_SLOTS`. Its default is derived from memory, not only cores:
   `min(max(1, cores ÷ 2), floor((memory_limit − model_rss) ÷ per_slot_peak))`, where `model_rss` is measured at start
   after every session loads and `per_slot_peak` is provisional 512 MiB (a raster child's cap plus ORT working memory;
-  measured in `ML-09`). If that is below 1, modeld refuses to start (`CS-ML-0001`). A value set by the operator above
+  measured in `ML-09`). `memory_limit` is `OPENSEAL_MODELD_MEMORY_LIMIT` (bytes, or `KiB`/`MiB`/`GiB`), else the
+  cgroup v2 `memory.max`, else 4 GiB; `model_rss` is `VmRSS` from `/proc/self/status` (built in the skeleton, with no
+  inference session loaded yet). If that is below 1, modeld refuses to start (`CS-ML-0001`). A value set by the operator above
   the derived one is refused the same way. When full, modeld answers busy (`CS-ML-0009`) and the worker retries with
   back-off.
 

@@ -58,6 +58,6 @@ pub use manifest::{ALLOWED_LICENCES, Bundle, Entry, MAX_BUNDLE, MAX_FILE, Manife
 pub use oplog::{OpLog, OpRecord};
 #[cfg(feature = "server")]
 pub use server::{
-    AllowList, ModelService, Modeld, ModeldLimits, NO_RUNTIME, default_slots, fingerprint,
-    server_tls,
+    AllowList, DEFAULT_MEMORY_LIMIT, ModelService, Modeld, ModeldLimits, NO_RUNTIME, PER_SLOT_PEAK,
+    SlotSettings, configured_slots, default_slots, fingerprint, resident_bytes, server_tls,
 };

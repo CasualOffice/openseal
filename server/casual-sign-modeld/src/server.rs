@@ -131,16 +131,97 @@ impl Default for ModeldLimits {
     }
 }
 
-/// How many slots fit (ADR-029 review defect 11): half the cores, but never more than the
-/// memory left after the models, divided by one slot's peak. At least one.
+/// The container memory limit assumed when neither `OPENSEAL_MODELD_MEMORY_LIMIT` nor the
+/// cgroup gives one (docs/33 §4, provisional).
+pub const DEFAULT_MEMORY_LIMIT: u64 = 4 << 30;
+
+/// One slot's peak memory: a raster child's cap plus ONNX Runtime's working memory
+/// (docs/33 §3.3, provisional 512 MiB until measured in `ML-09`).
+pub const PER_SLOT_PEAK: u64 = 512 << 20;
+
+/// How many slots fit (ADR-029 review defect 11, docs/33 §3.3):
+/// `min(max(1, cores / 2), (memory_limit - model_rss) / per_slot_peak)`. Zero means the
+/// models leave no room for one slot, and modeld must not start. A `per_slot_peak` of
+/// zero puts no memory bound on the count.
 #[must_use]
 pub fn default_slots(cores: usize, memory_limit: u64, model_rss: u64, per_slot_peak: u64) -> usize {
-    let by_cpu = cores / 2;
+    let by_cpu = (cores / 2).max(1);
     let by_memory = memory_limit
         .saturating_sub(model_rss)
         .checked_div(per_slot_peak)
-        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX));
-    by_cpu.min(by_memory).max(1)
+        .map_or(usize::MAX, |n| usize::try_from(n).unwrap_or(usize::MAX));
+    by_cpu.min(by_memory)
+}
+
+/// Parse a memory size: bytes, or a whole number followed by `KiB`, `MiB` or `GiB`.
+fn parse_bytes(text: &str) -> Option<u64> {
+    let t = text.trim();
+    let (digits, shift) = [("GiB", 30u32), ("MiB", 20), ("KiB", 10)]
+        .iter()
+        .find_map(|(unit, shift)| t.strip_suffix(unit).map(|d| (d.trim(), *shift)))
+        .unwrap_or((t, 0));
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits
+        .parse::<u64>()
+        .ok()?
+        .checked_mul(1u64.checked_shl(shift)?)
+}
+
+/// The settings that decide the slot count, as the daemon reads them.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SlotSettings<'a> {
+    /// Cores available to the process.
+    pub cores: usize,
+    /// `OPENSEAL_MODELD_SLOTS`, if set.
+    pub slots: Option<&'a str>,
+    /// `OPENSEAL_MODELD_MEMORY_LIMIT`, if set: bytes, or a number with `KiB`, `MiB`, `GiB`.
+    pub memory_limit: Option<&'a str>,
+    /// The cgroup v2 `memory.max` of the container, if readable (`max` means none).
+    pub cgroup_memory_max: Option<&'a str>,
+    /// modeld's resident memory once the models are loaded, in bytes.
+    pub model_rss: u64,
+}
+
+/// The slot count the daemon runs with (docs/33 §3.3): [`default_slots`] over the memory
+/// limit (the operator's setting, else the cgroup's, else [`DEFAULT_MEMORY_LIMIT`]) and
+/// [`PER_SLOT_PEAK`]; an operator's `OPENSEAL_MODELD_SLOTS` may lower it, never raise it.
+///
+/// # Errors
+/// `CS-ML-0001` naming `OPENSEAL_MODELD_MEMORY_LIMIT` when the limit is invalid or leaves
+/// no slot, or `OPENSEAL_MODELD_SLOTS` when that is invalid, zero or above the bound.
+pub fn configured_slots(s: &SlotSettings<'_>) -> Result<usize, ModeldError> {
+    const MEMORY: &str = "OPENSEAL_MODELD_MEMORY_LIMIT";
+    let limit = match s.memory_limit {
+        Some(text) => parse_bytes(text).ok_or(ModeldError::Setting(MEMORY))?,
+        // An unreadable or unlimited cgroup falls back to the provisional default.
+        None => s
+            .cgroup_memory_max
+            .and_then(parse_bytes)
+            .unwrap_or(DEFAULT_MEMORY_LIMIT),
+    };
+    let bound = default_slots(s.cores, limit, s.model_rss, PER_SLOT_PEAK);
+    if bound == 0 {
+        return Err(ModeldError::Setting(MEMORY));
+    }
+    match s.slots {
+        Some(n) => n
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=bound).contains(n))
+            .ok_or(ModeldError::Setting("OPENSEAL_MODELD_SLOTS")),
+        None => Ok(bound),
+    }
+}
+
+/// The resident memory a Linux `/proc/self/status` reports (`VmRSS:  1234 kB`), in bytes.
+#[must_use]
+pub fn resident_bytes(status: &str) -> Option<u64> {
+    let line = status.lines().find_map(|l| l.strip_prefix("VmRSS:"))?;
+    let kib = line.trim().strip_suffix("kB")?.trim();
+    kib.parse::<u64>().ok()?.checked_mul(1024)
 }
 
 /// A slot held while an operation runs; released on drop.
@@ -548,6 +629,94 @@ mod tests {
         );
     }
 
+    /// Review D1: the daemon's slot count is bounded by its memory limit, not only by
+    /// cores; an operator value above the memory bound, or a bound below one slot, stops
+    /// modeld from starting (docs/33 §3.3).
+    #[test]
+    fn the_daemon_slot_count_is_bounded_by_its_memory_limit() {
+        const GIB: u64 = 1 << 30;
+        let base = SlotSettings {
+            cores: 32,
+            model_rss: GIB / 2,
+            ..SlotSettings::default()
+        };
+        // No setting and no cgroup: the 4 GiB default limit, (4 - 0.5) GiB / 512 MiB = 7.
+        assert_eq!(configured_slots(&base).unwrap(), 7);
+        // The operator's limit wins over the cgroup's.
+        let set = SlotSettings {
+            memory_limit: Some("2GiB"),
+            cgroup_memory_max: Some("68719476736\n"),
+            ..base
+        };
+        assert_eq!(configured_slots(&set).unwrap(), 3);
+        // The cgroup's limit is used when the operator sets none; `max` means none.
+        let cgroup = SlotSettings {
+            cgroup_memory_max: Some("1610612736\n"),
+            ..base
+        };
+        assert_eq!(configured_slots(&cgroup).unwrap(), 2);
+        let unlimited = SlotSettings {
+            cgroup_memory_max: Some("max\n"),
+            ..base
+        };
+        assert_eq!(configured_slots(&unlimited).unwrap(), 7);
+        // An operator value at or below the bound is kept; above it is refused.
+        let low = SlotSettings {
+            slots: Some("3"),
+            memory_limit: Some("2GiB"),
+            ..base
+        };
+        assert_eq!(configured_slots(&low).unwrap(), 3);
+        let high = SlotSettings {
+            slots: Some("4"),
+            ..low
+        };
+        assert_eq!(
+            configured_slots(&high),
+            Err(ModeldError::Setting("OPENSEAL_MODELD_SLOTS"))
+        );
+        // Models filling the limit leave no slot: modeld does not start.
+        let full = SlotSettings {
+            memory_limit: Some("512MiB"),
+            ..base
+        };
+        assert_eq!(
+            configured_slots(&full),
+            Err(ModeldError::Setting("OPENSEAL_MODELD_MEMORY_LIMIT"))
+        );
+        // Garbage is refused, named, never echoed.
+        for bad in ["", "lots", "-1", "4TB", "99999999999999999999"] {
+            let s = SlotSettings {
+                memory_limit: Some(bad),
+                ..base
+            };
+            assert_eq!(
+                configured_slots(&s),
+                Err(ModeldError::Setting("OPENSEAL_MODELD_MEMORY_LIMIT")),
+                "{bad}"
+            );
+        }
+        for bad in ["0", "x", ""] {
+            let s = SlotSettings {
+                slots: Some(bad),
+                ..base
+            };
+            assert_eq!(
+                configured_slots(&s),
+                Err(ModeldError::Setting("OPENSEAL_MODELD_SLOTS")),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn resident_memory_is_read_from_proc_status() {
+        let status = "Name:\tmodeld\nVmPeak:\t  9000 kB\nVmRSS:\t   2048 kB\nThreads:\t4\n";
+        assert_eq!(resident_bytes(status), Some(2048 * 1024));
+        assert_eq!(resident_bytes("Name:\tmodeld\n"), None);
+        assert_eq!(resident_bytes("VmRSS:\tlots kB\n"), None);
+    }
+
     #[test]
     fn slots_are_bounded_by_memory_as_well_as_cores() {
         const GIB: u64 = 1 << 30;
@@ -555,8 +724,10 @@ mod tests {
         assert_eq!(default_slots(32, 4 * GIB, 3 * GIB / 2, GIB / 2), 5);
         // Few cores: the CPU bound wins.
         assert_eq!(default_slots(4, 64 * GIB, GIB, GIB / 2), 2);
-        // Never zero, even when the models alone fill the limit or the peak is unknown.
-        assert_eq!(default_slots(32, GIB, 2 * GIB, GIB / 2), 1);
-        assert_eq!(default_slots(1, 4 * GIB, GIB, 0), 1);
+        // Zero when the models alone fill the limit: modeld refuses to start on that.
+        assert_eq!(default_slots(32, GIB, 2 * GIB, GIB / 2), 0);
+        // One core still gets one slot; an unknown peak puts no memory bound.
+        assert_eq!(default_slots(1, 4 * GIB, GIB, GIB / 2), 1);
+        assert_eq!(default_slots(8, 4 * GIB, GIB, 0), 4);
     }
 }

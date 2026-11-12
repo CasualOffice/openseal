@@ -11,13 +11,15 @@
 //! | `OPENSEAL_MODELD_OPLOG` | The operation log (append-only, hash-chained; counts and ids only) |
 //! | `OPENSEAL_MODELD_BUNDLE` | The bundle directory, read-only (default `/opt/openseal/models`) |
 //! | `OPENSEAL_MODELD_PROFILES` | Comma-separated profiles that must be complete (`ocr,templates,...`; default none) |
-//! | `OPENSEAL_MODELD_SLOTS` | Operations at once (default: half the cores, at least 1) |
+//! | `OPENSEAL_MODELD_MEMORY_LIMIT` | modeld's memory limit: bytes, or `KiB`/`MiB`/`GiB` (default: the cgroup's `memory.max`, else 4 GiB) |
+//! | `OPENSEAL_MODELD_SLOTS` | Operations at once (default: half the cores, at least 1, but no more than `(memory limit - resident memory after loading) / 512 MiB`; a value above that bound, or a bound of zero, stops modeld) |
 
 use std::path::Path;
 use std::process::ExitCode;
 
 use casual_sign_modeld::{
-    AllowList, Bundle, Manifest, ModelService, Modeld, ModeldError, ModeldLimits, OpLog, server_tls,
+    AllowList, Bundle, Manifest, ModelService, Modeld, ModeldError, ModeldLimits, OpLog,
+    SlotSettings, configured_slots, resident_bytes, server_tls,
 };
 
 fn var(name: &'static str) -> Option<String> {
@@ -70,18 +72,26 @@ fn run() -> Result<(), ModeldError> {
         return Err(ModeldError::Setting("OPENSEAL_MODELD_ALLOW_LIST (empty)"));
     }
     let log = OpLog::open(Path::new(&need("OPENSEAL_MODELD_OPLOG")?))?;
+    // Slots are bounded by memory as well as cores (docs/33 §3.3). Resident memory is read
+    // once the bundle is verified; when inference sessions are loaded they load before this.
     let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
-    let mut limits = ModeldLimits {
-        slots: (cores / 2).max(1),
+    let slots_setting = var("OPENSEAL_MODELD_SLOTS");
+    let memory_setting = var("OPENSEAL_MODELD_MEMORY_LIMIT");
+    let cgroup = std::fs::read_to_string("/sys/fs/cgroup/memory.max").ok();
+    let model_rss = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| resident_bytes(&s))
+        .unwrap_or(0);
+    let limits = ModeldLimits {
+        slots: configured_slots(&SlotSettings {
+            cores,
+            slots: slots_setting.as_deref(),
+            memory_limit: memory_setting.as_deref(),
+            cgroup_memory_max: cgroup.as_deref(),
+            model_rss,
+        })?,
         ..ModeldLimits::default()
     };
-    if let Some(n) = var("OPENSEAL_MODELD_SLOTS") {
-        limits.slots = n
-            .parse()
-            .ok()
-            .filter(|n| *n > 0)
-            .ok_or(ModeldError::Setting("OPENSEAL_MODELD_SLOTS"))?;
-    }
     let installed = bundle.installed.len();
     let id = bundle.id.clone();
     let service = ModelService::new(bundle, allow, log, limits);
