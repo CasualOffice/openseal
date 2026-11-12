@@ -241,6 +241,49 @@ test("finish later clears the progress; the done page links Verify and prints", 
   await shot(page, "done-1440");
 });
 
+// WEB-18 review: nothing floats over a field, no tile cuts a signature off.
+test("Next brings a field above the floating guide bar; tiles show the whole name", async ({ page, isMobile }) => {
+  test.skip(isMobile, "the floating guide bar is the desktop layout; Tab is a keyboard path");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toDocuments(page);
+  await page.getByRole("textbox", { name: /Job title/ }).fill("Engineer");
+  await page.getByRole("textbox", { name: /Job title/ }).press("Tab");
+  await expect(page.locator("#guide-progress")).toHaveText("1 of 2 required");
+  const sig = page.locator('[data-field="signature"]');
+  const isClear = async () => {
+    const f = await sig.boundingBox();
+    const g = await page.locator("#guide").boundingBox();
+    const z = await page.locator(".os-docbar").boundingBox();
+    const clear = (o) => f.x + f.width <= o.x || f.x >= o.x + o.width || f.y + f.height <= o.y;
+    return clear(g) && clear(z);
+  };
+  // The focused checkbox's label tab does not cover the Job title field above it.
+  await expect(page.locator('[data-field="checkbox"] input')).toBeFocused();
+  await expect.poll(async () => {
+    const tip = await page.locator('[data-field="checkbox"] .os-sfield__tip').boundingBox();
+    const job = await page.locator('[data-field="text"]').boundingBox();
+    return !tip || tip.y >= job.y + job.height || tip.y + tip.height <= job.y || tip.x >= job.x + job.width || tip.x + tip.width <= job.x;
+  }, { message: "the label tab covers no other field" }).toBe(true);
+  // The next field (the signature) is brought clear of the guide bar once it is next.
+  await expect.poll(isClear, { message: "next: clear of the guide bar and the zoom pill" }).toBe(true);
+  // Tabbing onto it (at the bottom of the view, where the bar floats) and Next alike.
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: /^Sign: Signature/ })).toBeFocused();
+  await expect.poll(isClear, { message: "tabbed to: clear of the guide bar and the zoom pill" }).toBe(true);
+  await page.getByTestId("signer-doc").evaluate((el) => { el.scrollTop = 0; });
+  await page.locator("#guide-next").click();
+  await expect(page.getByRole("button", { name: /^Sign: Signature/ })).toBeFocused();
+  await expect.poll(isClear, { message: "Next: clear of the guide bar and the zoom pill" }).toBe(true);
+  // No label tab is on show over the page until a field is hovered or focused.
+  await page.mouse.move(5, 300);
+  await page.locator("#guide-next").focus();
+  for (const tip of await page.locator(".os-sfield__tip").all()) await expect(tip).toHaveCSS("opacity", "0");
+  await page.getByRole("button", { name: /^Sign: Signature/ }).click();
+  const dlg = page.getByRole("dialog", { name: /Adopt your signature/ });
+  await dlg.getByLabel("Your full name").fill("Maximilian Alexander Featherstonehaugh");
+  await expect.poll(() => dlg.locator(".os-adopt__sample").evaluateAll((els) => els.every((el) => el.scrollWidth <= el.parentElement.clientWidth))).toBe(true);
+});
+
 test.describe("phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -255,6 +298,12 @@ test.describe("phone", () => {
     await adoptTyped(page);
     // Nothing is left to do, so there is no dead Next in the bottom bar.
     await expect(page.locator("#guide-next")).toBeHidden();
+    // WEB-18: the page fits the width again with a gutter; no pill sits on the page.
+    await expect(page.locator(".os-docbar")).toBeHidden();
+    await expect.poll(async () => {
+      const p = await page.locator(".os-page").first().boundingBox();
+      return p.x >= 8 && p.x + p.width <= 390 - 8;
+    }, { message: "the page is fitted with a gutter" }).toBe(true);
     await page.locator("#guide-finish").click();
     await expect(page.getByRole("heading", { name: "Review and finish" })).toBeAttached();
     const pages = await page.getByTestId("review-doc").boundingBox();

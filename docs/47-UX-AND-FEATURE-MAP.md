@@ -854,6 +854,12 @@ The signer page rebuilt on `docs/assets/design-canvas/Signer.dc.html` and `Signe
   mark inks in left to right; the date-signed field says "Fills in when you sign" until a mark is placed. The yellow
   Start flag of WEB-06 is gone (the ring and the guide bar replace it). The field list moved to More → All fields (a
   side panel; a bottom sheet capped at 55 dvh on phones); the sender's message is also on the consent card.
+- **Nothing covers a field.** The document view keeps 7 rem of scroll padding under the floating guide bar; Next
+  centres the field in the part of the view the bar does not cover, and a field that is focused or becomes next is
+  scrolled clear of the bar and the zoom pill (`keepClear`). Label tabs show on hover and focus only (the next field is
+  ringed instead), below the field when another field is above, and not at all when both would cover one. Style tiles
+  stack the signature over the initials and shrink the sample until it fits (never cut off). On phones the page pill is
+  hidden, only a field being typed into grows, and the page is fitted to the width again once everything is filled.
 - **Guide bar.** Dark, floating, bottom centre: a progress ring "n/N", the next action ("Sign the agreement", "Initial
   page 1", "Fill in Job title", …), "n required fields left", and Start / Next; once nothing required is left, Finish
   (red, pulsing). Phones: the white bottom action bar. `#guide-progress` keeps the "n of N required" status for

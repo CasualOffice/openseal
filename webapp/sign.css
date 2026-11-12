@@ -184,7 +184,9 @@
 .os-signframe { display: grid; grid-template-columns: 6rem minmax(0, 1fr) 6rem; height: 100%; min-height: 0; }
 .os-signframe__centre { position: relative; display: grid; min-width: 0; min-height: 0; }
 .os-sign .os-docview { background: transparent; }
-.os-signframe .os-docview__pages { padding: 1.75rem 1.5rem 7rem; gap: 1.75rem; }
+.os-signframe .os-docview__pages { padding: 1.75rem 1.5rem 8rem; gap: 1.75rem; }
+/* Focus moving into a field keeps it clear of the floating guide bar (WEB-18). */
+.os-sign__pages { scroll-padding: 1rem 0 7rem; }
 .os-docview.os-sign__pages, .os-docview.os-review__pages { display: block; }
 .os-sign__pages .os-docview__pages { position: relative; }
 .os-sign .os-page { border-radius: 0.125rem; box-shadow: 0 0 0 1px rgba(24, 24, 27, .06), 0 2px 4px rgba(24, 24, 27, .04), 0 24px 48px -24px rgba(24, 24, 27, .25); }
@@ -260,9 +262,14 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
   opacity: 0; transform: translateY(0.125rem); transition: opacity var(--os-dur-fast) var(--os-ease), transform var(--os-dur-fast) var(--os-ease);
 }
-.os-sfield:hover > .os-sfield__tip, .os-sfield:focus-within > .os-sfield__tip, .os-sfield.is-next > .os-sfield__tip { opacity: 1; transform: none; }
+/* WEB-18 (the canvas shows no floating tags): the tab shows on hover and focus only;
+ * the next field is ringed instead, so a tab never sits over another field. */
+.os-sfield:hover > .os-sfield__tip, .os-sfield:focus-within > .os-sfield__tip { opacity: 1; transform: none; }
 /* The label tab says what the field is; the placeholder does not repeat it then. */
-.os-sfield.os-sfield:is(:hover, :focus-within, .is-next) .os-sfield__input::placeholder { color: transparent; }
+.os-sfield.os-sfield:is(:hover, :focus-within) .os-sfield__input::placeholder { color: transparent; }
+.os-sfield.tip-below > .os-sfield__tip { bottom: auto; top: calc(100% + 0.375rem); }
+.os-sfield.tip-none > .os-sfield__tip { display: none; }
+.os-sfield.tip-none .os-sfield__input::placeholder { color: inherit; }
 /* P-05: on phones a touch area of at least 44 px under each field's control. */
 .os-sfield__hit { display: none; }
 
@@ -407,15 +414,15 @@
 /* The style tiles: paper in both themes, so the ink reads as it will on the PDF. */
 .os-adopt__fonts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
 .os-adopt__font {
-  position: relative; height: 5.5rem; padding: 0 0.75rem; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.75rem; min-width: 0;
+  position: relative; min-height: 5.5rem; padding: 0.5rem 0.75rem; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; min-width: 0;
   border-radius: 0.75rem; background: var(--os-sign-paper); color: var(--os-sign-ink); box-shadow: inset 0 0 0 1px rgba(24, 24, 27, .08); cursor: pointer;
   transition: background 160ms var(--os-sign-ease), box-shadow 160ms var(--os-sign-ease);
 }
 .os-adopt__font:has(input:checked) { background: #f5f8ff; box-shadow: inset 0 0 0 2px #2563eb; }
 .os-adopt__font:has(input:focus-visible) { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
-.os-adopt__sample { display: block; min-width: 0; line-height: 1.4; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.os-adopt__sample--signature { font-size: 2rem; flex: 0 1 auto; }
-.os-adopt__sample--initials { font-size: 1.5rem; flex: none; max-width: 35%; }
+.os-adopt__sample { display: block; max-width: 100%; line-height: 1.35; white-space: nowrap; }
+.os-adopt__sample--signature { font-size: 2rem; }
+.os-adopt__sample--initials { font-size: 1.375rem; }
 .os-script-1 { font-family: var(--os-font-script-1); }
 .os-script-2 { font-family: var(--os-font-script-2); }
 /* The draw pad: paper, a hint until there is ink, a dashed baseline. */
@@ -502,10 +509,13 @@
   /* Fields: a 44 px touch area; the one in use grows to a usable size (zoom.js). */
   .os-sfield__hit { display: block; position: absolute; left: 50%; top: 50%; width: max(100%, 2.75rem); height: max(100%, 2.75rem); transform: translate(-50%, -50%); z-index: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .os-sfield > .os-sfield__btn, .os-sfield > .os-sfield__input, .os-sfield > .os-sfield__check, .os-sfield > .os-sfield__select { position: relative; z-index: 1; }
-  .os-sfield:focus-within { transform: scale(var(--os-enlarge, 1)); z-index: 6; box-shadow: 0 0 0 0.125rem var(--os-focus), var(--os-shadow-pop); }
+  /* Only a field being typed into grows (a signature opens its dialog instead). */
+  .os-sfield:has(.os-sfield__input:focus, .os-sfield__select:focus) { transform: scale(var(--os-enlarge, 1)); z-index: 6; box-shadow: 0 0 0 0.125rem var(--os-focus), var(--os-shadow-pop); }
   .os-sfield__input, .os-sfield > .os-sfield__select { font-size: 1rem; }
   .os-sfield__tip { z-index: 9; }
-  .os-sfield:not(.is-next):not(:focus-within) > .os-sfield__tip { display: none; }
+  .os-sfield:not(:focus-within) > .os-sfield__tip { display: none; }
+  /* The page indicator and zoom pill would sit on the page: pinch zooms here. */
+  .os-sign .os-signframe .os-docbar { display: none; }
   .os-sfield { container-type: size; }
   .os-sfield:not(:focus-within) > :is(.os-sfield__btn, .os-sfield__input, .os-sfield__select, .os-sfield__auto) { font-size: clamp(0.4375rem, 62cqh, 1rem); min-height: 0; }
   .os-sfield:not(:focus-within) > .os-sfield__btn > svg { width: clamp(0.5rem, 70cqh, 1rem); height: auto; }
@@ -539,7 +549,7 @@
   .os-adopt__modes { padding: 0.1875rem; border-radius: 0.625rem; background: var(--os-sign-bg); }
   .os-adopt__mode { flex: 1; height: 2.25rem; }
   .os-adopt__mode[aria-selected="true"] { background: var(--os-bg); color: var(--os-text); box-shadow: 0 1px 2px rgba(24, 24, 27, .08); }
-  .os-adopt__font { height: 6.5rem; border-radius: 0.875rem; }
+  .os-adopt__font { min-height: 6.5rem; border-radius: 0.875rem; }
   .os-adopt .os-dialog__foot { flex-direction: column-reverse; gap: 0.25rem; padding: 0.5rem 1.25rem calc(1rem + env(safe-area-inset-bottom)); background: var(--os-bg); box-shadow: none; }
   .os-adopt .os-dialog__foot .os-btn { width: 100%; height: 2.75rem; border-radius: 0.875rem; }
   .os-adopt .os-dialog__foot .os-btn--primary { height: 3.25rem; font-size: 0.9375rem; font-weight: 600; }

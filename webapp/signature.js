@@ -90,6 +90,7 @@ export function adoptDialog({ mark = "signature", name = "", both = false }) {
           tabBtns[k].tabIndex = k === m ? 0 : -1;
         }
         if (m === "draw") for (const p of Object.values(pads)) p.redraw();
+        if (m === "type") requestAnimationFrame(() => fitSamples(panels.type));
       }
 
       // Type: the name and the initials, previewed together in each style.
@@ -112,6 +113,7 @@ export function adoptDialog({ mark = "signature", name = "", both = false }) {
           const samples = marks.map((m) => h("span", { class: `os-adopt__sample os-adopt__sample--${m} os-script-${i + 1}`, text: typed[m] || " " }));
           return h("label", { class: "os-adopt__font", attrs: { for: id } }, radio, ...samples, h("span", { class: "os-sr-only", text: t("adopt.style-n", { name: label }) }));
         }));
+        requestAnimationFrame(() => fitSamples(previews));
       }
       renderPreviews();
       panels.type.append(previews);
@@ -318,4 +320,21 @@ function grabHandle(body, close) {
     grab.addEventListener("pointerup", up);
     grab.addEventListener("pointercancel", up);
   });
+}
+
+
+/// Shrink each style tile's sample until it fits its tile (WEB-18: a signature preview
+/// is never cut off). The font size is set through the CSSOM; 12 px is the floor.
+function fitSamples(root) {
+  for (const el of root.querySelectorAll(".os-adopt__sample")) {
+    el.style.removeProperty("font-size");
+    const room = el.parentElement?.clientWidth - 24;
+    if (!(room > 0)) continue;
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollWidth > room && size > 12) {
+      size -= 1;
+      el.style.setProperty("font-size", `${(size / rem).toFixed(3)}rem`);
+    }
+  }
 }

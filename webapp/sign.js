@@ -670,12 +670,66 @@ function focusField(id, flag = true) {
   if (!f || !el || !dv) return;
   const i = dv.pages.findIndex((p) => p.key === f.document_id && p.n === f.p.page);
   zoomToField(f);
-  dv.scrollToBox(i, f.p);
+  // Centred in the part of the view the guide bar does not cover (WEB-18).
+  const cover = coveredBelow();
+  dv.scrollToBox(i, { ...f.p, y: f.p.y + cover / 2 / dv.scale });
   if (flag) {
     el.classList.add("is-flagged");
     setTimeout(() => el.classList.remove("is-flagged"), 1200);
   }
   el.querySelector("button, input, select")?.focus({ preventScroll: true });
+  setTimeout(() => keepClear(el), reducedMotion() ? 0 : 450);
+}
+
+/// What floats over the document view: the guide bar while it floats (desktop) and
+/// the zoom pill, as rectangles.
+function floaters() {
+  const out = [];
+  if (!guide.hidden && getComputedStyle(guide).position === "fixed") out.push(guide.getBoundingClientRect());
+  const bar = main.querySelector(".os-signframe .os-docbar");
+  if (bar && bar.getClientRects().length) out.push(bar.getBoundingClientRect());
+  return out;
+}
+
+/// Whether a floater (the guide bar, the zoom pill) covers part of `el`.
+function underFloater(el) {
+  const r = el.getBoundingClientRect();
+  return floaters().some((o) => o.left < r.right && o.right > r.left && o.top < r.bottom && o.bottom > r.top);
+}
+
+/// Put field `box`'s label tab above it, below it when another field is in the way
+/// above, or nowhere when both would cover a field (WEB-18: a tab never covers one).
+function placeTip(box) {
+  const tip = box.querySelector(".os-sfield__tip");
+  if (!tip) return;
+  box.classList.remove("tip-below", "tip-none");
+  const others = [...box.parentElement.querySelectorAll(".os-sfield")].filter((n) => n !== box).map((n) => n.getBoundingClientRect());
+  const hits = () => { const t_ = tip.getBoundingClientRect(); return others.some((o) => o.left < t_.right && o.right > t_.left && o.top < t_.bottom && o.bottom > t_.top); };
+  if (!hits()) return;
+  box.classList.add("tip-below");
+  if (hits()) { box.classList.remove("tip-below"); box.classList.add("tip-none"); }
+}
+
+/// How many px at the bottom of the document view the floating guide bar covers.
+function coveredBelow() {
+  if (!dv) return 0;
+  const sc = dv.scroller.getBoundingClientRect();
+  return Math.max(0, ...floaters().map((r) => sc.bottom - r.top + 12));
+}
+
+/// Scroll the document view so field `el` is not under the guide bar or the zoom pill,
+/// nor under the top edge of the view (WEB-18: a field is never covered).
+function keepClear(el) {
+  if (!dv || !el?.isConnected) return;
+  const sc = dv.scroller.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const GAP = 12;
+  let floor = sc.bottom - GAP;
+  for (const o of floaters()) if (o.left < r.right && o.right > r.left) floor = Math.min(floor, o.top - GAP);
+  let dy = 0;
+  if (r.bottom > floor) dy = r.bottom - floor;
+  if (r.top - dy < sc.top + GAP) dy = r.top - (sc.top + GAP);
+  if (Math.abs(dy) > 0.5) dv.scroller.scrollBy({ top: dy, behavior: "instant" });
 }
 
 /// Phones (P-05, M-01; DocuSign's guided zoom): the view zooms until the field is a
@@ -743,7 +797,10 @@ function fieldNode(f, pg) {
   // field's own sheet instead (below).
   box.addEventListener("focusin", (e) => {
     if (phone() && dv && f.p.height * dv.scale < TOUCH_PX && e.target.matches?.(":focus-visible")) focusField(f.id, false);
+    else requestAnimationFrame(() => keepClear(box));
+    placeTip(box);
   });
+  box.addEventListener("pointerenter", () => placeTip(box));
   const req = f.required ? `, ${t("sign.required")}` : "";
   const label = f.label || t(`ftype.${f.type}`);
   // G-S8: every field says what it is on the page: a label tab above it, shown on
@@ -1215,6 +1272,9 @@ function updateGuide() {
   paintGuide(g);
   for (const node of main.querySelectorAll(".os-sfield")) node.classList.toggle("is-next", node.dataset.fieldId === nf?.id);
   for (const paint of autoPaints.values()) paint();
+  // The next field, when it is in view but under the floating guide bar, comes clear.
+  const nextEl = nf && main.querySelector(`[data-field-id="${CSS.escape(nf.id)}"]`);
+  if (nextEl && underFloater(nextEl)) requestAnimationFrame(() => keepClear(nextEl));
   const leftPlaced = left.map((f) => ({ ...f, p: fromWire(f.placement) }));
   const counts = dv ? pageCounts(dv.pages, leftPlaced) : [];
   thumbs?.badges((i) => counts[i] || 0, (n) => t(n === 1 ? "sign.rail.left-one" : "sign.rail.left", { n }));
@@ -1240,6 +1300,9 @@ function paintGuide(g) {
   finishBtn.classList.toggle("is-ready", g.ready);
   // Focus follows the action that replaced it, so the keyboard is not left on nothing.
   if (g.ready && !wasReady && document.activeElement === nextBtn) finishBtn.focus({ preventScroll: true });
+  // Phones: once everything is done, the page is fitted to the width again, so the
+  // signer sees it whole before finishing (the guided zoom is for filling in).
+  if (g.ready && !wasReady && phone() && dv && dv.mode !== "fit-width") dv.setZoom("fit-width");
 }
 
 /// The phone header's two segments (fields done, finished).

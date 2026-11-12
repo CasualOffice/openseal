@@ -160,8 +160,10 @@ test.describe("desktop", () => {
       const d = await page.getByTestId("signer-doc").boundingBox();
       return f.y >= d.y && f.y + f.height <= d.y + d.height;
     }).toBe(true);
-    // G-S8: its label tab shows (it is next); another field's on hover.
-    await expect(field.locator(".os-sfield__tip")).toHaveCSS("opacity", "1");
+    // G-S8 as WEB-18 draws it: the next field is ringed, its tab hidden so no tab sits
+    // over another field; a field's tab shows on hover and focus.
+    await expect(field).toHaveClass(/is-next/);
+    await expect(field.locator(".os-sfield__tip")).toHaveCSS("opacity", "0");
     const box = page.locator('[data-field="checkbox"]');
     await box.hover();
     await expect(box.locator(".os-sfield__tip")).toHaveCSS("opacity", "1");
