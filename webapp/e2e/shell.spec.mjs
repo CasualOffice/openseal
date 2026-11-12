@@ -322,7 +322,7 @@ test.describe("verify page and public site", () => {
     // Checked: a verdict where the verifier is built, else the page says checking is not
     // available here. Never the picker, and never "could not be opened".
     await expect(page.getByTestId("verdict").or(page.getByTestId("verify-missing"))).toBeVisible();
-    await expect(page.getByTestId("verify-missing")).not.toContainText("tools/");
+    await expect(page.locator("body")).not.toContainText("tools/");
     await expect(page.getByTestId("verify-problem")).toHaveCount(0);
   });
 

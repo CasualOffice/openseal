@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="shell.css">
+  <link rel="stylesheet" href="auth.css">
   <script type="module" src="verify.js"></script>
 </head>
 <body class="os-verify">
@@ -25,7 +26,7 @@
       <img class="os-logo--dark" src="assets/logo-dark.svg" alt="" width="123" height="24">
     </a>
     <span class="os-spacer"></span>
-    <button type="button" id="theme-btn" class="os-btn os-btn--ghost os-btn--md os-btn--icon"></button>
+    <button type="button" id="theme-btn" class="os-btn os-btn--ghost os-btn--md os-btn--icon" data-os-command="theme.toggle"></button>
     <a id="open-app" class="os-btn os-btn--secondary os-btn--md" href="app.html"><span data-i18n="verify.open-app">Open OpenSeal</span></a>
   </header>
   <main id="main" class="os-verify__main" tabindex="-1"></main>
