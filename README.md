@@ -68,7 +68,7 @@ and open <http://127.0.0.1:8130/app.html?mock=1> (demo mode; sign in as `demo@op
 
 Docs are true as of 2026-11-11. **Pre-alpha.** The headless engine is complete and tested against 422 real-world PDFs.
 The workflow engine, persistence, key service, API server and job worker are built and merged; the web app is being
-built. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12). v0.0.1, the first pre-release, is being cut. **Phase 2** is open early under waiver `W-1`.
+built. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12). **v0.0.1**, the first pre-release, is [published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1). **Phase 2** is open early under waiver `W-1`.
 **Release 1** (the common send-and-sign case, [docs/06](docs/06-ROADMAP-AND-DELIVERY.md)) comes next.
 
 | Phase | Exit gate | State |
