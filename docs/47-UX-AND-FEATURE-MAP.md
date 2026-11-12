@@ -566,3 +566,85 @@ review.
 
 Also: `playwright.config.mjs` runs `sign-layout.spec.mjs` with the signer specs; `docview.js` (shared) gained the
 `padLeft` function form, additive.
+
+## As built: manage screens (UX-07, 2026-11-12)
+
+The UX-01 package P5 (Home, Agreements, envelope page), after DocuSign's Manage and envelope pages. Files:
+`envelope.js`, `dashboard.js`, `home.js`, `envactions.js`, `dom.js`, `managemodel.js` (the pure rules: action
+hierarchy per state, the Agreements address, "expiring soon", CSV), `manage.css`, `strings/manage.en.js`.
+
+### Envelope page
+
+- **One primary and one secondary action per state**, everything else in a grouped **More** menu with the
+  destructive group last (`managemodel.js` `envelopeActions`):
+
+  | State | Primary | Secondary | More |
+  | --- | --- | --- | --- |
+  | Draft | Edit draft | — | Copy, Save as template · Delete draft |
+  | Sent, delivered | Correct | Resend | Download current PDF, Copy, Save as template, History · Void |
+  | Completed | Download signed PDF | Certificate | Copy, Save as template, History |
+  | Declined, voided, expired | Copy and resend | Download (the document as it ended, `version=current`) | Certificate (only where the server serves it, `NOT_ON_SERVER.certificateEnded`, `UXW-30`), Save as template, History · Delete |
+
+  Below 47.5em the primary is full width with the secondary and More beside each other under it.
+- **Why it ended**, under the title: who declined and their reason, the void reason, or when it expired, and that
+  Copy and resend starts again.
+- **Summary card**, two columns: Envelope ID (monospace, Copy), created, sent, ended, sender, documents (each opens
+  the Documents tab at that file) | subject, message, expiry, reminders, signing order (in order or at once) and
+  authentication (who needs an access code).
+- **Evidence card** for every sent envelope: what the audit trail is, the chain head with Copy and a line on what it
+  proves; for a completed one, "Verify in OpenSeal Verify" (`verify.html`, a new tab) and how to check the downloaded
+  PDF there. Handing the sealed file to Verify directly needs `verify.js` to accept a hand-off (not in this package).
+- **Void** is one dialog: the reason, the consequence ("cannot be undone; recipients get your reason") and a filled
+  danger button (`envactions.js` `voidEnvelopes`, also used for bulk void with the count in the title).
+
+### Correct panel
+
+The side panel corrects, for each recipient who has not acted: name, email, access code and signing order (one
+`PATCH …/recipients/{r}` each, which keeps members the API does not show), or removes them; it adds recipients
+(name, email, role, order) and sets the expiry (end of the chosen day) and the reminders. Adds, removes, expiry and
+reminders go first as one `POST /correct` change list (`add_recipient`, `remove_recipient`, `set_expiry`,
+`set_reminders`), all or none. At least one person who signs or approves must remain. Recipients whose name, email or
+code changed and who are still sent it get a new invitation; added ones are invited by routing. Fields and documents
+of an envelope in flight are the editor-based Correct, `UXW-19`.
+
+### Agreements
+
+- **Density:** dates in lists are one line ("Today, 5:28 PM", "Yesterday, …", "Nov 12", the year only when it
+  differs; `dom.js` `fmtShortDate`) with the full time in a tooltip; the "Created" sub-line is gone (it is on the
+  envelope page); the table has a fixed layout and set column widths; subject, recipients and status line truncate
+  with an ellipsis; the Sender column shows only when a loaded envelope was sent by someone else. Rows are 64 px or
+  less at 1440.
+- **Search in the address:** typing in the top search replaces the hash with `#/agreements?folder=…&q=…` (no history
+  entry, no remount), so reload, Back and a shared link keep it; rail links keep the search; the subtitle says
+  `All envelopes matching "offer"`.
+- **Expiring soon** quick view (sent and delivered, `expires_at` within 7 days, filtered in the page until the API
+  filters by expiry, `UXW-03`); Home's card links to it, so the count and the list agree.
+- **Row menu** grouped with separators: Open (was "Open and history") or Edit | Correct, Resend, Download … |
+  Copy, Save as template, History | Void, Delete. Ended envelopes get Copy and resend and Download.
+- **Bulk bar** is sticky under the top bar (a fixed bottom bar on phones): Resend, Download (signed PDF when
+  completed, else as it stands), Export CSV (formula-safe cells), Void and Delete in the danger colour on the dark bar.
+- **New envelope** left the page head: the top bar's Start is the one way in (the empty state keeps its button).
+- **Phones (below 47.5em):** a folder select with counts replaces the rail; filters sit behind a Filters button with a
+  count; checkboxes appear after Select.
+- **History panel** (44rem) is a timeline: the event as a plain verb ("Signed", "Opened", "Reminder sent"), who and
+  when under it, the event hash in a Details disclosure with Copy. The envelope page's audit table keeps the audit
+  trail's own labels.
+- Row checkboxes sit in a 2rem hit area (WCAG 2.2 SC 2.5.8).
+
+### Home
+
+Five counters (Declined or expired, Waiting for others, Expiring soon, Drafts, Completed). The drop zone is one slim
+line. Recent envelopes are the six last changed: subject, "To: …", status badge and line, and the last change; the
+whole row opens it. "Needs your signature" waits for the Inbox (`UXW-01`).
+
+### Tests
+
+- Node: `tests/manage.test.mjs` (action hierarchy per state, row-menu groups, the address, expiring soon, CSV cells,
+  the short date); the CSV formula guard was mutated and seen red.
+- Playwright (`e2e/manage.spec.mjs`, chromium): the four acceptance tests (Download on a declined envelope, a primary
+  action on it, the search surviving a reload, rows of 64 px or less at 1440) each seen red with the screen files
+  reverted to `main` and green after; grouped row menu and one void dialog, sticky bulk bar with CSV export, bulk
+  void and delete; Expiring soon card and view agree; summary, evidence card and History timeline; Correct adds,
+  removes and sets expiry and reminders; phones (folder select, Filters, Select, full-width primary); screenshots at
+  1440 and 390. `send.spec.mjs`, `real-stack.spec.mjs` and `signin-dashboard.spec.mjs` follow the new way in (Start)
+  and Void's place in More.

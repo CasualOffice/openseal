@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 39 of 167 rows work end to end; 22 more have their engine built and tested; 60 are designed, 1 is partial (`FG-132`) and 45 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 39 of 167 rows work end to end; 22 more have their engine built and tested; 58 are designed, 4 are partial (`FG-131`, `FG-132`, `FG-133`, `FG-140`) and 44 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -145,16 +145,16 @@ instructions 8 and 9).
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
 | FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Designed |
-| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Designed |
+| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (7 days, filtered in the page), completed, with counts on Home and the rail (`UX-07`); waiting for me needs the Inbox (`UXW-01`); auth failed not yet |
 | FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search, status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
-| FG-133 | Correct | DS | Build | 6 | Designed |
+| FG-133 | Correct | DS | Build | 6 | Partial: a side panel changes name, email, access code and signing order of recipients who have not acted, adds and removes them, and sets expiry and reminders (`POST /correct` and `PATCH …/recipients/{r}`; `UX-07`, tested in mock mode); fields and documents are `UXW-19` |
 | FG-134 | Void with reason | DS, SN | Build | 2 | Works |
 | FG-135 | Resend | DS, SN | Build | 2 | Works |
 | FG-136 | Copy; save as template | DS | Build | 6 | Works |
 | FG-137 | Transfer ownership | DS | Build | 10 | Designed |
 | FG-138 | History view | DS, SN | Build | 6 | Works (staff audit view; the signer's own `GET /s/{token}/history`, `WEB-07`) |
 | FG-139 | Envelope custom fields | DS | Build | 6 | Designed |
-| FG-140 | Reports and CSV export | DS | Build | 6 | — |
+| FG-140 | Reports and CSV export | DS | Build | 6 | Partial: Agreements exports the selected envelopes as CSV, formula-safe (`UX-07`); server reports are `UXW-25` |
 | FG-141 | Insights dashboard | DS | Build | 6 | — |
 
 ## Evidence and verification
