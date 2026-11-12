@@ -888,6 +888,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, { items: [...seen.values()].slice(0, limit) });
     }
     if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
+    if (res === "users" && id === "me" && !sub) return me(method, body);
     if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
     if (res === "webhooks") return webhooks(method, id, sub, subId, subSub, body);
@@ -1020,12 +1021,15 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (subSub === "detect-fields" && method === "POST") {
         // As `POST …/detect-fields` (nothing changed or recorded): the mock's documents
         // put their signature lines low on each page, so it suggests a signature, a date
-        // and a name there, ordered by page, top, left.
+        // and a name there, ordered by page, top, left. As the server's detector does
+        // (casual-sign-fields detect.rs), a field on a line sits on it: its bottom is the
+        // line (mockpdf.js draws them at PDF y 150, so 642 from the top of a 792 page;
+        // UX-05, they were below the lines).
         const items = [];
         for (let page = 1; page <= d.pages; page++) {
           items.push(
-            { document_id: d.id, type: "signature", page, x: "72", y: "680", width: "180", height: "40", source: "underline", cue: "Signature", confidence: 82 },
-            { document_id: d.id, type: "date_signed", page, x: "330", y: "698", width: "120", height: "22", source: "label", cue: "Date", confidence: 74 },
+            { document_id: d.id, type: "signature", page, x: "72", y: "602", width: "180", height: "40", source: "underline", cue: "Signature", confidence: 82 },
+            { document_id: d.id, type: "date_signed", page, x: "340", y: "620", width: "120", height: "22", source: "underline", cue: "Date", confidence: 74 },
             { document_id: d.id, type: "name", page, x: "72", y: "730", width: "180", height: "22", source: "label", cue: "Print name", confidence: 61 },
           );
         }
@@ -1331,6 +1335,39 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     for (const [k, v] of Object.entries(db.invites)) if (v === u.id) delete db.invites[k];
     db.invites[`inv-${uid()}`] = u.id;
   }
+  /// The signed-in user's own profile (UX-04, NOT_ON_SERVER.profile): name, email (only
+  /// an administrator changes it), notification choices, a saved signature and initials,
+  /// and a password change that needs the current password.
+  function me(method, body) {
+    const u = db.users.find((x) => x.id === "user-demo");
+    if (!u) fail(404, "CS-API-0002", "Not found");
+    // Kept beside the member record, so the admin list keeps the server's shape. The demo
+    // password itself never changes (sign-in stays MOCK.password).
+    db.profiles ||= {};
+    const p = (db.profiles[u.id] ||= { notifications: { completed: true, declined: true, viewed: false }, signature: null, initials: null });
+    const out = () => ({ id: u.id, name: u.name, email: u.email, notifications: { ...p.notifications }, signature: p.signature, initials: p.initials });
+    if (method === "GET") return json(200, out());
+    if (method !== "PATCH") fail(405, "CS-API-0012", "Method not allowed");
+    const b = body || {};
+    for (const k of Object.keys(b)) if (!["name", "notifications", "signature", "initials", "password", "current_password"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+    if ("name" in b && (typeof b.name !== "string" || !b.name.trim() || b.name.length > 200)) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
+    if ("notifications" in b) {
+      const n = b.notifications;
+      if (!n || typeof n !== "object" || Object.entries(n).some(([k, v]) => !["completed", "declined", "viewed"].includes(k) || typeof v !== "boolean")) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/notifications", code: "type" }]);
+    }
+    for (const m of ["signature", "initials"]) {
+      if (m in b && b[m] !== null && (typeof b[m]?.image_base64 !== "string" || !b[m].image_base64 || b[m].image_base64.length > 2_000_000)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: `/${m}`, code: "type" }]);
+    }
+    if ("password" in b) {
+      if (b.current_password !== MOCK.password) fail(403, "CS-AUTH-0007", "Invalid credentials");
+      if (typeof b.password !== "string" || b.password.length < 12) fail(400, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
+    }
+    if ("name" in b) u.name = b.name.trim();
+    if ("notifications" in b) p.notifications = { ...p.notifications, ...b.notifications };
+    for (const m of ["signature", "initials"]) if (m in b) p[m] = b[m];
+    return json(200, out());
+  }
+
   function users(method, id, body, sub) {
     if (!id && method === "POST" && body?.invite === true) {
       // `POST /users` with `invite: true` (WEB-06 AD-01): a member who sets up their own
@@ -1653,9 +1690,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     let offline = false;
     try { offline = store?.getItem("openseal.mock.offline") === "1"; } catch { offline = false; }
     if (offline) throw new TypeError("Failed to fetch");
-    await load();
     const url = new URL(typeof input === "string" ? input : input.url, "http://mock.invalid");
     const method = (init.method || "GET").toUpperCase();
+    // UX-04, ahead of the server (NOT_ON_SERVER.authProviders): no session and no state,
+    // so answered before the state is loaded; the sign-in form asks on arrival, and an
+    // early load would let this tab's copy go stale under another writer (the e2e seed).
+    if (url.pathname === "/api/v1/auth/providers" && method === "GET") {
+      // Test hook: `sessionStorage["openseal.mock.idp"] = "Acme SSO"` configures one.
+      let idp = null;
+      try { idp = store?.getItem("openseal.mock.idp") || null; } catch { idp = null; }
+      return json(200, { items: idp ? [{ id: "idp-demo", name: idp, url: "/sso/idp-demo/start" }] : [] });
+    }
+    await load();
     const headers = {};
     for (const [k, v] of Object.entries(init.headers || {})) headers[k.toLowerCase()] = v;
     let body = null;
@@ -1683,6 +1729,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         delete db.invites[body.token];
         save();
         return json(200, { account_id: "acct-demo", user_id: u.id });
+      }
+      // UX-04, ahead of the server (NOT_ON_SERVER.passwordReset): no session needed. The
+      // answer is the same for any address (no enumeration).
+      if (url.pathname === "/api/v1/auth/password-reset" && method === "POST") {
+        for (const k of Object.keys(body || {})) if (k !== "email") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        if (typeof body?.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
+        return json(202, {});
       }
       let res;
       if (parts[1] === "api" && parts[2] === "v1") res = await staff(method, parts, url.searchParams, headers, body);

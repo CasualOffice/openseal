@@ -64,9 +64,9 @@ test("templates: empty state, then a new template from a PDF with roles and fiel
   await page.getByTestId("wizard-next").click();
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   await placingFor(page, 0);
-  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   await placingFor(page, 1);
-  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   await expectAccessible(page, "template editor");
   await snap(page, testInfo, "web02-template-editor");
   await page.getByTestId("wizard-next").click();
@@ -130,7 +130,7 @@ test("a new template keeps its document and fields, bound to the role's id (WEB-
   await page.getByRole("button", { name: "Add role" }).first().click();
   await page.getByTestId("role-name").fill("Vendor");
   await page.getByTestId("wizard-next").click();
-  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   await page.getByTestId("wizard-next").click();
   await page.getByRole("button", { name: "Save template" }).click();
   await expect(page.locator(".os-toast")).toContainText("Template saved.");
