@@ -14,4 +14,22 @@ ignore = [
     # nothing; only `--target all` shows the chain. Owner instruction 32; removed under
     # DEP-05 once phonenumber drops postcard or heapless 0.7.
     "RUSTSEC-2023-0089",
+    # RUSTSEC-2026-0367, -0368, -0369, -0429 (zip < 9.0.0; all four in
+    # `ZipArchive::extract` / `ZipStreamReader::extract`): `oar-ocr` 0.10.2 (modeld's
+    # `server` feature, ML-02) requires `zip ^8.6`, so 9.0 cannot be taken until it moves.
+    # Its only zip use is `ZipArchive::new` and `by_name` in `indra/lm.rs` (an n-gram
+    # model it reads from a file), never `extract`, and modeld does not load that model.
+    # Pending owner confirmation, as instructions 15 and 32; removed under DEP-06.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
+    # RUSTSEC-2024-0436 (paste, unmaintained; no vulnerability) and RUSTSEC-2026-0192
+    # (ttf-parser, unmaintained; no vulnerability): both reach modeld only because
+    # `oar-ocr-core` depends on `imageproc` with its defaults, which turn on `image`'s
+    # default codecs (paste is a compile-time proc macro of the avif encoder `rav1e`) and
+    # `ab_glyph` text drawing (ttf-parser). modeld decodes no image file and draws no
+    # text. Pending owner confirmation; removed under DEP-07, which trims those features.
+    "RUSTSEC-2024-0436",
+    "RUSTSEC-2026-0192",
 ]

@@ -390,7 +390,16 @@ until the owner decides (allow BSL-1.0 for this crate in `deny.toml` with an ADR
 D3(b)); a row is proposed.
 **Also found:** `oar-ocr` 0.10.2 and its `-core` and `-derive` crates declare `rust-version = 1.95`, above the
 workspace's pinned 1.94.0, so the CI list's `cargo +1.94.0 check --workspace` fails with the `server` feature until
-the MSRV moves to 1.95 (the toolchain in use is 1.96) or an older `oar-ocr` is pinned; a row is proposed.
+the MSRV moves to 1.95 (the toolchain in use is 1.96) or an older `oar-ocr` is pinned; a row is proposed. No
+older `oar-ocr` avoids either: 0.7.0 onward all declare 1.95 and use `clipper2-rust` (BSL-1.0 in every version),
+and 0.6.x uses `clipper2`, a binding to the same BSL-1.0 C++ library.
+**Lockfile ages (2026-11-13, review of piece D):** four crates the tree locked were under the two-week rule of §5;
+they are pinned back to `bit_field` 0.10.3, `exr` 1.74.0 (1.74.1 and 1.74.2 bring `pulp` and the unmaintained
+`paste`), `hayro-cmap` 0.1.0 and `hayro-postscript` 0.1.0 (the fuzz lockfile too). `rustix` moves to 1.1.6
+(2026-10-27) for RUSTSEC-2026-0486. `cargo audit` ignores, each with its reason in `.cargo/audit.toml` and pending
+the owner's confirmation: the four `zip` 8.6 `extract` advisories (`oar-ocr` requires `^8.6`, reads one archive
+with `by_name` only and never extracts; `DEP-06`) and the unmaintained `paste` and `ttf-parser`, which arrive only
+through `imageproc`'s default features turning on every `image` codec and `ab_glyph` (`DEP-07`).
 
 Determinism: CPU execution only, one intra-op thread per session, a fixed graph optimisation level, and fixed
 truncation. Output is expected to be bit-identical on the same build and CPU instruction set; across AVX2 and

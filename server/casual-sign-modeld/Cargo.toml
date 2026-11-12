@@ -50,8 +50,12 @@ rustls-pki-types = { version = "1.15.1", features = ["std"] }
 # The rasteriser (piece C, `ML-02`, `PDF-REN-01`): pure Rust, forbids `unsafe` itself;
 # runs only in the raster child (src/raster.rs). 0.9.0 (2026-11-02) is too new.
 hayro = { version = "=0.8.0", optional = true }
-# Grey and RGB rasters handed to the OCR pipeline: the version oar-ocr uses. No codec
-# features: modeld never decodes an image file, only raw pixels.
+# Grey and RGB rasters handed to the OCR pipeline: the version oar-ocr uses. Our own
+# entry asks for no codec features, but `oar-ocr-core` depends on `imageproc` with its
+# defaults, which turn on `image`'s `default-formats`, so every codec (avif with the
+# `rav1e` encoder, exr, tiff, gif, webp, hdr, dds, qoi and the rest) is compiled into
+# the daemon. None is reached: modeld never decodes an image file (no `image::open`,
+# `load_from_memory` or `ImageReader` in src), only raw pixels. Trimming this is a row.
 image = { version = "=0.25.10", default-features = false, optional = true }
 # The PaddleOCR pipeline (piece D). Its defaults are `download-binaries` (fetches ONNX
 # Runtime at build) and `simd`: only `simd` is kept, and `auto-download` stays off
@@ -62,7 +66,7 @@ oar-ocr = { version = "=0.10.2", default-features = false, features = ["simd"], 
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "tracing"], optional = true }
 # Address-space and CPU-time limits the raster child sets on itself (`setrlimit`),
 # without `unsafe` in this crate.
-rustix = { version = "=1.1.5", default-features = false, features = ["std", "process"], optional = true }
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "process"], optional = true }
 # The one fixed log subscriber (`SEC-I05`): third-party targets capped at WARN whatever
 # RUST_LOG says (src/logging.rs). Both already in the tree.
 tracing = { version = "0.1.44", optional = true }
