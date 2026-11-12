@@ -209,7 +209,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     try { if (v) store?.setItem("openseal.csrf", v); else store?.removeItem("openseal.csrf"); } catch { /* storage off */ }
   };
 
-  async function request(method, path, { body, query, ifMatch, raw = false, ceremony = false } = {}) {
+  async function request(method, path, { body, query, ifMatch, raw = false, ceremony = false, signal } = {}) {
     let url = baseUrl + path;
     if (query) {
       const q = new URLSearchParams();
@@ -229,8 +229,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         credentials: baseUrl ? "include" : "same-origin",
+        ...(signal ? { signal } : {}),
       });
-    } catch {
+    } catch (err) {
+      if (signal?.aborted || err?.name === "AbortError") throw err;
       throw new ApiError({ code: "CS-NET-0001", title: "Network error" });
     }
     if (!res.ok) {
@@ -394,6 +396,33 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// A staff user hosts an in-person signer (UXW-36): answers `{url, expires_at}`, a
     /// one-time signing page to open on this device, acting as this user hosting them.
     hostInPerson: (id, r) => data(request("POST", `${E(id)}/recipients/${encodeURIComponent(r)}/host`)),
+
+    // ---- Document intelligence (docs/33 §6; WEB-18) ---------------------------
+    // The server answers 404 until WEB-19 builds these; `ml.js` reads a 404 or
+    // `CS-ML-0011` as "unavailable" and every ML surface hides.
+    /// The workspace's model features, `{ocr, template_matching, extraction,
+    /// personal_data, personal_data_model?, ocr_scripts?, reread_scanner_text?,
+    /// not_in_plan?: [feature], installed?: false}`. Workspace admin only.
+    getMlSettings: () => data(request("GET", "/api/v1/account/settings/ml")),
+    /// Turn features on or off: `{ocr?, template_matching?, extraction?, personal_data?, …}`;
+    /// a feature the plan lacks is refused with `403 CS-ML-0011`. Answers the settings.
+    patchMlSettings: (body) => data(request("PATCH", "/api/v1/account/settings/ml", { body })),
+    /// Ask for a draft's document to be analysed (idempotent): `202 {status:
+    /// queued|running|done|failed|unavailable, uses}`.
+    requestAnalysis: (id, doc) => data(request("POST", `${E(id)}/documents/${encodeURIComponent(doc)}/analysis`)),
+    /// `{status, uses, ocr_pages: [page], truncated, bundle_id}`.
+    getAnalysis: (id, doc) => data(request("GET", `${E(id)}/documents/${encodeURIComponent(doc)}/analysis`)),
+    /// `{items: [{id, kind: template|entity|personal_data, document_id, page?, rect?, label,
+    /// value?, normalized?, score, model: {id, sha256}, state: open|accepted|dismissed}],
+    /// next_cursor}`; `kind` and `state` filter.
+    listSuggestions: (id, { kind, state, cursor, limit } = {}) => data(request("GET", `${E(id)}/suggestions`, { query: { kind, state, cursor, limit } })),
+    /// Accept a suggestion (it performs the ordinary action; `409 CS-ML-0012` when stale).
+    acceptSuggestion: (id, s) => data(request("POST", `${E(id)}/suggestions/${encodeURIComponent(s)}/accept`)),
+    dismissSuggestion: (id, s) => data(request("POST", `${E(id)}/suggestions/${encodeURIComponent(s)}/dismiss`)),
+    /// Search agreements by meaning (`ML-07B`, planned in docs/33 §6, `WEB-19`): `{items:
+    /// [{envelope_id, document_id, subject, page, snippet: [{text, mark?}], score}]}`.
+    /// `signal` aborts a stale search.
+    searchByMeaning: (q, { signal, limit } = {}) => data(request("GET", "/api/v1/search", { query: { q, mode: "meaning", limit }, signal })),
 
     // ---- Folders (`NOT_ON_SERVER.folders`) -------------------------------------
     /// The signed-in user's folders, `{items: [{id, name, count}]}`.
