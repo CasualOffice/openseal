@@ -38,9 +38,9 @@
   --os-accent-soft: rgba(192, 22, 34, 0.08);
   /* Destructive, declined and error (UX-02): burnt orange, a different hue from the seal
    * red so Void or Delete never reads as the primary action (CIEDE2000 ≥ 10, tested). */
-  --os-danger: #c2410c;
-  --os-danger-fill: #c2410c;
-  --os-danger-hover: #9a3412;  /* a filled destructive button under the pointer */
+  --os-danger: #ad4609;
+  --os-danger-fill: #ad4609;
+  --os-danger-hover: #8c3a06;  /* a filled destructive button under the pointer */
   --os-on-danger: #ffffff;
   --os-select-soft: rgba(29, 95, 191, 0.08); /* a selected row: info blue, not the accent */
   --os-success: #12703a;
@@ -143,8 +143,8 @@
   --os-on-accent: #ffffff;
   --os-accent-soft: rgba(255, 138, 146, 0.12);
   --os-danger: #fb923c;
-  --os-danger-fill: #c2410c;
-  --os-danger-hover: #9a3412;
+  --os-danger-fill: #ad4609;
+  --os-danger-hover: #8c3a06;
   --os-on-danger: #ffffff;
   --os-select-soft: rgba(138, 180, 255, 0.12);
   --os-success: #5fd38d;
@@ -188,8 +188,8 @@
     --os-on-accent: #ffffff;
     --os-accent-soft: rgba(255, 138, 146, 0.12);
     --os-danger: #fb923c;
-    --os-danger-fill: #c2410c;
-    --os-danger-hover: #9a3412;
+    --os-danger-fill: #ad4609;
+    --os-danger-hover: #8c3a06;
     --os-on-danger: #ffffff;
     --os-select-soft: rgba(138, 180, 255, 0.12);
     --os-success: #5fd38d;

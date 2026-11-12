@@ -254,6 +254,23 @@ test("destructive colours are clearly distinct from the seal red, in both themes
   assert.deepEqual(report, []);
 });
 
+test("status badges' words meet 4.5:1 on their own tint, in both themes (UX-02)", () => {
+  // A badge is `color-mix(in srgb, <colour> N%, var(--os-bg))` behind text in <colour>
+  // (app.css, admin.css); 12 px text, so 4.5:1.
+  const css = fs.readFileSync(path.join(WEBAPP, "tokens.css"), "utf8");
+  const light = tokens(css.slice(css.indexOf(":root {"), css.indexOf(':root[data-theme="dark"]')));
+  const dark = tokens(css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf("@media (prefers-color-scheme: dark)")));
+  const mix = (fg, bg, p) => `#${[1, 3, 5].map((i) => Math.round(parseInt(fg.slice(i, i + 2), 16) * p + parseInt(bg.slice(i, i + 2), 16) * (1 - p)).toString(16).padStart(2, "0")).join("")}`;
+  const report = [];
+  for (const [name, th] of [["light", light], ["dark", dark]]) {
+    for (const c of ["os-danger", "os-success", "os-info", "os-warning"]) {
+      const r = ratio(th[c], mix(th[c], th["os-bg"], 0.12));
+      if (r < 4.5) report.push(`${name}: ${c} on its badge tint ${r.toFixed(2)}`);
+    }
+  }
+  assert.deepEqual(report, []);
+});
+
 test("the OS-preference dark block is the explicit dark block", () => {
   const css = fs.readFileSync(path.join(WEBAPP, "tokens.css"), "utf8");
   const dark = tokens(css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf("@media (prefers-color-scheme: dark)")));
