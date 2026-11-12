@@ -520,6 +520,16 @@ mutation of the migration):
   `prev` and `action` columns to be what the bytes state, and refuses an event outside the current scope (`42501`)
   before reading that chain, so another scope's head or next `seq` is never revealed. The workspace functions require
   the event's bytes to name their own action and workspace.
+- **Concurrent changes queue on the head.** `openseal_admin_chain_tip()` and `openseal_org_chain_tip()` lock the head
+  row (`accounts` or `organizations`) in one statement and read the next `seq` and head in the next, so a transaction
+  that waited for the lock sees the event the other one wrote (one statement would read `seq` from its starting
+  snapshot and be refused as a broken chain). Two admin changes to one workspace, or two workspace creations in one
+  organization, at the same time both commit.
+- **The commit check is coarse.** `admin_change_has_event` accepts any event the transaction appended to that
+  workspace's log or its organization's; it does not check that the event describes the change. The repositories,
+  which write both together, are what pair them.
+- **The actor's IP cannot be erased.** It is inside the hashed bytes of an append-only log, personal data kept for
+  the log's life by design (docs/07 §Data classification, docs/09 §5).
 - **Who sees which event.** Workspace creation and archiving go to the organization log (they are organization
   actions); the bootstrap writes `organization.created` and `organization.admin_added` there through
   `openseal_append_org_event`; workspace settings, members and profiles go to the workspace log.

@@ -86,6 +86,13 @@ Note the tension: **evidence must persist, and data subjects may ask for erasure
 retained under a legal obligation or legitimate interest; the product lets the controller decide per account, and
 never deletes evidence silently.
 
+One record is kept by design and cannot be erased: the **admin audit logs** (`ORG-05`, docs/23 §2.5) hold the acting
+administrator's user or API client id and IP address inside each event's hash-chained bytes, in an append-only log, so
+that who changed a workspace's settings, members or permissions stays provable. That IP address is personal data
+(docs/07 §Data classification); erasing it would break the chain, so it is retained for the life of the log, and an
+operator's privacy notice should say so. Whether this meets a given law is the controller's assessment; the product
+claims no compliance for it.
+
 ## 6. Security attestations
 
 SOC 2 Type II, ISO/IEC 27001, ISO/IEC 27017/27018, HIPAA, FedRAMP and PCI DSS (for payments) attach to an operator,

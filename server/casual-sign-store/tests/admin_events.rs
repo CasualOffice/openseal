@@ -472,8 +472,18 @@ async fn head(db: &TestDb, table: &str, id: uuid::Uuid) -> Option<Vec<u8>> {
 /// about that chain is read (`42501`, never an `OS005` naming its next `seq`), and its
 /// head does not move.
 #[tokio::test]
-async fn an_event_for_another_scope_is_refused_without_reading_its_chain() {
-    let Some(db) = fresh("admin_event_other_scope", Rls::On).await else {
+async fn an_event_for_another_scope_is_refused_without_reading_its_chain_rls_on() {
+    another_scope_is_refused("admin_event_other_scope_on", Rls::On).await;
+}
+
+/// The same with row security off: the chain trigger alone refuses it.
+#[tokio::test]
+async fn an_event_for_another_scope_is_refused_without_reading_its_chain_rls_off() {
+    another_scope_is_refused("admin_event_other_scope_off", Rls::Off).await;
+}
+
+async fn another_scope_is_refused(name: &str, rls: Rls) {
+    let Some(db) = fresh(name, rls).await else {
         return;
     };
     let (org_a, a, _, _) = workspace_with_admin(&db, "alpha").await;
@@ -510,5 +520,111 @@ async fn an_event_for_another_scope_is_refused_without_reading_its_chain() {
         head(&db, "organizations", org_a.0).await,
     );
     assert_eq!(before, after);
+    db.drop().await;
+}
+
+/// Wait (bounded, no sleep) until some backend on the test database waits on a lock.
+async fn until_a_backend_waits_on_a_lock(db: &TestDb) {
+    for _ in 0..10_000 {
+        let waiting: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM pg_stat_activity \
+             WHERE datname = current_database() AND wait_event_type = 'Lock'",
+        )
+        .fetch_one(&db.admin)
+        .await
+        .unwrap();
+        if waiting > 0 {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("the second transaction never waited on the chain head");
+}
+
+/// Two admin changes to one workspace at the same time both commit: the second waits on
+/// the head lock, then reads the `seq` the first one wrote (never a stale one, which the
+/// chain trigger would refuse as a broken chain, `CS-DB-0014`).
+#[tokio::test]
+async fn concurrent_admin_changes_to_one_workspace_both_commit() {
+    let Some(db) = fresh("admin_events_concurrent_ws", Rls::On).await else {
+        return;
+    };
+    let (_, account, admin, profiles) = workspace_with_admin(&db, "alpha").await;
+    let (m1, m2) = (user("b1@alpha.example"), user("b2@alpha.example"));
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    tx.act_as(actor(admin));
+    for m in [&m1, &m2] {
+        tx.users().create_member(m, profiles.sender).await.unwrap();
+    }
+    tx.commit().await.unwrap();
+    // Profile changes touch only membership rows, so the head lock is the only thing
+    // the second transaction waits on.
+    let mut first = db.store.for_account(account).begin().await.unwrap();
+    first.act_as(actor(admin));
+    first
+        .users()
+        .set_profile(m1.id, profiles.viewer)
+        .await
+        .unwrap();
+    let store = db.store.clone();
+    let m2 = m2.id;
+    let second = tokio::spawn(async move {
+        let mut tx = store.for_account(account).begin().await?;
+        tx.act_as(actor(admin));
+        tx.users().set_profile(m2, profiles.viewer).await?;
+        tx.commit().await
+    });
+    until_a_backend_waits_on_a_lock(&db).await;
+    first.commit().await.unwrap();
+    second.await.unwrap().unwrap();
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    let seqs: Vec<_> = tx
+        .verified_admin_log()
+        .await
+        .unwrap()
+        .iter()
+        .map(|e| e.seq)
+        .collect();
+    tx.commit().await.unwrap();
+    assert_eq!(seqs, [0, 1, 2, 3, 4]);
+    db.drop().await;
+}
+
+/// The same for one organization: two workspaces created in it at the same time.
+#[tokio::test]
+async fn concurrent_admin_changes_to_one_organization_both_commit() {
+    let Some(db) = fresh("admin_events_concurrent_org", Rls::On).await else {
+        return;
+    };
+    let org = db.organization("alpha").await;
+    let mut first = db.store.for_organization(org).begin().await.unwrap();
+    first
+        .create_workspace(AccountId(id()), "one", &builtin_profiles())
+        .await
+        .unwrap();
+    let store = db.store.clone();
+    let p2 = builtin_profiles();
+    let second = tokio::spawn(async move {
+        let mut tx = store.for_organization(org).begin().await?;
+        tx.create_workspace(AccountId(id()), "two", &p2).await?;
+        tx.commit().await
+    });
+    until_a_backend_waits_on_a_lock(&db).await;
+    first.commit().await.unwrap();
+    second.await.unwrap().unwrap();
+    let mut tx = db.store.for_organization(org).begin().await.unwrap();
+    let actions: Vec<String> = tx
+        .verified_admin_log()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| e.action)
+        .collect();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        actions.iter().filter(|a| *a == "workspace.created").count(),
+        2,
+        "{actions:?}"
+    );
     db.drop().await;
 }

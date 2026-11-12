@@ -354,7 +354,7 @@ Deferred constraint triggers named `*_admin_change_has_event` on `accounts` (ins
 `policy`, `status`, `data_regions`), `organization_admins` and `org_permission_sets` refuse an application-role commit
 whose transaction appended no event to that workspace's log or its organization's (`admin_change_has_event`,
 `CS-DB-0008`); the owner role is outside, as for the audit chain. Definer functions: `openseal_admin_chain_tip()`
-(next `seq` and head of the current scope's log, locked), `openseal_org_chain_tip()` and
+(next `seq` and head of the current scope's log, the head row locked in one statement and read in the next so that a transaction that waited sees the other's event), `openseal_org_chain_tip()` and
 `openseal_append_org_event(…)` (from a workspace, its organization's log), `openseal_xact_has_admin_event`;
 `openseal_create_workspace` and `openseal_archive_workspace` now take the event (`seq`, `prev`, `hash`, `at`,
 `canonical`), check that its bytes name that action and workspace, and append it in the same transaction (an already

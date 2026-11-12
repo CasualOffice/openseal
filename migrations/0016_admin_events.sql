@@ -194,6 +194,9 @@ CREATE TRIGGER org_admin_events_extend_chain
 -- The next `seq` and the head of the current scope's log (the workspace's in account
 -- scope, the organization's in organization scope), with the head row locked until the
 -- transaction ends, so the event built from them is the next one. No tenant parameter.
+-- The lock is taken by one statement and the chain read by the next: a statement that
+-- waited for the lock would otherwise read `seq` from the snapshot it started with, the
+-- one before the other transaction's event, and its event would be refused (OS005).
 CREATE FUNCTION openseal_admin_chain_tip() RETURNS TABLE (next_seq bigint, head bytea)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path = public, pg_catalog
@@ -203,15 +206,17 @@ DECLARE
     org uuid := openseal_current_org();
 BEGIN
     IF acct IS NOT NULL THEN
+        PERFORM 1 FROM accounts a WHERE a.id = acct FOR UPDATE;
         RETURN QUERY
         SELECT COALESCE((SELECT e.seq + 1 FROM admin_events e WHERE e.account_id = acct
                           ORDER BY e.seq DESC LIMIT 1), 0),
-               (SELECT a.admin_chain_head FROM accounts a WHERE a.id = acct FOR UPDATE);
+               (SELECT a.admin_chain_head FROM accounts a WHERE a.id = acct);
     ELSIF org IS NOT NULL THEN
+        PERFORM 1 FROM organizations o WHERE o.id = org FOR UPDATE;
         RETURN QUERY
         SELECT COALESCE((SELECT e.seq + 1 FROM org_admin_events e WHERE e.organization_id = org
                           ORDER BY e.seq DESC LIMIT 1), 0),
-               (SELECT o.admin_chain_head FROM organizations o WHERE o.id = org FOR UPDATE);
+               (SELECT o.admin_chain_head FROM organizations o WHERE o.id = org);
     END IF;
 END
 $$;
@@ -229,11 +234,13 @@ DECLARE
     org uuid := (SELECT a.organization_id FROM accounts a WHERE a.id = openseal_current_account());
 BEGIN
     IF org IS NOT NULL THEN
+        -- Lock, then read in a fresh statement (as `openseal_admin_chain_tip`).
+        PERFORM 1 FROM organizations o WHERE o.id = org FOR UPDATE;
         RETURN QUERY
         SELECT org,
                COALESCE((SELECT e.seq + 1 FROM org_admin_events e WHERE e.organization_id = org
                           ORDER BY e.seq DESC LIMIT 1), 0),
-               (SELECT o.admin_chain_head FROM organizations o WHERE o.id = org FOR UPDATE);
+               (SELECT o.admin_chain_head FROM organizations o WHERE o.id = org);
     END IF;
 END
 $$;
