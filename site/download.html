@@ -6,10 +6,10 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Download and deploy | OpenSeal</title>
-<meta name="description" content="Ways to run OpenSeal today: the Docker Compose stack, the web app in demo mode, the openseal command line and the offline verifier, all built from source.">
+<meta name="description" content="Ways to run OpenSeal v0.0.1, the first pre-release: the Docker Compose stack, the web app in demo mode, the openseal command line and the offline verifier.">
 <meta name="theme-color" content="#b3141f">
 <meta property="og:title" content="Download and deploy | OpenSeal">
-<meta property="og:description" content="Ways to run OpenSeal today: the Docker Compose stack, the web app in demo mode, the openseal command line and the offline verifier, all built from source.">
+<meta property="og:description" content="Ways to run OpenSeal v0.0.1, the first pre-release: the Docker Compose stack, the web app in demo mode, the openseal command line and the offline verifier.">
 <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
@@ -39,9 +39,10 @@
 <main id="main" tabindex="-1">
 <section class="page-head"><div class="wrap">
   <h1>Download and deploy</h1>
-  <p class="lede">OpenSeal is pre-alpha, so there are no release binaries or published images yet. Everything below runs from a checkout of the repository.</p>
+  <p class="lede"><strong>v0.0.1</strong>, the first pre-release, is published: the common send-and-sign case, end to end on one machine. It is for evaluation, not yet for production agreements. Everything below runs from a checkout of the repository.</p>
   <div class="cta-row">
-    <a class="btn btn-primary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span></a>
+    <a class="btn btn-primary" href="https://github.com/CasualOffice/openseal/releases/tag/v0.0.1">Release notes for v0.0.1<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span></a>
+    <a class="btn btn-secondary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span></a>
   </div>
 </div></section>
 
@@ -54,6 +55,7 @@
 <pre><code>git clone https://github.com/CasualOffice/openseal
 cd openseal
 docker compose up -d --build --wait</code></pre>
+      <p>The release workflow also built the v0.0.1 server, worker and key-service images for GitHub Container Registry (<code>ghcr.io/casualoffice/openseal-{server,worker,keyd}:0.0.1</code>). Until those packages are public, build from the checkout as above.</p>
       <p><a href="docs/getting-started.html">Getting started</a> covers the first administrator and a test envelope.</p>
     </article>
     <article class="card">
@@ -91,7 +93,7 @@ python3 -I tools/serve-webapp.py
     <div class="cta-row"><a class="btn btn-secondary" href="docs/self-hosting.html">Production checklist<span class="btn-icon"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span></a></div>
   </div>
   <ul class="facts">
-    <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><polyline points="3.29 7 12 12 20.71 7"/><path d="m7.5 4.27 9 5.15"/></svg></span><strong>Release images and binaries</strong><span>Signed images with an SBOM come with 1.0 general availability; until then, build from source.</span></li>
+    <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><polyline points="3.29 7 12 12 20.71 7"/><path d="m7.5 4.27 9 5.15"/></svg></span><strong>Release images</strong><span>v0.0.1's images were built from the tag with pinned base images, an SBOM and provenance attestations. The Compose stack around them generates development keys; production keys and certificates are yours to supply.</span></li>
     <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></span><strong>Kubernetes and high availability</strong><span>A Helm chart, an HA reference and a backup and restore drill are planned in the operations slice.</span></li>
     <li><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 8V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h8"/><path d="M10 19v-3.96 3.15"/><path d="M7 19h5"/><rect width="6" height="10" x="16" y="12" rx="2"/></svg></span><strong>Desktop and mobile apps</strong><span>A desktop app for senders and offline verification, and mobile apps, are on the <a href="roadmap.html">roadmap</a>.</span></li>
   </ul>

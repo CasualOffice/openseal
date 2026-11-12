@@ -51,6 +51,19 @@ SLICE_THEME = {
 }
 NEXT_MILESTONES = {"MS-3", "MS-4", "MS-5"}  # first signature, team beta, 1.0 GA
 LATER_MILESTONES = {"MS-6", "MS-7", "MS-8"}
+# Work after v0.0.1 shown under "Coming next" (owner instruction 36), with its status
+# read from docs/14. The labels are short public names for each row.
+NOW_ROWS = [
+    ("UX-01", "Enterprise UI and layout pass, in packages UX-02 to UX-08"),
+    ("ORG-01", "Organizations above workspaces, with organization, workspace and delegated admins"),
+    ("CON-01", "Platform console for the operator: organizations, plans, keys and certificates, health"),
+    ("PLAN-01", "Plans: entitlements, quotas, usage metering and export"),
+    ("ML-09", "casual-sign-modeld, the separate process that hosts pretrained models"),
+    ("ML-02", "Text from scanned and image-only pages (OCR)"),
+    ("ML-05", "Template matching on upload"),
+    ("ML-07", "Agreement extraction: parties, dates, amounts"),
+    ("ML-08", "Personal-data detection with validated recognisers"),
+]
 
 
 def fail(msg: str) -> None:
@@ -104,8 +117,11 @@ def release1(secs: dict[str, str]) -> dict:
     key = next((k for k in secs if k.startswith("Release 1")), None)
     if not key:
         fail("docs/06 has no Release 1 section")
-    intro = secs[key].strip().split("\n\n")[0].replace("\n", " ")
-    body = re.sub(r"\n\s+", " ", secs[key])
+    # Only the section's own text: its "### Release 1 ships as v0.0.1" subsection (the
+    # gate's boxes) would otherwise run into the last field read to the end.
+    own = secs[key].split("\n### ", 1)[0]
+    intro = own.strip().split("\n\n")[0].replace("\n", " ")
+    body = re.sub(r"\n\s+", " ", own)
     m_in = re.search(r"\*\*In:\*\*\s*(.+?)(?=\n- \*\*|\Z)", body, flags=re.S)
     m_after = re.search(r"\*\*After Release 1, in slice order:\*\*\s*(.+?)(?=\n- \*\*|\Z)", body, flags=re.S)
     m_order = re.search(r"\*\*Work order:\*\*\s*(.+?)(?=\n- \*\*|\Z)", body, flags=re.S)
@@ -113,7 +129,11 @@ def release1(secs: dict[str, str]) -> dict:
         fail("docs/06 Release 1 lacks In:, After Release 1 or Work order:")
     items = [plain(x).rstrip(".") for x in re.split(r";\s*", m_in.group(1).strip())]
     items = [x[0].upper() + x[1:] for x in items if x]
-    return {"intro": plain(intro), "items": items, "order": plain(m_order.group(1)).strip()}
+    # Published once docs/06 "Where things stand" says so in its Release 1 row.
+    stand = next((v for k, v in secs.items() if k.startswith("Where things stand")), "")
+    m_pub = re.search(r"^\| Release 1 / (v[\d.]+) \| \*\*Published\*\*", stand, flags=re.M)
+    return {"intro": plain(intro), "items": items, "order": plain(m_order.group(1)).strip(),
+            "version": m_pub.group(1) if m_pub else None}
 
 
 def slice_outcomes(text: str) -> dict[int, tuple[str, str]]:
@@ -193,7 +213,7 @@ def render() -> str:
 <div class="tl-body"><div class="tl-title"><h3>{esc(p2["name"])}: {esc(p2["title"])}</h3>{pill(p2_state, "Closed" if p2["closed"] else "In progress")}</div>
 <p>{esc(p2["gives"])} {built} of {len(stages)} stages built; {p2["done"]} of {p2["done"] + len(p2["todo"])} exit criteria met.</p>
 <ul class="tl-items">{stage_items}</ul>
-<p>Left to close the phase:</p><ul class="tl-items">{left}</ul></div></li>""")
+{f'<p>Left to close the phase:</p><ul class="tl-items">{left}</ul>' if left else ""}</div></li>""")
 
     web_done = [(r, c) for r, c in web if c[2] == "Done"]
     web_open = [(r, c) for r, c in web if c[2] != "Done"]
@@ -204,9 +224,28 @@ def render() -> str:
 <div class="tl-body"><div class="tl-title"><h3>Web app for senders and signers</h3>{pill("progress", "In progress")}</div>
 <p>{len(web_done)} of {len(web)} web app rows done; the rest were found while building it.</p>
 <ul class="tl-items">{web_items}</ul></div></li>""")
-    tl.append(f"""<li><span class="tl-dot">{sitelib.icon("rocket", 20)}</span>
+    if r1["version"]:
+        tl.append(f"""<li class="tl-done"><span class="tl-dot">{sitelib.icon("rocket", 20)}</span>
+<div class="tl-body"><div class="tl-title"><h3>Release 1</h3>{pill("done", r1["version"] + " published")}</div>
+<p>The common send-and-sign case, end to end on one machine, published as the {esc(r1["version"])} pre-release for evaluation, not yet for production agreements. <a href="{sitelib.REPO}/releases/tag/{esc(r1["version"])}">Release notes</a>.</p></div></li>""")
+    else:
+        tl.append(f"""<li><span class="tl-dot">{sitelib.icon("rocket", 20)}</span>
 <div class="tl-body"><div class="tl-title"><h3>Release 1</h3>{pill("next", "Next")}</div>
 <p>{esc(r1["order"])}</p></div></li>""")
+
+    # Work running now beside the slices, each with its tracker row's status.
+    now_items = []
+    for rid, label in NOW_ROWS:
+        if rid not in t:
+            fail(f"docs/14 has no row {rid}")
+        st = t[rid][2]
+        ok = st == "Done"
+        now_items.append(f'<li>{sitelib.icon("circle-check" if ok else "circle-dot", 16, "ok" if ok else "wip")}'
+                         f'<span><b>{esc(rid)}</b> {esc(label)} ({esc(st.lower())})</span></li>')
+    tl.append(f"""<li class="tl-progress"><span class="tl-dot">{sitelib.icon("loader-circle", 20)}</span>
+<div class="tl-body"><div class="tl-title"><h3>Coming next</h3>{pill("progress", "In progress")}</div>
+<p>Workspaces and an admin console, assistive features from pretrained models, and a UI and workflow overhaul. Model features are off by default and are suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
+<ul class="tl-items">{"".join(now_items)}</ul></div></li>""")
 
     scope = "".join(f'<li>{sitelib.icon("check", 16)}<span>{esc(x)}</span></li>' for x in r1["items"])
 
@@ -254,7 +293,7 @@ def render() -> str:
 
 <section class="section-tight section-alt" aria-labelledby="r1-h"><div class="wrap">
   <div class="release">
-    <div class="tl-title"><h2 id="r1-h">Release 1: the common case first</h2>{pill("next", "Next")}</div>
+    <div class="tl-title"><h2 id="r1-h">Release 1: the common case first</h2>{pill("done", r1["version"] + " published") if r1["version"] else pill("next", "Next")}</div>
     <p class="muted">{esc(r1["intro"])}</p>
     <ul class="scope">{scope}</ul>
   </div>

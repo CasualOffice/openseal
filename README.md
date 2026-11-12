@@ -66,10 +66,18 @@ and open <http://127.0.0.1:8130/app.html?mock=1> (demo mode; sign in as `demo@op
 
 ## Status
 
-Docs are true as of 2026-11-11. **Pre-alpha.** The headless engine is complete and tested against 422 real-world PDFs.
-The workflow engine, persistence, key service, API server and job worker are built and merged; the web app is being
-built. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12). **v0.0.1**, the first pre-release, is [published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1). **Phase 2** is open early under waiver `W-1`.
-**Release 1** (the common send-and-sign case, [docs/06](docs/06-ROADMAP-AND-DELIVERY.md)) comes next.
+Docs are true as of `19518fb` (2026-11-12). **Pre-alpha.** **v0.0.1**, the first pre-release, is
+[published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1): usable end to end on one machine with Docker
+Compose, not yet for production agreements. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12).
+The engine, workflow engine, persistence, key service, API server, job worker and web app are built and merged; a
+sender uploads, places fields and sends; signers sign on a phone or a desktop; everyone downloads a sealed PDF and
+certificate that pyHanko accepts, in CI on the Compose stack.
+
+**In progress now:** a UI and workflow pass towards DocuSign and SignNow parity (`UX-02` to `UX-08`); organizations,
+workspaces, delegated administration, a platform console and plans (ADR-028); assistive features from pretrained
+models, off by default and never part of the evidence (ADR-029: the model process skeleton, personal-data recognisers
+and value normalisation are merged; OCR for scans, template matching and agreement extraction are being built); and
+a security fix for cross-workspace accounts (`SEC-ID-01`).
 
 | Phase | Exit gate | State |
 | --- | --- | --- |
@@ -77,7 +85,8 @@ built. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12). *
 | 0 — Foundation | **Closed** (4 of 4) | CI green on GitHub (Linux, macOS, Windows), every CI job seen failing on a seeded violation (PR #1), 422-PDF corpus, 50 hostile fixtures, pyHanko and EU DSS validators, spikes. Signed off 2026-11-11 |
 | 1 — PDF and evidence core | **Closed** (7 of 7) | Every admitted corpus PDF (417 of 417) filled, flattened, sealed and verified by ours, pyHanko and EU DSS; tamper and signature-wrapping fixtures detected by all three; WASM byte-identical to native; 24 h of fuzzing per target with no finding. Signed off 2026-11-11 |
 | 2 — Envelope engine and server | **Closed** (5 of 5) | Workflow engine, persistence, API server, job worker, keyd and the Docker Compose deployment; end-to-end on the stack green in CI; crash tests with real process kills; tenant isolation over every operation; every access and web threat with a test seen red. Signed off 2026-11-12 |
-| Release 1 and slices 1–35 | — | Release 1 scope set (owner, 2026-11-11): slice 1 send and sign with routing, templates, API and webhooks; the rest follows slice by slice |
+| Release 1 (v0.0.1) | Published 2026-11-12 | Send and sign with routing, templates, decline and void, access code and email code, sealed PDF and certificate, verify, API and webhooks, single-node Compose. Left in `REL-01`: public container packages and the recorded manual walkthrough |
+| Slices 1–35 | — | None closed yet; slices 1, 2, 5 and 7 lead to M3 (first signature, private preview) |
 
 **What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):
 
@@ -103,7 +112,7 @@ cargo run --release -p casual-sign-pdf --example admit_dir -- fixtures/corpus/fi
 tools/ci-local.sh                            # everything CI runs, locally
 ```
 
-A command-line tool (`openseal admit | fill | seal | verify`) arrives with `T-1J`. Exact state per item:
+The command-line tool: `cargo run -p casual-sign-cli -- admit | normalize | fill | seal | verify | audit verify`. Exact state per item:
 [docs/14](docs/14-EXECUTION-TRACKER.md); phases and milestones: [docs/06](docs/06-ROADMAP-AND-DELIVERY.md).
 
 The design, research and plan:
@@ -116,10 +125,10 @@ The design, research and plan:
 | Research: DocuSign, SignNow, open-source competitors, law and standards | [docs/48](docs/48-DOCUSIGN-STUDY.md), [49](docs/49-SIGNNOW-STUDY.md), [52](docs/52-COMPETITOR-STUDY.md), [09](docs/09-LEGAL-AND-COMPLIANCE.md) |
 | Security | [docs/07](docs/07-SECURITY-THREAT-MODEL.md) |
 | Roadmap and tracker | [docs/06](docs/06-ROADMAP-AND-DELIVERY.md), [docs/14](docs/14-EXECUTION-TRACKER.md) |
-| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; none works end to end yet (no server or UI), 32 have their engine built |
+| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; 39 work end to end, 22 more have their engine built |
 
-The plan: **Phase 1** finishes the headless engine; **Phase 2** builds the envelope engine, server and API; then
-**35 vertical slices** deliver user-visible features, starting with send-and-sign. Milestones: M0 ready to build, M1
+The plan: the headless engine (Phase 1) and the envelope engine, server and API (Phase 2) are done; **35 vertical
+slices** now deliver user-visible features, starting with send-and-sign. Milestones: M0 ready to build, M1
 engine alpha, M2 service alpha, M3 first signature (private preview), M4 team beta, **M5 1.0 GA**, M6 regulated
 industries, M7 ecosystem, M8 agreement platform ([roadmap](docs/06-ROADMAP-AND-DELIVERY.md#milestones)).
 
