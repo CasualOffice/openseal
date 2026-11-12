@@ -200,6 +200,60 @@ test("text and control colours meet WCAG 2.2 AA in both themes", () => {
   assert.deepEqual(report, []);
 });
 
+// CIEDE2000 between two sRGB colours: how different they look (UX-02).
+function lab(hex) {
+  const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const [r, g, b] = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
+  const f = (x) => (x > 216 / 24389 ? Math.cbrt(x) : (24389 / 27 * x + 16) / 116);
+  const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+  const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+  const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+function deltaE(c1, c2) {
+  const rad = Math.PI / 180;
+  const [L1, a1, b1] = lab(c1); const [L2, a2, b2] = lab(c2);
+  const Cb = (Math.hypot(a1, b1) + Math.hypot(a2, b2)) / 2;
+  const G = 0.5 * (1 - Math.sqrt(Cb ** 7 / (Cb ** 7 + 25 ** 7)));
+  const p1 = (1 + G) * a1; const p2 = (1 + G) * a2;
+  const C1 = Math.hypot(p1, b1); const C2 = Math.hypot(p2, b2);
+  const h1 = (Math.atan2(b1, p1) / rad + 360) % 360; const h2 = (Math.atan2(b2, p2) / rad + 360) % 360;
+  let dh = h2 - h1;
+  if (C1 * C2 === 0) dh = 0; else if (dh > 180) dh -= 360; else if (dh < -180) dh += 360;
+  const dH = 2 * Math.sqrt(C1 * C2) * Math.sin((dh / 2) * rad);
+  const Lb = (L1 + L2) / 2; const Cbp = (C1 + C2) / 2;
+  let hb = h1 + h2;
+  if (C1 * C2 !== 0) hb = Math.abs(h1 - h2) <= 180 ? hb / 2 : hb < 360 ? (hb + 360) / 2 : (hb - 360) / 2;
+  const T = 1 - 0.17 * Math.cos((hb - 30) * rad) + 0.24 * Math.cos(2 * hb * rad) + 0.32 * Math.cos((3 * hb + 6) * rad) - 0.2 * Math.cos((4 * hb - 63) * rad);
+  const Rc = 2 * Math.sqrt(Cbp ** 7 / (Cbp ** 7 + 25 ** 7));
+  const Rt = -Math.sin(2 * 30 * Math.exp(-(((hb - 275) / 25) ** 2)) * rad) * Rc;
+  const Sl = 1 + (0.015 * (Lb - 50) ** 2) / Math.sqrt(20 + (Lb - 50) ** 2); const Sc = 1 + 0.045 * Cbp; const Sh = 1 + 0.015 * Cbp * T;
+  return Math.sqrt(((L2 - L1) / Sl) ** 2 + ((C2 - C1) / Sc) ** 2 + (dH / Sh) ** 2 + Rt * ((C2 - C1) / Sc) * (dH / Sh));
+}
+
+test("destructive colours are clearly distinct from the seal red, in both themes (UX-02)", () => {
+  // Owner rule: Void, Delete, Decline and errors never read as the primary action. A
+  // CIEDE2000 difference of 10 or more is clearly a different colour at a glance; the
+  // old danger red (#b42318 beside #b3141f) was 3.5.
+  const css = fs.readFileSync(path.join(WEBAPP, "tokens.css"), "utf8");
+  const light = tokens(css.slice(css.indexOf(":root {"), css.indexOf(':root[data-theme="dark"]')));
+  const dark = tokens(css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf("@media (prefers-color-scheme: dark)")));
+  const report = [];
+  for (const [name, th] of [["light", light], ["dark", dark]]) {
+    for (const [a, b] of [["os-accent", "os-danger"], ["os-accent-fill", "os-danger-fill"], ["os-danger", "os-warning"]]) {
+      if (!th[a] || !th[b]) { report.push(`${name}: ${a} or ${b} missing`); continue; }
+      const d = deltaE(th[a], th[b]);
+      if (d < 10) report.push(`${name}: ${a} ${th[a]} vs ${b} ${th[b]}: ΔE ${d.toFixed(1)}`);
+    }
+    for (const [fg, bg] of [["os-on-danger", "os-danger-fill"], ["os-on-danger", "os-danger-hover"], ["os-on-accent", "os-accent-hover-fill"]]) {
+      if (!th[fg] || !th[bg]) { report.push(`${name}: ${fg} or ${bg} missing`); continue; }
+      const r = ratio(th[fg], th[bg]);
+      if (r < 4.5) report.push(`${name}: ${fg} on ${bg} ${r.toFixed(2)}`);
+    }
+  }
+  assert.deepEqual(report, []);
+});
+
 test("the OS-preference dark block is the explicit dark block", () => {
   const css = fs.readFileSync(path.join(WEBAPP, "tokens.css"), "utf8");
   const dark = tokens(css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf("@media (prefers-color-scheme: dark)")));

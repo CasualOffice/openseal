@@ -80,10 +80,11 @@ a:hover { color: var(--os-accent-hover); }
 .os-btn--sm.os-btn--icon { width: var(--os-btn-sm); }
 .os-btn--lg.os-btn--icon { width: var(--os-btn-lg); }
 .os-btn--primary { background: var(--os-accent-fill); border-color: var(--os-accent-fill); color: var(--os-on-accent); }
-.os-btn--primary:hover { background: #8e0b14; border-color: #8e0b14; color: var(--os-on-accent); }
-:root[data-theme="dark"] .os-btn--primary:hover { background: #8e0b14; border-color: #8e0b14; }
+.os-btn--primary:hover { background: var(--os-accent-hover-fill); border-color: var(--os-accent-hover-fill); color: var(--os-on-accent); }
+/* Destructive (UX-02): the danger hue, never the seal red; outlined, or filled for the
+ * confirming button of a destructive dialog. Hover fills, in both. */
 .os-btn--danger { background: var(--os-raised); border-color: var(--os-danger); color: var(--os-danger); }
-.os-btn--danger:hover { background: var(--os-danger); color: var(--os-bg); }
+.os-btn--danger:hover { background: var(--os-danger-fill); border-color: var(--os-danger-fill); color: var(--os-on-danger); }
 .os-btn--ghost { background: transparent; border-color: transparent; }
 .os-btn--ghost:hover { background: var(--os-surface-2); }
 .os-btn.is-busy { position: relative; color: transparent !important; }
@@ -172,7 +173,7 @@ select.os-input {
 .os-table--compact td { padding: var(--os-s2) var(--os-s3); height: 2.5rem; }
 .os-table--rows .os-row { cursor: pointer; transition: background var(--os-dur-fast) var(--os-ease); }
 .os-table--rows .os-row:hover { background: var(--os-surface); }
-.os-table--rows .os-row.is-selected { background: var(--os-accent-soft); }
+.os-table--rows .os-row.is-selected { background: var(--os-select-soft); }
 .os-row-link { color: var(--os-text); font-weight: 600; text-decoration: none; display: inline-block; min-height: var(--os-target-min); padding: 0.125rem 0; }
 .os-row-link:hover { text-decoration: underline; color: var(--os-text); }
 .os-table-wrap { overflow-x: auto; }
@@ -226,6 +227,8 @@ select.os-input {
 .il-accent-dash { stroke: var(--os-accent); stroke-width: 2; stroke-dasharray: 4 3; fill: var(--os-accent-soft); }
 .il-accent-fill { fill: var(--os-accent-fill); }
 .il-on-accent { stroke: var(--os-on-accent); stroke-width: 3; }
+.il-danger { stroke: var(--os-danger); stroke-width: 2.5; }
+.il-danger-line { stroke: var(--os-danger); stroke-width: 2; }
 .os-skeleton-list { display: grid; gap: var(--os-s2); }
 .os-skeleton-row { display: flex; align-items: center; gap: var(--os-s4); padding: var(--os-s3); border-bottom: 1px solid var(--os-border); }
 .os-skel { display: block; height: 0.75rem; border-radius: 0.375rem; background: linear-gradient(90deg, var(--os-skeleton) 0%, var(--os-skeleton-hi) 50%, var(--os-skeleton) 100%); background-size: 200% 100%; animation: os-shimmer 1.4s linear infinite; }
@@ -245,8 +248,7 @@ select.os-input {
 .os-toast .os-btn--ghost { color: inherit; }
 .os-toast .os-btn--ghost:hover { background: color-mix(in srgb, var(--os-bg) 15%, transparent); color: inherit; }
 .os-toast__text { flex: 1; overflow-wrap: anywhere; }
-.os-toast--error { background: var(--os-danger); color: #fff; }
-:root[data-theme="dark"] .os-toast--error { color: #1a0505; }
+.os-toast--error { background: var(--os-danger-fill); color: var(--os-on-danger); }
 .os-toast.is-leaving { animation: os-toast-out var(--os-dur) var(--os-ease) forwards; }
 @keyframes os-toast-in { from { opacity: 0; transform: translateY(0.5rem); } to { opacity: 1; transform: none; } }
 @keyframes os-toast-out { to { opacity: 0; transform: translateY(0.5rem); } }
@@ -547,8 +549,8 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
   .os-docbar { display: none; }
 }
 /* G-S5: a destructive confirmation's button is filled. */
-.os-btn--danger-fill { background: var(--os-danger); border-color: var(--os-danger); color: var(--os-bg); }
-.os-btn--danger-fill:hover { filter: brightness(0.92); }
+.os-btn--danger-fill { background: var(--os-danger-fill); border-color: var(--os-danger-fill); color: var(--os-on-danger); }
+.os-btn--danger-fill:hover { background: var(--os-danger-hover); border-color: var(--os-danger-hover); color: var(--os-on-danger); }
 .os-callout { display: flex; gap: var(--os-s3); padding: var(--os-s3) var(--os-s4); border-radius: var(--os-radius); margin-bottom: var(--os-s4); }
 .os-callout--danger { background: color-mix(in srgb, var(--os-danger) 9%, var(--os-raised)); border: 1px solid color-mix(in srgb, var(--os-danger) 45%, var(--os-raised)); }
 .os-callout--danger > svg { color: var(--os-danger); flex: none; margin-top: 0.125rem; }

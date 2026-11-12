@@ -33,9 +33,16 @@
   --os-accent: #b3141f;        /* the seal red, one step deeper than the logo's #c01622 for text */
   --os-accent-hover: #8e0b14;
   --os-accent-fill: #b3141f;
+  --os-accent-hover-fill: #8e0b14; /* the primary button under the pointer */
   --os-on-accent: #ffffff;
   --os-accent-soft: rgba(192, 22, 34, 0.08);
-  --os-danger: #b42318;
+  /* Destructive, declined and error (UX-02): burnt orange, a different hue from the seal
+   * red so Void or Delete never reads as the primary action (CIEDE2000 ≥ 10, tested). */
+  --os-danger: #c2410c;
+  --os-danger-fill: #c2410c;
+  --os-danger-hover: #9a3412;  /* a filled destructive button under the pointer */
+  --os-on-danger: #ffffff;
+  --os-select-soft: rgba(29, 95, 191, 0.08); /* a selected row: info blue, not the accent */
   --os-success: #12703a;
   --os-warning: #8a5a00;
   --os-info: #1d5fbf;
@@ -132,9 +139,14 @@
   --os-accent: #ff8a92;
   --os-accent-hover: #ffb3b8;
   --os-accent-fill: #b3141f;
+  --os-accent-hover-fill: #8e0b14;
   --os-on-accent: #ffffff;
   --os-accent-soft: rgba(255, 138, 146, 0.12);
-  --os-danger: #ff8b80;
+  --os-danger: #fb923c;
+  --os-danger-fill: #c2410c;
+  --os-danger-hover: #9a3412;
+  --os-on-danger: #ffffff;
+  --os-select-soft: rgba(138, 180, 255, 0.12);
   --os-success: #5fd38d;
   --os-warning: #f2c14e;
   --os-info: #8ab4ff;
@@ -172,9 +184,14 @@
     --os-accent: #ff8a92;
     --os-accent-hover: #ffb3b8;
     --os-accent-fill: #b3141f;
+    --os-accent-hover-fill: #8e0b14;
     --os-on-accent: #ffffff;
     --os-accent-soft: rgba(255, 138, 146, 0.12);
-    --os-danger: #ff8b80;
+    --os-danger: #fb923c;
+    --os-danger-fill: #c2410c;
+    --os-danger-hover: #9a3412;
+    --os-on-danger: #ffffff;
+    --os-select-soft: rgba(138, 180, 255, 0.12);
     --os-success: #5fd38d;
     --os-warning: #f2c14e;
     --os-info: #8ab4ff;
