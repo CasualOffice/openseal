@@ -17,7 +17,7 @@ import { fromWire } from "./geometry.js";
 import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN } from "./signfields.js";
 import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
-import { docView, zoomControls, thumbnails, clampScale } from "./docview.js";
+import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
 import { initTheme } from "./theme.js";
 
 const store = (() => { try { return sessionStorage; } catch { return null; } })();
@@ -306,6 +306,10 @@ async function documents() {
   const v = docView({
     label: t("sign.documents-title"),
     testId: "signer-doc",
+    // UX-06: fit width leaves the Start flag's room in the left margin (the pages'
+    // padding beyond the usual 1.5 rem, set by sign.css per width), so the page never
+    // runs under the field list and the view never scrolls sideways.
+    padLeft: () => tagRoom(v),
     onLayout: () => { enlarge(); zc?.sync(); requestAnimationFrame(placeTag); },
     onZoom: () => { enlarge(); zc?.sync(); },
     onPage: (i) => { zc?.sync(); thumbs.mark(i); },
@@ -347,6 +351,12 @@ async function documents() {
   // field, focused, not the top of page 1.
   const first = nextField();
   if (first) setTimeout(() => (values.size ? focusField(first.id, false) : revealField(first.id)), 50);
+}
+
+/// The px the pages' left padding adds to the usual margin: the Start flag's room.
+function tagRoom(view_) {
+  const pad = parseFloat(getComputedStyle(view_.inner).paddingLeft) || 0;
+  return Math.max(0, pad - remPx(1.5));
 }
 
 /// Scroll field `id` into the middle of the view and flag it, leaving focus and zoom.

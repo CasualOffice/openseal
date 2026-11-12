@@ -167,6 +167,8 @@
 .os-review__side { display: grid; gap: var(--os-s3); align-content: start; }
 .os-review__side .os-stack .os-btn { width: 100%; }
 .os-signframe--review { grid-template-columns: minmax(0, 1fr) auto; }
+/* UX-06: review has no Start flag, so no room for one (fit width then fits). */
+.os-signframe.os-signframe--review { --os-tag-room: 0rem; }
 .os-signframe--review .os-page__overlay { container-type: size; }
 .os-flat--checkbox svg { width: 100%; height: 100%; }
 .os-dock--static .os-dock__toggle { display: none; }
