@@ -41,7 +41,8 @@ impl Ctx {
 }
 
 /// Request middleware: the request id and client address, and the console's response
-/// headers: no caching, no framing, no sniffing, no referrer, a CSP that loads nothing.
+/// headers: no caching, no framing, no sniffing, no referrer, a CSP that loads nothing
+/// (unless the response set its own cache and page policy: the UI's files, crate::ui).
 pub(crate) async fn context(
     axum::extract::State(state): axum::extract::State<AppState>,
     mut req: Request,
@@ -63,17 +64,23 @@ pub(crate) async fn context(
         h.insert("x-request-id", v);
     }
     for (k, v) in [
-        ("cache-control", "no-store"),
         ("x-content-type-options", "nosniff"),
         ("x-frame-options", "DENY"),
         ("referrer-policy", "no-referrer"),
+        ("cross-origin-resource-policy", "same-origin"),
+    ] {
+        h.insert(k, HeaderValue::from_static(v));
+    }
+    // The UI's files set their own cache policy and page policy (crate::ui); everything
+    // else, the API above all, is never cached and may load nothing.
+    for (k, v) in [
+        ("cache-control", "no-store"),
         (
             "content-security-policy",
             "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
         ),
-        ("cross-origin-resource-policy", "same-origin"),
     ] {
-        h.insert(k, HeaderValue::from_static(v));
+        h.entry(k).or_insert(HeaderValue::from_static(v));
     }
     resp
 }

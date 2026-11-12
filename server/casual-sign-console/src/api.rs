@@ -1011,8 +1011,3 @@ pub async fn resume_organization(
 ) -> Result<StatusCode, ConsoleError> {
     apply_org(&state, &op, id, body.approval, OrgAction::Resume).await
 }
-
-/// Unknown routes: a problem body, not the framework's text.
-pub async fn fallback() -> ConsoleError {
-    ConsoleError::NotFound
-}

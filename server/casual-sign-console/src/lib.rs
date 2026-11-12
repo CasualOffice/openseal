@@ -12,6 +12,9 @@
 //! which has no grant on any `public` table. It has no blob store, no keyd signing
 //! identity and no tenant repository: it depends on `casual-sign-platform-store`, never
 //! on `casual-sign-store`, `-host` or `-server` (docs/23 §5.1, §5.2).
+//!
+//! It also serves its own web UI (`console-ui/`, embedded at compile time; [`ui`]) at `/`
+//! on the same private listener (CON-17).
 
 pub mod api;
 pub mod auth;
@@ -21,6 +24,7 @@ pub mod health;
 pub mod net;
 pub mod state;
 pub mod totp;
+pub mod ui;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
@@ -115,7 +119,7 @@ pub fn app(state: AppState) -> Router {
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))
         .route("/console/v1/alerts", get(api::alerts))
-        .fallback(api::fallback)
+        .fallback(ui::fallback)
         .layer(DefaultBodyLimit::max(max_body))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
