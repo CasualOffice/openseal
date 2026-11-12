@@ -11,12 +11,18 @@
 //! (`CS-ML-0006`), and a panic inside the rasteriser is caught and reported as
 //! `CS-ML-0006`, never passed on. **What it does not have yet** is piece C's killable
 //! child process: no per-page time cap, no decoded-image budget, no `RLIMIT_AS`
-//! (`SEC-I01`). When piece C lands, [`render_grey`] is replaced by its raster call and
+//! (`SEC-I01`). When piece C lands, [`render_each`] is replaced by its raster call and
 //! the hashing below stays as it is. Recorded for the merge.
+//!
+//! **Memory.** Pages are rendered one at a time and each is hashed, and its raster
+//! dropped, before the next is rendered: a request holds one page raster at once (at most
+//! 16 MiB of grey plus its 64 MiB colour buffer), never all of its up to [`MAX_PAGES`].
+//! The request's deadline is checked before every page (`CS-ML-0007`).
 //!
 //! Hashes are of the rendered pixels only; no text is read, and nothing here is logged.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::time::{Duration, Instant};
 
 use hayro::hayro_interpret::InterpreterSettings;
 use hayro::hayro_syntax::Pdf;
@@ -34,7 +40,10 @@ use crate::wire::{MAX_PAGES, MAX_RASTER_SIDE, Op, PageHash, Request};
 pub(crate) const HASH_DPI: f32 = 72.0;
 
 /// A page rendered in 8-bit grey, row-major, `width × height` bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Clone`: a page raster can be 16 MiB, and the tests count the live ones
+/// ([`live_rasters`]) to prove a request holds at most one at a time.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct GreyPage {
     /// Width in pixels.
     pub(crate) width: u32,
@@ -44,45 +53,106 @@ pub(crate) struct GreyPage {
     pub(crate) pixels: Vec<u8>,
 }
 
+impl GreyPage {
+    fn new(width: u32, height: u32, pixels: Vec<u8>) -> Self {
+        #[cfg(test)]
+        live_rasters::up();
+        Self {
+            width,
+            height,
+            pixels,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for GreyPage {
+    fn drop(&mut self) {
+        live_rasters::down();
+    }
+}
+
+/// Test-only count of the [`GreyPage`]s alive on this thread, and its high-water mark.
+#[cfg(test)]
+pub(crate) mod live_rasters {
+    use std::cell::Cell;
+
+    thread_local! {
+        static LIVE: Cell<usize> = const { Cell::new(0) };
+        static PEAK: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn up() {
+        let n = LIVE.get().saturating_add(1);
+        LIVE.set(n);
+        PEAK.set(PEAK.get().max(n));
+    }
+
+    pub(super) fn down() {
+        LIVE.set(LIVE.get().saturating_sub(1));
+    }
+
+    /// Reset the high-water mark to the live count; returns nothing.
+    pub(crate) fn reset_peak() {
+        PEAK.set(LIVE.get());
+    }
+
+    /// The most rasters alive at once since [`reset_peak`].
+    pub(crate) fn peak() -> usize {
+        PEAK.get()
+    }
+}
+
 /// Hash the pages of `request` (a HASH request). Needs no model, so it answers whatever
 /// the bundle holds.
 ///
 /// # Errors
 /// `CS-ML-0004` if `request` is not a HASH request or names more than [`MAX_PAGES`]
-/// pages; `CS-ML-0006` for a PDF that does not open, is encrypted, or lacks a page asked
+/// pages; `CS-ML-0007` once the request's deadline passes between pages; `CS-ML-0006` for a PDF that does not open, is encrypted, or lacks a page asked
 /// for, a page box under one pixel, or a page the rasteriser fails on. A page over
 /// [`MAX_RASTER_SIDE`] pixels on a side is rendered smaller, not refused.
 pub(crate) fn run(bundle: &Bundle, request: &Request) -> Result<Vec<PageHash>, ModeldError> {
+    let started = Instant::now();
     let _ = bundle;
     let Op::Hash { pdf, pages } = &request.op else {
         return Err(ModeldError::Malformed("not a HASH request"));
     };
-    page_hashes(pdf, pages)
+    let deadline = Duration::from_millis(u64::from(request.deadline_ms));
+    page_hashes(pdf, pages, || started.elapsed() > deadline)
 }
 
 /// The dHash and pHash of each of `pages` (zero-based) of `pdf`, in the order asked.
-pub(crate) fn page_hashes(pdf: &[u8], pages: &[u16]) -> Result<Vec<PageHash>, ModeldError> {
+///
+/// Each page is hashed as soon as it is rendered and its raster dropped before the next
+/// is rendered, so a request holds one page raster at a time, never all of them (up to
+/// [`MAX_PAGES`] × 16 MiB). `expired` is asked before each page; once it answers true
+/// the request stops with `CS-ML-0007`.
+pub(crate) fn page_hashes(
+    pdf: &[u8],
+    pages: &[u16],
+    expired: impl Fn() -> bool,
+) -> Result<Vec<PageHash>, ModeldError> {
     if pages.len() > MAX_PAGES {
         return Err(ModeldError::Malformed("too many pages"));
     }
-    let rendered = render_grey(pdf, pages, HASH_DPI)?;
-    pages
-        .iter()
-        .zip(rendered)
-        .map(|(&page, grey)| {
-            let (dhash, phash) = hash_grey(&grey)?;
-            Ok(PageHash { page, dhash, phash })
-        })
-        .collect()
+    let mut out = Vec::with_capacity(pages.len());
+    render_each(pdf, pages, HASH_DPI, expired, |page, grey| {
+        let (dhash, phash) = hash_grey(grey)?;
+        out.push(PageHash { page, dhash, phash });
+        Ok(())
+    })?;
+    Ok(out)
 }
 
 /// dHash and pHash of one grey raster.
 ///
 /// # Errors
 /// `CS-ML-0006` if the pixel buffer does not match its dimensions (cannot happen for a
-/// raster from [`render_grey`]; checked rather than assumed).
-pub(crate) fn hash_grey(page: &GreyPage) -> Result<(u64, u64), ModeldError> {
-    let img = GrayImage::from_raw(page.width, page.height, page.pixels.clone())
+/// raster from [`render_each`]; checked rather than assumed). Takes the page by value so
+/// its pixels move into the image instead of being copied.
+pub(crate) fn hash_grey(mut page: GreyPage) -> Result<(u64, u64), ModeldError> {
+    let pixels = std::mem::take(&mut page.pixels);
+    let img = GrayImage::from_raw(page.width, page.height, pixels)
         .ok_or(ModeldError::Raster("raster size"))?;
     let dhash = HasherConfig::with_bytes_type::<[u8; 8]>()
         .hash_size(8, 8)
@@ -101,25 +171,41 @@ pub(crate) fn hash_grey(page: &GreyPage) -> Result<(u64, u64), ModeldError> {
     ))
 }
 
-/// Render `pages` of `pdf` at `dpi` to grey on white.
+/// Render `pages` of `pdf` at `dpi` to grey on white, one at a time, handing each page
+/// (its index and raster) to `sink` before the next is rendered. `expired` is asked
+/// before each page.
 ///
 /// Stand-in for piece C's raster child (see the module docs); the caps are the same.
-pub(crate) fn render_grey(
+///
+/// # Errors
+/// `CS-ML-0007` once `expired` answers true; `CS-ML-0006` as [`page_hashes`]; any error
+/// `sink` returns.
+pub(crate) fn render_each(
     pdf: &[u8],
     pages: &[u16],
     dpi: f32,
-) -> Result<Vec<GreyPage>, ModeldError> {
+    expired: impl Fn() -> bool,
+    mut sink: impl FnMut(u16, GreyPage) -> Result<(), ModeldError>,
+) -> Result<(), ModeldError> {
     let scale = dpi / 72.0;
     if !scale.is_finite() || scale <= 0.0 {
         return Err(ModeldError::Malformed("resolution"));
     }
     // hayro is not documented to never panic on hostile input; a panic is a refusal of
     // this document, never a crash of modeld.
-    catch_unwind(AssertUnwindSafe(|| render_inner(pdf, pages, scale)))
-        .unwrap_or(Err(ModeldError::Raster("rasteriser failed")))
+    catch_unwind(AssertUnwindSafe(|| {
+        render_inner(pdf, pages, scale, &expired, &mut sink)
+    }))
+    .unwrap_or(Err(ModeldError::Raster("rasteriser failed")))
 }
 
-fn render_inner(pdf: &[u8], pages: &[u16], scale: f32) -> Result<Vec<GreyPage>, ModeldError> {
+fn render_inner(
+    pdf: &[u8],
+    pages: &[u16],
+    scale: f32,
+    expired: &dyn Fn() -> bool,
+    sink: &mut dyn FnMut(u16, GreyPage) -> Result<(), ModeldError>,
+) -> Result<(), ModeldError> {
     let doc = Pdf::new(pdf.to_vec()).map_err(|e| match e {
         hayro::hayro_syntax::LoadPdfError::Decryption(_) => ModeldError::Raster("encrypted"),
         _ => ModeldError::Raster("unreadable"),
@@ -127,8 +213,10 @@ fn render_inner(pdf: &[u8], pages: &[u16], scale: f32) -> Result<Vec<GreyPage>, 
     let all = doc.pages();
     let cache = RenderCache::new();
     let settings = InterpreterSettings::default();
-    let mut out = Vec::with_capacity(pages.len());
     for &index in pages {
+        if expired() {
+            return Err(ModeldError::Deadline);
+        }
         let page = all
             .get(usize::from(index))
             .ok_or(ModeldError::Raster("page not in document"))?;
@@ -166,13 +254,11 @@ fn render_inner(pdf: &[u8], pages: &[u16], scale: f32) -> Result<Vec<GreyPage>, 
                 _ => 255,
             })
             .collect();
-        out.push(GreyPage {
-            width,
-            height,
-            pixels,
-        });
+        // The colour buffer is dropped here, before the sink sees the grey page.
+        drop(pixmap);
+        sink(index, GreyPage::new(width, height, pixels))?;
     }
-    Ok(out)
+    Ok(())
 }
 
 /// The scale to render a page box of `(w, h)` points at: `scale`, lowered so neither
@@ -215,6 +301,20 @@ mod tests {
         std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
     }
 
+    fn never() -> bool {
+        false
+    }
+
+    /// All the requested pages' rasters, for the tests that look at them.
+    fn render_grey(pdf: &[u8], pages: &[u16], dpi: f32) -> Result<Vec<GreyPage>, ModeldError> {
+        let mut out = Vec::new();
+        render_each(pdf, pages, dpi, never, |_, g| {
+            out.push(g);
+            Ok(())
+        })?;
+        Ok(out)
+    }
+
     fn dist(a: u64, b: u64) -> u32 {
         (a ^ b).count_ones()
     }
@@ -222,8 +322,8 @@ mod tests {
     #[test]
     fn the_same_page_gives_the_same_hashes() {
         let pdf = fixture("vector/latin-consent.pdf");
-        let a = page_hashes(&pdf, &[0]).unwrap();
-        let b = page_hashes(&pdf, &[0]).unwrap();
+        let a = page_hashes(&pdf, &[0], never).unwrap();
+        let b = page_hashes(&pdf, &[0], never).unwrap();
         assert_eq!(a, b);
         assert_eq!(a[0].page, 0);
         // A blank-looking hash would make every page match every other.
@@ -236,13 +336,14 @@ mod tests {
     /// different form is not.
     #[test]
     fn a_scan_is_near_its_vector_original_and_far_from_another_form() {
-        let vector = page_hashes(&fixture("vector/latin-consent.pdf"), &[0]).unwrap()[0];
+        let vector = page_hashes(&fixture("vector/latin-consent.pdf"), &[0], never).unwrap()[0];
         let scan = page_hashes(
             &fixture("scans/latin-consent--200dpi-q75-skew+0.6.pdf"),
             &[0],
+            never,
         )
         .unwrap()[0];
-        let other = page_hashes(&fixture("vector/latin-acroform.pdf"), &[0]).unwrap()[0];
+        let other = page_hashes(&fixture("vector/latin-acroform.pdf"), &[0], never).unwrap()[0];
         let (dd, dp) = (
             dist(vector.dhash, scan.dhash),
             dist(vector.phash, scan.phash),
@@ -269,8 +370,9 @@ mod tests {
             let Some((form, _)) = name.split_once("--") else {
                 continue;
             };
-            let scan = page_hashes(&fixture(&format!("scans/{name}")), &[0]).unwrap()[0];
-            let vector = page_hashes(&fixture(&format!("vector/{form}.pdf")), &[0]).unwrap()[0];
+            let scan = page_hashes(&fixture(&format!("scans/{name}")), &[0], never).unwrap()[0];
+            let vector =
+                page_hashes(&fixture(&format!("vector/{form}.pdf")), &[0], never).unwrap()[0];
             println!(
                 "{name}: dhash {} phash {}",
                 dist(vector.dhash, scan.dhash),
@@ -279,19 +381,56 @@ mod tests {
         }
     }
 
+    /// A hostile request of many large pages must not hold every page raster at once
+    /// (200 pages × 16 MiB is 3.2 GiB, past the 512 MiB slot budget, docs/33 §3.3): each
+    /// page is hashed as soon as it is rendered, and its raster dropped.
+    #[test]
+    fn hashing_holds_at_most_one_page_raster_at_a_time() {
+        let pdf = minimal_pdf("0 0 600 800");
+        let pages = [0u16; 8];
+        live_rasters::reset_peak();
+        let hashes = page_hashes(&pdf, &pages, never).unwrap();
+        assert_eq!(hashes.len(), pages.len());
+        assert_eq!(live_rasters::peak(), 1, "page rasters held at once");
+    }
+
+    /// The deadline is checked before every page, not only after the last.
+    #[test]
+    fn a_passed_deadline_stops_between_pages() {
+        use std::cell::Cell;
+        let pdf = minimal_pdf("0 0 600 800");
+        let asked = Cell::new(0u32);
+        let err = page_hashes(&pdf, &[0, 0, 0, 0], || {
+            asked.set(asked.get() + 1);
+            asked.get() > 2
+        })
+        .unwrap_err();
+        assert_eq!(err, ModeldError::Deadline);
+        assert_eq!(
+            asked.get(),
+            3,
+            "asked before pages 0, 1 and 2; page 2 never renders"
+        );
+    }
+
     #[test]
     fn hostile_input_is_refused_not_panicked() {
         assert_eq!(
-            page_hashes(b"%PDF-1.7 not a pdf", &[0]).unwrap_err().code(),
+            page_hashes(b"%PDF-1.7 not a pdf", &[0], never)
+                .unwrap_err()
+                .code(),
             "CS-ML-0006"
         );
         let pdf = fixture("vector/latin-consent.pdf");
         assert_eq!(
-            page_hashes(&pdf, &[999]).unwrap_err(),
+            page_hashes(&pdf, &[999], never).unwrap_err(),
             ModeldError::Raster("page not in document")
         );
         let many = vec![0u16; MAX_PAGES + 1];
-        assert_eq!(page_hashes(&pdf, &many).unwrap_err().code(), "CS-ML-0004");
+        assert_eq!(
+            page_hashes(&pdf, &many, never).unwrap_err().code(),
+            "CS-ML-0004"
+        );
     }
 
     #[test]
@@ -314,7 +453,7 @@ mod tests {
                 g[0].height
             );
             assert_eq!(g[0].pixels.len(), (g[0].width * g[0].height) as usize);
-            assert_eq!(page_hashes(&pdf, &[0]).unwrap().len(), 1);
+            assert_eq!(page_hashes(&pdf, &[0], never).unwrap().len(), 1);
         }
         assert!(
             render_grey(&minimal_pdf("0 0 4097 100"), &[0], HASH_DPI).unwrap()[0].width >= 4090

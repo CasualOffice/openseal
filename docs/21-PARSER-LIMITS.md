@@ -210,6 +210,7 @@ provisional are re-set from measurement before an exit is claimed.
 | Pages OCR'd per document | 200; later pages are not read (`truncated`) | — (report) |
 | Render resolution | 150 DPI (host may set 100–200) | CS-ML-0001 |
 | Render resolution for page hashes (HASH, built) | 72 DPI, fixed (docs/33 §5.2); a page over the raster size cap renders smaller; `hash::tests::a_page_over_the_pixel_cap_renders_smaller_never_larger` | — |
+| Page rasters held per HASH request (built) | One: each page is hashed and its raster dropped before the next is rendered; the deadline is checked before every page; `hash::tests::hashing_holds_at_most_one_page_raster_at_a_time`, `hash::tests::a_passed_deadline_stops_between_pages` | CS-ML-0007 (deadline) |
 | Extracted span normalised (date, duration, amount; `casual-sign-fields::normalize`, built) | 256 bytes; longer spans are not read | — (`None`: suggestions only, no error) |
 | Duration count | 100,000 units | — (`None`) |
 | Amount digits | 28 | — (`None`) |

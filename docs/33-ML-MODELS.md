@@ -214,8 +214,9 @@ They are stored as `BIGINT` and compared by Hamming distance. No model is needed
 resize, pHash its `Median` over the 8×8 low frequencies of a 16×16 DCT; pages are rendered on white and converted to
 grey by Rec. 601 luma. A page over 4,096 px a side renders at a lower resolution (docs/21). Because piece C's raster
 child is not built yet, HASH renders with `hayro` **in process**: a panic is caught and answered `CS-ML-0006`, but there
-is no per-page time cap, decoded-image budget or `RLIMIT_AS` until `render_grey` is replaced by piece C's raster call
-(`SEC-I01`, a recorded gap). Measured on fixtures/ml (scan against its vector original, dHash / pHash Hamming
+is no per-page time cap, decoded-image budget or `RLIMIT_AS` until `render_each` is replaced by piece C's raster call
+(`SEC-I01`, a recorded gap). Pages are rendered one at a time, each hashed and its raster dropped before the next, so
+a request holds one page raster, not all of its up to 200; the request deadline is checked before every page. Measured on fixtures/ml (scan against its vector original, dHash / pHash Hamming
 distance): blank-form scans at 150–300 DPI with JPEG q60–q75 or fax and skew up to ±2° are 1–9 / 0–6, and the one
 turned 90° is 5 / 2; filled scans are 3–15 / 2–8 (dHash over 10 on `latin-acroform` filled at 150 DPI, 15, and
 `latin-consent` filled, 11); a scan turned 180° is 26 / 34, so an upside-down scan does not match until orientation is corrected first. The acceptance pair
