@@ -108,6 +108,45 @@ impl Accounts<'_> {
             })
         }
     }
+
+    /// The published disclosure (ERSD, docs/22 §1) whose text hashes to `sha256`: the
+    /// one the account's workflow policy names, whose hash consent records (UXW-34).
+    /// When one text was published under several versions or languages, the highest
+    /// version (then the first language) is answered, so the answer is deterministic.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn disclosure(&mut self, sha256: &[u8; 32]) -> Result<Option<Disclosure>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "SELECT version, language, body FROM ersd_versions \
+             WHERE account_id = $1 AND text_sha256 = $2 AND published_at IS NOT NULL \
+             ORDER BY version DESC, language LIMIT 1",
+            acct,
+            sha256.as_slice()
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| Disclosure {
+            version: r.version,
+            language: r.language,
+            body: r.body,
+        }))
+    }
+}
+
+/// A published disclosure's text (`ersd_versions`, docs/22 §1). Immutable once
+/// published: a change is a new version.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Disclosure {
+    /// The table's version number (the policy names its own label for it).
+    pub version: i32,
+    /// Its language tag.
+    pub language: String,
+    /// The text recipients read; its SHA-256 is what consent records.
+    pub body: String,
 }
 
 text_enum!(

@@ -58,7 +58,9 @@ export function anchoredScroll({ top, left, height, width }, fx, fy, ax, ay) {
 
 /// Make a document view. `pages`: `[{key, n, total, name, width, height, pdf}]` (points,
 /// pdf: a pdfview.js handle). Callbacks: `onLayout(view)` after a relayout, `onPage(i)`
-/// when the current page changes, `onZoom(view)`.
+/// when the current page changes, `onZoom(view)`. `padLeft`: px the fit leaves free on
+/// the left beyond the usual margin, or a function answering it at each layout (UX-06:
+/// the signer's Start flag room, which a media query sets).
 export function docView({ label, pages = [], mode = "fit-width", onLayout = null, onPage = null, onZoom = null, padLeft = 0, testId = "doc-scroller" }) {
   const live = h("div", { class: "os-sr-only", attrs: { "aria-live": "polite", "data-testid": "doc-live" } });
   const inner = h("div", { class: "os-docview__pages" });
@@ -72,6 +74,7 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
   let paintTimer = null;
   let announceTimer = null;
   const painted = new Map(); // page index → scale painted at
+  const leftRoom = () => Math.max(0, Number(typeof padLeft === "function" ? padLeft() : padLeft) || 0);
 
   const near = typeof IntersectionObserver === "function" ? new IntersectionObserver((entries) => {
     for (const e of entries) {
@@ -109,7 +112,7 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
   function layout() {
     const [mw, mh] = maxSize();
     const pad = remPx(1.5);
-    view.scale = scaleFor(view.mode, mw, mh, scroller.clientWidth - padLeft, scroller.clientHeight, pad);
+    view.scale = scaleFor(view.mode, mw, mh, scroller.clientWidth - leftRoom(), scroller.clientHeight, pad);
     view.els.forEach(({ el }, i) => {
       const p = view.pages[i];
       el.style.width = `${p.width * view.scale}px`;
@@ -221,7 +224,7 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
   function relayout() {
     if (!view.els.length || typeof view.mode === "number") return;
     const [mw, mh] = maxSize();
-    const next = scaleFor(view.mode, mw, mh, scroller.clientWidth - padLeft, scroller.clientHeight, remPx(1.5));
+    const next = scaleFor(view.mode, mw, mh, scroller.clientWidth - leftRoom(), scroller.clientHeight, remPx(1.5));
     if (Math.abs(next - view.scale) < 1e-4) return;
     setZoom(view.mode);
   }

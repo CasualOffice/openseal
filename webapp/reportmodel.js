@@ -7,11 +7,12 @@ export function statusCounts(rows) {
   return out;
 }
 
-/// Median hours from `sent_at` to `ended_at` over completed envelopes, to one decimal;
-/// null when none has both times.
+/// Median hours from `sent_at` to completion over completed envelopes, to one decimal;
+/// null when none has both times. Completion is the list summary's `completed_at`
+/// (UX-08), or a full envelope's `ended_at`.
 export function medianHours(envelopes) {
   const hours = (envelopes || [])
-    .map((e) => (Date.parse(e?.ended_at) - Date.parse(e?.sent_at)) / 3_600_000)
+    .map((e) => (Date.parse(e?.completed_at || e?.ended_at) - Date.parse(e?.sent_at)) / 3_600_000)
     .filter((x) => Number.isFinite(x) && x >= 0)
     .sort((a, b) => a - b);
   if (!hours.length) return null;
@@ -32,4 +33,38 @@ export function toCsv(objects) {
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return [keys.join(","), ...objects.map((o) => keys.map((k) => cell(o[k])).join(","))].join("\r\n") + "\r\n";
+}
+
+/// Whether a list summary carries its completion time (the server's does, UX-08), so
+/// the median needs no read per envelope.
+export const hasTimes = (r) => r != null && "sent_at" in r && "completed_at" in r;
+
+/// The rows created in a period (UX-08): `range` "all", a number of days ("7", "30", …)
+/// back from `now` (ms), or "custom" with `from` and `to` as yyyy-mm-dd, inclusive local
+/// days, either one open.
+export function inWindow(rows, { range = "all", from = "", to = "" } = {}, now = Date.now()) {
+  if (range === "all") return rows;
+  if (range === "custom") {
+    const lo = from ? new Date(`${from}T00:00:00`).getTime() : -Infinity;
+    const hi = to ? new Date(`${to}T00:00:00`).getTime() + 86_400_000 : Infinity;
+    return rows.filter((r) => { const at = Date.parse(r.created_at); return at >= lo && at < hi; });
+  }
+  const since = now - Number(range) * 86_400_000;
+  return rows.filter((r) => Date.parse(r.created_at) >= since);
+}
+
+/// The CSV's rows (UX-08): every summary field the list gives, the sender by name or
+/// email where `senderName(id)` knows it, else the id.
+export function csvRows(rows, senderName = () => "") {
+  return (rows || []).map((r) => ({
+    id: r.id,
+    subject: r.subject || "",
+    status: r.status,
+    sender: senderName(r.sender_user_id) || r.sender_user_id || "",
+    created_at: r.created_at || "",
+    sent_at: r.sent_at || "",
+    completed_at: r.completed_at || "",
+    expires_at: r.expires_at || "",
+    updated_at: r.updated_at || "",
+  }));
 }

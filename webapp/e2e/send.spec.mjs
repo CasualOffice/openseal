@@ -26,7 +26,9 @@ async function placeFor(page, who, types) {
 test("upload, two signers in order and a CC, fields for each, send", async ({ page }) => {
   const subject = `Services contract ${Date.now()}`;
   await signIn(page);
-  await page.getByRole("button", { name: "New envelope" }).first().click();
+  // UX-07: the top bar's Start is the one way in to a new envelope.
+  await page.locator("#start-btn").click();
+  await page.getByRole("menuitem", { name: "Send an envelope" }).click();
   await expect(page.getByTestId("empty-documents")).toBeVisible();
   await page.getByTestId("pdf-input").setInputFiles(pdfFile());
   await expect(page.getByTestId("doc-card")).toHaveCount(1);

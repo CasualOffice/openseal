@@ -624,6 +624,13 @@ pub fn table() -> Vec<Route> {
         ),
         r("GET", "/s/{token}/history", Public, JSON, ceremony::history),
         r(
+            "GET",
+            "/s/{token}/disclosure",
+            Public,
+            JSON,
+            ceremony::disclosure,
+        ),
+        r(
             "POST",
             "/s/{token}/reassign",
             Public,

@@ -41,12 +41,17 @@ icons (MIT), no vendor artwork or wording.
       certificate (after completion) · Help · Session information · Language
 ```
 
+As built (UX-06): Other actions has Download, Print, Assign to someone else (when allowed), Change signature (once
+one is adopted), View history, Help, Finish later and Decline. **Language** waits for a second locale (`FG-125`) and
+**Session information** and **View certificate** for their rows (`UX-06` returned rows); neither is in the menu yet.
+
 - **Start / Next** flag in the margin moves to the next required field; a progress count ("3 of 7 required").
 - **Required** fields have a solid outline and an accessible name ending "required"; optional fields dashed.
 - **Adopt signature** dialog: name and initials prefilled and editable; tabs **Style** (typed in one of 4 bundled
   script fonts), **Draw** (pointer and touch, with clear and undo), **Upload** (PNG or JPEG, background removed
   client-side, then re-validated server-side); one "Adopt and sign" button; the adoption applies to later fields
-  until changed.
+  until changed. As built (UX-06): name and initials adopted together, **2** bundled script fonts so far (Great
+  Vibes, Allura; the other two are a returned row), a signed field offers Remove and Change.
 - **Review** step (WYSIWYS, [02](02-HLD.md) §6): the flattened pages, with the values listed beside them; "Finish"
   is a separate, explicit action with the legal wording the account configures.
 - **Mobile**: full-width pages with pinch zoom; fields enlarge when focused; the adopt dialog is full-screen; the
@@ -119,25 +124,42 @@ separate API origin is added to `connect-src` by the server that serves the page
 
 ### Design system
 
-One tokens file, `webapp/tokens.css`; components in `webapp/app.css`. Light and dark by `data-theme` or the OS.
+One tokens file, `webapp/tokens.css`; shared components in `webapp/app.css`. Each part of the app has its own
+stylesheet loaded after it (UX-02): `shell.css` (top bar, sections, sign-in, verify), `prepare.css` (the editor),
+`sign.css` (the signing page), `manage.css` (Home, Agreements, envelope) and `admin.css` (Templates, Reports, Admin).
+`app.html` loads app, shell, prepare, manage and admin; `sign.html` app and sign; `verify.html` app and shell.
+Messages are split the same way: `strings.en.js` merges `strings/{common,shell,prepare,sign,manage,admin}.en.js`,
+and a key lives in exactly one part. Light and dark by `data-theme` or the OS.
 
 | Token family | Values |
 | --- | --- |
-| Brand | seal red: accent text `#b3141f` (light) / `#ff8a92` (dark); fill `#b3141f` with white text; logo gradient `#c01622 → #8e0b14`. Focus ring blue, distinct from the accent and from errors |
-| Type | system UI stack; 12 / 14 / 16 / 20 / 24 / 32 px; body 14 px in the app, 16 px on the signing page and below 760 px; line height 1.5 body, 1.25 headings |
+| Brand | seal red: accent text `#b3141f` (light) / `#ff8a92` (dark); fill `#b3141f` with white text, `#8e0b14` under the pointer (`--os-accent-hover-fill`); logo gradient `#c01622 → #8e0b14`. Focus ring blue, distinct from the accent and from errors |
+| Danger | destructive, declined and error: burnt orange, a different hue from the seal red (UX-02, owner instruction 26): text `#ad4609` (light) / `#fb923c` (dark); fill `#ad4609` with white text, `#8c3a06` under the pointer (`--os-danger-fill`, `--os-on-danger`, `--os-danger-hover`). Outlined danger buttons fill on hover; a destructive dialog's confirming button is the filled danger button with an icon, and its consequence is a warning callout. Error toasts and field errors use the fill |
+| Selection | a selected row is tinted info blue (`--os-select-soft`), never accent-soft |
+| Status badges | icon and word on a 10–12 % tint of the colour: Completed green, Sent / Delivered / Completing blue, Expired amber, Declined danger, Voided and Draft neutral (Voided with its ban icon); neutral badges keep a `--os-border-strong` outline in dark |
+| Type | Inter (OFL, `fonts/ui/`, Latin and Latin Extended, variable weight) then the system UI stack; 12 / 14 / 16 / 20 / 24 / 32 px at a 16 px root; body 14 px in the app, 16 px on the signing page and below 760 px; line height 1.5 body, 1.25 headings |
+| Root size | the user's default (100 %) below 64em; 93.75 % (15 px at the default) from 64em, the same in every desktop window (UX-02: it followed the viewport before) |
 | Space | 4 px grid: 4, 8, 12, 16, 24, 32, 48 |
 | Radius | 6, 8, 12 |
-| Icons | Lucide (ISC), inlined by `icon(name, {size, label})`: 16 dense, 20 default, 24 toolbars and empty states; stroke 2 (1.75 at 24); `aria-hidden` unless labelled |
-| Controls | buttons 32 / 36 / 44 px; targets ≥ 24 px (SC 2.5.8), ≥ 44 px on the signing page and phones (SC 2.5.5); focus ring 2 px, offset 2 px |
+| Icons | Lucide (ISC), inlined by `icon(name, {size, label})`: 16 dense, 20 default, 24 toolbars and empty states; stroke 2 (1.75 at 24); `aria-hidden` unless labelled. Aliases: `align-start/end/top/bottom`, `help-circle` |
+| Controls | buttons 32 / 36 / 44 px; targets ≥ 24 px (SC 2.5.8) and ≥ 44 px on the signing page and phones (SC 2.5.5), as `max(rem, px)` so a smaller root never shrinks them; row checkboxes are drawn 18 px in a 44 px target; focus ring 2 px, offset 2 px |
 | Motion | 150 / 200 / 250 ms, `cubic-bezier(.2,0,0,1)`; all zero under `prefers-reduced-motion: reduce` |
 | Recipients | six colours, each ≥ 3:1 against the page as an outline |
 
 Rules: status is never colour alone (badge = icon + word); every list and first-run screen has an empty state
 (illustration, one-line title, one sentence, the primary action; illustrations are original line drawings in
-`illustrations.js`, `aria-hidden`); lists and pages show skeletons while loading; dialogs and toasts enter and leave
-in 150–200 ms; a sent envelope and a finished signing show the seal stamping in once; no looping animation except
-loading shimmer and spinners. Contrast is measured, not asserted: `webapp/tests/pure.test.mjs` fails if any text
-colour falls under 4.5:1 or a control edge, focus ring or recipient colour under 3:1 in either theme.
+`illustrations.js`, `aria-hidden`; error drawings use `.il-danger`); lists and pages show skeletons while loading;
+dialogs and toasts enter and leave in 150–200 ms; a sent envelope and a finished signing show the seal stamping in
+once; no looping animation except loading shimmer and spinners. The `hidden` attribute always hides
+(`[hidden] { display: none !important }`). Menus from `menuButton` open in the top layer (a popover), placed from
+their button inside the viewport, above it when there is more room, scrolling when taller; items may include a
+separator. `openPanel({ dismissible: false })` is for a secret shown once (only its actions close it);
+`toast(…, { scope: "view" })` toasts go when the router calls `clearViewToasts()`. Contrast is measured, not
+asserted: `webapp/tests/pure.test.mjs` fails if any text colour falls under 4.5:1 (also each status colour on its
+own badge tint, and white on the accent and danger fills), a control edge, focus ring or recipient colour under 3:1,
+or the accent and danger colours (and fills, and danger and warning) are less than CIEDE2000 10 apart, in either
+theme. `webapp/e2e/visual.spec.mjs` checks menus stay in the viewport at 1440, 1366 and 390, hidden elements are not
+shown, the badge colours, the font, checkbox targets, and the panel and toast options.
 
 ### Tests
 
@@ -200,8 +222,8 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
 | Home | `app.html#/home` (`home.js`) | `GET /api/v1/envelopes?status=&limit=` per counter, `GET …/{id}` for expiry |
 | Agreements | `app.html#/agreements[?folder=&q=]` (`dashboard.js`) | as WEB-01, plus `GET …/{id}` per row for recipients and last change |
 | Templates | `#/templates`, `#/templates/new`, `#/templates/{id}`, `#/templates/{id}/edit` (`templates.js`, `prepare.js` in template mode) | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{id}`, the template's documents, roles and fields (`templatesync.js`, WEB-09 and WEB-10 below); using one is a single `POST /api/v1/envelopes` (`templatemodel.js`) |
-| Reports | `#/reports` (`reports.js`, `reportmodel.js`) | `GET /api/v1/envelopes` (up to 1,000) and `GET …/{id}` for completed ones |
-| Admin | `#/admin[?tab=api]` (`admin.js`) | `GET/POST /api/v1/users`, `PATCH/DELETE /api/v1/users/{id}`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}` |
+| Reports | `#/reports` (`reports.js`, `reportmodel.js`) | `GET /api/v1/envelopes` (up to 1,000; the summaries' `sent_at` and `completed_at` give the median, UX-08), `GET /api/v1/users` for sender names when allowed |
+| Admin | `#/admin[?section=…]` (account, users, webhooks, api, …) (`admin.js`, `adminmodel.js`; the older `?tab=` still lands) | `GET/PATCH /api/v1/accounts/me`, `GET/POST /api/v1/users`, `GET/PATCH/DELETE /api/v1/users/{id}`, `POST …/invite`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}`, `GET/POST /api/v1/webhooks`, `DELETE /api/v1/webhooks/{id}`, `GET …/deliveries` (UX-08); ahead of the server: `PATCH /webhooks/{id}`, `POST …/test`, `POST …/deliveries/{d}/redeliver` (api.js `NOT_ON_SERVER`) |
 | Verify | `verify.html` (`verify.js`, `verifyreport.js`, `trail.js`) | none: casual-sign-wasm's `verify()` in the page; `audit-trail.json` read by pdf.js |
 
 - **Every call is in `api.js`** (WEB-10 moved `api-extra.js` there; see below). **Mock mode** serves templates, users
@@ -512,3 +534,179 @@ Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`
 Further findings for the main session: the staff audit view (`envactions.js` `eventLabel`, `envelope.js`'s recipient
 timeline) still reads the mock's underscore event names and `event.recipient_id`, while the server answers dotted types
 with `event.data.recipient_id`, so on a real server the audit table shows raw types and the timeline misses "opened".
+
+## As built (UX-06, signer ceremony, 2026-11-12)
+
+The signer package of the UX-01 audit (the bar: a DocuSign or SignNow signer switching misses nothing). Observed in
+mock mode at 1024, 1280 and 1440 wide and 390×844. Spec: `webapp/e2e/sign-layout.spec.mjs` (its 12 tests seen red:
+the three fit-width tests on `e851426`, 98 px of horizontal overflow at each width; the other nine against the
+signer files before this change); `guided-ceremony.spec.mjs` follows the radio popover and the signature image in
+review.
+
+| # | Problem | Fix | Status |
+| --- | --- | --- | --- |
+| 1 | Fit width did not fit: the page ran about 98 px under the field list and the view scrolled sideways (the Start flag's 6.5 rem room was in the pages' padding, never in the fit) | `docView` takes `padLeft` as a function read at each layout; the signer answers the pages' padding beyond the usual margin; review, which has no flag, has no room | Fixed |
+| 2 | The sender was never named | The consent card says "<Name> (<email>) sent you documents to review and sign", on whose behalf when the account differs, and "Sign by <date>"; the field list shows "From <name> (<email>)" above the message and the deadline; Help names the sender to ask | Fixed in the UI; the view's `sender` and `envelope.expires_at` are the mock's until `NOT_ON_SERVER.disclosure` (`UXW-34`) lands; without them nothing is shown |
+| 3 | A placed signature could not be removed or changed | A signed field opens a menu: Remove (`DELETE /s/{token}/fields/{f}`, a new `recipient.field_cleared` event; offered only where the server has it, `NOT_ON_SERVER.clearField`, `UXW-35`) and Change signature (adopt anew, then every field signed with that mark gets the new one, each a new field event); More has Change signature once one is adopted | Fixed in the UI; Remove mock only until `UXW-35` |
+| 4 | Initials needed a second adopt step | The dialog asks for full name and initials together, previews both in each style, draws both on two pads, and adopts both (two `POST /s/{token}/adopt`); an upload is the mark being placed only | Fixed |
+| 5 | Adopt panel inherited the 18 rem field list (85 px draw pad) | A side panel of 34 rem (30 to 48, resizable), pads 3:1; the field list it covers is hidden while it is open | Fixed |
+| 6 | Adopt errors only as toasts; upload a bare file input | One `role="alert"` line under the controls; a drop zone (drop or choose, guidance, the cleaned image shown in it) | Fixed |
+| 7 | Only 2 typed styles (this page promises 4) | Not done: two more OFL script faces need a provenance-checked download (and the flattener's copy, docs/30) | Returned row |
+| 8 | Arrival landed mid-page | First arrival opens at the top of page 1 with the Start flag beside the first required field; coming back still goes to the next field | Fixed |
+| 9 | Phone fit width: label tabs and fixed-size text overflowed small fields | Below 48em only the next field (or the one in use) shows its tab, and field text is sized in container units of the field until it is in use | Partly: DocuSign-style compact markers that expand on Next are a returned row |
+| 10 | Radio groups needed a panel and Save | A popover on the field: a click, Space or Enter picks and saves; arrow keys move. A dropdown that takes a typed value keeps its panel | Fixed (radios drawn at their own placements need option placements, docs/22: returned row) |
+| 11 | Phone review put Finish above the document | The pages full height; a bottom bar "Review values (n)" (the values as a sheet) and Finish; desktop shows one heading (the panel head is gone) and the adopted mark in the values list | Fixed |
+| 12 | Required looked like an error | Required: a strong neutral outline and a red asterisk; optional: a dashed neutral outline; red outlines only for an invalid value; the in-field placeholder hides while the tab shows; the field list's icons are neutral | Fixed |
+| 13 | Finish looked disabled but acted | Full contrast: an outlined secondary until every required field is done, then the filled primary; `aria-disabled` and its reason kept | Fixed |
+| 14 | Consent had no full disclosure and no visible alternative | "Read the full disclosure" opens the account's text by version (`GET /s/{token}/disclosure`, offered only where the server has it); "Other actions" opens More | Fixed in the UI; the text is the mock's until `UXW-34` |
+| 15 | History printed raw types, times without a zone | Every audit type the server can send has words; an unknown type is left out; times carry their zone | Fixed |
+| 16 | Finish later left stale progress | The bar's progress is cleared on every closing screen; "This envelope expires on <date>" when it does | Fixed |
+| 17 | Done page: Verify named not linked, no Print, brand copy | A link to `/verify.html`, a Print button, "The completed documents are sealed…" | Fixed |
+| 18 | Print had an external-link icon and opened a tab unannounced | A printer icon and "Print (opens the PDF)" | Fixed |
+
+Also: `playwright.config.mjs` runs `sign-layout.spec.mjs` with the signer specs; `docview.js` (shared) gained the
+`padLeft` function form, additive.
+
+## As built: manage screens (UX-07, 2026-11-12)
+
+The UX-01 package P5 (Home, Agreements, envelope page), after DocuSign's Manage and envelope pages. Files:
+`envelope.js`, `dashboard.js`, `home.js`, `envactions.js`, `dom.js`, `managemodel.js` (the pure rules: action
+hierarchy per state, the Agreements address, "expiring soon", CSV), `manage.css`, `strings/manage.en.js`.
+
+### Envelope page
+
+- **One primary and one secondary action per state**, everything else in a grouped **More** menu with the
+  destructive group last (`managemodel.js` `envelopeActions`):
+
+  | State | Primary | Secondary | More |
+  | --- | --- | --- | --- |
+  | Draft | Edit draft | — | Copy, Save as template · Delete draft |
+  | Sent, delivered | Correct | Resend | Download current PDF, Copy, Save as template, History · Void |
+  | Completed | Download signed PDF | Certificate | Copy, Save as template, History |
+  | Declined, voided, expired | Copy and resend | Download (the document as it ended, `version=current`) | Certificate (only where the server serves it, `NOT_ON_SERVER.certificateEnded`, `UXW-30`), Save as template, History · Delete |
+
+  Below 47.5em the primary is full width with the secondary and More beside each other under it.
+- **Why it ended**, under the title: who declined and their reason, the void reason, or when it expired, and that
+  Copy and resend starts again.
+- **Summary card**, two columns: Envelope ID (monospace, Copy), created, sent, ended, sender, documents (each opens
+  the Documents tab at that file) | subject, message, expiry, reminders, signing order (in order or at once) and
+  authentication (who needs an access code).
+- **Evidence card** for every sent envelope: what the audit trail is, the chain head with Copy and a line on what it
+  proves; for a completed one, "Verify in OpenSeal Verify" (`verify.html`, a new tab) and how to check the downloaded
+  PDF there. Handing the sealed file to Verify directly needs `verify.js` to accept a hand-off (not in this package).
+- **Void** is one dialog: the reason, the consequence ("cannot be undone; recipients get your reason") and a filled
+  danger button (`envactions.js` `voidEnvelopes`, also used for bulk void with the count in the title).
+
+### Correct panel
+
+The side panel corrects, for each recipient who has not acted: name, email, access code and signing order (one
+`PATCH …/recipients/{r}` each, which keeps members the API does not show), or removes them; it adds recipients
+(name, email, role, order) and sets the expiry (end of the chosen day) and the reminders. Adds, removes, expiry and
+reminders go first as one `POST /correct` change list (`add_recipient`, `remove_recipient`, `set_expiry`,
+`set_reminders`), all or none. At least one person who signs or approves must remain. Recipients whose name, email or
+code changed and who are still sent it get a new invitation; added ones are invited by routing. Fields and documents
+of an envelope in flight are the editor-based Correct, `UXW-19`.
+
+### Agreements
+
+- **Density:** dates in lists are one line ("Today, 5:28 PM", "Yesterday, …", "Nov 12", the year only when it
+  differs; `dom.js` `fmtShortDate`) with the full time in a tooltip; the "Created" sub-line is gone (it is on the
+  envelope page); the table has a fixed layout and set column widths; subject, recipients and status line truncate
+  with an ellipsis; the Sender column shows only when a loaded envelope was sent by someone else. Rows are 64 px or
+  less at 1440.
+- **Search in the address:** typing in the top search replaces the hash with `#/agreements?folder=…&q=…` (no history
+  entry, no remount), so reload, Back and a shared link keep it; rail links keep the search; the subtitle says
+  `All envelopes matching "offer"`.
+- **Expiring soon** quick view (sent and delivered, `expires_at` within 7 days, filtered in the page until the API
+  filters by expiry, `UXW-03`); Home's card links to it, so the count and the list agree.
+- **Row menu** grouped with separators: Open (was "Open and history") or Edit | Correct, Resend, Download … |
+  Copy, Save as template, History | Void, Delete. Ended envelopes get Copy and resend and Download.
+- **Bulk bar** is sticky under the top bar (a fixed bottom bar on phones): Resend, Download (signed PDF when
+  completed, else as it stands), Export CSV (formula-safe cells), Void and Delete in the danger colour on the dark bar.
+- **New envelope** left the page head: the top bar's Start is the one way in (the empty state keeps its button).
+- **Phones (below 47.5em):** a folder select with counts replaces the rail; filters sit behind a Filters button with a
+  count; checkboxes appear after Select.
+- **History panel** (44rem) is a timeline: the event as a plain verb ("Signed", "Opened", "Reminder sent"), who and
+  when under it, the event hash in a Details disclosure with Copy. The envelope page's audit table keeps the audit
+  trail's own labels.
+- Row checkboxes sit in a 2rem hit area (WCAG 2.2 SC 2.5.8).
+
+### Home
+
+Five counters (Declined or expired, Waiting for others, Expiring soon, Drafts, Completed). The drop zone is one slim
+line. Recent envelopes are the six last changed: subject, "To: …", status badge and line, and the last change; the
+whole row opens it. "Needs your signature" waits for the Inbox (`UXW-01`).
+
+### Tests
+
+- Node: `tests/manage.test.mjs` (action hierarchy per state, row-menu groups, the address, expiring soon, CSV cells,
+  the short date); the CSV formula guard was mutated and seen red.
+- Playwright (`e2e/manage.spec.mjs`, chromium): the four acceptance tests (Download on a declined envelope, a primary
+  action on it, the search surviving a reload, rows of 64 px or less at 1440) each seen red with the screen files
+  reverted to `main` and green after; grouped row menu and one void dialog, sticky bulk bar with CSV export, bulk
+  void and delete; Expiring soon card and view agree; summary, evidence card and History timeline; Correct adds,
+  removes and sets expiry and reminders; phones (folder select, Filters, Select, full-width primary); screenshots at
+  1440 and 390. `send.spec.mjs`, `real-stack.spec.mjs` and `signin-dashboard.spec.mjs` follow the new way in (Start)
+  and Void's place in More.
+
+## As built (UX-08, 2026-11-12): Templates, Reports, Admin
+
+Package P6 of the UX-01 audit. The bar: a DocuSign customer finds Admin, Reports and template use where they
+expect them, and nothing silently wrong.
+
+**Admin** (`admin.js`, pure rules in `adminmodel.js`) is a section rail after DocuSign eSignature Admin, replacing the
+three tabs. Groups and sections (`SECTIONS`): **Account** (Account: settings and branding; Signing and sending;
+Electronic disclosure; Retention), **Users and groups** (Users; Groups; Permission profiles), **Integrations**
+(Webhooks; API clients), **Security** (Single sign-on and domains; Seal and timestamp; Audit log). Below 37.5em the
+rail becomes a select with the same groups. A section whose endpoints the server does not have yet is a row marked
+**Soon**, never hidden; opened, it says what it will hold and that it is not on this server yet. Each slots in as its
+endpoint lands (rows in docs/14). `#/admin?section=<id>`; the older `?tab=` links still land.
+
+- **Users**: one primary **Add user** panel with a **Send an invitation email** switch, on by default (`POST /users`
+  with `invite: true`); switched off, a password of at least 12 characters is required and set there. Search (name
+  or email) and Permission profile and Status filters above the table, with a count. **Edit** stays in the row;
+  **Resend invitation** and **Remove** move to the row's menu (Remove is the danger item; nobody removes themselves).
+  On phones Edit is in the menu too, so a card has one menu button.
+- **Webhooks** (docs/40 §4): the subscriptions (endpoint, events, Active or Off), **New webhook** in a side panel (an
+  https:// public address, events grouped by subject, three envelope events checked by default, and the **names** of
+  the operator's signing secrets: the secret never passes through the API, so there is nothing to show once; a
+  refused address, `CS-API-0013`, is said beside the field), and the selected subscription's latest deliveries
+  (event, Delivered/Failed/Pending, attempts, HTTP status) with **Deliver again** on a failed one, **Send test
+  event**, and Pause, Resume and Turn off in the row menu. Pause, resume, test and redelivery are `NOT_ON_SERVER`
+  (UXW-31, -32, -33): the mock answers them; a server without them answers "not available on this server yet".
+  Deliveries have no time column: the server's delivery has no timestamp yet (row in docs/14).
+- **API clients**: a **For developers** card with the Account ID and API base URL, each with Copy; Expires with an
+  "In N days" badge within 30 days and Expired after; **Show revoked (n)**, off by default; Revoke in the row menu.
+  The New API client panel groups all ten server scopes (Envelopes, Templates, Administration) with a one-line
+  description each. Created and Last used columns appear as soon as the server's client carries `created_at` and
+  `last_used_at` (row in docs/14). The one-time key or secret opens in a side panel with no close button that
+  Escape and navigating away leave open (`openPanel({dismissible: false})`, UX-02); only **I have copied it** closes it.
+- **Account**: Settings and Branding cards. Branding pairs a colour picker with the hex field, checks white text on
+  the colour against WCAG 4.5:1 (`contrastRatio`), and previews the email header and the signing page's bar live.
+  At phone width the cards' definition lists stack, so no word breaks mid-word.
+
+**Reports** (`reports.js`, `reportmodel.js`): every tile says what it rests on ("of 6 envelopes loaded", "of 5
+sent", "from 4 completed"), and "of the newest 1,000" when the account has more than a report loads. The median
+uses every completed envelope's `sent_at` and `completed_at` from the list (the server's summary carries both;
+the mock now does too), falling back to reading the newest 50 one by one, and saying so, on a server without them.
+Period presets plus a **Custom range** (From, To, by creation date), a **Sender** filter (all, me, each member), the
+period note on the same row, each status row a link to `#/agreements?status=…`, and a CSV of id, subject, status,
+sender, created, sent, completed, expires and last change. Lede: "Envelopes your account sent, by status and time to
+complete." Recipient and usage reports wait for REP-01.
+
+**Template use** (`templates.js`, `templatemodel.js`): inputs are labelled **Name** and **Email**, the role named in
+their description; both suggest the account's contacts (`GET /contacts`) and complete each other. **Add recipient**
+adds a copy or another signer after every role (an added signer's fields are placed in the editor, so Send asks for
+Edit before sending). The field count and a key of the roles' colours sit above the pages, and each role's fields are
+outlined on the preview in its colour (`pdfPreview({decorate})`, an additive hook). Templates list: **Use** keeps its
+word on phones.
+
+Tests: Node `tests/ux08.test.mjs` (sections and old links, scopes, event groups and secret names, expiry, member
+filters, contrast, the median from summaries, custom range, CSV columns, added recipients). Playwright
+`e2e/admin.spec.mjs` at 1440 and 390 px: the rail and a waiting section; a webhook created, a refused address, a test
+event's delivery row, a failed delivery delivered again, pause; the secret surviving Escape and navigation, the
+expiry badge, revoke and Show revoked; Add user with and without an invitation, search and filters, Remove from the
+menu; branding contrast and preview; Reports sample sizes, custom range, sender, a status row to Agreements; template
+use with role labels, outlines, an added copy recipient sent. The webhook, secret and Reports tests fail on the code
+before UX-08; the Escape check was also seen to fail with the panel made dismissible. `manage.spec.mjs`,
+`web02.spec.mjs` and `visual.spec.mjs` follow the rail, the single Add user panel and the row menus.

@@ -1,0 +1,357 @@
+/* The signing page's styles (UX-02 split of app.css; docs/47 §Design system): 16 px body,
+ * 44 px targets (SC 2.5.5), the bar, the guide tag and bottom guide, signing fields, the
+ * field list, review, done, and adopting a signature. Loaded after app.css by sign.html. */
+
+/* On phones the signing page's bottom bar holds the guide: toasts sit above it. */
+/* The signing page's toasts sit top centre, under its bar, never over the guide. */
+.os-sign .os-toasts { top: 4.75rem; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); }
+.os-statuschip { display: inline-flex; align-items: center; gap: 0.25rem; height: 1.75rem; padding: 0 0.625rem; border-radius: 62.4375rem; background: var(--os-surface); color: var(--os-muted); font-size: var(--os-fs-12); font-weight: 600; white-space: nowrap; }
+@media (max-width: 47.5em) {
+  .os-statuschip > span { position: absolute; width: 0.0625em; height: 0.0625em; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-statuschip { padding: 0 0.375em; }
+}
+.os-done__seal.is-stamping { animation: os-stamp 600ms var(--os-ease) both; }
+
+/* ---- Signing page (16 px body, 44 px targets: SC 2.5.5) ----------------------------
+ * WEB-02 redesign, after DocuSign's signer view: a bar with the document's name,
+ * progress, zoom, the field list and Finish; a yellow Start/Next tag in the left margin
+ * beside the next required field; on phones the guide and Finish are a bottom bar. */
+.os-sign { --os-fs-body: var(--os-fs-16); min-height: 100vh; display: flex; flex-direction: column; background: var(--os-stage); }
+.os-sign__bar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: var(--os-s3); padding: var(--os-s2) var(--os-s6); background: var(--os-bg); border-bottom: 1px solid var(--os-border); min-height: 4rem; box-shadow: var(--os-shadow); }
+.os-sign__titles { flex: 1; min-width: 0; display: grid; }
+.os-sign__subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-sign__barprogress { font-size: var(--os-fs-14); color: var(--os-muted); }
+.os-sign__barprogress:empty { display: none; }
+.os-sign__tools { display: flex; align-items: center; gap: var(--os-s1); }
+.os-sign__barfinish.is-ready { animation: os-ready var(--os-dur-slow) var(--os-ease); }
+.os-sign__main { flex: 1; padding: var(--os-s6) var(--os-s2) 7.5rem; outline: none; }
+.os-sign__screen { animation: os-enter var(--os-dur) var(--os-ease); }
+.os-sign__card { width: min(30rem, 100%); margin: var(--os-s6) auto; padding: var(--os-s8) var(--os-s6); background: var(--os-bg); border-radius: var(--os-radius-lg); box-shadow: var(--os-shadow-md); display: grid; gap: var(--os-s2); }
+.os-sign__card > svg { color: var(--os-accent); }
+.os-sign__card .os-btn { width: 100%; margin-top: var(--os-s3); }
+.os-sign__card .os-stack .os-btn { margin-top: 0; }
+.os-sign__title { font-size: var(--os-fs-24); font-weight: 600; }
+.os-sign__list { margin: 0; padding-left: var(--os-s6); display: grid; gap: var(--os-s1); }
+.os-sign__message { width: min(60rem, 100%); margin: 0 auto var(--os-s4); padding: var(--os-s3) var(--os-s4); background: var(--os-bg); border-radius: var(--os-radius); border-left: 0.25rem solid var(--os-border-strong); overflow-wrap: anywhere; }
+.os-sign__stage { position: relative; width: min(68.75rem, 100%); margin: 0 auto; }
+.os-sign__pages { display: flex; flex-direction: column; align-items: center; gap: var(--os-s4); touch-action: pan-x pan-y; transform-origin: 50% 0; }
+/* The Start/Next tag: a yellow flag pointing at the next required field. */
+.os-guidetag {
+  position: absolute; left: 0; z-index: 4; transform: translateY(-50%); display: inline-flex; align-items: center;
+  height: 2.5rem; padding: 0 var(--os-s3) 0 var(--os-s4); border: 1px solid var(--os-tag-edge); border-right: 0; border-radius: 0.375rem 0 0 0.375rem;
+  background: var(--os-tag); color: var(--os-text); font-weight: 700; cursor: pointer; box-shadow: var(--os-shadow-md);
+  transition: top var(--os-dur-slow) var(--os-ease);
+}
+.os-guidetag::after { content: ""; position: absolute; right: -1.25rem; top: -1px; border-style: solid; border-width: 1.25rem 0 1.25rem 1.25rem; border-color: transparent transparent transparent var(--os-tag-edge); }
+.os-guidetag::before { content: ""; position: absolute; right: -1.125rem; top: 0; z-index: 1; border-style: solid; border-width: 1.1875rem 0 1.1875rem 1.1875rem; border-color: transparent transparent transparent var(--os-tag); }
+.os-guidetag:focus-visible { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: 0.25rem; }
+.os-sign__guide {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; align-items: center; gap: var(--os-s2);
+  padding: var(--os-s3) var(--os-s4) calc(var(--os-s3) + env(safe-area-inset-bottom)); background: var(--os-bg); border-top: 1px solid var(--os-border); box-shadow: 0 -0.25rem 1rem rgba(0, 0, 0, .08);
+}
+.os-sign__progress { flex: 1; font-weight: 600; }
+#guide-finish.is-ready { animation: os-ready var(--os-dur-slow) var(--os-ease); }
+@keyframes os-ready { 50% { transform: scale(1.04); } }
+.os-menu--end { right: 0; }
+/* Desktop: the tag and the bar's Finish guide; the bottom bar is for phones. */
+@media (min-width: 47.5625em) {
+  .is-signing .os-sign__guide { display: none; }
+  .os-sign__stage { padding-left: 7.5rem; }
+}
+@media (max-width: 47.5em) {
+  .os-guidetag, .os-sign__barfinish, .os-sign__barprogress { display: none !important; }
+  .os-sign__bar { padding: var(--os-s2) var(--os-s3); }
+  #fields-btn > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  #fields-btn { width: var(--os-btn-lg); padding: 0; }
+}
+.os-sfield { position: absolute; display: flex; border-radius: 0.25rem; transform-origin: 0 50%; transition: transform var(--os-dur) var(--os-ease), box-shadow var(--os-dur-fast) var(--os-ease); }
+.os-sfield.is-required { box-shadow: 0 0 0 0.125rem #b42318; }
+.os-sfield:not(.is-required):not(.is-auto) { box-shadow: 0 0 0 0.125rem var(--os-info); outline: 1px dashed var(--os-info); outline-offset: 0.125rem; }
+.os-sfield.is-done { box-shadow: 0 0 0 0.125rem var(--os-success); }
+.os-sfield.is-flagged { animation: os-flag 1.2s var(--os-ease); }
+@keyframes os-flag { 0%, 100% { transform: none; } 20%, 60% { transform: scale(1.06); } }
+.os-sfield.is-stamped { animation: os-drop var(--os-dur-slow) var(--os-ease); }
+/* Phones: the field in use grows to a usable size (zoom.js sets --os-enlarge). */
+@media (max-width: 47.5em) {
+  .os-sfield:focus-within { transform: scale(var(--os-enlarge, 1)); z-index: 6; box-shadow: 0 0 0 0.125rem var(--os-focus), var(--os-shadow-pop); }
+  .os-sfield__input { font-size: 1rem; }
+}
+.os-sfield__btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: var(--os-s1);
+  min-height: var(--os-target-min); border: 0; border-radius: 0.25rem; cursor: pointer;
+  background: #fff1b8; color: #111827; font-size: var(--os-fs-12); font-weight: 700; overflow: hidden;
+}
+.os-sfield__btn:hover { background: #ffe680; }
+.os-sfield.is-done .os-sfield__btn { background: transparent; }
+.os-sfield__btn img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.os-sfield__input { width: 100%; border: 0; border-radius: 0.25rem; padding: 0 var(--os-s2); background: #fff1b8; color: #111827; font-size: var(--os-fs-12); font-weight: 600; min-height: 0; }
+.os-sfield__input::placeholder { color: #6b4e00; opacity: 1; font-weight: 600; }
+.os-sfield.is-done .os-sfield__input { background: rgba(255, 255, 255, .7); }
+.os-sfield__check { width: 100%; height: 100%; margin: 0; accent-color: #b3141f; }
+/* Auto-filled fields (date signed, name, email): shown filled, as a quiet tab that
+ * cannot be edited, so every kind of field reads as a tab. */
+.os-sfield.is-auto { box-shadow: 0 0 0 1px #9ca3af; background: #f1f5f9; border-left: 0.1875rem solid #6b7280; }
+.os-sfield__auto { font-size: var(--os-fs-12); color: #374151; align-self: center; padding: 0 var(--os-s2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+/* Small fields get a 44 px touch area without moving their drawn box (SC 2.5.5). */
+.os-sfield__btn::after, .os-sfield__check::after { content: ""; position: absolute; inset: -0.75rem; }
+.os-sfield__btn, .os-sfield__check { position: relative; }
+/* Field list */
+.os-fieldlist { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--os-s1); }
+.os-fieldlist__item { display: flex; align-items: center; gap: var(--os-s3); width: 100%; min-height: var(--os-target-touch); padding: var(--os-s2) var(--os-s3); border: 1px solid var(--os-border); border-radius: var(--os-radius); background: var(--os-raised); cursor: pointer; text-align: left; }
+.os-fieldlist__item:hover { background: var(--os-surface); }
+.os-fieldlist__item > svg { color: #b42318; flex: none; }
+.os-fieldlist__item.is-done > svg { color: var(--os-success); }
+.os-fieldlist__main { flex: 1; display: grid; }
+.os-fieldlist__state { font-size: var(--os-fs-12); font-weight: 600; color: var(--os-muted); }
+/* Review (ADR-020): the pages as signed, values listed, an explicit Finish. */
+.os-reviewscreen { width: min(73.75rem, 100%); margin: 0 auto; }
+.os-reviewscreen__head { margin-bottom: var(--os-s4); display: grid; gap: var(--os-s1); }
+.os-reviewscreen__grid { display: grid; grid-template-columns: minmax(0, 1fr) 21.25rem; gap: var(--os-s6); align-items: start; }
+.os-review__pages { display: flex; flex-direction: column; align-items: center; gap: var(--os-s4); }
+.os-reviewscreen__side { position: sticky; top: calc(4rem + var(--os-s4)); background: var(--os-bg); border-radius: var(--os-radius-lg); padding: var(--os-s6); box-shadow: var(--os-shadow-md); display: grid; gap: var(--os-s3); }
+.os-reviewscreen__side .os-stack .os-btn { width: 100%; }
+.os-flat { position: absolute; display: flex; align-items: center; overflow: hidden; color: #0b1f4b; line-height: 1; white-space: nowrap; }
+.os-flat img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.os-flat--checkbox { justify-content: center; }
+@media (max-width: 56.25em) {
+  .os-reviewscreen__grid { grid-template-columns: minmax(0, 1fr); }
+  .os-reviewscreen__side { position: static; order: -1; }
+}
+.os-done { box-shadow: var(--os-shadow-md); }
+.os-done__seal { margin-bottom: var(--os-s2); }
+.os-review { display: grid; grid-template-columns: max-content 1fr; gap: var(--os-s1) var(--os-s4); margin: 0 0 var(--os-s3); }
+.os-review dt { color: var(--os-muted); }
+.os-review dd { margin: 0; overflow-wrap: anywhere; }
+.os-adopt__fonts { display: grid; gap: var(--os-s2); margin-top: var(--os-s3); }
+.os-adopt__font { display: block; padding: var(--os-s2) var(--os-s4); border: 1px solid var(--os-border-strong); border-radius: var(--os-radius); cursor: pointer; background: #fff; color: #0b1f4b; min-height: var(--os-target-touch); }
+.os-adopt__font:has(input:checked) { border-color: var(--os-accent); box-shadow: 0 0 0 0.125rem var(--os-accent); }
+.os-adopt__font:has(input:focus-visible) { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
+.os-adopt__sample { font-size: 2.25rem; line-height: 1.4; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.os-script-1 { font-family: var(--os-font-script-1); }
+.os-script-2 { font-family: var(--os-font-script-2); }
+.os-adopt__pad { width: 100%; height: auto; aspect-ratio: 3 / 1; background: #fff; border: 1px dashed var(--os-border-strong); border-radius: var(--os-radius); touch-action: none; cursor: crosshair; margin: var(--os-s2) 0; }
+.os-adopt__upload-preview { max-width: 100%; max-height: 10rem; margin-top: var(--os-s3); background: #fff; border-radius: var(--os-radius); }
+@media (max-width: 47.5em) {
+  .os-sign__guide .os-btn { padding: 0 var(--os-s4); }
+}
+@media (max-width: 26.25em) {
+  .os-sign__progress { font-size: var(--os-fs-14); }
+  .os-sign__guide #guide-next > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-sign__guide #guide-next { width: var(--os-btn-lg); padding: 0; }
+}
+.os-sign__stage > .os-sign__message { width: auto; max-width: 59rem; margin: 0 auto var(--os-s4); }
+@media (max-width: 47.999em) {
+  .has-side-sheet .os-sign__guide, .has-sheet .os-sign__guide { visibility: hidden; }
+}
+@media (max-height: 31.25em) {
+  .os-sign { height: auto; min-height: 100dvh; overflow: visible; }
+}
+
+/* ---- Signing page frame -------------------------------------------------------------- */
+.os-sign { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); }
+.os-sign > .os-skip { position: absolute; }
+.os-sign__bar { position: relative; flex-wrap: wrap; row-gap: var(--os-s1); }
+.os-sign__main { min-height: 0; overflow: auto; padding: var(--os-s6) var(--os-s3); }
+.os-sign__main.is-frame-host { overflow: hidden; padding: 0; }
+.os-sign__main.is-frame-host > .os-sign__screen { height: 100%; }
+.os-signframe { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
+.os-signframe__centre { position: relative; display: grid; min-width: 0; min-height: 0; }
+.os-signframe .os-docview__pages { padding-left: calc(var(--os-s6) + var(--os-tag-room, 0rem)); }
+.os-sign__guide { position: static; }
+.os-sign__savechip { font-size: var(--os-fs-12); color: var(--os-muted); white-space: nowrap; }
+.os-sign__savechip:empty { display: none; }
+.os-sign__message--panel { width: auto; margin: 0; border-left-width: 0.25rem; background: var(--os-surface); }
+.os-fieldlist__item.is-next { border-color: var(--os-tag-edge); box-shadow: inset 0.25rem 0 0 var(--os-tag-edge); }
+.os-sfield__err { position: absolute; left: 0; top: 100%; margin-top: 0.125rem; padding: 0.125rem var(--os-s1); border-radius: 0.25rem; background: var(--os-danger-fill); color: var(--os-on-danger); font-size: var(--os-fs-12); white-space: nowrap; z-index: 7; }
+.os-sfield__err:empty { display: none; }
+.os-review__side { display: grid; gap: var(--os-s3); align-content: start; }
+.os-review__side .os-stack .os-btn { width: 100%; }
+.os-signframe--review { grid-template-columns: minmax(0, 1fr) auto; }
+/* UX-06: review has no Start flag, so no room for one (fit width then fits). */
+.os-signframe.os-signframe--review { --os-tag-room: 0rem; }
+.os-signframe--review .os-page__overlay { container-type: size; }
+.os-flat--checkbox svg { width: 100%; height: 100%; }
+.os-dock--static .os-dock__toggle { display: none; }
+.os-dock--static .os-dock__body { gap: var(--os-s3); }
+.os-sign__pages .os-docview__pages { position: relative; }
+@media (min-width: 48em) {
+  .os-signframe { --os-tag-room: 6.5rem; }
+  .is-signing .os-sign__guide { display: none; }
+}
+@media (max-width: 47.999em) {
+  .os-signframe { grid-template-columns: minmax(0, 1fr); }
+  .os-sign__main:not(.is-frame-host) { padding: var(--os-s4) var(--os-s3); }
+  /* Review on phones: the values and Finish above the pages, never a hidden sheet. */
+  .os-signframe--review { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .os-dock.os-dock--static { position: static; order: -1; transform: none; visibility: visible; transition: none; max-height: 45dvh; border-radius: 0; box-shadow: var(--os-shadow); }
+  .os-dock--static .os-dock__head { display: none; }
+  .os-dock--static .os-dock__body { padding: var(--os-s3); }
+  .os-dock--static .os-stack { grid-template-columns: 1fr 1fr; }
+  .os-guidetag { display: none !important; }
+}
+/* Short windows on the signing page too (P-03, 400 % zoom): the bar and the guide stop
+ * being pinned; the page scrolls and the document view takes the full window height. */
+@media (max-height: 31.25em) {
+  .os-sign { display: block; height: auto; min-height: 100dvh; overflow: visible; }
+  .os-sign__main { overflow: visible; }
+  .os-sign__main.is-frame-host { height: 100dvh; overflow: hidden; }
+}
+
+/* ---- Signer findings (WEB-06: P-05, M-01..M-03, G-S1..G-S8) ------------------------- */
+/* G-S1: Start/Next in the bar, styled as the guide tag it stands for. */
+.os-btn--tag { background: var(--os-tag); border-color: var(--os-tag-edge); color: var(--os-text); font-weight: 700; }
+.os-btn--tag:hover { background: color-mix(in srgb, var(--os-tag) 75%, var(--os-tag-edge)); }
+/* G-S8: every field's label as a tab above it: on hover, on focus, and for the next one. */
+.os-sfield__tip {
+  position: absolute; left: 0; bottom: calc(100% + 0.25rem); z-index: 8; max-width: 16rem; padding: 0.125rem 0.375rem; border-radius: 0.25rem;
+  background: var(--os-text); color: var(--os-bg); font-size: 0.75rem; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none; opacity: 0; transform: translateY(0.125rem); transition: opacity var(--os-dur-fast) var(--os-ease), transform var(--os-dur-fast) var(--os-ease);
+}
+.os-sfield:hover > .os-sfield__tip, .os-sfield:focus-within > .os-sfield__tip, .os-sfield.is-next > .os-sfield__tip { opacity: 1; transform: none; }
+/* P-05: on phones a touch area of at least 44 px under each field's control. */
+.os-sfield__hit { display: none; }
+/* G-S7: the review's Finish, pinned under the values. */
+.os-review__actions { padding: var(--os-s3) var(--os-s4) calc(var(--os-s3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--os-border); background: var(--os-bg); }
+.os-review__actions .os-btn { width: 100%; }
+/* G-S3: the done screen's next steps and copy. */
+.os-done__next { font-size: var(--os-fs-16); font-weight: 600; margin-top: var(--os-s4); }
+.os-done__steps { text-align: left; margin: 0 auto; padding-left: var(--os-s6); display: grid; gap: var(--os-s2); max-width: 30rem; }
+.os-done__actions { margin-top: var(--os-s6); display: flex; justify-content: center; }
+/* G-S2: history and help panels. */
+.os-history { list-style: none; margin: var(--os-s3) 0 0; padding: 0; display: grid; }
+.os-history__item { display: grid; gap: 0.125rem; padding: var(--os-s2) 0; border-bottom: 1px solid var(--os-border); }
+.os-help-sec + .os-help-sec { margin-top: var(--os-s4); }
+.os-help-sec__title { font-size: var(--os-fs-16); font-weight: 600; margin-bottom: var(--os-s2); }
+/* M-03: drawing a signature full screen on a phone. */
+.os-adopt__fullbtn, .os-adopt__fullhint, .os-adopt__fulldone { display: none; }
+.os-adopt__padtools { flex-wrap: wrap; }
+.os-adopt__padwrap.is-full {
+  position: fixed; inset: 0; z-index: calc(var(--os-z-dialog) + 10); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: var(--os-s3);
+  background: var(--os-raised); padding: calc(var(--os-s4) + env(safe-area-inset-top)) calc(var(--os-s4) + env(safe-area-inset-right)) calc(var(--os-s4) + env(safe-area-inset-bottom)) calc(var(--os-s4) + env(safe-area-inset-left));
+}
+.os-adopt__padwrap.is-full .os-adopt__pad { width: min(100%, calc((100dvh - 9rem) * 3)); margin: 0; }
+.os-adopt__padwrap.is-full .os-adopt__padtools { width: min(100%, calc((100dvh - 9rem) * 3)); justify-content: flex-end; margin: 0; }
+.os-adopt__padwrap.is-full .os-adopt__fulldone { display: inline-flex; margin-left: auto; }
+/* An upright phone: the whole pad turns a quarter clockwise, so the signature runs
+ * along the screen's long side (signature.js maps the pointer back). */
+@media (orientation: portrait) {
+  .os-adopt__padwrap.is-full { inset: auto; top: 0; left: 100vw; width: 100dvh; height: 100vw; transform-origin: 0 0; transform: rotate(90deg); }
+  .os-adopt__padwrap.is-full .os-adopt__pad, .os-adopt__padwrap.is-full .os-adopt__padtools { width: min(100%, calc((100vw - 9rem) * 3)); }
+  .os-adopt__padwrap.is-full .os-adopt__fullhint { display: block; color: var(--os-muted); text-align: center; }
+}
+@media (max-width: 47.999em), (pointer: coarse) {
+  .os-adopt__fullbtn { display: inline-flex; width: 100%; margin: var(--os-s2) 0; }
+}
+@media (max-width: 47.999em) {
+  #bar-next { display: none !important; }
+  .os-sfield__hit { display: block; position: absolute; left: 50%; top: 50%; width: max(100%, 2.75rem); height: max(100%, 2.75rem); transform: translate(-50%, -50%); z-index: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .os-sfield > .os-sfield__btn, .os-sfield > .os-sfield__input, .os-sfield > .os-sfield__check { position: relative; z-index: 1; }
+  .os-sfield__tip { z-index: 9; }
+  /* M-02: the bar keeps words: a two-line title, Fields and Start/Next labelled. */
+  .os-sign__subject { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: var(--os-fs-14); line-height: 1.25; overflow-wrap: anywhere; }
+  #fields-btn > span, .os-sign__guide #guide-next > span { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  #fields-btn { width: auto; padding: 0 var(--os-s3); gap: var(--os-s1); }
+  .os-sign__guide #guide-next { width: auto; padding: 0 var(--os-s4); }
+  .os-sign__savechip { display: none; }
+  /* G-S6: the field list leaves the document visible above it. */
+  .os-dock[data-panel="sign-fields"] { max-height: 55dvh; }
+}
+@media (max-width: 26.25em) {
+  .os-sign__mark { display: none; }
+  .os-sign__bar { gap: var(--os-s2); }
+  #more-btn { width: var(--os-btn-lg); padding: 0; }
+  #more-btn > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-sign__guide { gap: var(--os-s2); padding-left: var(--os-s3); padding-right: var(--os-s3); }
+  .os-sign__guide .os-btn { padding: 0 var(--os-s3); }
+}
+/* The signer's and the review's scrollers are document views: no flex centring of
+ * their (max-content) page column, or a page zoomed wider than the view overflows to
+ * the left where it cannot be scrolled to (P-05: zoom-to-field cut the field off). */
+.os-docview.os-sign__pages, .os-docview.os-review__pages { display: block; }
+/* The adopt panel in the field list's place: tabs and actions fit its width. */
+.os-adopt .os-tab { flex: 1 1 auto; justify-content: center; padding: 0 var(--os-s2); }
+.os-sheet--hosted.os-adopt .os-sheet__body { padding-left: var(--os-s4); padding-right: var(--os-s4); }
+.os-sheet--hosted.os-adopt .os-sheet__foot { padding-left: var(--os-s4); padding-right: var(--os-s4); flex-wrap: nowrap; }
+.os-sheet--hosted.os-adopt .os-sheet__foot .os-btn { flex: 1 1 auto; }
+@media (max-width: 47.999em) {
+  .os-review__actions.os-stack { grid-template-columns: minmax(0, 1fr); }
+}
+/* WEB-06 field kinds in the ceremony: a native select, a choice button, fixed values. */
+.os-sfield__select { width: 100%; min-height: 0; border: 0; border-radius: 0.25rem; padding: 0 var(--os-s1); background: #fff1b8; color: #111827; font-size: var(--os-fs-12); font-weight: 600; cursor: pointer; }
+.os-sfield.is-done .os-sfield__select { background: rgba(255, 255, 255, .7); }
+.os-sfield__choice { justify-content: space-between; padding: 0 var(--os-s1) 0 var(--os-s2); min-width: 0; }
+.os-sfield__choice > .os-trunc { min-width: 0; }
+.os-sfield.is-fixed { background: #f8fafc; border-left-color: #94a3b8; }
+@media (max-width: 47.999em) {
+  .os-sfield > .os-sfield__select { position: relative; z-index: 1; font-size: 1rem; }
+}
+
+/* ---- UX-06: the signer ceremony package of the UX audit ------------------------------ */
+/* Who sent it and by when, on the consent card and in the field list. */
+.os-sign__sender, .os-sign__signby { display: flex; align-items: flex-start; gap: var(--os-s2); margin: 0; overflow-wrap: anywhere; }
+.os-sign__sender { font-weight: 600; }
+.os-sign__signby { color: var(--os-muted); font-size: var(--os-fs-14); }
+.os-sign__sender > svg, .os-sign__signby > svg { flex: none; margin-top: 0.1875rem; color: var(--os-muted); }
+.os-sign__from { font-weight: 600; margin-bottom: var(--os-s1); overflow-wrap: anywhere; }
+/* Quiet text buttons on the card: the disclosure and the other actions. */
+.os-sign__card .os-btn.os-sign__linkbtn { width: auto; justify-self: start; margin-top: 0; padding-left: var(--os-s1); padding-right: var(--os-s1); color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.1875rem; }
+.os-sign__card .os-btn.os-sign__linkbtn:last-child { justify-self: center; }
+.os-sign__disclosure-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: var(--os-s2); }
+/* A menu or a choice floating on a field (signed-field menu, radio popover). */
+.os-sign__floating { position: fixed; z-index: calc(var(--os-z-dialog) + 5); min-width: 12rem; }
+.os-sign__choices { display: grid; padding: var(--os-s1) var(--os-s2); }
+.os-sign__choices .os-radio { padding: 0 var(--os-s1); border-radius: var(--os-radius-sm); }
+.os-sign__choices .os-radio:hover { background: var(--os-surface); }
+/* Required is a neutral strong outline and a red asterisk; a red outline means an
+ * error only; optional is a lighter dashed outline. */
+.os-sfield.is-required { box-shadow: 0 0 0 0.125rem var(--os-text); }
+.os-sfield.is-required:not(.is-done):not(.is-auto)::after { content: "*"; position: absolute; top: -0.625rem; right: -0.5rem; z-index: 3; min-width: 1rem; height: 1rem; border-radius: 50%; background: var(--os-bg); color: var(--os-danger); font-size: 0.875rem; font-weight: 700; line-height: 1.15; text-align: center; pointer-events: none; }
+.os-sfield:not(.is-required):not(.is-auto) { box-shadow: none; outline: 0.125rem dashed var(--os-border-strong); outline-offset: 0; }
+.os-sfield.is-done { box-shadow: 0 0 0 0.125rem var(--os-success); outline: 0; }
+.os-sfield:has([aria-invalid="true"]) { box-shadow: 0 0 0 0.125rem var(--os-danger); outline: 0; }
+.os-fieldlist__item > svg { color: var(--os-muted); }
+/* The label tab says what the field is; the placeholder does not repeat it then. */
+.os-sfield:is(:hover, :focus-within, .is-next) .os-sfield__input::placeholder { color: transparent; }
+/* Finish: full contrast all along (it acts: it goes to the next required field). */
+#bar-finish[aria-disabled="true"], #guide-finish[aria-disabled="true"] { opacity: 1; cursor: pointer; }
+/* Review: the adopted mark in the values list; short values do not wrap needlessly. */
+.os-review { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
+.os-review__mark { display: block; max-width: 100%; max-height: 2.75rem; background: #fff; border-radius: var(--os-radius-sm); }
+@media (min-width: 48em) {
+  /* One heading: the panel's h1, not its head as well. */
+  .os-dock--static .os-dock__head { display: none; }
+}
+/* Review on phones: the document full height, a bottom bar with the values and Finish. */
+@media (max-width: 47.999em) {
+  .os-signframe--review.is-phone { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .os-review__actions--bar.os-stack { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--os-s2); }
+  .os-review__actions--bar .os-btn { padding: 0 var(--os-s3); }
+  /* Compact fields at fit width: the tab only for the next field or the one in use,
+   * the text sized to the field (container units) until it is in use. */
+  .os-sfield:not(.is-next):not(:focus-within) > .os-sfield__tip { display: none; }
+  .os-sfield { container-type: size; }
+  .os-sfield:not(:focus-within) > :is(.os-sfield__btn, .os-sfield__input, .os-sfield__select, .os-sfield__auto) { font-size: clamp(0.4375rem, 62cqh, 1rem); min-height: 0; }
+  .os-sfield:not(:focus-within) > .os-sfield__btn > svg { width: clamp(0.5rem, 70cqh, 1rem); height: auto; }
+}
+.os-done__actions { gap: var(--os-s2); flex-wrap: wrap; }
+/* The adopt panel: wide enough to draw in (30 rem or more), the pads 3:1. */
+.os-adopt__padblock + .os-label { margin-top: var(--os-s4); }
+.os-adopt__padtools { flex-wrap: nowrap; }
+.os-adopt__type--both .os-adopt__font { display: flex; align-items: center; gap: var(--os-s4); }
+.os-adopt__type--both .os-adopt__sample--signature { flex: 1; min-width: 0; }
+.os-adopt__sample--initials { flex: none; max-width: 30%; }
+.os-adopt__drop { display: grid; justify-items: center; align-content: center; gap: var(--os-s1); padding: var(--os-s6) var(--os-s4); border: 0.125rem dashed var(--os-border-strong); border-radius: var(--os-radius-lg); background: var(--os-surface); text-align: center; cursor: pointer; aspect-ratio: 3 / 1; }
+.os-adopt__drop:hover, .os-adopt__drop.is-dropping { border-color: var(--os-accent-fill); background: var(--os-accent-soft); }
+.os-adopt__drop > svg { color: var(--os-muted); }
+.os-adopt__drop-title { font-weight: 600; }
+.os-adopt__drop.has-image { aspect-ratio: auto; }
+.os-adopt__drop .os-adopt__upload-preview { margin-top: var(--os-s2); max-height: 8rem; }
+#adopt-file:focus-visible + .os-adopt__drop { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: var(--os-focus-offset); }
+#adopt-err:empty { display: none; }
+/* An inline link in running text (the done page's Verify page). */
+.os-sign__inlink { color: var(--os-accent); text-decoration: underline; text-underline-offset: 0.1875rem; }
+/* A side panel (adopt, help, history) covers the field list on desktop; what it covers
+ * is hidden, so nothing behind it can be reached or read through it. */
+@media (min-width: 48em) {
+  .has-side-sheet .os-signframe > .os-dock--right { visibility: hidden; }
+}

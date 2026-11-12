@@ -4,20 +4,23 @@
 // delete, download the PDF as it stands, correct. Each screen calls these and refreshes
 // itself; nothing here keeps state.
 
-import { h, fmtDate, download } from "./dom.js";
+import { h, fmtDate, fmtShortDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { toBase64 } from "./api.js";
+import { toBase64, corrections } from "./api.js";
 import { added } from "./templatesync.js";
 import { recipientCorrection } from "./people.js";
-import { openPanel, toast, confirmDialog, emptyState } from "./ui/index.js";
+import { DELETABLE, ACTIVE, ENDED } from "./managemodel.js";
+import { openPanel, toast, confirmDialog, reasonDialog, emptyState, button } from "./ui/index.js";
 
 const SIGNING = new Set(["signer", "in_person_signer", "approver"]);
 const ACTED = new Set(["completed", "declined"]);
-/// Statuses a sender may delete (A-03): a draft, or an envelope that ended without
-/// completing. A completed agreement is evidence and stays (retention decides, docs/32).
-export const DELETABLE = new Set(["draft", "voided", "declined", "expired"]);
-export const ACTIVE = new Set(["sent", "delivered"]);
+// The state sets live in managemodel.js (UX-07, pure); re-exported for the screens.
+export { DELETABLE, ACTIVE, ENDED };
+
+/// A short date for lists and status lines (UX-07); `fmtDate` gives the full one for a
+/// tooltip.
+export const shortDate = (iso, now) => fmtShortDate(iso, { today: t("dates.today"), yesterday: t("dates.yesterday") }, now);
 
 const byOrder = (e) => [...(e?.recipients || [])].sort((a, b) => a.routing_order - b.routing_order);
 const who = (r) => r?.name || r?.email || t("actor.unknown");
@@ -43,10 +46,10 @@ export function statusLine(e) {
       const names = waitingFor(e).map(who);
       return names.length ? t("agreements.line.waiting", { names: names.join(", ") }) : "";
     }
-    case "completed": return t("agreements.line.completed", { date: fmtDate(e.ended_at) });
+    case "completed": return t("agreements.line.completed", { date: shortDate(e.ended_at) });
     case "declined": return t("agreements.line.declined", { name: who(byOrder(e).find((r) => r.status === "declined")) });
-    case "voided": return t("agreements.line.voided", { date: fmtDate(e.ended_at) });
-    case "expired": return t("agreements.line.expired", { date: fmtDate(e.ended_at || e.expires_at) });
+    case "voided": return t("agreements.line.voided", { date: shortDate(e.ended_at) });
+    case "expired": return t("agreements.line.expired", { date: shortDate(e.ended_at || e.expires_at) });
     default: return "";
   }
 }
@@ -98,19 +101,64 @@ export function auditTable(audit, env, senderName) {
   return h("div", { class: "os-table-wrap" }, table);
 }
 
-/// The history of one envelope in a side panel (A-03 "History").
+/// The plain verb a person expects for an audit event in the History panel (UX-07):
+/// "Signed", "Viewed", "Declined"; the audit trail's own label otherwise.
+export function historyVerb(type) {
+  const label = t(`history.${type}`);
+  return label === `history.${type}` ? eventLabel(type) : label;
+}
+
+/// Copy `text` to the clipboard and say so; a browser that refuses says that instead.
+export async function copyText(text, done = t("action.copied")) {
+  try { await navigator.clipboard.writeText(text); toast(done, "success"); } catch { toast(t("action.copy-failed"), "error"); }
+}
+
+/// The audit events as a vertical timeline (UX-07, the History panel): the verb in
+/// bold, who and when under it, and the event's hash in a disclosure with a copy button.
+export function historyTimeline(audit, env, senderName = "") {
+  const ol = h("ol", { class: "os-histline", attrs: { "data-testid": "history-timeline" } });
+  for (const a of audit.items || []) {
+    const hash = a.hash || "";
+    ol.append(h("li", { class: "os-histline__item" },
+      h("strong", { class: "os-histline__verb", text: historyVerb(a.type) }),
+      h("span", { class: "os-muted os-small" }, h("span", { text: `${actorOf(a, env, senderName)} · ` }), h("time", { attrs: { datetime: a.at, title: fmtDate(a.at) }, text: fmtDate(a.at) })),
+      hash ? h("details", { class: "os-histline__details" },
+        h("summary", { text: t("history.details") }),
+        h("div", { class: "os-histline__hash" },
+          h("code", { text: hash }),
+          button(t("history.copy-hash"), { icon: "copy", size: "sm", variant: "ghost", iconOnly: true, onClick: () => copyText(hash) }))) : null));
+  }
+  return ol;
+}
+
+/// The history of one envelope in a side panel (A-03 "History"; UX-07 a timeline).
 export async function historyPanel(ctx, id, subject) {
   const [{ envelope }, audit] = await Promise.all([ctx.api.getEnvelope(id), ctx.api.audit(id)]);
   await openPanel({
     id: "history",
     title: t("agreements.history-title", { subject }),
-    width: 34,
+    width: 44,
     build(body) {
       if (!(audit.items || []).length) { body.append(emptyState({ illus: "documents", title: t("envelope.audit-empty"), text: "" })); return; }
-      body.append(auditTable(audit, envelope, ""));
+      body.append(historyTimeline(audit, envelope, ""));
     },
     actions: [{ label: t("action.close"), value: null }],
   });
+}
+
+/// Void one or more envelopes with one dialog (UX-07): the count, what voiding does,
+/// and the reason recipients see; a filled danger button. Resolves true when voided.
+export async function voidEnvelopes(ctx, ids) {
+  const many = ids.length > 1;
+  const reason = await reasonDialog(
+    many ? t("agreements.void-many-title", { n: ids.length }) : t("envelope.void-title"),
+    t("envelope.void-label"),
+    { confirm: many ? t("agreements.bulk-void", { n: ids.length }) : t("envelope.void"), consequence: t("envelope.void-consequence") },
+  );
+  if (!reason) return false;
+  for (const id of ids) await ctx.api.voidEnvelope(id, reason);
+  toast(t(many ? "agreements.voided-n" : "envelope.voided", { n: ids.length }), "success");
+  return true;
 }
 
 /// Fetch every document of an envelope as `{name, content_base64}`.
@@ -195,12 +243,27 @@ export async function deleteEnvelope(ctx, id, subject, status) {
   return true;
 }
 
-/// Download each document as it stands while the envelope is in progress (E-02).
+/// Download each document as it stands (E-02): while the envelope is in progress, or as
+/// it ended when declined, voided or expired (UX-07). `version=current` serves any
+/// envelope that was sent (docs/40), with a "not signed" banner unless sealed.
 export async function downloadCurrent(ctx, id, env = null) {
   const e = env || (await ctx.api.getEnvelope(id)).envelope;
+  const suffix = ENDED.has(e.status) ? e.status : "current";
   for (const d of e.documents || []) {
-    download(await ctx.api.documentContent(id, d.id, "current"), `${(d.name || "document.pdf").replace(/\.pdf$/i, "")}-current.pdf`);
+    download(await ctx.api.documentContent(id, d.id, "current"), `${(d.name || "document.pdf").replace(/\.pdf$/i, "")}-${suffix}.pdf`);
   }
+}
+
+/// The certificate of an envelope (completed; ended ones once `certificateEnded` is
+/// served, UXW-30).
+export async function downloadCertificate(ctx, id) {
+  download(await ctx.api.certificate(id), `certificate-${id}.pdf`);
+}
+
+/// Whether the certificate can be asked for in this state: a completed envelope's
+/// always; an ended one's only where the server serves it (`NOT_ON_SERVER.certificateEnded`).
+export function hasCertificate(ctx, status) {
+  return status === "completed" || (ENDED.has(status) && !!ctx.api.available?.("certificateEnded"));
 }
 
 /// Download the sealed documents of a completed envelope.
@@ -213,26 +276,70 @@ export async function downloadSealed(ctx, id, env = null) {
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-/// Correct a sent envelope (E-01, DocuSign's Correct) in a side panel: name, email and
-/// access code of each recipient who has not acted, then a new invitation to those
-/// changed who were already sent it. Resolves true when corrected.
+/// Correct a sent envelope (E-01, DocuSign's Correct) in a side panel. For each
+/// recipient who has not acted: name, email, access code and signing order, or remove
+/// them; add a recipient; change the expiry and the reminders (UX-07). Recipients who
+/// have acted are shown locked. Resolves true when corrected.
 ///
-/// WEB-10: each changed recipient is one `PATCH …/recipients/{r}` (If-Match), which the
+/// WEB-10: a changed recipient is one `PATCH …/recipients/{r}` (If-Match), which the
 /// server applies as a correction of a sent envelope. `POST …/correct`'s
 /// `update_recipient` replaces the whole engine `RecipientSpec`, refuses an
 /// `access_code` member, and needs members the API does not show (`date_format`), so
-/// it would drop settings or fail; the PATCH keeps the rest and stores the code.
+/// it would drop settings or fail; the PATCH keeps the rest and stores the code (and
+/// the routing order). Adding and removing recipients, the expiry and the reminders go
+/// in one `POST …/correct` change list (UX-07; casual-sign-workflow `Change`), all or
+/// none, before the PATCHes. A full editor-based Correct (fields, documents) is UXW-19.
 export async function correctPanel(ctx, id) {
   const { envelope: e, etag } = await ctx.api.getEnvelope(id);
   const recs = byOrder(e);
   const rows = [];
+  const fresh = [];
+  let list;
+  let expiry;
+  let first;
+  let every;
+  let settingsErr;
+  const lastOrder = () => Math.max(1, ...recs.map((r) => r.routing_order || 1), ...fresh.map((x) => Number(x.order.value) || 1));
+  const dateOf = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const rem = e.reminders || {};
+  const orderInput = (pid, value) => h("input", { id: `${pid}-order`, class: "os-input os-input--sm os-correct__order", type: "number", min: 1, max: 99, step: 1, value: String(value), attrs: { inputmode: "numeric" } });
+
+  function addRow() {
+    const n = fresh.length + rows.length + 1;
+    const p = `cr-new-${n}-${Math.random().toString(36).slice(2, 6)}`;
+    const name = h("input", { id: `${p}-name`, class: "os-input", maxLength: 255, autocomplete: "off", attrs: { "aria-describedby": `${p}-err` } });
+    const email = h("input", { id: `${p}-email`, class: "os-input", type: "email", autocomplete: "off", attrs: { "aria-describedby": `${p}-err` } });
+    const type = h("select", { id: `${p}-type`, class: "os-input os-select" }, ["signer", "approver", "viewer", "cc"].map((k) => h("option", { value: k, text: t(`rtype.${k}`) })));
+    const order = orderInput(p, lastOrder() + (fresh.length ? 0 : 1));
+    const err = h("p", { id: `${p}-err`, class: "os-field-error", attrs: { "aria-live": "polite" } });
+    const li = h("li", { class: "os-correct__item is-new", attrs: { "data-testid": "correct-new" } });
+    const x = { name, email, type, order, err, li };
+    const remove = button(t("envelope.correct-remove-new"), { icon: "x", size: "sm", variant: "ghost", onClick: () => { li.remove(); fresh.splice(fresh.indexOf(x), 1); } });
+    li.append(
+      h("div", { class: "os-correct__head" }, h("strong", { text: t("envelope.correct-new") }), h("span", { class: "os-spacer" }), remove),
+      h("label", { class: "os-label", attrs: { for: `${p}-name` }, text: t("prepare.name") }), name,
+      h("label", { class: "os-label", attrs: { for: `${p}-email` }, text: t("prepare.email") }), email,
+      h("div", { class: "os-correct__pair" },
+        h("div", {}, h("label", { class: "os-label", attrs: { for: `${p}-type` }, text: t("envelope.correct-type") }), type),
+        h("div", {}, h("label", { class: "os-label", attrs: { for: `${p}-order` }, text: t("envelope.correct-order") }), order)),
+      err);
+    fresh.push(x);
+    list.append(li);
+    name.focus();
+  }
+
   const result = await openPanel({
     id: "correct",
     title: t("envelope.correct-title"),
-    width: 30,
+    width: 32,
     build(body) {
       body.append(h("p", { class: "os-muted", text: t("envelope.correct-lede") }));
-      const list = h("ol", { class: "os-correct" });
+      body.append(h("h3", { class: "os-correct__section", text: t("envelope.recipients") }));
+      list = h("ol", { class: "os-correct" });
       recs.forEach((r, i) => {
         const acted = ACTED.has(r.status);
         const head = h("div", { class: "os-correct__head" },
@@ -256,44 +363,105 @@ export async function correctPanel(ctx, id) {
           h("p", { id: `${p}-code-help`, class: "os-help", text: t("envelope.correct-code-help") }));
         codeRow.hidden = !had;
         req.addEventListener("change", () => { codeRow.hidden = !req.checked; });
+        const order = orderInput(p, r.routing_order || 1);
         const err = h("p", { id: `${p}-err`, class: "os-field-error", attrs: { "aria-live": "polite" } });
-        li.append(
+        const fieldsBox = h("div", { class: "os-correct__fields" },
           h("label", { class: "os-label", attrs: { for: `${p}-name` }, text: t("prepare.name") }), name,
           h("label", { class: "os-label", attrs: { for: `${p}-email` }, text: t("prepare.email") }), email,
+          h("div", { class: "os-correct__pair" },
+            h("div", {}, h("label", { class: "os-label", attrs: { for: `${p}-order` }, text: t("envelope.correct-order") }), order)),
           h("label", { class: "os-check", attrs: { for: `${p}-req` } }, req, h("span", { text: t("envelope.require-code") })),
-          codeRow, err);
-        rows.push({ r, name, email, req, code, err, had });
+          codeRow);
+        const x = { r, name, email, req, code, order, err, had, removed: false };
+        const removedNote = h("p", { class: "os-muted os-small", hidden: true, text: t("envelope.correct-removed", { name: who(r) }) });
+        const remove = button(t("envelope.correct-remove"), { icon: "trash-2", size: "sm", variant: "ghost", attrs: { "aria-label": t("envelope.correct-remove-named", { name: who(r) }) }, onClick: () => {
+          x.removed = !x.removed;
+          li.classList.toggle("is-removed", x.removed);
+          fieldsBox.hidden = x.removed;
+          removedNote.hidden = !x.removed;
+          remove.setAttribute("aria-label", t(x.removed ? "envelope.correct-undo-remove-named" : "envelope.correct-remove-named", { name: who(r) }));
+          remove.querySelector("span")?.replaceChildren(t(x.removed ? "envelope.correct-undo-remove" : "envelope.correct-remove"));
+        } });
+        head.append(h("span", { class: "os-spacer" }), remove);
+        li.append(fieldsBox, removedNote, err);
+        rows.push(x);
         list.append(li);
       });
       body.append(list);
+      body.append(h("div", { class: "os-correct__add" }, button(t("envelope.correct-add"), { icon: "user-plus", size: "sm", attrs: { "data-testid": "correct-add" }, onClick: addRow })));
       if (!rows.length) body.append(h("p", { class: "os-muted", attrs: { "data-testid": "correct-none" }, text: t("envelope.correct-none") }));
+
+      // Expiry and reminders (UX-07): `set_expiry` and `set_reminders` in the change list.
+      expiry = h("input", { id: "cr-expiry", class: "os-input", type: "date", value: dateOf(e.expires_at), attrs: { "aria-describedby": "cr-expiry-help cr-settings-err" } });
+      first = h("input", { id: "cr-first", class: "os-input os-input--sm", type: "number", min: 0, max: 999, step: 1, value: String(rem.first_after_days || 0), attrs: { inputmode: "numeric", "aria-describedby": "cr-rem-help" } });
+      every = h("input", { id: "cr-every", class: "os-input os-input--sm", type: "number", min: 0, max: 999, step: 1, value: String(rem.then_every_days || 0), attrs: { inputmode: "numeric", "aria-describedby": "cr-rem-help" } });
+      settingsErr = h("p", { id: "cr-settings-err", class: "os-field-error", attrs: { "aria-live": "polite" } });
+      body.append(h("h3", { class: "os-correct__section", text: t("envelope.correct-settings") }),
+        h("div", { class: "os-correct__settings" },
+          h("label", { class: "os-label", attrs: { for: "cr-expiry" }, text: t("envelope.correct-expiry") }), expiry,
+          h("p", { id: "cr-expiry-help", class: "os-help", text: t("envelope.correct-expiry-help") }),
+          h("div", { class: "os-correct__pair" },
+            h("div", {}, h("label", { class: "os-label", attrs: { for: "cr-first" }, text: t("envelope.correct-first") }), first),
+            h("div", {}, h("label", { class: "os-label", attrs: { for: "cr-every" }, text: t("envelope.correct-every") }), every)),
+          h("p", { id: "cr-rem-help", class: "os-help", text: t("envelope.correct-reminders-help") }),
+          settingsErr));
     },
     actions: [
       { label: t("action.cancel"), value: null },
       {
         label: t("envelope.correct-save"), variant: "primary", icon: "send", attrs: { "data-testid": "correct-save" },
         onClick: async () => {
-          if (!rows.length) return null;
           let bad = null;
-          for (const x of rows) {
+          const flag = (el, err, msg) => { err.textContent = msg; el.setAttribute("aria-invalid", "true"); bad ||= el; };
+          const orderOk = (el) => /^\d{1,2}$/.test(el.value) && Number(el.value) >= 1;
+          for (const x of [...rows, ...fresh]) {
             x.err.textContent = "";
-            for (const el of [x.name, x.email, x.code]) el.removeAttribute("aria-invalid");
-            const problem = !x.name.value.trim() ? [x.name, t("use.need-name")]
-              : !EMAIL.test(x.email.value.trim()) ? [x.email, t("use.need-email")]
-                : x.req.checked && !x.had && !x.code.value ? [x.code, t("envelope.correct-need-code")] : null;
-            if (problem) { x.err.textContent = problem[1]; problem[0].setAttribute("aria-invalid", "true"); bad ||= problem[0]; }
+            for (const el of [x.name, x.email, x.code, x.order]) el?.removeAttribute("aria-invalid");
+            if (x.removed) continue;
+            if (!x.name.value.trim()) flag(x.name, x.err, t("use.need-name"));
+            else if (!EMAIL.test(x.email.value.trim())) flag(x.email, x.err, t("use.need-email"));
+            else if (!orderOk(x.order)) flag(x.order, x.err, t("envelope.correct-need-order"));
+            else if (x.req && x.req.checked && !x.had && !x.code.value) flag(x.code, x.err, t("envelope.correct-need-code"));
           }
-          if (bad) { bad.focus(); return undefined; }
-          const changed = rows.filter((x) => x.name.value.trim() !== (x.r.name || "") || x.email.value.trim() !== (x.r.email || "") || x.req.checked !== x.had || (x.req.checked && x.code.value));
-          if (!changed.length) return "same";
+          settingsErr.textContent = "";
+          for (const el of [expiry, first, every]) el.removeAttribute("aria-invalid");
+          const today = dateOf(new Date().toISOString());
+          if (expiry.value && expiry.value < today) flag(expiry, settingsErr, t("envelope.correct-expiry-past"));
+          for (const el of [first, every]) if (!/^\d{1,3}$/.test(el.value)) flag(el, settingsErr, t("envelope.correct-need-days"));
+          const keeps = recs.some((r) => SIGNING.has(r.type) && (ACTED.has(r.status) || !rows.find((x) => x.r === r)?.removed))
+            || fresh.some((x) => SIGNING.has(x.type.value));
+          if (!bad && !keeps) { const x = rows.find((y) => y.removed); if (x) flag(x.order, x.err, t("envelope.correct-need-signer")); }
+          if (bad) { (bad.hidden || bad.closest("[hidden]") ? null : bad)?.focus(); return undefined; }
+
+          const changes = [];
+          for (const x of rows) if (x.removed) changes.push(corrections.removeRecipient(x.r.id));
+          for (const x of fresh) changes.push(corrections.addRecipient({ type: x.type.value, name: x.name.value.trim(), email: x.email.value.trim(), routing_order: Number(x.order.value) }));
+          if (expiry.value !== dateOf(e.expires_at)) changes.push(corrections.setExpiry(expiry.value ? new Date(`${expiry.value}T23:59:59`) : null));
+          if (Number(first.value) !== (rem.first_after_days || 0) || Number(every.value) !== (rem.then_every_days || 0)) {
+            changes.push(corrections.setReminders({ first_after_days: Number(first.value), then_every_days: Number(every.value) }));
+          }
+          const patches = [];
+          for (const x of rows) {
+            if (x.removed) continue;
+            const body = recipientCorrection(x.r, { name: x.name.value.trim(), email: x.email.value.trim(), requireCode: x.req.checked, code: x.code.value }) || {};
+            if (Number(x.order.value) !== x.r.routing_order) body.routing_order = Number(x.order.value);
+            if (Object.keys(body).length) patches.push([x, body]);
+          }
+          if (!changes.length && !patches.length) return "same";
           let tag = etag;
-          for (const x of changed) {
-            const body = recipientCorrection(x.r, { name: x.name.value.trim(), email: x.email.value.trim(), requireCode: x.req.checked, code: x.code.value });
-            if (!body) continue;
+          if (changes.length) {
+            await ctx.api.correctEnvelope(id, tag, changes);
+            tag = (await ctx.api.getEnvelope(id)).etag;
+          }
+          for (const [x, body] of patches) {
             await ctx.api.patchRecipient(id, x.r.id, tag, body);
             tag = (await ctx.api.getEnvelope(id)).etag;
           }
-          const notify = changed.filter((x) => x.r.status === "sent" || x.r.status === "delivered").map((x) => x.r.id);
+          // A new invitation for those whose name, email or code changed and who are
+          // (still, after any reordering) sent it; added recipients are invited by routing.
+          const contact = patches.filter(([, body]) => Object.keys(body).some((k) => k !== "routing_order")).map(([x]) => x.r.id);
+          const now = contact.length ? (await ctx.api.getEnvelope(id)).envelope : null;
+          const notify = contact.filter((rid) => ["sent", "delivered"].includes(now?.recipients?.find((r) => r.id === rid)?.status));
           if (notify.length) await ctx.api.resend(id, notify);
           return "corrected";
         },

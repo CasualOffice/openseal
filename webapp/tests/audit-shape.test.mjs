@@ -85,7 +85,7 @@ test("WEB-12: a ceremony records the server's types, with the location in contex
   const consent = trail.items.find((i) => i.type === "recipient.consented");
   assert.deepEqual(consent.event.context.location, { latitude: 1.5, longitude: 2.5, accuracy_m: 20 });
   assert.equal(consent.event.data.ersd_version, MOCK.ersd);
-  assert.match(consent.event.data.ersd_hash, /^[0-9a-f]{64}$/);
+  assert.match(consent.event.data.ersd_hash, /^sha256:[0-9a-f]{64}$/);
   assert.deepEqual(trail.items.find((i) => i.type === "recipient.auth_failed").event.data, { recipient_id: v.recipient.id, method: "access_code", attempt: 1 });
 });
 
