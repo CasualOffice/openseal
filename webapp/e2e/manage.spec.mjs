@@ -217,7 +217,7 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
   await expect(page.getByRole("dialog", { name: "Edit user" }).getByRole("switch", { name: "Disable sign-in" })).toBeDisabled();
   await page.keyboard.press("Escape");
 
-  await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Account" }).click();
+  await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Branding" }).click();
   await page.getByTestId("account-branding").getByRole("button", { name: "Edit branding" }).click();
   const br = page.getByRole("dialog", { name: "Branding" });
   await br.getByLabel("Accent colour", { exact: true }).fill("red");

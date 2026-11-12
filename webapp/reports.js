@@ -10,7 +10,7 @@
 import { h, clear, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, emptyState, skeletonRows, errorState, selectField } from "./ui/index.js";
+import { button, emptyState, skeletonBlock, errorState, selectField } from "./ui/index.js";
 import { statusCounts, medianHours, toCsv, hasTimes, inWindow, csvRows } from "./reportmodel.js";
 
 const STATUSES = ["draft", "sent", "delivered", "completed", "declined", "voided", "expired"];
@@ -21,6 +21,14 @@ const RANGES = ["all", "7", "30", "90", "365", "custom"];
 /// The rows created within the last `range` days (`"all"`: every row). `now` in ms.
 export function inPeriod(rows, range, now = Date.now()) {
   return inWindow(rows, { range }, now);
+}
+
+/// While the envelopes load (WEB-17): four stat tiles and the chart, shaped like the page,
+/// so nothing shifts when the figures arrive. Hidden from assistive technology.
+function reportSkeleton() {
+  return h("div", { class: "os-repskel", attrs: { "aria-hidden": "true" } },
+    h("div", { class: "os-repskel__tiles" }, ...[0, 1, 2, 3].map(() => skeletonBlock({ height: 8.25 }))),
+    skeletonBlock({ height: 24 }));
 }
 
 export function mount(view, ctx) {
@@ -42,7 +50,7 @@ export function mount(view, ctx) {
   const tools = h("div", { class: "os-reports__tools" }, period.el, dates, who.el, note);
   view.append(h("div", { class: "os-page-head" }, h("h1", { class: "os-page-title", text: t("reports.title") }), exportBtn),
     h("p", { class: "os-muted os-lede", text: t("reports.lede") }), tools);
-  const body = h("div", { attrs: { "aria-busy": "true", "aria-live": "polite" } }, skeletonRows(5));
+  const body = h("div", { class: "os-reports", attrs: { "aria-busy": "true", "aria-live": "polite" } }, reportSkeleton());
   view.append(body);
   let rows = [];
   let completed = [];

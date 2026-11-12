@@ -2,20 +2,38 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SECTIONS, sectionFrom, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio } from "../adminmodel.js";
+import { NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio } from "../adminmodel.js";
 import { medianHours, inWindow, csvRows, hasTimes, toCsv } from "../reportmodel.js";
 import { envelopeFromTemplate, extraProblems } from "../templatemodel.js";
 
 const q = (s) => new URLSearchParams(s);
 
-test("the admin rail has the four groups, waiting sections included, and old ?tab= links still land", () => {
-  assert.deepEqual([...new Set(SECTIONS.map((s) => s.group))], ["account", "people", "integrations", "security"]);
-  assert.deepEqual(SECTIONS.filter((s) => s.ready).map((s) => s.id), ["account", "users", "webhooks", "api"]);
-  assert.ok(SECTIONS.filter((s) => !s.ready).length >= 8);
-  assert.equal(sectionFrom(q("")), "users");
-  assert.equal(sectionFrom(q("tab=api")), "api");
-  assert.equal(sectionFrom(q("section=webhooks")), "webhooks");
-  assert.equal(sectionFrom(q("section=nope")), "users");
+test("the admin nav is the canvas's nine pages in order, the waiting ones included", () => {
+  assert.deepEqual(NAV.map((n) => n.id), ["organization", "members", "security", "signing", "branding", "intelligence", "retention", "integrations", "audit"]);
+  assert.deepEqual(NAV.filter((n) => n.ready).map((n) => n.id), ["organization", "members", "branding", "intelligence", "integrations"]);
+  // Every page not built yet names what it waits for, so none is a dead link.
+  for (const n of NAV.filter((x) => !x.ready)) assert.ok(n.waits?.length, n.id);
+});
+
+test("old ?section= and ?tab= links land on the page that now holds them", () => {
+  assert.deepEqual(routeFrom(q("")), { nav: "members", tab: null });
+  assert.deepEqual(routeFrom(q("tab=api")), { nav: "integrations", tab: "api" });
+  assert.deepEqual(routeFrom(q("section=webhooks")), { nav: "integrations", tab: "webhooks" });
+  assert.deepEqual(routeFrom(q("section=integrations")), { nav: "integrations", tab: "api" });
+  assert.deepEqual(routeFrom(q("tab=account")), { nav: "organization", tab: null });
+  assert.deepEqual(routeFrom(q("section=seal")), { nav: "signing", tab: null });
+  assert.deepEqual(routeFrom(q("section=groups")), { nav: "members", tab: null });
+  assert.deepEqual(routeFrom(q("section=intelligence")), { nav: "intelligence", tab: null });
+  assert.deepEqual(routeFrom(q("section=nope")), { nav: "members", tab: null });
+});
+
+test("nav links: Members is bare #/admin, a tabbed page opens on its first tab", () => {
+  assert.equal(navHref("members"), "#/admin");
+  assert.equal(navHref("integrations"), "#/admin?section=api");
+  assert.equal(navHref("integrations", "webhooks"), "#/admin?section=webhooks");
+  assert.equal(navHref("intelligence"), "#/admin?section=intelligence");
+  // Each href routes back to its own page.
+  for (const n of NAV) assert.equal(routeFrom(q(navHref(n.id).split("?")[1] || "")).nav, n.id, n.id);
 });
 
 test("every server scope is offered once", () => {

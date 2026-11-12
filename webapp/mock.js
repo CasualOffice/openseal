@@ -887,7 +887,26 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         else fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
       }
     } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
-    return json(200, { ...ml.settings, not_in_plan: [] });
+    return json(200, { ...ml.settings, not_in_plan: [], ...mlInstalled() });
+  }
+  /// WEB-18 Admin › Document intelligence (lane D): the additive, read-only members the
+  /// settings answer carries about this server, as the canvas lists them: the models the
+  /// operator installed and the OCR script packs. Hashes are made-up placeholders.
+  function mlInstalled() {
+    const sha = (a, b) => a + "0".repeat(56) + b;
+    return {
+      models: [
+        { id: "pp-ocrv6-small", name: "PP-OCRv6 small (detect + recognise)", profile: "ocr", status: "ready", licence: "Apache-2.0", bytes: 30_000_000, sha256: sha("9c41", "e07a") },
+        { id: "arabic-pp-ocrv5", name: "Arabic OCR pack (PP-OCRv5)", profile: "ocr-pack", status: "installing", licence: "Apache-2.0", bytes: 11_000_000 },
+        { id: "e5-small", name: "multilingual-e5-small", profile: "templates", status: "ready", licence: "MIT", bytes: 470_000_000, sha256: sha("1f8b", "44d2") },
+        { id: "gliner-multi", name: "gliner_multi-v2.1 (int8)", profile: "extraction", status: "ready", licence: "Apache-2.0", bytes: 700_000_000, sha256: sha("a03e", "9b15") },
+        { id: "gliner-pii-base", name: "gliner-pii-base-v1.0", profile: "personal_data", status: "ready", licence: "Apache-2.0", bytes: 197_000_000, sha256: sha("5d27", "c3f0") },
+      ],
+      ocr_packs: [
+        { script: "latin", state: "installed" }, { script: "cyrillic", state: "installed" }, { script: "greek", state: "installed" }, { script: "cjk", state: "installed" },
+        { script: "arabic", state: "installing" }, { script: "devanagari", state: "missing" },
+      ],
+    };
   }
   /// The canvas's suggestions for a seeded envelope, by its subject; ids stable per run.
   function mlSeed(env) {

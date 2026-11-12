@@ -161,7 +161,7 @@ test("admin: add and remove a user; an API client's key is shown once, then revo
   await signIn(page);
   await page.getByRole("link", { name: "Admin" }).click();
   const rail = page.getByRole("navigation", { name: "Admin sections" });
-  await expect(rail.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
+  await expect(rail.getByRole("link", { name: "Members and roles" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("cell", { name: "Robin Sender", exact: true })).toBeVisible();
   await expectAccessible(page, "admin users");
   await snap(page, testInfo, "web02-admin-users");
@@ -180,8 +180,9 @@ test("admin: add and remove a user; an API client's key is shown once, then revo
   await expect(page.getByRole("menuitem", { name: "Remove" })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  await rail.getByRole("link", { name: "API clients" }).click();
-  await expect(rail.getByRole("link", { name: "API clients" })).toHaveAttribute("aria-current", "page");
+  await rail.getByRole("link", { name: "API and webhooks" }).click();
+  await expect(rail.getByRole("link", { name: "API and webhooks" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("tab", { name: "API clients" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "New API client" }).click();
   const create = page.getByRole("dialog", { name: "New API client" });
   await create.getByLabel("Name").fill("Billing sync");
