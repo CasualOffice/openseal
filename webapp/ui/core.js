@@ -40,10 +40,14 @@ export async function busy(btn, work) {
 
 // ---- Toasts ----------------------------------------------------------------------
 
+const viewToasts = new Set(); // close functions of the toasts about the current view
+
 /// Show a short message. `kind`: info | success | error. Errors stay until dismissed.
 /// `action`: `{label, onClick}` adds one button (Undo after a delete, A24); a toast
-/// with an action stays 8 s so it can be reached.
-export function toast(message, kind = "info", { action = null } = {}) {
+/// with an action stays 8 s so it can be reached. `scope: "view"` ties the toast to
+/// the screen it is about: `clearViewToasts()` (the router, on navigation) removes it;
+/// the default, `"app"`, outlives navigation (a send confirmed, a session ended).
+export function toast(message, kind = "info", { action = null, scope = "app" } = {}) {
   let region = document.getElementById("os-toasts");
   if (!region) {
     region = h("div", { id: "os-toasts", class: "os-toasts", attrs: { role: "status", "aria-live": "polite" } });
@@ -54,14 +58,24 @@ export function toast(message, kind = "info", { action = null } = {}) {
     h("span", { class: "os-toast__text", text: message }),
   );
   const close = () => {
+    viewToasts.delete(close);
     node.classList.add("is-leaving");
     setTimeout(() => node.remove(), reducedMotion() ? 0 : 200);
   };
+  if (scope === "view") {
+    node.dataset.scope = "view";
+    viewToasts.add(close);
+  }
   if (action) node.append(button(action.label, { variant: "ghost", size: "sm", onClick: () => { close(); action.onClick(); }, attrs: { "data-testid": "toast-action" } }));
   node.append(button(t("action.dismiss"), { icon: "x", variant: "ghost", size: "sm", iconOnly: true, onClick: close }));
   region.append(node);
   if (kind !== "error") setTimeout(close, action ? 8000 : 5000);
   return close;
+}
+
+/// Remove every toast shown with `scope: "view"` (the view it was about has gone).
+export function clearViewToasts() {
+  for (const close of [...viewToasts]) close();
 }
 
 /// Toast an API error by its code (docs/20), with the request id when there is one.

@@ -184,7 +184,33 @@ select.os-input {
 .os-row-link { color: var(--os-text); font-weight: 600; text-decoration: none; display: inline-block; min-height: var(--os-target-min); padding: 0.125rem 0; }
 .os-row-link:hover { text-decoration: underline; color: var(--os-text); }
 .os-table-wrap { overflow-x: auto; }
-.os-checkbox { width: 1.125rem; height: 1.125rem; margin: 0; accent-color: var(--os-accent-fill); cursor: pointer; display: block; }
+/* Checkboxes (UX-02): drawn by us, so the 18 px box can sit in a larger target. Square
+ * layers in tokens (theme-aware): the edge, the fill, and when checked the accent with a
+ * white tick. In a table the padding around the box is a 44 px hit area (SC 2.5.8 and
+ * the touch size), taken back by a negative margin so rows keep their height. */
+.os-checkbox {
+  appearance: none; -webkit-appearance: none; box-sizing: content-box; flex: none;
+  width: 1.125rem; height: 1.125rem; padding: 0; margin: 0; border: 0; border-radius: 0; display: block; cursor: pointer;
+  background:
+    linear-gradient(var(--os-bg), var(--os-bg)) center / calc(1.125rem - 2px) calc(1.125rem - 2px) no-repeat,
+    linear-gradient(var(--os-border-strong), var(--os-border-strong)) center / 1.125rem 1.125rem no-repeat;
+}
+.os-checkbox:checked, .os-checkbox:indeterminate {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 0.875rem 0.875rem no-repeat,
+    linear-gradient(var(--os-accent-fill), var(--os-accent-fill)) center / 1.125rem 1.125rem no-repeat;
+}
+.os-checkbox:indeterminate {
+  background:
+    linear-gradient(var(--os-on-accent), var(--os-on-accent)) center / 0.625rem 0.125rem no-repeat,
+    linear-gradient(var(--os-accent-fill), var(--os-accent-fill)) center / 1.125rem 1.125rem no-repeat;
+}
+.os-checkbox:disabled { opacity: .5; cursor: not-allowed; }
+.os-checkbox:focus-visible { outline-offset: calc(var(--os-focus-offset) - var(--os-check-pad, 0px)); }
+.os-table .os-checkbox {
+  --os-check-pad: calc((var(--os-target-touch) - 1.125rem) / 2);
+  padding: var(--os-check-pad); margin: calc(-1 * var(--os-check-pad)); position: relative; z-index: 1;
+}
 .os-col-subject { display: grid; gap: 0.125rem; padding: var(--os-s1) 0; }
 .os-row__sub { font-size: var(--os-fs-12); overflow-wrap: anywhere; }
 .os-row__sub:empty::before { content: ""; display: block; width: 10rem; height: 0.625rem; border-radius: 0.25rem; background: var(--os-skeleton); }
@@ -218,6 +244,11 @@ select.os-input {
 .os-meta { display: grid; grid-template-columns: max-content 1fr; gap: var(--os-s2) var(--os-s6); margin: 0; }
 .os-meta dt { color: var(--os-muted); }
 .os-meta dd { margin: 0; overflow-wrap: anywhere; }
+/* Phones (UX-02): label above value, so a value never wraps mid-word in a thin column. */
+@media (max-width: 37.5em) {
+  .os-meta { grid-template-columns: minmax(0, 1fr); row-gap: 0.125rem; }
+  .os-meta dd + dt { margin-top: var(--os-s2); }
+}
 .os-link { display: inline-flex; align-items: center; gap: var(--os-s1); min-height: var(--os-target-min); font-weight: 600; text-decoration: none; }
 .os-link:hover { text-decoration: underline; }
 .os-order {
@@ -460,7 +491,7 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); border-color: var(--os-bor
 .os-icon[width="20"] { width: 1.25rem; height: 1.25rem; }
 .os-icon[width="24"] { width: 1.5rem; height: 1.5rem; }
 /* Sticky headers on every table (A29). */
-.os-table thead th { position: sticky; top: 0; z-index: 1; }
+.os-table thead th { position: sticky; top: 0; z-index: 2; } /* above the row checkboxes (z 1) scrolling under it */
 /* The document view: the one scroll container. */
 .os-docview { position: relative; overflow: auto; min-width: 0; min-height: 0; background: var(--os-stage); outline: none; overscroll-behavior: contain; touch-action: pan-x pan-y; }
 .os-docview:focus-visible { box-shadow: inset 0 0 0 var(--os-focus-width) var(--os-focus); }

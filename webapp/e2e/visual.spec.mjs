@@ -362,3 +362,56 @@ test("the bundled UI font draws the app and the signing page, at one root size",
   await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
   expect(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "OpenSeal Inter"', "Sign"); })).toBe(true);
 });
+
+// Small component defects (UX-02).
+test.describe("components at 390", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+  test("the envelope's details stack in one column on a phone", async ({ page }, testInfo) => {
+    test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+    await signIn(page, "agreements");
+    await page.getByRole("link", { name: "Mutual NDA — Acme and Globex" }).click();
+    const meta = page.locator(".os-meta").first();
+    await expect(meta).toBeVisible();
+    const cols = await meta.evaluate((dl) => getComputedStyle(dl).gridTemplateColumns.split(" ").length);
+    expect(cols, "one column of label, then value").toBe(1);
+  });
+});
+
+test("row checkboxes have a 44 px target (SC 2.5.8 and the touch size)", async ({ page }, testInfo) => {
+  test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page, "agreements");
+  const box = page.locator("tbody .os-checkbox").first();
+  await expect(box).toBeVisible();
+  const r = await box.evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    const cx = b.left + b.width / 2; const cy = b.top + b.height / 2;
+    const hits = [[-19, 0], [19, 0], [0, -19], [0, 19]].map(([dx, dy]) => document.elementFromPoint(cx + dx, cy + dy) === el);
+    return { w: b.width, h: b.height, hits };
+  });
+  expect(Math.min(r.w, r.h), "target size").toBeGreaterThanOrEqual(44);
+  expect(r.hits, "the box answers 19 px from its centre").toEqual([true, true, true, true]);
+});
+
+test("openPanel can refuse dismissal, and view toasts clear on navigation", async ({ page }, testInfo) => {
+  test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
+  await signIn(page, "agreements");
+  // A one-time secret: no close button, Escape does nothing, only the action closes it.
+  await page.evaluate(() => import("/ui/index.js").then((ui) => {
+    window.__panel = ui.openPanel({ id: "secret", title: "Secret", dismissible: false, build: (b) => b.append(document.createTextNode("shown once")), actions: [{ label: "I have copied it", variant: "primary", value: "done" }] });
+  }));
+  const sheet = page.getByTestId("sheet-secret");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Close" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeVisible();
+  await page.evaluate(() => import("/ui/index.js").then((ui) => ui.closePanel()));
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "I have copied it" }).click();
+  await expect(sheet).toHaveCount(0);
+  expect(await page.evaluate(() => window.__panel)).toBe("done");
+  // Toasts: a view-scoped one goes when the view does; a global one stays.
+  await page.evaluate(() => import("/ui/index.js").then((ui) => { ui.toast("about this list", "info", { scope: "view" }); ui.toast("saved everywhere", "success"); ui.clearViewToasts(); }));
+  await expect(page.locator(".os-toast", { hasText: "about this list" })).toHaveCount(0);
+  await expect(page.locator(".os-toast", { hasText: "saved everywhere" })).toBeVisible();
+});
