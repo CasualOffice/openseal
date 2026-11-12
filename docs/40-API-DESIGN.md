@@ -195,6 +195,22 @@ upload attachments, adopt signature, finish, decline, reassign. The token is opa
 expiring (default with the envelope), and exchanged on first use for a short session bound to the browser. These
 endpoints are rate-limited per token and per IP and audited on every state change.
 
+**The view** (`GET /s/{token}`, and the answer of every changing call): `envelope` (`id`, `status`, `subject`,
+`message`, `signing_options`, `documents`, `expires_at`), `recipient`, `fields` (this recipient's), `capture_location`,
+`consent_required` (`{version, sha256, url}` or `null`), `auth_required`, and `sender`:
+
+| Member | Meaning |
+| --- | --- |
+| `sender.name` | The sending user's name as the account holds it now |
+| `sender.email` | The sending user's email address |
+| `sender.organisation` | The account's brand name (`settings.branding.name`), else the account's name |
+| `consent_required.url` | Where the full disclosure is read: `GET /s/{token}/disclosure` answers `{version, sha256, text}`, `sha256` over the text's UTF-8, the hash consent records |
+| `envelope.expires_at` | When the envelope expires, so the page can say "sign by" |
+
+The signer cannot judge whether a request is genuine without knowing who sent it (UX-01 audit, signer P1). The
+three members above and `/disclosure` are **designed, not yet served**: the web app's mock answers them (`UX-03`)
+and the page must work without them; the server's view still answers the rest.
+
 ## 7. SDKs
 
 - **TypeScript** client generated from the OpenAPI document, plus the custom elements (`sdk/`).
@@ -342,3 +358,46 @@ binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised
 | `GET /s/{token}/history` | The recipient's view of the chain, verified as it is read: events they acted in or that name them (`data.recipient_id`) and the milestones `envelope.sent`, `.corrected`, `.voided`, `.declined`, `.expired`, `.completing`, `.completed`, oldest first, each `{seq, type, at, by}` with `by` one of `you`, `sender`, `recipient` (another, never named), `user`, `host`, `system`; no names, addresses, IPs, user agents, locations or values. Bound browser only, after every required authentication and the account's disclosure (`403 CS-AUTH-0003`/`0005` before); available after finishing or declining while the link is valid. Records nothing (decision recorded here: docs/32 §3 has no access event for reading one's own history, and it serves no document). `type` is the audit type (`recipient.signed`), not the mock's `recipient_signed`. `tests/signer_history.rs`; seen red with the filter removed (signer 2's events shown to signer 1) |
 | `POST /s/{token}/reassign {name, email, reason?, location?}` | The engine's `Reassign` (docs/24): only with `signing_options.allow_reassign` (`409 CS-WF-0012` otherwise) and while this recipient's required action is open (`409` once finished). The new recipient takes the routing order and fields (values cleared) and is invited when their turn comes (`send_invitation` queued); this link is revoked in the same transaction; `recipient.reassigned` records the reason and, with `capture_location`, the device's location (the page's `location` member, refused before `WEB-07` by the strict body). `tests/signer_history.rs` |
 
+
+## Web client and mock contract (`UX-03`)
+
+`webapp/api.js` is the web app's one client of this API and `webapp/mock.js` its in-memory fake (`?mock=1` on a
+loopback host only). The UI packages of the UX-01 audit call only what these two expose; `webapp/tests/contract.test.mjs`
+drives every call below against the mock.
+
+**Served by the server, now in the client.** Webhooks: `listWebhooks`, `getWebhook`, `createWebhook {url, event_types,
+secret_refs, envelope_id?}` (the signing secret is provisioned by the operator and named by `secret_refs`; the API never
+shows one), `deleteWebhook` (disables; deliveries stay readable), `listDeliveries`; `WEBHOOK_EVENT_TYPES` lists the 20
+types the server takes. `listContacts`. The ceremony's `approve` and `withdrawConsent`. `corrections` builds the change
+list `POST …/correct` takes (`add_recipient`, `update_recipient`, `remove_recipient`, `add_field`, `update_field`,
+`remove_field`, `remove_document`, `set_subject`, `set_message`, `set_expiry`, `set_reminders`, `set_signing_options`),
+with `recipientSpec` and `fieldSpec` keeping only the members the engine's `RecipientSpec` and `Field` have, and new ids
+minted as UUIDs. `fieldWire` and `recipientWire` build the field and recipient bodies of create and `/fields`
+`/recipients`, with every member of the engine's `Field` (`FIELD_MEMBERS`: `read_only`, `locked`, `value`, `default`,
+`validation`, `format`, `group`, `conditional`, `formula`, `options`, `allow_custom`, `tooltip`, `placeholder`, …);
+`FIELD_TYPES` and `RECIPIENT_TYPES` list the engine's kinds, and `FIELD_TYPES_READY` and `RECIPIENT_TYPES_READY` those
+a signer completes end to end today.
+
+**Not on the server yet.** `NOT_ON_SERVER` in `api.js` names each call the UI may make that the server does not serve,
+with what it needs and its tracker row. The mock serves them as designed; against a server the client refuses them at
+once with `CS-NET-0002` (status 501, client-side only like `CS-NET-0001`; the `detail` names the call), and
+`client.available(name)` lets a screen show the control as "not available yet" rather than hide it:
+
+| Name | Needs on the server |
+| --- | --- |
+| `inbox` | `GET /envelopes?waiting_for=me` (items with `my_recipient_id`) and `POST /envelopes/{id}/sign-link` → `{url}` |
+| `envelopeFilters` | `GET /envelopes?recipient=&date_field=updated_at\|created_at\|sent_at\|completed_at` |
+| `folders` | `GET`/`POST /folders`, `PATCH`/`DELETE /folders/{id}`, `POST /folders/{id\|none}/envelopes {envelope_ids}`, `GET /envelopes?folder=` |
+| `deleted` | `GET /envelopes?deleted=true`, `POST /envelopes/{id}/restore` |
+| `certificateEnded` | `GET …/certificate` for declined, voided and expired envelopes (`409` today) |
+| `updateWebhook`, `testWebhook`, `redeliver` | `PATCH /webhooks/{id} {url?, event_types?, active?}`, `POST …/test`, `POST …/deliveries/{d}/redeliver` |
+| `disclosure` | `GET /s/{token}/disclosure` and the view's `sender`, `consent_required.url`, `envelope.expires_at` (§6) |
+| `clearField` | `DELETE /s/{token}/fields/{field}`: a signer removes a value before finishing, recorded by a new audit type |
+| `hostInPerson` | `POST /envelopes/{id}/recipients/{r}/host` → `{url}`: a staff user hosts an in-person signer |
+
+**The mock follows the server** where it had drifted: every engine recipient type is taken and routed (everyone but a
+copy is waited for; an approver approves, a viewer completes by viewing every document to the end, an in-person signer
+signs only once hosted); sending refuses a field the recipient's type may not hold; the per-element recipient and field
+calls correct a sent envelope as the server's do (`envelope.corrected`); `/correct` takes the whole change list, all or
+none; `status` takes several values, and `sort`, `order`, `sender`, `from` and `to` filter as `WEB-08` built them;
+deleting an envelope that ended keeps it readable (`envelope.deleted`); a subscribed event records a delivery.
