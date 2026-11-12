@@ -1,0 +1,21 @@
+OpenSeal modeld image: third-party notices
+==========================================
+
+This image ships the unmodified ONNX Runtime 1.28.3 CPU shared library
+(/opt/openseal/models/runtime/libonnxruntime.so), released by Microsoft under the
+MIT licence (/opt/openseal/models/runtime/LICENSE, copied here as
+ONNXRUNTIME-LICENSE). The library contains third-party code listed in ONNX Runtime's
+ThirdPartyNotices.txt, shipped in this directory and beside the library
+(/opt/openseal/models/runtime/ThirdPartyNotices.txt). It includes:
+
+- Eigen, under the Mozilla Public License 2.0. Source code form of Eigen is available
+  from https://gitlab.com/libeigen/eigen. The revision this ONNX Runtime release is
+  built from is commit 1d8b82b0740839c0de7f1242a3585e3390ff5f33, as named by the
+  `eigen` line of https://github.com/microsoft/onnxruntime/blob/v1.28.3/cmake/deps.txt
+  (fetched from https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip).
+- Boost, under the Boost Software License 1.0.
+
+OpenSeal does not modify ONNX Runtime or the code it contains. These licences apply to
+that binary only (OpenSeal owner instruction 32, ADR-029); OpenSeal's own code is
+Apache-2.0. The model weights in /opt/openseal/models are listed with their licences in
+/opt/openseal/models/bundle.json.

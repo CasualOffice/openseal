@@ -123,7 +123,15 @@ by the adversarial review; nothing here is legal advice, and `LEG-02`'s counsel 
 | knowledgator/gliner-pii-base-v1.0 | v1.0, official `model_quint8.onnx` (196,757,174 B) | Personal-data layer 2 (names, addresses, organizations), English only | Apache-2.0 | https://huggingface.co/knowledgator/gliner-pii-base-v1.0 | **Undisclosed** (the card names only an evaluation set); encoder microsoft/deberta-v3-small (MIT) | Optional, off by default |
 | urchade/gliner_multi_pii-v1 | v1, `pytorch_model.bin` only; usable only as our int8 export under the file cap | Personal-data layer 2, non-Latin names | Apache-2.0 | https://huggingface.co/urchade/gliner_multi_pii-v1 | Fine-tune of gliner_multi-v2.1; data not itemised | Fallback, not yet exported |
 
-Runtime binary in the same manifest: **ONNX Runtime 1.28.x**, MIT, https://github.com/microsoft/onnxruntime/blob/main/LICENSE.
+Runtime binary in the same manifest: **ONNX Runtime 1.28.3**, MIT, https://github.com/microsoft/onnxruntime/blob/v1.28.3/LICENSE,
+bundling Eigen (MPL-2.0) and Boost (BSL-1.0) among the third-party code its `ThirdPartyNotices.txt` lists. **Scoped
+exception (owner instruction 32):** MPL-2.0 and BSL-1.0 are allowed for that unmodified binary in the modeld image
+only, nowhere else. The manifest records it per entry (`licence_exception = "owner-instruction-32"` on the two library
+entries), and `tools/ml/fetch-models.py` honours it for those entry ids alone, refusing it on any other entry and
+refusing a bundle that lacks the `ThirdPartyNotices.txt` from the same archive (both cases in its `--self-test`). The
+image ships `ThirdPartyNotices.txt`, the ONNX Runtime licence and `deploy/modeld/NOTICE.txt` in
+`/usr/share/doc/openseal-modeld/`; the notice points to the source of the Eigen revision ONNX Runtime 1.28.3 builds
+(commit `1d8b82b0740839c0de7f1242a3585e3390ff5f33`, per its `cmake/deps.txt`).
 
 Refused (licence not on the allow list): GLiNER v0 and v1 (`gliner_base`, `gliner_multi`; CC-BY-NC-4.0),
 `iiiorg/piiranha-v1` (CC-BY-NC-ND-4.0), `nvidia/gliner-PII` (NVIDIA Open Model License), spaCy fr and es pipelines
