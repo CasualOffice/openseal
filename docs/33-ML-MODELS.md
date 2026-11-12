@@ -405,11 +405,22 @@ a required dependency of `oar-ocr-core` 0.10.2 (polygon offsetting in its DB pos
 admits BSL-1.0 for the ONNX Runtime binary only, so the licence gate fails on any tree with the `server` feature
 until the owner decides (allow BSL-1.0 for this crate in `deny.toml` with an ADR, or replace the unclip step under
 D3(b)); a row is proposed.
+**Resolved 2026-11-13 (`ML-02`), under D3(b):** the unclip step is replaced, not the licence admitted. The workspace
+`[patch.crates-io]` puts our own Apache-2.0 crate `server/clipper2-rust` in place of the BSL-1.0 one; it provides
+only the five items `oar-ocr-core` calls (round-joined outward offset of a closed polygon, taken over its convex
+hull, and the shoelace area), written from that call, not from Clipper2's source. For the quad boxes modeld's
+detector produces the hull is the box itself. `cargo deny check bans licenses sources` passes; the real-weight
+recall test (`tests/ocr.rs`, Latin word recall at least 95%) passes with it and reads nothing when the offset is
+disabled. `deny.toml` is unchanged.
 **Also found:** `oar-ocr` 0.10.2 and its `-core` and `-derive` crates declare `rust-version = 1.95`, above the
 workspace's pinned 1.94.0, so the CI list's `cargo +1.94.0 check --workspace` fails with the `server` feature until
 the MSRV moves to 1.95 (the toolchain in use is 1.96) or an older `oar-ocr` is pinned; a row is proposed. No
 older `oar-ocr` avoids either: 0.7.0 onward all declare 1.95 and use `clipper2-rust` (BSL-1.0 in every version),
 and 0.6.x uses `clipper2`, a binding to the same BSL-1.0 C++ library.
+**Still open (2026-11-13, `ML-02`):** the 1.95 declaration is metadata only: `cargo +1.94.0 check -p
+casual-sign-modeld --all-features --all-targets --ignore-rust-version` compiles, but the CI list's `cargo +1.94.0
+check --workspace --locked` refuses on the declaration. Clearing it needs the owner: move the MSRV to 1.95
+(instruction 14 sets 1.94), or patch the three `oar-ocr` crates in as vendored copies declaring 1.94 (D3(b)).
 **Lockfile ages (2026-11-13, review of piece D):** four crates the tree locked were under the two-week rule of §5;
 they are pinned back to `bit_field` 0.10.3, `exr` 1.74.0 (1.74.1 and 1.74.2 bring `pulp` and the unmaintained
 `paste`), `hayro-cmap` 0.1.0 and `hayro-postscript` 0.1.0 (the fuzz lockfile too). `rustix` moves to 1.1.6
