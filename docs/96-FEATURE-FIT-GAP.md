@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 39 of 167 rows work end to end; 23 more have their engine built and tested; 57 are designed, 4 are partial (`FG-131`, `FG-132`, `FG-133`, `FG-140`) and 44 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 52 are designed, 17 are partial (`FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -38,12 +38,12 @@ instructions 8 and 9).
 | --- | --- | --- | --- | --- | --- |
 | FG-020 | Signer | DS, SN | Build | 1 | Works |
 | FG-021 | Carbon copy | DS, SN | Build | 2 | Works |
-| FG-022 | Needs to view (viewer) | DS, SN | Build | 2 | Designed |
-| FG-023 | Approver | SN | Build | 2 | Designed |
+| FG-022 | Needs to view (viewer) | DS, SN | Build | 2 | Partial: the editor adds viewers, who act in their turn with no fields (`UX-05`); the viewer ceremony is not run end to end |
+| FG-023 | Approver | SN | Build | 2 | Partial: the editor adds approvers, who act in their turn with no fields (`UX-05`); the approver ceremony is not run end to end |
 | FG-024 | Specify recipients (agent) | DS | Build | 2 | Designed |
 | FG-025 | Allow to edit (editor) | DS | Build | 6 | Designed |
 | FG-026 | Update recipients (intermediary) | DS | Build | 6 | Designed |
-| FG-027 | In-person signer | DS, SN | Build | 14 | Engine |
+| FG-027 | In-person signer | DS, SN | Build | 14 | Engine (hosting served by `POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`; the editor offers it, `UX-05`) |
 | FG-028 | Witness | DS | Build | 16 | — |
 | FG-029 | Notary (remote online notarization) | DS, SN | Build, with provider plugins | 31 | — |
 | FG-030 | Electronic seal recipient | DS | Plugin | 18 | — |
@@ -68,28 +68,28 @@ instructions 8 and 9).
 | FG-052 | Optional signature | DS | Build | 4 | Designed |
 | FG-053 | Stamp | DS, SN | Build | 4 | Engine |
 | FG-054 | Date signed | DS | Build | 1 | Works |
-| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Designed |
+| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Partial: name, email, company and title placed (`UX-05`); first and last name not in the palette |
 | FG-056 | Envelope id field | DS | Build | 4 | Designed |
 | FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Engine |
 | FG-058 | Number with locale, currency, min, max | DS, SN | Build | 4 | Engine |
 | FG-059 | Date with format | DS, SN | Build | 4 | Engine |
-| FG-060 | Email, phone, SSN, ZIP validations; regex | DS, SN | Build | 4 | Engine |
+| FG-060 | Email, phone, SSN, ZIP validations; regex | DS, SN | Build | 4 | Partial: the editor places and configures it and the mock round-trips it (`UX-05`); the ceremony checks them (`WEB-06`); no real-stack run yet |
 | FG-061 | Checkbox; checkbox group rules | DS, SN | Build | 4 | Engine |
-| FG-062 | Radio group | DS, SN | Build | 4 | Engine |
-| FG-063 | Dropdown (with custom entry) | DS, SN | Build | 4 | Engine |
+| FG-062 | Radio group | DS, SN | Build | 4 | Partial: the editor places and configures it and the mock round-trips it (`UX-05`); the ceremony fills it (`WEB-06`); no real-stack run yet |
+| FG-063 | Dropdown (with custom entry) | DS, SN | Build | 4 | Partial: the editor places and configures it and the mock round-trips it (`UX-05`); the ceremony fills it (`WEB-06`); no real-stack run yet |
 | FG-064 | Formula / calculated field | DS, SN | Build | 4 | Engine |
-| FG-065 | Signer attachment | DS, SN | Build | 4 | Designed |
-| FG-066 | Note | DS | Build | 4 | Designed |
+| FG-065 | Signer attachment | DS, SN | Build | 4 | Partial: the editor places and configures it and the mock round-trips it (`UX-05`); the ceremony takes the file (`WEB-06`); no real-stack run yet |
+| FG-066 | Note | DS | Build | 4 | Partial: the editor places and configures it and the mock round-trips it (`UX-05`); the ceremony shows it (`WEB-06`); no real-stack run yet |
 | FG-067 | Approve and decline buttons | DS | Build | 4 | Designed |
 | FG-068 | Hyperlink | SN | Build | 4 | Designed |
 | FG-069 | Drawing area | DS | Build | 4 | — |
 | FG-070 | Payment field | DS, SN | Plugin | 13 | Designed |
-| FG-071 | Prefill (sender-filled) fields | DS, SN | Build | 4 | Engine |
-| FG-072 | Required, read-only, locked | DS, SN | Build | 1 | Engine |
-| FG-073 | Data labels; linked fields (same label mirrors) | DS | Build | 4 | Engine |
+| FG-071 | Prefill (sender-filled) fields | DS, SN | Build | 4 | Partial: a sender's value, read only or starting, on text, company, title, number and checkbox (`UX-05`); no real-stack run yet |
+| FG-072 | Required, read-only, locked | DS, SN | Build | 1 | Partial: required and read only in the editor (`UX-05`); locked not offered |
+| FG-073 | Data labels; linked fields (same label mirrors) | DS | Build | 4 | Partial: the data label is set in the editor (`UX-05`); mirroring is the engine's, not run in a browser |
 | FG-074 | Shared fields across signers | DS | Build | 4 | — |
 | FG-075 | Conditional fields | DS, SN | Build | 4 | Engine |
-| FG-076 | Font, size, colour, alignment | DS, SN | Build | 4 | Engine |
+| FG-076 | Font, size, colour, alignment | DS, SN | Build | 4 | Partial: font, size and alignment in the editor (`UX-05`); colour not offered |
 | FG-077 | Anchor text auto-place | DS | Build | 4 | Engine |
 | FG-078 | Text tags in documents | SN | Build | 4 | Engine |
 | FG-079 | Custom (saved) field presets | DS | Build | 4 | — |
@@ -103,7 +103,7 @@ instructions 8 and 9).
 | --- | --- | --- | --- | --- | --- |
 | FG-090 | Recipients-first preparation | DS | Build | 2 | Works |
 | FG-091 | Document-first editor with roles assigned in place | SN | Build | 1 | Works |
-| FG-092 | Preview as recipient | DS | Build | 2 | — |
+| FG-092 | Preview as recipient | DS | Build | 2 | Partial: Review's Preview as shows the recipient's fields on the document (`UX-05`); a preview of their signing page is not built |
 | FG-093 | Custom subject and message | DS, SN | Build | 1 | Works |
 | FG-094 | Reminders | DS, SN | Build | 2 | Works |
 | FG-095 | Expiration and warning | DS, SN | Build | 2 | Designed |
@@ -146,7 +146,7 @@ instructions 8 and 9).
 | --- | --- | --- | --- | --- | --- |
 | FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Designed |
 | FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (7 days, filtered in the page), completed, with counts on Home and the rail (`UX-07`); waiting for me needs the Inbox (`UXW-01`); auth failed not yet |
-| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search, status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
+| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (from every screen and on phones, `UX-04`), status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
 | FG-133 | Correct | DS | Build | 6 | Partial: a side panel changes name, email, access code and signing order of recipients who have not acted, adds and removes them, and sets expiry and reminders (`POST /correct` and `PATCH …/recipients/{r}`; `UX-07`, tested in mock mode); fields and documents are `UXW-19` |
 | FG-134 | Void with reason | DS, SN | Build | 2 | Works |
 | FG-135 | Resend | DS, SN | Build | 2 | Works |

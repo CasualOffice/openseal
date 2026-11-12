@@ -19,7 +19,7 @@ use std::process::ExitCode;
 
 use casual_sign_modeld::{
     AllowList, Bundle, Manifest, ModelService, Modeld, ModeldError, ModeldLimits, OpLog,
-    SlotSettings, configured_slots, resident_bytes, server_tls,
+    SlotSettings, SpanModels, configured_slots, resident_bytes, server_tls,
 };
 
 fn var(name: &'static str) -> Option<String> {
@@ -48,6 +48,9 @@ fn run() -> Result<(), ModeldError> {
         })
         .unwrap_or_default();
     let bundle = Bundle::verify(Path::new(&dir), &manifest, &profiles)?;
+    // Inference sessions load before modeld listens, and before resident memory is read
+    // for the slot bound (docs/33 §3.3).
+    let spans = SpanModels::load(&bundle)?;
 
     let tls = server_tls(
         &read(
@@ -73,7 +76,7 @@ fn run() -> Result<(), ModeldError> {
     }
     let log = OpLog::open(Path::new(&need("OPENSEAL_MODELD_OPLOG")?))?;
     // Slots are bounded by memory as well as cores (docs/33 §3.3). Resident memory is read
-    // once the bundle is verified; when inference sessions are loaded they load before this.
+    // once the bundle is verified and the inference sessions are loaded.
     let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
     let slots_setting = var("OPENSEAL_MODELD_SLOTS");
     let memory_setting = var("OPENSEAL_MODELD_MEMORY_LIMIT");
@@ -94,7 +97,7 @@ fn run() -> Result<(), ModeldError> {
     };
     let installed = bundle.installed.len();
     let id = bundle.id.clone();
-    let service = ModelService::new(bundle, allow, log, limits);
+    let service = ModelService::new(bundle, allow, log, limits).with_span_models(spans);
     let listen = var("OPENSEAL_MODELD_LISTEN").unwrap_or_else(|| "127.0.0.1:7444".into());
     let modeld = Modeld::bind(&listen, tls, service)?;
     eprintln!(

@@ -28,16 +28,29 @@ import { register, unregisterPrefix, run } from "./commands.js";
 import { button, busy, emptyState, toast, toastError, confirmDialog, selectField, dockPanel, openPanel, closePanel } from "./ui/index.js";
 import { openPdf } from "./pdfview.js";
 import { docView, zoomControls, thumbnails } from "./docview.js";
-import { FIELD_TYPES, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput } from "./geometry.js";
-import { errorMessage } from "./api.js";
+import { FIELD_TYPES, FIELD_GROUPS, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput, requiredByDefault, validationFrom, optionsFrom } from "./geometry.js";
+import { errorMessage, RECIPIENT_TYPES } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate } from "./templatesync.js";
 import { suggestionsFrom } from "./detect.js";
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from "./guides.js";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
+import { sendSummary } from "./people.js";
 
-const FIELD_ICON = { signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", text: "text-cursor-input", checkbox: "square-check" };
+const FIELD_ICON = {
+  signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", company: "layers", title: "type",
+  text: "text-cursor-input", number: "list-ordered", checkbox: "square-check", radio_group: "circle-dashed", dropdown: "chevron-down", attachment: "paperclip", note: "info",
+};
+/// The members of a field the editor sets besides its place, owner, `required` and `label`
+/// (UX-05), by their wire names (api.js `FIELD_MEMBERS`); kept on the editor's field as is.
+const MEMBERS = ["read_only", "value", "tooltip", "placeholder", "validation", "format", "options", "allow_custom"];
+const blankMember = (v) => v == null || v === false || v === "" || (Array.isArray(v) && !v.length);
+/// The members a field has, for the wire and for comparing with the server's copy.
+const membersOf = (f) => Object.fromEntries(MEMBERS.filter((k) => !blankMember(f[k])).map((k) => [k, f[k]]));
+/// What a new field of `type` starts with: a radio group or dropdown has two options to
+/// rename, since one with none cannot be answered.
+const newMembers = (type) => (CHOICE.has(type) ? { options: [t("prepare.option-n", { n: 1 }), t("prepare.option-n", { n: 2 })] } : {});
 const MAX_UPLOAD = 50 * 1024 * 1024; // docs/21: 50 MiB decoded
 const COLOURS = 6;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -113,6 +126,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const dv = docView({
     label: t("prepare.pages"),
     testId: "editor-doc",
+    // Phones open at a readable size (UX-05: 1 CSS px a point, 11 pt body text at 11 px;
+    // fit width was about 5 px) and pan; two fingers zoom, as on any page.
+    mode: matchMedia("(max-width: 47.999em)").matches ? 1 : "fit-width",
     onLayout: () => { zoom.sync(); },
     onZoom: () => zoom.sync(),
     onPage: (i) => { zoom.sync(); thumbs.mark(i); },
@@ -134,30 +150,55 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       title),
     h("nav", { class: "os-prepare__steps", attrs: { "aria-label": t("wizard.steps") } }, stepper),
     docTools,
-    h("span", { class: "os-spacer" }),
-    status,
-    TPL ? null : saveBtn,
-    backBtn, nextBtn, sendBtn, TPL ? saveBtn : null);
+    // The step's actions keep their place at the bar's end on every step (UX-05): the
+    // title and the step labels give way first, never Back, Next or Send.
+    h("div", { class: "os-prepare__actions" },
+      status,
+      TPL ? null : saveBtn,
+      backBtn, nextBtn, sendBtn, TPL ? saveBtn : null));
 
   const docsPanel = h("section", { class: "os-panel os-panel--docs", attrs: { "aria-labelledby": "docs-h" } });
   const rcptPanel = h("section", { class: "os-panel os-panel--rcpt", attrs: { "aria-labelledby": "rcpt-h" } });
   const palettePanel = h("section", { class: "os-panel os-panel--palette", attrs: { "aria-labelledby": "pal-h" } });
   const thumbsBox = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
-  const thumbs = thumbnails(dv, thumbsBox, { width: 88 });
+  const thumbs = thumbnails(dv, thumbsBox, { width: 64, byDocument: true });
   const leftDock = dockPanel({ id: "editor-fields", side: "left", title: t("prepare.fields"), icon: "signature", width: 13.5, min: 11, max: 24, testId: "panel-fields" });
-  leftDock.body.append(palettePanel, h("section", { class: "os-panel os-panel--thumbs", attrs: { "aria-labelledby": "thumbs-h" } },
-    h("h3", { id: "thumbs-h", class: "os-panel__title", text: t("prepare.pages") }), thumbsBox));
+  leftDock.body.append(palettePanel);
+  leftDock.body.classList.add("os-dock__body--split");
+  // The pages, pinned under the palette so they are always in view (UX-05: they came
+  // after it and fell below the fold), grouped by document. Phones show the page indicator.
+  const rail = h("section", { class: "os-prepare__rail os-panel--thumbs", attrs: { "aria-labelledby": "thumbs-h", "data-testid": "thumbs-rail" } },
+    h("h3", { id: "thumbs-h", class: "os-panel__title", text: t("prepare.pages") }), thumbsBox);
+  leftDock.body.append(rail);
   const props = h("div", { class: "os-props" });
   const rightDock = dockPanel({ id: "editor-props", side: "right", title: t("prepare.properties"), icon: "settings", width: 15, min: 13, max: 30, testId: "panel-props", collapsed: matchMedia("(max-width: 74.999em)").matches });
   rightDock.body.append(props);
   // Phones: the palette and the properties are bottom sheets; this opens the palette.
   const addFab = button(t("prepare.add-field-short"), { icon: "plus", variant: "primary", size: "lg", onClick: () => leftDock.openSheet(), attrs: { "data-testid": "add-field-sheet" } });
-  const propsFab = button(t("prepare.field-settings"), { icon: "settings", size: "lg", onClick: () => rightDock.openSheet(), attrs: { "data-testid": "props-sheet" } });
+  const propsFab = button(t("prepare.field-settings"), { icon: "settings", size: "lg", onClick: () => rightDock.openSheet(), attrs: { "data-testid": "props-sheet", title: t("prepare.field-settings") } });
   propsFab.hidden = true;
   // The document's own bar floats at the bottom of the pages: zoom and "Page n of N".
-  const centre = h("div", { class: "os-prepare__centre" }, stage,
-    h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoom.el),
-    h("div", { class: "os-fabs" }, propsFab, addFab));
+  // Phones (UX-05): one bottom bar, the zoom and page with Add field and Field settings,
+  // instead of floating buttons over the page indicator.
+  const previewBar = h("div", { class: "os-previewbar", attrs: { role: "status", "data-testid": "preview-as" } });
+  previewBar.hidden = true;
+  const centre = h("div", { class: "os-prepare__centre" }, stage, previewBar,
+    h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoom.el,
+      h("div", { class: "os-docbar__actions" }, propsFab, addFab)));
+  /// Preview as a recipient (UX-05, DocuSign's "Preview"): on the fields step, their
+  /// fields stand out and everyone else's fade, with a bar saying whose view it is.
+  let previewKey = null;
+  function previewAs(key) {
+    previewKey = key;
+    const r = recipient(key);
+    previewBar.hidden = !r;
+    previewBar.replaceChildren();
+    if (r) {
+      previewBar.append(icon("eye", { size: 16 }), h("span", { text: t("prepare.previewing", { name: displayName(r, S.recipients.indexOf(r)) }) }),
+        button(t("prepare.preview-end"), { size: "sm", onClick: () => { previewAs(null); stage.focus(); } }));
+    }
+    renderFieldsOnly();
+  }
   const reviewPanel = h("section", { class: "os-panel os-panel--review", attrs: { "aria-labelledby": "review-h" } });
   const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; });
@@ -167,11 +208,35 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     fields: h("div", { class: "os-prepare__body" }, leftDock.el, centre, rightDock.el),
     review: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, reviewPanel),
   };
-  const frame = h("div", { class: "os-prepare", attrs: { "data-step": step } }, bar, h("div", { class: "os-wizard" },...Object.values(panes)), live, dv.live, fileInput);
+  // Contacts autocomplete (UX-05; GET /contacts): one list of names and one of addresses
+  // for every recipient row, filled as the user types; choosing one fills the other box.
+  const contactNames = h("datalist", { id: "rc-names" });
+  const contactMails = h("datalist", { id: "rc-mails" });
+  const contacts = new Map(); // lower-cased name or email → {name, email}
+  let contactTimer = null;
+  let contactSeq = 0;
+  function lookContacts(q) {
+    clearTimeout(contactTimer);
+    if (TPL || q.trim().length < 2 || !ctx.api.listContacts) return;
+    contactTimer = setTimeout(async () => {
+      const seq = ++contactSeq;
+      try {
+        const out = await ctx.api.listContacts({ q: q.trim(), limit: 8 });
+        if (seq !== contactSeq) return;
+        const items = (out?.items || []).filter((c) => c && typeof c.email === "string");
+        contactNames.replaceChildren(...items.filter((c) => c.name).map((c) => h("option", { value: c.name, label: c.email })));
+        contactMails.replaceChildren(...items.map((c) => h("option", { value: c.email, label: c.name || "" })));
+        for (const c of items) { contacts.set(c.email.toLowerCase(), c); if (c.name) contacts.set(c.name.toLowerCase(), c); }
+      } catch { /* suggestions only: typing goes on without them */ }
+    }, 200);
+  }
+  const frame = h("div", { class: "os-prepare", attrs: { "data-step": step } }, bar, h("div", { class: "os-wizard" },...Object.values(panes)), live, dv.live, fileInput, contactNames, contactMails);
   view.append(frame);
 
 
   function stepLabel(s) {
+    // A template is saved, not sent (UX-05): its last step is "Review and save".
+    if (TPL && s === "review") return "wizard.review-template";
     return s === "recipients" && TPL ? "wizard.step.roles" : `wizard.step.${s}`;
   }
   /// Open step `s`: show its pane, mark the step bar, set the toolbar's buttons.
@@ -192,9 +257,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
     docTools.hidden = s !== "fields";
     skipTo(s === "fields" ? "#document" : "#main", t(s === "fields" ? "a11y.skip-doc" : "a11y.skip"));
-    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); }
+    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); disarm(); closeDetectToast?.(); closeDetectToast = null; if (previewKey) previewAs(null); }
     backBtn.hidden = i === 0;
     nextBtn.hidden = i === STEPS.length - 1;
+    syncNext();
     if (sendBtn) sendBtn.hidden = s !== "review";
     if (TPL) saveBtn.hidden = s !== "review";
     say(t("wizard.where", { n: i + 1, total: STEPS.length, label: t(stepLabel(s)) }));
@@ -206,6 +272,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
     if (s === "review") renderReview();
   }
+
+  /// Next on the documents step waits for a document (UX-05): with none there is nothing
+  /// to place fields on. The reason is its tooltip and is said under the drop zone.
+  function syncNext() {
+    const need = step === "documents" && !S.docs.length;
+    nextBtn.disabled = need;
+    if (need) nextBtn.title = t("wizard.need-doc"); else nextBtn.removeAttribute("title");
+  }
+  let closeDetectToast = null; // the "suggested fields" toast, closed on leaving the step
 
   const say = (msg) => { live.textContent = ""; setTimeout(() => { live.textContent = msg; }, 30); };
 
@@ -253,11 +328,22 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // step order. With the order off, signers are all step 1 and copies step 2.
   const colourOf = (rk) => (S.recipients.findIndex((r) => r.key === rk) % COLOURS) + 1;
   const recipient = (rk) => S.recipients.find((r) => r.key === rk);
-  const signers = () => S.recipients.filter((r) => r.type === "signer");
+  /// Who fills fields (UX-05): a signer, and an in-person signer whom staff host. An
+  /// approver, a viewer and a copy take none.
+  const takesFields = (r) => r?.type === "signer" || r?.type === "in_person_signer";
+  const signers = () => S.recipients.filter(takesFields);
+  /// The types a recipient may be given (UX-05): the engine's ready ones (api.js
+  /// RECIPIENT_TYPES_READY), and an in-person signer only where staff can host one
+  /// (NOT_ON_SERVER.hostInPerson); a type already set stays offered.
+  const recipientTypes = (current) => {
+    const out = ["signer", ...(ctx.api.available?.("hostInPerson") ? ["in_person_signer"] : []), "approver", "viewer", "cc"];
+    return out.includes(current) || !current ? out : [...out, current];
+  };
   const displayName = (r, i) => r?.name?.trim() || t(TPL ? "template.role-n" : "prepare.recipient-n", { n: i + 1 });
   function orderOf(r) {
     if (S.ordered) return r.order || 1;
-    return r.type === "signer" ? 1 : 2;
+    // All at once: everyone who acts at step 1, copies after them.
+    return r.type === "cc" ? 2 : 1;
   }
   const orders = () => S.recipients.map((r) => r.order || 1);
   /// Set every recipient's step from `next` (aligned with S.recipients), then keep the
@@ -391,7 +477,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const name = h("input", { id: nameId, class: "os-input os-input--sm", value: r.name, autocomplete: "off", placeholder: t(TPL ? "template.role-placeholder" : "prepare.name"), maxLength: 255, attrs: { "data-testid": TPL ? "role-name" : "recipient-name" } });
     const emailErr = h("p", { id: `${mailId}-err`, class: "os-field-error os-rcpt__err", attrs: { "aria-live": "polite" } });
     const email = h("input", { id: mailId, class: "os-input os-input--sm", type: "email", value: r.email, autocomplete: "email", placeholder: t("prepare.email"), attrs: { "data-testid": "recipient-email", "aria-describedby": `${mailId}-err` } });
-    const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), [["signer", t("rtype.signer")], ["cc", t("rtype.cc")]], { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
+    const typeField = selectField(t("prepare.role-for", { name: displayName(r, i) }), recipientTypes(r.type).map((ty) => [ty, t(`rtype.${ty}`)]), { id: typeId, value: r.type, labelHidden: true, size: "sm", attrs: { "data-testid": "recipient-type" } });
     const type = typeField.select;
     const commit = (k, v) => {
       if (r[k] === v) return;
@@ -403,7 +489,18 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // Typed values are kept as they are typed, so a re-render (a role change, a field
     // placed) never loses them; the label refresh waits for the change event.
     name.addEventListener("input", () => { r.name = name.value.trim(); S.dirty = true; });
-    email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; });
+    email.addEventListener("input", () => { r.email = email.value.trim(); S.dirty = true; lookContacts(email.value); });
+    name.addEventListener("input", () => lookContacts(name.value));
+    if (!TPL) { name.setAttribute("list", "rc-names"); email.setAttribute("list", "rc-mails"); }
+    // A contact chosen from either list fills both boxes (the other only when empty).
+    const fillFrom = (v) => {
+      const c = contacts.get(String(v).trim().toLowerCase());
+      if (!c) return;
+      if (!name.value.trim() && c.name) { name.value = c.name; r.name = c.name; }
+      if (!email.value.trim()) { email.value = c.email; r.email = c.email; }
+    };
+    name.addEventListener("change", () => fillFrom(name.value));
+    email.addEventListener("change", () => fillFrom(email.value));
     name.addEventListener("change", () => { renderPalette(); renderFieldsOnly(); renderProps(); });
     // A bad address is said beside the field when the user leaves it (S-02), not only at send.
     const checkEmail = () => {
@@ -440,33 +537,43 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
     // The access code is set when the recipient is created; the API has no way to
     // change it afterwards (RecipientPatch), so a saved recipient shows it read-only.
-    const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code"), maxLength: 64, attrs: { "aria-label": t("prepare.access-code-for", { name: displayName(r, i) }), "data-testid": "recipient-access-code" } });
+    const access = h("input", { id: `ra-${r.key}`, class: "os-input os-input--sm", value: r.id ? "" : r.accessCode, disabled: !!r.id, autocomplete: "off", inputMode: "numeric", placeholder: r.id ? t(r.hasAccessCode ? "prepare.access-code-set" : "prepare.access-code-none") : t("prepare.access-code-optional"), maxLength: 64, attrs: { "data-testid": "recipient-access-code", "aria-describedby": `ra-${r.key}-help` } });
     access.addEventListener("input", () => { r.accessCode = access.value.trim(); S.dirty = true; });
     // An emailed one-time code (SEC-A02): set when the recipient is created, like the
     // access code, so a saved recipient shows it read-only.
     const otpBox = h("input", { id: `rotp-${r.key}`, type: "checkbox", checked: !!r.emailOtp, disabled: !!r.id, attrs: { "data-testid": "recipient-email-otp" } });
     otpBox.addEventListener("change", () => { r.emailOtp = otpBox.checked; S.dirty = true; });
     const otp = h("label", { class: "os-check os-rcpt__otp", attrs: { for: `rotp-${r.key}` } }, otpBox, h("span", { text: t("prepare.email-otp") }));
-    const li = h("li", { class: `os-rcpt os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key } },
+    // Per-recipient options (UX-05, DocuSign's "More" on each row): how they prove who
+    // they are. Set when the recipient is created (the API has no later change).
+    const acting = r.type !== "cc";
+    const more = TPL || !acting ? null : h("details", { class: "os-details os-rcpt__more", open: !!(r.accessCode || r.emailOtp) && !r.id, attrs: { "data-testid": "recipient-more" } },
+      h("summary", {}, h("span", { text: t("prepare.more-options") }), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })),
+      h("div", { class: "os-rcpt__opts" },
+        h("div", { class: "os-rcpt__cell" },
+          h("label", { class: "os-label os-rcpt__label", attrs: { for: `ra-${r.key}` } }, t("prepare.access-code-label"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })),
+          access, h("p", { id: `ra-${r.key}-help`, class: "os-help", text: t("prepare.access-code-help") })),
+        otp));
+    // One dense row (UX-05): type, step, name, email, options, then the row's tools.
+    const tools = h("div", { class: "os-rcpt__tools" }, up, down, del);
+    const li = h("li", { class: `os-rcpt os-rcpt--row${TPL ? " os-rcpt--role" : ""} os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key, "data-type": r.type } },
       h("div", { class: "os-rcpt__head" },
         grip, h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
         order,
-        typeField.el,
-        h("span", { class: "os-spacer" }), up, down, del),
+        typeField.el),
       // Visible labels, not placeholders alone (S-03); "of recipient 2" for screen readers.
       h("div", { class: "os-rcpt__cell" },
         h("label", { class: "os-label os-rcpt__label", attrs: { for: nameId } }, t("prepare.name"), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })), name),
       TPL ? null : h("div", { class: "os-rcpt__cell" },
         h("label", { class: "os-label os-rcpt__label", attrs: { for: mailId } }, t("prepare.email"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })), email, emailErr),
-      r.type === "signer" && !TPL ? access : null,
-      r.type === "signer" && !TPL ? otp : null);
+      tools,
+      more);
     // The card's controls are named after the recipient: renamed, they follow.
     name.addEventListener("change", () => {
       const who = displayName(r, S.recipients.indexOf(r));
       if (S.ordered) order.setAttribute("aria-label", t("prepare.order-for", { name: who }));
       del.setAttribute("aria-label", t("prepare.remove-recipient", { name: who }));
       del.title = t("prepare.remove-recipient", { name: who });
-      access.setAttribute("aria-label", t("prepare.access-code-for", { name: who }));
       typeField.el.querySelector("label")?.replaceChildren(t("prepare.role-for", { name: who }));
     });
     li.addEventListener("focusin", () => { if (S.active !== r.key) { S.active = r.key; markActive(); renderPalette(); } });
@@ -504,7 +611,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       change(() => { S.recipients.splice(i, 1); S.recipients.splice(j, 0, r); });
     }
     // Keep focus on the same control of the card that moved.
-    setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] .os-rcpt__head button[aria-label="${t(d < 0 ? "prepare.move-up" : "prepare.move-down")}"]:not([disabled])`)?.focus(), 0);
+    setTimeout(() => rcptPanel.querySelector(`[data-rkey="${r.key}"] .os-rcpt__tools button[aria-label="${t(d < 0 ? "prepare.move-up" : "prepare.move-down")}"]:not([disabled])`)?.focus(), 0);
   }
   async function removeRecipient(r) {
     const n = S.fields.filter((f) => f.recipientKey === r.key).length;
@@ -522,22 +629,38 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // mousedown and its click (a name committed on blur) would swallow the click.
   const palFor = h("div", { class: "os-palette__for" });
   const palGrid = h("div", { class: "os-palette os-r1" });
+  const groupBox = new Map(FIELD_GROUPS.map(([g]) => [g, h("div", { class: "os-palette__items" })]));
+  for (const [g] of FIELD_GROUPS) {
+    palGrid.append(h("div", { class: "os-palette__group", attrs: { role: "group", "aria-labelledby": `pal-g-${g}` } },
+      h("p", { id: `pal-g-${g}`, class: "os-palette__gtitle", text: t(`prepare.fgroup.${g}`) }), groupBox.get(g)));
+  }
   for (const type of FIELD_TYPES) {
-    const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
+    const b = h("button", { type: "button", class: "os-palette__item", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-pressed": "false", "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }) } },
       icon(FIELD_ICON[type], { size: 20 }), h("span", { text: t(`ftype.${type}`) }));
-    b.addEventListener("click", () => { addFieldInView(type); leftDock.closeSheet(); });
+    // A pointer click arms the type (UX-05, DocuSign's and SignNow's click-to-place): the
+    // next click on a page places it there. A double click keeps it armed for several.
+    // Enter or Space (a click with no pointer, `detail` 0) places it on the page in view,
+    // so the keyboard keeps its one-key placement.
+    b.addEventListener("click", (e) => {
+      if (e.detail === 0) { disarm(); addFieldInView(type); leftDock.closeSheet(); return; }
+      if (e.detail > 1) return;
+      if (armed?.type === type && !armed.sticky) disarm(true); else arm(type, false);
+      leftDock.closeSheet();
+    });
+    b.addEventListener("dblclick", () => arm(type, true));
     b.addEventListener("dragstart", (e) => {
       e.dataTransfer.setData("application/x-openseal-field", type);
       e.dataTransfer.effectAllowed = "copy";
       stage.classList.add("is-dropping");
     });
     b.addEventListener("dragend", () => stage.classList.remove("is-dropping"));
-    palGrid.append(b);
+    groupBox.get(FIELD_GROUPS.find(([, ts]) => ts.includes(type))[0]).append(b);
   }
   palettePanel.append(
     palFor,
     h("h3", { id: "pal-h", class: "os-panel__title", text: t("prepare.field-types") }),
-    palGrid, h("p", { class: "os-muted os-small", text: t("prepare.palette-hint") }));
+    // Touch screens get touch words (UX-05): no Enter, arrows or Shift there.
+    palGrid, h("p", { class: "os-muted os-small", attrs: { "data-testid": "palette-hint" }, text: t(matchMedia("(pointer: coarse)").matches ? "prepare.palette-hint-touch" : "prepare.palette-hint") }));
   // Detect fields (WEB-09): the server's suggestions as ghost fields. Envelopes only:
   // the API detects on an envelope's documents.
   const detectBtn = TPL ? null : button(t("prepare.detect"), { icon: "scan", command: "field.detect", onClick: () => run("field.detect"), attrs: { "data-testid": "detect-fields", "aria-describedby": "detect-help" } });
@@ -598,8 +721,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     docsPanel.append(h("div", { class: "os-step-head" },
       h("div", {},
         h("h2", { id: "docs-h", class: "os-step-head__title", text: t("prepare.documents") }),
-        h("p", { class: "os-muted", text: t("wizard.documents-lede") })),
+        h("p", { class: "os-muted", text: t(TPL ? "template.documents-lede" : "wizard.documents-lede") })),
       S.docs.length ? button(t("prepare.add-pdf"), { icon: "file-up", command: "document.add", onClick: () => fileInput.click() }) : null));
+    syncNext();
+    if (TPL) {
+      // A template is named where it starts (UX-05); the same name as on Review and save.
+      const name = h("input", { id: "tpl-name", class: "os-input", value: S.subject, maxLength: 255, autocomplete: "off", placeholder: t("template.name-example"), attrs: { "data-testid": "template-name-start" } });
+      name.addEventListener("input", () => { subject.value = name.value; subject.dispatchEvent(new Event("input")); });
+      docsPanel.append(h("div", { class: "os-fieldrow os-tplname" }, h("label", { class: "os-label", attrs: { for: "tpl-name" }, text: t("template.name-start") }), name));
+    }
     if (!S.docs.length) {
       const empty = emptyState({
         illus: "documents", title: t("empty.documents.title"), text: t("empty.documents.text"),
@@ -696,6 +826,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       return;
     }
     dv.setPages(S.docs.flatMap((d) => d.pages.map((p, i) => ({ key: d.key, n: i + 1, total: d.pages.length, name: d.name, width: p.width, height: p.height, pdf: pdfs.get(d.key) }))));
+    // Each document's name above its first page (UX-05), so a page says whose document it is.
+    if (S.docs.length > 1) dv.pages.forEach((p, i) => { if (p.n === 1) dv.els[i].el.before(h("div", { class: "os-docband", attrs: { "aria-hidden": "true", "data-testid": "doc-band" } }, icon("file-text", { size: 16 }), h("span", { class: "os-trunc", text: p.name }), h("span", { class: "os-muted", text: p.total === 1 ? t("prepare.page-one") : t("prepare.pages-long", { n: p.total }) }))); });
     dv.els.forEach(({ overlay }, i) => {
       const p = dv.pages[i];
       const d = S.docs.find((x) => x.key === p.key);
@@ -708,7 +840,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         const box = overlay.getBoundingClientRect();
         addField(type, d, p.n, (e.clientX - box.left) / dv.scale, (e.clientY - box.top) / dv.scale);
       });
-      overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) startMarquee(e, overlay, p.key, p.n); });
+      // Armed (UX-05): the click places; a press neither draws a marquee nor selects text.
+      // A click, not the press, so a finger that scrolls the page places nothing.
+      overlay.addEventListener("pointerdown", (e) => {
+        if (armed) { if (e.pointerType !== "touch") e.preventDefault(); return; }
+        if (e.target === overlay) startMarquee(e, overlay, p.key, p.n);
+      });
+      overlay.addEventListener("click", (e) => {
+        if (armed && (e.target === overlay || e.target === armGhost || armGhost.contains(e.target))) placeArmed(e, overlay, p.key, p.n);
+      });
     });
     thumbs.build();
     renderFieldsOnly();
@@ -724,14 +864,16 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   function fieldLabel(f) {
     const r = recipient(f.recipientKey);
     const i = S.recipients.indexOf(r);
-    return t("prepare.field-aria", { type: t(`ftype.${f.type}`), name: displayName(r, i), page: f.page, req: f.required ? t("prepare.required-suffix") : "" });
+    const base = t("prepare.field-aria", { type: t(`ftype.${f.type}`), name: displayName(r, i), page: f.page, req: f.required ? t("prepare.required-suffix") : "" });
+    // The name starts with the label the box shows, when it shows one (SC 2.5.3).
+    return f.label ? `${f.label}, ${base}` : base;
   }
   function renderFieldsOnly() {
     for (const n of stage.querySelectorAll(".os-field")) n.remove();
     for (const f of S.fields) {
       const ov = overlayFor(f);
       if (!ov) continue;
-      const el = h("button", { type: "button", class: `os-field os-r${colourOf(f.recipientKey)}${f.required ? " is-required" : ""}${S.selected === f.key ? " is-selected" : ""}`, attrs: { "data-fkey": f.key, "data-field": f.type, "aria-label": fieldLabel(f), "aria-pressed": String(S.selected === f.key) } },
+      const el = h("button", { type: "button", class: `os-field os-r${colourOf(f.recipientKey)}${f.required ? " is-required" : ""}${previewKey && f.recipientKey !== previewKey ? " is-other" : ""}${S.selected === f.key ? " is-selected" : ""}`, attrs: { "data-fkey": f.key, "data-field": f.type, "aria-label": fieldLabel(f), "aria-pressed": String(S.selected === f.key) } },
         icon(FIELD_ICON[f.type] || "text-cursor-input", { size: 16 }),
         h("span", { class: "os-field__label", text: f.label || t(`ftype.${f.type}`) }),
         // Whose field it is, beside its colour (F-02): the recipient's initials, drawn by CSS
@@ -957,16 +1099,72 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!f) rightDock.closeSheet();
   }
 
+  // ---- Click-to-place (UX-05) -------------------------------------------------------------
+  // An armed type follows the pointer as a ghost of its default size; a click on a page
+  // places the field centred there. Escape (field.deselect) or a second click on the
+  // type disarms; a double-clicked type stays armed until then.
+  let armed = null; // {type, sticky}
+  const armGhost = h("div", { class: "os-armghost", attrs: { "aria-hidden": "true", "data-testid": "arm-ghost" } });
+  function markArmed() {
+    for (const b of palGrid.querySelectorAll(".os-palette__item")) {
+      const on = armed?.type === b.dataset.fieldType;
+      b.classList.toggle("is-armed", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    stage.classList.toggle("is-armed", !!armed);
+    if (!armed) armGhost.remove();
+  }
+  function arm(type, sticky) {
+    if (!S.docs.length) { toast(t("prepare.add-pdf-first"), "info"); fileInput.click(); return; }
+    armed = { type, sticky };
+    markArmed();
+    armGhost.replaceChildren(icon(FIELD_ICON[type] || "text-cursor-input", { size: 16 }), h("span", { text: t(`ftype.${type}`) }));
+    say(t(sticky ? "prepare.armed-sticky" : "prepare.armed", { type: t(`ftype.${type}`) }));
+  }
+  function disarm(announce = false) {
+    if (!armed) return;
+    armed = null;
+    markArmed();
+    if (announce) say(t("prepare.disarmed"));
+  }
+  /// The ghost under the pointer, on the page it is over (points → % of that page).
+  function moveGhost(e) {
+    if (!armed || e.pointerType === "touch") return;
+    const ov = e.target.closest?.(".os-page__overlay");
+    if (!ov) { armGhost.remove(); return; }
+    const p = dv.pages.find((x) => x.key === ov.dataset.doc && String(x.n) === ov.dataset.page);
+    if (!p) return;
+    const box = ov.getBoundingClientRect();
+    const r = placeAt(armed.type, (e.clientX - box.left) / dv.scale, (e.clientY - box.top) / dv.scale, p);
+    if (armGhost.parentElement !== ov) ov.append(armGhost);
+    place(armGhost, { ...r, docKey: p.key, page: p.n });
+    armGhost.className = `os-armghost os-r${S.active ? colourOf(S.active) : 1}`;
+  }
+  stage.addEventListener("pointermove", moveGhost);
+  stage.addEventListener("pointerleave", () => armGhost.remove());
+  /// A click on an empty part of a page with a type armed: the field, centred there.
+  function placeArmed(e, ov, docKey, pageN) {
+    if (!armed || e.button !== 0) return false;
+    const doc = S.docs.find((d) => d.key === docKey);
+    if (!doc) return false;
+    const box = ov.getBoundingClientRect();
+    const type = armed.type;
+    if (!armed.sticky) disarm();
+    addField(type, doc, pageN, (e.clientX - box.left) / dv.scale, (e.clientY - box.top) / dv.scale);
+    return true;
+  }
+
   let lastPlaced = null;
   function addField(type, doc, page, cx, cy) {
     let r = recipient(S.active);
-    if (r?.type !== "signer") r = signers()[0];
+    if (!takesFields(r)) r = signers()[0];
     if (!r) r = addRecipient(false);
     const pg = doc.pages[page - 1];
     const rect = placeAt(type, cx, cy, pg);
-    const f = { key: newKey("f"), id: null, docKey: doc.key, recipientKey: r.key, type, page, ...rect, required: type === "signature" || type === "initials", label: "" };
+    const f = { key: newKey("f"), id: null, docKey: doc.key, recipientKey: r.key, type, page, ...rect, required: requiredByDefault(type), label: "", ...newMembers(type) };
     change(() => { S.fields.push(f); S.selected = f.key; });
     lastPlaced = f.key;
+    propsFab.hidden = false;
     const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`);
     if (el) {
       el.classList.add("is-new");
@@ -1007,6 +1205,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         const top = Math.max(r.top, s.top);
         const bottom = Math.min(r.bottom, s.bottom);
         if (bottom > top) cy = ((top - r.top) + (bottom - top) / 3) / dv.scale;
+        // Across too (UX-05): a page wider than the view (phones, zoomed in) gets the
+        // field in the middle of the part on screen, not of the page.
+        const left = Math.max(r.left, s.left);
+        const right = Math.min(r.right, s.right);
+        if (right > left && r.width > s.width) cx = ((left - r.left) + (right - left) / 2) / dv.scale;
       }
     }
     // A margin below each field keeps keyboard-placed fields apart, not touching.
@@ -1021,7 +1224,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // dismisses them all. Each of these is one undo step. A draft is saved first, since
   // detection reads the stored documents.
   /// Who accepted suggestions are for: the signer being placed for, else the first.
-  const signerFor = () => { const r = recipient(S.active); return r?.type === "signer" ? r : signers()[0] || null; };
+  const signerFor = () => { const r = recipient(S.active); return takesFields(r) ? r : signers()[0] || null; };
   const ghostLabel = (g) => (g.label || t(`ftype.${g.type}`));
   function renderGhosts() {
     for (const n of stage.querySelectorAll(".os-ghost")) n.remove();
@@ -1059,7 +1262,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const i = S.ghosts.indexOf(list[0]);
     let r = signerFor();
     if (!r) r = addRecipient(false);
-    const made = list.map((g) => ({ key: newKey("f"), id: null, docKey: g.docKey, recipientKey: r.key, type: g.type, page: g.page, x: g.x, y: g.y, width: g.width, height: g.height, required: g.type === "signature" || g.type === "initials", label: g.label || "" }));
+    const made = list.map((g) => ({ key: newKey("f"), id: null, docKey: g.docKey, recipientKey: r.key, type: g.type, page: g.page, x: g.x, y: g.y, width: g.width, height: g.height, required: requiredByDefault(g.type), label: g.label || "", ...newMembers(g.type) }));
     const gone = new Set(list);
     change(() => { S.ghosts = S.ghosts.filter((g) => !gone.has(g)); S.fields.push(...made); });
     say(made.length === 1 ? t("prepare.field-added", { label: fieldLabel(made[0]) }) : t("prepare.ghosts-accepted", { n: made.length, name: displayName(r, S.recipients.indexOf(r)) }));
@@ -1091,7 +1294,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         change(() => { S.ghosts = ghosts; S.selected = null; });
         const who = signerFor();
         const msg = t("prepare.detect-found", { n: ghosts.length, name: who ? displayName(who, S.recipients.indexOf(who)) : t("prepare.recipient-n", { n: S.recipients.length + 1 }) });
-        toast(truncated ? `${msg} ${t("prepare.detect-truncated")}` : msg, "info");
+        closeDetectToast = toast(truncated ? `${msg} ${t("prepare.detect-truncated")}` : msg, "info");
         say(msg);
         const first = ghosts[0];
         dv.scrollToBox(pageIndex(first.docKey, first.page), first);
@@ -1103,6 +1306,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
 
   // ---- Properties ------------------------------------------------------------------------
   let advancedOpen = false;
+  const propOpen = {}; // section → open, while the editor is open (UX-05)
+  // A validation preset chosen whose settings are not typed yet (a pattern, a length):
+  // field key → kind, so the panel shows its inputs before there is a rule to store.
+  const kindChosen = new Map();
   function renderProps() {
     clear(props);
     if (multi.size > 1) {
@@ -1160,17 +1367,97 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     props.append(h("div", { class: "os-props__head" },
       h("h3", { class: "os-props__title", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }) }),
       button(t("prepare.back-to-list"), { icon: "list", size: "sm", variant: "ghost", iconOnly: true, onClick: () => { select(null); props.querySelector("button")?.focus({ preventScroll: true }); } })));
-    props.append(selectField(t(TPL ? "template.assigned-to" : "prepare.assigned-to"), S.recipients.map((r, i) => [r, i]).filter(([r]) => r.type === "signer" || r.key === f.recipientKey).map(([r, i]) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "fp-recipient", value: f.recipientKey, onChange: (v) => set("recipientKey", v) }).el);
-    if (takesInput(f.type)) {
-      const req = h("input", { id: "fp-required", type: "checkbox", checked: !!f.required });
-      req.addEventListener("change", () => set("required", req.checked));
-      props.append(h("label", { class: "os-check", attrs: { for: "fp-required" } }, req, h("span", { text: t("prepare.required") })));
-    } else {
-      props.append(h("p", { class: "os-muted os-small", text: t(`prepare.auto-${f.type}`) }));
+    // A member set or cleared (blank removes it, as the server stores it), one undo step.
+    const setM = (k, v) => {
+      const blank = v == null || v === false || v === "" || (Array.isArray(v) && !v.length);
+      if (blank ? !(k in f) : JSON.stringify(f[k]) === JSON.stringify(v)) return;
+      S.undo.push(snapshot()); S.redo = [];
+      if (blank) delete f[k]; else f[k] = v;
+      S.dirty = true;
+      renderFieldsOnly();
+    };
+    const textIn = (id, labelKey, value, onSet, { help = null, max = 255, type = "text", area = false } = {}) => {
+      const i = h(area ? "textarea" : "input", { id, class: `os-input${area ? " os-textarea" : ""}`, value: value ?? "", maxLength: max, ...(area ? { rows: 3 } : { type }), attrs: help ? { "aria-describedby": `${id}-help` } : {} });
+      i.addEventListener("change", () => onSet(i.value));
+      return h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: t(labelKey) }), i, help ? h("p", { id: `${id}-help`, class: "os-help", text: t(help) }) : null);
+    };
+    const check = (id, labelKey, on, onSet) => {
+      const i = h("input", { id, type: "checkbox", checked: !!on });
+      i.addEventListener("change", () => onSet(i.checked));
+      return h("label", { class: "os-check", attrs: { for: id } }, i, h("span", { text: t(labelKey) }));
+    };
+    /// A section of the panel (UX-05: General, Formatting, Validation, Options), open by
+    /// default, remembered while the editor is open.
+    const section = (key, ...body) => {
+      const d = h("details", { class: "os-details os-props__sec", open: propOpen[key] !== false, attrs: { "data-testid": `props-${key}` } },
+        h("summary", { text: t(`prepare.props-${key}`) }), ...body);
+      d.addEventListener("toggle", () => { propOpen[key] = d.open; });
+      return d;
+    };
+    const general = [
+      selectField(t(TPL ? "template.assigned-to" : "prepare.assigned-to"), S.recipients.map((r, i) => [r, i]).filter(([r]) => takesFields(r) || r.key === f.recipientKey).map(([r, i]) => [r.key, `${i + 1}. ${displayName(r, i)}`]), { id: "fp-recipient", value: f.recipientKey, onChange: (v) => set("recipientKey", v) }).el,
+    ];
+    if (takesInput(f.type)) general.push(check("fp-required", "prepare.required", f.required, (v) => set("required", v)));
+    else general.push(h("p", { class: "os-muted os-small", text: t(`prepare.auto-${f.type}`) }));
+    if (!TPL && f.type === "note") {
+      // A note is the sender's text, shown to the recipient as written.
+      general.push(textIn("fp-note", "prepare.note-text", f.value?.text, (v) => setM("value", v.trim() ? { text: v.trim() } : null), { max: 2000, area: true }));
     }
-    const label = h("input", { id: "fp-label", class: "os-input", value: f.label || "", maxLength: 255 });
-    label.addEventListener("change", () => set("label", label.value.trim()));
-    props.append(h("label", { class: "os-label", attrs: { for: "fp-label" }, text: t("prepare.label") }), label);
+    if (!TPL && (TYPED.has(f.type) || f.type === "checkbox")) {
+      // DocuSign's "Read only" with a sender's value: the recipient sees it, cannot change it.
+      general.push(check("fp-readonly", "prepare.read-only", f.read_only, (v) => { setM("read_only", v); renderProps(); }));
+      if (f.type === "checkbox") general.push(check("fp-checked", "prepare.checked-value", f.value?.checked, (v) => setM("value", v ? { checked: true } : null)));
+      else general.push(textIn("fp-value", f.read_only ? "prepare.value-fixed" : "prepare.value-start", f.value?.text, (v) => setM("value", v ? { text: v } : null), { help: "prepare.value-help", max: 4000 }));
+    }
+    general.push(textIn("fp-label", "prepare.label", f.label, (v) => set("label", v.trim()), { help: "prepare.label-help" }));
+    // A template keeps only Required and Label until templatesync.js sends the rest (UX-11); the
+    // panel offers nothing that would vanish on save (UX-05 review).
+    if (TPL) general.push(h("p", { class: "os-muted os-small", text: t("prepare.template-settings-later"), attrs: { "data-testid": "props-template-note" } }));
+    if (!TPL) general.push(textIn("fp-tooltip", "prepare.tooltip", f.tooltip, (v) => setM("tooltip", v.trim()), { max: 1000 }));
+    if (!TPL && TYPED.has(f.type)) general.push(textIn("fp-placeholder", "prepare.placeholder", f.placeholder, (v) => setM("placeholder", v.trim())));
+    props.append(section("general", ...general));
+    if (!TPL && CHOICE.has(f.type)) {
+      const opts = textIn("fp-options", "prepare.options", (f.options || []).join("\n"), (v) => { setM("options", optionsFrom(v)); renderProps(); }, { help: "prepare.options-help", max: 50000, area: true });
+      const body = [opts];
+      if (f.type === "dropdown") body.push(check("fp-custom", "prepare.allow-custom", f.allow_custom, (v) => setM("allow_custom", v)));
+      if (!(f.options || []).length) body.push(h("p", { class: "os-field-error", text: t("prepare.options-none") }));
+      props.append(section("options", ...body));
+    }
+    if (!TPL && (TYPED.has(f.type) || ["name", "email", "date_signed"].includes(f.type))) {
+      const fmt = f.format || {};
+      const setF = (k, v) => { const next = { ...(f.format || {}) }; if (v === "" || v == null || v === false) delete next[k]; else next[k] = v; setM("format", Object.keys(next).length ? next : null); };
+      const size = h("input", { id: "fp-font-size", class: "os-input os-input--sm", type: "number", min: "6", max: "72", step: "1", inputMode: "numeric", value: fmt.font_size ?? "", placeholder: t("prepare.fmt-auto") });
+      size.addEventListener("change", () => { const n = Number.parseInt(size.value, 10); setF("font_size", Number.isInteger(n) && n >= 6 && n <= 72 ? String(n) : null); });
+      const body = [
+        selectField(t("prepare.font"), [["", t("prepare.fmt-default")], ["helvetica", "Helvetica"], ["times", "Times"], ["courier", "Courier"]], { id: "fp-font", value: fmt.font_family || "", size: "sm", onChange: (v) => setF("font_family", v) }).el,
+        h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "fp-font-size" }, text: t("prepare.font-size") }), size),
+        selectField(t("prepare.text-align"), [["", t("prepare.fmt-default")], ["left", t("prepare.align-left-text")], ["center", t("prepare.align-center-text")], ["right", t("prepare.align-right-text")]], { id: "fp-align", value: fmt.align || "", size: "sm", onChange: (v) => setF("align", v) }).el,
+      ];
+      if (TYPED.has(f.type)) body.push(check("fp-mask", "prepare.mask", fmt.mask, (v) => setF("mask", v)));
+      props.append(section("format", ...body));
+    }
+    if (!TPL && (f.type === "text" || f.type === "number")) {
+      // Validation (DocuSign's and SignNow's presets): what the recipient's value must be.
+      const v = f.validation || {};
+      const kind = f.type === "number" ? "number" : (v.kind || kindChosen.get(f.key) || "");
+      const opts = { min: v.min, max: v.max, pattern: v.pattern, maxLength: v.kind === "length" ? v.max : "", message: v.message };
+      const apply = (k, val) => { opts[k] = val; const next = validationFrom(kindNow, opts); setM("validation", next); };
+      let kindNow = kind;
+      const body = [];
+      if (f.type === "text") {
+        body.push(selectField(t("prepare.validate"), [["", t("prepare.validate-none")], ["email", t("prepare.validate-email")], ["phone", t("prepare.validate-phone")], ["zip", t("prepare.validate-zip")], ["ssn", t("prepare.validate-ssn")], ["number", t("prepare.validate-number")], ["length", t("prepare.validate-length")], ["regex", t("prepare.validate-regex")]],
+          { id: "fp-validate", value: kind, size: "sm", onChange: (k) => { kindNow = k; kindChosen.set(f.key, k); setM("validation", validationFrom(k, opts)); renderProps(); props.querySelector("#fp-validate")?.focus(); } }).el);
+      }
+      if (kindNow === "number") {
+        body.push(h("div", { class: "os-geo" },
+          textIn("fp-min", "prepare.min", opts.min, (x) => apply("min", x), { type: "text" }),
+          textIn("fp-max", "prepare.max", opts.max, (x) => apply("max", x), { type: "text" })));
+      }
+      if (kindNow === "length") body.push(textIn("fp-maxlen", "prepare.max-length", opts.maxLength, (x) => apply("maxLength", x), { type: "number" }));
+      if (kindNow === "regex") body.push(textIn("fp-pattern", "prepare.pattern", opts.pattern, (x) => apply("pattern", x), { help: "prepare.pattern-help", max: 1000 }));
+      if (kindNow) body.push(textIn("fp-vmsg", "prepare.validate-message", opts.message, (x) => apply("message", x.trim()), { max: 500 }));
+      props.append(section("validation", ...body));
+    }
     const geo = h("div", { class: "os-geo" });
     for (const k of ["x", "y", "width", "height"]) {
       const id = `fp-${k}`;
@@ -1259,10 +1546,27 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("span", { class: "os-order", text: String(orderOf(r)) }),
         h("span", { class: "os-summary__who" }, h("strong", { text: displayName(r, i) }), TPL ? null : h("span", { class: "os-muted os-small", text: r.email || t("wizard.no-email") })),
         h("span", { class: "os-muted os-small", text: t(`rtype.${r.type}`) }),
-        h("span", { class: "os-small os-summary__fields", text: r.type === "signer" ? (mine.length ? `${fieldsN(mine.length)}: ${kinds}` : t("wizard.no-fields")) : t("wizard.gets-copy") })));
+        // A signer with no fields is a warning here, with its fix, not only at Send (UX-05).
+        takesFields(r) && !mine.length
+          ? h("span", { class: "os-small os-summary__fields os-summary__warn", attrs: { "data-testid": "summary-no-fields" } },
+            icon("triangle-alert", { size: 16 }), h("span", { text: t("wizard.no-fields") }),
+            button(t("wizard.place-fields"), { size: "sm", icon: "arrow-right", attrs: { "aria-label": t("wizard.place-fields-for", { name: displayName(r, i) }) }, onClick: async () => { await go("fields"); pick(r.key); } }))
+          : h("span", { class: "os-small os-summary__fields", text: takesFields(r) ? `${fieldsN(mine.length)}: ${kinds}` : t(r.type === "cc" ? "wizard.gets-copy" : "wizard.reviews") })));
     });
     if (!S.recipients.length) ul.append(h("li", { class: "os-muted", text: t(TPL ? "empty.roles.title" : "empty.recipients.title") }));
     sum.append(ul);
+    // Preview as each recipient who fills fields (UX-05): the document with their fields.
+    const sg = signers();
+    if (sg.length && S.docs.length) {
+      sum.append(h("div", { class: "os-previewstrip", attrs: { role: "group", "aria-labelledby": "rv-prev-h", "data-testid": "preview-strip" } },
+        h("span", { id: "rv-prev-h", class: "os-label", text: t("wizard.preview-as") }),
+        ...sg.map((r) => {
+          const i = S.recipients.indexOf(r);
+          const b = button(displayName(r, i), { size: "sm", icon: "eye", attrs: { "aria-label": t("wizard.preview-as-name", { name: displayName(r, i) }) }, onClick: async () => { await go("fields"); previewAs(r.key); } });
+          b.classList.add(`os-r${colourOf(r.key)}`, "os-previewstrip__btn");
+          return b;
+        })));
+    }
     reviewPanel.querySelector(".os-step-head").after(sum);
   }
   /// "1 field" / "3 fields" (T-02).
@@ -1298,15 +1602,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const prevActive = Math.max(0, S.recipients.findIndex((r) => r.key === S.active));
     const prevAccess = new Map(S.recipients.map((r) => [r.id, r.accessCode]));
     const steps = fromServer(recs.map((r) => r.routing_order));
-    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: r.type === "cc" ? "cc" : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), order: steps[i] }));
+    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), order: steps[i] }));
     // Signers all at one step with copies after them is the switch off; anything else is steps.
-    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type === "signer");
+    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type !== "cc");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
     const dkey = new Map(S.docs.map((d) => [d.id, d.key]));
     S.fields = (env.fields || []).map((f) => {
       const p = fromWire(f.placement);
       if (!p || !dkey.has(f.document_id)) return null;
-      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", server: JSON.stringify({ r: f.recipient_id, p: f.placement, q: !!f.required, l: f.label || "" }) };
+      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", ...membersOf(f), server: JSON.stringify({ r: f.recipient_id, p: f.placement, q: !!f.required, l: f.label || "", m: membersOf(f) }) };
     }).filter(Boolean);
     // Keep whom fields are being placed for across a save (the list keeps its order).
     S.active = S.recipients[prevActive]?.key || S.recipients[0]?.key || null;
@@ -1337,8 +1641,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.docs = docs;
     const roles = [...(tp.roles || [])].sort((a, b) => (a.routing_order ?? 1) - (b.routing_order ?? 1));
     const steps = fromServer(roles.map((r) => r.routing_order));
-    S.recipients = roles.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: "", type: r.type === "cc" ? "cc" : "signer", accessCode: "", order: steps[i] }));
-    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type === "signer");
+    S.recipients = roles.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: "", order: steps[i] }));
+    S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type !== "cc");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
     const dkey = new Map(S.docs.map((d) => [d.id, d.key]));
     S.fields = (tp.fields || []).map((f) => {
@@ -1355,14 +1659,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // ---- Saving ------------------------------------------------------------------------------
   function recipientBody(r) {
     const body = { type: r.type, name: r.name || t("prepare.recipient-n", { n: S.recipients.indexOf(r) + 1 }), email: r.email, routing_order: orderOf(r) };
-    if (r.type === "signer" && r.accessCode) { body.auth = ["access_code"]; body.access_code = r.accessCode; }
-    if (r.type === "signer" && r.emailOtp && r.email) body.auth = (body.auth || []).concat(["email_otp"]);
+    if (r.type !== "cc" && r.accessCode) { body.auth = ["access_code"]; body.access_code = r.accessCode; }
+    if (r.type !== "cc" && r.emailOtp && r.email) body.auth = (body.auth || []).concat(["email_otp"]);
     return body;
   }
   function fieldBody(f, recipientRef, documentRef) {
     const body = { recipient: recipientRef, document: documentRef, type: f.type, ...toWire(f.page, f) };
     if (f.required && takesInput(f.type)) body.required = true;
     if (f.label) body.label = f.label;
+    Object.assign(body, membersOf(f));
     return body;
   }
   const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}) });
@@ -1456,10 +1761,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const rid = (k) => S.recipients.find((r) => r.key === k)?.id;
       const did = (k) => S.docs.find((d) => d.key === k)?.id;
       for (const f of S.fields.filter((x) => x.id)) {
-        const now = JSON.stringify({ r: rid(f.recipientKey), p: toWire(f.page, f), q: !!f.required, l: f.label || "" });
+        const now = JSON.stringify({ r: rid(f.recipientKey), p: toWire(f.page, f), q: !!f.required, l: f.label || "", m: membersOf(f) });
         if (now === f.server) continue;
         const body = fieldBody(f, rid(f.recipientKey), did(f.docKey));
-        await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null });
+        // Every member named: null removes one the sender cleared (a JSON merge, UX-05).
+        const members = Object.fromEntries(MEMBERS.map((k) => [k, blankMember(f[k]) ? null : f[k]]));
+        await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null, ...members });
       }
       const newFields = S.fields.filter((x) => !x.id);
       if (newFields.length) await ctx.api.addFields(S.id, newFields.map((f) => fieldBody(f, rid(f.recipientKey), did(f.docKey))));
@@ -1478,14 +1785,21 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const out = [];
     if (!S.docs.length) out.push({ text: t("send.need-doc"), step: "documents" });
     if (!signers().length) out.push({ text: t("send.need-signer"), step: "recipients" });
+    // Suggestions neither accepted nor dismissed would be lost on send (UX-05).
+    if (S.ghosts.length) out.push({ text: t(S.ghosts.length === 1 ? "send.need-suggestion-one" : "send.need-suggestions", { n: S.ghosts.length }), step: "fields" });
     S.recipients.forEach((r, i) => {
       if (!r.name.trim()) out.push({ text: t("send.need-name", { n: i + 1 }), step: "recipients", focus: `#rn-${r.key}` });
       if (!EMAIL.test(r.email)) out.push({ text: t("send.need-email", { name: displayName(r, i) }), step: "recipients", focus: `#re-${r.key}` });
-      if (r.type === "signer" && !S.fields.some((f) => f.recipientKey === r.key)) out.push({ text: t("send.need-field", { name: displayName(r, i) }), step: "fields", recipient: r.key });
+      if (takesFields(r) && !S.fields.some((f) => f.recipientKey === r.key)) out.push({ text: t("send.need-field", { name: displayName(r, i) }), step: "fields", recipient: r.key });
       // A copy recipient signs nothing: fields left on one would be dropped (P-02).
-      const cc = r.type !== "signer" ? S.fields.filter((f) => f.recipientKey === r.key).length : 0;
+      const cc = !takesFields(r) ? S.fields.filter((f) => f.recipientKey === r.key).length : 0;
       if (cc) out.push({ text: t("send.cc-fields", { name: displayName(r, i), n: cc }), step: "fields" });
     });
+    // A radio group or dropdown with no options cannot be answered (UX-05).
+    for (const f of S.fields.filter((x) => CHOICE.has(x.type) && !(x.options || []).length)) {
+      const r = recipient(f.recipientKey);
+      out.push({ text: t("send.need-options", { type: t(`ftype.${f.type}`), name: displayName(r, S.recipients.indexOf(r)) }), step: "fields", field: f.key });
+    }
     return out;
   }
 
@@ -1501,6 +1815,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
             close(null);
             await go(p.step);
             if (p.recipient) pick(p.recipient);
+            if (p.field) select(p.field);
             if (p.focus) setTimeout(() => document.querySelector(p.focus)?.focus(), 0);
           } });
           return h("li", {}, icon("triangle-alert", { size: 16 }), h("span", { class: "os-problems__text", text: p.text }), fix);
@@ -1513,20 +1828,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   async function send() {
     const list = problems();
     if (list.length) { await showProblems(list, t("send.problems-title")); return; }
-    const sum = S.recipients.filter((r) => r.type === "signer").length;
-    // Says who signs when and who only gets a copy (R-02).
+    // Who gets it now, who in turn, who reviews and who only gets a copy (R-02; UX-05:
+    // with signing steps only the first step is emailed at once).
     const subj = S.subject.trim() || t("envelope.untitled");
-    const sg = signers();
-    const copies = S.recipients.filter((r) => r.type !== "signer");
-    const nameOf = (r) => displayName(r, S.recipients.indexOf(r));
-    const text = [
-      t(sum === 1 ? "send.confirm-one" : "send.confirm-text", { n: sum, subject: subj }),
-      sg.length > 1 ? (new Set(sg.map(orderOf)).size > 1
-        // Steps in order; a step of several is "A & B" (they sign at the same time).
-        ? t("send.confirm-order", { order: groups(sg.map(orderOf)).map((g) => g.members.map((i) => nameOf(sg[i])).join(" & ")).join(" → ") })
-        : t("send.confirm-together")) : "",
-      copies.length ? t("send.confirm-copies", { names: copies.map(nameOf).join(", ") }) : "",
-    ].filter(Boolean).join(" ");
+    const text = sendSummary(S.recipients.map((r, i) => ({ name: displayName(r, i), type: r.type, order: orderOf(r) })), subj).map(([k, p]) => t(k, p)).join(" ");
     if (!(await confirmDialog(t("send.confirm-title"), text, { confirm: t("prepare.send") }))) return;
     await busy(sendBtn, async () => {
       try {
@@ -1747,7 +2052,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     change(() => { S.fields.push(copy); S.selected = copy.key; });
     select(copy.key);
   }, () => !!S.clipboard);
-  reg("field.deselect", t("cmd.field.deselect"), () => { const f = sel(); select(null); if (f) stage.focus(); });
+  // Escape: an armed type first (UX-05), then the selection.
+  reg("field.deselect", t("cmd.field.deselect"), () => { if (armed) { disarm(true); return; } const f = sel(); select(null); if (f) stage.focus(); }, () => !!armed || hasSel());
   reg("edit.undo", t("cmd.edit.undo"), () => { const s = S.undo.pop(); if (!s) return; S.redo.push(snapshot()); restore(s); }, () => S.undo.length > 0);
   reg("edit.redo", t("cmd.edit.redo"), () => { const s = S.redo.pop(); if (!s) return; S.undo.push(snapshot()); restore(s); }, () => S.redo.length > 0);
   if (TPL) {
@@ -1762,7 +2068,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
   reg("recipient.add", t(TPL ? "template.add-role" : "prepare.add-recipient"), () => addRecipient(), () => true);
   reg("document.add", t("prepare.add-pdf"), () => fileInput.click(), () => true);
-  for (const type of FIELD_TYPES) reg(`field.add-${type}`, t("prepare.add-field", { type: t(`ftype.${type}`) }), () => addFieldInView(type), () => true);
+  for (const type of FIELD_TYPES) {
+    reg(`field.add-${type}`, t("prepare.add-field", { type: t(`ftype.${type}`) }), () => addFieldInView(type), () => true);
+    reg(`field.arm-${type}`, t("prepare.arm-field", { type: t(`ftype.${type}`) }), () => arm(type, false), () => S.docs.length > 0);
+  }
+  reg("field.disarm", t("prepare.disarm"), () => disarm(true), () => !!armed);
   for (let n = 1; n <= 9; n++) {
     reg(`recipient.select-${n}`, t("cmd.recipient.select"), () => pick(signers()[n - 1].key), () => signers().length >= n);
   }

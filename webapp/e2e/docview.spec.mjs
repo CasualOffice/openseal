@@ -162,7 +162,7 @@ for (const [name, viewport, scale, kind] of SIZES) {
 
       await editorWithPages(page);
       if (await page.getByTestId("add-field-sheet").isVisible()) await page.getByTestId("add-field-sheet").click();
-      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+      await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
       await expect(page.locator(".os-field")).toHaveCount(1);
       await expectRules("editor-doc");
       await shotTo("editor");

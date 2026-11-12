@@ -20,7 +20,7 @@ async function step(page, name) {
 
 async function placeFor(page, who, types) {
   await placingFor(page, who);
-  for (const type of types) await page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).click();
+  for (const type of types) await page.locator(".os-palette").getByRole("button", { name: `Add ${type} field` }).press("Enter");
 }
 
 test("upload, two signers in order and a CC, fields for each, send", async ({ page }) => {
@@ -104,7 +104,7 @@ test("a saved draft reopens with its fields where they were", async ({ page }) =
   await page.getByTestId("wizard-next").click();
   await addRecipient(page, 0, { name: "Dee Draft", email: "dee@example.com" });
   await page.getByTestId("wizard-next").click();
-  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Shift+ArrowDown");
   const x = await page.getByLabel("Left").inputValue();
@@ -158,9 +158,9 @@ test("Shift+click selects several fields; they line up, move and delete together
   await addRecipient(page, 0, { name: "Gus Group", email: "gus@example.com" });
   await page.getByTestId("wizard-next").click();
   const sig = page.locator(".os-palette").getByRole("button", { name: "Add Signature field" });
-  await sig.click();
-  await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).click();
-  await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).click();
+  await sig.press("Enter");
+  await page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" }).press("Enter");
+  await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).press("Enter");
   const fields = page.locator(".os-field");
   await expect(fields).toHaveCount(3);
   // Each new field goes just below the one placed before it, lined up (F-01).
@@ -209,7 +209,7 @@ test("a draft saves itself after a pause, keeps the selection, and then leaves w
   await page.getByTestId("wizard-next").click();
   await addRecipient(page, 0, { name: "Ada Auto", email: "ada@example.com" });
   await page.getByTestId("wizard-next").click();
-  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).click();
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
   await expect(page.getByTestId("save-status")).toContainText("Unsaved changes");
   // Unsaved: leaving asks (A12); staying keeps the work.
   await page.goto(app("#/agreements"));

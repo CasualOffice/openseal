@@ -18,7 +18,7 @@ publish = false
 default = ["server"]
 # The daemon: bundle verification at start, the op log, the op handlers. Inference
 # dependencies are added here as `dep:` entries by the pieces that need them.
-server = []
+server = ["dep:ort", "dep:tokenizers", "dep:regex", "dep:serde_json", "dep:unicode-normalization"]
 
 [[bin]]
 name = "casual-sign-modeld"
@@ -33,10 +33,29 @@ aws-lc-rs = "1.19.0"
 # no process-wide default. Already in the tree.
 rustls = { version = "0.23.46", default-features = false, features = ["std", "aws_lc_rs", "logging"] }
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
+# ONNX Runtime bindings (ADR-029 D3, docs/33 §5.5): the one `ort` version oar-ocr also
+# pins. `load-dynamic` opens the bundle's hash-checked libonnxruntime.so at start; the
+# default features (`download-binaries`, `tls-native`, `copy-dylibs`, `ndarray`) stay
+# off, so a build never fetches anything.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"], optional = true }
+# GLiNER's DeBERTa tokenizer.json (docs/33 §5.3). Default features (progress bar, the C++
+# suffix array) are off; `onig` is the regex engine its pre-tokenizers need, the same one
+# oar-ocr-core brings (§5.2).
+tokenizers = { version = "=0.23.2", default-features = false, features = ["onig"], optional = true }
+# GLiNER's word splitter (`\w+(?:[-_]\w+)*|\S`, Python semantics) needs Unicode general
+# categories. Already in the tree through casual-sign-pii.
+regex = { version = "1.13.1", default-features = false, features = ["std", "unicode", "perf"], optional = true }
+# Reads gliner_config.json (max_len, max_width, the prompt tokens). Already in the tree.
+serde_json = { version = "1.0.154", optional = true }
+# A span request's text must already be NFC (docs/33 §3.2): checked, never changed.
+# Already in the tree through casual-sign-fields.
+unicode-normalization = { version = "0.1.24", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 # Throwaway TLS PKI for the mTLS tests (as keyd's tests).
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
+# Reads the GLiNER golden spans (fixtures/ml/gliner-golden/).
+serde_json = "1.0.154"
 
 [lints]
 workspace = true

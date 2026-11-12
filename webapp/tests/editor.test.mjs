@@ -6,6 +6,10 @@ import assert from "node:assert/strict";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "../routing.js";
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners, stops } from "../guides.js";
 import { suggestionsFrom } from "../detect.js";
+import { FIELD_TYPES, FIELD_GROUPS, takesInput, requiredByDefault, validationFrom, optionsFrom } from "../geometry.js";
+import { FIELD_TYPES_READY, createClient } from "../api.js";
+import { createMockFetch, MOCK } from "../mock.js";
+import { makePdf } from "../mockpdf.js";
 
 // ---- signing steps ---------------------------------------------------------------------------
 test("orders stay compact; the API's are read leniently", () => {
@@ -118,5 +122,58 @@ test("suggestions become ghost fields the editor can place, skipping ones on pla
   ];
   const out = suggestionsFrom(items, docs, placed, () => "k");
   assert.equal(out.length, 1, "on a placed field, past the last page, another document, or unreadable: left out");
-  assert.deepEqual([out[0].type, out[0].label, out[0].page, out[0].docKey], ["text", "Company name", 2, "d1"]);
+  // A company suggestion is a company field now the editor places that type (UX-05).
+  assert.deepEqual([out[0].type, out[0].label, out[0].page, out[0].docKey], ["company", "Company name", 2, "d1"]);
+  // A type the editor does not place becomes a text field labelled with its cue.
+  const other = suggestionsFrom([{ document_id: "doc-1", type: "ssn", page: 2, x: "72", y: "300", width: "120", height: "22", cue: "SSN" }], docs, [], () => "k");
+  assert.deepEqual([other[0].type, other[0].label], ["text", "SSN"]);
+});
+
+test("a detected field on a signature line sits on the line, in the editor as from the API (UX-05)", async () => {
+  // The fixture: the mock's PDF, whose signature and date lines are drawn at a PDF y
+  // read from its own content (bottom-left origin), on a 792-point page.
+  const bytes = makePdf([{ title: "Lines", lines: ["Sign below."] }]);
+  const text = new TextDecoder("latin1").decode(bytes);
+  const [, x0, lineY] = text.match(/(\d+) (\d+) m \d+ \d+ l S/).map(Number);
+  const lineTop = 792 - lineY; // the line in displayed space, top-left origin (ADR-019)
+  const api = createClient({ fetch: createMockFetch() });
+  await api.login(MOCK.email, MOCK.password);
+  const env = await api.createEnvelope({ subject: "Lines", documents: [{ name: "l.pdf", content_base64: Buffer.from(bytes).toString("base64") }] });
+  const out = await api.detectFields(env.id, env.documents[0].id);
+  const docs = [{ key: "d1", id: env.documents[0].id, pages: [{ width: 612, height: 792 }] }];
+  const ghosts = suggestionsFrom(out.items, docs, [], () => "g");
+  for (const type of ["signature", "date_signed"]) {
+    const g = ghosts.find((x) => x.type === type);
+    assert.ok(g, `a ${type} suggestion`);
+    assert.equal(g.y + g.height, lineTop, `${type}: bottom on the line, not below it`);
+  }
+  assert.equal(ghosts.find((x) => x.type === "signature").x, x0);
+});
+
+// ---- field kinds and properties (UX-05) -------------------------------------------------------
+test("the palette places exactly the kinds the ceremony fills, each in one group", () => {
+  assert.deepEqual([...FIELD_TYPES].sort(), [...FIELD_TYPES_READY].sort());
+  assert.deepEqual(FIELD_GROUPS.flatMap(([, ts]) => ts).sort(), [...FIELD_TYPES].sort());
+  assert.equal(takesInput("note"), false);
+  assert.equal(takesInput("dropdown"), true);
+  assert.equal(requiredByDefault("text"), true);
+  assert.equal(requiredByDefault("checkbox"), false);
+});
+
+test("a validation preset becomes the engine's rule; settings not typed leave it out", () => {
+  assert.equal(validationFrom(""), null);
+  assert.deepEqual(validationFrom("email", { message: " Work email " }), { kind: "email", message: "Work email" });
+  assert.deepEqual(validationFrom("number", { min: "1", max: "99.50", maxLength: "4" }), { kind: "number", min: "1", max: "99.50" });
+  assert.deepEqual(validationFrom("number", { min: "one" }), { kind: "number" });
+  assert.equal(validationFrom("regex", { pattern: "" }), null);
+  assert.deepEqual(validationFrom("regex", { pattern: "^a$" }), { kind: "regex", pattern: "^a$" });
+  assert.deepEqual(validationFrom("length", { maxLength: "12" }), { kind: "length", max: 12 });
+  assert.equal(validationFrom("length", { maxLength: "-1" }), null);
+  assert.equal(validationFrom("credit_card"), null);
+});
+
+test("options typed one per line: trimmed, blanks and repeats dropped, at most 500", () => {
+  assert.deepEqual(optionsFrom(" Red\r\n\nGreen\nRed \nBlue"), ["Red", "Green", "Blue"]);
+  assert.equal(optionsFrom(Array.from({ length: 600 }, (_, i) => `o${i}`).join("\n")).length, 500);
+  assert.deepEqual(optionsFrom(""), []);
 });

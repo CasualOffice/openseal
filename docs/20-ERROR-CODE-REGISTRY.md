@@ -320,7 +320,7 @@ a dead ML job means only "no suggestions" and never blocks sending or sealing.
 | CS-ML-0002 | Model bundle: a file missing, unlisted, over its size or not matching its SHA-256; modeld does not start. *Final* |
 | CS-ML-0003 | A model file refused: external data, custom op domain, pickle format, or licence not allowed. *Final* |
 | CS-ML-0004 | A frame malformed or over a bound (length, count, id alphabet, UTF-8 or NFC), or a document handle unknown on this connection |
-| CS-ML-0005 | Input over its bound: page pixels, decoded image data, text bytes. *Final* for that page or call |
+| CS-ML-0005 | Input over its bound: page pixels, decoded image data, text bytes, GLiNER label-prompt tokens. *Final* for that page or call |
 | CS-ML-0006 | A page could not be rasterised: encrypted, unsupported, damaged, or over its time (the raster child was killed). Reported per page |
 | CS-ML-0007 | Inference deadline passed |
 | CS-ML-0008 | modeld unreachable, TLS refused, or the connection closed |

@@ -189,7 +189,7 @@ objects concerned, never their content.
   access is still recorded. Any other status, a purged envelope, or a second time is `CS-WF-0001`.
 - **Attachment downloaded** (`Access::AttachmentDownloaded {field, hash}`, `WEB-08`) records `attachment.downloaded`
   only when the field's value names that hash (`CS-WF-0008` otherwise).
-- **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says.
+- **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says. It needs the same gate as declining (`gate_in`: opened, not locked, every authentication passed; `SEC-CER-01`), since consent outlives a correction that clears the authentication.
 - **A signer with no signature field** must still adopt a signature before finishing (free-form signing, intent).
 - **Sending needs a recipient with a required action**; an envelope of carbon copies only is `CS-WF-0004`.
 - **Location (GEO-01)** is checked after the command is decided, against the setting as it stood before the command,

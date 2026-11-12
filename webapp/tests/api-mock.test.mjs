@@ -93,8 +93,12 @@ test("the ceremony: access code, consent with location, adopt, fill, finish comp
   let v = await c.ceremony.open(t);
   assert.deepEqual(v.auth_required, ["access_code"]);
   assert.equal(v.envelope.signing_options.capture_location, true);
+  // SEC-CER-01: before the code the view names no document and no field.
+  assert.deepEqual(v.envelope.documents, []);
+  assert.deepEqual(v.fields, []);
   await assert.rejects(c.ceremony.authenticate(t, "access_code", "0000"), (e) => e.code === "CS-AUTH-0003");
-  await c.ceremony.authenticate(t, "access_code", MOCK.accessCode);
+  v = await c.ceremony.authenticate(t, "access_code", MOCK.accessCode);
+  assert.ok(v.envelope.documents.length > 0 && v.fields.length > 0);
   await assert.rejects(c.ceremony.fill(t, v.fields[0].id, { text: "x" }), (e) => e.code === "CS-AUTH-0005");
   await c.ceremony.consent(t, MOCK.ersd, { latitude: 1.5, longitude: 2.5, accuracy_m: 20 });
   const sig = v.fields.find((f) => f.type === "signature");

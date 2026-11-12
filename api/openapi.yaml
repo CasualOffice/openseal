@@ -2240,6 +2240,10 @@ paths:
     get:
       operationId: ceremonyDocument
       summary: "The document as delivered"
+      description: >-
+        Only in the browser the link is bound to, once the recipient has passed every
+        authentication they need and, when the account requires a disclosure, consented
+        to it (403 CS-AUTH-0003, CS-AUTH-0004 or CS-AUTH-0005 before; SEC-CER-01).
       security: []
       x-permission: public
       responses:

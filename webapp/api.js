@@ -192,6 +192,10 @@ export const NOT_ON_SERVER = Object.freeze({
   testWebhook: { row: "UXW-32", needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
   redeliver: { row: "UXW-33", needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
   clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit event)" },
+  // UX-04: the shell's account menu and sign-in.
+  profile: { row: "UXW-37", needs: "GET/PATCH /api/v1/users/me {name, email (read-only), notifications {completed, declined, viewed}, signature and initials {image_base64} or null, password with current_password}" },
+  passwordReset: { row: "UXW-38", needs: "POST /api/v1/auth/password-reset {email} (no session; 202 whether or not the email has an account) and the emailed one-time link to set a new password" },
+  authProviders: { row: "UXW-39", needs: "GET /api/v1/auth/providers (no session) answering {items: [{id, name, url}]}, the configured SSO identity providers (FG-173)" },
 });
 
 /// Make a client. `baseUrl` is prepended to every path ("" = same origin). `store`
@@ -278,6 +282,19 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     },
     session: () => data(request("GET", "/api/v1/auth/session")),
     account: () => data(request("GET", "/api/v1/accounts/me")),
+    /// The signed-in user's own profile (`NOT_ON_SERVER.profile`, UX-04): `{id, name,
+    /// email, notifications: {completed, declined, viewed}, signature, initials}`, the
+    /// marks as `{image_base64}` or null.
+    me: unbuilt("profile", () => data(request("GET", "/api/v1/users/me"))),
+    /// Change one's own profile: `{name?, notifications?, signature?, initials?,
+    /// password?, current_password?}` (a new password needs the current one).
+    patchMe: unbuilt("profile", (body) => data(request("PATCH", "/api/v1/users/me", { body }))),
+    /// Ask for a password-reset email (`NOT_ON_SERVER.passwordReset`, UX-04); no
+    /// session. The answer is the same whether or not the address has an account.
+    requestPasswordReset: unbuilt("passwordReset", (email) => data(request("POST", "/api/v1/auth/password-reset", { body: { email } }))),
+    /// The SSO identity providers this server offers on sign-in
+    /// (`NOT_ON_SERVER.authProviders`, UX-04): `{items: [{id, name, url}]}`; no session.
+    authProviders: unbuilt("authProviders", () => data(request("GET", "/api/v1/auth/providers"))),
 
     // ---- Envelopes ---------------------------------------------------------
     /// `q`: text the subject or a recipient's name or email contains (WEB-04).
