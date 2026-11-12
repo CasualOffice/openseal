@@ -23,7 +23,7 @@ async fn state_round_trips_with_revisions_and_steps_are_insert_only() {
     let Some(db) = fresh("state_round_trips", Rls::On).await else {
         return;
     };
-    let w = world::seed(&db.store, "alpha").await;
+    let w = world::seed(&db, "alpha").await;
     let t = db.store.for_account(w.account);
     let mut tx = t.begin().await.unwrap();
     assert!(
@@ -116,7 +116,7 @@ async fn job_step_rows_cannot_be_updated_by_the_application_role() {
     let Some(db) = fresh("job_step_rows_cannot_be_updated", Rls::On).await else {
         return;
     };
-    let w = world::seed(&db.store, "alpha").await;
+    let w = world::seed(&db, "alpha").await;
     let t = db.store.for_account(w.account);
     let mut tx = t.begin().await.unwrap();
     tx.job_steps()
@@ -142,7 +142,7 @@ async fn heartbeat_extends_only_the_holders_lease() {
     let Some(db) = fresh("heartbeat_extends_only_the_holders_lease", Rls::On).await else {
         return;
     };
-    let w = world::seed(&db.store, "alpha").await;
+    let w = world::seed(&db, "alpha").await;
     let lease = uuid::Uuid::new_v4();
     let claimed = db
         .store
@@ -214,8 +214,8 @@ async fn new_methods_refuse_another_accounts_ids(rls: Rls) {
     let Some(db) = fresh(&format!("new_methods_refuse_cross_tenant_{rls:?}"), rls).await else {
         return;
     };
-    let a = world::seed(&db.store, "alpha").await;
-    let b = world::seed(&db.store, "bravo").await;
+    let a = world::seed(&db, "alpha").await;
+    let b = world::seed(&db, "bravo").await;
     // A's rows.
     let ta = db.store.for_account(a.account);
     let mut tx = ta.begin().await.unwrap();

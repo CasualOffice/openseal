@@ -27,6 +27,7 @@ use rustls_pki_types::pem::PemObject;
 
 use crate::client::tls_certificates;
 use crate::error::ModeldError;
+use crate::gliner::SpanModels;
 use crate::manifest::Bundle;
 use crate::ocr::OcrEngine;
 use crate::oplog::{OpLog, OpRecord, hex};
@@ -251,6 +252,7 @@ pub struct ConnectionState {
 pub struct ModelService {
     bundle: Bundle,
     runtime: String,
+    spans: SpanModels,
     allow: AllowList,
     log: Mutex<OpLog>,
     busy: AtomicUsize,
@@ -291,6 +293,7 @@ impl ModelService {
         Self {
             bundle,
             runtime: NO_RUNTIME.to_owned(),
+            spans: SpanModels::default(),
             allow,
             log: Mutex::new(log),
             busy: AtomicUsize::new(0),
@@ -327,6 +330,18 @@ impl ModelService {
             engine.runtime().clone_into(&mut self.runtime);
         }
         Ok(self)
+    }
+
+    /// The service answering ENTITIES and PERSONAL with `models` (loaded from this
+    /// bundle by [`SpanModels::load`] before modeld measures its resident memory). INFO
+    /// then reports the ONNX Runtime version.
+    #[must_use]
+    pub fn with_span_models(mut self, models: SpanModels) -> Self {
+        if models.has_entities() || models.has_personal() {
+            self.runtime = crate::gliner::runtime_version();
+        }
+        self.spans = models;
+        self
     }
 
     /// The verified bundle.
@@ -439,6 +454,9 @@ impl ModelService {
         }
         let _slot = self.take_slot().ok_or(ModeldError::Busy)?;
         let b = &self.bundle;
+        let deadline = started
+            .checked_add(Duration::from_millis(u64::from(req.deadline_ms)))
+            .unwrap_or(started);
         let resp = match &req.op {
             Op::Info | Op::DocClose { .. } => return Err(ModeldError::Malformed("unreachable")),
             Op::DocOpen { pdf } => {
@@ -472,8 +490,8 @@ impl ModelService {
             }
             Op::Hash { .. } => Response::Hash(crate::hash::run(b, req)?),
             Op::Embed { .. } => Response::Embed(crate::embed::run(b, req)?),
-            Op::Entities(r) => Response::Spans(crate::entities::run(b, r)?),
-            Op::Personal(r) => Response::Spans(crate::personal::run(b, r)?),
+            Op::Entities(r) => Response::Spans(crate::entities::run(&self.spans, r, deadline)?),
+            Op::Personal(r) => Response::Spans(crate::personal::run(&self.spans, r, deadline)?),
         };
         if started.elapsed() > Duration::from_millis(u64::from(req.deadline_ms)) {
             return Err(ModeldError::Deadline);

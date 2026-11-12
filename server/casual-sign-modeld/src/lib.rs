@@ -17,9 +17,9 @@
 //!   the op modules: [`raster`] (piece C: `hayro` in a per-document child process, the
 //!   pixel, decoded-image and time caps), `rules` (C: rules and boxes found on scans),
 //!   `ocr` (D: PP-OCRv6 through `oar-ocr`), [`logging`] (the fixed third-party log
-//!   filter), and those the later pieces fill: `hash`, `embed` (I), `gliner`,
-//!   `entities`, `personal` (K). Until filled, an op answers `CS-ML-0010` (not
-//!   installed).
+//!   filter), [`Gliner`] with `entities` and `personal` (K: ENTITIES and PERSONAL
+//!   through GLiNER on ONNX Runtime, [`SpanModels`]), and those still to fill: `hash`,
+//!   `embed` (I). An op whose model is not installed answers `CS-ML-0010`.
 //! - With only the `raster` feature: the rasteriser, for the `rasterise` fuzz target.
 //!
 //! Every output is a suggestion a person accepts; none enters a sealed document, the
@@ -58,6 +58,11 @@ mod server;
 pub use client::{Call, DEADLINE_GRACE, Endpoint, ModelClient, Session, client_tls};
 pub use error::{BundleProblem, ModelRefusal, ModeldError};
 
+#[cfg(feature = "server")]
+pub use gliner::{
+    Gliner, MAX_PROMPT_TOKENS, MAX_WINDOW_TOKENS, MAX_WINDOWS, RUNTIME_PATH, SpanModels,
+    WINDOW_OVERLAP, WindowFeeds, init_runtime, split_words,
+};
 #[cfg(feature = "server")]
 pub use manifest::{ALLOWED_LICENCES, Bundle, Entry, MAX_BUNDLE, MAX_FILE, Manifest};
 #[cfg(feature = "server")]

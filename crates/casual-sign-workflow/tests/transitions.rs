@@ -458,6 +458,62 @@ fn withdrawing_consent_declines() {
     assert_eq!(hx.status(), EnvelopeStatus::Declined);
 }
 
+/// SEC-CER-01: consent outlives a correction that sends a new link and clears the
+/// authentication passed under the old one. Whoever holds the new link must pass the
+/// access code again before withdrawing consent (which declines the envelope), as for
+/// declining itself.
+#[test]
+fn withdrawing_consent_needs_the_authentication_first() {
+    let mut hx = Harness::new();
+    hx.policy.ersd = Some(Ersd {
+        version: Text::new("v1").unwrap(),
+        hash: h(1),
+    });
+    hx.draft(&[auth(&[AuthMethod::AccessCode], recipient("r1", Signer, 1))]);
+    hx.send();
+    hx.get_ready("r1");
+    let mut moved = auth(&[AuthMethod::AccessCode], recipient("r1", Signer, 1));
+    moved.email = text("moved@example.test");
+    hx.ok(
+        sender(),
+        Command::Correct {
+            changes: vec![Change::UpdateRecipient { recipient: moved }],
+        },
+    );
+    assert!(hx.state().recipient(&id("r1")).unwrap().consent.is_some());
+    hx.ok(
+        as_recipient("r1"),
+        Command::OpenLink {
+            recipient: id("r1"),
+        },
+    );
+    let e = hx
+        .run(
+            as_recipient("r1"),
+            Command::WithdrawConsent {
+                recipient: id("r1"),
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(e, WorkflowError::AuthRequired { .. }), "{e:?}");
+    assert_eq!(hx.status(), EnvelopeStatus::Delivered);
+    hx.ok(
+        as_recipient("r1"),
+        Command::AuthResult {
+            recipient: id("r1"),
+            method: AuthMethod::AccessCode,
+            passed: true,
+        },
+    );
+    hx.ok(
+        as_recipient("r1"),
+        Command::WithdrawConsent {
+            recipient: id("r1"),
+        },
+    );
+    assert_eq!(hx.status(), EnvelopeStatus::Declined);
+}
+
 #[test]
 fn host_asserted_authentication_is_recorded_for_embedded_signers() {
     let mut hx = Harness::new();

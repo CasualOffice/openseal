@@ -6,7 +6,10 @@ use time::OffsetDateTime;
 
 use super::{affected, text_enum};
 use crate::error::{Result, StoreError, db};
-use crate::ids::{AccountId, PermissionProfileId, StaffSessionId, UserId, UserInvitationId};
+use crate::ids::{
+    AccountId, OrganizationId, PermissionProfileId, StaffSessionId, UserId, UserInvitationId,
+};
+use crate::org::WorkspaceStatus;
 use crate::store::TenantTx;
 
 /// The current account's row.
@@ -14,6 +17,10 @@ use crate::store::TenantTx;
 pub struct Account {
     /// Its id.
     pub id: AccountId,
+    /// The organization it is a workspace of; never changes (docs/23 §2.1).
+    pub organization_id: OrganizationId,
+    /// Active or archived.
+    pub status: WorkspaceStatus,
     /// Its display name.
     pub name: String,
     /// Settings (docs/22 §8).
@@ -39,7 +46,8 @@ impl Accounts<'_> {
     pub async fn get(&mut self) -> Result<Account> {
         let acct = self.tx.acct();
         let r = sqlx::query!(
-            "SELECT id, name, settings, data_region, created_at FROM accounts WHERE id = $1",
+            "SELECT id, organization_id, status, name, settings, data_region, created_at \
+             FROM accounts WHERE id = $1",
             acct
         )
         .fetch_optional(self.tx.conn())
@@ -48,6 +56,8 @@ impl Accounts<'_> {
         .ok_or(StoreError::NotFound { entity: "account" })?;
         Ok(Account {
             id: AccountId(r.id),
+            organization_id: OrganizationId(r.organization_id),
+            status: WorkspaceStatus::parse(&r.status, "status")?,
             name: r.name,
             settings: r.settings,
             data_region: r.data_region,
@@ -71,6 +81,34 @@ impl Accounts<'_> {
         .await
         .map_err(db)?;
         affected(done.rows_affected(), "account")
+    }
+
+    /// Make `user`, the first administrator of a just-bootstrapped install, the owner of
+    /// this account's organization ([`crate::Store::bootstrap_organization`]). Refused
+    /// unless this transaction created the organization, it has no administrator yet and
+    /// this is its only workspace, and `user` is an enabled member here holding the
+    /// built-in admin profile. An organization that already existed without an owner is
+    /// never claimable here (docs/23 §5.1).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when refused.
+    pub async fn make_first_owner(&mut self, user: UserId, now: OffsetDateTime) -> Result<()> {
+        let done = sqlx::query_scalar!(
+            r#"SELECT openseal_bootstrap_owner($1, $2) AS "done!""#,
+            user.0,
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        if done {
+            Ok(())
+        } else {
+            Err(StoreError::NotFound {
+                entity: "organization",
+            })
+        }
     }
 
     /// The published disclosure (ERSD, docs/22 §1) whose text hashes to `sha256`: the
@@ -418,24 +456,19 @@ impl Users<'_> {
 
 impl Users<'_> {
     /// A member's Argon2id PHC string, for checking a local login. Only this method
-    /// reads it, and only for an enabled member of this account.
+    /// reads it, and only for an enabled member of this account: the application role
+    /// cannot select the column, and reads it through `openseal_login_password_hash`.
     ///
     /// # Errors
     ///
     /// `CS-DB-0001`.
     pub async fn password_hash(&mut self, user: UserId) -> Result<Option<Personal<String>>> {
         let acct = self.tx.acct();
-        let row = sqlx::query_scalar!(
-            "SELECT u.password_hash FROM users u JOIN account_memberships m ON m.user_id = u.id \
-             WHERE m.account_id = $1 AND u.id = $2 AND u.disabled_at IS NULL \
-             AND m.disabled_at IS NULL",
-            acct,
-            user.0
-        )
-        .fetch_optional(self.tx.conn())
-        .await
-        .map_err(db)?;
-        Ok(row.flatten().map(Personal))
+        let row = sqlx::query_scalar!("SELECT openseal_login_password_hash($2, $1)", acct, user.0)
+            .fetch_one(self.tx.conn())
+            .await
+            .map_err(db)?;
+        Ok(row.map(Personal))
     }
 
     /// Set a member's Argon2id PHC string (computed by the caller; never a password).

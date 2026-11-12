@@ -496,7 +496,14 @@ impl Env {
         let db = fresh(test, Rls::On).await?;
         let account = AccountId(Uuid::now_v7());
         let sender = UserId(Uuid::now_v7());
-        db.store.create_account(account, "Acme Test").await.unwrap();
+        // A workspace of an organization of its own, made by the owner role as the
+        // console will; a test's further workspaces use `bootstrap_workspace`.
+        let org = db.organization("Acme Test").await;
+        let mut tx = db.store.for_organization(org).begin().await.unwrap();
+        tx.create_workspace(account, "Acme Test", &db::builtin_profiles())
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
         let mut tx = db.store.for_account(account).begin().await.unwrap();
         let profile = PermissionProfileId(Uuid::now_v7());
         tx.users()

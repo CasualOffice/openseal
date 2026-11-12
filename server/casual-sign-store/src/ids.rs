@@ -32,7 +32,9 @@ macro_rules! id_type {
 }
 
 id_type!(
-    /// An account (tenant).
+    /// An organization: the level above accounts (ADR-028, docs/23 §2.1).
+    OrganizationId,
+    /// An account (tenant): a workspace of one organization.
     AccountId,
     /// A staff user.
     UserId,

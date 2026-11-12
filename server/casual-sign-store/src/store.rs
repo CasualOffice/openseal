@@ -7,6 +7,10 @@
 //! also sets `openseal.account_id` for its own duration, so PostgreSQL's row-level
 //! security policies apply the same filter a second time: a repository bug is caught by
 //! RLS, and an RLS gap by the repository (both are tested separately).
+//!
+//! Accounts are workspaces of an organization (ADR-028). The application cannot insert
+//! one: [`Store::bootstrap_organization`] makes the first, and an organization
+//! transaction (`crate::org`) the rest, each through a `SECURITY DEFINER` function.
 
 use std::time::Duration;
 
@@ -69,23 +73,9 @@ impl Store {
         }
     }
 
-    /// Create an account. The insert runs with `openseal.account_id` set to the new id,
-    /// so the row-level security policy (`id = current account`) admits it.
-    ///
-    /// # Errors
-    ///
-    /// `CS-DB-0006` when the id exists; `CS-DB-0008` for an empty or overlong name.
-    pub async fn create_account(&self, id: AccountId, name: &str) -> Result<()> {
-        let mut tx = self.for_account(id).begin().await?;
-        sqlx::query!(
-            "INSERT INTO accounts (id, name) VALUES ($1, $2)",
-            id.0,
-            name
-        )
-        .execute(tx.conn())
-        .await
-        .map_err(db)?;
-        tx.commit().await
+    /// The pool, for the organization scope in this crate.
+    pub(crate) fn pool(&self) -> &PgPool {
+        &self.pool
     }
 
     /// The cross-account entry points: secret → ids, and the job queue's claim.
@@ -141,6 +131,12 @@ pub struct TenantTx {
 }
 
 impl TenantTx {
+    /// Bind an open transaction, whose `openseal.account_id` is already `account`, as
+    /// that account's transaction ([`crate::OrgTx::into_workspace`]).
+    pub(crate) fn bound(tx: Transaction<'static, Postgres>, account: AccountId) -> Self {
+        Self { tx, account }
+    }
+
     /// The account every statement in this transaction is bound to.
     #[must_use]
     pub fn account_id(&self) -> AccountId {
@@ -174,6 +170,21 @@ impl TenantTx {
     pub async fn rollback(self) -> Result<()> {
         self.tx.rollback().await.map_err(db)
     }
+}
+
+/// A workspace a signed-in person can switch to (docs/23 §2.3): metadata only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserWorkspace {
+    /// The workspace.
+    pub account_id: AccountId,
+    /// Its name.
+    pub account_name: String,
+    /// `active` or `archived`.
+    pub account_status: crate::org::WorkspaceStatus,
+    /// Its organization.
+    pub organization_id: crate::ids::OrganizationId,
+    /// Its organization's name.
+    pub organization_name: String,
 }
 
 /// Where a recipient token leads.
@@ -337,6 +348,45 @@ impl EntryPoints<'_> {
                 UserId(r.user_id),
             )
         }))
+    }
+
+    /// Every workspace the user of a live staff session belongs to, enabled there, with
+    /// its organization (switching, docs/23 §2.3). The user comes from the session's
+    /// hash, never from an id the caller names. Empty for a session that is not live.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0010` for an unreadable row.
+    pub async fn user_workspaces(
+        &self,
+        session_token_sha256: &[u8; 32],
+        now: OffsetDateTime,
+    ) -> Result<Vec<UserWorkspace>> {
+        let rows = sqlx::query!(
+            r#"SELECT account_id AS "account_id!", account_name AS "account_name!",
+                      account_status AS "account_status!", organization_id AS "organization_id!",
+                      organization_name AS "organization_name!"
+                 FROM openseal_user_workspaces($1, $2)"#,
+            session_token_sha256.as_slice(),
+            now
+        )
+        .fetch_all(&self.store.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                Ok(UserWorkspace {
+                    account_id: AccountId(r.account_id),
+                    account_name: r.account_name,
+                    account_status: crate::org::WorkspaceStatus::parse(
+                        &r.account_status,
+                        "account_status",
+                    )?,
+                    organization_id: crate::ids::OrganizationId(r.organization_id),
+                    organization_name: r.organization_name,
+                })
+            })
+            .collect()
     }
 
     /// The signing link an active link token's hash names (docs/24 §9).
