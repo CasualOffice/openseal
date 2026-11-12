@@ -134,10 +134,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       title),
     h("nav", { class: "os-prepare__steps", attrs: { "aria-label": t("wizard.steps") } }, stepper),
     docTools,
-    h("span", { class: "os-spacer" }),
-    status,
-    TPL ? null : saveBtn,
-    backBtn, nextBtn, sendBtn, TPL ? saveBtn : null);
+    // The step's actions keep their place at the bar's end on every step (UX-05): the
+    // title and the step labels give way first, never Back, Next or Send.
+    h("div", { class: "os-prepare__actions" },
+      status,
+      TPL ? null : saveBtn,
+      backBtn, nextBtn, sendBtn, TPL ? saveBtn : null));
 
   const docsPanel = h("section", { class: "os-panel os-panel--docs", attrs: { "aria-labelledby": "docs-h" } });
   const rcptPanel = h("section", { class: "os-panel os-panel--rcpt", attrs: { "aria-labelledby": "rcpt-h" } });

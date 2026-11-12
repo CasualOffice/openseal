@@ -123,10 +123,15 @@
   .os-optgrid { grid-template-columns: minmax(0, 1fr); }
   .os-step-head { flex-wrap: wrap; }
 }
-.os-prepare { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; }
-.os-prepare__bar { flex-wrap: wrap; row-gap: var(--os-s1); min-height: 3.5rem; padding: var(--os-s2) var(--os-s3); gap: var(--os-s2); position: relative; z-index: 20; }
-.os-prepare__head { flex: 0 1 auto; max-width: 16rem; }
-.os-prepare__steps { display: flex; min-width: 0; }
+.os-prepare { display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); height: 100%; min-height: 0; container: prepare / inline-size; }
+.os-prepare__bar { flex-wrap: nowrap; min-width: 0; min-height: 3.5rem; padding: var(--os-s2) var(--os-s3); gap: var(--os-s2); position: relative; z-index: 20; }
+.os-prepare__head { flex: 0 1 auto; min-width: 3rem; max-width: 16rem; }
+.os-prepare__steps { display: flex; flex: 0 1 auto; min-width: 0; }
+/* The step's actions (UX-05): one group at the bar's end that never shrinks or wraps. */
+.os-prepare__actions { display: flex; align-items: center; gap: var(--os-s2); flex: none; margin-left: auto; }
+.os-prepare__steps .os-stepper, .os-prepare__steps .os-stepper li { min-width: 0; }
+.os-prepare__steps .os-stepper__btn { min-width: 0; max-width: 100%; }
+.os-prepare__steps .os-stepper__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .os-prepare__steps .os-stepper { margin: 0; }
 .os-prepare__doctools { display: flex; align-items: center; gap: 0.125rem; padding-left: var(--os-s2); border-left: 1px solid var(--os-border); }
 .os-savestate { display: inline-flex; align-items: center; gap: var(--os-s1); font-size: var(--os-fs-12); color: var(--os-muted); white-space: nowrap; }
@@ -216,13 +221,27 @@
   .os-stepper li + li::before { width: 0.5rem; }
   .os-wizard__pane { padding: var(--os-s4) var(--os-s3); }
 }
-/* Narrower windows (and 150 % zoom): a compact toolbar — save state as a dot with its
- * words for assistive technology and as a tooltip, Save and Back as icons. */
-@media (max-width: 89.999em) {
+/* A compact toolbar by the editor's own width (UX-05: a container query, so a docked
+ * panel, a zoomed page or a long translation compacts it, not the window's width alone).
+ * First the save state becomes a dot (its words for assistive technology and as a
+ * tooltip), then Save and Back become icons, then the steps not open lose their names. */
+@container prepare (max-width: 99.999rem) {
   .os-savestate > span:not(.os-savestate__dot) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .os-prepare__bar > .os-btn:not([data-testid="wizard-next"]):not(.os-btn--primary) > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .os-prepare__bar > .os-btn:not([data-testid="wizard-next"]):not(.os-btn--primary) { width: var(--os-btn); padding: 0; }
   .os-stepper li + li::before { width: 0.75rem; }
+}
+@container prepare (max-width: 89.999rem) {
+  .os-prepare__actions > .os-btn:not(.os-btn--primary) > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-prepare__actions > .os-btn:not(.os-btn--primary) { width: var(--os-btn); padding: 0; }
+}
+@container prepare (max-width: 79.999rem) {
+  .os-prepare__steps .os-stepper__btn:not([aria-current="step"]) .os-stepper__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+}
+/* Phones: two rows on purpose — the title and the step's actions, then the steps. */
+@container prepare (max-width: 47.999rem) {
+  .os-prepare__bar { flex-wrap: wrap; row-gap: var(--os-s1); }
+  .os-prepare__steps { order: 10; flex: 1 1 auto; }
+  .os-prepare__doctools { order: 11; }
+  .os-prepare__actions { gap: var(--os-s1); }
 }
 /* Short windows (400 % zoom, landscape phones): nothing pinned may cover the step (P-03). */
 @media (max-height: 31.25em) {
