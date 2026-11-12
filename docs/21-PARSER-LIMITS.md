@@ -195,12 +195,13 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 
 ## ML (`casual-sign-modeld`, the worker's ML jobs; designed, ADR-029)
 
-Designed in [33](33-ML-MODELS.md) §4; nothing is built, and no row has a hostile fixture yet (the `ml_*` fixtures of
+Designed in [33](33-ML-MODELS.md) §4; the `casual-sign-modeld` skeleton enforces only the 64 MiB frame cap (not yet the 4 MiB cap on other frames), the id bounds and the pre-admission bound; the rest is not built, and no row has a hostile fixture yet (the `ml_*` fixtures of
 `SEC-I02` come with `ML-02`). Values marked provisional are re-set from measurement before an exit is claimed.
 
 | Limit | Default | Code |
 | --- | ---: | --- |
 | modeld frame: `DOC_OPEN`; every other frame | 64 MiB (a 50 MiB upload plus headers); 4 MiB | CS-ML-0004 |
+| A caller off the allow list: its first frame | length read; at most 64 KiB of the body discarded through a 1 KiB buffer, never held; then refused | CS-ML-0015 |
 | Open documents per connection | 1 | CS-ML-0004 |
 | Model ids, account and job ids in a frame | 1–64 bytes, `[A-Za-z0-9._-]` | CS-ML-0004 |
 | Pages OCR'd per document | 200; later pages are not read (`truncated`) | — (report) |

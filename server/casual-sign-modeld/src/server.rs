@@ -12,6 +12,7 @@
 //! no database, SMTP, webhook or keyd credential (ADR-029).
 
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -27,7 +28,15 @@ use crate::client::tls_certificates;
 use crate::error::ModeldError;
 use crate::manifest::Bundle;
 use crate::oplog::{OpLog, OpRecord, hex};
-use crate::wire::{Info, Op, Request, Response, read_frame, write_frame};
+use crate::wire::{Info, Op, Request, Response, read_frame, read_frame_length, write_frame};
+
+/// The largest read made for a caller not yet admitted: its frame is discarded through a
+/// buffer this size, never held (review D2).
+const PRE_ADMISSION_BUFFER: usize = 1024;
+
+/// How much of a refused caller's first frame is read and discarded, so its refusal is not
+/// lost to a reset from unread data. More is left unread.
+const PRE_ADMISSION_DRAIN: usize = 64 << 10;
 
 /// The runtime version INFO reports until an inference runtime is linked.
 pub const NO_RUNTIME: &str = "none";
@@ -424,13 +433,13 @@ fn connection(
         .map(|c| fingerprint(c.as_ref()))
         .ok_or(ModeldError::NotAuthorized)?;
     let admitted = service.admit(&caller);
+    if let Err(e) = &admitted {
+        refuse(&mut s, e)?;
+        s.conn.send_close_notify();
+        let _ = s.conn.complete_io(&mut s.sock);
+        return admitted;
+    }
     while let Some(body) = read_frame(&mut s)? {
-        // A caller off the allow list gets its refusal as the answer to its first
-        // request (read first, so the refusal is not lost to a reset), and nothing else.
-        if let Err(e) = &admitted {
-            write_frame(&mut s, &Response::Error(e.number()).encode()?)?;
-            break;
-        }
         let response = match Request::decode(&body) {
             Ok(req) => service.answer(&caller, &req),
             Err(e) => Response::Error(e.number()),
@@ -442,9 +451,96 @@ fn connection(
     admitted
 }
 
+/// Answer a caller off the allow list with its refusal, as the answer to its first
+/// request, and nothing else. Its frame is never held: the length prefix is read, then at
+/// most [`PRE_ADMISSION_DRAIN`] bytes of the body are discarded through a fixed buffer
+/// (so the refusal is not lost to a reset from unread data), and the rest is left unread.
+fn refuse(s: &mut (impl Read + Write), err: &ModeldError) -> Result<(), ModeldError> {
+    let Some(n) = read_frame_length(s)? else {
+        return Ok(());
+    };
+    let mut left = n.min(PRE_ADMISSION_DRAIN);
+    let mut sink = [0u8; PRE_ADMISSION_BUFFER];
+    while left > 0 {
+        let buf = sink
+            .get_mut(..left.min(PRE_ADMISSION_BUFFER))
+            .unwrap_or_default();
+        match s.read(buf) {
+            Ok(0) => break,
+            Ok(got) => left = left.saturating_sub(got),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(ModeldError::Transport(e.kind().to_string())),
+        }
+    }
+    write_frame(s, &Response::Error(err.number()).encode()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stream that announces a frame of `MAX_FRAME` bytes and then supplies zeros,
+    /// remembering the largest read it was asked to fill and what was written to it.
+    struct Hostile {
+        header: [u8; 4],
+        sent: usize,
+        largest_read: usize,
+        written: Vec<u8>,
+    }
+
+    impl Read for Hostile {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.largest_read = self.largest_read.max(buf.len());
+            let n = if self.sent < 4 {
+                let rest = &self.header[self.sent..];
+                let n = rest.len().min(buf.len());
+                buf[..n].copy_from_slice(&rest[..n]);
+                n
+            } else {
+                buf.fill(0);
+                buf.len()
+            };
+            self.sent += n;
+            Ok(n)
+        }
+    }
+
+    impl Write for Hostile {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.written.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Review D2: a caller that chains to the client CA but is not on the allow list
+    /// must not make modeld allocate a frame-sized buffer before it is refused. With 64
+    /// connections at 64 MiB each that was the container's whole memory limit.
+    #[test]
+    fn a_refused_caller_cannot_make_modeld_allocate_a_large_buffer() {
+        let mut s = Hostile {
+            header: u32::try_from(crate::wire::MAX_FRAME).unwrap().to_be_bytes(),
+            sent: 0,
+            largest_read: 0,
+            written: Vec::new(),
+        };
+        refuse(&mut s, &ModeldError::NotAuthorized).unwrap();
+        assert!(
+            s.largest_read <= PRE_ADMISSION_BUFFER,
+            "asked to fill {} bytes before admission",
+            s.largest_read
+        );
+        assert!(s.sent <= 4 + PRE_ADMISSION_DRAIN, "read {} bytes", s.sent);
+        let body = read_frame(&mut s.written.as_slice()).unwrap().unwrap();
+        assert_eq!(
+            body,
+            Response::Error(ModeldError::NotAuthorized.number())
+                .encode()
+                .unwrap()
+        );
+    }
 
     #[test]
     fn slots_are_bounded_by_memory_as_well_as_cores() {

@@ -899,6 +899,20 @@ fn decode_spans(r: &mut Reader<'_>, req: &SpanRequest) -> Result<Vec<Span>, Mode
 /// # Errors
 /// `CS-ML-0004` for a truncated or oversized frame, `CS-ML-0008` for a transport error.
 pub fn read_frame(stream: &mut impl Read) -> Result<Option<Vec<u8>>, ModeldError> {
+    let Some(n) = read_frame_length(stream)? else {
+        return Ok(None);
+    };
+    let mut body = vec![0u8; n];
+    stream
+        .read_exact(&mut body)
+        .map_err(|e| ModeldError::Transport(e.kind().to_string()))?;
+    Ok(Some(body))
+}
+
+/// Read one frame's length prefix only, checked against [`MAX_FRAME`]. `Ok(None)` at a
+/// clean end of stream. The server reads a refused caller's frame this way, so nothing
+/// the size of the frame is allocated before a caller is admitted.
+pub(crate) fn read_frame_length(stream: &mut impl Read) -> Result<Option<usize>, ModeldError> {
     let mut len = [0u8; 4];
     let mut got = 0usize;
     while got < len.len() {
@@ -915,11 +929,7 @@ pub fn read_frame(stream: &mut impl Read) -> Result<Option<Vec<u8>>, ModeldError
     if n > MAX_FRAME {
         return Err(malformed("frame over the limit"));
     }
-    let mut body = vec![0u8; n];
-    stream
-        .read_exact(&mut body)
-        .map_err(|e| ModeldError::Transport(e.kind().to_string()))?;
-    Ok(Some(body))
+    Ok(Some(n))
 }
 
 /// Write one frame.
