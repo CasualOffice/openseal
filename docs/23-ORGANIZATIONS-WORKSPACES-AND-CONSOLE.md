@@ -183,8 +183,8 @@ GRANT UPDATE (name, settings, data_region) ON accounts TO openseal_app;
   - `openseal_create_workspace(p_id, p_name)`: organization scope only; inserts the account under
     `openseal_current_org()` with its built-in profiles. ORG-02's version writes no event, because the log tables do
     not exist yet; ORG-05's migration, the next one, replaces it (and `openseal_archive_workspace`) with versions that
-    append the admin events (§2.5) in the same transaction. No route calls either function before ORG-05 merges:
-    the workspace routes are ORG-03's, which needs ORG-05.
+    append the admin events (§2.5) in the same transaction (built: migration 0015, §2.5 As built). No route calls
+    either function before ORG-05 merges: the workspace routes are ORG-03's, which needs ORG-05.
   - `openseal_archive_workspace(p_id)`: organization scope, a workspace of that organization.
   - `openseal_bootstrap_organization(p_org, p_account, p_name)`: succeeds only when no organization exists, so
     `casual-sign-server bootstrap` creates the first organization and workspace of a self-hosted install and nothing
@@ -490,6 +490,43 @@ An event records actor (user, API client, SCIM token or operator id), action, ta
 values for settings that are not secret (secrets as "rotated"), request id and the actor's IP (personal data under
 docs/07, retained as such). Exported as JSON or CSV through `GET /organizations/me/audit` and `GET /admin-events`. This
 meets docs/10's "admin audit log of every configuration change, exportable".
+
+#### As built (`ORG-05`, migration `0015_admin_events.sql`)
+
+Built as above, with these decisions (each tested in `server/casual-sign-store/tests/admin_events.rs`, seen red under a
+mutation of the migration):
+
+- **The repositories append the events, not the routes.** Every store method that changes settings, a member, a
+  profile, a workspace or the organization appends its event in the same transaction, so no caller can forget one. The
+  caller says who acts (`TenantTx::act_as`, `OrgTx::act_as`, carried by `into_workspace`); every guarded API call acts
+  as its principal (the user behind a session, the API client behind a key or token) with the request id and client
+  address; without it the event records `system` (bootstrap, tests).
+- **No change commits without its event.** Deferred constraint triggers on `accounts`, `account_memberships`,
+  `permission_profiles`, `organizations`, `organization_admins` and `org_permission_sets` refuse an application-role
+  commit whose transaction appended no event to that workspace's log or its organization's (`23514`, constraint
+  `admin_change_has_event`, `CS-DB-0008`). "This transaction" is the event row's `xact` (`pg_current_xact_id()`, the
+  top-level id even inside a savepoint), set by the insert trigger, never by the caller. The owner role (migrations,
+  superuser recovery) is outside, as it is for the envelope chain (`SEC-S07`).
+- **Canonical event (v1).** RFC 8785 bytes from `casual-sign-audit::jcs`: `v`, `account` or `organization`, `seq`,
+  `prev` (hex or null), `at` (Unix milliseconds), `actor` (`{kind: user|api_client, id}` or `{kind: system}`), `action`,
+  `target` (ids by name), `changes` (`key`, `old`, `new`), and `request_id` and `ip` when known. Names and e-mail
+  addresses are never recorded, only ids; a member rename names the key without values; settings keys that look secret
+  (`secret`, `password`, `token`, `private`, `credential`) and passwords are recorded as `"rotated"`. Actions now:
+  `workspace.created`, `workspace.archived`, `workspace.settings_changed`, `organization.created`,
+  `organization.admin_added`, `member.added`, `member.removed`, `member.profile_changed`, `member.disabled`,
+  `member.enabled`, `member.renamed`, `member.password_set`, `profile.created`. A user changing their own name or
+  password, and accepting an invitation, are not administrative changes and write none.
+- **The database checks the bytes.** Besides the hash, `seq` and `prev`, the insert trigger requires the owner, `seq`,
+  `prev` and `action` columns to be what the bytes state, and refuses an event outside the current scope (`42501`)
+  before reading that chain, so another scope's head or next `seq` is never revealed. The workspace functions require
+  the event's bytes to name their own action and workspace.
+- **Who sees which event.** Workspace creation and archiving go to the organization log (they are organization
+  actions); the bootstrap writes `organization.created` and `organization.admin_added` there through
+  `openseal_append_org_event`; workspace settings, members and profiles go to the workspace log.
+- **Reading.** `TenantTx::admin_events(after, limit)` and `verified_admin_log()`, the same on `OrgTx`; the verified read
+  also requires the stored head to equal the last event's hash. `GET /admin-events` (workspace, `admin:account`)
+  re-verifies the whole log, then answers JSON or CSV. `GET /organizations/me/audit` comes with ORG-03's organization
+  routes, over `OrgTx::admin_events`.
 
 ## 3. Organization policy and inheritance
 

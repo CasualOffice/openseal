@@ -326,7 +326,7 @@ there, were backfilled as owners; a deferred constraint trigger refuses a commit
 leaves an active organization without an enabled one (`organization_keeps_an_owner`, `CS-DB-0008`). Organization
 scope reads `accounts`, `account_memberships` and `users` of its own workspaces through `FOR SELECT` policies
 named `organization_scope`; content tables are untouched. Definer functions: `openseal_create_workspace` and
-`openseal_archive_workspace` (organization scope; no events until ORG-05 replaces them),
+`openseal_archive_workspace` (organization scope; replaced by ORG-05's event-writing versions, below),
 `openseal_bootstrap_organization` and `openseal_bootstrap_owner` (the install's first organization only, in the transaction that created it),
 `openseal_login_password_hash` (login) and `openseal_user_workspaces` (switching, from a live session). Store:
 `Store::for_organization(org)` → `OrgScope::begin()` → `OrgTx` (`organization`, `workspaces`, `workspace(id) →
@@ -334,6 +334,31 @@ WorkspaceOf`, `create_workspace`, `archive_workspace`, `into_workspace(&Workspac
 `TenantTx` that re-reads the workspace's organization; `Store::bootstrap_organization` and
 `Accounts::make_first_owner`; `EntryPoints::user_workspaces`. `Store::create_account` is gone: the application can no
 longer create an account outside those functions. Forty-five tables.
+
+`0015_admin_events.sql` (`ORG-05`, ADR-028, docs/23 §2.5) adds the **admin audit logs**: `admin_events` (a tenant
+table, chained per workspace, head in `accounts.admin_chain_head`) and `org_admin_events` (an organization table,
+chained per organization, head in `organizations.admin_chain_head`). Columns: owner id, `seq`, `prev_hash`, `hash`,
+`action`, `at`, `canonical` (RFC 8785 bytes, at most 64 KiB), `xact` (the top-level transaction that appended it, set
+by the insert trigger) and `recorded_at`; primary key (owner, `seq`). Append-only as `audit_events`: SELECT and INSERT
+only for `openseal_app`, triggers refuse UPDATE, DELETE and TRUNCATE for every role (`OS001`, `CS-DB-0004`). A
+definer insert trigger refuses an event outside the current scope (`42501`, before the chain is read), then checks
+`sha256(canonical) = hash`, that the owner, `seq`, `prev` and `action` columns are what the bytes state, and that
+`seq` is next and `prev` the head under `FOR UPDATE` on the head column (`OS005`, `CS-DB-0014`), and moves the head.
+Deferred constraint triggers named `*_admin_change_has_event` on `accounts` (insert, or update of `name`, `settings`,
+`data_region`, `status`), `account_memberships`, `permission_profiles`, `organizations` (insert, or update of `name`,
+`policy`, `status`, `data_regions`), `organization_admins` and `org_permission_sets` refuse an application-role commit
+whose transaction appended no event to that workspace's log or its organization's (`admin_change_has_event`,
+`CS-DB-0008`); the owner role is outside, as for the audit chain. Definer functions: `openseal_admin_chain_tip()`
+(next `seq` and head of the current scope's log, locked), `openseal_org_chain_tip()` and
+`openseal_append_org_event(…)` (from a workspace, its organization's log), `openseal_xact_has_admin_event`;
+`openseal_create_workspace` and `openseal_archive_workspace` now take the event (`seq`, `prev`, `hash`, `at`,
+`canonical`), check that its bytes name that action and workspace, and append it in the same transaction (an already
+archived workspace writes none). Store: the repositories append the events themselves (`Accounts::set_settings`,
+`Accounts::make_first_owner`, `Users::create_profile`, `create_member`, `add_existing_member`, `rename`,
+`set_password_hash`, `set_profile`, `set_disabled`, `remove_member`, `OrgTx::create_workspace`, `archive_workspace`,
+`Store::bootstrap_organization`); `TenantTx::act_as` and `OrgTx::act_as` set the actor (`AdminActor`: user, API client
+or system, time, request id, IP); `TenantTx::admin_events`, `verified_admin_log` and the same on `OrgTx` read and
+re-verify. Forty-seven tables.
 
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
