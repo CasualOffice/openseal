@@ -597,7 +597,10 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
         Command::WithdrawConsent { recipient } => {
             let (i, r) = rec(s, recipient)?;
             authorize_recipient(r, cmd, ctx)?;
-            gate_active(s, r, cmd)?;
+            // In, as for consenting and declining (SEC-CER-01): consent outlives a
+            // correction that clears the authentication, and withdrawing it declines,
+            // so a link alone must not withdraw it.
+            gate_in(s, r, cmd)?;
             let Some(consent) = r.consent.clone() else {
                 return Err(recipient_refused(cmd, r));
             };

@@ -71,7 +71,7 @@ test("WEB-12: a ceremony records the server's types, with the location in contex
   const t = MOCK.ceremonyToken;
   let v = await c.ceremony.open(t);
   await assert.rejects(c.ceremony.authenticate(t, "access_code", "0000"));
-  await c.ceremony.authenticate(t, "access_code", MOCK.accessCode);
+  v = await c.ceremony.authenticate(t, "access_code", MOCK.accessCode);
   await c.ceremony.consent(t, MOCK.ersd, { latitude: 1.5, longitude: 2.5, accuracy_m: 20 });
   await c.ceremony.viewed(t, v.envelope.documents[0].id, [1, 2]);
   const a = await c.ceremony.adopt(t, "signature", "draw", PNG);

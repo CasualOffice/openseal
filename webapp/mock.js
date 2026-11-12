@@ -342,10 +342,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   function view(env, rec, token) {
     const sender = db.users.find((u) => u.id === env.sender_user_id);
     const acct = account();
+    // SEC-CER-01: no document and no field until every authentication is passed.
+    const shown = rec.auth.every((m) => rec.auth_passed.includes(m));
     return {
-      envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: env.documents, expires_at: env.expires_at },
+      envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: shown ? env.documents : [], expires_at: env.expires_at },
       recipient: publicRecipient(rec),
-      fields: env.fields.filter((f) => f.recipient_id === rec.id),
+      fields: shown ? env.fields.filter((f) => f.recipient_id === rec.id) : [],
       capture_location: !!env.signing_options?.capture_location,
       consent_required: { version: MOCK.ersd, sha256: ersdSha, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
