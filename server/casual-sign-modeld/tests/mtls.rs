@@ -197,3 +197,68 @@ fn a_request_over_a_bound_is_never_sent() {
     let log = std::fs::read_to_string(&modeld.oplog).unwrap();
     assert!(log.is_empty(), "nothing was sent: {log}");
 }
+
+/// **A document handle lives on its connection only** (docs/33 §3.1, `SEC-I06`): one
+/// document open per connection, a handle unknown to another connection, closed once,
+/// and the raster child gone with the connection. Runs without model weights: OCR on an
+/// open document answers `CS-ML-0010`, after the handle is checked.
+#[test]
+fn a_document_handle_lives_on_its_connection_only() {
+    let pki = Pki::new();
+    let worker = pki.client_identity("worker");
+    let exe = std::path::PathBuf::from(env!("CARGO_BIN_EXE_casual-sign-modeld"));
+    let modeld = start_modeld_with(
+        &pki,
+        &pki.server_identity(),
+        &[&worker.2],
+        ModeldLimits::default(),
+        "modeld-doc-handles",
+        |s| s.with_raster(&exe, casual_sign_modeld::raster::RasterLimits::default()),
+    );
+    let c = client(&pki.tls_ca.pem(), &modeld, Some(&worker));
+    let pdf = b"%PDF-1.7\n1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n2 0 obj\n<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n3 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>\nendobj\ntrailer\n<</Root 1 0 R>>\n%%EOF\n".to_vec();
+    let mut a = c.session().unwrap();
+    let (doc, pages) = a.open_document(&call(), pdf.clone()).unwrap();
+    assert_eq!(pages, 1);
+    // One open document per connection.
+    assert_eq!(
+        a.open_document(&call(), pdf.clone()).unwrap_err().code(),
+        "CS-ML-0004"
+    );
+    // The handle checks before the model: a wrong one is malformed, the right one finds
+    // no OCR model installed here.
+    assert_eq!(
+        a.ocr(&call(), doc + 1, 0, 150, vec![]).unwrap_err().code(),
+        "CS-ML-0004"
+    );
+    assert_eq!(
+        a.ocr(&call(), doc, 0, 150, vec![]).unwrap_err(),
+        ModeldError::NotInstalled
+    );
+    // Another connection does not know the handle.
+    let mut b = c.session().unwrap();
+    assert_eq!(
+        b.ocr(&call(), doc, 0, 150, vec![]).unwrap_err().code(),
+        "CS-ML-0004"
+    );
+    assert_eq!(
+        b.close_document(&call(), doc).unwrap_err().code(),
+        "CS-ML-0004"
+    );
+    b.close();
+    a.close_document(&call(), doc).unwrap();
+    assert_eq!(
+        a.close_document(&call(), doc).unwrap_err().code(),
+        "CS-ML-0004"
+    );
+    // After a close, the connection may open again.
+    let (again, _) = a.open_document(&call(), pdf).unwrap();
+    assert_ne!(again, 0);
+    a.close();
+    let log = std::fs::read_to_string(&modeld.oplog).unwrap();
+    assert!(
+        log.contains("\tdoc_open\tacc-0001\tjob-0001\t0\t1\t"),
+        "{log}"
+    );
+    assert!(!log.contains("%PDF"), "{log}");
+}
