@@ -740,8 +740,9 @@ paths:
       summary: "Spend a user invitation's one-time link and set the password (WEB-06)"
       description: >-
         An unknown, expired, spent or revoked link, or a member disabled meanwhile, is
-        `401 CS-AUTH-0002`, all alike. The member then logs in with `/auth/login`.
-        Rate-limited as login.
+        `401 CS-AUTH-0002`, all alike. Setting the password ends the member's sessions
+        in every account they belong to (SEC-ID-01). The member then logs in with
+        `/auth/login`. Rate-limited as login.
       security: []
       x-permission: public
       requestBody:
@@ -892,6 +893,14 @@ paths:
     patch:
       operationId: patchUser
       summary: "Rename a member, set their password, change their profile, disable or enable them"
+      description: >-
+        The name and password belong to the user in every account (SEC-ID-01). An
+        administrator, or any API key (the user's own included), changes them only for a
+        user whose one membership is this account; for a user who also belongs to another
+        account it is `403 CS-API-0015` and nothing in the request is applied. The user
+        changes their own name and password through their own session; a new password
+        ends their sessions in every account. Profile fields and disabling apply to this
+        account's membership only.
       x-permission: "admin:users"
       requestBody:
         required: true

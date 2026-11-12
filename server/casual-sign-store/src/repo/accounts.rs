@@ -661,31 +661,6 @@ impl Users<'_> {
         Ok(done.rows_affected() == 1)
     }
 
-    /// Spend an open invitation. False when it was already accepted or revoked (a
-    /// second use of the link).
-    ///
-    /// # Errors
-    ///
-    /// `CS-DB-0001`.
-    pub async fn accept_invitation(
-        &mut self,
-        id: UserInvitationId,
-        now: OffsetDateTime,
-    ) -> Result<bool> {
-        let acct = self.tx.acct();
-        let done = sqlx::query!(
-            "UPDATE user_invitations SET accepted_at = $3 \
-             WHERE account_id = $1 AND id = $2 AND accepted_at IS NULL AND revoked_at IS NULL",
-            acct,
-            id.0,
-            now
-        )
-        .execute(self.tx.conn())
-        .await
-        .map_err(db)?;
-        Ok(done.rows_affected() == 1)
-    }
-
     /// Spend an open, sent, unexpired invitation of this account and set its member's
     /// password (an Argon2id PHC string). The link reached the member's own address, so
     /// this is the member setting their own password, even when they belong to other

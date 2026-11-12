@@ -207,8 +207,12 @@ the row is visible only through a membership of the current account; enrolling a
 normalized email as well as their id (`add_existing_member`). Repositories are reached only through
 `Store::for_account(id)` → `Tenant::begin()` → `TenantTx`, which binds the account into every statement and sets
 `openseal.account_id` for the transaction. The only cross-account paths are `SECURITY DEFINER` functions, executable by
-the application role alone, that take a secret's hash (recipient token, API key, signing link), a login identity, or a
-supplied lease token (job claim) and return ids. The migrator owns every table; `openseal_app` owns nothing, has no
+the application role alone, that take a secret's hash (recipient token, API key, signing link), a login identity, a
+supplied lease token (job claim), the user's own live session id (`openseal_update_own_user`, 0013) or an open, sent,
+unexpired invitation id (`openseal_accept_user_invitation`, 0013); the two 0013 functions may also end that user's
+sessions in every account, through `openseal_revoke_user_sessions`, which the application role cannot call. One more,
+`openseal_user_in_other_account` (0013), answers only whether a member of the current account also belongs to another
+account, and is false for anyone who is not a member of the current account. The migrator owns every table; `openseal_app` owns nothing, has no
 `BYPASSRLS`, no `TRUNCATE` anywhere, and only `SELECT`, `INSERT` on `audit_events` and `envelope_tombstones`.
 
 **Audit as built.** An event is stored as its RFC 8785 canonical bytes, exactly what its hash covers; an insert
