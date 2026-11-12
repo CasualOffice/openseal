@@ -236,12 +236,24 @@ pub fn call() -> Call {
     }
 }
 
+/// A scratch directory deleted when dropped, so a test leaves nothing behind.
+#[derive(Debug)]
+pub struct ScratchDir(pub PathBuf);
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 /// The model bundle named by `OPENSEAL_MODELD_TEST_BUNDLE` (a directory fetched by
-/// `tools/ml/fetch-models.py`), copied with only the files its `bundle.json` lists into
-/// a scratch directory and verified against a manifest built from that `bundle.json`.
-/// `None`, with a message, when the variable is unset: tests that need real weights are
-/// skipped then, never passed.
-pub fn real_bundle(name: &str, profiles: &[&str]) -> Option<Bundle> {
+/// `tools/ml/fetch-models.py`), with only the files its `bundle.json` lists hard-linked
+/// (copied only where a link cannot be made) into a scratch directory, and verified
+/// against a manifest built from that `bundle.json`. The directory is deleted when the
+/// returned [`ScratchDir`] drops, so no copy of the weights outlives the test (rules 34,
+/// 35). `None`, with a message, when the variable is unset: tests that need real weights
+/// are skipped then, never passed.
+pub fn real_bundle(name: &str, profiles: &[&str]) -> Option<(Bundle, ScratchDir)> {
     let Some(src) = std::env::var_os("OPENSEAL_MODELD_TEST_BUNDLE") else {
         eprintln!("SKIPPED: OPENSEAL_MODELD_TEST_BUNDLE is unset; no model weights to run");
         return None;
@@ -249,15 +261,14 @@ pub fn real_bundle(name: &str, profiles: &[&str]) -> Option<Bundle> {
     let src = PathBuf::from(src);
     let info: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(src.join("bundle.json")).unwrap()).unwrap();
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = ScratchDir(scratch(name));
     let mut manifest = String::from("# test bundle from bundle.json\n");
     for f in info["files"].as_array().unwrap() {
         let s = |k: &str| f[k].as_str().unwrap().to_owned();
         let (dest, bytes) = (s("dest"), f["bytes"].as_u64().unwrap());
-        let to = dir.join(&dest);
-        if std::fs::metadata(&to).map(|m| m.len()).ok() != Some(bytes) {
-            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        let to = dir.0.join(&dest);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        if std::fs::hard_link(src.join(&dest), &to).is_err() {
             std::fs::copy(src.join(&dest), &to).unwrap();
         }
         manifest.push_str(&format!(
@@ -269,5 +280,6 @@ pub fn real_bundle(name: &str, profiles: &[&str]) -> Option<Bundle> {
         ));
     }
     let profiles: Vec<String> = profiles.iter().map(|p| (*p).to_owned()).collect();
-    Some(Bundle::verify(&dir, &Manifest::parse(&manifest).unwrap(), &profiles).unwrap())
+    let bundle = Bundle::verify(&dir.0, &Manifest::parse(&manifest).unwrap(), &profiles).unwrap();
+    Some((bundle, dir))
 }

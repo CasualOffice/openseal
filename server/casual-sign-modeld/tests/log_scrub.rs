@@ -112,7 +112,8 @@ fn third_party_below_cap(line: &str) -> bool {
 
 #[test]
 fn no_op_at_trace_level_writes_document_text_or_a_third_party_event_below_its_cap() {
-    let Some(bundle) = common::real_bundle("scrub-bundle", &["ocr", "runtime"]) else {
+    let Some((bundle, _bundle_dir)) = common::real_bundle("scrub-bundle", &["ocr", "runtime"])
+    else {
         return;
     };
     let out = Captured::default();

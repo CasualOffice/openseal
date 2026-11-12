@@ -378,8 +378,9 @@ fn bad_requests_are_refused_with_their_codes() {
     );
 }
 
-/// Hard-link (or copy) `files` of the test bundle into a scratch bundle.
-fn scratch_bundle(root: &Path, name: &str, files: &[&str]) -> PathBuf {
+/// Hard-link (or copy) `files` of the test bundle into a scratch bundle, deleted when the
+/// returned guard drops.
+fn scratch_bundle(root: &Path, name: &str, files: &[&str]) -> common::ScratchDir {
     let dir = common::scratch(name);
     for f in files {
         let to = dir.join(f);
@@ -388,7 +389,7 @@ fn scratch_bundle(root: &Path, name: &str, files: &[&str]) -> PathBuf {
             std::fs::copy(root.join(f), &to).unwrap();
         }
     }
-    dir
+    common::ScratchDir(dir)
 }
 
 /// ENTITIES and PERSONAL through the service: the op log records counts and ids, never
@@ -403,7 +404,8 @@ fn personal_spans_through_the_service_log_no_text() {
         "personal_data/gliner-pii-base/tokenizer.json",
         "personal_data/gliner-pii-base/gliner_config.json",
     ];
-    let dir = scratch_bundle(&root, "gliner-service-bundle", &files);
+    let guard = scratch_bundle(&root, "gliner-service-bundle", &files);
+    let dir = guard.0.clone();
     let ids = [
         "ort",
         "gliner-pii-base",

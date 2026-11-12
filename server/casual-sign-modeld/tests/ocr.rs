@@ -35,8 +35,9 @@ fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn service(name: &str) -> Option<ModelService> {
-    let bundle = common::real_bundle(&format!("{name}-bundle"), &["ocr", "runtime"])?;
+/// The service, and the scratch bundle it reads, deleted when that guard drops.
+fn service(name: &str) -> Option<(ModelService, common::ScratchDir)> {
+    let (bundle, dir_guard) = common::real_bundle(&format!("{name}-bundle"), &["ocr", "runtime"])?;
     let dir = common::scratch(&format!("{name}-run"));
     let service = ModelService::new(
         bundle,
@@ -47,7 +48,7 @@ fn service(name: &str) -> Option<ModelService> {
     .with_raster(Path::new(EXE), RasterLimits::default())
     .with_ocr()
     .unwrap();
-    Some(service)
+    Some((service, dir_guard))
 }
 
 fn request(op: Op) -> Request {
@@ -154,7 +155,7 @@ fn recall(truth: &serde_json::Value, pages: &[OcrPage]) -> Vec<(String, usize, u
 /// characters; the PP-OCRv5 packs come from piece X's export).
 #[test]
 fn scans_are_read_at_200_dpi_with_latin_word_recall_of_95_percent() {
-    let Some(s) = service("ocr-recall") else {
+    let Some((s, _bundle)) = service("ocr-recall") else {
         return;
     };
     let mut names: Vec<_> = std::fs::read_dir(repo().join("fixtures/ml/scans"))
@@ -201,7 +202,7 @@ fn scans_are_read_at_200_dpi_with_latin_word_recall_of_95_percent() {
 /// bundle lacks is refused (`CS-ML-0010`) and the document stays open.
 #[test]
 fn ocr_answers_words_in_nfc_with_geometry_and_refuses_a_missing_pack() {
-    let Some(s) = service("ocr-shape") else {
+    let Some((s, _bundle)) = service("ocr-shape") else {
         return;
     };
     let scan = repo().join("fixtures/ml/scans/latin-services--200dpi-q75-rot90.pdf");
