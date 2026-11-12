@@ -490,7 +490,7 @@ export function mount(view, ctx, _match, params) {
     if (s.q) {
       return emptyState({ illus: "search", title: t("empty.search.title"), text: t("empty.search.text", { query: s.q }), action: button(t("action.clear-search"), { variant: "primary", onClick: clearSearch }), testId: "empty-search" });
     }
-    if (!s.rows.length) {
+    if (!s.rows.length && s.view === "all") {
       return emptyState({
         illus: "documents", title: t("agreements.empty.first.title"), text: t("agreements.empty.first.text"), testId: "empty-envelopes",
         action: h("div", { class: "os-actions" },

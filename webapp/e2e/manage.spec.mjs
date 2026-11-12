@@ -133,6 +133,7 @@ test("agreements: Expiring with nothing in it says so, with a way back to all", 
   await signIn(page);
   await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); for (const e of db.envelopes) e.expires_at = null; sessionStorage.setItem(k, JSON.stringify(db)); });
   await page.goto(app("#/agreements?folder=expiring"));
+  await page.reload();
   const empty = page.getByTestId("empty-filter");
   await expect(empty).toContainText("Nothing is about to expire");
   await expect(empty.locator("svg.os-illus")).toBeVisible();
