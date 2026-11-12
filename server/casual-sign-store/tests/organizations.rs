@@ -938,6 +938,59 @@ async fn bootstrap_owner_refuses_an_organization_made_before_this_transaction() 
     db.drop().await;
 }
 
+/// An organization admin is an enabled member of a workspace of that organization
+/// (docs/23 §2.3): in organization scope, naming a user of another organization is
+/// refused (`organization_admin_is_a_member`), and a member of its own is accepted.
+#[tokio::test]
+async fn an_organization_admin_must_be_a_member_of_one_of_its_workspaces() {
+    let Some(db) = fresh("an_organization_admin_must_be_a_member", Rls::On).await else {
+        return;
+    };
+    let a = world::seed(&db, "alpha").await;
+    let b = world::seed(&db, "beta").await;
+    let insert = |org: OrganizationId, user: UserId| {
+        let app = db.app.clone();
+        async move {
+            let mut conn = app.begin().await.unwrap();
+            sqlx::query("SELECT set_config('openseal.organization_id', $1, true)")
+                .bind(org.0.to_string())
+                .execute(&mut *conn)
+                .await
+                .unwrap();
+            sqlx::query(
+                "INSERT INTO organization_admins (organization_id, user_id, role, created_at) \
+                 VALUES ($1, $2, 'admin', now())",
+            )
+            .bind(org.0)
+            .bind(user.0)
+            .execute(&mut *conn)
+            .await?;
+            conn.commit().await
+        }
+    };
+    let err = insert(a.organization, b.user).await.unwrap_err();
+    assert_eq!(sqlstate(&err), "23503", "{err}");
+    assert_eq!(
+        err.as_database_error().and_then(|e| e.constraint()),
+        Some("organization_admin_is_a_member")
+    );
+    // A disabled membership does not count.
+    sqlx::query("UPDATE account_memberships SET disabled_at = now() WHERE user_id = $1")
+        .bind(a.user.0)
+        .execute(&db.admin)
+        .await
+        .unwrap();
+    let err = insert(a.organization, a.user).await.unwrap_err();
+    assert_eq!(sqlstate(&err), "23503", "{err}");
+    sqlx::query("UPDATE account_memberships SET disabled_at = NULL WHERE user_id = $1")
+        .bind(a.user.0)
+        .execute(&db.admin)
+        .await
+        .unwrap();
+    insert(a.organization, a.user).await.unwrap();
+    db.drop().await;
+}
+
 /// The deferred last-owner constraint: removing or demoting the only enabled owner of an
 /// active organization fails at commit (`CS-ORG-0008`).
 #[tokio::test]

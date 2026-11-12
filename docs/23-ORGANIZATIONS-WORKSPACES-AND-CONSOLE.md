@@ -253,6 +253,12 @@ Built as sketched above, with these decisions taken within the design (each test
   organization exists. `casual_sign_server::bootstrap_workspace` provisions a workspace and its first administrator in
   an existing organization (no organization role); its callers until ORG-03 are tests and, from CON-03, the console.
   Until the console exists, a second organization is made by the owner role (as the tests do).
+- **An organization admin is a member.** A `BEFORE INSERT OR UPDATE OF organization_id, user_id` trigger on
+  `organization_admins` refuses a user who is not an enabled member of a workspace of that organization (SQLSTATE
+  `23503`, constraint `organization_admin_is_a_member`, store `CS-DB-0008`); the foreign key to `users` ignores row
+  security, so without it a user of another organization could be named. ORG-03's routes also check it, with their
+  own error code. A membership disabled later leaves the row; removal is ORG-03's. Test:
+  `organizations.rs::an_organization_admin_must_be_a_member_of_one_of_its_workspaces`, seen red without the trigger.
 - **The last-owner constraint** fires on UPDATE or DELETE of an `owner` row and raises SQLSTATE `23514` with
   constraint `organization_keeps_an_owner` (store `CS-DB-0008`, `StoreError::is_last_owner`; the API code `CS-ORG-0008`
   is issued with ORG-03's routes). An organization that never had an owner (an account with no admin at migration) can

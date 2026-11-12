@@ -23,7 +23,9 @@
 --    account with none gets an organization with no owner, which the console lists for
 --    recovery (docs/23 §5.1). A deferred constraint trigger then refuses a commit that
 --    removes or demotes an owner and leaves an active organization with no enabled one
---    (CS-ORG-0008; constraint `organization_keeps_an_owner`).
+--    (CS-ORG-0008; constraint `organization_keeps_an_owner`). A trigger refuses an
+--    administrator who is not an enabled member of one of the organization's workspaces
+--    (23503, constraint `organization_admin_is_a_member`).
 -- 5. Organization scope reads `accounts`, `account_memberships` and `users` of its own
 --    workspaces through `FOR SELECT` policies only; it writes to a workspace only through
 --    a single-account transaction (`Store::for_workspace_of`) or a definer function.
@@ -189,6 +191,29 @@ SELECT a.organization_id, m.user_id, 'owner', m.created_at
   JOIN accounts a ON a.id = m.account_id
   JOIN permission_profiles p ON p.account_id = m.account_id AND p.id = m.permission_profile_id
  WHERE p.kind = 'admin' AND m.disabled_at IS NULL;
+
+-- An organization administrator is an enabled member of a workspace of that organization
+-- (docs/23 §2.3). The foreign key to `users` ignores row security, so without this a user
+-- of another organization could be named. Checked on insert and when the organization or
+-- user changes; a later disabled membership leaves the row (removal is ORG-03's job).
+CREATE FUNCTION openseal_check_org_admin_is_member() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = public, pg_catalog
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM account_memberships m JOIN accounts a ON a.id = m.account_id
+                    WHERE m.user_id = NEW.user_id AND a.organization_id = NEW.organization_id
+                      AND m.disabled_at IS NULL) THEN
+        RAISE EXCEPTION 'organization administrator must be a member of one of its workspaces'
+            USING ERRCODE = '23503', CONSTRAINT = 'organization_admin_is_a_member';
+    END IF;
+    RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION openseal_check_org_admin_is_member() FROM PUBLIC;
+CREATE TRIGGER organization_admin_is_a_member
+    BEFORE INSERT OR UPDATE OF organization_id, user_id ON organization_admins
+    FOR EACH ROW EXECUTE FUNCTION openseal_check_org_admin_is_member();
 
 -- Refuse a commit that removed or demoted an owner and left an active organization with
 -- no owner whose identity is enabled (CS-ORG-0008). An organization that never had one
