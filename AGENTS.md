@@ -63,25 +63,32 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `19518fb` (2026-11-12).
+Docs are true as of `b5f7101` (2026-11-13).
 
 **Phases D, 0, 1 and 2 are closed** (owner: D and 0 on 2026-11-11, 1 on 2026-11-11 after clean fuzz run 42907980149,
-2 on 2026-11-12). **v0.0.1, the first pre-release, is published** (tag at `4780d84`, GitHub CI run 43123420112 green on
-all 14 jobs; `REL-01` keeps the GHCR packages' visibility and the manual walkthrough). The repository is public; GitHub
-CI runs, and `tools/ci-local.sh` runs once per batch before a push (instruction 31). Work runs within this machine's
-memory: one Rust build at a time (instruction 37).
+2 on 2026-11-12), and milestones M0, M1 and M2 are declared reached (instruction 38). **v0.0.1, the first
+pre-release, is published** (tag at `4780d84`, GitHub CI run 43123420112 green on all 14 jobs; `REL-01` keeps the GHCR
+packages' visibility and the manual walkthrough). The repository is public; GitHub CI runs, and `tools/ci-local.sh`
+runs once per batch, after the batch is merged and before a push, about every 30 minutes (instructions 31, 39, 41).
+Lanes use the whole machine, backing off when free memory falls below about 3 GB (instruction 40); an independent
+reviewer is used only for risky pieces (security, evidence, database, server; instruction 41).
 
 - **Built:** the Rust engine (PDF reader, writer and normalizer, fields, flattening, crypto, PAdES sealing B-B to
   B-LTA, verifier, audit chain and certificate, SDK and `openseal` CLI, WebAssembly verifier); the workflow engine,
   Postgres store, API server (`api/openapi.yaml`), job worker, `casual-sign-keyd` (PKCS#11) and the single-node Compose
-  deployment; the web app (sign-in, home, agreements, document-first send editor, templates, reports, admin, signer
-  ceremony on phone and desktop, verify page), tested by Playwright in mock mode and against the Compose stack
-  (`compose-e2e`). [96](docs/96-FEATURE-FIT-GAP.md) counts 39 of 167 rows working end to end.
-- **In progress:** the UI pass in packages `UX-02` to `UX-08` (`UX-01`; missing workflows `UXW-01`–`UXW-29`);
-  organizations, workspaces, delegated admin, the platform console and plans (ADR-028 Accepted,
-  [23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md), `ORG-*`, `CON-*`, `PLAN-*`); pretrained ML models (ADR-029
-  Accepted, [33](docs/33-ML-MODELS.md)): the `casual-sign-modeld` skeleton (`ML-09`), personal-data recognisers
-  `casual-sign-pii` (`ML-08`) and value normalisation (`ML-07`) are merged; OCR (`ML-02`), template matching (`ML-05`)
-  and extraction (`ML-07`) are being built. The P0 fix `SEC-ID-01` (cross-workspace account takeover) is in progress.
+  deployment; the web app, redesigned in all seven `UX-01` packages (`UX-02` to `UX-08`, merged 2026-11-13: design
+  system with a distinct destructive colour, send editor with click-to-place and every field kind, signing page,
+  Home/Agreements/envelope page, Templates/Reports/Admin rail, app shell with notifications and profile), tested by
+  Playwright in mock mode and against the Compose stack (`compose-e2e`); the signer view naming the sender and
+  serving the disclosure (`UXW-34`); organizations above workspaces (`ORG-02`, migration 0014); in
+  `casual-sign-modeld`, the skeleton and bundle tooling (`ML-09`) and GLiNER spans for extraction and personal data
+  (`ML-07`, `ML-08`, fp16 exports equal to the golden spans), beside `casual-sign-pii`'s validated recognisers and
+  value normalisation. Security fixes `SEC-ID-01` and `SEC-CER-01` are merged. [96](docs/96-FEATURE-FIT-GAP.md)
+  counts 39 of 167 rows working end to end and 17 in part.
+- **In progress:** OCR (`ML-02`) and template matching (`ML-05`) on worker branches, not merged; the modeld exit
+  (`compose --profile ml up`, `ML-09`); workflows a switching customer expects (`UXW-*`, e.g. in-person hosting
+  `UXW-36`); ADR-028 in stages ([23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)): admin audit logs (`ORG-05`)
+  next, then switching (`ORG-04`) and the organization admin screens (`ORG-06`), delegated admin, console and plans
+  (`ORG-*`, `CON-*`, `PLAN-*`). Open: WebKit axe failure on the review step (`E2E-02`).
 - **Next:** slices 1, 2, 5 and 7 to their end points for M3, then v0.0.2 (organizations and switching, the console with
   health, plans with three meters; instruction 29).
