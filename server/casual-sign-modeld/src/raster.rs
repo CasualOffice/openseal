@@ -759,3 +759,97 @@ impl Document {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // Tests may unwrap (CLAUDE.md, Rust standards): a failure is the test failing.
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    /// A raster header as a lying child would write it, with no pixels after it: a
+    /// header the parent accepted would make it allocate and then fail to read them.
+    fn header(width: u16, height: u16, dpi: u16, rotate: u16, crop: [f32; 4]) -> Vec<u8> {
+        let mut b = vec![0u8];
+        for v in [width, height, dpi, rotate] {
+            b.extend_from_slice(&v.to_be_bytes());
+        }
+        for v in crop {
+            b.extend_from_slice(&v.to_be_bytes());
+        }
+        b
+    }
+
+    const CROP: [f32; 4] = [0.0, 0.0, 612.0, 792.0];
+
+    /// Feeds `bytes` to the parent and returns the code it answered, after checking it
+    /// read nothing past the header (it refused before allocating the pixels).
+    fn refused(bytes: &[u8]) -> Option<&'static str> {
+        let mut r = std::io::Cursor::new(bytes);
+        let answer = read_answer(&mut r, 150)?;
+        assert_eq!(r.position(), u64::try_from(bytes.len()).unwrap());
+        answer.err().map(|e| e.code())
+    }
+
+    #[test]
+    fn parent_refuses_a_lying_childs_header_before_allocating() {
+        let long = u16::try_from(MAX_LONG_SIDE + 1).unwrap();
+        let cases: [(&str, Vec<u8>); 9] = [
+            ("zero width", header(0, 100, 150, 0, CROP)),
+            ("zero height", header(100, 0, 150, 0, CROP)),
+            ("long side over the cap", header(long, 10, 150, 0, CROP)),
+            ("zero dpi", header(100, 100, 0, 0, CROP)),
+            (
+                "dpi above the one asked for",
+                header(100, 100, 151, 0, CROP),
+            ),
+            (
+                "rotation not a quarter turn",
+                header(100, 100, 150, 45, CROP),
+            ),
+            (
+                "NaN crop",
+                header(100, 100, 150, 0, [f32::NAN, 0.0, 1.0, 1.0]),
+            ),
+            (
+                "infinite crop",
+                header(100, 100, 150, 0, [0.0, 0.0, f32::INFINITY, 1.0]),
+            ),
+            ("unknown status byte", vec![7]),
+        ];
+        for (why, bytes) in cases {
+            assert_eq!(refused(&bytes), Some("CS-ML-0014"), "{why}");
+        }
+    }
+
+    #[test]
+    fn the_side_cap_implies_the_pixel_cap() {
+        // 4096 × 4096 = 16.78 MP is under 16.8 MP, so a header within the side cap is
+        // within the pixel cap too: the `pixels > MAX_PIXELS` check in `read_answer` is
+        // a second guard that no header can reach while the caps stay as they are. If
+        // either cap changes, this fails and a pixel-cap case belongs in the test above.
+        assert!(u64::from(MAX_LONG_SIDE) * u64::from(MAX_LONG_SIDE) <= MAX_PIXELS);
+    }
+
+    #[test]
+    fn parent_accepts_an_honest_header_and_reads_its_pixels() {
+        let mut bytes = header(3, 2, 150, 90, CROP);
+        bytes.extend_from_slice(&[0, 64, 128, 192, 255, 1]);
+        let mut r = std::io::Cursor::new(bytes);
+        let raster = read_answer(&mut r, 150).unwrap().unwrap();
+        assert_eq!(
+            (raster.width, raster.height, raster.dpi, raster.rotate),
+            (3, 2, 150, 90)
+        );
+        assert_eq!(raster.grey, [0, 64, 128, 192, 255, 1]);
+    }
+
+    #[test]
+    fn a_childs_error_code_outside_the_raster_set_becomes_raster_child() {
+        let mut b = vec![1u8];
+        b.extend_from_slice(&ModeldError::RasterChild.number().to_be_bytes());
+        assert_eq!(refused(&b), Some("CS-ML-0014"));
+        let mut b = vec![1u8];
+        b.extend_from_slice(&u16::MAX.to_be_bytes());
+        assert_eq!(refused(&b), Some("CS-ML-0014"));
+    }
+}
