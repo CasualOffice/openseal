@@ -463,11 +463,11 @@ impl ModelService {
                 dpi,
                 scripts,
             } => {
-                let engine = self.ocr.as_ref().ok_or(ModeldError::NotInstalled)?;
                 let open = match conn.open.as_mut() {
                     Some((handle, d)) if handle == doc => d,
                     _ => return Err(ModeldError::Malformed("unknown document handle")),
                 };
+                let engine = self.ocr.as_ref().ok_or(ModeldError::NotInstalled)?;
                 Response::Ocr(read_page(engine, open, *page, *dpi, scripts)?)
             }
             Op::Hash { .. } => Response::Hash(crate::hash::run(b, req)?),

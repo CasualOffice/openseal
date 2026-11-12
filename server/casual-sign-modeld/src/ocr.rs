@@ -358,13 +358,28 @@ impl OcrEngine {
                 .ok_or(ModeldError::NotInstalled)?;
             engines.push(&pack.1);
         }
+        let (w, h) = (u32::from(raster.width), u32::from(raster.height));
         let rgb: Vec<u8> = raster.grey.iter().flat_map(|&g| [g, g, g]).collect();
-        let image =
-            image::RgbImage::from_raw(u32::from(raster.width), u32::from(raster.height), rgb)
-                .ok_or(ModeldError::Inference)?;
-        // Per detected line: (text, confidence, quad, character boxes) from the most
-        // confident recogniser. The detector is the same model on the same image for every
-        // recogniser, so its lines come back in the same order.
+        let upright = image::RgbImage::from_raw(w, h, rgb).ok_or(ModeldError::Inference)?;
+        let lines = Self::lines(&engines, &upright)?;
+        // A page scanned upside down reads as noise at low confidence; then the page is
+        // read turned half round too, and the more confident reading is kept (no model:
+        // PP-LCNet line orientation, when installed, handles single lines).
+        if median_confidence(&lines).is_some_and(|m| m < UPSIDE_DOWN_BELOW) {
+            let turned = image::imageops::rotate180(&upright);
+            let turned_lines = Self::lines(&engines, &turned)?;
+            if total_confidence(&turned_lines) > total_confidence(&lines) {
+                let (wf, hf) = (f32::from(raster.width), f32::from(raster.height));
+                return Ok(reading_of(turned_lines, |q| half_turn(q, wf, hf)));
+            }
+        }
+        Ok(reading_of(lines, |q| q))
+    }
+
+    /// Detect once and recognise with each of `engines`; per detected line the most
+    /// confident recognition. The detector is the same model on the same image for every
+    /// recogniser, so its lines come back in the same order.
+    fn lines(engines: &[&OAROCR], image: &image::RgbImage) -> Result<Vec<Line>, ModeldError> {
         let mut best: Vec<Option<Line>> = Vec::new();
         for engine in engines {
             let results = engine
@@ -390,21 +405,52 @@ impl OcrEngine {
                 }
             }
         }
-        let mut reading = Reading::default();
-        for (text, conf, quad, boxes) in best.into_iter().flatten() {
-            if reading.words.len() >= MAX_PAGE_ITEMS {
-                break;
-            }
-            let words = words_of_line(&text, conf, &quad, boxes.as_deref());
-            if words.is_empty() {
-                continue;
-            }
-            reading.lines.push(quad);
-            let room = MAX_PAGE_ITEMS.saturating_sub(reading.words.len());
-            reading.words.extend(words.into_iter().take(room));
-        }
-        Ok(reading)
+        Ok(best.into_iter().flatten().collect())
     }
+}
+
+/// Below this median line confidence a page is also read turned half round.
+const UPSIDE_DOWN_BELOW: f32 = 0.75;
+
+fn median_confidence(lines: &[Line]) -> Option<f32> {
+    let mut c: Vec<f32> = lines.iter().map(|l| l.1).collect();
+    c.sort_by(f32::total_cmp);
+    c.get(c.len() / 2).copied()
+}
+
+fn total_confidence(lines: &[Line]) -> f32 {
+    lines.iter().map(|l| l.1).sum()
+}
+
+/// A quad read on the page turned half round, back on the page: each point turned, and
+/// the corners renamed so the first is again top left.
+fn half_turn(q: Quad, w: f32, h: f32) -> Quad {
+    let t = |(x, y): (f32, f32)| (w - x, h - y);
+    let [a, b, c, d] = q;
+    [t(c), t(d), t(a), t(b)]
+}
+
+/// Words and line quads from recognised lines, each quad passed through `place`.
+fn reading_of(lines: Vec<Line>, place: impl Fn(Quad) -> Quad) -> Reading {
+    let mut reading = Reading::default();
+    for (text, conf, quad, boxes) in lines {
+        if reading.words.len() >= MAX_PAGE_ITEMS {
+            break;
+        }
+        let words = words_of_line(&text, conf, &quad, boxes.as_deref());
+        if words.is_empty() {
+            continue;
+        }
+        reading.lines.push(place(quad));
+        let room = MAX_PAGE_ITEMS.saturating_sub(reading.words.len());
+        reading
+            .words
+            .extend(words.into_iter().take(room).map(|w| Word {
+                quad: place(w.quad),
+                ..w
+            }));
+    }
+    reading
 }
 
 #[cfg(test)]
@@ -429,6 +475,17 @@ mod tests {
                 "{bad:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_quad_read_upside_down_comes_back_upright_from_top_left() {
+        // A word at the top left of a 100 x 50 page turned half round is at its bottom
+        // right; turned back, its first corner is its top left again.
+        let q: Quad = [(80.0, 40.0), (90.0, 40.0), (90.0, 45.0), (80.0, 45.0)];
+        assert_eq!(
+            half_turn(q, 100.0, 50.0),
+            [(10.0, 5.0), (20.0, 5.0), (20.0, 10.0), (10.0, 10.0)]
+        );
     }
 
     #[test]
