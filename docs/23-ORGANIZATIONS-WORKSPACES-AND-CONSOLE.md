@@ -659,7 +659,9 @@ they need (review findings 5 and 6):
 | `casual-sign-keyd-client` | Host | keyd's wire format and mTLS client, without `cryptoki`, the file key or the server | worker, console; keyd keeps the server side |
 
 - The console **never depends on `casual-sign-server`, `-host` or `-store`**, and none of them depends on it.
-- The web UI is `webapp/console/` (vanilla ES modules, its own command registry and CSP), served only by this binary.
+- The web UI is `console-ui/` at the repository root (vanilla ES modules, its own command registry and CSP), embedded
+  in this binary at compile time and served only by it. *Not* `webapp/console/`, as first written: the public server
+  serves `webapp/` wholesale, so a console folder there would also be served on the public origin (CON-17, §5.6).
 - Listens on `OPENSEAL_CONSOLE_LISTEN`, default `127.0.0.1:8090`. A non-loopback bind needs `OPENSEAL_CONSOLE_PUBLIC=1`
   and refuses to start without TLS settings or `OPENSEAL_TRUSTED_PROXIES` (`CS-CON-0005`).
 - First consumer: the operators. Added to docs/19 and to Compose as its own service with its own database credentials.
@@ -820,7 +822,41 @@ self-approval, another action or organization, the approver applying, reuse, sta
 `contract.rs` (route table, OpenAPI and router). Each guard
 was seen red by a mutation (docs/07 `SEC-X01` to `SEC-X04`).
 
-**Not yet built** (rows in docs/14): the console UI (`webapp/console/`, after the web UX overhaul); the Compose
+**The UI (`CON-17`).** `console-ui/` at the repository root: `index.html`, `console.css`, and ES modules `app.js`
+(screens, routing, the command registry, side panels), `api.js` (the `/console/v1` client; the CSRF token sign-in
+returned kept in `sessionStorage` for the tab), `model.js` (pure logic, unit-tested with `node --test`), `dom.js`
+(`h()` from `webapp/dom.js`) and `art.js` (illustrations), with Geist and Geist Mono in `console-ui/fonts/`
+(PROVENANCE.md). No framework, no build step, no inline script or style.
+
+- **Served by the console binary only** (`src/ui.rs`): every file is embedded with `include_bytes!`, so the binary is
+  self-contained and no request path reaches the file system; any other path is the API's `404 CS-CON-0011`. Each UI
+  file carries the policy `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src
+  'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`; fonts
+  (versioned names) are cached for a year, the rest `no-cache`. The request middleware keeps `no-store` and the policy
+  that loads nothing on everything else (the API), and no longer overwrites a response's own cache and page policy.
+- **Screens**, from the approved canvas (`docs/assets/design-canvas/Console.dc.html`): sign-in (password, then TOTP),
+  enrolment from the one-time link (`#/enrol/<token>`, kept in the fragment so it never reaches a server log; the key
+  shown once, as text and an `otpauth:` link), Health, Organizations (list, filter of loaded pages, detail with
+  workspaces, rename, region labels, workspace label and archive), the two-person suspend and resume (request, grant
+  by another operator in Approvals, apply by the requester), Approvals, Operators (owners only: add with the one-time
+  link shown once, disable) and the Operator log (paged, verify). Screens follow the API's `x-roles`; the server still
+  decides. Every write that needs a fresh second factor says so; when the server answers `CS-CON-0002` a side panel asks
+  for a new code, sends it to `/auth/totp` and repeats the action.
+- **Only what the API returns.** Health tiles are queue depth (oldest queued, running), dead letters, database and
+  connections, services up, and whether the operator log verifies. The canvas's sparklines and usual-range bands need
+  metric history the API does not keep, so tiles show current values; alerts are listed with resolved ones dimmed and
+  an all-clear state, without the canvas's Acknowledge (the API has no acknowledgement); the canvas's model-service
+  card is left out (no model-health API). Loading skeletons, illustrated empty states, error states with retry; fluid
+  rem root, controls that never wrap, keyboard and screen-reader use (focus moves to each screen's heading, panels trap
+  focus and close on Esc), reduced motion respected.
+- **Tests.** `tests/ui.rs`: the page and every file with type, policy and cache; everything the page, modules and
+  stylesheet reference is served; unknown files, traversal and source-only files are `404` problems; the API keeps its
+  headers (seen red when the middleware overwrote the UI's policy again). `console-ui/tests/model.test.mjs` (15 unit
+  tests). `console-ui/e2e/console.spec.mjs` (Playwright, headless): `serve.sh` starts the real binary on a fresh
+  migrated database with the console's own LOGIN role, then two operators enrol, sign in, rename, label, request,
+  grant (re-entering a second factor the test makes stale), apply a suspension, verify the log and sign out.
+
+**Not yet built** (rows in docs/14): the Compose
 service and the console's LOGIN role in deployment (`CON-02`); `casual-sign-keyd-client` (`CON-15`); the other
 two-person actions (organization create, close, owner recovery, identity disable, adding a platform owner) and the
 server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); copies of
@@ -1031,7 +1067,7 @@ recipient authentication, Brands, ERSD, Template sharing, Retention, Webhooks, A
 (read-only unless entitled), Usage, Archived agreements, Admin audit log. Settings set by the organization show a lock
 and "Set by your organization". The workspace switcher sits in the top bar's account menu.
 
-**Console** (`webapp/console/`): Sign in (password, then TOTP); Dashboard (services, alerts, certificates expiring, dead
+**Console** (`console-ui/`, served by the console binary; §5.6): Sign in (password, then TOTP); Dashboard (services, alerts, certificates expiring, dead
 letters, queues, pending approvals); Organizations (search, detail, plan, overrides, usage, status, owner recovery,
 history); Plans; Usage; Keys and certificates; Timestamping; Trust lists; Services; Reconciliation; Operators;
 Approvals; Operator log (verify, export); Platform settings (default plan, self-sign-up, allowed region labels).

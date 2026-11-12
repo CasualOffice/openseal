@@ -50,11 +50,21 @@ macro_rules! asset {
 /// Every file the UI is made of. Anything else is `404 CS-CON-0011`.
 static ASSETS: &[Asset] = &[
     asset!("/", "text/html; charset=utf-8", "index.html", false),
-    asset!("/console.css", "text/css; charset=utf-8", "console.css", false),
+    asset!(
+        "/console.css",
+        "text/css; charset=utf-8",
+        "console.css",
+        false
+    ),
     asset!("/app.js", "text/javascript; charset=utf-8", "app.js", false),
     asset!("/api.js", "text/javascript; charset=utf-8", "api.js", false),
     asset!("/dom.js", "text/javascript; charset=utf-8", "dom.js", false),
-    asset!("/model.js", "text/javascript; charset=utf-8", "model.js", false),
+    asset!(
+        "/model.js",
+        "text/javascript; charset=utf-8",
+        "model.js",
+        false
+    ),
     asset!("/art.js", "text/javascript; charset=utf-8", "art.js", false),
     asset!(
         "/fonts/geist-1.3.1-variable.woff2",
@@ -97,10 +107,17 @@ pub async fn fallback(method: Method, uri: Uri) -> Response {
     let Some(a) = asset else {
         return ConsoleError::NotFound.into_response();
     };
-    let body = if method == Method::HEAD { &[][..] } else { a.bytes };
+    let body = if method == Method::HEAD {
+        &[][..]
+    } else {
+        a.bytes
+    };
     let mut resp = body.into_response();
     let h = resp.headers_mut();
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_static(a.content_type));
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(a.content_type),
+    );
     h.insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static(if a.immutable { IMMUTABLE } else { REVALIDATE }),

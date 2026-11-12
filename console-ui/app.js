@@ -6,7 +6,7 @@
 // through `textContent` (dom.js `h`). Screens show only what the API returns: no
 // invented numbers, no series the API does not keep.
 
-import { h, clear, $, svg } from "./dom.js";
+import { h, append, clear, $, svg } from "./dom.js";
 import * as api from "./api.js";
 import * as M from "./model.js";
 import * as art from "./art.js";
@@ -43,6 +43,9 @@ function run(name, ...args) {
 }
 
 // Small pieces -------------------------------------------------------------------------
+
+/// Append children, skipping null and false (the DOM's own `append` would print "null").
+const put = (parent, ...kids) => append(parent, kids);
 
 function toast(text, bad = false) {
   const t = h("div", { class: `toast${bad ? " bad" : ""}`, text });
@@ -214,7 +217,12 @@ async function withFactor(fn) {
             submit: async () => {
               const code = M.cleanCode(input.value);
               if (!code) throw "Enter the 6 digits from your authenticator app.";
-              await api.post("/auth/totp", { code });
+              try {
+                await api.post("/auth/totp", { code });
+              } catch (p) {
+                if (p?.code === "CS-CON-0002") throw "That code is not right, or was already used. Wait for the next one.";
+                throw p;
+              }
               done = true;
               closePanel();
               resolve();
@@ -283,7 +291,13 @@ function showSignIn(message) {
       submitText: "Continue",
       submit: async () => {
         if (!email.value.trim() || !password.value) throw "Enter your e-mail and password.";
-        await run("signIn", email.value.trim(), password.value);
+        try {
+          await run("signIn", email.value.trim(), password.value);
+        } catch (p) {
+          // Wrong password and unknown e-mail answer alike (CS-CON-0001).
+          if (p?.code === "CS-CON-0001") throw "That e-mail and password do not match an operator.";
+          throw p;
+        }
         showTotp();
       },
     }),
@@ -302,7 +316,13 @@ function showTotp() {
       submit: async () => {
         const code = M.cleanCode(input.value);
         if (!code) throw "Enter the 6 digits from your authenticator app.";
-        await run("submitTotp", code);
+        try {
+          await run("submitTotp", code);
+        } catch (p) {
+          if (p?.code === "CS-CON-0002") throw "That code is not right, or was already used. Wait for the next one.";
+          if (p?.code === "CS-CON-0001" || p?.code === "CS-CON-0013") { showSignIn("Your sign-in has ended. Start again."); return; }
+          throw p;
+        }
         await enterApp();
       },
     }),
@@ -528,8 +548,8 @@ async function viewHealth(main, view) {
       if (view !== state.view) return;
       state.healthAt = Date.now();
       const sum = M.healthSummary(r.health, r.alerts);
-      clear(pill).append(h("span", { class: `dot live tone-${sum.tone}` }), h("span", { text: sum.text }));
-      clear(body).append(
+      put(clear(pill), h("span", { class: `dot live tone-${sum.tone}` }), h("span", { text: sum.text }));
+      put(clear(body), 
         h("div", { class: "tiles" }, M.healthTiles(r.health).map(tile)),
         h("div", { class: "split" }, alertsCard(r.alerts), servicesCard(r.health.services || [])),
         h("div", { class: "split" }, queueCard(r.health.jobs || []), deadCard(r.dead)));
@@ -537,7 +557,7 @@ async function viewHealth(main, view) {
     } catch (p) {
       if (view !== state.view) return;
       if (handleAuth(p)) return;
-      if (first) clear(body).append(h("div", { class: "card" }, errorState(p, load)));
+      if (first) put(clear(body), h("div", { class: "card" }, errorState(p, load)));
       else toast(M.problemMessage(p), true);
     } finally { first = false; }
   }
@@ -571,17 +591,17 @@ async function viewOrganizations(main, view) {
       draw();
     } catch (p) {
       if (view !== state.view || handleAuth(p)) return;
-      clear(body).append(errorState(p, () => load(after)));
+      put(clear(body), errorState(p, () => load(after)));
     }
   }
   function draw() {
     const list = M.filterOrgs(orgs, search.value);
     clear(body);
     if (!orgs.length) {
-      body.append(emptyState(art.noOrganizations(), "No organizations yet", "Organizations appear here when tenants sign up or are created."));
+      put(body, emptyState(art.noOrganizations(), "No organizations yet", "Organizations appear here when tenants sign up or are created."));
       return;
     }
-    body.append(
+    put(body, 
       h("div", { class: "card-h" }, h("b", { text: "All organizations" }), h("span", { class: "sub", text: `${M.count(orgs.length)} loaded` })),
       list.length
         ? h("div", { class: "tbl-wrap" }, h("table", {},
@@ -628,12 +648,12 @@ async function viewOrganization(main, view, id) {
       draw(o);
     } catch (p) {
       if (view !== state.view || handleAuth(p)) return;
-      clear(body).append(h("div", { class: "card" }, errorState(p, load)));
+      put(clear(body), h("div", { class: "card" }, errorState(p, load)));
     }
   }
   function draw(o) {
     titleSlot.textContent = o.name;
-    clear(head).append(titleSlot, statusChip(o.status),
+    put(clear(head), titleSlot, statusChip(o.status),
       can.manage ? h("span", { class: "right" }, btn("Rename", "ghost", () => renamePanel(o))) : null);
     const c = o.counts || {};
     const props = h("section", { class: "card rise", attrs: { "aria-labelledby": "props-h" } },
@@ -648,7 +668,7 @@ async function viewOrganization(main, view, id) {
         h("dt", { text: "Owners" }), h("dd", { text: M.count(c.owners) }),
         h("dt", { text: "Envelopes" }), h("dd", { text: M.count(c.envelopes) }))),
       h("div", { class: "card-f", text: "Region labels are labels only: they do not move or confine data." }));
-    body.replaceChildren(can.manage ? h("div", { class: "split" }, props, twoPersonCard(o)) : props, workspacesCard(o));
+    put(clear(body), can.manage ? h("div", { class: "split" }, props, twoPersonCard(o)) : props, workspacesCard(o));
   }
   function renamePanel(o) {
     openPanel("Rename organization", (close) => {
@@ -689,18 +709,18 @@ async function viewOrganization(main, view, id) {
     const card = h("section", { class: "card rise", attrs: { "aria-labelledby": "tp-h" } },
       h("div", { class: "card-h" }, h("b", { id: "tp-h", text: action === "organization.resume" ? "Resume" : "Suspend" }), h("span", { class: "sub", text: "two-person action" })));
     const b = h("div", { class: "card-b form" });
-    card.append(b);
+    put(card, b);
     if (!action) {
-      b.append(h("p", { class: "d", text: "A closed organization cannot be suspended or resumed." }));
+      put(b, h("p", { class: "d", text: "A closed organization cannot be suspended or resumed." }));
       return card;
     }
     const verb = action === "organization.suspend" ? "suspension" : "resumption";
     const mine = M.myRequest(state.approvals, o.id, action, state.me);
-    b.append(h("p", { class: "d", text: action === "organization.suspend"
+    put(b, h("p", { class: "d", text: action === "organization.suspend"
       ? "Suspending refuses new work in the organization; envelopes already sent continue. You request it, a second operator approves it, then you apply it."
       : "Resuming lets the organization start new work again. You request it, a second operator approves it, then you apply it." }));
     if (!mine) {
-      b.append(h("div", { class: "acts form" }, h("div", { class: "acts" },
+      put(b, h("div", { class: "acts form" }, h("div", { class: "acts" },
         btn(`Request ${verb}`, action === "organization.suspend" ? "danger" : "ghost", async (e) => {
           const t = e.currentTarget;
           t.disabled = true;
@@ -709,10 +729,10 @@ async function viewOrganization(main, view, id) {
           finally { t.disabled = false; }
         }), factorNote())));
     } else if (mine.state === "waiting") {
-      b.append(h("div", { class: "alert-box warn", attrs: { role: "status" } },
+      put(b, h("div", { class: "alert-box warn", attrs: { role: "status" } },
         h("span", { text: `Requested ${M.ago(mine.approval.created_at)}. Waiting for a second operator to approve it in Approvals; the request lapses ${M.until(mine.approval.expires_at)}.` })));
     } else {
-      b.append(h("div", { class: "alert-box ok", attrs: { role: "status" } }, h("span", { text: "Approved by a second operator. You can apply it now." })),
+      put(b, h("div", { class: "alert-box ok", attrs: { role: "status" } }, h("span", { text: "Approved by a second operator. You can apply it now." })),
         h("div", { class: "acts" },
           btn(`Apply ${verb}`, action === "organization.suspend" ? "danger" : "primary", async (e) => {
             const t = e.currentTarget;
@@ -804,13 +824,13 @@ async function viewApprovals(main, view) {
       draw();
     } catch (p) {
       if (view !== state.view || handleAuth(p)) return;
-      clear(body).append(errorState(p, load));
+      put(clear(body), errorState(p, load));
     }
   }
   function draw() {
-    clear(body).append(h("div", { class: "card-h" }, h("b", { text: "Two-person requests" }), h("span", { class: "sub", text: "the last 24 hours, newest first" })));
+    put(clear(body), h("div", { class: "card-h" }, h("b", { text: "Two-person requests" }), h("span", { class: "sub", text: "the last 24 hours, newest first" })));
     if (!state.approvals.length) {
-      body.append(emptyState(art.noApprovals(), "No requests in the last 24 hours", "Suspending or resuming an organization starts with a request here, which a second operator approves."));
+      put(body, emptyState(art.noApprovals(), "No requests in the last 24 hours", "Suspending or resuming an organization starts with a request here, which a second operator approves."));
       return;
     }
     for (const a of state.approvals) {
@@ -819,7 +839,7 @@ async function viewApprovals(main, view) {
       const name = state.orgNames.get(a.organization);
       const acts = h("div", { class: "acts" });
       if (st === "grantable") {
-        acts.append(btn("Approve", "primary", async (e) => {
+        put(acts, btn("Approve", "primary", async (e) => {
           const t = e.currentTarget;
           t.disabled = true;
           try { await run("grantApproval", a.id); toast("Approved: the requester can now apply it"); await load(); }
@@ -827,9 +847,9 @@ async function viewApprovals(main, view) {
           finally { t.disabled = false; }
         }, { "aria-label": `Approve: ${M.actionLabel(a.action)} ${name || a.organization}` }));
       } else if (st === "ready") {
-        acts.append(h("a", { class: "btn", href: `#/organizations/${a.organization}`, text: "Open to apply" }));
-      } else acts.append(chip(label, tone));
-      body.append(h("div", { class: `row${st === "applied" || st === "expired" ? " done" : ""}` },
+        put(acts, h("a", { class: "btn", href: `#/organizations/${a.organization}`, text: "Open to apply" }));
+      } else put(acts, chip(label, tone));
+      put(body, h("div", { class: `row${st === "applied" || st === "expired" ? " done" : ""}` },
         h("span", { class: `bullet tone-${st === "grantable" ? "warn" : st === "ready" || st === "applied" ? "ok" : "ok"}` }),
         h("div", { class: "main" },
           h("b", {}, `${M.actionLabel(a.action)}: `, h("a", { class: "name", href: `#/organizations/${a.organization}`, text: name || M.shortId(a.organization) })),
@@ -857,11 +877,11 @@ async function viewOperators(main, view) {
       draw(r.operators || []);
     } catch (p) {
       if (view !== state.view || handleAuth(p)) return;
-      clear(body).append(errorState(p, load));
+      put(clear(body), errorState(p, load));
     }
   }
   function draw(list) {
-    clear(body).append(
+    put(clear(body), 
       h("div", { class: "card-h" }, h("b", { text: "Operators" }), h("span", { class: "sub", text: "their sign-in e-mail is shown to platform owners only" })),
       h("div", { class: "tbl-wrap" }, h("table", {},
         h("thead", {}, h("tr", {}, h("th", { text: "E-mail" }), h("th", { text: "Roles" }), h("th", { class: "hide-sm", text: "Added" }), h("th", { text: "Status" }), h("th", { text: "", attrs: { "aria-label": "Actions" } }))),
@@ -930,10 +950,10 @@ async function viewLog(main, view) {
     clear(result);
     try {
       const r = await run("verifyLog");
-      result.append(h("div", { class: "alert-box ok rise" }, h("span", { text: `Verified: ${M.plural(r.events, "event")}, every hash and link recomputed.` }), r.head ? h("code", { text: `head ${r.head.slice(0, 16)}…`, attrs: { title: r.head } }) : null));
+      put(result, h("div", { class: "alert-box ok rise" }, h("span", { text: `Verified: ${M.plural(r.events, "event")}, every hash and link recomputed.` }), r.head ? h("code", { text: `head ${r.head.slice(0, 16)}…`, attrs: { title: r.head } }) : null));
     } catch (p) {
       if (handleAuth(p)) return;
-      result.append(h("div", { class: "alert-box bad rise", attrs: { role: "alert" } }, h("span", { text: p.code === "CS-CON-0007" ? "The operator log does not verify: an event was changed or removed. Changes are refused until it is repaired." : M.problemMessage(p) })));
+      put(result, h("div", { class: "alert-box bad rise", attrs: { role: "alert" } }, h("span", { text: p.code === "CS-CON-0007" ? "The operator log does not verify: an event was changed or removed. Changes are refused until it is repaired." : M.problemMessage(p) })));
     } finally { verify.disabled = false; }
   });
   const body = h("section", { class: "card" }, skeletonRows(5));
@@ -954,20 +974,20 @@ async function viewLog(main, view) {
       draw();
     } catch (p) {
       if (view !== state.view || handleAuth(p)) return;
-      clear(body).append(errorState(p, () => load(after)));
+      put(clear(body), errorState(p, () => load(after)));
     }
   }
   function draw() {
-    clear(body).append(h("div", { class: "card-h" }, h("b", { text: "Events" }), h("span", { class: "sub", text: "oldest first; hash-chained, append-only" })));
-    if (!events.length) { body.append(emptyState(art.noEntries(), "No events yet", "Every operator action is recorded here.")); return; }
-    body.append(h("div", { class: "tbl-wrap" }, h("table", {},
+    put(clear(body), h("div", { class: "card-h" }, h("b", { text: "Events" }), h("span", { class: "sub", text: "oldest first; hash-chained, append-only" })));
+    if (!events.length) { put(body, emptyState(art.noEntries(), "No events yet", "Every operator action is recorded here.")); return; }
+    put(body, h("div", { class: "tbl-wrap" }, h("table", {},
       h("thead", {}, h("tr", {}, h("th", { class: "num", text: "Seq" }), h("th", { text: "Time" }), h("th", { text: "Action" }), h("th", { class: "hide-sm", text: "Operator" }), h("th", { class: "hide-sm", text: "Details" }), h("th", { class: "hide-sm", text: "Hash" }))),
       h("tbody", {}, events.map((e) => h("tr", {},
         h("td", { class: "num mono", text: String(e.seq) }),
         h("td", { text: M.shortDate(e.at) }),
         h("td", {}, h("span", { text: M.eventLabel(e.action), attrs: { title: e.action } })),
         h("td", { class: "hide-sm" }, e.operator ? h("code", { text: e.operator === state.me ? "you" : M.shortId(e.operator), attrs: { title: e.operator } }) : h("span", { class: "w", text: "host" })),
-        h("td", { class: "hide-sm" }, h("span", { class: "chips" }, M.eventDetails(e).map(([k, v]) => h("span", { class: "chip region", text: `${k}: ${v.length > 13 ? M.shortId(v) : v}`, attrs: { title: `${k}: ${v}` } })))),
+        h("td", { class: "hide-sm" }, h("span", { class: "chips" }, M.eventDetails(e).map(([k, v]) => h("span", { class: "chip region", text: `${k}: ${/^[0-9a-f-]{36}$/.test(v) ? M.shortId(v) : v}`, attrs: { title: `${k}: ${v}` } })))),
         h("td", { class: "hide-sm" }, h("code", { text: e.hash.slice(0, 10), attrs: { title: e.hash } }))))))),
     more ? h("div", { class: "more" }, btn("Load more", "ghost", () => load(next))) : null);
   }

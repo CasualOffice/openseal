@@ -170,7 +170,7 @@ export function healthSummary(h, alerts = []) {
   const bad = tiles.filter((t) => t.state === "bad");
   const open = openAlerts(alerts).length;
   const warn = tiles.filter((t) => t.state === "warn").length;
-  if (bad.length) return { tone: "bad", text: `${bad.map((t) => t.label).join(", ")} need${bad.length === 1 ? "s" : ""} attention` };
+  if (bad.length) return { tone: "bad", text: `Needs attention: ${bad.map((t) => t.label).join(", ")}` };
   if (open) return { tone: "warn", text: `${plural(open, "alert")} need${open === 1 ? "s" : ""} attention` };
   if (warn) return { tone: "warn", text: "Dead letters need a look" };
   return { tone: "ok", text: "All systems normal" };

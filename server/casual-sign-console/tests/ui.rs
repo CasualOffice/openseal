@@ -51,7 +51,13 @@ async fn send(method: Method, path: &str) -> (StatusCode, axum::http::HeaderMap,
         .unwrap();
     let status = resp.status();
     let headers = resp.headers().clone();
-    let body = resp.into_body().collect().await.unwrap().to_bytes().to_vec();
+    let body = resp
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
     (status, headers, body)
 }
 

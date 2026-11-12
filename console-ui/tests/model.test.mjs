@@ -64,7 +64,7 @@ test("an alert resolved by a later alert is no longer open", () => {
 test("the summary names what needs attention, worst first", () => {
   assert.deepEqual(M.healthSummary({ ...HEALTH, services: [] , dead_letters: 0 }, []), { tone: "ok", text: "All systems normal" });
   assert.equal(M.healthSummary(HEALTH, []).tone, "bad");
-  assert.match(M.healthSummary(HEALTH, []).text, /Services needs attention/);
+  assert.equal(M.healthSummary(HEALTH, []).text, "Needs attention: Services");
   const quiet = { ...HEALTH, services: [], dead_letters: 0 };
   assert.deepEqual(M.healthSummary(quiet, [{ id: "x", code: "C", resolves: null }]), { tone: "warn", text: "1 alert needs attention" });
 });
