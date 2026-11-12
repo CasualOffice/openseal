@@ -20,23 +20,27 @@ test("agreements: no envelopes, no matches, nothing with a status", async ({ pag
     await page.evaluate(() => {
       const s = JSON.parse(sessionStorage.getItem("openseal.mock.v1"));
       s.envelopes = [];
+      s.inboxSeeded = true; // no envelope from another member either
       sessionStorage.setItem("openseal.mock.v1", JSON.stringify(s));
     });
     await page.reload();
     const none = page.getByTestId("empty-envelopes");
     await check(none, testInfo, "no-envelopes");
-    await expect(none.getByRole("button", { name: "New envelope" })).toBeVisible();
+    await expect(none.getByRole("button", { name: "New agreement" })).toBeVisible();
+    await expect(none.getByRole("button", { name: "Use a template" })).toBeVisible();
     await page.goto(app("#/agreements?status=voided"));
     await check(page.getByTestId("empty-filter"), testInfo, "filter");
     return;
   }
+  await page.getByRole("button", { name: "Search agreements" }).click();
   await page.getByRole("searchbox").fill("zzz-nothing");
   await check(page.getByTestId("empty-search"), testInfo, "search");
 });
 
 test("agreements: no search results", async ({ page }, testInfo) => {
   await signIn(page);
-  await expect(page.locator("tbody tr").first()).toBeVisible();
+  await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
+  await page.getByRole("button", { name: "Search agreements" }).click();
   await page.getByRole("searchbox").fill("zzz-nothing");
   const e = page.getByTestId("empty-search");
   await check(e, testInfo, "search");
@@ -66,7 +70,7 @@ test("offline shows a way to try again, and trying again recovers", async ({ pag
   if (REAL) await page.unroute("**/api/v1/envelopes?*");
   else await page.evaluate(() => sessionStorage.removeItem("openseal.mock.offline"));
   await e.getByRole("button", { name: "Try again" }).click();
-  await expect(page.locator("tbody tr").first()).toBeVisible();
+  await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
 });
 
 test("signing: all done, declined, unknown link", async ({ page }, testInfo) => {

@@ -1,65 +1,48 @@
-// Agreements (WEB-01, redesigned in WEB-02, WEB-06 and UX-07; docs/47 §Screens
-// "Agreements", after DocuSign's Manage page): a folder rail with quick views and
-// counts, filters (sender, last change), a dense table (select, subject with its
-// recipients, status with a line in words, sender, last change, expiry, row actions)
-// with sortable columns, a sticky bulk action bar, and the top bar's search.
+// Agreements (WEB-17, WEB-18; canvas Main.dc.html; docs/47 §As built: Agreements): the
+// list grouped by where each agreement stands, with sticky group headers, beside a
+// docked inspector for the selected one.
 //
-// Folders are status filters on `GET /api/v1/envelopes?status=`; a view over two
-// statuses (Waiting for others = sent + delivered) pages each and merges them, newest
-// first. "Expiring soon" (UX-07) is the waiting envelopes whose `expires_at` (on each
-// list item) falls within 7 days, filtered here until the API filters by expiry.
-// Recipients and the status line come from each row's `GET …/{id}`, fetched after the
-// list paints. Search is the server's (`q`, WEB-04) and lives in the address
-// (`#/agreements?folder=…&q=…`, replaced as you type), so a reload, Back or a shared
-// link keeps it. Sorting and the sender and date filters apply to the envelopes loaded
-// (the API has neither yet, UXW-03; the page says so when more could be loaded).
+// Header: pill tabs (All, Needs me, Waiting, Completed, Drafts, Expiring), Search,
+// Filter (sender, last change), Display (sort, select for bulk, export CSV) and New
+// agreement. The sidebar's Views (#nav-views) show the same views with live counts and
+// switch in place. Older addresses (`?status=`, `?folder=declined|voided|expired|action`)
+// still open their filter, named above the list.
 //
-// UX-07 density: one line per date ("Today, 5:28 PM", the full time in a tooltip), a
-// fixed table layout with set column widths, the Sender column only when someone else
-// sent a loaded envelope; rows of 64 px or less at 1440. Phones get a folder select in
-// place of the rail, filters behind a Filters button, and checkboxes behind Select.
+// Data: every agreement up to 1000, newest change first (`GET /envelopes`, the server's
+// search `q`), and the Inbox for "Needs me" where the server has one
+// (`NOT_ON_SERVER.inbox`; hidden otherwise). Views, groups and counts are the pure rules
+// of managemodel.js over those rows. Recipients, progress and page counts come from each
+// row's `GET …/{id}`, a few at a time after the list paints; suggestion counts from
+// ml.js only when document intelligence is available.
 //
-// A draft opens in the editor (A-02). Each row's menu (A-03, grouped in UX-07) offers
-// what its state allows: open or edit | correct, resend, download | copy, save as
-// template, history | void, delete. Bulk: resend, download, export CSV, void, delete.
+// The list is a WAI-ARIA grid: rows are focusable (roving tabindex), ↑/↓/Home/End move
+// the selection, Enter opens, Space ticks a row while selecting. Clicking a row selects
+// it; on narrower screens it opens the inspector as a slide-over (a full page on phones),
+// which Escape closes, returning focus to the row.
 
-import { h, clear, fmtDate, download } from "./dom.js";
+import { h, clear, download, reducedMotion } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { button, busy, emptyState, skeletonRows, statusBadge, errorState, toast, toastError, confirmDialog, menuButton, selectField } from "./ui/index.js";
-import { countLabel } from "./templatemodel.js";
+import { button, busy, emptyState, errorState, toast, toastError, confirmDialog, menuButton, selectField, tabs, iconButton } from "./ui/index.js";
 import {
-  statusLine, shortDate, copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, downloadCertificate, hasCertificate,
-  historyPanel, correctPanel, voidEnvelopes, DELETABLE, ACTIVE,
+  copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, downloadCertificate, hasCertificate,
+  historyPanel, correctPanel, voidEnvelopes, waitingFor, DELETABLE, ACTIVE,
 } from "./envactions.js";
-import { agreementsHash, expiringSoon, rowActions, toCsv } from "./managemodel.js";
+import {
+  agreementsHash, rowActions, toCsv, VIEWS, toneOf, viewFrom, groupRows, flatIds, moveSelection, viewCounts, signingProgress, primaryVerb, inView,
+} from "./managemodel.js";
+import {
+  docThumb, progressSegments, whenEl, statusPillFor, subText, recipientAvatars, openDetails, insightsAvailable, renderNavViews,
+  fetchAgreements, fetchInbox,
+} from "./agreementparts.js";
+import { registerMeaningSearch } from "./meaning.js";
+import { loadSuggestions, onSuggestions } from "./ml.js";
+import { createInspector } from "./inspector.js";
 
 const DAY = 86_400_000;
 
-/// The rail: id, statuses (none = every status), icon, group; `soon` keeps only those
-/// expiring within `SOON_DAYS`.
-export const FOLDERS = [
-  { id: "all", statuses: [], icon: "inbox", group: "folders" },
-  { id: "drafts", statuses: ["draft"], icon: "file-pen-line", group: "folders" },
-  { id: "action", statuses: ["declined", "expired"], icon: "circle-alert", group: "views" },
-  { id: "waiting", statuses: ["sent", "delivered"], icon: "hourglass", group: "views" },
-  { id: "expiring", statuses: ["sent", "delivered"], icon: "clock", group: "views", soon: true },
-  { id: "completed", statuses: ["completed"], icon: "circle-check", group: "views" },
-  { id: "declined", statuses: ["declined"], icon: "circle-x", group: "ended" },
-  { id: "voided", statuses: ["voided"], icon: "ban", group: "ended" },
-  { id: "expired", statuses: ["expired"], icon: "clock", group: "ended" },
-];
-const LEGACY = { draft: "drafts", sent: "waiting", delivered: "waiting", completed: "completed", declined: "declined", voided: "voided", expired: "expired" };
-
-/// The folder a route's parameters name: `?folder=`, or the older `?status=`.
-export function folderFrom(params) {
-  const f = params?.get("folder");
-  if (FOLDERS.some((x) => x.id === f)) return f;
-  return LEGACY[params?.get("status")] || "all";
-}
-
-/// Where a row goes: a draft to the editor (A-02), anything sent to its details.
+/// Where a row opens: a draft in the editor (A-02), anything sent on its own page.
 export function rowHref(r) {
   return r.status === "draft" ? `#/prepare/${encodeURIComponent(r.id)}` : `#/envelopes/${encodeURIComponent(r.id)}`;
 }
@@ -79,389 +62,502 @@ export function inRange(when, { range = "any", from = "", to = "" } = {}, now = 
   return Number.isFinite(days) ? at >= now - days * DAY : true;
 }
 
-/// Compare two rows for a sort key; empty values sort last either way.
-export function compareBy(key, dir, get) {
-  return (a, b) => {
-    const x = get(a, key);
-    const y = get(b, key);
-    if (x === y) return 0;
-    if (x == null || x === "") return 1;
-    if (y == null || y === "") return -1;
-    return (x < y ? -1 : 1) * (dir === "asc" ? 1 : -1);
-  };
-}
+/// Within-group orders for Display → Sort; empty values last.
+const ORDERS = {
+  changed: (a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")),
+  created: (a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")),
+  subject: (a, b) => (a.subject || "").localeCompare(b.subject || "", undefined, { sensitivity: "base" }),
+  expires: (a, b) => (a.expires_at ? (b.expires_at ? a.expires_at.localeCompare(b.expires_at) : -1) : b.expires_at ? 1 : 0),
+};
+
+const narrow = () => matchMedia("(max-width: 74.999em)").matches;
 
 export function mount(view, ctx, _match, params) {
-  const folder = FOLDERS.find((f) => f.id === folderFrom(params));
-  let rows = [];
-  // Whether `rows` holds a loaded list. Until then the list shows the skeleton or the
-  // error state, and late helpers (sender names, details) must not draw over it.
-  let ready = false;
-  let cursors = new Map(); // status|"" → next cursor
-  let rawQuery = (params.get("q") || "").trim();
-  let query = rawQuery.toLowerCase();
+  const s = {
+    view: viewFrom(params),
+    q: (params.get("q") || "").trim(),
+    rows: [],
+    mine: new Set(),
+    inbox: new Map(), // id → Inbox item (my_recipient_id)
+    ready: false,
+    capped: false,
+    order: "changed",
+    filter: { sender: "", range: "any", from: "", to: "" },
+    selected: null,
+    selecting: false,
+    picked: new Set(),
+    open: false, // the inspector, when it floats
+  };
   const details = new Map(); // id → envelope
-  const selected = new Set();
-  const filter = { sender: "", range: "any", from: "", to: "" };
-  let sort = { key: null, dir: "desc" };
+  const audits = new Map(); // id → audit
   const people = new Map(); // user id → name
-  let selecting = false; // phones: checkboxes shown
+  let mlOn = false;
+  let gone = false;
+  let navCounts = null; // the sidebar Views' counts, from the last unsearched load
 
-  const topSearch = document.getElementById("top-search");
-  if (topSearch) topSearch.value = rawQuery;
-  /// Put the search in the address without a new history entry or a remount.
-  const syncHash = () => {
-    const want = agreementsHash(folder.id, rawQuery);
-    if (location.hash !== want) history.replaceState(history.state, "", `${location.pathname}${location.search}${want}`);
-  };
-  // The server searches subject, names and emails (`q`, WEB-04); typing waits 250 ms.
-  let searchTimer = null;
-  ctx.onSearch = (q) => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      if (q.toLowerCase() === query) return;
-      rawQuery = q;
-      query = q.toLowerCase();
-      syncHash();
-      updateRailLinks();
-      renderTitle();
-      load();
-    }, 250);
-  };
-
-  // ---- Rail (desktop) and folder select (phones) -------------------------------------
-  const rail = h("nav", { class: "os-rail", attrs: { "aria-label": t("agreements.folders") } });
-  const counts = new Map();
-  const railLinks = [];
-  for (const group of ["folders", "views", "ended"]) {
-    rail.append(h("p", { class: "os-rail__group", text: t(`agreements.group.${group}`) }));
-    const ul = h("ul", { class: "os-rail__list" });
-    for (const f of FOLDERS.filter((x) => x.group === group)) {
-      const n = h("span", { class: "os-rail__count" });
-      counts.set(f.id, n);
-      const a = h("a", {
-        class: "os-rail__link", href: agreementsHash(f.id, rawQuery),
-        attrs: { "aria-current": f.id === folder.id ? "page" : null, "data-folder": f.id },
-      }, icon(f.icon, { size: 16 }), h("span", { class: "os-rail__label", text: t(`agreements.folder.${f.id}`) }), n);
-      railLinks.push([f.id, a]);
-      ul.append(h("li", {}, a));
-    }
-    rail.append(ul);
-  }
-  const folderSel = selectField(t("agreements.folder"), FOLDERS.map((f) => [f.id, t(`agreements.folder.${f.id}`)]), {
-    id: "folder-select", value: folder.id, labelHidden: true, attrs: { "data-testid": "folder-select" },
-    onChange: (v) => ctx.navigate(agreementsHash(v, rawQuery)),
+  // ---- Header ------------------------------------------------------------------------
+  const inboxOn = ctx.api.available ? ctx.api.available("inbox") : true;
+  const tabViews = VIEWS.filter((v) => v.tab && (!v.inbox || inboxOn));
+  const listHost = h("div", { class: "os-agr__scroll" });
+  let quiet = true; // the tabs' first render is not a choice
+  const tabset = tabs({
+    label: t("agreements.views"),
+    variant: "pill",
+    tabs: tabViews.map((v) => ({ id: v.id, label: t(`agreements.view.${v.id}`) })),
+    current: tabViews.some((v) => v.id === s.view) ? s.view : "all",
+    render: (id, panel) => { panel.append(listHost); if (!quiet) setView(id); },
   });
-  function updateRailLinks() {
-    for (const [id, a] of railLinks) a.href = agreementsHash(id, rawQuery);
-  }
+  quiet = false;
+  const tablist = tabset.querySelector('[role="tablist"]');
+  const tabpanel = tabset.querySelector('[role="tabpanel"]');
+  tabpanel.classList.add("os-agr__panel");
+  tabpanel.removeAttribute("tabindex");
 
-  // ---- Filters (A-01) ------------------------------------------------------------------
-  const senderSel = selectField(t("agreements.filter.sender"), [["", t("agreements.filter.anyone")], ["me", t("agreements.filter.me")]], { id: "flt-sender", size: "sm", onChange: (v) => { filter.sender = v; renderRows(); } });
-  const rangeSel = selectField(t("agreements.filter.when"), ["any", "7", "30", "90", "custom"].map((k) => [k, t(`agreements.filter.${k}`)]), { id: "flt-range", size: "sm", onChange: (v) => { filter.range = v; custom.hidden = v !== "custom"; renderRows(); } });
+  const searchInput = h("input", { id: "agr-search", type: "search", class: "os-agr__searchinput", autocomplete: "off", value: s.q, attrs: { "aria-label": t("agreements.search"), placeholder: t("agreements.search") } });
+  const searchRow = h("form", { class: "os-agr__searchrow", attrs: { role: "search" }, hidden: !s.q },
+    icon("os-search", { size: 16 }), searchInput,
+    iconButton(t("agreements.search-clear"), "x", { size: "sm", onClick: () => clearSearch() }));
+  searchRow.addEventListener("submit", (e) => e.preventDefault());
+  const searchBtn = iconButton(t("agreements.search"), "os-search", { size: "sm", onClick: () => toggleSearch(true) });
+  searchBtn.setAttribute("aria-controls", "agr-search");
+  const filterBtn = button(t("agreements.filter-btn"), { icon: "os-filter", variant: "ghost", size: "sm", attrs: { "aria-expanded": "false", "aria-controls": "agr-filters", "data-testid": "filters-toggle" }, onClick: () => toggleFilters() });
+  filterBtn.classList.add("os-agr__hbtn");
+  const filterCount = h("span", { class: "os-count-badge", hidden: true });
+  filterBtn.append(filterCount);
+  const displayMenu = menuButton({
+    label: t("agreements.display-btn"),
+    buttonOpts: { icon: "os-display", variant: "ghost", size: "sm", attrs: { "data-testid": "display-toggle" } },
+    items: () => [
+      h("p", { class: "os-menu__head", text: t("agreements.sort-label") }),
+      ...Object.keys(ORDERS).map((k) => ({ label: t(`agreements.sort.${k}`), icon: s.order === k ? "os-check" : "os-blank", run: () => { s.order = k; renderList(); } })),
+      "separator",
+      { label: s.selecting ? t("agreements.select-off") : t("agreements.select-on"), icon: "square-check", run: () => toggleSelect() },
+      { label: t("agreements.export-csv"), icon: "file-text", run: () => exportCsv(visibleRows()) },
+    ],
+  });
+  displayMenu.querySelector("button").classList.add("os-agr__hbtn");
+  const newBtn = h("a", { class: "os-btn os-btn--primary os-btn--sm os-agr__new", href: "#/prepare", attrs: { "data-testid": "agreements-new" } },
+    icon("plus", { size: 16 }), h("span", { class: "os-agr__btnlabel", text: t("agreements.new") }), h("kbd", { class: "os-kbd os-kbd--on-accent", attrs: { "aria-hidden": "true" }, text: "N" }));
+  const head = h("header", { class: "os-agr__head" },
+    h("h1", { class: "os-agr__title", text: t("agreements.title") }), tablist,
+    h("div", { class: "os-agr__tools" }, searchBtn, filterBtn, displayMenu, newBtn));
+
+  // Filter popover (A-01): sender and last change, applied to the loaded rows.
+  const f = s.filter;
+  const senderSel = selectField(t("agreements.filter.sender"), [["", t("agreements.filter.anyone")], ["me", t("agreements.filter.me")]], { id: "flt-sender", size: "sm", onChange: (v) => { f.sender = v; renderList(); } });
+  const rangeSel = selectField(t("agreements.filter.when"), ["any", "7", "30", "90", "custom"].map((k) => [k, t(`agreements.filter.${k}`)]), { id: "flt-range", size: "sm", onChange: (v) => { f.range = v; custom.hidden = v !== "custom"; renderList(); } });
   const fromIn = h("input", { id: "flt-from", type: "date", class: "os-input os-input--sm" });
   const toIn = h("input", { id: "flt-to", type: "date", class: "os-input os-input--sm" });
-  fromIn.addEventListener("change", () => { filter.from = fromIn.value; renderRows(); });
-  toIn.addEventListener("change", () => { filter.to = toIn.value; renderRows(); });
+  fromIn.addEventListener("change", () => { f.from = fromIn.value; renderList(); });
+  toIn.addEventListener("change", () => { f.to = toIn.value; renderList(); });
   const custom = h("div", { class: "os-filters__custom", hidden: true },
     h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "flt-from" }, text: t("agreements.filter.from") }), fromIn),
     h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "flt-to" }, text: t("agreements.filter.to") }), toIn));
-  const clearBtn = button(t("agreements.filter.clear"), { icon: "x", size: "sm", variant: "ghost", onClick: () => {
-    Object.assign(filter, { sender: "", range: "any", from: "", to: "" });
+  const clearBtn = button(t("agreements.filter.clear"), { icon: "x", size: "sm", variant: "ghost", onClick: () => clearFilters() });
+  const filters = h("div", { id: "agr-filters", class: "os-agr__filters", attrs: { role: "group", "aria-label": t("agreements.filter.title") }, hidden: true },
+    senderSel.el, rangeSel.el, custom, clearBtn, button(t("agreements.filter.apply"), { size: "sm", variant: "subtle", onClick: () => toggleFilters(false) }));
+  filters.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); toggleFilters(false); filterBtn.focus(); } });
+  const filtering = () => !!f.sender || f.range !== "any";
+
+  const note = h("p", { class: "os-agr__note", attrs: { "data-testid": "agreements-sub", "aria-live": "polite" }, hidden: true });
+  const bulk = h("div", { class: "os-bulk os-agr__bulk", attrs: { role: "region", "aria-label": t("agreements.bulk"), "data-testid": "bulk-bar" }, hidden: true });
+  const main = h("section", { class: "os-agr__main", attrs: { "aria-labelledby": "agr-h" } }, head, searchRow, filters, note, bulk, tabpanel);
+  head.querySelector("h1").id = "agr-h";
+
+  // ---- Inspector -------------------------------------------------------------------
+  const inspector = createInspector(ctx, { load: loadDetail, actionsFor, onClose: () => setOpen(false) });
+  const scrim = h("div", { class: "os-agr__scrim", hidden: true });
+  scrim.addEventListener("click", () => setOpen(false));
+  inspector.el.addEventListener("keydown", (e) => { if (e.key === "Escape" && s.open && !e.defaultPrevented) { e.preventDefault(); setOpen(false); } });
+  const root = h("div", { class: "os-agr" }, main, scrim, inspector.el);
+  view.append(root);
+
+  // ---- Commands (⌘K and shortcuts reach every verb) ---------------------------------
+  register("list.search", { label: t("cmd.search"), run: () => toggleSearch(true) });
+  register("list.filters", { label: t("agreements.filters"), run: () => toggleFilters(true) });
+  register("list.select", { label: t("agreements.select-on"), run: () => toggleSelect() });
+  register("list.export", { label: t("agreements.export-csv"), run: () => exportCsv(visibleRows()) });
+  register("list.open", { label: t("inspector.open"), run: () => { const r = selectedRow(); if (r) ctx.navigate(rowHref(r)); }, enabled: () => !!selectedRow() });
+  register("list.primary", { label: t("inspector.sign"), run: () => { const r = selectedRow(); const a = r && actionsFor(r, details.get(r.id)).primary; if (a) a.run(); }, enabled: () => !!selectedRow() });
+  for (const v of tabViews) register(`list.view.${v.id}`, { label: t("agreements.legacy-view", { view: t(`agreements.view.${v.id}`) }), run: () => setView(v.id) });
+  const offMeaning = registerMeaningSearch(ctx);
+
+  // ---- State changes ---------------------------------------------------------------
+  function syncHash() {
+    const want = agreementsHash(s.view, s.q);
+    if (location.hash !== want) history.replaceState(history.state, "", `${location.pathname}${location.search}${want}`);
+  }
+  function setView(id) {
+    if (!VIEWS.some((v) => v.id === id)) return;
+    s.view = id;
+    syncHash();
+    for (const b of tablist.querySelectorAll('[role="tab"]')) {
+      const on = b.dataset.tab === id;
+      b.setAttribute("aria-selected", String(on));
+      b.tabIndex = on ? 0 : -1;
+    }
+    if (!tabViews.some((v) => v.id === id)) tablist.querySelector('[role="tab"]').tabIndex = 0;
+    renderList();
+    renderNav();
+  }
+  function toggleSearch(on) {
+    searchRow.hidden = !on && !s.q;
+    if (on) searchInput.focus();
+  }
+  let searchTimer = null;
+  searchInput.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      const q = searchInput.value.trim();
+      if (q === s.q) return;
+      s.q = q;
+      syncHash();
+      load();
+    }, 250);
+  });
+  searchInput.addEventListener("keydown", (e) => { if (e.key === "Escape" && !searchInput.value) { e.stopPropagation(); searchRow.hidden = true; searchBtn.focus(); } });
+  function clearSearch() {
+    searchInput.value = "";
+    if (s.q) { s.q = ""; syncHash(); load(); }
+    searchInput.focus();
+  }
+  function toggleFilters(open = filters.hidden) {
+    filters.hidden = !open;
+    filterBtn.setAttribute("aria-expanded", String(open));
+    if (open) senderSel.select.focus();
+  }
+  function clearFilters() {
+    Object.assign(f, { sender: "", range: "any", from: "", to: "" });
     senderSel.select.value = ""; rangeSel.select.value = "any"; fromIn.value = ""; toIn.value = ""; custom.hidden = true;
-    renderRows();
-  } });
-  const filters = h("div", { id: "agreements-filters", class: "os-filters", attrs: { role: "group", "aria-label": t("agreements.filters") } }, senderSel.el, rangeSel.el, custom, clearBtn);
-  const filtering = () => !!filter.sender || filter.range !== "any";
-  const activeFilters = () => (filter.sender ? 1 : 0) + (filter.range !== "any" ? 1 : 0);
-
-  // Phones (UX-07): Filters and Select toggles in one bar under the title.
-  const filterCount = h("span", { class: "os-count-badge", hidden: true });
-  const filtersBtn = button(t("agreements.filters"), { icon: "filter", size: "sm", attrs: { "aria-expanded": "false", "aria-controls": "agreements-filters", "data-testid": "filters-toggle" }, onClick: () => toggleFilters() });
-  filtersBtn.append(filterCount);
-  const selectBtn = button(t("agreements.select-mode"), { icon: "square-check", size: "sm", attrs: { "aria-pressed": "false", "data-testid": "select-toggle" }, onClick: () => toggleSelect() });
-  const phoneBar = h("div", { class: "os-manage__phonebar" }, folderSel.el, h("div", { class: "os-manage__toggles" }, filtersBtn, selectBtn));
-  function toggleFilters(open = !filters.classList.contains("is-open")) {
-    filters.classList.toggle("is-open", open);
-    filtersBtn.setAttribute("aria-expanded", String(open));
+    renderList();
   }
-  function toggleSelect(on = !selecting) {
-    selecting = on;
-    selectBtn.setAttribute("aria-pressed", String(on));
-    content.classList.toggle("is-selecting", on);
-    if (!on && selected.size) { selected.clear(); renderRows(); }
+  function toggleSelect(on = !s.selecting) {
+    s.selecting = on;
+    if (!on) s.picked.clear();
+    renderList();
   }
-
-  // ---- Content -------------------------------------------------------------------------
-  // One way in to a new envelope: the top bar's Start (UX-07, as G-03 did for Home); the
-  // empty state keeps its own button.
-  const title = h("h1", { class: "os-page-title", text: t("agreements.title") });
-  const sub = h("p", { class: "os-muted", attrs: { "data-testid": "agreements-sub" } });
-  const head = h("div", { class: "os-page-head" }, h("div", { class: "os-page-head__main os-page-head__stack" }, title, sub));
-  function renderTitle() {
-    const name = t(`agreements.folder.${folder.id}`);
-    sub.textContent = rawQuery ? t("agreements.searching", { folder: name, query: rawQuery }) : name;
-  }
-  renderTitle();
-  const bulk = h("div", { class: "os-bulk", attrs: { role: "region", "aria-label": t("agreements.bulk"), "data-testid": "bulk-bar", hidden: true } });
-  const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
-  const note = h("p", { class: "os-muted os-small os-filters__note", hidden: true });
-  const more = h("div", { class: "os-list__more" });
-  const content = h("div", { class: "os-manage__content" }, head, phoneBar, filters, bulk, list, note, more);
-  view.append(h("div", { class: "os-manage" }, rail, content));
-
-  register("list.search", { label: t("cmd.search"), run: () => topSearch?.focus() });
-  register("list.filters", { label: t("agreements.filters"), run: () => toggleFilters() });
-  register("list.select", { label: t("agreements.select-mode"), run: () => toggleSelect() });
-  register("list.export", { label: t("agreements.export-csv"), run: () => exportCsv(visible()) });
-
-  // ---- Loading ---------------------------------------------------------------------------
-  const keys = () => (folder.statuses.length ? folder.statuses : [""]);
-  async function load(append = false) {
-    if (!append) {
-      clear(list);
-      list.setAttribute("aria-busy", "true");
-      list.append(skeletonRows(8));
-      ready = false;
-      cursors = new Map(keys().map((k) => [k, undefined]));
+  function setOpen(open, { focus = true } = {}) {
+    const floating = narrow();
+    s.open = open && floating;
+    root.classList.toggle("is-inspecting", s.open);
+    scrim.hidden = !s.open;
+    main.inert = s.open;
+    if (s.open) {
+      inspector.el.setAttribute("role", "dialog");
+      inspector.el.setAttribute("aria-modal", "true");
+      inspector.el.setAttribute("aria-labelledby", "insp-title");
+      inspector.el.removeAttribute("aria-label");
+      if (focus) requestAnimationFrame(() => inspector.el.querySelector(".os-insp__close")?.focus());
+    } else {
+      inspector.el.removeAttribute("role");
+      inspector.el.removeAttribute("aria-modal");
+      inspector.el.removeAttribute("aria-labelledby");
+      inspector.el.setAttribute("aria-label", t("inspector.label"));
+      if (focus && floating) rowEl(s.selected)?.focus();
     }
+  }
+  const mq = matchMedia("(max-width: 74.999em)");
+  const onMq = () => { if (!mq.matches && s.open) setOpen(false, { focus: false }); };
+  mq.addEventListener("change", onMq);
+
+  // ---- Loading ---------------------------------------------------------------------
+  let loadSeq = 0;
+  async function load() {
+    const my = ++loadSeq;
+    s.ready = false;
+    clear(listHost);
+    listHost.setAttribute("aria-busy", "true");
+    listHost.append(skeletonGrid());
     try {
-      const want = keys().filter((k) => !append || cursors.get(k));
-      const pages = await Promise.all(want.map((k) => ctx.api.listEnvelopes({ status: k || undefined, cursor: append ? cursors.get(k) : undefined, limit: 25, q: query || undefined })));
-      let got = pages.flatMap((p) => p.items || []);
-      if (folder.soon) got = got.filter((r) => expiringSoon(r.expires_at));
-      want.forEach((k, i) => cursors.set(k, pages[i].next_cursor || null));
-      rows = (append ? rows.concat(got) : got).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-      list.removeAttribute("aria-busy");
-      ready = true;
-      renderRows();
-      fillDetails(got);
+      const [list, inbox] = await Promise.all([fetchAgreements(ctx, { q: s.q }), fetchInbox(ctx)]);
+      if (my !== loadSeq || gone) return;
+      s.rows = list.items;
+      s.capped = list.capped;
+      s.inbox = new Map(inbox.items.map((x) => [x.id, x]));
+      s.mine = inbox.ids;
+      // An Inbox item another member sent may not be in the account's list under a search.
+      for (const it of inbox.items) if (!s.rows.some((r) => r.id === it.id) && (!s.q || (it.subject || "").toLowerCase().includes(s.q.toLowerCase()))) s.rows.push(it);
+      s.ready = true;
+      listHost.removeAttribute("aria-busy");
+      renderList();
+      renderNav();
+      fillDetails();
     } catch (err) {
-      list.removeAttribute("aria-busy");
+      if (my !== loadSeq || gone) return;
+      listHost.removeAttribute("aria-busy");
       if (ctx.failed(err)) return;
-      if (append) toastError(err);
-      else errorState(list, err, () => load());
+      errorState(listHost, err, () => load());
+      inspector.showNone();
     }
   }
 
-  async function loadCounts() {
-    await Promise.all(FOLDERS.map(async (f) => {
-      try {
-        let label;
-        if (f.soon) {
-          // Expiring soon: the waiting envelopes' own `expires_at` (one page each).
-          const pages = await Promise.all(f.statuses.map((s) => ctx.api.listEnvelopes({ status: s, limit: 200 })));
-          const n = pages.flatMap((p) => p.items || []).filter((r) => expiringSoon(r.expires_at)).length;
-          label = countLabel({ n, more: pages.some((p) => p.next_cursor) });
-        } else {
-          const parts = await Promise.all((f.statuses.length ? f.statuses : [undefined]).map((s) => ctx.api.countEnvelopes(s)));
-          label = countLabel({ n: parts.reduce((s, p) => s + p.n, 0), more: parts.some((p) => p.more) });
-        }
-        counts.get(f.id).textContent = label;
-        const opt = folderSel.select.querySelector(`option[value="${f.id}"]`);
-        if (opt) opt.textContent = `${t(`agreements.folder.${f.id}`)} (${label})`;
-      } catch { /* counts are a convenience */ }
-    }));
+  async function loadDetail(id) {
+    const [env, audit] = await Promise.all([
+      details.has(id) ? details.get(id) : ctx.api.getEnvelope(id).then((x) => { details.set(id, x.envelope); return x.envelope; }),
+      audits.has(id) ? audits.get(id) : ctx.api.audit(id).then((a) => { audits.set(id, a); return a; }, () => ({ items: [], chain_head: null })),
+    ]);
+    return { env, audit };
   }
 
-  /// Names of the account's members for the Sender column and filter; a member who may
-  /// not list users sees "You" and the others as "—".
+  /// Recipients, progress and pages for the rows in view, four at a time.
+  async function fillDetails() {
+    const queue = visibleRows().map((r) => r.id).filter((id) => !details.has(id)).slice(0, 150);
+    const worker = async () => {
+      while (queue.length && !gone) {
+        const id = queue.shift();
+        try {
+          const { envelope } = await ctx.api.getEnvelope(id);
+          details.set(id, envelope);
+          paintRow(id);
+        } catch { /* the row keeps its summary */ }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    if (mlOn) fillSuggestions();
+  }
+  async function fillSuggestions() {
+    const queue = visibleRows().map((r) => r.id).slice(0, 150);
+    const worker = async () => { while (queue.length && !gone) { const id = queue.shift(); try { await loadSuggestions(id); } catch { /* no chip */ } } };
+    await Promise.all([worker(), worker(), worker()]);
+  }
+  const offSugg = onSuggestions(({ envId }) => paintRow(envId));
+
   async function loadPeople() {
     try {
       for (const u of (await ctx.api.users.list()).items || []) people.set(u.id, u.name || u.email || "");
       const others = [...people].filter(([id]) => id !== ctx.session?.user_id).sort((a, b) => a[1].localeCompare(b[1]));
       for (const [id, name] of others) senderSel.select.append(h("option", { value: id, text: name }));
-      renderRows();
-    } catch { /* not an admin: the column says You or — */ }
+    } catch { /* not an admin: Anyone and Me only */ }
   }
 
-  /// Recipients and dates for each row, a few at a time, without blocking the list; the
-  /// rows are drawn again once all are in when a sort or filter depends on them.
-  async function fillDetails(items) {
-    const queue = items.filter((r) => !details.has(r.id));
-    const worker = async () => {
-      while (queue.length) {
-        const r = queue.shift();
-        try {
-          const { envelope } = await ctx.api.getEnvelope(r.id);
-          details.set(r.id, envelope);
-          paintDetail(r.id);
-        } catch { /* the row keeps its summary */ }
-      }
-    };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-    if (sort.key || filter.range !== "any") renderRows();
-  }
-
-  /// The last change: the list item's `updated_at` (docs/40), else the latest date known.
-  function lastChange(r) {
-    if (r.updated_at) return r.updated_at;
-    const e = details.get(r.id);
-    return [e?.ended_at, e?.sent_at, r.created_at].filter(Boolean).sort().pop();
-  }
-  function recipientsLine(e) {
-    const recs = [...(e?.recipients || [])].sort((a, b) => a.routing_order - b.routing_order);
-    if (!recs.length) return t("agreements.no-recipients");
-    return t("agreements.to", { names: recs.map((r) => r.name || r.email).join(", ") });
-  }
-  const senderName = (r) => (r.sender_user_id && r.sender_user_id === ctx.session?.user_id ? t("agreements.you") : people.get(r.sender_user_id) || "—");
-  function paintDetail(id) {
-    const tr = list.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
-    if (!tr) return;
-    const e = details.get(id);
-    tr.querySelector(".os-row__sub").textContent = recipientsLine(e);
-    tr.querySelector(".os-row__line").textContent = statusLine(e);
-    const r = rows.find((x) => x.id === id);
-    if (r && !r.updated_at) tr.querySelector(".os-col-changed").replaceChildren(dateCell(lastChange(r)));
-    tr.querySelector(".os-col-expires").replaceChildren(expiresCell(r || e, e));
-  }
-  function dateCell(iso) {
-    return iso ? h("time", { attrs: { datetime: iso, title: fmtDate(iso) }, text: shortDate(iso) }) : h("span", { class: "os-muted", text: "—" });
-  }
-  /// Expiry: the date; "No expiry" for one still open (or a draft) without one; "—" for
-  /// one that ended (P3, one meaning per mark).
-  function expiresCell(r, e = null) {
-    const at = r?.expires_at ?? e?.expires_at;
-    const status = r?.status || e?.status;
-    if (at) return dateCell(at);
-    if (r?.expires_at === undefined && !e) return "";
-    return h("span", { class: "os-muted", text: ACTIVE.has(status) || status === "draft" ? t("agreements.never") : "—" });
-  }
-
-  // ---- Rendering --------------------------------------------------------------------------
-  const sortValue = (r, key) => {
-    const e = details.get(r.id);
-    if (key === "subject") return (r.subject || "").toLowerCase();
-    if (key === "status") return r.status;
-    if (key === "changed") return lastChange(r);
-    if (key === "expires") return r.expires_at || e?.expires_at || "";
-    return r.created_at;
-  };
-  const visible = () => {
+  // ---- Rendering -------------------------------------------------------------------
+  const selectedRow = () => s.rows.find((r) => r.id === s.selected) || null;
+  const lastChange = (r) => r.updated_at || r.created_at;
+  function passesFilter(r) {
     const me = ctx.session?.user_id;
-    let out = rows.filter((r) => {
-      if (filter.sender === "me" && r.sender_user_id !== me) return false;
-      if (filter.sender && filter.sender !== "me" && r.sender_user_id !== filter.sender) return false;
-      return inRange(lastChange(r), filter);
-    });
-    if (sort.key) out = [...out].sort(compareBy(sort.key, sort.dir, sortValue));
-    return out;
-  };
+    if (f.sender === "me" && r.sender_user_id !== me) return false;
+    if (f.sender && f.sender !== "me" && r.sender_user_id !== f.sender) return false;
+    return inRange(lastChange(r), f);
+  }
+  const groups = () => groupRows(s.rows.filter(passesFilter), s.view, s.mine, { order: ORDERS[s.order] });
+  function visibleRows() { return groups().flatMap((g) => g.items); }
+  const fromName = (r) => people.get(r.sender_user_id) || null;
+  const rowEl = (id) => (id ? listHost.querySelector(`[role="row"][data-id="${CSS.escape(id)}"]`) : null);
 
-  function sortHeader(key, labelKey, cls = "") {
-    const label = t(labelKey);
-    const on = sort.key === key;
-    const b = h("button", { type: "button", class: "os-sort", attrs: { "data-sort": key, title: t("agreements.sort-by", { column: label }) } },
-      h("span", { text: label }), icon("chevron-down", { size: 16, className: `os-sort__icon${on ? ` is-${sort.dir}` : ""}` }));
-    b.addEventListener("click", () => {
-      sort = on ? { key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "subject" || key === "status" ? "asc" : "desc" };
-      renderRows();
-      list.querySelector(`.os-sort[data-sort="${key}"]`)?.focus();
-    });
-    return h("th", { class: cls, attrs: { scope: "col", "aria-sort": on ? (sort.dir === "asc" ? "ascending" : "descending") : null } }, b);
+  function renderNav() {
+    // The counts are the whole account's: a search keeps the last ones it had.
+    if (s.ready && !s.q) navCounts = viewCounts(s.rows, s.mine);
+    renderNavViews(ctx, { current: s.view, q: s.q, counts: navCounts, onPick: (id) => { setView(id); syncTabFocus(); } });
+  }
+  function syncTabFocus() { tablist.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }
+
+  function renderNote() {
+    const legacy = !tabViews.some((v) => v.id === s.view);
+    const parts = [];
+    if (legacy) parts.push(t("agreements.legacy-view", { view: t(`agreements.view.${s.view}`) }));
+    if (s.q) parts.push(t("agreements.searching", { folder: t(`agreements.view.${s.view}`), query: s.q }));
+    if (s.capped) parts.push(t("agreements.capped", { n: s.rows.length }));
+    note.hidden = !parts.length;
+    note.textContent = parts.join(" · ");
+    const n = (f.sender ? 1 : 0) + (f.range !== "any" ? 1 : 0);
+    filterCount.hidden = !n;
+    filterCount.textContent = n ? String(n) : "";
+    clearBtn.hidden = !filtering();
   }
 
-  function clearSearch() {
-    const s = document.getElementById("top-search");
-    if (s) { s.value = ""; s.focus(); }
-    rawQuery = "";
-    query = "";
-    syncHash();
-    updateRailLinks();
-    renderTitle();
+  function renderList() {
+    renderNote();
+    renderBulk();
+    if (!s.ready) return;
+    const gs = groups();
+    const ids = flatIds(gs);
+    clear(listHost);
+    if (!gs.length) {
+      listHost.append(emptyFor());
+      s.selected = null;
+      inspector.showNone();
+      root.classList.add("is-empty");
+      return;
+    }
+    root.classList.remove("is-empty");
+    if (!ids.includes(s.selected)) s.selected = ids[0];
+    const grid = h("div", { class: `os-agr-grid${s.selecting ? " is-selecting" : ""}`, attrs: { role: "grid", "aria-labelledby": "agr-h", "aria-multiselectable": s.selecting ? "true" : null, "data-testid": "agreements-grid" } });
+    grid.append(h("div", { class: "os-sr-only", attrs: { role: "row" } },
+      ...(s.selecting ? [""] : []).map(() => h("span", { attrs: { role: "columnheader" }, text: t("agreements.select-all") })),
+      ...["agreement", "recipients", "progress", "status", "when"].map((c) => h("span", { attrs: { role: "columnheader" }, text: t(`agreements.col.${c}`) }))));
+    for (const g of gs) {
+      const label = t(`agreements.grp.${g.group}`);
+      grid.append(h("div", { class: "os-agr-group", attrs: { role: "row" } },
+        h("span", { class: "os-agr-group__cell", attrs: { role: "gridcell", "aria-colspan": s.selecting ? "6" : "5" } },
+          h("span", { class: `os-dot os-dot--${g.tone}`, attrs: { "aria-hidden": "true" } }),
+          h("span", { text: label }), h("span", { class: "os-agr-group__n", text: String(g.items.length) }))));
+      for (const r of g.items) grid.append(rowNode(r));
+    }
+    grid.addEventListener("keydown", onGridKey);
+    listHost.append(grid);
+    showSelected();
+  }
+
+  function rowNode(r) {
+    const env = details.get(r.id);
+    const on = r.id === s.selected;
+    const subject = r.subject || t("envelope.untitled");
+    const n = mlOn ? openDetails(r.id) : 0;
+    const cells = [];
+    if (s.selecting) {
+      const box = h("input", { type: "checkbox", class: "os-checkbox", checked: s.picked.has(r.id), attrs: { "aria-label": t("agreements.select", { subject }), tabindex: "-1" } });
+      box.addEventListener("click", (e) => e.stopPropagation());
+      box.addEventListener("change", () => pick(r.id, box.checked));
+      cells.push(h("span", { class: "os-agr-cell os-agr-cell--check", attrs: { role: "gridcell" } }, box));
+    }
+    cells.push(
+      h("span", { class: "os-agr-cell os-agr-cell--main", attrs: { role: "gridcell" } },
+        docThumb(toneOf(r, s.mine)),
+        h("span", { class: "os-agr-cell__text" },
+          h("span", { class: "os-agr-name", text: subject }),
+          h("span", { class: "os-agr-sub", text: subText(r, env, s.mine, { from: fromName(r) }) }))),
+      h("span", { class: "os-agr-cell os-agr-cell--people", attrs: { role: "gridcell" } }, env ? recipientAvatars(env) : null),
+      h("span", { class: "os-agr-cell os-agr-cell--progress", attrs: { role: "gridcell" } }, env ? progressSegments(signingProgress(env), r.status) : null),
+      h("span", { class: "os-agr-cell os-agr-cell--status", attrs: { role: "gridcell" } }, statusPillFor(r, env, s.mine),
+        n ? h("span", { class: "os-sugg-chip", attrs: { title: t("agreements.sugg-chip", { n }), "data-testid": "sugg-chip" } }, icon("os-sparkle", { size: 12 }), h("span", { class: "os-sugg-chip__n", attrs: { "aria-hidden": "true" }, text: String(n) }), h("span", { class: "os-sr-only", text: t("agreements.sugg-chip", { n }) })) : null),
+      h("span", { class: "os-agr-cell os-agr-cell--when", attrs: { role: "gridcell" } }, whenEl(lastChange(r))));
+    const row = h("div", {
+      class: `os-agr-row${on ? " is-selected" : ""}${s.picked.has(r.id) ? " is-picked" : ""}`,
+      attrs: { role: "row", tabindex: on ? "0" : "-1", "aria-selected": String(s.selecting ? s.picked.has(r.id) : on), "data-id": r.id, "data-status": r.status, "aria-current": on && s.selecting ? "true" : null },
+    }, ...cells);
+    row.addEventListener("click", () => activate(r.id, { fromPointer: true }));
+    row.addEventListener("dblclick", () => ctx.navigate(rowHref(r)));
+    return row;
+  }
+
+  function paintRow(id) {
+    const old = rowEl(id);
+    const r = s.rows.find((x) => x.id === id);
+    if (!old || !r) return;
+    const had = document.activeElement === old;
+    const fresh = rowNode(r);
+    old.replaceWith(fresh);
+    if (had) fresh.focus({ preventScroll: true });
+  }
+
+  function select(id, { focus = false } = {}) {
+    if (!id) return;
+    const prev = s.selected;
+    s.selected = id;
+    if (prev && prev !== id) paintRow(prev);
+    paintRow(id);
+    const el = rowEl(id);
+    if (focus) { el?.focus({ preventScroll: true }); el?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" }); }
+    showSelected();
+  }
+  function showSelected() {
+    const r = selectedRow();
+    if (!r) { inspector.showNone(); return; }
+    if (inspector.current()?.id === r.id) return;
+    const item = s.inbox.get(r.id);
+    inspector.show(r, { mine: s.mine, mineId: item?.my_recipient_id || null, from: fromName(r) });
+  }
+  function activate(id, { fromPointer = false } = {}) {
+    if (s.selecting && fromPointer) { pick(id, !s.picked.has(id)); return; }
+    select(id, { focus: !fromPointer });
+    if (narrow()) setOpen(true);
+  }
+  function pick(id, on) {
+    if (on) s.picked.add(id); else s.picked.delete(id);
+    paintRow(id);
+    renderBulk();
+  }
+
+  function onGridKey(e) {
+    const row = e.target.closest?.('[role="row"][data-id]');
+    if (!row || e.target.matches("input")) return;
+    const ids = flatIds(groups());
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+      e.preventDefault();
+      select(moveSelection(ids, row.dataset.id, e.key), { focus: true });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const r = s.rows.find((x) => x.id === row.dataset.id);
+      if (r) ctx.navigate(rowHref(r));
+    } else if (e.key === " ") {
+      e.preventDefault();
+      if (s.selecting) pick(row.dataset.id, !s.picked.has(row.dataset.id));
+      else activate(row.dataset.id);
+    }
+  }
+
+  function emptyFor() {
+    if (s.q) {
+      return emptyState({ illus: "search", title: t("empty.search.title"), text: t("empty.search.text", { query: s.q }), action: button(t("action.clear-search"), { variant: "primary", onClick: clearSearch }), testId: "empty-search" });
+    }
+    if (!s.rows.length && s.view === "all") {
+      return emptyState({
+        illus: "documents", title: t("agreements.empty.first.title"), text: t("agreements.empty.first.text"), testId: "empty-envelopes",
+        action: h("div", { class: "os-actions" },
+          button(t("agreements.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/prepare") }),
+          button(t("agreements.empty.use-template"), { icon: "layout-template", variant: "subtle", onClick: () => ctx.navigate("#/templates") })),
+      });
+    }
+    if (filtering() && s.rows.some((r) => inView(r, s.view, s.mine))) {
+      return emptyState({ illus: "search", title: t("agreements.filter.none"), text: t("agreements.filter.none-text"), action: button(t("agreements.filter.clear"), { variant: "primary", onClick: clearFilters }), testId: "empty-filters" });
+    }
+    const known = ["me", "waiting", "completed", "drafts", "expiring"].includes(s.view) ? s.view : "other";
+    const illus = { me: "inbox", waiting: "recipients", completed: "done", drafts: "documents", expiring: "calendar-check", other: "inbox" }[known];
+    return emptyState({
+      illus, title: t(`agreements.empty.${known}.title`), text: t(`agreements.empty.${known}.text`), testId: "empty-filter",
+      action: button(t("agreements.empty.see-all"), { variant: "subtle", onClick: () => setView("all") }),
+    });
+  }
+
+  function skeletonGrid() {
+    const wrap = h("div", { class: "os-agr-skel", attrs: { "aria-label": t("agreements.loading"), role: "status" } },
+      h("div", { class: "os-agr-group os-agr-group--skel", attrs: { "aria-hidden": "true" } }, h("span", { class: "os-skel os-agr-skel__head" })));
+    [62, 48, 70, 55, 66, 44, 58].forEach((w) => {
+      const a = h("span", { class: "os-skel" });
+      const b = h("span", { class: "os-skel os-skel--sub" });
+      a.style.width = `${w}%`;
+      b.style.width = `${Math.round(w * 0.6)}%`;
+      wrap.append(h("div", { class: "os-agr-row os-agr-row--skel", attrs: { "aria-hidden": "true" } },
+        h("span", { class: "os-agr-cell os-agr-cell--main" }, h("span", { class: "os-skel os-skel--doc" }), h("span", { class: "os-skel-lines" }, a, b)),
+        h("span", { class: "os-agr-cell os-agr-cell--people" }, h("span", { class: "os-skel os-skel--circle" }), h("span", { class: "os-skel os-skel--circle os-skel--overlap" })),
+        h("span", { class: "os-agr-cell os-agr-cell--progress" }, h("span", { class: "os-skel os-agr-skel__prog" })),
+        h("span", { class: "os-agr-cell os-agr-cell--status" }, h("span", { class: "os-skel os-skel--pill" })),
+        h("span", { class: "os-agr-cell os-agr-cell--when" }, h("span", { class: "os-skel os-agr-skel__when" }))));
+    });
+    return wrap;
+  }
+
+  // ---- Actions -----------------------------------------------------------------------
+  const guard = (fn) => async () => { try { await fn(); } catch (err) { if (!ctx.failed(err)) toastError(err); } };
+  function refreshAfter(id) {
+    details.delete(id);
+    audits.delete(id);
     load();
   }
-
-  function renderRows() {
-    if (!ready) return; // the skeleton or the error state stays (a late name or filter must not hide it)
-    clear(list);
-    clear(more);
-    const shown = visible();
-    for (const id of [...selected]) if (!rows.some((r) => r.id === id)) selected.delete(id);
-    renderBulk();
-    const canMore = [...cursors.values()].some(Boolean);
-    note.hidden = !(canMore && (filtering() || sort.key));
-    note.textContent = t("agreements.filter.loaded", { n: rows.length });
-    clearBtn.hidden = !filtering();
-    const nf = activeFilters();
-    filterCount.hidden = !nf;
-    filterCount.textContent = nf ? String(nf) : "";
-    if (!rows.length && query) {
-      list.append(emptyState({ illus: "search", title: t("empty.search.title"), text: t("empty.search.text", { query: rawQuery }), action: button(t("action.clear-search"), { variant: "primary", onClick: clearSearch }), testId: "empty-search" }));
-      return;
-    }
-    if (!rows.length) {
-      list.append(folder.id === "all"
-        ? emptyState({ illus: "documents", title: t("empty.envelopes.title"), text: t("empty.envelopes.text"), action: button(t("nav.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/prepare") }), testId: "empty-envelopes" })
-        : emptyState({ illus: "inbox", title: t("empty.folder.title", { folder: t(`agreements.folder.${folder.id}`) }), text: t("empty.filter.text"), action: button(t("agreements.folder.all"), { variant: "primary", onClick: () => ctx.navigate("#/agreements") }), testId: "empty-filter" }));
-      return;
-    }
-    if (!shown.length) {
-      list.append(emptyState({ illus: "search", title: t("agreements.filter.none"), text: t("agreements.filter.none-text"), action: button(t("agreements.filter.clear"), { variant: "primary", onClick: () => clearBtn.click() }), testId: "empty-filters" }));
-      if (canMore) more.append(moreButton());
-      return;
-    }
-    // The Sender column only when a loaded envelope was sent by someone else (UX-07).
-    const me = ctx.session?.user_id;
-    const showSender = rows.some((r) => r.sender_user_id && r.sender_user_id !== me);
-    const all = h("input", { type: "checkbox", class: "os-checkbox", attrs: { "aria-label": t("agreements.select-all") } });
-    all.checked = shown.every((r) => selected.has(r.id));
-    all.indeterminate = !all.checked && shown.some((r) => selected.has(r.id));
-    all.addEventListener("change", () => { for (const r of shown) { if (all.checked) selected.add(r.id); else selected.delete(r.id); } renderRows(); });
-    const table = h("table", { class: `os-table os-table--rows os-table--manage os-table--cards has-check${showSender ? " has-sender" : ""}` },
-      h("caption", { class: "os-sr-only", text: t("agreements.caption") }),
-      h("thead", {}, h("tr", {},
-        h("th", { class: "os-col-check", attrs: { scope: "col" } }, h("label", { class: "os-hit" }, all)),
-        sortHeader("subject", "agreements.col.subject"),
-        sortHeader("status", "agreements.col.status"),
-        showSender ? h("th", { class: "os-col-opt", attrs: { scope: "col" }, text: t("agreements.col.sender") }) : null,
-        sortHeader("changed", "dates.changed", "os-col-date"),
-        sortHeader("expires", "agreements.col.expires", "os-col-opt os-col-date"),
-        h("th", { attrs: { scope: "col" }, class: "os-col-actions" }, h("span", { class: "os-sr-only", text: t("templates.col.actions") })))));
-    const tb = h("tbody");
-    for (const r of shown) {
-      const href = rowHref(r);
-      const subject = r.subject || t("envelope.untitled");
-      const box = h("input", { type: "checkbox", class: "os-checkbox", checked: selected.has(r.id), attrs: { "aria-label": t("agreements.select", { subject }) } });
-      box.addEventListener("change", () => { if (box.checked) selected.add(r.id); else selected.delete(r.id); tr.classList.toggle("is-selected", box.checked); renderBulk(); syncAll(); });
-      const e = details.get(r.id);
-      const tr = h("tr", { class: `os-row${selected.has(r.id) ? " is-selected" : ""}`, attrs: { "data-id": r.id, "data-status": r.status } },
-        h("td", { class: "os-col-check" }, h("label", { class: "os-hit" }, box)),
-        h("td", { class: "os-col-main" }, h("div", { class: "os-col-subject" },
-          h("a", { href, class: "os-row-link", attrs: { title: subject }, text: subject }),
-          h("span", { class: "os-row__sub os-muted", text: e ? recipientsLine(e) : "" }))),
-        h("td", { class: "os-col-status" }, statusBadge(r.status), h("span", { class: "os-row__line os-small", text: e ? statusLine(e) : "" })),
-        showSender ? h("td", { class: "os-col-opt os-col-sender", attrs: { "data-label": t("agreements.col.sender") }, text: senderName(r) }) : null,
-        h("td", { class: "os-col-date os-col-changed", attrs: { "data-label": t("dates.changed") } }, dateCell(lastChange(r))),
-        h("td", { class: "os-col-opt os-col-date os-col-expires", attrs: { "data-label": t("agreements.col.expires") } }, expiresCell(r, e)),
-        h("td", { class: "os-col-actions" }, rowMenu(r, subject)));
-      tr.addEventListener("click", (ev) => { if (ev.target.closest("a, button, input, label, .os-menu")) return; ctx.navigate(href); });
-      tb.append(tr);
-    }
-    table.append(tb);
-    list.append(h("div", { class: "os-table-wrap" }, table));
-    function syncAll() {
-      all.checked = shown.every((r) => selected.has(r.id));
-      all.indeterminate = !all.checked && shown.some((r) => selected.has(r.id));
-    }
-    if (canMore) more.append(moreButton());
-  }
-  function moreButton() {
-    const b = button(t("agreements.more"), { icon: "chevron-down", onClick: async () => { b.disabled = true; await load(true); } });
-    return b;
-  }
-
-  /// The row's actions, as DocuSign's per-row menu: what the envelope's state allows,
-  /// grouped with separators and destructive items last (UX-07).
-  function rowMenu(r, subject) {
+  /// What the inspector offers for `r` (see inspector.js).
+  function actionsFor(r, env) {
     const id = r.id;
-    const refresh = () => { details.delete(id); load(); loadCounts(); };
-    const guard = (fn) => async () => { try { await fn(); } catch (err) { if (!ctx.failed(err)) toastError(err); } };
+    const subject = r.subject || t("envelope.untitled");
     const copyThen = guard(async () => { const c = await copyEnvelope(ctx, id); ctx.navigate(`#/prepare/${encodeURIComponent(c.id)}`); });
+    const verb = primaryVerb(r.status, s.mine.has(id));
+    let primary = null;
+    if (verb === "sign") primary = { label: t("inspector.sign"), run: guard(async () => { const x = await ctx.api.signLink(id); if (x?.url) location.href = x.url; }) };
+    else if (verb === "remind") {
+      const waiting = env ? waitingFor(env) : [];
+      const first = waiting.length === 1 ? (waiting[0].name || waiting[0].email || "").split(/\s+/)[0] : "";
+      primary = { label: first ? t("inspector.remind", { name: first }) : t("inspector.remind-all"), run: guard(async () => {
+        await ctx.api.resend(id, waiting.length ? waiting.map((x) => x.id) : undefined);
+        toast(t("inspector.reminded", { name: waiting.map((x) => x.name || x.email).join(", ") || subject }), "success");
+        audits.delete(id);
+        inspector.refresh();
+      }) };
+    } else if (verb === "download") primary = { label: t("inspector.download"), run: guard(() => downloadSealed(ctx, id, env)) };
+    else if (verb === "edit") primary = { label: t("inspector.edit"), run: async () => ctx.navigate(rowHref(r)) };
+    else if (verb === "copy-resend") primary = { label: t("envelope.copy-resend"), run: copyThen };
     const verbs = {
       edit: [t("envelope.edit"), "file-pen-line", () => ctx.navigate(rowHref(r))],
       open: [t("agreements.open"), "eye", () => ctx.navigate(rowHref(r))],
-      correct: [t("agreements.correct"), "pencil", guard(async () => { if (await correctPanel(ctx, id)) refresh(); })],
+      correct: [t("agreements.correct"), "pencil", guard(async () => { if (await correctPanel(ctx, id)) refreshAfter(id); })],
       resend: [t("envelope.resend"), "rotate-cw", () => resend([id])],
       "download-current": [t("agreements.download-current"), "download", guard(() => downloadCurrent(ctx, id, details.get(id)))],
       "download-ended": [t("envelope.download-ended"), "download", guard(() => downloadCurrent(ctx, id, details.get(id) || r))],
@@ -471,40 +567,37 @@ export function mount(view, ctx, _match, params) {
       copy: [t("agreements.copy"), "copy", copyThen],
       template: [t("agreements.save-template"), "layout-template", guard(() => saveAsTemplate(ctx, id))],
       history: [t("agreements.history"), "list-ordered", guard(() => historyPanel(ctx, id, subject))],
-      void: [t("envelope.void"), "ban", guard(async () => { if (await voidEnvelopes(ctx, [id])) { selected.delete(id); details.clear(); load(); loadCounts(); } }), true],
-      delete: [t(r.status === "draft" ? "agreements.delete-draft" : "agreements.delete"), "trash-2", guard(async () => { if (await deleteEnvelope(ctx, id, subject, r.status)) { selected.delete(id); refresh(); } }), true],
+      void: [t("envelope.void"), "ban", guard(async () => { if (await voidEnvelopes(ctx, [id])) refreshAfter(id); }), true],
+      delete: [t(r.status === "draft" ? "agreements.delete-draft" : "agreements.delete"), "trash-2", guard(async () => { if (await deleteEnvelope(ctx, id, subject, r.status)) { s.picked.delete(id); refreshAfter(id); } }), true],
     };
-    const groups = rowActions(r.status, { cert: hasCertificate(ctx, r.status) });
-    return menuButton({
-      label: t("agreements.actions-for", { subject }),
-      buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
-      items: () => groups.flatMap((g, i) => [i ? "separator" : null, ...g.map((a) => {
-        const [label, ic, run, danger] = verbs[a];
-        return { label, icon: ic, run, danger };
-      })]).filter(Boolean),
-    });
+    const more = rowActions(r.status, { cert: hasCertificate(ctx, r.status) }).map((g) => g.map((a) => {
+      const [label, ic, run, danger] = verbs[a];
+      return { label, icon: ic, run, danger };
+    }));
+    return { primary, open: () => ctx.navigate(rowHref(r)), more };
   }
 
-  // ---- Bulk actions --------------------------------------------------------------------------
+  // ---- Bulk (Display → Select agreements) ---------------------------------------------
   function renderBulk() {
     clear(bulk);
-    bulk.hidden = selected.size === 0;
-    if (!selected.size) return;
-    const chosen = rows.filter((r) => selected.has(r.id));
+    for (const id of [...s.picked]) if (!s.rows.some((r) => r.id === id)) s.picked.delete(id);
+    bulk.hidden = !s.selecting;
+    if (!s.selecting) return;
+    const chosen = s.rows.filter((r) => s.picked.has(r.id));
     const active = chosen.filter((r) => ACTIVE.has(r.status)).map((r) => r.id);
     const sentOnes = chosen.filter((r) => r.status !== "draft").map((r) => r.id);
     const deletable = chosen.filter((r) => DELETABLE.has(r.status));
     bulk.append(...[
-      h("strong", { attrs: { "aria-live": "polite" }, text: t("agreements.selected", { n: selected.size }) }),
+      h("strong", { attrs: { "aria-live": "polite" }, text: t("agreements.selected", { n: chosen.length }) }),
       active.length ? button(t("agreements.bulk-resend", { n: active.length }), { icon: "rotate-cw", size: "sm", onClick: (e) => busy(e.currentTarget, () => resend(active)) }) : null,
       sentOnes.length ? button(t("agreements.bulk-download", { n: sentOnes.length }), { icon: "download", size: "sm", onClick: (e) => busy(e.currentTarget, () => downloadMany(sentOnes)) }) : null,
-      button(t("agreements.export-csv"), { icon: "file-text", size: "sm", attrs: { "data-testid": "bulk-export" }, onClick: () => exportCsv(chosen) }),
+      chosen.length ? button(t("agreements.export-csv"), { icon: "file-text", size: "sm", attrs: { "data-testid": "bulk-export" }, onClick: () => exportCsv(chosen) }) : null,
       active.length ? button(t("agreements.bulk-void", { n: active.length }), { icon: "ban", size: "sm", variant: "danger", attrs: { "data-testid": "bulk-void" }, onClick: () => voidMany(active) }) : null,
       deletable.length ? button(t("agreements.bulk-delete", { n: deletable.length }), { icon: "trash-2", size: "sm", variant: "danger", attrs: { "data-testid": "bulk-delete" }, onClick: () => deleteMany(deletable) }) : null,
       h("span", { class: "os-spacer" }),
-      button(t("agreements.clear-selection"), { icon: "x", size: "sm", variant: "ghost", onClick: () => { selected.clear(); renderRows(); } })].filter(Boolean));
+      chosen.length ? button(t("agreements.clear-selection"), { icon: "x", size: "sm", variant: "ghost", onClick: () => { s.picked.clear(); renderList(); } }) : null,
+      button(t("agreements.select-off"), { size: "sm", variant: "ghost", attrs: { "data-testid": "select-off" }, onClick: () => toggleSelect(false) })].filter(Boolean));
   }
-
   async function resend(ids) {
     try {
       for (const id of ids) await ctx.api.resend(id);
@@ -514,10 +607,10 @@ export function mount(view, ctx, _match, params) {
   async function voidMany(ids) {
     try {
       if (!(await voidEnvelopes(ctx, ids))) return;
-      selected.clear();
+      s.picked.clear();
       details.clear();
+      audits.clear();
       load();
-      loadCounts();
     } catch (err) { if (!ctx.failed(err)) toastError(err); }
   }
   async function deleteMany(chosen) {
@@ -527,37 +620,49 @@ export function mount(view, ctx, _match, params) {
       for (const r of chosen) {
         const { etag } = await ctx.api.getEnvelope(r.id);
         await ctx.api.deleteEnvelope(r.id, etag);
-        selected.delete(r.id);
+        s.picked.delete(r.id);
       }
       toast(t("agreements.deleted-n", { n: chosen.length }), "success");
     } catch (err) { if (!ctx.failed(err)) toastError(err); }
     details.clear();
     load();
-    loadCounts();
   }
   async function downloadMany(ids) {
     try {
       for (const id of ids) {
-        const r = rows.find((x) => x.id === id);
+        const r = s.rows.find((x) => x.id === id);
         if (r?.status === "completed") await downloadSealed(ctx, id, details.get(id));
         else await downloadCurrent(ctx, id, details.get(id));
       }
     } catch (err) { if (!ctx.failed(err)) toastError(err); }
   }
-  /// The chosen rows as CSV (UX-07): what the list shows, one envelope a line.
+  /// The chosen rows as CSV (UX-07): what the list shows, one agreement a line.
   function exportCsv(chosen) {
     const head = [t("agreements.col.subject"), t("agreements.col.status"), t("agreements.csv.recipients"), t("agreements.col.sender"), t("agreements.col.created"), t("dates.changed"), t("agreements.col.expires"), t("envelope.id")];
     const lines = chosen.map((r) => {
       const e = details.get(r.id);
       const recs = [...(e?.recipients || [])].sort((a, b) => a.routing_order - b.routing_order).map((x) => (x.email ? `${x.name} <${x.email}>` : x.name)).join("; ");
-      return [r.subject || "", t(`status.${r.status}`), recs, senderName(r), r.created_at || "", lastChange(r) || "", r.expires_at || e?.expires_at || "", r.id];
+      const sender = r.sender_user_id === ctx.session?.user_id ? t("agreements.you") : people.get(r.sender_user_id) || "";
+      return [r.subject || "", t(`status.${r.status}`), recs, sender, r.created_at || "", lastChange(r) || "", r.expires_at || e?.expires_at || "", r.id];
     });
     download(new Blob(["﻿", toCsv([head, ...lines])], { type: "text/csv;charset=utf-8" }), `agreements-${new Date().toISOString().slice(0, 10)}.csv`);
     toast(t("agreements.exported", { n: chosen.length }), "success");
   }
 
+  // ---- Start ------------------------------------------------------------------------
+  if (!tabViews.some((v) => v.id === s.view)) setView(s.view);
+  renderNav();
+  insightsAvailable().then((v) => { mlOn = v; if (v && s.ready) fillSuggestions(); }, () => { mlOn = false; });
   load();
-  loadCounts();
   loadPeople();
-  return () => { unregisterPrefix("list."); ctx.onSearch = null; clearTimeout(searchTimer); };
+  return () => {
+    gone = true;
+    clearTimeout(searchTimer);
+    offSugg();
+    offMeaning();
+    inspector.destroy();
+    mq.removeEventListener("change", onMq);
+    unregisterPrefix("list.");
+    renderNavViews(ctx, { current: null, counts: navCounts });
+  };
 }

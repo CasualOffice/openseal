@@ -1061,3 +1061,54 @@ The signer page rebuilt on `docs/assets/design-canvas/Signer.dc.html` and `Signe
   their behavioural assertions kept (Finish hidden until ready instead of `aria-disabled`; the field list through More;
   the page centred instead of the Start flag; the receipt's facts and Verify link instead of the "What happens next"
   list); `decline.spec` scopes the sender's "Reason given" to the callout (it matched twice on the sender's page).
+
+## As built: Agreements, the inspector, the envelope page and Home on the approved canvas (WEB-17 / WEB-18 lane A, 2026-11-13)
+
+Spec: `docs/assets/design-canvas/Main.dc.html`. Replaces the UX-07 folder rail and table.
+
+- **Agreements** (`dashboard.js`) fills the content card edge to edge. Header: pill tabs All, Needs me, Waiting,
+  Completed, Drafts, Expiring (Needs me only where the server has the Inbox, `NOT_ON_SERVER.inbox`); Search (a row
+  under the header, the server's `q`, kept in the address); Filter (sender, last change); Display (sort within groups,
+  Select agreements for bulk, Export CSV); New agreement. Narrower lists keep every tab: a container query drops
+  Filter and Display to icons, then New agreement. Older addresses (`?status=`, `?folder=declined|voided|expired|action`)
+  still open their filter, named above the list.
+- **List**: every agreement up to 1000 (`GET /envelopes`, 200 a page) plus the Inbox, grouped Needs your signature,
+  Waiting on others, Completed, Drafts, Declined/voided/expired, with sticky group headers (dot, label, count). Rows
+  are the canvas grid: page thumbnail with a status-coloured signature line, name and sub line (ellipsis), recipient
+  avatars, signing progress segments and n/m, status pill in words, the violet suggestion chip, relative time with
+  tabular numerals. A WAI-ARIA grid: roving focus, ↑/↓/Home/End move the selection, Enter opens, Space ticks while
+  selecting; click selects, double-click opens. Skeleton rows in the same grid while loading; empty states for a
+  first run (New agreement, Use a template), a search, filters, and each view (Expiring: calendar-check, "Nothing is
+  about to expire", See all agreements); error state with retry.
+- **Inspector** (`inspector.js`, 23.5rem): status pill, name, sub line, primary action by state (Sign now through
+  `sign-link`, Remind <first name> through `resend`, Download, Continue editing, Copy and resend), Open, and More (the
+  UX-07 row actions). Underline tabs: Recipients (signing order with numbered / ✓ badges), Activity (latest audit events,
+  Full history opens the History panel), Insights, Evidence. Docked from 75rem, a slide-over below (a dialog with a
+  scrim, Escape closes and returns focus to the row), a full page on phones.
+- **Insights** exist only when `ml.js` reports extraction or personal-data detection; a 404 (the real server today)
+  hides the tab, the row chip, the envelope page's card and the ⌘K section. Cards for `entity` suggestions (Save to
+  details / Dismiss, "check this" under 75 %) and one amber card for personal data whose "Review for redaction" lists
+  each item to add to the redaction proposal (docs/33 §6) or dismiss. Optimistic through `ml.js`, rolled back with an
+  error toast when refused. While a draft's analysis is queued or running, the canvas's "Reading the document" state.
+- **Evidence** says only what the code checks: `auditLinks` (managemodel.js) checks the API trail's seq, prev and head
+  links in the page and the card says "Audit trail linked … Verify recomputes every hash from the sealed PDF" (never
+  "verified" or "unchanged"); the chain head; a document fingerprint only when the server returns
+  `delivered_sha256` / `upload_sha256` (the mock returns none, so none shows); Download certificate and Verify for a
+  completed agreement. There is no "evidence package" download because the app has none.
+- **Views** (`agreementparts.renderNavViews`): the sidebar's `#nav-views` with dots and live counts, filled by
+  Agreements and Home; on Agreements they switch in place and keep the search in their links.
+- **Matches by meaning** (`meaning.js`): a ⌘K provider over `api.searchByMeaning`, registered by Agreements, the
+  envelope page and Home only when extraction is available; snippets drawn as text nodes and `<mark>`.
+- **Envelope page** (`envelope.js`): header in the inspector's language (pill and status line, name, sent date and
+  pages, the UX-07 actions), then summary, documents (PDF preview) and the audit trail, with the inspector's
+  Recipients (detailed: steps, Resend, demo link), Insights and Evidence as cards beside them.
+- **Home** (`home.js`): greeting, five counts (each opens its view), Needs your attention (waiting for my signature,
+  expiring, ended without everyone signing), Quick actions (upload PDFs, also a drop target; start from a template;
+  verify a sealed PDF), Recent activity, Recent templates; skeletons and empty states.
+- **Pure rules** (`managemodel.js`): `VIEWS`, `GROUPS`, `viewFrom`, `groupOf`, `toneOf`, `inView`, `viewCounts`,
+  `groupRows`, `flatIds`, `moveSelection`, `signingProgress`, `primaryVerb`, `relativeWhen`, `recipientBadge`,
+  `piiSummary`, `auditLinks`, `documentFingerprint`; shared view parts in `agreementparts.js`.
+- **Tests**: `tests/manage.test.mjs` (one per rule above); `e2e/manage.spec.mjs` (grid keyboard and inspector, Needs
+  me and Sign now, Expiring empty, Insights accept/dismiss and PII review, rollback on a refused suggestion, ML
+  unavailable hides every ML surface, ⌘K by meaning, the reading state, the More menu, bulk, phone inspector page,
+  plus the UX-07 behaviours moved to the new UI), `e2e/signin-dashboard.spec.mjs`, `e2e/empty-states.spec.mjs`.

@@ -1,36 +1,32 @@
-// Home (WEB-02; docs/47 §Screens "Home", after DocuSign's): a greeting, four stat
-// cards, a drop zone that starts an envelope with the dropped PDFs, recent activity and
-// recent templates. One way in to a new envelope (WEB-06 G-03): the top bar's Start;
-// the drop zone is the same action for files already in hand, so its button is quiet.
+// Home (WEB-02, UX-07; restyled in WEB-17 on the approved canvas, Main.dc.html): a
+// greeting, the overview counts (each opens its view), "Needs your attention" (waiting
+// for this user's signature, expiring within 7 days, ended without everyone signing),
+// quick actions (upload PDFs to send, start from a template, verify a sealed PDF), recent
+// activity and recent templates. Skeletons while loading; illustrated empty states.
 //
-// Counts come from `GET /api/v1/envelopes?status=` (the API has no count): one page of
-// up to 200 per status, shown as "200+" past that. "Declined or expired" (WEB-06 A-04;
-// it was "Action required", which DocuSign uses for "waiting for you") is the sender's
-// own to-do: envelopes that ended without completing and need a new copy or a word with
-// the recipient. "Expiring soon" reads each waiting list item's `expires_at` and counts
-// those ending within 7 days; its card opens the matching quick view (UX-07). Envelopes
-// waiting for *this user's* signature need the Inbox (UXW-01, NOT_ON_SERVER.inbox).
-//
-// UX-07: each recent envelope says who it went to ("To: …"), where it stands (the
-// status line) and when it last changed, and the whole row opens it; the drop zone is
-// one slim line, so the list starts above the fold; a Drafts counter.
+// Data: every agreement (agreementparts.fetchAgreements) and the Inbox where the server
+// has one; counts are managemodel.viewCounts over them, the same numbers the sidebar's
+// Views and the Agreements tabs show. Recipients for the recent rows come from each
+// one's `GET …/{id}`.
 
-import { h, clear, fmtDate } from "./dom.js";
+import { h, clear } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, emptyState, skeletonRows, statusBadge, errorState, toast } from "./ui/index.js";
-import { countLabel } from "./templatemodel.js";
+import { button, emptyState, errorState, toast, skeletonLines } from "./ui/index.js";
+import { illustration } from "./illustrations.js";
 import { handFiles } from "./handoff.js";
-import { statusLine, shortDate } from "./envactions.js";
+import { shortDate } from "./envactions.js";
 import { rowHref } from "./dashboard.js";
-import { expiringSoon } from "./managemodel.js";
+import { viewCounts, groupRows, toneOf } from "./managemodel.js";
+import { docThumb, statusPillFor, subText, whenEl, renderNavViews, fetchAgreements, fetchInbox } from "./agreementparts.js";
+import { registerMeaningSearch } from "./meaning.js";
 
 export const CARDS = [
-  { key: "action", icon: "circle-alert", href: "#/agreements?folder=action" },
-  { key: "waiting", icon: "hourglass", href: "#/agreements?folder=waiting" },
-  { key: "expiring", icon: "clock", href: "#/agreements?folder=expiring" },
-  { key: "drafts", icon: "file-pen-line", href: "#/agreements?folder=drafts" },
-  { key: "completed", icon: "circle-check", href: "#/agreements?folder=completed" },
+  { key: "action", view: "action" },
+  { key: "waiting", view: "waiting" },
+  { key: "expiring", view: "expiring" },
+  { key: "drafts", view: "drafts" },
+  { key: "completed", view: "completed" },
 ];
 
 /// The greeting for the hour: morning before 12, afternoon before 18, else evening.
@@ -38,25 +34,43 @@ export function greetingKey(hour) {
   return hour < 12 ? "home.greeting.morning" : hour < 18 ? "home.greeting.afternoon" : "home.greeting.evening";
 }
 
-export function mount(view, ctx) {
-  const head = h("div", { class: "os-page-head os-home__head" },
-    h("div", { class: "os-page-head__main os-page-head__stack" },
-      h("h1", { class: "os-page-title", text: t("home.title") }),
-      h("p", { class: "os-muted", text: t(greetingKey(new Date().getHours())) })));
+/// What needs this user's attention, at most `max`, most pressing first: waiting for
+/// their signature, then expiring within 7 days, then ended without everyone signing
+/// (declined or expired). Each item is `{row, why}`. Pure.
+export function attentionItems(rows, mine, { now = Date.now(), max = 5 } = {}) {
+  const out = [];
+  const seen = new Set();
+  const add = (why, list) => { for (const r of list) if (!seen.has(r.id)) { seen.add(r.id); out.push({ row: r, why }); } };
+  const pick = (view) => groupRows(rows, view, mine, { now }).flatMap((g) => g.items);
+  add("you", pick("me"));
+  add("expiring", pick("expiring").sort((a, b) => String(a.expires_at).localeCompare(String(b.expires_at))));
+  add("ended", pick("action"));
+  return out.slice(0, max);
+}
 
-  const counters = h("ul", { class: "os-counters os-counters--home", attrs: { "aria-label": t("home.overview"), "aria-busy": "true" } });
+export function mount(view, ctx) {
+  const hour = new Date().getHours();
+  const hello = hour < 12 ? "home.hello.morning" : hour < 18 ? "home.hello.afternoon" : "home.hello.evening";
+  const head = h("div", { class: "os-home2__head" },
+    h("h1", { class: "os-home2__title", text: t("home.title") }),
+    h("p", { class: "os-home2__hello" }, h("span", { class: "os-home2__greet", text: t(hello) }), h("span", { class: "os-muted", text: t("home.lede") })));
+
+  // Overview: one count per view, each a link to it.
+  const counters = h("ul", { class: "os-home2__stats", attrs: { "aria-label": t("home.overview"), "aria-busy": "true" } });
   const cells = new Map();
   for (const c of CARDS) {
     const n = h("span", { class: "os-counter__n" }, h("span", { class: "os-skel os-skel--short", attrs: { "aria-hidden": "true" } }));
-    const a = h("a", { class: `os-counter os-counter--${c.key}`, href: c.href, attrs: { "data-testid": `counter-${c.key}` } },
-      h("span", { class: "os-counter__icon" }, icon(c.icon, { size: 20 })),
-      h("span", { class: "os-counter__label", text: t(`home.counter.${c.key}`) }),
-      n);
+    counters.append(h("li", {}, h("a", { class: `os-stat os-stat--${c.key}`, href: `#/agreements?folder=${c.view}`, attrs: { "data-testid": `counter-${c.key}` } },
+      h("span", { class: `os-dot os-dot--${{ action: "danger", waiting: "wait", expiring: "draft", drafts: "draft", completed: "done" }[c.key]}`, attrs: { "aria-hidden": "true" } }),
+      h("span", { class: "os-counter__label", text: t(`home.counter.${c.key}`) }), n)));
     cells.set(c.key, n);
-    counters.append(h("li", {}, a));
   }
 
-  // Drop zone: SignNow's speed, the editor opens on the files.
+  // Needs your attention.
+  const attention = h("div", { class: "os-home2__list", attrs: { "aria-busy": "true" } }, skeletonList(3));
+  const attentionCard = card("attn-h", t("home.attention"), attention, h("a", { class: "os-link", href: "#/agreements" }, h("span", { text: t("home.all-agreements") }), icon("arrow-right", { size: 16 })), "home-attention");
+
+  // Quick actions: upload (also a drop target), a template, Verify.
   const input = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "home-input" } });
   const start = (files) => {
     const pdfs = [...files].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
@@ -65,66 +79,98 @@ export function mount(view, ctx) {
     ctx.navigate("#/prepare");
   };
   input.addEventListener("change", () => { if (input.files.length) start(input.files); input.value = ""; });
-  const drop = h("section", { class: "os-dropzone", attrs: { "aria-labelledby": "drop-h", "data-testid": "home-drop" } },
-    h("span", { class: "os-dropzone__icon" }, icon("file-up", { size: 24 })),
-    h("div", { class: "os-dropzone__text" },
-      h("h2", { id: "drop-h", class: "os-dropzone__title", text: t("home.drop") }),
-      h("p", { class: "os-muted", text: t("home.drop-text") })),
-    button(t("home.choose-files"), { icon: "upload", onClick: () => input.click() }),
-    input);
-  for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); drop.classList.add("is-dropping"); } });
-  drop.addEventListener("dragleave", (e) => { if (!drop.contains(e.relatedTarget)) drop.classList.remove("is-dropping"); });
-  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("is-dropping"); if (e.dataTransfer.files?.length) start(e.dataTransfer.files); });
+  const quick = h("ul", { class: "os-quick" },
+    quickItem("file-up", t("home.quick.upload"), t("home.quick.upload-text"), { onClick: () => input.click(), testId: "home-drop" }),
+    quickItem("layout-template", t("home.quick.template"), t("home.quick.template-text"), { href: "#/templates" }),
+    quickItem("shield-check", t("home.quick.verify"), t("home.quick.verify-text"), { href: "verify.html" }));
+  const quickCard = card("quick-h", t("home.quick"), h("div", {}, quick, input), null, "home-quick");
+  for (const ev of ["dragenter", "dragover"]) quickCard.addEventListener(ev, (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); quickCard.classList.add("is-dropping"); } });
+  quickCard.addEventListener("dragleave", (e) => { if (!quickCard.contains(e.relatedTarget)) quickCard.classList.remove("is-dropping"); });
+  quickCard.addEventListener("drop", (e) => { e.preventDefault(); quickCard.classList.remove("is-dropping"); if (e.dataTransfer.files?.length) start(e.dataTransfer.files); });
 
-  const recent = h("div", { class: "os-list", attrs: { "aria-busy": "true" } }, skeletonRows(4));
-  const recentCard = h("section", { class: "os-card os-card--flush", attrs: { "aria-labelledby": "recent-h" } },
-    h("div", { class: "os-card__head" },
-      h("h2", { id: "recent-h", class: "os-card__title", text: t("home.recent") }),
-      h("a", { class: "os-link", href: "#/agreements" }, h("span", { text: t("home.all-agreements") }), icon("arrow-right", { size: 16 }))),
-    recent);
+  // Recent activity: the agreements that changed last.
+  const recent = h("div", { class: "os-home2__list", attrs: { "aria-busy": "true" } }, skeletonList(4));
+  const recentCard = card("recent-h", t("home.recent-activity"), recent, h("a", { class: "os-link", href: "#/agreements" }, h("span", { text: t("home.all-agreements") }), icon("arrow-right", { size: 16 })));
 
-  // Recent templates (G-03): the old Start card repeated the top bar's Start menu.
-  const tplList = h("div", { class: "os-list", attrs: { "aria-busy": "true" } }, skeletonRows(3));
-  const tplCard = h("section", { class: "os-card os-card--flush", attrs: { "aria-labelledby": "tpl-h", "data-testid": "home-templates" } },
-    h("div", { class: "os-card__head" },
-      h("h2", { id: "tpl-h", class: "os-card__title", text: t("home.templates") }),
-      h("a", { class: "os-link", href: "#/templates" }, h("span", { text: t("home.all-templates") }), icon("arrow-right", { size: 16 }))),
-    tplList);
+  // Recent templates (G-03).
+  const tplList = h("div", { class: "os-home2__list", attrs: { "aria-busy": "true" } }, skeletonList(3));
+  const tplCard = card("tpl-h", t("home.templates"), tplList, h("a", { class: "os-link", href: "#/templates" }, h("span", { text: t("home.all-templates") }), icon("arrow-right", { size: 16 })), "home-templates");
 
-  view.append(head, counters, drop, h("div", { class: "os-home__grid" }, recentCard, tplCard));
-
-  async function count(statuses) {
-    const parts = await Promise.all(statuses.map((s) => ctx.api.countEnvelopes(s)));
-    return { n: parts.reduce((s, p) => s + p.n, 0), more: parts.some((p) => p.more) };
-  }
-  /// Waiting envelopes expiring within 7 days, from each list item's `expires_at`.
-  async function expiring() {
-    const pages = await Promise.all(["sent", "delivered"].map((s) => ctx.api.listEnvelopes({ status: s, limit: 200 })));
-    return { n: pages.flatMap((p) => p.items || []).filter((r) => expiringSoon(r.expires_at)).length, more: pages.some((p) => p.next_cursor) };
-  }
+  view.append(h("div", { class: "os-home2" }, head, counters,
+    h("div", { class: "os-home2__grid" }, h("div", { class: "os-home2__col" }, attentionCard, recentCard), h("div", { class: "os-home2__col" }, quickCard, tplCard))));
+  const offMeaning = registerMeaningSearch(ctx);
 
   async function load() {
     try {
-      const [action, waiting, soon, drafts, completed, page] = await Promise.all([
-        count(["declined", "expired"]), count(["sent", "delivered"]), expiring(), count(["draft"]), count(["completed"]), ctx.api.listEnvelopes({ limit: 6, sort: "updated_at" }),
-      ]);
-      for (const [k, v] of [["action", action], ["waiting", waiting], ["expiring", soon], ["drafts", drafts], ["completed", completed]]) cells.get(k).replaceChildren(countLabel(v));
+      const [list, inbox] = await Promise.all([fetchAgreements(ctx), fetchInbox(ctx)]);
+      const rows = list.items.concat(inbox.items.filter((x) => !list.items.some((r) => r.id === x.id)));
+      const counts = viewCounts(rows, inbox.ids);
+      for (const c of CARDS) cells.get(c.key).replaceChildren(String(counts[c.view]) + (list.capped && c.key !== "expiring" ? "+" : ""));
       counters.removeAttribute("aria-busy");
-      const items = page.items || [];
-      const envs = await Promise.all(items.map((r) => ctx.api.getEnvelope(r.id).then((x) => x.envelope).catch(() => null)));
-      renderRecent(items, envs);
+      renderNavViews(ctx, { counts });
+      renderAttention(rows, inbox.ids);
+      const latest = [...list.items].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at))).slice(0, 6);
+      const envs = await Promise.all(latest.map((r) => ctx.api.getEnvelope(r.id).then((x) => x.envelope).catch(() => null)));
+      renderRecent(latest, envs, inbox.ids);
     } catch (err) {
       counters.removeAttribute("aria-busy");
-      recent.removeAttribute("aria-busy");
+      for (const el of [attention, recent]) el.removeAttribute("aria-busy");
       if (ctx.failed(err)) return;
       for (const n of cells.values()) n.replaceChildren("—");
-      errorState(recent, err, () => { recent.setAttribute("aria-busy", "true"); recent.replaceChildren(skeletonRows(4)); load(); });
+      clear(attention);
+      errorState(recent, err, () => { recent.setAttribute("aria-busy", "true"); recent.replaceChildren(skeletonList(4)); load(); });
     }
+  }
+
+  function renderAttention(rows, mine) {
+    attention.removeAttribute("aria-busy");
+    const items = attentionItems(rows, mine);
+    if (!items.length) {
+      attention.replaceChildren(h("div", { class: "os-home2__none", attrs: { "data-testid": "home-attention-none" } },
+        illustration("done"), h("div", {}, h("p", { class: "os-home2__none-title", text: t("home.attention-none.title") }), h("p", { class: "os-muted", text: t("home.attention-none.text") }))));
+      return;
+    }
+    attention.replaceChildren(h("ul", { class: "os-hrows" }, items.map(({ row, why }) => {
+      const line = why === "you" ? t("home.why.you") : why === "expiring" ? t("home.why.expiring", { date: shortDate(row.expires_at) }) : t("home.why.ended");
+      return hrow(row, null, mine, line, { testId: "attention-row" });
+    })));
+  }
+
+  /// The recent agreements: subject, who it went to, where it stands and when it last
+  /// changed; the whole row opens it (a draft in the editor, A-02).
+  function renderRecent(items, envs, mine) {
+    clear(recent);
+    recent.removeAttribute("aria-busy");
+    if (!items.length) {
+      recent.append(emptyState({ illus: "documents", title: t("empty.home.title"), text: t("empty.home.text"), action: button(t("agreements.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/prepare") }), testId: "empty-home" }));
+      return;
+    }
+    recent.append(h("ul", { class: "os-hrows" }, items.map((r, i) => {
+      const e = envs[i];
+      const recs = [...(e?.recipients || [])].sort((a, b) => a.routing_order - b.routing_order).map((x) => x.name || x.email);
+      const to = recs.length ? t("agreements.to", { names: recs.join(", ") }) : t("agreements.no-recipients");
+      return hrow(r, e, mine, to, { testId: "recent-row", recent: true });
+    })));
+  }
+
+  /// One agreement as a row: thumbnail, name and a line, status pill, time. The name is
+  /// the link; the whole row is clickable too.
+  function hrow(r, e, mine, line, { testId, recent: isRecent = false }) {
+    const href = rowHref(r);
+    const li = h("li", { class: `os-hrow${isRecent ? " os-recent__item" : ""}`, attrs: { "data-testid": testId } },
+      docThumb(toneOf(r, mine)),
+      h("span", { class: "os-hrow__main" },
+        h("a", { class: "os-hrow__name", href, text: r.subject || t("envelope.untitled") }),
+        h("span", { class: "os-hrow__line", text: line || subText(r, e, mine) })),
+      statusPillFor(r, e, mine),
+      whenEl(r.updated_at || r.created_at));
+    li.addEventListener("click", (ev) => { if (ev.target.closest("a, button")) return; ctx.navigate(href); });
+    return li;
   }
 
   async function loadTemplates() {
     try {
-      const items = ((await ctx.api.templates.list()).items || []).slice(0, 5);
+      const items = ((await ctx.api.templates.list()).items || []).slice(0, 4);
       tplList.removeAttribute("aria-busy");
       if (!items.length) {
         tplList.replaceChildren(h("div", { class: "os-home__none" },
@@ -132,14 +178,14 @@ export function mount(view, ctx) {
           h("a", { class: "os-link", href: "#/templates/new" }, icon("plus", { size: 16 }), h("span", { text: t("templates.new") }))));
         return;
       }
-      tplList.replaceChildren(h("ul", { class: "os-recent" }, items.map((tp) => {
+      tplList.replaceChildren(h("ul", { class: "os-hrows" }, items.map((tp) => {
         const name = tp.name || t("templates.untitled");
-        return h("li", { class: "os-recent__item" },
-          h("span", { class: "os-recent__icon os-recent__icon--tpl" }, icon("layout-template", { size: 20 })),
-          h("span", { class: "os-recent__main" },
-            h("a", { class: "os-row-link", href: `#/templates/${encodeURIComponent(tp.id)}`, text: name }),
-            h("span", { class: "os-muted os-small", text: tp.email_subject || t("home.template-no-subject") })),
-          h("a", { class: "os-btn os-btn--secondary os-btn--sm", href: `#/templates/${encodeURIComponent(tp.id)}`, attrs: { "aria-label": t("templates.use-named", { name }) } }, h("span", { text: t("templates.use") })));
+        return h("li", { class: "os-hrow os-hrow--tpl" },
+          h("span", { class: "os-hrow__icon", attrs: { "aria-hidden": "true" } }, icon("layout-template", { size: 16 })),
+          h("span", { class: "os-hrow__main" },
+            h("span", { class: "os-hrow__name", text: name }),
+            h("span", { class: "os-hrow__line", text: tp.email_subject || t("home.template-no-subject") })),
+          h("a", { class: "os-btn os-btn--subtle os-btn--sm", href: `#/templates/${encodeURIComponent(tp.id)}`, attrs: { "aria-label": t("templates.use-named", { name }) } }, h("span", { text: t("templates.use") })));
       })));
     } catch (err) {
       tplList.removeAttribute("aria-busy");
@@ -148,37 +194,31 @@ export function mount(view, ctx) {
     }
   }
 
-  /// The recent envelopes (UX-07): subject, who it went to, where it stands and when it
-  /// last changed; the whole row opens it (a draft in the editor, A-02).
-  function renderRecent(items, envs = []) {
-    clear(recent);
-    recent.removeAttribute("aria-busy");
-    if (!items.length) {
-      recent.append(emptyState({ illus: "documents", title: t("empty.home.title"), text: t("empty.home.text"), action: button(t("nav.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/prepare") }), testId: "empty-home" }));
-      return;
-    }
-    const ul = h("ul", { class: "os-recent" });
-    items.forEach((r, i) => {
-      const e = envs[i];
-      const href = rowHref(r);
-      const recs = [...(e?.recipients || [])].sort((a, b) => a.routing_order - b.routing_order).map((x) => x.name || x.email);
-      const when = r.updated_at || e?.ended_at || e?.sent_at || r.created_at;
-      const line = e ? statusLine(e) : "";
-      const li = h("li", { class: "os-recent__item os-recent__item--env", attrs: { "data-testid": "recent-row" } },
-        h("span", { class: "os-recent__icon" }, icon("file-text", { size: 20 })),
-        h("span", { class: "os-recent__main" },
-          h("a", { class: "os-row-link", href, text: r.subject || t("envelope.untitled") }),
-          h("span", { class: "os-muted os-small os-recent__to", text: recs.length ? t("agreements.to", { names: recs.join(", ") }) : t("agreements.no-recipients") })),
-        h("span", { class: "os-recent__state" },
-          statusBadge(r.status),
-          line ? h("span", { class: "os-muted os-small os-recent__line", text: line }) : null),
-        h("time", { class: "os-muted os-small os-recent__when", attrs: { datetime: when, title: fmtDate(when) }, text: shortDate(when) }));
-      li.addEventListener("click", (ev) => { if (ev.target.closest("a, button")) return; ctx.navigate(href); });
-      ul.append(li);
-    });
-    recent.append(ul);
-  }
-
   load();
   loadTemplates();
+  return () => offMeaning();
 }
+
+/// A card with a heading, an optional link on the right, and a body.
+function card(hid, title, body, link = null, testId = null) {
+  return h("section", { class: "os-card os-card--flush os-home2__card", attrs: { "aria-labelledby": hid, "data-testid": testId } },
+    h("div", { class: "os-card__head" }, h("h2", { id: hid, class: "os-card__title", text: title }), link), body);
+}
+
+/// A quick action: an icon, a title and a line; a link, or a button for `onClick`.
+function quickItem(ic, title, text, { href = null, onClick = null, testId = null }) {
+  const inner = [h("span", { class: "os-quick__icon", attrs: { "aria-hidden": "true" } }, icon(ic, { size: 16 })),
+    h("span", { class: "os-quick__text" }, h("span", { class: "os-quick__title", text: title }), h("span", { class: "os-quick__line", text }))];
+  const el = href
+    ? h("a", { class: "os-quick__item", href, attrs: { "data-testid": testId } }, ...inner)
+    : h("button", { type: "button", class: "os-quick__item", attrs: { "data-testid": testId }, on: { click: onClick } }, ...inner);
+  return h("li", {}, el);
+}
+
+/// Skeleton rows shaped like the home rows: thumbnail, two lines, a pill.
+function skeletonList(n) {
+  const ul = h("div", { class: "os-hrows os-hrows--skel", attrs: { "aria-hidden": "true" } });
+  for (let i = 0; i < n; i++) ul.append(h("div", { class: "os-hrow" }, h("span", { class: "os-skel os-skel--doc" }), skeletonLines(2), h("span", { class: "os-skel os-skel--pill" })));
+  return ul;
+}
+
