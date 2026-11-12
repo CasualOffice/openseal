@@ -48,6 +48,7 @@ by saying so.
 | 37 | 2026-11-12 | "Continue, but reduce the system resource utilization of this system." Work runs within the machine's memory: one Rust build at a time with two jobs and a shared build directory, at most one light agent beside it, the full CI alone | [04](04-MISTAKES-AND-RULES.md) rule 33 |
 | 38 | 2026-11-12 | Chose, from options: declare milestones M0 (Ready to build), M1 (Engine alpha) and M2 (Service alpha) reached; every phase they contain (D, 0, 1, 2) is closed | `MS-0`, `MS-1`, `MS-2` in [14](14-EXECUTION-TRACKER.md) |
 | 39 | 2026-11-12 | "Ask him to complete but don't run CI; you run it after it's done." Workers and reviewers finish their pieces without running the full CI list; they run only the targeted tests that prove their own change (red then green). The main session runs the full CI once after the batch is merged, then pushes | [CLAUDE.md](../CLAUDE.md) §The list CI runs; instruction 31 |
+| 40 | 2026-11-12 | "You can use the complete system." Supersedes instruction 37: run as many lanes in parallel as the machine holds, each Rust lane with its own build directory, backing off only when free memory falls below about 3 GB (docs/04 rule 33's watch on `free -g` stays) | [04](04-MISTAKES-AND-RULES.md) rule 33 |
 
 ## Inherited working rules
 
