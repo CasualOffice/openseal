@@ -259,3 +259,134 @@ test("the ceremony's field kinds are placed and configured, and come back from t
   expect(env2.fields.find((f) => f.type === "text").validation).toBeUndefined();
 });
 
+// ---- Review, template mode, documents --------------------------------------------------------
+
+test("documents: Next waits for a PDF", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await expect(page.getByTestId("wizard-next")).toBeDisabled();
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await expect(page.getByTestId("wizard-next")).toBeEnabled();
+});
+
+test("a template says Review and save and is named where it starts", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await page.goto(app("#/templates/new"));
+  await expect(page.locator(".os-stepper__btn").nth(3)).toContainText("Review and save");
+  await expect(page.locator("#docs-h + p")).toContainText("this template starts with");
+  await page.getByLabel("Name this template").fill("Mutual NDA 2027");
+  await expect(page.locator(".os-prepare__title")).toHaveText("Mutual NDA 2027");
+  await expectAccessible(page, "template documents step");
+  await snap(page, testInfo, "prepare-template-start-1440");
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await page.getByTestId("wizard-next").click();
+  await page.getByRole("button", { name: "Add role" }).first().click();
+  await page.getByTestId("role-name").first().fill("Client");
+  await step(page, "Review and save");
+  await expect(page.getByRole("heading", { name: "Review and save" })).toBeVisible();
+  await expect(page.getByLabel("Template name")).toHaveValue("Mutual NDA 2027");
+});
+
+test("review: a signer without fields is a warning with its fix; preview as a recipient; the confirmation follows the order", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toFields(page, [["Ana Signer", "ana@example.com"], ["Ben Signer", "ben@example.com"]]);
+  await add(page, "Signature");
+  await step(page, "Review");
+  const warn = page.getByTestId("summary-no-fields");
+  await expect(warn).toHaveCount(1);
+  await expect(warn).toContainText("No fields yet");
+  await snap(page, testInfo, "prepare-review-warn-1440");
+  await expectAccessible(page, "review with a warning");
+  await warn.getByRole("button", { name: "Place fields for Ben Signer" }).click();
+  await expect(page.locator('.os-stepper__btn[aria-current="step"]')).toContainText("Fields");
+  await expect(page.getByRole("radiogroup", { name: "Placing fields for" }).getByRole("radio", { name: "Ben Signer" })).toHaveAttribute("aria-checked", "true");
+  await add(page, "Signature");
+  await step(page, "Review");
+  await expect(page.getByTestId("summary-no-fields")).toHaveCount(0);
+
+  // Preview as Ana: her field stands out, Ben's fades; ending it shows both alike.
+  await page.getByTestId("preview-strip").getByRole("button", { name: "Preview as Ana Signer" }).click();
+  await expect(page.getByTestId("preview-as")).toContainText("Previewing as Ana Signer");
+  await expect(page.locator(".os-field.is-other")).toHaveCount(1);
+  await snap(page, testInfo, "prepare-preview-as-1440");
+  await page.getByTestId("preview-as").getByRole("button", { name: "End preview" }).click();
+  await expect(page.locator(".os-field.is-other")).toHaveCount(0);
+  await expect(page.getByTestId("preview-as")).toBeHidden();
+
+  // In order (the default): only Ana is emailed now, then Ben.
+  await step(page, "Review");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const dlg = page.getByRole("dialog", { name: "Send this envelope?" });
+  await expect(dlg).toContainText("Ana Signer will get an email for “Please sign: contract” now");
+  await expect(dlg).toContainText("Ana Signer → Ben Signer");
+  await expect(dlg).not.toContainText("2 signers will get an email");
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+});
+
+test("suggested fields left undecided stop Send, and their toast goes when the step is left", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toFields(page);
+  await add(page, "Signature");
+  await page.getByTestId("detect-fields").click();
+  await expect(page.getByTestId("ghost").first()).toBeVisible();
+  const toastNode = page.locator(".os-toast", { hasText: "suggested fields" });
+  await expect(toastNode).toBeVisible();
+  await step(page, "Review");
+  await expect(toastNode).toHaveCount(0);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText(/suggested fields are neither accepted nor dismissed/)).toBeVisible();
+});
+
+test("the pages stay in view beside the palette, grouped by document, with a band on the canvas", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles([pdfFile("contract.pdf"), pdfFile("annex.pdf", "Annex")]);
+  await expect(page.getByTestId("doc-card")).toHaveCount(2);
+  await page.getByTestId("wizard-next").click();
+  await page.getByRole("button", { name: "Add recipient" }).first().click();
+  await page.getByTestId("recipient-name").fill("Ana");
+  await page.getByTestId("recipient-email").fill("ana@example.com");
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page").first()).not.toHaveClass(/is-loading/);
+  const rail = page.getByTestId("thumbs-rail");
+  // In the window, not below the fold.
+  const box = await rail.boundingBox();
+  expect(box.y + 120).toBeLessThan(900);
+  await expect(page.getByTestId("thumbs-doc")).toHaveText(["contract.pdf", "annex.pdf"]);
+  await expect(page.getByTestId("doc-band")).toHaveCount(2);
+});
+
+test("on a phone the editor opens readable, places in view, and has one bottom bar", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await toFields(page);
+  // Readable: a 612-point page is drawn at least 1 px a point (fit width was ~0.6).
+  const pg = await page.locator(".os-page").first().boundingBox();
+  expect(pg.width).toBeGreaterThanOrEqual(600);
+  await page.getByTestId("add-field-sheet").click();
+  await expect(page.getByTestId("palette-hint")).toBeVisible();
+  await add(page, "Signature");
+  const field = page.locator(".os-field").first();
+  await expect(field).toBeVisible();
+  const f = await field.boundingBox();
+  const doc = await page.getByTestId("editor-doc").boundingBox();
+  expect(f.x).toBeGreaterThanOrEqual(doc.x);
+  expect(f.x + f.width).toBeLessThanOrEqual(doc.x + doc.width + 1);
+  // One bar: the page indicator and both actions, none on top of another.
+  const bar = page.locator(".os-docbar");
+  for (const id of ["page-indicator", "add-field-sheet", "props-sheet"]) await expect(bar.getByTestId(id)).toBeVisible();
+  const boxes = await Promise.all(["page-indicator", "add-field-sheet", "props-sheet"].map((id) => bar.getByTestId(id).boundingBox()));
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i]; const b = boxes[j];
+    expect(a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5, `bar items ${i} and ${j} overlap`).toBe(true);
+  }
+  for (const b of boxes) expect(b.x >= 0 && b.x + b.width <= 390, `bar item in the window: ${JSON.stringify(b)}`).toBe(true);
+  // The toolbar's actions stay on its first row on a phone too.
+  const r = await onFirstRow(page, page.getByTestId("wizard-next"));
+  expect(r.same && r.inside).toBe(true);
+  await snap(page, testInfo, "prepare-fields-390");
+  await expectAccessible(page, "phone editor");
+});
+

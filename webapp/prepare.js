@@ -36,6 +36,7 @@ import { suggestionsFrom } from "./detect.js";
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from "./guides.js";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
+import { sendSummary } from "./people.js";
 
 const FIELD_ICON = {
   signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", company: "layers", title: "type",
@@ -125,6 +126,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const dv = docView({
     label: t("prepare.pages"),
     testId: "editor-doc",
+    // Phones open at a readable size (UX-05: 1 CSS px a point, 11 pt body text at 11 px;
+    // fit width was about 5 px) and pan; two fingers zoom, as on any page.
+    mode: matchMedia("(max-width: 47.999em)").matches ? 1 : "fit-width",
     onLayout: () => { zoom.sync(); },
     onZoom: () => zoom.sync(),
     onPage: (i) => { zoom.sync(); thumbs.mark(i); },
@@ -157,21 +161,44 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const rcptPanel = h("section", { class: "os-panel os-panel--rcpt", attrs: { "aria-labelledby": "rcpt-h" } });
   const palettePanel = h("section", { class: "os-panel os-panel--palette", attrs: { "aria-labelledby": "pal-h" } });
   const thumbsBox = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
-  const thumbs = thumbnails(dv, thumbsBox, { width: 88 });
+  const thumbs = thumbnails(dv, thumbsBox, { width: 64, byDocument: true });
   const leftDock = dockPanel({ id: "editor-fields", side: "left", title: t("prepare.fields"), icon: "signature", width: 13.5, min: 11, max: 24, testId: "panel-fields" });
-  leftDock.body.append(palettePanel, h("section", { class: "os-panel os-panel--thumbs", attrs: { "aria-labelledby": "thumbs-h" } },
-    h("h3", { id: "thumbs-h", class: "os-panel__title", text: t("prepare.pages") }), thumbsBox));
+  leftDock.body.append(palettePanel);
+  leftDock.body.classList.add("os-dock__body--split");
+  // The pages, pinned under the palette so they are always in view (UX-05: they came
+  // after it and fell below the fold), grouped by document. Phones show the page indicator.
+  const rail = h("section", { class: "os-prepare__rail os-panel--thumbs", attrs: { "aria-labelledby": "thumbs-h", "data-testid": "thumbs-rail" } },
+    h("h3", { id: "thumbs-h", class: "os-panel__title", text: t("prepare.pages") }), thumbsBox);
+  leftDock.body.append(rail);
   const props = h("div", { class: "os-props" });
   const rightDock = dockPanel({ id: "editor-props", side: "right", title: t("prepare.properties"), icon: "settings", width: 15, min: 13, max: 30, testId: "panel-props", collapsed: matchMedia("(max-width: 74.999em)").matches });
   rightDock.body.append(props);
   // Phones: the palette and the properties are bottom sheets; this opens the palette.
   const addFab = button(t("prepare.add-field-short"), { icon: "plus", variant: "primary", size: "lg", onClick: () => leftDock.openSheet(), attrs: { "data-testid": "add-field-sheet" } });
-  const propsFab = button(t("prepare.field-settings"), { icon: "settings", size: "lg", onClick: () => rightDock.openSheet(), attrs: { "data-testid": "props-sheet" } });
+  const propsFab = button(t("prepare.field-settings"), { icon: "settings", size: "lg", onClick: () => rightDock.openSheet(), attrs: { "data-testid": "props-sheet", title: t("prepare.field-settings") } });
   propsFab.hidden = true;
   // The document's own bar floats at the bottom of the pages: zoom and "Page n of N".
-  const centre = h("div", { class: "os-prepare__centre" }, stage,
-    h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoom.el),
-    h("div", { class: "os-fabs" }, propsFab, addFab));
+  // Phones (UX-05): one bottom bar, the zoom and page with Add field and Field settings,
+  // instead of floating buttons over the page indicator.
+  const previewBar = h("div", { class: "os-previewbar", attrs: { role: "status", "data-testid": "preview-as" } });
+  previewBar.hidden = true;
+  const centre = h("div", { class: "os-prepare__centre" }, stage, previewBar,
+    h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoom.el,
+      h("div", { class: "os-docbar__actions" }, propsFab, addFab)));
+  /// Preview as a recipient (UX-05, DocuSign's "Preview"): on the fields step, their
+  /// fields stand out and everyone else's fade, with a bar saying whose view it is.
+  let previewKey = null;
+  function previewAs(key) {
+    previewKey = key;
+    const r = recipient(key);
+    previewBar.hidden = !r;
+    previewBar.replaceChildren();
+    if (r) {
+      previewBar.append(icon("eye", { size: 16 }), h("span", { text: t("prepare.previewing", { name: displayName(r, S.recipients.indexOf(r)) }) }),
+        button(t("prepare.preview-end"), { size: "sm", onClick: () => { previewAs(null); stage.focus(); } }));
+    }
+    renderFieldsOnly();
+  }
   const reviewPanel = h("section", { class: "os-panel os-panel--review", attrs: { "aria-labelledby": "review-h" } });
   const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; });
@@ -186,6 +213,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
 
 
   function stepLabel(s) {
+    // A template is saved, not sent (UX-05): its last step is "Review and save".
+    if (TPL && s === "review") return "wizard.review-template";
     return s === "recipients" && TPL ? "wizard.step.roles" : `wizard.step.${s}`;
   }
   /// Open step `s`: show its pane, mark the step bar, set the toolbar's buttons.
@@ -206,9 +235,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
     docTools.hidden = s !== "fields";
     skipTo(s === "fields" ? "#document" : "#main", t(s === "fields" ? "a11y.skip-doc" : "a11y.skip"));
-    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); disarm(); }
+    if (s !== "fields") { leftDock.closeSheet(); rightDock.closeSheet(); disarm(); closeDetectToast?.(); closeDetectToast = null; if (previewKey) previewAs(null); }
     backBtn.hidden = i === 0;
     nextBtn.hidden = i === STEPS.length - 1;
+    syncNext();
     if (sendBtn) sendBtn.hidden = s !== "review";
     if (TPL) saveBtn.hidden = s !== "review";
     say(t("wizard.where", { n: i + 1, total: STEPS.length, label: t(stepLabel(s)) }));
@@ -220,6 +250,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
     if (s === "review") renderReview();
   }
+
+  /// Next on the documents step waits for a document (UX-05): with none there is nothing
+  /// to place fields on. The reason is its tooltip and is said under the drop zone.
+  function syncNext() {
+    const need = step === "documents" && !S.docs.length;
+    nextBtn.disabled = need;
+    if (need) nextBtn.title = t("wizard.need-doc"); else nextBtn.removeAttribute("title");
+  }
+  let closeDetectToast = null; // the "suggested fields" toast, closed on leaving the step
 
   const say = (msg) => { live.textContent = ""; setTimeout(() => { live.textContent = msg; }, 30); };
 
@@ -631,8 +670,15 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     docsPanel.append(h("div", { class: "os-step-head" },
       h("div", {},
         h("h2", { id: "docs-h", class: "os-step-head__title", text: t("prepare.documents") }),
-        h("p", { class: "os-muted", text: t("wizard.documents-lede") })),
+        h("p", { class: "os-muted", text: t(TPL ? "template.documents-lede" : "wizard.documents-lede") })),
       S.docs.length ? button(t("prepare.add-pdf"), { icon: "file-up", command: "document.add", onClick: () => fileInput.click() }) : null));
+    syncNext();
+    if (TPL) {
+      // A template is named where it starts (UX-05); the same name as on Review and save.
+      const name = h("input", { id: "tpl-name", class: "os-input", value: S.subject, maxLength: 255, autocomplete: "off", placeholder: t("template.name-example"), attrs: { "data-testid": "template-name-start" } });
+      name.addEventListener("input", () => { subject.value = name.value; subject.dispatchEvent(new Event("input")); });
+      docsPanel.append(h("div", { class: "os-fieldrow os-tplname" }, h("label", { class: "os-label", attrs: { for: "tpl-name" }, text: t("template.name-start") }), name));
+    }
     if (!S.docs.length) {
       const empty = emptyState({
         illus: "documents", title: t("empty.documents.title"), text: t("empty.documents.text"),
@@ -729,6 +775,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       return;
     }
     dv.setPages(S.docs.flatMap((d) => d.pages.map((p, i) => ({ key: d.key, n: i + 1, total: d.pages.length, name: d.name, width: p.width, height: p.height, pdf: pdfs.get(d.key) }))));
+    // Each document's name above its first page (UX-05), so a page says whose document it is.
+    if (S.docs.length > 1) dv.pages.forEach((p, i) => { if (p.n === 1) dv.els[i].el.before(h("div", { class: "os-docband", attrs: { "aria-hidden": "true", "data-testid": "doc-band" } }, icon("file-text", { size: 16 }), h("span", { class: "os-trunc", text: p.name }), h("span", { class: "os-muted", text: p.total === 1 ? t("prepare.page-one") : t("prepare.pages-long", { n: p.total }) }))); });
     dv.els.forEach(({ overlay }, i) => {
       const p = dv.pages[i];
       const d = S.docs.find((x) => x.key === p.key);
@@ -774,7 +822,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const f of S.fields) {
       const ov = overlayFor(f);
       if (!ov) continue;
-      const el = h("button", { type: "button", class: `os-field os-r${colourOf(f.recipientKey)}${f.required ? " is-required" : ""}${S.selected === f.key ? " is-selected" : ""}`, attrs: { "data-fkey": f.key, "data-field": f.type, "aria-label": fieldLabel(f), "aria-pressed": String(S.selected === f.key) } },
+      const el = h("button", { type: "button", class: `os-field os-r${colourOf(f.recipientKey)}${f.required ? " is-required" : ""}${previewKey && f.recipientKey !== previewKey ? " is-other" : ""}${S.selected === f.key ? " is-selected" : ""}`, attrs: { "data-fkey": f.key, "data-field": f.type, "aria-label": fieldLabel(f), "aria-pressed": String(S.selected === f.key) } },
         icon(FIELD_ICON[f.type] || "text-cursor-input", { size: 16 }),
         h("span", { class: "os-field__label", text: f.label || t(`ftype.${f.type}`) }),
         // Whose field it is, beside its colour (F-02): the recipient's initials, drawn by CSS
@@ -1065,6 +1113,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const f = { key: newKey("f"), id: null, docKey: doc.key, recipientKey: r.key, type, page, ...rect, required: requiredByDefault(type), label: "", ...newMembers(type) };
     change(() => { S.fields.push(f); S.selected = f.key; });
     lastPlaced = f.key;
+    propsFab.hidden = false;
     const el = stage.querySelector(`.os-field[data-fkey="${f.key}"]`);
     if (el) {
       el.classList.add("is-new");
@@ -1105,6 +1154,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         const top = Math.max(r.top, s.top);
         const bottom = Math.min(r.bottom, s.bottom);
         if (bottom > top) cy = ((top - r.top) + (bottom - top) / 3) / dv.scale;
+        // Across too (UX-05): a page wider than the view (phones, zoomed in) gets the
+        // field in the middle of the part on screen, not of the page.
+        const left = Math.max(r.left, s.left);
+        const right = Math.min(r.right, s.right);
+        if (right > left && r.width > s.width) cx = ((left - r.left) + (right - left) / 2) / dv.scale;
       }
     }
     // A margin below each field keeps keyboard-placed fields apart, not touching.
@@ -1189,7 +1243,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         change(() => { S.ghosts = ghosts; S.selected = null; });
         const who = signerFor();
         const msg = t("prepare.detect-found", { n: ghosts.length, name: who ? displayName(who, S.recipients.indexOf(who)) : t("prepare.recipient-n", { n: S.recipients.length + 1 }) });
-        toast(truncated ? `${msg} ${t("prepare.detect-truncated")}` : msg, "info");
+        closeDetectToast = toast(truncated ? `${msg} ${t("prepare.detect-truncated")}` : msg, "info");
         say(msg);
         const first = ghosts[0];
         dv.scrollToBox(pageIndex(first.docKey, first.page), first);
@@ -1438,10 +1492,27 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("span", { class: "os-order", text: String(orderOf(r)) }),
         h("span", { class: "os-summary__who" }, h("strong", { text: displayName(r, i) }), TPL ? null : h("span", { class: "os-muted os-small", text: r.email || t("wizard.no-email") })),
         h("span", { class: "os-muted os-small", text: t(`rtype.${r.type}`) }),
-        h("span", { class: "os-small os-summary__fields", text: r.type === "signer" ? (mine.length ? `${fieldsN(mine.length)}: ${kinds}` : t("wizard.no-fields")) : t("wizard.gets-copy") })));
+        // A signer with no fields is a warning here, with its fix, not only at Send (UX-05).
+        takesFields(r) && !mine.length
+          ? h("span", { class: "os-small os-summary__fields os-summary__warn", attrs: { "data-testid": "summary-no-fields" } },
+            icon("triangle-alert", { size: 16 }), h("span", { text: t("wizard.no-fields") }),
+            button(t("wizard.place-fields"), { size: "sm", icon: "arrow-right", attrs: { "aria-label": t("wizard.place-fields-for", { name: displayName(r, i) }) }, onClick: async () => { await go("fields"); pick(r.key); } }))
+          : h("span", { class: "os-small os-summary__fields", text: takesFields(r) ? `${fieldsN(mine.length)}: ${kinds}` : t(r.type === "cc" ? "wizard.gets-copy" : "wizard.reviews") })));
     });
     if (!S.recipients.length) ul.append(h("li", { class: "os-muted", text: t(TPL ? "empty.roles.title" : "empty.recipients.title") }));
     sum.append(ul);
+    // Preview as each recipient who fills fields (UX-05): the document with their fields.
+    const sg = signers();
+    if (sg.length && S.docs.length) {
+      sum.append(h("div", { class: "os-previewstrip", attrs: { role: "group", "aria-labelledby": "rv-prev-h", "data-testid": "preview-strip" } },
+        h("span", { id: "rv-prev-h", class: "os-label", text: t("wizard.preview-as") }),
+        ...sg.map((r) => {
+          const i = S.recipients.indexOf(r);
+          const b = button(displayName(r, i), { size: "sm", icon: "eye", attrs: { "aria-label": t("wizard.preview-as-name", { name: displayName(r, i) }) }, onClick: async () => { await go("fields"); previewAs(r.key); } });
+          b.classList.add(`os-r${colourOf(r.key)}`, "os-previewstrip__btn");
+          return b;
+        })));
+    }
     reviewPanel.querySelector(".os-step-head").after(sum);
   }
   /// "1 field" / "3 fields" (T-02).
@@ -1660,6 +1731,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const out = [];
     if (!S.docs.length) out.push({ text: t("send.need-doc"), step: "documents" });
     if (!signers().length) out.push({ text: t("send.need-signer"), step: "recipients" });
+    // Suggestions neither accepted nor dismissed would be lost on send (UX-05).
+    if (S.ghosts.length) out.push({ text: t(S.ghosts.length === 1 ? "send.need-suggestion-one" : "send.need-suggestions", { n: S.ghosts.length }), step: "fields" });
     S.recipients.forEach((r, i) => {
       if (!r.name.trim()) out.push({ text: t("send.need-name", { n: i + 1 }), step: "recipients", focus: `#rn-${r.key}` });
       if (!EMAIL.test(r.email)) out.push({ text: t("send.need-email", { name: displayName(r, i) }), step: "recipients", focus: `#re-${r.key}` });
@@ -1701,20 +1774,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   async function send() {
     const list = problems();
     if (list.length) { await showProblems(list, t("send.problems-title")); return; }
-    const sum = S.recipients.filter((r) => r.type === "signer").length;
-    // Says who signs when and who only gets a copy (R-02).
+    // Who gets it now, who in turn, who reviews and who only gets a copy (R-02; UX-05:
+    // with signing steps only the first step is emailed at once).
     const subj = S.subject.trim() || t("envelope.untitled");
-    const sg = signers();
-    const copies = S.recipients.filter((r) => r.type !== "signer");
-    const nameOf = (r) => displayName(r, S.recipients.indexOf(r));
-    const text = [
-      t(sum === 1 ? "send.confirm-one" : "send.confirm-text", { n: sum, subject: subj }),
-      sg.length > 1 ? (new Set(sg.map(orderOf)).size > 1
-        // Steps in order; a step of several is "A & B" (they sign at the same time).
-        ? t("send.confirm-order", { order: groups(sg.map(orderOf)).map((g) => g.members.map((i) => nameOf(sg[i])).join(" & ")).join(" → ") })
-        : t("send.confirm-together")) : "",
-      copies.length ? t("send.confirm-copies", { names: copies.map(nameOf).join(", ") }) : "",
-    ].filter(Boolean).join(" ");
+    const text = sendSummary(S.recipients.map((r, i) => ({ name: displayName(r, i), type: r.type, order: orderOf(r) })), subj).map(([k, p]) => t(k, p)).join(" ");
     if (!(await confirmDialog(t("send.confirm-title"), text, { confirm: t("prepare.send") }))) return;
     await busy(sendBtn, async () => {
       try {

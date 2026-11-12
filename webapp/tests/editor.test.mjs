@@ -7,7 +7,9 @@ import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, n
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners, stops } from "../guides.js";
 import { suggestionsFrom } from "../detect.js";
 import { FIELD_TYPES, FIELD_GROUPS, takesInput, requiredByDefault, validationFrom, optionsFrom } from "../geometry.js";
-import { FIELD_TYPES_READY } from "../api.js";
+import { FIELD_TYPES_READY, createClient } from "../api.js";
+import { createMockFetch, MOCK } from "../mock.js";
+import { makePdf } from "../mockpdf.js";
 
 // ---- signing steps ---------------------------------------------------------------------------
 test("orders stay compact; the API's are read leniently", () => {
@@ -125,6 +127,27 @@ test("suggestions become ghost fields the editor can place, skipping ones on pla
   // A type the editor does not place becomes a text field labelled with its cue.
   const other = suggestionsFrom([{ document_id: "doc-1", type: "ssn", page: 2, x: "72", y: "300", width: "120", height: "22", cue: "SSN" }], docs, [], () => "k");
   assert.deepEqual([other[0].type, other[0].label], ["text", "SSN"]);
+});
+
+test("a detected field on a signature line sits on the line, in the editor as from the API (UX-05)", async () => {
+  // The fixture: the mock's PDF, whose signature and date lines are drawn at a PDF y
+  // read from its own content (bottom-left origin), on a 792-point page.
+  const bytes = makePdf([{ title: "Lines", lines: ["Sign below."] }]);
+  const text = new TextDecoder("latin1").decode(bytes);
+  const [, x0, lineY] = text.match(/(\d+) (\d+) m \d+ \d+ l S/).map(Number);
+  const lineTop = 792 - lineY; // the line in displayed space, top-left origin (ADR-019)
+  const api = createClient({ fetch: createMockFetch() });
+  await api.login(MOCK.email, MOCK.password);
+  const env = await api.createEnvelope({ subject: "Lines", documents: [{ name: "l.pdf", content_base64: Buffer.from(bytes).toString("base64") }] });
+  const out = await api.detectFields(env.id, env.documents[0].id);
+  const docs = [{ key: "d1", id: env.documents[0].id, pages: [{ width: 612, height: 792 }] }];
+  const ghosts = suggestionsFrom(out.items, docs, [], () => "g");
+  for (const type of ["signature", "date_signed"]) {
+    const g = ghosts.find((x) => x.type === type);
+    assert.ok(g, `a ${type} suggestion`);
+    assert.equal(g.y + g.height, lineTop, `${type}: bottom on the line, not below it`);
+  }
+  assert.equal(ghosts.find((x) => x.type === "signature").x, x0);
 });
 
 // ---- field kinds and properties (UX-05) -------------------------------------------------------

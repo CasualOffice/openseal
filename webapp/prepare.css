@@ -98,7 +98,9 @@
   box-shadow: 0 1px 0.125rem rgba(15, 23, 42, .12);
   transition: box-shadow var(--os-dur-fast) var(--os-ease), transform var(--os-dur-fast) var(--os-ease);
 }
-.os-field.is-required::after { content: "*"; position: absolute; top: 0; right: 0.25rem; color: #b42318; font-weight: 700; }
+/* Required (UX-05): a filled corner flag, distinct from the dashed border of an optional
+ * field and from the red of an error; the field's name says "required" in words. */
+.os-field.is-required::after { content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 0.625rem 0.625rem 0; border-color: transparent color-mix(in srgb, var(--rc) 75%, #000) transparent transparent; }
 .os-field.is-required { border-style: solid; }
 .os-field svg { color: color-mix(in srgb, var(--rc) 70%, #000); flex: none; }
 .os-field__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -155,7 +157,7 @@
 .os-savestate__dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; }
 .os-prepare__body { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
 .os-prepare__centre { position: relative; display: grid; min-width: 0; min-height: 0; }
-.os-fabs { display: none; }
+.os-docbar__actions { display: none; }
 .os-panel--palette { margin: 0; padding: 0; border: 0; }
 .os-dock .os-panel__title { flex: none; }
 .os-palette__for + .os-panel__title { margin-top: var(--os-s4); }
@@ -224,10 +226,7 @@
 .os-problems__text { flex: 1; }
 @media (max-width: 47.999em) {
   .os-prepare__body { grid-template-columns: minmax(0, 1fr); }
-  .os-fabs { position: absolute; right: var(--os-s3); bottom: var(--os-s3); z-index: 7; display: flex; gap: var(--os-s2); }
-  .os-fab { box-shadow: var(--os-shadow-md); }
   .os-palette__items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .has-sheet .os-fabs { visibility: hidden; }
   /* Editor toolbar on phones: title and actions, then the steps and undo/redo. */
   .os-prepare__bar { padding: var(--os-s1) var(--os-s2); gap: var(--os-s1); }
   .os-prepare__head { flex: 1 1 6rem; max-width: none; }
@@ -266,4 +265,53 @@
   .os-prepare__bar { position: static; }
   .os-wizard, .os-wizard__pane { overflow: visible; }
   .os-prepare__body { height: 80dvh; }
+}
+
+/* ---- UX-05: the pages rail, document bands, preview, phones ------------------------ */
+/* The pages, pinned at the foot of the fields panel so they are always in view, grouped
+ * by document; the palette above scrolls on its own. */
+.os-dock__body--split { overflow: hidden; }
+.os-dock__body--split > .os-panel--palette { flex: 1 1 auto; min-height: 6rem; overflow: auto; margin: calc(-1 * var(--os-s1)); padding: var(--os-s1); }
+.os-prepare__rail { display: flex; flex-direction: column; flex: 0 1 auto; max-height: 40%; min-height: 7.5rem; padding-top: var(--os-s3); border-top: 1px solid var(--os-border); }
+.os-prepare__rail .os-panel__title { flex: none; margin-bottom: var(--os-s2); }
+.os-thumbs__doc { grid-column: 1 / -1; display: flex; min-width: 0; margin-top: var(--os-s2); font-size: var(--os-fs-12); font-weight: 600; color: var(--os-muted); }
+.os-thumbs__doc:first-child { margin-top: 0; }
+/* Each document's name above its first page, when there are several. */
+.os-docband { display: flex; align-items: center; gap: var(--os-s2); max-width: 100%; padding: var(--os-s1) var(--os-s3); border-radius: var(--os-radius-sm); background: var(--os-raised); border: 1px solid var(--os-border); font-size: var(--os-fs-12); font-weight: 600; }
+/* A field narrower than its words shows its icon only; smaller still, no handle either,
+ * so the box stays a target and never a jumble of chips (UX-05; phones, zoomed out). */
+.os-field { container-type: size; }
+@container (max-width: 4.5rem) {
+  .os-field__label, .os-field__who { display: none; }
+}
+@container (max-width: 2rem) {
+  .os-field__handle { display: none; }
+}
+/* Focus and selection differ (UX-05): selection is the recipient's colour ring, focus
+ * the app's focus outline outside it. */
+.os-field:focus-visible { outline: var(--os-focus-width) solid var(--os-focus); outline-offset: 0.375rem; }
+.os-field.is-other { opacity: .3; }
+/* Preview as a recipient: a bar over the document, and the strip on Review. */
+.os-previewbar { position: absolute; z-index: 6; top: var(--os-s3); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: var(--os-s2); padding: var(--os-s1) var(--os-s1) var(--os-s1) var(--os-s3); border: 1px solid var(--os-border); border-radius: var(--os-radius-lg); background: var(--os-raised); box-shadow: var(--os-shadow-md); font-size: var(--os-fs-14); max-width: calc(100% - 2 * var(--os-s3)); }
+.os-previewbar[hidden] { display: none; }
+.os-previewstrip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--os-s2); margin-top: var(--os-s4); padding-top: var(--os-s3); border-top: 1px solid var(--os-border); }
+.os-previewstrip .os-label { margin: 0; }
+.os-previewstrip__btn { border-left: 0.25rem solid var(--rc); }
+.os-summary__warn { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--os-s2); color: var(--os-warning); font-weight: 600; }
+.os-summary__warn > svg { flex: none; }
+.os-tplname { max-width: 32rem; margin-bottom: var(--os-s6); }
+@media (max-width: 47.999em) {
+  .os-prepare__rail { display: none; }
+  /* One bottom bar: the page indicator with Add field and Field settings (UX-05). */
+  .os-prepare .os-docbar { left: var(--os-s2); right: var(--os-s2); bottom: var(--os-s2); justify-content: space-between; gap: var(--os-s2); }
+  .os-docbar__actions { display: flex; gap: var(--os-s2); }
+  .os-docbar__actions > .os-btn[hidden] { display: none; }
+  /* Field settings as its icon (its name stays for assistive technology), so the bar fits. */
+  .os-docbar__actions > [data-testid="props-sheet"] { width: var(--os-btn-lg); padding: 0; justify-content: center; }
+  .os-docbar__actions > [data-testid="props-sheet"] > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .os-prepare .os-docbar { max-width: calc(100% - 2 * var(--os-s2)); }
+  .os-previewbar { top: var(--os-s2); }
+}
+@media (max-width: 47.999em) and (max-height: 31.25em) {
+  .os-prepare .os-docbar { display: flex; }
 }
