@@ -336,29 +336,34 @@ test("screenshots at 1440, 1920, 390 and 200 % zoom", async ({ page, browser }, 
 
 // ---- UX-07: manage screens, DocuSign-level hierarchy, density and evidence ----------
 
-test("UX-07 declined envelope: Download, a primary Copy and resend, the decline reason", async ({ page }) => {
+// The four acceptance checks of UX-07, one test each so each is seen red on its own.
+const declined = async (page) => {
   await signIn(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(app(`#/envelopes/${await subjectId(page, "Board consent — November")}`));
-  const head = page.locator(".os-page-head");
+  await expect(page.getByTestId("status-line")).toBeVisible();
+  return page.locator(".os-page-head");
+};
+
+test("UX-07 acceptance: Download is shown on a declined envelope", async ({ page }) => {
+  const head = await declined(page);
+  const [dl] = await Promise.all([page.waitForEvent("download"), head.getByRole("button", { name: "Download", exact: true }).click()]);
+  expect(dl.suggestedFilename()).toMatch(/-declined\.pdf$/);
+});
+
+test("UX-07 acceptance: a declined envelope has a primary action, Copy and resend, and says why it ended", async ({ page }) => {
+  const head = await declined(page);
   const primary = head.locator(".os-btn--primary");
   await expect(primary).toHaveCount(1);
   await expect(primary).toHaveText("Copy and resend");
-  await expect(page.getByTestId("decline-callout")).toBeVisible();
-  const [dl] = await Promise.all([page.waitForEvent("download"), head.getByRole("button", { name: "Download", exact: true }).click()]);
-  expect(dl.suggestedFilename()).toMatch(/\.pdf$/);
+  await expect(page.getByTestId("decline-callout")).toContainText("Wrong meeting date");
   await expectAccessible(page, "declined envelope");
+  await primary.click();
+  await expect(page).toHaveURL(/#\/prepare\//);
 });
 
-test("UX-07 agreements: the search survives a reload, rows are 64 px or less at 1440", async ({ page }, testInfo) => {
+test("UX-07 acceptance: the search survives a reload", async ({ page }) => {
   await signIn(page);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(app("#/agreements"));
-  await expect(page.locator("tbody tr").first()).toBeVisible();
-  // Let the details fill every row (recipients, status line, dates) before measuring.
-  await expect(page.locator("tbody tr .os-row__sub").filter({ hasText: /\S/ })).toHaveCount(await page.locator("tbody tr").count());
-  for (const hgt of await page.locator("tbody tr").evaluateAll((trs) => trs.map((tr) => tr.getBoundingClientRect().height))) expect(hgt).toBeLessThanOrEqual(64);
-  await snap(page, testInfo, "ux07-agreements-1440");
   await page.locator("#top-search").fill("offer");
   await expect(page).toHaveURL(/[?&]q=offer/);
   await expect(page.locator("tbody tr")).toHaveCount(1);
@@ -368,6 +373,20 @@ test("UX-07 agreements: the search survives a reload, rows are 64 px or less at 
   await expect(page.getByTestId("agreements-sub")).toContainText("“offer”");
   // A folder link keeps the search.
   await expect(page.locator('.os-rail__link[data-folder="waiting"]')).toHaveAttribute("href", "#/agreements?folder=waiting&q=offer");
+});
+
+test("UX-07 acceptance: rows are 64 px or less at 1440", async ({ page }, testInfo) => {
+  await signIn(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(app("#/agreements"));
+  await expect(page.locator("tbody tr").first()).toBeVisible();
+  // Let the details fill every row (recipients, status line, dates) before measuring.
+  await expect(page.locator("tbody tr .os-row__sub").filter({ hasText: /\S/ })).toHaveCount(await page.locator("tbody tr").count());
+  const heights = await page.locator("tbody tr").evaluateAll((trs) => trs.map((tr) => tr.getBoundingClientRect().height));
+  for (const hgt of heights) expect(hgt).toBeLessThanOrEqual(64);
+  // No date spills out of its column.
+  for (const over of await page.locator("tbody td.os-col-date").evaluateAll((tds) => tds.map((td) => td.scrollWidth - td.clientWidth))) expect(over).toBeLessThanOrEqual(0);
+  await snap(page, testInfo, "ux07-agreements-1440");
 });
 
 test("UX-07 agreements: one way in, grouped row menu, one void dialog, bulk bar with export and delete", async ({ page }) => {
