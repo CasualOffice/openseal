@@ -88,3 +88,23 @@ export function fmtDate(iso) {
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+
+const DAY_MS = 86_400_000;
+const dayStart = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+
+/// A short date for lists (UX-07): "Today, 5:28 PM", "Yesterday, 9:02 AM", "Nov 12"
+/// this year, "Nov 12, 2025" otherwise, in the browser's locale. `labels` name today
+/// and yesterday (from the caller's `t`); `now` in ms. The full timestamp is
+/// `fmtDate`'s, for a tooltip.
+export function fmtShortDate(iso, { today = "Today", yesterday = "Yesterday" } = {}, now = Date.now()) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const at = d.getTime();
+  if (Number.isNaN(at)) return "";
+  const time = () => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const days = Math.round((dayStart(now) - dayStart(at)) / DAY_MS);
+  if (days === 0) return `${today}, ${time()}`;
+  if (days === 1) return `${yesterday}, ${time()}`;
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return d.toLocaleDateString(undefined, sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+}
