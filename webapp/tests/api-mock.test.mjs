@@ -107,8 +107,8 @@ test("the ceremony: access code, consent with location, adopt, fill, finish comp
   assert.equal(v.recipient.status, "completed");
   assert.equal(v.envelope.status, "completed");
   const audit = await c.audit(v.envelope.id);
-  const consent = audit.items.find((i) => i.type === "recipient_consented");
-  assert.deepEqual(consent.event.location, { latitude: 1.5, longitude: 2.5, accuracy_m: 20 });
+  const consent = audit.items.find((i) => i.type === "recipient.consented");
+  assert.deepEqual(consent.event.context.location, { latitude: 1.5, longitude: 2.5, accuracy_m: 20 });
   for (let i = 1; i < audit.items.length; i++) assert.equal(audit.items[i].prev, audit.items[i - 1].hash);
 });
 
