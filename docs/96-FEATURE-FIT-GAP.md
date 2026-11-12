@@ -154,7 +154,7 @@ instructions 8 and 9).
 | FG-137 | Transfer ownership | DS | Build | 10 | Designed |
 | FG-138 | History view | DS, SN | Build | 6 | Works (staff audit view; the signer's own `GET /s/{token}/history`, `WEB-07`) |
 | FG-139 | Envelope custom fields | DS | Build | 6 | Designed |
-| FG-140 | Reports and CSV export | DS | Build | 6 | — |
+| FG-140 | Reports and CSV export | DS | Build | 6 | — (in part: an envelope report with sample sizes, custom range, sender filter and a nine-column CSV over the newest 1,000, computed in the page, `UX-08`; recipient and usage reports wait for REP-01) |
 | FG-141 | Insights dashboard | DS | Build | 6 | — |
 
 ## Evidence and verification
@@ -204,7 +204,7 @@ instructions 8 and 9).
 | FG-192 | JWT bearer grant (service integrations) | DS | Build | 8 | Designed |
 | FG-193 | API keys | — | Build | Phase 2 | Works |
 | FG-194 | Webhooks: account and per-envelope, HMAC, rotation | DS, SN | Build | 8 | Works |
-| FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Designed |
+| FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Designed (in part: Admin lists subscriptions and their latest deliveries, `UX-08`; redeliver, test and pause wait for UXW-31 to UXW-33) |
 | FG-196 | Embedded signing view | DS, SN | Build | 9 | Designed |
 | FG-197 | Embedded sending / prepare view | DS, SN | Build | 9 | Designed |
 | FG-198 | Embedded correct and template edit views | DS, SN | Build | 9 | Designed |

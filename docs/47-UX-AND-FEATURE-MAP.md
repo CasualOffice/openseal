@@ -217,8 +217,8 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
 | Home | `app.html#/home` (`home.js`) | `GET /api/v1/envelopes?status=&limit=` per counter, `GET …/{id}` for expiry |
 | Agreements | `app.html#/agreements[?folder=&q=]` (`dashboard.js`) | as WEB-01, plus `GET …/{id}` per row for recipients and last change |
 | Templates | `#/templates`, `#/templates/new`, `#/templates/{id}`, `#/templates/{id}/edit` (`templates.js`, `prepare.js` in template mode) | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{id}`, the template's documents, roles and fields (`templatesync.js`, WEB-09 and WEB-10 below); using one is a single `POST /api/v1/envelopes` (`templatemodel.js`) |
-| Reports | `#/reports` (`reports.js`, `reportmodel.js`) | `GET /api/v1/envelopes` (up to 1,000) and `GET …/{id}` for completed ones |
-| Admin | `#/admin[?tab=api]` (`admin.js`) | `GET/POST /api/v1/users`, `PATCH/DELETE /api/v1/users/{id}`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}` |
+| Reports | `#/reports` (`reports.js`, `reportmodel.js`) | `GET /api/v1/envelopes` (up to 1,000; the summaries' `sent_at` and `completed_at` give the median, UX-08), `GET /api/v1/users` for sender names when allowed |
+| Admin | `#/admin[?section=…]` (account, users, webhooks, api, …) (`admin.js`, `adminmodel.js`; the older `?tab=` still lands) | `GET/PATCH /api/v1/accounts/me`, `GET/POST /api/v1/users`, `GET/PATCH/DELETE /api/v1/users/{id}`, `POST …/invite`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}`, `GET/POST /api/v1/webhooks`, `DELETE /api/v1/webhooks/{id}`, `GET …/deliveries` (UX-08); ahead of the server: `PATCH /webhooks/{id}`, `POST …/test`, `POST …/deliveries/{d}/redeliver` (api.js `NOT_ON_SERVER`) |
 | Verify | `verify.html` (`verify.js`, `verifyreport.js`, `trail.js`) | none: casual-sign-wasm's `verify()` in the page; `audit-trail.json` read by pdf.js |
 
 - **Every call is in `api.js`** (WEB-10 moved `api-extra.js` there; see below). **Mock mode** serves templates, users
@@ -529,3 +529,65 @@ Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`
 Further findings for the main session: the staff audit view (`envactions.js` `eventLabel`, `envelope.js`'s recipient
 timeline) still reads the mock's underscore event names and `event.recipient_id`, while the server answers dotted types
 with `event.data.recipient_id`, so on a real server the audit table shows raw types and the timeline misses "opened".
+
+## As built (UX-08, 2026-11-12): Templates, Reports, Admin
+
+Package P6 of the UX-01 audit. The bar: a DocuSign customer finds Admin, Reports and template use where they
+expect them, and nothing silently wrong.
+
+**Admin** (`admin.js`, pure rules in `adminmodel.js`) is a section rail after DocuSign eSignature Admin, replacing the
+three tabs. Groups and sections (`SECTIONS`): **Account** (Account: settings and branding; Signing and sending;
+Electronic disclosure; Retention), **Users and groups** (Users; Groups; Permission profiles), **Integrations**
+(Webhooks; API clients), **Security** (Single sign-on and domains; Seal and timestamp; Audit log). Below 37.5em the
+rail becomes a select with the same groups. A section whose endpoints the server does not have yet is a row marked
+**Soon**, never hidden; opened, it says what it will hold and that it is not on this server yet. Each slots in as its
+endpoint lands (rows in docs/14). `#/admin?section=<id>`; the older `?tab=` links still land.
+
+- **Users**: one primary **Add user** panel with a **Send an invitation email** switch, on by default (`POST /users`
+  with `invite: true`); switched off, a password of at least 12 characters is required and set there. Search (name
+  or email) and Permission profile and Status filters above the table, with a count. **Edit** stays in the row;
+  **Resend invitation** and **Remove** move to the row's menu (Remove is the danger item; nobody removes themselves).
+  On phones Edit is in the menu too, so a card has one menu button.
+- **Webhooks** (docs/40 §4): the subscriptions (endpoint, events, Active or Off), **New webhook** in a side panel (an
+  https:// public address, events grouped by subject, three envelope events checked by default, and the **names** of
+  the operator's signing secrets: the secret never passes through the API, so there is nothing to show once; a
+  refused address, `CS-API-0013`, is said beside the field), and the selected subscription's latest deliveries
+  (event, Delivered/Failed/Pending, attempts, HTTP status) with **Deliver again** on a failed one, **Send test
+  event**, and Pause, Resume and Turn off in the row menu. Pause, resume, test and redelivery are `NOT_ON_SERVER`
+  (UXW-31, -32, -33): the mock answers them; a server without them answers "not available on this server yet".
+  Deliveries have no time column: the server's delivery has no timestamp yet (row in docs/14).
+- **API clients**: a **For developers** card with the Account ID and API base URL, each with Copy; Expires with an
+  "In N days" badge within 30 days and Expired after; **Show revoked (n)**, off by default; Revoke in the row menu.
+  The New API client panel groups all ten server scopes (Envelopes, Templates, Administration) with a one-line
+  description each. Created and Last used columns appear as soon as the server's client carries `created_at` and
+  `last_used_at` (row in docs/14). The one-time key or secret opens in a side panel with no close button that
+  Escape and navigating away leave open (`openPanel({dismissible: false})`, UX-02); only **I have copied it** closes it.
+- **Account**: Settings and Branding cards. Branding pairs a colour picker with the hex field, checks white text on
+  the colour against WCAG 4.5:1 (`contrastRatio`), and previews the email header and the signing page's bar live.
+  At phone width the cards' definition lists stack, so no word breaks mid-word.
+
+**Reports** (`reports.js`, `reportmodel.js`): every tile says what it rests on ("of 6 envelopes loaded", "of 5
+sent", "from 4 completed"), and "of the newest 1,000" when the account has more than a report loads. The median
+uses every completed envelope's `sent_at` and `completed_at` from the list (the server's summary carries both;
+the mock now does too), falling back to reading the newest 50 one by one, and saying so, on a server without them.
+Period presets plus a **Custom range** (From, To, by creation date), a **Sender** filter (all, me, each member), the
+period note on the same row, each status row a link to `#/agreements?status=…`, and a CSV of id, subject, status,
+sender, created, sent, completed, expires and last change. Lede: "Envelopes your account sent, by status and time to
+complete." Recipient and usage reports wait for REP-01.
+
+**Template use** (`templates.js`, `templatemodel.js`): inputs are labelled **Name** and **Email**, the role named in
+their description; both suggest the account's contacts (`GET /contacts`) and complete each other. **Add recipient**
+adds a copy or another signer after every role (an added signer's fields are placed in the editor, so Send asks for
+Edit before sending). The field count and a key of the roles' colours sit above the pages, and each role's fields are
+outlined on the preview in its colour (`pdfPreview({decorate})`, an additive hook). Templates list: **Use** keeps its
+word on phones.
+
+Tests: Node `tests/ux08.test.mjs` (sections and old links, scopes, event groups and secret names, expiry, member
+filters, contrast, the median from summaries, custom range, CSV columns, added recipients). Playwright
+`e2e/admin.spec.mjs` at 1440 and 390 px: the rail and a waiting section; a webhook created, a refused address, a test
+event's delivery row, a failed delivery delivered again, pause; the secret surviving Escape and navigation, the
+expiry badge, revoke and Show revoked; Add user with and without an invitation, search and filters, Remove from the
+menu; branding contrast and preview; Reports sample sizes, custom range, sender, a status row to Agreements; template
+use with role labels, outlines, an added copy recipient sent. The webhook, secret and Reports tests fail on the code
+before UX-08; the Escape check was also seen to fail with the panel made dismissible. `manage.spec.mjs`,
+`web02.spec.mjs` and `visual.spec.mjs` follow the rail, the single Add user panel and the row menus.
