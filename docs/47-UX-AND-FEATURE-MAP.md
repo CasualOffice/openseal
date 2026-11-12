@@ -932,6 +932,44 @@ by OCR; analysis `running` for about 2 s after it is requested); `sessionStorage
 **Tests.** `tests/ml.test.mjs` (pure decisions, the mock endpoints, the optimistic store; seen red with the rollback
 removed), `tests/pure.test.mjs` (contrast and the dark blocks on the new values; the fluid root; Geist bundled with
 its licence).
+## As built: Admin, Document intelligence, Templates, Reports, Profile on the canvas (WEB-17, WEB-18, 2026-11-13)
+
+Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list language).
+
+- **Admin nav** (`admin.js`, `adminmodel.js` `NAV`, `routeFrom`, `navHref`): a secondary nav inside the content card in
+  the canvas's order: Organization, Members and roles, Security and sign-in, Signing and seals, Branding, Document
+  intelligence (with the violet sparkle), Retention, API and webhooks, Audit log; "Back to agreements" and
+  "{workspace} · Admin" above. The current page is raised on white. Pages whose endpoints the server lacks are marked
+  "Soon" and open an illustrated page naming what they will hold (one card per part), never a dead link. Every old
+  `?section=`/`?tab=` id lands on the page that now holds it (`account` → Organization, `seal` → Signing and seals,
+  `api`/`webhooks` → the tabs of API and webhooks). Each page has the canvas head (h1, lede, actions right). Below
+  48em the nav is a "Section" select. Each nav page is a command (`admin.go.*`), so ⌘K reaches it.
+- **API and webhooks**: one page, pill tabs (`tabs({variant: "pill"})`, arrow keys); the URL follows the tab
+  (`history.replaceState`) so a reload or link opens the same one. Organization and Branding are separate pages over
+  `/accounts/me`. Members says groups and custom profiles are not on this server yet.
+- **Document intelligence** (`intelmodel.js` pure and tested, `adminintel.js` view): "n of 5 on" chip; the three
+  promises; one card per feature with model name, description and a violet spring switch bound to
+  `PATCH /account/settings/ml`: it changes at once, the count follows, a polite live region says "… is on/off", and a
+  refusal puts it back with an error toast (switchButton). After a change `mlStatus({refresh})` updates the session.
+  **Detect fields on upload has no server setting** (docs/33 §6 merges OCR suggestions into detect-fields), so its
+  switch follows Read scanned pages, is disabled, and says so. OCR script chips (installed / installing with stripes /
+  ask your operator), the personal-data language note, "Models on this server" (name, status, licence · size ·
+  purpose, short SHA-256 as the server reports it, "pending" while installing), and the footer line. States: loading
+  (page-shaped skeleton), **not installed on this server** (404 today, or `installed: false`: an illustrated empty
+  state naming the operator; no switch, count or model list), **not in your plan** (`403 CS-ML-0011`: a note, every
+  switch off and disabled; a partial `not_in_plan` disables only those cards with the reason), other refusals in place.
+  The page reads two additive, read-only members of the settings answer: `models: [{id, name, profile, status:
+  ready|installing|failed, licence, bytes, sha256}]` and `ocr_packs: [{script, state: installed|installing|missing}]`
+  (the mock serves the canvas's values); without them the models card is hidden and `ocr_scripts` count as installed.
+  Deviation from the canvas: an off card is not drawn at 72 % opacity (its muted text would fall under 4.5:1); it is
+  told apart by its surface and grey glyph.
+- **Templates**: rows with the canvas's page thumbnail, name over subject with ellipsis. **Reports**: a skeleton shaped
+  like the four tiles and the chart (no layout shift), tiles and chart card with hairline rings. **Profile**: an
+  identity row (avatar, name, email) and signature rows as cards (notifications stay checkboxes: the foundation `toggle` hides its input under the track, so a click on the input is intercepted).
+- **Tests**: `tests/intel.test.mjs` (page states, plan, detect follows OCR, PATCH key guard, sizes, hashes, model
+  rows, script chips), `tests/ux08.test.mjs` (nav order, old links, hrefs round-trip); `e2e/admin.spec.mjs` adds the
+  nav (order, no wrapped label, waiting parts, old links), Document intelligence (count, switches, scripts, models,
+  save and reload, refused change rolls back, not installed hides every ML control, not in plan), and the pill tabs.
 
 ## As built: sign-in, accept invite and Verify on the approved canvas (WEB-18 lane E, 2026-11-13)
 

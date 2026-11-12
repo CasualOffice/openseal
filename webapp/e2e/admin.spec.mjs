@@ -21,22 +21,123 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
       await signIn(page);
     });
 
-    test("admin: a section rail with the sections still to come as rows", async ({ page }, testInfo) => {
+    test("admin: the canvas's nav, the pages still to come say so and what they will hold", async ({ page }, testInfo) => {
       await page.goto(app("#/admin"));
+      await expect(page.getByRole("heading", { name: "Members and roles", level: 1 })).toBeVisible();
       if (width > 600) {
         const rail = page.getByRole("navigation", { name: "Admin sections" });
-        await expect(rail.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
-        for (const name of ["Account", "Webhooks", "API clients", "Groups", "Permission profiles", "Single sign-on and domains", "Seal and timestamp", "Audit log"]) {
-          await expect(rail.getByRole("link", { name: new RegExp(`^${name}`) })).toBeVisible();
+        await expect(rail.getByRole("link", { name: "Members and roles" })).toHaveAttribute("aria-current", "page");
+        const names = ["Organization", "Members and roles", "Security and sign-in", "Signing and seals", "Branding", "Document intelligence", "Retention", "API and webhooks", "Audit log"];
+        await expect(rail.locator("a[data-section]")).toHaveText(names.map((n) => new RegExp(`^${n}`)));
+        // No nav label wraps (owner instruction 44: no control label may wrap).
+        for (const link of await rail.locator("a[data-section]").all()) {
+          const box = await link.boundingBox();
+          expect(box.height, await link.innerText()).toBeLessThan(48);
         }
-        await rail.getByRole("link", { name: /^Seal and timestamp/ }).click();
+        await rail.getByRole("link", { name: /^Signing and seals/ }).click();
       } else {
         await expect(page.getByRole("navigation", { name: "Admin sections" })).toBeHidden();
-        await page.getByLabel("Section", { exact: true }).selectOption("seal");
+        await page.getByLabel("Section", { exact: true }).selectOption("signing");
       }
-      await expect(page.getByTestId("waiting-seal")).toContainText("Not available on this server yet");
+      const waiting = page.getByTestId("waiting-signing");
+      await expect(waiting).toContainText("Not available on this server yet");
+      for (const part of ["Signing and sending", "Seal and timestamp", "Electronic disclosure"]) await expect(waiting.getByRole("heading", { name: part, level: 2 })).toBeVisible();
+      // Old links still land: ?section=seal opens the page that now holds it.
+      await page.goto(app("#/admin?section=seal"));
+      await expect(page.getByTestId("waiting-seal")).toHaveCount(0);
+      await expect(page.getByTestId("wait-part-seal")).toBeVisible();
       await expectAccessible(page, "admin waiting section");
       await snap(page, testInfo, `ux08-admin-waiting-${label}`);
+    });
+
+    test("admin › document intelligence: count, cards, scripts, models; a switch saves and survives a reload", async ({ page }, testInfo) => {
+      await page.goto(app("#/admin?section=intelligence"));
+      await expect(page.getByRole("heading", { name: "Document intelligence", level: 1 })).toBeVisible();
+      await expect(page.getByTestId("intel-count")).toHaveText("5 of 5 on");
+      await expect(page.getByTestId("intel-promises")).toContainText("Runs on your servers");
+      for (const f of ["Read scanned pages", "Detect fields on upload", "Match templates", "Extract agreement details", "Find personal data"]) {
+        await expect(page.getByRole("switch", { name: f })).toHaveAttribute("aria-checked", "true");
+      }
+      // Detect fields has no setting of its own: it follows OCR and says so.
+      await expect(page.getByRole("switch", { name: "Detect fields on upload" })).toBeDisabled();
+      await expect(page.getByTestId("intel-detect-why")).toContainText("follows Read scanned pages");
+      const scripts = page.getByTestId("intel-scripts");
+      await expect(scripts).toContainText("✓ Latin, Cyrillic, Greek, CJK");
+      await expect(scripts).toContainText("Arabic · installing");
+      await expect(scripts).toContainText("Devanagari · ask your operator");
+      await expect(page.getByTestId("intel-ocr")).toContainText("PP-OCRv6");
+      const models = page.getByTestId("intel-models");
+      await expect(models.getByRole("listitem")).toHaveCount(5);
+      await expect(models).toContainText("sha256 9c41…e07a");
+      await expect(models).toContainText("sha256 pending");
+      await expect(page.getByTestId("intel-footer")).toContainText("With everything off, OpenSeal works exactly as it does without models");
+      await expectAccessible(page, "document intelligence");
+      await snap(page, testInfo, `web18-intel-${label}`);
+
+      // Turning one off: at once, said politely, and kept by the server.
+      const pii = page.getByRole("switch", { name: "Find personal data" });
+      await pii.click();
+      await expect(pii).toHaveAttribute("aria-checked", "false");
+      await expect(page.getByTestId("intel-count")).toHaveText("4 of 5 on");
+      await expect(page.getByTestId("intel-live")).toHaveText("Find personal data is off.");
+      await expect(page.getByTestId("intel-pii").getByText(/English only for now/)).toBeHidden();
+      // OCR off takes Detect fields with it.
+      await page.getByRole("switch", { name: "Read scanned pages" }).click();
+      await expect(page.getByRole("switch", { name: "Detect fields on upload" })).toHaveAttribute("aria-checked", "false");
+      await expect(page.getByTestId("intel-count")).toHaveText("2 of 5 on");
+      await page.reload();
+      await expect(page.getByTestId("intel-count")).toHaveText("2 of 5 on");
+      await expect(page.getByRole("switch", { name: "Find personal data" })).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("admin › document intelligence: a refused change goes back and says why", async ({ page }) => {
+      await page.goto(app("#/admin?section=intelligence"));
+      const sw = page.getByRole("switch", { name: "Match templates" });
+      await expect(sw).toHaveAttribute("aria-checked", "true");
+      // The plan is taken away after the page loaded: the PATCH answers 403 CS-ML-0011.
+      await page.evaluate(() => sessionStorage.setItem("openseal.mock.ml", "no-plan"));
+      await sw.click();
+      await expect(page.locator(".os-toast--error")).toBeVisible();
+      await expect(sw).toHaveAttribute("aria-checked", "true");
+      await expect(page.getByTestId("intel-count")).toHaveText("5 of 5 on");
+    });
+
+    test("admin › document intelligence: not installed on this server, and not in the plan", async ({ page }, testInfo) => {
+      await page.evaluate(() => sessionStorage.setItem("openseal.mock.ml", "off"));
+      await page.goto(app("#/admin?section=intelligence"));
+      const none = page.getByTestId("intel-not-installed");
+      await expect(none).toContainText("Not installed on this server");
+      await expect(none).toContainText("your operator");
+      // Nothing ML is offered: no switch, no count, no model list.
+      await expect(page.getByRole("switch")).toHaveCount(0);
+      await expect(page.getByTestId("intel-count")).toHaveCount(0);
+      await expect(page.getByTestId("intel-models")).toHaveCount(0);
+      await expectAccessible(page, "document intelligence not installed");
+      await snap(page, testInfo, `web18-intel-none-${label}`);
+
+      await page.evaluate(() => sessionStorage.setItem("openseal.mock.ml", "no-plan"));
+      await page.reload();
+      await expect(page.getByTestId("intel-no-plan")).toContainText("Not in your plan");
+      await expect(page.getByTestId("intel-count")).toHaveText("0 of 5 on");
+      for (const sw of await page.getByRole("switch").all()) {
+        await expect(sw).toBeDisabled();
+        await expect(sw).toHaveAttribute("aria-checked", "false");
+      }
+      await page.evaluate(() => sessionStorage.removeItem("openseal.mock.ml"));
+    });
+
+    test("admin › API and webhooks: pill tabs with arrow keys, the URL follows the tab", async ({ page }) => {
+      await page.goto(app("#/admin?section=api"));
+      const tabs = page.getByRole("tablist", { name: "API and webhooks" });
+      await expect(tabs.getByRole("tab", { name: "API clients" })).toHaveAttribute("aria-selected", "true");
+      await tabs.getByRole("tab", { name: "API clients" }).focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(tabs.getByRole("tab", { name: "Webhooks" })).toHaveAttribute("aria-selected", "true");
+      await expect(tabs.getByRole("tab", { name: "Webhooks" })).toBeFocused();
+      await expect(page.getByRole("heading", { name: "Webhooks", level: 2 })).toBeVisible();
+      await expect(page).toHaveURL(/section=webhooks$/);
+      await page.reload();
+      await expect(page.getByRole("tab", { name: "Webhooks" })).toHaveAttribute("aria-selected", "true");
     });
 
     test("admin: create a webhook, send a test event and see its delivery row", async ({ page }, testInfo) => {
@@ -167,7 +268,7 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
     });
 
     test("admin branding: a colour picker, a contrast warning and a preview", async ({ page }, testInfo) => {
-      await page.goto(app("#/admin?section=account"));
+      await page.goto(app("#/admin?section=branding"));
       await page.getByTestId("account-branding").getByRole("button", { name: "Edit branding" }).click();
       const br = page.getByRole("dialog", { name: "Branding" });
       await br.getByLabel("Accent colour", { exact: true }).fill("#f5c518");

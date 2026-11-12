@@ -1,29 +1,47 @@
-// Admin as data (UX-08): the pure rules of the Admin screens, apart from admin.js so
-// Node tests them. No DOM and no network.
+// Admin as data (UX-08, WEB-17): the pure rules of the Admin screens, apart from admin.js
+// so Node tests them. No DOM and no network.
 
-/// The Admin sections, in the rail's order and groups (UX-08, after DocuSign
-/// eSignature Admin). `ready`: drawn over endpoints the server has; the others wait for
-/// their endpoints and are shown as rows that say so, never hidden (docs/47 §Admin).
-export const SECTIONS = Object.freeze([
-  { id: "account", group: "account", icon: "settings", ready: true },
-  { id: "signing", group: "account", icon: "pen-line", ready: false },
-  { id: "ersd", group: "account", icon: "file-text", ready: false },
-  { id: "retention", group: "account", icon: "hourglass", ready: false },
-  { id: "users", group: "people", icon: "users", ready: true },
-  { id: "groups", group: "people", icon: "list", ready: false },
-  { id: "profiles", group: "people", icon: "shield-check", ready: false },
-  { id: "webhooks", group: "integrations", icon: "bell", ready: true },
-  { id: "api", group: "integrations", icon: "key-round", ready: true },
-  { id: "sso", group: "security", icon: "lock", ready: false },
-  { id: "seal", group: "security", icon: "stamp", ready: false },
-  { id: "audit", group: "security", icon: "list-checks", ready: false },
+/// The Admin navigation (WEB-17, canvas Intelligence): one secondary nav inside the
+/// content card, in the canvas's order. `ready`: drawn over endpoints the server has;
+/// the others are pages that say what they will hold and that this server does not have
+/// them yet (`waits`: the parts each one waits for), never dead links. `tabs`: a page
+/// holding more than one part, shown as pill tabs.
+export const NAV = Object.freeze([
+  { id: "organization", ready: true },
+  { id: "members", ready: true },
+  { id: "security", ready: false, waits: ["sso"] },
+  { id: "signing", ready: false, waits: ["signing", "seal", "ersd"] },
+  { id: "branding", ready: true },
+  { id: "intelligence", ready: true, ml: true },
+  { id: "retention", ready: false, waits: ["retention"] },
+  { id: "integrations", ready: true, tabs: ["api", "webhooks"] },
+  { id: "audit", ready: false, waits: ["audit"] },
 ]);
-export const GROUPS = Object.freeze(["account", "people", "integrations", "security"]);
 
-/// The section a route's parameters name: `?section=`, or the older `?tab=`; Users by default.
-export function sectionFrom(params) {
-  const want = params?.get?.("section") || params?.get?.("tab");
-  return SECTIONS.some((s) => s.id === want) ? want : "users";
+/// Section names from before WEB-17 (`?section=` and `?tab=` links in other screens and
+/// bookmarks) and the page each now lives on.
+const ALIASES = Object.freeze({
+  account: "organization", users: "members", groups: "members", profiles: "members",
+  sso: "security", seal: "signing", ersd: "signing", api: "integrations", webhooks: "integrations",
+});
+
+/// The page and tab a route's parameters name (`?section=`, or the older `?tab=`):
+/// `{nav, tab}`; Members by default; `tab` only for a page with tabs (its first by
+/// default). Pure.
+export function routeFrom(params) {
+  const want = params?.get?.("section") || params?.get?.("tab") || "";
+  const id = NAV.some((n) => n.id === want) ? want : ALIASES[want] || "members";
+  const item = NAV.find((n) => n.id === id);
+  const tab = item.tabs ? (item.tabs.includes(want) ? want : item.tabs[0]) : null;
+  return { nav: id, tab };
+}
+
+/// The link to a page (Members is the bare `#/admin`), or to one of its tabs. Pure.
+export function navHref(id, tab = null) {
+  if (tab) return `#/admin?section=${tab}`;
+  if (id === "members") return "#/admin";
+  const item = NAV.find((n) => n.id === id);
+  return item?.tabs ? `#/admin?section=${item.tabs[0]}` : `#/admin?section=${id}`;
 }
 
 /// Every scope of docs/40 §2 (server `auth.rs` `SCOPES`), grouped for the New API
