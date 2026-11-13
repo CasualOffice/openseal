@@ -19,6 +19,7 @@
 
 mod apply;
 mod auth;
+pub mod authz;
 mod call;
 mod ceremony;
 mod crypto;

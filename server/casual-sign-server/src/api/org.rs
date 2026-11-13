@@ -29,75 +29,12 @@ use uuid::Uuid;
 use super::admin::{AdminEventsQuery, admin_log_response, new_profiles, profile_id};
 use super::envelopes::rfc3339;
 use super::{json, path_id};
-use crate::auth::Credential;
+use crate::auth::{Credential, Principal};
+pub(crate) use crate::authz::{OrgAction, holds};
 use crate::call::Call;
 use crate::dto::parse;
 use crate::error::ApiError;
-
-/// The organization actions these routes need (docs/23 §2.2's catalogue).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OrgAction {
-    /// Read the organization, its workspaces and its admins (metadata only).
-    Read,
-    /// `org.settings.update`.
-    SettingsUpdate,
-    /// `org.admins.manage`: owners and admins (owner only).
-    AdminsManage,
-    /// `org.workspaces.create`.
-    WorkspacesCreate,
-    /// `org.workspaces.archive`.
-    WorkspacesArchive,
-    /// `org.workspaces.join`: owners and admins, never delegated.
-    WorkspacesJoin,
-    /// `org.audit.read`.
-    AuditRead,
-}
-
-impl OrgAction {
-    /// The catalogue name, as a delegated admin's permission set names it.
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Read => "org.read",
-            Self::SettingsUpdate => "org.settings.update",
-            Self::AdminsManage => "org.admins.manage",
-            Self::WorkspacesCreate => "org.workspaces.create",
-            Self::WorkspacesArchive => "org.workspaces.archive",
-            Self::WorkspacesJoin => "org.workspaces.join",
-            Self::AuditRead => "org.audit.read",
-        }
-    }
-}
-
-/// Whether `admin` holds `action`, on `workspace` when the action is about one
-/// (docs/23 §2.2's table): an owner every action; an admin all but managing owners and
-/// admins; a delegated admin what its set names, within its workspace scope, and never
-/// a join or an admin change.
-pub(crate) fn holds(
-    admin: &OrganizationAdmin,
-    action: OrgAction,
-    workspace: Option<AccountId>,
-) -> bool {
-    match admin.role {
-        OrganizationRole::Owner => true,
-        OrganizationRole::Admin => action != OrgAction::AdminsManage,
-        OrganizationRole::Delegated => {
-            if matches!(action, OrgAction::WorkspacesJoin | OrgAction::AdminsManage) {
-                return false;
-            }
-            if action == OrgAction::Read {
-                return true;
-            }
-            let named = admin.permissions.iter().any(|p| p == action.as_str());
-            let in_scope = match (&admin.workspace_scope, workspace) {
-                (Some(scope), Some(w)) => scope.contains(&w),
-                _ => true,
-            };
-            named && in_scope
-        }
-        // A role this build does not know holds nothing (deny by default).
-        _ => false,
-    }
-}
+use crate::state::AppState;
 
 /// The caller's organization transaction and role, after checking it holds `action`
 /// (`None` workspace: the action is not about one; checked again by the handler with
@@ -121,9 +58,54 @@ async fn begin(c: &Call, action: OrgAction) -> Result<(OrgTx, OrganizationAdmin)
     Ok((tx, admin))
 }
 
+/// The caller's row in `organization_admins` of the session workspace's organization,
+/// read afresh: `None` for a caller with no organization role, or for an API key or
+/// OAuth client (organization roles are a staff session's only, docs/23 §6).
+///
+/// # Errors
+///
+/// A store error.
+pub(crate) async fn admin_of(
+    st: &AppState,
+    p: &Principal,
+) -> Result<Option<OrganizationAdmin>, ApiError> {
+    if !matches!(p.credential, Credential::Session(_)) {
+        return Ok(None);
+    }
+    let mut ws = st.store().for_account(p.account).begin().await?;
+    let org = ws.account().get().await?.organization_id;
+    ws.rollback().await?;
+    let mut tx = st.store().for_organization(org).begin().await?;
+    let admin = tx.admin(p.user).await?;
+    tx.rollback().await?;
+    Ok(admin)
+}
+
+/// The route guard's check of an organization-level route (ORG-07, docs/23 §2.2:
+/// `x-level: organization`): a staff session whose role, read afresh, holds `action`
+/// (an action a delegated admin may hold for some workspaces only passes here and is
+/// checked by the handler per workspace). Else `403 CS-AUTH-0006`.
+///
+/// # Errors
+///
+/// `CS-AUTH-0006`, or a store error.
+pub(crate) async fn require(
+    st: &AppState,
+    p: &Principal,
+    action: OrgAction,
+) -> Result<(), ApiError> {
+    if !matches!(p.credential, Credential::Session(_)) {
+        return Err(ApiError::forbidden("a staff session"));
+    }
+    match admin_of(st, p).await? {
+        Some(a) if holds(&a, action, None) || scoped(action) => Ok(()),
+        _ => Err(ApiError::forbidden(action.as_str())),
+    }
+}
+
 /// Actions a delegated admin may hold for some workspaces only: checked per workspace.
 fn scoped(action: OrgAction) -> bool {
-    action == OrgAction::WorkspacesArchive
+    action.per_workspace()
 }
 
 /// Commit, serving the last-owner refusal as `CS-ORG-0008`.
@@ -347,7 +329,9 @@ pub(crate) async fn add_admin(c: Call, body: Bytes) -> Result<Response, ApiError
     let role = role_of(&req.role)?;
     let user = UserId(Uuid::parse_str(&req.user_id).map_err(|_| ApiError::invalid("/user_id"))?);
     if user == c.p.user {
-        return Err(ApiError::grant_refused());
+        return Err(ApiError::grant_refused(
+            crate::authz::Refusal::ToItself.what(),
+        ));
     }
     if tx.member_email(user).await?.is_none() {
         return Err(ApiError::not_an_org_member());
@@ -377,7 +361,9 @@ pub(crate) async fn patch_admin(
     let req: AdminPatch = parse(&body)?;
     let role = role_of(&req.role)?;
     if user == c.p.user {
-        return Err(ApiError::grant_refused());
+        return Err(ApiError::grant_refused(
+            crate::authz::Refusal::ToItself.what(),
+        ));
     }
     tx.set_admin_role(user, role).await?;
     let a = tx.admin(user).await?.ok_or_else(ApiError::not_found)?;

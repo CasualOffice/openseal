@@ -406,6 +406,21 @@ pub fn ceremony_cookie(resp: &Resp) -> String {
 
 pub const OPENAPI: &str = include_str!("../../../../api/openapi.yaml");
 
+/// `(METHOD, path) -> x-level` from the OpenAPI document, for operations that state one
+/// (ORG-07).
+pub fn openapi_levels() -> BTreeMap<(String, String), String> {
+    let doc: Value = serde_norway::from_str(OPENAPI).unwrap();
+    let mut out = BTreeMap::new();
+    for (path, item) in doc["paths"].as_object().unwrap() {
+        for (method, op) in item.as_object().unwrap() {
+            if let Some(l) = op.get("x-level").and_then(Value::as_str) {
+                out.insert((method.to_uppercase(), path.clone()), l.to_owned());
+            }
+        }
+    }
+    out
+}
+
 /// `(METHOD, path) -> x-permission` from the OpenAPI document.
 pub fn openapi_operations() -> BTreeMap<(String, String), String> {
     let doc: Value = serde_norway::from_str(OPENAPI).unwrap();

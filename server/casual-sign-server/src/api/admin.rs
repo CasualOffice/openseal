@@ -2,6 +2,8 @@
 //! login and logout (session cookie and CSRF token), the OAuth 2.1 client-credentials
 //! token endpoint, and the JWKS that verifies its tokens (docs/40 §2).
 
+use std::collections::BTreeSet;
+
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -22,7 +24,8 @@ use uuid::Uuid;
 
 use super::envelopes::rfc3339;
 use super::{json, path_id};
-use crate::auth::{API_KEY_PREFIX, CSRF_HEADER, Credential, SCOPES, session_cookie};
+use crate::auth::{API_KEY_PREFIX, CSRF_HEADER, Credential, SCOPES, profile_grant, session_cookie};
+use crate::authz::{self, Action, Grant};
 use crate::call::Call;
 use crate::crypto::{
     AUDIENCE, Claims, hash_password, random_secret, same, sha256, verify_password,
@@ -54,6 +57,17 @@ struct AccountPatch {
     settings: serde_json::Map<String, Value>,
 }
 
+/// The workspace action a settings key needs (ORG-07): the second-factor policy is
+/// security, the workflow policy signing, branding its own, everything else sending.
+fn setting_action(key: &str) -> Action {
+    match key {
+        "mfa_policy" => Action::SettingsSecurity,
+        "workflow_policy" => Action::SettingsSigning,
+        "branding" => Action::BrandsManage,
+        _ => Action::SettingsSending,
+    }
+}
+
 /// `PATCH /accounts/me {settings}`: a JSON merge into the account's settings. The
 /// server's own keys (`builtin_profiles`) cannot be changed.
 pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiError> {
@@ -68,6 +82,9 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
         if k == "builtin_profiles" {
             return Err(ApiError::invalid("/settings/builtin_profiles"));
         }
+        // Each key is its action's (ORG-07, docs/23 §2.2): the route needs
+        // `settings.sending`, and a key of another kind needs its own action as well.
+        c.p.require_action(setting_action(&k))?;
         if k == "workflow_policy"
             && serde_json::from_value::<casual_sign_workflow::Policy>(v.clone()).is_err()
         {
@@ -371,10 +388,48 @@ fn member_json(m: &casual_sign_store::repo::accounts::Member) -> Value {
     })
 }
 
-/// `GET /users`.
+/// The members a group-scoped caller administers (ORG-07, docs/23 §2.2): those of its
+/// scope groups, read now. `None` for a caller without a group scope (every member).
+pub(crate) async fn administered(
+    c: &Call,
+    tx: &mut TenantTx,
+) -> Result<Option<BTreeSet<UserId>>, ApiError> {
+    let Some(scope) = &c.p.admin_scope else {
+        return Ok(None);
+    };
+    let mut out = BTreeSet::new();
+    for g in scope {
+        out.extend(tx.groups().members(*g).await?);
+    }
+    Ok(Some(out))
+}
+
+/// The member `id`, `404` when there is none or a group-scoped caller does not
+/// administer them (an object outside the caller's scope answers as another tenant's).
+async fn member_in_scope(
+    c: &Call,
+    tx: &mut TenantTx,
+    id: UserId,
+) -> Result<casual_sign_store::repo::accounts::Member, ApiError> {
+    let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    if administered(c, tx).await?.is_some_and(|s| !s.contains(&id)) {
+        return Err(ApiError::not_found());
+    }
+    Ok(m)
+}
+
+/// `GET /users`: every member, or a group-scoped caller's members only.
 pub(crate) async fn users(c: Call) -> Result<Response, ApiError> {
     let mut tx = c.tx().await?;
-    let items: Vec<Value> = tx.users().list().await?.iter().map(member_json).collect();
+    let mine = administered(&c, &mut tx).await?;
+    let items: Vec<Value> = tx
+        .users()
+        .list()
+        .await?
+        .iter()
+        .filter(|m| mine.as_ref().is_none_or(|s| s.contains(&m.user_id)))
+        .map(member_json)
+        .collect();
     Ok(json(StatusCode::OK, &json!({ "items": items })))
 }
 
@@ -483,12 +538,23 @@ pub(crate) async fn profile_id(
         .ok_or_else(|| ApiError::invalid("/profile"))
 }
 
-/// The profile a name or id means, refused (`CS-AUTH-0006`) when it gives more than
-/// the caller holds (UXW-07, `Principal::may_grant`).
+/// The grant a stored profile is (its actions, kind and group scope).
+pub(crate) async fn stored_grant(
+    tx: &mut casual_sign_store::TenantTx,
+    p: &casual_sign_store::repo::accounts::PermissionProfile,
+) -> Result<Grant, ApiError> {
+    let scope = tx.users().profile_scope(p.id).await?;
+    Ok(profile_grant(p.kind, &p.permissions, scope.as_deref()))
+}
+
+/// The profile a name or id means, given to member `to`: refused (`403 CS-ORG-0005`)
+/// when it gives more than the caller holds, a wider group scope, or anything to the
+/// caller itself (`grantable`, ORG-07; UXW-07).
 pub(crate) async fn granted_profile(
     c: &Call,
     tx: &mut casual_sign_store::TenantTx,
     name: &str,
+    to: UserId,
 ) -> Result<PermissionProfileId, ApiError> {
     let id = profile_id(tx, name).await?;
     let p = tx
@@ -496,14 +562,17 @@ pub(crate) async fn granted_profile(
         .profile(id)
         .await?
         .ok_or_else(|| ApiError::invalid("/profile"))?;
-    c.p.may_grant(p.kind, &p.permissions)?;
+    let mut grant = stored_grant(tx, &p).await?;
+    grant.to_user = Some(to);
+    let org = super::org::admin_of(&c.st, &c.p).await?;
+    c.p.may_grant(org.as_ref(), &grant)?;
     Ok(id)
 }
 
-/// Refuse (`CS-AUTH-0006`) a change to another member whose profile gives more than
-/// the caller holds (UXW-07): someone who manages users with a custom profile cannot
-/// re-profile, disable, rename, reset, re-invite (PRF-01) or remove a member above
-/// them. The caller's own record is theirs to change as the route allows.
+/// Refuse (`403 CS-ORG-0005`) a change to another member whose profile gives more than
+/// the caller holds (UXW-07, `grantable`): someone who manages users with a custom
+/// profile cannot re-profile, disable, rename, reset, re-invite (PRF-01) or remove a
+/// member above them. The caller's own record is theirs to change as the route allows.
 async fn outranks(
     c: &Call,
     tx: &mut casual_sign_store::TenantTx,
@@ -517,7 +586,9 @@ async fn outranks(
         .profile(target.permission_profile_id)
         .await?
         .ok_or_else(|| ApiError::internal("profile"))?;
-    c.p.may_grant(p.kind, &p.permissions)
+    let grant = stored_grant(tx, &p).await?;
+    let org = super::org::admin_of(&c.st, &c.p).await?;
+    c.p.may_grant(org.as_ref(), &grant)
 }
 
 fn normalize_email(e: &str) -> Result<String, ApiError> {
@@ -564,9 +635,14 @@ pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiErr
         }
         None => None,
     };
+    // A group-scoped caller adds members only into its groups; inviting into a group is
+    // ORG-38, so until then a group-scoped caller adds none (deny by default).
+    if c.p.admin_scope.is_some() {
+        return Err(ApiError::grant_refused(authz::Refusal::Scope.what()));
+    }
     let mut tx = c.tx().await?;
-    let profile = granted_profile(&c, &mut tx, &req.profile).await?;
     let id = UserId(Uuid::now_v7());
+    let profile = granted_profile(&c, &mut tx, &req.profile, id).await?;
     // Seats are checked against the plan under the seat counters' lock, so two parallel
     // invites cannot both take the last seat (PLAN-04, `CS-PLAN-0003`).
     let seats = tx.gauge_lock(Meter::Seats).await?;
@@ -605,7 +681,7 @@ pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiErr
 pub(crate) async fn user(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     let id = UserId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    let m = member_in_scope(&c, &mut tx, id).await?;
     let v = member_with_invitation(&mut tx, &m, c.st.now()).await?;
     Ok(json(StatusCode::OK, &v))
 }
@@ -615,7 +691,7 @@ pub(crate) async fn user(c: Call, Path(id): Path<String>) -> Result<Response, Ap
 pub(crate) async fn reinvite_user(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     let id = UserId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    let m = member_in_scope(&c, &mut tx, id).await?;
     // A member above the caller is not theirs to re-invite either (PRF-01).
     outranks(&c, &mut tx, &m).await?;
     if m.disabled_at.is_some() || m.login_kind != LoginKind::Local {
@@ -727,15 +803,14 @@ pub(crate) async fn patch_user(
 ) -> Result<Response, ApiError> {
     let id = UserId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    let target = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    let target = member_in_scope(&c, &mut tx, id).await?;
     outranks(&c, &mut tx, &target).await?;
     let req: UserPatch = parse(&body)?;
-    if id == c.p.user && (req.profile.is_some() || req.disabled.is_some()) {
-        return Err(ApiError::invalid(if req.profile.is_some() {
-            "/profile"
-        } else {
-            "/disabled"
-        }));
+    if req.disabled.is_some() {
+        c.p.require_action(Action::UsersDisable)?;
+    }
+    if id == c.p.user && req.disabled.is_some() {
+        return Err(ApiError::invalid("/disabled"));
     }
     // Re-profiling or enabling may take a seat: checked under the seat counters' lock
     // (PLAN-04, `CS-PLAN-0003`); a change that frees or keeps seats is never refused.
@@ -745,7 +820,8 @@ pub(crate) async fn patch_user(
         None
     };
     if let Some(p) = &req.profile {
-        let profile = granted_profile(&c, &mut tx, p).await?;
+        // Never one's own profile: `grantable` refuses a grant to oneself (CS-ORG-0005).
+        let profile = granted_profile(&c, &mut tx, p, id).await?;
         tx.users().set_profile(id, profile).await?;
     }
     if let Some(off) = req.disabled {
@@ -819,7 +895,7 @@ pub(crate) async fn delete_user(c: Call, Path(id): Path<String>) -> Result<Respo
         return Err(ApiError::invalid("/id"));
     }
     let mut tx = c.tx().await?;
-    let target = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    let target = member_in_scope(&c, &mut tx, id).await?;
     outranks(&c, &mut tx, &target).await?;
     tx.users().remove_member(id).await?;
     tx.commit().await?;
@@ -884,10 +960,17 @@ pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiE
     if req.scopes.is_empty() || req.scopes.iter().any(|s| !SCOPES.contains(&s.as_str())) {
         return Err(ApiError::invalid("/scopes"));
     }
-    // A client never holds more than the caller does.
-    if req.scopes.iter().any(|s| !c.p.scopes.contains(s.as_str())) {
-        return Err(ApiError::forbidden("the scopes it grants"));
-    }
+    // A client never holds more than the caller does (`grantable`, ORG-07).
+    let asked = Grant {
+        actions: req
+            .scopes
+            .iter()
+            .flat_map(|s| authz::scope_actions(s))
+            .collect(),
+        ..Grant::default()
+    };
+    let org = super::org::admin_of(&c.st, &c.p).await?;
+    c.p.may_grant(org.as_ref(), &asked)?;
     if req.expires_in_days.is_some_and(|d| d == 0 || d > 3650) {
         return Err(ApiError::invalid("/expires_in_days"));
     }
@@ -1143,6 +1226,7 @@ pub(crate) async fn session(c: Call) -> Result<Response, ApiError> {
             "account_id": c.p.account.to_string(), "user_id": c.p.user.to_string(),
             "credential": kind, "client_id": c.p.client().map(|x| x.to_string()),
             "scopes": c.p.scopes, "admin": c.p.admin,
+            "actions": c.p.actions.iter().map(|a| a.as_str()).collect::<Vec<_>>(),
             "second_factor": c.p.second_factor.as_str(),
         }),
     ))

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT admin_scope_group_ids FROM permission_profiles WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "admin_scope_group_ids",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "permission_profiles",
+            "name": "admin_scope_group_ids"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "0b7c6b6d6fa0fad2a36c8ff058ecd6422bc1f8ad2a1d66275ca9bf2d10062834"
+}
