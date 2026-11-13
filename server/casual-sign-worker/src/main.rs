@@ -19,6 +19,8 @@
 //! | `OPENSEAL_KEYD_ADDR`, `OPENSEAL_KEYD_SERVER_NAME`, `OPENSEAL_KEYD_CA` | keyd's address, its certificate's name, and the CA it chains to (PEM path) |
 //! | `OPENSEAL_KEYD_CLIENT_CERT`, `OPENSEAL_KEYD_CLIENT_KEY` | This worker's client certificate chain and key (PEM paths) |
 //! | `OPENSEAL_KEYD_ALIAS` | The platform key's alias (default `platform`) |
+//! | `OPENSEAL_MODELD_ADDR`, `OPENSEAL_MODELD_SERVER_NAME`, `OPENSEAL_MODELD_CA` | Optional: the model service's address, its certificate's name and CA (PEM path); unset, document-analysis jobs end as `unavailable` (docs/33 §1) |
+//! | `OPENSEAL_MODELD_CLIENT_CERT`, `OPENSEAL_MODELD_CLIENT_KEY` | This worker's client certificate chain and key for the model service (PEM paths) |
 //! | `OPENSEAL_WORKER_DEV_KEY`, `OPENSEAL_WORKER_DEV_CHAIN` | Instead of keyd: a PEM key and its chain, development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_WEBHOOK_ALLOW` | Non-public ranges webhooks may reach anyway, comma-separated CIDRs (default none) |
 //! | `OPENSEAL_WEBHOOK_EXTRA_ROOTS` | PEM file of CAs webhook receivers may chain to besides the platform's roots (a private CA) |
@@ -93,6 +95,28 @@ fn seal_key() -> Result<SealKey, WorkerError> {
     let remote = RemoteKey::connect(endpoint, &alias)
         .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
     Ok(SealKey::Remote(remote))
+}
+
+/// The model service's client, when `OPENSEAL_MODELD_ADDR` is set (docs/33 §1): the
+/// client and wire format only, no inference runtime in this process (`SEC-I14`).
+fn inference() -> Result<Option<Arc<dyn casual_sign_worker::ml::Inference>>, WorkerError> {
+    let Some(addr) = var("OPENSEAL_MODELD_ADDR") else {
+        return Ok(None);
+    };
+    let ca = read("OPENSEAL_MODELD_CA")?;
+    let cert = read("OPENSEAL_MODELD_CLIENT_CERT")?;
+    let key = read("OPENSEAL_MODELD_CLIENT_KEY")?;
+    let tls = casual_sign_modeld::client_tls(&ca, Some((&cert, &key)))
+        .map_err(|e| WorkerError::Model { code: e.code() })?;
+    let endpoint = casual_sign_modeld::Endpoint {
+        addr,
+        server_name: need("OPENSEAL_MODELD_SERVER_NAME")?,
+        tls,
+        connect_timeout: Duration::from_secs(10),
+    };
+    Ok(Some(Arc::new(casual_sign_worker::ml::Modeld::new(
+        casual_sign_modeld::ModelClient::new(endpoint),
+    ))))
 }
 
 fn configure() -> Result<(WorkerConfig, SmtpConfig, SealServices, SsrfPolicy, String), WorkerError>
@@ -247,6 +271,10 @@ async fn serve<B: BlobStore + 'static>(
         Arc::new(LogAlerts),
         Arc::new(SystemClock),
     );
+    let worker = match inference()? {
+        Some(i) => worker.with_inference(i),
+        None => worker,
+    };
     #[cfg(feature = "crash-points")]
     let worker = worker.with_fault_hook(Arc::new(|at, kind| {
         // P2-CRASH: `OPENSEAL_CRASH_AT=worker:<Boundary>:<job kind>` kills the process.

@@ -9,7 +9,7 @@ use axum::handler::Handler;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
 
-use crate::api::{admin, envelopes as env, templates, webhooks};
+use crate::api::{admin, envelopes as env, folders, ml, org, templates, webhooks};
 use crate::ceremony;
 use crate::http::{Guard, guard, request_context};
 use crate::state::AppState;
@@ -143,6 +143,35 @@ pub fn table() -> Vec<Route> {
             JSON,
             admin::patch_account,
         ),
+        // The workspace's document-analysis switches (docs/33 §6, §7; WEB-19).
+        r(
+            "GET",
+            "/api/v1/account/settings/ml",
+            Scope("admin:account"),
+            JSON,
+            ml::settings,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/account/settings/ml",
+            Scope("admin:account"),
+            JSON,
+            ml::patch_settings,
+        ),
+        r(
+            "GET",
+            "/api/v1/ersd-versions",
+            Scope("admin:account"),
+            JSON,
+            admin::ersd_versions,
+        ),
+        r(
+            "POST",
+            "/api/v1/ersd-versions",
+            Scope("admin:account"),
+            JSON,
+            admin::publish_ersd,
+        ),
         r(
             "GET",
             "/api/v1/admin-events",
@@ -157,6 +186,91 @@ pub fn table() -> Vec<Route> {
             Scope(""),
             IMAGE * 2,
             admin::patch_me,
+        ),
+        // Organization (ORG-03): the role is checked per request in the handler.
+        r(
+            "GET",
+            "/api/v1/organizations/me",
+            Scope(""),
+            JSON,
+            org::organization,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/organizations/me",
+            Scope(""),
+            JSON,
+            org::patch_organization,
+        ),
+        r(
+            "GET",
+            "/api/v1/organizations/me/workspaces",
+            Scope(""),
+            JSON,
+            org::workspaces,
+        ),
+        r(
+            "POST",
+            "/api/v1/organizations/me/workspaces",
+            Scope(""),
+            JSON,
+            org::create_workspace,
+        ),
+        r(
+            "GET",
+            "/api/v1/organizations/me/workspaces/{id}",
+            Scope(""),
+            JSON,
+            org::workspace,
+        ),
+        r(
+            "POST",
+            "/api/v1/organizations/me/workspaces/{id}/archive",
+            Scope(""),
+            JSON,
+            org::archive_workspace,
+        ),
+        r(
+            "POST",
+            "/api/v1/organizations/me/workspaces/{id}/join",
+            Scope(""),
+            JSON,
+            org::join_workspace,
+        ),
+        r(
+            "GET",
+            "/api/v1/organizations/me/admins",
+            Scope(""),
+            JSON,
+            org::admins,
+        ),
+        r(
+            "POST",
+            "/api/v1/organizations/me/admins",
+            Scope(""),
+            JSON,
+            org::add_admin,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/organizations/me/admins/{user}",
+            Scope(""),
+            JSON,
+            org::patch_admin,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/organizations/me/admins/{user}",
+            Scope(""),
+            JSON,
+            org::remove_admin,
+        ),
+        r(
+            "GET",
+            "/api/v1/organizations/me/audit",
+            Scope(""),
+            JSON,
+            org::audit,
         ),
         r(
             "GET",
@@ -328,6 +442,42 @@ pub fn table() -> Vec<Route> {
             JSON,
             env::detect_fields,
         ),
+        // Document analysis (docs/33 §6, WEB-19).
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/documents/{doc}/analysis",
+            ew,
+            JSON,
+            ml::request_envelope,
+        ),
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/documents/{doc}/analysis",
+            er,
+            JSON,
+            ml::envelope_analysis,
+        ),
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/suggestions",
+            er,
+            JSON,
+            ml::suggestions,
+        ),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/suggestions/{s}/accept",
+            ew,
+            JSON,
+            ml::accept,
+        ),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/suggestions/{s}/dismiss",
+            ew,
+            JSON,
+            ml::dismiss,
+        ),
         r(
             "GET",
             "/api/v1/envelopes/{id}/recipients",
@@ -412,6 +562,26 @@ pub fn table() -> Vec<Route> {
             JSON,
             env::host_in_person,
         ),
+        // The Inbox (UXW-01): any signed-in member, as the recipient they are.
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/sign-link",
+            Scope(""),
+            JSON,
+            env::sign_link,
+        ),
+        // Folders (UXW-02): each member's own.
+        r("GET", "/api/v1/folders", er, JSON, folders::list),
+        r("POST", "/api/v1/folders", ew, JSON, folders::create),
+        r("PATCH", "/api/v1/folders/{id}", ew, JSON, folders::rename),
+        r("DELETE", "/api/v1/folders/{id}", ew, JSON, folders::delete),
+        r(
+            "POST",
+            "/api/v1/folders/{id}/envelopes",
+            ew,
+            JSON,
+            folders::file,
+        ),
         r(
             "POST",
             "/api/v1/envelopes/{id}/views/signing",
@@ -458,6 +628,13 @@ pub fn table() -> Vec<Route> {
         ),
         r(
             "POST",
+            "/api/v1/templates/{id}/restore",
+            tw,
+            JSON,
+            templates::restore,
+        ),
+        r(
+            "POST",
             "/api/v1/templates/{id}/duplicate",
             tw,
             JSON,
@@ -483,6 +660,20 @@ pub fn table() -> Vec<Route> {
             tr,
             JSON,
             templates::document_content,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/documents/{doc}/analysis",
+            tw,
+            JSON,
+            ml::request_template,
+        ),
+        r(
+            "GET",
+            "/api/v1/templates/{id}/documents/{doc}/analysis",
+            tr,
+            JSON,
+            ml::template_analysis,
         ),
         r(
             "POST",

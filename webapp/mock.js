@@ -105,11 +105,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   let db = null;
   let ersdSha = null;
 
+  /// ERSD-01, as the server: the disclosure the policy names. The last one published
+  /// through `POST /ersd-versions`, else the demo text as version `MOCK.ersd`.
+  const disclosure = () => {
+    const d = db?.ersd?.at(-1);
+    return d ? { version: d.label, sha256: d.sha256, text: d.text } : { version: MOCK.ersd, sha256: ersdSha, text: MOCK_DISCLOSURE };
+  };
+
   const save = () => {
     if (!store) return;
     try { store.setItem(KEY, JSON.stringify(db)); } catch { /* full or off: memory only */ }
   };
-  const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; };
+  const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; db.ersd ||= []; };
   async function load() {
     ersdSha ||= `sha256:${await sha256hex(MOCK_DISCLOSURE)}`;
     if (db) return;
@@ -119,7 +126,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (s) { db = JSON.parse(s); fill(); return; }
       } catch { db = null; }
     }
-    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [] };
+    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [], ersd: [] };
     await seed();
     save();
   }
@@ -349,7 +356,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       recipient: publicRecipient(rec),
       fields: shown ? env.fields.filter((f) => f.recipient_id === rec.id) : [],
       capture_location: !!env.signing_options?.capture_location,
-      consent_required: { version: MOCK.ersd, sha256: ersdSha, url: `/s/${encodeURIComponent(token)}/disclosure` },
+      consent_required: { version: disclosure().version, sha256: disclosure().sha256, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
       sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
     };
@@ -696,8 +703,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!["asc", "desc"].includes(order)) bad("order");
     const senderQ = query.get("sender");
     const sender = senderQ === "me" ? "user-demo" : senderQ;
-    // UX-03, ahead of the server (NOT_ON_SERVER): `recipient`, `date_field`, `folder`,
-    // `deleted`, `waiting_for=me`.
+    // As the server (UXW-01/02/03): `recipient`, `date_field`, `folder`, `deleted`,
+    // `waiting_for=me`.
     const recipient = (query.get("recipient") || "").trim().toLowerCase();
     const dateField = query.get("date_field") || "updated_at";
     if (!["updated_at", "created_at", "sent_at", "completed_at"].includes(dateField)) bad("date_field");
@@ -816,7 +823,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     fail(405, "CS-API-0012", "Method not allowed");
   }
 
-  // ---- Folders (UX-03, not on the server yet: NOT_ON_SERVER.folders) ---------------------
+  // ---- Folders (as the server, UXW-02: each member's own) --------------------------------
   function folders(method, id, sub, body) {
     const named = () => {
       const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -855,9 +862,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   // 64 % ("check this"); personal data with page references; the draft "Lease renewal
   // 2027" matching the template "MSA v4" at 96 % with its last page scanned (read by
   // OCR). Analysis of a draft reports `running` for about 2 s after it is requested.
+  // The server serves these since WEB-19 (docs/33 §6); the shapes below are its shapes.
   // Test hook: `sessionStorage["openseal.mock.ml"] = "off"` makes every ML call answer
-  // 404, as the real server does today; `"no-plan"` answers `403 CS-ML-0011`.
+  // 404, as a server without the routes does; `"no-plan"` answers `403 CS-ML-0011`.
   const ML_FEATURE_KEYS = ["ocr", "template_matching", "extraction", "personal_data"];
+  /// What a run does for each feature, in the server's fixed order (docs/33 §2).
+  const ML_USES = { ocr: "ocr", template_matching: "template", extraction: "entities", personal_data: "personal_data" };
   function mlMode() {
     try { return store?.getItem("openseal.mock.ml") || "on"; } catch { return "on"; }
   }
@@ -887,7 +897,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         else fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
       }
     } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
-    return json(200, { ...ml.settings, not_in_plan: [], ...mlInstalled() });
+    return json(200, { ...ml.settings, not_in_plan: [], installed: true, ...mlInstalled() });
   }
   /// WEB-18 Admin › Document intelligence (lane D): the additive, read-only members the
   /// settings answer carries about this server, as the canvas lists them: the models the
@@ -923,9 +933,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     else if (/^Mutual NDA/.test(s)) list = [ent("Parties", "Acme and Globex", 0.98, 1), ent("Confidentiality period", "3 years", 0.95, 2), pii("Email address", "avery@acme.example", 0.97, 1), pii("Email address", "sam@globex.example", 0.97, 1)];
     else if (/^Board consent/.test(s)) list = [ent("Resolution", "Approve FY2027 budget", 0.9, 1), ent("Effective date", "November 12, 2026", 0.93, 1)];
     else if (/^Lease renewal/.test(s)) {
-      const tpl = (db.templates || [])[0];
+      const tpl = (db.templates || []).find((x) => !x.deleted_at);
       list = [
-        { kind: "template", label: "MSA v4", value: "Master services agreement v4", score: 0.96, page: 1, template_id: tpl?.id || null, pages_matched: `${last} of ${last}` },
+        // As the server (WEB-19): a template suggestion's label is the template's name, it
+        // has no span value, and `pages_matched` of `pages_total` are numbers.
+        { kind: "template", label: "MSA v4", value: null, score: 0.96, page: 1, template_id: tpl?.id || null, pages_matched: last, pages_total: last },
         ent("Term", "24 months from the last signature", 0.96, 1),
         pii("Email address", "taylor@example.com", 0.97, at(3)),
         pii("Phone number", "+1 555 0199", 0.88, at(3)),
@@ -972,7 +984,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const ml = mlState();
     const last = Math.max(1, doc.pages || 1);
     const scanned = /^Lease renewal/.test(env.subject || "") ? [Math.min(3, last)] : [];
-    const out = (status) => ({ status, uses: ML_FEATURE_KEYS.filter((k) => ml.settings[k]), ocr_pages: status === "done" ? scanned : [], truncated: false, bundle_id: "bundle-demo" });
+    const out = (status) => ({ id: `run-${doc.id.slice(0, 8)}`, document_id: doc.id, status, uses: ML_FEATURE_KEYS.filter((k) => ml.settings[k]).map((k) => ML_USES[k]), ocr_pages: status === "done" ? scanned : [], truncated: false, bundle_id: status === "done" ? "bundle-demo" : null });
     if (method === "POST") {
       if (env.status !== "draft") fail(409, "CS-WF-0001", "Not allowed in the current state");
       ml.analysis[doc.id] ||= { requested_at: now().getTime() };
@@ -1015,6 +1027,33 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return json(200, { items: items.slice(0, Math.min(20, Number(query.get("limit")) || 8)) });
   }
 
+  /// ERSD-01, as the server's `GET/POST /ersd-versions`: publish a text as the next
+  /// version of its language and require it in one step; read the one required (with its
+  /// text) and the history (without). The seed requires the demo text, which no row
+  /// holds, so `current.version` is null until something is published.
+  async function ersdVersions(method, body) {
+    const row = (d) => ({ id: d.id, version: d.version, label: d.label, language: d.language, sha256: d.sha256, published_at: d.published_at });
+    if (method === "POST") {
+      for (const k of Object.keys(body || {})) if (k !== "text" && k !== "language") fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/${k}`, code: "unknown" }]);
+      const text = body?.text;
+      if (typeof text !== "string") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/text", code: "CS-API-0001" }]);
+      if (new TextEncoder().encode(text).length > 100000) fail(413, "CS-API-0006", "Request body too large");
+      if (!text.trim() || text.includes("\0")) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/text", code: "CS-API-0001" }]);
+      const language = body?.language ?? "en";
+      if (typeof language !== "string" || !/^[A-Za-z][A-Za-z0-9-]{1,34}$/.test(language)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/language", code: "CS-API-0001" }]);
+      const version = 1 + Math.max(0, ...db.ersd.filter((d) => d.language === language).map((d) => d.version));
+      const d = { id: `ersd-${db.ersd.length + 1}`, version, label: String(version), language, sha256: `sha256:${await sha256hex(text)}`, published_at: now().toISOString(), text };
+      db.ersd.push(d);
+      save();
+      return json(201, row(d));
+    } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
+    const last = db.ersd.at(-1);
+    const current = last
+      ? { label: last.label, sha256: last.sha256, version: last.version, language: last.language, published_at: last.published_at, text: last.text }
+      : { label: MOCK.ersd, sha256: ersdSha, version: null, language: null, published_at: null, text: MOCK_DISCLOSURE };
+    return json(200, { current, items: db.ersd.slice(-100).reverse().map(row) });
+  }
+
   async function staff(method, parts, query, headers, body) {
     if (!db.session) fail(401, "CS-AUTH-0001", "Not authenticated");
     if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
@@ -1040,6 +1079,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       return json(200, db.account);
     }
+    if (res === "ersd-versions" && !id) return ersdVersions(method, body);
     // WEB-06: recipient autocomplete, as the server's GET /contacts.
     if (res === "contacts" && method === "GET") {
       const q = (query.get("q") || "").trim().toLowerCase();
@@ -1059,7 +1099,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // and search by meaning.
     if (res === "account" && id === "settings" && sub === "ml") return mlSettings(method, body);
     if (res === "search" && !id && method === "GET") return mlSearch(query);
-    if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
+    if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body, query);
     if (res === "users" && id === "me" && !sub) return me(method, body);
     if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
@@ -1112,12 +1152,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return json(204, null);
       }
     }
-    // UX-03, not on the server yet (api.js NOT_ON_SERVER.deleted): back to the lists.
+    // UX-03, not on the server yet (api.js NOT_ON_SERVER.restoreEnvelope): back to the lists.
     if (sub === "restore" && method === "POST") {
       if (!env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
       delete env.deleted_at;
       env.version++;
-      // Not a casual-sign-audit type yet: the restore row adds it (NOT_ON_SERVER.deleted).
+      // Not a casual-sign-audit type yet: ADR-031 (Proposed) adds it (NOT_ON_SERVER.restoreEnvelope).
       await audit(env, "envelope.restored", {}, { by: "sender" });
       return withEtag(env);
     }
@@ -1126,12 +1166,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const res = mlEnvelope(env, method, sub, subId, subSub, query);
       if (res) return res;
     }
-    // UX-03, not on the server yet (NOT_ON_SERVER.inbox): the signing page for the
-    // signed-in user, when routing has reached them.
+    // As the server (UXW-01): the signing page for the signed-in user, when routing has
+    // reached them.
     if (sub === "sign-link" && method === "POST") {
       const r = myRecipient(env);
       if (!r) fail(409, "CS-WF-0007", "Routing has not reached the recipient yet");
-      return json(200, { url: `/s/${encodeURIComponent(r.token)}` });
+      return json(201, { url: `/s/${encodeURIComponent(r.token)}`, expires_at: iso(5) });
     }
     if (sub === "correct" && method === "POST") {
       // `POST …/correct {changes}` (docs/40, docs/24 §6), as the server: the engine's change
@@ -1176,8 +1216,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, { items, chain_head: items.length ? items[items.length - 1].hash : null });
     }
     if (sub === "certificate" && method === "GET") {
-      // A completed envelope's, as the server; a declined, voided or expired one's
-      // ahead of it (UX-03, NOT_ON_SERVER.certificateEnded).
+      // A completed envelope's; a declined, voided or expired one's envelope
+      // certificate (UXW-30), as the server once its worker has made it.
       if (!["completed", "declined", "voided", "expired"].includes(env.status)) fail(409, "CS-API-0009", "Not available in the object's state");
       const lines = [`Envelope ${env.id}`, `Subject: ${env.subject}`, `Outcome: ${env.status}`, ""];
       for (const r of env.recipients) lines.push(`${r.name} <${r.email}> - ${r.type} - ${r.status} ${r.completed_at || ""}`);
@@ -1255,7 +1295,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         checkIfMatch(env, headers);
         const correcting = editable(env);
         if (correcting && settled(r)) fail(409, "CS-WF-0001", "Recipient has already acted");
-        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "auth", "access_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "type", "auth", "access_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        // A type change is a draft's only (UX-12): a correction keeps the type.
+        if (body?.type != null && body.type !== r.type && correcting) fail(409, "CS-WF-0001", "Not allowed in the current state");
         if (body?.name != null && !String(body.name).trim()) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
         if (body?.email != null && !String(body.email).includes("@")) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/email", code: "CS-API-0001" }]);
         const had = r.auth.includes("access_code");
@@ -1266,6 +1308,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (body?.name != null) r.name = String(body.name).trim();
         if (body?.email != null) r.email = String(body.email);
         if (body?.routing_order != null) r.routing_order = body.routing_order;
+        if (body?.type != null) r.type = String(body.type);
         r.auth = auth;
         if (code) { r.access_code = code; r.auth_passed = []; } else if (had && !wants) r.access_code = null;
         if (correcting) await corrected(env, [`recipients.${r.id}`]);
@@ -1384,17 +1427,40 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return field;
   }
   const tplWhole = (tp, status = 200) => json(status, publicTemplate(tp), { ETag: `"v${tp.version}"` });
-  function templates(method, id, sub, subId, subSub, headers, body) {
+  function templates(method, id, sub, subId, subSub, headers, body, query) {
     if (!id) {
       if (method === "GET") {
-        const items = [...db.templates].sort((a, b) => b.created_at.localeCompare(a.created_at))
+        // UXW-02, as the server: `deleted=true` is the Deleted view, most recently
+        // deleted first; without it, the live templates.
+        const del = query?.get("deleted") ?? null;
+        if (del != null && del !== "true" && del !== "false") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/deleted", code: "CS-API-0001" }]);
+        const deleted = del === "true";
+        const items = db.templates.filter((tp) => !!tp.deleted_at === deleted)
+          .sort((a, b) => (deleted ? b.deleted_at.localeCompare(a.deleted_at) : b.created_at.localeCompare(a.created_at)))
           .map((tp) => ({ ...publicTemplate(tp, false), roles: tp.roles, last_used_at: tp.last_used_at || null }));
         return json(200, { items });
       }
       if (method === "POST") return tplWhole(newTemplate(body), 201);
     }
-    const tp = db.templates.find((x) => x.id === id);
+    const found = db.templates.find((x) => x.id === id);
+    // UXW-02: a deleted template answers only a restore or a second delete (for good).
+    if (found?.deleted_at) {
+      if (sub === "restore" && method === "POST") {
+        tplIfMatch(found, headers, false);
+        delete found.deleted_at;
+        found.version++;
+        return tplWhole(found);
+      }
+      if (!sub && method === "DELETE") {
+        tplIfMatch(found, headers);
+        db.templates = db.templates.filter((x) => x !== found);
+        return json(204, null);
+      }
+      fail(404, "CS-API-0002", "Not found");
+    }
+    const tp = found;
     if (!tp) fail(404, "CS-API-0002", "Not found");
+    if (sub === "restore") fail(404, "CS-API-0002", "Not found");
     if (!sub) {
       if (method === "GET") return tplWhole(tp);
       if (method === "PATCH") {
@@ -1407,8 +1473,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return tplWhole(tp);
       }
       if (method === "DELETE") {
+        // UXW-02: to the Deleted view, kept whole and restorable.
         tplIfMatch(tp, headers);
-        db.templates = db.templates.filter((x) => x !== tp);
+        tp.deleted_at = iso();
+        tp.version++;
         return json(204, null);
       }
     }
@@ -1661,7 +1729,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // valid.
     if (sub === "disclosure" && method === "GET") {
       if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
-      return json(200, { version: MOCK.ersd, sha256: ersdSha, text: MOCK_DISCLOSURE });
+      return json(200, disclosure());
     }
     // WEB-06: the signer's copy (`GET /s/{token}/document`; in the mock the first
     // document) and history stay available after finishing or declining.
@@ -1723,9 +1791,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // An in-person signer signs only in a session a staff user hosts (the engine's `gate_in`).
     if (rec.type === "in_person_signer" && !rec.hosted) fail(409, "CS-WF-0001", "Not allowed in the current state");
     if (sub === "consent" && method === "POST") {
-      if (body?.ersd_version !== MOCK.ersd) fail(400, "CS-API-0001", "Unknown disclosure version", [{ pointer: "/ersd_version", code: "mismatch" }]);
+      const want = disclosure();
+      if (body?.ersd_version !== want.version) fail(400, "CS-API-0001", "Unknown disclosure version", [{ pointer: "/ersd_version", code: "mismatch" }]);
       rec.consented = true;
-      await audit(env, "recipient.consented", { recipient_id: rec.id, ersd_version: body.ersd_version, ersd_hash: ersdSha }, loc);
+      await audit(env, "recipient.consented", { recipient_id: rec.id, ersd_version: body.ersd_version, ersd_hash: want.sha256 }, loc);
       return json(200, view(env, rec, token));
     }
     // Withdrawing consent declines a required action, whatever `allow_decline` says (the
@@ -1733,7 +1802,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "withdraw-consent" && method === "POST") {
       if (!rec.consented) fail(409, "CS-WF-0001", "Not allowed in the current state");
       rec.consented = false;
-      await audit(env, "recipient.consent_withdrawn", { recipient_id: rec.id, ersd_version: MOCK.ersd }, loc);
+      await audit(env, "recipient.consent_withdrawn", { recipient_id: rec.id, ersd_version: disclosure().version }, loc);
       if (ACTING(rec)) await decline(env, rec, null, loc);
       return json(200, view(env, rec, token));
     }

@@ -224,7 +224,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | Account | `accounts` (RLS on `id`) | `TenantTx::account` |
 | User, membership, permission profile | `users`, `account_memberships`, `permission_profiles` | `TenantTx::users` |
 | Group | `groups`, `group_members` | schema only |
-| Brand, Settings, ERSD versions | `brands`, `accounts.settings`, `ersd_versions` | settings; `TenantTx::account().disclosure` reads a published ERSD text by its hash (`UXW-34`); no write path yet (`ERSD-01`) |
+| Brand, Settings, ERSD versions | `brands`, `accounts.settings`, `ersd_versions` | settings; `TenantTx::account().disclosure` reads a published ERSD text by its hash (`UXW-34`); `publish_disclosure` inserts the next version of a language (the account row locked first, so two publishes never share a number) with its `ersd.published` admin event, and `disclosures` lists the published versions without text (`ERSD-01`); rows are never updated, no migration was needed |
 | Template, TemplateDocument, Role, role-bound Field, sharing | `templates`, `template_documents`, `template_roles`, `template_fields`, `template_shares` | `TenantTx::templates` (not shares) |
 | Envelope, folders and recycle folder | `envelopes`, `folders` | `TenantTx::envelopes` |
 | Document, DocumentVersion | `documents`, `document_versions` | `TenantTx::documents` |
@@ -375,6 +375,41 @@ archived workspace writes none). Store: the repositories append the events thems
 or system, time, request id, IP); `TenantTx::admin_events`, `verified_admin_log`, `verified_admin_events` (one page, verified
 against the event at its cursor and the stored head) and the same on `OrgTx` read and re-verify. Forty-seven tables.
 
+`0021_ml_analysis.sql` (`WEB-19`, `ML-01`; docs/33 §7 As built, §13) adds the
+advisory document-analysis tables, each with `account_id`, RLS and the repository `TenantTx::ml`
+(`casual_sign_store::repo::ml`): `ml_settings` (a workspace's four switches, the personal-data model, OCR script
+packs, "re-read scanner text"; no row means every feature off), `ml_entitlements` (the plan's `ml.*` features; the
+application role may only read it), `analysis_runs` (one per document and job key: `kind` `analyze_document` or
+`fingerprint_template`, `uses`, `document_sha256`, `job_key` unique per account and naming the account and the
+document, `status` `queued`/`running`/`done`/`failed`/`unavailable`, `bundle_id`, `ocr_pages`, `truncated`, `code`;
+exactly one of `envelope_id` and `template_id`, each a composite foreign key with `account_id`, `ON DELETE CASCADE`),
+`suggestions` (`kind` `template`/`entity`/`personal_data`, page, rect, label, UTF-8 byte span offsets and never the
+span text, the matched template and its page counts, score, model id and weights hash, `state`
+`open`/`accepted`/`dismissed` with `decided_by`, `decided_at`), `ocr_pages` (a run's OCR words per page: document
+content) and `template_fingerprints` (a template page's dHash and pHash, an optional text embedding, the model). None is
+read by the seal job, the audit chain or the evidence package (docs/33 invariant 2). Fifty-three tables with `0021`.
+
+`0022_folders_and_deleted.sql` (`UXW-01`, `UXW-02`, `UXW-03`) makes **folders each member's own**: 0002's `folders`
+rows of kind `envelopes` with `owner_user_id`, a name unique per member ignoring case (`folders_owner_name`; the API
+bounds names to 100 characters and a member to 500 folders), and `UNIQUE (account_id, id, owner_user_id)`. A new tenant
+table `folder_envelopes` (`id`, `user_id`, `envelope_id`, `folder_id`, `filed_at`) records where a member filed an
+envelope, one folder per member and envelope; its reference `(account_id, folder_id, user_id)` to the folder and its
+owner means nobody can file into another member's folder, and removing the folder, the membership or the envelope row
+removes the filing. Filing is a member's view of their lists, not a change of the agreement: no audit event, no
+`updated_at`. 0004's `envelopes.folder_id` (one folder for every member) stays unused. `TenantTx::folders` lists a
+member's folders with the count of filed envelopes not deleted, creates, renames, deletes and files (`file`, all in one
+statement). `recipient_tokens.purpose` may also be `account`, a link a signed-in member obtained for the recipient
+they are (the Inbox's `sign-link`), and `host_user_id` is set exactly for `in_person` and `account`. A partial index
+`recipients_account_live_email` serves the Inbox. `Envelopes::search` also filters by a recipient's name or email, by
+which date a range bounds (`updated_at`, `created_at`, `sent_at`, `completed_at`), by the member's folder (or none),
+by the Deleted view (`deleted_at` set) and by the Inbox (sent envelopes where the member is, by their email, a
+recipient whose turn it is and who acts through a link: not a copy, an in-person signer or an embedded recipient), and
+reports the member's filing and, in the Inbox, the recipient they are. Restoring a deleted envelope needs a workflow
+command and audit type (ADR-031, Proposed), so 0022 adds nothing for it. `templates` gains `deleted_at`: deleting a
+live template sets it (the template keeps its roles, documents and fields, leaves every read, edit and the list, and
+`Templates::list_deleted`, `get_deleted` and `restore` serve the Deleted view); deleting it there removes it for good.
+A template has no audit chain, so neither step is evidence. Fifty-four tables with `0022`.
+
 `0026_console_org_events.sql` (`CON-16`, docs/23 §2.5) holds the console role to the admin logs: the
 `*_admin_change_has_event` triggers now also refuse an `openseal_console` commit that changed an organization or a
 workspace without an `operator.*` event appended to that organization's `org_admin_events` in the same transaction
@@ -383,7 +418,8 @@ workspace without an `operator.*` event appended to that organization's `org_adm
 `platform_owner`, an `operator.*` action, the bytes' actor exactly that operator, their `operator_event` link an existing operator event of that
 operator and action, else `OS005`).
 
-**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
+**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15), including of the
+analysis tables (`SEC-I07`); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 
 **Corrections to the text above.** The setting is `openseal.account_id`, read as
@@ -428,6 +464,16 @@ the rules above, and what does not:
   `api_calls` for any writer. The application reads only `openseal_effective_plan(now)` (current assignment and live
   overrides for its organization and workspace, no reasons or operator ids). `accounts.settings` holds no plan limits;
   its column comment says so.
+- **Metering (built, `PLAN-03`, migration 0025):** `usage_ledger` (tenant, append-only by trigger, primary key
+  `(account_id, meter, source_kind, source_id)` so a retried job or a decision recorded again counts once; `quantity`
+  for the workspace and `org_quantity` for the organization, which differ only for `seats`), `usage_counters` (tenant)
+  and `org_usage_counters` (organization), `(meter, period_start) → value`, calendar month (UTC) for counters and one
+  epoch period for gauges, and `usage_blob_refs` (tenant; references per content-addressed blob, so a blob is counted
+  once per workspace). The application role has SELECT only on all four; every write is through the definer
+  `openseal_meter_apply`, which writes the ledger row and both counters in one transaction, so each counter equals its
+  ledger sum at both levels. The application counts counter meters through `openseal_meter_record` (gauges refused,
+  `CS-DB-0008`; `TenantTx::record_usage`); `seats`, `storage_bytes` and `workspaces` are kept by triggers in the
+  transaction of the change (docs/23 §7.2).
 - **Catalog tests** are scoped to `public` and name their exceptions; the `platform` schema has its own.
 - **Migration order** is fixed in merge order (docs/23 §12): `SEC-ID-01`'s fix, organizations (with organization admins
   and the owner backfill), admin logs, platform schema, operators, approvals, plans, usage; later schema rows take the

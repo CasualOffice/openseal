@@ -16,11 +16,13 @@ use casual_sign_model::{EnvelopeStatus as MStatus, Id};
 use casual_sign_sdk::{AdmissionReport, Credentials, NormalizationReport};
 use casual_sign_store::repo::documents::{Document, NewVersion, VersionKind};
 use casual_sign_store::repo::envelopes::{
-    After, AfterKey, EnvelopeStatus, ListFilter, Listed, Sort, SortKey, never_expires, status_rank,
+    After, AfterKey, DateField, EnvelopeStatus, FolderFilter, ListFilter, Listed, Sort, SortKey,
+    never_expires, status_rank,
 };
 use casual_sign_store::repo::recipients::{NewToken, TokenPurpose};
 use casual_sign_store::{
-    DocumentId, DocumentVersionId, EnvelopeId, RecipientId, RecipientTokenId, TenantTx, UserId,
+    DocumentId, DocumentVersionId, EnvelopeId, FolderId, RecipientId, RecipientTokenId, TenantTx,
+    UserId,
 };
 use casual_sign_workflow::{
     Access, Change, Command, DocumentSpec, EnvelopeState, Principal as WfPrincipal,
@@ -295,10 +297,42 @@ pub(crate) struct ListQuery {
     order: Option<String>,
     /// A sender's user id, or `me`.
     sender: Option<String>,
-    /// Last change at or after (RFC 3339).
+    /// `date_field` at or after (RFC 3339).
     from: Option<String>,
-    /// Last change before (RFC 3339).
+    /// `date_field` before (RFC 3339).
     to: Option<String>,
+    /// Text a recipient's name or email contains (UXW-03).
+    recipient: Option<String>,
+    /// Which date `from` and `to` bound: `updated_at` (default), `created_at`,
+    /// `sent_at`, `completed_at` (UXW-03).
+    date_field: Option<String>,
+    /// One of the caller's folders, or `none` (UXW-02).
+    folder: Option<String>,
+    /// `true`: the Deleted view (UXW-02).
+    deleted: Option<String>,
+    /// `me`: the Inbox (UXW-01).
+    waiting_for: Option<String>,
+}
+
+fn parse_date_field(s: &str) -> Option<DateField> {
+    [
+        DateField::Updated,
+        DateField::Created,
+        DateField::Sent,
+        DateField::Completed,
+    ]
+    .into_iter()
+    .find(|d| d.as_str() == s)
+}
+
+/// A free-text list parameter: trimmed, empty as absent, at most [`MAX_QUERY`]
+/// characters and no control characters.
+fn text_param<'a>(v: Option<&'a str>, at: &str) -> Result<Option<&'a str>, ApiError> {
+    let t = v.map(str::trim).filter(|t| !t.is_empty());
+    if t.is_some_and(|t| t.chars().count() > MAX_QUERY || t.chars().any(char::is_control)) {
+        return Err(ApiError::invalid(at));
+    }
+    Ok(t)
 }
 
 /// The longest `q` searched for, in characters.
@@ -447,10 +481,8 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
             statuses.push(st);
         }
     }
-    let search = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty());
-    if search.is_some_and(|t| t.chars().count() > MAX_QUERY || t.chars().any(char::is_control)) {
-        return Err(ApiError::invalid("/query/q"));
-    }
+    let search = text_param(q.q.as_deref(), "/query/q")?;
+    let recipient = text_param(q.recipient.as_deref(), "/query/recipient")?;
     let asked = match q.sender.as_deref() {
         None => None,
         Some("me") => Some(c.p.user),
@@ -460,9 +492,31 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
     };
     let changed_from = instant(q.from.as_deref(), "/query/from")?;
     let changed_to = instant(q.to.as_deref(), "/query/to")?;
+    let date_field = match q.date_field.as_deref() {
+        None => DateField::Updated,
+        Some(s) => parse_date_field(s).ok_or_else(|| ApiError::invalid("/query/date_field"))?,
+    };
+    let folder = match q.folder.as_deref() {
+        None => FolderFilter::Any,
+        Some("none") => FolderFilter::None,
+        Some(s) => FolderFilter::In(FolderId(
+            Uuid::parse_str(s).map_err(|_| ApiError::invalid("/query/folder"))?,
+        )),
+    };
+    let deleted = match q.deleted.as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(ApiError::invalid("/query/deleted")),
+    };
+    let waiting = match q.waiting_for.as_deref() {
+        None => false,
+        Some("me") => true,
+        Some(_) => return Err(ApiError::invalid("/query/waiting_for")),
+    };
     // Without `view_all`, the caller's own only: another sender asked for is an empty
-    // page, never someone else's envelopes.
-    let own = (!(c.p.admin || c.p.view_all)).then_some(c.p.user);
+    // page, never someone else's envelopes. The Inbox is its own access: envelopes
+    // waiting for the caller as a recipient, whoever sent them.
+    let own = (!(c.p.admin || c.p.view_all || waiting)).then_some(c.p.user);
     let sender = match (own, asked) {
         (Some(me), Some(other)) if me != other => return Ok(page_json(Vec::new(), None)),
         (Some(me), _) => Some(me),
@@ -474,6 +528,12 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
         search,
         changed_from,
         changed_to,
+        recipient,
+        date_field,
+        member: Some(c.p.user),
+        folder,
+        deleted,
+        waiting,
     };
     let mut tx = c.tx().await?;
     let page = tx
@@ -488,7 +548,7 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
         .iter()
         .map(|l| {
             let e = &l.envelope;
-            json!({
+            let mut item = json!({
                 "id": e.id.to_string(),
                 "status": e.status.as_str(),
                 "subject": e.subject.get(),
@@ -498,7 +558,15 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
                 "sent_at": e.sent_at.map(rfc3339),
                 "completed_at": e.completed_at.map(rfc3339),
                 "expires_at": e.expires_at.map(rfc3339),
-            })
+                "folder_id": l.folder.map(|f| f.to_string()),
+            });
+            if waiting && let Some(map) = item.as_object_mut() {
+                map.insert(
+                    "my_recipient_id".into(),
+                    json!(l.my_recipient.map(|r| r.to_string())),
+                );
+            }
+            item
         })
         .collect();
     Ok(page_json(items, next))
@@ -599,9 +667,11 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let mut l = create_env(&mut tx, c.p.account, env, &create, &ctx, c.p.client()).await?;
     let mut changes = Vec::new();
     let mut doc_ids = Vec::new();
+    let mut uploads = Vec::new();
     for (name, bytes) in decoded {
         let spec = add_document(&c.st, &mut tx, env, &name, bytes).await?;
         doc_ids.push(spec.id.clone());
+        uploads.push((uid(&spec.id)?, spec.delivered_hash.0));
         changes.push(Change::AddDocument { document: spec });
     }
     let (rchanges, refs, codes) = recipients_in(&mut tx, &req.recipients, "/recipients").await?;
@@ -652,6 +722,12 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
     store_codes(&mut tx, codes).await?;
     if send {
         command(&c, &mut tx, &mut cmds, &mut l, Command::Send, None).await?;
+    } else {
+        // Document analysis of the draft's uploads (docs/33 §2), only with a feature in
+        // effect; otherwise nothing is written (ML-01).
+        for (doc, sha) in uploads {
+            crate::api::ml::on_envelope_upload(&c.st, &mut tx, c.p.account, env, doc, sha).await?;
+        }
     }
     tx.commit().await?;
     let mut r = envelope_response(StatusCode::CREATED, &l.state);
@@ -944,6 +1020,7 @@ pub(crate) async fn add_document_route(
     };
     let spec = add_document(&c.st, &mut tx, l.id, &name, bytes).await?;
     let doc_id = spec.id.clone();
+    let upload = (uid(&spec.id)?, spec.delivered_hash.0);
     change(
         &c,
         &mut tx,
@@ -952,6 +1029,10 @@ pub(crate) async fn add_document_route(
         v,
     )
     .await?;
+    if l.state.status == MStatus::Draft {
+        crate::api::ml::on_envelope_upload(&c.st, &mut tx, c.p.account, l.id, upload.0, upload.1)
+            .await?;
+    }
     tx.commit().await?;
     let d = l
         .state
@@ -964,7 +1045,7 @@ pub(crate) async fn add_document_route(
     ))
 }
 
-fn doc_in<'a>(
+pub(crate) fn doc_in<'a>(
     s: &'a EnvelopeState,
     doc: &str,
 ) -> Result<&'a casual_sign_workflow::DocumentState, ApiError> {
@@ -1178,11 +1259,31 @@ async fn serve_bytes(
 
 /// `GET /envelopes/{id}/certificate`: the certificate of completion on its own, with
 /// the audit trail embedded, sealed by the seal job (stage 2D) when the envelope
-/// completes; `409 CS-API-0009` before. The download is recorded in the chain.
+/// completes; for a declined, voided or expired envelope, its envelope certificate
+/// (UXW-30), which says how it ended and never claims completion, made and sealed by
+/// the worker when it ended. `409 CS-API-0009` before either exists (an ended envelope
+/// without one asks the worker for it then). The download is recorded in the chain.
 pub(crate) async fn certificate(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     let mut tx = c.tx().await?;
     let mut l = find(&mut tx, &c.p, &id).await?;
     let Some(sha) = tx.envelopes().certificate(l.id).await? else {
+        if matches!(
+            l.state.status,
+            MStatus::Declined | MStatus::Voided | MStatus::Expired
+        ) {
+            // An envelope that ended before the worker made envelope certificates
+            // (UXW-30): ask for it now; the queue keeps one job per envelope.
+            let job = casual_sign_host::jobs::ended_certificate_job(
+                casual_sign_store::JobId(Uuid::now_v7()),
+                l.id,
+                c.st.now(),
+            );
+            tx.jobs().enqueue(&job).await?;
+            tx.commit().await?;
+            return Err(ApiError::not_available(
+                "the envelope certificate is being made; ask again shortly",
+            ));
+        }
         return Err(ApiError::not_available(
             "the certificate is made by the seal job when the envelope completes",
         ));
@@ -1367,6 +1468,10 @@ struct RecipientPatch {
     email: Option<String>,
     #[serde(default)]
     routing_order: Option<u32>,
+    /// A new type (row UX-12): a draft only; a correction keeps the type, which the
+    /// engine enforces.
+    #[serde(default, rename = "type")]
+    rtype: Option<casual_sign_model::RecipientType>,
     #[serde(default)]
     auth: Option<Vec<casual_sign_audit::AuthMethod>>,
     /// A new access code (row WEB-04); stored only as Argon2id, never returned.
@@ -1374,8 +1479,8 @@ struct RecipientPatch {
     access_code: Option<String>,
 }
 
-/// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, authentication
-/// and the access code, while the envelope is a draft or being corrected (the engine
+/// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, type (a draft
+/// only), authentication and the access code, while the envelope is a draft or being corrected (the engine
 /// refuses the change otherwise, and then no code is stored).
 ///
 /// The access code follows the authentication methods it ends up with: `access_code`
@@ -1411,6 +1516,9 @@ pub(crate) async fn patch_recipient(
     if let Some(o) = req.routing_order {
         spec.routing_order = casual_sign_model::RoutingOrder::new(o)
             .map_err(|_| ApiError::invalid("/routing_order"))?;
+    }
+    if let Some(t) = req.rtype {
+        spec.rtype = t;
     }
     let had_code = spec
         .auth
@@ -1836,10 +1944,99 @@ pub(crate) async fn host_in_person(
     Ok(resp)
 }
 
-/// The body of `…/host`: empty, or an empty object.
+/// The body of `…/host` and `…/sign-link`: empty, or an empty object.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HostIn {}
+
+/// Whether the signed-in member with `email` is recipient `r` for the Inbox: the same
+/// address ignoring case, and a recipient who acts through a link (not a copy, an
+/// in-person signer whose link only a host obtains, or an embedded recipient whose
+/// links only the embedding host obtains). The store's Inbox query applies the same
+/// rule.
+fn is_me(r: &casual_sign_workflow::RecipientState, email: &str) -> bool {
+    use casual_sign_model::RecipientType as T;
+    !matches!(r.spec.rtype, T::Cc | T::InPersonSigner)
+        && r.spec.embedded_client_user_id.is_none()
+        && r.spec.email.get().as_str().to_lowercase() == email
+}
+
+/// How long an Inbox signing link lives (UXW-01): it is used at once, in the browser
+/// that asked, and binds to that browser on first use.
+const SIGN_LINK_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// `POST /envelopes/{id}/sign-link` (UXW-01): a signed-in member signs, approves or
+/// views an envelope of this account that waits for them as a recipient, from inside
+/// the app. The caller must be, by their account email, a recipient whose turn it is
+/// and who acts through a link; the answer is a one-time ceremony link (`{url,
+/// expires_at}`, five minutes, `SecretBearing`) of purpose `account` naming the member.
+/// The ceremony then records the member's sign-in (`account_login`) as how the link was
+/// obtained, instead of an emailed link, and applies every authentication the sender
+/// required, as for an emailed link. An envelope the caller neither may see nor is a
+/// recipient of is `404`; one where they are a recipient whose turn has not come, or
+/// has passed, is `409 CS-WF-0007`. Issuing a link changes nothing in the envelope.
+pub(crate) async fn sign_link(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = crate::apply::load(&mut tx, EnvelopeId(path_id(&id)?))
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let member = tx
+        .users()
+        .get(c.p.user)
+        .await?
+        .filter(|m| m.disabled_at.is_none())
+        .ok_or_else(ApiError::not_found)?;
+    let email = member.email.get().to_lowercase();
+    let mine: Vec<&casual_sign_workflow::RecipientState> = l
+        .state
+        .recipients
+        .iter()
+        .filter(|r| is_me(r, &email))
+        .collect();
+    if mine.is_empty() && !super::visible(&c.p, &l.state) {
+        return Err(ApiError::not_found());
+    }
+    // The person signs in themselves: an API key or OAuth client, which may act for a
+    // member without them, never obtains a link that records their sign-in.
+    if c.p.client().is_some() {
+        return Err(ApiError::forbidden("a signed-in session"));
+    }
+    if !body.iter().all(u8::is_ascii_whitespace) {
+        let _: HostIn = parse(&body)?;
+    }
+    let live = matches!(l.state.status, MStatus::Sent | MStatus::Delivered);
+    let mut turn: Vec<&&casual_sign_workflow::RecipientState> = mine
+        .iter()
+        .filter(|r| live && r.status.is_active())
+        .collect();
+    turn.sort_by_key(|r| r.spec.routing_order);
+    let r = turn.first().ok_or_else(ApiError::not_reached)?;
+    let token = random_secret()?;
+    let expires = crate::state::plus_std(c.st.now(), SIGN_LINK_TTL)?;
+    tx.recipients()
+        .issue_token(&NewToken {
+            id: RecipientTokenId(Uuid::now_v7()),
+            envelope_id: l.id,
+            recipient_id: RecipientId(uid(r.id())?),
+            token_sha256: sha256(token.as_bytes()),
+            purpose: TokenPurpose::Account,
+            host_user_id: Some(c.p.user),
+            expires_at: expires,
+        })
+        .await?;
+    tx.commit().await?;
+    let url = format!("{}/s/{token}", c.st.config().public_url);
+    let mut resp = json(
+        StatusCode::CREATED,
+        &json!({ "url": url, "expires_at": rfc3339(expires) }),
+    );
+    resp.extensions_mut().insert(SecretBearing);
+    Ok(resp)
+}
 
 /// For tests and the worker's own use: issue an invitation token for a recipient of
 /// an envelope (the worker mints the invitation's token when it sends the email,

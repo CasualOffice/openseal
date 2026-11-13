@@ -4,6 +4,10 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+### Fixed
+- A saved recipient's type changed in the send editor is now kept on save: `PATCH …/recipients/{r}` takes `type`
+  on a draft (`UX-12`).
+
 ### Added
 - A redesigned web app from an audit against DocuSign and SignNow (`UX-01`, all seven packages `UX-02` to `UX-08`):
   - a design system, with destructive actions in a colour distinct from the seal red, and the Inter font bundled;

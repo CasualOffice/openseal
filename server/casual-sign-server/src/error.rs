@@ -91,6 +91,21 @@ impl ApiError {
         }])
     }
 
+    /// `CS-API-0001` 422 with the member's own code `exists` at `pointer`: a name the
+    /// caller already uses (a folder, UXW-02).
+    pub fn exists(pointer: &str) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-API-0001").fields(vec![FieldProblem {
+            pointer: pointer.into(),
+            code: "exists",
+        }])
+    }
+
+    /// `CS-WF-0007` 409: routing has not reached the caller as a recipient, or has
+    /// passed them (the Inbox's sign-link, UXW-01).
+    pub fn not_reached() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-WF-0007")
+    }
+
     /// `CS-API-0002` 404: no such object, including another account's.
     pub fn not_found() -> Self {
         Self::new(StatusCode::NOT_FOUND, "CS-API-0002")
@@ -167,6 +182,24 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-API-0015")
     }
 
+    /// `CS-ML-0011` 403: the document-analysis feature is not in effect for the workspace
+    /// (not installed, not in its plan, or off; docs/33 §6, §7).
+    pub fn ml_off() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-ML-0011")
+    }
+
+    /// `CS-ML-0012` 409: the suggestion is already decided, or its document left the
+    /// envelope since the analysis (docs/33 §6).
+    pub fn ml_stale() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-ML-0012")
+    }
+
+    /// `CS-WF-0001` 409: not allowed in the object's state (an analysis asked for on an
+    /// envelope that is no longer a draft).
+    pub fn wrong_state(detail: &str) -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-WF-0001").detail(detail)
+    }
+
     /// `CS-AUTH-0001` 401.
     pub fn unauthenticated() -> Self {
         Self::new(StatusCode::UNAUTHORIZED, "CS-AUTH-0001")
@@ -202,6 +235,28 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-AUTH-0010")
     }
 
+    /// `CS-ORG-0005` 403: a grant to oneself, or beyond the granter's own rights
+    /// (docs/23 §2.2).
+    pub fn grant_refused() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-ORG-0005")
+    }
+
+    /// `CS-ORG-0008` 409: the organization must keep at least one enabled owner.
+    pub fn last_owner() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-ORG-0008")
+    }
+
+    /// `CS-ORG-0010` 409: the workspace is archived.
+    pub fn workspace_archived() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-ORG-0010")
+    }
+
+    /// `CS-ORG-0018` 422: an organization administrator must be an enabled member of one
+    /// of its workspaces (docs/23 §2.3); also for a user id the organization cannot see.
+    pub fn not_an_org_member() -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-ORG-0018")
+    }
+
     /// The fixed title of a code.
     fn title(&self) -> &'static str {
         match self.code {
@@ -230,6 +285,10 @@ impl ApiError {
             "CS-AUTH-0008" => "CSRF token missing or wrong",
             "CS-AUTH-0009" => "Link bound to another browser",
             "CS-AUTH-0010" => "Host does not own this embedding",
+            "CS-ORG-0005" => "Grant refused",
+            "CS-ORG-0008" => "Organization must keep an enabled owner",
+            "CS-ORG-0010" => "Workspace archived",
+            "CS-ORG-0018" => "Not a member of the organization's workspaces",
             c if c.starts_with("CS-WF") => "Workflow refused the command",
             c if c.starts_with("CS-FLD") => "Field rules refused the value",
             c if c.starts_with("CS-PDF") || c.starts_with("CS-WRT") => "Document refused",

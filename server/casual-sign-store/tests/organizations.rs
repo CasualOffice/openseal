@@ -70,6 +70,7 @@ async fn policies(admin: &PgPool, table: &str) -> Vec<(String, String, String, S
 const ORG_TABLES: &[&str] = &[
     "org_admin_events",
     "org_permission_sets",
+    "org_usage_counters",
     "organization_admins",
 ];
 
@@ -523,6 +524,7 @@ async fn organization_scope_reaches_no_content(rls: Rls) {
             "organization_admins",
             "org_permission_sets",
             "org_admin_events",
+            "org_usage_counters",
         ];
         for t in &tables {
             let truth_sql = match t.as_str() {

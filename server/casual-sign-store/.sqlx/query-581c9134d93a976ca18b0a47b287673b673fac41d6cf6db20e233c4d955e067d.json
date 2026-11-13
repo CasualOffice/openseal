@@ -1,0 +1,293 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, sender_user_id, status, subject, message, routing_mode, expires_at, reminder_policy, signing_options, seal_profile, completion_delivery, template_ids, version, chain_head, created_at, sent_at, completed_at, voided_at, updated_at, deleted_at, lower(subject) AS \"subject_key!\", (SELECT fe.folder_id FROM folder_envelopes AS fe WHERE fe.account_id = e.account_id AND fe.envelope_id = e.id AND fe.user_id = $13) AS folder_id, (SELECT r.id FROM recipients AS r JOIN users AS u ON u.id = $13 WHERE $17::bool AND r.account_id = e.account_id AND r.envelope_id = e.id AND r.status IN ('sent', 'delivered', 'authenticated', 'auto_responded') AND r.type NOT IN ('cc', 'in_person_signer') AND r.embedded_client_user_id IS NULL AND lower(r.email) = lower(u.email) ORDER BY r.routing_order, r.id LIMIT 1) AS my_recipient_id FROM envelopes AS e WHERE account_id = $1 AND (deleted_at IS NOT NULL) = $16::bool AND EXISTS (SELECT 1 FROM envelope_states AS s WHERE s.account_id = e.account_id AND s.envelope_id = e.id) AND (cardinality($2::text[]) = 0 OR status = ANY($2)) AND ($3::uuid IS NULL OR sender_user_id = $3) AND ($4::text IS NULL OR subject ILIKE $4 ESCAPE '\\' OR EXISTS (SELECT 1 FROM recipients AS r WHERE r.account_id = e.account_id AND r.envelope_id = e.id AND (r.name ILIKE $4 ESCAPE '\\' OR r.email ILIKE $4 ESCAPE '\\'))) AND ($11::text IS NULL OR EXISTS (SELECT 1 FROM recipients AS r WHERE r.account_id = e.account_id AND r.envelope_id = e.id AND (r.name ILIKE $11 ESCAPE '\\' OR r.email ILIKE $11 ESCAPE '\\'))) AND ($5::timestamptz IS NULL OR (CASE $12::text WHEN 'created_at' THEN created_at WHEN 'sent_at' THEN sent_at WHEN 'completed_at' THEN completed_at ELSE updated_at END) >= $5) AND ($6::timestamptz IS NULL OR (CASE $12::text WHEN 'created_at' THEN created_at WHEN 'sent_at' THEN sent_at WHEN 'completed_at' THEN completed_at ELSE updated_at END) < $6) AND ($14::text = 'any' OR ($14::text = 'none' AND NOT EXISTS (SELECT 1 FROM folder_envelopes AS fe WHERE fe.account_id = e.account_id AND fe.envelope_id = e.id AND fe.user_id = $13)) OR ($14::text = 'in' AND EXISTS (SELECT 1 FROM folder_envelopes AS fe WHERE fe.account_id = e.account_id AND fe.envelope_id = e.id AND fe.user_id = $13 AND fe.folder_id = $15::uuid))) AND (NOT $17::bool OR (status IN ('sent', 'delivered') AND EXISTS (SELECT 1 FROM recipients AS r JOIN users AS u ON u.id = $13 WHERE r.account_id = e.account_id AND r.envelope_id = e.id AND r.status IN ('sent', 'delivered', 'authenticated', 'auto_responded') AND r.type NOT IN ('cc', 'in_person_signer') AND r.embedded_client_user_id IS NULL AND lower(r.email) = lower(u.email)))) AND (NOT $7::bool OR (created_at, id) < ($8, $9::uuid)) ORDER BY created_at DESC, id DESC LIMIT $10",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "sender_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "message",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "message"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "routing_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "routing_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "reminder_policy",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "reminder_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "signing_options",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "signing_options"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "seal_profile",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "seal_profile"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "completion_delivery",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "completion_delivery"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "template_ids",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "template_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "chain_head",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "chain_head"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "sent_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "sent_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "completed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "completed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "voided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "voided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "deleted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "deleted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "subject_key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 21,
+        "name": "folder_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 22,
+        "name": "my_recipient_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Bool",
+        "Timestamptz",
+        "Uuid",
+        "Int8",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "581c9134d93a976ca18b0a47b287673b673fac41d6cf6db20e233c4d955e067d"
+}

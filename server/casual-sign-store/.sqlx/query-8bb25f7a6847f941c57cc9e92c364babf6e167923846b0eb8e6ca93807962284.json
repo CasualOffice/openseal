@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ersd_versions (id, account_id, version, language, text_sha256, body, published_at, created_at)\n               SELECT $1, $2, COALESCE(MAX(version), 0) + 1, $3, $4, $5, $6, $6\n               FROM ersd_versions WHERE account_id = $2 AND language = $3\n               RETURNING version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ersd_versions",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8bb25f7a6847f941c57cc9e92c364babf6e167923846b0eb8e6ca93807962284"
+}

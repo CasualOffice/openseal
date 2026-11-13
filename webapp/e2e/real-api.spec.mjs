@@ -148,6 +148,29 @@ test("a template field's every setting round-trips through templatesync.js on th
   expect(r.changed).toEqual({ tooltip: "Changed", read_only: null, value: null, placeholder: null, format: null, validation: settings.text.validation });
 });
 
+// UX-12: a saved draft recipient's type change, as the editor's save builds it
+// (preparemodel.js recipientPatch), kept by the server and read back after a reload.
+test("a draft recipient's type change survives save on the server (UX-12)", async ({ page }) => {
+  await signIn(page, "home");
+  const out = await inApp(page, async () => {
+    const { api, lib } = window.__web10;
+    const { recipientPatch } = await import(new URL("preparemodel.js", location.href).href);
+    const stamp = Date.now();
+    const env = await api.createEnvelope({
+      subject: `UX-12 ${stamp}`,
+      documents: [{ name: "t.pdf", content_base64: btoa(String.fromCharCode(...lib.makePdf([{ title: "Type later" }]))) }],
+      recipients: [{ ref: "a", type: "signer", name: "Ana Type", email: `ana${stamp}@example.com`, routing_order: 1 }],
+    });
+    const { envelope, etag } = await api.getEnvelope(env.id);
+    const saved = envelope.recipients[0];
+    const patch = recipientPatch(saved, { type: "approver", name: saved.name, email: saved.email, routing_order: saved.routing_order });
+    await api.patchRecipient(env.id, saved.id, etag, patch);
+    const after = (await api.getEnvelope(env.id)).envelope.recipients[0];
+    return { patch, type: after.type, same: after.id === saved.id };
+  });
+  expect(out).toEqual({ patch: { type: "approver" }, type: "approver", same: true });
+});
+
 test("the editor on the server: a template saved, reopened and saved back; a parallel step; detection", async ({ page }) => {
   await signIn(page, "home");
   const name = `Editor template ${Date.now()}`;

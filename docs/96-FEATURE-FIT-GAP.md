@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 51 are designed, 18 are partial (`FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 50 are designed, 19 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -29,7 +29,7 @@ instructions 8 and 9).
 | FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
 | FG-010 | Document visibility per recipient | DS | Build | 6 | — |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
-| FG-012 | Template matching on upload | DS | Build | 3 | Designed |
+| FG-012 | Template matching on upload | DS | Build | 3 | Partial: uploads to a draft are matched against the workspace's template page hashes when template matching is on (`WEB-19`); not run on the real stack in a browser |
 | FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | — |
 
 ## Recipients and routing
@@ -144,9 +144,9 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Designed |
-| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (7 days, filtered in the page), completed, with counts on Home and the rail (`UX-07`); waiting for me needs the Inbox (`UXW-01`); auth failed not yet |
-| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (from every screen and on phones, `UX-04`), status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
+| FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Partial: the Inbox (envelopes waiting for the signed-in member, signed from inside the app, `UXW-01`), each member's own folders, the Deleted view of envelopes and of templates with template restore (`UXW-02`) served; restoring a deleted envelope awaits ADR-031 |
+| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (7 days, filtered in the page), completed, with counts on Home and the rail (`UX-07`); waiting for me from the Inbox (`UXW-01`); auth failed not yet |
+| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (from every screen and on phones, `UX-04`), status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); recipient and a range on created, sent, completed or last change, server-side (`UXW-03`); custom fields not yet |
 | FG-133 | Correct | DS | Build | 6 | Partial: a side panel changes name, email, access code and signing order of recipients who have not acted, adds and removes them, and sets expiry and reminders (`POST /correct` and `PATCH …/recipients/{r}`; `UX-07`, tested in mock mode); fields and documents are `UXW-19` |
 | FG-134 | Void with reason | DS, SN | Build | 2 | Works |
 | FG-135 | Resend | DS, SN | Build | 2 | Works |
@@ -161,7 +161,7 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
 | FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
 | FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
 | FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |
@@ -186,13 +186,13 @@ instructions 8 and 9).
 | FG-174 | Domain claims | DS | Build | 10 | Designed |
 | FG-175 | SCIM provisioning | DS | Build | 10 | Designed |
 | FG-176 | Brands (logo, colours, emails, landing pages) | DS, SN | Build | 12 | — |
-| FG-177 | ERSD editing | DS | Build | 5 | Designed |
+| FG-177 | ERSD editing | DS | Build | 5 | Partial: `POST /ersd-versions` publishes and requires a version in one step (`ERSD-01`); the Admin card edits it against the mock; real-stack e2e left (`UXW-12`) |
 | FG-178 | Retention and purge policies | DS | Build | 15 | Designed |
 | FG-179 | Legal hold | — | Build | 15 | — |
 | FG-180 | Data residency (region tags) | DS | Build | 15 | — |
 | FG-181 | BYOK per-tenant keys | — | Build | 15 | — |
 | FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | — |
-| FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization route waits for ORG-03, screens for ORG-06 |
+| FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization's through `GET /organizations/me/audit` (`ORG-03`); screens wait for ORG-06 |
 | FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Designed |
 
 ## Developer surface

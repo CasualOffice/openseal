@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE folders SET name = $4 WHERE account_id = $1 AND id = $2 AND owner_user_id = $3 AND kind = 'envelopes'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1deed1ac5079d143df0bff9ef6511dad5611a2e02fd9b251076366af4be7b5a"
+}

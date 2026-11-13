@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT page, words FROM ocr_pages WHERE account_id = $1 AND run_id = $2 ORDER BY page",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "page",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ocr_pages",
+            "name": "page"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "words",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "ocr_pages",
+            "name": "words"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1e734c859b48b6396ab71a786b8dc0ef39edf8ae9afd8a7cd1c426aeef08b4c7"
+}

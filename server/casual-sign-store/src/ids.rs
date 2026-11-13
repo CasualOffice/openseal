@@ -76,4 +76,12 @@ id_type!(
     PasswordResetId,
     /// A staff user's session.
     StaffSessionId,
+    /// A member's folder (UXW-02).
+    FolderId,
+    /// A member's filing of an envelope in a folder (UXW-02).
+    FolderEntryId,
+    /// One analysis of one stored document (docs/33 §2, WEB-19).
+    AnalysisRunId,
+    /// One suggestion of an analysis (docs/33 §6).
+    SuggestionId,
 );

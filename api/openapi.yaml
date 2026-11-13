@@ -241,6 +241,73 @@ components:
       properties:
         items: {type: array, items: {$ref: '#/components/schemas/AdminEvent'}}
         next_cursor: {type: [integer, 'null']}
+    Organization:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [active, suspended, closed]}
+        role: {type: string, enum: [owner, admin, delegated], description: "The caller's role (GET only)"}
+        created_at: {type: string, format: date-time}
+    OrganizationPatch:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+    OrgWorkspace:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [active, archived]}
+    OrgWorkspaceList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/OrgWorkspace'}}
+    OrgWorkspaceCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+    OrgWorkspaceJoin:
+      type: object
+      required: [profile]
+      additionalProperties: false
+      properties:
+        profile: {type: string, description: '`admin`, `sender`, `viewer`, or a permission profile id of that workspace'}
+    OrgWorkspaceMembership:
+      type: object
+      properties:
+        workspace_id: {type: string}
+        user_id: {type: string}
+        permission_profile_id: {type: string}
+    OrgAdmin:
+      type: object
+      properties:
+        user_id: {type: string}
+        role: {type: string, enum: [owner, admin, delegated]}
+        permission_set_id: {type: [string, 'null']}
+        workspace_scope: {type: [array, 'null'], items: {type: string}}
+        created_at: {type: string, format: date-time}
+    OrgAdminList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/OrgAdmin'}}
+    OrgAdminCreate:
+      type: object
+      required: [user_id, role]
+      additionalProperties: false
+      properties:
+        user_id: {type: string, description: An enabled member of a workspace of this organization}
+        role: {type: string, enum: [owner, admin], description: Delegated admins need a permission set (ORG-07)}
+    OrgAdminPatch:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: {type: string, enum: [owner, admin]}
     UserCreate:
       type: object
       required: [email, name, profile]
@@ -346,6 +413,9 @@ components:
         name: {type: string}
         email: {type: string}
         routing_order: {type: integer}
+        type:
+          allOf: [{$ref: '#/components/schemas/RecipientType'}]
+          description: "A new type (UX-12), on a draft only; a correction keeps the type and is refused `409`."
         auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}}
         access_code:
           type: string
@@ -440,6 +510,26 @@ components:
         sent_at: {type: [string, 'null'], format: date-time}
         completed_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
+        folder_id: {type: [string, 'null'], description: "The caller's own folder it is filed in (UXW-02)"}
+        my_recipient_id: {type: [string, 'null'], description: "With waiting_for=me only: the recipient the caller is (UXW-01)"}
+    Folder:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string, maxLength: 100}
+        count: {type: integer, description: "Envelopes the owner filed in it that are not deleted"}
+    FolderName:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100, description: "Trimmed; unique among the caller's folders ignoring case (422 `exists` at /name)"}
+    FolderMove:
+      type: object
+      additionalProperties: false
+      required: [envelope_ids]
+      properties:
+        envelope_ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
     DetectedField:
       type: object
       properties:
@@ -453,6 +543,108 @@ components:
         source: {type: string, enum: [underline, label, box, acroform]}
         cue: {type: string, description: "The text cue (at most 64 characters), or the form field's data label"}
         confidence: {type: integer, minimum: 0, maximum: 100}
+    MlSettings:
+      type: object
+      description: >-
+        A workspace's document-analysis switches (docs/33 §6, §7). A feature is in effect only
+        when the model service is installed, the plan entitles it and an administrator turned
+        it on; every level is off by default.
+      properties:
+        ocr: {type: boolean}
+        template_matching: {type: boolean}
+        extraction: {type: boolean}
+        personal_data: {type: boolean}
+        personal_data_model: {type: [string, 'null'], pattern: '^[A-Za-z0-9._-]{1,64}$'}
+        ocr_scripts: {type: array, maxItems: 16, items: {type: string, enum: [latin, cyrillic, greek, cjk, arabic, devanagari]}}
+        reread_scanner_text: {type: boolean}
+        not_in_plan: {type: array, readOnly: true, items: {type: string, enum: [ocr, template_matching, extraction, personal_data]}}
+        installed: {type: boolean, readOnly: true, description: false when this server has no model service}
+    ErsdPublish:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 100000, description: "The disclosure recipients read and consent to; at most 100,000 bytes of UTF-8, not blank, no NUL"}
+        language: {type: string, pattern: '^[A-Za-z][A-Za-z0-9-]{1,34}$', default: en}
+    ErsdVersion:
+      type: object
+      description: A published disclosure, without its text.
+      properties:
+        id: {type: string}
+        version: {type: integer, minimum: 1}
+        label: {type: string, description: "The version as the policy and consent name it"}
+        language: {type: string}
+        sha256: {type: string, description: "`sha256:<hex>` of the text's UTF-8"}
+        published_at: {type: string, format: date-time}
+    ErsdVersions:
+      type: object
+      properties:
+        current:
+          type: [object, 'null']
+          properties:
+            label: {type: string}
+            sha256: {type: string}
+            version: {type: [integer, 'null']}
+            language: {type: [string, 'null']}
+            published_at: {type: [string, 'null'], format: date-time}
+            text: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/ErsdVersion'}}
+    MlSettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        ocr: {type: boolean}
+        template_matching: {type: boolean}
+        extraction: {type: boolean}
+        personal_data: {type: boolean}
+        personal_data_model: {type: [string, 'null'], pattern: '^[A-Za-z0-9._-]{1,64}$'}
+        ocr_scripts: {type: array, maxItems: 16, items: {type: string, enum: [latin, cyrillic, greek, cjk, arabic, devanagari]}}
+        reread_scanner_text: {type: boolean}
+    Analysis:
+      type: object
+      description: One analysis of one stored document (docs/33 §2). Advisory; never evidence.
+      properties:
+        id: {type: string}
+        document_id: {type: string}
+        status: {type: string, enum: [queued, running, done, failed, unavailable]}
+        uses: {type: array, items: {type: string, enum: [ocr, template, entities, personal_data]}}
+        ocr_pages: {type: array, description: 1-based pages read by OCR, items: {type: integer, minimum: 1}}
+        truncated: {type: boolean}
+        bundle_id: {type: [string, 'null']}
+        code: {type: string, description: Why it failed (CS-ML-*)}
+        created_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+    Suggestion:
+      type: object
+      description: >-
+        What an analysis suggests; a person accepts or dismisses it (docs/33 §6). `value` is
+        read from the stored document when listed and is document content.
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [template, entity, personal_data]}
+        document_id: {type: string}
+        page: {type: [integer, 'null'], minimum: 1}
+        rect: {type: [object, 'null']}
+        label: {type: string}
+        value: {type: [string, 'null']}
+        normalized: {type: [string, 'null']}
+        score: {type: number, minimum: 0, maximum: 1}
+        model:
+          type: object
+          properties:
+            id: {type: string}
+            sha256: {type: string}
+        state: {type: string, enum: [open, accepted, dismissed]}
+        template_id: {type: string, description: The matched template (kind template)}
+        pages_matched: {type: [integer, 'null']}
+        pages_total: {type: [integer, 'null']}
+        decided_by: {type: string}
+        decided_at: {type: string, format: date-time}
+    SuggestionPage:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Suggestion'}}
+        next_cursor: {type: [string, 'null']}
     DetectedFields:
       type: object
       properties:
@@ -947,6 +1139,77 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Object'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/account/settings/ml:
+    get:
+      operationId: getMlSettings
+      summary: "The workspace's document-analysis settings (docs/33 §6, WEB-19)"
+      x-permission: "admin:account"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MlSettings'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchMlSettings
+      summary: "Turn document-analysis features on or off"
+      description: >-
+        Turning on a feature the plan lacks, or any feature while the model service is not
+        installed, is `403 CS-ML-0011`; turning one off is always allowed.
+      x-permission: "admin:account"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MlSettingsPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MlSettings'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/ersd-versions:
+    get:
+      operationId: listErsdVersions
+      summary: "The account's electronic disclosure: the one the workflow policy names, with its text, and the published versions (ERSD-01)"
+      description: >-
+        `current` is the disclosure `settings.workflow_policy.ersd` names, with its published
+        text (`text` null when no intact published row has that hash), or null when the
+        account requires none. `items` are the published versions, newest first, at most 100,
+        without their text.
+      x-permission: "admin:account"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErsdVersions'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: publishErsdVersion
+      summary: "Publish disclosure text as the next version and require it, in one step (ERSD-01)"
+      description: >-
+        Writes the next version of `language` (one more than its highest), its `ersd.published`
+        admin event, and `settings.workflow_policy.ersd = {version, hash}` with its
+        `workspace.settings_changed` event, in one transaction. Envelopes already sent then ask
+        for consent to the new version. Published rows are never changed: a new text is a new
+        version. An empty or blank text, one with a NUL, or a bad language tag is
+        `422 CS-API-0001`; a text over 100,000 bytes is `413 CS-API-0006`.
+      x-permission: "admin:account"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ErsdPublish'}
+      responses:
+        '201':
+          description: Published and required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErsdVersion'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/admin-events:
     get:
       operationId: listAdminEvents
@@ -965,6 +1228,224 @@ paths:
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
         - {name: format, in: query, required: false, schema: {type: string, enum: [json, csv], default: json}}
         - {name: verify, in: query, required: false, description: "`page` verifies the page read; `full` re-verifies the whole log first; another value is `422 CS-API-0001`", schema: {type: string, enum: [page, full], default: page}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminEventList'}
+            text/csv:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me:
+    get:
+      operationId: getOrganization
+      summary: "The caller's organization and their role in it (ORG-03)"
+      description: >-
+        Organization metadata only; no role confers access to agreements (SEC-O07).
+        The caller's organization is the session's workspace's; the role is read from
+        `organization_admins` on every request (no role, or an action it does not hold:
+        `403 CS-AUTH-0006`; a non-session credential: `403 CS-AUTH-0006`). Another
+        organization's ids answer `404 CS-API-0002`.
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchOrganization
+      summary: "Rename the organization (`org.settings.update`), logged as `organization.renamed`"
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrganizationPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/workspaces:
+    get:
+      operationId: listOrgWorkspaces
+      summary: "The organization's workspaces, by name (metadata only)"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspaceList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createOrgWorkspace
+      summary: "Create a workspace (`org.workspaces.create`) with its built-in profiles and no member, logged as `workspace.created`"
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrgWorkspaceCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspace'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/workspaces/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Workspace id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getOrgWorkspace
+      summary: "A workspace of the organization (metadata only)"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspace'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/workspaces/{id}/archive:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Workspace id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: archiveOrgWorkspace
+      summary: "Archive a workspace (`org.workspaces.archive`, idempotent), logged as `workspace.archived`"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspace'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/workspaces/{id}/join:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Workspace id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: joinOrgWorkspace
+      summary: "Become a member of a workspace (`org.workspaces.join`, owners and admins only)"
+      description: >-
+        The only way an organization role reaches agreements: one transaction writes the membership,
+        `member.added` (`via: organization`) in the workspace's log and `org.workspace_joined` in the
+        organization's. A delegated admin gets `403 CS-AUTH-0006`; an archived workspace `409 CS-ORG-0010`.
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrgWorkspaceJoin'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspaceMembership'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/admins:
+    get:
+      operationId: listOrgAdmins
+      summary: "The organization's owners and admins"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgAdminList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: addOrgAdmin
+      summary: "Make a user an owner or admin (`org.admins.manage`, owners only), logged as `organization.admin_added`"
+      description: >-
+        The user must be an enabled member of a workspace of this organization, else `422 CS-ORG-0018`
+        (also for an id the organization cannot see); never oneself (`403 CS-ORG-0005`).
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrgAdminCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgAdmin'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/admins/{user}:
+    parameters:
+      - name: user
+        in: path
+        required: true
+        description: User id (UUIDv7)
+        schema: {type: string}
+    patch:
+      operationId: patchOrgAdmin
+      summary: "Change an administrator's role (owners only; never one's own), logged as `organization.admin_role_changed`"
+      description: >-
+        A delegated admin made an owner or admin loses its permission set and workspace
+        scope; the same role again changes and logs nothing. Leaving no enabled owner is
+        `409 CS-ORG-0008`.
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrgAdminPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgAdmin'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: removeOrgAdmin
+      summary: "Remove an administrator (owners only), logged as `organization.admin_removed`"
+      description: >-
+        An owner may resign; the last enabled owner may not (`409 CS-ORG-0008`).
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: object, properties: {user_id: {type: string}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/audit:
+    get:
+      operationId: listOrgAdminEvents
+      summary: "The organization's admin audit log (`org.audit.read`), oldest first, verified as read"
+      description: >-
+        As `GET /admin-events`, over the organization's chain: workspace creation and archiving,
+        joins, administrator changes, renames, and the platform's `operator.*` copies (CON-16).
+      x-permission: ""
+      parameters:
+        - {name: cursor, in: query, required: false, description: "The `seq` after which to start", schema: {type: integer, minimum: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
+        - {name: format, in: query, required: false, schema: {type: string, enum: [json, csv], default: json}}
+        - {name: verify, in: query, required: false, schema: {type: string, enum: [page, full], default: page}}
       responses:
         '200':
           description: OK
@@ -1199,9 +1680,14 @@ paths:
       description: >-
         The envelopes the caller may see (their own without `view_all`), never another
         account's, and never those removed from the lists (`DELETE` of an envelope that
-        ended without completing). Newest first by default. Keyset paging: a cursor
-        belongs to the sort and order it was issued for (another is `422`), and pages stay
-        stable under inserts.
+        ended without completing) unless `deleted=true` asks for exactly those (the
+        Deleted view, UXW-02). `waiting_for=me` is the Inbox (UXW-01): sent envelopes of
+        this account, whoever sent them, in which the caller is, by their account email, a
+        recipient whose turn it is and who acts through a link (not a copy, an in-person
+        or an embedded signer); each item then has `my_recipient_id`. Every item has
+        `folder_id`, the caller's own folder it is filed in, or null. Newest first by
+        default. Keyset paging: a cursor belongs to the sort and order it was issued for
+        (another is `422`), and pages stay stable under inserts.
       x-permission: "envelopes:read"
       parameters:
         - $ref: '#/components/parameters/cursor'
@@ -1237,13 +1723,44 @@ paths:
         - name: from
           in: query
           required: false
-          description: Last change at or after this instant (RFC 3339).
+          description: "`date_field` at or after this instant (RFC 3339)."
           schema: {type: string, format: date-time}
         - name: to
           in: query
           required: false
-          description: Last change before this instant (RFC 3339).
+          description: "`date_field` before this instant (RFC 3339)."
           schema: {type: string, format: date-time}
+        - name: date_field
+          in: query
+          required: false
+          description: >-
+            Which date `from` and `to` bound (UXW-03): the last change (default), creation,
+            sending or completion. An envelope without that date is outside any range.
+          schema: {type: string, enum: [updated_at, created_at, sent_at, completed_at], default: updated_at}
+        - name: recipient
+          in: query
+          required: false
+          description: >-
+            Text a recipient's name or email contains, ignoring case (UXW-03); at most 200
+            characters.
+          schema: {type: string, maxLength: 200}
+        - name: folder
+          in: query
+          required: false
+          description: >-
+            One of the caller's folders (another member's matches nothing), or `none`: in
+            none of the caller's folders (UXW-02).
+          schema: {type: string}
+        - name: deleted
+          in: query
+          required: false
+          description: "`true`: only the envelopes removed from the lists, the Deleted view (UXW-02)."
+          schema: {type: string, enum: ["true", "false"], default: "false"}
+        - name: waiting_for
+          in: query
+          required: false
+          description: "`me`: the Inbox (UXW-01)."
+          schema: {type: string, enum: [me]}
       responses:
         '200':
           description: OK
@@ -1460,7 +1977,12 @@ paths:
         schema: {type: string}
     get:
       operationId: getCertificate
-      summary: "Certificate of completion PDF (made by the seal job)"
+      summary: "Certificate of completion PDF (made by the seal job), or a declined, voided or expired envelope's envelope certificate (UXW-30)"
+      description: >-
+        A completed envelope's certificate of completion. A declined, voided or expired
+        envelope's envelope certificate says how it ended and never claims completion;
+        the worker makes and seals it when the envelope ends. `409 CS-API-0009` before
+        either exists (an ended envelope without one asks the worker for it then).
       x-permission: "envelopes:read"
       responses:
         '200':
@@ -1633,6 +2155,98 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/DetectedFields'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/documents/{doc}/analysis:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: doc, in: path, required: true, description: Document id, schema: {type: string}}
+    post:
+      operationId: requestAnalysis
+      summary: "Ask for a draft's document to be analysed (docs/33 §6, WEB-19)"
+      description: >-
+        Idempotent on the job key (account, document, its SHA-256, the features, the model
+        bundle). `403 CS-ML-0011` with no feature in effect; `409 CS-WF-0001` once the
+        envelope is no longer a draft. The envelope's sender or an administrator.
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Analysis'}
+        default: {$ref: '#/components/responses/Problem'}
+    get:
+      operationId: getAnalysis
+      summary: "The document's newest analysis"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Analysis'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/suggestions:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    get:
+      operationId: listSuggestions
+      summary: "Suggestions of the envelope's analyses (docs/33 §6, WEB-19)"
+      description: >-
+        Only kinds whose feature is in effect, only for documents still in the envelope.
+        `403 CS-ML-0011` with no feature in effect.
+      x-permission: "envelopes:read"
+      parameters:
+        - {name: kind, in: query, schema: {type: string, enum: [template, entity, personal_data]}}
+        - {name: state, in: query, schema: {type: string, enum: [open, accepted, dismissed]}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SuggestionPage'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/suggestions/{s}/accept:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: s, in: path, required: true, description: Suggestion id, schema: {type: string}}
+    post:
+      operationId: acceptSuggestion
+      summary: "Accept a suggestion"
+      description: >-
+        Records who accepted it and when. The action it suggests (applying a template, adding
+        a field) is the person's own, through the ordinary endpoints. `409 CS-ML-0012` when
+        already decided or its document left the envelope.
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Suggestion'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/suggestions/{s}/dismiss:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: s, in: path, required: true, description: Suggestion id, schema: {type: string}}
+    post:
+      operationId: dismissSuggestion
+      summary: "Dismiss a suggestion"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Suggestion'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/recipients:
     parameters:
@@ -1852,6 +2466,34 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SigningView'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/sign-link:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: createSignLink
+      summary: "The Inbox (UXW-01): a five-minute signing link for the signed-in member, as the recipient they are"
+      description: >-
+        For a member signed in with a session (an API key or OAuth client is `403`) who
+        is, by their account email, a recipient of this envelope whose turn it is and
+        who acts through a link. The ceremony records the member's sign-in
+        (`account_login`) as how the link was obtained and applies every authentication
+        the sender required. `404` when the caller neither may see the envelope nor is a
+        recipient of it; `409 CS-WF-0007` when routing has not reached them or has passed.
+        The body is empty or `{}`.
+      x-permission: ""
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningView'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/views/signing:
     parameters:
       - name: id
@@ -1880,8 +2522,18 @@ paths:
   /api/v1/templates:
     get:
       operationId: listTemplates
-      summary: "Templates"
+      summary: "Templates; with deleted=true the Deleted view (UXW-02)"
+      description: >-
+        The account's live templates by name, or with `deleted=true` the deleted ones,
+        kept whole and restorable, most recently deleted first. Any other value of
+        `deleted` than `true` or `false` is `422`.
       x-permission: "templates:read"
+      parameters:
+        - name: deleted
+          in: query
+          required: false
+          description: "`true`: the Deleted view (UXW-02)."
+          schema: {type: string, enum: ['true', 'false']}
       responses:
         '200':
           description: OK
@@ -1945,12 +2597,32 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     delete:
       operationId: deleteTemplate
-      summary: "Delete a template with its roles, documents and fields; envelopes made from it keep their copies (WEB-06)"
+      summary: "Move a live template to the Deleted view, kept whole (UXW-02); delete one already there for good, with its roles, documents and fields; envelopes made from it keep their copies (WEB-06)"
       x-permission: "templates:write"
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/restore:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    post:
+      operationId: restoreTemplate
+      summary: "Bring a template of the Deleted view back, with everything it had (UXW-02)"
+      description: >-
+        `If-Match` is honoured when given. A live template, or none, is `404`. The body
+        is empty or `{}`.
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+        - {name: If-Match, in: header, required: false, description: "\"v<version>\"", schema: {type: string}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/templates/{id}/duplicate:
     parameters:
@@ -2025,6 +2697,35 @@ paths:
           content:
             application/pdf:
               schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/documents/{doc}/analysis:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: doc, in: path, required: true, description: Template document id, schema: {type: string}}
+    post:
+      operationId: requestTemplateAnalysis
+      summary: "Ask for a template document's page hashes, for matching uploads (docs/33 §6)"
+      description: "`403 CS-ML-0011` unless template matching is in effect."
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Analysis'}
+        default: {$ref: '#/components/responses/Problem'}
+    get:
+      operationId: getTemplateAnalysis
+      summary: "The template document's newest analysis"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Analysis'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/templates/{id}/roles:
     parameters:
@@ -2140,6 +2841,101 @@ paths:
         - $ref: '#/components/parameters/ifMatch'
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/folders:
+    get:
+      operationId: listFolders
+      summary: "The caller's own envelope folders, by name, with counts (UXW-02)"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Folder'}}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createFolder
+      summary: "A new folder of the caller's (at most 500)"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FolderName'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Folder'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/folders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: One of the caller's folders (another member's or account's is 404)
+        schema: {type: string}
+    patch:
+      operationId: renameFolder
+      summary: "Rename one of the caller's folders"
+      x-permission: "envelopes:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FolderName'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Folder'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteFolder
+      summary: "Remove one of the caller's folders; what was filed in it is in no folder"
+      x-permission: "envelopes:write"
+      responses:
+        '204': {description: Removed}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/folders/{id}/envelopes:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: One of the caller's folders, or `none` to file the envelopes in no folder
+        schema: {type: string}
+    post:
+      operationId: moveEnvelopes
+      summary: "File 1 to 200 envelopes the caller may see in a folder of theirs, or in none, all or nothing"
+      description: >-
+        Filing is the caller's own view of their lists: the envelopes, their `updated_at`
+        and their audit chains are untouched. An envelope the caller may not see is `404`
+        and nothing moves.
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FolderMove'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  moved: {type: integer}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/webhooks:
     get:

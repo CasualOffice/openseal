@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM folder_envelopes WHERE account_id = $1 AND user_id = $2 AND envelope_id = ANY($3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7741bdd9ea14b6ad1b4dd62a0ed675295557f8b3da1247ed48f65573c0a917a4"
+}

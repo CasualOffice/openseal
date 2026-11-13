@@ -48,12 +48,14 @@ pub use admin_log::{
     ADMIN_EVENT_CONSTRAINT, ADMIN_EVENT_VERSION, ActorKind, AdminActor,
     MAX_PAGE as ADMIN_EVENTS_MAX_PAGE, StoredAdminEvent, verify_admin_chain,
 };
+/// The meters [`TenantTx::record_usage`] counts (docs/23 §7.2).
+pub use casual_sign_policy::plans::Meter;
 pub use error::{Result, StoreError};
 pub use ids::*;
 pub use migrate::{MIGRATIONS, Migration, MigrationReport, migrate};
 pub use org::{
-    BuiltinProfiles, LAST_OWNER_CONSTRAINT, OrgScope, OrgTx, Organization, OrganizationStatus,
-    Workspace, WorkspaceOf, WorkspaceStatus,
+    BuiltinProfiles, LAST_OWNER_CONSTRAINT, OrgScope, OrgTx, Organization, OrganizationAdmin,
+    OrganizationRole, OrganizationStatus, Workspace, WorkspaceOf, WorkspaceStatus,
 };
 pub use store::{
     ClaimedJob, EntryPoints, RecipientTokenTarget, StaffSessionTarget, Store, Tenant, TenantTx,

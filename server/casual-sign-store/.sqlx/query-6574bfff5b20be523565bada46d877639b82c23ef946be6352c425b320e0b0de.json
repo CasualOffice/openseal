@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE analysis_runs SET status = 'running' WHERE account_id = $1 AND id = $2 AND status IN ('queued', 'running')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6574bfff5b20be523565bada46d877639b82c23ef946be6352c425b320e0b0de"
+}

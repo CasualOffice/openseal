@@ -382,7 +382,7 @@ export async function fetchAgreements(ctx, { q = "", cap = 1000 } = {}) {
 }
 
 /// The envelopes waiting for this user's signature (the Inbox), `{ids, items}`; empty
-/// where the server has no Inbox yet (`NOT_ON_SERVER.inbox`).
+/// where the backend has no Inbox (UXW-01).
 export async function fetchInbox(ctx) {
   if (ctx.api.available && !ctx.api.available("inbox")) return { ids: new Set(), items: [] };
   try {

@@ -178,6 +178,40 @@ impl TenantTx {
         self.tx.rollback().await.map_err(db)
     }
 
+    /// Count `quantity` of counter meter `meter` for this workspace and its organization,
+    /// once per `(source_kind, source_id)`, through `openseal_meter_record` (docs/23 §7.2,
+    /// migration 0025): the ledger row and both counters are written in this transaction,
+    /// so a decision recorded again or a retried job counts once. Gauges (`seats`,
+    /// `storage_bytes`, `workspaces`, `templates`) are kept by the database and refused
+    /// here. `source_kind` is a lower-case dotted name; `source_id` an id, never content.
+    /// True when this call counted; false when the source was already counted.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` for a gauge, a quantity below 1 or a malformed source; `CS-DB-0009`
+    /// outside a workspace scope.
+    pub async fn record_usage(
+        &mut self,
+        meter: casual_sign_policy::plans::Meter,
+        quantity: i64,
+        at: OffsetDateTime,
+        source_kind: &str,
+        source_id: Uuid,
+    ) -> Result<bool> {
+        let counted = sqlx::query_scalar!(
+            "SELECT openseal_meter_record($1, $2, $3, $4, $5)",
+            meter.as_str(),
+            quantity,
+            at,
+            source_kind,
+            source_id.to_string()
+        )
+        .fetch_one(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        Ok(counted.unwrap_or(false))
+    }
+
     /// This workspace's organization's plan rows at `now`, through
     /// `openseal_effective_plan` (docs/23 §7.1): the assignment current at `now` and the
     /// overrides live at `now` for the organization and this workspace. Resolve them with

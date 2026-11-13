@@ -1541,6 +1541,248 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .await;
     assert_eq!(gone.status, StatusCode::NO_CONTENT, "{:?}", gone.json());
 
+    // Document analysis (WEB-19): this server has no model service, so the settings say
+    // so and every analysis call is `403 CS-ML-0011` (tests/ml.rs covers them working).
+    let ml = ok(
+        api.call("GET", "/api/v1/account/settings/ml", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "ml settings",
+    )
+    .await;
+    assert_eq!(ml["installed"], false);
+    ok(
+        api.call(
+            "PATCH",
+            "/api/v1/account/settings/ml",
+            k,
+            Some(json!({"ocr": false})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "ml settings off",
+    )
+    .await;
+    let none = uuid::Uuid::now_v7();
+    for (m, p) in [
+        ("POST", format!("{base}/documents/{doc}/analysis")),
+        ("GET", format!("{base}/documents/{doc}/analysis")),
+        ("GET", format!("{base}/suggestions")),
+        ("POST", format!("{base}/suggestions/{none}/accept")),
+        ("POST", format!("{base}/suggestions/{none}/dismiss")),
+    ] {
+        let r = api.call(m, &p, k, None, &[]).await;
+        assert_eq!(
+            (r.status, r.code().as_str()),
+            (StatusCode::FORBIDDEN, "CS-ML-0011"),
+            "{m} {p}"
+        );
+    }
+    for m in ["POST", "GET"] {
+        let p = format!("/api/v1/templates/{none}/documents/{none}/analysis");
+        assert_eq!(
+            api.call(m, &p, k, None, &[]).await.status,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    // Folders (UXW-02): the caller's own.
+    let f = ok(
+        api.call(
+            "POST",
+            "/api/v1/folders",
+            k,
+            Some(json!({"name": "Q3"})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create folder",
+    )
+    .await;
+    let fid = f["id"].as_str().unwrap();
+    ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/folders/{fid}/envelopes"),
+            k,
+            Some(json!({"envelope_ids": [id]})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "file",
+    )
+    .await;
+    let listed = ok(
+        api.call("GET", "/api/v1/folders", k, None, &[]).await,
+        StatusCode::OK,
+        "folders",
+    )
+    .await;
+    assert_eq!(listed["items"][0]["count"], 1);
+    ok(
+        api.call(
+            "PATCH",
+            &format!("/api/v1/folders/{fid}"),
+            k,
+            Some(json!({"name": "Q4"})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "rename folder",
+    )
+    .await;
+    let gone = api
+        .call("DELETE", &format!("/api/v1/folders/{fid}"), k, None, &[])
+        .await;
+    assert_eq!(gone.status, StatusCode::NO_CONTENT);
+
+    // The Inbox (UXW-01): an envelope waiting for the administrator, signed in.
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            k,
+            Some(json!({
+                "subject": "For me", "status": "sent",
+                "documents": [{"name": "m.pdf", "content_base64": b64(&common::harness::pdf(1))}],
+                "recipients": [{"ref": "me", "type": "signer", "name": "Admin", "email": a.email}],
+                "fields": [{"recipient": "me", "document": 0, "type": "signature", "page": 1,
+                            "x": 72, "y": 100, "width": 180, "height": 40, "required": true}],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "envelope for me",
+    )
+    .await;
+    let login = api
+        .call(
+            "POST",
+            "/api/v1/auth/login",
+            &Auth::None,
+            Some(json!({"email": a.email, "password": common::harness::PASSWORD})),
+            &[],
+        )
+        .await;
+    let me = session_of(&login);
+    let inbox = ok(
+        api.call("GET", "/api/v1/envelopes?waiting_for=me", &me, None, &[])
+            .await,
+        StatusCode::OK,
+        "inbox",
+    )
+    .await;
+    let mine = inbox["items"][0]["id"].as_str().unwrap();
+    ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/envelopes/{mine}/sign-link"),
+            &me,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "sign-link",
+    )
+    .await;
+
+    // The organization (ORG-03), as its owner's session; `uid` an admin and back.
+    let os = session_of(&login);
+    for (m, path, body, want) in [
+        (
+            "GET",
+            "/api/v1/organizations/me".to_owned(),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "PATCH",
+            "/api/v1/organizations/me".to_owned(),
+            Some(json!({"name": "Alpha"})),
+            StatusCode::OK,
+        ),
+        (
+            "GET",
+            "/api/v1/organizations/me/workspaces".to_owned(),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "GET",
+            "/api/v1/organizations/me/admins".to_owned(),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "POST",
+            "/api/v1/organizations/me/admins".to_owned(),
+            Some(json!({"user_id": uid, "role": "admin"})),
+            StatusCode::CREATED,
+        ),
+        (
+            "PATCH",
+            format!("/api/v1/organizations/me/admins/{uid}"),
+            Some(json!({"role": "owner"})),
+            StatusCode::OK,
+        ),
+        (
+            "DELETE",
+            format!("/api/v1/organizations/me/admins/{uid}"),
+            None,
+            StatusCode::OK,
+        ),
+    ] {
+        ok(api.call(m, &path, &os, body, &[]).await, want, &path).await;
+    }
+    let w = ok(
+        api.call(
+            "POST",
+            "/api/v1/organizations/me/workspaces",
+            &os,
+            Some(json!({"name": "Second"})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create workspace",
+    )
+    .await;
+    let wid = w["id"].as_str().unwrap().to_owned();
+    for (m, path, body, want) in [
+        (
+            "GET",
+            format!("/api/v1/organizations/me/workspaces/{wid}"),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "POST",
+            format!("/api/v1/organizations/me/workspaces/{wid}/join"),
+            Some(json!({"profile": "viewer"})),
+            StatusCode::CREATED,
+        ),
+        (
+            "POST",
+            format!("/api/v1/organizations/me/workspaces/{wid}/archive"),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "GET",
+            "/api/v1/organizations/me/audit?verify=full".to_owned(),
+            None,
+            StatusCode::OK,
+        ),
+    ] {
+        ok(api.call(m, &path, &os, body, &[]).await, want, &path).await;
+    }
+
     // Members and sessions last.
     ok(
         api.call("DELETE", &format!("/api/v1/users/{uid}"), k, None, &[])

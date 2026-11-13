@@ -257,7 +257,7 @@ export async function downloadCertificate(ctx, id) {
 }
 
 /// Whether the certificate can be asked for in this state: a completed envelope's
-/// always; an ended one's only where the server serves it (`NOT_ON_SERVER.certificateEnded`).
+/// always; an ended one's (UXW-30) where the backend serves it.
 export function hasCertificate(ctx, status) {
   return status === "completed" || (ENDED.has(status) && !!ctx.api.available?.("certificateEnded"));
 }

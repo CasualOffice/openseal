@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
-use casual_sign_audit::{Channel, Hash256};
+use casual_sign_audit::{Channel, Hash256, Timestamp};
 use casual_sign_model::{Id, Text};
 use casual_sign_sdk::Art;
 use casual_sign_store::blob::{BlobKey, BlobStore};
@@ -251,6 +251,7 @@ pub struct Worker<B: BlobStore> {
     alerts: Arc<dyn AlertSink>,
     clock: Arc<dyn Clock>,
     faults: Option<FaultHook>,
+    inference: Option<Arc<dyn crate::ml::Inference>>,
 }
 
 impl<B: BlobStore> core::fmt::Debug for Worker<B> {
@@ -343,7 +344,16 @@ impl<B: BlobStore + 'static> Worker<B> {
             alerts,
             clock,
             faults: None,
+            inference: None,
         }
+    }
+
+    /// Run document-analysis jobs against `inference` (docs/33 §2). Without it, such a
+    /// job ends its run as `unavailable` and nothing else.
+    #[must_use]
+    pub fn with_inference(mut self, inference: Arc<dyn crate::ml::Inference>) -> Self {
+        self.inference = Some(inference);
+        self
     }
 
     /// Stop dead at the boundaries `hook` names (crash tests).
@@ -526,6 +536,14 @@ impl<B: BlobStore + 'static> Worker<B> {
         }
         if job.kind == casual_sign_host::jobs::SEND_PASSWORD_RESET {
             return self.password_reset(job, lease).await;
+        }
+        if job.kind == casual_sign_host::jobs::SEAL_ENDED_CERTIFICATE {
+            return self.ended_certificate(job, lease).await;
+        }
+        if job.kind == casual_sign_host::ml::ANALYZE_DOCUMENT
+            || job.kind == casual_sign_host::ml::FINGERPRINT_TEMPLATE
+        {
+            return self.analysis(job, lease).await;
         }
         let payload = jobs::parse(&job.kind, &job.payload)?;
         let envelope = EnvelopeId(payload.envelope_id);
@@ -1155,6 +1173,187 @@ impl<B: BlobStore + 'static> Worker<B> {
         self.close_job(tx, job, lease).await
     }
 
+    /// `analyze_document` / `fingerprint_template` (docs/33 §2): read the stored PDF,
+    /// ask the model service, and write the OCR words, the suggestions or the page
+    /// prints, the run's end and the job's completion in one transaction. Advisory: no
+    /// envelope state, audit event or document version is touched, and a failure ends
+    /// the run as `failed` once its attempts are spent, never blocking anything.
+    async fn analysis(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        use casual_sign_host::ml::{self as hml, AnalysisJob};
+        use casual_sign_store::repo::ml::{RunEnd, RunStatus};
+        use casual_sign_store::{AnalysisRunId, TemplateDocumentId, TemplateId};
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: AnalysisJob = serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        let fingerprint = job.kind == hml::FINGERPRINT_TEMPLATE;
+        if p.account_id != job.account_id.0
+            || fingerprint != p.template_id.is_some()
+            || fingerprint == p.envelope_id.is_some()
+            || job.envelope_id.map(|e| e.0) != p.envelope_id
+        {
+            return Err(bad());
+        }
+        let now = self.now();
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        let open = tx
+            .ml()
+            .run(AnalysisRunId(p.run_id))
+            .await?
+            .filter(|r| matches!(r.status, RunStatus::Queued | RunStatus::Running));
+        let Some(run) = open else {
+            return self.close_job(tx, job, lease).await;
+        };
+        if run.document_id != p.document_id || hml::hex(&run.document_sha256) != p.document_sha256 {
+            return Err(bad());
+        }
+        let end = |status, code: Option<&str>| RunEnd {
+            status,
+            bundle_id: None,
+            ort_version: None,
+            ocr_pages: Vec::new(),
+            truncated: false,
+            code: code.map(str::to_owned),
+            at: now,
+        };
+        let Some(inference) = self.inference.clone() else {
+            tx.ml()
+                .finish_run(run.id, &end(RunStatus::Unavailable, None))
+                .await?;
+            return self.close_job(tx, job, lease).await;
+        };
+        let settings = tx.ml().settings().await?;
+        let fingerprints = if !fingerprint && run.uses.iter().any(|u| u == "template") {
+            tx.ml().fingerprints().await?
+        } else {
+            Vec::new()
+        };
+        tx.ml().start_run(run.id).await?;
+        tx.commit().await?;
+        let pdf = self
+            .blob_or(&BlobKey(run.document_sha256), "document")
+            .await?;
+        let input = crate::ml::Input {
+            pdf,
+            uses: run.uses.clone(),
+            scripts: settings.ocr_scripts,
+            fingerprints,
+            fingerprint,
+        };
+        let call = casual_sign_modeld::Call {
+            account: job.account_id.0.simple().to_string(),
+            job: job.id.0.simple().to_string(),
+            deadline: Duration::from_secs(15 * 60),
+        };
+        let engine = self.seal.engine.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            crate::ml::analyse(&*inference, &engine, &call, &input)
+        })
+        .await
+        .map_err(|_| WorkerError::Config {
+            setting: "analysis",
+        })?;
+        let out = match result {
+            Ok(o) => o,
+            Err(e) if e.retryable() && job.attempts < hml::MAX_ATTEMPTS => return Err(e),
+            Err(e) => {
+                crate::log(
+                    "WARN",
+                    "analysis_failed",
+                    &[("job", job.id.0.to_string()), ("code", e.code().to_owned())],
+                );
+                let mut tx = self.store.for_account(job.account_id).begin().await?;
+                tx.ml()
+                    .finish_run(run.id, &end(RunStatus::Failed, Some(e.code())))
+                    .await?;
+                return self.close_job(tx, job, lease).await;
+            }
+        };
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        if let Some(t) = p.template_id {
+            let (t, d) = (TemplateId(t), TemplateDocumentId(p.document_id));
+            let still = tx.templates().documents(t).await?.iter().any(|x| x.id == d);
+            if still {
+                let (model_id, sha) = (
+                    crate::ml::PAGE_HASH_MODEL.to_owned(),
+                    crate::ml::id_hash(crate::ml::PAGE_HASH_MODEL),
+                );
+                let rows: Vec<casual_sign_store::repo::ml::Fingerprint> = out
+                    .prints
+                    .iter()
+                    .map(|x| casual_sign_store::repo::ml::Fingerprint {
+                        template_id: t,
+                        document_id: d,
+                        page: x.page,
+                        dhash: x.dhash,
+                        phash: x.phash,
+                        embedding: x.embedding.clone(),
+                        model_id: model_id.clone(),
+                        weights_sha256: sha,
+                    })
+                    .collect();
+                tx.ml().put_fingerprints(t, d, &rows).await?;
+            }
+        }
+        for (page, words) in &out.ocr {
+            tx.ml().put_ocr_page(run.id, *page, words).await?;
+        }
+        let mut list = Vec::with_capacity(out.suggestions.len());
+        for s in &out.suggestions {
+            let label = match s.template {
+                Some((t, _, _)) => match tx.templates().get(t).await? {
+                    Some(tpl) => tpl.name.chars().take(64).collect(),
+                    None => continue,
+                },
+                None => s.label.clone(),
+            };
+            if label.is_empty() {
+                continue;
+            }
+            list.push(casual_sign_store::repo::ml::NewSuggestion {
+                id: casual_sign_store::SuggestionId(Uuid::now_v7()),
+                kind: s.kind,
+                page: Some(s.page),
+                rect: None,
+                label,
+                span: s.span,
+                normalized: None,
+                template: s.template,
+                score: s.score,
+                model_id: s.model.0.clone(),
+                weights_sha256: s.model.1,
+            });
+        }
+        tx.ml()
+            .add_suggestions(run.id, run.document_id, &list)
+            .await?;
+        let bundle = Some(out.bundle.clone()).filter(|b| casual_sign_modeld::wire::valid_id(b));
+        tx.ml()
+            .finish_run(
+                run.id,
+                &RunEnd {
+                    status: RunStatus::Done,
+                    bundle_id: bundle,
+                    ort_version: Some(out.runtime.chars().take(64).collect()),
+                    ocr_pages: out.ocr.iter().map(|(p, _)| *p).collect(),
+                    truncated: out.truncated,
+                    code: None,
+                    at: now,
+                },
+            )
+            .await?;
+        crate::log(
+            "INFO",
+            "analysis_done",
+            &[
+                ("job", job.id.0.to_string()),
+                ("suggestions", list.len().to_string()),
+                ("ocr_pages", out.ocr.len().to_string()),
+            ],
+        );
+        self.close_job(tx, job, lease).await
+    }
+
     /// Finish a job that has no envelope in `tx` and commit.
     async fn close_job(&self, mut tx: TenantTx, job: &ClaimedJob, lease: Uuid) -> Result<()> {
         self.boundary(Boundary::BeforeCommit, &job.kind).await;
@@ -1554,9 +1753,34 @@ impl<B: BlobStore + 'static> Worker<B> {
         ctx: &Ctx<'_>,
         state: EnvelopeState,
     ) -> Result<Vec<SealedDocument>> {
-        // Gather.
-        let mut tx = self.tx(ctx).await?;
-        let chain = tx.audit().chain(ctx.envelope).await?;
+        let input = self.gather(ctx.account, ctx.envelope, state, true).await?;
+        let now = input.now;
+        // Seal (blocking: keyd and the TSA are synchronous).
+        let services = self.seal.clone();
+        let (outs, input) = tokio::task::spawn_blocking(move || {
+            let r = seal::seal_all(&services, &input);
+            (r, input)
+        })
+        .await
+        .map_err(|_| WorkerError::Pipeline {
+            code: "CS-SEAL-0001",
+        })?;
+        let sealed = outs?;
+        self.store_sealed(ctx, input, sealed, now).await
+    }
+
+    /// Everything the certificate (and, with `documents`, sealing) needs: the chain,
+    /// the account's name, the sender, each document's delivered bytes, the captures
+    /// the values and adoptions name, and the files signers attached.
+    async fn gather(
+        &self,
+        account: AccountId,
+        envelope: EnvelopeId,
+        state: EnvelopeState,
+        documents: bool,
+    ) -> Result<SealInput> {
+        let mut tx = self.store.for_account(account).begin().await?;
+        let chain = tx.audit().chain(envelope).await?;
         let account = tx.account().get().await?;
         let sender = tx
             .users()
@@ -1565,7 +1789,7 @@ impl<B: BlobStore + 'static> Worker<B> {
             .ok_or(WorkerError::SealInput { what: "sender" })?;
         tx.commit().await?;
         let mut delivered = Vec::with_capacity(state.documents.len());
-        for d in &state.documents {
+        for d in state.documents.iter().filter(|_| documents) {
             let bytes = self
                 .blobs
                 .get(&BlobKey(*d.spec.delivered_hash.as_bytes()))
@@ -1619,8 +1843,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                 sha256: Hash256::digest(&bytes),
             });
         }
-        let now = ts(self.now())?;
-        let input = SealInput {
+        Ok(SealInput {
             attachments,
             state,
             chain,
@@ -1631,19 +1854,19 @@ impl<B: BlobStore + 'static> Worker<B> {
             },
             delivered,
             captures,
-            now,
-        };
-        // Seal (blocking: keyd and the TSA are synchronous).
-        let services = self.seal.clone();
-        let (outs, input) = tokio::task::spawn_blocking(move || {
-            let r = seal::seal_all(&services, &input);
-            (r, input)
+            now: ts(self.now())?,
         })
-        .await
-        .map_err(|_| WorkerError::Pipeline {
-            code: "CS-SEAL-0001",
-        })?;
-        let sealed = outs?;
+    }
+
+    /// Store the sealed documents and certificate, read each back and verify it
+    /// independently, then record the versions and the certificate.
+    async fn store_sealed(
+        &self,
+        ctx: &Ctx<'_>,
+        input: SealInput,
+        sealed: seal::Sealed,
+        now: Timestamp,
+    ) -> Result<Vec<SealedDocument>> {
         self.boundary(Boundary::Sealed, &ctx.job.kind).await;
 
         // Store, read back, verify independently: the documents and the certificate.
@@ -1695,6 +1918,58 @@ impl<B: BlobStore + 'static> Worker<B> {
         tx.commit().await?;
         self.boundary(Boundary::Recorded, &ctx.job.kind).await;
         Ok(records)
+    }
+
+    /// The envelope certificate of an envelope that ended without completing (UXW-30):
+    /// rendered from the state and the chain with how it ended, sealed on its own with
+    /// the platform key at the envelope's profile, stored, read back and verified
+    /// independently, then recorded as the envelope's certificate. Nothing is done when
+    /// the envelope has a certificate already or has not ended that way; a seal that
+    /// fails retries the job. The chain is not extended: the certificate is not an act
+    /// on the agreement, and its download is recorded when it happens.
+    async fn ended_certificate(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: casual_sign_host::jobs::EndedCertificateJob =
+            serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        let envelope = EnvelopeId(p.envelope_id);
+        if job.envelope_id != Some(envelope) {
+            return Err(bad());
+        }
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        let made = tx.envelopes().certificate(envelope).await?.is_some();
+        let state = load_state(&mut tx, envelope).await?;
+        let ended = state.as_ref().is_some_and(|s| {
+            matches!(
+                s.status,
+                casual_sign_model::EnvelopeStatus::Declined
+                    | casual_sign_model::EnvelopeStatus::Voided
+                    | casual_sign_model::EnvelopeStatus::Expired
+            )
+        });
+        let (Some(state), true, false) = (state, ended, made) else {
+            return self.close_job(tx, job, lease).await;
+        };
+        tx.commit().await?;
+        let input = self.gather(job.account_id, envelope, state, false).await?;
+        let now = input.now;
+        let profile = input.state.seal_profile;
+        let services = self.seal.clone();
+        let bytes = tokio::task::spawn_blocking(move || seal::seal_ended(&services, &input))
+            .await
+            .map_err(|_| WorkerError::Pipeline {
+                code: "CS-SEAL-0001",
+            })??;
+        self.boundary(Boundary::Sealed, &job.kind).await;
+        let key = self.blobs.put(&bytes).await?;
+        let back = self.blobs.get(&key).await?;
+        seal::verify_stored(&self.seal, &back, profile, now)?;
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        if tx.envelopes().certificate(envelope).await?.is_none() {
+            tx.envelopes().set_certificate(envelope, &key.0).await?;
+        }
+        self.close_job(tx, job, lease).await
     }
 
     async fn blob_or(&self, key: &BlobKey, what: &'static str) -> Result<Vec<u8>> {
