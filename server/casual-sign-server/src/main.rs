@@ -30,6 +30,20 @@
 //! `casual-sign-server migrate` applies every missing migration as the schema owner
 //! named by `OPENSEAL_MIGRATE_DATABASE_URL` (secret), never the application role (T-2F).
 //!
+//! Backups and restores (ASVS-14, docs/65 §Backups; `tools/backup/openseal-backup.py`
+//! runs them):
+//!
+//! - `casual-sign-server blobs-export <dir>` writes every blob of the configured store
+//!   (`OPENSEAL_BLOB_DIR` or `OPENSEAL_S3_*`) to `<dir>/<sha256>`, checking each against
+//!   its key; files already there are checked and kept.
+//! - `casual-sign-server blobs-import <dir>` puts every file of `<dir>` into the store,
+//!   refusing a name that is not a key or bytes that are not the name's.
+//! - `casual-sign-server verify-evidence` connects as the schema owner
+//!   (`OPENSEAL_MIGRATE_DATABASE_URL`, secret), rebuilds and verifies every envelope's
+//!   audit chain, each workspace's and organization's admin log, and reads back every
+//!   document blob from the store (each verified against its key). It exits 0 only when
+//!   all of it verifies, printing the counts.
+//!
 //! `casual-sign-server healthcheck` asks the server on `OPENSEAL_LISTEN` (its port, on
 //! the loopback address) for `/.well-known/jwks.json` and exits 0 on `200`: a
 //! container's health check with no shell or HTTP client in the image (T-2F).
@@ -196,6 +210,98 @@ async fn migrate() -> ExitCode {
     }
 }
 
+/// The store as the backup commands use it: the server's own configuration.
+async fn blobs_or_fail() -> Result<Blobs, ExitCode> {
+    blob_store().await.map_err(|e| fail(&e))
+}
+
+/// `blobs-export <dir>` and `blobs-import <dir>` (ASVS-14).
+async fn blobs_copy(export: bool, dir: Option<&String>) -> ExitCode {
+    use casual_sign_store::blob::{export_to_dir, import_from_dir};
+    let Some(dir) = dir.map(std::path::Path::new) else {
+        return fail("usage: blobs-export <dir> | blobs-import <dir>");
+    };
+    let blobs = match blobs_or_fail().await {
+        Ok(b) => b,
+        Err(code) => return code,
+    };
+    if export {
+        let report = match &blobs {
+            Blobs::Fs(s) => export_to_dir(s.as_ref(), dir).await,
+            Blobs::S3(s) => export_to_dir(s.as_ref(), dir).await,
+        };
+        match report {
+            Ok(r) => {
+                println!(
+                    "blobs exported={} present={} ignored={}",
+                    r.exported, r.present, r.ignored
+                );
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(&e.to_string()),
+        }
+    } else {
+        let report = match &blobs {
+            Blobs::Fs(s) => import_from_dir(s.as_ref(), dir).await,
+            Blobs::S3(s) => import_from_dir(s.as_ref(), dir).await,
+        };
+        match report {
+            Ok(r) => {
+                println!("blobs imported={}", r.imported);
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(&e.to_string()),
+        }
+    }
+}
+
+/// `verify-evidence` (ASVS-14): every chain, then every document blob.
+async fn verify_evidence() -> ExitCode {
+    use casual_sign_store::blob::BlobStore as _;
+    let url = match secret("OPENSEAL_MIGRATE_DATABASE_URL") {
+        Ok(Some(u)) => u,
+        Ok(None) => return fail("OPENSEAL_MIGRATE_DATABASE_URL is not set"),
+        Err(e) => return fail(&e),
+    };
+    let store = match Store::connect(&url, 2).await {
+        Ok(s) => s,
+        Err(e) => return fail(e.code()),
+    };
+    let report = match store.verify_evidence().await {
+        Ok(r) => r,
+        Err(e) => return fail(&e.to_string()),
+    };
+    let keys = match store.document_blob_keys().await {
+        Ok(k) => k,
+        Err(e) => return fail(&e.to_string()),
+    };
+    let blobs = match blobs_or_fail().await {
+        Ok(b) => b,
+        Err(code) => return code,
+    };
+    for key in &keys {
+        let read = match &blobs {
+            Blobs::Fs(s) => s.get(key).await,
+            Blobs::S3(s) => s.get(key).await,
+        };
+        if let Err(e) = read {
+            return fail(&format!("{e} (document blob {key})"));
+        }
+    }
+    println!(
+        "evidence verified: envelopes={} audit_events={} workspaces={} admin_events={} \
+         organizations={} org_admin_events={} document_blobs={}",
+        report.envelopes,
+        report.audit_events,
+        report.workspaces,
+        report.admin_events,
+        report.organizations,
+        report.org_admin_events,
+        keys.len()
+    );
+    ExitCode::SUCCESS
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     tracing_subscriber::fmt()
@@ -210,6 +316,11 @@ async fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         Some("healthcheck") => return healthcheck(),
         Some("migrate") => return migrate().await,
+        Some("verify-evidence") => return verify_evidence().await,
+        Some(cmd @ ("blobs-export" | "blobs-import")) => {
+            let dir = std::env::args().nth(2);
+            return blobs_copy(cmd == "blobs-export", dir.as_ref()).await;
+        }
         _ => {}
     }
     let url = match secret("OPENSEAL_DATABASE_URL") {

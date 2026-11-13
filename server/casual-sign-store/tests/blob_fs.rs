@@ -119,3 +119,107 @@ async fn works_on_a_current_thread_runtime() {
     let key = store.put(b"x").await.unwrap();
     assert_eq!(store.get(&key).await.unwrap(), b"x");
 }
+
+/// Every page of `store`'s listing, joined: (keys, ignored, pages).
+async fn list_all(store: &impl BlobStore) -> (Vec<BlobKey>, u64, usize) {
+    let (mut keys, mut ignored, mut pages, mut after) = (Vec::new(), 0, 0, None);
+    loop {
+        let page = store.list(after).await.unwrap();
+        keys.extend(page.keys);
+        ignored += page.ignored;
+        pages += 1;
+        match page.next {
+            Some(n) => after = Some(n),
+            None => return (keys, ignored, pages),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn list_walks_every_key_in_order_in_pages_and_skips_what_is_not_a_blob() {
+    let root = scratch("list");
+    let store = FsBlobStore::new(&root).unwrap();
+    let empty = store.list(None).await.unwrap();
+    assert!(empty.keys.is_empty() && empty.next.is_none() && empty.ignored == 0);
+    // More than one page (1000 keys a page).
+    let mut want = Vec::new();
+    for i in 0u32..1002 {
+        want.push(store.put(&i.to_le_bytes()).await.unwrap());
+    }
+    want.sort();
+    // Not blobs: a stray file at the root, a key filed in the wrong directory, a file
+    // with a key's name that is a directory, and a write in flight in `tmp`.
+    std::fs::write(root.join("README"), b"not a blob").unwrap();
+    let stray = BlobKey::of(b"stray");
+    let wrong = root.join("00").join("00");
+    std::fs::create_dir_all(&wrong).unwrap();
+    std::fs::write(wrong.join(stray.hex()), b"stray").unwrap();
+    let dir_key = BlobKey::of(b"a directory");
+    std::fs::create_dir_all(final_path(&root, &dir_key)).unwrap();
+    std::fs::write(root.join("tmp").join("partial.1.0"), b"partial").unwrap();
+    let (keys, ignored, pages) = list_all(&store).await;
+    assert_eq!(keys, want);
+    assert_eq!(pages, 2);
+    assert_eq!(ignored, 3);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_store_exported_to_a_directory_imports_into_a_fresh_one_unchanged() {
+    use casual_sign_store::blob::{export_to_dir, import_from_dir};
+    let source = FsBlobStore::new(scratch("export-source")).unwrap();
+    let mut want = Vec::new();
+    for i in 0u32..5 {
+        want.push(
+            source
+                .put(format!("%PDF-1.7 blob {i}").as_bytes())
+                .await
+                .unwrap(),
+        );
+    }
+    want.sort();
+    let dir = scratch("export-dir").join("blobs");
+    let first = export_to_dir(&source, &dir).await.unwrap();
+    assert_eq!((first.exported, first.present, first.ignored), (5, 0, 0));
+    // Again into the same directory: every file is checked and kept.
+    let again = export_to_dir(&source, &dir).await.unwrap();
+    assert_eq!((again.exported, again.present), (0, 5));
+
+    let target = FsBlobStore::new(scratch("import-target")).unwrap();
+    let imported = import_from_dir(&target, &dir).await.unwrap();
+    assert_eq!(imported.imported, 5);
+    let (keys, _, _) = list_all(&target).await;
+    assert_eq!(keys, want);
+    for k in &want {
+        assert_eq!(target.get(k).await.unwrap(), source.get(k).await.unwrap());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_import_refuses_altered_or_foreign_files_and_an_export_an_altered_one() {
+    use casual_sign_store::blob::{export_to_dir, import_from_dir};
+    let source = FsBlobStore::new(scratch("refuse-source")).unwrap();
+    let key = source.put(b"%PDF-1.7 the sealed bytes").await.unwrap();
+    let dir = scratch("refuse-dir").join("blobs");
+    export_to_dir(&source, &dir).await.unwrap();
+    let file = dir.join(key.hex());
+
+    // One byte changed: refused, and nothing is put.
+    let mut bytes = std::fs::read(&file).unwrap();
+    bytes[0] ^= 1;
+    std::fs::write(&file, &bytes).unwrap();
+    let target = FsBlobStore::new(scratch("refuse-target")).unwrap();
+    let err = import_from_dir(&target, &dir).await.unwrap_err();
+    assert_eq!(err.code(), "CS-BLOB-0003");
+    assert!(list_all(&target).await.0.is_empty());
+    // An export finding that altered file refuses it too, rather than keeping it.
+    let err = export_to_dir(&source, &dir).await.unwrap_err();
+    assert_eq!(err.code(), "CS-BLOB-0003");
+
+    // A file that is not named by a key (an interrupted copy, anything else).
+    std::fs::remove_file(&file).unwrap();
+    export_to_dir(&source, &dir).await.unwrap();
+    std::fs::write(dir.join(format!("{}.part", key.hex())), b"partial").unwrap();
+    let err = import_from_dir(&target, &dir).await.unwrap_err();
+    assert_eq!(err.code(), "CS-BLOB-0005");
+    assert!(list_all(&target).await.0.is_empty());
+}

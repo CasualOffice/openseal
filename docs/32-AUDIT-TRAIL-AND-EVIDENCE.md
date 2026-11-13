@@ -117,6 +117,13 @@ certificate of completion prints the **chain head** (hash of the last event befo
 
 `casual-sign-verify` checks the embedded chain as part of verifying a document; `verify.html` shows it as a timeline.
 
+The database's copy as a whole is checked by `casual-sign-server verify-evidence` (`ASVS-14`, `Store::verify_evidence`):
+run as the schema owner (a role that row-level security filters is refused, `CS-DB-0015`), it rebuilds every envelope's
+chain from the stored canonical bytes, requires the envelope's stored head to be the last event's hash, re-verifies
+every workspace's and organization's admin log, and reads back every document blob against its SHA-256. A broken
+chain names its envelope, workspace or organization (`CS-DB-0005`, `CS-DB-0014`). A restore runs it before the
+services start again (docs/65 §Backups and restore).
+
 ## 5. Anchoring (optional, slice 7)
 
 Per account, a daily job builds a **Merkle tree of every chain head** that changed that day, gets an RFC 3161 timestamp

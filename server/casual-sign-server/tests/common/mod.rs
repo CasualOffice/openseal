@@ -158,6 +158,21 @@ pub async fn rls_tables(admin: &PgPool) -> Vec<String> {
 }
 
 impl TestDb {
+    /// A URL for this database as the superuser (the owner), for a subprocess.
+    pub fn owner_url(&self) -> String {
+        let server = std::env::var(ENV).unwrap();
+        let base = server.rsplit_once('/').map_or(server.as_str(), |(b, _)| b);
+        format!("{base}/{}", self.name)
+    }
+
+    /// A URL for this database as the application's login role, for a subprocess.
+    pub fn app_url(&self) -> String {
+        let owner = self.owner_url();
+        let (scheme, rest) = owner.split_once("://").unwrap();
+        let host = rest.rsplit_once('@').map_or(rest, |(_, h)| h);
+        format!("{scheme}://{APP_LOGIN}:{APP_PASSWORD}@{host}")
+    }
+
     /// Drop the database.
     pub async fn drop(self) {
         self.admin.close().await;

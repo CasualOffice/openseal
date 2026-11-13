@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{BlobKey, BlobStore, DEFAULT_MAX_BLOB_BYTES, verified, within};
+use super::{BlobKey, BlobListing, BlobStore, DEFAULT_MAX_BLOB_BYTES, verified, within};
 use crate::error::{Result, StoreError};
 
 /// A filesystem blob store. Cheap to clone.
@@ -173,5 +173,73 @@ impl BlobStore for FsBlobStore {
             Err(e) => Err(io(&e)),
         })
         .await
+    }
+
+    async fn list(&self, after: Option<String>) -> Result<BlobListing> {
+        let inner = Arc::clone(&self.inner);
+        blocking(move || inner.list_blocking(after.as_deref())).await
+    }
+}
+
+/// Keys per page of [`FsBlobStore`]'s listing.
+const LIST_PAGE: usize = 1000;
+
+impl Inner {
+    /// Every key under the root (`aa/bb/<hex>`), past `after`, at most [`LIST_PAGE`].
+    /// The `tmp` directory holds writes in flight and is not listed; anything else that
+    /// is not a key in its own place is counted as ignored.
+    fn list_blocking(&self, after: Option<&str>) -> Result<BlobListing> {
+        let mut keys = Vec::new();
+        let mut ignored: u64 = 0;
+        for a in fs::read_dir(&self.root).map_err(|e| io(&e))? {
+            let a = a.map_err(|e| io(&e))?;
+            let a_name = a.file_name();
+            if a_name == "tmp" {
+                continue;
+            }
+            if !a.file_type().map_err(|e| io(&e))?.is_dir() {
+                ignored = ignored.saturating_add(1);
+                continue;
+            }
+            for b in fs::read_dir(a.path()).map_err(|e| io(&e))? {
+                let b = b.map_err(|e| io(&e))?;
+                if !b.file_type().map_err(|e| io(&e))?.is_dir() {
+                    ignored = ignored.saturating_add(1);
+                    continue;
+                }
+                for f in fs::read_dir(b.path()).map_err(|e| io(&e))? {
+                    let f = f.map_err(|e| io(&e))?;
+                    let key = f
+                        .file_name()
+                        .to_str()
+                        .and_then(|n| BlobKey::parse(n).ok())
+                        .filter(|k| self.path(k) == f.path());
+                    match key {
+                        Some(k) if f.file_type().map_err(|e| io(&e))?.is_file() => keys.push(k),
+                        _ => ignored = ignored.saturating_add(1),
+                    }
+                }
+            }
+        }
+        keys.sort_unstable();
+        // Every page walks the whole tree; what is not a blob is reported once, on the
+        // first page, so a caller summing the pages counts each stray name once.
+        if let Some(after) = after {
+            ignored = 0;
+            let after =
+                BlobKey::parse(after).map_err(|_| StoreError::BlobUnavailable { status: None })?;
+            keys.retain(|k| *k > after);
+        }
+        let next = if keys.len() > LIST_PAGE {
+            keys.truncate(LIST_PAGE);
+            keys.last().map(BlobKey::hex)
+        } else {
+            None
+        };
+        Ok(BlobListing {
+            keys,
+            ignored,
+            next,
+        })
     }
 }

@@ -83,6 +83,10 @@ pub enum StoreError {
         /// The `seq` offered or read.
         seq: u64,
     },
+    /// `CS-DB-0015`: a check that must read every account's rows (`verify-evidence`,
+    /// ASVS-14) was run as a role that row-level security filters; run it as the schema
+    /// owner.
+    FilteredRole,
     /// `CS-PLAN-0002` to `CS-PLAN-0005`: the organization's plan refused the action: a
     /// quota, the seat or storage limit, or the organization is suspended (PLAN-04,
     /// docs/23 §7.3).
@@ -124,6 +128,7 @@ impl StoreError {
             Self::Database { .. } => "CS-DB-0012",
             Self::Immutable => "CS-DB-0013",
             Self::AdminChainBroken { .. } => "CS-DB-0014",
+            Self::FilteredRole => "CS-DB-0015",
             Self::Plan(r) => r.code,
             Self::BlobUnavailable { .. } => "CS-BLOB-0001",
             Self::BlobNotFound => "CS-BLOB-0002",
@@ -223,6 +228,10 @@ impl fmt::Display for StoreError {
             Self::AdminChainBroken { seq } => {
                 write!(f, "{code}: admin event {seq} does not extend its chain")
             }
+            Self::FilteredRole => write!(
+                f,
+                "{code}: this role cannot see every account's rows; run as the schema owner"
+            ),
             Self::Plan(r) => match (r.meter, r.limit) {
                 (Some(m), Some(l)) => write!(f, "{code}: {} limit {l} reached", m.as_str()),
                 _ => write!(f, "{code}: refused by the plan"),

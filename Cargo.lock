@@ -2553,6 +2553,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "instant-xml"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c32db75b7c16c5051ea7b6605eea01f7b5a25abe84c20473c9e7c7987f5850c"
+dependencies = [
+ "instant-xml-macros",
+ "xmlparser",
+]
+
+[[package]]
+name = "instant-xml-macros"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac3c2e6cbd6e0579ee53a8290fc0015a438cfff0139c8359d5891cae130815d7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
 name = "interpolate_name"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4273,6 +4295,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1af5b74b316ee483ae486bd3cb206c8caa5dbb3cf0eab7269a868ae43aeece03"
 dependencies = [
  "aws-lc-rs",
+ "instant-xml",
  "jiff",
  "percent-encoding",
  "url",
@@ -5739,6 +5762,12 @@ dependencies = [
  "der",
  "x509-cert",
 ]
+
+[[package]]
+name = "xmlparser"
+version = "0.13.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "y4m"
