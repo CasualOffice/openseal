@@ -39,6 +39,7 @@ mod error;
 mod ids;
 mod migrate;
 mod org;
+mod quota;
 mod store;
 
 pub mod blob;
@@ -56,6 +57,9 @@ pub use migrate::{MIGRATIONS, Migration, MigrationReport, migrate};
 pub use org::{
     BuiltinProfiles, LAST_OWNER_CONSTRAINT, OrgScope, OrgTx, Organization, OrganizationAdmin,
     OrganizationRole, OrganizationStatus, Workspace, WorkspaceOf, WorkspaceStatus,
+};
+pub use quota::{
+    Consumed, GaugeLock, PlanRefusal, QUOTA_REACHED, SEATS_REACHED, STORAGE_REACHED, SUSPENDED,
 };
 pub use store::{
     ClaimedJob, EntryPoints, RecipientTokenTarget, StaffSessionTarget, Store, Tenant, TenantTx,

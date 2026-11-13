@@ -107,6 +107,15 @@ components:
             properties:
               pointer: {type: string}
               code: {type: string}
+        meter:
+          type: string
+          description: The plan meter that refused (`CS-PLAN-0002` to `CS-PLAN-0004`; docs/23 §7.3).
+        limit: {type: integer, format: int64, minimum: 0}
+        used: {type: integer, format: int64, minimum: 0}
+        period_end:
+          type: string
+          format: date-time
+          description: When the refusing quota's period ends; absent for gauges and standing quotas.
     Object:
       type: object
       additionalProperties: true

@@ -17,7 +17,8 @@
 - **Idempotency**: every `POST` accepts `Idempotency-Key`; replays within 24 h return the first response.
 - **Optimistic concurrency**: `ETag` on envelopes; `If-Match` required on updates of drafts and corrections.
 - **Errors**: RFC 9457 problem details with a stable `code` from [20](20-ERROR-CODE-REGISTRY.md), a `request_id`, and
-  `errors[]` with JSON pointers for field-level problems. Never document content.
+  `errors[]` with JSON pointers for field-level problems. Never document content. A plan refusal (`CS-PLAN-0002` to
+  `CS-PLAN-0005`, 403; `PLAN-04`) adds `meter`, `limit`, `used` and `period_end` where they apply, nothing else.
 - **Pagination**: cursor-based (`?cursor=…&limit=…`), stable under inserts.
 - **Time**: RFC 3339 UTC. **Ids**: UUIDv7 strings.
 - **Rate limits**: per client and per account; `RateLimit` and `RateLimit-Policy` headers (IETF draft) and

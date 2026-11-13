@@ -72,6 +72,7 @@ const ORG_TABLES: &[&str] = &[
     "org_permission_sets",
     "org_usage_counters",
     "organization_admins",
+    "quota_notices",
 ];
 
 // Catalog tests (docs/23 §2.1) -----------------------------------------------------------
@@ -525,6 +526,7 @@ async fn organization_scope_reaches_no_content(rls: Rls) {
             "org_permission_sets",
             "org_admin_events",
             "org_usage_counters",
+            "quota_notices",
         ];
         for t in &tables {
             let truth_sql = match t.as_str() {

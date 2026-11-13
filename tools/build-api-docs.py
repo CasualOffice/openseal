@@ -28,8 +28,11 @@ GROUPS = {
     "auth": "Authentication and sessions", "oauth": "OAuth", ".well-known": "Discovery", "accounts": "Account",
     "users": "Users and invitations", "api-clients": "API clients", "envelopes": "Envelopes", "templates": "Templates",
     "contacts": "Contacts", "webhooks": "Webhooks", "s": "Signing ceremony (not public API)",
+    "account": "Account settings", "admin-events": "Admin audit log", "ersd-versions": "Electronic disclosure",
+    "folders": "Folders", "organizations": "Organizations",
 }
-ORDER = ["auth", "oauth", ".well-known", "envelopes", "templates", "contacts", "webhooks", "users", "api-clients", "accounts", "s"]
+ORDER = ["auth", "oauth", ".well-known", "envelopes", "folders", "templates", "contacts", "webhooks", "users", "api-clients",
+         "accounts", "account", "ersd-versions", "admin-events", "organizations", "s"]
 
 
 def esc(s) -> str:

@@ -11,8 +11,8 @@ use casual_sign_store::repo::accounts::{LoginKind, NewUser};
 use casual_sign_store::repo::api_clients::{ApiClientKind, NewApiClient};
 use casual_sign_store::repo::sessions::{LoginMethod, NewSession};
 use casual_sign_store::{
-    AccountId, ApiClientId, BuiltinProfiles, OrganizationId, PermissionProfileId, StaffSessionId,
-    Store, TenantTx, UserId,
+    AccountId, ApiClientId, BuiltinProfiles, Meter, OrganizationId, PermissionProfileId,
+    StaffSessionId, Store, TenantTx, UserId,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -493,6 +493,9 @@ pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiErr
     let mut tx = c.tx().await?;
     let profile = profile_id(&mut tx, &req.profile).await?;
     let id = UserId(Uuid::now_v7());
+    // Seats are checked against the plan under the seat counters' lock, so two parallel
+    // invites cannot both take the last seat (PLAN-04, `CS-PLAN-0003`).
+    let seats = tx.gauge_lock(Meter::Seats).await?;
     tx.users()
         .create_member(
             &NewUser {
@@ -505,6 +508,8 @@ pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiErr
             },
             profile,
         )
+        .await?;
+    tx.gauge_check(seats, c.st.now(), "member.add", id.0)
         .await?;
     if let Some(phc) = phc {
         tx.users().set_password_hash(id, &Personal(phc)).await?;
@@ -654,6 +659,13 @@ pub(crate) async fn patch_user(
             "/disabled"
         }));
     }
+    // Re-profiling or enabling may take a seat: checked under the seat counters' lock
+    // (PLAN-04, `CS-PLAN-0003`); a change that frees or keeps seats is never refused.
+    let seats = if req.profile.is_some() || req.disabled == Some(false) {
+        Some(tx.gauge_lock(Meter::Seats).await?)
+    } else {
+        None
+    };
     if let Some(p) = &req.profile {
         let profile = profile_id(&mut tx, p).await?;
         tx.users().set_profile(id, profile).await?;
@@ -665,6 +677,10 @@ pub(crate) async fn patch_user(
             tx.sessions().revoke_all(id, now).await?;
             tx.users().revoke_invitations(id, now).await?;
         }
+    }
+    if let Some(seats) = seats {
+        tx.gauge_check(seats, c.st.now(), "member.change", Uuid::now_v7())
+            .await?;
     }
     let name = match &req.name {
         Some(n) => {

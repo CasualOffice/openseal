@@ -21,8 +21,8 @@ use casual_sign_store::repo::envelopes::{
 };
 use casual_sign_store::repo::recipients::{NewToken, TokenPurpose};
 use casual_sign_store::{
-    DocumentId, DocumentVersionId, EnvelopeId, FolderId, RecipientId, RecipientTokenId, TenantTx,
-    UserId,
+    DocumentId, DocumentVersionId, EnvelopeId, FolderId, Meter, RecipientId, RecipientTokenId,
+    TenantTx, UserId,
 };
 use casual_sign_workflow::{
     Access, Change, Command, DocumentSpec, EnvelopeState, Principal as WfPrincipal,
@@ -180,6 +180,9 @@ async fn add_document(
     let (report, findings) = admission_json(&delivered.admission, delivered.normalization.as_ref());
     let report_hash = Hash256::digest(&serde_json::to_vec(&report).unwrap_or_default());
     let doc = DocumentId(Uuid::now_v7());
+    // Storage is checked against the plan under its counter rows' lock (PLAN-04,
+    // `CS-PLAN-0004`; a suspended organization takes no new document, `CS-PLAN-0005`).
+    let storage = tx.gauge_lock(Meter::StorageBytes).await?;
     let ord = tx
         .documents()
         .list(env)
@@ -220,6 +223,7 @@ async fn add_document(
             })
             .await?;
     }
+    tx.gauge_check(storage, st.now(), "document", doc.0).await?;
     Ok(DocumentSpec {
         id: eid(doc.0)?,
         name: Personal(casual_sign_model::Text::new(name).map_err(|_| ApiError::invalid("/name"))?),

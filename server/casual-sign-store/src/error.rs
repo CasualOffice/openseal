@@ -83,6 +83,10 @@ pub enum StoreError {
         /// The `seq` offered or read.
         seq: u64,
     },
+    /// `CS-PLAN-0002` to `CS-PLAN-0005`: the organization's plan refused the action: a
+    /// quota, the seat or storage limit, or the organization is suspended (PLAN-04,
+    /// docs/23 §7.3).
+    Plan(crate::quota::PlanRefusal),
     /// `CS-BLOB-0001`: the blob store failed (I/O, network, or an unexpected answer).
     BlobUnavailable {
         /// The HTTP status or OS error number, when there is one.
@@ -120,6 +124,7 @@ impl StoreError {
             Self::Database { .. } => "CS-DB-0012",
             Self::Immutable => "CS-DB-0013",
             Self::AdminChainBroken { .. } => "CS-DB-0014",
+            Self::Plan(r) => r.code,
             Self::BlobUnavailable { .. } => "CS-BLOB-0001",
             Self::BlobNotFound => "CS-BLOB-0002",
             Self::BlobCorrupt => "CS-BLOB-0003",
@@ -218,6 +223,10 @@ impl fmt::Display for StoreError {
             Self::AdminChainBroken { seq } => {
                 write!(f, "{code}: admin event {seq} does not extend its chain")
             }
+            Self::Plan(r) => match (r.meter, r.limit) {
+                (Some(m), Some(l)) => write!(f, "{code}: {} limit {l} reached", m.as_str()),
+                _ => write!(f, "{code}: refused by the plan"),
+            },
             Self::BlobUnavailable { status } => match status {
                 Some(s) => write!(f, "{code}: blob store failed ({s})"),
                 None => write!(f, "{code}: blob store failed"),
