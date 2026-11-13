@@ -2,7 +2,7 @@
 //! manifest before anything else is read (ASVS 14.1.5, `ASVS-24`, `HRD-06`).
 
 // Test code: a panic is the failure report (CLAUDE.md).
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
