@@ -155,3 +155,78 @@ decides, the models stay off by default and no product text says they are cleare
 **Personal-data detection is assistive.** It proposes spans for redaction and retention that a person accepts; it
 does not find every item of personal data, and it is *designed to support* a controller's data-minimization work,
 never described as making a deployment compliant with GDPR or any other law.
+
+## 9. Third-party licence review packet (`LEG-01`)
+
+For counsel. This section states what was checked, how, and what is open; it is a self-assessment prepared for review,
+**not legal advice and not a clearance**. `LEG-01` stays In progress until counsel signs it off.
+
+**What OpenSeal distributes.** Apache-2.0 source (LICENSE, NOTICE). Container images: server (with the web app and the
+WebAssembly engine it serves to browsers), worker, keyd, console (with the embedded console UI) and modeld (with ONNX
+Runtime and model weights). The website. Running OpenSeal as a hosted service is not distribution under Apache-2.0
+(ATTRIBUTION.md), but the browser code (web app, console UI, WASM engine, fonts, pdf.js) is delivered to users' browsers
+and is treated here as distributed.
+
+**Inventory.** `python3 tools/licence-inventory.py` writes [THIRD-PARTY.md](../THIRD-PARTY.md) from the tree:
+
+- **Rust crates** from Cargo.lock through `cargo metadata --locked`: 549 third-party crates on 2026-11-13, of which
+  506 are reached through normal dependencies (`shipped`), 15 only through build-dependencies and 27 only through
+  dev-dependencies. Cargo.lock covers every target platform, so `shipped` over-counts for any single binary. For each
+  crate it records the declared SPDX expression and the copyright lines found in its licence files.
+  [THIRD-PARTY-LICENSES.txt](../THIRD-PARTY-LICENSES.txt) reproduces every licence, notice and patent-licence file
+  those crates ship, verbatim, one copy per distinct text (348 texts), including those in subfolders for bundled C
+  libraries and data (Oniguruma in `onig_sys`, AWS-LC and fiat-crypto, Adobe CMaps and Foxit fonts in `hayro`, the
+  Unicode tables in `regex-syntax`); the standard Apache-2.0 text is LICENSE.
+- **Vendored and embedded files** (15 components): pdf.js 4.10.38 with its CMaps (Adobe, BSD-3-Clause) and standard
+  fonts (Foxit, Liberation Sans), Lucide icons, Geist and Geist Mono (web app, console UI, website), Liberation, Great
+  Vibes and Allura fonts embedded in flattened PDFs, the Adobe AFM and Glyph List data tables, the Presidio-derived
+  recogniser patterns, the Lexend outlines in the logo, and the ONNX Runtime binary in the modeld image.
+- **Model weights and tokenizers** in bundled profiles of `tools/ml/models.toml` (10 repositories; Apache-2.0 or MIT;
+  §8 holds the training-data notes). Export-only inputs are not bundled and not listed.
+
+**Licence policy applied.** `deny.toml` allows Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MIT, NCSA, Unicode-3.0,
+Unlicense and Zlib for crates; every expression in the inventory resolves to these (where a crate offers a choice,
+OpenSeal relies on an allowed option: `ryu` and `whoami` offer BSL-1.0 beside Apache-2.0, `r-efi` offers
+LGPL-2.1-or-later beside MIT and Apache-2.0, `imgref` CC0-1.0 beside Apache-2.0). Expressions joined by AND require
+every listed licence and are reproduced in full: `ring` (Apache-2.0 AND ISC), `aws-lc-sys` and `aws-lc-rs` (ISC,
+Apache-2.0, MIT, BSD-3-Clause, with code derived from OpenSSL and BoringSSL), `brotli` and `matchit` (MIT AND
+BSD-3-Clause), the Unicode crates (Unicode-3.0). ONNX Runtime's bundled Eigen (MPL-2.0) and Boost (BSL-1.0) are the
+one scoped exception, owner instruction 32 (§8).
+
+**NOTICE check.** `python3 tools/licence-inventory.py --check` fails unless NOTICE points to the inventory and the
+licence texts, names every vendored component and every bundled model repository, reproduces the NOTICE of any
+shipped crate that has one (Apache-2.0 §4(d); on 2026-11-13 none does: the only crate with a notices file,
+`cfg_aliases`, is build-only), names every shipped crate with a PATENTS file (`rav1e`, whose Alliance for Open Media
+Patent License 1.0 must be reproduced with binaries), and no licence or font file sits in a shipped folder without a component that accounts
+for it. Before `LEG-01` NOTICE omitted the Geist fonts (three copies), the pdf.js CMaps (Adobe BSD-3-Clause), ONNX
+Runtime and all model weights, and said nothing of the Rust crates; it now covers them. The check is a tool for this
+review, not a CI gate (no new gates without the owner).
+
+**Questions for counsel.**
+
+1. Is NOTICE plus THIRD-PARTY.md and THIRD-PARTY-LICENSES.txt a sufficient attribution for the MIT, BSD, ISC, Zlib and
+   Unicode-3.0 crates compiled into binaries and into the WebAssembly the browser loads, given that the texts are
+   reproduced per crate rather than in each binary?
+2. The images do not yet ship LICENSE, NOTICE or the inventory files (`LEG-05`), and the web app and console offer no
+   third-party notices page; what placement satisfies Apache-2.0 §4 and the MIT and BSD notice conditions for the
+   images and for code delivered to browsers?
+3. Thirteen crates publish no licence file in their package (`LEG-07`); is the declared SPDX identifier with the
+   upstream repository's licence file an acceptable source of the notice?
+4. Model weights: the image ships each weight's licence identifier in `bundle.json` but not the licence texts or
+   copyright holders (`LEG-06`). What must accompany Apache-2.0 and MIT weights, including the ones OpenSeal converts
+   (ONNX export, fp16)? Does a converted weight file count as a modified work needing a change notice?
+5. The scoped MPL-2.0 (Eigen) and BSL-1.0 (Boost) exception for the unmodified ONNX Runtime binary (§8,
+   `deploy/modeld/NOTICE.txt`): is the source pointer adequate for MPL-2.0 §3.2?
+6. Data and fonts: the Adobe AFM notice ("retain all copyright notices") as met by NOTICE; the OFL-1.1 fonts, embedded
+   as subsets in signed PDFs that users distribute; the Presidio patterns ported without code, with the MIT text
+   included.
+7. `rav1e` 0.8.1 (an AV1 encoder that `image`'s default features compile into casual-sign-modeld, though modeld
+   encodes no image) is BSD-2-Clause and also under the Alliance for Open Media Patent License 1.0, which requires
+   the licence to accompany binaries and ends the patent grant for a licensee that brings a patent claim over an
+   AV1 implementation. NOTICE names it and THIRD-PARTY-LICENSES.txt holds the text; is that adequate, and should
+   the encoder be dropped from the build instead (`LEG-08`)?
+8. Training-data lineage stays an owner and counsel question under `LEG-02` and §8; this packet covers licences only.
+
+**Not covered here:** trademark (DEC-07), legal claims and the default ERSD (`LEG-02`), the corpus fixtures, which are
+fetched by URL and never distributed (NOTICE lists their attribution), and CI-only tools (EU DSS, pyHanko, Playwright,
+axe-core), which are never shipped.
