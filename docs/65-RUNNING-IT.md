@@ -162,7 +162,7 @@ seed sealed under a lost key cannot be opened and its users must enrol again; AS
 
 ## Backups and restore
 
-**Status:** built and drilled (`ASVS-14`, ASVS 8.1.5 and 8.1.6; docs/07 `SEC-D02`). The tool is
+**Status:** built and tested; the restore drill is written but has not yet run to completion, so no restore time is measured yet (`ASVS-14`, ASVS 8.1.5 and 8.1.6; docs/07 `SEC-D02`). The tool is
 `tools/backup/openseal_backup.py` (Python standard library and the `openssl` command, OpenSSL 3.0 or later); the drill
 is `tools/backup/drill.sh`, run by CI's `backup-drill` job and `tools/ci-local.sh`.
 
@@ -258,7 +258,7 @@ stack's SoftHSM token is development only: a fresh stack imports a fresh generat
 | RPO, database | At most the backup interval (one hour with the schedule above); 5 minutes with PITR | Logical backups by this tool; for production also PostgreSQL point-in-time recovery (WAL archiving: the managed service's, or pgBackRest), restored to just before the incident, then `verify-evidence` |
 | RPO, documents | The backup interval; zero with a replicated bucket | Blobs are write-once and content-addressed: bucket versioning, Object Lock and cross-region replication keep every blob the database can name |
 | RPO, keyd's log | The backup interval | keyd's log lists signatures the database also records; a lost tail loses no evidence a sealed document needs |
-| RTO | 4 hours for a production install | Measured by the drill: restore time of its data set below; it grows with the dump size (`pg_restore` speed) and the number of blobs |
+| RTO | 4 hours for a production install (a target, not yet measured) | The drill records the restore time of its data set in its report; it grows with the dump size (`pg_restore` speed) and the number of blobs |
 
 What an RPO window loses: changes after the backup, including envelopes signed or sealed after it. Sealed PDFs already
 delivered still verify on their own; the restored audit chain simply ends at the backup's head, and those envelopes
