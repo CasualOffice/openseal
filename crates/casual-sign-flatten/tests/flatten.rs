@@ -542,3 +542,83 @@ fn jpeg_metadata_is_dropped_and_its_orientation_applied() {
     }
     assert!(turned);
 }
+
+/// The baselines (`Tm` y, in the field's own box) of the text drawn in `out`'s forms.
+fn baselines(out: &[u8]) -> Vec<f64> {
+    let mut a = admit(out, &Limits::default(), &never).unwrap();
+    let nums: Vec<u32> = a.document.object_numbers().collect();
+    let mut ys = Vec::new();
+    for n in nums {
+        if let Ok(Object::Stream(s)) = a.document.object(n, &never)
+            && s.dict.name(b"Subtype") == Some(b"Form")
+        {
+            let ops = a.document.decode_stream(n, &never).unwrap();
+            for line in String::from_utf8_lossy(&ops).lines() {
+                let w: Vec<&str> = line.split_whitespace().collect();
+                if w.len() == 7 && w[6] == "Tm" {
+                    ys.push(w[5].parse::<f64>().unwrap());
+                }
+            }
+        }
+    }
+    ys
+}
+
+#[test]
+fn a_multi_line_text_field_draws_each_line_from_the_top_of_its_box() {
+    // FG-057 (S1-01): the signer's line breaks are kept, one baseline per line, and a
+    // multi-line box is read from its top even when the value is one line, as the
+    // signer saw it in the ceremony's text area.
+    let base = delivered(&page_pdf(&cases()[0], "", "", Vec::new()));
+    let multi = |name: &str| {
+        let mut f = field(name, FieldType::Text, 1, [40.0, 40.0, 200.0, 120.0]);
+        f.format = Some(Format {
+            multiline: true,
+            ..Format::default()
+        });
+        f
+    };
+    let three = BTreeMap::from([(id("m"), text("Line one\nLine two\r\nLine three"))]);
+    let out = run(
+        &base,
+        &[multi("m")],
+        &three,
+        &BTreeMap::new(),
+        &FlattenOptions::default(),
+    )
+    .unwrap();
+    let ys = baselines(&out.bytes);
+    assert_eq!(ys.len(), 3, "one baseline per line: {ys:?}");
+    assert!(ys.windows(2).all(|p| p[0] > p[1]), "lines run down: {ys:?}");
+    assert!(ys[0] > 90.0, "the first line is at the top: {ys:?}");
+
+    let one = BTreeMap::from([(id("m"), text("Only line"))]);
+    let out = run(
+        &base,
+        &[multi("m")],
+        &one,
+        &BTreeMap::new(),
+        &FlattenOptions::default(),
+    )
+    .unwrap();
+    let ys = baselines(&out.bytes);
+    assert_eq!(ys.len(), 1, "{ys:?}");
+    assert!(
+        ys[0] > 90.0,
+        "a one-line value in a multi-line box sits at its top: {ys:?}"
+    );
+
+    // A single-line box keeps its one line in the middle.
+    let single = field("s", FieldType::Text, 1, [40.0, 40.0, 200.0, 120.0]);
+    let one = BTreeMap::from([(id("s"), text("Only line"))]);
+    let out = run(
+        &base,
+        &[single],
+        &one,
+        &BTreeMap::new(),
+        &FlattenOptions::default(),
+    )
+    .unwrap();
+    let ys = baselines(&out.bytes);
+    assert!(ys.len() == 1 && ys[0] < 70.0, "{ys:?}");
+}

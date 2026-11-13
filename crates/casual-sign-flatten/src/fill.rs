@@ -465,6 +465,7 @@ pub(crate) fn plan_field(
                     color: da.color,
                     padding: 2.0 + border,
                     comb,
+                    top: false,
                 };
                 if list_box && !opts.is_empty() {
                     list(
@@ -616,6 +617,7 @@ fn plan_multi(
             color: da.color,
             padding: 2.0 + border,
             comb: None,
+            top: false,
         };
         list(
             &mut canvas,

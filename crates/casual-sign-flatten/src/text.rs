@@ -148,6 +148,9 @@ pub(crate) struct Setting {
     pub padding: f64,
     /// Comb cells (a `/Comb` field's `/MaxLen`), when set.
     pub comb: Option<u32>,
+    /// Set from the top of the box even when the text is one line (a multi-line box,
+    /// `FG-057`); otherwise a single line sits in the vertical middle.
+    pub top: bool,
 }
 
 /// The outcome of setting text.
@@ -218,8 +221,9 @@ pub(crate) fn set(
     canvas.line("BT");
     canvas.fill_color(s.color);
     let em = size / 1000.0;
-    // A single line sits in the vertical middle; several start at the top.
-    let first_baseline = if ls.len() <= 1 {
+    // A single line sits in the vertical middle, unless the box is a multi-line one;
+    // several start at the top.
+    let first_baseline = if ls.len() <= 1 && !s.top {
         (h - (asc - desc) * em) / 2.0 - desc * em
     } else {
         h - pad - asc * em
@@ -324,6 +328,7 @@ mod tests {
             color: Color::BLACK,
             padding: 2.0,
             comb: None,
+            top: false,
         };
         let r = set(&mut c, &mut u, &fonts, &m, 80.0, 20.0, &s);
         assert!(r.shrunk && !r.overflow && r.size < 12.0, "{r:?}");

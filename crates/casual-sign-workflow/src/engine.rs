@@ -1598,6 +1598,19 @@ fn sign(
             FieldType::Name if f.value.is_none() && !name.is_empty() => {
                 f.value = Some(FieldValue::Text(name.clone()));
             }
+            FieldType::FirstName | FieldType::LastName if f.value.is_none() => {
+                // FG-055 (docs/24 §Auto-filled fields): the name's first word, and the
+                // rest; a part the name does not have stays empty.
+                let (first, last) = split_name(name.as_str());
+                let part = if f.field_type == FieldType::FirstName {
+                    first
+                } else {
+                    last
+                };
+                if !part.is_empty() {
+                    f.value = Some(FieldValue::Text(Text::new(part)?));
+                }
+            }
             FieldType::Email if f.value.is_none() && !email.is_empty() => {
                 f.value = Some(FieldValue::Text(email.clone()));
             }
@@ -1633,6 +1646,18 @@ fn sign(
         });
     }
     complete_recipient(s, i, documents, out)
+}
+
+/// A recipient's name as first and last name (`FG-055`, docs/24 §Auto-filled fields): the
+/// first word, and everything after it, with the spaces around them dropped. A one-word
+/// name has no last name. "Ludwig van Beethoven" is "Ludwig" and "van Beethoven".
+#[must_use]
+pub(crate) fn split_name(name: &str) -> (&str, &str) {
+    let name = name.trim();
+    match name.split_once(char::is_whitespace) {
+        Some((first, rest)) => (first, rest.trim_start()),
+        None => (name, ""),
+    }
 }
 
 /// Re-runs every field rule on the server (docs/24 §5) and keeps the issues on the
@@ -1998,4 +2023,20 @@ fn record_access(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::split_name;
+
+    #[test]
+    fn a_name_splits_at_its_first_space() {
+        assert_eq!(split_name("Ada Lovelace"), ("Ada", "Lovelace"));
+        assert_eq!(
+            split_name(" Ludwig  van Beethoven "),
+            ("Ludwig", "van Beethoven")
+        );
+        assert_eq!(split_name("Plato"), ("Plato", ""));
+        assert_eq!(split_name("   "), ("", ""));
+    }
 }

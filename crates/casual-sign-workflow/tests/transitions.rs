@@ -584,6 +584,55 @@ fn a_signature_value_needs_the_mark_adopted() {
 }
 
 #[test]
+fn finish_fills_first_and_last_name_from_the_recipients_name() {
+    // FG-055 (S1-03): the first word, and the rest; a one-word name has no last name.
+    let mut hx = Harness::new();
+    let mut r1 = recipient("r1", Signer, 1);
+    r1.name = text("  Ludwig van Beethoven ");
+    hx.draft(&[r1]);
+    hx.ok(
+        sender(),
+        Command::Edit {
+            changes: vec![
+                add_field(field("first", "doc-1", "r1", FieldType::FirstName, false)),
+                add_field(field("last", "doc-1", "r1", FieldType::LastName, false)),
+            ],
+        },
+    );
+    hx.send();
+    hx.get_ready("r1");
+    let r1 = || as_recipient("r1");
+    hx.ok(
+        r1(),
+        Command::AdoptSignature {
+            recipient: id("r1"),
+            mark: MarkKind::Signature,
+            method: AdoptionMethod::Upload,
+            image_hash: h(3),
+        },
+    );
+    hx.ok(
+        r1(),
+        Command::Finish {
+            recipient: id("r1"),
+            values: vec![entry("sig-r1", FieldValue::Signature(id("img")))],
+        },
+    );
+    let value = |fid: &str| {
+        hx.state()
+            .fields
+            .0
+            .iter()
+            .find(|f| f.id == id(fid))
+            .unwrap()
+            .value
+            .clone()
+    };
+    assert_eq!(value("first"), Some(txt("Ludwig")));
+    assert_eq!(value("last"), Some(txt("van Beethoven")));
+}
+
+#[test]
 fn finish_reruns_every_field_rule_and_stamps_server_values() {
     let mut hx = Harness::new();
     hx.draft(&[recipient("r1", Signer, 1), recipient("r2", Signer, 2)]);

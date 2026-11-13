@@ -640,6 +640,11 @@ pub struct Format {
     /// Conceal the value on the document (DocuSign's `concealValueOnDocument`).
     #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub mask: bool,
+    /// A text box of several lines (`FG-057`): the signer types line breaks, and the
+    /// value is set from the top of the box, as the signer saw it typed, rather than
+    /// centred as a single line.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    pub multiline: bool,
 }
 
 /// How many boxes of a checkbox group must be checked (docs/22 §6, docs/48 §5).
