@@ -181,8 +181,8 @@ instructions 8 and 9).
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
 | FG-170 | Users, CSV import, close, reactivate | DS | Build | 10 | Designed |
-| FG-171 | Permission profiles (built-in and custom) | DS | Build | 10 | Designed |
-| FG-172 | Groups | DS | Build | 10 | Designed |
+| FG-171 | Permission profiles (built-in and custom) | DS | Build | 10 | Partial: built-in admin, sender, viewer and custom profiles made, changed and deleted by an administrator, enforced on the server per request, never beyond the caller's own rights, in the web app (`UXW-07`); not yet run on the Compose stack |
+| FG-172 | Groups | DS | Build | 10 | Partial: groups made, renamed, deleted and their members set by an administrator, used to share templates, in the web app (`UXW-07`, `UXW-06`); not yet run on the Compose stack; a group's permission profile and envelope sharing not built (`PRF-03`) |
 | FG-173 | SSO: SAML 2.0 and OIDC; require SSO; JIT provisioning | DS, SN | Build | 10 | Designed |
 | FG-174 | Domain claims | DS | Build | 10 | Designed |
 | FG-175 | SCIM provisioning | DS | Build | 10 | Designed |
