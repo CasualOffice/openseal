@@ -11,6 +11,7 @@
 
 import { makePdf, countPages } from "./mockpdf.js";
 import { checkText } from "./signfields.js";
+import { checkList } from "./bulkmodel.js";
 
 /// Fixed demo values; the e2e specs read them from here.
 export const MOCK = {
@@ -155,7 +156,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!store) return;
     try { store.setItem(KEY, JSON.stringify(db)); } catch { /* full or off: memory only */ }
   };
-  const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; db.ersd ||= []; db.adminLog ||= []; };
+  const fill = () => { db.templates ||= []; db.groups ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; db.bulk ||= []; db.ersd ||= []; db.adminLog ||= []; };
   async function load() {
     ersdSha ||= `sha256:${await sha256hex(MOCK_DISCLOSURE)}`;
     if (db) return;
@@ -165,7 +166,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (s) { db = JSON.parse(s); fill(); return; }
       } catch { db = null; }
     }
-    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [], ersd: [], adminLog: [] };
+    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], groups: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [], bulk: [], ersd: [], adminLog: [] };
     await seed();
     save();
   }
@@ -579,6 +580,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       { id: "user-demo", email: MOCK.email, name: "Demo Admin", login_kind: "local", permission_profile_id: "profile-admin", disabled: false },
       { id: "user-robin", email: "sender@openseal.test", name: "Robin Sender", login_kind: "local", permission_profile_id: "profile-sender", disabled: false },
     );
+    // UXW-06: a group to share templates with.
+    db.groups.push({ id: "group-legal", name: "Legal", members: 1 });
     db.apiClients.push({ id: uid(), kind: "api_key", name: "CRM integration", owner_user_id: "user-demo", key_prefix: "osk_3f9a12c0", scopes: ["envelopes:read", "envelopes:write", "envelopes:send"], expires_at: null, revoked: false });
     // One webhook subscription with a delivered and a failed delivery (UX-03), so the
     // Admin webhooks screen has rows to show.
@@ -920,6 +923,104 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       sendable();
       Object.assign(d, { status: "delivered", attempts: d.attempts + 1, last_status_code: 200 });
       return json(202, d);
+    }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+
+  /// `POST /envelopes` (and each row of a bulk send, UXW-04, as the server): create, and
+  /// send when `b.status` is `sent`.
+  async function createEnvelopeFrom(body) {
+    const b = body || {};
+    checkSizes(0, (b.documents || []).map((d) => d.content_base64 || ""));
+    const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
+    if (b.reminders) env.reminders = b.reminders;
+    if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
+    const docIds = (b.documents || []).map((d) => addDocument(env, d.name, unb64(d.content_base64 || "")).id);
+    const refs = {};
+    for (const r of b.recipients || []) { const rec = addRecipient(env, r); if (r.ref) refs[r.ref] = rec.id; }
+    for (const f of b.fields || []) addField(env, f, refs, docIds);
+    // As the server: `Create`, then one `Edit` with every change the body made.
+    await audit(env, "envelope.created", { subject_hash: await sha256hex(env.subject) }, { by: "sender" });
+    const changed = [
+      ...docIds.map((d) => `documents.${d}`), ...env.recipients.map((r) => `recipients.${r.id}`), ...env.fields.map((f) => `fields.${f.id}`),
+      ...(b.reminders ? ["reminders"] : []), ...(Number.isInteger(b.expires_in_days) ? ["expires_at"] : []), ...(b.signing_options ? ["signing_options"] : []),
+    ];
+    for (const d of env.documents) await documentAdded(env, d);
+    if (changed.length) await audit(env, "envelope.corrected", { changed }, { by: "sender" });
+    if (b.status === "sent") await send(env);
+    return env;
+  }
+
+  // ---- Bulk send from a template (as the server, UXW-04) ---------------------------------
+  // The list is checked by bulkmodel.js's `checkList`, the server's rules; each sent row
+  // is one `createEnvelopeFrom`, the template's documents, roles and fields with the
+  // row's people. Ten rows per `…/send`, as the server.
+  async function bulkSends(method, id, sub, body) {
+    const counts = (b) => {
+      const n = (s) => b.rows.filter((r) => r.status === s).length;
+      return { pending: n("pending"), sent: n("sent"), failed: n("failed"), cancelled: n("cancelled") };
+    };
+    const out = (b, rows = true) => {
+      const { rows: list, ...rest } = b;
+      return { ...rest, row_count: list.length, counts: counts(b), ...(rows ? { rows: list } : {}) };
+    };
+    const rolesOfTpl = (tp) => [...(tp.roles || [])].sort((a, b) => a.routing_order - b.routing_order || a.name.localeCompare(b.name));
+    if (!id) {
+      if (method === "GET") return json(200, { items: db.bulk.slice().reverse().map((b) => out(b, false)) });
+      if (method === "POST") {
+        for (const k of Object.keys(body || {})) if (!["template_id", "name", "csv", "rows", "validate_only"].includes(k)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/${k}`, code: "CS-API-0001" }]);
+        const tp = db.templates.find((x) => x.id === body?.template_id && !x.deleted_at);
+        if (!tp || !(tp.documents || []).length || !(tp.roles || []).length) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/template_id", code: "CS-API-0001" }]);
+        const roles = rolesOfTpl(tp);
+        const checked = checkList(roles, { csv: body.csv ?? undefined, rows: body.rows ?? undefined });
+        if (checked.error) fail(422, "CS-API-0001", "Malformed request", checked.error);
+        if (body.validate_only) {
+          return json(200, { columns: checked.columns, row_count: checked.rows.length, valid: checked.rows.filter((r) => r.status === "pending").length, rows: checked.rows });
+        }
+        const name = (typeof body.name === "string" && body.name.trim()) || tp.name;
+        const b = {
+          id: uid(), name, template_id: tp.id, sender_user_id: "user-demo", status: "queued", created_at: iso(), finished_at: null,
+          rows: checked.rows.map((r) => ({ ...r, envelope_id: null, error_code: r.problems[0]?.code || null })),
+        };
+        db.bulk.push(b);
+        return json(201, out(b), { Location: `/api/v1/bulk-sends/${b.id}` });
+      }
+      fail(405, "CS-API-0012", "Method not allowed");
+    }
+    const b = db.bulk.find((x) => x.id === id);
+    if (!b) fail(404, "CS-API-0002", "Not found");
+    if (!sub && method === "GET") return json(200, out(b));
+    if (sub === "cancel" && method === "POST") {
+      if (!["queued", "sending"].includes(b.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      for (const r of b.rows) if (r.status === "pending") r.status = "cancelled";
+      Object.assign(b, { status: "cancelled", finished_at: iso() });
+      return json(200, out(b));
+    }
+    if (sub === "send" && method === "POST") {
+      const tp = db.templates.find((x) => x.id === b.template_id && !x.deleted_at);
+      for (const r of b.rows.filter((x) => x.status === "pending").slice(0, 10)) {
+        try {
+          if (!tp) fail(404, "CS-API-0002", "Not found");
+          const roles = rolesOfTpl(tp);
+          const docIndex = new Map(tp.documents.map((d, i) => [d.id, i]));
+          const fields = (tp.fields || []).filter((f) => docIndex.has(f.document_id) && roles.some((x) => x.id === f.role_id))
+            .map(({ id: _id, role_id, document_id, ...f }) => ({ ...f, recipient: `role${roles.findIndex((x) => x.id === role_id)}`, document: docIndex.get(document_id) }));
+          const env = await createEnvelopeFrom({
+            subject: tp.email_subject || tp.name, message: tp.email_message || "", status: "sent",
+            documents: tp.documents.map((d) => ({ name: d.name, content_base64: db.blobs[d.id] })),
+            recipients: roles.map((x, i) => ({ ref: `role${i}`, type: x.type, name: r.recipients[i]?.name || "", email: r.recipients[i]?.email || "", routing_order: x.routing_order })),
+            fields,
+          });
+          env.bulk_send_id = b.id;
+          Object.assign(r, { status: "sent", envelope_id: env.id });
+        } catch (e) {
+          if (!(e instanceof Problem)) throw e;
+          Object.assign(r, { status: "failed", error_code: e.code });
+        }
+      }
+      const left = b.rows.some((x) => x.status === "pending");
+      if (["queued", "sending"].includes(b.status)) Object.assign(b, left ? { status: "sending" } : { status: "completed", finished_at: iso() });
+      return json(200, out(b));
     }
     fail(405, "CS-API-0012", "Method not allowed");
   }
@@ -1433,29 +1534,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "api-clients") return apiClients(method, id, body);
     if (res === "webhooks") return webhooks(method, id, sub, subId, subSub, body);
     if (res === "folders") return folders(method, id, sub, body);
+    if (res === "bulk-sends") return bulkSends(method, id, sub, body);
+    if (res === "groups" && !id && method === "GET") return json(200, { items: db.groups });
     if (res !== "envelopes") fail(404, "CS-API-0002", "Not found");
 
     if (!id) {
       if (method === "GET") return listEnvelopes(query);
       if (method === "POST") {
-        const b = body || {};
-        checkSizes(0, (b.documents || []).map((d) => d.content_base64 || ""));
-        const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
-        if (b.reminders) env.reminders = b.reminders;
-        if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
-        const docIds = (b.documents || []).map((d) => addDocument(env, d.name, unb64(d.content_base64 || "")).id);
-        const refs = {};
-        for (const r of b.recipients || []) { const rec = addRecipient(env, r); if (r.ref) refs[r.ref] = rec.id; }
-        for (const f of b.fields || []) addField(env, f, refs, docIds);
-        // As the server: `Create`, then one `Edit` with every change the body made.
-        await audit(env, "envelope.created", { subject_hash: await sha256hex(env.subject) }, { by: "sender" });
-        const changed = [
-          ...docIds.map((d) => `documents.${d}`), ...env.recipients.map((r) => `recipients.${r.id}`), ...env.fields.map((f) => `fields.${f.id}`),
-          ...(b.reminders ? ["reminders"] : []), ...(Number.isInteger(b.expires_in_days) ? ["expires_at"] : []), ...(b.signing_options ? ["signing_options"] : []),
-        ];
-        for (const d of env.documents) await documentAdded(env, d);
-        if (changed.length) await audit(env, "envelope.corrected", { changed }, { by: "sender" });
-        if (b.status === "sent") await send(env);
+        const env = await createEnvelopeFrom(body);
         return withEtag(env, 201);
       }
     }
@@ -1711,8 +1797,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   // (roles, documents, fields); fields are bound to `role_id` (or `role`, also an id);
   // every change bumps the version, and the changes that name one object need If-Match.
   function publicTemplate(tp, whole = true) {
-    const { documents, fields, created_at: _c, last_used_at: _l, ...rest } = tp;
-    return whole ? { ...rest, documents, fields } : rest;
+    const { documents, fields, created_at: _c, last_used_at: _l, shares: _s, favourite, edit_share: _e, ...rest } = tp;
+    const access = tp.owner_user_id === "user-demo" ? "owner" : (tp.edit_share ? "edit" : "use");
+    return whole ? { ...rest, documents, fields, access, favourite: !!favourite } : rest;
   }
   const ROLE_TYPES = ["signer", "cc", "approver", "viewer", "in_person_signer"];
   function checkRole(r, at) {
@@ -1765,9 +1852,15 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         const del = query?.get("deleted") ?? null;
         if (del != null && del !== "true" && del !== "false") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/deleted", code: "CS-API-0001" }]);
         const deleted = del === "true";
-        const items = db.templates.filter((tp) => !!tp.deleted_at === deleted)
+        // UXW-06: `view` narrows the live list. The demo member owns every template the
+        // mock makes, so Shared with me holds the ones another owner shared.
+        const view = query?.get("view") ?? "all";
+        if (!["all", "owned", "shared", "favourites"].includes(view)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/view", code: "CS-API-0001" }]);
+        const me = "user-demo";
+        const inView = (tp) => deleted || view === "all" || (view === "owned" && tp.owner_user_id === me) || (view === "shared" && tp.owner_user_id !== me) || (view === "favourites" && !!tp.favourite);
+        const items = db.templates.filter((tp) => !!tp.deleted_at === deleted && inView(tp))
           .sort((a, b) => (deleted ? b.deleted_at.localeCompare(a.deleted_at) : b.created_at.localeCompare(a.created_at)))
-          .map((tp) => ({ ...publicTemplate(tp, false), roles: tp.roles, last_used_at: tp.last_used_at || null }));
+          .map((tp) => ({ ...publicTemplate(tp, false), roles: tp.roles, last_used_at: tp.last_used_at || null, access: tp.owner_user_id === me ? "owner" : (tp.edit_share ? "edit" : "use"), favourite: !!tp.favourite, shared: (tp.shares || []).length > 0 }));
         return json(200, { items });
       }
       if (method === "POST") return tplWhole(newTemplate(body), 201);
@@ -1809,6 +1902,37 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         tp.version++;
         return json(204, null);
       }
+    }
+    // UXW-06: shares (the owner's) and the demo member's star, as the server.
+    if (sub === "shares") {
+      if (method === "GET") return json(200, { items: tp.shares || [] });
+      if (method === "PUT") {
+        const items = body?.items;
+        if (!Array.isArray(items) || items.length > 500) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/items", code: "CS-API-0001" }]);
+        const seen = new Set();
+        tp.shares = items.map((it, i) => {
+          const named = ["user_id", "email", "group_id", "account"].filter((k) => it?.[k] != null);
+          const bad = () => fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/items/${i}`, code: "CS-API-0001" }]);
+          if (named.length !== 1) bad();
+          let target;
+          if (it.account === true) target = { account: true };
+          else if (it.group_id) { const g = db.groups.find((x) => x.id === it.group_id); if (!g) bad(); target = { group: { id: g.id, name: g.name } }; }
+          else {
+            const u = db.users.find((x) => (it.user_id && x.id === it.user_id) || (it.email && (x.email || "").toLowerCase() === String(it.email).trim().toLowerCase()));
+            if (!u || u.id === tp.owner_user_id) bad();
+            target = { user: { id: u.id, name: u.name || null, email: u.email } };
+          }
+          const key = JSON.stringify(target.user?.id ?? target.group?.id ?? "account");
+          if (seen.has(key)) bad();
+          seen.add(key);
+          return { id: uid(), can_edit: !!it.can_edit, ...target };
+        });
+        return json(200, { items: tp.shares });
+      }
+    }
+    if (sub === "favourite" && (method === "PUT" || method === "DELETE")) {
+      tp.favourite = method === "PUT";
+      return json(204, null);
     }
     if (sub === "duplicate" && method === "POST") {
       // `POST /templates/{id}/duplicate {name?}`: "Copy of <name>" unless named.

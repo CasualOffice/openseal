@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bulk_sends SET status = 'cancelled', finished_at = $3 WHERE account_id = $1 AND id = $2 AND status IN ('queued', 'sending')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0ffcf6bab3f95139c664120bdaac7a8ddcafe35468653052b1f788b7f71b6643"
+}

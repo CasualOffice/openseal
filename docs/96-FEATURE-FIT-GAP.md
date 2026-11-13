@@ -109,9 +109,9 @@ instructions 8 and 9).
 | FG-095 | Expiration and warning | DS, SN | Build | 2 | Partial: an envelope's expiry is set on send or correct; the worker emails the warning (account `workflow_policy.expiry_warning_days`) and expires the envelope on time, telling the sender and the recipients whose turn it was (`VS-02`, worker tests/expiry.rs); an admin sets the warning days on the Organization page (`RTE-03`, `webapp/e2e/admin-screens.spec.mjs`) |
 | FG-096 | Templates with roles | DS, SN | Build | 3 | Works |
 | FG-097 | Composite templates (several into one envelope) | DS | Build | 3 | Designed |
-| FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Designed |
+| FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Partial: sharing with members, groups and the whole workspace (use, or edit with Can edit), Shared with me and Favourites served deny-by-default and in the web app (`UXW-06`), not yet run on the Compose stack; template folders and locking not built (`TSH-03`) |
 | FG-099 | Document group templates | SN | Build | 3 | Designed |
-| FG-100 | Bulk send (CSV, API, test row, progress) | DS, SN | Build | 11 | Designed |
+| FG-100 | Bulk send (CSV, API, test row, progress) | DS, SN | Build | 11 | Partial: `POST /bulk-sends` (CSV or JSON rows, checked with per-row errors, `validate_only` as the test of the list), `…/send` in steps with progress, cancel, and the web app's `#/templates/{id}/bulk` (`UXW-04`); server tests seen red then green; the e2e spec not yet run against the Compose stack; no completion webhook (`UXW-47`) |
 | FG-101 | Signing links / PowerForms | DS, SN | Build | 11 | Designed |
 | FG-102 | QR code for signing links | SN | Build | 11 | Designed |
 | FG-103 | Self-sign ("Sign a document" for oneself) | DS, SN | Build | 2 | — |

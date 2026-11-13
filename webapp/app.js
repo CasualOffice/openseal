@@ -3,7 +3,7 @@
 //
 // Routes (hash, so a static server needs no rewrites):
 //   #/signin  #/home  #/agreements[?status=…]  #/envelopes/{id}  #/prepare  #/prepare/{id}
-//   #/templates  #/templates/new  #/templates/{id}  #/templates/{id}/edit  #/admin[?tab=api|account]
+//   #/templates  #/templates/new  #/templates/{id}  #/templates/{id}/edit  #/templates/{id}/bulk  #/admin[?tab=api|account]
 //   #/org[?section=workspaces|users|admins|audit]   (ORG-06; organization roles only)
 //   #/accept-invite?token=…   (WEB-06; no session needed)
 // Any other route shows "This page does not exist" (UX-04). Verify is its own page,
@@ -86,6 +86,8 @@ const ROUTES = [
     const prepare = await import("./prepare.js");
     return { mount: (view, c, m, params) => prepare.mount(view, c, [], params, { template: true, templateId: m[0] }) };
   }, { nav: "templates", wide: true, chrome: false, frame: true }],
+  // UXW-04: bulk send from a template with a CSV list.
+  [/^#\/templates\/([^/?]+)\/bulk$/, () => import("./bulk.js"), { nav: "templates" }],
   [/^#\/templates\/([^/?]+)$/, async () => ({ mount: (await import("./templates.js")).mountUse }), { nav: "templates" }],
   [/^#\/admin(?:\?.*)?$/, () => import("./admin.js"), { nav: "admin" }],
   // ORG-06: the organization admin, for a person who holds an organization role.

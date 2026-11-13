@@ -17,6 +17,7 @@
     dead_code
 )]
 
+pub mod bulk;
 pub mod flow;
 pub mod harness;
 pub mod templates;

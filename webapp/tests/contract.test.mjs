@@ -10,6 +10,7 @@ import {
   RECIPIENT_TYPES, FIELD_TYPES, FIELD_MEMBERS,
 } from "../api.js";
 import { makePdf } from "../mockpdf.js";
+import { canDo, shareItems, hasShare, isEmail } from "../templatemodel.js";
 import { sendSummary } from "../people.js";
 import { EN } from "../strings.en.js";
 import { readFileSync } from "node:fs";
@@ -539,4 +540,63 @@ test("workspaces: listed by organization, a switch replaces the CSRF token, a st
   // The new CSRF token is the one sent: a changing call still passes.
   await c.switchWorkspace("acct-demo");
   assert.equal((await c.session()).account_id, "acct-demo");
+});
+
+test("template sharing, Shared with me and Favourites reach the server as it serves them (UXW-06)", async () => {
+  const seen = [];
+  const fake = async (url, init = {}) => {
+    seen.push(`${init.method || "GET"} ${url}${init.body ? ` ${init.body}` : ""}`);
+    return new Response(init.method === "PUT" && url.endsWith("/favourite") ? null : JSON.stringify({ items: [] }), { status: init.method === "PUT" && url.endsWith("/favourite") ? 204 : 200 });
+  };
+  const c = createClient({ fetch: fake });
+  await c.templates.list();
+  await c.templates.list("shared");
+  await c.templates.shares("t1");
+  await c.templates.setShares("t1", [{ email: "lee@example.test", can_edit: true }]);
+  await c.templates.favourite("t1", true);
+  await c.groups.list();
+  assert.deepEqual(seen, [
+    "GET /api/v1/templates",
+    "GET /api/v1/templates?view=shared",
+    "GET /api/v1/templates/t1/shares",
+    'PUT /api/v1/templates/t1/shares {"items":[{"email":"lee@example.test","can_edit":true}]}',
+    "PUT /api/v1/templates/t1/favourite",
+    "GET /api/v1/groups",
+  ]);
+});
+
+test("the mock shares a template by email, group and workspace and keeps the member's Favourites (UXW-06)", async () => {
+  const c = await signedIn();
+  const tp = await c.templates.create({ name: "Shared NDA", roles: [{ name: "Client", type: "signer", routing_order: 1 }] });
+  const mine = (await c.templates.list("owned")).items.find((x) => x.id === tp.id);
+  assert.deepEqual([mine.access, mine.favourite, mine.shared], ["owner", false, false]);
+  const groups = (await c.groups.list()).items;
+  const out = await c.templates.setShares(tp.id, shareItems([{ email: "SENDER@openseal.test", can_edit: true }, { group: groups[0] }, { account: true }]));
+  assert.deepEqual(out.items.map((s) => s.user?.email ?? s.group?.name ?? (s.account && "all")), ["sender@openseal.test", "Legal", "all"]);
+  assert.equal(out.items[0].can_edit, true);
+  await assert.rejects(c.templates.setShares(tp.id, [{ account: true }, { account: true }]), (e) => e.status === 422, "one target twice");
+  await assert.rejects(c.templates.setShares(tp.id, [{ email: MOCK.email }]), (e) => e.status === 422, "not with the owner");
+  assert.equal((await c.templates.list()).items.find((x) => x.id === tp.id).shared, true);
+  await c.templates.favourite(tp.id, true);
+  assert.deepEqual((await c.templates.list("favourites")).items.map((x) => x.id), [tp.id]);
+  await c.templates.favourite(tp.id, false);
+  assert.deepEqual((await c.templates.list("favourites")).items, []);
+  assert.deepEqual((await c.templates.list("shared")).items, [], "the demo member owns every mock template");
+  await assert.rejects(c.templates.list("everyone"), (e) => e.status === 422);
+});
+
+test("the share panel's rules: access ranks, PUT items and one entry per target (UXW-06)", () => {
+  assert.equal(canDo({ access: "use" }, "edit"), false);
+  assert.equal(canDo({ access: "edit" }, "edit"), true);
+  assert.equal(canDo({ access: "edit" }, "owner"), false);
+  assert.equal(canDo({}, "owner"), true, "no access member: the caller's own");
+  assert.deepEqual(shareItems([{ user: { id: "u1", email: "a@x.test" }, can_edit: true }, { email: " b@x.test " }, { group: { id: "g1" } }, { account: true }]),
+    [{ user_id: "u1", can_edit: true }, { email: "b@x.test", can_edit: false }, { group_id: "g1", can_edit: false }, { account: true, can_edit: false }]);
+  const entries = [{ user: { id: "u1", email: "A@x.test" } }, { group: { id: "g1" } }];
+  assert.equal(hasShare(entries, { email: "a@X.test" }), true);
+  assert.equal(hasShare(entries, { group: { id: "g1" } }), true);
+  assert.equal(hasShare(entries, { account: true }), false);
+  assert.equal(hasShare(entries, { email: "c@x.test" }), false);
+  assert.equal(isEmail("lee@example.test"), true);
+  assert.equal(isEmail("lee"), false);
 });

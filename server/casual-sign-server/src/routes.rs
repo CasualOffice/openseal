@@ -9,7 +9,9 @@ use axum::handler::Handler;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
 
-use crate::api::{admin, envelopes as env, folders, mfa, ml, org, switch, templates, webhooks};
+use crate::api::{
+    admin, bulk, envelopes as env, folders, mfa, ml, org, switch, templates, webhooks,
+};
 use crate::ceremony;
 use crate::http::{Guard, guard, request_context};
 use crate::state::AppState;
@@ -611,6 +613,30 @@ pub fn table() -> Vec<Route> {
             JSON,
             env::sign_link,
         ),
+        // Bulk send from a template (UXW-04).
+        r("GET", "/api/v1/bulk-sends", er, JSON, bulk::list),
+        r(
+            "POST",
+            "/api/v1/bulk-sends",
+            Scope("bulk:send"),
+            JSON,
+            bulk::create,
+        ),
+        r("GET", "/api/v1/bulk-sends/{id}", er, JSON, bulk::get),
+        r(
+            "POST",
+            "/api/v1/bulk-sends/{id}/send",
+            Scope("bulk:send"),
+            JSON,
+            bulk::send,
+        ),
+        r(
+            "POST",
+            "/api/v1/bulk-sends/{id}/cancel",
+            Scope("bulk:send"),
+            JSON,
+            bulk::cancel,
+        ),
         // Folders (UXW-02): each member's own.
         r("GET", "/api/v1/folders", er, JSON, folders::list),
         r("POST", "/api/v1/folders", ew, JSON, folders::create),
@@ -674,6 +700,36 @@ pub fn table() -> Vec<Route> {
             JSON,
             templates::restore,
         ),
+        // Template sharing and Favourites (UXW-06).
+        r(
+            "GET",
+            "/api/v1/templates/{id}/shares",
+            tr,
+            JSON,
+            templates::shares,
+        ),
+        r(
+            "PUT",
+            "/api/v1/templates/{id}/shares",
+            tw,
+            JSON,
+            templates::put_shares,
+        ),
+        r(
+            "PUT",
+            "/api/v1/templates/{id}/favourite",
+            tr,
+            JSON,
+            templates::favourite,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}/favourite",
+            tr,
+            JSON,
+            templates::unfavourite,
+        ),
+        r("GET", "/api/v1/groups", tr, JSON, templates::groups),
         r(
             "POST",
             "/api/v1/templates/{id}/duplicate",

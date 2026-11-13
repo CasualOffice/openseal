@@ -35,6 +35,9 @@ const LOCAL = {
   "os-back": [["path", { d: "m15 6-6 6 6 6" }]],
   "os-enter": [["path", { d: "M20 5v7a3 3 0 0 1-3 3H6" }], ["path", { d: "m9 11-4 4 4 4" }]],
   "os-sparkle": [["path", { d: "M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z", fill: "currentColor", stroke: "none" }]],
+  // Favourites (UXW-06): a five-point star, outline and filled.
+  "os-star": [["path", { d: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" }]],
+  "os-star-filled": [["path", { d: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z", fill: "currentColor" }]],
   "os-lock": [["rect", { x: "5", y: "11", width: "14", height: "9", rx: "2" }], ["path", { d: "M8 11V8a4 4 0 0 1 8 0v3" }]],
 };
 
