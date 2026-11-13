@@ -282,6 +282,9 @@
   animation: os-sign-guide-in 340ms var(--os-sign-spring) both;
 }
 .os-guide[hidden] { display: none; }
+/* A modal (Adopt your signature) covers the guide: it steps back rather than sit, inert,
+   under the dialog's own buttons (on a phone the bottom bar's Next lay under Cancel). */
+body:has(dialog[open]) .os-guide { visibility: hidden; }
 .os-guide__ring { flex: none; display: block; width: 2.25rem; height: 2.25rem; }
 .os-guide__svg { display: block; width: 100%; height: 100%; }
 .os-guide__track { stroke: rgba(255, 255, 255, .14); }

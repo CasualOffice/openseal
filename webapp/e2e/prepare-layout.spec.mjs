@@ -162,8 +162,10 @@ test("a clicked field type places its field where the page is clicked; Escape ca
   const date = page.locator(".os-palette").getByRole("button", { name: "Add Date signed field" });
   await date.dblclick();
   await expect(date).toHaveAttribute("aria-pressed", "true");
-  await page.mouse.click(box.x + 120 * scale, box.y + 460 * scale);
-  await page.mouse.click(box.x + 420 * scale, box.y + 460 * scale);
+  // Above the floating tool bar: with the document at least 65 % of the width the page
+  // is drawn larger, and 460 pt down now sits under the bar.
+  await page.mouse.click(box.x + 120 * scale, box.y + 320 * scale);
+  await page.mouse.click(box.x + 420 * scale, box.y + 320 * scale);
   await expect(page.locator('.os-field[data-field="date_signed"]')).toHaveCount(2);
   await expect(date).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
