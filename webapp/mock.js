@@ -1763,7 +1763,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     // WEB-06: the signer's copy (`GET /s/{token}/document`; in the mock the first
     // document) and history stay available after finishing or declining.
-    if ((sub === "document" && parts.length === 4) || sub === "history") {
+    if (((sub === "document" || sub === "certificate") && parts.length === 4) || sub === "history") {
       if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
       if (sub === "history") {
@@ -1777,6 +1777,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       // As the server: only after this recipient finished (409 before), `doc` optional
       // for one document; the mock serves the delivered bytes (no preview banner).
       if (rec.status !== "completed") fail(409, "CS-API-0009", "Not available before finishing");
+      // VS-01, as the server: the certificate of completion once the envelope completes.
+      if (sub === "certificate") {
+        if (env.status !== "completed") fail(409, "CS-API-0009", "Not available in the object's state");
+        const lines = [`Envelope ${env.id}`, `Subject: ${env.subject}`, "Outcome: completed", ""];
+        for (const r of env.recipients) lines.push(`${r.name} <${r.email}> - ${r.type} - ${r.status} ${r.completed_at || ""}`);
+        lines.push("", "Mock mode: not a real certificate.");
+        return pdf(makePdf([{ title: "Certificate of completion", lines }]));
+      }
       const want = query?.get("doc");
       const d = want ? env.documents.find((x) => x.id === want) : env.documents[0];
       if (!d) fail(404, "CS-API-0002", "Not found");

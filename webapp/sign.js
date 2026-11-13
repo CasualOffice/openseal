@@ -1481,6 +1481,15 @@ function done(everyone, celebrate = false) {
   const print = button(t("sign.done.print"), { icon: "printer", variant: "ghost", size: "lg", attrs: { "data-testid": "done-print" } });
   print.classList.add("os-state__secondary");
   print.addEventListener("click", () => busy(print, () => downloadCopy(true)));
+  // VS-01: once the envelope is completed (the completion email's link), the
+  // certificate of completion too, so the signer holds what the sender holds.
+  const actions = [copy, print];
+  if (view?.envelope?.status === "completed") {
+    const cert = button(t("sign.done.certificate"), { icon: "file-check", variant: "ghost", size: "lg", attrs: { "data-testid": "done-certificate", "data-os-command": "signer.certificate" } });
+    cert.classList.add("os-state__secondary");
+    cert.addEventListener("click", () => busy(cert, () => downloadCertificate()));
+    actions.push(cert);
+  }
   const MARK = "\u0001";
   const [before, after = ""] = t("sign.done.next-verify", { link: MARK }).split(MARK);
   const name = firstName(view?.recipient?.name);
@@ -1490,7 +1499,7 @@ function done(everyone, celebrate = false) {
     title,
     text: everyone ? t("sign.done.everyone") : t("sign.done.waiting"),
     children: [receiptRows(), h("p", { class: "os-state__note" }, before, h("a", { class: "os-sign__inlink", href: "/verify.html", text: t("sign.done.verify-link") }), after)],
-    actions: [copy, print],
+    actions,
     testId: "sign-done",
     tone: "seal",
   }));
@@ -1539,6 +1548,16 @@ async function downloadCopy(print = false) {
     return;
   }
   for (const f of files) download(f.blob, f.name);
+}
+
+/// The certificate of completion (VS-01): `GET /s/{token}/certificate`, offered once
+/// the envelope is completed; the server refuses it before (409), shown as a toast.
+async function downloadCertificate() {
+  closeMore();
+  let blob;
+  try { blob = await api.ceremony.certificate(token); } catch (err) { toastError(err); return; }
+  const base = String(view?.envelope?.subject || "document").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, 100) || "document";
+  download(blob, `${base} - certificate.pdf`);
 }
 
 /// Decline (G-S5): a destructive confirmation, so a true modal. It says what declining
@@ -1767,6 +1786,7 @@ function registerCommands() {
   register("signer.finish", { label: t("sign.finish"), run: finish, enabled: signing });
   register("signer.fields", { label: t("sign.fields.menu"), run: fieldList, enabled: signing });
   register("signer.download", { label: t("sign.menu.download"), run: () => downloadCopy(), enabled: () => stage !== "auth" });
+  register("signer.certificate", { label: t("sign.done.certificate"), run: () => downloadCertificate(), enabled: () => view?.envelope?.status === "completed" });
   register("signer.print", { label: t("sign.menu.print"), run: () => downloadCopy(true), enabled: () => stage !== "auth" });
   register("signer.change-signature", { label: t("sign.field.change-signature"), run: () => changeMark("signature"), enabled: () => stage === "open" && !!adoptions.signature });
   register("signer.reassign", { label: t("sign.menu.reassign"), run: reassign, enabled: () => stage === "open" && opts().allow_reassign === true });

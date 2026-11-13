@@ -70,6 +70,10 @@ test("access code, location, consent, guide, draw, fill, finish", async ({ page 
   await page.getByTestId("review-finish").click();
   await expect(page.getByTestId("sign-done")).toBeVisible();
   await expect(page.getByTestId("sign-done")).toContainText("Everyone has signed");
+  // VS-01: the envelope is completed (the mock seals at once), so the signer gets the
+  // certificate of completion as well as the copy.
+  const [cert] = await Promise.all([page.waitForEvent("download"), page.getByTestId("done-certificate").click()]);
+  expect(cert.suggestedFilename()).toMatch(/certificate\.pdf$/);
 });
 
 test("the typed signature is the keyboard path", async ({ page }) => {
