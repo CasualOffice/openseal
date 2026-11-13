@@ -386,6 +386,13 @@ impl<B: BlobStore + 'static> Worker<B> {
         self.clock.now()
     }
 
+    /// Read the database's TSAs when the cache is stale (`CON-07`).
+    async fn refresh_tsas(&self) {
+        if let Some(d) = &self.seal.tsa_directory {
+            d.refresh(&self.store).await;
+        }
+    }
+
     /// Claim one batch and run it; returns how many jobs ran.
     ///
     /// # Errors
@@ -1839,6 +1846,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         let input = self.gather(ctx.account, ctx.envelope, state, true).await?;
         let now = input.now;
         // Seal (blocking: keyd and the TSA are synchronous).
+        self.refresh_tsas().await;
         let services = self.seal.clone();
         let (outs, input) = tokio::task::spawn_blocking(move || {
             let r = seal::seal_all(&services, &input);
@@ -2038,6 +2046,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         let input = self.gather(job.account_id, envelope, state, false).await?;
         let now = input.now;
         let profile = input.state.seal_profile;
+        self.refresh_tsas().await;
         let services = self.seal.clone();
         let bytes = tokio::task::spawn_blocking(move || seal::seal_ended(&services, &input))
             .await

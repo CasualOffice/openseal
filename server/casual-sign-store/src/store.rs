@@ -343,6 +343,20 @@ pub struct EntryPoints<'s> {
 }
 
 impl EntryPoints<'_> {
+    /// The enabled time-stamping authorities' URLs from `platform.tsa_endpoints`, in the
+    /// order to try them (docs/23 §5.4, `CON-07`, migration 0034); empty when the
+    /// operators have configured none, and the worker then uses `OPENSEAL_TSA_URLS`.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn tsa_urls(&self) -> Result<Vec<String>> {
+        sqlx::query_scalar::<_, String>("SELECT url FROM openseal_tsa_endpoints() LIMIT 64")
+            .fetch_all(&self.store.pool)
+            .await
+            .map_err(db)
+    }
+
     /// The recipient an unexpired, unrevoked invitation token names (SEC-A01).
     ///
     /// # Errors

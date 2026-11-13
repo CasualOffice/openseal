@@ -492,6 +492,9 @@ pub struct Env {
     pub inference: Mutex<Option<Arc<dyn casual_sign_worker::ml::Inference>>>,
     /// The SMS and voice provider the worker is given (none by default).
     pub messenger: Mutex<Option<Arc<dyn casual_sign_worker::messenger::Messenger>>>,
+    /// When set, seals time-stamp through this directory (the database's TSAs, `CON-07`)
+    /// instead of the in-process test TSA.
+    pub tsa_directory: Mutex<Option<Arc<casual_sign_worker::tsa::TsaDirectory>>>,
     next: AtomicU64,
 }
 
@@ -570,6 +573,7 @@ impl Env {
             allow_loopback: AtomicBool::new(true),
             inference: Mutex::new(None),
             messenger: Mutex::new(None),
+            tsa_directory: Mutex::new(None),
             next: AtomicU64::new(0),
         };
         env.blob_store().put(&env.delivered).await.unwrap();
@@ -606,7 +610,8 @@ impl Env {
         for a in self.anchors.lock().unwrap().iter() {
             trust.add_anchor(a).unwrap();
         }
-        SealServices {
+        let directory = self.tsa_directory.lock().unwrap().clone();
+        let mut services = SealServices {
             engine: self.engine.clone(),
             fonts: FontSet::bundled(),
             key,
@@ -616,6 +621,7 @@ impl Env {
                 )))
             }),
             revocation: Arc::new(|| Box::new(NoRevocation)),
+            tsa_directory: None,
             trust,
             crls: Vec::new(),
             name: Some("OpenSeal test operator".into()),
@@ -623,7 +629,12 @@ impl Env {
             location: None,
             certificate: CertificateOptions::default(),
             verify_url: None,
+        };
+        if let Some(d) = directory {
+            services.timestamps = d.factory();
+            services.tsa_directory = Some(d);
         }
+        services
     }
 
     fn worker(&self, faults: Option<FaultHook>) -> Worker<FsBlobStore> {
