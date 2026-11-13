@@ -1201,3 +1201,29 @@ list, template offer, template plan, OCR pages, personal data). `e2e/editor.spec
 (single-key tools, hint and held Continue; template match apply, undo and the model's results; nothing ML with the
 model service absent); `prepare-layout.spec.mjs` and `editor.spec.mjs` were updated to the new bar, library, checks and
 suggestion bar with their behavioural assertions kept.
+
+## As built: organization admin, first cut (ORG-06, 2026-11-13)
+
+`#/org` (`webapp/org.js`; pure rules in `orgmodel.js`: `ORG_NAV`, `orgRouteFrom`, `orgHref`, `orgCan`, counts,
+`auditRow`, `filterAudit`), for a person who holds an organization role (`GET /organizations/me` read once after
+sign-in): "Organization settings" in the workspace menu and in ⌘K. There is no canvas artboard for it, so it is built
+from the Admin screen's parts only, with no new CSS: the secondary nav inside the content card ("Back to
+agreements", "{organization} · Organization", five pages) and the "Section" select below 48em, the page head (h1,
+lede, actions right), the Reports counters, the account card's definition list, `os-table--cards` row tables, side
+panels for every form, and the danger confirmation for archive and remove.
+
+- **Overview**: active workspaces (archived count below), administrators (owners below), the organization's name,
+  your role, created; Rename organization (`org.settings.update`). Plan and usage, identity, policy, retention and
+  branding are named as coming.
+- **Workspaces**: name, status, whether you are a member or are here (from `GET /auth/workspaces`); New workspace,
+  Join (owners and admins, with a permission profile; the panel says the join is logged in both logs), Archive.
+- **Users**: the session workspace's members with their organization role, and a line saying the directory across
+  workspaces is not on this server yet (`ORG-33`).
+- **Administrators**: name, email, role, since; owners add a member as admin or owner, change a role, remove, or step
+  down; the last owner's refusal (`CS-ORG-0008`) is a toast with its code.
+- **Audit log**: newest first, a sentence per known action with its changed keys, who acted (the server for a system
+  event), what it was about; filter, load older entries (cursor), Verify chain (`verify=full`).
+
+Buttons follow the role (`orgCan`); the server decides every request. The mock serves `/organizations/me…` as
+`api/org.rs`, with a chained log. Tests: `tests/org.test.mjs`; `e2e/org.spec.mjs` (mock, 1440 and 390 px, axe on
+each page). Left: the real-stack run, `ORG-33` to `ORG-36`.

@@ -1205,6 +1205,11 @@ owner-only items marked, with pending approvals); Security policy (each key with
 region labels, legal hold when `ORG-23` lands); Branding and defaults; Plan and usage (charts per docs/47, export);
 Audit log (organization and operator events, filters, export).
 
+As built (`ORG-06`, first cut, 2026-11-13): `#/org` with Overview, Workspaces, Users, Administrators and Audit log
+(docs/47 §As built: organization admin). It is shown to every organization role holder, not hidden for one workspace
+(`ORG-36`); Users lists the session workspace's members until a directory route exists (`ORG-33`); the routes give
+user ids, named when the user is in the session workspace (`ORG-34`); export and operator events are `ORG-35`.
+
 **Workspace admin** (`#/admin`, extending today's three tabs): Overview, Users (invite, profile, disable, transfer
 envelopes, resend invitation), Groups, Permission profiles (delegated admin with group scope), Sending, Signing and
 recipient authentication, Brands, ERSD, Template sharing, Retention, Webhooks, API apps and keys, Seal and timestamp

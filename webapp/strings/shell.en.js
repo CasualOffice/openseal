@@ -74,6 +74,7 @@ export const SHELL = {
   "ws.default": "Workspace",
   "ws.plan": "OpenSeal",
   "ws.settings": "Workspace settings",
+  "ws.org": "Organization settings",
   "ws.switch": "Switch workspace",
   "palette.label": "Command menu",
   "palette.jump": "Search or jump to…",

@@ -193,8 +193,8 @@ instructions 8 and 9).
 | FG-180 | Data residency (region tags) | DS | Build | 15 | — |
 | FG-181 | BYOK per-tenant keys | — | Build | 15 | — |
 | FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | — |
-| FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization's through `GET /organizations/me/audit` (`ORG-03`); screens wait for ORG-06 |
-| FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Partial: one identity in several workspaces lists them and switches between them (`GET /auth/workspaces`, `POST /auth/switch`, the sidebar's workspace menu; `ORG-04`), organization routes (`ORG-03`); admin screens wait for ORG-06 |
+| FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization's through `GET /organizations/me/audit` (`ORG-03`) and its screen, `#/org?section=audit` (`ORG-06`, newest first, filter, chain verify); the workspace log's screen waits for UXW-09, export for ORG-35 |
+| FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Partial: one identity in several workspaces lists them and switches between them (`GET /auth/workspaces`, `POST /auth/switch`, the sidebar's workspace menu; `ORG-04`), organization routes (`ORG-03`); organization admin first cut `#/org`: Overview, Workspaces (create, join, archive), Users (session workspace), Administrators, Audit log (`ORG-06`, mock e2e; real stack left) |
 
 ## Developer surface
 

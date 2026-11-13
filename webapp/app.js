@@ -4,6 +4,7 @@
 // Routes (hash, so a static server needs no rewrites):
 //   #/signin  #/home  #/agreements[?status=…]  #/envelopes/{id}  #/prepare  #/prepare/{id}
 //   #/templates  #/templates/new  #/templates/{id}  #/templates/{id}/edit  #/admin[?tab=api|account]
+//   #/org[?section=workspaces|users|admins|audit]   (ORG-06; organization roles only)
 //   #/accept-invite?token=…   (WEB-06; no session needed)
 // Any other route shows "This page does not exist" (UX-04). Verify is its own page,
 // verify.html, usable without an account.
@@ -84,6 +85,8 @@ const ROUTES = [
   }, { nav: "templates", wide: true, chrome: false, frame: true }],
   [/^#\/templates\/([^/?]+)$/, async () => ({ mount: (await import("./templates.js")).mountUse }), { nav: "templates" }],
   [/^#\/admin(?:\?.*)?$/, () => import("./admin.js"), { nav: "admin" }],
+  // ORG-06: the organization admin, for a person who holds an organization role.
+  [/^#\/org(?:\?.*)?$/, () => import("./org.js"), { nav: "admin" }],
   [/^#\/reports$/, () => import("./reports.js"), { nav: "reports" }],
 ];
 
@@ -262,6 +265,7 @@ const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userA
 
 let wsName = null; // the workspace name in the switcher row
 let spaces = null; // GET /auth/workspaces (ORG-04): the person's workspaces by organization
+let orgRole = null; // GET /organizations/me (ORG-06): the person's organization role, or null
 let acctWrap = null;
 let bellWrap = null;
 
@@ -380,6 +384,7 @@ function buildWorkspace() {
       h("div", { class: "os-menu__who" }, h("strong", { text: wsName.textContent }), h("span", { class: "os-muted", text: t("ws.plan") })),
       ...switchItems(),
       ctx.session?.admin ? { label: t("ws.settings"), icon: "settings", run: () => ctx.navigate("#/admin?tab=account") } : null,
+      orgRole ? { label: t("ws.org"), icon: "layers", run: () => ctx.navigate("#/org") } : null,
       { label: t("start.verify"), icon: "shield-check", run: () => run("app.verify") },
       { label: t("help.about"), icon: "info", run: () => run("help.about") },
     ],
@@ -539,6 +544,7 @@ function registerPaletteSections() {
       { id: "go-templates", label: t("palette.go", { place: t("nav.templates") }), icon: "os-grid", run: go("#/templates") },
       { id: "go-reports", label: t("palette.go", { place: t("nav.reports") }), icon: "os-bars", run: go("#/reports") },
       ctx.session?.admin ? { id: "go-admin", label: t("palette.go", { place: t("nav.admin") }), icon: "os-shield", run: go("#/admin") } : null,
+      orgRole ? { id: "go-org", label: t("palette.go", { place: t("ws.org") }), icon: "layers", run: go("#/org") } : null,
       { id: "theme", label: t("cmd.theme"), icon: "moon", kbd: isMac() ? "⌘⇧L" : "Ctrl⇧L", run: () => run("theme.toggle") },
       { id: "keys", label: t("help.shortcuts"), icon: "keyboard", kbd: "?", run: () => run("help.shortcuts") },
     ].filter(Boolean);
@@ -676,6 +682,7 @@ async function loadWho() {
     const account = await api.account().catch(() => null);
     if (account?.name && wsName) wsName.textContent = account.name;
     spaces = await api.workspaces().catch(() => null);
+    orgRole = (await api.org.get().catch(() => null))?.role || null;
     if (api.available("profile")) {
       const me = await api.me();
       who.name = me?.name || "";
