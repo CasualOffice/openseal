@@ -773,6 +773,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-policy"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "casual-sign-sdk"
 version = "0.0.1"
 dependencies = [

@@ -1,0 +1,25 @@
+[package]
+name = "casual-sign-policy"
+version = "0.0.1"
+description = "OpenSeal policy: pure resolution of an organization's effective plan (entitlements, quotas, overrides) and plan validation, with no I/O and no store (ADR-028, docs/23 §5.2, §7)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Pure: no I/O, no store, no clock (time is supplied). Compiles to wasm32 with no `#[cfg]`
+# fork. Every dependency is already in the tree.
+[dependencies]
+# Reading the stored plan rows (`openseal_effective_plan()`, `platform.plan_inputs`) from
+# their JSON form. MIT OR Apache-2.0.
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.120"
+time = "0.3.36"
+uuid = { version = "1.10", features = ["serde"] }
+
+[dev-dependencies]
+time = { version = "0.3.36", features = ["macros"] }
+
+[lints]
+workspace = true
