@@ -27,6 +27,7 @@ pub mod health;
 pub mod keys;
 pub mod net;
 pub mod plans;
+pub mod seal;
 pub mod state;
 pub mod totp;
 pub mod tsa;
@@ -96,6 +97,10 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/console/v1/tsa/changes", "custodians"),
     ("POST", "/console/v1/tsa/changes/{id}/grant", "custodians"),
     ("POST", "/console/v1/tsa/changes/{id}/apply", "custodians"),
+    ("GET", "/console/v1/seal", "any"),
+    ("POST", "/console/v1/seal/changes", "custodians"),
+    ("POST", "/console/v1/seal/changes/{id}/grant", "custodians"),
+    ("POST", "/console/v1/seal/changes/{id}/apply", "custodians"),
     ("GET", "/console/v1/health", "any"),
     ("GET", "/console/v1/dead-letters", "any"),
     ("GET", "/console/v1/alerts", "any"),
@@ -167,6 +172,10 @@ pub fn app(state: AppState) -> Router {
         .route("/console/v1/tsa/changes", post(tsa::propose))
         .route("/console/v1/tsa/changes/{id}/grant", post(tsa::grant))
         .route("/console/v1/tsa/changes/{id}/apply", post(tsa::apply))
+        .route("/console/v1/seal", get(seal::seal))
+        .route("/console/v1/seal/changes", post(seal::propose))
+        .route("/console/v1/seal/changes/{id}/grant", post(tsa::grant))
+        .route("/console/v1/seal/changes/{id}/apply", post(tsa::apply))
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))
         .route("/console/v1/alerts", get(api::alerts));

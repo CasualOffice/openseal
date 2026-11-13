@@ -231,8 +231,12 @@ pub async fn apply(
     let now = state.now();
     let mut tx = state.store().begin().await?;
     let action = tx.apply_key_change(&op.token_sha256, id, now).await?;
+    // The seal alias's event is the one the worker requires before it seals with the
+    // alias (`openseal_seal_alias`, migration 0035).
     let name = if action == KeyAction::TsaRemove.as_str() {
         "operator.tsa.removed"
+    } else if action == KeyAction::SealActivate.as_str() {
+        "operator.seal.activated"
     } else {
         "operator.tsa.set"
     };

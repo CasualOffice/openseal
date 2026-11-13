@@ -26,8 +26,8 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 195 | 104 | 84 | 7 |
-| Partly | 40 | 12 | 22 | 6 |
+| Met | 196 | 104 | 85 | 7 |
+| Partly | 39 | 12 | 21 | 6 |
 | Not met | 19 | 5 | 10 | 4 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
@@ -72,7 +72,7 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-25 | P2 | ASVS 8.3.6 | Hold passwords, one-time codes and link tokens from requests in zeroizing buffers and drop them after use |
 | ASVS-26 (Done) | P1 | ASVS 7.4.3 | Closed 2026-11-13, server and console (`ASVS-34` with it). Was: A last-resort panic layer on the server answering `500` problem details with the request id (and the same in the console) |
 | ASVS-27 | P2 | ASVS 1.1.3 | A security-constraint line in docs/14 rows that add a user-facing feature (who may do it, what is refused), checked when the row is written |
-| ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key | Runbook in docs/65 §Rotation (`HRD-06`), exercised by tests for the database login, the API token key, keyd identities and webhook secrets; left: object-store credentials exercised (`HRD-07`) and the second-factor key (`HRD-08`). Was: Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
+| ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key (closed 2026-11-14) | Runbook in docs/65 §Rotation (`HRD-06`), exercised by tests for the database login, the API token key, keyd identities and webhook secrets; left: object-store credentials exercised (`HRD-07`) and the second-factor key (`HRD-08`). Was: Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
 | ASVS-29 | P2 | ASVS 2.4.5 | Optional password pepper held outside the database (a secret file through `casual-sign-secrets`), with rehash on login |
 | ASVS-30 (Done) | P2 | ASVS 5.2.3 | Closed 2026-11-13: the test went red without the guard and docs/07 `SEC-M02` was updated. Was: docs/07 `SEC-M02` still read Planned although `-worker/src/email.rs` refuses CR/LF and encodes headers: confirm its test goes red without the guard and update the row |
 | ASVS-34 (Done) | P2 | ASVS 7.4.3 | Closed 2026-11-13 with `ASVS-26`. Was: The console's last-resort panic layer answering a `500` problem, as the server's since `ASVS-26` |
@@ -129,7 +129,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.6.1 | 2 | All | Key management policy and lifecycle | Partly | docs/31 §5 (keyd), docs/65 production checklist and §Rotation (database, token key, keyd identities, webhooks); seal key rotation designed, not built (`CON-10`) | CON-10 |
+| 1.6.1 | 2 | All | Key management policy and lifecycle | Met | docs/31 §5 (keyd), docs/65 production checklist and §Rotation: the seal key rotates by two key custodians with a start time, keyd serving both keys meanwhile (`CON-10`, migration 0035, tests seen red); database login, token key, keyd identities and webhook secrets with tests; the second-factor key's rotation is `HRD-08` (1.6.3) | — |
 | 1.6.2 | 2 | All | Key material protected in vaults; secrets out of code | Met | Seal key only in keyd behind PKCS#11 (`SEC-S04`); secrets from files (`casual-sign-secrets`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s) each secret is mounted only into the services that read it, the seal PIN and chain into keyd alone (`SEC-H02`); the evaluation compose file still shares one volume | — |
 | 1.6.3 | 2 | All | Keys and passwords replaceable with a re-encryption process | Partly | Passwords and API clients replaceable through the API; rotation runbooks with tests for the database login (no restart, `-store/tests/rotation.rs`), the API token key (`kid` overlap), keyd TLS identities and webhook secrets (docs/65 §Rotation); the second-factor key cannot be rotated yet | HRD-08 |
 | 1.6.4 | 2 | All | Client-side secrets treated as insecure | Met | No secret in the web app; the CSRF token is per session, the session cookie is `HttpOnly`; WASM verifier holds no key | — |

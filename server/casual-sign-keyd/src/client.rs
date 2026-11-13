@@ -66,6 +66,21 @@ impl RemoteKey {
         })
     }
 
+    /// The alias this key was fetched under.
+    #[must_use]
+    pub fn alias(&self) -> &str {
+        &self.alias
+    }
+
+    /// The key keyd serves under `alias`, on the same endpoint: the seal key after a
+    /// rotation (`CON-10`). Fetches its chain, so it fails when keyd does not serve it.
+    ///
+    /// # Errors
+    /// As [`RemoteKey::connect`]: `CS-KEY-0002` when keyd does not serve `alias`.
+    pub fn with_alias(&self, alias: &str) -> Result<Self, KeydError> {
+        Self::connect(self.endpoint.clone(), alias)
+    }
+
     /// The same key, with signatures recorded in keyd's log against `envelope`.
     ///
     /// # Errors

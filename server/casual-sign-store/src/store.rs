@@ -29,6 +29,21 @@ use crate::migrate::{MigrationReport, migrate};
 /// database credential is in sole use within 15 minutes of the reload (docs/65 §Rotation).
 pub const CONNECTION_LIFETIME: Duration = Duration::from_secs(15 * 60);
 
+/// The seal key alias in force at an instant (`CON-10`, migration 0035).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealAlias {
+    /// keyd's alias for the key.
+    pub alias: String,
+    /// The approval request that made this version.
+    pub approval: Uuid,
+    /// From when it is in force.
+    pub active_from: OffsetDateTime,
+    /// Whether the change is fully approved: spent, granted by another key custodian with
+    /// a fresh second factor, and recorded in the operator chain. The worker refuses an
+    /// alias that is not (`CS-CON-0006`).
+    pub approved: bool,
+}
+
 /// A PostgreSQL-backed store. Cheap to clone (a pool handle).
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -441,6 +456,31 @@ impl EntryPoints<'_> {
             .fetch_all(&self.store.pool)
             .await
             .map_err(db)
+    }
+
+    /// The seal key alias in force at `at` from `platform.seal_profiles` (docs/23 §5.4,
+    /// `CON-10`, migration 0035), with whether its change is fully approved; `None` when
+    /// key custodians have set none, and the worker then uses `OPENSEAL_KEYD_ALIAS`.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn seal_alias(&self, at: OffsetDateTime) -> Result<Option<SealAlias>> {
+        let row: Option<(String, Uuid, OffsetDateTime, bool)> = sqlx::query_as(
+            "SELECT alias, approval, active_from, approved FROM openseal_seal_alias($1)",
+        )
+        .bind(at)
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(
+            row.map(|(alias, approval, active_from, approved)| SealAlias {
+                alias,
+                approval,
+                active_from,
+                approved,
+            }),
+        )
     }
 
     /// The recipient an unexpired, unrevoked invitation token names (SEC-A01).

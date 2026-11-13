@@ -39,6 +39,8 @@ pub enum KeyAction {
     TsaSet,
     /// Remove a TSA endpoint.
     TsaRemove,
+    /// Seal with another key alias from a given time (`CON-10`, migration 0035).
+    SealActivate,
 }
 
 impl KeyAction {
@@ -48,8 +50,24 @@ impl KeyAction {
         match self {
             Self::TsaSet => "tsa.set",
             Self::TsaRemove => "tsa.remove",
+            Self::SealActivate => "seal.activate",
         }
     }
+}
+
+/// One version of the seal key alias (`CON-10`, migration 0035): insert-only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealProfile {
+    /// Its id.
+    pub id: Uuid,
+    /// keyd's alias for the key.
+    pub active_alias: String,
+    /// From when the worker seals with it.
+    pub active_from: OffsetDateTime,
+    /// When the change was applied.
+    pub changed_at: OffsetDateTime,
+    /// The approval that made it.
+    pub approval: Uuid,
 }
 
 impl PlatformStore {
@@ -74,6 +92,31 @@ impl PlatformStore {
                     priority: r.try_get("priority").map_err(db)?,
                     enabled: r.try_get("enabled").map_err(db)?,
                     cert_sha256: r.try_get("cert_sha256").map_err(db)?,
+                    changed_at: r.try_get("changed_at").map_err(db)?,
+                    approval: r.try_get("approval").map_err(db)?,
+                })
+            })
+            .collect()
+    }
+
+    /// The seal key alias versions, newest start first (at most 64).
+    ///
+    /// # Errors
+    /// A database error.
+    pub async fn seal_profiles(&self) -> Result<Vec<SealProfile>> {
+        let rows = sqlx::query(
+            "SELECT id, active_alias, active_from, changed_at, approval \
+             FROM platform.seal_profiles ORDER BY active_from DESC, id DESC LIMIT 64",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.iter()
+            .map(|r| {
+                Ok(SealProfile {
+                    id: r.try_get("id").map_err(db)?,
+                    active_alias: r.try_get("active_alias").map_err(db)?,
+                    active_from: r.try_get("active_from").map_err(db)?,
                     changed_at: r.try_get("changed_at").map_err(db)?,
                     approval: r.try_get("approval").map_err(db)?,
                 })

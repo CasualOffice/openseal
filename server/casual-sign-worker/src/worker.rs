@@ -1916,7 +1916,13 @@ impl<B: BlobStore + 'static> Worker<B> {
         let now = input.now;
         // Seal (blocking: keyd and the TSA are synchronous).
         self.refresh_tsas().await;
-        let services = self.seal.clone();
+        let mut services = self.seal.clone();
+        // The alias in force at the seal's own time.
+        let at = OffsetDateTime::from_unix_timestamp_nanos(
+            i128::from(now.unix_millis()).saturating_mul(1_000_000),
+        )
+        .map_err(|_| WorkerError::StateUnreadable)?;
+        services.key = self.seal_key_at(at).await?;
         let (outs, input) = tokio::task::spawn_blocking(move || {
             let r = seal::seal_all(&services, &input);
             (r, input)
@@ -1927,6 +1933,38 @@ impl<B: BlobStore + 'static> Worker<B> {
         })?;
         let sealed = outs?;
         self.store_sealed(ctx, input, sealed, now).await
+    }
+
+    /// The seal key at `now` (`CON-10`, docs/23 §5.4): the alias the key custodians put in
+    /// force in `platform.seal_profiles`, fetched from keyd per seal, or the configured
+    /// key while they have set none. A version whose change is not fully approved, an
+    /// alias keyd does not serve, or a database alias without keyd is refused, and the
+    /// seal fails safe (`SealFailed`, retried; nothing sealed with an older key).
+    async fn seal_key_at(&self, now: OffsetDateTime) -> Result<seal::SealKey> {
+        let Some(chosen) = self.store.entry_points().seal_alias(now).await? else {
+            return Ok(self.seal.key.clone());
+        };
+        if !chosen.approved {
+            return Err(WorkerError::Pipeline {
+                code: "CS-CON-0006",
+            });
+        }
+        match &self.seal.key {
+            seal::SealKey::Remote(r) if r.alias() == chosen.alias => Ok(self.seal.key.clone()),
+            seal::SealKey::Remote(r) => {
+                let r = r.clone();
+                let key = tokio::task::spawn_blocking(move || r.with_alias(&chosen.alias))
+                    .await
+                    .map_err(|_| WorkerError::Pipeline {
+                        code: "CS-KEY-0011",
+                    })?
+                    .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+                Ok(seal::SealKey::Remote(key))
+            }
+            seal::SealKey::Local { .. } => Err(WorkerError::Pipeline {
+                code: "CS-CON-0006",
+            }),
+        }
     }
 
     /// Everything the certificate (and, with `documents`, sealing) needs: the chain,
