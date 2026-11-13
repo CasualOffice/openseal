@@ -119,6 +119,14 @@ test("the draft matches MSA v4 at 96 %, its analysis runs for about 2 s, page 3 
   const done = await c.getAnalysis(lease.id, doc.id);
   assert.equal(done.status, "done");
   assert.deepEqual(done.ocr_pages, [Math.min(3, doc.pages)]);
+  // The server's shapes (WEB-19, docs/33 §2, §6): `uses` in its fixed order and names,
+  // and a template suggestion's page counts as numbers with no span value.
+  assert.deepEqual(done.uses, ["ocr", "template", "entities", "personal_data"]);
+  assert.equal(done.document_id, doc.id);
+  const [tpl] = (await c.listSuggestions(lease.id, { kind: "template" })).items;
+  assert.equal(tpl.value, null);
+  assert.equal(typeof tpl.pages_matched, "number");
+  assert.equal(tpl.pages_matched, tpl.pages_total);
   // Analysis is for drafts only.
   const nda = await byPrefix(c, "Mutual NDA");
   const ndaDoc = (await c.getEnvelope(nda.id)).envelope.documents[0];
