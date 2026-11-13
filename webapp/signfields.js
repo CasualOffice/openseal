@@ -190,6 +190,15 @@ export function firstName(name) {
   return String(name || "").trim().split(/\s+/)[0] || "";
 }
 
+/// A name as first and last name, as the server's engine fills `first_name` and
+/// `last_name` at finish (`FG-055`, docs/24 §5): the first word, and everything after it.
+/// "Ludwig van Beethoven" → {first: "Ludwig", last: "van Beethoven"}; one word has no last.
+export function nameParts(name) {
+  const s = String(name || "").trim();
+  const at = s.search(/\s/);
+  return at < 0 ? { first: s, last: "" } : { first: s.slice(0, at), last: s.slice(at).trimStart() };
+}
+
 /// The organisation's two-letter mark ("Acme Corporation" → "AC", "Northwind" → "NO").
 export function orgMark(org) {
   const clean = (w) => [...w.replace(/[^\p{L}\p{N}]/gu, "")];

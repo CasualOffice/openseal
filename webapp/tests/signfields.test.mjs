@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { fills, isFilled, isFixed, checkText, isPhone, isZip, fixedText, inputModeFor, nextAction, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments } from "../signfields.js";
+import { fills, isFilled, isFixed, checkText, isPhone, isZip, fixedText, inputModeFor, nextAction, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments } from "../signfields.js";
 
 // ---- The ceremony's model (WEB-18) ---------------------------------------------------------
 
@@ -138,4 +138,11 @@ test("numbers: a number, whole when decimals is 0, within min and max", () => {
   assert.deepEqual(checkText({ type: "number" }, "x"), { key: "sign.check.number" }, "a number field needs a number without a rule");
   assert.equal(inputModeFor(qty), "numeric");
   assert.equal(inputModeFor({ type: "text", validation: { kind: "email" } }), "email");
+});
+
+test("a name splits into first and last as the server's engine fills them (FG-055)", () => {
+  assert.deepEqual(nameParts("Ada Lovelace"), { first: "Ada", last: "Lovelace" });
+  assert.deepEqual(nameParts(" Ludwig  van Beethoven "), { first: "Ludwig", last: "van Beethoven" });
+  assert.deepEqual(nameParts("Plato"), { first: "Plato", last: "" });
+  assert.deepEqual(nameParts(""), { first: "", last: "" });
 });

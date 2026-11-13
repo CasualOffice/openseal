@@ -42,7 +42,7 @@ const templateMark = () => glyph([["rect", { x: "4", y: "4", width: "7", height:
 /// A short glyph per field kind, as the canvas's library chips show them (text, so the
 /// chip reads in any font; decorative, the button names the kind).
 export const KIND_GLYPH = {
-  signature: "✍", initials: "AB", date_signed: "◷", name: "Aa", email: "@", company: "▦", title: "Tt",
+  signature: "✍", initials: "AB", date_signed: "◷", name: "Aa", first_name: "Fn", last_name: "Ln", email: "@", company: "▦", title: "Tt",
   text: "T", number: "#", checkbox: "☑", radio_group: "◉", dropdown: "▾", attachment: "⎘", note: "i", select: "↖",
 };
 

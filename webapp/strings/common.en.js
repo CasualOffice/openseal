@@ -115,6 +115,8 @@ export const COMMON = {
   "ftype.email": "Email",
   "ftype.initials": "Initials",
   "ftype.name": "Name",
+  "ftype.first_name": "First name",
+  "ftype.last_name": "Last name",
   "ftype.signature": "Signature",
   "ftype.text": "Text",
 

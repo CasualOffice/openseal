@@ -78,6 +78,28 @@ function b64(bytes) {
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
+/// The decoded size of base64 `s`, without decoding it.
+function b64Size(s) {
+  const n = String(s || "").length;
+  const pad = s?.endsWith("==") ? 2 : s?.endsWith("=") ? 1 : 0;
+  return Math.floor((n * 3) / 4) - pad;
+}
+
+/// As the server (docs/21, `FG-006`): a document over 50 MiB, or an envelope whose
+/// documents come to over 200 MiB however they arrive, is refused with `413
+/// CS-API-0006` before anything is decoded or kept.
+const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
+const MAX_ENVELOPE_BYTES = 200 * 1024 * 1024;
+function checkSizes(held, contents) {
+  let total = held;
+  for (const c of contents) {
+    const n = b64Size(c);
+    if (n > MAX_DOCUMENT_BYTES) fail(413, "CS-API-0006", "Request too large");
+    total += n;
+  }
+  if (total > MAX_ENVELOPE_BYTES) fail(413, "CS-API-0006", "Request too large");
+}
+
 function unb64(s) {
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
@@ -1139,6 +1161,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "GET") return listEnvelopes(query);
       if (method === "POST") {
         const b = body || {};
+        checkSizes(0, (b.documents || []).map((d) => d.content_base64 || ""));
         const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
         if (b.reminders) env.reminders = b.reminders;
         if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
@@ -1255,6 +1278,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "documents") {
       if (!subId && method === "POST") {
         draftOnly(env);
+        checkSizes(env.documents.reduce((n, x) => n + (x.bytes || 0), 0), [body?.content_base64 || ""]);
         const d = addDocument(env, body?.name, unb64(body?.content_base64 || ""));
         await documentAdded(env, d);
         await edited(env, [`documents.${d.id}`]);

@@ -1532,8 +1532,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (TYPED.has(f.type) || f.type === "checkbox") {
       // DocuSign's "Read only" with a sender's value: the recipient sees it, cannot change it.
       general.push(check("fp-readonly", "prepare.read-only", f.read_only, (v) => { setM("read_only", v); renderProps(); }));
+      // DocuSign's "Locked" (FG-072): the sender's value is fixed; the ceremony and the
+      // server refuse a change to it.
+      general.push(check("fp-locked", "prepare.locked", f.locked, (v) => { setM("locked", v); renderProps(); }));
       if (f.type === "checkbox") general.push(check("fp-checked", "prepare.checked-value", f.value?.checked, (v) => setM("value", v ? { checked: true } : null)));
-      else general.push(textIn("fp-value", f.read_only ? "prepare.value-fixed" : "prepare.value-start", f.value?.text, (v) => setM("value", v ? { text: v } : null), { help: "prepare.value-help", max: 4000 }));
+      else general.push(textIn("fp-value", f.read_only || f.locked ? "prepare.value-fixed" : "prepare.value-start", f.value?.text, (v) => setM("value", v ? { text: v } : null), { help: "prepare.value-help", max: 4000, area: !!f.format?.multiline }));
     }
     general.push(textIn("fp-label", "prepare.label", f.label, (v) => set("label", v.trim()), { help: "prepare.label-help" }));
     // A template keeps every setting here too (templatesync.js, UX-11).
@@ -1546,7 +1549,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (!(f.options || []).length) body.push(h("p", { class: "os-field-error", text: t("prepare.options-none") }));
       props.append(section("options", ...body));
     }
-    if (TYPED.has(f.type) || ["name", "email", "date_signed"].includes(f.type)) {
+    if (TYPED.has(f.type) || ["name", "first_name", "last_name", "email", "date_signed"].includes(f.type)) {
       const fmt = f.format || {};
       const setF = (k, v) => { const next = { ...(f.format || {}) }; if (v === "" || v == null || v === false) delete next[k]; else next[k] = v; setM("format", Object.keys(next).length ? next : null); };
       const size = h("input", { id: "fp-font-size", class: "os-input os-input--sm", type: "number", min: "6", max: "72", step: "1", inputMode: "numeric", value: fmt.font_size ?? "", placeholder: t("prepare.fmt-auto") });
@@ -1557,6 +1560,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         selectField(t("prepare.text-align"), [["", t("prepare.fmt-default")], ["left", t("prepare.align-left-text")], ["center", t("prepare.align-center-text")], ["right", t("prepare.align-right-text")]], { id: "fp-align", value: fmt.align || "", size: "sm", onChange: (v) => setF("align", v) }).el,
       ];
       if (TYPED.has(f.type)) body.push(check("fp-mask", "prepare.mask", fmt.mask, (v) => setF("mask", v)));
+      // A text box of several lines (FG-057): the signer types line breaks; the sealed
+      // copy sets the value from the box's top.
+      if (f.type === "text") body.push(check("fp-multiline", "prepare.multiline", fmt.multiline, (v) => { setF("multiline", v); renderProps(); }));
       props.append(section("format", ...body));
     }
     if (f.type === "text" || f.type === "number") {
@@ -1999,6 +2005,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     saving = false;
     syncStatus();
     status.replaceChildren(icon("circle-alert", { size: 16 }), h("span", { text: t("prepare.not-saved") }));
+    // The server's 413 (FG-006): a file over 50 MB is refused before it is sent, so here
+    // it is the envelope's documents together over 200 MB.
+    if (err?.status === 413 || err?.code === "CS-API-0006") { toast(`${t("prepare.envelope-too-large")} (${err.code || "HTTP-413"})`, "error"); return; }
     const extra = (err.errors || []).map((e) => `${e.pointer || ""} ${e.code || ""}`.trim()).filter(Boolean);
     toast(extra.length ? `${errorMessage(err)} — ${extra.slice(0, 3).join("; ")}` : errorMessage(err), "error");
   }

@@ -27,7 +27,7 @@ export function wirePlacement(f) {
 
 /// The settings of a field the editor offers besides its place, owner, `required` and
 /// `label` (UX-05, UX-11), by their wire names (api.js `FIELD_MEMBERS`).
-export const FIELD_SETTINGS = Object.freeze(["read_only", "value", "tooltip", "placeholder", "validation", "format", "options", "allow_custom"]);
+export const FIELD_SETTINGS = Object.freeze(["read_only", "locked", "value", "tooltip", "placeholder", "validation", "format", "options", "allow_custom"]);
 
 /// Whether a setting's value means "not set" (as the server leaves it out).
 export const blankSetting = (v) => v == null || v === false || v === "" || (Array.isArray(v) && !v.length);

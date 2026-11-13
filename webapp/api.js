@@ -73,7 +73,7 @@ export const FIELD_TYPES = Object.freeze([
 /// The types the ceremony fills or shows and the flattener draws today (docs/40 As built,
 /// `WEB-06`); the rest are taken and stored, their signer side a later row.
 export const FIELD_TYPES_READY = Object.freeze([
-  "signature", "initials", "date_signed", "name", "email", "company", "title", "text", "number", "checkbox",
+  "signature", "initials", "date_signed", "name", "first_name", "last_name", "email", "company", "title", "text", "number", "checkbox",
   "radio_group", "dropdown", "attachment", "note",
 ]);
 

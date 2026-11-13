@@ -23,7 +23,7 @@ import { button, busy, toast, toastError, openDialog, noServerState, dockPanel, 
 import { register, run } from "./commands.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
-import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments } from "./signfields.js";
+import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments } from "./signfields.js";
 import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
@@ -490,7 +490,14 @@ function consent() {
 // ---- Documents and fields -------------------------------------------------------------------
 
 const today = () => new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-const AUTO = { date_signed: () => dateText(), name: () => view.recipient?.name || "", email: () => view.recipient?.email || "" };
+const AUTO = {
+  date_signed: () => dateText(),
+  name: () => view.recipient?.name || "",
+  // FG-055: as the engine cuts the name at finish (docs/24 §5).
+  first_name: () => nameParts(view.recipient?.name).first,
+  last_name: () => nameParts(view.recipient?.name).last,
+  email: () => view.recipient?.email || "",
+};
 
 /// The date-signed field's words (WEB-18, the canvas): it fills itself in once this
 /// signer has placed a signature or initials.
@@ -852,7 +859,8 @@ function fieldNode(f, pg) {
     const id = `sf-${f.id}`;
     // A rejected value is said beside the field, not only in a toast (A17).
     const err = h("span", { id: `${id}-err`, class: "os-sfield__err", attrs: { role: "alert" } });
-    const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, inputMode: inputModeFor(f), placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}), ...(f.validation?.kind === "email" ? { autocomplete: "email" } : f.validation?.kind === "phone" ? { autocomplete: "tel" } : {}) } });
+    // A multi-line text box (FG-057) is a text area: Enter types a line break.
+    const input = h(f.format?.multiline ? "textarea" : "input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, inputMode: inputModeFor(f), placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}), ...(f.validation?.kind === "email" ? { autocomplete: "email" } : f.validation?.kind === "phone" ? { autocomplete: "tel" } : {}) } });
     // Typing: a problem the field's rule finds is said as soon as the value is left,
     // before the server is asked (it checks again, and at finish).
     const save = async (text) => {
@@ -971,10 +979,11 @@ function textSheet(f, label, value, save) {
     className: "os-fieldsheet",
     build(body, close) {
       const id = "fieldsheet-input";
-      input = h("input", { id, class: "os-input os-input--lg", value, maxLength: 4000, autocomplete: "off", inputMode: inputModeFor(f), attrs: { autofocus: true, "aria-describedby": "fieldsheet-err", ...(f.required ? { "aria-required": "true" } : {}) } });
+      const multi = !!f.format?.multiline;
+      input = h(multi ? "textarea" : "input", { id, class: multi ? "os-input os-textarea" : "os-input os-input--lg", value, maxLength: 4000, autocomplete: "off", inputMode: inputModeFor(f), ...(multi ? { rows: 4 } : {}), attrs: { autofocus: true, "aria-describedby": "fieldsheet-err", ...(f.required ? { "aria-required": "true" } : {}) } });
       err = h("p", { id: "fieldsheet-err", class: "os-field-error", attrs: { role: "alert" } });
       input.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter") return;
+        if (e.key !== "Enter" || multi) return;
         e.preventDefault();
         input.closest(".os-sheet")?.querySelector(".os-sheet__foot .os-btn--primary")?.click();
       });
