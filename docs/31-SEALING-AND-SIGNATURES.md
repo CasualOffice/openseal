@@ -133,6 +133,9 @@ keyd's log with `document.sealed` (`SEC-S05`).
 `TimestampSource` is a list of TSAs with failover. Requests carry a nonce and `certReq=true`; the response is checked
 (status, nonce, message imprint, TSA certificate chain against the trust store, ESSCertIDv2 per RFC 5816) before
 embedding. Free public TSAs are allowed for evaluation and flagged in the admin console as not production-grade.
+The worker's list is the enabled rows of `platform.tsa_endpoints`, changed in the console by two key custodians
+and read at most once a minute (`CON-07`, [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §5.6), else
+`OPENSEAL_TSA_URLS`; each database URL's addresses pass the `SEC-W01` policy before every request.
 
 ## 7. Verification
 

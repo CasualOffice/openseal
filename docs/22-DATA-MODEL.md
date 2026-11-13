@@ -505,6 +505,12 @@ the rules above, and what does not:
   idempotent by source), `usage_counters`.
 - **Schema `platform`** (operators, approvals, plans, TSA, trust anchors, seal profiles, alerts) is reached by the
   console's role `openseal_console`, which has no grant on any `public` table.
+- **TSA endpoints (built, `CON-07`, migration 0034):** `platform.tsa_endpoints` (id, URL `http`/`https`, policy
+  OID, priority 0 to 1000, enabled, expected TSA certificate SHA-256, the approval that made the version) and
+  `platform.approval_payloads` (insert-only: the whole payload of a key change, re-hashed at apply). Written only by
+  `platform.apply_key_change` after `request_key_change` and `grant_key_change` by two key custodians (`OS012` →
+  `CS-CON-0006` for a payload that fails its checks); `approval_requests.action` gains `tsa.set` and `tsa.remove`. The
+  worker reads only `openseal_tsa_endpoints()` (enabled rows: URL, policy OID, certificate hash, in order).
 - **Plans (built, `PLAN-02`, migration 0024):** `platform.plans` (immutable versions of a key; archive only),
   `plan_entitlements`, `plan_quotas`, `plan_seat_rule`, `plan_assignments` (current on `[starts_at, ends_at)`; only
   `ends_at` shortens), `plan_overrides` (`workspace_id`, workspace-level quotas only; only `expires_at` shortens).
