@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 39 of 167 rows work end to end; 15 more have their engine built and tested; 46 are designed, 24 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-057`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-177`, `FG-183`, `FG-184`, `FG-195`) and 43 are not started** (counted with `grep` over the Status column). Counts recounted 2026-11-13 (`VS-01`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 39 of 167 rows work end to end; 15 more have their engine built and tested; 45 are designed, 25 are partial (`FG-006`, `FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-057`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-177`, `FG-183`, `FG-184`, `FG-195`) and 43 are not started** (counted with `grep` over the Status column). Counts recounted 2026-11-13 (`VS-01`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -21,7 +21,7 @@ instructions 8 and 9).
 | FG-003 | Import from URL | SN | Build | 8 | — |
 | FG-004 | Import from cloud storage (Drive, OneDrive, Dropbox, Box) | DS | Plugin | 24 | — |
 | FG-005 | Multiple documents per envelope; reorder | DS, SN (groups) | Build | 2 | Designed |
-| FG-006 | Size limits: 50 MB per file, 200 MB per envelope | DS | Build | 1 | Designed |
+| FG-006 | Size limits: 50 MB per file, 200 MB per envelope | DS | Build | 1 | Partial: 50 MiB per file in the editor and the API; 200 MiB per envelope in the API, at create and on every later upload (server `tests/threats.rs`, `VS-01`); no browser run of the refusal (`S1-05`) |
 | FG-007 | Neutralize JavaScript, actions, embedded files; report | — | Build | Phase 1 | Engine |
 | FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Engine |
 | FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | Engine (`XFA-01`; gaps `XFA-02`..`XFA-05`) |
@@ -68,7 +68,7 @@ instructions 8 and 9).
 | FG-052 | Optional signature | DS | Build | 4 | Designed |
 | FG-053 | Stamp | DS, SN | Build | 4 | Engine |
 | FG-054 | Date signed | DS | Build | 1 | Works |
-| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Partial: name, email, company and title placed (`UX-05`); first and last name not in the palette |
+| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Partial: name, email, company and title placed (`UX-05`); first and last name not in the palette nor filled at signing (`S1-03`) |
 | FG-056 | Envelope id field | DS | Build | 4 | Designed |
 | FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Partial: single-line text, with max length and mask in the editor, placed, filled on a phone and sealed (`VS-01`); multi-line not built (`S1-01`) |
 | FG-058 | Number with locale, currency, min, max | DS, SN | Build | 4 | Engine |
@@ -85,7 +85,7 @@ instructions 8 and 9).
 | FG-069 | Drawing area | DS | Build | 4 | — |
 | FG-070 | Payment field | DS, SN | Plugin | 13 | Designed |
 | FG-071 | Prefill (sender-filled) fields | DS, SN | Build | 4 | Partial: a sender's value, read only or starting, on text, company, title, number and checkbox (`UX-05`); no real-stack run yet |
-| FG-072 | Required, read-only, locked | DS, SN | Build | 1 | Partial: required and read only in the editor (`UX-05`); locked not offered |
+| FG-072 | Required, read-only, locked | DS, SN | Build | 1 | Partial: required and read only in the editor (`UX-05`); locked is kept by the API and honoured by the ceremony, not offered in the editor (`S1-04`) |
 | FG-073 | Data labels; linked fields (same label mirrors) | DS | Build | 4 | Partial: the data label is set in the editor (`UX-05`); mirroring is the engine's, not run in a browser |
 | FG-074 | Shared fields across signers | DS | Build | 4 | — |
 | FG-075 | Conditional fields | DS, SN | Build | 4 | Engine |
