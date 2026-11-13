@@ -328,24 +328,105 @@ pub struct StoredAdminEvent {
 }
 
 /// Re-check a stored chain from its first event: each hash is SHA-256 of its bytes,
-/// `seq` runs 0, 1, 2, … and each `prev` is the previous hash. Returns the head.
+/// the `at` column is the instant the bytes state, `seq` runs 0, 1, 2, … and each `prev`
+/// is the previous hash. Returns the head.
 ///
 /// # Errors
 ///
 /// `CS-DB-0014` naming the first event that does not verify.
 pub fn verify_admin_chain(events: &[StoredAdminEvent]) -> Result<Option<[u8; 32]>> {
-    let mut head: Option<[u8; 32]> = None;
-    for (i, e) in events.iter().enumerate() {
-        let broken = StoreError::AdminChainBroken { seq: e.seq };
-        if u64::try_from(i).ok() != Some(e.seq)
-            || e.prev != head
-            || Hash256::digest(&e.canonical).as_bytes() != &e.hash
-        {
-            return Err(broken);
+    verify_segment(0, None, events)
+}
+
+/// Re-check one stretch of a chain: `events` must be `seq` `start`, `start + 1`, … with
+/// the first linked to `prev`. Returns the hash of the last (or `prev` when empty).
+fn verify_segment(
+    start: u64,
+    prev: Option<[u8; 32]>,
+    events: &[StoredAdminEvent],
+) -> Result<Option<[u8; 32]>> {
+    let mut head = prev;
+    let mut want = Some(start);
+    for e in events {
+        if want != Some(e.seq) || e.prev != head {
+            return Err(StoreError::AdminChainBroken { seq: e.seq });
         }
+        verify_event(e)?;
         head = Some(e.hash);
+        want = e.seq.checked_add(1);
     }
     Ok(head)
+}
+
+/// One event on its own: its hash is SHA-256 of its bytes, and its `at` column is the
+/// millisecond the bytes state (the column is what the API serves).
+fn verify_event(e: &StoredAdminEvent) -> Result<()> {
+    let broken = StoreError::AdminChainBroken { seq: e.seq };
+    if Hash256::digest(&e.canonical).as_bytes() != &e.hash {
+        return Err(broken);
+    }
+    let stated = serde_json::from_slice::<serde_json::Value>(&e.canonical)
+        .ok()
+        .and_then(|v| v.get("at").and_then(serde_json::Value::as_u64));
+    match stated.map(at_of) {
+        Some(Ok(at)) if at == e.at => Ok(()),
+        _ => Err(broken),
+    }
+}
+
+/// Verify one page of a log as it is read (docs/23 §2.5), so that walking the whole log
+/// by cursor checks every link once rather than re-reading the log for every page.
+///
+/// `rows` is what the query returned from `seq` `after` inclusive (or from the start),
+/// at most `limit` events after it. The event at `after` is the anchor: its own hash
+/// and time are checked and the page must link to it (its link to its own predecessor
+/// was checked when the page holding it was read). A short page is the end of the log,
+/// whose last hash must be `stored_head`. Returns the page without the anchor.
+pub(crate) fn verify_page(
+    after: Option<u64>,
+    rows: Vec<StoredAdminEvent>,
+    limit: usize,
+    stored_head: Option<&[u8]>,
+) -> Result<Vec<StoredAdminEvent>> {
+    let (start, prev, page) = match after {
+        None => (0, None, rows),
+        Some(c) => {
+            let mut it = rows.into_iter();
+            let Some(anchor) = it.next() else {
+                // The cursor is past the end: nothing to show.
+                return Ok(Vec::new());
+            };
+            if anchor.seq != c {
+                return Err(StoreError::AdminChainBroken { seq: c });
+            }
+            verify_event(&anchor)?;
+            let Some(start) = c.checked_add(1) else {
+                return Ok(Vec::new());
+            };
+            (start, Some(anchor.hash), it.collect::<Vec<_>>())
+        }
+    };
+    let head = verify_segment(start, prev, &page)?;
+    if page.len() < limit && stored_head != head.as_ref().map(<[u8; 32]>::as_slice) {
+        return Err(StoreError::AdminChainBroken {
+            seq: page.last().map_or(start.saturating_sub(1), |e| e.seq),
+        });
+    }
+    Ok(page)
+}
+
+/// The `seq` from which a verified page reads (inclusive of its anchor), as the
+/// exclusive bound the queries take, and how many rows: the anchor and `limit` more.
+/// `None` when the cursor is beyond any `seq` a log can hold.
+pub(crate) fn page_bounds(after: Option<u64>, limit: i64) -> Option<(i64, i64)> {
+    let limit = limit.clamp(1, MAX_PAGE);
+    match after {
+        None => Some((-1, limit)),
+        Some(c) => {
+            let c = i64::try_from(c).ok()?;
+            Some((c.checked_sub(1)?, limit.checked_add(1)?))
+        }
+    }
 }
 
 pub(crate) fn stored(
@@ -457,7 +538,7 @@ impl TenantTx {
     }
 
     /// This workspace's admin log, from `after` (exclusive; `None` from the start), at
-    /// most `limit` events (1 to [`MAX_PAGE`]).
+    /// most `limit` events (1 to [`MAX_PAGE`]), as stored, unverified.
     ///
     /// # Errors
     ///
@@ -467,14 +548,18 @@ impl TenantTx {
         after: Option<u64>,
         limit: i64,
     ) -> Result<Vec<StoredAdminEvent>> {
-        let acct = self.acct();
         let from = after.map_or(Ok(-1), i64::try_from).unwrap_or(i64::MAX);
+        self.admin_rows(from, limit.clamp(1, MAX_PAGE)).await
+    }
+
+    async fn admin_rows(&mut self, from: i64, limit: i64) -> Result<Vec<StoredAdminEvent>> {
+        let acct = self.acct();
         let rows = sqlx::query!(
             "SELECT seq, prev_hash, hash, action, at, canonical FROM admin_events \
              WHERE account_id = $1 AND seq > $2 ORDER BY seq LIMIT $3",
             acct,
             from,
-            limit.clamp(1, MAX_PAGE)
+            limit
         )
         .fetch_all(self.conn())
         .await
@@ -482,6 +567,37 @@ impl TenantTx {
         rows.into_iter()
             .map(|r| stored(r.seq, r.prev_hash, r.hash, r.action, r.at, r.canonical))
             .collect()
+    }
+
+    async fn admin_head(&mut self) -> Result<Option<Vec<u8>>> {
+        let acct = self.acct();
+        sqlx::query_scalar!("SELECT admin_chain_head FROM accounts WHERE id = $1", acct)
+            .fetch_one(self.conn())
+            .await
+            .map_err(db)
+    }
+
+    /// One page of this workspace's admin log, as [`Self::admin_events`], verified as it
+    /// is read: each event against the one before it (the event at `after` included),
+    /// and the last page against the stored head. Walking the log by cursor so checks
+    /// every link once; [`Self::verified_admin_log`] re-checks the whole log at once.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0014` naming the first event that does not verify; `CS-DB-0010` for an
+    /// unreadable row.
+    pub async fn verified_admin_events(
+        &mut self,
+        after: Option<u64>,
+        limit: i64,
+    ) -> Result<Vec<StoredAdminEvent>> {
+        let Some((from, rows)) = page_bounds(after, limit) else {
+            return Ok(Vec::new());
+        };
+        let page = self.admin_rows(from, rows).await?;
+        let head = self.admin_head().await?;
+        let limit = usize::try_from(limit.clamp(1, MAX_PAGE)).unwrap_or(usize::MAX);
+        verify_page(after, page, limit, head.as_deref())
     }
 
     /// This workspace's whole admin log, re-verified ([`verify_admin_chain`]); the
@@ -500,12 +616,7 @@ impl TenantTx {
             all.extend(page);
         }
         let head = verify_admin_chain(&all)?;
-        let acct = self.acct();
-        let stored =
-            sqlx::query_scalar!("SELECT admin_chain_head FROM accounts WHERE id = $1", acct)
-                .fetch_one(self.conn())
-                .await
-                .map_err(db)?;
+        let stored = self.admin_head().await?;
         if stored.as_deref() != head.as_ref().map(<[u8; 32]>::as_slice) {
             return Err(StoreError::AdminChainBroken {
                 seq: all.last().map_or(0, |e| e.seq),

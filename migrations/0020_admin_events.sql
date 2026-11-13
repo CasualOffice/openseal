@@ -1,4 +1,4 @@
--- 0016: admin audit logs (ORG-05, ADR-028, docs/23 §2.5, §12).
+-- 0020: admin audit logs (ORG-05, ADR-028, docs/23 §2.5, §12).
 --
 -- Two logs, separate from envelope evidence and built the same way:
 --
@@ -12,8 +12,9 @@
 -- TRUNCATE, for every role, the owner included (OS001, CS-DB-0004); an insert trigger
 -- refuses an event that does not extend its chain (OS005, CS-DB-0014): its hash must be
 -- SHA-256 of its canonical bytes (RFC 8785, made in Rust by `casual-sign-audit`), its
--- `seq`, `prev`, owner and action must be the ones the canonical bytes state, `seq` the
--- next and `prev` the head, read under a row lock on the head column.
+-- `seq`, `prev`, owner, action and time (`at`, the bytes' Unix milliseconds) must be the
+-- ones the canonical bytes state, `seq` the next and `prev` the head, read under a row
+-- lock on the head column.
 --
 -- A change is not committed without its event. A deferred constraint trigger on every
 -- table an administrator changes (`accounts`, `account_memberships`,
@@ -87,7 +88,7 @@ CREATE TRIGGER org_admin_events_no_truncate
 -- say (owner, seq, prev, action). Raises OS005 (CS-DB-0014).
 CREATE FUNCTION openseal_admin_event_check(
     p_owner uuid, p_owner_key text, p_seq bigint, p_prev bytea, p_hash bytea,
-    p_action text, p_canonical bytea) RETURNS void
+    p_action text, p_at timestamptz, p_canonical bytea) RETURNS void
     LANGUAGE plpgsql
     SET search_path = pg_catalog
 AS $$
@@ -103,17 +104,24 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
         RAISE EXCEPTION 'admin event is not JSON (seq %)', p_seq USING ERRCODE = 'OS005';
     END;
+    -- `at` is a whole number of milliseconds (at most 2^53, as the Rust side writes it),
+    -- and the column must be exactly that instant: the API serves the column.
     IF jsonb_typeof(doc) <> 'object'
        OR doc ->> p_owner_key IS DISTINCT FROM p_owner::text
        OR doc ->> 'seq' IS DISTINCT FROM p_seq::text
        OR doc ->> 'action' IS DISTINCT FROM p_action
-       OR (doc ->> 'prev') IS DISTINCT FROM encode(p_prev, 'hex') THEN
+       OR (doc ->> 'prev') IS DISTINCT FROM encode(p_prev, 'hex')
+       OR jsonb_typeof(doc -> 'at') IS DISTINCT FROM 'number'
+       OR (doc ->> 'at') !~ '^(0|[1-9][0-9]{0,15})$'
+       OR p_at IS NULL
+       OR p_at <> 'epoch'::timestamptz + (doc ->> 'at')::bigint * interval '1 millisecond' THEN
         RAISE EXCEPTION 'admin event columns differ from its canonical bytes (seq %)', p_seq
             USING ERRCODE = 'OS005';
     END IF;
 END
 $$;
-REVOKE ALL ON FUNCTION openseal_admin_event_check(uuid, text, bigint, bytea, bytea, text, bytea) FROM PUBLIC;
+REVOKE ALL ON FUNCTION openseal_admin_event_check(uuid, text, bigint, bytea, bytea, text, timestamptz,
+    bytea) FROM PUBLIC;
 
 -- Definer: the head columns are not the application's to write. Row security still holds
 -- for the insert itself (its WITH CHECK runs after this trigger, and a failure there
@@ -133,7 +141,7 @@ BEGIN
         RAISE EXCEPTION 'admin event for another workspace' USING ERRCODE = '42501';
     END IF;
     PERFORM openseal_admin_event_check(NEW.account_id, 'account', NEW.seq, NEW.prev_hash,
-                                       NEW.hash, NEW.action, NEW.canonical);
+                                       NEW.hash, NEW.action, NEW.at, NEW.canonical);
     SELECT admin_chain_head INTO head FROM accounts WHERE id = NEW.account_id FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'admin event for no workspace' USING ERRCODE = 'OS005';
@@ -168,7 +176,8 @@ BEGIN
         RAISE EXCEPTION 'admin event for another organization' USING ERRCODE = '42501';
     END IF;
     PERFORM openseal_admin_event_check(NEW.organization_id, 'organization', NEW.seq,
-                                       NEW.prev_hash, NEW.hash, NEW.action, NEW.canonical);
+                                       NEW.prev_hash, NEW.hash, NEW.action, NEW.at,
+                                       NEW.canonical);
     SELECT admin_chain_head INTO head FROM organizations WHERE id = NEW.organization_id FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'admin event for no organization' USING ERRCODE = 'OS005';

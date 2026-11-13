@@ -97,6 +97,9 @@ pub(crate) struct AdminEventsQuery {
     /// `json` (default) or `csv`.
     #[serde(default)]
     format: Option<String>,
+    /// `full`: re-verify the whole log before answering, not only this page's links.
+    #[serde(default)]
+    verify: Option<String>,
 }
 
 fn hex(b: &[u8]) -> String {
@@ -112,10 +115,13 @@ fn csv_field(s: &str) -> String {
     }
 }
 
-/// `GET /admin-events?cursor&limit&format=json|csv` (ORG-05, docs/23 §2.5): a page of
-/// this workspace's admin log, oldest first, each event with its hash, `prev` and its
-/// canonical bytes as the JSON they are. The whole log is re-verified before any page
-/// is answered, so a broken chain is `500 CS-DB-0014`, never a quiet partial log.
+/// `GET /admin-events?cursor&limit&format=json|csv&verify=full` (ORG-05, docs/23 §2.5):
+/// a page of this workspace's admin log, oldest first, each event with its hash, `prev`
+/// and its canonical bytes as the JSON they are. Each page is verified as it is read
+/// (each event against the one before it, the event at the cursor included; the last
+/// page against the stored head), so an export walked by cursor checks every link once
+/// and a broken link is `500 CS-DB-0014`, never a quiet partial log. `verify=full`
+/// re-verifies the whole log first.
 pub(crate) async fn admin_events(
     c: Call,
     axum::extract::Query(q): axum::extract::Query<AdminEventsQuery>,
@@ -129,9 +135,16 @@ pub(crate) async fn admin_events(
         Some("csv") => true,
         Some(_) => return Err(ApiError::invalid("/query/format")),
     };
+    let full = match q.verify.as_deref() {
+        None | Some("page") => false,
+        Some("full") => true,
+        Some(_) => return Err(ApiError::invalid("/query/verify")),
+    };
     let mut tx = c.tx().await?;
-    tx.verified_admin_log().await?;
-    let page = tx.admin_events(q.cursor, limit).await?;
+    if full {
+        tx.verified_admin_log().await?;
+    }
+    let page = tx.verified_admin_events(q.cursor, limit).await?;
     tx.commit().await?;
     let next = (i64::try_from(page.len()).ok() == Some(limit))
         .then(|| page.last().map(|e| e.seq))

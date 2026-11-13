@@ -217,7 +217,7 @@ impl OrgTx {
     }
 
     /// This organization's admin log, from `after` (exclusive; `None` from the start), at
-    /// most `limit` events (1 to [`crate::ADMIN_EVENTS_MAX_PAGE`]).
+    /// most `limit` events (1 to [`crate::ADMIN_EVENTS_MAX_PAGE`]), as stored, unverified.
     ///
     /// # Errors
     ///
@@ -227,14 +227,19 @@ impl OrgTx {
         after: Option<u64>,
         limit: i64,
     ) -> Result<Vec<StoredAdminEvent>> {
-        let org = self.org();
         let from = after.map_or(Ok(-1), i64::try_from).unwrap_or(i64::MAX);
+        self.admin_rows(from, limit.clamp(1, crate::admin_log::MAX_PAGE))
+            .await
+    }
+
+    async fn admin_rows(&mut self, from: i64, limit: i64) -> Result<Vec<StoredAdminEvent>> {
+        let org = self.org();
         let rows = sqlx::query!(
             "SELECT seq, prev_hash, hash, action, at, canonical FROM org_admin_events \
              WHERE organization_id = $1 AND seq > $2 ORDER BY seq LIMIT $3",
             org,
             from,
-            limit.clamp(1, crate::admin_log::MAX_PAGE)
+            limit
         )
         .fetch_all(&mut *self.tx)
         .await
@@ -242,6 +247,39 @@ impl OrgTx {
         rows.into_iter()
             .map(|r| stored(r.seq, r.prev_hash, r.hash, r.action, r.at, r.canonical))
             .collect()
+    }
+
+    async fn admin_head(&mut self) -> Result<Option<Vec<u8>>> {
+        let org = self.org();
+        sqlx::query_scalar!(
+            "SELECT admin_chain_head FROM organizations WHERE id = $1",
+            org
+        )
+        .fetch_one(&mut *self.tx)
+        .await
+        .map_err(db)
+    }
+
+    /// One page of this organization's admin log, verified as it is read, as
+    /// [`crate::TenantTx::verified_admin_events`].
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0014` naming the first event that does not verify; `CS-DB-0010` for an
+    /// unreadable row.
+    pub async fn verified_admin_events(
+        &mut self,
+        after: Option<u64>,
+        limit: i64,
+    ) -> Result<Vec<StoredAdminEvent>> {
+        let Some((from, rows)) = crate::admin_log::page_bounds(after, limit) else {
+            return Ok(Vec::new());
+        };
+        let page = self.admin_rows(from, rows).await?;
+        let head = self.admin_head().await?;
+        let limit =
+            usize::try_from(limit.clamp(1, crate::admin_log::MAX_PAGE)).unwrap_or(usize::MAX);
+        crate::admin_log::verify_page(after, page, limit, head.as_deref())
     }
 
     /// This organization's whole admin log, re-verified; the stored head must be the
@@ -260,15 +298,8 @@ impl OrgTx {
             all.extend(page);
         }
         let head = verify_admin_chain(&all)?;
-        let org = self.org();
-        let at = sqlx::query_scalar!(
-            "SELECT admin_chain_head FROM organizations WHERE id = $1",
-            org
-        )
-        .fetch_one(&mut *self.tx)
-        .await
-        .map_err(db)?;
-        if at.as_deref() != head.as_ref().map(<[u8; 32]>::as_slice) {
+        let stored = self.admin_head().await?;
+        if stored.as_deref() != head.as_ref().map(<[u8; 32]>::as_slice) {
             return Err(StoreError::AdminChainBroken {
                 seq: all.last().map_or(0, |e| e.seq),
             });

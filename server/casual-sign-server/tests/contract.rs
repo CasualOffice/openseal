@@ -184,6 +184,30 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         a.boot.account.to_string(),
         "{last}"
     );
+    // A later page links to the event at its cursor; `verify=full` re-checks the whole
+    // log first; another `verify` is refused.
+    let second = ok(
+        api.call(
+            "GET",
+            "/api/v1/admin-events?cursor=0&limit=1&verify=full",
+            k,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "admin events, full verify",
+    )
+    .await;
+    assert_eq!(second["items"][0]["seq"], 1, "{second}");
+    assert_eq!(
+        second["items"][0]["prev"], log["items"][0]["hash"],
+        "{second}"
+    );
+    let bad = api
+        .call("GET", "/api/v1/admin-events?verify=all", k, None, &[])
+        .await;
+    assert!(bad.status.is_client_error(), "{:?}", bad.status);
     let csv = api
         .call("GET", "/api/v1/admin-events?format=csv", k, None, &[])
         .await;

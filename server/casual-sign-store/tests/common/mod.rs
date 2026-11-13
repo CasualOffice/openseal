@@ -232,7 +232,7 @@ pub async fn org_event(conn: &mut sqlx::PgConnection, org: OrganizationId) {
         )
     });
     let canonical = format!(
-        "{{\"action\":\"test.change\",\"organization\":\"{}\",\"prev\":{prev_json},\"seq\":{seq}}}",
+        "{{\"action\":\"test.change\",\"at\":1,\"organization\":\"{}\",\"prev\":{prev_json},\"seq\":{seq}}}",
         org.0
     )
     .into_bytes();
@@ -241,7 +241,7 @@ pub async fn org_event(conn: &mut sqlx::PgConnection, org: OrganizationId) {
         .to_vec();
     sqlx::query(
         "INSERT INTO org_admin_events (organization_id, seq, prev_hash, hash, action, at, canonical) \
-         VALUES ($1, $2, $3, $4, 'test.change', now(), $5)",
+         VALUES ($1, $2, $3, $4, 'test.change', 'epoch'::timestamptz + interval '1 millisecond', $5)",
     )
     .bind(org.0)
     .bind(seq)

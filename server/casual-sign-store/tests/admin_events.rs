@@ -174,7 +174,7 @@ async fn an_admin_event_that_does_not_extend_its_chain_is_refused() {
     let insert = |seq: i64, prev: Option<[u8; 32]>, hash: [u8; 32], bytes: Vec<u8>| {
         format!(
             "INSERT INTO admin_events (account_id, seq, prev_hash, hash, action, at, canonical) \
-             VALUES ('{account}', {seq}, {}, '\\x{}', 'member.removed', now(), '\\x{}')",
+             VALUES ('{account}', {seq}, {}, '\\x{}', 'member.removed', {AT_1MS}, '\\x{}')",
             prev.map_or("NULL".to_owned(), |p| format!("'\\x{}'", Hash256(p).hex())),
             Hash256(hash).hex(),
             hex(&bytes),
@@ -207,6 +207,13 @@ async fn an_admin_event_that_does_not_extend_its_chain_is_refused() {
             *Hash256::digest(&canonical(0, Some(head))).as_bytes(),
             canonical(0, Some(head)),
         ),
+        // The `at` column differs from the bytes (`"at":1`), which the API would serve.
+        insert(1, Some(head), good_hash, good.clone()).replace(AT_1MS, "'1999-01-01Z'"),
+        // A microsecond off the millisecond the bytes state.
+        insert(1, Some(head), good_hash, good.clone()).replace(
+            AT_1MS,
+            "'epoch'::timestamptz + interval '1001 microseconds'",
+        ),
     ];
     for sql in cases {
         let err = as_app(&db.app, "openseal.account_id", account.0, &sql)
@@ -231,6 +238,9 @@ async fn an_admin_event_that_does_not_extend_its_chain_is_refused() {
     tx.commit().await.unwrap();
     db.drop().await;
 }
+
+/// The instant `"at":1` states: one millisecond after the epoch.
+const AT_1MS: &str = "'epoch'::timestamptz + interval '1 millisecond'";
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
@@ -626,5 +636,134 @@ async fn concurrent_admin_changes_to_one_organization_both_commit() {
         2,
         "{actions:?}"
     );
+    db.drop().await;
+}
+
+/// Run `sql` as the owner with the logs' own triggers off: tampering that the database
+/// would refuse, to see what reading finds.
+async fn tamper(db: &TestDb, sql: &str) {
+    let mut c = db.admin.acquire().await.unwrap();
+    for s in [
+        "ALTER TABLE admin_events DISABLE TRIGGER USER",
+        "ALTER TABLE accounts DISABLE TRIGGER USER",
+        sql,
+        "ALTER TABLE admin_events ENABLE TRIGGER USER",
+        "ALTER TABLE accounts ENABLE TRIGGER USER",
+    ] {
+        c.execute(sqlx::raw_sql(sqlx::AssertSqlSafe(s.to_owned())))
+            .await
+            .unwrap();
+    }
+}
+
+/// `GET /admin-events` verifies each page as it reads it, not the whole log on every
+/// page (ORG-05 review, defect 4): a page links to the event at its cursor, the last
+/// page to the stored head, and a broken link is found by the page that holds it;
+/// `verified_admin_log` still re-checks the whole log.
+#[tokio::test]
+async fn a_page_of_the_admin_log_is_verified_without_rereading_the_whole_log() {
+    let Some(db) = fresh("admin_events_page_verify", Rls::On).await else {
+        return;
+    };
+    let (_, account, admin, _) = workspace_with_admin(&db, "alpha").await;
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    tx.act_as(actor(admin));
+    for color in ["#100", "#200", "#300", "#400", "#500"] {
+        let mut settings = tx.account().get().await.unwrap().settings;
+        settings["brand"] = serde_json::json!({ "color": color });
+        tx.account().set_settings(&settings).await.unwrap();
+    }
+    tx.commit().await.unwrap();
+    let seqs = |p: &[StoredAdminEvent]| p.iter().map(|e| e.seq).collect::<Vec<_>>();
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    assert_eq!(tx.verified_admin_log().await.unwrap().len(), 6);
+    // Walking the log by cursor returns what the full read does.
+    assert_eq!(
+        seqs(&tx.verified_admin_events(None, 4).await.unwrap()),
+        [0, 1, 2, 3]
+    );
+    assert_eq!(
+        seqs(&tx.verified_admin_events(Some(3), 4).await.unwrap()),
+        [4, 5]
+    );
+    assert_eq!(
+        seqs(&tx.verified_admin_events(Some(5), 4).await.unwrap()),
+        [] as [u64; 0]
+    );
+    assert_eq!(
+        seqs(&tx.verified_admin_events(Some(9), 4).await.unwrap()),
+        [] as [u64; 0]
+    );
+    tx.commit().await.unwrap();
+
+    // Event 0's bytes and event 3's time are rewritten behind the triggers.
+    tamper(
+        &db,
+        &format!(
+            "UPDATE admin_events SET canonical = canonical || '\\x20'::bytea \
+             WHERE account_id = '{}' AND seq = 0",
+            account.0
+        ),
+    )
+    .await;
+    tamper(
+        &db,
+        &format!(
+            "UPDATE admin_events SET at = '1999-01-01Z' WHERE account_id = '{}' AND seq = 3",
+            account.0
+        ),
+    )
+    .await;
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    let broken = |seq| StoreError::AdminChainBroken { seq };
+    assert_eq!(tx.verified_admin_log().await.unwrap_err(), broken(0));
+    assert_eq!(
+        tx.verified_admin_events(None, 2).await.unwrap_err(),
+        broken(0)
+    );
+    // A page after the cursor does not re-read event 0.
+    assert_eq!(
+        seqs(&tx.verified_admin_events(Some(1), 1).await.unwrap()),
+        [2]
+    );
+    // The page holding event 3, and the page anchored on it, find its time.
+    assert_eq!(
+        tx.verified_admin_events(Some(1), 2).await.unwrap_err(),
+        broken(3)
+    );
+    assert_eq!(
+        tx.verified_admin_events(Some(3), 2).await.unwrap_err(),
+        broken(3)
+    );
+    assert_eq!(
+        seqs(&tx.verified_admin_events(Some(4), 2).await.unwrap()),
+        [5]
+    );
+    tx.commit().await.unwrap();
+
+    // The stored head no longer the last event's hash: the last page finds it.
+    tamper(
+        &db,
+        &format!(
+            "UPDATE accounts SET admin_chain_head = '\\x{}' WHERE id = '{}'",
+            "00".repeat(32),
+            account.0
+        ),
+    )
+    .await;
+    let mut tx = db.store.for_account(account).begin().await.unwrap();
+    assert_eq!(
+        tx.verified_admin_events(Some(4), 2).await.unwrap_err(),
+        broken(5)
+    );
+    assert_eq!(
+        tx.verified_admin_events(Some(5), 2).await.unwrap_err(),
+        broken(5)
+    );
+    assert_eq!(
+        seqs(&tx.verified_admin_events(Some(4), 1).await.unwrap()),
+        [5]
+    );
+    tx.commit().await.unwrap();
     db.drop().await;
 }
