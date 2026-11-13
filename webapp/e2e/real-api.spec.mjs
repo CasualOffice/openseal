@@ -154,5 +154,10 @@ test("the editor on the server: a template saved, reopened and saved back; a par
   await page.getByTestId("wizard-next").click();
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   await page.getByTestId("detect-fields").click();
-  await expect(page.locator(".os-toast").last()).toContainText(/suggested fields for Dee Tect|No fields found to suggest/);
+  // Found suggestions show in the floating bar ("4 suggested fields for Dee", the canvas);
+  // none found is a toast.
+  const found = page.getByTestId("suggestions");
+  const none = page.locator(".os-toast", { hasText: "No fields found to suggest" });
+  await expect(found.or(none)).toBeVisible({ timeout: 30_000 });
+  if (await found.isVisible()) await expect(found).toContainText(/suggested fields? for Dee/);
 });
