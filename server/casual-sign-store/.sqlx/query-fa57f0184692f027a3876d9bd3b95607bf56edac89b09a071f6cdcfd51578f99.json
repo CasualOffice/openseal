@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH RECURSIVE chain (id, status, depth) AS (\n                 SELECT id, status, 0 FROM analysis_runs WHERE account_id = $1 AND job_key = $2\n                 UNION ALL\n                 SELECT r.id, r.status, c.depth + 1 FROM chain c\n                   JOIN analysis_runs r ON r.account_id = $1 AND r.job_key = $3 || c.id::text\n                  WHERE c.status IN ('failed', 'unavailable'))\n               SELECT id AS \"id!\" FROM chain ORDER BY depth DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fa57f0184692f027a3876d9bd3b95607bf56edac89b09a071f6cdcfd51578f99"
+}

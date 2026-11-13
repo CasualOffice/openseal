@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE analysis_runs r SET status = 'failed', code = CASE WHEN j.last_error_code ~ '^CS-[A-Z]+-[0-9]{4}$' THEN j.last_error_code ELSE 'CS-WRK-0015' END, finished_at = $4 FROM jobs j WHERE r.account_id = $1 AND j.account_id = $1 AND j.idempotency_key = r.job_key AND r.status IN ('queued', 'running') AND ($2::uuid IS NULL OR r.document_id = $2) AND ($3::uuid IS NULL OR j.id = $3) AND (j.status = 'dead' OR (j.status = 'running' AND j.locked_until < $4 AND j.attempts >= j.max_attempts))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b4e0a8134b1df5369f92bae57d74a7b040d1b9c1954a2fbe7481554a7815d640"
+}
