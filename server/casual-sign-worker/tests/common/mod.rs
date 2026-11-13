@@ -523,7 +523,7 @@ impl Env {
                 id: profile,
                 name: "Senders".into(),
                 kind: ProfileKind::Sender,
-                permissions: vec!["send".into()],
+                permissions: vec!["envelopes:send".into()],
             })
             .await
             .unwrap();
