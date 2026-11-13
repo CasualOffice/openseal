@@ -245,7 +245,7 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 | CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |
 | CS-WRK-0017 | The SMS or voice provider did not accept a one-time code message (its HTTP status, when it answered); retried within the code's attempts (VS-05) |
 
-## Platform console (`casual-sign-console`, `casual-sign-platform-store`; `CON-02`, `CON-03`, `CON-04`)
+## Platform console (`casual-sign-console`, `casual-sign-platform-store`; `CON-02`, `CON-03`, `CON-04`, `CON-06`)
 
 Issued by the console's first rows (migrations 0016 to 0018). Every console answer is an RFC 9457 problem with one of
 these codes; messages carry codes, ids and sequence numbers only. The platform store maps SQLSTATEs raised by the
@@ -260,6 +260,7 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 | CS-CON-0003 | Operator role lacks the action, checked by the route and again by the database (403) |
 | CS-CON-0004 | Action needs a second operator's approval; missing, expired, used, by the requester, or for another payload (409). Issued for suspending and resuming an organization (`CON-04`, migration 0019) and for adding a `platform_owner` (refused until that action has its approval function) |
 | CS-CON-0005 | Console listener refused: a non-loopback bind without `OPENSEAL_CONSOLE_PUBLIC=1`, or without `OPENSEAL_TRUSTED_PROXIES` (TLS terminates at the proxy), or the console's origin equal to the public application's (start-up) |
+| CS-CON-0008 | keyd admin call refused: a caller on keyd's signing allow-list calling an admin operation (`list-keys`, `oplog-head`, `oplog-range`, `health`), or a caller on the admin allow-list asking for a chain or a signature. Issued by keyd (`CON-06`; wire number 1008, recorded in keyd's log) and answered by the console as 502 when its keyd identity is on the wrong list. The console answers other keyd failures with keyd's own `CS-KEY-*` code (502) |
 | CS-CON-0007 | Operator log does not verify (names the first bad `seq`): the console refuses to start; the API and health page report it (503) |
 | CS-CON-0010 | Request invalid: malformed JSON or a value out of range; names the field (422) |
 | CS-CON-0011 | No such object (404) |
@@ -281,7 +282,7 @@ SQLSTATE `OS003`) for the identity-attribute refusal, so this design's SQLSTATEs
 inside `openseal_consume_quota` only, to roll back a refused count, and never reaches a client); `CS-PLAN-0001` and
 `CS-PLAN-0007` are not. `CS-DB-0004`'s widening to the admin logs and `CS-DB-0014` are issued (`ORG-05`, migration 0020); the operator log
 (`platform.operator_events`) uses both (`CON-03`, migration 0017). `CS-DB-0013` is issued (`ORG-02`). All are listed with
-the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`, `CON-03`) and listed in the section above.
+the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`, `CON-03`), and `-0008` (`CON-06`), and listed in the section above.
 
 | Code | Meaning |
 | --- | --- |
@@ -311,7 +312,6 @@ the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`
 | CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422; names the field). Issued (`PLAN-02`): by `casual-sign-policy` validation and by the migration 0024 definer functions (`OS010`) |
 | CS-PLAN-0007 | Workspace allocations exceed the organization's quota (422) |
 | CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422) |
-| CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
 | CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no signature (alert) |
 
 ## Personal data (`casual-sign-pii`, `ML-08`)

@@ -896,13 +896,14 @@ the platform store never runs migrations. The numbers were the next free ones wh
    equal the application's (`CS-CON-0005`). The console verifies the whole operator log at start and refuses to start
    when it does not verify (`CS-CON-0007`).
 7. **Health probes** read `platform.service_targets`: `http` (GET, healthy on 2xx, no redirects, plain HTTP on the
-   private network) or `tcp` (connect), 2-second timeout, at most 64. keyd and TLS endpoints (TSA) are `tcp` targets
-   until keyd's admin `health` and `list-keys` (`CON-06`) and the servers' ops listeners (`CON-05`) exist.
+   private network) or `tcp` (connect), 2-second timeout, at most 64. TLS endpoints (TSA) are `tcp` targets until the
+   servers' ops listeners (`CON-05`) exist; keyd's own `health` is read through its admin interface (`CON-06`, below).
 
 **API** (`/console/v1`, `api/console-openapi.yaml`): `auth/login`, `auth/totp`, `auth/logout`,
 `auth/enrolment/begin`, `auth/enrolment/finish`, `me`, `operators` (GET, POST), `operators/{id}/disable`,
 `operator-log` and `operator-log/verify`, `organizations` and `organizations/{id}` (GET, PATCH), `workspaces/{id}`
-(PATCH), `approvals` (GET, POST), `approvals/{id}/grant`, `organizations/{id}/suspend` and `…/resume`, `health`,
+(PATCH), `approvals` (GET, POST), `approvals/{id}/grant`, `organizations/{id}/suspend` and `…/resume`, `keys` and
+`keys/log` (`CON-06`), `health`,
 `dead-letters`, `alerts`; `/livez`, `/readyz`.
 
 **Tests** (Postgres 17, `server/casual-sign-console/tests/`): `catalog.rs` (`SEC-X01`, `SEC-X02` grants, the exact
@@ -947,12 +948,30 @@ returned kept in `sessionStorage` for the tab), `model.js` (pure logic, unit-tes
   migrated database with the console's own LOGIN role, then two operators enrol, sign in, rename, label, request,
   grant (re-entering a second factor the test makes stale), apply a suspension, verify the log and sign out.
 
+**Keys (`CON-06`).** keyd's admin interface is built as §5.4 designs it: `OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, disjoint
+from the signing list (a fingerprint on both refuses to start, `CS-KEY-0010`); `list-keys`, `oplog-head`,
+`oplog-range(from, n ≤ 256)` and `health` are answered only to it, chain and sign only to the signing list, and every
+call and refusal (`CS-CON-0008`, wire number 1008) is in keyd's log. The wire format, `KeydError`, the client
+transport and `AdminClient` moved to the new crate `casual-sign-keyd-client` (no `cryptoki`); keyd re-exports them, and
+the worker still depends on keyd until `CON-15` moves it. The console reads keyd when `OPENSEAL_CONSOLE_KEYD_ADDR` is
+set (with `_SERVER_NAME`, `_CA`, `_CLIENT_CERT` and the secret `_CLIENT_KEY`): `GET /keys` (any role: each key's
+algorithm, backend, development flag, signer subject and issuer, validity, days left, status `valid`, `expiring`
+within 90 days, `expired` or `not_yet_valid`, SHA-256 of each chain certificate, and the log head), `GET /keys/log`
+(operators: records with caller fingerprint, operation, alias, digest, envelope id and outcome), and a `keyd` block in
+`/health` (`up`, `degraded`, `down` with keyd's code, or `not_configured`). keyd's refusals and failures are 502 with
+keyd's code. The UI's Keys and certificates page and a keyd Health tile show them. *Decided:* the subject and issuer
+are sent by keyd as RFC 4514 text, so the console parses no certificate; a key's status is computed by the console
+from its clock. Tests: `casual-sign-keyd/tests/admin.rs` (admin client cannot sign, signing client cannot list, both
+seen red by removing each half of the role check), `casual-sign-keyd-client` wire round-trips and truncations,
+`casual-sign-console/tests/keys.rs` against a real keyd (seen red with the role check removed), `model.test.mjs`.
+
 **Not yet built** (rows in docs/14): the Compose
-service and the console's LOGIN role in deployment (`CON-02`); `casual-sign-keyd-client` (`CON-15`); the other
+service and the console's LOGIN role in deployment (`CON-02`); moving the worker onto `casual-sign-keyd-client`
+(`CON-15`); the other
 two-person actions (organization create, close, owner recovery, identity disable, adding a platform owner) and the
 server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); TOTP re-entry
-for key and trust actions (`CON-07`); ops listeners and metrics on server and worker, keyd health (`CON-05`); keys,
-certificates and expiry (`CON-06`, `CON-08`); plans and limits (`PLAN-02`).
+for key and trust actions (`CON-07`); ops listeners and metrics on server and worker, readiness on keyd (`CON-05`);
+expiry alerts (`CON-08`).
 
 ## 6. API additions (`/api/v1`, additive)
 

@@ -113,6 +113,12 @@ document byte or signed attribute reaches keyd).
   signature is released; a write failure releases nothing (`CS-KEY-0009`); keyd refuses to start on a log whose chain
   does not verify.
 - **`RemoteKey`**: the caller's `KeyProvider` over keyd (one mTLS connection per signature, envelope id attached).
+- **Admin interface** (`CON-06`, [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §5.4): a second allow-list
+  (`OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, disjoint from the signing one) is answered only `list-keys` (alias, backend,
+  algorithm, chain, the signer certificate's validity, subject and issuer), `oplog-head`, `oplog-range` (at most 256
+  records) and `health` (each key's backend state; for PKCS#11 an open session), never a chain to sign with or a
+  signature; a signing caller is refused them. Both refusals are `CS-CON-0008` and recorded. The wire format and
+  client live in `casual-sign-keyd-client`, without `cryptoki`.
 
 Checked: keys generated in SoftHSM 2.7 (P-256 with its certificate in the token, P-384, RSA-3072 PKCS#1 v1.5 and PSS)
 seal a PDF at B-B in process and through keyd; all eight pass our verifier (integrity, signature and chain;

@@ -225,6 +225,23 @@ fn malformed(why: &'static str) -> KeydError {
     KeydError::Malformed(why)
 }
 
+/// The name of the algorithm with wire id `id` (as `casual-sign-keyd` assigns them), for
+/// display; `unknown` for an id keyd does not use.
+#[must_use]
+pub const fn algorithm_name(id: u8) -> &'static str {
+    match id {
+        1 => "ecdsa-p256-sha256",
+        2 => "ecdsa-p384-sha384",
+        3 => "rsa-pkcs1-sha256",
+        4 => "rsa-pkcs1-sha384",
+        5 => "rsa-pkcs1-sha512",
+        6 => "rsa-pss-sha256",
+        7 => "rsa-pss-sha384",
+        8 => "rsa-pss-sha512",
+        _ => "unknown",
+    }
+}
+
 /// Whether `s` is a valid identifier (alias or envelope id).
 #[must_use]
 pub fn valid_id(s: &str, allow_empty: bool) -> bool {
