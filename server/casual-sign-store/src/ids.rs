@@ -88,4 +88,8 @@ id_type!(
     BulkSendId,
     /// One row of a bulk send (UXW-04).
     BulkSendRowId,
+    /// A group of members (docs/22 §8).
+    GroupId,
+    /// A template's share with a member, a group or the whole account (UXW-06).
+    TemplateShareId,
 );

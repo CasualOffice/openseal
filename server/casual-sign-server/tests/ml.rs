@@ -900,3 +900,105 @@ async fn only_the_sender_or_an_administrator_requests_analysis_or_decides() {
         "an administrator asks",
     );
 }
+
+/// `TSH-01` (UXW-06): a template suggestion names a template, so it is shown only to a
+/// member who may use that template. A member who may see every envelope but with whom
+/// the matched template is not shared does not see the suggestion (nor its name or id)
+/// and cannot decide it (`404`); once the owner shares the template, they see it.
+#[tokio::test]
+async fn a_template_suggestion_is_shown_only_to_members_who_may_use_the_template() {
+    let Some(api) = with_bundle("ml_template_suggestion_access").await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    all_on(&api, &a).await;
+    let (rae, rae_id) = reviewer(&api, &a).await;
+    let t = ok(
+        api.call(
+            "POST",
+            "/api/v1/templates",
+            &a.auth,
+            Some(json!({"name": "Private NDA", "roles": [{"name": "R", "type": "signer"}]})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "template",
+    );
+    let tid = t["id"].as_str().unwrap().to_owned();
+    let (id, doc) = draft(&api, &a.auth, &text_pdf(TEXT)).await;
+    let path = format!("/api/v1/envelopes/{id}/documents/{doc}/analysis");
+    let first = ok(
+        api.call("GET", &path, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "analysis",
+    );
+    let run = AnalysisRunId(first["id"].as_str().unwrap().parse().unwrap());
+    let ids = finish_with_suggestions(
+        &api,
+        a.boot.account,
+        run,
+        doc.parse().unwrap(),
+        Some(casual_sign_store::TemplateId(tid.parse().unwrap())),
+    )
+    .await;
+    let list = format!("/api/v1/envelopes/{id}/suggestions");
+    let kinds = |v: &Value| -> Vec<String> {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["kind"].as_str().unwrap().to_owned())
+            .collect()
+    };
+
+    let owner = ok(
+        api.call("GET", &list, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "owner",
+    );
+    assert_eq!(kinds(&owner), ["entity", "personal_data", "template"]);
+    let unshared = ok(
+        api.call("GET", &list, &rae, None, &[]).await,
+        StatusCode::OK,
+        "unshared member",
+    );
+    assert_eq!(kinds(&unshared), ["entity", "personal_data"], "{unshared}");
+    assert!(
+        !unshared.to_string().contains(&tid),
+        "the template id leaked"
+    );
+    let r = api
+        .call(
+            "POST",
+            &format!("{list}/{}/accept", ids[2]),
+            &rae,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(
+        r.status,
+        StatusCode::NOT_FOUND,
+        "deciding an unseen suggestion"
+    );
+
+    ok(
+        api.call(
+            "PUT",
+            &format!("/api/v1/templates/{tid}/shares"),
+            &a.auth,
+            Some(json!({"items": [{"user_id": rae_id}]})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "share",
+    );
+    let shared = ok(
+        api.call("GET", &list, &rae, None, &[]).await,
+        StatusCode::OK,
+        "shared member",
+    );
+    assert_eq!(kinds(&shared), ["entity", "personal_data", "template"]);
+}

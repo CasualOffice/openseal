@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.owner_user_id, t.name, t.email_subject, t.email_message, t.settings, t.matching_rules, t.version, r.share_right, EXISTS (SELECT 1 FROM template_favourites f WHERE f.account_id = $1 AND f.template_id = t.id AND f.user_id = $2) AS \"favourite!\", EXISTS (SELECT 1 FROM template_shares s WHERE s.account_id = $1 AND s.template_id = t.id) AS \"shared!\" FROM templates t CROSS JOIN LATERAL (SELECT openseal_template_share_right($1, t.id, $2) AS share_right) r WHERE t.account_id = $1 AND t.deleted_at IS NULL AND ($3 OR t.owner_user_id = $2 OR r.share_right IS NOT NULL) AND CASE $4::text WHEN 'owned' THEN t.owner_user_id = $2 WHEN 'shared' THEN t.owner_user_id <> $2 AND r.share_right IS NOT NULL WHEN 'favourites' THEN EXISTS (SELECT 1 FROM template_favourites f WHERE f.account_id = $1 AND f.template_id = t.id AND f.user_id = $2) ELSE true END ORDER BY t.name, t.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "templates",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "owner_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "templates",
+            "name": "owner_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "templates",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email_subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "templates",
+            "name": "email_subject"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "email_message",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "templates",
+            "name": "email_message"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "settings",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "templates",
+            "name": "settings"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "matching_rules",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "templates",
+            "name": "matching_rules"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "templates",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "share_right",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "favourite!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "shared!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "6c3fee8b8f315643b1b75941a8fafb1a0d427338fce04281344520e8c774adbd"
+}

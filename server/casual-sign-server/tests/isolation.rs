@@ -204,6 +204,7 @@ async fn another_accounts_ids_are_not_found_on_every_operation(rls: Rls) {
         "/api/v1/webhooks",
         "/api/v1/folders",
         "/api/v1/bulk-sends",
+        "/api/v1/groups",
     ] {
         let r = api.call("GET", p, &b.auth, None, &[]).await;
         let text = String::from_utf8_lossy(&r.body).into_owned();

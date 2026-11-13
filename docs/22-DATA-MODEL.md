@@ -168,7 +168,11 @@ one recorded in `envelope.completed`.
 A template is an envelope without people: documents, roles (name, routing order, type, default auth), role-bound
 fields, message, settings, and **matching rules** (slice 3: DocuSign's template matching on upload). Creating an envelope
 from one or more templates copies, never references, so editing a template never changes a sent envelope. Templates
-have owners, sharing (user, group, account), folders and versions.
+have owners, sharing (user, group, account), folders and versions. **As built (`UXW-06`, migration 0031):** access is
+deny by default and decided per request: the owner and the account's administrators hold every right; a share
+(`template_shares`, one per member, group or the whole account) lets its members use the template, and edit it with
+`can_edit`; deleting, restoring and sharing stay with the owner. Each member stars their own Favourites
+(`template_favourites`). Template folders and locking are not built.
 
 ## 8. Account and identity
 
@@ -431,6 +435,19 @@ workspace without an `operator.*` event appended to that organization's `org_adm
 `seq` and head, the head row locked) and `platform.copy_to_org_log` (live operator session with role `operator` or
 `platform_owner`, an `operator.*` action, the bytes' actor exactly that operator, their `operator_event` link an existing operator event of that
 operator and action, else `OS005`).
+
+`0031_template_sharing.sql` (`UXW-06`) makes **template access deny by default**. `openseal_template_share_right(account,
+template, member)` (invoker rights, so RLS still applies) answers what a member's shares give: `edit`, `use` or NULL,
+through a share to them, to a group they belong to (`group_members`) or to the whole account. 0003's `template_shares`,
+never written before, gains `created_at`, one share per target and template (three partial unique indexes), and
+cascades: a share goes with its template, with the membership it names (a removed member keeps none) and with its
+group. Every template that existed before 0031 gets a whole-account share with `can_edit`, so nobody loses access on
+upgrade; a template made since is its owner's alone until shared. A new tenant table `template_favourites`
+(`user_id`, `template_id`, `created_at`; primary key per member and template; cascades with the membership and the
+template) holds each member's starred templates; starring changes no version. `Templates::access` (owner or
+administrator `Owner`, else the share right), `list_for` (by view: all, owned, shared with me, favourites, with each
+row's access, star and whether it is shared), `shares`, `replace_shares`, `set_favourite`, `is_favourite` and
+`groups` (names and member counts). Sixty-three tables with `0031`.
 
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15), including of the
 analysis tables (`SEC-I07`); a database guard

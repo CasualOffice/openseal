@@ -856,6 +856,9 @@ components:
         roles: {type: array, items: {type: object}}
         documents: {type: array, items: {type: object}, description: "Single-template reads only: id, name, ord, pages, page_geometry, sha256"}
         fields: {type: array, items: {$ref: '#/components/schemas/TemplateField'}, description: Single-template reads only}
+        access: {type: string, enum: [owner, edit, use], description: "What the caller may do with it (UXW-06): owner (its owner or an administrator: also delete, restore and share), edit, or use"}
+        favourite: {type: boolean, description: "Starred by the caller (UXW-06)"}
+        shared: {type: boolean, description: "List reads only: shared with anyone (UXW-06)"}
     TemplateList:
       type: object
       properties:
@@ -877,6 +880,48 @@ components:
               name: {type: string}
               routing_order: {type: integer}
               type: {$ref: '#/components/schemas/RecipientType'}
+    TemplateShares:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              can_edit: {type: boolean}
+              user: {type: object, description: "A member: id, name, email"}
+              group: {type: object, description: "A group: id, name"}
+              account: {type: boolean, description: "The whole account"}
+    TemplateSharesIn:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            description: "Exactly one of user_id, email, group_id or account: true"
+            properties:
+              user_id: {type: string}
+              email: {type: string, minLength: 3, maxLength: 320}
+              group_id: {type: string}
+              account: {type: boolean, enum: [true]}
+              can_edit: {type: boolean, default: false}
+    GroupList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+              members: {type: integer}
     TemplatePatch:
       type: object
       additionalProperties: false
@@ -2729,11 +2774,15 @@ paths:
   /api/v1/templates:
     get:
       operationId: listTemplates
-      summary: "Templates; with deleted=true the Deleted view (UXW-02)"
+      summary: "Templates the caller may use, by view; with deleted=true the Deleted view (UXW-02, UXW-06)"
       description: >-
-        The account's live templates by name, or with `deleted=true` the deleted ones,
-        kept whole and restorable, most recently deleted first. Any other value of
-        `deleted` than `true` or `false` is `422`.
+        The live templates the caller may use, by name: their own, those shared with
+        them (directly, through a group, or with the whole account) and, for an
+        administrator, every one (UXW-06). `view` narrows the list: `owned`, `shared`
+        (Shared with me: another member's templates a share reaches the caller by) or
+        `favourites` (the caller's starred ones). With `deleted=true`, the deleted
+        templates the caller owns (every one for an administrator), kept whole and
+        restorable, most recently deleted first. Any other value is `422`.
       x-permission: "templates:read"
       parameters:
         - name: deleted
@@ -2741,6 +2790,11 @@ paths:
           required: false
           description: "`true`: the Deleted view (UXW-02)."
           schema: {type: string, enum: ['true', 'false']}
+        - name: view
+          in: query
+          required: false
+          description: "`all` (default), `owned`, `shared` (Shared with me) or `favourites` (UXW-06)."
+          schema: {type: string, enum: [all, owned, shared, favourites]}
       responses:
         '200':
           description: OK
@@ -2830,6 +2884,59 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Template'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/shares:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    get:
+      operationId: listTemplateShares
+      summary: "Whom a template is shared with (UXW-06); its owner's or an administrator's"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateShares'}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      operationId: replaceTemplateShares
+      summary: "Replace a template's shares with members, groups or the whole account (UXW-06)"
+      description: >-
+        The whole set of shares. A user is a member of this account, named by id or
+        email; a group is one of its groups. Sharing with the owner, or naming one target
+        twice, is `422`. A share lets its members use the template, and edit it with
+        `can_edit`; deleting, restoring and sharing stay with the owner and
+        administrators. Anyone without access is answered `404`, too little access `403`.
+      x-permission: "templates:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TemplateSharesIn'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TemplateShares'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/favourite:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    put:
+      operationId: favouriteTemplate
+      summary: "Star a template for the caller (Favourites, UXW-06); idempotent"
+      x-permission: "templates:read"
+      responses:
+        '204': {description: Starred}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: unfavouriteTemplate
+      summary: "Unstar a template for the caller (UXW-06); idempotent"
+      x-permission: "templates:read"
+      responses:
+        '204': {description: Unstarred}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/templates/{id}/duplicate:
     parameters:
@@ -3256,6 +3363,18 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/BulkSendWithRows'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/groups:
+    get:
+      operationId: listGroups
+      summary: "The account's groups with member counts, for sharing templates (UXW-06)"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GroupList'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/webhooks:
     get:

@@ -672,6 +672,36 @@ pub fn table() -> Vec<Route> {
             JSON,
             templates::restore,
         ),
+        // Template sharing and Favourites (UXW-06).
+        r(
+            "GET",
+            "/api/v1/templates/{id}/shares",
+            tr,
+            JSON,
+            templates::shares,
+        ),
+        r(
+            "PUT",
+            "/api/v1/templates/{id}/shares",
+            tw,
+            JSON,
+            templates::put_shares,
+        ),
+        r(
+            "PUT",
+            "/api/v1/templates/{id}/favourite",
+            tr,
+            JSON,
+            templates::favourite,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/templates/{id}/favourite",
+            tr,
+            JSON,
+            templates::unfavourite,
+        ),
+        r("GET", "/api/v1/groups", tr, JSON, templates::groups),
         r(
             "POST",
             "/api/v1/templates/{id}/duplicate",

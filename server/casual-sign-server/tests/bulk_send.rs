@@ -16,7 +16,7 @@ mod common;
 use axum::http::StatusCode;
 use common::Rls;
 use common::bulk::{CSV, bulk_send, lease_template};
-use common::harness::{Api, Auth};
+use common::harness::{Api, Auth, PASSWORD, session_of};
 use serde_json::json;
 
 #[tokio::test]
@@ -225,4 +225,66 @@ async fn a_caller_who_may_not_write_envelopes_cannot_bulk_send() {
         )
         .await;
     assert_eq!(r.status, StatusCode::FORBIDDEN, "{:?}", r.json());
+}
+
+#[tokio::test]
+async fn a_member_cannot_bulk_send_a_template_not_shared_with_them() {
+    // UXW-06 made templates their owner's until shared: bulk send reads the template on
+    // the server, so it must ask the same question `GET /templates/{id}` does.
+    let Some(api) = Api::new("bulk_send_unshared", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let tid = lease_template(&api, &a.auth).await;
+    let email = "bulk-member@alpha.test";
+    let u = api
+        .call(
+            "POST",
+            "/api/v1/users",
+            &a.auth,
+            Some(json!({"email": email, "name": email, "profile": "sender", "password": PASSWORD})),
+            &[],
+        )
+        .await;
+    assert_eq!(u.status, StatusCode::CREATED, "{:?}", u.json());
+    let login = api
+        .call(
+            "POST",
+            "/api/v1/auth/login",
+            &Auth::None,
+            Some(json!({"email": email, "password": PASSWORD})),
+            &[],
+        )
+        .await;
+    let other = session_of(&login);
+    let r = api
+        .call(
+            "GET",
+            &format!("/api/v1/templates/{tid}"),
+            &other,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(
+        r.status,
+        StatusCode::NOT_FOUND,
+        "the template is not shared"
+    );
+    for validate_only in [true, false] {
+        let r = api
+            .call(
+                "POST",
+                "/api/v1/bulk-sends",
+                &other,
+                Some(json!({"template_id": tid, "csv": CSV, "validate_only": validate_only})),
+                &[],
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{:?}", r.json());
+    }
+    let listed = api
+        .call("GET", "/api/v1/bulk-sends", &other, None, &[])
+        .await;
+    assert_eq!(listed.json()["items"], json!([]));
 }

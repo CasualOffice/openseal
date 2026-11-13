@@ -555,12 +555,27 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       revoke: (c) => data(request("DELETE", `/api/v1/api-clients/${encodeURIComponent(c)}`)),
     },
 
+    /// The account's groups, `{items: [{id, name, members}]}`, to share a template with
+    /// (UXW-06).
+    groups: { list: () => data(request("GET", "/api/v1/groups")) },
+
     // ---- Templates (docs/40: roles, documents and fields, as on envelopes) -----
     // A single-template read, and the document and role calls, answer the whole
     // template: `roles` with ids, `documents`, and `fields` bound to `role_id`. The
     // ETag is `"v<version>"`; every change bumps the version.
     templates: {
-      list: () => data(request("GET", "/api/v1/templates")),
+      /// The templates the caller may use (UXW-06); `view`: `all` (default), `owned`,
+      /// `shared` (Shared with me) or `favourites`. Each item has `access` (owner, edit or
+      /// use), `favourite` and `shared`.
+      list: (view) => data(request("GET", "/api/v1/templates", view && view !== "all" ? { query: { view } } : {})),
+      /// Whom a template is shared with (UXW-06; its owner's): `{items: [{id, can_edit,
+      /// user?: {id, name, email}, group?: {id, name}, account?: true}]}`.
+      shares: (tp) => data(request("GET", `${T(tp)}/shares`)),
+      /// Replace the shares: `[{user_id | email | group_id | account: true, can_edit?}]`;
+      /// answers the shares as `shares` does.
+      setShares: (tp, items) => data(request("PUT", `${T(tp)}/shares`, { body: { items } })),
+      /// Star (`on`) or unstar a template for the caller (Favourites).
+      favourite: (tp, on) => data(request(on ? "PUT" : "DELETE", `${T(tp)}/favourite`)),
       /// `{template, etag}`; the ETag falls back to the version when a proxy drops it.
       async get(tp) {
         const r = await request("GET", T(tp));

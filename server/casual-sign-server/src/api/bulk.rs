@@ -484,6 +484,15 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
         Uuid::parse_str(&req.template_id).map_err(|_| ApiError::invalid("/template_id"))?,
     );
     let mut tx = c.tx().await?;
+    // A template the caller may not use (UXW-06) is as one that does not exist.
+    if tx
+        .templates()
+        .access(tid, c.p.user, c.p.admin)
+        .await?
+        .is_none()
+    {
+        return Err(ApiError::invalid("/template_id"));
+    }
     let t = load_template(&mut tx, tid)
         .await?
         .ok_or_else(|| ApiError::invalid("/template_id"))?;

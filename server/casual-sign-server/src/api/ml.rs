@@ -30,6 +30,7 @@ use casual_sign_store::repo::documents::VersionKind;
 use casual_sign_store::repo::ml::{
     MlSettings, NewRun, Run, RunKind, Suggestion, SuggestionFilter, SuggestionKind, SuggestionState,
 };
+use casual_sign_store::repo::templates::TemplateAccess;
 use casual_sign_store::{
     AccountId, AnalysisRunId, DocumentId, EnvelopeId, JobId, SuggestionId, TemplateDocumentId,
     TemplateId, TenantTx,
@@ -406,17 +407,17 @@ pub(crate) async fn envelope_analysis(
     Ok(json(StatusCode::OK, &run_json(&run)))
 }
 
-/// A template of this account and one of its documents: `(template, document, sha256)`.
+/// A template of this account the caller may act on with `need` (UXW-06), and one of
+/// its documents: `(template, document, sha256)`.
 async fn template_doc(
     tx: &mut TenantTx,
+    c: &Call,
+    need: TemplateAccess,
     id: &str,
     doc: &str,
 ) -> Result<(TemplateId, TemplateDocumentId, [u8; 32]), ApiError> {
     let t = TemplateId(path_id(id)?);
-    tx.templates()
-        .get(t)
-        .await?
-        .ok_or_else(ApiError::not_found)?;
+    crate::api::templates::found(tx, c, t, need).await?;
     let d = TemplateDocumentId(path_id(doc)?);
     let found = tx
         .templates()
@@ -436,7 +437,7 @@ pub(crate) async fn request_template(
     Path((id, doc)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     let mut tx = c.tx().await?;
-    let (t, d, sha) = template_doc(&mut tx, &id, &doc).await?;
+    let (t, d, sha) = template_doc(&mut tx, &c, TemplateAccess::Edit, &id, &doc).await?;
     if !in_effect(&c.st, &mut tx)
         .await?
         .contains(&Feature::TemplateMatching)
@@ -464,7 +465,7 @@ pub(crate) async fn template_analysis(
     Path((id, doc)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     let mut tx = c.tx().await?;
-    let (_, d, _) = template_doc(&mut tx, &id, &doc).await?;
+    let (_, d, _) = template_doc(&mut tx, &c, TemplateAccess::Use, &id, &doc).await?;
     if in_effect(&c.st, &mut tx).await?.is_empty() {
         return Err(ApiError::ml_off());
     }
@@ -587,6 +588,20 @@ async fn values(
     Ok(out)
 }
 
+/// Whether the caller may see suggestion `s`: a template suggestion names a template,
+/// so only one the caller may use (UXW-06, TSH-01); a member it is not shared with does
+/// not learn its name or id. Every other kind, always.
+async fn may_see_template(tx: &mut TenantTx, c: &Call, s: &Suggestion) -> Result<bool, ApiError> {
+    match s.template {
+        Some((t, _, _)) => Ok(tx
+            .templates()
+            .access(t, c.p.user, c.p.admin)
+            .await?
+            .is_some()),
+        None => Ok(true),
+    }
+}
+
 /// Whether `s`'s document is still one of the envelope's.
 fn current(l: &Loaded, s: &Suggestion) -> bool {
     l.state
@@ -646,10 +661,15 @@ pub(crate) async fn suggestions(
     } else {
         None
     };
-    let shown: Vec<Suggestion> = got
-        .into_iter()
-        .filter(|s| features.contains(&feature_of(s.kind)) && current(&l, s))
-        .collect();
+    let mut shown = Vec::with_capacity(got.len());
+    for s in got {
+        if features.contains(&feature_of(s.kind))
+            && current(&l, &s)
+            && may_see_template(&mut tx, &c, &s).await?
+        {
+            shown.push(s);
+        }
+    }
     let vals = values(&c.st, &mut tx, &shown).await?;
     tx.commit().await?;
     let items: Vec<Value> = shown
@@ -682,6 +702,9 @@ async fn decide(
         .await?
         .filter(|s| features.contains(&feature_of(s.kind)))
         .ok_or_else(ApiError::not_found)?;
+    if !may_see_template(&mut tx, &c, &s).await? {
+        return Err(ApiError::not_found());
+    }
     may_change(&c.p, &l)?;
     if s.state != SuggestionState::Open || !current(&l, &s) {
         return Err(ApiError::ml_stale());

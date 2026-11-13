@@ -6,6 +6,11 @@
 // confirmation); and "Use" (`#/templates/{id}`): the document on the left, the roles
 // and Send in a sticky side panel on the right (T-03).
 //
+// Sharing (UXW-06; after DocuSign's Templates): pill tabs All, Mine, Shared with me and
+// Favourites (`GET /templates?view=`); a star on each row; Share (the owner's) in a side
+// panel: members by email, groups, or everyone in the workspace, each "can edit" or
+// not. The row menu offers what the caller's `access` allows; the server decides.
+//
 // Using a template is one `POST /api/v1/envelopes` (templatemodel.js): the template's
 // documents, its roles filled with people, and its fields bound to the roles' ids. A
 // template without documents becomes a draft with its recipients, opened in the editor
@@ -16,8 +21,11 @@ import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { toBase64 } from "./api.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { button, busy, emptyState, skeletonRows, errorState, openPanel, confirmDialog, toast, toastError, pdfPreview, menuButton, selectField } from "./ui/index.js";
-import { rolesOf, peopleProblems, extraProblems, envelopeFromTemplate } from "./templatemodel.js";
+import { button, busy, emptyState, skeletonRows, errorState, openPanel, confirmDialog, toast, toastError, pdfPreview, menuButton, selectField, tabs, iconButton, checkbox, field, pill } from "./ui/index.js";
+import { rolesOf, peopleProblems, extraProblems, envelopeFromTemplate, canDo, shareItems, hasShare, isEmail } from "./templatemodel.js";
+
+/// The list's views (UXW-06): `id` is the `view` the server takes.
+const VIEWS = ["all", "owned", "shared", "favourites"];
 
 /// Templates whose name or email subject contains `q` (any case).
 export function matchTemplates(items, q) {
@@ -45,14 +53,24 @@ export function mount(view, ctx) {
   const tools = h("div", { class: "os-filters" }, h("div", { class: "os-fieldrow os-filters__search" },
     h("label", { class: "os-sr-only", attrs: { for: "tpl-search" }, text: t("templates.search") }), search));
   const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
-  view.append(head, h("p", { class: "os-muted os-lede", text: t("templates.lede") }), tools, list);
+  let shown = "all";
+  let quiet = true; // the tabs' first render is not a choice
+  const tabset = tabs({
+    label: t("templates.views"),
+    variant: "pill",
+    tabs: VIEWS.map((id) => ({ id, label: t(`templates.view.${id}`) })),
+    current: "all",
+    render: (id, panel) => { panel.append(tools, list); if (!quiet) { shown = id; load(); } },
+  });
+  quiet = false;
+  view.append(head, h("p", { class: "os-muted os-lede", text: t("templates.lede") }), tabset);
 
   async function load() {
     clear(list);
     list.setAttribute("aria-busy", "true");
     list.append(skeletonRows(3));
     try {
-      const page = await ctx.api.templates.list();
+      const page = await ctx.api.templates.list(shown);
       items = page.items || [];
       list.removeAttribute("aria-busy");
       render();
@@ -79,6 +97,10 @@ export function mount(view, ctx) {
   function render() {
     clear(list);
     tools.hidden = !items.length;
+    if (!items.length && shown !== "all") {
+      list.append(emptyState({ illus: "templates", title: t(`templates.empty-view.${shown}`), text: "", testId: `empty-templates-${shown}` }));
+      return;
+    }
     if (!items.length) {
       list.append(emptyState({ illus: "templates", title: t("empty.templates.title"), text: t("empty.templates.text"), action: button(t("templates.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/templates/new") }), testId: "empty-templates" }));
       return;
@@ -104,25 +126,123 @@ export function mount(view, ctx) {
           h("span", { class: "os-tplrow__text" },
             h("a", { href, class: "os-row-link os-tplrow__name", text: name }),
             h("span", { class: "os-row__sub os-muted os-tplrow__sub", text: tp.email_subject || t("home.template-no-subject") })))),
-        h("td", { class: "os-col-date", attrs: { "data-label": t("templates.col.owner") }, text: owner(tp) }),
+        h("td", { class: "os-col-date", attrs: { "data-label": t("templates.col.owner") } }, owner(tp), tp.shared && canDo(tp, "owner") ? pill(t("templates.shared"), { ic: "users" }) : null),
         h("td", { class: "os-col-date os-muted", attrs: { "data-label": t("templates.col.used") } }, tp.last_used_at ? h("time", { attrs: { datetime: tp.last_used_at }, text: fmtDate(tp.last_used_at) }) : t("templates.never-used")),
         h("td", { class: "os-col-actions" },
           h("div", { class: "os-actions os-actions--row" },
+            starButton(tp, name),
             useButton(name, href),
             menuButton({
               label: t("templates.actions-for", { name }),
               buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
+              // What the caller's access allows (UXW-06); the server decides every call.
               items: () => [
-                { label: t("templates.edit-fields"), icon: "file-pen-line", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/edit`) },
+                canDo(tp, "edit") ? { label: t("templates.edit-fields"), icon: "file-pen-line", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/edit`) } : null,
                 { label: t("templates.bulk.menu"), icon: "send", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/bulk`) },
-                { label: t("templates.edit"), icon: "pencil", run: () => edit(tp) },
+                canDo(tp, "edit") ? { label: t("templates.edit"), icon: "pencil", run: () => edit(tp) } : null,
+                canDo(tp, "owner") ? { label: t("templates.share"), icon: "users", run: () => share(tp) } : null,
                 { label: t("templates.duplicate"), icon: "copy", run: () => duplicate(tp) },
-                { label: t("templates.delete"), icon: "trash-2", danger: true, run: () => remove(tp) },
-              ],
+                canDo(tp, "owner") ? { label: t("templates.delete"), icon: "trash-2", danger: true, run: () => remove(tp) } : null,
+              ].filter(Boolean),
             })))));
     }
     table.append(tb);
     list.append(h("div", { class: "os-table-wrap" }, table));
+  }
+
+  /// The row's star (UXW-06): adds the template to the member's Favourites or takes it
+  /// out; a toggle button (`aria-pressed`).
+  function starButton(tp, name) {
+    const on = !!tp.favourite;
+    return iconButton(t(on ? "templates.unfavourite" : "templates.favourite", { name }), on ? "os-star-filled" : "os-star", {
+      size: "sm",
+      attrs: { "aria-pressed": String(on), "data-testid": "tpl-star" },
+      onClick: async () => {
+        try {
+          await ctx.api.templates.favourite(tp.id, !on);
+          tp.favourite = !on;
+          toast(t(on ? "templates.unfavourited" : "templates.favourited"), "success");
+          if (shown === "favourites") load(); else render();
+        } catch (err) { if (!ctx.failed(err)) toastError(err); }
+      },
+    });
+  }
+
+  /// Share in a side panel (UXW-06): whom it is shared with, each "can edit" or not;
+  /// add a member by email, a group, or everyone in the workspace; Save replaces the
+  /// shares. The owner's (or an administrator's).
+  async function share(tp) {
+    let entries;
+    let groups = [];
+    try {
+      entries = ((await ctx.api.templates.shares(tp.id)).items || []).map((x) => ({ ...x }));
+      try { groups = (await ctx.api.groups.list()).items || []; } catch { /* no groups to offer */ }
+    } catch (err) { if (!ctx.failed(err)) toastError(err); return; }
+    const name = tp.name || t("templates.untitled");
+    const done = await openPanel({
+      id: "template-share",
+      title: t("templates.share-title", { name }),
+      description: t("templates.share-lede"),
+      build(body) {
+        const who = (e) => (e.account ? t("templates.share-everyone")
+          : e.group ? t("templates.share-group", { name: e.group.name || "—" })
+            : e.user?.name ? `${e.user.name} <${e.user.email || ""}>` : (e.user?.email || e.email || ""));
+        const listEl = h("ul", { class: "os-use__roles", attrs: { "aria-label": t("templates.share-list"), "data-testid": "share-list" } });
+        const draw = () => {
+          clear(listEl);
+          if (!entries.length) listEl.append(h("li", { class: "os-muted os-small", attrs: { "data-testid": "share-none" }, text: t("templates.share-none") }));
+          entries.forEach((e, i) => {
+            const label = who(e);
+            const edit = checkbox(t("templates.share-can-edit"), { checked: !!e.can_edit, onChange: (v) => { e.can_edit = v; }, attrs: { "data-testid": "share-can-edit", "aria-describedby": `share-who-${i}` } });
+            // The Use panel's person row (os-use__role), reused.
+            listEl.append(h("li", { class: "os-use__role", attrs: { "data-testid": "share-entry" } },
+              h("div", { class: "os-use__role-head" },
+                h("strong", { id: `share-who-${i}`, text: label }),
+                h("span", { class: "os-spacer" }),
+                iconButton(t("templates.share-remove", { who: label }), "x", { size: "sm", onClick: () => { entries.splice(i, 1); draw(); } })),
+              edit.el));
+          });
+        };
+        draw();
+        const email = field(t("templates.share-email"), { id: "share-email", type: "email", maxLength: 320, attrs: { "data-testid": "share-email" } });
+        const add = () => {
+          const v = email.input.value.trim();
+          if (!isEmail(v)) { email.setError(t("templates.share-bad-email")); email.input.focus(); return; }
+          email.setError("");
+          if (!hasShare(entries, { email: v })) entries.push({ email: v, can_edit: false });
+          email.input.value = "";
+          draw();
+        };
+        email.input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+        const addBtn = button(t("templates.share-add"), { icon: "user-plus", size: "sm", attrs: { "data-testid": "share-add" }, onClick: add });
+        const parts = [h("h3", { class: "os-card__title", text: t("templates.share-list") }), listEl, email.el, h("div", { class: "os-actions" }, addBtn)];
+        if (groups.length) {
+          const pick = selectField(t("templates.share-group-pick"), [["", t("templates.share-group-none")], ...groups.map((g) => [g.id, g.name])], {
+            id: "share-group",
+            attrs: { "data-testid": "share-group" },
+            onChange: (id) => {
+              const g = groups.find((x) => x.id === id);
+              if (g && !hasShare(entries, { group: g })) entries.push({ group: { id: g.id, name: g.name }, can_edit: false });
+              pick.select.value = "";
+              draw();
+            },
+          });
+          parts.push(pick.el);
+        }
+        parts.push(h("div", { class: "os-actions" }, button(t("templates.share-everyone-add"), { icon: "users", size: "sm", attrs: { "data-testid": "share-everyone" }, onClick: () => {
+          if (!hasShare(entries, { account: true })) entries.push({ account: true, can_edit: false });
+          draw();
+        } })));
+        body.append(...parts);
+      },
+      actions: [
+        { label: t("action.cancel"), value: null },
+        { label: t("templates.save"), variant: "primary", attrs: { "data-testid": "share-save" }, onClick: async () => { await ctx.api.templates.setShares(tp.id, shareItems(entries)); return true; } },
+      ],
+    });
+    if (!done) return;
+    toast(t("templates.share-saved"), "success");
+    load();
   }
 
   /// Edit details in a side panel (T-01): name, email subject, message.

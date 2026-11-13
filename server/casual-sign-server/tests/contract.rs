@@ -431,6 +431,55 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     .await;
     // WEB-06: every template-editing operation.
     common::templates::edit_template(&api, k).await;
+    // UXW-06: groups to share with, sharing, and Favourites.
+    ok(
+        api.call("GET", "/api/v1/groups", k, None, &[]).await,
+        StatusCode::OK,
+        "groups",
+    )
+    .await;
+    let shares = format!("/api/v1/templates/{tid}/shares");
+    let put = ok(
+        api.call(
+            "PUT",
+            &shares,
+            k,
+            Some(json!({"items": [{"account": true, "can_edit": false}]})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "template shares put",
+    )
+    .await;
+    assert_eq!(put["items"][0]["account"], true, "{put}");
+    ok(
+        api.call("GET", &shares, k, None, &[]).await,
+        StatusCode::OK,
+        "template shares",
+    )
+    .await;
+    let star = format!("/api/v1/templates/{tid}/favourite");
+    ok(
+        api.call("PUT", &star, k, None, &[]).await,
+        StatusCode::NO_CONTENT,
+        "favourite",
+    )
+    .await;
+    let favs = ok(
+        api.call("GET", "/api/v1/templates?view=favourites", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "favourites",
+    )
+    .await;
+    assert_eq!(favs["items"].as_array().unwrap().len(), 1, "{favs}");
+    ok(
+        api.call("DELETE", &star, k, None, &[]).await,
+        StatusCode::NO_CONTENT,
+        "unfavourite",
+    )
+    .await;
 
     // Webhooks.
     let w = ok(
