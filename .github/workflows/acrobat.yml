@@ -1,0 +1,83 @@
+name: acrobat
+
+# HRD-03, rung 4 of the verification ladder (docs/31): Adobe Acrobat Reader opens every PDF
+# of the HRD-02 interop packet (fixtures/interop) on a disposable Windows runner, and what it
+# shows is recorded by UI Automation with screenshots and judged against
+# fixtures/interop/ACROBAT-CHECKLIST.md. The owner has no Acrobat (owner instruction 49),
+# and nothing like this runs on a desktop (docs/04 rule 17).
+#
+# Separate from ci.yml on purpose: Reader is third-party, downloaded per run and slow to
+# install, so it never blocks main. It runs by hand, weekly, and when the packet or this
+# check changes.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 5 * * 1"   # Mondays 05:23 UTC: a Reader update that reads our seals differently shows within a week
+  push:
+    branches: [main]
+    paths:
+      - "fixtures/interop/**"
+      - "tools/interop/acrobat*"
+      - ".github/workflows/acrobat.yml"
+  pull_request:
+    paths:
+      - "fixtures/interop/**"
+      - "tools/interop/acrobat*"
+      - "tools/interop/test_acrobat_report.py"
+      - ".github/workflows/acrobat.yml"
+
+concurrency:
+  group: acrobat-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  reader:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      # The Chocolatey package of Adobe Acrobat Reader, pinned; raise it deliberately and record
+      # the new version's run in docs/31.
+      READER_PACKAGE_VERSION: "2026.2.22031"
+      PYTHONUTF8: "1"
+    steps:
+      # The packet's PDFs and SHA256SUMS must arrive byte for byte.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: The packet is the committed one
+        shell: pwsh
+        run: |
+          Get-Content fixtures/interop/SHA256SUMS | ForEach-Object {
+            $sum, $name = $_ -split '  ', 2
+            $got = (Get-FileHash -Algorithm SHA256 -LiteralPath "fixtures/interop/$name").Hash.ToLower()
+            if ($got -ne $sum) { throw "$name has SHA-256 $got, not $sum" }
+          }
+      # The judge's own tests first: it must tell an invalid signature from a valid one.
+      - run: python -I -m unittest discover -s tools/interop -p "test_*.py"
+      - run: python -m pip install --quiet "pywinauto==0.6.9" "pillow==11.3.0" "pyhanko==0.38.1" cryptography
+      - name: Install Adobe Acrobat Reader
+        run: choco install adobereader --version "${{ env.READER_PACKAGE_VERSION }}" -y --no-progress --params '"/NoUpdates"'
+      - name: Trust the test root and set Reader's verification preferences
+        shell: pwsh
+        run: tools/interop/acrobat-setup.ps1 -Packet fixtures/interop
+      - name: Open each PDF in Reader and record the signature panel
+        run: python -I tools/interop/acrobat_driver.py fixtures/interop --out acrobat-out --trust-method "Windows root store (LocalMachine\Root) + iMSStoreTrusted=0x62"
+      - name: Upload screenshots and the report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: acrobat-reader-${{ github.run_id }}
+          path: acrobat-out/
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Judge the report against the checklist
+        shell: pwsh
+        run: |
+          python -I tools/interop/acrobat_report.py acrobat-out/acrobat-report.json | Tee-Object -FilePath judge.txt
+          $rc = $LASTEXITCODE
+          "## Acrobat Reader over fixtures/interop`n" + '```' | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Get-Content judge.txt | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          '```' | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          exit $rc
