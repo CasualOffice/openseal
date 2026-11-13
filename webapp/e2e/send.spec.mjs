@@ -146,8 +146,16 @@ test("recipients reorder with the arrows and by dragging a card", async ({ page 
   expect(await names()).toEqual(["Two", "One", "Three"]);
   // Dropped on the gap before the first step, a card takes a step of its own there.
   await page.setViewportSize({ width: 1280, height: 1300 }); // both ends on screen: no scroll mid-drag
-  await page.locator(".os-rcpt__grip").nth(2).dragTo(page.getByTestId("step-gap").first());
-  expect(await names()).toEqual(["Three", "Two", "One"]);
+  const grip = page.locator(".os-rcpt__grip").nth(2);
+  const gap = page.getByTestId("step-gap").first();
+  await expect(grip).toBeInViewport();
+  await expect(gap).toBeInViewport();
+  // E2E-03: with one mouse move, WebKit on the Compose run began the drag only after the
+  // button was up (its drag image painted after dragTo returned), so nothing dropped.
+  // Moves along the way let the drag start and reach the gap before the drop; the
+  // order is then read until it settles.
+  await grip.dragTo(gap, { steps: 10 });
+  await expect.poll(names).toEqual(["Three", "Two", "One"]);
 });
 
 test("Shift+click selects several fields; they line up, move and delete together, and undo restores them", async ({ page }) => {
