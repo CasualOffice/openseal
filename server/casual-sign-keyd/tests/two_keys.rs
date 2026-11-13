@@ -73,6 +73,9 @@ fn keyd_serves_the_next_key_beside_the_current_one() {
     let mut child = Killed(
         Command::new(KEYD)
             .env_clear()
+            // Windows cannot load its network stack without SystemRoot, so a cleared
+            // environment made keyd exit before it listened (Windows CI only).
+            .envs(std::env::var_os("SystemRoot").map(|v| ("SystemRoot", v)))
             .env("OPENSEAL_DEV_INSECURE_KEY", "1")
             .env("OPENSEAL_KEYD_LISTEN", "127.0.0.1:0")
             .env("OPENSEAL_KEYD_TLS_CERT", dir.join("tls.pem"))
@@ -92,8 +95,13 @@ fn keyd_serves_the_next_key_beside_the_current_one() {
             .unwrap(),
     );
     let mut lines = BufReader::new(child.0.stderr.take().unwrap()).lines();
+    let mut seen = Vec::new();
     let addr = loop {
-        let line = lines.next().expect("keyd exited").unwrap();
+        let Some(line) = lines.next() else {
+            panic!("keyd exited before serving: {seen:#?}");
+        };
+        let line = line.unwrap();
+        seen.push(line.clone());
         // keyd's lines are JSON (ASVS-08): `"event":"serving"` with `alias` and `listen`.
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
             continue;
