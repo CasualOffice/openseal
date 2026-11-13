@@ -220,6 +220,12 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-AUTH-0010")
     }
 
+    /// `CS-ORG-0001` 403: no enabled membership in the workspace a switch names, or no
+    /// such workspace (docs/23 §2.3).
+    pub fn not_a_workspace_member() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-ORG-0001")
+    }
+
     /// `CS-ORG-0005` 403: a grant to oneself, or beyond the granter's own rights
     /// (docs/23 §2.2).
     pub fn grant_refused() -> Self {
@@ -270,6 +276,7 @@ impl ApiError {
             "CS-AUTH-0008" => "CSRF token missing or wrong",
             "CS-AUTH-0009" => "Link bound to another browser",
             "CS-AUTH-0010" => "Host does not own this embedding",
+            "CS-ORG-0001" => "Not a member of that workspace",
             "CS-ORG-0005" => "Grant refused",
             "CS-ORG-0008" => "Organization must keep an enabled owner",
             "CS-ORG-0010" => "Workspace archived",

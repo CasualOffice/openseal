@@ -1665,6 +1665,26 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     let s = session_of(&login);
+    // Workspace switching (ORG-04): the listing, and a switch into the one workspace
+    // the session already has, which issues a new session and ends the old one.
+    ok(
+        api.call("GET", "/api/v1/auth/workspaces", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "workspaces",
+    )
+    .await;
+    let switched = api
+        .call(
+            "POST",
+            "/api/v1/auth/switch",
+            &s,
+            Some(json!({"account_id": a.boot.account.to_string()})),
+            &[],
+        )
+        .await;
+    assert_eq!(switched.status, StatusCode::OK, "{:?}", switched.json());
+    let s = session_of(&switched);
     ok(
         api.call("POST", "/api/v1/auth/logout", &s, None, &[]).await,
         StatusCode::NO_CONTENT,
