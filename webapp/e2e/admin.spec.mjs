@@ -171,7 +171,7 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
       await expect(del.getByTestId("delivery-row")).toHaveCount(2);
       await expect(del.getByTestId("delivery-row").first()).toContainText("Failed");
       await expect(del.getByTestId("delivery-row").first()).toContainText("503");
-      await del.getByRole("button", { name: "Deliver envelope.declined again" }).click();
+      await del.getByRole("button", { name: "Deliver again: envelope.declined" }).click();
       await expect(del.getByTestId("delivery-row").first()).toContainText("Delivered");
       await snap(page, testInfo, `ux08-webhooks-${label}`);
 

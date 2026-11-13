@@ -16,22 +16,31 @@
 // A webhook's signing secret never passes through the API (docs/40 §4): the panel
 // names the operator's secrets, so there is nothing to show once.
 //
-// Pause and resume a webhook, a test event and redelivery are served (UXW-31..33); a
-// test event and a redelivery are sent by the server's worker, so a delivery shows
-// `pending` until it has been tried.
+// Pause and resume a webhook, editing its address and events, a test event and
+// redelivery are served (UXW-31..33, UXW-10); a test event and a redelivery are sent by
+// the server's worker, so a delivery shows `pending` until it has been tried.
+//
+// The Audit log page (UXW-09) reads the workspace's admin log (`GET /admin-events`,
+// ORG-05), which the server verifies as it answers; the filters work on the events
+// loaded, since the route takes none (UXW-44), and the export is the server's own CSV,
+// every page. The expiry warning days (RTE-03) are the account's
+// `settings.workflow_policy.expiry_warning_days`, sent as the whole policy.
 //
 // WEB-10, against api/openapi.yaml and the server: a member's `permission_profile_id`
 // is an id, named through the account's `settings.builtin_profiles`; the list has no
 // invitation state, so it is read per local member (`GET /users/{id}`); the account's
 // name is shown, not edited (the API has no rename).
 
-import { h, clear, fmtDate } from "./dom.js";
+import { h, clear, fmtDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { WEBHOOK_EVENT_TYPES } from "./api.js";
 import { register, unregisterPrefix } from "./commands.js";
 import { profileName } from "./people.js";
-import { NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio } from "./adminmodel.js";
+import {
+  NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
+  expiryWarningOf, expiryWarningPatch, MAX_WARNING_DAYS, actorKind, changedKeys, filterAdminEvents, joinCsvPages,
+} from "./adminmodel.js";
 import { intelligence } from "./adminintel.js";
 import { ersdCard } from "./adminersd.js";
 import { button, emptyState, skeletonRows, skeletonBlock, errorState, openPanel, confirmDialog, toast, toastError, selectField, toggle, menuButton, checkbox, tabs } from "./ui/index.js";
@@ -49,6 +58,7 @@ const TITLE = {
 const LEDE = {
   organization: () => t("admin.lede.organization"), members: () => t("admin.lede.members"), branding: () => t("admin.lede.branding"),
   integrations: () => t("admin.lede.integrations"), intelligence: () => t("intel.lede"), signing: () => t("admin.lede.signing"),
+  audit: () => t("admin.lede.audit"),
 };
 const TAB = { api: () => t("admin.api"), webhooks: () => t("admin.webhooks") };
 const PART = {
@@ -95,8 +105,9 @@ export function mount(view, ctx, _match, params) {
   else if (current === "members") users(body, ctx);
   else if (current === "integrations") integrations(body, ctx, tab);
   else if (current === "intelligence") intelligence(body, ctx, HEADS.get(body));
+  else if (current === "audit") adminLog(body, ctx);
   else account(body, ctx, current);
-  return () => { for (const p of ["users.", "webhooks.", "apiclients.", "admin.go.", "intel."]) unregisterPrefix(p); };
+  return () => { for (const p of ["users.", "webhooks.", "apiclients.", "admin.go.", "intel.", "adminlog."]) unregisterPrefix(p); };
 }
 
 /// The secondary nav (canvas): back to agreements, the workspace, then the pages; the
@@ -173,6 +184,12 @@ function waiting(panel, item, ctx) {
       h("p", { class: "os-adm__card-text", text: WAITS[w]() }))))));
 }
 
+/// The expiry warning as the Organization page says it (RTE-03).
+function warningText(days) {
+  if (!days) return t("admin.expiry-warning-none");
+  return days === 1 ? t("admin.expiry-warning-day") : t("admin.expiry-warning-days", { n: days });
+}
+
 /// A text value and its Copy button, for a value people paste elsewhere.
 function copyRow(id, label, value) {
   const input = h("input", { id, class: "os-input os-input--mono", value, readOnly: true, attrs: { "data-testid": `${id}-value` } });
@@ -220,7 +237,8 @@ function account(panel, ctx, part) {
         h("dl", { class: "os-meta os-adm__meta" },
           row(t("admin.account-name"), acct.name),
           row(t("admin.expiry-days"), s().default_expiry_days),
-          row(t("admin.reminder-days"), s().first_reminder_days ? s().first_reminder_days : t("admin.reminder-none")))));
+          row(t("admin.reminder-days"), s().first_reminder_days ? s().first_reminder_days : t("admin.reminder-none")),
+          h("dt", { text: t("admin.expiry-warning") }), h("dd", { attrs: { "data-testid": "expiry-warning" }, text: warningText(expiryWarningOf(s())) }))));
   }
   function card(id, title, lede, editLabel, onEdit, ...body) {
     return h("section", { class: "os-card os-adm__card", attrs: { "aria-labelledby": `acct-${id}-h`, "data-testid": `account-${id}` } },
@@ -239,11 +257,14 @@ function account(panel, ctx, part) {
       build(body) {
         f.expiry = h("input", { id: "a-expiry", class: "os-input", type: "number", min: "1", max: "365", step: "1", value: s().default_expiry_days ?? "", attrs: { autofocus: true } });
         f.remind = h("input", { id: "a-remind", class: "os-input", type: "number", min: "0", max: "60", step: "1", value: s().first_reminder_days ?? "" });
+        f.warn = h("input", { id: "a-warn", class: "os-input", type: "number", min: "0", max: String(MAX_WARNING_DAYS), step: "1", value: String(expiryWarningOf(s())), attrs: { "aria-describedby": "a-warn-help" } });
         f.err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
         body.append(
           h("p", { class: "os-label", text: t("admin.account-name") }), h("p", { class: "os-muted", attrs: { "data-testid": "account-name" }, text: acct.name || t("admin.not-set") }),
           h("label", { class: "os-label", attrs: { for: "a-expiry" }, text: t("admin.expiry-days") }), f.expiry,
-          h("label", { class: "os-label", attrs: { for: "a-remind" }, text: t("admin.reminder-days") }), f.remind, f.err);
+          h("label", { class: "os-label", attrs: { for: "a-remind" }, text: t("admin.reminder-days") }), f.remind,
+          h("label", { class: "os-label", attrs: { for: "a-warn" }, text: t("admin.expiry-warning") }), f.warn,
+          h("p", { id: "a-warn-help", class: "os-help", text: t("admin.expiry-warning-help") }), f.err);
       },
       actions: [
         { label: t("action.cancel"), value: null },
@@ -253,7 +274,12 @@ function account(panel, ctx, part) {
             const expiry = f.expiry.value === "" ? null : Number.parseInt(f.expiry.value, 10);
             const remind = f.remind.value === "" ? null : Number.parseInt(f.remind.value, 10);
             if (expiry != null && !(expiry >= 1 && expiry <= 365)) { f.err.textContent = t("admin.need-days"); f.expiry.focus(); return undefined; }
-            const out = await ctx.api.patchAccountSettings({ default_expiry_days: expiry, first_reminder_days: remind || null });
+            const warn = f.warn.value === "" ? 0 : Number(f.warn.value);
+            if (!Number.isInteger(warn) || warn < 0 || warn > MAX_WARNING_DAYS) { f.err.textContent = t("admin.need-warning-days", { n: MAX_WARNING_DAYS }); f.warn.focus(); return undefined; }
+            // RTE-03: the server takes the workflow policy whole, so the account's policy
+            // as it is now (its disclosure kept) goes back with the new warning days.
+            const patch = { default_expiry_days: expiry, first_reminder_days: remind || null, ...(await expiryWarningPatch(ctx.api, warn)) };
+            const out = await ctx.api.patchAccountSettings(patch);
             acct = { ...acct, settings: out?.settings || acct.settings };
             return true;
           },
@@ -528,6 +554,186 @@ function users(panel, ctx) {
   load();
 }
 
+// ---- Audit log (UXW-09; ORG-05, docs/40 /admin-events) ----------------------------------
+
+/// Events read per page, and pages read before the screen asks to load more.
+const LOG_PAGE = 1000;
+const LOG_PAGES = 5;
+
+/// The workspace's admin log: who changed what, newest first, with filters over the
+/// events loaded (the route takes none), each event's changes and chain link in a panel,
+/// the server's CSV of the whole log, and a check of the whole chain by the server.
+function adminLog(panel, ctx) {
+  let items = [];
+  let next = null;
+  const names = new Map();
+  const filter = { q: "", action: "all", actor: "all" };
+  sectionHead(panel, t("admin.nav.audit"), t("admin.lede.audit"),
+    button(t("admin.log.verify"), { icon: "shield-check", command: "adminlog.verify", onClick: () => verify() }),
+    button(t("admin.log.export"), { icon: "download", command: "adminlog.export", onClick: () => exportCsv() }));
+  register("adminlog.verify", { label: t("admin.log.verify"), run: () => verify() });
+  register("adminlog.export", { label: t("admin.log.export"), run: () => exportCsv() });
+
+  const search = h("input", { id: "log-search", type: "search", class: "os-input os-input--sm", autocomplete: "off", placeholder: t("admin.log.search") });
+  search.addEventListener("input", () => { filter.q = search.value; render(); });
+  const action = selectField(t("admin.log.action"), [["all", t("admin.filter-all")]], { id: "log-filter-action", size: "sm", onChange: (v) => { filter.action = v; render(); } });
+  const actor = selectField(t("admin.log.actor"), [["all", t("admin.filter-all")], ...["user", "api_client", "system"].map((k) => [k, t(`admin.log.by.${k}`)])],
+    { id: "log-filter-actor", size: "sm", onChange: (v) => { filter.actor = v; render(); } });
+  const tools = h("div", { class: "os-filters os-admin__tools" },
+    h("div", { class: "os-fieldrow os-filters__search" }, h("label", { class: "os-label", attrs: { for: "log-search" }, text: t("admin.log.search") }), search), action.el, actor.el);
+  const count = h("p", { class: "os-muted os-small", attrs: { "aria-live": "polite", "data-testid": "audit-count" } });
+  const list = h("div", { class: "os-list os-surface-card", attrs: { "data-testid": "audit-log" } });
+  const more = h("div", { class: "os-admin__tools os-admin__tools--end", hidden: true });
+  panel.append(tools, count, list, more);
+
+  const who = (e) => {
+    const a = e?.event?.actor || {};
+    const kind = actorKind(e);
+    if (kind === "system") return t("admin.log.by-system");
+    return names.get(`${kind}:${a.id}`) || t(kind === "user" ? "admin.log.by-user-id" : "admin.log.by-client-id", { id: String(a.id || "").slice(0, 8) });
+  };
+
+  async function load() {
+    clear(list);
+    list.setAttribute("aria-busy", "true");
+    list.append(skeletonRows(4));
+    try {
+      const [users, clientsPage] = await Promise.all([ctx.api.users.list().catch(() => null), ctx.api.apiClients.list().catch(() => null)]);
+      for (const u of users?.items || []) names.set(`user:${u.id}`, u.name || u.email || "");
+      for (const c of clientsPage?.items || []) names.set(`api_client:${c.id}`, c.name || "");
+      items = [];
+      next = null;
+      await pages(null);
+      list.removeAttribute("aria-busy");
+      render();
+    } catch (err) {
+      list.removeAttribute("aria-busy");
+      if (ctx.failed(err)) return;
+      errorState(list, err, load);
+    }
+  }
+  /// Read up to LOG_PAGES pages after `cursor`.
+  async function pages(cursor) {
+    let at = cursor;
+    for (let i = 0; i < LOG_PAGES; i++) {
+      const page = await ctx.api.adminEvents({ cursor: at ?? undefined, limit: LOG_PAGE });
+      items.push(...(page?.items || []));
+      at = page?.next_cursor ?? null;
+      if (at == null) break;
+    }
+    next = at;
+  }
+  async function loadMore() {
+    try { await pages(next); render(); } catch (err) { if (!ctx.failed(err)) toastError(err); }
+  }
+
+  function render() {
+    // The action filter lists the actions loaded, keeping the one chosen.
+    const actions = [...new Set(items.map((e) => e.action))].sort();
+    if (filter.action !== "all" && !actions.includes(filter.action)) filter.action = "all";
+    clear(action.select).append(...[["all", t("admin.filter-all")], ...actions.map((a) => [a, a])]
+      .map(([v, l]) => h("option", { value: v, text: l, selected: v === filter.action })));
+    clear(more);
+    more.hidden = next == null;
+    if (next != null) more.append(h("p", { class: "os-muted os-small", text: t("admin.log.partial", { n: items.length }) }), button(t("admin.log.more"), { icon: "chevron-down", size: "sm", onClick: () => loadMore() }));
+    clear(list);
+    if (!items.length) {
+      count.textContent = "";
+      list.append(emptyState({ illus: "documents", title: t("admin.log.empty-title"), text: t("admin.log.empty-text"), testId: "empty-audit" }));
+      return;
+    }
+    const shown = filterAdminEvents(items, filter, who).slice().reverse();
+    count.textContent = t("admin.log.count", { n: shown.length, total: items.length });
+    if (!shown.length) {
+      list.append(emptyState({ illus: "search", title: t("admin.log.no-match"), text: "", action: button(t("admin.clear-filters"), { variant: "primary", onClick: () => { filter.q = ""; filter.action = "all"; filter.actor = "all"; search.value = ""; actor.select.value = "all"; render(); } }) }));
+      return;
+    }
+    const table = h("table", { class: "os-table os-table--rows os-table--cards" },
+      h("caption", { class: "os-sr-only", text: t("admin.nav.audit") }),
+      h("thead", {}, h("tr", {},
+        h("th", { attrs: { scope: "col" }, class: "os-col-date", text: t("admin.log.when") }),
+        h("th", { attrs: { scope: "col" }, text: t("admin.log.action") }),
+        h("th", { attrs: { scope: "col" }, text: t("admin.log.actor") }),
+        h("th", { attrs: { scope: "col" }, text: t("admin.log.changes") }),
+        h("th", { attrs: { scope: "col" }, class: "os-col-actions", text: t("templates.col.actions") }))));
+    const tb = h("tbody");
+    for (const e of shown) {
+      const keys = changedKeys(e);
+      tb.append(h("tr", { attrs: { "data-testid": "audit-row", "data-seq": String(e.seq) } },
+        h("td", { class: "os-col-date os-small", attrs: { "data-label": t("admin.log.when") }, text: fmtDate(e.at) }),
+        h("td", { attrs: { "data-label": t("admin.log.action") } }, h("code", { text: e.action || "" })),
+        h("td", { attrs: { "data-label": t("admin.log.actor") }, text: who(e) }),
+        h("td", { class: "os-small", attrs: { "data-label": t("admin.log.changes") }, text: keys.length ? keys.join(", ") : "—" }),
+        h("td", { class: "os-col-actions" }, button(t("admin.log.details"), { icon: "info", size: "sm", attrs: { "aria-label": t("admin.log.details-of", { n: e.seq }) }, onClick: () => details(e) }))));
+    }
+    table.append(tb);
+    list.append(h("div", { class: "os-table-wrap" }, table));
+  }
+
+  /// One event: who, its targets, each change with its value before and after, and
+  /// where it sits in the chain.
+  function details(e) {
+    const val = (v) => (v === null || v === undefined ? t("admin.log.absent") : typeof v === "string" ? v : JSON.stringify(v));
+    const target = Object.entries(e?.event?.target || {});
+    openPanel({
+      id: "admin-event",
+      title: t("admin.log.event", { n: e.seq }),
+      width: 32,
+      build(body) {
+        body.append(h("dl", { class: "os-meta os-adm__meta" },
+          h("dt", { text: t("admin.log.when") }), h("dd", { text: fmtDate(e.at) }),
+          h("dt", { text: t("admin.log.action") }), h("dd", {}, h("code", { text: e.action || "" })),
+          h("dt", { text: t("admin.log.actor") }), h("dd", { text: who(e) }),
+          ...target.flatMap(([k, v]) => [h("dt", { text: t("admin.log.target", { name: k }) }), h("dd", {}, h("code", { text: String(v) }))]),
+          ...(e?.event?.request_id ? [h("dt", { text: t("admin.log.request") }), h("dd", {}, h("code", { text: String(e.event.request_id) }))] : [])));
+        const changes = Array.isArray(e?.event?.changes) ? e.event.changes : [];
+        body.append(h("h3", { class: "os-card__title", text: t("admin.log.changes") }));
+        if (!changes.length) body.append(h("p", { class: "os-muted os-small", text: t("admin.log.no-changes") }));
+        for (const c of changes) {
+          body.append(h("dl", { class: "os-meta os-adm__meta", attrs: { "data-testid": "audit-change" } },
+            h("dt", { text: t("admin.log.key") }), h("dd", {}, h("code", { text: String(c?.key ?? "") })),
+            h("dt", { text: t("admin.log.old") }), h("dd", {}, h("code", { class: "os-admin__url", text: val(c?.old) })),
+            h("dt", { text: t("admin.log.new") }), h("dd", {}, h("code", { class: "os-admin__url", text: val(c?.new) }))));
+        }
+        body.append(h("h3", { class: "os-card__title", text: t("admin.log.chain") }),
+          h("dl", { class: "os-meta os-adm__meta" },
+            h("dt", { text: t("admin.log.hash") }), h("dd", {}, h("code", { class: "os-admin__url", attrs: { "data-testid": "audit-hash" }, text: e.hash || "" })),
+            h("dt", { text: t("admin.log.prev") }), h("dd", {}, h("code", { class: "os-admin__url", text: e.prev || t("admin.log.first") }))));
+      },
+      actions: [{ label: t("action.close"), value: null }],
+    });
+  }
+
+  /// The server's CSV, every page, as one file.
+  async function exportCsv() {
+    try {
+      const out = [];
+      let cursor;
+      for (;;) {
+        const page = await ctx.api.adminEventsCsv({ cursor, limit: LOG_PAGE });
+        out.push(page.text);
+        if (page.next == null) break;
+        cursor = page.next;
+      }
+      download(new Blob([joinCsvPages(out)], { type: "text/csv" }), `admin-log-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (err) { if (!ctx.failed(err)) toastError(err); }
+  }
+
+  /// The server re-verifies the whole chain (`verify=full`); a broken one is CS-DB-0014.
+  async function verify() {
+    try {
+      await ctx.api.adminEvents({ limit: 1, verify: "full" });
+      toast(t("admin.log.verified"), "success");
+    } catch (err) {
+      if (ctx.failed(err)) return;
+      if (err?.code === "CS-DB-0014") toast(t("admin.log.broken"), "error");
+      else toastError(err);
+    }
+  }
+
+  load();
+}
+
 // ---- Webhooks (UX-08; docs/40 §4) ------------------------------------------------------
 
 function webhooks(panel, ctx) {
@@ -578,6 +784,7 @@ function webhooks(panel, ctx) {
         label: t("admin.actions-for", { name: w.url }),
         buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
         items: () => [
+          { label: t("admin.wh.edit"), icon: "pencil", run: () => edit(w) },
           { label: t("admin.wh.test"), icon: "send", run: () => test(w) },
           w.active ? { label: t("admin.wh.pause"), icon: "clock", run: () => setActive(w, false) } : { label: t("admin.wh.resume"), icon: "refresh-cw", run: () => setActive(w, true) },
           w.active ? "separator" : null,
@@ -661,22 +868,25 @@ function webhooks(panel, ctx) {
     try { await ctx.api.deleteWebhook(w.id); toast(t("admin.wh.disabled"), "success"); load(w.id); } catch (err) { if (!ctx.failed(err)) toastError(err); }
   }
 
-  /// New webhook (UX-08): the https:// address, the events, and the names of the
-  /// operator's signing secrets (the secret itself never passes through the API).
-  async function add() {
+  /// New webhook (UX-08), or an edit of one (UXW-10): the https:// address, the events,
+  /// and for a new one the names of the operator's signing secrets (the secret itself
+  /// never passes through the API; an edit cannot change them, `PATCH /webhooks/{id}`).
+  async function add(existing = null) {
     const f = { events: [] };
+    const editing = !!existing;
     const made = await openPanel({
-      id: "webhook-new",
-      title: t("admin.wh.new"),
+      id: editing ? "webhook-edit" : "webhook-new",
+      title: t(editing ? "admin.wh.edit-title" : "admin.wh.new"),
       width: 30,
       build(body) {
-        f.url = h("input", { id: "wh-url", class: "os-input os-input--mono", type: "url", inputMode: "url", autocomplete: "off", maxLength: 2048, placeholder: "https://", attrs: { autofocus: true, "aria-describedby": "wh-url-help wh-err" } });
-        f.refs = h("input", { id: "wh-refs", class: "os-input os-input--mono", autocomplete: "off", maxLength: 300, attrs: { "aria-describedby": "wh-refs-help wh-err" } });
+        f.url = h("input", { id: "wh-url", class: "os-input os-input--mono", type: "url", inputMode: "url", autocomplete: "off", maxLength: 2048, placeholder: "https://", value: existing?.url || "", attrs: { autofocus: true, "aria-describedby": "wh-url-help wh-err" } });
+        f.refs = editing ? null : h("input", { id: "wh-refs", class: "os-input os-input--mono", autocomplete: "off", maxLength: 300, attrs: { "aria-describedby": "wh-refs-help wh-err" } });
         const events = h("div", { class: "os-admin__events" });
+        const chosen = (e) => (editing ? (existing.event_types || []).includes(e) : /^envelope\.(completed|declined|voided)$/.test(e));
         for (const [group, types] of eventGroups(WEBHOOK_EVENT_TYPES)) {
           const fs = h("fieldset", { class: "os-fieldset" }, h("legend", { class: "os-label", text: t(`admin.wh.group.${group}`) }));
           for (const e of types) {
-            const box = checkbox(e, { id: `wh-ev-${e.replace(/\W/g, "-")}`, checked: /^envelope\.(completed|declined|voided)$/.test(e), attrs: { value: e } });
+            const box = checkbox(e, { id: `wh-ev-${e.replace(/\W/g, "-")}`, checked: chosen(e), attrs: { value: e } });
             f.events.push(box.input);
             fs.append(box.el);
           }
@@ -686,25 +896,36 @@ function webhooks(panel, ctx) {
         body.append(
           h("label", { class: "os-label", attrs: { for: "wh-url" }, text: t("admin.wh.url") }), f.url,
           h("p", { id: "wh-url-help", class: "os-help", text: t("admin.wh.url-help") }),
-          h("label", { class: "os-label", attrs: { for: "wh-refs" }, text: t("admin.wh.secrets") }), f.refs,
-          h("p", { id: "wh-refs-help", class: "os-help", text: t("admin.wh.secrets-help") }),
+          ...(editing
+            ? [h("p", { class: "os-label", text: t("admin.wh.secrets") }),
+              h("p", { class: "os-help", attrs: { "data-testid": "webhook-secrets" }, text: t("admin.wh.edit-secrets", { names: (existing.secret_refs || []).join(", ") }) })]
+            : [h("label", { class: "os-label", attrs: { for: "wh-refs" }, text: t("admin.wh.secrets") }), f.refs,
+              h("p", { id: "wh-refs-help", class: "os-help", text: t("admin.wh.secrets-help") })]),
           events, f.err);
       },
       actions: [
         { label: t("action.cancel"), value: null },
         {
-          label: t("admin.create"), variant: "primary",
+          label: t(editing ? "templates.save" : "admin.create"), variant: "primary",
           onClick: async () => {
-            for (const el of [f.url, f.refs]) el.removeAttribute("aria-invalid");
+            for (const el of [f.url, f.refs]) el?.removeAttribute("aria-invalid");
             f.err.textContent = "";
             const url = f.url.value.trim();
             const event_types = f.events.filter((b) => b.checked).map((b) => b.value);
-            const refs = parseSecretRefs(f.refs.value);
+            const refs = editing ? {} : parseSecretRefs(f.refs.value);
             const bad = !/^https:\/\/\S+$/i.test(url) ? [f.url, t("admin.wh.need-url")]
               : refs.error ? [f.refs, t(refs.error === "none" ? "admin.wh.need-secret" : refs.error === "many" ? "admin.wh.many-secrets" : "admin.wh.bad-secret")]
                 : !event_types.length ? [f.events[0], t("admin.wh.need-event")] : null;
             if (bad) { f.err.textContent = bad[1]; if (bad[0] !== f.events[0]) bad[0].setAttribute("aria-invalid", "true"); bad[0].focus(); return undefined; }
             try {
+              if (editing) {
+                // Only what changed: a URL sent again is checked again (SEC-W01).
+                const patch = {};
+                if (url !== existing.url) patch.url = url;
+                const before = [...(existing.event_types || [])].sort().join(" ");
+                if ([...event_types].sort().join(" ") !== before) patch.event_types = event_types;
+                return Object.keys(patch).length ? await ctx.api.updateWebhook(existing.id, patch) : existing;
+              }
               return await ctx.api.createWebhook({ url, event_types, secret_refs: refs.refs });
             } catch (err) {
               if (err?.code !== "CS-API-0013") throw err;
@@ -718,9 +939,10 @@ function webhooks(panel, ctx) {
       ],
     });
     if (!made) return;
-    toast(t("admin.wh.added"), "success");
+    toast(t(editing ? "admin.wh.saved" : "admin.wh.added"), "success");
     load(made.id);
   }
+  const edit = (w) => add(w);
 
   load();
 }
