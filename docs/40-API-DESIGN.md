@@ -423,6 +423,28 @@ binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised
 | `POST /auth/password-reset/confirm {token, password}` | `UXW-38`. Spends the link once and sets the password; the user's sessions end in every account and their other open resets are revoked. An unknown, expired, spent or revoked link is `401 CS-AUTH-0002`, all alike. The web app's page for the link is `UXW-38A` |
 | `GET /auth/providers` | `UXW-39`. No session. `{items: [{id, name, url}]}`, the SSO identity providers sign-in offers: empty until SSO is built (FG-173) |
 
+## As built (`ASVS-01`, staff second factor)
+
+A staff user may add a TOTP authenticator (RFC 6238: HMAC-SHA1, six digits, 30-second steps, one step of drift either
+way); an account may require one with `settings.mfa_policy` (`PATCH /accounts/me`): `optional` (the default: only
+users who enrolled), `administrators` or `everyone`. A user with a confirmed factor owes it in every session, whatever
+the policy, so a password reset or a new password does not bypass it. A session that owes a factor reaches only the
+routes marked `x-permission: signing-in` (`GET /auth/session`, `POST /auth/logout` and the three below); every other
+`/api/v1` call is `403 CS-AUTH-0011` with `detail` `verify` or `enrol`. API keys and access tokens are not asked for
+one (they are credentials of their own, made by a member who signed in). `GET /auth/session` answers `second_factor`:
+`none`, `passed`, `verify` or `enrol`. A workspace switch carries the sign-in's factor.
+
+| Endpoint | As built |
+| --- | --- |
+| `POST /auth/mfa/totp/enrol` | A new 160-bit seed for the session's own user, answered once as `{otpauth_uri, secret}` (`Cache-Control: no-store`; the URI's label is the user id, never the email). Stored only sealed under `OPENSEAL_MFA_KEY`; calling again before confirming draws a new seed. `409 CS-API-0009` once a factor is confirmed or when the server has no key |
+| `POST /auth/mfa/totp/confirm {code}` | A code from the new authenticator confirms the enrolment, the session passes its factor, and the answer shows ten recovery codes once (112 random bits each, base32 in groups of five; only their SHA-256 is stored). `401 CS-AUTH-0012` for a wrong code |
+| `POST /auth/mfa/verify {code}` or `{recovery_code}` | Passes the session's factor. A TOTP code is accepted only for a step later than the last accepted one for the user, so a code works once; a recovery code is spent (case, spaces and dashes ignored) and the answer says how many are left. `401 CS-AUTH-0012` for a wrong, replayed or spent code |
+
+All three are staff sessions only (`422 CS-API-0001` for a key or token) and are rate-limited per user at the login
+rate. Not built yet: WebAuthn (`CON-13`), `administrators` as the default policy (`ASVS-31`), replacing or resetting a
+lost factor and regenerating recovery codes (`ASVS-32`). The web app shows the code step and enrolment on the sign-in
+card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a QR code is `ASVS-33`.
+
 ## As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`)
 
 | Endpoint | As built |

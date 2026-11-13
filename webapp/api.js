@@ -298,6 +298,13 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// The SSO identity providers this server offers on sign-in (UX-04, UXW-39):
     /// `{items: [{id, name, url}]}`, empty until SSO exists (FG-173); no session.
     authProviders: () => data(request("GET", "/api/v1/auth/providers")),
+    /// Pass the session's second factor (ASVS-01): `{code}` from the authenticator, or
+    /// `{recovery_code}`; `401 CS-AUTH-0012` when wrong or already used.
+    verifySecondFactor: (body) => data(request("POST", "/api/v1/auth/mfa/verify", { body })),
+    /// Start TOTP enrolment: `{otpauth_uri, secret}`, shown once.
+    enrolTotp: () => data(request("POST", "/api/v1/auth/mfa/totp/enrol")),
+    /// Confirm enrolment with a first code: `{second_factor, recovery_codes}`, shown once.
+    confirmTotp: (code) => data(request("POST", "/api/v1/auth/mfa/totp/confirm", { body: { code } })),
 
     // ---- Envelopes ---------------------------------------------------------
     /// `q`: text the subject or a recipient's name or email contains (WEB-04).

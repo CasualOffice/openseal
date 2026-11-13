@@ -123,7 +123,9 @@ All configuration through environment variables; every secret also accepted as `
 (`server/casual-sign-server/src/main.rs`, `-worker`, `-keyd`); `docker-compose.yml` sets every one of them. A list
 generated from the code into this page is still to come. The server's: `OPENSEAL_DATABASE_URL`,
 `OPENSEAL_JWT_SIGNING_KEY`, `OPENSEAL_BLOB_DIR` or `OPENSEAL_S3_*`, `OPENSEAL_PUBLIC_URL`, `OPENSEAL_LISTEN`,
-`OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, `OPENSEAL_WEBAPP_DIR`, `OPENSEAL_RECIPIENT_IDPS_FILE`; `migrate` reads
+`OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, `OPENSEAL_WEBAPP_DIR`, `OPENSEAL_RECIPIENT_IDPS_FILE`,
+`OPENSEAL_MFA_KEY` (32 random bytes as base64, sealing staff TOTP seeds; keep it with the database backups, since a
+seed sealed under a lost key cannot be opened and its users must enrol again; ASVS-01); `migrate` reads
 `OPENSEAL_MIGRATE_DATABASE_URL`.
 
 ## Upgrades

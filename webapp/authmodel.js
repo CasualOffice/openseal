@@ -67,6 +67,26 @@ export function usableProviders(items) {
     .map((p) => ({ url: p.url, name: p.name.trim().slice(0, 80) }));
 }
 
+/// What a session still owes before the app opens (ASVS-01): `"verify"`, `"enrol"`, or
+/// null when it owes nothing (`GET /auth/session`'s `second_factor`).
+export function owedFactor(session) {
+  const f = session?.second_factor;
+  return f === "verify" || f === "enrol" ? f : null;
+}
+
+/// The second-factor form's error: a message key or null. A code is six digits (spaces
+/// ignored); a recovery code is anything non-empty (the server is the judge).
+export function factorError(value = "", recovery = false) {
+  const v = String(value).replace(/\s+/g, "");
+  if (recovery) return v ? null : "mfa.recovery-missing";
+  return /^[0-9]{6}$/.test(v) ? null : "mfa.code-missing";
+}
+
+/// The setup key as people type it into an authenticator: base32 in groups of four.
+export function groupSecret(secret = "") {
+  return String(secret).replace(/[^A-Z2-7]/g, "").replace(/(.{4})(?=.)/g, "$1 ");
+}
+
 /// The message key for a refused sign-in: wrong credentials get the plain sentence, any
 /// other failure (server down, locked) the API client's own message.
 export function signInFailure(err) {

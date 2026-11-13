@@ -273,6 +273,47 @@ pub struct StaffSessionTarget {
     pub user_id: UserId,
     /// SHA-256 of its CSRF token.
     pub csrf_sha256: [u8; 32],
+    /// The session has passed its second factor (migration 0032, ASVS-01).
+    pub mfa_verified: bool,
+    /// The user has a confirmed second factor, so every session of theirs owes it.
+    pub mfa_enrolled: bool,
+    /// The account's `settings.mfa_policy`.
+    pub mfa_policy: MfaPolicy,
+}
+
+/// Who in an account must sign in with a second factor (`settings.mfa_policy`, ASVS-01).
+/// A user with a confirmed factor always owes it, whatever the policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MfaPolicy {
+    /// Only users who enrolled (`optional`, and when unset).
+    Optional,
+    /// Administrators, and anyone who enrolled (`administrators`).
+    Administrators,
+    /// Every staff user (`everyone`).
+    Everyone,
+}
+
+impl MfaPolicy {
+    /// The policy a setting names. An unknown name fails closed, as `everyone`: the
+    /// server refuses unknown names when the setting is written.
+    #[must_use]
+    pub fn from_setting(name: &str) -> Self {
+        match name {
+            "optional" => Self::Optional,
+            "administrators" => Self::Administrators,
+            _ => Self::Everyone,
+        }
+    }
+
+    /// The setting's name.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Optional => "optional",
+            Self::Administrators => "administrators",
+            Self::Everyone => "everyone",
+        }
+    }
 }
 
 /// A job handed to a worker. Finish it with `TenantTx::jobs().complete` or `fail` in its
@@ -364,7 +405,9 @@ impl EntryPoints<'_> {
     ) -> Result<Option<StaffSessionTarget>> {
         let row = sqlx::query!(
             r#"SELECT account_id AS "account_id!", session_id AS "session_id!",
-                      user_id AS "user_id!", csrf_sha256 AS "csrf_sha256!"
+                      user_id AS "user_id!", csrf_sha256 AS "csrf_sha256!",
+                      mfa_verified AS "mfa_verified!", mfa_enrolled AS "mfa_enrolled!",
+                      mfa_policy AS "mfa_policy!"
                  FROM openseal_resolve_staff_session($1, $2)"#,
             token_sha256.as_slice(),
             now
@@ -378,6 +421,9 @@ impl EntryPoints<'_> {
                 session_id: StaffSessionId(r.session_id),
                 user_id: UserId(r.user_id),
                 csrf_sha256: crate::repo::hash32(r.csrf_sha256, "csrf_sha256")?,
+                mfa_verified: r.mfa_verified,
+                mfa_enrolled: r.mfa_enrolled,
+                mfa_policy: MfaPolicy::from_setting(&r.mfa_policy),
             })
         })
         .transpose()

@@ -244,6 +244,18 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-AUTH-0010")
     }
 
+    /// `CS-AUTH-0011` 403: the session owes a second factor it has not passed, or must
+    /// enrol one first (ASVS-01); `detail` says which (`verify` or `enrol`).
+    pub fn second_factor_required(detail: &str) -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-AUTH-0011").detail(detail)
+    }
+
+    /// `CS-AUTH-0012` 401: the second factor was refused: a wrong code, one already
+    /// used, or a spent recovery code (ASVS-01).
+    pub fn second_factor_refused() -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, "CS-AUTH-0012")
+    }
+
     /// `CS-ORG-0001` 403: no enabled membership in the workspace a switch names, or no
     /// such workspace (docs/23 §2.3).
     pub fn not_a_workspace_member() -> Self {

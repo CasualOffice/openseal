@@ -443,6 +443,19 @@ that freezes an envelope's documents after `sent` (the workflow engine enforces 
 are one `spec` JSON object as the model serializes them. "Forgetting the filter does not compile" holds in the sense
 that no other door exists; the isolation tests, not the compiler, prove each method filters.
 
+`0032_staff_mfa.sql` (`ASVS-01`, docs/40 As built `ASVS-01`) gives staff users a TOTP second factor. `users` gains
+`totp_seed_sealed` (AES-256-GCM under the server's `OPENSEAL_MFA_KEY`, the user id as associated data),
+`totp_confirmed_at`, `totp_last_step` (the newest accepted step; a code is accepted only for a later one) and
+`recovery_code_sha256` (up to 16 SHA-256 hashes; ten are issued, each removed as it is used). The factor is the
+person's, so it holds in every account they belong to. The application role cannot read these columns (0014 grants
+`users` SELECT per column) and a trigger refuses its writes to them (`users_factor_guard`); only definer functions
+keyed by the user's own live session of the current account change them: `openseal_own_totp`,
+`openseal_begin_own_totp` (only while unconfirmed), `openseal_confirm_own_totp`, `openseal_verify_own_totp` and
+`openseal_use_own_recovery_code` (`Sessions::own_totp` and siblings). `staff_sessions` gains `mfa_at`, when the session
+passed its factor (a workspace switch carries it); `openseal_resolve_staff_session` now also answers it, whether the
+user enrolled, and the account's `settings.mfa_policy` (`optional` when unset; an unknown value reads as `everyone`).
+No new table.
+
 ### Designed (ADR-028): tenancy with organizations
 
 The second scope, the organization tables `organizations`, `organization_admins` and `org_permission_sets`, the

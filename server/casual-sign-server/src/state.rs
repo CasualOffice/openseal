@@ -237,6 +237,7 @@ pub(crate) struct Inner {
     pub geoip: std::sync::OnceLock<Arc<crate::geo::GeoIp>>,
     pub webapp: std::sync::OnceLock<Arc<crate::web::WebApp>>,
     pub idps: std::sync::OnceLock<Arc<crate::idp::RecipientIdps>>,
+    pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
 }
 
 impl AppState {
@@ -264,6 +265,7 @@ impl AppState {
             geoip: std::sync::OnceLock::new(),
             webapp: std::sync::OnceLock::new(),
             idps: std::sync::OnceLock::new(),
+            mfa: std::sync::OnceLock::new(),
         })))
     }
 
@@ -283,6 +285,17 @@ impl AppState {
     /// is ignored.
     pub fn set_recipient_idps(&self, idps: crate::idp::RecipientIdps) {
         let _ = self.0.idps.set(Arc::new(idps));
+    }
+
+    /// Let staff enrol a TOTP second factor, its seeds sealed under `key` (ASVS-01).
+    /// Without it, enrolment answers `409 CS-API-0009` and no account may require a
+    /// factor. Set once; a second call is ignored.
+    pub fn set_mfa_key(&self, key: crate::mfa::MfaKey) {
+        let _ = self.0.mfa.set(Arc::new(key));
+    }
+
+    pub(crate) fn mfa_key(&self) -> Option<&Arc<crate::mfa::MfaKey>> {
+        self.0.mfa.get()
     }
 
     pub(crate) fn webapp(&self) -> Option<&Arc<crate::web::WebApp>> {

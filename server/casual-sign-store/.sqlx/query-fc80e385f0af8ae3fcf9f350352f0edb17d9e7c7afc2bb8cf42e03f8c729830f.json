@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_id AS \"account_id!\", session_id AS \"session_id!\",\n                      user_id AS \"user_id!\", csrf_sha256 AS \"csrf_sha256!\",\n                      mfa_verified AS \"mfa_verified!\", mfa_enrolled AS \"mfa_enrolled!\",\n                      mfa_policy AS \"mfa_policy!\"\n                 FROM openseal_resolve_staff_session($1, $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "session_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "csrf_sha256!",
+        "type_info": "Bytea",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "mfa_verified!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "mfa_enrolled!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "mfa_policy!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "fc80e385f0af8ae3fcf9f350352f0edb17d9e7c7afc2bb8cf42e03f8c729830f"
+}
