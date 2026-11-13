@@ -1268,6 +1268,17 @@ impl<B: BlobStore + 'static> Worker<B> {
         if run.document_id != p.document_id || hml::hex(&run.document_sha256) != p.document_sha256 {
             return Err(bad());
         }
+        // An envelope purged since the run was asked for (a request racing the draft's
+        // deletion) is not analysed; its run goes as the purge's did (`SEC-I07`, `ML-31`).
+        if let Some(e) = p.envelope_id {
+            let purged = load_state(&mut tx, EnvelopeId(e))
+                .await?
+                .is_none_or(|s| s.purged);
+            if purged {
+                tx.ml().forget_envelope(EnvelopeId(e)).await?;
+                return self.close_job(tx, job, lease).await;
+            }
+        }
         let end = |status, code: Option<&str>| RunEnd {
             status,
             bundle_id: None,

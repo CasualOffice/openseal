@@ -647,6 +647,23 @@ async fn purging_an_envelope_or_a_template_purges_its_analysis() {
         "a purged envelope keeps no run, suggestion or OCR page"
     );
     assert_eq!(derived(&env, Some(kept.env), None).await, other);
+    // An analysis asked for as the draft was deleted, queued after the purge ran, finds
+    // the envelope purged and leaves nothing behind.
+    enqueue(
+        &env,
+        hml::ANALYZE_DOCUMENT,
+        gone.doc,
+        (Some(gone.env), None),
+        sha,
+        &["ocr", "entities"],
+    )
+    .await;
+    env.run().await;
+    assert_eq!(
+        derived(&env, Some(gone.env), None).await,
+        [0; 4],
+        "an analysis queued after the purge writes nothing back"
+    );
 
     // A template deleted for good takes its run, its page prints and the suggestions
     // that name it, in every envelope.

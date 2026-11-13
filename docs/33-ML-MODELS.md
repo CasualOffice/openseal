@@ -612,7 +612,8 @@ settings show "not installed on this server".
 - **Not built:** OCR-sourced suggestions merged into `detect-fields` (`text_source`, `ocr_rule`, `ocr_box`), search by
   meaning (`ML-07B`), the console's `/console/ml`.
 - **Purge and evidence (`ML-31`, `ML-32`).** The purge job deletes an envelope's analysis runs, and their suggestions
-  and OCR pages with them; a deleted template takes its run, page prints and the suggestions naming it (`SEC-I07`). An
+  and OCR pages with them; a deleted template takes its run, page prints and the suggestions naming it (`SEC-I07`); a purged
+  envelope's analysis routes answer `404`, and an analysis job that finds its envelope purged deletes its run. An
   envelope analysed with every feature on seals to the same signed bytes and audit chain as with ML off (`SEC-I13`).
 
 ## 8. Weights: pinning and delivery

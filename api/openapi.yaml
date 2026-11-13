@@ -2418,7 +2418,8 @@ paths:
       description: >-
         Idempotent on the job key (account, document, its SHA-256, the features, the model
         bundle). `403 CS-ML-0011` with no feature in effect; `409 CS-WF-0001` once the
-        envelope is no longer a draft. The envelope's sender or an administrator.
+        envelope is no longer a draft; `404` once it is purged (a deleted draft). The
+        envelope's sender or an administrator.
       x-permission: "envelopes:write"
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
@@ -2448,7 +2449,7 @@ paths:
       summary: "Suggestions of the envelope's analyses (docs/33 §6, WEB-19)"
       description: >-
         Only kinds whose feature is in effect, only for documents still in the envelope.
-        `403 CS-ML-0011` with no feature in effect.
+        `403 CS-ML-0011` with no feature in effect; `404` once the envelope is purged.
       x-permission: "envelopes:read"
       parameters:
         - {name: kind, in: query, schema: {type: string, enum: [template, entity, personal_data]}}
