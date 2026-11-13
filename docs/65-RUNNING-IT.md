@@ -257,7 +257,7 @@ injection, is `HRD-01`'s.
 ### Configuration integrity (ASVS 14.1.5, `ASVS-24`)
 
 keyd and the worker read their security settings once, at start, so a change on disk does nothing until a restart.
-At start each logs `config NAME sha256:…` for every such setting and `security configuration sha256:…` over them
+At start each logs a JSON line `"event":"config"` (`setting`, `digest`: `sha256:…`) for every such setting and one `"event":"security_configuration"` (`digest`, `settings`, `manifest`: `matches` or `not_set`) over them
 all: for keyd its TLS certificate, client CA, allow lists, seal chain, PKCS#11 module (the library's bytes), alias,
 token and key label, and the path of its signature operations log (`OPENSEAL_KEYD_OPLOG`); for the worker its
 trust anchors, TSA list, keyd and model service addresses and CAs, its client certificates, keyd alias, webhook

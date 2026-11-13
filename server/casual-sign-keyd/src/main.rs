@@ -353,7 +353,15 @@ fn main() -> ExitCode {
     }
     // Before anything else is read: a configuration that is not the approved one never
     // reaches the HSM or the network.
-    if let Err(e) = config.log_and_check("keyd") {
+    let mut log = |event: &str, fields: &[(&str, &str)]| {
+        casual_sign_seclog::write_strs(
+            casual_sign_seclog::Service::Keyd,
+            casual_sign_seclog::Level::Info,
+            event,
+            fields,
+        );
+    };
+    if let Err(e) = config.log_and_check(&mut log) {
         log_line(
             casual_sign_seclog::Level::Error,
             "start_failed",

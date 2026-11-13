@@ -188,34 +188,48 @@ impl ConfigDigest {
         Ok(())
     }
 
-    /// Log the digests to standard error as `{who}: config …` lines, then, when
-    /// `OPENSEAL_CONFIG_MANIFEST` is set, check them against that file. Returns whether
-    /// a manifest was checked.
+    /// Hand the digests to `log` as events with string fields (the daemon writes them as
+    /// its JSON log lines, ASVS-08): `config` (`setting`, `digest`) per setting, then
+    /// `security_configuration` (`digest`, `settings`, `manifest`: `matches` or
+    /// `not_set`). With `OPENSEAL_CONFIG_MANIFEST` set, the digests are checked against
+    /// that file first. Returns whether a manifest was checked.
     ///
     /// # Errors
     ///
     /// [`IntegrityError`] when the manifest cannot be read or does not match.
-    pub fn log_and_check(&self, who: &str) -> Result<bool, IntegrityError> {
+    pub fn log_and_check(&self, log: &mut ConfigLog<'_>) -> Result<bool, IntegrityError> {
         for item in &self.items {
-            eprintln!("{who}: config {} {}", item.name, item.digest());
+            log(
+                "config",
+                &[("setting", &item.name), ("digest", &item.digest())],
+            );
         }
-        eprintln!(
-            "{who}: security configuration {} ({} settings)",
-            self.combined(),
-            self.items.len()
-        );
-        let Some(path) = std::env::var(MANIFEST_VAR).ok().filter(|v| !v.is_empty()) else {
-            eprintln!("{who}: {MANIFEST_VAR} is not set; the configuration is not checked");
-            return Ok(false);
+        let checked = match std::env::var(MANIFEST_VAR).ok().filter(|v| !v.is_empty()) {
+            None => false,
+            Some(path) => {
+                let text =
+                    std::fs::read_to_string(&path).map_err(|_| IntegrityError::Unreadable {
+                        name: MANIFEST_VAR.to_owned(),
+                    })?;
+                self.check(&text)?;
+                true
+            }
         };
-        let text = std::fs::read_to_string(&path).map_err(|_| IntegrityError::Unreadable {
-            name: MANIFEST_VAR.to_owned(),
-        })?;
-        self.check(&text)?;
-        eprintln!("{who}: security configuration matches {MANIFEST_VAR}");
-        Ok(true)
+        log(
+            "security_configuration",
+            &[
+                ("digest", &self.combined()),
+                ("settings", &self.items.len().to_string()),
+                ("manifest", if checked { "matches" } else { "not_set" }),
+            ],
+        );
+        Ok(checked)
     }
 }
+
+/// Where [`ConfigDigest::log_and_check`] sends its events: an event name and its string
+/// fields (setting names and digests, never a value).
+pub type ConfigLog<'a> = dyn FnMut(&str, &[(&str, &str)]) + 'a;
 
 /// Why a configuration does not verify. Every variant names a setting or a line, never
 /// a value or a digest.

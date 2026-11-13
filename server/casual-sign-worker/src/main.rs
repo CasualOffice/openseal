@@ -454,7 +454,15 @@ fn main() -> ExitCode {
         print!("{}", digest.manifest());
         return ExitCode::SUCCESS;
     }
-    if let Err(e) = digest.log_and_check("casual-sign-worker") {
+    let mut log = |event: &str, fields: &[(&str, &str)]| {
+        casual_sign_seclog::write_strs(
+            casual_sign_seclog::Service::Worker,
+            casual_sign_seclog::Level::Info,
+            event,
+            fields,
+        );
+    };
+    if let Err(e) = digest.log_and_check(&mut log) {
         return start_failed(e.code(), &e.to_string());
     }
     // A malformed pseudonym key stops the worker, as it stops the server and the

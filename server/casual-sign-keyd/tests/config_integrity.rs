@@ -56,15 +56,26 @@ fn a_changed_allow_list_stops_keyd_before_it_starts() {
     // Unchanged: the check passes and keyd goes on to fail on its (absent) TLS identity.
     let same = keyd(&dir, &[], Some(&path));
     let err = stderr(&same);
+    // JSON log lines (ASVS-08): one per setting, then the whole, checked.
+    let line = |event: &str, key: &str, value: &str| {
+        err.lines().any(|l| {
+            serde_json::from_str::<serde_json::Value>(l).is_ok_and(|v| {
+                v["event"] == event
+                    && v[key] == value
+                    && v["digest"]
+                        .as_str()
+                        .is_some_and(|d| d.starts_with("sha256:"))
+            })
+        })
+    };
     assert!(
-        err.contains("keyd: config OPENSEAL_KEYD_ALLOW_LIST sha256:"),
+        line("config", "setting", "OPENSEAL_KEYD_ALLOW_LIST"),
         "{err}"
     );
     assert!(
-        err.contains("keyd: security configuration sha256:"),
+        line("security_configuration", "manifest", "matches"),
         "{err}"
     );
-    assert!(err.contains("matches OPENSEAL_CONFIG_MANIFEST"), "{err}");
     assert!(!err.contains("CS-KEY-0014"), "{err}");
 
     // A caller added to the allow list without a new manifest: refused, by name.
