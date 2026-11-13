@@ -1,10 +1,24 @@
 <!--meta {"title": "Download and deploy", "description": "Ways to run OpenSeal v0.0.1, the first pre-release: the Docker Compose stack, the web app in demo mode, the openseal command line and the offline verifier.", "nav": "download"} -->
 <section class="page-head"><div class="wrap">
   <h1>Download and deploy</h1>
-  <p class="lede"><strong>v0.0.1</strong>, the first pre-release, is published: the common send-and-sign case, end to end on one machine. It is for evaluation, not yet for production agreements. Everything below runs from a checkout of the repository.</p>
+  <p class="lede"><strong>v0.0.1</strong>, the first pre-release, is published: the common send-and-sign case, end to end on one machine. It is for evaluation, not yet for production agreements. Everything below runs from a checkout of the repository; the <a href="app/app.html#/signin">demo</a> and the <a href="verify.html">verifier</a> also run on this site, with nothing to install.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/CasualOffice/openseal/releases/tag/v0.0.1">Release notes for v0.0.1<span class="btn-icon">{{icon:arrow-up-right:16}}</span></a>
     <a class="btn btn-secondary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon">{{icon:arrow-up-right:16}}</span></a>
+  </div>
+</div></section>
+
+<section class="section-tight"><div class="wrap">
+  <div class="limits" data-testid="limits">
+    <h2 id="limits-h">{{icon:triangle-alert:18}}Before you deploy: the pre-release limits</h2>
+    <ul>
+      <li><strong>Not for production agreements yet.</strong> v0.0.1 is for evaluation.</li>
+      <li>The Compose stack generates its own certificate authority, software HSM and timestamp authority: its seals validate only against that development CA.</li>
+      <li>Release gates still ahead: an external security and cryptographic review, an accessibility audit, validation in Adobe Acrobat, and a counsel review. The ASVS self-assessment is written and its findings are being closed.</li>
+      <li>Backups: the encrypted, signed backup tool and the restore drill are built; the drill's run on CI is the last step before it counts.</li>
+      <li>No Helm chart or high-availability reference yet.</li>
+    </ul>
+    <p>Each is tracked on the <a href="roadmap.html">roadmap</a>.</p>
   </div>
 </div></section>
 
@@ -23,7 +37,7 @@ docker compose up -d --build --wait</code></pre>
     <article class="card">
       <span class="cell-icon">{{icon:monitor}}</span>
       <h2>The web app, without a server</h2>
-      <p>Demo mode keeps everything in the browser tab. Good for a look around; nothing is sent or signed.</p>
+      <p>Demo mode keeps everything in the browser tab: send and sign a sample agreement; nothing is really sent or sealed. <a href="app/app.html#/signin">Open the demo on this site</a>, or serve it from a checkout:</p>
 <pre><code>python3 -I tools/serve-webapp.py
 # http://127.0.0.1:8130/app.html?mock=1
 # demo@openseal.test / openseal-demo-1</code></pre>
@@ -38,7 +52,7 @@ target/release/openseal help</code></pre>
     <article class="card">
       <span class="cell-icon">{{icon:shield-check}}</span>
       <h2>The offline verifier</h2>
-      <p>The verify page with the engine compiled to WebAssembly. Needs wasm-pack.</p>
+      <p>The verify page with the engine compiled to WebAssembly. It runs on <a href="verify.html">this site</a>; to serve your own, build it with wasm-pack:</p>
 <pre><code>tools/build-webapp-wasm.sh
 python3 -I tools/serve-webapp.py
 # http://127.0.0.1:8130/verify.html</code></pre>
@@ -55,8 +69,8 @@ python3 -I tools/serve-webapp.py
     <div class="cta-row"><a class="btn btn-secondary" href="docs/self-hosting.html">Production checklist<span class="btn-icon">{{icon:arrow-right:16}}</span></a></div>
   </div>
   <ul class="facts">
-    <li><span class="cell-icon">{{icon:package}}</span><strong>Release images</strong><span>v0.0.1's images were built from the tag with pinned base images, an SBOM and provenance attestations. The Compose stack around them generates development keys; production keys and certificates are yours to supply.</span></li>
-    <li><span class="cell-icon">{{icon:layers}}</span><strong>Kubernetes and high availability</strong><span>A Helm chart, an HA reference and a backup and restore drill are planned in the operations slice.</span></li>
-    <li><span class="cell-icon">{{icon:monitor-smartphone}}</span><strong>Desktop and mobile apps</strong><span>A desktop app for senders and offline verification, and mobile apps, are on the <a href="roadmap.html">roadmap</a>.</span></li>
+    <li data-claim><span class="cell-icon">{{icon:package}}</span><strong>Release images</strong><span>v0.0.1's images were built from the tag with pinned base images, an SBOM and provenance attestations. The Compose stack around them generates development keys; production keys and certificates are yours to supply.</span>{{claim:deployment|your keys, certificates and timestamp authorities}}</li>
+    <li data-claim><span class="cell-icon">{{icon:layers}}</span><strong>Backups, Kubernetes and high availability</strong><span>Encrypted, signed backups and a restore drill that verifies the audit chains after restore are built; the drill's CI run is the last step before it counts. A Helm chart and an HA reference are planned in the operations slice.</span>{{claim:deployment|where backups go, their keys, and the restore schedule (docs/65)}}</li>
+    <li data-not-claim="roadmap"><span class="cell-icon">{{icon:monitor-smartphone}}</span><strong>Desktop and mobile apps</strong><span>A desktop app for senders and offline verification, and mobile apps, are on the <a href="roadmap.html">roadmap</a>.</span></li>
   </ul>
 </div></section>

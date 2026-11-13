@@ -12,12 +12,21 @@
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#status)
 
 **Electronic signatures you can run anywhere, embed in anything, and verify without us.**
-An Apache-2.0 agreement platform with DocuSign's workflow and SignNow's speed: send documents for signature, route them
-through signers in order, collect every kind of field, and get back a sealed PDF whose evidence anyone can check
-offline. A deterministic Rust engine does the PDF work, the sealing and the evidence; a server of record runs the
-workflow; a plain web app and an API sit on top.
 
-Website and documentation: [`site/`](site/) (built by `tools/build-site.py`; `.github/workflows/pages.yml` publishes it once GitHub Pages is enabled).
+**OpenSeal is an Apache-2.0 signing and verification engine you embed:** a deterministic Rust engine (the
+`casual-sign-*` crates: a bounded PDF reader, form filling, flattening, PAdES sealing, the verifier and the hash-chained
+audit trail), the same verifier compiled to WebAssembly for the browser, and an API and SDK. **On top of it sits the
+reference product**, a complete agreement platform with DocuSign's workflow and SignNow's speed: send documents for
+signature, route them through signers in order, collect every kind of field, and get back a sealed PDF whose evidence
+anyone can check offline. A server of record runs the workflow; a plain web app and the API sit on top.
+
+Website and documentation: <https://seal.casualoffice.org>, built from [`site/`](site/) by `tools/build-site.py` and
+published by `.github/workflows/pages.yml`, with an **interactive demo** (the web app in demo mode, no install) and a
+**public verifier** that checks a sealed PDF in your browser without uploading it.
+
+> **Pre-release.** v0.0.1 is for evaluation, not for production agreements. The development stack makes its own CA,
+> software HSM and timestamp authority; the external security review, accessibility audit, Adobe Acrobat validation
+> and counsel review are still ahead. See [Status](#status).
 
 Part of [CasualOffice](https://github.com/CasualOffice), with
 [OpenCalc](https://github.com/CasualOffice/opencalc) (spreadsheets),
@@ -31,15 +40,14 @@ it shares.
 - **Apache-2.0, not AGPL.** Every serious open-source e-signature project is AGPL, which most companies cannot embed in
   their products. This one can be embedded anywhere.
 - **Nothing behind a paywall.** Bulk send, signing links, conditional fields, formulas, payments, SSO, retention,
-  embedding and webhooks are all in the open core.
-- **Evidence first.** Every completed agreement will carry a PAdES seal with trusted time (long-term validation
-  optional), a certificate of completion, and a hash-chained audit trail embedded in the PDF. Every seal will be
-  checked by our verifier and by independent validators before release (sealing, the verifier and both validators
-  exist today).
-- **Verify without us.** A completed PDF will be verifiable in the browser, offline, or from the command line, with no
-  account and no server.
-- **Keys where you want them.** Signing keys will live in your HSM or cloud KMS, behind a separate signing service that
-  never sees documents.
+  embedding and webhooks belong to the open core, never to a paid tier (some are still on the roadmap).
+- **Evidence first.** Every completed agreement carries a PAdES seal with an RFC 3161 timestamp (long-term validation
+  optional), a certificate of completion, and a hash-chained audit trail embedded in the PDF. Every seal is checked by
+  our verifier before it is stored, and CI checks every sealed and tampered fixture with pyHanko and EU DSS too.
+- **Verify without us.** A completed PDF is verifiable in the browser (the verifier in WebAssembly; the file is not
+  uploaded), offline, or with the `openseal` command line, with no account and no server.
+- **Keys where you want them.** Signing keys live in your HSM behind PKCS#11, in a separate signing service (keyd)
+  that never sees documents; cloud KMS backends are planned (`KEYD-01`).
 - **An API you already know.** Envelopes, recipients, routing orders, fields, templates, embedded views and signed
   webhooks, in the shapes DocuSign and SignNow integrators expect.
 
@@ -62,7 +70,8 @@ docker compose exec -e OPENSEAL_ADMIN_PASSWORD='a long passphrase' server \
 This is a **development** deployment: a generated certificate authority, a software HSM for the sealing key and a
 local timestamp authority, so seals validate only against that CA. Configuration, services and production notes are
 in [docs/65](docs/65-RUNNING-IT.md). To look at the web app without any server, run `python3 -I tools/serve-webapp.py`
-and open <http://127.0.0.1:8130/app.html?mock=1> (demo mode; sign in as `demo@openseal.test` / `openseal-demo-1`).
+and open <http://127.0.0.1:8130/app.html?mock=1> (demo mode; sign in as `demo@openseal.test` / `openseal-demo-1`),
+or try the same demo on the website with nothing installed.
 
 ## Status
 
