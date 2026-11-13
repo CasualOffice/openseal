@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE organization_admins SET role = $3, permission_set_id = CASE WHEN $3 = 'delegated' THEN permission_set_id END, workspace_scope = CASE WHEN $3 = 'delegated' THEN workspace_scope END WHERE organization_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c064df6fd574cf795a4d46a6cc98692df54886a8539c5bfa65c27d5fb8ca09d4"
+}
