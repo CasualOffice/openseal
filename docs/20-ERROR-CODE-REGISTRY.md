@@ -160,7 +160,7 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-API-0011 | A request with this idempotency key is still in progress (409) |
 | CS-API-0012 | Method not allowed (405) |
 | CS-API-0013 | Webhook URL refused: not HTTPS to a public address (SEC-W01) |
-| CS-API-0014 | Recipient authentication method not available on this server (one-time codes until slice 5) |
+| CS-API-0014 | Recipient authentication method not available: not required of this recipient, not a sent code (`email_otp`, `sms_otp`, `voice_otp`), or nowhere to send it (no address or phone number) |
 | CS-API-0015 | The user is also a member of another account: only they may change their password or name (403, `SEC-ID-01`); from the store's `CS-DB-0009` with SQLSTATE `OS003` |
 | CS-AUTH-0001 | Not authenticated |
 | CS-AUTH-0002 | Token expired or revoked |
@@ -240,6 +240,7 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 | CS-WRK-0014 | No payment gateway configured (slice 13). *Final* |
 | CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job |
 | CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |
+| CS-WRK-0017 | The SMS or voice provider did not accept a one-time code message (its HTTP status, when it answered); retried within the code's attempts (VS-05) |
 
 ## Platform console (`casual-sign-console`, `casual-sign-platform-store`; `CON-02`, `CON-03`, `CON-04`)
 

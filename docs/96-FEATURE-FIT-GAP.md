@@ -130,7 +130,7 @@ instructions 8 and 9).
 | FG-116 | Decline with reason | DS, SN | Build | 2 | Works |
 | FG-117 | Access code | DS, SN | Build | 5 | Works |
 | FG-118 | Email OTP | — | Build | 5 | Works |
-| FG-119 | SMS OTP, phone call | DS, SN | Plugin | 5 | Designed |
+| FG-119 | SMS OTP, phone call | DS, SN | Plugin | 5 | Partial: `sms_otp` and `voice_otp` built through the worker's `Messenger` with an HTTPS gateway, in the signing page and the editor (VS-05, `tests/sms_otp.rs`); provider adapters `MSG-01`; no browser run on the real stack yet (`RAUTH-02`) |
 | FG-120 | Knowledge-based authentication | DS | Plugin | 18 | — |
 | FG-121 | ID verification (document + selfie, eID) | DS | Plugin | 18 | — |
 | FG-122 | Kiosk mode | SN | Build | 14 | — |

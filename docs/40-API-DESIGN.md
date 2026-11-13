@@ -347,8 +347,11 @@ documents, which needs a PDF merge the engine does not have (proposed row). `GET
 an `HttpOnly`, `SameSite=Strict`, `Secure` cookie, `Secure` dropped only with the staff cookie's development
 setting `OPENSEAL_DEV_INSECURE_KEY=1`, since WebKit keeps no `Secure` cookie over `http://localhost`); any other
 browser is `403 CS-AUTH-0009`. Changing calls must be
-`application/json`. Access codes are Argon2id (SEC-A03); one-time codes by email or SMS answer `CS-API-0014` until
-slice 5. `POST /s/{token}/adopt` stores the image, then the capture document the seal job reads
+`application/json`. Access codes are Argon2id (SEC-A03). One-time codes (SEC-A02): `POST /s/{token}/otp {method?}`
+sends one by email (`email_otp`, the default), SMS (`sms_otp`) or a voice call (`voice_otp`, read digit by digit), the
+last two to the recipient's E.164 `phone` (required with them, `422` otherwise) through the worker's `Messenger`
+(slice 5, VS-05); `POST /s/{token}/otp/verify {code, method?}` passes the open code's method. `CS-API-0014` for a
+method the recipient does not require. `POST /s/{token}/adopt` stores the image, then the capture document the seal job reads
 (`{"kind":"image","image":"<hex>"}`), and answers its hash as `adoption_id`; a signature or initials value must name
 a capture this recipient adopted (`422 CS-API-0001` otherwise), so no value can draw another person's capture.
 `POST /s/{token}/withdraw-consent` withdraws consent to electronic records (declining a required action).

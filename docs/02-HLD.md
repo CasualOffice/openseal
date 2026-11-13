@@ -178,7 +178,7 @@ Each has already been paid for there.
 | Trust | `TrustStore` (value) | Bundled Mozilla roots plus operator roots; EU LOTL for verification | AATL list (operator-supplied) |
 | Object storage | `BlobStore` (server) | Local filesystem; S3-compatible | Azure Blob, GCS |
 | Email | `Mailer` | SMTP | SES, SendGrid, Postmark |
-| SMS / voice | `Messenger` | Disabled | Twilio, Vonage, MessageBird |
+| SMS / voice | `Messenger` | Disabled | Built: an HTTPS gateway (`HttpGateway`, VS-05); Twilio, Vonage, MessageBird adapters `MSG-01` |
 | Identity verification | `IdentityVerifier` | Disabled | Onfido, Veriff, Persona, eID schemes, BankID |
 | Payments | `PaymentGateway` | Disabled | Stripe |
 | Document conversion | `Converter` | Sister engines (OpenDoc, OpenCalc, OpenPresent PDF export) where present; LibreOffice in a sandboxed container | — |
