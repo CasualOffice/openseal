@@ -112,8 +112,8 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // 0022 `folder_envelopes` (UXW-02), a tenant table; 0025 `usage_ledger`,
     // `usage_counters` and `usage_blob_refs`, tenant tables, and `org_usage_counters`,
     // an organization table (PLAN-03); 0028 `quota_notices`, an organization table
-    // (PLAN-04).
-    assert_eq!(tables.len(), 59, "{tables:?}");
+    // (PLAN-04); 0023 `password_resets` and `member_profiles` (UXW-37, UXW-38), tenant tables.
+    assert_eq!(tables.len(), 61, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_admin_events",

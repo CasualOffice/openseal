@@ -270,6 +270,7 @@ export const SIGN = {
   "sign.later.expires": "This envelope expires on {date}.",
   "sign.done.verify-link": "Verify page",
   "sign.done.print": "Print",
+  "sign.done.certificate": "Certificate of completion",
   "sign.review.values-button": "Review values ({n})",
   "sign.history.created": "Created by the sender",
   "sign.history.sent-you": "The envelope was sent to you",

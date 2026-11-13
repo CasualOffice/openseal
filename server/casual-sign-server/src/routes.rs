@@ -842,6 +842,13 @@ pub fn table() -> Vec<Route> {
             ceremony::download,
         ),
         r(
+            "GET",
+            "/s/{token}/certificate",
+            Public,
+            JSON,
+            ceremony::certificate,
+        ),
+        r(
             "POST",
             "/s/{token}/documents/{doc}/viewed",
             Public,

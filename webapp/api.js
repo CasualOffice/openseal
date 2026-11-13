@@ -584,6 +584,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// WEB-06: after finishing, the sealed copy once complete, else a preview.
       download: async (token, doc) =>
         (await request("GET", `${S(token)}/document`, { raw: true, ceremony: true, query: doc ? { doc } : undefined })).blob,
+      /// VS-01: after finishing, the certificate of completion once the envelope completes.
+      certificate: async (token) =>
+        (await request("GET", `${S(token)}/certificate`, { raw: true, ceremony: true })).blob,
       // WEB-06 (G-S2): the envelope's history as this recipient may see it, and
       // reassignment when the envelope allows it (WEB-07). History events are
       // `{seq, type, at, by}`, `type` the audit event type (`recipient.signed`, …).
