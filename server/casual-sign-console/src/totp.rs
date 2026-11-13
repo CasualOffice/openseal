@@ -83,12 +83,13 @@ pub fn matching_step(key: &[u8], entered: &str, now_step: u64) -> Option<u64> {
     .into_iter()
     .flatten()
     {
-        let expected = code(key, step);
-        let diff = expected
-            .bytes()
-            .zip(entered.bytes())
-            .fold(0u8, |acc, (a, b)| acc | (a ^ b));
-        if diff == 0 && found.is_none() {
+        // Constant-time from aws-lc-rs (ADR-006), never a hand-rolled loop (CLAUDE.md, ASVS-12).
+        let equal = aws_lc_rs::constant_time::verify_slices_are_equal(
+            code(key, step).as_bytes(),
+            entered.as_bytes(),
+        )
+        .is_ok();
+        if equal && found.is_none() {
             found = Some(step);
         }
     }

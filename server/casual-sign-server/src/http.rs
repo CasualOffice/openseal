@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use axum::body::{Body, Bytes, to_bytes};
+use axum::body::{Body, Bytes, HttpBody as _, to_bytes};
 use axum::extract::{MatchedPath, Request, State};
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
@@ -108,6 +108,53 @@ pub(crate) async fn request_context(
         "request"
     );
     resp
+}
+
+/// The last-resort answer to a handler that panicked (ASVS-26): `500` problem details
+/// with the request id and nothing else. The panic's message is neither sent nor
+/// logged, since it may carry data; the log line names the request so an operator can
+/// find it.
+pub(crate) fn panicked(_payload: Box<dyn std::any::Any + Send + 'static>) -> Response {
+    tracing::error!(
+        request_id = %crate::error::request_id().unwrap_or_default(),
+        "handler panicked"
+    );
+    ApiError::internal("panic").into_response()
+}
+
+/// Media types a route under `/api/v1` reads besides `application/json`.
+pub(crate) type OtherMedia = &'static [&'static str];
+
+/// `/api/v1` reads JSON (ASVS-09): a request that carries a body, or names a media type,
+/// must say `application/json` (or one of the route's other media, `extra`), else `415
+/// CS-API-0007`. A cross-site HTML form or a "simple" `fetch` can only send
+/// form-encoded, multipart or plain text, so this closes login CSRF and its kind
+/// without relying on `SameSite` alone. A body-less `POST` (an action) passes.
+pub(crate) async fn json_only(
+    State(extra): State<OtherMedia>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let h = req.headers();
+    let media = h.get(header::CONTENT_TYPE).map(|v| {
+        v.to_str()
+            .unwrap_or("")
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+    });
+    let ok = match media.as_deref() {
+        Some(m) => m == "application/json" || extra.contains(&m),
+        // No media type: only an empty body (`Content-Length: 0` or none at all).
+        None => req.body().is_end_stream(),
+    };
+    if ok {
+        next.run(req).await
+    } else {
+        ApiError::unsupported_media().into_response()
+    }
 }
 
 /// The router's own refusals (no route, wrong method, body over the limit, wrong

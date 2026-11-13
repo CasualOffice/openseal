@@ -33,8 +33,17 @@ pub const SCOPES: [&str; 10] = [
     "audit:read",
 ];
 
-/// The cookie that carries a staff session.
-pub(crate) const SESSION_COOKIE: &str = "os_session";
+/// The cookie that carries a staff session: `__Host-os_session` whenever cookies are
+/// `Secure`, so the browser keeps it host-only, on path `/` and over HTTPS, and a
+/// sibling subdomain cannot plant one (ASVS-05); plain `os_session` only for
+/// plain-HTTP development, where a `__Host-` cookie would be refused.
+pub(crate) fn session_cookie(secure: bool) -> &'static str {
+    if secure {
+        "__Host-os_session"
+    } else {
+        "os_session"
+    }
+}
 /// The header that carries a staff session's CSRF token.
 pub(crate) const CSRF_HEADER: &str = "x-csrf-token";
 /// API keys start with this, for secret scanning (SEC-A10).
@@ -360,7 +369,7 @@ pub(crate) async fn authenticate(
         )
         .await;
     }
-    if let Some(secret) = cookie(headers, SESSION_COOKIE) {
+    if let Some(secret) = cookie(headers, session_cookie(state.config().secure_cookies)) {
         let s = state
             .store()
             .entry_points()
@@ -444,7 +453,7 @@ mod tests {
             header::COOKIE,
             HeaderValue::from_static("a=1; os_session=abc; os_sessionx=no"),
         );
-        assert_eq!(cookie(&h, SESSION_COOKIE), Some("abc"));
+        assert_eq!(cookie(&h, "os_session"), Some("abc"));
         assert_eq!(cookie(&h, "b"), None);
         h.insert(
             header::AUTHORIZATION,

@@ -153,10 +153,10 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-API-0004 | Idempotency key reused with a different body |
 | CS-API-0005 | Precondition failed (`If-Match` unreadable); a stale version is `CS-WF-0002` |
 | CS-API-0006 | Request body too large (413) |
-| CS-API-0007 | Unsupported media type (415); ceremony calls that change state must be `application/json` |
+| CS-API-0007 | Unsupported media type (415); ceremony calls that change state, and every `/api/v1` body, must be `application/json` (`ASVS-09`; the token endpoint also takes its RFC 6749 form, a document upload a raw PDF) |
 | CS-API-0008 | Precondition required: `If-Match` absent where it is required (428) |
 | CS-API-0009 | Not available in the object's state (409): a sealed document, certificate or PDF audit report before the seal job made it |
-| CS-API-0010 | Internal error (500); the detail names the failing step, never data |
+| CS-API-0010 | Internal error (500); the detail names the failing step, never data (`panic` for a handler that panicked, `ASVS-26`) |
 | CS-API-0011 | A request with this idempotency key is still in progress (409) |
 | CS-API-0012 | Method not allowed (405) |
 | CS-API-0013 | Webhook URL refused: not HTTPS to a public address (SEC-W01) |

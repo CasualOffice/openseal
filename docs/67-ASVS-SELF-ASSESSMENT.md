@@ -26,8 +26,8 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 176 | 98 | 73 | 5 |
-| Partly | 55 | 15 | 33 | 7 |
+| Met | 182 | 101 | 75 | 6 |
+| Partly | 49 | 12 | 31 | 6 |
 | Not met | 23 | 8 | 10 | 5 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
@@ -41,7 +41,7 @@ operation log, and the append-only hash-chained logs are met, with tests that do
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-30` is closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26` and `ASVS-30` are closed.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
@@ -49,14 +49,14 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-02 | P1 | ASVS 2.1.7; `SEC-A09` | Refuse breached and common passwords at set, change and reset: a bundled list checked offline, optional k-anonymity range lookup configured by the operator |
 | ASVS-03 | P2 | ASVS 2.1.8 | Password strength indication on the set-password screens; needs the owner's design approval before any UI change |
 | ASVS-04 | P1 | ASVS 2.2.3, 2.5.5 | Email the user when their password is changed, reset or set from an invitation, and when a factor is added or removed (no secret in the mail) |
-| ASVS-05 | P1 | ASVS 3.2.3, 3.4.4 | Name the staff session cookie `__Host-os_session` whenever cookies are `Secure` (and the ceremony cookie with a `__Host-` or narrowest-path equivalent) |
+| ASVS-05 (Done) | P1 | ASVS 3.2.3, 3.4.4 | Closed 2026-11-13: the staff cookie is `__Host-os_session` whenever `Secure`; the ceremony cookie keeps `Path=/s/`. Was: Name the staff session cookie `__Host-os_session` whenever cookies are `Secure` (and the ceremony cookie with a `__Host-` or narrowest-path equivalent) |
 | ASVS-06 | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
 | ASVS-07 | P1 | ASVS 3.7.1, 4.3.3 | Step-up re-authentication (password or second factor within the last 5 minutes) before creating API clients or keys, granting administrator profiles, changing webhook URLs and changing the user's email |
 | ASVS-08 | P1 | ASVS 1.7.1, 1.7.2, 2.8.5, 7.1.3, 7.1.4, 7.2.1, 7.2.2, 8.3.5, 9.2.5; `SEC-D01` stays (no personal data) | Security event log: staff sign-in success and failure, logout, reset, lockout, operator TOTP rejection, rate-limit hits and every 401/403 with request id and a hashed principal; one JSON log format across server, worker, keyd and modeld; staff document downloads recorded; worker logs keyd and TSA connection failures with their code; docs/65 explains shipping logs to a remote collector |
-| ASVS-09 | P1 | ASVS 4.2.2, 13.1.5, 13.2.5 | `/api/v1` refuses a request body that is not `Content-Type: application/json` (`415`), including `POST /auth/login`, closing login CSRF by a cross-site form |
+| ASVS-09 (Done) | P1 | ASVS 4.2.2, 13.1.5, 13.2.5 | Closed 2026-11-13: `/api/v1` answers `415 CS-API-0007` to a body that is not JSON. Was: `/api/v1` refuses a request body that is not `Content-Type: application/json` (`415`), including `POST /auth/login`, closing login CSRF by a cross-site form |
 | ASVS-10 | P2 | ASVS 12.3.4, 14.4.2 | `Content-Disposition` on API responses (`attachment` for JSON; `attachment` or `inline` with a server-made filename for documents and certificates) |
 | ASVS-11 | P1 | ASVS 12.4.2 | Malware scanning seam for uploads: an optional scanner (ICAP or ClamAV in its own container) called before admission, its verdict recorded in the audit chain |
-| ASVS-12 | P2 | ASVS 6.2.8 | Replace the hand-rolled hash comparison `same` in `-server/src/crypto.rs` (and any copy in the console) with a vetted constant-time primitive (`subtle` or `aws-lc-rs`), per CLAUDE.md: cryptography is never hand-rolled |
+| ASVS-12 (Done) | P2 | ASVS 6.2.8 | Closed 2026-11-13: comparisons call `aws_lc_rs::constant_time`. Was: Replace the hand-rolled hash comparison `same` in `-server/src/crypto.rs` (and any copy in the console) with a vetted constant-time primitive (`subtle` or `aws-lc-rs`), per CLAUDE.md: cryptography is never hand-rolled |
 | ASVS-13 | P1 | ASVS 8.1.4, 11.1.7, 11.1.8; `VS-20` | Detect and alert on abnormal activity: request and 429 rates per principal and address, authentication failure bursts, mass downloads, bulk voids; thresholds configurable; alerts to the operator's channel |
 | ASVS-14 | P1 | ASVS 8.1.5, 8.1.6; `SEC-D02` | Backups encrypted with separate keys, with a documented and tested restore drill that verifies the audit chain, admin logs and keyd's operation log after restore |
 | ASVS-15 | P1 | ASVS 1.14.2, 10.3.2, 14.1.1, 14.2.5; `SEC-C02` | Sign release images with cosign and document verification at deploy; an SBOM for the source tree and vendored web files beside the image SBOMs |
@@ -70,11 +70,12 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-23 | P2 | ASVS 10.1.1, 10.2.3 to 10.2.6 (L3) | Malicious-code review for ceremony, sealing and keyd: a static scan for hard-coded credentials, time comparisons and hidden routes in CI, and a recorded manual review (feeds `SEC-REV-01`) |
 | ASVS-24 | P2 | ASVS 14.1.5 (L3 sealing, keyd) | keyd and the worker log the SHA-256 of their security configuration (allow list, client CA, trust anchors, TSA list) at start and refuse a change without a restart; the operator can compare it |
 | ASVS-25 | P2 | ASVS 8.3.6 | Hold passwords, one-time codes and link tokens from requests in zeroizing buffers and drop them after use |
-| ASVS-26 | P1 | ASVS 7.4.3 | A last-resort panic layer on the server answering `500` problem details with the request id (and the same in the console) |
+| ASVS-26 (Done) | P1 | ASVS 7.4.3 | Closed 2026-11-13 for the server; the console's layer is `ASVS-34`. Was: A last-resort panic layer on the server answering `500` problem details with the request id (and the same in the console) |
 | ASVS-27 | P2 | ASVS 1.1.3 | A security-constraint line in docs/14 rows that add a user-facing feature (who may do it, what is refused), checked when the row is written |
 | ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key | Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
 | ASVS-29 | P2 | ASVS 2.4.5 | Optional password pepper held outside the database (a secret file through `casual-sign-secrets`), with rehash on login |
 | ASVS-30 (Done) | P2 | ASVS 5.2.3 | Closed 2026-11-13: the test went red without the guard and docs/07 `SEC-M02` was updated. Was: docs/07 `SEC-M02` still read Planned although `-worker/src/email.rs` refuses CR/LF and encodes headers: confirm its test goes red without the guard and update the row |
+| ASVS-34 | P2 | ASVS 7.4.3 | The console's last-resort panic layer answering a `500` problem, as the server's since `ASVS-26` |
 
 Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KEYD-01` (cloud KMS), `SEAL-14`
 (SHA-1 only for identifiers).
@@ -308,7 +309,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 3.2.1 | 1 | All | New session token on authentication | Met | `login_inner` mints a new random secret and session row per login (`admin.rs`) | — |
 | 3.2.2 | 1 | All | Session tokens 64+ bits | Met | 256 bits (`random_secret`, `-server/src/crypto.rs`) | — |
-| 3.2.3 | 1 | All | Tokens stored in browser securely | Partly | Cookies `HttpOnly`, `Secure`, `SameSite`; staff cookie lacks the `__Host-` prefix | ASVS-05 |
+| 3.2.3 | 1 | All | Tokens stored in browser securely | Met | Cookies `HttpOnly`, `Secure`, `SameSite`; the staff cookie is `__Host-os_session` whenever `Secure` (`-server/src/auth.rs` `session_cookie`; `-server/tests/web.rs` `the_staff_session_cookie_is_host_prefixed_whenever_it_is_secure`) | ASVS-05 |
 | 3.2.4 | 2 | All | Tokens from approved algorithms | Met | `aws_lc_rs::rand::SystemRandom` | — |
 
 **V3.3 Session Termination**
@@ -327,7 +328,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 3.4.1 | 1 | All | Cookies `Secure` | Met | `Secure` unless plain-HTTP development (`Config::secure_cookies`; `-server/tests/web.rs` `the_ceremony_cookie_is_secure_unless_the_server_is_plain_http_development`) | — |
 | 3.4.2 | 1 | All | Cookies `HttpOnly` | Met | `cookie()` in `admin.rs`; ceremony cookie `ceremony.rs` | — |
 | 3.4.3 | 1 | All | Cookies `SameSite` | Met | Staff `SameSite=Lax`, ceremony `SameSite=Strict` | — |
-| 3.4.4 | 1 | All | `__Host-` prefix | Partly | Operator cookie `__Host-os_op`; staff cookie `os_session` and ceremony cookie have no prefix | ASVS-05 |
+| 3.4.4 | 1 | All | `__Host-` prefix | Met | Operator cookie `__Host-os_op`; staff cookie `__Host-os_session` whenever `Secure` (plain `os_session` only for plain-HTTP development); the ceremony cookie keeps the narrowest path instead (`Path=/s/`, `SameSite=Strict`, `Secure`), which `__Host-` would forbid | ASVS-05 |
 | 3.4.5 | 1 | All | Path attribute narrowest practical | Met | Ceremony cookie `Path=/s/`; staff cookie `Path=/` (the app and API share one origin) | — |
 
 **V3.5 Token-based Session Management**
@@ -368,7 +369,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 4.2.1 | 1 | All | IDOR protection | Met | Tenancy-scoped repository plus RLS; `-server/tests/isolation.rs` `another_accounts_ids_are_not_found_with_rls`/`_without_rls`; `-store/tests/isolation.rs`; `SEC-A04` | — |
-| 4.2.2 | 1 | All | Strong anti-CSRF | Partly | CSRF token on every changing session request (`auth.rs` `CSRF_HEADER`; `-server/tests/auth.rs` `..._missing_csrf_are_refused`); ceremony requires `application/json`; `POST /auth/login` accepts any content type (login CSRF) | ASVS-09 |
+| 4.2.2 | 1 | All | Strong anti-CSRF | Met | CSRF token on every changing session request (`auth.rs` `CSRF_HEADER`; `-server/tests/auth.rs` `..._missing_csrf_are_refused`); ceremony requires `application/json`; every `/api/v1` body, `POST /auth/login` included, must be `application/json` (`-server/src/http.rs` `json_only`, `415 CS-API-0007`), so a cross-site form cannot log in | ASVS-09 |
 
 **V4.3 Other Access Control Considerations**
 
@@ -456,7 +457,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 6.2.5 | 2 | All | No insecure modes (ECB, PKCS#1 v1.5) | Partly | keyd supports RSA PKCS#1 v1.5 signatures for compatibility with readers (docs/31); SHA-1 only for identifiers (`SEAL-14`) | SEAL-14 |
 | 6.2.6 | 2 | All | Nonces/IVs not reused | Met | RFC 3161 nonces random per request (`SEC-S09`); no IV-based encryption | — |
 | 6.2.7 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): encrypted data authenticated | Met | No data encrypted; every sealed document and timestamp is signed and verified independently (`-worker/src/seal.rs`) | — |
-| 6.2.8 | 3 | Ceremony, sealing, keyd | L3 (ceremony, sealing, keyd): constant-time operations | Partly | Argon2 verify is constant-time; token-hash comparison is a hand-rolled fold (`-server/src/crypto.rs` `same`), not a vetted constant-time primitive | ASVS-12 |
+| 6.2.8 | 3 | Ceremony, sealing, keyd | L3 (ceremony, sealing, keyd): constant-time operations | Met | Argon2 verify is constant-time; token-hash and TOTP code comparisons call `aws_lc_rs::constant_time::verify_slices_are_equal` (`-server/src/crypto.rs` `same`, `-server/src/totp.rs`, and the console's copies) | ASVS-12 |
 
 **V6.3 Random Values**
 
@@ -506,7 +507,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 7.4.1 | 1 | All | Generic error messages with an id | Met | RFC 9457 problem details: fixed title per code plus request id (`-server/src/error.rs`) | — |
 | 7.4.2 | 2 | All | Exception handling across the codebase | Met | Typed `Result` errors; untrusted input never panics (CLAUDE.md; fuzz targets in `fuzz/`) | — |
-| 7.4.3 | 2 | All | Last-resort error handler | Partly | A handler panic is confined to its connection by the runtime, but no layer catches it and answers a problem with the request id (no `CatchPanic` in `-server/src/http.rs`) | ASVS-26 |
+| 7.4.3 | 2 | All | Last-resort error handler | Partly | The server catches a handler panic and answers `500 CS-API-0010` with the request id (`-server/src/routes.rs` `finish`, `http.rs` `panicked`; `routes::tests::a_handler_that_panics_answers_a_problem_with_the_request_id_only`); the console has no such layer yet | ASVS-26, ASVS-34 |
 
 ### V8 Data Protection
 
@@ -661,7 +662,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 13.1.2 | 3 | — | Deleted in 4.0.3 (duplicate of 4.3.1) | Deleted | — | — |
 | 13.1.3 | 1 | All | API URLs expose no secrets | Partly | `/api/v1` takes credentials in headers or cookies only; the ceremony path carries the link token (3.1.1) | ASVS-20 |
 | 13.1.4 | 2 | All | Authorization at URI and resource level | Met | Route guard plus per-object tenancy check | — |
-| 13.1.5 | 2 | All | Unexpected content types rejected | Partly | Ceremony: state-changing calls must be `application/json` (`ceremony.rs`); `/api/v1` does not check `Content-Type` | ASVS-09 |
+| 13.1.5 | 2 | All | Unexpected content types rejected | Met | Ceremony: state-changing calls must be `application/json` (`ceremony.rs`); `/api/v1` refuses any other media type, or a body without one, with `415 CS-API-0007` (`http.rs` `json_only`; the token endpoint's RFC 6749 form and a raw PDF upload named per route; `routes::tests::api_v1_refuses_a_body_that_is_not_json`) | ASVS-09 |
 
 **V13.2 RESTful Web Service**
 
@@ -671,7 +672,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 13.2.2 | 1 | All | JSON schema validation before accepting input | Met | Typed `serde` structs with `deny_unknown_fields`; OpenAPI contract test | — |
 | 13.2.3 | 1 | All | Cookie-based REST protected from CSRF | Met | CSRF token header on every changing staff request; ceremony `SameSite=Strict` and JSON-only | — |
 | 13.2.4 | 3 | — | Deleted in 4.0.3 (duplicate of 11.1.4) | Deleted | — | — |
-| 13.2.5 | 2 | All | REST services check the incoming Content-Type | Partly | As 13.1.5 | ASVS-09 |
+| 13.2.5 | 2 | All | REST services check the incoming Content-Type | Met | As 13.1.5 | ASVS-09 |
 | 13.2.6 | 2 | All | Messages trustworthy in transit | Met | HTTPS at the edge with HSTS; webhook payloads HMAC-signed (`SEC-W02`); keyd requests over mTLS | — |
 
 **V13.3 SOAP Web Service**

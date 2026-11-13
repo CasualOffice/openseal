@@ -28,8 +28,8 @@ casual-sign-secrets = { path = "../casual-sign-secrets" }
 axum = { version = "0.8.4", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path", "original-uri"] }
 tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
-# Body size limits. MIT.
-tower-http = { version = "0.6.6", default-features = false, features = ["limit"] }
+# Body size limits and the last-resort panic answer (ASVS-26). MIT.
+tower-http = { version = "0.6.6", default-features = false, features = ["limit", "catch-panic"] }
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"
 uuid = { version = "1.10", features = ["v7", "serde"] }

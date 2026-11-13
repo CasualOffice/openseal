@@ -8,12 +8,13 @@ use axum::extract::DefaultBodyLimit;
 use axum::handler::Handler;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
+use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
     admin, bulk, envelopes as env, folders, mfa, ml, org, switch, templates, webhooks,
 };
 use crate::ceremony;
-use crate::http::{Guard, guard, request_context};
+use crate::http::{Guard, OtherMedia, guard, json_only, panicked, request_context};
 use crate::state::AppState;
 
 /// Who may call a route.
@@ -1038,10 +1039,127 @@ pub fn app(state: AppState) -> Router {
                 guard,
             ));
         }
+        if route.path.starts_with("/api/v1/") {
+            // ASVS-09, outside the guard (a refused body needs no authentication): JSON
+            // only, but for the token endpoint's RFC 6749 form and a raw PDF upload.
+            let extra: OtherMedia = match route.path {
+                "/api/v1/oauth/token" => &["application/x-www-form-urlencoded"],
+                "/api/v1/envelopes/{id}/documents" => &["application/pdf"],
+                _ => &[],
+            };
+            h = h.route_layer(from_fn_with_state(extra, json_only));
+        }
         router = router.route(route.path, h);
     }
+    finish(router, state)
+}
+
+/// Around the routes: problem details for anything unmatched, the last-resort panic
+/// answer, and the request middleware.
+fn finish(router: Router<AppState>, state: AppState) -> Router {
     router
         .fallback(crate::web::fallback)
+        // ASVS-26: inside the request context, so the answer carries the request id.
+        .layer(CatchPanicLayer::custom(panicked))
         .layer(from_fn_with_state(state.clone(), request_context))
         .with_state(state)
+}
+
+#[cfg(test)]
+// Test code: a panic is the failure report (CLAUDE.md).
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::get;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::state::{Blobs, Config, SystemClock};
+
+    /// An application whose database is never reached: a lazy pool on a closed port.
+    fn offline() -> AppState {
+        let pool = sqlx::postgres::PgPool::connect_lazy("postgres://nobody:none@127.0.0.1:9/none")
+            .unwrap();
+        let dir = std::env::temp_dir().join(format!("os-routes-{}", uuid::Uuid::now_v7()));
+        AppState::new(
+            casual_sign_store::Store::from_pool(pool),
+            Blobs::Fs(Arc::new(
+                casual_sign_store::blob::FsBlobStore::new(dir).unwrap(),
+            )),
+            crate::crypto::JwtKeys::generate().unwrap(),
+            Arc::new(SystemClock),
+            Config::default(),
+        )
+        .unwrap()
+    }
+
+    async fn call(app: Router, req: Request<Body>) -> (StatusCode, String, String) {
+        let r = app.oneshot(req).await.unwrap();
+        let id = r.headers()["x-request-id"].to_str().unwrap().to_owned();
+        let status = r.status();
+        let body = r.into_body().collect().await.unwrap().to_bytes();
+        (status, id, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    async fn boom() -> &'static str {
+        panic!("secret-in-panic")
+    }
+
+    /// ASVS-26: a handler that panics answers `500` problem details carrying the request
+    /// id, and nothing of the panic.
+    #[tokio::test]
+    async fn a_handler_that_panics_answers_a_problem_with_the_request_id_only() {
+        let st = offline();
+        let routes: Router<AppState> = Router::new().route("/boom", get(boom));
+        let req = Request::get("/boom").body(Body::empty()).unwrap();
+        let (status, id, body) = call(finish(routes, st), req).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(body.contains("CS-API-0010") && body.contains(&id), "{body}");
+        assert!(!body.contains("secret-in-panic"), "{body}");
+    }
+
+    /// ASVS-09: a cross-site form or a `text/plain` fetch cannot log in or create; the
+    /// refusal comes before the handler or the guard (no database is reached).
+    #[tokio::test]
+    async fn api_v1_refuses_a_body_that_is_not_json() {
+        let app = app(offline());
+        for (path, media, body) in [
+            (
+                "/api/v1/auth/login",
+                "text/plain",
+                r#"{"email":"a@b","password":"x"}"#,
+            ),
+            (
+                "/api/v1/auth/login",
+                "application/x-www-form-urlencoded",
+                "email=a%40b&password=x",
+            ),
+            (
+                "/api/v1/envelopes",
+                "application/x-www-form-urlencoded",
+                "subject=x",
+            ),
+            (
+                "/api/v1/envelopes",
+                "multipart/form-data; boundary=b",
+                "--b--",
+            ),
+        ] {
+            let req = Request::post(path)
+                .header("content-type", media)
+                .body(Body::from(body))
+                .unwrap();
+            let (status, _, problem) = call(app.clone(), req).await;
+            assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{path} {media}");
+            assert!(problem.contains("CS-API-0007"), "{problem}");
+        }
+        let bare = Request::post("/api/v1/auth/login")
+            .body(Body::from("{}"))
+            .unwrap();
+        assert_eq!(call(app, bare).await.0, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
 }

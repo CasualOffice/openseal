@@ -446,6 +446,20 @@ rate. Not built yet: WebAuthn (`CON-13`), `administrators` as the default policy
 lost factor and regenerating recovery codes (`ASVS-32`). The web app shows the code step and enrolment on the sign-in
 card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a QR code is `ASVS-33`.
 
+## As built (`ASVS-05`, `ASVS-09`, `ASVS-26`)
+
+- **Session cookie name.** Wherever cookies are `Secure` (every deployment but plain-HTTP development), the staff
+  session cookie is `__Host-os_session` (`Path=/`, no `Domain`), and only that name authenticates, so a cookie a
+  sibling subdomain plants under another name is ignored; plain-HTTP development uses `os_session`. The ceremony
+  cookie keeps the narrowest path (`Path=/s/`, `SameSite=Strict`) instead of a `__Host-` name, which requires `/`.
+- **JSON only.** Every `/api/v1` request that names a media type other than `application/json` (parameters such as
+  `charset` allowed), or carries a body without one, is `415 CS-API-0007`, before authentication. Two routes take one
+  more: `POST /oauth/token` the RFC 6749 form (`application/x-www-form-urlencoded`) and `POST /envelopes/{id}/documents`
+  a raw `application/pdf`. A body-less action (`POST …/send`) needs no `Content-Type`. A cross-site HTML form therefore
+  cannot reach `POST /auth/login` or any other route.
+- **A panic is a problem.** A handler that panics answers `500 CS-API-0010` (`detail: panic`) with the request id;
+  the panic's message is neither sent nor logged.
+
 ## As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`)
 
 | Endpoint | As built |

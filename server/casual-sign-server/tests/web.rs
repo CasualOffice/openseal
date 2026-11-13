@@ -522,6 +522,67 @@ async fn the_ceremony_cookie_is_secure_unless_the_server_is_plain_http_developme
     }
 }
 
+/// Row ASVS-05: the staff session cookie is `__Host-os_session` (`Secure`, `Path=/`, no
+/// `Domain`) whenever cookies are `Secure`, and only that name authenticates; plain
+/// `os_session` only for plain-HTTP development.
+#[tokio::test]
+async fn the_staff_session_cookie_is_host_prefixed_whenever_it_is_secure() {
+    for secure in [true, false] {
+        let Some(api) = Api::with("web_staff_cookie", Rls::On, |c| c.secure_cookies = secure).await
+        else {
+            return;
+        };
+        let a = api.tenant("alpha").await;
+        let login = api
+            .call(
+                "POST",
+                "/api/v1/auth/login",
+                &Auth::None,
+                Some(json!({"email": a.email, "password": common::harness::PASSWORD})),
+                &[],
+            )
+            .await;
+        assert_eq!(login.status, StatusCode::OK);
+        let set = header(&login, "set-cookie");
+        let (name, _) = set.split_once('=').unwrap();
+        let want = if secure {
+            "__Host-os_session"
+        } else {
+            "os_session"
+        };
+        assert_eq!(name, want, "{set}");
+        assert!(
+            set.contains("; Path=/;") && !set.contains("Domain"),
+            "{set}"
+        );
+        assert_eq!(set.contains("; Secure"), secure, "{set}");
+        let Auth::Session { cookie, csrf } = common::harness::session_of(&login) else {
+            panic!("a session");
+        };
+        let me = |name: &'static str| {
+            let cookie = format!("{name}={cookie}");
+            let api = &api;
+            let csrf = csrf.clone();
+            async move {
+                api.send(
+                    "GET",
+                    "/api/v1/users/me",
+                    &Auth::None,
+                    Body::empty(),
+                    &[("cookie", &cookie), ("x-csrf-token", &csrf)],
+                )
+                .await
+                .status
+            }
+        };
+        assert_eq!(me(want).await, StatusCode::OK);
+        if secure {
+            // A cookie a sibling subdomain could plant under the bare name is ignored.
+            assert_eq!(me("os_session").await, StatusCode::UNAUTHORIZED);
+        }
+    }
+}
+
 /// Row UX-12: a draft's saved recipient changes type through `PATCH`, and the change
 /// is stored (read back after a fresh `GET`); a correction may not change it.
 #[tokio::test]

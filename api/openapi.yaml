@@ -31,8 +31,8 @@ components:
     session:
       type: apiKey
       in: cookie
-      name: os_session
-      description: Staff session from `/api/v1/auth/login`; changing requests also send `X-CSRF-Token`.
+      name: __Host-os_session
+      description: Staff session from `/api/v1/auth/login` (named `os_session` only on a plain-HTTP development server); changing requests also send `X-CSRF-Token`. Every request body is `application/json` (else `415 CS-API-0007`).
   parameters:
     ifMatch:
       name: If-Match
