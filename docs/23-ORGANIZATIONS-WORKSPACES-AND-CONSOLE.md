@@ -261,12 +261,12 @@ Built as sketched above, with these decisions taken within the design (each test
 - **An organization admin is a member.** A `BEFORE INSERT OR UPDATE OF organization_id, user_id` trigger on
   `organization_admins` refuses a user who is not an enabled member of a workspace of that organization (SQLSTATE
   `23503`, constraint `organization_admin_is_a_member`, store `CS-DB-0008`); the foreign key to `users` ignores row
-  security, so without it a user of another organization could be named. ORG-03's routes also check it, with their
-  own error code. A membership disabled later leaves the row; removal is ORG-03's. Test:
+  security, so without it a user of another organization could be named. ORG-03's routes also check it, answering
+  `422 CS-ORG-0018`. A membership disabled later leaves the row; removal is ORG-03's. Test:
   `organizations.rs::an_organization_admin_must_be_a_member_of_one_of_its_workspaces`, seen red without the trigger.
 - **The last-owner constraint** fires on UPDATE or DELETE of an `owner` row and raises SQLSTATE `23514` with
   constraint `organization_keeps_an_owner` (store `CS-DB-0008`, `StoreError::is_last_owner`; the API code `CS-ORG-0008`
-  is issued with ORG-03's routes). An organization that never had an owner (an account with no admin at migration) can
+  is issued by ORG-03's routes). An organization that never had an owner (an account with no admin at migration) can
   still gain administrators. Disabling an owner's identity (`users.disabled_at`) is not checked here; the platform's
   identity disable (CON-04) must check it.
 - **Backfill** makes owners of admin-profile members whose membership is enabled; a disabled one is not an owner.
@@ -280,7 +280,7 @@ Built as sketched above, with these decisions taken within the design (each test
   create the role first (`CREATE ROLE openseal_org_mover NOLOGIN NOINHERIT`). With that, test 6 holds on a
   non-superuser CREATEROLE migrator (`catalog_6_holds_on_a_non_superuser_createrole_migrator`).
 - **Catalog test 1** names `accounts` (keyed on `id`) beside `account_memberships`; `org_workspace_allocations` does
-  not exist yet. The route half of `SEC-O01` waits for ORG-03's routes.
+  not exist yet. The route half of `SEC-O01` is ORG-03's (`tests/organizations.rs`, generated from the route table).
 
 ### 2.2 Roles and permissions
 
@@ -564,8 +564,8 @@ mutation of the migration):
   instead of re-reading the whole log for every page (about N²/limit rows for an export). `GET /admin-events`
   (workspace, `admin:account`) answers JSON or CSV from it; `verify=full` re-verifies the whole log first. A single
   page in the middle does not prove the events before its cursor: an export walks from the start, or asks for
-  `verify=full`. `GET /organizations/me/audit` comes with ORG-03's organization
-  routes, over `OrgTx::admin_events`.
+  `verify=full`. `GET /organizations/me/audit` (ORG-03) answers the organization's
+  log the same way, over `OrgTx::verified_admin_events`, with the same `verify=page|full`.
 
 ## 3. Organization policy and inheritance
 
