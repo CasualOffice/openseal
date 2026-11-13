@@ -74,7 +74,7 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
         }
         // Who must sign in with a second factor (ASVS-01). Requiring one needs the
         // server's sealing key, or nobody could enrol.
-        if k == "mfa_policy" {
+        if k == "mfa_policy" && !v.is_null() {
             match v.as_str() {
                 Some("optional") => {}
                 Some("administrators" | "everyone") => {

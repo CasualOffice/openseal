@@ -10,7 +10,7 @@
 //! against the steps one before and one after now (clock drift); the database makes each
 //! step single-use per user (migration 0032).
 
-use aws_lc_rs::hmac;
+use aws_lc_rs::{constant_time, hmac};
 
 /// Seconds per step (RFC 6238 §4.1, the default `X`).
 pub const STEP_SECONDS: u64 = 30;
@@ -86,12 +86,11 @@ pub fn matching_step(key: &[u8], entered: &str, now_step: u64) -> Option<u64> {
     .into_iter()
     .flatten()
     {
-        let expected = code(key, step);
-        let diff = expected
-            .bytes()
-            .zip(entered.bytes())
-            .fold(0u8, |acc, (a, b)| acc | (a ^ b));
-        if diff == 0 && found.is_none() {
+        // Constant-time from aws-lc-rs (ADR-006), never a hand-rolled loop (CLAUDE.md).
+        let equal =
+            constant_time::verify_slices_are_equal(code(key, step).as_bytes(), entered.as_bytes())
+                .is_ok();
+        if equal && found.is_none() {
             found = Some(step);
         }
     }

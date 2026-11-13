@@ -286,5 +286,17 @@ async fn an_administrator_without_a_second_factor_reaches_only_the_sign_in_steps
         .call("GET", "/api/v1/envelopes", &t.auth, None, &[])
         .await;
     assert_eq!(r.status, StatusCode::OK);
+
+    // Like every other setting, `null` removes the policy: back to the default.
+    let r = api
+        .call(
+            "PATCH",
+            "/api/v1/accounts/me",
+            &t.auth,
+            Some(json!({"settings": {"mfa_policy": null}})),
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
     api.db.drop().await;
 }
