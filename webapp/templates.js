@@ -105,8 +105,8 @@ export function mount(view, ctx) {
       list.append(emptyState({ illus: "templates", title: t("empty.templates.title"), text: t("empty.templates.text"), action: button(t("templates.new"), { icon: "plus", variant: "primary", onClick: () => ctx.navigate("#/templates/new") }), testId: "empty-templates" }));
       return;
     }
-    const shown = matchTemplates(items, search.value);
-    if (!shown.length) {
+    const matches = matchTemplates(items, search.value);
+    if (!matches.length) {
       list.append(emptyState({ illus: "search", title: t("templates.no-match", { query: search.value.trim() }), text: "", action: button(t("action.clear-search"), { variant: "primary", onClick: () => { search.value = ""; search.focus(); render(); } }), testId: "empty-template-search" }));
       return;
     }
@@ -118,7 +118,7 @@ export function mount(view, ctx) {
         h("th", { attrs: { scope: "col" }, class: "os-col-date", text: t("templates.col.used") }),
         h("th", { attrs: { scope: "col" }, class: "os-col-actions", text: t("templates.col.actions") }))));
     const tb = h("tbody");
-    for (const tp of shown) {
+    for (const tp of matches) {
       const href = `#/templates/${encodeURIComponent(tp.id)}`;
       const name = tp.name || t("templates.untitled");
       tb.append(h("tr", { class: "os-row", attrs: { "data-id": tp.id } },
