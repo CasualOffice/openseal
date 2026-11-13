@@ -201,15 +201,52 @@ pub async fn propose(
         .into_response())
 }
 
-/// `POST /console/v1/tsa/changes/{id}/grant`: approve another key custodian's change
-/// (step 2).
+/// `POST /console/v1/tsa/changes/{id}/grant`: approve another key custodian's TSA change
+/// (step 2). Not found for a change of another kind (a seal alias change is granted
+/// through `/console/v1/seal/changes/{id}/grant`).
 pub async fn grant(
     State(state): State<AppState>,
     op: Authed<KeyCustodians>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ConsoleError> {
+    grant_key_change(&state, &op, id, &[KeyAction::TsaSet, KeyAction::TsaRemove]).await
+}
+
+/// `POST /console/v1/tsa/changes/{id}/apply`: apply one's own approved TSA change (step
+/// 3). Not found for a change of another kind.
+pub async fn apply(
+    State(state): State<AppState>,
+    op: Authed<KeyCustodians>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ConsoleError> {
+    apply_key_change(&state, &op, id, &[KeyAction::TsaSet, KeyAction::TsaRemove]).await
+}
+
+/// Whether request `id` is a key change of one of `kinds`, read in `tx`: a route grants
+/// and applies only the changes it is for (not found, `CS-CON-0011`, otherwise).
+async fn of_kind(
+    tx: &mut casual_sign_platform_store::PlatformTx,
+    id: Uuid,
+    kinds: &[KeyAction],
+) -> Result<(), ConsoleError> {
+    let action = tx.approval_action(id).await?;
+    if kinds.iter().any(|k| action.as_deref() == Some(k.as_str())) {
+        Ok(())
+    } else {
+        Err(ConsoleError::NotFound)
+    }
+}
+
+/// Step 2 of a key change of one of `kinds`, shared by the TSA and seal routes.
+pub(crate) async fn grant_key_change(
+    state: &AppState,
+    op: &Authed<KeyCustodians>,
+    id: Uuid,
+    kinds: &[KeyAction],
+) -> Result<StatusCode, ConsoleError> {
     let now = state.now();
     let mut tx = state.store().begin().await?;
+    of_kind(&mut tx, id, kinds).await?;
     if !tx.grant_key_change(&op.token_sha256, id, now).await? {
         return Err(ConsoleError::NotFound);
     }
@@ -222,14 +259,16 @@ pub async fn grant(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `POST /console/v1/tsa/changes/{id}/apply`: apply one's own approved change (step 3).
-pub async fn apply(
-    State(state): State<AppState>,
-    op: Authed<KeyCustodians>,
-    Path(id): Path<Uuid>,
+/// Step 3 of a key change of one of `kinds`, shared by the TSA and seal routes.
+pub(crate) async fn apply_key_change(
+    state: &AppState,
+    op: &Authed<KeyCustodians>,
+    id: Uuid,
+    kinds: &[KeyAction],
 ) -> Result<StatusCode, ConsoleError> {
     let now = state.now();
     let mut tx = state.store().begin().await?;
+    of_kind(&mut tx, id, kinds).await?;
     let action = tx.apply_key_change(&op.token_sha256, id, now).await?;
     // The seal alias's event is the one the worker requires before it seals with the
     // alias (`openseal_seal_alias`, migration 0035).

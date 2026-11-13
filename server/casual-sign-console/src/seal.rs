@@ -5,10 +5,11 @@
 //! (migration 0035). The console proposes only an alias keyd serves now with a certificate
 //! valid at `active_from`; the worker reads the alias per seal job and refuses one keyd
 //! does not serve or whose change is not fully approved (`CS-CON-0006`). Grant and apply
-//! are the key-change steps shared with the TSAs ([`crate::tsa`]).
+//! are the key-change steps shared with the TSAs ([`crate::tsa`]), each route taking only
+//! changes of its own kind. Without `active_from` the change starts when it is applied.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use casual_sign_platform_store::{Detail, KeyAction, SealProfile};
@@ -75,7 +76,7 @@ pub async fn seal(
 pub struct ChangeBody {
     /// keyd's alias for the key to seal with.
     alias: String,
-    /// From when (RFC 3339); now when omitted. Not before now.
+    /// From when (RFC 3339), not before now; omitted, from when the change is applied.
     active_from: Option<String>,
 }
 
@@ -89,7 +90,8 @@ fn alias_ok(s: &str) -> bool {
 /// `POST /console/v1/seal/changes`: propose sealing with another alias from
 /// `active_from` (step 1 of 3). Key custodians, with a second factor entered within 5
 /// minutes. Refused (`CS-CON-0006`, `alias`) unless keyd serves the alias now with a
-/// certificate valid at `active_from`; refused when the console has no keyd to ask.
+/// certificate valid at `active_from` (now, when it is omitted); refused when the console
+/// has no keyd to ask.
 pub async fn propose(
     State(state): State<AppState>,
     op: Authed<KeyCustodians>,
@@ -100,18 +102,21 @@ pub async fn propose(
         return Err(ConsoleError::KeyRefused("alias"));
     }
     // Whole seconds in UTC: the database's pattern, and the instant the payload hashes.
-    let from = match &body.active_from {
-        Some(t) => {
-            OffsetDateTime::parse(t, &Rfc3339).map_err(|_| ConsoleError::Invalid("active_from"))?
-        }
-        None => now,
-    }
-    .to_offset(time::UtcOffset::UTC)
-    .replace_nanosecond(0)
-    .map_err(|_| ConsoleError::Invalid("active_from"))?;
-    if from < now.replace_nanosecond(0).unwrap_or(now) {
+    // Omitted, the database starts the version when the change is applied.
+    let stated = match &body.active_from {
+        Some(t) => Some(
+            OffsetDateTime::parse(t, &Rfc3339)
+                .map_err(|_| ConsoleError::Invalid("active_from"))?
+                .to_offset(time::UtcOffset::UTC)
+                .replace_nanosecond(0)
+                .map_err(|_| ConsoleError::Invalid("active_from"))?,
+        ),
+        None => None,
+    };
+    if stated.is_some_and(|from| from < now.replace_nanosecond(0).unwrap_or(now)) {
         return Err(ConsoleError::KeyRefused("active_from"));
     }
+    let from = stated.unwrap_or(now);
     let Some(client) = state.config().keyd.clone() else {
         return Err(ConsoleError::KeyRefused("alias"));
     };
@@ -126,9 +131,13 @@ pub async fn propose(
     {
         return Err(ConsoleError::KeyRefused("alias"));
     }
-    let from_text = from
-        .format(&Rfc3339)
-        .map_err(|_| ConsoleError::Invalid("active_from"))?;
+    let from_text = match stated {
+        Some(t) => Value::String(
+            t.format(&Rfc3339)
+                .map_err(|_| ConsoleError::Invalid("active_from"))?,
+        ),
+        None => Value::Null,
+    };
     let profile = Uuid::now_v7();
     let payload = json!({ "id": profile, "alias": body.alias, "active_from": from_text });
     let id = Uuid::now_v7();
@@ -158,6 +167,32 @@ pub async fn propose(
         Json(json!({ "id": id, "profile": profile, "active_from": from_text })),
     )
         .into_response())
+}
+
+/// `POST /console/v1/seal/changes/{id}/grant`: approve another key custodian's alias
+/// change (step 2). Not found for a change of another kind.
+pub async fn grant(
+    State(state): State<AppState>,
+    op: Authed<KeyCustodians>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ConsoleError> {
+    crate::tsa::grant_key_change(&state, &op, id, &[KeyAction::SealActivate]).await
+}
+
+/// `POST /console/v1/seal/changes/{id}/apply`: apply one's own approved alias change
+/// (step 3). Not found for a change of another kind; refused (`CS-CON-0006`,
+/// `active_from`) when its stated start has passed.
+pub async fn apply(
+    State(state): State<AppState>,
+    op: Authed<KeyCustodians>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ConsoleError> {
+    // The payload was checked when proposed and is hash-bound, so the database's only
+    // `OS012` at this step is a start already past.
+    match crate::tsa::apply_key_change(&state, &op, id, &[KeyAction::SealActivate]).await {
+        Err(ConsoleError::KeyRefused(_)) => Err(ConsoleError::KeyRefused("active_from")),
+        other => other,
+    }
 }
 
 #[cfg(test)]

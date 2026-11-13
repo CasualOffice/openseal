@@ -14,7 +14,16 @@
 --
 -- The change is the three steps of 0034 with action `seal.activate` and the payload
 -- {"id", "alias", "active_from"}; `active_from` may not be before the moment the change
--- is applied, so no seal already made is ever attributed to a key after the fact.
+-- is applied, so no seal already made is ever attributed to a key after the fact. A null
+-- `active_from` means "from when the change is applied": the row starts at that moment.
+--
+-- An approval is judged as it stood when it was given. A grant of a key change is made
+-- only by `grant_key_change`, which admits only an active key custodian with a fresh
+-- second factor (0034 took key changes out of `platform.grant_approval`), so the grant
+-- row is the record that its approver was one then. Applying also needs the approver to
+-- be an active key custodian still; the worker's read afterwards judges the grant as
+-- given and the approval as spent when the version was applied, so disabling a departed
+-- custodian, or taking the role away, does not stop sealing with an alias they approved.
 
 ALTER TABLE platform.approval_requests DROP CONSTRAINT approval_requests_action_check;
 ALTER TABLE platform.approval_requests ADD CONSTRAINT approval_requests_action_check
@@ -72,9 +81,9 @@ BEGIN
         bad := coalesce(NOT (p_payload ?& ARRAY['id', 'alias', 'active_from'])
             OR (SELECT count(*) FROM jsonb_object_keys(p_payload)) <> 3
             OR jsonb_typeof(p_payload->'alias') <> 'string'
-            OR jsonb_typeof(p_payload->'active_from') <> 'string'
+            OR jsonb_typeof(p_payload->'active_from') NOT IN ('string', 'null')
             OR NOT (p_payload->>'alias') ~ '^[A-Za-z0-9._-]{1,64}$'
-            OR NOT (p_payload->>'active_from')
+            OR NOT coalesce(p_payload->>'active_from', '2000-01-01T00:00:00Z')
                 ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$', true);
     ELSE
         bad := true;
@@ -134,9 +143,13 @@ BEGIN
 END
 $$;
 
--- Whether request `p_request` was granted by a key custodian other than its requester,
--- with a second factor at most 5 minutes old, no later than `p_at`. Internal.
-CREATE FUNCTION platform.key_change_granted(p_request uuid, p_requester uuid, p_at timestamptz)
+-- Whether key change `p_request` was granted, no later than `p_at`, by an operator other
+-- than its requester (a key custodian then: only `grant_key_change` grants a key change)
+-- with a second factor at most 5 minutes old. With `p_still`, the approver must also be
+-- an active key custodian now (applying); without, the grant is judged as given (the
+-- worker's read). Internal.
+CREATE FUNCTION platform.key_change_granted(p_request uuid, p_requester uuid, p_at timestamptz,
+                                            p_still boolean)
 RETURNS boolean
     LANGUAGE sql STABLE
     SET search_path = pg_catalog
@@ -144,7 +157,7 @@ AS $$
     SELECT EXISTS (SELECT 1 FROM platform.approval_grants g
                      JOIN platform.operators o ON o.id = g.approver
                     WHERE g.request_id = p_request AND g.approver <> p_requester
-                      AND 'key_custodian' = ANY (o.roles) AND o.disabled_at IS NULL
+                      AND (NOT p_still OR ('key_custodian' = ANY (o.roles) AND o.disabled_at IS NULL))
                       AND g.granted_at - g.mfa_at <= interval '5 minutes'
                       AND g.granted_at <= p_at)
 $$;
@@ -166,11 +179,12 @@ BEGIN
        OR r.requester <> op
        OR r.payload_sha256 <> sha256(convert_to(p::text, 'UTF8'))
        OR EXISTS (SELECT 1 FROM platform.approval_uses u WHERE u.request_id = p_request)
-       OR NOT platform.key_change_granted(p_request, r.requester, p_now) THEN
+       OR NOT platform.key_change_granted(p_request, r.requester, p_now, true) THEN
         RAISE EXCEPTION 'CS-CON-0004 no unused approval by another key custodian for this change'
             USING ERRCODE = 'OS009';
     END IF;
     PERFORM platform.check_key_payload(r.action, r.target, p);
+    -- A null start is the moment of applying; a stated one may not have passed.
     IF r.action = 'seal.activate' AND (p->>'active_from')::timestamptz < p_now THEN
         RAISE EXCEPTION 'CS-CON-0006 seal.activate active_from is before the change is applied'
             USING ERRCODE = 'OS012';
@@ -187,7 +201,8 @@ BEGIN
         DELETE FROM platform.tsa_endpoints WHERE id = r.target;
     ELSE
         INSERT INTO platform.seal_profiles (id, active_alias, active_from, changed_at, approval)
-        VALUES (r.target, p->>'alias', (p->>'active_from')::timestamptz, p_now, p_request);
+        VALUES (r.target, p->>'alias', coalesce((p->>'active_from')::timestamptz, p_now), p_now,
+                p_request);
     END IF;
     RETURN r.action;
 END
@@ -196,17 +211,20 @@ $$;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA platform FROM PUBLIC;
 
 -- The worker's read, per seal job: the alias in force at `p_at`, the approval that made
--- it and whether that approval is complete (spent, granted by another key custodian,
--- and recorded by the console as `operator.seal.activated` in the operator chain). No
--- row: no alias configured in the database.
+-- it and whether that approval is complete: spent when the version was applied, granted
+-- before then by another operator who was then an active key custodian (judged as given,
+-- not by the approver's state now), and recorded by the console as
+-- `operator.seal.activated` in the operator chain. No row: no alias configured in the
+-- database.
 CREATE FUNCTION openseal_seal_alias(p_at timestamptz)
 RETURNS TABLE (alias text, approval uuid, active_from timestamptz, approved boolean)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path = pg_catalog
 AS $$
     SELECT s.active_alias, s.approval, s.active_from,
-           EXISTS (SELECT 1 FROM platform.approval_uses u WHERE u.request_id = s.approval)
-           AND platform.key_change_granted(s.approval, r.requester, s.changed_at)
+           EXISTS (SELECT 1 FROM platform.approval_uses u
+                    WHERE u.request_id = s.approval AND u.used_at = s.changed_at)
+           AND platform.key_change_granted(s.approval, r.requester, s.changed_at, false)
            AND r.action = 'seal.activate' AND r.target = s.id
            AND EXISTS (SELECT 1 FROM platform.operator_events e
                         WHERE e.action = 'operator.seal.activated'

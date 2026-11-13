@@ -138,6 +138,19 @@ impl PlatformStore {
 }
 
 impl PlatformTx {
+    /// The action of approval request `request`, if there is one: the console grants and
+    /// applies a key change only through the routes for its action.
+    ///
+    /// # Errors
+    /// A database error.
+    pub async fn approval_action(&mut self, request: Uuid) -> Result<Option<String>> {
+        sqlx::query_scalar("SELECT action FROM platform.approval_requests WHERE id = $1")
+            .bind(request)
+            .fetch_optional(&mut *self.tx)
+            .await
+            .map_err(db)
+    }
+
     /// Propose a key change (step 1): the whole payload is stored for the approver.
     ///
     /// # Errors

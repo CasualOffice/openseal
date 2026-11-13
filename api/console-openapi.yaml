@@ -779,7 +779,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/id'
       x-roles: custodians
-      description: Approve another key custodian's TSA change (step 2), with a second factor within 5 minutes. Approving one's own is `CS-CON-0004`.
+      description: Approve another key custodian's TSA change (step 2), with a second factor within 5 minutes. Approving one's own is `CS-CON-0004`. Only a TSA change (`tsa.set`, `tsa.remove`); any other id, a seal alias change included, is `CS-CON-0011` (404).
       responses:
         '204': {description: Granted.}
         default: {$ref: '#/components/responses/Problem'}
@@ -789,7 +789,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/id'
       x-roles: custodians
-      description: Apply one's own TSA change once another key custodian has granted it (step 3), with a second factor within 5 minutes. Without that approval, or a second time, `CS-CON-0004`.
+      description: Apply one's own TSA change once another key custodian has granted it (step 3), with a second factor within 5 minutes. Without that approval, or a second time, `CS-CON-0004`. Only a TSA change; any other id is `CS-CON-0011` (404).
       responses:
         '204': {description: Applied.}
         default: {$ref: '#/components/responses/Problem'}
@@ -825,7 +825,7 @@ paths:
     post:
       operationId: proposeSealChange
       x-roles: custodians
-      description: Propose sealing with another keyd alias from `active_from` (step 1 of 3, key custodians, a second factor within 5 minutes; whole seconds, UTC, default now). `CS-CON-0006` naming `alias` unless keyd serves the alias now with a certificate valid at `active_from` (or when the console has no keyd), naming `active_from` for a time already past.
+      description: Propose sealing with another keyd alias from `active_from` (step 1 of 3, key custodians, a second factor within 5 minutes; whole seconds, UTC). Without `active_from` the version starts when the change is applied (step 3), and the response's `active_from` is null. `CS-CON-0006` naming `alias` unless keyd serves the alias now with a certificate valid at `active_from` (now, when omitted; or when the console has no keyd), naming `active_from` for a time already past.
       requestBody:
         required: true
         content:
@@ -847,7 +847,7 @@ paths:
                 properties:
                   id: {type: string, format: uuid}
                   profile: {type: string, format: uuid}
-                  active_from: {type: string, format: date-time}
+                  active_from: {type: [string, 'null'], format: date-time, description: Null when the version starts at the apply.}
         default: {$ref: '#/components/responses/Problem'}
   /console/v1/seal/changes/{id}/grant:
     post:
@@ -855,7 +855,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/id'
       x-roles: custodians
-      description: Approve another key custodian's alias change (step 2), with a second factor within 5 minutes. Approving one's own is `CS-CON-0004`.
+      description: Approve another key custodian's alias change (step 2), with a second factor within 5 minutes. Approving one's own is `CS-CON-0004`. Only a seal alias change (`seal.activate`); any other id, a TSA change included, is `CS-CON-0011` (404).
       responses:
         '204': {description: Granted.}
         default: {$ref: '#/components/responses/Problem'}
@@ -865,7 +865,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/id'
       x-roles: custodians
-      description: Apply one's own alias change once another key custodian has granted it (step 3), with a second factor within 5 minutes; records `operator.seal.activated`, which the worker requires. Without that approval, or a second time, `CS-CON-0004`; an `active_from` already past, `CS-CON-0006`.
+      description: Apply one's own alias change once another key custodian has granted it (step 3), with a second factor within 5 minutes; records `operator.seal.activated`, which the worker requires. Without that approval (by a key custodian who still is one), or a second time, `CS-CON-0004`; an `active_from` already past, `CS-CON-0006` naming `active_from`. Only a seal alias change; any other id is `CS-CON-0011` (404). Once applied, the version stays approved for the worker if its approver is later disabled or loses the role.
       responses:
         '204': {description: Applied.}
         default: {$ref: '#/components/responses/Problem'}

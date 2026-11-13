@@ -429,11 +429,184 @@ async fn a_seal_alias_change_needs_two_custodians_a_served_alias_and_a_future_st
         )
         .await;
     assert_eq!(r.code(), "CS-CON-0006", "{}", r.text);
+    assert_eq!(r.json()["field"], "active_from", "{}", r.text);
 
     let owner = c.sign_in(OWNER, PASSWORD, &seed).await;
     let log = c
         .call(&owner, "GET", "/console/v1/operator-log?limit=200", None)
         .await;
     assert!(log.text.contains("operator.seal.activated"), "{}", log.text);
+    db.drop().await;
+}
+
+/// A new key custodian, enrolled; returns their operator id and TOTP seed.
+async fn custodian_id(
+    c: &common::Console,
+    owner: &common::Session,
+    email: &str,
+) -> (String, Vec<u8>) {
+    let r = c
+        .call(
+            owner,
+            "POST",
+            "/console/v1/operators",
+            Some(serde_json::json!({"email": email, "roles": ["key_custodian"]})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let id = r.json()["id"].as_str().unwrap().to_owned();
+    let token = r.json()["enrolment_token"].as_str().unwrap().to_owned();
+    (id, c.enrol(&token, PASSWORD).await)
+}
+
+/// **`CON-10`: an alias change without a start takes effect when it is applied; the
+/// approval is judged as it stood when given, so disabling the approving custodian
+/// afterwards does not stop sealing (HRD-06 review); and a seal change is granted and
+/// applied only through the seal routes, a TSA change only through the TSA routes.**
+#[tokio::test]
+async fn a_seal_alias_without_a_start_applies_now_and_outlives_its_approver() {
+    let Some(db) = common::fresh("a_seal_alias_outlives_its_approver").await else {
+        return;
+    };
+    let pki = start_keyd();
+    let c = common::console_with(&db, config(&pki, &pki.console));
+    let seed = c.bootstrap(OWNER, PASSWORD).await;
+    let owner = c.sign_in(OWNER, PASSWORD, &seed).await;
+    let (_, a_seed) = custodian_id(&c, &owner, "a@ops.example").await;
+    let (b_id, b_seed) = custodian_id(&c, &owner, "b@ops.example").await;
+    let a = c.sign_in("a@ops.example", PASSWORD, &a_seed).await;
+
+    // No start: "from when it is applied".
+    let r = c
+        .call(
+            &a,
+            "POST",
+            "/console/v1/seal/changes",
+            Some(serde_json::json!({"alias": "platform"})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    assert!(r.json()["active_from"].is_null(), "{}", r.text);
+    let id = r.json()["id"].as_str().unwrap().to_owned();
+
+    // A TSA change, for the cross-route checks.
+    let r = c
+        .call(
+            &a,
+            "POST",
+            "/console/v1/tsa/changes",
+            Some(
+                serde_json::json!({"action": "set", "url": "https://1.1.1.1/tsr", "priority": 10}),
+            ),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let tsa = r.json()["id"].as_str().unwrap().to_owned();
+
+    let b = c.sign_in("b@ops.example", PASSWORD, &b_seed).await;
+    for path in [
+        format!("/console/v1/tsa/changes/{id}/grant"),
+        format!("/console/v1/seal/changes/{tsa}/grant"),
+    ] {
+        let r = c.call(&b, "POST", &path, None).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    let r = c
+        .call(
+            &b,
+            "POST",
+            &format!("/console/v1/seal/changes/{id}/grant"),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+    let r = c
+        .call(
+            &b,
+            "POST",
+            &format!("/console/v1/tsa/changes/{tsa}/grant"),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+    for path in [
+        format!("/console/v1/tsa/changes/{id}/apply"),
+        format!("/console/v1/seal/changes/{tsa}/apply"),
+    ] {
+        let r = c.call(&a, "POST", &path, None).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+
+    // Applied an hour later, it starts then, not when it was proposed.
+    c.clock.advance(3600);
+    let a = c.sign_in("a@ops.example", PASSWORD, &a_seed).await;
+    let r = c
+        .call(
+            &a,
+            "POST",
+            &format!("/console/v1/seal/changes/{id}/apply"),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+    let page = c.call(&a, "GET", "/console/v1/seal", None).await;
+    let current = &page.json()["current"];
+    assert_eq!(current["alias"], "platform", "{}", page.text);
+    assert_eq!(
+        current["active_from"], current["changed_at"],
+        "{}",
+        page.text
+    );
+    let from = current["active_from"].as_str().unwrap().to_owned();
+    assert!(from.as_str() >= "2027-01-15T09:00:00Z", "{from}");
+    assert_eq!(alias_at(&db, "2027-01-15T08:59:59Z").await, None);
+    assert_eq!(alias_at(&db, &from).await, Some(("platform".into(), true)));
+
+    // The approving custodian leaves: the alias they approved stays approved.
+    let owner = c.sign_in(OWNER, PASSWORD, &seed).await;
+    let r = c
+        .call(
+            &owner,
+            "POST",
+            &format!("/console/v1/operators/{b_id}/disable"),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+    assert_eq!(
+        alias_at(&db, "2027-01-15T10:00:00Z").await,
+        Some(("platform".into(), true)),
+        "a disabled approver does not unapprove a change already applied"
+    );
+
+    // A grant the disabled custodian gave to a change not yet applied no longer counts.
+    let r = c
+        .call(
+            &a,
+            "POST",
+            "/console/v1/seal/changes",
+            Some(serde_json::json!({"alias": "platform", "active_from": "2027-01-20T00:00:00Z"})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let next = r.json()["id"].as_str().unwrap().to_owned();
+    casual_sign_platform_store::sqlx::query(
+        "INSERT INTO platform.approval_grants (request_id, approver, mfa_at, granted_at) \
+         VALUES ($1::uuid, $2::uuid, '2027-01-15T09:00:00Z', '2027-01-15T09:00:00Z')",
+    )
+    .bind(&next)
+    .bind(&b_id)
+    .execute(&db.owner)
+    .await
+    .unwrap();
+    let r = c
+        .call(
+            &a,
+            "POST",
+            &format!("/console/v1/seal/changes/{next}/apply"),
+            None,
+        )
+        .await;
+    assert_eq!(r.code(), "CS-CON-0004", "{}", r.text);
     db.drop().await;
 }

@@ -174,8 +174,8 @@ pub fn app(state: AppState) -> Router {
         .route("/console/v1/tsa/changes/{id}/apply", post(tsa::apply))
         .route("/console/v1/seal", get(seal::seal))
         .route("/console/v1/seal/changes", post(seal::propose))
-        .route("/console/v1/seal/changes/{id}/grant", post(tsa::grant))
-        .route("/console/v1/seal/changes/{id}/apply", post(tsa::apply))
+        .route("/console/v1/seal/changes/{id}/grant", post(seal::grant))
+        .route("/console/v1/seal/changes/{id}/apply", post(seal::apply))
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))
         .route("/console/v1/alerts", get(api::alerts));
