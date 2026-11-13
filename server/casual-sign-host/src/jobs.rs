@@ -42,7 +42,38 @@ pub const KINDS: &[&str] = &[
     DELETE_DRAFT,
     SEND_USER_INVITATION,
     SEND_EMAIL_OTP,
+    SEAL_ENDED_CERTIFICATE,
 ];
+
+/// Not an effect (UXW-30): make and seal the envelope certificate of an envelope that
+/// ended without completing (declined, voided, expired), for `GET …/certificate`. Its
+/// payload is [`EndedCertificateJob`], the envelope's id only. Queued by
+/// [`crate::apply`] when a decision ends an envelope, and by the API server for an
+/// envelope that ended before this job existed.
+pub const SEAL_ENDED_CERTIFICATE: &str = "seal_ended_certificate";
+
+/// The payload of a [`SEAL_ENDED_CERTIFICATE`] job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EndedCertificateJob {
+    /// The envelope.
+    pub envelope_id: Uuid,
+}
+
+/// Job `id` making `envelope`'s envelope certificate, due at `now`. Its idempotency key
+/// names the envelope, so however often it is asked for, one certificate is made.
+#[must_use]
+pub fn ended_certificate_job(id: JobId, envelope: EnvelopeId, now: time::OffsetDateTime) -> NewJob {
+    NewJob {
+        id,
+        envelope_id: Some(envelope),
+        kind: SEAL_ENDED_CERTIFICATE.to_owned(),
+        idempotency_key: format!("ended-certificate:{envelope}"),
+        payload: serde_json::json!({ "envelope_id": envelope.0 }),
+        run_at: now,
+        max_attempts: 15,
+    }
+}
 
 /// `SendInvitation`.
 pub const SEND_INVITATION: &str = "send_invitation";

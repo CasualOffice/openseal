@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
-use casual_sign_audit::{Channel, Hash256};
+use casual_sign_audit::{Channel, Hash256, Timestamp};
 use casual_sign_model::{Id, Text};
 use casual_sign_sdk::Art;
 use casual_sign_store::blob::{BlobKey, BlobStore};
@@ -520,6 +520,9 @@ impl<B: BlobStore + 'static> Worker<B> {
         }
         if job.kind == casual_sign_host::jobs::SEND_EMAIL_OTP {
             return self.email_otp(job, lease).await;
+        }
+        if job.kind == casual_sign_host::jobs::SEAL_ENDED_CERTIFICATE {
+            return self.ended_certificate(job, lease).await;
         }
         let payload = jobs::parse(&job.kind, &job.payload)?;
         let envelope = EnvelopeId(payload.envelope_id);
@@ -1365,9 +1368,34 @@ impl<B: BlobStore + 'static> Worker<B> {
         ctx: &Ctx<'_>,
         state: EnvelopeState,
     ) -> Result<Vec<SealedDocument>> {
-        // Gather.
-        let mut tx = self.tx(ctx).await?;
-        let chain = tx.audit().chain(ctx.envelope).await?;
+        let input = self.gather(ctx.account, ctx.envelope, state, true).await?;
+        let now = input.now;
+        // Seal (blocking: keyd and the TSA are synchronous).
+        let services = self.seal.clone();
+        let (outs, input) = tokio::task::spawn_blocking(move || {
+            let r = seal::seal_all(&services, &input);
+            (r, input)
+        })
+        .await
+        .map_err(|_| WorkerError::Pipeline {
+            code: "CS-SEAL-0001",
+        })?;
+        let sealed = outs?;
+        self.store_sealed(ctx, input, sealed, now).await
+    }
+
+    /// Everything the certificate (and, with `documents`, sealing) needs: the chain,
+    /// the account's name, the sender, each document's delivered bytes, the captures
+    /// the values and adoptions name, and the files signers attached.
+    async fn gather(
+        &self,
+        account: AccountId,
+        envelope: EnvelopeId,
+        state: EnvelopeState,
+        documents: bool,
+    ) -> Result<SealInput> {
+        let mut tx = self.store.for_account(account).begin().await?;
+        let chain = tx.audit().chain(envelope).await?;
         let account = tx.account().get().await?;
         let sender = tx
             .users()
@@ -1376,7 +1404,7 @@ impl<B: BlobStore + 'static> Worker<B> {
             .ok_or(WorkerError::SealInput { what: "sender" })?;
         tx.commit().await?;
         let mut delivered = Vec::with_capacity(state.documents.len());
-        for d in &state.documents {
+        for d in state.documents.iter().filter(|_| documents) {
             let bytes = self
                 .blobs
                 .get(&BlobKey(*d.spec.delivered_hash.as_bytes()))
@@ -1430,8 +1458,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                 sha256: Hash256::digest(&bytes),
             });
         }
-        let now = ts(self.now())?;
-        let input = SealInput {
+        Ok(SealInput {
             attachments,
             state,
             chain,
@@ -1442,19 +1469,19 @@ impl<B: BlobStore + 'static> Worker<B> {
             },
             delivered,
             captures,
-            now,
-        };
-        // Seal (blocking: keyd and the TSA are synchronous).
-        let services = self.seal.clone();
-        let (outs, input) = tokio::task::spawn_blocking(move || {
-            let r = seal::seal_all(&services, &input);
-            (r, input)
+            now: ts(self.now())?,
         })
-        .await
-        .map_err(|_| WorkerError::Pipeline {
-            code: "CS-SEAL-0001",
-        })?;
-        let sealed = outs?;
+    }
+
+    /// Store the sealed documents and certificate, read each back and verify it
+    /// independently, then record the versions and the certificate.
+    async fn store_sealed(
+        &self,
+        ctx: &Ctx<'_>,
+        input: SealInput,
+        sealed: seal::Sealed,
+        now: Timestamp,
+    ) -> Result<Vec<SealedDocument>> {
         self.boundary(Boundary::Sealed, &ctx.job.kind).await;
 
         // Store, read back, verify independently: the documents and the certificate.
@@ -1506,6 +1533,58 @@ impl<B: BlobStore + 'static> Worker<B> {
         tx.commit().await?;
         self.boundary(Boundary::Recorded, &ctx.job.kind).await;
         Ok(records)
+    }
+
+    /// The envelope certificate of an envelope that ended without completing (UXW-30):
+    /// rendered from the state and the chain with how it ended, sealed on its own with
+    /// the platform key at the envelope's profile, stored, read back and verified
+    /// independently, then recorded as the envelope's certificate. Nothing is done when
+    /// the envelope has a certificate already or has not ended that way; a seal that
+    /// fails retries the job. The chain is not extended: the certificate is not an act
+    /// on the agreement, and its download is recorded when it happens.
+    async fn ended_certificate(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: casual_sign_host::jobs::EndedCertificateJob =
+            serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        let envelope = EnvelopeId(p.envelope_id);
+        if job.envelope_id != Some(envelope) {
+            return Err(bad());
+        }
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        let made = tx.envelopes().certificate(envelope).await?.is_some();
+        let state = load_state(&mut tx, envelope).await?;
+        let ended = state.as_ref().is_some_and(|s| {
+            matches!(
+                s.status,
+                casual_sign_model::EnvelopeStatus::Declined
+                    | casual_sign_model::EnvelopeStatus::Voided
+                    | casual_sign_model::EnvelopeStatus::Expired
+            )
+        });
+        let (Some(state), true, false) = (state, ended, made) else {
+            return self.close_job(tx, job, lease).await;
+        };
+        tx.commit().await?;
+        let input = self.gather(job.account_id, envelope, state, false).await?;
+        let now = input.now;
+        let profile = input.state.seal_profile;
+        let services = self.seal.clone();
+        let bytes = tokio::task::spawn_blocking(move || seal::seal_ended(&services, &input))
+            .await
+            .map_err(|_| WorkerError::Pipeline {
+                code: "CS-SEAL-0001",
+            })??;
+        self.boundary(Boundary::Sealed, &job.kind).await;
+        let key = self.blobs.put(&bytes).await?;
+        let back = self.blobs.get(&key).await?;
+        seal::verify_stored(&self.seal, &back, profile, now)?;
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        if tx.envelopes().certificate(envelope).await?.is_none() {
+            tx.envelopes().set_certificate(envelope, &key.0).await?;
+        }
+        self.close_job(tx, job, lease).await
     }
 
     async fn blob_or(&self, key: &BlobKey, what: &'static str) -> Result<Vec<u8>> {

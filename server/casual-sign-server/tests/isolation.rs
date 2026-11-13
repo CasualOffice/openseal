@@ -69,8 +69,19 @@ async fn world(api: &Api, t: &Tenant) -> BTreeMap<&'static str, String> {
         .call("POST", "/api/v1/webhooks", k, Some(json!({"url": "https://hooks.example.com/x", "event_types": ["envelope.sent"], "secret_refs": ["k"]})), &[])
         .await
         .json();
+    let folder = api
+        .call(
+            "POST",
+            "/api/v1/folders",
+            k,
+            Some(json!({"name": "F"})),
+            &[],
+        )
+        .await
+        .json();
     let s = |v: &Value| v.as_str().unwrap().to_owned();
     BTreeMap::from([
+        ("folder", s(&folder["id"])),
         ("envelope", s(&e["id"])),
         ("doc", s(&e["documents"][0]["id"])),
         ("r", s(&e["recipients"][0]["id"])),
@@ -94,6 +105,8 @@ fn fill(path: &str, ids: &BTreeMap<&'static str, String>, envelope: &str) -> Str
         ids["template"].clone()
     } else if path.starts_with("/api/v1/webhooks/") {
         ids["webhook"].clone()
+    } else if path.starts_with("/api/v1/folders/") {
+        ids["folder"].clone()
     } else {
         panic!("no id kind for {path}")
     };
@@ -163,6 +176,7 @@ async fn another_accounts_ids_are_not_found_on_every_operation(rls: Rls) {
         "/api/v1/api-clients",
         "/api/v1/templates",
         "/api/v1/webhooks",
+        "/api/v1/folders",
     ] {
         let r = api.call("GET", p, &b.auth, None, &[]).await;
         let text = String::from_utf8_lossy(&r.body).into_owned();

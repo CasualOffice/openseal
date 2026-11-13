@@ -9,7 +9,7 @@ use axum::handler::Handler;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
 
-use crate::api::{admin, envelopes as env, templates, webhooks};
+use crate::api::{admin, envelopes as env, folders, templates, webhooks};
 use crate::ceremony;
 use crate::http::{Guard, guard, request_context};
 use crate::state::AppState;
@@ -375,6 +375,26 @@ pub fn table() -> Vec<Route> {
             es,
             JSON,
             env::host_in_person,
+        ),
+        // The Inbox (UXW-01): any signed-in member, as the recipient they are.
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/sign-link",
+            Scope(""),
+            JSON,
+            env::sign_link,
+        ),
+        // Folders (UXW-02): each member's own.
+        r("GET", "/api/v1/folders", er, JSON, folders::list),
+        r("POST", "/api/v1/folders", ew, JSON, folders::create),
+        r("PATCH", "/api/v1/folders/{id}", ew, JSON, folders::rename),
+        r("DELETE", "/api/v1/folders/{id}", ew, JSON, folders::delete),
+        r(
+            "POST",
+            "/api/v1/folders/{id}/envelopes",
+            ew,
+            JSON,
+            folders::file,
         ),
         r(
             "POST",

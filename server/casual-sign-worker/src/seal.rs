@@ -21,7 +21,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use casual_sign_audit::{AuthMethod, Chain, EventData, Hash256, Timestamp};
+use casual_sign_audit::{ActorKind, AuthMethod, Chain, EventData, Hash256, Timestamp};
+use casual_sign_certificate::{EndKind, Ending};
 use casual_sign_keyd::{DEV_REASON, DigestSigner, RemoteKey};
 use casual_sign_model::{EnvelopeStatus, Field, FieldValue, Id, RecipientType, SealProfile};
 use casual_sign_sdk::evidence::{
@@ -385,12 +386,19 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
                 _ => {}
             }
         }
-        // Authentication by email link is what every recipient passed by opening it.
+        // What every recipient passed by opening their link: the method the opening
+        // recorded first (an emailed link; a member's sign-in for an Inbox or in-person
+        // link, UXW-01, UXW-36), an emailed link when the event names none.
         if auth.is_empty() && sent.is_some() {
+            let opened = mine
+                .iter()
+                .find(|c| matches!(c.event.data, EventData::RecipientDelivered { .. }));
             auth.push(AuthStep {
-                method: AuthMethod::EmailLink,
+                method: opened
+                    .and_then(|c| c.event.context.auth.first().copied())
+                    .unwrap_or(AuthMethod::EmailLink),
                 passed: true,
-                at: first(&|d| matches!(d, EventData::RecipientDelivered { .. })),
+                at: opened.map(|c| c.event.at),
             });
         }
         rows.push(RecipientRow {
@@ -512,19 +520,7 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
     if input.delivered.len() != s.documents.len() {
         return Err(WorkerError::SealInput { what: "document" });
     }
-    let (provider, development): (Box<dyn KeyProvider>, bool) = match &services.key {
-        SealKey::Remote(r) => {
-            let r = r
-                .for_envelope(s.id.as_str())
-                .map_err(|e| pipeline(e.code()))?;
-            let dev = DigestSigner::is_development(&r);
-            (Box::new(r), dev)
-        }
-        SealKey::Local {
-            provider,
-            development,
-        } => (provider(), *development),
-    };
+    let (provider, development) = key_for(services, s)?;
     let fingerprint = provider
         .certificate_chain()
         .first()
@@ -609,6 +605,119 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
         documents: out,
         certificate,
     })
+}
+
+/// The platform key for `s`, and whether it is a development key.
+fn key_for(services: &SealServices, s: &EnvelopeState) -> Result<(Box<dyn KeyProvider>, bool)> {
+    Ok(match &services.key {
+        SealKey::Remote(r) => {
+            let r = r
+                .for_envelope(s.id.as_str())
+                .map_err(|e| pipeline(e.code()))?;
+            let dev = DigestSigner::is_development(&r);
+            (Box::new(r), dev)
+        }
+        SealKey::Local {
+            provider,
+            development,
+        } => (provider(), *development),
+    })
+}
+
+/// How an envelope that did not complete ended (UXW-30), from its chain: the time of
+/// its `envelope.declined`, `envelope.voided` or `envelope.expired`; who declined (the
+/// recipient, as named in the state) and their reason; who voided (the sender, or the
+/// administrator the event names) and the reason. `None` for any other status.
+#[must_use]
+pub fn ending(state: &EnvelopeState, chain: &Chain, sender: &Party) -> Option<Ending> {
+    let last = |pred: &dyn Fn(&EventData) -> bool| {
+        chain.events().iter().rev().find(|c| pred(&c.event.data))
+    };
+    match state.status {
+        EnvelopeStatus::Declined => {
+            let e = last(&|d| matches!(d, EventData::EnvelopeDeclined { .. }))?;
+            let EventData::EnvelopeDeclined { recipient_id } = &e.event.data else {
+                return None;
+            };
+            let reason = chain
+                .events()
+                .iter()
+                .rev()
+                .find_map(|c| match &c.event.data {
+                    EventData::RecipientDeclined {
+                        recipient_id: r,
+                        reason,
+                    } if r == recipient_id => Some(reason.as_ref().map(|x| x.get().clone())),
+                    _ => None,
+                });
+            Some(Ending {
+                kind: EndKind::Declined,
+                at: e.event.at,
+                by: state
+                    .recipient(recipient_id)
+                    .map(|r| r.spec.name.get().as_str().to_owned()),
+                reason: reason.flatten(),
+            })
+        }
+        EnvelopeStatus::Voided => {
+            let e = last(&|d| matches!(d, EventData::EnvelopeVoided { .. }))?;
+            let EventData::EnvelopeVoided { reason } = &e.event.data else {
+                return None;
+            };
+            let by = match e.event.actor.kind {
+                ActorKind::Sender => Some(sender.name.clone()),
+                _ => e.event.actor.name.as_ref().map(|n| n.get().clone()),
+            };
+            Some(Ending {
+                kind: EndKind::Voided,
+                at: e.event.at,
+                by,
+                reason: Some(reason.get().clone()),
+            })
+        }
+        EnvelopeStatus::Expired => {
+            let e = last(&|d| matches!(d, EventData::EnvelopeExpired {}))?;
+            Some(Ending {
+                kind: EndKind::Expired,
+                at: e.event.at,
+                by: None,
+                reason: None,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The envelope certificate of an envelope that ended without completing (UXW-30),
+/// rendered with [`ending`] and sealed on its own at the envelope's profile (blocking).
+/// The caller stores the bytes, reads them back and calls [`verify_stored`].
+///
+/// # Errors
+///
+/// `CS-WRK-0011` when the envelope did not end that way; the failing step's code
+/// (`CS-AUD-*`, `CS-SEAL-*`, `CS-KEY-*`, ...).
+pub fn seal_ended(services: &SealServices, input: &SealInput) -> Result<Vec<u8>> {
+    let s = &input.state;
+    let end =
+        ending(s, &input.chain, &input.sender).ok_or(WorkerError::SealInput { what: "ending" })?;
+    let (provider, development) = key_for(services, s)?;
+    let mut cert_input = certificate_input(input);
+    cert_input.ending = Some(end);
+    let rendered = casual_sign_certificate::render_certificate(
+        &cert_input,
+        &services.fonts,
+        &services.certificate,
+    )
+    .map_err(|x| pipeline(x.code()))?;
+    Ok(seal_bytes(
+        services,
+        &rendered.bytes,
+        profile(s.seal_profile),
+        input.now,
+        provider.as_ref(),
+        development,
+    )?
+    .bytes)
 }
 
 /// Seal `bytes` at `target` with the platform key, the operator's name, reason and
