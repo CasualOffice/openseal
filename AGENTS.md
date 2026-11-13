@@ -63,36 +63,43 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `b5f7101` (2026-11-13).
+Docs are true as of `67ca967` (2026-11-13).
 
 **Phases D, 0, 1 and 2 are closed** (owner: D and 0 on 2026-11-11, 1 on 2026-11-11 after clean fuzz run 42907980149,
 2 on 2026-11-12), and milestones M0, M1 and M2 are declared reached (instruction 38). **v0.0.1, the first
 pre-release, is published** (tag at `4780d84`, GitHub CI run 43123420112 green on all 14 jobs; `REL-01` keeps the GHCR
-packages' visibility and the manual walkthrough). The repository is public; GitHub CI runs, and `tools/ci-local.sh`
-runs once per batch, after the batch is merged and before a push, about every 30 minutes (instructions 31, 39, 41).
-Lanes use the whole machine, backing off when free memory falls below about 3 GB (instruction 40); an independent
-reviewer is used only for risky pieces (security, evidence, database, server; instruction 41).
+packages' visibility and the manual walkthrough). The repository is public; GitHub CI on `main` is the full check, and
+sessions run only the test that proves their change (docs/04 rule 37). Work runs as one cycling queue whose items
+merge and push straight to `main`, with no pull requests (instructions 45 to 47). Lanes use the whole machine,
+backing off when free memory falls below about 3 GB (instruction 40); an independent reviewer is used only for risky
+pieces (security, evidence, database, server; instruction 41).
 
 - **Built:** the Rust engine (PDF reader, writer and normalizer, fields, flattening, crypto, PAdES sealing B-B to
-  B-LTA, verifier, audit chain and certificate, SDK and `openseal` CLI, WebAssembly verifier); the workflow engine,
-  Postgres store, API server (`api/openapi.yaml`), job worker, `casual-sign-keyd` (PKCS#11) and the single-node Compose
-  deployment; the web app, redesigned in all seven `UX-01` packages (`UX-02` to `UX-08`, merged 2026-11-13: design
-  system with a distinct destructive colour, send editor with click-to-place and every field kind, signing page,
-  Home/Agreements/envelope page, Templates/Reports/Admin rail, app shell with notifications and profile), tested by
-  Playwright in mock mode and against the Compose stack (`compose-e2e`); the signer view naming the sender and
-  serving the disclosure (`UXW-34`); organizations above workspaces (`ORG-02`, migration 0014); in
-  `casual-sign-modeld`, the skeleton and bundle tooling (`ML-09`) and GLiNER spans for extraction and personal data
-  (`ML-07`, `ML-08`, fp16 exports equal to the golden spans), beside `casual-sign-pii`'s validated recognisers and
-  value normalisation. Security fixes `SEC-ID-01` and `SEC-CER-01` are merged. [96](docs/96-FEATURE-FIT-GAP.md)
-  counts 48 of 168 rows working end to end and 20 in part. Slice 5 (`VS-05`): every identity step, consent and
-  its withdrawal built and in a mock-mode browser run; its Compose run and demo (`RAUTH-02`) left.
-- **In progress:** slice 2 routing (`VS-02`): every recipient type acts through the ceremony on the server and
-  expiry runs through the worker; the approver, viewer, agent and in-person steps are in a browser run (`RTE-01`); left are CI on main with the in-person Compose spec (`UXW-18`), the demo (`RTE-04`) and owner closure. OCR (`ML-02`) and template matching (`ML-05`) on worker branches, not merged; the modeld exit
-  (`compose --profile ml up`, `ML-09`); workflows a switching customer expects (`UXW-*`, e.g. in-person hosting
-  `UXW-36`); ADR-028 in stages ([23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)): admin audit logs (`ORG-05`)
-  and switching (`ORG-04`) built, then the organization admin screens (`ORG-06`), delegated admin, console and plans
-  (`ORG-*`, `CON-*`, `PLAN-*`); the console's server side (operators with TOTP, the operator log, organization reads
-  and first writes, health reads; `CON-02` to `CON-05` in part, docs/23 §5.6) on a worker branch, its screens after
-  the UX overhaul. Open: WebKit axe failure on the review step (`E2E-02`).
+  B-LTA, verifier, audit chain and certificate, XFA layout, `casual-sign-pii` recognisers, SDK and `openseal` CLI,
+  WebAssembly verifier); the workflow engine, Postgres store (migrations 0001 to 0034), API server
+  (`api/openapi.yaml`), job worker, `casual-sign-keyd` (PKCS#11) and the single-node Compose deployment; the web app,
+  redesigned on the approved design (`UX-02` to `UX-08`, `WEB-17`, `WEB-18`), tested by Playwright in mock mode and
+  against the Compose stack (`compose-e2e`). Merged on 2026-11-13 and tested on the server, most rows waiting only for
+  their Compose run in CI: Inbox, folders, Deleted views and server filters (`UXW-01` to `UXW-03`); bulk send from a
+  template with a CSV list (`UXW-04`); template sharing, Shared with me and Favourites (`UXW-06`); groups and custom
+  permission profiles (`UXW-07`); the admin audit log screen and the webhooks screen (`UXW-09`, `UXW-10`,
+  `UXW-31` to `UXW-33`); organizations, their routes, workspace switching and admin audit logs (`ORG-02` to `ORG-05`
+  Done) and the organization admin screens' first cut (`ORG-06`); the platform console `casual-sign-console` with
+  operators and TOTP (`CON-03`), approvals and suspend or resume (`CON-04`), health (`CON-05`), the Keys page over
+  keyd's admin interface (`CON-06`), timestamp authorities in the database changed by two key custodians (`CON-07`),
+  console writes copied into organization logs (`CON-16`) and its UI (`CON-17`); plans, metering and quota
+  enforcement (`PLAN-02` to `PLAN-04` Done); SMS and voice one-time codes and recipient sign-in through an OpenID
+  Connect provider (`VS-05`, `RAUTH-01`, ADR-033 Proposed); a staff TOTP second factor (`ASVS-01`), breached-password
+  refusal and security notices (`ASVS-02`, `ASVS-04`); in `casual-sign-modeld`, OCR (`ML-02`), page hashes and
+  embeddings (`ML-05`), GLiNER extraction and personal data (`ML-07`, `ML-08`), with the worker's analysis jobs and
+  the server's analysis routes (`WEB-19`); the ASVS 4.0.3 self-assessment ([67](docs/67-ASVS-SELF-ASSESSMENT.md),
+  `SEC-ASVS-01`) and the licence inventory (`LEG-01`). [96](docs/96-FEATURE-FIT-GAP.md) counts 48 of 168 rows working
+  end to end and 25 in part.
+- **In progress:** slice 1 (`VS-01`: the browser run on Compose green on GitHub, the demo `S1-02`, accessibility);
+  slice 2 (`VS-02`: CI on main with the in-person Compose spec `UXW-18`, the demo `RTE-04`); slice 5 (`VS-05`: the
+  Compose run and demo `RAUTH-02`, ADR-033's acceptance); the Compose runs of the `UXW-*` and `ORG-06` rows above;
+  the console as a Compose service and its remaining writes (`CON-02`, `CON-04`, `CON-05`); the editor's model
+  suggestions and `compose --profile ml up` (`WEB-18`, `ML-09`); the open ASVS findings and `LEG-01` sign-off.
 - **Next:** slices 1, 2, 5 and 7 to their end points for M3, then v0.0.2 (organizations and switching, the console with
-  health, plans with three meters; instruction 29).
+  health, plans with three meters; instruction 29), then the rest of ADR-028 (`ORG-07` onward, `CON-08` onward,
+  `PLAN-05` onward).

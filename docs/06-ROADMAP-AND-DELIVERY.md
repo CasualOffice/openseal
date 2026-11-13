@@ -54,9 +54,14 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of `b5f7101` (2026-11-13). Phases D, 0, 1 and 2 are closed; **v0.0.1**, the first pre-release,
-is published (`REL-01`). Engine, server, API, worker, keyd, Compose deployment and web app exist; since v0.0.1 the web
-app has been redesigned (`UX-02` to `UX-08`) and organizations sit above workspaces (`ORG-02`).
+Docs are true as of `67ca967` (2026-11-13). Phases D, 0, 1 and 2 are closed; **v0.0.1**, the first pre-release,
+is published (`REL-01`). Engine, server, API, worker, keyd, Compose deployment and web app exist. Merged since v0.0.1,
+most rows waiting only for their Compose run in CI: the redesigned web app (`UX-02` to `UX-08`, `WEB-17`), Inbox,
+folders and server filters (`UXW-01` to `UXW-03`), bulk send (`UXW-04`), template sharing (`UXW-06`), groups and
+permission profiles (`UXW-07`), the admin audit log and webhooks screens (`UXW-09`, `UXW-10`), organizations and
+workspaces (`ORG-02` to `ORG-06`), the platform console with plans, metering and quotas, keys and timestamp
+authorities (`CON-03` to `CON-07`, `CON-16`, `CON-17`, `PLAN-02` to `PLAN-04`), the model service (`ML-02`, `ML-05`,
+`ML-07`, `ML-08`, `WEB-19`), staff two-factor and breached-password checks (`ASVS-01`, `ASVS-02`, `ASVS-04`).
 
 | Phase or work | State | Note |
 | --- | --- | --- |
@@ -66,12 +71,12 @@ app has been redesigned (`UX-02` to `UX-08`) and organizations sit above workspa
 | 2 Envelope engine and server | **Closed** 2026-11-12 | Owner, instruction 23; `compose-e2e`, `P2-CRASH`, `P2-THREATS` |
 | Milestones | M0, M1, M2 **reached** | Owner, instruction 38 (`MS-0`–`MS-2` in [14](14-EXECUTION-TRACKER.md)); M3 needs slices 1, 2, 5 and 7 closed |
 | Release 1 / v0.0.1 | **Published** 2026-11-12 | Tagged at `4780d84` after GitHub CI run 43123420112 was green on all 14 jobs; images with SBOM and provenance; pre-release on GitHub. Left in `REL-01`: GHCR packages public, the manual walkthrough in [65](65-RUNNING-IT.md); the boxes below are ticked by `REL-01` from evidence |
-| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point; slice 1 (`VS-01`) is in progress, its boxes below. Slice 5 (`VS-05`): access code, email, SMS and voice codes, sign-in through an OpenID Connect provider (`RAUTH-01`, ADR-033 Proposed), versioned ERSD and withdrawal built, tested and in a mock-mode browser run on desktop and phone; the Compose run and the demo (`RAUTH-02`) and ADR-033's acceptance left. [96](96-FEATURE-FIT-GAP.md) counts 48 of 168 rows working and 20 in part |
+| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point; slice 1 (`VS-01`) is in progress, its boxes below. Slice 5 (`VS-05`): access code, email, SMS and voice codes, sign-in through an OpenID Connect provider (`RAUTH-01`, ADR-033 Proposed), versioned ERSD and withdrawal built, tested and in a mock-mode browser run on desktop and phone; the Compose run and the demo (`RAUTH-02`) and ADR-033's acceptance left. [96](96-FEATURE-FIT-GAP.md) counts 48 of 168 rows working and 25 in part |
 | Slice 2 routing (`VS-02`) | In progress 2026-11-13 | Outcome met by tests: sequential (`E2E-01`); parallel and mixed with a copy, an agent, an approver and a viewer acting through the ceremony (`casual-sign-server` tests/routing.rs); the agent, offered by the editor, names later recipients by `POST /s/{token}/recipients`; decline (worker tests/flow.rs); void; reminders (worker tests/crash.rs); expiry and its warning through the worker (worker tests/expiry.rs). The signing page's approver, viewer and agent steps and the in-person host are in a browser run (`webapp/e2e/recipient-types.spec.mjs`, `RTE-01`), and the receipt says what each type did (`RTE-02`). End point not met: CI green on main after the merge, including the in-person Compose spec (`UXW-18`); the demo (`RTE-04`); owner closure |
 | UI pass (`UX-01`) | **Done** 2026-11-13 | All seven packages `UX-02` to `UX-08` merged: design system and a distinct destructive colour, send editor (click-to-place, every field kind, recipient types), signing page, Home/Agreements/envelope, Templates/Reports/Admin rail, app shell with notifications and profile. Signer view names the sender and serves the disclosure (`UXW-34`). Follow-ups and missing workflows are `UXW-*` and `UX-09` onward |
-| In progress: organizations, console, plans | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | `ORG-02` merged (migration 0014: organizations, organization scope, bootstrap). `ORG-05` (admin audit logs) and switching `ORG-04` built; next admin screens `ORG-06`; `CON-01`, `PLAN-01` and their rows; for v0.0.2 (instruction 29) |
-| In progress: ML | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Merged: `casual-sign-modeld` skeleton and bundle tooling (`ML-09`), GLiNER spans for extraction and personal data with fp16 parity (`ML-07`, `ML-08`), `casual-sign-pii` recognisers, value normalisation. On worker branches, not merged: OCR (`ML-02`), template matching (`ML-05`). Every feature off by default; nothing a model says enters the evidence |
-| Security | `SEC-ID-01`, `SEC-CER-01` **Done** | Shared-account changes refused across workspaces (migration 0013); signer content and every ceremony write require the recipient's authentication first |
+| In progress: organizations, console, plans | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | Done: organizations (`ORG-02`), organization routes (`ORG-03`), switching (`ORG-04`), admin audit logs (`ORG-05`); console operators with TOTP (`CON-03`), the Keys page (`CON-06`), timestamp authorities with two-person changes (`CON-07`), operator actions copied to organization logs (`CON-16`); plans, metering and quota enforcement (`PLAN-02` to `PLAN-04`). In progress: organization admin screens (`ORG-06`), the console as a Compose service (`CON-02`), approvals and suspend or resume (`CON-04`), health (`CON-05`), the console UI (`CON-17`). Next: `ORG-07`, `CON-08`, `PLAN-05` onward; for v0.0.2 (instruction 29) |
+| In progress: ML | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Merged: `casual-sign-modeld` with bundle tooling (`ML-09`), OCR (`ML-02`), page hashes and embeddings for template matching (`ML-05`), GLiNER spans for extraction and personal data with fp16 parity (`ML-07`, `ML-08`), `casual-sign-pii` recognisers, value normalisation, the worker's analysis jobs and the server's analysis routes (`WEB-19`). Left: the worker on modeld's network in Compose (`compose --profile ml up`, `ML-09`) and the editor's suggestions on the real stack (`WEB-18`). Every feature off by default; nothing a model says enters the evidence |
+| Security | `SEC-ID-01`, `SEC-CER-01`, `ASVS-02`, `ASVS-04` **Done**; `ASVS-01`, `SEC-ASVS-01` in progress | Shared-account changes refused across workspaces (migration 0013); signer content and every ceremony write require the recipient's authentication first; staff TOTP with recovery codes (`ASVS-01`, WebAuthn and lost-factor recovery left); breached passwords refused; the ASVS 4.0.3 self-assessment ([67](67-ASVS-SELF-ASSESSMENT.md)) with 38 findings, 8 closed. Not a certification |
 
 ### Waivers
 
@@ -101,9 +106,9 @@ v0.0.1 is the first tagged pre-release: usable end to end on a single machine, n
 is cut when every box below is ticked, from evidence, not from intent (`REL-01`).
 
 - **Gate**
-  - [ ] Phase 2 exit items met and signed off: end-to-end on the Compose stack green on GitHub (`compose-e2e`); crash
+  - [x] Phase 2 exit items met and signed off: end-to-end on the Compose stack green on GitHub (`compose-e2e`); crash
     tests on the stack (`P2-CRASH`); every SEC-A, SEC-T, SEC-W threat with a test seen red (`P2-THREATS`).
-  - [ ] GitHub CI fully green on the release commit, every job, no job skipped or cancelled.
+  - [x] GitHub CI fully green on the release commit, every job, no job skipped or cancelled.
   - [ ] Release 1 scope above works on the Compose stack, checked by the Playwright suite against the real server and
     one manual walkthrough recorded in `docs/65` (send, sign on desktop and phone, decline, correct, templates, verify).
   - [ ] Independent validators: the release's sealed outputs accepted by pyHanko and EU DSS.
@@ -113,9 +118,9 @@ is cut when every box below is ticked, from evidence, not from intent (`REL-01`)
   - [ ] Container images built by a release workflow from the tag, pinned base images, published to GitHub Container
     Registry as `ghcr.io/casualoffice/openseal-{server,worker,keyd}:0.0.1`, with SBOM and provenance attestations.
   - [ ] `docker-compose.yml` able to use the published images (no local build needed).
-  - [ ] Git tag `v0.0.1` (annotated) and a GitHub pre-release with notes from `CHANGELOG.md`: what works, what does not,
+  - [x] Git tag `v0.0.1` (annotated) and a GitHub pre-release with notes from `CHANGELOG.md`: what works, what does not,
     the development-only security posture (generated CA, SoftHSM, dev TSA), and how to report security issues.
-  - [ ] Site: Download page and roadmap updated for v0.0.1.
+  - [x] Site: Download page and roadmap updated for v0.0.1.
 - **Not in v0.0.1** (stays on the roadmap, after it): SSO, SAML and WebAuthn, SMS authentication, bulk send, payments,
   B-LTA renewal jobs, production deployment (Helm, HA), and everything in the slices after Release 1.
 

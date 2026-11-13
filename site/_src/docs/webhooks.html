@@ -71,4 +71,4 @@ def verify(secret: str, headers: dict, body: bytes) -> bool:
 <h2>Where webhooks may go</h2>
 <p>Only <code>https://</code> URLs to public addresses. Private, loopback, link-local (including cloud metadata), carrier-grade NAT, reserved and multicast addresses are refused, both when the address is resolved and again when the connection is made, so DNS rebinding cannot reach your internal network. An operator can allow a private range with <code>OPENSEAL_WEBHOOK_ALLOW</code>.</p>
 
-<div class="callout">{{icon:info}}<div><p>Planned: manual redelivery, disabling a subscription that has failed for five days, filters by sender or template, and optional mutual TLS to receivers.</p></div></div>
+<div class="callout">{{icon:info}}<div><p>Built: editing, pausing and resuming a subscription, a test delivery, and manual redelivery, from the API and from Admin. Planned: disabling a subscription that has failed for five days, filters by sender or template, and optional mutual TLS to receivers.</p></div></div>

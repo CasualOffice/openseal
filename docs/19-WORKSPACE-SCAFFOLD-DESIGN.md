@@ -1,6 +1,6 @@
 # 19 — Workspace and layer division
 
-**Status: Draft for owner. As built (2026-11-10):** eleven members: `-model`, `-fields`, `-pdf`, `-crypto`, `-verify`, `-flatten`, `-seal`, `-audit`, `-certificate` (built), `-sdk` and `-wasm` (skeletons, in progress). `fuzz/` targets: `admit`, `normalize`, `content`, `verify`, `verify_chain`, `seal`. The **Key external dependencies** column is the target; a crate not yet built does not have them.
+**Status: Draft for owner. As built (2026-11-13, `DOC-008`):** 27 workspace members (`Cargo.toml`): 15 engine crates in `crates/` (`-model`, `-pdf`, `-crypto`, `-fields`, `-pii`, `-verify`, `-flatten`, `-seal`, `-audit`, `-certificate`, `-sdk`, `-cli`, `-wasm`, `-workflow`, `-xfa`) and 12 in `server/` (`-store`, `-policy`, `-platform-store`, `-console`, `-secrets`, `-keyd-client`, `-keyd`, `-modeld`, `-host`, `-worker`, `-server`, and our `clipper2-rust` patch stand-in); `-convert` and `-mcp` are designed, not built. `fuzz/` targets: `admit`, `normalize`, `content`, `verify`, `verify_chain`, `seal`, `pii`, `extract_normalize` (modeld's `rasterise` target lives in its own crate). The **Key external dependencies** column is the target; a crate not yet built does not have them.
 
 ## Layout
 

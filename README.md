@@ -66,36 +66,52 @@ and open <http://127.0.0.1:8130/app.html?mock=1> (demo mode; sign in as `demo@op
 
 ## Status
 
-Docs are true as of `b5f7101` (2026-11-13). **Pre-alpha.** **v0.0.1**, the first pre-release, is
+Docs are true as of `67ca967` (2026-11-13). **Pre-alpha.** **v0.0.1**, the first pre-release, is
 [published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1): usable end to end on one machine with Docker
 Compose, not yet for production agreements. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12),
 and the owner has declared milestones M0, M1 and M2 reached. The engine, workflow engine, persistence, key service,
 API server, job worker and web app are built and merged; a sender uploads, places fields and sends; signers sign on a
 phone or a desktop; everyone downloads a sealed PDF and certificate that pyHanko accepts, in CI on the Compose stack.
 
-**On `main` since v0.0.1** (not yet in a release):
+**On `main` since v0.0.1** (not yet in a release). Each is merged and tested on the server; most still wait for
+their run against the Compose stack in CI before their row is closed ([docs/14](docs/14-EXECUTION-TRACKER.md)):
 
-- **A redesigned web app**, all seven packages of the `UX-01` audit against DocuSign and SignNow (`UX-02` to
-  `UX-08`): a design system with a destructive colour distinct from the seal red; a send editor with click-to-place
-  fields, every field kind with its properties, recipient types and contacts; a reworked signing page; Home,
-  Agreements and the envelope page; Templates, Reports and an Admin section rail; an app shell with notifications,
-  profile and help menus that works on phones.
-- **The signer's page names the sender** and serves the electronic-records disclosure (`UXW-34`).
-- **Organizations above workspaces** (`ORG-02`, migration 0014): each existing account becomes a workspace in its
-  own organization, with organization owners, an organization scope enforced in the database, and server bootstrap
-  that makes the first organization.
-- **Text recognition in the model service** (`ML-07`, `ML-08`): GLiNER span extraction and personal-data detection
-  in `casual-sign-modeld`, beside the validated recognisers in `casual-sign-pii` (cards by Luhn, IBAN mod-97, US SSN,
-  UK NI, Indian PAN and Aadhaar, and others). Off by default; nothing a model says enters the evidence.
-- **Security hardening** of signer authentication and of shared accounts (`SEC-CER-01`, `SEC-ID-01`).
+- **A redesigned web app** on the approved design (`UX-02` to `UX-08`, `WEB-17`, `WEB-18`): send editor with
+  click-to-place fields and every field kind, signing page, Home, Agreements and the envelope page, Templates,
+  Reports and Admin, an app shell that works on phones. The signer's page names the sender and serves the
+  electronic-records disclosure (`UXW-34`).
+- **Inbox and folders** (`UXW-01` to `UXW-03`): envelopes waiting for the signed-in member, signed from inside the
+  app; each member's own folders; a Deleted view for envelopes and templates; server-side filters and sorts.
+- **Bulk send** from a template with a CSV list, per-row errors, a test of the list and progress (`UXW-04`).
+- **Template sharing** with members, groups or the whole workspace, Shared with me and Favourites (`UXW-06`).
+- **Groups and custom permission profiles** (`UXW-07`), an **admin audit log** per workspace and per organization,
+  hash-chained, with JSON and CSV export (`ORG-05`, `UXW-09`), and a **webhooks screen** that edits, pauses, tests
+  and redelivers (`UXW-10`, `UXW-31` to `UXW-33`).
+- **Organizations and workspaces** (ADR-028): organizations above workspaces (`ORG-02`), organization routes
+  (`ORG-03`), switching between workspaces (`ORG-04`) and a first cut of the organization admin screens (`ORG-06`).
+- **The platform console** (`casual-sign-console`, a separate binary with its own sign-in and TOTP): health,
+  organizations with two-person suspend and resume, approvals, operators and the hash-chained operator log
+  (`CON-02` to `CON-05`, `CON-16`, `CON-17`); **plans** with versions, assignments and overrides (`PLAN-02`),
+  **metering** of envelopes sent, seats, storage and workspaces (`PLAN-03`) and **quota enforcement** (`PLAN-04`);
+  the **Keys and certificates** page over keyd's read-only admin interface (`CON-06`) and **timestamp authorities**
+  held in the database and changed by two key custodians, which the worker now seals with (`CON-07`). The console
+  is not yet a Compose service (`CON-02`).
+- **Recipient authentication**: one-time codes by **SMS and voice call** through an HTTPS gateway (`VS-05`) and
+  **sign-in through an OpenID Connect provider** (`RAUTH-01`, ADR-033 Proposed).
+- **Staff accounts**: a TOTP second factor with recovery codes and an account policy (`ASVS-01`), passwords on a
+  breached-password list refused, and an email notice when a password is set, changed or reset or a second
+  factor is added (`ASVS-02`, `ASVS-04`).
+- **The ML model service** `casual-sign-modeld` (ADR-029): OCR of scanned pages (`ML-02`), page hashes and
+  embeddings for template matching (`ML-05`), GLiNER extraction and personal-data detection (`ML-07`, `ML-08`), with
+  the worker's analysis jobs and the server's analysis and suggestion routes (`WEB-19`). Off by default; nothing a
+  model says enters the evidence. Left: the editor's suggestions on the real stack and `compose --profile ml up`
+  (`ML-09`).
+- **An OWASP ASVS 4.0.3 self-assessment** ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md), `SEC-ASVS-01`; not a
+  certification) and a **licence inventory** ([THIRD-PARTY.md](THIRD-PARTY.md), `LEG-01`, awaiting sign-off).
 
-**In progress now:** OCR for scanned pages (`ML-02`), template matching on upload (`ML-05`) and hosting an
-in-person signer (`UXW-36`), each being built on a worker branch and not yet merged. **Next for organizations:** the
-admin audit logs (`ORG-05`) and switching between workspaces (`ORG-04`) are built; then the organization admin screens
-(`ORG-06`), followed by delegated administration, a platform console and plans (ADR-028, aimed at v0.0.2). The
-console's server side (operator sign-in with TOTP, its own audit log, organization and health reads) is being built
-on a worker branch; its screens follow the UX overhaul. Model
-features stay off by default and never part of the evidence (ADR-029).
+**Next:** the Compose runs that close the rows above; slices 1, 2, 5 and 7 to their end points for M3; the rest of
+ADR-028 (delegated administration, organization policy, SSO, SCIM, usage export; `ORG-*`, `CON-*`, `PLAN-*`) for
+v0.0.2 (instruction 29); the open ASVS findings (`ASVS-03` and onward).
 
 | Phase | Exit gate | State |
 | --- | --- | --- |
@@ -104,7 +120,7 @@ features stay off by default and never part of the evidence (ADR-029).
 | 1 — PDF and evidence core | **Closed** (7 of 7) | Every admitted corpus PDF (417 of 417) filled, flattened, sealed and verified by ours, pyHanko and EU DSS; tamper and signature-wrapping fixtures detected by all three; WASM byte-identical to native; 24 h of fuzzing per target with no finding. Signed off 2026-11-11 |
 | 2 — Envelope engine and server | **Closed** (5 of 5) | Workflow engine, persistence, API server, job worker, keyd and the Docker Compose deployment; end-to-end on the stack green in CI; crash tests with real process kills; tenant isolation over every operation; every access and web threat with a test seen red. Signed off 2026-11-12 |
 | Release 1 (v0.0.1) | Published 2026-11-12 | Send and sign with routing, templates, decline and void, access code and email code, sealed PDF and certificate, verify, API and webhooks, single-node Compose. Left in `REL-01`: public container packages and the recorded manual walkthrough |
-| Slices 1–35 | — | None closed yet; slices 1, 2, 5 and 7 lead to M3 (first signature, private preview) |
+| Slices 1–35 | — | None closed yet; slices 1, 2 and 5 have their outcome built and are waiting for their Compose runs and demos; slices 1, 2, 5 and 7 lead to M3 (first signature, private preview) |
 
 **What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):
 
@@ -143,7 +159,7 @@ The design, research and plan:
 | Research: DocuSign, SignNow, open-source competitors, law and standards | [docs/48](docs/48-DOCUSIGN-STUDY.md), [49](docs/49-SIGNNOW-STUDY.md), [52](docs/52-COMPETITOR-STUDY.md), [09](docs/09-LEGAL-AND-COMPLIANCE.md) |
 | Security | [docs/07](docs/07-SECURITY-THREAT-MODEL.md) |
 | Roadmap and tracker | [docs/06](docs/06-ROADMAP-AND-DELIVERY.md), [docs/14](docs/14-EXECUTION-TRACKER.md) |
-| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 167 features tracked; 39 work end to end, 17 in part, 15 more have their engine built |
+| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 168 features tracked; 48 work end to end, 25 in part, 15 more have their engine built |
 
 The plan: the headless engine (Phase 1) and the envelope engine, server and API (Phase 2) are done; **35 vertical
 slices** now deliver user-visible features, starting with send-and-sign. Milestones: M0 ready to build, M1

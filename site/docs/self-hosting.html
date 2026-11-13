@@ -58,13 +58,14 @@
   <tbody>
     <tr><td><code>server</code></td><td>distroless, non-root</td><td>REST API, the signing ceremony, and the web app on port 8080</td></tr>
     <tr><td><code>worker</code></td><td>distroless, non-root</td><td>Jobs from a PostgreSQL queue: email, reminders and expiry, sealing through keyd and the timestamp authority, webhooks</td></tr>
-    <tr><td><code>keyd</code></td><td>OpenSeal</td><td>Holds the seal key behind PKCS#11; accepts only the worker, over mutual TLS; keeps its own hash-chained log of operations</td></tr>
+    <tr><td><code>keyd</code></td><td>OpenSeal</td><td>Holds the seal key behind PKCS#11; signs only for the worker, over mutual TLS, and answers the platform console's read-only questions on a separate allow list; keeps its own hash-chained log of operations</td></tr>
     <tr><td><code>postgres</code></td><td><code>postgres:17-alpine</code></td><td>The record and the audit trail; the application role is bound by row-level security and cannot update or delete audit events</td></tr>
     <tr><td><code>migrate</code></td><td>the server image</td><td>One-shot: migrations as the schema owner, before the server starts</td></tr>
     <tr><td><code>s3</code></td><td>SeaweedFS</td><td>S3-compatible store for documents, content-addressed and written once</td></tr>
     <tr><td><code>mailpit</code></td><td><code>axllent/mailpit</code></td><td>Development only: catches all email</td></tr>
     <tr><td><code>tsa</code></td><td>development tools</td><td>Development only: an RFC 3161 timestamp authority</td></tr>
     <tr><td><code>pki</code></td><td>development tools</td><td>Development only, first start: the CA, TLS certificates, seal key and random passwords, into a read-only <code>secrets</code> volume</td></tr>
+    <tr><td><code>modeld</code></td><td>OpenSeal</td><td>Optional, Compose profile <code>ml</code>: pretrained models for OCR, template matching and personal-data detection, on an internal network with no secrets but its own TLS identity. The worker is not yet put on its network in this file</td></tr>
   </tbody>
 </table>
 </div>
@@ -85,7 +86,10 @@
     <tr><td><code>OPENSEAL_TRUSTED_PROXIES</code></td><td>Proxies whose forwarded client address is believed, for the evidence's IP addresses</td></tr>
     <tr><td><code>OPENSEAL_GEOIP_DB</code></td><td>Optional GeoIP database for the approximate location in the certificate</td></tr>
     <tr><td><code>OPENSEAL_WEBAPP_DIR</code></td><td>The web app's files, served at <code>/</code></td></tr>
+    <tr><td><code>OPENSEAL_MFA_KEY</code></td><td>32 random bytes, base64, that seal members' second-factor seeds; back it up with the database</td></tr>
+    <tr><td><code>OPENSEAL_RECIPIENT_IDPS_FILE</code></td><td>Optional: the OpenID Connect providers signers may sign in with; holds client secrets</td></tr>
     <tr><td><code>OPENSEAL_WEBHOOK_ALLOW</code></td><td>Worker: address ranges webhooks may reach although private (refused by default)</td></tr>
+    <tr><td><code>OPENSEAL_SMS_GATEWAY_URL</code>, <code>OPENSEAL_SMS_GATEWAY_SECRET</code></td><td>Worker: the HTTPS gateway that sends text-message and voice one-time codes; unset, such codes are never sent</td></tr>
   </tbody>
 </table>
 </div>
@@ -97,7 +101,7 @@
   <thead><tr><th scope="col">Area</th><th scope="col">Do</th></tr></thead>
   <tbody>
     <tr><td>Signing key</td><td>A document-signing certificate from a CA your relying parties trust (for example an AATL member, or a qualified seal certificate for eIDAS), with its key generated in your HSM; configure keyd with PKCS#11. Never a file key.</td></tr>
-    <tr><td>Timestamps</td><td>At least two RFC 3161 timestamp authorities with a service level (qualified, if you need eIDAS qualified time)</td></tr>
+    <tr><td>Timestamps</td><td>At least two RFC 3161 timestamp authorities with a service level (qualified, if you need eIDAS qualified time). Key custodians add and change them in the platform console, two people per change</td></tr>
     <tr><td>Email</td><td>A sending domain with SPF, DKIM and DMARC (<code>p=quarantine</code> or stricter); an SMTP relay or provider; bounce handling</td></tr>
     <tr><td>Database</td><td>PostgreSQL 15 or later, encrypted, with point-in-time recovery; a separate role for migrations</td></tr>
     <tr><td>Object store</td><td>S3-compatible, with versioning and encryption; Object Lock in compliance mode for regulated tenants</td></tr>
@@ -110,6 +114,9 @@
 </table>
 </div>
 
+<h2 id="platform-console">Platform console</h2>
+<p><code>casual-sign-console</code> is a separate program for the people who run a deployment: health, organizations, approvals, keys and certificates, timestamp authorities, plans and usage limits, operators and the operator log. Operators sign in with a password and an authenticator code. It is not yet a Compose service: build it with <code>cargo build --release -p casual-sign-console</code>, create the first operator with <code>casual-sign-console bootstrap-operator</code>, and run <code>casual-sign-console serve</code>, which listens on <code>127.0.0.1:8090</code> and refuses to start if its operator log does not verify. The full list of its settings is in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65</a>.</p>
+
 <h2 id="upgrades">Upgrades</h2>
 <p>Migrations are forward-only and numbered. They are designed to stay compatible for one release, so old and new nodes can run side by side during a rolling deploy. Do not skip a minor version without reading its release notes.</p>
 
@@ -118,7 +125,7 @@
 
     <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="administration.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Administration</span></a><a class="pn pn-next" href="api.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">API reference</span></a></nav>
   </article>
-  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#the-services">The services</a></li><li><a href="#configuration">Configuration</a></li><li><a href="#production-checklist">Production checklist</a></li><li><a href="#upgrades">Upgrades</a></li><li><a href="#backups">Backups</a></li></ul></nav>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#the-services">The services</a></li><li><a href="#configuration">Configuration</a></li><li><a href="#production-checklist">Production checklist</a></li><li><a href="#platform-console">Platform console</a></li><li><a href="#upgrades">Upgrades</a></li><li><a href="#backups">Backups</a></li></ul></nav>
 </div>
 </main>
 <footer class="site-footer">

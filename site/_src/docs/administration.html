@@ -1,9 +1,9 @@
-<!--meta {"title": "Administration", "description": "Manage OpenSeal users and invitations, permission profiles, API keys and OAuth clients, and account settings and branding."} -->
+<!--meta {"title": "Administration", "description": "Manage OpenSeal users and invitations, groups and permission profiles, sign-in security, API keys, OAuth clients and webhooks, the admin audit log, and account settings and branding."} -->
 <h1>Administration</h1>
-<p class="lede">Administrators manage who can use the account, which programs can call the API, and the account's defaults. Everything here is under <strong>Admin</strong> in the top bar, and every action is also an API call.</p>
+<p class="lede">Administrators manage who can use the account, which programs can call the API, and the account's defaults. Everything here is under <strong>Admin</strong>, and every action is also an API call.</p>
 
 <h2>Users</h2>
-<p>A member signs in to send and manage envelopes; signers never need an account. Each member has a <strong>permission profile</strong>:</p>
+<p>A member signs in to send and manage envelopes; signers never need an account. Each member has a <strong>permission profile</strong>. Three are built in:</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Permission profiles">
 <table>
   <thead><tr><th scope="col">Profile</th><th scope="col">Can</th></tr></thead>
@@ -18,7 +18,10 @@
   <li><strong>Invite user</strong> emails a one-time link to set a password. <strong>Resend invitation</strong> sends a new link; earlier links stop working.</li>
   <li>Or <strong>add a user</strong> with a password (at least 12 characters), or none for someone who signs in another way.</li>
   <li><strong>Disable sign-in</strong> stops a member signing in or calling the API. Their envelopes stay, as they do when a member is removed.</li>
+  <li><strong>Custom permission profiles</strong> choose exactly which scopes a member holds; the server enforces them on every request and never grants more than the administrator making the change holds.</li>
+  <li><strong>Groups</strong> collect members, so a template can be shared with a group at once.</li>
 </ul>
+<p>Passwords on a list of breached and common passwords are refused wherever a password is set. A member can add a <strong>second factor</strong> (an authenticator app code, with ten one-time recovery codes), and the account can require one of administrators or of everyone. Members are emailed when their password or second factor changes.</p>
 <p>The first administrator is created on the command line with <code>bootstrap</code> (<a href="getting-started.html#create-the-first-administrator">Getting started</a>).</p>
 
 <h2>API clients</h2>
@@ -44,10 +47,17 @@
     <tr><td><code>admin:users</code></td><td>Manage members and invitations</td></tr>
     <tr><td><code>admin:account</code></td><td>Account settings and API clients</td></tr>
     <tr><td><code>audit:read</code></td><td>Read audit trails</td></tr>
+    <tr><td><code>bulk:send</code></td><td>Bulk send from a template with a list of recipients</td></tr>
   </tbody>
 </table>
 </div>
 <p>The scope each operation needs is listed beside it in the <a href="api.html">API reference</a>.</p>
+
+<h2>Admin audit log</h2>
+<p>Every change to settings, members, groups, profiles, workspaces and the organization is recorded in a hash-chained log in the same transaction as the change. <strong>Audit log</strong> lists it and exports it as JSON or CSV. Nothing in it is ever edited or deleted.</p>
+
+<h2>Organizations and workspaces</h2>
+<p>Each account is a workspace inside an organization. A person in several workspaces switches between them from the sidebar's workspace menu. Organization owners and administrators see the organization's workspaces, people, administrators and its own audit log.</p>
 
 <h2>Account settings and branding</h2>
 <ul>
@@ -55,4 +65,4 @@
   <li><strong>Branding</strong>: the name recipients see in emails and on the signing page, and an accent colour. Text on that colour must stay readable; the form says so if it would not.</li>
 </ul>
 
-<div class="callout">{{icon:info}}<div><p>Planned for organization admin (<code>VS-10</code>): groups, custom permission profiles, OIDC and SAML single sign-on, domain claims, SCIM and an admin audit log. See the <a href="../roadmap.html">roadmap</a>.</p></div></div>
+<div class="callout">{{icon:info}}<div><p>Planned for organization admin (<code>VS-10</code>): OIDC and SAML single sign-on for members, passkeys (WebAuthn), domain claims, SCIM and delegated administration. See the <a href="../roadmap.html">roadmap</a>.</p></div></div>

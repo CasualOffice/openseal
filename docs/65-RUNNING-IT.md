@@ -34,7 +34,7 @@ Ports bind to `127.0.0.1` only: `OPENSEAL_HTTP_PORT` (default 8080) and `OPENSEA
 | `tsa` | `deploy/devtools/Dockerfile` | A development RFC 3161 time-stamping authority (`openssl ts -reply`) |
 | `server` | `deploy/Dockerfile` target `server` (distroless, `nonroot`) | The API, the ceremony and the web app (`webapp/`) on port 8080 |
 | `worker` | `deploy/Dockerfile` target `worker` (distroless, `nonroot`) | Email through Mailpit, sealing through keyd and the TSA, webhooks |
-| `modeld` (profile `ml` only) | `deploy/Dockerfile` target `modeld` (distroless, `nonroot`) | Pretrained models, on an internal network; see §Pretrained models. Not built yet |
+| `modeld` (profile `ml` only) | `deploy/Dockerfile` target `modeld` (distroless, `nonroot`) | Pretrained models, on an internal network; see §Pretrained models. The image builds; the worker is not yet on its network (`ML-09`) |
 
 Every image is pinned by digest (docs/04 rule 31). **This stack is for evaluation and development only:** its keys are
 generated on the machine, its CA is trusted by nothing else, its seals are development seals, and the server sends
@@ -56,8 +56,10 @@ target/tools-venv/bin/python tools/verify-sealed.py target/e2e-sealed     # pyHa
 
 ## Pretrained models (optional, Compose profile `ml`)
 
-**Status:** the bundle tooling is built and checked (`ML-01`); the daemon `casual-sign-modeld` is not yet in the
-workspace, so the `modeld` image does not build yet, and the worker does not call it (ADR-029, docs/33).
+**Status:** the bundle tooling is built and checked (`ML-01`), and `casual-sign-modeld` is built with its OCR, HASH,
+EMBED, ENTITIES and PERSONAL operations (`ML-02`, `ML-05`, `ML-07`, `ML-08`, `ML-09`). The worker's analysis jobs call it
+when `OPENSEAL_MODELD_ADDR` is set (`WEB-19`), but the Compose file does not yet put the worker on the `ml` network,
+so in this stack nothing reaches it; that run is `ML-09`'s exit (ADR-029, docs/33).
 
 Assistive features (OCR of scanned pages, template matching, personal-data highlights) run in a separate process,
 `modeld`. It holds no secrets other than its own TLS identity: it never mounts the shared `secrets` volume, only its
@@ -100,12 +102,36 @@ entries, and `fetch-models.py` honours that exception for those entry ids alone,
 (`NOTICE.txt`, which points to the Eigen revision's source; `ThirdPartyNotices.txt`; `ONNXRUNTIME-LICENSE`), and
 beside the library in `/opt/openseal/models/runtime/`.
 
+## Platform console (operators)
+
+The console (`casual-sign-console`, docs/23 §5) is a separate binary for the people who run a deployment: health,
+organizations, approvals, keys and certificates, timestamp authorities, plans, operators and the operator log. It is
+**not yet a Compose service or a release image** (`CON-02`); build it with `cargo build --release -p
+casual-sign-console` and run it beside the stack. It connects to PostgreSQL as a LOGIN role that is a member of
+`openseal_console` (created by the migrations, with no grant on the application's tables), never as the application's
+role, and listens on `127.0.0.1:8090` unless told otherwise; a non-loopback bind needs `OPENSEAL_CONSOLE_PUBLIC=1` and
+`OPENSEAL_TRUSTED_PROXIES`, with TLS at the proxy, and its origin must differ from the web app's.
+
+```sh
+casual-sign-console bootstrap-operator owner@ops.example    # the first platform owner: prints a one-time enrolment token
+casual-sign-console serve                                   # verifies the operator log first, refuses to start if it does not verify
+casual-sign-console verify-log
+casual-sign-console set-service-target <name> <role> <http|tcp> <target>    # what the health page probes (as the schema owner)
+```
+
+Its settings (`server/casual-sign-console/src/main.rs`): `OPENSEAL_CONSOLE_DATABASE_URL` and `OPENSEAL_CONSOLE_MFA_KEY`
+(32 bytes, base64, sealing operators' TOTP seeds) as secrets; `OPENSEAL_CONSOLE_LISTEN`, `OPENSEAL_CONSOLE_ORIGIN`;
+`OPENSEAL_CONSOLE_KEYD_ADDR`, `_KEYD_CA`, `_KEYD_CLIENT_CERT`, `_KEYD_CLIENT_KEY` and `_KEYD_SERVER_NAME` for the Keys
+page, with the console's certificate on keyd's admin allow list only; `OPENSEAL_CONSOLE_TSA_ALLOW` for TSA addresses
+that are not public. Operators sign in with a password and a mandatory TOTP code; risky changes (suspending an
+organization, a TSA change) need a second operator's approval.
+
 ## Production checklist
 
 | Area | Do |
 | --- | --- |
 | Signing key | Obtain a document-signing certificate from an AATL member CA (or a qualified seal certificate for eIDAS) with its key generated in your HSM or cloud KMS; configure `keyd` with PKCS#11 or the KMS backend; never a file key ([09](09-LEGAL-AND-COMPLIANCE.md) §7) |
-| Timestamps | Configure at least two RFC 3161 TSAs with an SLA (qualified, if you need eIDAS qualified time) |
+| Timestamps | Configure at least two RFC 3161 TSAs with an SLA (qualified, if you need eIDAS qualified time). Key custodians add and change them in the platform console, two people per change (`CON-07`); the worker reads them from the database and falls back to `OPENSEAL_TSA_URLS` when none is configured |
 | Email | A sending domain with SPF, DKIM and DMARC (`p=quarantine` or stricter); a provider plugin or SMTP relay; bounce handling webhook |
 | SMS / IDV / payments | Enable only the providers you have contracts with. SMS and voice one-time codes (`sms_otp`, `voice_otp`) go through an HTTPS gateway you run or rent: set `OPENSEAL_SMS_GATEWAY_URL` and `OPENSEAL_SMS_GATEWAY_SECRET` (or `_FILE`) on the worker; it posts `{"channel":"sms"\|"voice","to":"+…","text":"…","id":"…"}` with `Authorization: Bearer`. Unset, such codes are never sent (`CS-WRK-0013`). Recipient sign-in through an identity provider (`sso`): list the OpenID Connect providers signers may use in a JSON file named by `OPENSEAL_RECIPIENT_IDPS_FILE` on the server, `{"providers": [{"id", "name", "issuer", "authorization_endpoint", "token_endpoint", "jwks_uri", "client_id", "client_secret", "redirect_uri"?}]}`; it holds client secrets, so mount it as a secret. Register `{OPENSEAL_PUBLIC_URL}/s/oidc` (the default `redirect_uri`) with each provider, with the `openid email` scopes. Endpoints must be HTTPS (HTTP only to a loopback address). Unset, `sso` cannot pass (`CS-API-0014`) |
 | Database | PostgreSQL 15+, encrypted, PITR backups, a separate role for migrations; the application role has no `UPDATE`/`DELETE` on `audit_events` |
@@ -126,7 +152,10 @@ generated from the code into this page is still to come. The server's: `OPENSEAL
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, `OPENSEAL_WEBAPP_DIR`, `OPENSEAL_RECIPIENT_IDPS_FILE`,
 `OPENSEAL_MFA_KEY` (32 random bytes as base64, sealing staff TOTP seeds; keep it with the database backups, since a
 seed sealed under a lost key cannot be opened and its users must enrol again; ASVS-01); `migrate` reads
-`OPENSEAL_MIGRATE_DATABASE_URL`.
+`OPENSEAL_MIGRATE_DATABASE_URL`. The worker's SMS and voice gateway is `OPENSEAL_SMS_GATEWAY_URL` and
+`OPENSEAL_SMS_GATEWAY_SECRET`; its model service `OPENSEAL_MODELD_ADDR` with `OPENSEAL_MODELD_CA`,
+`_CLIENT_CERT`, `_CLIENT_KEY` and `_SERVER_NAME`. keyd's read-only admin operations answer only the certificates on
+`OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, which must not overlap its signing list (`CON-06`).
 
 ## Upgrades
 
