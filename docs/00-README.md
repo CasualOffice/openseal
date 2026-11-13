@@ -7,7 +7,9 @@ Read in this order: 03 → 01 → 02 → 05 → 06 → 14 → 07. Then the pilla
 
 Docs are true as of `19518fb` (2026-11-12). **Phases D, 0, 1 and 2 are closed and v0.0.1 is published:** engine, server, API, worker, keyd, Compose deployment and web app exist; organizations (ADR-028), ML (ADR-029) and the UI pass are in progress. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
 (what it is and its status), [AGENTS.md](../AGENTS.md) (the contract and current state), [CLAUDE.md](../CLAUDE.md)
-(working rules and engineering standards).
+(working rules and engineering standards), [NOTICE](../NOTICE) with [THIRD-PARTY.md](../THIRD-PARTY.md) and
+[THIRD-PARTY-LICENSES.txt](../THIRD-PARTY-LICENSES.txt) (third-party attributions, inventory and licence texts, generated
+by `tools/licence-inventory.py`, `LEG-01`).
 
 | Doc | What it is | Status |
 | --- | --- | --- |
