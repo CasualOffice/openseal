@@ -17,7 +17,7 @@ pub mod event;
 mod store;
 
 pub use error::{PlatformError, Result};
-pub use event::{ChainReport, Detail, EventDraft, StoredEvent};
+pub use event::{ChainReport, Detail, EventDraft, OrgScope, StoredEvent};
 pub use store::{
     AlertRow, ApprovalRow, DeadJob, JobStat, MAX_PAGE, NewOperator, OperatorLogin, OperatorSummary,
     OrgAction, OrganizationRow, PlatformStore, PlatformTx, Role, ServiceTarget, Session,
