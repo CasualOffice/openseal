@@ -573,10 +573,90 @@ async function viewHealth(main, view) {
 // Keys and certificates (CON-06) ------------------------------------------------------
 
 command("refreshKeys", async (withLog) => {
-  const keys = await api.get("/keys");
+  const [keys, tsa] = await Promise.all([api.get("/keys"), api.get("/tsa")]);
   const log = withLog && keys.configured ? await api.get("/keys/log?limit=100") : null;
-  return { keys, log };
+  return { keys, log, tsa };
 });
+command("proposeTsa", (change) => withFactor(() => api.post("/tsa/changes", change)));
+command("grantTsa", (id) => withFactor(() => api.post(`/tsa/changes/${id}/grant`)));
+command("applyTsa", (id) => withFactor(() => api.post(`/tsa/changes/${id}/apply`)));
+
+/// The propose-a-TSA panel (key custodians); `done` reloads the page.
+function tsaPanel(done, endpoint) {
+  openPanel(endpoint ? "Change time-stamping authority" : "Add time-stamping authority", (closePanel) => {
+    const url = h("input", { type: "url", attrs: { required: true, maxlength: "2048", placeholder: "https://tsa.example.com/tsr", value: endpoint?.url || "" } });
+    const priority = h("input", { type: "number", attrs: { min: "0", max: "1000", value: String(endpoint?.priority ?? 100) } });
+    const oid = h("input", { type: "text", attrs: { placeholder: "Optional, e.g. 1.2.3.4", value: endpoint?.policy_oid || "" } });
+    const cert = h("input", { type: "text", class: "mono", attrs: { placeholder: "Optional SHA-256, 64 hex digits", value: endpoint?.cert_sha256 || "" } });
+    const enabled = select([["true", "Enabled"], ["false", "Disabled"]], endpoint?.enabled === false ? "false" : "true");
+    return h("div", { class: "form" },
+      h("p", { class: "d", text: "A second key custodian approves the change, then you apply it. The address must be public; the worker checks it again at every use." }),
+      form({
+        fields: [field("URL", url), field("Priority", priority, "Lower is tried first"), field("Policy OID", oid), field("TSA certificate", cert), field("State", enabled)],
+        submitText: "Propose change",
+        factor: true,
+        submit: async () => {
+          const change = { action: "set", url: url.value.trim(), priority: Number(priority.value), enabled: enabled.value === "true" };
+          if (endpoint) change.id = endpoint.id;
+          if (oid.value.trim()) change.policy_oid = oid.value.trim();
+          if (cert.value.trim()) change.cert_sha256 = cert.value.trim();
+          await run("proposeTsa", change);
+          closePanel();
+          toast("Proposed: a second key custodian approves it next");
+          done();
+        },
+      }));
+  });
+}
+
+function tsaCards(tsa, reload) {
+  const can = M.access(state.roles);
+  const endpoints = tsa?.endpoints || [];
+  const changes = tsa?.changes || [];
+  const act = (label, cls, cmd, id, ok) => btn(label, cls, async (e) => {
+    const t = e.currentTarget;
+    t.disabled = true;
+    try { await run(cmd, id); toast(ok); reload(); }
+    catch (p) { if (!p?.cancelled && !handleAuth(p)) toast(M.problemMessage(p), true); }
+    finally { t.disabled = false; }
+  });
+  const list = h("section", { class: "card rise", attrs: { "aria-labelledby": "tsa-h" } },
+    h("div", { class: "card-h" }, h("b", { id: "tsa-h", text: "Time-stamping authorities" }),
+      h("span", { class: "sub", text: "tried in priority order; while none is enabled the worker uses OPENSEAL_TSA_URLS" }),
+      can.custodian ? h("span", { class: "right" }, btn("Add", "ghost", () => tsaPanel(reload))) : null),
+    endpoints.length
+      ? h("div", { class: "tbl-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, h("th", { class: "num", text: "Priority" }), h("th", { text: "URL" }), h("th", { class: "hide-sm", text: "Policy" }), h("th", { text: "State" }), h("th", { class: "hide-sm", text: "Changed" }), can.custodian ? h("th", { text: "" }) : null)),
+        h("tbody", {}, endpoints.map((t) => h("tr", {},
+          h("td", { class: "num mono", text: String(t.priority) }),
+          h("td", {}, h("code", { text: t.url })),
+          h("td", { class: "hide-sm" }, h("code", { text: t.policy_oid || "–" })),
+          h("td", {}, chip(t.enabled ? "Enabled" : "Disabled", t.enabled ? "ok" : "")),
+          h("td", { class: "hide-sm", text: M.shortDate(t.changed_at) }),
+          can.custodian ? h("td", {}, h("span", { class: "chips" },
+            btn("Change", "ghost", () => tsaPanel(reload, t)),
+            act("Remove", "ghost", "proposeTsa", { action: "remove", id: t.id }, "Removal proposed: a second key custodian approves it next"))) : null)))))
+      : emptyState(art.noEntries(), "None configured here", "Seals use the TSAs in OPENSEAL_TSA_URLS until key custodians add one."));
+  const rows = changes.map((c) => {
+    const st = M.approvalState(c, state.me);
+    const [label, tone] = APPROVAL_TEXT[st];
+    const acts = h("div", { class: "acts" });
+    if (can.custodian && st === "grantable") put(acts, act("Approve", "primary", "grantTsa", c.id, "Approved: the proposer can now apply it"));
+    else if (can.custodian && st === "ready") put(acts, act("Apply", "primary", "applyTsa", c.id, "Applied: seals use it from the next minute"));
+    else put(acts, chip(label, tone));
+    return h("div", { class: `row${st === "applied" || st === "expired" ? " done" : ""}` },
+      h("span", { class: `bullet tone-${st === "grantable" ? "warn" : "ok"}` }),
+      h("div", { class: "main" }, h("b", { text: M.actionLabel(c.action) }),
+        h("span", { class: "d", text: M.tsaChangeText(c) }),
+        h("span", { class: "w", text: `Proposed by ${c.requester === state.me ? "you" : `operator ${M.shortId(c.requester)}`} · ${M.ago(c.created_at)} · ${c.used ? "spent" : `lapses ${M.until(c.expires_at)}`}` })),
+      acts);
+  });
+  const pending = h("section", { class: "card rise", attrs: { "aria-labelledby": "tsac-h" } },
+    h("div", { class: "card-h" }, h("b", { id: "tsac-h", text: "Changes" }), h("span", { class: "sub", text: "two key custodians: one proposes and applies, another approves" }),
+      can.custodian ? h("span", { class: "right" }, factorNote("Each step needs a code from your authenticator app")) : null),
+    rows.length ? rows : emptyState(art.noApprovals(), "No changes in the last 24 hours", "A key custodian's proposal appears here for a second custodian to approve."));
+  return [list, pending];
+}
 
 function keyCard(k) {
   const st = M.keyStatus(k);
@@ -628,11 +708,12 @@ async function viewKeys(main, view) {
       if (view !== state.view) return;
       if (!r.keys.configured) {
         put(clear(body), h("div", { class: "card" }, emptyState(art.noEntries(), "keyd is not configured",
-          "Set OPENSEAL_CONSOLE_KEYD_ADDR and the console's admin certificate on the host; keyd lists that certificate on its admin allow-list, never its signing list.")));
+          "Set OPENSEAL_CONSOLE_KEYD_ADDR and the console's admin certificate on the host; keyd lists that certificate on its admin allow-list, never its signing list.")),
+        ...tsaCards(r.tsa, load));
         return;
       }
       const keys = r.keys.keys || [];
-      put(clear(body),
+      put(clear(body), ...tsaCards(r.tsa, load),
         keys.length ? keys.map(keyCard) : h("div", { class: "card" }, emptyState(art.noEntries(), "keyd serves no keys", "Keys are provisioned in the HSM or KMS by the key custodian, on the keyd host.")),
         r.log ? keydLogCard(r.log) : null);
     } catch (p) {

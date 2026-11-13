@@ -911,7 +911,14 @@ pub async fn approvals(
     _op: Authed<Operators>,
 ) -> Result<Json<Value>, ConsoleError> {
     let now = state.now();
-    let list = state.store().approvals(now).await?;
+    // Organization actions only; key changes are the key custodians' (`GET /tsa`).
+    let list: Vec<_> = state
+        .store()
+        .approvals(now)
+        .await?
+        .into_iter()
+        .filter(|a| a.action.starts_with("organization."))
+        .collect();
     Ok(Json(json!({
         "approvals": list.iter().map(|a| json!({
             "id": a.id,

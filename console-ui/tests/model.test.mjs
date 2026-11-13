@@ -145,7 +145,7 @@ test("problems become plain sentences, naming the field or the wait", () => {
 });
 
 test("roles map to screens as the API's x-roles do", () => {
-  assert.deepEqual(M.access(["observer"]), { health: true, organizations: true, keys: true, keysLog: false, manage: false, approvals: false, plans: true, log: false, operators: false });
+  assert.deepEqual(M.access(["observer"]), { health: true, organizations: true, keys: true, keysLog: false, custodian: false, manage: false, approvals: false, plans: true, log: false, operators: false });
   assert.equal(M.access(["operator"]).approvals, true);
   assert.equal(M.access(["operator"]).operators, false);
   assert.equal(M.access(["platform_owner"]).operators, true);
@@ -269,4 +269,13 @@ test("keyd's tile reads its health and names the refusal (CON-06)", () => {
   assert.equal(M.access(["observer"]).keys, true);
   assert.equal(M.access(["observer"]).keysLog, false);
   assert.equal(M.access(["operator"]).keysLog, true);
+});
+
+test("a TSA change reads as what it sets, for the approver (CON-07)", () => {
+  const set = { action: "tsa.set", endpoint: "0192aaaa-bbbb-7ccc-8ddd-eeeeffff0000", payload: { url: "https://tsa.example/tsr", priority: 10, enabled: true, policy_oid: "1.2.3", cert_sha256: "ab".repeat(32) } };
+  assert.equal(M.tsaChangeText(set), "https://tsa.example/tsr · priority 10 · enabled · policy 1.2.3 · certificate abababababab…");
+  assert.match(M.tsaChangeText({ action: "tsa.remove", endpoint: "0192aaaa-bbbb-7ccc-8ddd-eeeeffff0000" }), /^Remove /);
+  assert.equal(M.access(["key_custodian"]).custodian, true);
+  assert.equal(M.access(["operator"]).custodian, false);
+  assert.equal(M.actionLabel("tsa.set"), "Set time-stamping authority");
 });

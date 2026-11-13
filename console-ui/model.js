@@ -16,6 +16,7 @@ export function access(roles = []) {
     organizations: true,
     keys: true,
     keysLog: manager,
+    custodian: has("key_custodian"),
     manage: manager,
     approvals: manager,
     plans: true,
@@ -199,6 +200,17 @@ export function keyStatus(k) {
   return { ...s, note };
 }
 
+/// A proposed TSA change's text for the approver: what it sets or removes, from the
+/// stored payload (`GET /tsa`).
+export function tsaChangeText(c) {
+  const p = c?.payload || {};
+  if (c?.action === "tsa.remove") return `Remove ${shortId(c.endpoint)}`;
+  const parts = [p.url || "?", `priority ${p.priority ?? "?"}`, p.enabled === false ? "disabled" : "enabled"];
+  if (p.policy_oid) parts.push(`policy ${p.policy_oid}`);
+  if (p.cert_sha256) parts.push(`certificate ${String(p.cert_sha256).slice(0, 12)}…`);
+  return parts.join(" · ");
+}
+
 /// keyd's health as a tile: up, degraded (a key's backend does not answer), down with
 /// keyd's code, or not configured.
 export function keydTile(keyd) {
@@ -277,6 +289,8 @@ export function approvalState(a, me, now = Date.now()) {
 const ACTION_LABELS = {
   "organization.suspend": "Suspend organization",
   "organization.resume": "Resume organization",
+  "tsa.set": "Set time-stamping authority",
+  "tsa.remove": "Remove time-stamping authority",
 };
 
 /// An approval action's label.
