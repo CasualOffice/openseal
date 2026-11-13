@@ -130,3 +130,42 @@ export function envelopeFromTemplate(template, people, { docs = [], fields = [],
 export function countLabel({ n, more }) {
   return more ? `${n}+` : String(n);
 }
+
+// ---- Sharing (UXW-06) ---------------------------------------------------------------
+
+const RANK = { use: 0, edit: 1, owner: 2 };
+
+/// Whether the caller's `access` to a template (as the server answers it: owner, edit or
+/// use) allows `need`. A template without `access` is the caller's own. The server
+/// decides every call; this only keeps the menus to what will work.
+export function canDo(template, need) {
+  const have = RANK[template?.access] ?? RANK.owner;
+  return have >= (RANK[need] ?? RANK.owner);
+}
+
+/// The `PUT /templates/{id}/shares` items from the share panel's entries: a member by id
+/// (or by the email just typed), a group by id, or the whole account; each with
+/// `can_edit`.
+export function shareItems(entries) {
+  return entries.map((e) => {
+    const can_edit = !!e.can_edit;
+    if (e.account) return { account: true, can_edit };
+    if (e.group?.id) return { group_id: e.group.id, can_edit };
+    if (e.user?.id) return { user_id: e.user.id, can_edit };
+    return { email: String(e.email || "").trim(), can_edit };
+  });
+}
+
+/// Whether `entries` already reach the target `next` (the same member, by id or email,
+/// the same group, or the account), so the panel does not add it twice.
+export function hasShare(entries, next) {
+  const email = (x) => String(x.user?.email || x.email || "").trim().toLowerCase();
+  return entries.some((e) => (next.account && e.account)
+    || (next.group?.id && e.group?.id === next.group.id)
+    || (!next.account && !next.group && !e.account && !e.group && email(e) && email(e) === email(next)));
+}
+
+/// Whether `s` looks like an email address worth sending to the server.
+export function isEmail(s) {
+  return EMAIL.test(String(s || "").trim());
+}
