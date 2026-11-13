@@ -47,7 +47,7 @@ components:
       schema: {type: integer, minimum: 1, maximum: 200}
   responses:
     Problem:
-      description: A problem (RFC 9457) with `code`; `field` for CS-CON-0010, `retry_after` for CS-CON-0012.
+      description: A problem (RFC 9457) with `code`; `field` for CS-CON-0010 and CS-PLAN-0006, `retry_after` for CS-CON-0012.
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -497,6 +497,142 @@ paths:
               required: [approval]
               properties:
                 approval: {type: string, format: uuid}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/plans:
+    get:
+      operationId: plans
+      x-roles: any
+      description: Every plan version (PLAN-02, docs/23 §7.1), by key and newest version first, with its entitlements (every feature, true or false), quotas, seat rule, when it was archived and how many organizations it is current for; and `catalogue`, the feature, meter (kind, approximate), period, enforcement, level and seat-rule names this build knows.
+      responses:
+        '200':
+          description: Plans and the catalogue.
+          content:
+            application/json:
+              schema: {type: object, required: [plans, catalogue]}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createPlan
+      x-roles: operators
+      description: The next version of plan `key` (1 for a new key); versions are immutable. `CS-PLAN-0006` (naming the field) for an unknown name, a duplicate quota, a gauge with a period, `workspaces` per workspace, a limit above 2^63-1, a bad key or name, and `hard` enforcement on an approximate meter (`api_calls`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [key, name]
+              properties:
+                key: {type: string, pattern: '^[a-z][a-z0-9_-]{0,63}$'}
+                name: {type: string, minLength: 1, maxLength: 120}
+                entitlements: {type: object, additionalProperties: {type: boolean}}
+                quotas:
+                  type: array
+                  maxItems: 64
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [meter, limit, period, enforcement, level]
+                    properties:
+                      meter: {type: string}
+                      limit: {type: integer, minimum: 0}
+                      period: {type: string, enum: [month, year, none]}
+                      enforcement: {type: string, enum: [hard, soft, notify]}
+                      level: {type: string, enum: [organization, workspace]}
+                seat_rule: {type: string, enum: [can_send, every_member]}
+      responses:
+        '201':
+          description: Created; its id, key and version.
+          content:
+            application/json:
+              schema: {type: object, required: [id, key, version]}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/plans/{id}/archive:
+    post:
+      operationId: archivePlan
+      x-roles: operators
+      description: No new assignment may name this version; current assignments continue.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/organizations/{id}/plan:
+    get:
+      operationId: organizationPlan
+      x-roles: any
+      description: The organization's assignments (newest first, with `current`) and overrides (newest first, with `live`, `applied` and the reason, which stays in the console), and `effective`, the plan in force for the organization now (null when none is assigned). Workspace overrides are listed and apply in their workspace only.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: The organization's plan.
+          content:
+            application/json:
+              schema: {type: object, required: [organization, at, effective, assignments, overrides]}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: assignPlan
+      x-roles: operators
+      description: Assign a plan version from `starts_at` (default now; never earlier) until `ends_at` (default open-ended). The assignment current at `starts_at` ends at that instant. `CS-PLAN-0006` for an archived version, a start in the past, an end not after the start, or an assignment already starting at or after this one.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [plan]
+              properties:
+                plan: {type: string, format: uuid}
+                starts_at: {type: string, format: date-time}
+                ends_at: {type: string, format: date-time}
+      responses:
+        '201':
+          description: Assigned; the assignment's id.
+          content:
+            application/json:
+              schema: {type: object, required: [id]}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/organizations/{id}/plan-overrides:
+    post:
+      operationId: setPlanOverride
+      x-roles: operators
+      description: 'Override one entitlement (`feature.<feature>`: `true` or `false`), one quota''s limit or enforcement (`quota.<meter>.<level>.limit` or `.enforcement`), or the seat rule (`seat_rule`), until `expires_at` (exclusive; default never). With `workspace`, one of the organization''s workspaces, only a workspace-level quota. `CS-PLAN-0006` for a key, value or scope outside that grammar, `hard` on an approximate meter, or an expiry not in the future; `CS-CON-0010` for a reason that is empty, over 200 characters or holds a control character. The reason is kept in the console only, never in the operator log.'
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [key, value, reason]
+              properties:
+                key: {type: string}
+                value: {type: string}
+                reason: {type: string, minLength: 1, maxLength: 200}
+                workspace: {type: string, format: uuid}
+                expires_at: {type: string, format: date-time}
+      responses:
+        '201':
+          description: Set; the override's id.
+          content:
+            application/json:
+              schema: {type: object, required: [id]}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/plan-overrides/{id}/expire:
+    post:
+      operationId: expirePlanOverride
+      x-roles: operators
+      description: Stop an override now (overrides change only by expiring earlier).
+      parameters:
+        - $ref: '#/components/parameters/id'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         default: {$ref: '#/components/responses/Problem'}

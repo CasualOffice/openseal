@@ -35,8 +35,8 @@ async fn migrations_apply_from_empty_then_a_second_run_applies_nothing() {
     );
     assert_eq!(second.already, all);
     // Versions rise from 1 with no gap but a number docs/14 reserves for another lane
-    // (0020; 0021 is WEB-19's and may land first).
-    const RESERVED: &[i64] = &[20];
+    // (22, 23 and 25 are reserved by rows merging separately).
+    const RESERVED: &[i64] = &[22, 23, 25];
     assert!(all.windows(2).all(|w| w[0] < w[1]), "{all:?}");
     let last = *all.last().unwrap();
     let missing: Vec<i64> = (1..=last)

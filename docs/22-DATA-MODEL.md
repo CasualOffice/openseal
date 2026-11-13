@@ -387,7 +387,15 @@ exactly one of `envelope_id` and `template_id`, each a composite foreign key wit
 span text, the matched template and its page counts, score, model id and weights hash, `state`
 `open`/`accepted`/`dismissed` with `decided_by`, `decided_at`), `ocr_pages` (a run's OCR words per page: document
 content) and `template_fingerprints` (a template page's dHash and pHash, an optional text embedding, the model). None is
-read by the seal job, the audit chain or the evidence package (docs/33 invariant 2). Fifty-three tables with `0020`.
+read by the seal job, the audit chain or the evidence package (docs/33 invariant 2). Fifty-three tables with `0021`.
+
+`0026_console_org_events.sql` (`CON-16`, docs/23 §2.5) holds the console role to the admin logs: the
+`*_admin_change_has_event` triggers now also refuse an `openseal_console` commit that changed an organization or a
+workspace without an `operator.*` event appended to that organization's `org_admin_events` in the same transaction
+(`platform.xact_copied_to_org_log`). Definer functions for the console: `platform.org_log_tip` (organization, next
+`seq` and head, the head row locked) and `platform.copy_to_org_log` (live operator session with role `operator` or
+`platform_owner`, an `operator.*` action, the bytes' actor exactly that operator, their `operator_event` link an existing operator event of that
+operator and action, else `OS005`).
 
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15), including of the
 analysis tables (`SEC-I07`); a database guard
@@ -428,6 +436,13 @@ the rules above, and what does not:
   idempotent by source), `usage_counters`.
 - **Schema `platform`** (operators, approvals, plans, TSA, trust anchors, seal profiles, alerts) is reached by the
   console's role `openseal_console`, which has no grant on any `public` table.
+- **Plans (built, `PLAN-02`, migration 0024):** `platform.plans` (immutable versions of a key; archive only),
+  `plan_entitlements`, `plan_quotas`, `plan_seat_rule`, `plan_assignments` (current on `[starts_at, ends_at)`; only
+  `ends_at` shortens), `plan_overrides` (`workspace_id`, workspace-level quotas only; only `expires_at` shortens).
+  Written only by session-checked definer functions (`OS010` → `CS-PLAN-0006`); constraints refuse `hard` on
+  `api_calls` for any writer. The application reads only `openseal_effective_plan(now)` (current assignment and live
+  overrides for its organization and workspace, no reasons or operator ids). `accounts.settings` holds no plan limits;
+  its column comment says so.
 - **Catalog tests** are scoped to `public` and name their exceptions; the `platform` schema has its own.
 - **Migration order** is fixed in merge order (docs/23 §12): `SEC-ID-01`'s fix, organizations (with organization admins
   and the owner backfill), admin logs, platform schema, operators, approvals, plans, usage; later schema rows take the

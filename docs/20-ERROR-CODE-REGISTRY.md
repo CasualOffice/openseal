@@ -203,7 +203,7 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0005 | Audit event does not extend its envelope's chain: hash, `seq` or `prev` (SQLSTATE `OS002`) |
 | CS-DB-0006 | Already exists (a unique constraint, named) |
 | CS-DB-0007 | Stale version: the object changed since it was read |
-| CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object; with constraint `organization_keeps_an_owner` (SQLSTATE `23514`, `ORG-02`), a commit that would leave an active organization with no enabled owner (`StoreError::is_last_owner`, served as `CS-ORG-0008` once ORG-03's routes issue it); with constraint `organization_admin_is_a_member` (SQLSTATE `23503`, `ORG-02`), an organization administrator who is not an enabled member of one of that organization's workspaces; with constraint `admin_change_has_event` (SQLSTATE `23514`, `ORG-05`), a commit by the application role that changed settings, a member, a profile, a workspace or the organization without appending that change's admin event |
+| CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object; with constraint `organization_keeps_an_owner` (SQLSTATE `23514`, `ORG-02`), a commit that would leave an active organization with no enabled owner (`StoreError::is_last_owner`, served as `CS-ORG-0008` once ORG-03's routes issue it); with constraint `organization_admin_is_a_member` (SQLSTATE `23503`, `ORG-02`), an organization administrator who is not an enabled member of one of that organization's workspaces; with constraint `admin_change_has_event` (SQLSTATE `23514`, `ORG-05`), a commit by the application role that changed settings, a member, a profile, a workspace or the organization without appending that change's admin event, or by the console role (`CON-16`) that changed an organization or workspace without its `operator.*` copy in that organization's log |
 | CS-DB-0009 | Refused by the database: missing privilege, or a row row-level security does not admit; SQLSTATE `OS003` (the store's own) when the user to change is also a member of another account (`SEC-ID-01`, served as `CS-API-0015`) |
 | CS-DB-0010 | A stored value could not be read back as its type |
 | CS-DB-0011 | The database has a migration this build does not know |
@@ -246,7 +246,7 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 Issued by the console's first rows (migrations 0016 to 0018). Every console answer is an RFC 9457 problem with one of
 these codes; messages carry codes, ids and sequence numbers only. The platform store maps SQLSTATEs raised by the
 `platform` definer functions: `OS006` → `CS-CON-0001`, `OS007` → `CS-CON-0002`, `OS008` → `CS-CON-0003`, `OS009` →
-`CS-CON-0004`, `OS005` → `CS-DB-0014`, `OS001` → `CS-DB-0004` (widened to `platform.operator_events` and
+`CS-CON-0004`, `OS010` → `CS-PLAN-0006` (plans, `PLAN-02`, migration 0024), `OS005` → `CS-DB-0014`, `OS001` → `CS-DB-0004` (widened to `platform.operator_events` and
 `platform.alerts`, which use the same refusal).
 
 | Code | Meaning |
@@ -301,7 +301,7 @@ the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`
 | CS-PLAN-0003 | Seat limit reached (403) |
 | CS-PLAN-0004 | Storage limit reached (403) |
 | CS-PLAN-0005 | Organization suspended by the platform: new work refused, sent envelopes continue (403) |
-| CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422) |
+| CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422; names the field). Issued (`PLAN-02`): by `casual-sign-policy` validation and by the migration 0024 definer functions (`OS010`) |
 | CS-PLAN-0007 | Workspace allocations exceed the organization's quota (422) |
 | CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422) |
 | CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
