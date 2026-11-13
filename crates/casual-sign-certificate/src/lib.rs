@@ -34,7 +34,7 @@ mod layout;
 mod pdf;
 mod text;
 
-use casual_sign_audit::{Hash256, VerifyOptions, verify_trail};
+use casual_sign_audit::{EventData, Hash256, VerifyOptions, verify_trail};
 use casual_sign_flatten::FontSet;
 use casual_sign_pdf::{Admitted, Change, Dictionary, IncrementalUpdate, Limits, Object, admit};
 
@@ -193,6 +193,7 @@ fn checked(input: &CertificateInput<'_>) -> Result<Vec<u8>, CertificateError> {
             what: "chain.envelope_id",
         });
     }
+    agreed_ending(input)?;
     let trail = input.chain.to_trail_json()?;
     let report = verify_trail(
         &trail,
@@ -203,6 +204,37 @@ fn checked(input: &CertificateInput<'_>) -> Result<Vec<u8>, CertificateError> {
     );
     report.into_result()?;
     Ok(trail)
+}
+
+/// The ending must be the chain's (UXW-30): the certificate says how the envelope ended
+/// from the chain it prints, not from its caller alone. The chain's last terminal event
+/// (`envelope.completing`, `envelope.completed`, `envelope.declined`,
+/// `envelope.voided` or `envelope.expired`) decides: a decline, void or expiry needs an
+/// ending of that kind at that event's time, and anything else needs no ending, so a
+/// certificate of completion is never drawn for an envelope whose chain says it ended,
+/// nor an ended certificate for one whose chain says it completed.
+fn agreed_ending(input: &CertificateInput<'_>) -> Result<(), CertificateError> {
+    let last = input.chain.events().iter().rev().find_map(|c| {
+        let kind = match &c.event.data {
+            EventData::EnvelopeDeclined { .. } => Some(EndKind::Declined),
+            EventData::EnvelopeVoided { .. } => Some(EndKind::Voided),
+            EventData::EnvelopeExpired {} => Some(EndKind::Expired),
+            EventData::EnvelopeCompleting {} | EventData::EnvelopeCompleted { .. } => None,
+            _ => return None,
+        };
+        Some((kind, c.event.at))
+    });
+    let agrees = match (&input.ending, last) {
+        (Some(end), Some((Some(kind), at))) => end.kind == kind && end.at == at,
+        (Some(_), _) => false,
+        (None, Some((Some(_), _))) => false,
+        (None, _) => true,
+    };
+    if agrees {
+        Ok(())
+    } else {
+        Err(CertificateError::Input { what: "ending" })
+    }
 }
 
 /// The certificate's pages drawn, before the trail is attached.

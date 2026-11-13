@@ -15,7 +15,7 @@ mod common;
 
 use std::path::PathBuf;
 
-use casual_sign_audit::{VerifyOptions, verify_trail};
+use casual_sign_audit::{EventData, Personal, VerifyOptions, verify_trail};
 use casual_sign_certificate::{
     CertificateOptions, DisclosurePlacement, EmailMask, PageSize, append_certificate,
     render_certificate,
@@ -244,31 +244,39 @@ fn an_ended_envelope_certificate_says_how_it_ended_and_never_claims_completion()
     assert!(done.contains("Certificate of Completion"), "{done}");
     assert!(!done.contains("not completed"), "{done}");
 
-    for (kind, by, reason, outcome) in [
+    for (kind, by, reason, outcome, last) in [
         (
             casual_sign_certificate::EndKind::Declined,
             Some(name(1)),
             Some("Terms changed"),
             format!("Declined by {}", name(1)),
+            EventData::EnvelopeDeclined {
+                recipient_id: id("rcp-1"),
+            },
         ),
         (
             casual_sign_certificate::EndKind::Voided,
             Some("Sam Sender".to_owned()),
             Some("Replaced by a new version"),
             "Voided by Sam Sender".to_owned(),
+            EventData::EnvelopeVoided {
+                reason: Personal("Replaced by a new version".to_owned()),
+            },
         ),
         (
             casual_sign_certificate::EndKind::Expired,
             None,
             None,
             "Expired".to_owned(),
+            EventData::EnvelopeExpired {},
         ),
     ] {
+        let (chain, delivered, at) = chain_ending(2, last);
         let mut ended = input(&chain, delivered, 2);
         ended.envelope.status = outcome.split(' ').next().unwrap().to_owned();
         ended.ending = Some(casual_sign_certificate::Ending {
             kind,
-            at: t(2_000_000),
+            at,
             by,
             reason: reason.map(str::to_owned),
         });
@@ -299,10 +307,16 @@ fn an_ended_envelope_certificate_says_how_it_ended_and_never_claims_completion()
         )
         .unwrap();
     }
-    let mut bad = input(&chain, delivered, 2);
+    let (declined, delivered, at) = chain_ending(
+        2,
+        EventData::EnvelopeDeclined {
+            recipient_id: id("rcp-1"),
+        },
+    );
+    let mut bad = input(&declined, delivered, 2);
     bad.ending = Some(casual_sign_certificate::Ending {
         kind: casual_sign_certificate::EndKind::Declined,
-        at: t(2_000_000),
+        at,
         by: None,
         reason: Some("x".repeat(4_001)),
     });
@@ -312,6 +326,54 @@ fn an_ended_envelope_certificate_says_how_it_ended_and_never_claims_completion()
             .code(),
         "CS-AUD-0020"
     );
+}
+
+/// The ending is the chain's, not the caller's word (UXW-30): a certificate of
+/// completion for a chain that ended, an ending for a chain that completed, or an
+/// ending of another kind or time than the chain's are each refused.
+#[test]
+fn a_certificate_refuses_an_ending_the_chain_does_not_record() {
+    use casual_sign_certificate::{EndKind, Ending};
+    let fonts = FontSet::bundled();
+    let refused = |inp: &casual_sign_certificate::CertificateInput<'_>| {
+        render_certificate(inp, &fonts, &CertificateOptions::default())
+            .map(|_| ())
+            .map_err(|e| (e.code(), e.to_string()))
+    };
+    let ending = |kind, at| {
+        Some(Ending {
+            kind,
+            at,
+            by: None,
+            reason: None,
+        })
+    };
+    let (declined, delivered, at) = chain_ending(
+        2,
+        EventData::EnvelopeDeclined {
+            recipient_id: id("rcp-1"),
+        },
+    );
+    let expected = Err((
+        "CS-AUD-0020",
+        "CS-AUD-0020: certificate input: ending".to_owned(),
+    ));
+    // A declined chain called complete.
+    let mut inp = input(&declined, delivered, 2);
+    assert_eq!(refused(&inp), expected, "no ending for a declined chain");
+    // Another kind, or another time.
+    inp.ending = ending(EndKind::Voided, at);
+    assert_eq!(refused(&inp), expected, "a void the chain does not record");
+    inp.ending = ending(EndKind::Declined, t(1));
+    assert_eq!(refused(&inp), expected, "a time the chain does not record");
+    inp.ending = ending(EndKind::Declined, at);
+    assert_eq!(refused(&inp), Ok(()), "the chain's own ending");
+    // A chain that reached completion has no ending.
+    let (done, delivered) = chain(2);
+    let mut inp = input(&done, delivered, 2);
+    assert_eq!(refused(&inp), Ok(()));
+    inp.ending = ending(EndKind::Expired, at);
+    assert_eq!(refused(&inp), expected, "an ending for a completed chain");
 }
 
 #[test]

@@ -157,7 +157,11 @@ completed or sealed as an agreement; the summary has `Outcome` ("Declined by …
 `Reason` when one was given, and `Completed: Not completed`; the seal section says the documents were not sealed and
 this certificate is sealed on its own. The sections, the embedded trail and the chain head are as for completion. With
 no ending the bytes are exactly those of a certificate of completion (the 1, 3 and 25 recipient certificates hash as
-before). The server queues the worker's `seal_ended_certificate` when the envelope is declined, voided or expires (and
+before). The ending is the chain's, not the caller's word: the engine refuses (`CS-AUD-0020`, member `ending`) an
+ending whose kind or time differs from the chain's last terminal event (`envelope.declined`, `.voided`, `.expired`,
+`.completing`, `.completed`), an ending for a chain that reached completion, and a certificate of completion for a
+chain that ended (certificate `a_certificate_refuses_an_ending_the_chain_does_not_record`; seen red with the check
+removed). The server queues the worker's `seal_ended_certificate` when the envelope is declined, voided or expires (and
 again when one is asked for before it exists); the worker renders it, seals it on its own with the platform key at the
 envelope's profile, stores it, reads it back and verifies it before recording it as the envelope's certificate. Making
 it does not extend the chain (it is not an act on the agreement); each download is recorded as `certificate.downloaded`.
