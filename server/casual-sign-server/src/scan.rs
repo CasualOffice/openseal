@@ -546,10 +546,12 @@ mod tests {
             let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
             l.local_addr().unwrap().to_string()
         };
-        assert_eq!(
+        // Windows retries a refused connect for about two seconds, past the 500 ms
+        // budget, so a closed port there ends as Timeout; either way it is unscanned.
+        assert!(matches!(
             scanner(addr.clone()).scan(b"x").await,
-            Err(Unscanned::Connect)
-        );
+            Err(Unscanned::Connect | Unscanned::Timeout)
+        ));
         assert!(!scanner(addr).ping().await);
         let (addr, _rx) = fake(Fake::Hang).await;
         assert_eq!(scanner(addr).scan(b"x").await, Err(Unscanned::Timeout));

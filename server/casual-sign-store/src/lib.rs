@@ -36,6 +36,7 @@
 
 mod admin_log;
 mod error;
+mod evidence;
 mod ids;
 mod migrate;
 mod org;
@@ -53,6 +54,10 @@ pub use admin_log::{
 /// The meters [`TenantTx::record_usage`] counts (docs/23 §7.2).
 pub use casual_sign_policy::plans::Meter;
 pub use error::{Result, StoreError};
+pub use evidence::{
+    CAPTURE_BLOB_KEYS_SQL, EVIDENCE_BLOB_KEYS_SQL, EvidenceBlobKeys, EvidenceError, EvidenceReport,
+    EvidenceSubject,
+};
 pub use ids::*;
 pub use migrate::{MIGRATIONS, Migration, MigrationReport, migrate};
 pub use org::{

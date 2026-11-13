@@ -117,6 +117,20 @@ certificate of completion prints the **chain head** (hash of the last event befo
 
 `casual-sign-verify` checks the embedded chain as part of verifying a document; `verify.html` shows it as a timeline.
 
+The database's copy as a whole is checked by `casual-sign-server verify-evidence` (`ASVS-14`, `Store::verify_evidence`):
+run as the schema owner (a role that row-level security filters is refused, `CS-DB-0015`), it rebuilds every envelope's
+chain from the stored canonical bytes, requires the envelope's stored head to be the last event's hash, re-verifies
+every workspace's and organization's admin log and the platform's operator log (`CS-CON-0007`), and reads back
+against its SHA-256 every blob the evidence names (`Store::evidence_blob_keys`, `EVIDENCE_BLOB_KEYS_SQL`): every
+document version and template document, each envelope's certificate of completion, each adopted signature's capture,
+each brand's logo, and each attachment a signer uploaded (named only in the envelope's workflow state,
+`fields[*].value.attachment`). Each capture is parsed as the seal job parses it (`casual-sign-host` `capture::parse`:
+drawn, typed, or `{"kind": "image", "image": "<SHA-256>"}`), and an uploaded image it names is read too; a capture
+the seal job could not read fails (`CS-WRK-0016`). A
+broken chain names its envelope, workspace or organization (`CS-DB-0005`, `CS-DB-0014`), a missing blob its key
+(`CS-BLOB-0002`). A restore runs it before the services start again, and the backup tool reads the same keys in its
+dump's snapshot and refuses a backup that lacks one (docs/65 §Backups and restore).
+
 ## 5. Anchoring (optional, slice 7)
 
 Per account, a daily job builds a **Merkle tree of every chain head** that changed that day, gets an RFC 3161 timestamp
