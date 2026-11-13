@@ -45,3 +45,21 @@ pub use error::{ApiError, FieldProblem};
 pub use mfa::MfaKey;
 pub use routes::{Access, Route, app, table};
 pub use state::{AppState, Blobs, Clock, Config, ManualClock, RateLimits, SystemClock};
+
+/// Replaces the default panic hook, which prints the panic's message (it may carry a
+/// value from a request) to standard error, with one that logs where the panic happened
+/// and the request id only (ASVS-26). The binary installs it at start-up; the answer to
+/// the request is `routes`' last-resort `500` problem.
+pub fn quiet_panics() {
+    std::panic::set_hook(Box::new(|info| {
+        let at = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        tracing::error!(
+            at = %at,
+            request_id = %error::request_id().unwrap_or_default(),
+            "panicked"
+        );
+    }));
+}

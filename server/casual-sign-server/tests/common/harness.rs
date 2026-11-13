@@ -74,6 +74,9 @@ pub struct Api {
     pub called: Mutex<BTreeSet<(String, String)>>,
     /// The blob directory the server stores into.
     pub blob_dir: std::path::PathBuf,
+    /// Whether the server marks cookies `Secure` (and so names its session cookie
+    /// `__Host-os_session`, ASVS-05).
+    pub secure_cookies: bool,
 }
 
 /// An account with an administrator's API key holding every scope.
@@ -126,6 +129,7 @@ impl Api {
             ..Config::default()
         };
         tweak(&mut config);
+        let secure_cookies = config.secure_cookies;
         let st = AppState::new(
             db.store.clone(),
             blobs,
@@ -142,6 +146,7 @@ impl Api {
             peer: Mutex::new("198.51.100.7:50000".parse().unwrap()),
             called: Mutex::new(BTreeSet::new()),
             blob_dir: dir,
+            secure_cookies,
         })
     }
 
@@ -164,8 +169,14 @@ impl Api {
             Auth::None => {}
             Auth::Bearer(t) => req = req.header("authorization", format!("Bearer {t}")),
             Auth::Session { cookie, csrf } => {
+                // ASVS-05: `__Host-` whenever the server marks cookies `Secure`.
+                let name = if self.secure_cookies {
+                    "__Host-os_session"
+                } else {
+                    "os_session"
+                };
                 req = req
-                    .header("cookie", format!("os_session={cookie}"))
+                    .header("cookie", format!("{name}={cookie}"))
                     .header("x-csrf-token", csrf);
             }
         }
@@ -281,8 +292,9 @@ pub fn session_of(login: &Resp) -> Auth {
         .split(';')
         .next()
         .unwrap()
-        .strip_prefix("os_session=")
+        .split_once('=')
         .unwrap()
+        .1
         .to_owned();
     Auth::Session {
         cookie,

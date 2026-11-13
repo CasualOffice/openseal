@@ -20,7 +20,7 @@ use uuid::Uuid;
 use super::admin::cookie;
 use super::envelopes::rfc3339;
 use super::json;
-use crate::auth::{Credential, SESSION_COOKIE};
+use crate::auth::{Credential, session_cookie};
 use crate::call::Call;
 use crate::crypto::{random_secret, sha256};
 use crate::dto::parse;
@@ -33,8 +33,8 @@ fn session(c: &Call) -> Result<(StaffSessionId, [u8; 32]), ApiError> {
     let Credential::Session(s) = c.p.credential else {
         return Err(ApiError::invalid("/credential"));
     };
-    let secret =
-        crate::auth::cookie(&c.headers, SESSION_COOKIE).ok_or_else(ApiError::unauthenticated)?;
+    let name = session_cookie(c.st.config().secure_cookies);
+    let secret = crate::auth::cookie(&c.headers, name).ok_or_else(ApiError::unauthenticated)?;
     Ok((s, sha256(secret.as_bytes())))
 }
 
@@ -151,7 +151,8 @@ pub(crate) async fn switch(c: Call, body: Bytes) -> Result<Response, ApiError> {
             "csrf_token": csrf, "expires_at": rfc3339(taken.expires_at),
         }),
     );
-    if let Some(v) = cookie(SESSION_COOKIE, &secret, left, c.st.config().secure_cookies) {
+    let secure = c.st.config().secure_cookies;
+    if let Some(v) = cookie(session_cookie(secure), &secret, left, secure) {
         r.headers_mut().insert(header::SET_COOKIE, v);
     }
     r.extensions_mut().insert(SecretBearing);

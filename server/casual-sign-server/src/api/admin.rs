@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use super::envelopes::rfc3339;
 use super::{json, path_id};
-use crate::auth::{API_KEY_PREFIX, CSRF_HEADER, Credential, SCOPES, SESSION_COOKIE};
+use crate::auth::{API_KEY_PREFIX, CSRF_HEADER, Credential, SCOPES, session_cookie};
 use crate::call::Call;
 use crate::crypto::{
     AUDIENCE, Claims, hash_password, random_secret, same, sha256, verify_password,
@@ -1075,7 +1075,7 @@ async fn login_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respons
         }),
     );
     if let Some(v) = cookie(
-        SESSION_COOKIE,
+        session_cookie(st.config().secure_cookies),
         &secret,
         st.config().session_ttl.as_secs(),
         st.config().secure_cookies,
@@ -1095,7 +1095,8 @@ pub(crate) async fn logout(c: Call) -> Result<Response, ApiError> {
     tx.sessions().revoke(s, c.st.now()).await?;
     tx.commit().await?;
     let mut r = StatusCode::NO_CONTENT.into_response();
-    if let Some(v) = cookie(SESSION_COOKIE, "", 0, c.st.config().secure_cookies) {
+    let secure = c.st.config().secure_cookies;
+    if let Some(v) = cookie(session_cookie(secure), "", 0, secure) {
         r.headers_mut().insert(header::SET_COOKIE, v);
     }
     Ok(r)

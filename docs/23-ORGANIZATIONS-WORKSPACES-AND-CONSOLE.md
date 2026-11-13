@@ -438,7 +438,7 @@ is per workspace and harms no other.
 - A session is bound to one workspace, as today. `POST /api/v1/auth/switch {account_id}` with the current session and
   CSRF token checks, through `openseal_user_workspaces`, an enabled membership there; then that the current sign-in
   satisfies the target organization's login policy (SSO with its IdP, MFA, maximum session age). If so it issues a new
-  `os_session` for the target and revokes the old one; if not, `401 CS-ORG-0007` names the sign-in needed.
+  session cookie (`__Host-os_session` when `Secure`, ASVS-05) for the target and revokes the old one; if not, `401 CS-ORG-0007` names the sign-in needed.
 - `GET /api/v1/auth/workspaces` lists the user's workspaces by organization. The account always comes from the
   session; no header or parameter chooses another (`SEC-O05`).
 - API keys and OAuth clients stay per workspace. Organization automation uses organization SCIM tokens (`osscim_`,

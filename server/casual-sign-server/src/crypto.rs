@@ -35,10 +35,8 @@ pub(crate) fn sha256(text: &[u8]) -> [u8; 32] {
 
 /// Constant-time equality of two hashes.
 pub(crate) fn same(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    a.iter()
-        .zip(b.iter())
-        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-        == 0
+    // Constant-time from aws-lc-rs (ADR-006), never a hand-rolled loop (CLAUDE.md, ASVS-12).
+    aws_lc_rs::constant_time::verify_slices_are_equal(a, b).is_ok()
 }
 
 /// Argon2id with OWASP's second recommended configuration (19 MiB, 2 passes, 1 lane).
