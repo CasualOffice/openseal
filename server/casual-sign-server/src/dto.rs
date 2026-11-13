@@ -78,6 +78,10 @@ pub(crate) struct RecipientIn {
     pub time_zone_offset_minutes: i16,
     #[serde(default)]
     pub date_format: Option<DateFormat>,
+    /// Documents hidden from this recipient (`WF-02`): each a document id, or in a
+    /// create, the index of a document of the same request.
+    #[serde(default)]
+    pub excluded_documents: Vec<Value>,
 }
 
 fn one() -> u32 {
@@ -163,6 +167,7 @@ impl RecipientIn {
             time_zone_offset_minutes: self.time_zone_offset_minutes,
             date_format: self.date_format,
             witness_for: None,
+            excluded_documents: Vec::new(),
         })
     }
 }
@@ -301,6 +306,7 @@ pub(crate) fn recipient(r: &RecipientState) -> Value {
         "auth": s.auth,
         "embedded_client_user_id": s.embedded_client_user_id,
         "time_zone_offset_minutes": s.time_zone_offset_minutes,
+        "excluded_documents": s.excluded_documents,
         "status": r.status,
         "completed_at": r.completed_at,
         "declined_reason": r.declined_reason.as_ref().map(|d| &d.0),
@@ -327,6 +333,7 @@ pub(crate) fn envelope(s: &EnvelopeState) -> Value {
         "message": s.message.0,
         "created_at": s.created_at,
         "sent_at": s.sent_at,
+        "send_at": s.send_at,
         "ended_at": s.ended_at,
         "expires_at": s.expires_at,
         "void_reason": s.void_reason.as_ref().map(|r| &r.0),

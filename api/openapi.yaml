@@ -414,6 +414,7 @@ components:
         delivery: {type: string, enum: [email, sms, none]}
         auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}}
         embedded_client_user_id: {type: [string, 'null']}
+        excluded_documents: {type: array, items: {type: string}, description: 'Documents hidden from this recipient (WF-02): never listed or served to them'}
     RecipientList:
       type: object
       properties:
@@ -435,6 +436,10 @@ components:
         embedded_client_user_id: {type: string}
         time_zone_offset_minutes: {type: integer}
         date_format: {type: string}
+        excluded_documents:
+          type: array
+          items: {oneOf: [{type: string}, {type: integer, minimum: 0}]}
+          description: "Documents hidden from this recipient (WF-02): document ids, or in a create the index of a document of the same request. A recipient sees at least one document (`422 CS-WF-0004`), never a field on a hidden one (`422 CS-WF-0021`)."
     RecipientCreate:
       oneOf:
         - $ref: '#/components/schemas/RecipientIn'
@@ -458,6 +463,7 @@ components:
           maxLength: 255
           writeOnly: true
           description: "A new access code, stored only as Argon2id. Needed when `auth` gains `access_code`; refused when the resulting `auth` lacks it. Removing `access_code` from `auth` deletes the stored code. Draft or correcting envelopes only."
+        excluded_documents: {type: array, items: {type: string}, description: 'Document ids hidden from this recipient (WF-02); `[]` shows every document'}
     Field:
       type: object
       description: The model's field (docs/22 §6); `placement` in displayed page points, origin top-left.
@@ -526,6 +532,7 @@ components:
         message: {type: string}
         created_at: {type: string, format: date-time}
         sent_at: {type: [string, 'null'], format: date-time}
+        send_at: {type: [string, 'null'], format: date-time, description: 'A draft scheduled to send itself at this time (WF-02)'}
         ended_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
         reminders: {type: object}
@@ -802,6 +809,12 @@ components:
         status: {$ref: '#/components/schemas/EnvelopeStatus'}
         version: {type: integer}
         recipients: {type: array, items: {type: object}}
+    ScheduleRequest:
+      type: object
+      required: [send_at]
+      additionalProperties: false
+      properties:
+        send_at: {type: string, format: date-time, description: 'After now, at most 365 days ahead, before the expiry'}
     VoidRequest:
       type: object
       required: [reason]
@@ -2276,6 +2289,43 @@ paths:
       x-permission: "envelopes:send"
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/schedule:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    put:
+      operationId: scheduleEnvelope
+      summary: "Schedule a draft to send itself (WF-02)"
+      description: "The draft must be sendable now (`422 CS-WF-0004`); `send_at` after now, at most 365 days ahead and before the expiry (`422 CS-WF-0023`). A scheduled draft cannot be edited (`409 CS-WF-0022`) until the schedule is cancelled; sending by hand drops it. Recorded as a draft edit of `send_at`; the send itself is `envelope.sent` by the platform."
+      x-permission: "envelopes:send"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScheduleRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: unscheduleEnvelope
+      summary: "Cancel a draft's scheduled send (WF-02)"
+      x-permission: "envelopes:send"
       responses:
         '200':
           description: OK

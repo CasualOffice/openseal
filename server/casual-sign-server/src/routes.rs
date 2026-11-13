@@ -472,6 +472,20 @@ pub fn table() -> Vec<Route> {
             env::status,
         ),
         r("POST", "/api/v1/envelopes/{id}/send", es, JSON, env::send),
+        r(
+            "PUT",
+            "/api/v1/envelopes/{id}/schedule",
+            es,
+            JSON,
+            env::schedule,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/envelopes/{id}/schedule",
+            es,
+            JSON,
+            env::unschedule,
+        ),
         r("POST", "/api/v1/envelopes/{id}/void", es, JSON, env::void),
         r(
             "POST",

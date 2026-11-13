@@ -388,8 +388,13 @@ impl Open {
         // view names no document and no field (only what the invitation already said,
         // and what the page needs to ask for the code).
         let shown = me.is_some_and(|r| !r.auth_locked && r.auth_satisfied());
-        let documents: Vec<Value> = if shown {
-            s.documents.iter().map(dto::document).collect()
+        // WF-02: a document hidden from the recipient is never listed to them.
+        let documents: Vec<Value> = if let (true, Some(r)) = (shown, me) {
+            s.documents
+                .iter()
+                .filter(|d| r.spec.sees(d.id()))
+                .map(dto::document)
+                .collect()
         } else {
             Vec::new()
         };
@@ -1085,17 +1090,17 @@ pub(crate) async fn document(
     };
     let result = async {
         // SEC-CER-01: the link alone never yields the document.
-        ready(
+        let me =
             o.l.state
                 .recipient(&o.recipient)
-                .ok_or_else(ApiError::expired)?,
-            &o.cmds.policy,
-        )?;
+                .ok_or_else(ApiError::expired)?;
+        ready(me, &o.cmds.policy)?;
+        // WF-02: a document hidden from the recipient does not exist for them.
         let d =
             o.l.state
                 .documents
                 .iter()
-                .find(|d| same_id(d.id(), &doc))
+                .find(|d| same_id(d.id(), &doc) && me.spec.sees(d.id()))
                 .ok_or_else(ApiError::not_found)?;
         let versions = o.tx.documents().versions(DocumentId(uid(d.id())?)).await?;
         let v = versions
@@ -1160,10 +1165,16 @@ pub(crate) async fn download(
                 "the document can be downloaded once you have finished",
             ));
         }
-        let docs = &o.l.state.documents;
+        // WF-02: only the documents the recipient may see.
+        let docs: Vec<&casual_sign_workflow::DocumentState> =
+            o.l.state
+                .documents
+                .iter()
+                .filter(|d| me.spec.sees(d.id()))
+                .collect();
         let d = match (&q.doc, docs.as_slice()) {
-            (Some(doc), _) => docs.iter().find(|d| same_id(d.id(), doc)),
-            (None, [only]) => Some(only),
+            (Some(doc), _) => docs.iter().copied().find(|d| same_id(d.id(), doc)),
+            (None, [only]) => Some(*only),
             (None, _) => return Err(ApiError::invalid("/query/doc")),
         }
         .ok_or_else(ApiError::not_found)?
@@ -1300,11 +1311,17 @@ pub(crate) async fn viewed(
         if req.pages_seen.len() > 5_000 {
             return Err(ApiError::invalid("/pages_seen"));
         }
+        // WF-02: a document hidden from the recipient does not exist for them.
+        let sees = |id: &casual_sign_model::Id| {
+            o.l.state
+                .recipient(&o.recipient)
+                .is_some_and(|r| r.spec.sees(id))
+        };
         let d =
             o.l.state
                 .documents
                 .iter()
-                .find(|d| same_id(d.id(), &doc))
+                .find(|d| same_id(d.id(), &doc) && sees(d.id()))
                 .ok_or_else(ApiError::not_found)?;
         let (document, hash) = (d.id().clone(), d.spec.delivered_hash);
         let r = o.recipient.clone();
