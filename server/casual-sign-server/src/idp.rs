@@ -141,8 +141,10 @@ impl core::fmt::Debug for RecipientIdps {
 }
 
 /// Whether `url` is one this server will call or send a browser to: HTTPS, or HTTP to a
-/// loopback address.
-fn endpoint(url: &str) -> bool {
+/// loopback address. Also the rule for the server's own public URL outside development
+/// (`ASVS-19`, `HRD-06`).
+#[must_use]
+pub fn endpoint(url: &str) -> bool {
     if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return false;
     }

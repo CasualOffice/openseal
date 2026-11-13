@@ -19,6 +19,15 @@
 //! | `OPENSEAL_KEYD_PKCS11_PIN` or `OPENSEAL_KEYD_PKCS11_PIN_FILE` | User PIN (the file form is the private one) |
 //! | `OPENSEAL_KEYD_FILE_KEY` | A PEM key file instead of PKCS#11: development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_KEYD_SIGNATURES_PER_MINUTE` | Per-caller rate (default 600) |
+//! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings below; keyd refuses to start when they differ (`CS-KEY-0013`, ASVS-24) |
+//!
+//! **Security configuration** (ASVS 14.1.5): every setting above except the PIN is read
+//! once, at start, so a change takes effect only on a restart. At start keyd logs the
+//! SHA-256 of each security setting (the files' contents and the values; never the PIN)
+//! and one digest over them all, and, with `OPENSEAL_CONFIG_MANIFEST`, refuses to start
+//! unless they are exactly the manifest's. `casual-sign-keyd config-manifest` prints the
+//! manifest of the current environment, for the operator to record after an approved
+//! change (docs/65 §Configuration integrity).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -29,9 +38,35 @@ use casual_sign_keyd::{
     AllowList, ChainSource, DevKeyConsent, DigestSigner, FileKey, KeyService, Keyd, KeydError,
     KeydLimits, OpLog, Pkcs11KeyConfig, Pkcs11Module, certificates, server_tls,
 };
+use casual_sign_secrets::integrity::ConfigDigest;
 use casual_sign_secrets::{env_secret, unknown_secret_files};
 
 const KNOWN_SECRET_FILES: &[&str] = &["OPENSEAL_KEYD_PKCS11_PIN_FILE"];
+
+/// Security settings that name a file: the file's bytes are hashed (ASVS-24). The
+/// PKCS#11 module is the HSM vendor's library, so it is hashed too.
+const CONFIG_FILES: &[&str] = &[
+    "OPENSEAL_KEYD_TLS_CERT",
+    "OPENSEAL_KEYD_CLIENT_CA",
+    "OPENSEAL_KEYD_ALLOW_LIST",
+    "OPENSEAL_KEYD_ADMIN_ALLOW_LIST",
+    "OPENSEAL_KEYD_CHAIN",
+    "OPENSEAL_KEYD_INTERMEDIATES",
+    "OPENSEAL_KEYD_PKCS11_MODULE",
+];
+
+/// Security settings hashed as values.
+const CONFIG_VALUES: &[&str] = &[
+    "OPENSEAL_KEYD_LISTEN",
+    "OPENSEAL_KEYD_ALIAS",
+    "OPENSEAL_KEYD_RSA_ALGORITHM",
+    "OPENSEAL_KEYD_PKCS11_TOKEN",
+    "OPENSEAL_KEYD_PKCS11_KEY_LABEL",
+    "OPENSEAL_KEYD_PKCS11_KEY_ID",
+    "OPENSEAL_KEYD_FILE_KEY",
+    "OPENSEAL_KEYD_SIGNATURES_PER_MINUTE",
+    "OPENSEAL_DEV_INSECURE_KEY",
+];
 
 fn var(name: &'static str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
@@ -176,6 +211,23 @@ fn run() -> Result<(), KeydError> {
 }
 
 fn main() -> ExitCode {
+    let config = match ConfigDigest::from_env(CONFIG_FILES, CONFIG_VALUES) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("keyd: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if std::env::args().nth(1).as_deref() == Some("config-manifest") {
+        print!("{}", config.manifest());
+        return ExitCode::SUCCESS;
+    }
+    // Before anything else is read: a configuration that is not the approved one never
+    // reaches the HSM or the network.
+    if let Err(e) = config.log_and_check("keyd") {
+        eprintln!("keyd: {e}");
+        return ExitCode::FAILURE;
+    }
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

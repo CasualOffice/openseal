@@ -142,6 +142,85 @@ organization, a TSA change) need a second operator's approval.
 | Observability | OTLP endpoint for traces and metrics; alert on seal failures, TSA failover, email bounce rate, job backlog |
 | Retention | Set account retention policies before go-live; document them in your records schedule |
 
+## Production deployment (hardened profile, `HRD-06`)
+
+`deploy/compose.production.yml` is the production Compose profile; `docker-compose.yml` stays the evaluation stack.
+What the profile guarantees, and `python3 -I tools/check-deploy.py` checks on every CI run (it renders the file with
+`docker compose config` and fails naming each `service: rule`; `--self-test` breaks each of its 43 rules in turn and
+proves each is caught):
+
+- **Containers.** Every service runs as a named non-root user (Postgres 70, SeaweedFS 1000, keyd 10001, server and
+  worker 65532), with a read-only root file system (tmpfs only for sockets and scratch), every capability dropped and
+  none added, `no-new-privileges`, memory, CPU and process limits, no core dumps, bounded logs and a health check
+  (the worker writes a heartbeat while its database answers, `casual-sign-worker healthcheck`; the one-shot
+  `migrate` alone has none). No privileged mode, host namespace or Docker socket. Images are pinned by digest or
+  are OpenSeal's own at an `OPENSEAL_VERSION` you built and signed. The server stops on `SIGINT`, which drains it.
+- **Secrets** are Docker secrets: files under `/run/secrets/`, each mounted only into the services that read it (the
+  seal key's PIN and chain and keyd's identity into keyd alone, never the server), never an environment value (`docker inspect` and `/proc/1/environ` show only paths). Development switches
+  (`OPENSEAL_DEV_INSECURE_KEY`, file keys) are refused by the checker.
+- **TLS between services.** Postgres serves TLS 1.3 only, with an `hba_file` that has no plain `host` line (only
+  `hostssl` and `local`, SCRAM), and the database URLs say `sslmode=verify-full` against the internal CA. The object
+  store's S3 gateway serves TLS with a certificate from the internal CA, which the server and worker trust through
+  `OPENSEAL_S3_CA`; SeaweedFS's master, volume and filer ports listen on its loopback address only, and its vendor
+  telemetry is off (`-master.telemetry=false`, also in the evaluation stack). keyd is mutual TLS (unchanged). SMTP
+  is `starttls`. TLS to browsers terminates at your edge proxy (HSTS there), which forwards to the server's port on
+  the host's loopback address. The server refuses to start with an `http` `OPENSEAL_PUBLIC_URL` (other than to a
+  loopback address) unless `OPENSEAL_DEV_INSECURE_KEY=1`.
+- **Networks.** `data` (Postgres, object store, server, worker, migrate) and `signing` (keyd and the worker) are
+  internal: no route out. Only the server is on `edge` (its published port) and only the worker on `egress` (SMTP,
+  TSAs, webhooks, under the `SEC-W01` address policy). A network HSM needs keyd on a network that routes to the HSM
+  alone: add it as an `external` network for keyd only.
+- **Configuration integrity** (below): keyd and the worker refuse to start unless their security settings match the
+  manifests.
+
+Bringing it up: run `deploy/production/init-secrets.sh DIR` once as root on the Docker host. It writes the internal
+TLS CA (its key into `DIR/offline/`: move it off the host), the Postgres, object store, keyd and worker identities,
+random passwords, the database URLs, the S3 identities, the token and second-factor keys, and keyd's allow list,
+each owned by the one container user that reads it, mode 0400 (Postgres's key 0600). Add what only you have:
+`seal-chain.pem` and `keyd-pkcs11-pin` (owner 10001, 0400), `trust-anchors.pem`, `smtp-password` (owner 65532,
+0400). Set the variables the file requires (`OPENSEAL_SECRETS_DIR`, `OPENSEAL_VERSION`, `OPENSEAL_PUBLIC_URL`,
+`OPENSEAL_TRUSTED_PROXIES`, the PKCS#11 module, token and label, mail, SMTP, TSA and seal name; `docker compose`
+names any that is missing), record the manifests, then `docker compose -f deploy/compose.production.yml up -d --wait`.
+Checked by running (2026-11-14, Docker 29.8 on macOS): Postgres and the object store start healthy under this profile as
+their non-root users; a `verify-full` client gets TLS 1.3, a plain connection is refused (`no pg_hba.conf entry …
+no encryption`) and a wrong host name fails verification; the S3 gateway answers TLS 1.3 with the internal CA and
+every other SeaweedFS port is closed to the network. The whole stack end to end on this profile, with failure
+injection, is `HRD-01`'s.
+
+### Configuration integrity (ASVS 14.1.5, `ASVS-24`)
+
+keyd and the worker read their security settings once, at start, so a change on disk does nothing until a restart.
+At start each logs `config NAME sha256:…` for every such setting and `security configuration sha256:…` over them
+all: for keyd its TLS certificate, client CA, allow lists, seal chain, PKCS#11 module (the library's bytes), alias,
+token and key label; for the worker its trust anchors, TSA list, keyd and model service addresses and CAs, its
+client certificates, webhook allowances, object store, SMTP host and SMS gateway. Never a PIN, key or password.
+With `OPENSEAL_CONFIG_MANIFEST` (the production profile sets it) the daemon refuses to start, `CS-KEY-0013` naming
+the setting, when any setting differs from the manifest, is set but not listed, or is listed but not set. After an
+approved change, record the new manifest and replace the secret file:
+
+    docker compose -f deploy/compose.production.yml run --rm --no-deps keyd config-manifest > keyd-config-manifest
+    docker compose -f deploy/compose.production.yml run --rm --no-deps worker config-manifest > worker-config-manifest
+
+The console's TSA list is outside the manifest: it is in the database, changed by two key custodians (`CON-07`).
+
+### Rotation (`HRD-06`, `ASVS-28`)
+
+Each runbook keeps signers working throughout; each is exercised by a test, named.
+
+| Secret | How | Downtime | Test |
+| --- | --- | --- | --- |
+| Database login | Create a second login in `openseal_app` (`CREATE ROLE openseal_2 LOGIN PASSWORD '…' IN ROLE openseal_app`); rewrite `database-url` **in place** (`cat new > database-url`: Docker mounts the file, so a new inode is not seen); the server and worker read it again every `OPENSEAL_SECRET_RELOAD_SECONDS` (30) and open every new connection with it; `ALTER ROLE openseal NOLOGIN` (open sessions continue); after 15 minutes, the pool's connection lifetime, no session of the old login is left (`pg_stat_activity`): `DROP ROLE openseal`. The superuser's `migrate-database-url` changes with the next migration | None | `casual-sign-store` `tests/rotation.rs`: eight signer tasks over a rotation with the old login retired at once, 0 failed requests, every session the new login's within one lifetime; seen red with the reload removed (146 to 223 failed requests) |
+| keyd and worker mTLS identities | Issue the new worker certificate from the internal CA (`openssl` as in `init-secrets.sh`); add its fingerprint to `keyd-allow-list` next to the old; record keyd's manifest; restart keyd; switch the worker's `worker-client.key` and chain, record its manifest, restart the worker; remove the old fingerprint, record, restart keyd. keyd's server certificate: issue a new one under the same CA, replace, record, restart. A new CA: list both CAs in `internal-ca.pem` first | Sealing pauses for a keyd restart (seconds); seal jobs retry, signers are not affected | `casual-sign-keyd` `tests/mtls.rs` `a_worker_identity_rotates_with_an_overlap…`; seen red with the allow-list check removed |
+| API token signing key (sessions' counterpart for API clients) | Generate a new P-256 key; mount the old one as `OPENSEAL_JWT_PREVIOUS_KEY_FILE` and the new as `OPENSEAL_JWT_SIGNING_KEY_FILE`; restart the server. Tokens signed by the old key verify until they expire and both keys are in `/.well-known/jwks.json`; after `access_token_ttl` (1 hour) remove the previous key | A server restart; staff and signer sessions survive it (they are database rows) | `casual-sign-server` `crypto::tests::a_rotated_key_keeps_the_previous_keys_tokens_valid…`; seen red verifying with the current key only |
+| Staff sessions and CSRF tokens | No key to rotate: each session and its CSRF token are random values stored hashed per session (docs/40 §2), unaffected by any key rotation; signing out ends one | — | — |
+| Webhook secrets | Provision the new secret as a file (`NAME_FILE`) for the worker; add its reference to the subscription's `secret_refs` (up to 4); deliveries now carry one signature per secret; once the receiver has switched, remove the old reference | None | `casual-sign-worker` `webhook::tests::during_rotation_a_receiver_holding_either_secret_accepts…`; seen red signing with the first secret only |
+| Object store credentials | Add a second identity to `s3-identities.json`, restart the store; switch `s3-secret-key` (and the access key) and restart the server and worker; remove the old identity | Server restart | runbook; not yet automated (`HRD-07`) |
+| Second-factor key (`OPENSEAL_MFA_KEY`) | Not rotatable yet: staff TOTP seeds are sealed under it; a re-seal path is `HRD-08` | — | — |
+| Seal key alias | Two key custodians change `platform.seal_profiles.active_alias` with `active_from` (`CON-10`) | None | see `CON-10` |
+
+A single server is restarted for the token key and object store credentials; run two server replicas behind the edge
+proxy for zero-downtime restarts (`HRD-07`).
+
 ## Configuration
 
 All configuration through environment variables; every secret also accepted as `NAME_FILE` (the sisters'
@@ -153,11 +232,14 @@ All configuration through environment variables; every secret also accepted as `
 generated from the code into this page is still to come. The server's: `OPENSEAL_DATABASE_URL`,
 `OPENSEAL_JWT_SIGNING_KEY`, `OPENSEAL_BLOB_DIR` or `OPENSEAL_S3_*`, `OPENSEAL_PUBLIC_URL`, `OPENSEAL_LISTEN`,
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, `OPENSEAL_WEBAPP_DIR`, `OPENSEAL_RECIPIENT_IDPS_FILE`,
+`OPENSEAL_JWT_PREVIOUS_KEY` (during a rotation), `OPENSEAL_S3_CA` (also the worker's), `OPENSEAL_SECRET_RELOAD_SECONDS`
+(also the worker's),
 `OPENSEAL_MFA_KEY` (32 random bytes as base64, sealing staff TOTP seeds; keep it with the database backups, since a
 seed sealed under a lost key cannot be opened and its users must enrol again; ASVS-01); `migrate` reads
 `OPENSEAL_MIGRATE_DATABASE_URL`. The worker's SMS and voice gateway is `OPENSEAL_SMS_GATEWAY_URL` and
 `OPENSEAL_SMS_GATEWAY_SECRET`; its model service `OPENSEAL_MODELD_ADDR` with `OPENSEAL_MODELD_CA`,
-`_CLIENT_CERT`, `_CLIENT_KEY` and `_SERVER_NAME`. keyd's read-only admin operations answer only the certificates on
+`_CLIENT_CERT`, `_CLIENT_KEY` and `_SERVER_NAME`; its health file `OPENSEAL_HEALTH_FILE`. keyd and the worker check
+`OPENSEAL_CONFIG_MANIFEST` (above). keyd's read-only admin operations answer only the certificates on
 `OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, which must not overlap its signing list (`CON-06`).
 
 ## Upgrades

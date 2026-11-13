@@ -17,6 +17,8 @@ step "checks: repository"; python3 tools/check-repo.py
 # script (docs/04 rule 31).
 step "checks: fixtures";   python3 -I fixtures/tools/generate.py --check
                            python3 -I fixtures/corpus/fetch.py --check
+step "checks: deployment"; python3 -I tools/check-deploy.py --self-test
+                           python3 -I tools/check-deploy.py
 step "commit messages";    python3 tools/check-commits.py --range "$(git rev-list --max-parents=0 HEAD | tail -1)..HEAD"
 step "test";               cargo fetch --locked
                            cargo test --workspace --all-features --locked --no-fail-fast -q

@@ -28,6 +28,7 @@ pub mod apply;
 pub use casual_sign_host::capture;
 pub mod email;
 mod error;
+pub mod health;
 pub mod jobs;
 pub mod messenger;
 pub mod ml;

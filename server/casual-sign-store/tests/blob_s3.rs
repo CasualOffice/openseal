@@ -27,6 +27,7 @@ fn config(test: &str) -> Option<S3Config> {
         access_key: std::env::var("OPENSEAL_TEST_S3_ACCESS_KEY").unwrap_or_default(),
         secret_key: std::env::var("OPENSEAL_TEST_S3_SECRET_KEY").unwrap_or_default(),
         path_style: true,
+        ca_pem: None,
     })
 }
 

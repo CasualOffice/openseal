@@ -26,22 +26,22 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 186 | 104 | 76 | 6 |
-| Partly | 48 | 12 | 30 | 6 |
-| Not met | 20 | 5 | 10 | 5 |
+| Met | 195 | 104 | 84 | 7 |
+| Partly | 40 | 12 | 22 | 6 |
+| Not met | 19 | 5 | 10 | 4 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
 The largest gaps: a second factor for tenant staff that accounts must opt into (`ASVS-01` built TOTP; `ASVS-31` makes it the default for administrators), no security event log for staff authentication and
-access refusals (`ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), no malware scan of
+access refusals (`ASVS-08`), no malware scan of
 uploads (`ASVS-11`), no backup and restore drill (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26`, `ASVS-24`, `ASVS-30` and `ASVS-34` are closed.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
@@ -63,16 +63,16 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-16 | P1 | ASVS 8.3.2, 8.3.3; `VS-15` | Self-service export and erasure requests for staff users and signers (evidence kept as retention requires, personal data otherwise removed), and an operator privacy-notice template |
 | ASVS-17 | P2 | ASVS 1.8.2, 6.1.1, 6.1.2, 8.3.7 | Decide by ADR between application-level encryption of personal data at rest and operator storage encryption, and record what the operator must enable |
 | ASVS-18 | P1 | ASVS 8.3.8; `SEC-D03`, `VS-15` | Retention classification and purge of personal data per account policy, derived data included |
-| ASVS-19 | P1 | ASVS 1.2.2, 1.6.2, 1.9.1, 1.9.2, 1.14.1, 1.14.4, 1.14.5, 2.10.1, 9.1.1, 9.1.3, 9.2.2, 14.1.3 | Production deployment template: per-service secrets (seal key and PIN only in keyd), TLS to PostgreSQL (`sslmode=verify-full`) and the object store, the same container hardening as modeld for every service, a documented TLS edge, and a start-up refusal of an `http` public URL outside development |
+| ASVS-19 | P1 | ASVS 1.2.2, 1.6.2, 1.9.1, 1.9.2, 1.14.1, 1.14.4, 1.14.5, 2.10.1, 9.1.1, 9.1.3, 9.2.2, 14.1.3 | Built by `HRD-06` (2026-11-14): `deploy/compose.production.yml` with per-service secrets, TLS to PostgreSQL and the object store, every service hardened, checked by `tools/check-deploy.py`, and the `http` public URL refused. Left: the whole stack started on it (`HRD-01`), static database and object-store passwords (2.10.1), TLS at the edge is the operator's (9.1.1, 9.1.3). Was: Production deployment template: per-service secrets (seal key and PIN only in keyd), TLS to PostgreSQL (`sslmode=verify-full`) and the object store, the same container hardening as modeld for every service, a documented TLS edge, and a start-up refusal of an `http` public URL outside development |
 | ASVS-20 | P2 | ASVS 3.1.1, 8.3.1, 13.1.3 | Record the accepted risk of the bearer token in the signing link path (`/s/{token}`, bound to the first browser, no-referrer, route template in logs) in docs/07 `SEC-A01` and an ADR |
 | ASVS-21 | P2 | ASVS 2.2.4, 2.7.1 (L3 ceremony) | Phishing-resistant signer authentication option (a passkey for returning signers) as an alternative to SMS codes |
 | ASVS-22 | P2 | ASVS 3.6.1 (L3 ceremony) | Recipient sign-in: send `max_age` in the OIDC request and refuse an ID token whose `auth_time` is older |
 | ASVS-23 | P2 | ASVS 10.1.1, 10.2.3 to 10.2.6 (L3) | Malicious-code review for ceremony, sealing and keyd: a static scan for hard-coded credentials, time comparisons and hidden routes in CI, and a recorded manual review (feeds `SEC-REV-01`) |
-| ASVS-24 | P2 | ASVS 14.1.5 (L3 sealing, keyd) | keyd and the worker log the SHA-256 of their security configuration (allow list, client CA, trust anchors, TSA list) at start and refuse a change without a restart; the operator can compare it |
+| ASVS-24 (Done) | P2 | ASVS 14.1.5 (L3 sealing, keyd) | Closed 2026-11-14 (`HRD-06`): keyd and the worker log each setting's SHA-256 and refuse a configuration that differs from `OPENSEAL_CONFIG_MANIFEST` (`CS-KEY-0013`). Was: keyd and the worker log the SHA-256 of their security configuration (allow list, client CA, trust anchors, TSA list) at start and refuse a change without a restart; the operator can compare it |
 | ASVS-25 | P2 | ASVS 8.3.6 | Hold passwords, one-time codes and link tokens from requests in zeroizing buffers and drop them after use |
 | ASVS-26 (Done) | P1 | ASVS 7.4.3 | Closed 2026-11-13, server and console (`ASVS-34` with it). Was: A last-resort panic layer on the server answering `500` problem details with the request id (and the same in the console) |
 | ASVS-27 | P2 | ASVS 1.1.3 | A security-constraint line in docs/14 rows that add a user-facing feature (who may do it, what is refused), checked when the row is written |
-| ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key | Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
+| ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key | Runbook in docs/65 §Rotation (`HRD-06`), exercised by tests for the database login, the API token key, keyd identities and webhook secrets; left: object-store credentials exercised (`HRD-07`) and the second-factor key (`HRD-08`). Was: Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
 | ASVS-29 | P2 | ASVS 2.4.5 | Optional password pepper held outside the database (a secret file through `casual-sign-secrets`), with rehash on login |
 | ASVS-30 (Done) | P2 | ASVS 5.2.3 | Closed 2026-11-13: the test went red without the guard and docs/07 `SEC-M02` was updated. Was: docs/07 `SEC-M02` still read Planned although `-worker/src/email.rs` refuses CR/LF and encodes headers: confirm its test goes red without the guard and update the row |
 | ASVS-34 (Done) | P2 | ASVS 7.4.3 | Closed 2026-11-13 with `ASVS-26`. Was: The console's last-resort panic layer answering a `500` problem, as the server's since `ASVS-26` |
@@ -102,7 +102,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1.2.1 | 2 | All | Low-privilege OS accounts per component | Met | `deploy/Dockerfile`: `USER nonroot` (server, worker, modeld), `USER keyd`; modeld `cap_drop: [ALL]`, `no-new-privileges`, read-only root (`docker-compose.yml`) | — |
-| 1.2.2 | 2 | All | Component-to-component communication authenticated | Partly | keyd and modeld: mTLS with client allow-list (`-keyd/tests/mtls.rs`); PostgreSQL and S3 by password from secret files, no TLS in the compose file | ASVS-19 |
+| 1.2.2 | 2 | All | Component-to-component communication authenticated | Met | keyd and modeld: mTLS with client allow-list (`-keyd/tests/mtls.rs`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): PostgreSQL by SCRAM over TLS with `sslmode=verify-full`, the object store by signed requests over TLS verified against the internal CA (`-store/tests/blob_s3_tls.rs`) | — |
 | 1.2.3 | 2 | All | One vetted authentication mechanism | Met | Staff: Argon2id password, session cookie plus CSRF token, API keys and OAuth client credentials, all resolved in `-server/src/auth.rs`; signers: link token bound to a browser cookie (`-server/src/ceremony.rs`) | — |
 | 1.2.4 | 2 | All | All authentication pathways equally strong | Partly | Login, password reset and invite acceptance share rate limits and Argon2id (`-server/src/api/admin.rs` `login_limit`); staff TOTP is required only where an account's `mfa_policy` asks for it or the user enrolled (`ASVS-01`, `-server/tests/mfa.rs`), while operators must always use TOTP (`-console/src/totp.rs`) | ASVS-01, ASVS-31 |
 
@@ -129,9 +129,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.6.1 | 2 | All | Key management policy and lifecycle | Partly | docs/31 §5 (keyd), docs/65 production checklist; seal key rotation designed, not built (`CON-10`); API token key rotation not documented | CON-10, ASVS-28 |
-| 1.6.2 | 2 | All | Key material protected in vaults; secrets out of code | Partly | Seal key only in keyd behind PKCS#11 (`SEC-S04`); secrets from files (`casual-sign-secrets`); the development compose file mounts one shared secrets volume, seal key included, into every service | ASVS-19 |
-| 1.6.3 | 2 | All | Keys and passwords replaceable with a re-encryption process | Partly | Passwords and API clients replaceable through the API; database and S3 credentials replaceable by redeploying secret files; no documented rotation runbook for the JWT signing key and keyd TLS identities | ASVS-28 |
+| 1.6.1 | 2 | All | Key management policy and lifecycle | Partly | docs/31 §5 (keyd), docs/65 production checklist and §Rotation (database, token key, keyd identities, webhooks); seal key rotation designed, not built (`CON-10`) | CON-10 |
+| 1.6.2 | 2 | All | Key material protected in vaults; secrets out of code | Met | Seal key only in keyd behind PKCS#11 (`SEC-S04`); secrets from files (`casual-sign-secrets`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s) each secret is mounted only into the services that read it, the seal PIN and chain into keyd alone (`SEC-H02`); the evaluation compose file still shares one volume | — |
+| 1.6.3 | 2 | All | Keys and passwords replaceable with a re-encryption process | Partly | Passwords and API clients replaceable through the API; rotation runbooks with tests for the database login (no restart, `-store/tests/rotation.rs`), the API token key (`kid` overlap), keyd TLS identities and webhook secrets (docs/65 §Rotation); the second-factor key cannot be rotated yet | HRD-08 |
 | 1.6.4 | 2 | All | Client-side secrets treated as insecure | Met | No secret in the web app; the CSRF token is per session, the session cookie is `HttpOnly`; WASM verifier holds no key | — |
 
 **V1.7 Errors, Logging and Auditing Architecture**
@@ -152,8 +152,8 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.9.1 | 2 | All | Components encrypt communication | Partly | keyd and modeld mTLS (rustls, TLS 1.3); server to PostgreSQL and S3 unencrypted in the compose file | ASVS-19 |
-| 1.9.2 | 2 | All | Components verify each other's authenticity | Partly | keyd/modeld verify client certificates against a CA and an allow-list (`-keyd/tests/mtls.rs` `a_client_not_on_the_allow_list_is_refused_and_logged`); database and object store not authenticated by certificate | ASVS-19 |
+| 1.9.1 | 2 | All | Components encrypt communication | Met | keyd and modeld mTLS (rustls, TLS 1.3); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): PostgreSQL TLS 1.3 only with a `hostssl`-only `hba_file` (a plain connection refused, checked by running, docs/65), the S3 gateway on TLS | — |
+| 1.9.2 | 2 | All | Components verify each other's authenticity | Met | keyd/modeld verify client certificates against a CA and an allow-list (`-keyd/tests/mtls.rs` `a_client_not_on_the_allow_list_is_refused_and_logged`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s) the server and worker verify PostgreSQL's and the object store's certificates against the internal CA (`verify-full`; `OPENSEAL_S3_CA`), and they authenticate by SCRAM and signed requests | — |
 
 **V1.10 Malicious Software Architecture**
 
@@ -180,11 +180,11 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.14.1 | 2 | All | Segregation of components by trust level | Partly | keyd and modeld separate processes; modeld on an `internal: true` network; console on a private listener (docs/23 §5); compose file does not segregate server from keyd's secrets volume | ASVS-19 |
+| 1.14.1 | 2 | All | Segregation of components by trust level | Met | keyd and modeld separate processes; modeld on an `internal: true` network; console on a private listener (docs/23 §5); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): internal `data` and `signing` networks, keyd's PIN, chain and identity mounted into keyd alone | — |
 | 1.14.2 | 2 | All | Signed binaries, trusted deployment connections | Partly | Release images pushed with SBOM and provenance attestation (`.github/workflows/release.yml`); images not signed with cosign (`SEC-C02` Planned) | ASVS-15 |
 | 1.14.3 | 2 | All | Build warns of out-of-date or insecure components | Met | `cargo deny check` and `cargo audit --deny warnings` in CI job `dependency-policy`; `SEC-C01` | — |
-| 1.14.4 | 2 | All | Build verifies secure deployment | Partly | CI builds and tests; `tools/ci-local.sh`; no automated check of a production deployment's configuration | ASVS-19 |
-| 1.14.5 | 2 | All | Deployments sandboxed/network isolated | Partly | modeld sandboxed (`internal: true`, `cap_drop: [ALL]`, read-only); other services not given the same hardening in compose | ASVS-19 |
+| 1.14.4 | 2 | All | Build verifies secure deployment | Met | CI builds and tests; `tools/check-deploy.py` checks the production profile's configuration on every CI run, its rules each shown to fail by `--self-test` (`HRD-06`) | — |
+| 1.14.5 | 2 | All | Deployments sandboxed/network isolated | Met | Every service in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): non-root, read-only root, `cap_drop: [ALL]`, `no-new-privileges`, resource limits; database, object store and keyd on internal networks | — |
 | 1.14.6 | 2 | All | No deprecated client technologies | Met | Plain ES modules, no plugins, no Flash/ActiveX/Java; CSP `object-src 'none'` (`-server/src/web.rs` `PAGE_CSP`) | — |
 
 ### V2 Authentication
@@ -559,7 +559,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 9.2.1 | 2 | All | Trusted certificates on connections | Met | Outbound HTTPS (webhooks, OIDC, SMS gateway, TSA) verified against system roots; keyd/modeld against the configured CA | — |
-| 9.2.2 | 2 | All | TLS for all inbound and outbound connections | Partly | Webhooks and OIDC `https` only (HTTP to loopback for a same-host IdP); PostgreSQL and S3 not over TLS in compose; TSA URLs may be HTTP (RFC 3161 responses are signed) | ASVS-19 |
+| 9.2.2 | 2 | All | TLS for all inbound and outbound connections | Partly | Webhooks and OIDC `https` only (HTTP to loopback for a same-host IdP); PostgreSQL and the object store over TLS in the production profile (`HRD-06`); TSA URLs may be HTTP (RFC 3161 responses are signed) | ASVS-19 |
 | 9.2.3 | 2 | All | Encrypted, authenticated connections to external systems | Met | As 9.2.1; keyd mutual TLS | — |
 | 9.2.4 | 2 | All | OCSP stapling | N/A | At the operator's edge; seal-time revocation checks are separate (`SEC-S11`) | — |
 | 9.2.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backend TLS failures logged | Partly | keyd refuses a bad client at the handshake and records allow-list refusals in its op log; the worker's keyd and TSA connection failures surface as job errors without a dedicated log line | ASVS-08 |
@@ -698,9 +698,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 14.1.1 | 2 | All | Secure, repeatable build and deploy | Partly | Pinned toolchain (`rust-toolchain.toml`), `--locked` builds, images pinned by digest; images not signed | ASVS-15 |
 | 14.1.2 | 2 | All | Compiler protections and warnings | Met | Memory-safe Rust; `overflow-checks = true` in release; clippy `-D warnings` in CI | — |
-| 14.1.3 | 2 | All | Server configuration hardened | Partly | Security headers on every response; production hardening left to docs/65 checklist without a hardened template | ASVS-19 |
+| 14.1.3 | 2 | All | Server configuration hardened | Met | Security headers on every response; the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s) hardens every service (`SEC-H01`) | — |
 | 14.1.4 | 2 | All | Automated redeployment and recovery | Met | `docker-compose.yml`, release workflow; `migrate` step (docs/65 §Upgrades) | — |
-| 14.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): integrity of security-relevant configuration verifiable | Not met | keyd's allow list, client CA and trust anchors are files with no recorded digest; console changes to TSA and seal profile are two-person (`SEC-X05`, designed) | ASVS-24 |
+| 14.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): integrity of security-relevant configuration verifiable | Met | keyd and the worker log the SHA-256 of each security setting and of all of them at start and, with `OPENSEAL_CONFIG_MANIFEST` (required by the production profile), refuse to start on any difference (`CS-KEY-0013`; `-keyd/tests/config_integrity.rs`, seen red; `SEC-H04`); console TSA changes are two-person (`CON-07`) | — |
 
 **V14.2 Dependency**
 

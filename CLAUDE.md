@@ -113,6 +113,7 @@ cargo deny check bans licenses sources && cargo audit --deny warnings
 python3 tools/check-repo.py
 python3 -I fixtures/tools/generate.py --check
 python3 -I fixtures/corpus/fetch.py --check
+python3 -I tools/check-deploy.py --self-test && python3 -I tools/check-deploy.py   # production profile hardening (HRD-06)
 python3 tools/verify-sealed.py --self-test                 # pyHanko must tell sealed from tampered
 python3 tools/verify-sealed.py fixtures/sealed fixtures/tampered   # once Phase 1 writes sealed fixtures
 tools/wasm-parity.sh                       # native and WASM byte-identical over the corpus
