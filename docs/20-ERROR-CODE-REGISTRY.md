@@ -199,7 +199,7 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0001 | Database unreachable, connection failed, or pool exhausted |
 | CS-DB-0002 | A migration failed, or an applied migration's text changed (migrations are forward-only) |
 | CS-DB-0003 | Not found in this account (another account's object answers the same) |
-| CS-DB-0004 | Update, delete or truncate of the audit chain, a tombstone, or an admin log (`admin_events`, `org_admin_events`; `ORG-05`, migration 0016) refused (SQLSTATE `OS001`) |
+| CS-DB-0004 | Update, delete or truncate of the audit chain, a tombstone, an admin log (`admin_events`, `org_admin_events`; `ORG-05`, migration 0020), or the operator log (`CON-03`) refused (SQLSTATE `OS001`) |
 | CS-DB-0005 | Audit event does not extend its envelope's chain: hash, `seq` or `prev` (SQLSTATE `OS002`) |
 | CS-DB-0006 | Already exists (a unique constraint, named) |
 | CS-DB-0007 | Stale version: the object changed since it was read |
@@ -209,7 +209,7 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0011 | The database has a migration this build does not know |
 | CS-DB-0012 | Any other database error, by SQLSTATE |
 | CS-DB-0013 | Change to an immutable column refused: a workspace's organization, outside ORG-20's operator link (SQLSTATE `OS004`; `ORG-02`, migration 0014) |
-| CS-DB-0014 | Admin log event does not extend its chain: hash, `seq`, `prev`, or columns that differ from its canonical bytes (SQLSTATE `OS005`; `ORG-05`, migration 0016). The operator log (`CON-03`) will use it too |
+| CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq`, `prev`, or columns that differ from its canonical bytes (SQLSTATE `OS005`; `ORG-05`, migration 0020, for `admin_events` and `org_admin_events`; `CON-03`, migration 0017, for `platform.operator_events`) |
 | CS-BLOB-0001 | Blob store failed (I/O, network, unexpected status) |
 | CS-BLOB-0002 | No blob under that key |
 | CS-BLOB-0003 | Bytes stored under a key do not hash to it |
@@ -241,6 +241,31 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 | CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job |
 | CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |
 
+## Platform console (`casual-sign-console`, `casual-sign-platform-store`; `CON-02`, `CON-03`, `CON-04`)
+
+Issued by the console's first rows (migrations 0016 to 0018). Every console answer is an RFC 9457 problem with one of
+these codes; messages carry codes, ids and sequence numbers only. The platform store maps SQLSTATEs raised by the
+`platform` definer functions: `OS006` → `CS-CON-0001`, `OS007` → `CS-CON-0002`, `OS008` → `CS-CON-0003`, `OS009` →
+`CS-CON-0004`, `OS005` → `CS-DB-0014`, `OS001` → `CS-DB-0004` (widened to `platform.operator_events` and
+`platform.alerts`, which use the same refusal).
+
+| Code | Meaning |
+| --- | --- |
+| CS-CON-0001 | Operator not authenticated: no session cookie, or the session expired (8 hours), idled (30 minutes), was revoked, or its operator is disabled; also a wrong password, an unknown e-mail (the same answer) and an unknown or spent enrolment token (401) |
+| CS-CON-0002 | Second factor required, stale or wrong: a session that has passed only the password, a wrong code, a code for a time step already used, or a two-person step whose second factor is older than 5 minutes (401) |
+| CS-CON-0003 | Operator role lacks the action, checked by the route and again by the database (403) |
+| CS-CON-0004 | Action needs a second operator's approval; missing, expired, used, by the requester, or for another payload (409). Issued for suspending and resuming an organization (`CON-04`, migration 0019) and for adding a `platform_owner` (refused until that action has its approval function) |
+| CS-CON-0005 | Console listener refused: a non-loopback bind without `OPENSEAL_CONSOLE_PUBLIC=1`, or without `OPENSEAL_TRUSTED_PROXIES` (TLS terminates at the proxy), or the console's origin equal to the public application's (start-up) |
+| CS-CON-0007 | Operator log does not verify (names the first bad `seq`): the console refuses to start; the API and health page report it (503) |
+| CS-CON-0010 | Request invalid: malformed JSON or a value out of range; names the field (422) |
+| CS-CON-0011 | No such object (404) |
+| CS-CON-0012 | Rate limit: sign-in per address and per e-mail, TOTP per operator, requests per session; `retry_after` seconds (429) |
+| CS-CON-0013 | A changing request without its session's CSRF token, with a wrong one, or not `application/json` (403) |
+| CS-CON-0014 | Internal failure; names the step, never a value (500) |
+| CS-CON-0015 | The database is unavailable (503) |
+| CS-CON-0016 | Already exists: an operator with that e-mail (409) |
+| CS-CON-0017 | Console configuration invalid or a secret missing; names the variable (start-up) |
+
 ## Organizations, plans and console (proposed, ADR-028)
 
 **Proposed, not issued.** Reserved by ADR-028 (Accepted 2026-11-12) and [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)
@@ -248,9 +273,9 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 `CS-ORG` (organizations, workspaces, delegated administration, identity), `CS-PLAN` (plans and quotas), `CS-CON`
 (platform console). `CS-ORG-0012` is withdrawn before issue: `SEC-ID-01`'s fix issues `CS-API-0015` (store `CS-DB-0009`,
 SQLSTATE `OS003`) for the identity-attribute refusal, so this design's SQLSTATEs are `OS004` and `OS005`.
-`CS-DB-0004`'s widening to the admin logs and `CS-DB-0014` are issued (`ORG-05`); the operator log
-(`platform.operator_events`) joins them with `CON-03`. `CS-DB-0013` is issued (`ORG-02`). All are listed with the store
-codes above.
+`CS-DB-0004`'s widening to the admin logs and `CS-DB-0014` are issued (`ORG-05`, migration 0020); the operator log
+(`platform.operator_events`) uses both (`CON-03`, migration 0017). `CS-DB-0013` is issued (`ORG-02`). All are listed with
+the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`, `CON-03`) and listed in the section above.
 
 | Code | Meaning |
 | --- | --- |
@@ -278,13 +303,7 @@ codes above.
 | CS-PLAN-0005 | Organization suspended by the platform: new work refused, sent envelopes continue (403) |
 | CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422) |
 | CS-PLAN-0007 | Workspace allocations exceed the organization's quota (422) |
-| CS-CON-0001 | Operator not authenticated, or the session expired (401) |
-| CS-CON-0002 | Second factor required, stale or wrong (401) |
-| CS-CON-0003 | Operator role lacks the action (403) |
-| CS-CON-0004 | Action needs a second operator's approval; missing, expired, used, by the requester, or for another payload (409) |
-| CS-CON-0005 | Console listener refused: public bind without `OPENSEAL_CONSOLE_PUBLIC=1` and TLS or trusted proxies (start-up) |
 | CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422) |
-| CS-CON-0007 | Operator log does not verify; the console refuses writes (start-up and per write) |
 | CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
 | CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no signature (alert) |
 

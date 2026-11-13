@@ -212,17 +212,46 @@ export function emptyState({ illus = "inbox", title, text, action = null, testId
   );
 }
 
-/// Skeleton rows for a list while it loads (hidden from assistive technology; the
-/// container carries `aria-busy`).
+/// The canvas's skeleton widths (percent of the title column), so rows differ.
+const SKEL_W = [62, 48, 70, 55, 66, 44, 58];
+
+/// Skeleton rows for a list while it loads, shaped like the canvas's agreement rows: a
+/// document thumbnail, a title and a subtitle, an avatar pair, a status pill and a date.
+/// Hidden from assistive technology; the container carries `aria-busy`.
 export function skeletonRows(n = 5) {
   const wrap = h("div", { class: "os-skeleton-list", attrs: { "aria-hidden": "true" } });
   for (let i = 0; i < n; i++) {
+    const w = SKEL_W[i % SKEL_W.length];
+    const title = h("span", { class: "os-skel" });
+    const sub = h("span", { class: "os-skel os-skel--sub" });
+    title.style.width = `${w}%`;
+    sub.style.width = `${Math.round(w * 0.6)}%`;
     wrap.append(h("div", { class: "os-skeleton-row" },
-      h("span", { class: "os-skel os-skel--text" }),
+      h("span", { class: "os-skel os-skel--doc" }),
+      h("span", { class: "os-skel-lines" }, title, sub),
+      h("span", { class: "os-skel os-skel--circle" }),
       h("span", { class: "os-skel os-skel--pill" }),
       h("span", { class: "os-skel os-skel--short" })));
   }
   return wrap;
+}
+
+/// Skeleton text: `n` lines of varying width (a paragraph or a card body loading).
+export function skeletonLines(n = 3, { widths = SKEL_W } = {}) {
+  const wrap = h("div", { class: "os-skel-lines", attrs: { "aria-hidden": "true" } });
+  for (let i = 0; i < n; i++) {
+    const line = h("span", { class: `os-skel${i ? " os-skel--sub" : ""}` });
+    line.style.width = `${widths[i % widths.length] + (i ? 20 : 30)}%`;
+    wrap.append(line);
+  }
+  return wrap;
+}
+
+/// A skeleton block (a chart, a card, a preview loading); `height` in rem.
+export function skeletonBlock({ height = 6 } = {}) {
+  const b = h("span", { class: "os-skel os-skel--block", attrs: { "aria-hidden": "true" } });
+  b.style.height = `${height}rem`;
+  return b;
 }
 
 const STATUS_ICON = { draft: "file-pen-line", sent: "send", delivered: "eye", completing: "loader-circle", completed: "circle-check", declined: "circle-x", voided: "ban", expired: "clock", created: "clock" };

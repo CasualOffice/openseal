@@ -19,6 +19,9 @@ const WASM = fs.existsSync(path.join(ROOT, "webapp/vendor/openseal-wasm/casual_s
 async function checkLayout(page, what) {
   await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
   const problems = await page.evaluate(() => {
+    // Measured from the top of the page, as the screenshot is: the sticky phone bar (WEB-17)
+    // otherwise sits over whatever a click scrolled under it.
+    window.scrollTo(0, 0);
     const out = [];
     const vw = document.documentElement.clientWidth;
     if (document.documentElement.scrollWidth > vw + 1) out.push(`horizontal overflow: ${document.documentElement.scrollWidth} > ${vw}`);
@@ -53,13 +56,20 @@ async function checkLayout(page, what) {
       if (!styled) out.push(`unstyled ${el.tagName.toLowerCase()}: ${(el.getAttribute("aria-label") || el.textContent || el.name || "").trim().slice(0, 40)}`);
     }
     // Overlaps between interactive elements that are not nested in each other.
-    const skip = (el) => el.closest(".os-page__overlay, .os-menu, dialog:not([open])");
+    // Under an open modal dialog the page is inert: only the dialog's controls can meet.
+    // (The canvas draws the phone's adopt dialog as a bottom sheet over the signer's bar,
+    // docs/assets/design-canvas/SignerPhone.dc.html.)
+    const modal = document.querySelector("dialog:modal");
+    const skip = (el) => el.closest(".os-page__overlay, .os-menu, dialog:not([open])") || (modal && !modal.contains(el));
     const live = controls.filter((x) => !skip(x.el));
     for (let i = 0; i < live.length; i++) {
       for (let j = i + 1; j < live.length; j++) {
         const a = live[i]; const b = live[j];
         if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
         if (a.el.closest("label") && a.el.closest("label") === b.el.closest("label")) continue;
+        // A control drawn inside its field on purpose (the password reveal), whose input is padded to clear it.
+        const inset = (el) => el.closest(".os-auth__secret");
+        if (inset(a.el) && inset(a.el) === inset(b.el)) continue;
         const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
         const hgt = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
         if (w > 2 && hgt > 2) out.push(`overlap: ${a.el.tagName}(${(a.el.getAttribute("aria-label") || a.el.textContent).trim().slice(0, 30)}) × ${b.el.tagName}(${(b.el.getAttribute("aria-label") || b.el.textContent).trim().slice(0, 30)})`);
@@ -124,6 +134,13 @@ async function expectPainted(page, selector, what) {
   await expect.poll(blank, { message: `blank canvases on ${what}`, timeout: 10_000 }).toBe(0);
 }
 
+/// Open an agreement's detail page from the Agreements list (rows open on double-click or
+/// from the inspector; the address is the row's).
+async function openEnvelope(page, subject) {
+  const id = await page.locator(".os-agr-row[data-id]", { hasText: subject }).getAttribute("data-id");
+  await page.goto(app(`#/envelopes/${id}`));
+}
+
 async function shot(page, name, viewport, fullPage = true) {
   fs.mkdirSync(SHOTS, { recursive: true });
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -142,17 +159,18 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
       await check("01-signin");
       await signIn(page, "home");
-      await expect(page.locator(".os-counters:not([aria-busy])")).toBeVisible();
+      await expect(page.locator(".os-home2__stats:not([aria-busy])")).toBeVisible();
       await expect(page.locator(".os-recent__item").first()).toBeVisible();
       await check("02-home");
       await page.goto(app("#/agreements"));
-      await expect(page.locator(".os-row__sub").first()).not.toBeEmpty();
+      await expect(page.locator(".os-agr-row[data-id] .os-agr-sub").first()).not.toBeEmpty();
       await check("03-agreements");
-      await page.getByRole("link", { name: "Mutual NDA — Acme and Globex" }).click();
+      await openEnvelope(page, "Mutual NDA — Acme and Globex");
       await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();
       await check("04-envelope-summary");
-      await page.getByRole("tab", { name: "Documents" }).click();
-      await expectPainted(page, ".os-preview__pages", "envelope documents");
+      // The documents are a card on the envelope page, not a tab (WEB-17).
+      await page.getByTestId("envelope-documents").scrollIntoViewIfNeeded();
+      await expectPainted(page, "[data-testid=envelope-documents] .os-preview__pages", "envelope documents");
       await check("05-envelope-documents");
 
       await page.goto(app("#/prepare"));
@@ -285,17 +303,24 @@ for (const [vp, size] of [["1440", { width: 1440, height: 900 }], ["1366", { wid
     test("row menus, the Start menu and the account menu stay inside the viewport", async ({ page }, testInfo) => {
       test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
       await signIn(page, "agreements");
-      await expect(page.locator(".os-row__sub").first()).not.toBeEmpty();
-      const rowMenus = page.getByRole("button", { name: /^Actions for / });
-      await rowMenus.last().click();
-      await menuInView(page, `${vp} agreements: last row's menu`);
-      await page.keyboard.press("Escape");
-      await rowMenus.first().click();
-      await menuInView(page, `${vp} agreements: first row's menu`);
-      await page.keyboard.press("Escape");
+      await expect(page.locator(".os-agr-row[data-id] .os-agr-sub").first()).not.toBeEmpty();
+      // A row's actions are in the inspector's More menu (WEB-17): select the row, open it.
+      const rows = page.locator(".os-agr-row[data-id]");
+      for (const [which, r] of [["last", rows.last()], ["first", rows.first()]]) {
+        await r.click();
+        await page.getByRole("button", { name: /^Actions for / }).click();
+        await menuInView(page, `${vp} agreements: ${which} row's menu`);
+        await page.keyboard.press("Escape");
+        // On a phone the inspector is a full page: close it to reach the list again.
+        const close = page.getByRole("button", { name: "Close details" });
+        if (await close.isVisible()) await close.click();
+      }
+      // On a phone New agreement lives in the drawer (WEB-17); the account is in the top row.
+      if (await page.locator("#nav-toggle").isVisible()) await page.locator("#nav-toggle").click();
       await page.locator("#start-btn").click();
       await menuInView(page, `${vp} Start menu`);
       await page.keyboard.press("Escape");
+      if (await page.locator("#nav-toggle").getAttribute("aria-expanded") === "true") await page.keyboard.press("Escape");
       await page.locator("#account-btn").click();
       await menuInView(page, `${vp} account menu`);
       await page.keyboard.press("Escape");
@@ -340,27 +365,27 @@ for (const scheme of ["light", "dark"]) {
   });
 }
 
-// The UI font and the root size (UX-02): the bundled Inter draws the app and the signing
-// page, and the root size is the same in every window.
-test("the bundled UI font draws the app and the signing page, at one root size", async ({ page }, testInfo) => {
+// The UI font and the root size (UX-02, WEB-17): the bundled Geist draws the app and the
+// signing page, and the root follows the canvas's bounded fluid scale.
+test("the bundled UI font draws the app and the signing page, on the canvas's fluid root (WEB-17)", async ({ page }, testInfo) => {
   test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
-  const sizes = [];
-  for (const width of [1280, 1440, 1920]) {
+  // Owner instruction 44: 15 px at 1280, 16 at 1440, about 17 at 1920, 16 on phones.
+  const want = { 390: 16, 1280: 15.34, 1440: 15.82, 1920: 17.26 };
+  for (const width of [390, 1280, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(app("#/signin"));
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     const r = await page.evaluate(async () => {
       await document.fonts.ready;
-      return { root: getComputedStyle(document.documentElement).fontSize, loaded: document.fonts.check('14px "OpenSeal Inter"', "Agreement"), family: getComputedStyle(document.body).fontFamily };
+      return { root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize), loaded: document.fonts.check('14px "OpenSeal Geist"', "Agreement"), family: getComputedStyle(document.body).fontFamily };
     });
-    expect(r.family.startsWith('"OpenSeal Inter"'), `body font at ${width}: ${r.family}`).toBe(true);
-    expect(r.loaded, `Inter loaded at ${width}`).toBe(true);
-    sizes.push(r.root);
+    expect(r.family.startsWith('"OpenSeal Geist"'), `body font at ${width}: ${r.family}`).toBe(true);
+    expect(r.loaded, `Geist loaded at ${width}`).toBe(true);
+    expect(Math.abs(r.root - want[width]), `root size at ${width}: ${r.root}`).toBeLessThan(0.05);
   }
-  expect(new Set(sizes).size, `root size by window: ${sizes.join(", ")}`).toBe(1);
   await page.goto(signPage(tokens.sign));
   await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
-  expect(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "OpenSeal Inter"', "Sign"); })).toBe(true);
+  expect(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "OpenSeal Geist"', "Sign"); })).toBe(true);
 });
 
 // Small component defects (UX-02).
@@ -369,7 +394,7 @@ test.describe("components at 390", () => {
   test("the envelope's details stack in one column on a phone", async ({ page }, testInfo) => {
     test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
     await signIn(page, "agreements");
-    await page.getByRole("link", { name: "Mutual NDA — Acme and Globex" }).click();
+    await openEnvelope(page, "Mutual NDA — Acme and Globex");
     const meta = page.locator(".os-meta").first();
     await expect(meta).toBeVisible();
     const cols = await meta.evaluate((dl) => getComputedStyle(dl).gridTemplateColumns.split(" ").length);
@@ -381,7 +406,10 @@ test("row checkboxes have a 44 px target (SC 2.5.8 and the touch size)", async (
   test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
   await page.setViewportSize({ width: 1440, height: 900 });
   await signIn(page, "agreements");
-  const box = page.locator("tbody .os-checkbox").first();
+  // Rows take a checkbox in select mode (Display → Select agreements, WEB-17).
+  await page.getByTestId("display-toggle").click();
+  await page.getByRole("menuitem", { name: "Select agreements" }).click();
+  const box = page.locator(".os-agr-row[data-id] .os-checkbox").first();
   await expect(box).toBeVisible();
   const r = await box.evaluate((el) => {
     const b = el.getBoundingClientRect();

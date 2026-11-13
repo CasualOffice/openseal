@@ -1,11 +1,14 @@
-// Admin (WEB-02, UX-08; docs/47 §Screens "Admin"): a section rail after DocuSign
-// eSignature Admin (Account, Users and groups, Integrations, Security), a select in its
-// place below 37.5em. Sections drawn over the endpoints the server has: the account's
-// settings and branding (`/accounts/me`), its members (`/users`), webhooks
-// (`/webhooks`, deliveries) and API clients (`/api-clients`). The sections still
-// waiting for their endpoints (signing and sending, ERSD, retention, groups,
-// permission profiles, SSO, seal and timestamp, the admin audit log) are rows in the
-// rail that say so, never hidden (adminmodel.js `SECTIONS`).
+// Admin (WEB-02, UX-08, WEB-17; docs/47 §As built: Admin, Templates, Reports, Profile on
+// the canvas). The canvas Intelligence artboard's admin: a secondary nav inside the
+// content card (Organization, Members and roles, Security and sign-in, Signing and
+// seals, Branding, Document intelligence, Retention, API and webhooks, Audit log; a
+// select in its place on phones) and one settings page beside it, with the page's title,
+// lede and actions in its head. Pages drawn over the endpoints the server has: the
+// account's settings and branding (`/accounts/me`), its members (`/users`), webhooks
+// (`/webhooks`, deliveries) and API clients (`/api-clients`) as pill tabs of one page,
+// and Document intelligence (adminintel.js, `/account/settings/ml`). The pages still
+// waiting for their endpoints say what they will hold and that this server does not have
+// them yet (adminmodel.js `NAV`), never dead links.
 //
 // Access is the server's: a member without the scope gets CS-AUTH-0006, shown in place.
 // A new API key or OAuth secret is shown once, in a panel only "I have copied it"
@@ -28,80 +31,140 @@ import { t } from "./i18n.js";
 import { WEBHOOK_EVENT_TYPES } from "./api.js";
 import { register, unregisterPrefix } from "./commands.js";
 import { profileName } from "./people.js";
-import { SECTIONS, GROUPS, sectionFrom, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio } from "./adminmodel.js";
-import { button, emptyState, skeletonRows, errorState, openPanel, confirmDialog, toast, toastError, selectField, toggle, menuButton, checkbox } from "./ui/index.js";
+import { NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio } from "./adminmodel.js";
+import { intelligence } from "./adminintel.js";
+import { button, emptyState, skeletonRows, skeletonBlock, errorState, openPanel, confirmDialog, toast, toastError, selectField, toggle, menuButton, checkbox, tabs } from "./ui/index.js";
 
 const PROFILES = ["admin", "sender", "viewer"];
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-/// The section names, written out so the strings check finds every key.
+/// The nav's names and each page's lede, written out so the strings check finds every key.
 const TITLE = {
-  account: () => t("admin.account"), signing: () => t("admin.sec.signing"), ersd: () => t("admin.sec.ersd"), retention: () => t("admin.sec.retention"),
-  users: () => t("admin.users"), groups: () => t("admin.sec.groups"), profiles: () => t("admin.sec.profiles"),
-  webhooks: () => t("admin.webhooks"), api: () => t("admin.api"),
+  organization: () => t("admin.nav.organization"), members: () => t("admin.nav.members"), security: () => t("admin.nav.security"),
+  signing: () => t("admin.nav.signing"), branding: () => t("admin.nav.branding"), intelligence: () => t("admin.nav.intelligence"),
+  retention: () => t("admin.nav.retention"), integrations: () => t("admin.nav.integrations"), audit: () => t("admin.nav.audit"),
+};
+const LEDE = {
+  organization: () => t("admin.lede.organization"), members: () => t("admin.lede.members"), branding: () => t("admin.lede.branding"),
+  integrations: () => t("admin.lede.integrations"), intelligence: () => t("intel.lede"),
+};
+const TAB = { api: () => t("admin.api"), webhooks: () => t("admin.webhooks") };
+const PART = {
+  signing: () => t("admin.sec.signing"), ersd: () => t("admin.sec.ersd"), retention: () => t("admin.sec.retention"),
   sso: () => t("admin.sec.sso"), seal: () => t("admin.sec.seal"), audit: () => t("admin.sec.audit"),
 };
-const GROUP = { account: () => t("admin.group.account"), people: () => t("admin.group.people"), integrations: () => t("admin.group.integrations"), security: () => t("admin.group.security") };
 const WAITS = {
   signing: () => t("admin.wait.signing"), ersd: () => t("admin.wait.ersd"), retention: () => t("admin.wait.retention"),
-  groups: () => t("admin.wait.groups"), profiles: () => t("admin.wait.profiles"),
   sso: () => t("admin.wait.sso"), seal: () => t("admin.wait.seal"), audit: () => t("admin.wait.audit"),
 };
-const href = (id) => (id === "users" ? "#/admin" : `#/admin?section=${id}`);
+const WAIT_ILLUS = { security: "keys", signing: "verify", retention: "calendar", audit: "documents" };
+
+/// Where a section draws its own head: a page's body maps to the function that puts the
+/// actions and lede in the page's head (sectionHead); a tab's body has none and gets an
+/// h2 row of its own.
+const HEADS = new WeakMap();
 
 export function mount(view, ctx, _match, params) {
-  const current = sectionFrom(params);
-  const sec = SECTIONS.find((s) => s.id === current);
+  const { nav: current, tab } = routeFrom(params);
+  const item = NAV.find((n) => n.id === current);
+  const org = h("span", { class: "os-adm__org", text: t("admin.title") });
+  const navEl = buildNav(current, org);
+  const picker = buildPicker(current, ctx);
+  const actions = h("div", { class: "os-adm__actions" });
+  const chip = h("span", { class: "os-adm__chip-slot" });
+  const lede = h("p", { class: "os-adm__lede", text: item.ready ? LEDE[current]?.() || "" : t("admin.lede.waiting") });
+  const head = h("div", { class: "os-adm__head os-rise" },
+    h("div", { class: "os-adm__titles" }, h("h1", { class: "os-adm__title", text: TITLE[current]() }), lede), chip, actions);
+  const body = h("div", { class: "os-adm__body", attrs: { "data-section": tab || current } });
+  HEADS.set(body, ({ text = null, buttons = [], badge = null } = {}) => {
+    if (text) lede.textContent = text;
+    clear(actions).append(...buttons);
+    clear(chip);
+    if (badge) chip.append(badge);
+  });
+  view.append(h("div", { class: "os-adm", attrs: { "data-page": current } }, navEl,
+    h("div", { class: "os-adm__main" }, picker, h("div", { class: "os-adm__page" }, head, body))));
+  orgName(ctx, org);
+  for (const n of NAV) register(`admin.go.${n.id}`, { label: t("palette.go", { place: TITLE[n.id]() }), run: () => ctx.navigate(navHref(n.id)) });
 
-  const rail = h("nav", { class: "os-rail os-admin__rail", attrs: { "aria-label": t("admin.sections"), "data-testid": "admin-rail" } });
-  const picker = h("select", { id: "admin-section", class: "os-input os-select" });
-  for (const g of GROUPS) {
-    rail.append(h("p", { class: "os-rail__group", text: GROUP[g]() }));
-    const ul = h("ul", { class: "os-rail__list" });
-    const og = h("optgroup", { attrs: { label: GROUP[g]() } });
-    for (const s of SECTIONS.filter((x) => x.group === g)) {
-      ul.append(h("li", {}, h("a", {
-        class: `os-rail__link${s.ready ? "" : " is-waiting"}`, href: href(s.id),
-        attrs: { "data-section": s.id, ...(s.id === current ? { "aria-current": "page" } : {}) },
-      }, icon(s.icon, { size: 16 }), h("span", { class: "os-rail__label", text: TITLE[s.id]() }),
-      s.ready ? null : h("span", { class: "os-rail__soon", text: t("admin.soon") }))));
-      og.append(h("option", { value: s.id, selected: s.id === current, text: s.ready ? TITLE[s.id]() : `${TITLE[s.id]()} (${t("admin.soon")})` }));
-    }
-    rail.append(ul);
-    picker.append(og);
-  }
-  picker.addEventListener("change", () => ctx.navigate(href(picker.value)));
-  const pick = h("div", { class: "os-fieldrow os-admin__picker" }, h("label", { class: "os-label", attrs: { for: "admin-section" }, text: t("admin.section") }), picker);
-
-  const content = h("div", { class: "os-manage__content os-admin__content", attrs: { "data-section": current } });
-  view.append(h("div", { class: "os-page-head" }, h("h1", { class: "os-page-title", text: t("admin.title") })),
-    h("div", { class: "os-manage os-admin" }, rail, h("div", { class: "os-admin__main" }, pick, content)));
-
-  if (!sec.ready) waiting(content, sec);
-  else if (current === "users") users(content, ctx);
-  else if (current === "api") clients(content, ctx);
-  else if (current === "webhooks") webhooks(content, ctx);
-  else account(content, ctx);
-  return () => { for (const p of ["users.", "webhooks.", "apiclients."]) unregisterPrefix(p); };
+  if (!item.ready) waiting(body, item);
+  else if (current === "members") users(body, ctx);
+  else if (current === "integrations") integrations(body, ctx, tab);
+  else if (current === "intelligence") intelligence(body, ctx, HEADS.get(body));
+  else account(body, ctx, current);
+  return () => { for (const p of ["users.", "webhooks.", "apiclients.", "admin.go.", "intel."]) unregisterPrefix(p); };
 }
 
-/// A section's head: its title (h2), a lede, and its actions.
+/// The secondary nav (canvas): back to agreements, the workspace, then the pages; the
+/// current one raised on white, Document intelligence marked with the model sparkle,
+/// pages not on this server marked "Soon".
+function buildNav(current, org) {
+  const nav = h("nav", { class: "os-adm__nav", attrs: { "aria-label": t("admin.sections"), "data-testid": "admin-rail" } },
+    h("a", { class: "os-adm__link os-adm__back", href: "#/agreements" }, icon("os-back", { size: 16, stroke: 1.6 }), h("span", { text: t("admin.back") })),
+    org);
+  for (const n of NAV) {
+    nav.append(h("a", {
+      class: `os-adm__link${n.ready ? "" : " is-waiting"}`, href: navHref(n.id),
+      attrs: { "data-section": n.id, ...(n.id === current ? { "aria-current": "page" } : {}) },
+    }, h("span", { class: "os-adm__label", text: TITLE[n.id]() }),
+    n.ml ? icon("os-sparkle", { size: 12, className: "os-adm__spark" }) : null,
+    n.ready ? null : h("span", { class: "os-adm__soon", text: t("admin.soon") })));
+  }
+  return nav;
+}
+
+/// Phones: the nav is a select (it would push the page below the fold).
+function buildPicker(current, ctx) {
+  const picker = h("select", { id: "admin-section", class: "os-input os-select" });
+  for (const n of NAV) picker.append(h("option", { value: n.id, selected: n.id === current, text: n.ready ? TITLE[n.id]() : `${TITLE[n.id]()} (${t("admin.soon")})` }));
+  picker.addEventListener("change", () => ctx.navigate(navHref(picker.value)));
+  return h("div", { class: "os-fieldrow os-adm__picker" }, h("label", { class: "os-label", attrs: { for: "admin-section" }, text: t("admin.section") }), picker);
+}
+
+/// "Acme Inc · Admin" once the account is read; "Admin" until then or if it cannot be.
+async function orgName(ctx, el) {
+  try {
+    const a = await ctx.api.account();
+    if (a?.name) el.textContent = t("admin.org-of", { name: a.name });
+  } catch { /* the nav keeps "Admin" */ }
+}
+
+/// API and webhooks: one page, two pill tabs; the URL follows the tab so a reload or a
+/// shared link opens the same one.
+function integrations(body, ctx, tab) {
+  const tb = tabs({
+    label: t("admin.integrations-tabs"), variant: "pill", current: tab,
+    tabs: ["api", "webhooks"].map((id) => ({ id, label: TAB[id]() })),
+    render(id, panel) {
+      panel.dataset.section = id;
+      if (id === "webhooks") webhooks(panel, ctx); else clients(panel, ctx);
+    },
+    onChange(id) { try { history.replaceState(null, "", navHref("integrations", id)); } catch { /* a sandboxed frame */ } },
+  });
+  HEADS.get(body)?.({});
+  body.append(tb);
+}
+
+/// A section's head. On a page of its own: its actions (and lede, when it has one) go in
+/// the page's head. In a tab: an h2 row with its actions, and its lede below.
 function sectionHead(panel, title, lede, ...actions) {
+  const put = HEADS.get(panel);
+  if (put) { put({ text: lede, buttons: actions }); return; }
   panel.append(h("div", { class: "os-panel__head os-panel__head--page" },
     h("h2", { class: "os-card__title", text: title }),
     actions.length ? h("div", { class: "os-actions" }, ...actions) : null));
   if (lede) panel.append(h("p", { class: "os-muted os-admin__lede", text: lede }));
 }
 
-/// A section that waits for its server endpoints: what it will hold, and that it is not
-/// on this server yet.
-function waiting(panel, sec) {
-  sectionHead(panel, TITLE[sec.id](), null);
-  panel.append(h("section", { class: "os-card os-admin__waiting", attrs: { "data-testid": `waiting-${sec.id}` } },
-    h("p", { class: "os-admin__waiting-head" }, icon("hourglass", { size: 20 }), h("strong", { text: t("admin.wait.title") })),
-    h("p", { text: WAITS[sec.id]() }),
-    h("p", { class: "os-muted os-small", text: t("admin.wait.text") })));
+/// A page that waits for its server endpoints: an illustrated empty state that says so,
+/// then one card per part saying what it will hold.
+function waiting(panel, item) {
+  panel.append(h("div", { class: "os-adm__waiting", attrs: { "data-testid": `waiting-${item.id}` } },
+    emptyState({ illus: WAIT_ILLUS[item.id] || "inbox", title: t("admin.wait.title"), text: t("admin.wait.text") }),
+    h("div", { class: "os-adm__cards" }, ...item.waits.map((w) => h("section", { class: "os-adm__card", attrs: { "data-testid": `wait-part-${w}` } },
+      h("h2", { class: "os-adm__card-title", text: PART[w]() }),
+      h("p", { class: "os-adm__card-text", text: WAITS[w]() }))))));
 }
 
 /// A text value and its Copy button, for a value people paste elsewhere.
@@ -113,11 +176,13 @@ function copyRow(id, label, value) {
   return [h("label", { class: "os-label", attrs: { for: id }, text: label }), h("div", { class: "os-copyrow" }, input, copy)];
 }
 
-// ---- Account: settings and branding (AD-01) ------------------------------------------
+// ---- Organization and Branding: the account's settings and branding (AD-01) -----------
 
-function account(panel, ctx) {
+/// `part`: "organization" (the defaults for new envelopes) or "branding"; one page each
+/// in the canvas's nav, both over `/accounts/me`.
+function account(panel, ctx, part) {
   sectionHead(panel, t("admin.account"), null);
-  const box = h("div", { class: "os-admin-cards", attrs: { "aria-busy": "true" } }, skeletonRows(2));
+  const box = h("div", { class: "os-admin-cards", attrs: { "aria-busy": "true" } }, skeletonBlock({ height: 9 }));
   panel.append(box);
   let acct = null;
 
@@ -140,21 +205,21 @@ function account(panel, ctx) {
     const b = s().branding || {};
     const swatch = HEX.test(b.color || "") ? h("span", { class: "os-swatch", attrs: { "aria-hidden": "true" } }) : null;
     if (swatch) swatch.style.background = b.color;
-    box.append(
-      card("settings", t("admin.settings"), t("admin.settings-lede"), t("admin.edit-settings"), editSettings,
-        h("dl", { class: "os-meta" },
+    box.append(part === "branding"
+      ? card("branding", t("admin.branding"), t("admin.branding-lede"), t("admin.edit-branding"), editBranding,
+        h("dl", { class: "os-meta os-adm__meta" },
+          row(t("admin.brand-name"), b.name),
+          h("dt", { text: t("admin.brand-color") }), h("dd", { class: "os-swatchrow" }, swatch, h("span", { text: b.color || t("admin.not-set") }))))
+      : card("settings", t("admin.settings"), t("admin.settings-lede"), t("admin.edit-settings"), editSettings,
+        h("dl", { class: "os-meta os-adm__meta" },
           row(t("admin.account-name"), acct.name),
           row(t("admin.expiry-days"), s().default_expiry_days),
-          row(t("admin.reminder-days"), s().first_reminder_days ? s().first_reminder_days : t("admin.reminder-none")))),
-      card("branding", t("admin.branding"), t("admin.branding-lede"), t("admin.edit-branding"), editBranding,
-        h("dl", { class: "os-meta" },
-          row(t("admin.brand-name"), b.name),
-          h("dt", { text: t("admin.brand-color") }), h("dd", { class: "os-swatchrow" }, swatch, h("span", { text: b.color || t("admin.not-set") })))));
+          row(t("admin.reminder-days"), s().first_reminder_days ? s().first_reminder_days : t("admin.reminder-none")))));
   }
   function card(id, title, lede, editLabel, onEdit, ...body) {
-    return h("section", { class: "os-card", attrs: { "aria-labelledby": `acct-${id}-h`, "data-testid": `account-${id}` } },
+    return h("section", { class: "os-card os-adm__card", attrs: { "aria-labelledby": `acct-${id}-h`, "data-testid": `account-${id}` } },
       h("div", { class: "os-card__head" },
-        h("h3", { id: `acct-${id}-h`, class: "os-card__title", text: title }),
+        h("h2", { id: `acct-${id}-h`, class: "os-card__title", text: title }),
         button(editLabel, { icon: "pencil", size: "sm", onClick: onEdit })),
       h("p", { class: "os-muted os-small os-card__lede", text: lede }), ...body);
   }
@@ -269,7 +334,7 @@ function users(panel, ctx) {
     h("div", { class: "os-fieldrow os-filters__search" }, h("label", { class: "os-label", attrs: { for: "u-search" }, text: t("admin.search-users") }), search), prof.el, stat.el);
   const count = h("p", { class: "os-muted os-small", attrs: { "aria-live": "polite", "data-testid": "users-count" } });
   const list = h("div", { class: "os-list os-surface-card" });
-  panel.append(tools, count, list);
+  panel.append(tools, count, list, h("p", { class: "os-adm__later", attrs: { "data-testid": "members-later" }, text: t("admin.members-later") }));
   register("users.add", { label: t("admin.add-user"), run: () => add() });
 
   async function load() {

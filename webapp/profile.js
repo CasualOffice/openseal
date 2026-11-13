@@ -6,7 +6,7 @@
 // mock serves them; against a server without them the panel shows who is signed in and
 // says that changing it is not available yet, never a form that cannot save.
 
-import { h } from "./dom.js";
+import { h, initials } from "./dom.js";
 import { t } from "./i18n.js";
 import { openPanel, field, checkbox, button, toast, toastError } from "./ui/index.js";
 import { errorMessage } from "./api.js";
@@ -77,7 +77,12 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
       const notif = h("fieldset", { class: "os-fieldset", attrs: { "data-testid": "profile-notifications" } },
         h("legend", { class: "os-label", text: t("profile.notify") }),
         ...NOTIFY.map((k) => checks[k].el));
+      body.classList.add("os-prof");
       body.append(
+        // WEB-17: who this is, as the canvas's account row draws a person.
+        h("div", { class: "os-prof__who", attrs: { "aria-hidden": "true" } },
+          h("span", { class: "os-avatar os-avatar--c1 os-prof__avatar", text: initials(me.name || me.email || "") }),
+          h("span", { class: "os-prof__who-text" }, h("b", { text: me.name || "—" }), h("span", { text: me.email || "" }))),
         h("section", { class: "os-profile__section", attrs: { "aria-labelledby": "profile-h-you" } },
           h("h3", { id: "profile-h-you", class: "os-profile__h", text: t("profile.you") }),
           name.el,

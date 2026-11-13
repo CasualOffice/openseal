@@ -1,5 +1,9 @@
-// Envelope detail (WEB-01, WEB-06, UX-07): status, the recipients' timeline in routing
-// order, the audit events with who did each (docs/32), and the sender's actions.
+// Envelope detail (WEB-01, WEB-06, UX-07; restyled in WEB-17 on the approved canvas,
+// Main.dc.html): the header in the inspector's language (status pill, where it stands,
+// the name and its sub line, the actions), the documents, the summary and the audit
+// trail, and beside them the inspector's own sections as components (agreementparts.js):
+// Recipients in signing order (with each one's Sent / Opened / Signed steps and Resend
+// here), Insights where ml.js says document intelligence is available, and Evidence.
 //
 // UX-07 (after DocuSign's envelope page): one primary and one secondary action for each
 // state, everything else in a grouped More menu with destructive items last —
@@ -9,33 +13,38 @@
 //   declined, voided, expired: Copy and resend | Download (as it ended) | More: certificate (UXW-30), save as template, history · delete
 // A callout under the title says why an envelope ended. The summary is two columns:
 // the envelope ID (with Copy), dates and sender beside the message and the settings
-// (reminders, expiry, signing order, authentication). An Evidence card gives the chain
-// head with Copy, what it means, and for a completed envelope the way to verify it.
+// (reminders, expiry, signing order, authentication). The Evidence card says what the
+// API's audit trail shows (its links checked here, its head) and, once completed, how
+// to verify the sealed PDF.
 
 import { h, clear, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { button, busy, statusBadge, errorState, skeletonRows, toast, toastError, emptyState, tabs, pdfPreview, menuButton } from "./ui/index.js";
+import { button, busy, statusPill, errorState, skeletonLines, skeletonBlock, toast, toastError, emptyState, pdfPreview, menuButton } from "./ui/index.js";
 import {
   statusLine, auditTable, copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, downloadCertificate, hasCertificate,
-  correctPanel, historyPanel, voidEnvelopes, copyText, DELETABLE, ACTIVE, ENDED,
+  correctPanel, historyPanel, voidEnvelopes, copyText, shortDate, DELETABLE, ENDED,
 } from "./envactions.js";
-import { envelopeActions } from "./managemodel.js";
+import { envelopeActions, pillOf } from "./managemodel.js";
+import { recipientsSection, evidenceSection, insightsSection, insightsAvailable } from "./agreementparts.js";
+import { registerMeaningSearch } from "./meaning.js";
 
 const SIGNING = new Set(["signer", "in_person_signer", "approver"]);
-/// Events a recipient makes on opening: the first of them is when they opened it.
-const OPENING = ["recipient.delivered", "recipient.auth_passed", "recipient.consented", "recipient.viewed_document"];
 
 export function mount(view, ctx, [rawId]) {
   const id = decodeURIComponent(rawId);
-  const body = h("div", { class: "os-detail", attrs: { "aria-busy": "true" } }, skeletonRows(4));
+  // Loading: the page's own shape (header, then the two columns) in skeleton.
+  const body = h("div", { class: "os-detail os-env", attrs: { "aria-busy": "true", "aria-label": t("inspector.loading") } },
+    h("div", { class: "os-env__skelhead" }, skeletonLines(2)),
+    h("div", { class: "os-env__grid" }, h("div", { class: "os-env__main" }, skeletonBlock({ height: 9 }), skeletonBlock({ height: 18 })), h("div", { class: "os-env__side" }, skeletonBlock({ height: 14 }))));
   view.append(body);
   let env = null;
   let previews = [];
-  let tab = "summary";
   let senderName = "";
-  let showTab = null;
+  let mlOn = false;
+  let live = []; // destroy() of live sections (Insights)
+  const offMeaning = registerMeaningSearch(ctx);
 
   async function load() {
     try {
@@ -45,6 +54,7 @@ export function mount(view, ctx, [rawId]) {
       if (!senderName && ctx.session?.admin) {
         try { senderName = ((await ctx.api.users.list()).items || []).find((u) => u.id === envelope.sender_user_id)?.name || ""; } catch { /* the line says "sender" */ }
       }
+      mlOn = await insightsAvailable().catch(() => false);
       render(envelope, audit);
     } catch (err) {
       if (ctx.failed(err)) return;
@@ -79,6 +89,8 @@ export function mount(view, ctx, [rawId]) {
 
   function render(e, audit) {
     clear(body);
+    for (const s of live) s();
+    live = [];
     unregisterPrefix("envelope.act.");
     const subject = e.subject || t("envelope.untitled");
     const back = h("a", { href: "#/agreements", class: "os-back" }, icon("chevron-left", { size: 16 }), h("span", { text: t("agreements.title") }));
@@ -106,40 +118,49 @@ export function mount(view, ctx, [rawId]) {
       }));
     }
 
+    // The header in the inspector's language (canvas Main): status pill and where it
+    // stands, the name, the sub line; the actions on the right.
     const line = statusLine(e);
-    const head = h("div", { class: "os-page-head os-detail__head" },
-      h("div", { class: "os-page-head__main" }, h("h1", { class: "os-page-title", text: subject }), statusBadge(e.status),
-        line ? h("p", { class: "os-muted os-detail__line", attrs: { "data-testid": "status-line" }, text: line }) : null),
+    // The sub line says when it went out and how long it is (the status line says where it stands).
+    const pages = (e.documents || []).reduce((n, d) => n + (Number.isInteger(d.pages) ? d.pages : 0), 0);
+    const sub = [e.sent_at ? t("agreements.sub.sent", { date: shortDate(e.sent_at) }) : t("agreements.sub.draft", { date: shortDate(e.updated_at || e.created_at) }), pages ? (pages === 1 ? t("agreements.sub.page") : t("agreements.sub.pages", { n: pages })) : null].filter(Boolean).join(" · ");
+    const head = h("div", { class: "os-page-head os-detail__head os-env__head" },
+      h("div", { class: "os-page-head__main os-env__title" },
+        h("div", { class: "os-env__pillrow" }, statusPill(t(`status.${e.status}`), pillOf(e)),
+          line ? h("p", { class: "os-env__line os-detail__line", attrs: { "data-testid": "status-line" }, text: line }) : null),
+        h("h1", { class: "os-page-title", text: subject }),
+        h("p", { class: "os-env__sub", text: sub })),
       actions);
 
-    // Summary (routing and history) and Documents (a preview of each, sealed once
-    // completed), as DocuSign's envelope page.
+    // The documents, then the summary and the audit trail; beside them the inspector's
+    // sections (Recipients, Insights, Evidence) as the list's inspector draws them.
     for (const p of previews) p.destroy();
     previews = [];
-    const docTab = (panel, focus = null) => {
-      const docs = e.documents || [];
-      if (!docs.length) { panel.append(emptyState({ illus: "documents", title: t("empty.documents.title"), text: t("envelope.no-docs"), testId: "empty-envelope-docs" })); return; }
-      for (const d of docs) {
-        const variant = e.status === "completed" ? "sealed" : "normalized";
-        const p = pdfPreview({ load: () => ctx.api.documentContent(id, d.id, variant), name: d.name });
-        p.el.dataset.doc = d.id;
-        previews.push(p);
-        panel.append(p.el);
-      }
-      if (focus) requestAnimationFrame(() => panel.querySelector(`[data-doc="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "start" }));
-    };
-    let focusDoc = null;
-    const tabset = tabs({
-      label: t("envelope.sections"),
-      tabs: [{ id: "summary", label: t("envelope.tab.summary"), icon: "list-checks" }, { id: "documents", label: t("envelope.tab.documents"), icon: "file-text" }],
-      current: tab,
-      onChange: (which) => { tab = which; },
-      render: (which, panel) => {
-        if (which === "documents") { docTab(panel, focusDoc); focusDoc = null; } else panel.append(...[recipientsSection(e, audit), evidenceSection(e, audit), auditSection(e, audit)].filter(Boolean));
-      },
-    });
-    showTab = (which, doc = null) => { focusDoc = doc; tabset.querySelector(`[data-tab="${which}"]`)?.click(); };
-    body.append(...[back, head, endedCallout(e), summaryCard(e), tabset].filter(Boolean));
+    const docs = e.documents || [];
+    const docCard = h("section", { class: "os-card os-env__docs", attrs: { "aria-labelledby": "docs-h", "data-testid": "envelope-documents" } },
+      h("h2", { id: "docs-h", class: "os-card__title", text: t("envelope.documents") }));
+    if (!docs.length) docCard.append(emptyState({ illus: "documents", title: t("empty.documents.title"), text: t("envelope.no-docs"), testId: "empty-envelope-docs" }));
+    for (const d of docs) {
+      const p = pdfPreview({ load: () => ctx.api.documentContent(id, d.id, e.status === "completed" ? "sealed" : "normalized"), name: d.name });
+      p.el.dataset.doc = d.id;
+      previews.push(p);
+      docCard.append(p.el);
+    }
+    const sideCard = (title, hid, node, testId = null) => h("section", { class: "os-card os-env__card", attrs: { "aria-labelledby": hid, "data-testid": testId } },
+      h("h2", { id: hid, class: "os-card__title", text: title }), node);
+    const people = sideCard(t("envelope.recipients"), "rcpt-h",
+      (e.recipients || []).length
+        ? recipientsSection(e, audit, { detailed: true, onResend: (r) => resend(r), mock: ctx.mock })
+        : emptyState({ illus: "recipients", title: t("empty.recipients.title"), text: t("empty.recipients.text"), action: e.status === "draft" ? button(t("envelope.edit"), { variant: "primary", onClick: () => ctx.navigate(`#/prepare/${encodeURIComponent(e.id)}`) }) : null, testId: "empty-recipients" }));
+    const side = h("div", { class: "os-env__side" }, people);
+    if (mlOn) {
+      const s = insightsSection(ctx, e);
+      live.push(s.destroy);
+      side.append(h("section", { class: "os-card os-env__card", attrs: { "aria-label": t("inspector.tab.insights") } }, s.el));
+    }
+    if (e.status !== "draft") side.append(sideCard(t("envelope.evidence"), "evidence-h", evidenceSection(ctx, e, audit, { certificate: false }), "evidence-card"));
+    const mainCol = h("div", { class: "os-env__main" }, summaryCard(e), docCard, auditSection(e, audit));
+    body.append(...[back, head, endedCallout(e), h("div", { class: "os-env__grid" }, mainCol, side)].filter(Boolean));
   }
 
   /// Why an envelope ended, under its title (UX-07): who declined and their reason, the
@@ -179,7 +200,7 @@ export function mount(view, ctx, [rawId]) {
       senderName ? [h("dt", { text: t("envelope.sender") }), h("dd", { text: senderName })] : null,
       h("dt", { text: t("envelope.documents") }),
       h("dd", { class: "os-envsum__docs" }, docs.length
-        ? docs.map((d) => h("button", { type: "button", class: "os-linkbtn", text: d.name || t("envelope.untitled-doc"), on: { click: () => showTab?.("documents", d.id) } }))
+        ? docs.map((d) => h("button", { type: "button", class: "os-linkbtn", text: d.name || t("envelope.untitled-doc"), on: { click: () => body.querySelector(`[data-doc="${CSS.escape(d.id)}"]`)?.scrollIntoView({ block: "start" }) } }))
         : "—"));
     const rem = e.reminders || {};
     const reminders = rem.first_after_days || rem.then_every_days
@@ -202,77 +223,6 @@ export function mount(view, ctx, [rawId]) {
       h("div", { class: "os-envsum__col" }, h("h2", { class: "os-envsum__title", text: t("envelope.message-settings") }), settings));
   }
 
-  /// Evidence (UX-07): the chain head with Copy and what it is; for a completed envelope
-  /// Verify (verify.html checks the sealed PDF and its embedded trail in the browser,
-  /// offline). None for a draft.
-  function evidenceSection(e, audit) {
-    if (e.status === "draft") return null;
-    const sec = h("section", { class: "os-card os-evidence", attrs: { "aria-labelledby": "evidence-h", "data-testid": "evidence-card" } },
-      h("div", { class: "os-evidence__head" }, h("span", { class: "os-evidence__icon" }, icon("shield-check", { size: 20 })),
-        h("h2", { id: "evidence-h", class: "os-card__title", text: t("envelope.evidence") })));
-    const done = e.status === "completed";
-    sec.append(h("p", { class: "os-muted", text: t(done ? "envelope.evidence-sealed" : ENDED.has(e.status) ? "envelope.evidence-ended" : "envelope.evidence-open") }));
-    if (audit.chain_head) {
-      sec.append(h("div", { class: "os-evidence__chain" },
-        h("span", { class: "os-label", text: t("audit.head") }),
-        h("code", { class: "os-chainhead", attrs: { "data-testid": "chain-head" }, text: audit.chain_head }),
-        button(t("envelope.copy-chain"), { icon: "copy", size: "sm", variant: "ghost", iconOnly: true, onClick: () => copyText(audit.chain_head, t("envelope.chain-copied")) })),
-      h("p", { class: "os-help", text: t("envelope.chain-help") }));
-    }
-    // Verify; the signed PDF and the certificate are the header's own buttons, not repeated.
-    if (done) {
-      sec.append(h("div", { class: "os-actions os-evidence__actions" },
-        h("a", { class: "os-btn os-btn--secondary os-btn--sm", href: "verify.html", target: "_blank", rel: "noopener", attrs: { "data-testid": "evidence-verify" } },
-          icon("shield-check", { size: 16 }), h("span", { text: t("envelope.verify") }), h("span", { class: "os-sr-only", text: t("action.new-tab") }))));
-    }
-    if (done) sec.append(h("p", { class: "os-help", text: t("envelope.verify-help") }));
-    return sec;
-  }
-
-  function recipientsSection(e, audit) {
-    const sec = h("section", { class: "os-card", attrs: { "aria-labelledby": "rcpt-h" } }, h("h2", { id: "rcpt-h", class: "os-card__title", text: t("envelope.recipients") }));
-    const recs = [...(e.recipients || [])].sort((a, b) => a.routing_order - b.routing_order);
-    if (!recs.length) {
-      sec.append(emptyState({ illus: "recipients", title: t("empty.recipients.title"), text: t("empty.recipients.text"), action: e.status === "draft" ? button(t("envelope.edit"), { variant: "primary", onClick: () => ctx.navigate(`#/prepare/${encodeURIComponent(e.id)}`) }) : null, testId: "empty-recipients" }));
-      return sec;
-    }
-    const ol = h("ol", { class: "os-timeline" });
-    for (const r of recs) {
-      // The server's events name their recipient in `data.recipient_id` (WEB-12).
-      const events = (audit.items || []).filter((a) => (a.event?.data?.recipient_id || (a.event?.actor?.kind === "recipient" ? a.event.actor.id : null)) === r.id);
-      const at = (type) => events.find((x) => x.type === type)?.at;
-      const opened = OPENING.map(at).filter(Boolean).sort()[0] || null;
-      const sent = e.sent_at && r.status !== "created" ? (events.find((x) => x.type === "invitation.sent")?.at || e.sent_at) : null;
-      // A copy (CC) is sent once everyone has signed: it has no opened or signed step (E-04).
-      const steps = r.type === "cc"
-        ? [[r.status === "completed" ? t("timeline.delivered") : t("timeline.cc-waiting"), r.status === "completed" ? (r.completed_at || e.ended_at) : null]]
-        : [
-          [t("timeline.sent"), sent],
-          [t("timeline.opened"), opened],
-          [r.status === "declined" ? t("timeline.declined") : t("timeline.completed"), r.completed_at || at("recipient.completed") || at("recipient.declined")],
-        ];
-      const canResend = ACTIVE.has(e.status) && SIGNING.has(r.type) && (r.status === "sent" || r.status === "delivered");
-      const li = h("li", { class: `os-timeline__item is-${r.status}`, attrs: { "data-testid": "recipient-row" } },
-        h("div", { class: "os-timeline__who" },
-          h("span", { class: "os-order", attrs: { "aria-label": t("recipient.order-n", { n: r.routing_order }) }, text: String(r.routing_order) }),
-          h("div", {},
-            h("strong", { text: r.name }),
-            h("span", { class: "os-muted", text: ` · ${r.email} · ${t(`rtype.${r.type}`)}` })),
-          statusBadge(r.status),
-          canResend ? button(t("envelope.resend"), { icon: "rotate-cw", size: "sm", attrs: { "aria-label": t("envelope.resend-to", { name: r.name || r.email }) }, onClick: (ev) => busy(ev.currentTarget, () => resend(r)) }) : null),
-        h("ul", { class: "os-steps" }, steps.map(([label, when]) =>
-          h("li", { class: when ? "is-done" : "" }, icon(when ? "circle-check" : "clock", { size: 16 }), h("span", { text: label }), when ? h("time", { class: "os-muted", attrs: { datetime: when }, text: fmtDate(when) }) : null))),
-        r.declined_reason ? h("p", { class: "os-muted", text: t("envelope.declined-reason", { reason: r.declined_reason }) }) : null,
-      );
-      if (ctx.mock && r.mock_token && ACTIVE.has(e.status) && ["sent", "delivered"].includes(r.status)) {
-        li.append(h("a", { class: "os-link", href: `/s/${encodeURIComponent(r.mock_token)}?mock=1`, attrs: { "data-testid": "signing-link" } }, icon("external-link", { size: 16 }), h("span", { text: t("mock.signing-link") })));
-      }
-      ol.append(li);
-    }
-    sec.append(ol);
-    return sec;
-  }
-
   function auditSection(e, audit) {
     const sec = h("section", { class: "os-card", attrs: { "aria-labelledby": "audit-h" } }, h("h2", { id: "audit-h", class: "os-card__title", text: t("envelope.audit") }));
     if (!(audit.items || []).length) { sec.append(h("p", { class: "os-muted", text: t("envelope.audit-empty") })); return sec; }
@@ -290,5 +240,5 @@ export function mount(view, ctx, [rawId]) {
   }
   register("envelope.refresh", { label: t("action.refresh"), run: load });
   load();
-  return () => { unregisterPrefix("envelope.refresh"); unregisterPrefix("envelope.act."); for (const p of previews) p.destroy(); };
+  return () => { unregisterPrefix("envelope.refresh"); unregisterPrefix("envelope.act."); for (const p of previews) p.destroy(); for (const s of live) s(); offMeaning(); };
 }

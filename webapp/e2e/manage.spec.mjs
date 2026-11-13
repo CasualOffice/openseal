@@ -31,38 +31,215 @@ test("home: one way in to a new envelope, recent templates, words for what needs
   await expectAccessible(page, "home");
 });
 
-test("agreements: status line, sort, filters, and a draft opens in the editor", async ({ page }) => {
+const row = (page, subject) => page.locator(".os-agr-row[data-id]", { hasText: subject });
+const names = (page) => page.locator(".os-agr-row[data-id] .os-agr-name").allTextContents();
+/// Select an agreement and open its More menu in the inspector.
+async function actionsOf(page, subject) {
+  await row(page, subject).click();
+  await page.getByRole("button", { name: `Actions for ${subject}` }).click();
+  return page.getByRole("menu", { name: `Actions for ${subject}` });
+}
+
+test("agreements: status in words, sort, filters, and a draft opens in the editor", async ({ page }) => {
   await signIn(page);
-  const offer = page.locator("tbody tr", { hasText: "Offer letter — Jordan Rivera" });
-  await expect(offer.locator(".os-row__line")).toHaveText("Waiting for Jordan Rivera");
-  await expect(page.locator("tbody tr", { hasText: "Board consent" }).locator(".os-row__line")).toHaveText("Declined by Morgan Diaz");
+  await expect(row(page, "Offer letter — Jordan Rivera").locator(".os-row__status")).toHaveText("Waiting for Jordan Rivera");
+  await expect(row(page, "Board consent").locator(".os-row__status")).toHaveText("Declined by Morgan Diaz");
 
-  await page.getByRole("button", { name: "Subject" }).click();
-  await expect(page.getByRole("columnheader", { name: "Subject" })).toHaveAttribute("aria-sort", "ascending");
-  await expect(page.locator("tbody tr").first()).toContainText("Board consent");
-  await page.getByRole("button", { name: "Subject" }).click();
-  await expect(page.locator("tbody tr").first()).toContainText("Vendor services");
+  // Display → Sort orders within each group: a newer "Offer letter" before an older
+  // "Alpha …" by last change, after it by name.
+  await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); db.envelopes.find((e) => e.subject === "Vendor services agreement").subject = "Alpha vendor agreement"; sessionStorage.setItem(k, JSON.stringify(db)); });
+  await page.reload();
+  await expect(row(page, "Alpha vendor agreement")).toBeVisible();
+  let order = await names(page);
+  expect(order.indexOf("Offer letter — Jordan Rivera")).toBeLessThan(order.indexOf("Alpha vendor agreement"));
+  await page.getByTestId("display-toggle").click();
+  await page.getByRole("menuitem", { name: "Name, A to Z" }).click();
+  order = await names(page);
+  expect(order.indexOf("Alpha vendor agreement")).toBeLessThan(order.indexOf("Offer letter — Jordan Rivera"));
 
+  await page.getByTestId("filters-toggle").click();
   await page.getByLabel("Last change").selectOption("custom");
   await page.getByLabel("From", { exact: true }).fill("2001-01-01");
   await page.getByLabel("To", { exact: true }).fill("2001-01-02");
   await expect(page.getByTestId("empty-filters")).toBeVisible();
   await page.getByTestId("empty-filters").getByRole("button", { name: "Clear filters" }).click();
   await page.getByLabel("Sender").selectOption("me");
-  await expect(page.locator("tbody tr")).toHaveCount(6);
+  await expect(page.locator(".os-agr-row[data-id]")).toHaveCount(6);
   await expectAccessible(page, "agreements");
 
-  await page.getByRole("link", { name: "Lease renewal 2027" }).click();
+  await row(page, "Lease renewal 2027").dblclick();
   await expect(page).toHaveURL(/#\/prepare\//);
 });
 
-test("agreements row menu: copy, save as template, history, delete", async ({ page }) => {
+test("agreements: the list is a grid the keyboard drives, and the inspector follows the selection", async ({ page }) => {
   await signIn(page);
-  const open = async (subject) => {
-    await page.getByRole("button", { name: `Actions for ${subject}` }).click();
-    return page.getByRole("menu", { name: `Actions for ${subject}` });
-  };
-  let menu = await open("Offer letter — Jordan Rivera");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const grid = page.getByRole("grid", { name: "Agreements" });
+  await expect(grid.locator('[role="row"][data-id]').first()).toBeVisible();
+  // Group headers: a dot, the label and the count, sticky.
+  const head = grid.locator(".os-agr-group", { hasText: "Waiting on others" });
+  await expect(head).toContainText("2");
+  expect(await head.evaluate((e) => getComputedStyle(e).position)).toBe("sticky");
+  // One row is selected and focusable; arrows move it and the inspector follows.
+  const first = grid.locator('[role="row"][aria-selected="true"]');
+  await expect(first).toHaveCount(1);
+  await first.focus();
+  await page.keyboard.press("ArrowDown");
+  const second = grid.locator('[role="row"][aria-selected="true"]');
+  await expect(second).toBeFocused();
+  await expect(page.getByTestId("inspector").locator(".os-insp__title")).toHaveText(await second.locator(".os-agr-name").textContent());
+  await page.keyboard.press("End");
+  await expect(grid.locator('[role="row"][data-id]').last()).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(grid.locator('[role="row"][data-id]').first()).toBeFocused();
+  // The inspector: primary action by state, Open, and underline tabs with arrow keys.
+  await row(page, "Vendor services agreement").click();
+  const insp = page.getByTestId("inspector");
+  await expect(insp.getByTestId("inspector-primary")).toHaveText("Remind Riley");
+  await insp.getByRole("tab", { name: "Recipients" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(insp.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
+  await expect(insp.getByTestId("activity-list")).toContainText("Sent");
+  await insp.getByTestId("inspector-primary").click();
+  await expect(page.locator(".os-toast").last()).toContainText("Reminder sent to Riley Morgan.");
+  await row(page, "Mutual NDA — Acme and Globex").click();
+  await expect(insp.getByTestId("inspector-primary")).toHaveText("Download");
+  await insp.getByRole("tab", { name: "Evidence" }).click();
+  // Evidence says what was checked: the links, never "verified" or "unchanged".
+  await expect(insp.getByTestId("evidence-links")).toContainText("Audit trail linked");
+  await expect(insp.getByTestId("evidence")).not.toContainText(/verified|unchanged|Nothing has been changed/i);
+  await expect(insp.getByTestId("chain-head")).toHaveText(/^([0-9a-f]{4} ){15}[0-9a-f]{4}$/);
+  // The mock records no document hash, so no fingerprint is shown.
+  await expect(insp.getByTestId("evidence-fingerprint")).toHaveCount(0);
+  await row(page, "Lease renewal 2027").click();
+  await expect(insp.getByTestId("inspector-primary")).toHaveText("Continue editing");
+  await row(page, "Board consent — November").click();
+  await insp.getByTestId("inspector-open").click();
+  await expect(page).toHaveURL(/#\/envelopes\//);
+});
+
+test("agreements: Needs me holds what waits for my signature, and Sign now opens it", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("tab", { name: "Needs me" }).click();
+  await expect(page).toHaveURL(/folder=me/);
+  await expect(page.locator(".os-agr-row[data-id]")).toHaveCount(1);
+  await expect(row(page, "Expense policy acknowledgement").locator(".os-row__status")).toHaveText("Needs your signature");
+  await expect(page.locator('#nav-views a[data-view="me"]')).toHaveAttribute("aria-current", "page");
+  await expect(page.locator('#nav-views a[data-view="me"] .os-navview__n')).toHaveText("1");
+  await expect(page.getByTestId("inspector-primary")).toHaveText("Sign now");
+});
+
+test("agreements: Expiring with nothing in it says so, with a way back to all", async ({ page }, testInfo) => {
+  await signIn(page);
+  await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); for (const e of db.envelopes) e.expires_at = null; sessionStorage.setItem(k, JSON.stringify(db)); });
+  await page.goto(app("#/agreements?folder=expiring"));
+  await page.reload();
+  const empty = page.getByTestId("empty-filter");
+  await expect(empty).toContainText("Nothing is about to expire");
+  await expect(empty.locator("svg.os-illus")).toBeVisible();
+  await expectAccessible(page, "agreements expiring empty");
+  await snap(page, testInfo, "web17-agreements-expiring-empty");
+  await empty.getByRole("button", { name: "See all agreements" }).click();
+  await expect(page.getByRole("tab", { name: "All" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
+});
+
+test("agreements: Insights reads suggestions from the model layer; a person saves or dismisses each", async ({ page }, testInfo) => {
+  await signIn(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const vendor = row(page, "Vendor services agreement");
+  await expect(vendor.getByTestId("sugg-chip").locator(".os-sugg-chip__n")).toHaveText("3");
+  await vendor.click();
+  const insp = page.getByTestId("inspector");
+  await insp.getByRole("tab", { name: /Insights/ }).click();
+  await expect(insp.getByText("Read on your servers · never used for training")).toBeVisible();
+  const cards = insp.getByTestId("suggestion");
+  await expect(cards).toHaveCount(3);
+  await expect(cards.filter({ hasText: "Governing law" })).toContainText("64% · check this");
+  await cards.filter({ hasText: "Payment terms" }).getByTestId("suggestion-accept").click();
+  await expect(cards.filter({ hasText: "Payment terms" })).toContainText("Saved to agreement details");
+  await cards.filter({ hasText: "Governing law" }).getByTestId("suggestion-dismiss").click();
+  await expect(cards.filter({ hasText: "Governing law" })).toContainText("Dismissed");
+  await expect(vendor.getByTestId("sugg-chip").locator(".os-sugg-chip__n")).toHaveText("1");
+  const decided = await page.evaluate(() => Object.values(JSON.parse(sessionStorage.getItem("openseal.mock.v1")).ml.suggestions).flat().filter((x) => x.state !== "open").map((x) => [x.label, x.state]));
+  expect(decided).toEqual(expect.arrayContaining([["Payment terms", "accepted"], ["Governing law", "dismissed"]]));
+  // Personal data: one amber card; Review lists each to add to the redaction proposal.
+  const pii = insp.getByTestId("insights-pii");
+  await expect(pii).toContainText("Personal data found");
+  await expect(pii).toContainText("page 2");
+  await pii.getByRole("button", { name: "Review for redaction" }).click();
+  await expect(pii.getByTestId("pii-item")).toHaveCount(2);
+  await pii.getByTestId("pii-item").first().getByRole("button", { name: "Add to redaction proposal" }).click();
+  await expect(pii.getByTestId("pii-item").first()).toContainText("Added to the redaction proposal");
+  await expectAccessible(page, "agreements insights");
+  await snap(page, testInfo, "web17-agreements-insights-1440");
+});
+
+test("agreements: a refused suggestion goes back as it was, with an error", async ({ page }) => {
+  await signIn(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await row(page, "Vendor services agreement").click();
+  const insp = page.getByTestId("inspector");
+  await insp.getByRole("tab", { name: /Insights/ }).click();
+  const card = insp.getByTestId("suggestion").filter({ hasText: "Parties" });
+  await expect(card).toBeVisible();
+  // The server refuses the decision (here: the plan no longer has the feature, 403): the card goes back to open.
+  await page.evaluate(() => sessionStorage.setItem("openseal.mock.ml", "no-plan"));
+  await card.getByTestId("suggestion-accept").click();
+  await expect(page.locator(".os-toast--error").last()).toContainText("could not be saved");
+  await expect(card.getByTestId("suggestion-accept")).toBeVisible();
+});
+
+test("agreements: with document intelligence unavailable no ML control, tab or chip appears", async ({ page }) => {
+  await signIn(page);
+  await page.evaluate(() => sessionStorage.setItem("openseal.mock.ml", "off"));
+  await page.reload();
+  await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
+  await row(page, "Vendor services agreement").click();
+  const insp = page.getByTestId("inspector");
+  await expect(insp.getByRole("tab", { name: "Evidence" })).toBeVisible();
+  await expect(insp.getByRole("tab", { name: /Insights/ })).toHaveCount(0);
+  await expect(page.getByTestId("sugg-chip")).toHaveCount(0);
+  await expect(page.getByText("Suggested from the document")).toHaveCount(0);
+  await page.goto(app(`#/envelopes/${await subjectId(page, "Vendor services agreement")}`));
+  await expect(page.getByTestId("evidence-card")).toBeVisible();
+  await expect(page.getByTestId("insights")).toHaveCount(0);
+  // ⌘K has no "Matches by meaning" section.
+  await page.keyboard.press("Control+k");
+  await page.getByRole("combobox").fill("payment within 30 days");
+  await page.waitForTimeout(400);
+  await expect(page.getByText("Matches by meaning")).toHaveCount(0);
+});
+
+test("⌘K finds agreements by meaning, the passage highlighted as text", async ({ page }, testInfo) => {
+  await signIn(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
+  await page.keyboard.press("Control+k");
+  await page.getByRole("combobox").fill("payment within 30 days");
+  await expect(page.getByText("Matches by meaning")).toBeVisible();
+  const hit = page.getByRole("option", { name: /Vendor services agreement/ });
+  await expect(hit.locator("mark")).toHaveText("settled net thirty");
+  await expect(hit).toContainText("page 2");
+  await snap(page, testInfo, "web17-palette-meaning");
+  await hit.click();
+  await expect(page).toHaveURL(/#\/envelopes\//);
+});
+
+test("agreements: Analysis still running shows the reading state", async ({ page }) => {
+  await signIn(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // The draft's document was just added: its analysis runs for about 2 s.
+  await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); const env = db.envelopes.find((e) => e.subject === "Lease renewal 2027"); db.ml ||= { settings: { ocr: true, template_matching: true, extraction: true, personal_data: true }, suggestions: {}, analysis: {} }; db.ml.analysis[env.documents[0].id] = { requested_at: Date.now() + 60_000 }; sessionStorage.setItem(k, JSON.stringify(db)); });
+  await page.reload();
+  await row(page, "Lease renewal 2027").click();
+  await page.getByTestId("inspector").getByRole("tab", { name: /Insights/ }).click();
+  await expect(page.getByTestId("insights-reading")).toContainText("Reading the document");
+});
+
+test("agreements: the inspector's More menu: copy, save as template, history, delete", async ({ page }) => {
+  await signIn(page);
+  let menu = await actionsOf(page, "Offer letter — Jordan Rivera");
   for (const item of ["Open", "Correct", "Resend", "Download current PDF", "Copy", "Save as template", "History", "Void"]) {
     await expect(menu.getByRole("menuitem", { name: item, exact: true })).toBeVisible();
   }
@@ -71,16 +248,16 @@ test("agreements row menu: copy, save as template, history, delete", async ({ pa
   await expect(history.getByText(/^You \(sender\) ·/).first()).toBeVisible();
   await history.getByRole("button", { name: "Close" }).first().click();
 
-  menu = await open("Mutual NDA — Acme and Globex");
+  menu = await actionsOf(page, "Mutual NDA — Acme and Globex");
   await menu.getByRole("menuitem", { name: "Save as template" }).click();
   await expect(page.locator(".os-toast")).toContainText("Saved as template Mutual NDA — Acme and Globex");
 
-  menu = await open("Consulting SOW — Q1");
+  menu = await actionsOf(page, "Consulting SOW — Q1");
   await menu.getByRole("menuitem", { name: "Delete" }).click();
   await page.getByRole("dialog", { name: "Delete this envelope?" }).getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByRole("link", { name: "Consulting SOW — Q1" })).toHaveCount(0);
+  await expect(row(page, "Consulting SOW — Q1")).toHaveCount(0);
 
-  menu = await open("Mutual NDA — Acme and Globex");
+  menu = await actionsOf(page, "Mutual NDA — Acme and Globex");
   await expect(menu.getByRole("menuitem", { name: "Delete" })).toHaveCount(0); // a completed agreement stays
   await menu.getByRole("menuitem", { name: "Copy" }).click();
   await expect(page).toHaveURL(/#\/prepare\//);
@@ -217,7 +394,7 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
   await expect(page.getByRole("dialog", { name: "Edit user" }).getByRole("switch", { name: "Disable sign-in" })).toBeDisabled();
   await page.keyboard.press("Escape");
 
-  await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Account" }).click();
+  await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Branding" }).click();
   await page.getByTestId("account-branding").getByRole("button", { name: "Edit branding" }).click();
   const br = page.getByRole("dialog", { name: "Branding" });
   await br.getByLabel("Accent colour", { exact: true }).fill("red");
@@ -228,6 +405,7 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
   await br.getByRole("button", { name: "Save" }).click();
   await expect(page.getByTestId("account-branding")).toContainText("Acme Legal");
   await expect(page.getByTestId("account-branding")).toContainText("#0e7490");
+  await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Organization" }).click();
   await page.getByTestId("account-settings").getByRole("button", { name: "Edit settings" }).click();
   const st = page.getByRole("dialog", { name: "Settings" });
   // The API has no rename (AccountPatch is settings only): the name is shown, not a field.
@@ -251,7 +429,7 @@ test("an invited member sets a password from the emailed link, once", async ({ p
   await page.getByRole("menuitem", { name: "Resend invitation" }).click();
   await expect(page.locator(".os-toast").last()).toContainText("Invitation sent again to kai@example.com.");
   const token = await page.evaluate(() => Object.keys(JSON.parse(sessionStorage.getItem("openseal.mock.v1")).invites)[0]);
-  await page.getByRole("button", { name: "Account" }).click();
+  await page.locator("#account-btn").click();
   await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
@@ -274,20 +452,24 @@ test("an invited member sets a password from the emailed link, once", async ({ p
   await expect(page.getByRole("alert")).toContainText("expired or was already used");
 });
 
+// Seven envelopes: the six seeded plus the one another member sent the demo user, which
+// the mock adds when the Inbox is first asked for (Agreements asks for it since WEB-17).
 test("reports: a period, a colour per status, no stray border", async ({ page }) => {
   await signIn(page);
   await page.goto(app("#/reports"));
-  await expect(page.getByTestId("report-note")).toContainText("6 envelopes");
+  await expect(page.getByTestId("report-note")).toContainText("7 envelopes");
   const colours = await page.locator(".os-bars tbody .os-bar").evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
   expect(new Set(colours).size).toBe(colours.length);
   const last = page.locator(".os-bars tbody tr:last-child");
   for (const cell of [last.locator("th"), last.locator("td")]) expect(await cell.evaluate((e) => getComputedStyle(e).borderBottomWidth)).toBe("0px");
   await page.getByLabel("Period").selectOption("7");
-  await expect(page.getByTestId("report-note")).toContainText("6 envelopes");
-  await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); db.envelopes[0].created_at = "2020-01-01T00:00:00.000Z"; sessionStorage.setItem(k, JSON.stringify(db)); });
+  await expect(page.getByTestId("report-note")).toContainText("7 envelopes");
+  // Move one envelope out of the period. (The stored copy is what the page reloads from;
+  // it may or may not hold the Inbox envelope yet, so the count is read from it.)
+  const stored = await page.evaluate(() => { const k = "openseal.mock.v1"; const db = JSON.parse(sessionStorage.getItem(k)); db.envelopes[0].created_at = "2020-01-01T00:00:00.000Z"; sessionStorage.setItem(k, JSON.stringify(db)); return db.envelopes.length; });
   await page.reload();
   await page.getByLabel("Period").selectOption("30");
-  await expect(page.getByTestId("report-note")).toContainText("5 envelopes");
+  await expect(page.getByTestId("report-note")).toContainText(`${stored - 1} envelopes`);
   await expectAccessible(page, "reports");
 });
 
@@ -366,28 +548,31 @@ test("UX-07 acceptance: a declined envelope has a primary action, Copy and resen
 
 test("UX-07 acceptance: the search survives a reload", async ({ page }) => {
   await signIn(page);
-  await page.locator("#top-search").fill("offer");
+  await page.getByRole("button", { name: "Search agreements" }).click();
+  await page.locator("#agr-search").fill("offer");
   await expect(page).toHaveURL(/[?&]q=offer/);
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator(".os-agr-row[data-id]")).toHaveCount(1);
   await page.reload();
-  await expect(page.locator("tbody tr")).toHaveCount(1);
-  await expect(page.locator("#top-search")).toHaveValue("offer");
+  await expect(page.locator(".os-agr-row[data-id]")).toHaveCount(1);
+  await expect(page.locator("#agr-search")).toHaveValue("offer");
   await expect(page.getByTestId("agreements-sub")).toContainText("“offer”");
-  // A folder link keeps the search.
-  await expect(page.locator('.os-rail__link[data-folder="waiting"]')).toHaveAttribute("href", "#/agreements?folder=waiting&q=offer");
+  // A view link keeps the search.
+  await expect(page.locator('#nav-views a[data-view="waiting"]')).toHaveAttribute("href", "#/agreements?folder=waiting&q=offer");
 });
 
 test("UX-07 acceptance: rows are 64 px or less at 1440", async ({ page }, testInfo) => {
   await signIn(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(app("#/agreements"));
-  await expect(page.locator("tbody tr").first()).toBeVisible();
-  // Let the details fill every row (recipients, status line, dates) before measuring.
-  await expect(page.locator("tbody tr .os-row__sub").filter({ hasText: /\S/ })).toHaveCount(await page.locator("tbody tr").count());
-  const heights = await page.locator("tbody tr").evaluateAll((trs) => trs.map((tr) => tr.getBoundingClientRect().height));
+  const rows = page.locator(".os-agr-row[data-id]");
+  await expect(rows.first()).toBeVisible();
+  // Let the details fill every row (recipients, progress) before measuring.
+  await expect(page.locator(".os-agr-row[data-id] .os-avatars")).toHaveCount(await rows.count());
+  const heights = await rows.evaluateAll((trs) => trs.map((tr) => tr.getBoundingClientRect().height));
   for (const hgt of heights) expect(hgt).toBeLessThanOrEqual(64);
-  // No date spills out of its column.
-  for (const over of await page.locator("tbody td.os-col-date").evaluateAll((tds) => tds.map((td) => td.scrollWidth - td.clientWidth))) expect(over).toBeLessThanOrEqual(0);
+  // No time, name or status spills out of its cell, and no control label wraps.
+  for (const over of await page.locator(".os-agr-cell--when, .os-agr-name, .os-agr-sub").evaluateAll((els) => els.map((e) => e.scrollWidth - e.clientWidth - (getComputedStyle(e).textOverflow === "ellipsis" ? 1e9 : 0)))) expect(over).toBeLessThanOrEqual(0);
+  for (const hgt of await page.locator(".os-agr__head .os-tab, .os-agr__head .os-btn").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(hgt).toBeLessThanOrEqual(36);
   await snap(page, testInfo, "ux07-agreements-1440");
 });
 
@@ -395,11 +580,8 @@ test("UX-07 agreements: one way in, grouped row menu, one void dialog, bulk bar 
   await signIn(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.locator("main").getByRole("button", { name: "New envelope" })).toHaveCount(0);
-  // Every row is mine: no Sender column.
-  await expect(page.getByRole("columnheader", { name: "Sender" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Actions for Offer letter — Jordan Rivera" }).click();
-  const menu = page.getByRole("menu", { name: "Actions for Offer letter — Jordan Rivera" });
+  const menu = await actionsOf(page, "Offer letter — Jordan Rivera");
   await expect(menu.getByRole("separator")).toHaveCount(3);
   const labels = await menu.locator('[role="menuitem"], [role="separator"]').evaluateAll((els) => els.map((e) => e.getAttribute("role") === "separator" ? "|" : e.textContent));
   expect(labels.at(-1)).toBe("Void");
@@ -410,13 +592,14 @@ test("UX-07 agreements: one way in, grouped row menu, one void dialog, bulk bar 
   await page.keyboard.press("Escape");
 
   // A declined envelope's menu: Copy and resend and Download, Delete last.
-  await page.getByRole("button", { name: "Actions for Board consent — November" }).click();
-  const dmenu = page.getByRole("menu", { name: "Actions for Board consent — November" });
+  const dmenu = await actionsOf(page, "Board consent — November");
   await expect(dmenu.getByRole("menuitem", { name: "Copy and resend" })).toBeVisible();
   await expect(dmenu.getByRole("menuitem", { name: "Download", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // Bulk: two waiting envelopes; one dialog for both, with the count.
+  // Bulk (Display → Select agreements): two waiting envelopes; one dialog for both.
+  await page.getByTestId("display-toggle").click();
+  await page.getByRole("menuitem", { name: "Select agreements" }).click();
   await page.getByRole("checkbox", { name: "Select Offer letter — Jordan Rivera" }).check();
   await page.getByRole("checkbox", { name: "Select Vendor services agreement" }).check();
   const bar = page.getByTestId("bulk-bar");
@@ -433,13 +616,13 @@ test("UX-07 agreements: one way in, grouped row menu, one void dialog, bulk bar 
   await many.getByRole("button", { name: "Void (2)" }).click();
   await expect(page.locator(".os-toast").last()).toContainText("Voided 2 envelopes.");
   await expect(page.locator("dialog[open]")).toHaveCount(0);
-  await expect(page.locator('tbody tr[data-status="voided"]')).toHaveCount(3);
+  await expect(page.locator('.os-agr-row[data-status="voided"]')).toHaveCount(3);
 
   // Bulk delete of the voided ones.
   for (const s of ["Offer letter — Jordan Rivera", "Vendor services agreement"]) await page.getByRole("checkbox", { name: `Select ${s}` }).check();
   await page.getByTestId("bulk-delete").click();
   await page.getByRole("dialog", { name: "Delete 2 envelopes?" }).getByRole("button", { name: "Delete (2)" }).click();
-  await expect(page.getByRole("link", { name: "Offer letter — Jordan Rivera" })).toHaveCount(0);
+  await expect(row(page, "Offer letter — Jordan Rivera")).toHaveCount(0);
   await expectAccessible(page, "agreements after bulk");
 });
 
@@ -448,8 +631,9 @@ test("UX-07 expiring soon: the card and the quick view list the same envelopes",
   const n = Number(await page.getByTestId("counter-expiring").locator(".os-counter__n").textContent());
   await page.getByTestId("counter-expiring").click();
   await expect(page).toHaveURL(/folder=expiring/);
-  await expect(page.locator("tbody tr")).toHaveCount(n);
-  await expect(page.locator(".os-rail__link[aria-current=page]")).toContainText("Expiring soon");
+  await expect(page.locator(".os-agr-row[data-id]")).toHaveCount(n);
+  await expect(page.locator("#nav-views a[aria-current=page]")).toContainText("Expiring soon");
+  await expect(page.locator('#nav-views a[data-view="expiring"] .os-navview__n')).toHaveText(String(n));
 });
 
 test("UX-07 envelope page: summary with the ID, evidence card, History as a timeline", async ({ page }, testInfo) => {
@@ -462,7 +646,7 @@ test("UX-07 envelope page: summary with the ID, evidence card, History as a time
   await expect(head.getByRole("button", { name: "Certificate" })).toBeVisible();
   await expect(page.getByTestId("envelope-id")).toHaveText(id);
   const evidence = page.getByTestId("evidence-card");
-  await expect(evidence.getByTestId("chain-head")).toHaveText(/^[0-9a-f]{64}$/);
+  await expect(evidence.getByTestId("chain-head")).toHaveText(/^([0-9a-f]{4} ){15}[0-9a-f]{4}$/);
   await expect(evidence.getByTestId("evidence-verify")).toHaveAttribute("href", "verify.html");
   // The summary uses the width: two columns side by side.
   const cols = await page.locator(".os-envsum__col").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
@@ -507,22 +691,36 @@ test("UX-07 correct: add and remove a recipient, change the expiry and reminders
   await expect(page.locator(".os-envsum")).toContainText("first after 2 days, then every 3 days");
 });
 
-test("UX-07 phones: a folder select, Filters and Select toggles, one primary per envelope", async ({ page }, testInfo) => {
+test("UX-07 phones: views as tabs, Filter and Select, cards, the inspector as a page, one primary per envelope", async ({ page }, testInfo) => {
   await signIn(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(app("#/agreements"));
-  await expect(page.getByTestId("folder-select")).toBeVisible();
-  await expect(page.locator(".os-rail")).toBeHidden();
-  await expect(page.locator(".os-filters")).toBeHidden();
-  await expect(page.locator("tbody .os-checkbox").first()).toBeHidden();
+  await expect(page.getByRole("tab", { name: "Completed" })).toBeAttached();
+  await expect(page.locator(".os-agr__filters")).toBeHidden();
+  await expect(page.locator(".os-agr-row .os-checkbox")).toHaveCount(0);
   await page.getByTestId("filters-toggle").click();
-  await expect(page.locator(".os-filters")).toBeVisible();
-  await page.getByTestId("select-toggle").click();
-  await expect(page.locator("tbody .os-checkbox").first()).toBeVisible();
-  await page.getByTestId("folder-select").selectOption("completed");
+  await expect(page.locator(".os-agr__filters")).toBeVisible();
+  await page.getByTestId("display-toggle").click();
+  await page.getByRole("menuitem", { name: "Select agreements" }).click();
+  await expect(page.locator(".os-agr-row .os-checkbox").first()).toBeVisible();
+  await page.getByTestId("select-off").click();
+  await page.getByRole("tab", { name: "Completed" }).click();
   await expect(page).toHaveURL(/folder=completed/);
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator(".os-agr-row[data-id]")).toHaveCount(1);
+  await noSideScroll(page, "agreements at 390");
   await snap(page, testInfo, "ux07-agreements-390");
+  // A tap opens the inspector as a full page; Escape closes it and focus goes back.
+  const r = page.locator(".os-agr-row[data-id]").first();
+  await r.click();
+  const insp = page.getByRole("dialog", { name: "Mutual NDA — Acme and Globex" });
+  await expect(insp).toBeVisible();
+  const box = await insp.boundingBox();
+  expect(box.width).toBeGreaterThanOrEqual(389);
+  await expect(insp.getByRole("button", { name: "Close details" })).toBeFocused();
+  await snap(page, testInfo, "web17-inspector-390");
+  await page.keyboard.press("Escape");
+  await expect(insp).toBeHidden();
+  await expect(r).toBeFocused();
   await page.goto(app(`#/envelopes/${await subjectId(page, "Board consent — November")}`));
   const primary = page.locator(".os-page-head .os-btn--primary");
   await expect(primary).toHaveText("Copy and resend");
@@ -539,8 +737,8 @@ test("UX-07 screenshots at 1440: home, declined and sent envelopes", async ({ pa
   await signIn(page, "home");
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.getByTestId("recent-row").first()).toContainText("To: ");
-  // The recent list starts above the fold.
-  expect((await page.getByTestId("recent-row").first().boundingBox()).y).toBeLessThan(450);
+  // What needs doing starts above the fold (WEB-17: attention first, then recent).
+  expect((await page.getByTestId("attention-row").first().boundingBox()).y).toBeLessThan(450);
   await snap(page, testInfo, "ux07-home-1440");
   for (const [name, subject] of [["declined", "Board consent — November"], ["sent", "Offer letter — Jordan Rivera"], ["draft", "Lease renewal 2027"]]) {
     await page.goto(app(`#/envelopes/${await subjectId(page, subject)}`));

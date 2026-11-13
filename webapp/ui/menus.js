@@ -101,14 +101,16 @@ export function menuButton({ label, items, trigger = null, buttonOpts = {}, alig
   return wrap;
 }
 
-/// Tabs: `tabs` are `{id, label, icon?}`; `render(id, panel)` fills the panel when a
-/// tab is chosen. Arrow keys move between tabs (automatic activation).
-export function tabs({ label, tabs: list, current, render, onChange = null }) {
-  const bar = h("div", { class: "os-tabs", attrs: { role: "tablist", "aria-label": label } });
+/// Tabs: `tabs` are `{id, label, icon?, badge?}`; `render(id, panel)` fills the panel when a
+/// tab is chosen. `variant`: "underline" (the canvas inspector's) or "pill" (the list
+/// header's, an ink fill on the chosen one).
+/// Arrow keys move between tabs (automatic activation).
+export function tabs({ label, tabs: list, current, render, onChange = null, variant = "underline" }) {
+  const bar = h("div", { class: `os-tabs${variant === "pill" ? " os-tabs--pill" : ""}`, attrs: { role: "tablist", "aria-label": label } });
   const panel = h("div", { class: "os-tabpanel", attrs: { role: "tabpanel", tabindex: "0" } });
   const btns = list.map((tb) => {
     const b = h("button", { type: "button", class: "os-tab", id: `tab-${tb.id}`, attrs: { role: "tab", "aria-controls": "", "data-tab": tb.id } },
-      tb.icon ? icon(tb.icon, { size: 16 }) : null, h("span", { text: tb.label }));
+      tb.icon ? icon(tb.icon, { size: 16 }) : null, h("span", { text: tb.label }), tb.badge ? h("span", { class: "os-tab__badge", attrs: { "aria-hidden": "true" }, text: String(tb.badge) }) : null);
     b.addEventListener("click", () => pick(tb.id));
     b.addEventListener("keydown", (e) => {
       const i = list.indexOf(tb);

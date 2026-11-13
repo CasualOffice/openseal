@@ -76,11 +76,11 @@ test("upload, two signers in order and a CC, fields for each, send", async ({ pa
   await confirm.getByRole("button", { name: "Send" }).click();
   await expect(page.getByRole("heading", { name: "Recipients" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".os-page-head .os-badge")).toHaveText("Sent");
-  await expect(page.locator(".os-timeline__item")).toHaveCount(3);
+  await expect(page.getByTestId("recipient-row")).toHaveCount(3);
 
   await page.getByRole("link", { name: "Agreements" }).first().click();
-  const row = page.locator("tr", { hasText: subject });
-  await expect(row).toContainText("Sent");
+  const row = page.locator(".os-agr-row[data-id]", { hasText: subject });
+  await expect(row).toHaveAttribute("data-status", "sent");
 });
 
 test("send refuses an envelope that is not ready, and says what is missing", async ({ page }) => {
@@ -216,7 +216,9 @@ test("a draft saves itself after a pause, keeps the selection, and then leaves w
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page).toHaveURL(/#\/prepare$/);
   // Autosave (P-04): quietly, a few seconds after the last change.
-  await expect(page.getByTestId("save-status")).toContainText("Saved at", { timeout: 15_000 });
+  // The canvas's state: "Saved" (the time is its tooltip).
+  await expect(page.getByTestId("save-status")).toContainText("Saved", { timeout: 15_000 });
+  await expect(page.getByTestId("save-status")).toHaveAttribute("title", /Saved at/);
   await expect(page).toHaveURL(/#\/prepare\/.+/);
   await expect(page.locator(".os-field.is-selected")).toHaveCount(1);
   await page.goto(app("#/agreements"));

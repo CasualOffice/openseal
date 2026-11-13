@@ -45,6 +45,16 @@ Platform (schema `platform`) ── Operator, OperatorEvent, ApprovalRequest/Gra
 The design and its reasons are in [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md); §8 and §9 below carry the
 persistence notes.
 
+**Platform schema, as built (`CON-02`, `CON-03`, `CON-04` in part; migrations 0016 to 0019; docs/23 §5.6).** Schema
+`platform`, reached only by the role `openseal_console` (no grant on any `public` table): `settings`,
+`service_targets`, `alerts` (append-only), `operators`, `operator_mfa`, `operator_enrolments`, `operator_sessions`,
+`operator_events` (append-only, hash-chained, head in `operator_chain`), `approval_requests`, `approval_grants`,
+`approval_uses` (insert-only; the two-person rule). Tenant metadata reaches the console only
+through `platform` definer functions returning ids, names, statuses, labels, counts and times; writes to
+`organizations` (name, data-region labels) and `accounts` (data-region label, status) only through session-checked
+definer functions; `organizations.status` only through the two-person apply functions. Plans, TSA, trust anchors and
+seal profiles are not built yet.
+
 ## 2. Identifiers
 
 - Every entity has a **UUIDv7** id (time-ordered, index-friendly), minted by the host and supplied to the engine
@@ -340,7 +350,7 @@ longer create an account outside those functions. Forty-five tables.
 acts as its host hosting the signer (docs/40 As built); the host is a user rather than a membership so that removing
 the member is not refused, and the server refuses the link once the host is no longer an enabled member.
 
-`0016_admin_events.sql` (`ORG-05`, ADR-028, docs/23 §2.5) adds the **admin audit logs**: `admin_events` (a tenant
+`0020_admin_events.sql` (`ORG-05`, ADR-028, docs/23 §2.5) adds the **admin audit logs**: `admin_events` (a tenant
 table, chained per workspace, head in `accounts.admin_chain_head`) and `org_admin_events` (an organization table,
 chained per organization, head in `organizations.admin_chain_head`). Columns: owner id, `seq`, `prev_hash`, `hash`,
 `action`, `at`, `canonical` (RFC 8785 bytes, at most 64 KiB), `xact` (the top-level transaction that appended it, set

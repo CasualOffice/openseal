@@ -1,6 +1,7 @@
 // The website's behaviour (SITE-01): theme switch, phone menu, search over the prebuilt
 // index (search-index.json), copy buttons on code, scroll reveals and the docs'
-// "on this page" highlight. No framework; every string set as text.
+// "on this page" highlight. No framework; every string set as text. The hero's entrance
+// is CSS only (site.css §Motion), keyed on the `js` class theme-init.js sets.
 
 const root = document.documentElement;
 const base = document.body.dataset.root || "";
@@ -97,12 +98,6 @@ if (motionOK && "IntersectionObserver" in window) {
   // A jump past content (a #link, Find, End) must not leave it hidden.
   addEventListener("hashchange", showAll);
 }
-
-// ---- Hero illustration ------------------------------------------------------------------------
-// Played once, only when motion is welcome and the hero is on screen; its resting state
-// (shown otherwise) is the finished drawing.
-const heroArt = document.querySelector(".hero-art");
-if (heroArt && motionOK && heroArt.getBoundingClientRect().top < window.innerHeight) heroArt.classList.add("play");
 
 // ---- On this page ----------------------------------------------------------------------------
 const tocLinks = [...document.querySelectorAll(".toc a")];

@@ -26,6 +26,13 @@ export function matchTemplates(items, q) {
   return items.filter((tp) => [tp.name, tp.email_subject].some((v) => (v || "").toLowerCase().includes(s)));
 }
 
+/// The canvas's document thumbnail for a list row (WEB-17): a small page with lines.
+/// Decorative; the row's link names the template.
+function docThumb() {
+  return h("span", { class: "os-docthumb", attrs: { "aria-hidden": "true" } },
+    h("span", { class: "os-docthumb__line" }), h("span", { class: "os-docthumb__line" }), h("span", { class: "os-docthumb__line os-docthumb__line--short" }));
+}
+
 /// `#/templates`: the list.
 export function mount(view, ctx) {
   let items = [];
@@ -93,9 +100,10 @@ export function mount(view, ctx) {
       const href = `#/templates/${encodeURIComponent(tp.id)}`;
       const name = tp.name || t("templates.untitled");
       tb.append(h("tr", { class: "os-row", attrs: { "data-id": tp.id } },
-        h("td", {}, h("div", { class: "os-col-subject" },
-          h("span", { class: "os-row-title" }, icon("layout-template", { size: 16 }), h("a", { href, class: "os-row-link", text: name })),
-          h("span", { class: "os-row__sub os-muted", text: tp.email_subject || t("home.template-no-subject") }))),
+        h("td", {}, h("div", { class: "os-col-subject os-tplrow" }, docThumb(),
+          h("span", { class: "os-tplrow__text" },
+            h("a", { href, class: "os-row-link os-tplrow__name", text: name }),
+            h("span", { class: "os-row__sub os-muted os-tplrow__sub", text: tp.email_subject || t("home.template-no-subject") })))),
         h("td", { class: "os-col-date", attrs: { "data-label": t("templates.col.owner") }, text: owner(tp) }),
         h("td", { class: "os-col-date os-muted", attrs: { "data-label": t("templates.col.used") } }, tp.last_used_at ? h("time", { attrs: { datetime: tp.last_used_at }, text: fmtDate(tp.last_used_at) }) : t("templates.never-used")),
         h("td", { class: "os-col-actions" },

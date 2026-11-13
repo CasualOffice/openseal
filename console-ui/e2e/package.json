@@ -1,0 +1,14 @@
+{
+  "name": "openseal-console-ui-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Browser tests of the platform console UI (CON-17) against a real console binary and PostgreSQL. Headless only.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

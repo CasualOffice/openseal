@@ -104,3 +104,117 @@ export function inputModeFor(f) {
   if (k === "zip") return "numeric";
   return "text";
 }
+
+// ---- The ceremony's model (WEB-18; docs/47 §As built: signing ceremony) ------------------
+// What the guide bar, the page rail, the secure-open loader, the header and the receipt
+// show, as pure functions of the ceremony's state; sign.js renders from them. Words are
+// returned as `{key, vars}` for i18n, never as text.
+
+/// The words for doing field `f` next, as the guide bar's title. `label`: the field's
+/// own label or its kind's name, as the page shows it.
+export function nextAction(f, label = "") {
+  if (!f) return { key: "sign.guide.all-done" };
+  if (f.type === "signature") return { key: "sign.guide.sign" };
+  if (f.type === "initials") return { key: "sign.guide.initial", vars: { n: f.p?.page ?? f.page ?? 1 } };
+  if (f.type === "checkbox") return { key: "sign.guide.tick", vars: { label } };
+  if (f.type === "attachment") return { key: "sign.guide.attach", vars: { label } };
+  if (CHOSEN.has(f.type)) return { key: "sign.guide.choose", vars: { label } };
+  return { key: "sign.guide.fill", vars: { label } };
+}
+
+/// The guide bar's state: `total` required fields, `left` of them still to do, whether
+/// the signer has `started` (filled anything), and the `next` field with its `label`.
+/// `cta` is "start", "next" or "finish"; `fraction` is the share done (1 with nothing
+/// required, so the ring is full and Finish shows).
+export function guideState({ total, left, started, next = null, label = "" }) {
+  const all = Math.max(0, total | 0);
+  const l = Math.min(all, Math.max(0, left | 0));
+  const ready = l === 0;
+  return {
+    done: all - l,
+    total: all,
+    ready,
+    fraction: all ? (all - l) / all : 1,
+    cta: ready ? "finish" : started ? "next" : "start",
+    title: ready ? { key: all ? "sign.guide.all-done" : "sign.guide.nothing" } : nextAction(next, label),
+    sub: ready ? { key: "sign.guide.review" } : { key: l === 1 ? "sign.finish-reason-one" : "sign.finish-reason", vars: { n: l } },
+  };
+}
+
+/// The progress ring's `stroke-dasharray` for a circle of radius `r` filled to
+/// `fraction` (0 to 1).
+export function ringDash(fraction, r = 15) {
+  const c = 2 * Math.PI * r;
+  const f = Math.min(1, Math.max(0, Number(fraction) || 0));
+  return `${(c * f).toFixed(1)} ${c.toFixed(1)}`;
+}
+
+/// The secure-open loader's steps. `reached`: how many real steps have finished (1 the
+/// signing session was opened, 2 the document bytes arrived, 3 the first page was
+/// drawn); `pages`: the page count when the view gives it. Each step is `done`,
+/// `active` or `todo`. No step claims a check the page does not make.
+export function loaderSteps(reached, pages = null) {
+  const n = Number.isInteger(pages) && pages > 0 ? pages : null;
+  const steps = [
+    { key: "sign.loader.link" },
+    { key: "sign.loader.document" },
+    n ? { key: n === 1 ? "sign.loader.page" : "sign.loader.pages", vars: { n } } : { key: "sign.loader.pages-unknown" },
+  ];
+  const r = Math.max(0, reached | 0);
+  return steps.map((s, i) => ({ ...s, state: i < r ? "done" : i === r ? "active" : "todo" }));
+}
+
+/// Required fields still to do on each page: `pages` `[{key, n}]` (a document id and a
+/// page number), `left` `[{document_id, p: {page}}]`. Answers a count per page.
+export function pageCounts(pages, left) {
+  return pages.map((pg) => left.filter((f) => f.document_id === pg.key && (f.p?.page ?? f.page) === pg.n).length);
+}
+
+/// The total page count of `documents` when every one says it, else null.
+export function pageTotal(documents) {
+  const list = documents || [];
+  if (!list.length || !list.every((d) => Number.isInteger(d.pages) && d.pages > 0)) return null;
+  return list.reduce((a, d) => a + d.pages, 0);
+}
+
+/// The kinds of field this signer filled, in the order first met, once each (the
+/// receipt's "Fields" line). `filled(f)` says whether `f` was filled.
+export function filledKinds(fields, filled) {
+  const out = [];
+  for (const f of fields) if (filled(f) && !out.includes(f.type)) out.push(f.type);
+  return out;
+}
+
+/// "Jordan" from "Jordan Rivera"; "" for none.
+export function firstName(name) {
+  return String(name || "").trim().split(/\s+/)[0] || "";
+}
+
+/// The organisation's two-letter mark ("Acme Corporation" → "AC", "Northwind" → "NO").
+export function orgMark(org) {
+  const clean = (w) => [...w.replace(/[^\p{L}\p{N}]/gu, "")];
+  const words = String(org || "").trim().split(/\s+/).map(clean).filter((w) => w.length);
+  if (!words.length) return "";
+  const letters = words.length > 1 ? [words[0][0], words[1][0]] : words[0].slice(0, 2);
+  return letters.join("").toUpperCase();
+}
+
+/// Who asked: "<name> at <org> asked you to sign", or without the organisation when it
+/// is missing or the same; null when the view names no sender (never a guess).
+export function askLine(sender) {
+  const who = sender?.name || sender?.email || "";
+  if (!who) return null;
+  const org = sender?.organisation && sender.organisation !== who ? sender.organisation : "";
+  return org ? { key: "sign.ask.org", vars: { name: who, org } } : { key: "sign.ask", vars: { name: who } };
+}
+
+/// The date-signed field: the date once a signature or initials field holds a mark,
+/// else the words saying it fills itself in.
+export function dateField(signedAny, date) {
+  return signedAny ? { key: "sign.date.on", vars: { date } } : { key: "sign.date.pending" };
+}
+
+/// The phone header's two segments: the fields done, then finished.
+export function phoneSegments(ready, finished) {
+  return [!!ready || !!finished, !!finished];
+}

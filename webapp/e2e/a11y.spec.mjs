@@ -16,8 +16,10 @@ for (const scheme of ["light", "dark"]) {
 
     test("agreements, its empty states, and envelope detail", async ({ page }) => {
       await signIn(page);
-      await expect(page.locator("tbody tr").first()).toBeVisible();
+      await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
       await expectAccessible(page, `agreements (${scheme})`);
+      // Search opens from its button in the list's header (WEB-17).
+      await page.getByRole("button", { name: "Search agreements" }).click();
       await page.getByRole("searchbox").fill("zzz-nothing");
       await expect(page.getByTestId("empty-search")).toBeVisible();
       await expectAccessible(page, `agreements, no results (${scheme})`);
@@ -26,11 +28,11 @@ for (const scheme of ["light", "dark"]) {
         await expect(page.getByTestId("empty-filter")).toBeVisible();
         await expectAccessible(page, `agreements, empty filter (${scheme})`);
         await page.goto(app("#/agreements"));
-        await page.getByRole("link", { name: "Offer letter — Jordan Rivera" }).click();
+        await page.locator(".os-agr-row[data-id]", { hasText: "Offer letter — Jordan Rivera" }).dblclick();
       } else {
-        await page.getByRole("button", { name: "Clear search" }).click();
+        await page.getByTestId("empty-search").getByRole("button", { name: "Clear search" }).click();
         // A draft opens in the editor (A-02), so open the newest one that was sent.
-        await page.locator("tbody tr").filter({ hasNot: page.locator(".os-badge--draft") }).locator("a").first().click();
+        await page.locator('.os-agr-row[data-id]:not([data-status="draft"])').first().dblclick();
       }
       await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();
       await expectAccessible(page, `envelope detail (${scheme})`);

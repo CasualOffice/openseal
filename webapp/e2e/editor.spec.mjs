@@ -29,8 +29,8 @@ test("Edit reopens a template's document, roles and fields, and Save brings the 
   await expect(page.locator(".os-page")).toHaveCount(2);
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   await expect(page.locator(".os-field")).toHaveCount(4);
-  // The placed list numbers pages once the pages are laid out (it said "page 0").
-  await expect(page.getByTestId("placed-field").first()).toContainText("page 1");
+  // Nothing selected: the canvas's "Ready to save?" checks name each role's signature.
+  await expect(page.getByTestId("send-checks")).toContainText("Company has a signature field");
   await expectAccessible(page, "template editor");
   await snap(page, testInfo, "editor-template-1440");
 
@@ -306,7 +306,9 @@ test("Detect fields: suggestions as ghosts for the current signer; accept one, a
   await page.getByTestId("detect-fields").click();
   const ghosts = page.getByTestId("ghost");
   await expect(ghosts).toHaveCount(6);
-  await expect(page.getByTestId("suggestions")).toContainText("Accepted fields go to Ben");
+  // The floating bar (canvas): "6 suggested fields for Ben", and Continue is held.
+  await expect(page.getByTestId("suggestions")).toContainText("6 suggested fields for Ben");
+  await expect(page.getByTestId("wizard-next")).toHaveAttribute("aria-disabled", "true");
   await expect(page.locator(".os-field")).toHaveCount(0);
   await expectAccessible(page, "detected fields");
   await snap(page, testInfo, "editor-detect-1440");
@@ -330,7 +332,7 @@ test("Detect fields: suggestions as ghosts for the current signer; accept one, a
   await page.getByTestId("accept-all").click();
   await expect(ghosts).toHaveCount(0);
   await expect(page.locator(".os-field")).toHaveCount(5);
-  await expect(page.locator(".os-field", { has: page.locator('[data-who="A"]') })).toHaveCount(4);
+  await expect(page.locator(".os-field", { has: page.locator('[data-who="Ana"]') })).toHaveCount(4);
   await page.getByTestId("undo").click();
   await expect(ghosts).toHaveCount(4);
   await page.getByTestId("dismiss-all").click();
@@ -350,4 +352,87 @@ test("Detect fields is not offered for a template (the API detects on envelopes)
   await page.getByTestId("pdf-input").setInputFiles(pdfFile());
   await step(page, "Fields");
   await expect(page.getByTestId("detect-fields")).toHaveCount(0);
+});
+
+// ---- 5. The editor on the approved canvas (WEB-17 lane B) ------------------------------------
+
+/// Open the seeded draft "Lease renewal 2027" (the mock's template match, scanned page and
+/// personal data) on its fields.
+async function openLease(page) {
+  const env = (await mockDb(page)).envelopes.find((e) => /^Lease renewal/.test(e.subject));
+  await page.goto(app(`#/prepare/${env.id}`));
+  await expect(page.locator('.os-stepper__btn[aria-current="step"]')).toContainText("Fields");
+  await expect(page.getByTestId("prepare-loading")).toHaveCount(0);
+}
+
+test("canvas: single-key tools arm a kind, the hint names it, and a click places it; Continue says why it is held", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await newWithRecipients(page, [["Jordan Rivera", "jordan@example.com"], ["Sam Patel", "sam@example.com"]]);
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading").first()).toHaveCount(0);
+  // Nothing placed: the illustrated empty state with its two next actions.
+  await expect(page.getByTestId("empty-fields")).toContainText("No fields yet");
+  await expect(page.getByTestId("empty-place-signature")).toBeVisible();
+  await page.locator(".os-stage").focus();
+  await page.keyboard.press("s");
+  await expect(page.getByTestId("arm-hint")).toContainText("Click on the page to place Signature for Jordan");
+  await expect(page.getByRole("button", { name: "Signature (S)" })).toHaveAttribute("aria-pressed", "true");
+  const ov = await page.locator(".os-page__overlay").first().boundingBox();
+  await page.mouse.click(ov.x + ov.width * 0.3, ov.y + ov.height * 0.5);
+  await expect(page.locator('.os-field[data-field="signature"]')).toHaveCount(1);
+  await expect(page.getByTestId("arm-hint")).toHaveCount(0);
+  // V is Select; N arms Full name here (not a new envelope).
+  await page.locator(".os-stage").focus();
+  await page.keyboard.press("n");
+  await expect(page.getByRole("button", { name: "Name (N)" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("v");
+  await expect(page.getByRole("button", { name: "Select (V)" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/#\/prepare/);
+  // Sam has no field: Continue is held and says why; the press picks Sam.
+  await page.getByTestId("wizard-next").click({ force: true });
+  await expect(page.getByTestId("continue-why")).toHaveText("Every signer needs a field");
+  await expect(page.getByRole("radiogroup", { name: "Placing fields for" }).getByRole("radio", { name: "Sam Patel" })).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("send-checks")).toContainText("Sam Patel has no fields yet");
+  await expectAccessible(page, "canvas editor");
+  await snap(page, testInfo, "editor-canvas-1440");
+});
+
+test("canvas: the template match is applied by a click, undone from its chip, and the model's results show", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await openLease(page);
+  const banner = page.getByTestId("tpl-banner");
+  await expect(banner).toContainText("Looks like your “MSA v4” template");
+  await expect(banner).toContainText("96% match");
+  // Scanned page (OCR) and personal data, from the analysis and the suggestions.
+  await expect(page.locator(".os-thumb__ocr")).toHaveCount(1);
+  await expect(page.getByTestId("send-checks")).toContainText("is a scan; its text was read by OCR");
+  await expect(page.getByTestId("pii-card")).toContainText("Personal data on page");
+  await expectAccessible(page, "template match");
+  await snap(page, testInfo, "editor-template-match-1440");
+  const before = await page.locator(".os-field").count();
+  await page.getByTestId("tpl-apply").click();
+  await expect(page.getByTestId("tpl-applied")).toContainText("Applied “MSA v4”");
+  await expect(page.locator(".os-field")).not.toHaveCount(before);
+  const db = await mockDb(page);
+  const env = db.envelopes.find((e) => /^Lease renewal/.test(e.subject));
+  expect(db.ml.suggestions[env.id].find((s) => s.kind === "template").state).toBe("accepted");
+  await page.getByTestId("tpl-undo").click();
+  await expect(page.locator(".os-field")).toHaveCount(before);
+  await expect(banner).toBeVisible();
+  await page.getByTestId("tpl-skip").click();
+  await expect(banner).toHaveCount(0);
+});
+
+test("canvas: with no model service (404) no ML control, badge or card appears", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await page.evaluate(() => sessionStorage.setItem("openseal.mock.ml", "off"));
+  await openLease(page);
+  await expect(page.getByTestId("send-checks")).toContainText("has a signature field");
+  for (const id of ["tpl-banner", "pii-card"]) await expect(page.getByTestId(id)).toHaveCount(0);
+  await expect(page.locator(".os-thumb__ocr")).toHaveCount(0);
+  await expect(page.getByTestId("send-checks")).not.toContainText("OCR");
+  await expect(page.locator(".os-props__fine")).toHaveCount(0);
 });

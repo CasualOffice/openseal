@@ -32,7 +32,9 @@ test("access code, location, consent, guide, draw, fill, finish", async ({ page 
   // Documents with the guide.
   const progress = page.locator("#guide-progress");
   await expect(progress).toHaveText("0 of 2 required");
-  await expect(page.getByRole("button", { name: "Finish" })).toBeDisabled();
+  // WEB-18: Finish shows once nothing required is left; until then the guide says how many.
+  await expect(page.getByRole("button", { name: "Finish" })).toBeHidden();
+  await expect(page.locator("#guide-sub")).toHaveText("2 required fields left");
   await page.getByRole("button", { name: "Start" }).click();
   const text = page.getByRole("textbox", { name: /Job title/ });
   await expect(text).toBeFocused();

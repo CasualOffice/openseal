@@ -27,7 +27,7 @@ test("home shows counters, recent envelopes and where to start", async ({ page }
   await snap(page, testInfo, "web02-home");
   await page.getByTestId("counter-completed").click();
   await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator(".os-agr-row[data-id]")).toHaveCount(1);
 });
 
 test("home with nothing sent shows its empty state", async ({ page }, testInfo) => {
@@ -102,7 +102,8 @@ test("use a template: fill the roles, send, and the envelope has its fields", as
   await page.getByRole("dialog", { name: "Send this envelope?" }).getByRole("button", { name: "Send" }).click();
   await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Mutual NDA for signature" })).toBeVisible();
-  await expect(page.locator(".os-timeline__item")).toHaveCount(3);
+  // One row per recipient (the three roles), with its signing steps.
+  await expect(page.getByTestId("recipient-row")).toHaveCount(3);
 });
 
 test("a template without documents continues in the editor", async ({ page }) => {
@@ -161,7 +162,7 @@ test("admin: add and remove a user; an API client's key is shown once, then revo
   await signIn(page);
   await page.getByRole("link", { name: "Admin" }).click();
   const rail = page.getByRole("navigation", { name: "Admin sections" });
-  await expect(rail.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
+  await expect(rail.getByRole("link", { name: "Members and roles" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("cell", { name: "Robin Sender", exact: true })).toBeVisible();
   await expectAccessible(page, "admin users");
   await snap(page, testInfo, "web02-admin-users");
@@ -180,8 +181,9 @@ test("admin: add and remove a user; an API client's key is shown once, then revo
   await expect(page.getByRole("menuitem", { name: "Remove" })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  await rail.getByRole("link", { name: "API clients" }).click();
-  await expect(rail.getByRole("link", { name: "API clients" })).toHaveAttribute("aria-current", "page");
+  await rail.getByRole("link", { name: "API and webhooks" }).click();
+  await expect(rail.getByRole("link", { name: "API and webhooks" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("tab", { name: "API clients" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "New API client" }).click();
   const create = page.getByRole("dialog", { name: "New API client" });
   await create.getByLabel("Name").fill("Billing sync");

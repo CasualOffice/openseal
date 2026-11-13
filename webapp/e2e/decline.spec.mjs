@@ -20,8 +20,11 @@ test("decline needs a reason, ends the ceremony, and the sender sees it", async 
   await expect(page.getByTestId("sign-declined")).toBeVisible();
 
   test.skip(REAL, "the sender's side is checked with the seeded mock envelope");
-  await signIn(page);
-  await page.getByRole("navigation", { name: "Folders" }).getByRole("link", { name: /^Declined\s*\d*$/ }).click();
-  await page.getByRole("link", { name: "Vendor services agreement" }).click();
-  await expect(page.getByText("Reason given: The fee is wrong")).toBeVisible();
+  // Home's "Declined or expired" opens the list of what ended; the row opens the envelope.
+  await signIn(page, "home");
+  await page.getByTestId("counter-action").click();
+  await page.locator(".os-agr-row[data-id]", { hasText: "Vendor services agreement" }).dblclick();
+  await expect(page.getByTestId("decline-callout").getByText("Reason given: The fee is wrong")).toBeVisible();
+  // Said once, in the callout: not again on the recipient's row.
+  await expect(page.getByText("Reason given: The fee is wrong")).toHaveCount(1);
 });

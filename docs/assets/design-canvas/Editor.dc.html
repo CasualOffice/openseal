@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prepare: place fields</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;family=Source+Serif+4:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+html{font-size:clamp(15px,calc(11.5px + .3vw),18px)}
+@media (max-width:48em){html{font-size:16px}}
+body{margin:0;font-family:"Geist",system-ui,sans-serif;color:#18181b;background:#f4f3f0;-webkit-font-smoothing:antialiased}
+a{color:#18181b}a:hover{color:#c01622}
+button{font:inherit;color:inherit;cursor:pointer}
+button,a,kbd{white-space:nowrap}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #c01622;outline-offset:2px}
+.btn{flex-shrink:0;transition:transform 160ms cubic-bezier(.2,.8,.2,1),background 160ms cubic-bezier(.2,.8,.2,1),box-shadow 160ms cubic-bezier(.2,.8,.2,1)}
+.btn:active{transform:scale(.96)}
+.ghost:hover{background:rgba(24,24,27,.06)}
+.tool:hover{background:rgba(255,255,255,.1)}
+.lib:hover{background:#f4f3f0}
+.fld{transition:box-shadow 160ms cubic-bezier(.2,.8,.2,1),transform 160ms cubic-bezier(.2,.8,.2,1)}
+.fld:hover{transform:translateY(-1px)}
+@keyframes drop{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}
+@keyframes up{from{opacity:0;transform:translate(-50%,.5rem)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes down{from{opacity:0;transform:translate(-50%,-.5rem)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes rise{from{opacity:0;transform:translateY(.375rem)}to{opacity:1;transform:none}}
+@keyframes sweep{from{transform:translateY(-10%)}to{transform:translateY(1000%)}}
+@keyframes dash{to{stroke-dashoffset:-16}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes shimmer{from{background-position:150% 0}to{background-position:-50% 0}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-.3125rem)}}
+.drop{animation:drop 280ms cubic-bezier(.34,1.56,.64,1) both}
+.hint{animation:up 260ms cubic-bezier(.16,1,.3,1) both}
+.banner{animation:down 360ms cubic-bezier(.16,1,.3,1) both}
+.rise{animation:rise 320ms cubic-bezier(.16,1,.3,1) both}
+.sweep{animation:sweep 1.4s cubic-bezier(.45,0,.55,1) infinite}
+.spin{animation:spin .9s linear infinite}
+.sk{border-radius:.25rem;background:linear-gradient(90deg,#f1f0ed 0%,#f8f7f5 40%,#f1f0ed 80%);background-size:200% 100%;animation:shimmer 1.4s cubic-bezier(.4,0,.2,1) infinite}
+.float{animation:float 4s cubic-bezier(.45,0,.55,1) infinite}
+.ghostfld{animation:drop 320ms cubic-bezier(.34,1.56,.64,1) both}
+@media (prefers-reduced-motion:reduce){.drop,.hint,.banner,.rise,.sweep,.spin,.sk,.float,.ghostfld{animation:none}}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 40rem; display: flex; flex-direction: column; background: #f4f3f0; font-size: 0.8125rem">
+  <header style="min-height: 3rem; flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.75rem; padding: 0 0.75rem; background: #ffffff; box-shadow: 0 1px 0 rgba(24,24,27,.07)">
+    <div style="display: flex; align-items: center; gap: 0.5rem; min-width: 0">
+      <a href="Main.dc.html" aria-label="Back to agreements" class="btn ghost" style="width: 2rem; height: 2rem; border-radius: 0.4375rem; display: inline-flex; align-items: center; justify-content: center; text-decoration: none"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg></a>
+      <span style="color: #71717a">Agreements</span><span style="color: #a1a1aa">/</span>
+      <b style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0">Master services agreement — Acme</b>
+      <span style="display: inline-flex; align-items: center; gap: 0.3125rem; margin-left: 0.25rem; color: #71717a; font-size: 0.75rem; white-space: nowrap"><span style="width: 0.375rem; height: 0.375rem; border-radius: 50%; background: #15803d"></span>Saved</span>
+    </div>
+    <nav aria-label="Steps" style="display: flex; padding: 0.1875rem; border-radius: 0.5rem; background: #f4f3f0; gap: 0.125rem; white-space: nowrap">
+      <span style="height: 1.625rem; padding: 0 0.75rem; display: inline-flex; align-items: center; gap: 0.375rem; border-radius: 0.3125rem; color: #52525b"><span style="color: #15803d">✓</span>Document</span>
+      <span style="height: 1.625rem; padding: 0 0.75rem; display: inline-flex; align-items: center; gap: 0.375rem; border-radius: 0.3125rem; color: #52525b"><span style="color: #15803d">✓</span>Recipients</span>
+      <span style="height: 1.625rem; padding: 0 0.75rem; display: inline-flex; align-items: center; border-radius: 0.3125rem; background: #ffffff; box-shadow: 0 1px 2px rgba(24,24,27,.08), 0 0 0 1px rgba(24,24,27,.05); font-weight: 500">Fields</span>
+      <span style="height: 1.625rem; padding: 0 0.75rem; display: inline-flex; align-items: center; border-radius: 0.3125rem; color: #71717a">Review</span>
+    </nav>
+    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 0.375rem">
+      <a href="Signer.dc.html" class="btn ghost" style="height: 2rem; padding: 0 0.75rem; border-radius: 0.4375rem; display: inline-flex; align-items: center; text-decoration: none; font-weight: 500">Preview as signer</a>
+      <sc-if value="{{ canSend }}" hint-placeholder-val="{{ true }}"><a href="Main.dc.html" class="btn" style="height: 2rem; padding: 0 0.875rem; border-radius: 0.4375rem; background: #c01622; color: #fff; display: inline-flex; align-items: center; gap: 0.375rem; text-decoration: none; font-weight: 500; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 1px 2px rgba(142,11,20,.35)">Continue<svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a></sc-if>
+      <sc-if value="{{ blocked }}" hint-placeholder-val="{{ false }}"><button aria-disabled="true" title="{{ blockedWhy }}" class="btn" style="height: 2rem; padding: 0 0.875rem; border: 0; border-radius: 0.4375rem; background: #f1d0d3; color: #8e0b14; display: inline-flex; align-items: center; gap: 0.375rem; font-weight: 500; cursor: not-allowed">Continue</button></sc-if>
+    </div>
+  </header>
+
+  <div style="flex: 1; min-height: 0; display: flex">
+    <aside aria-label="Recipients and fields" style="width: 16.5rem; flex: none; background: #ffffff; box-shadow: 1px 0 0 rgba(24,24,27,.07); display: flex; flex-direction: column; overflow: auto">
+      <div style="padding: 0.875rem 0.75rem 0.5rem; display: flex; align-items: center"><span style="font-weight: 600">Recipients</span><button class="btn ghost" aria-label="Add recipient" style="margin-left: auto; width: 1.5rem; height: 1.5rem; border: 0; background: transparent; border-radius: 0.3125rem">+</button></div>
+      <div style="padding: 0 0.5rem; display: flex; flex-direction: column; gap: 0.125rem">
+        <sc-for list="{{ people }}" as="p" hint-placeholder-count="2">
+          <button onClick="{{ p.pick }}" class="btn" style="{{ p.style }}"><span style="{{ p.chip }}">{{ p.n }}</span><span style="display: flex; flex-direction: column; text-align: left; min-width: 0"><span style="font-weight: 500">{{ p.name }}</span><span style="font-size: 0.75rem; color: #71717a">{{ p.role }}</span></span><span style="margin-left: auto; font-size: 0.75rem; color: #71717a; font-variant-numeric: tabular-nums">{{ p.count }}</span></button>
+        </sc-for>
+      </div>
+      <div style="padding: 0.75rem 0.5rem 0.25rem">
+        <button onClick="{{ detect }}" class="btn" style="{{ detectStyle }}">
+          <sc-if value="{{ detecting }}" hint-placeholder-val="{{ false }}"><svg class="spin" width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.56"></path></svg></sc-if>
+          <sc-if value="{{ notDetecting }}" hint-placeholder-val="{{ true }}"><svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"></path></svg></sc-if>
+          {{ detectLabel }}
+        </button>
+      </div>
+      <div style="height: 1px; background: rgba(24,24,27,.06); margin: 0.625rem 0"></div>
+      <div style="padding: 0 0.75rem 0.375rem; display: flex; align-items: center"><span style="font-weight: 600">Fields</span><span style="margin-left: auto; font-size: 0.75rem; color: #71717a">for {{ whoFirst }}</span></div>
+      <div style="padding: 0 0.5rem; display: flex; flex-direction: column; gap: 0.0625rem">
+        <sc-for list="{{ library }}" as="t" hint-placeholder-count="8">
+          <button onClick="{{ t.arm }}" class="lib" style="{{ t.style }}"><span style="{{ t.icon }}">{{ t.glyph }}</span>{{ t.label }}<kbd style="margin-left: auto; font-family: 'Geist Mono', monospace; font-size: 0.6875rem; color: #71717a">{{ t.key }}</kbd></button>
+        </sc-for>
+      </div>
+      <div style="margin-top: auto; padding: 0.75rem 0.75rem 1.75rem; display: flex; flex-direction: column; gap: 0.5rem">
+        <span style="font-weight: 600">Pages</span>
+        <div style="display: flex; gap: 0.5rem">
+          <span style="width: 3.5rem; height: 4.5rem; border-radius: 0.25rem; background: #fff; box-shadow: 0 0 0 2px #c01622; position: relative"><span style="position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.6875rem">1</span></span>
+          <span style="width: 3.5rem; height: 4.5rem; border-radius: 0.25rem; background: #fff; box-shadow: 0 0 0 1px rgba(24,24,27,.12); position: relative"><span style="position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.6875rem; color: #71717a">2</span></span>
+          <span title="Scanned page, text read by OCR" style="width: 3.5rem; height: 4.5rem; border-radius: 0.25rem; background: #f7f6f2; box-shadow: 0 0 0 1px rgba(24,24,27,.12); position: relative"><span style="position: absolute; top: 0.25rem; left: 0.25rem; padding: 0 0.25rem; border-radius: 0.1875rem; background: #f5f3ff; color: #6d28d9; font-size: 0.5625rem; font-weight: 600">OCR</span><span style="position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.6875rem; color: #71717a">3</span></span>
+        </div>
+      </div>
+    </aside>
+
+    <main style="flex: 1; min-width: 0; position: relative; overflow: hidden; display: flex; flex-direction: column; background: #ebeae6">
+      <div style="flex: 1; overflow: auto; background-image: radial-gradient(rgba(24,24,27,.07) 1px, transparent 1px); background-size: 1rem 1rem">
+        <div style="padding: 5.5rem 1.5rem 7rem; display: flex; justify-content: center">
+          <sc-if value="{{ loading }}" hint-placeholder-val="{{ false }}">
+            <div aria-busy="true" aria-label="Preparing pages" style="position: relative; width: 46rem; height: 59.5rem; flex: none; background: #fff; padding: 4.5rem; box-sizing: border-box; border-radius: 0.125rem; box-shadow: 0 0 0 1px rgba(24,24,27,.06), 0 24px 48px -24px rgba(24,24,27,.25); display: flex; flex-direction: column; gap: 0.75rem">
+              <span class="sk" style="width: 8rem; height: 0.5rem"></span><span class="sk" style="width: 60%; height: 1.375rem; margin-bottom: 0.75rem"></span>
+              <span class="sk" style="height: 0.625rem"></span><span class="sk" style="height: 0.625rem; width: 94%"></span><span class="sk" style="height: 0.625rem; width: 82%"></span><span class="sk" style="height: 0.625rem; margin-top: 0.75rem"></span><span class="sk" style="height: 0.625rem; width: 90%"></span><span class="sk" style="height: 0.625rem; width: 70%"></span>
+              <div style="position: absolute; left: 50%; top: 45%; transform: translateX(-50%); display: flex; align-items: center; gap: 0.625rem; height: 2.25rem; padding: 0 1rem; border-radius: 1.125rem; background: #18181b; color: #fff"><svg class="spin" width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.56"></path></svg>Preparing 3 pages…</div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ ready }}" hint-placeholder-val="{{ true }}">
+            <div onClick="{{ place }}" class="rise" style="{{ pageStyle }}">
+              <div style="font-family: 'Source Serif 4', Georgia, serif; color: #27272a">
+                <div style="font-size: 0.6875rem; letter-spacing: 0.16em; text-transform: uppercase; color: #71717a; margin-bottom: 0.75rem">Acme Corporation</div>
+                <h2 style="margin: 0 0 1.25rem; font-size: 1.625rem; font-weight: 600">Master Services Agreement</h2>
+                <p style="margin: 0 0 0.875rem; line-height: 1.7; font-size: 0.9375rem">This Master Services Agreement is entered into between Acme Corporation and the Client identified below, and governs the services described in each Statement of Work.</p>
+                <p style="margin: 0 0 0.875rem; line-height: 1.7; font-size: 0.9375rem"><b>1. Services.</b> Acme will provide the services with reasonable skill and care. <b>2. Fees.</b> Client will pay the fees in each Statement of Work within 30 days of invoice.</p>
+                <p style="margin: 0 0 0.875rem; line-height: 1.7; font-size: 0.9375rem"><b>3. Term.</b> This agreement begins on the date of the last signature and continues for 24 months. <b>4. Confidentiality.</b> Each party will protect the other's confidential information.</p>
+              </div>
+              <div style="position: absolute; left: 4.5rem; right: 4.5rem; top: 44rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3rem; font-size: 0.6875rem; color: #71717a; font-family: 'Source Serif 4', Georgia, serif">
+                <div style="border-top: 1px solid #a1a1aa; padding-top: 0.375rem">Acme Corporation</div>
+                <div style="border-top: 1px solid #a1a1aa; padding-top: 0.375rem">Client</div>
+              </div>
+              <sc-if value="{{ detecting }}" hint-placeholder-val="{{ false }}">
+                <div aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; pointer-events: none"><div class="sweep" style="height: 10%; background: linear-gradient(180deg, rgba(139,92,246,0), rgba(139,92,246,.14)); border-bottom: 2px solid rgba(139,92,246,.55)"></div></div>
+              </sc-if>
+              <sc-for list="{{ ghosts }}" as="g" hint-placeholder-count="0">
+                <div class="ghostfld" style="{{ g.style }}">
+                  <span style="display: flex; flex-direction: column; min-width: 0"><span style="font-weight: 600; font-size: 0.75rem">{{ g.label }}</span><span style="font-size: 0.6875rem; opacity: .8">{{ g.cue }}</span></span>
+                  <span style="margin-left: auto; display: flex; gap: 0.25rem"><button onClick="{{ g.accept }}" aria-label="{{ g.acceptAria }}" class="btn" style="width: 1.5rem; height: 1.5rem; border: 0; border-radius: 0.3125rem; background: #18181b; color: #fff; font-size: 0.75rem">✓</button><button onClick="{{ g.dismiss }}" aria-label="{{ g.dismissAria }}" class="btn" style="width: 1.5rem; height: 1.5rem; border: 0; border-radius: 0.3125rem; background: #fff; box-shadow: inset 0 0 0 1px rgba(24,24,27,.15); font-size: 0.75rem">×</button></span>
+                </div>
+              </sc-for>
+              <sc-for list="{{ fields }}" as="f" hint-placeholder-count="3">
+                <button onClick="{{ f.select }}" class="fld drop" aria-label="{{ f.aria }}" style="{{ f.style }}"><span style="font-weight: 600; font-size: 0.75rem">{{ f.label }}</span><span style="opacity: .75; font-size: 0.6875rem">{{ f.who }}</span><sc-if value="{{ f.on }}" hint-placeholder-val="{{ false }}"><span style="position: absolute; right: -0.25rem; bottom: -0.25rem; width: 0.5rem; height: 0.5rem; background: #fff; box-shadow: 0 0 0 1.5px #2563eb; border-radius: 1px"></span><span style="position: absolute; left: -0.25rem; top: -0.25rem; width: 0.5rem; height: 0.5rem; background: #fff; box-shadow: 0 0 0 1.5px #2563eb; border-radius: 1px"></span></sc-if></button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <sc-if value="{{ showTpl }}" hint-placeholder-val="{{ true }}">
+        <div class="banner" role="status" style="position: absolute; left: 50%; top: 1rem; display: flex; align-items: center; gap: 0.875rem; padding: 0.5rem 0.5rem 0.5rem 0.75rem; border-radius: 0.75rem; background: #ffffff; box-shadow: 0 0 0 1px rgba(109,40,217,.18), 0 12px 32px -12px rgba(76,29,149,.35); max-width: calc(100% - 2rem)">
+          <span style="width: 2rem; height: 2rem; flex: none; border-radius: 0.5rem; background: #f5f3ff; color: #6d28d9; display: inline-flex; align-items: center; justify-content: center"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><path d="M14 17.5l2 2 4-4"></path></svg></span>
+          <span style="display: flex; flex-direction: column; line-height: 1.3; min-width: 0"><b style="font-weight: 600">Looks like your “MSA v4” template</b><span style="color: #71717a; font-size: 0.75rem">96% match · apply its 2 roles and 4 fields</span></span>
+          <button onClick="{{ applyTpl }}" class="btn" style="height: 2rem; padding: 0 0.75rem; border: 0; border-radius: 0.4375rem; background: #6d28d9; color: #fff; font-weight: 500">Apply template</button>
+          <button onClick="{{ skipTpl }}" class="btn ghost" style="height: 2rem; padding: 0 0.625rem; border: 0; border-radius: 0.4375rem; background: transparent; font-weight: 500; color: #52525b">Not now</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ showApplied }}" hint-placeholder-val="{{ false }}">
+        <div class="banner" role="status" style="position: absolute; left: 50%; top: 1rem; display: flex; align-items: center; gap: 0.75rem; height: 2.5rem; padding: 0 0.375rem 0 0.875rem; border-radius: 1.25rem; background: #18181b; color: #fff; box-shadow: 0 12px 32px -12px rgba(24,24,27,.5)"><span style="color: #4ade80">✓</span>Applied “MSA v4”: 4 fields placed<button onClick="{{ undoTpl }}" class="btn" style="height: 1.75rem; padding: 0 0.625rem; border: 0; border-radius: 0.875rem; background: rgba(255,255,255,.14); color: #fff; font-weight: 500">Undo</button></div>
+      </sc-if>
+      <sc-if value="{{ armed }}" hint-placeholder-val="{{ false }}">
+        <div class="hint" style="position: absolute; left: 50%; bottom: 5rem; display: flex; align-items: center; gap: 0.625rem; height: 2.25rem; padding: 0 0.5rem 0 0.875rem; border-radius: 1.125rem; background: #18181b; color: #fff; box-shadow: 0 8px 24px -8px rgba(24,24,27,.5)"><span style="{{ armDot }}"></span>Click on the page to place <b style="font-weight: 600">{{ armLabel }}</b> for {{ whoFirst }}<button onClick="{{ disarm }}" class="btn" style="height: 1.5rem; padding: 0 0.5rem; border: 0; border-radius: 0.75rem; background: rgba(255,255,255,.14); color: #fff; font-size: 0.75rem">Esc</button></div>
+      </sc-if>
+      <sc-if value="{{ hasGhosts }}" hint-placeholder-val="{{ false }}">
+        <div class="hint" role="status" style="position: absolute; left: 50%; bottom: 5rem; display: flex; align-items: center; gap: 0.75rem; height: 2.5rem; padding: 0 0.375rem 0 0.875rem; border-radius: 1.25rem; background: #ffffff; box-shadow: 0 0 0 1px rgba(109,40,217,.2), 0 12px 32px -12px rgba(76,29,149,.4)"><svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="#6d28d9" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"></path></svg><span><b style="font-weight: 600">{{ ghostCount }} suggested fields</b><span style="color: #71717a"> for {{ whoFirst }}</span></span><button onClick="{{ acceptAll }}" class="btn" style="height: 1.875rem; padding: 0 0.75rem; border: 0; border-radius: 0.9375rem; background: #6d28d9; color: #fff; font-weight: 500">Accept all</button><button onClick="{{ dismissAll }}" class="btn ghost" style="height: 1.875rem; padding: 0 0.625rem; border: 0; border-radius: 0.9375rem; background: transparent; font-weight: 500; color: #52525b">Dismiss all</button></div>
+      </sc-if>
+
+      <div role="toolbar" aria-label="Tools" style="position: absolute; left: 50%; bottom: 1.25rem; transform: translateX(-50%); display: flex; align-items: center; gap: 0.125rem; padding: 0.3125rem; border-radius: 0.875rem; background: #18181b; box-shadow: 0 0 0 1px rgba(255,255,255,.06) inset, 0 12px 32px -8px rgba(24,24,27,.55)">
+        <sc-for list="{{ toolbar }}" as="t" hint-placeholder-count="7">
+          <button onClick="{{ t.arm }}" class="tool btn" aria-label="{{ t.label }}" title="{{ t.label }}" style="{{ t.style }}">{{ t.glyph }}</button>
+        </sc-for>
+        <span style="width: 1px; height: 1.5rem; background: rgba(255,255,255,.12); margin: 0 0.25rem"></span>
+        <button onClick="{{ detect }}" class="tool btn" aria-label="Detect fields" title="Detect fields" style="width: 2.25rem; height: 2.25rem; border: 0; border-radius: 0.5625rem; background: transparent; color: #c4b5fd; display: inline-flex; align-items: center; justify-content: center"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"></path></svg></button>
+        <span style="color: rgba(255,255,255,.7); font-size: 0.75rem; padding: 0 0.5rem; font-variant-numeric: tabular-nums">100%</span>
+      </div>
+    </main>
+
+    <aside aria-label="Properties" style="width: 17.5rem; flex: none; background: #ffffff; box-shadow: -1px 0 0 rgba(24,24,27,.07); display: flex; flex-direction: column; overflow: auto">
+      <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+        <div class="rise" style="display: flex; flex-direction: column">
+        <div style="padding: 0.875rem 1rem; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 1px 0 rgba(24,24,27,.06)"><span style="{{ selChip }}">{{ selGlyph }}</span><b style="font-weight: 600">{{ selLabel }}</b><button onClick="{{ remove }}" class="btn ghost" aria-label="Delete field" style="margin-left: auto; height: 1.75rem; padding: 0 0.5rem; border: 0; background: transparent; border-radius: 0.375rem; color: #b91c1c">Delete</button></div>
+        <div style="padding: 1rem; display: flex; flex-direction: column; gap: 1.25rem">
+          <div style="display: flex; flex-direction: column; gap: 0.5rem"><span style="font-size: 0.75rem; font-weight: 500; color: #71717a">Assigned to</span>
+            <div style="display: flex; flex-direction: column; gap: 0.25rem"><sc-for list="{{ assign }}" as="a" hint-placeholder-count="2"><button onClick="{{ a.pick }}" class="btn" style="{{ a.style }}"><span style="{{ a.dot }}"></span>{{ a.name }}<span style="margin-left: auto; color: #2563eb">{{ a.mark }}</span></button></sc-for></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem"><span style="font-size: 0.75rem; font-weight: 500; color: #71717a">Behaviour</span>
+            <button onClick="{{ toggleReq }}" role="switch" aria-checked="{{ reqAria }}" style="display: flex; align-items: center; border: 0; background: transparent; padding: 0; text-align: left">Required<span style="{{ reqTrack }}"><span style="{{ reqKnob }}"></span></span></button>
+            <label style="display: flex; flex-direction: column; gap: 0.375rem">Tooltip<input value="Sign as authorised signatory" style="height: 2rem; padding: 0 0.625rem; border: 0; border-radius: 0.4375rem; background: #f4f3f0; font: inherit"></label>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem"><span style="font-size: 0.75rem; font-weight: 500; color: #71717a">Position</span>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.375rem"><span style="height: 2rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.625rem; border-radius: 0.4375rem; background: #f4f3f0"><span style="color: #71717a">X</span>{{ selX }}</span><span style="height: 2rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.625rem; border-radius: 0.4375rem; background: #f4f3f0"><span style="color: #71717a">Y</span>{{ selY }}</span></div>
+          </div>
+        </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ noFields }}" hint-placeholder-val="{{ true }}">
+        <div class="rise" style="padding: 2rem 1.25rem; display: flex; flex-direction: column; align-items: center; gap: 0.75rem; text-align: center">
+          <svg class="float" width="8.5rem" height="6.5rem" viewBox="0 0 136 104" fill="none" aria-hidden="true">
+            <ellipse cx="68" cy="97" rx="38" ry="4" fill="#18181b" opacity=".06"></ellipse>
+            <rect x="34" y="8" width="60" height="78" rx="4" fill="#fff" stroke="#d4d4d8" stroke-width="1.5"></rect>
+            <path d="M44 22h28M44 30h40M44 36h34M44 42h38" stroke="#e4e4e7" stroke-width="2.5" stroke-linecap="round"></path>
+            <rect x="44" y="56" width="40" height="14" rx="3" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="4 3" style="animation: dash 1.2s linear infinite"></rect>
+            <path d="M50 65c3-2 4-6 6-6s1 4 3 4 3-3 5-3" stroke="#2563eb" stroke-width="1.6" stroke-linecap="round"></path>
+            <path d="M98 50l12 4-5 2-2 5z" fill="#18181b"></path>
+            <circle cx="108" cy="22" r="10" fill="#f5f3ff"></circle><path d="M108 15l1.4 4.8 4.6 1.2-4.6 1.4-1.4 4.6-1.4-4.6-4.6-1.4 4.6-1.2z" fill="#8b5cf6"></path>
+            <circle cx="24" cy="34" r="2.5" fill="#fca5a5"></circle><circle cx="118" cy="76" r="2" fill="#f2c98f"></circle>
+          </svg>
+          <b style="font-size: 0.9375rem; font-weight: 600">No fields yet</b>
+          <span style="color: #71717a; line-height: 1.5; white-space: normal">Apply the matched template, let OpenSeal detect the fields, or pick a tool and click the page.</span>
+          <button onClick="{{ detect }}" class="btn" style="margin-top: 0.25rem; width: 100%; height: 2.125rem; border: 0; border-radius: 0.5rem; background: #6d28d9; color: #fff; font-weight: 500">Detect fields</button>
+          <button onClick="{{ armSig }}" class="btn ghost" style="width: 100%; height: 2.125rem; border: 0; border-radius: 0.5rem; background: #f4f3f0; font-weight: 500">Place a signature</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ showChecks }}" hint-placeholder-val="{{ false }}">
+        <div style="padding: 0.875rem 1rem; box-shadow: 0 1px 0 rgba(24,24,27,.06)"><b style="font-weight: 600">Ready to send?</b></div>
+        <div style="padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem">
+          <sc-for list="{{ checks }}" as="c" hint-placeholder-count="4"><div class="rise" style="display: flex; gap: 0.625rem; align-items: flex-start"><span style="{{ c.style }}">{{ c.mark }}</span><span style="line-height: 1.45; white-space: normal">{{ c.text }}</span></div></sc-for>
+          <div style="margin-top: 0.25rem; border-radius: 0.625rem; background: #fffbeb; box-shadow: inset 0 0 0 1px rgba(180,83,9,.18); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.375rem"><b style="font-weight: 600; color: #92400e">Personal data on page 3</b><span style="color: #78350f; line-height: 1.45; white-space: normal">2 email addresses and 1 phone number. Every recipient will see them.</span><button class="btn" style="align-self: flex-start; height: 1.75rem; padding: 0 0.625rem; border: 0; border-radius: 0.375rem; background: #fff; box-shadow: inset 0 0 0 1px rgba(180,83,9,.25); color: #92400e; font-size: 0.75rem; font-weight: 500">Review for redaction</button></div>
+          <span style="color: #71717a; line-height: 1.5; white-space: normal; font-size: 0.75rem">Suggestions are checked by a person before they count. Models run on your servers and never learn from your documents.</span>
+        </div>
+      </sc-if>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    this.state = { who: 0, armed: null, sel: 0, next: 1, req: {}, fields: [], loading: true, tpl: 'offer', detect: 'idle', ghosts: [] };
+  }
+  componentDidMount() { this.t1 = setTimeout(() => this.setState({ loading: false }), 1100); }
+  componentWillUnmount() { clearTimeout(this.t1); clearTimeout(this.t2); clearTimeout(this.t3); }
+  renderVals() {
+    const s = this.state;
+    const people = [
+      { name: 'Jordan Rivera', role: 'Signs first · Acme', c: '#2563eb', bg: '#eff4ff' },
+      { name: 'Sam Patel', role: 'Signs second · Client', c: '#9333ea', bg: '#f6efff' },
+    ];
+    const kinds = { sig: ['Signature', '✍', 'S', 13, 3.25], ini: ['Initials', 'AB', 'I', 6, 3], date: ['Date signed', '◷', 'D', 10, 2.25], name: ['Full name', 'Aa', 'N', 12, 2.25], text: ['Text', 'T', 'T', 12, 2.25], check: ['Checkbox', '☑', 'C', 2.25, 2.25], email: ['Email', '@', 'E', 13, 2.25], co: ['Company', '▦', 'O', 12, 2.25] };
+    const order = ['sig', 'ini', 'date', 'name', 'email', 'co', 'text', 'check'];
+    const cur = people[s.who];
+    const arm = (k) => () => this.setState({ armed: s.armed === k ? null : k });
+    const sel = s.fields.find((f) => f.id === s.sel);
+    const addMany = (list, extra) => {
+      let next = s.next; const req = Object.assign({}, s.req);
+      const fs = list.map((f) => { req[next] = true; return Object.assign({ id: next++ }, f); });
+      this.setState(Object.assign({ fields: s.fields.concat(fs), next, req, sel: 0 }, extra || {}));
+    };
+    const detect = () => {
+      if (s.detect === 'running' || s.loading) return;
+      this.setState({ detect: 'running', ghosts: [], armed: null });
+      this.t2 = setTimeout(() => this.setState({ detect: 'shown', ghosts: [
+        { gid: 'g1', t: 'sig', x: 8, y: 77, cue: 'Signature line, Acme' },
+        { gid: 'g2', t: 'name', x: 8, y: 86, cue: 'Name and title' },
+        { gid: 'g3', t: 'sig', x: 54, y: 77, cue: 'Signature line, Client' },
+        { gid: 'g4', t: 'date', x: 54, y: 86, cue: 'Date' },
+      ] }), 1500);
+    };
+    const tplFields = [{ t: 'sig', who: 0, x: 8, y: 77 }, { t: 'name', who: 0, x: 8, y: 86 }, { t: 'sig', who: 1, x: 54, y: 77 }, { t: 'date', who: 1, x: 54, y: 86 }];
+    const ghostBox = (g) => { const k = kinds[g.t]; return 'position:absolute;left:' + g.x + '%;top:' + g.y + '%;width:' + Math.max(k[3], 13) + 'rem;height:' + Math.max(k[4], 2.75) + 'rem;display:flex;align-items:center;gap:0.375rem;padding:0 0.3125rem 0 0.5rem;box-sizing:border-box;border-radius:0.3125rem;color:' + cur.c + ';background:rgba(255,255,255,.85);border:1.5px dashed ' + cur.c; };
+    const nGhosts = s.ghosts.length;
+    const sigFor = (i) => s.fields.some((f) => f.who === i && f.t === 'sig');
+    const ok = sigFor(0) && sigFor(1) && nGhosts === 0;
+    const okStyle = 'width:1.25rem;height:1.25rem;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.6875rem;font-weight:700;background:#eff8f2;color:#15803d';
+    const warnStyle = 'width:1.25rem;height:1.25rem;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.6875rem;font-weight:700;background:#fdf6ec;color:#b45309';
+    return {
+      loading: s.loading, ready: !s.loading,
+      canSend: ok, blocked: !ok,
+      blockedWhy: nGhosts ? 'Accept or dismiss the ' + nGhosts + ' suggested fields first' : 'Every signer needs a signature field',
+      people: people.map((p, i) => ({ name: p.name, role: p.role, n: String(i + 1), count: String(s.fields.filter((f) => f.who === i).length),
+        pick: () => this.setState({ who: i }),
+        chip: 'width:1.375rem;height:1.375rem;flex:none;border-radius:0.375rem;display:inline-flex;align-items:center;justify-content:center;font-size:0.6875rem;font-weight:600;color:#fff;background:' + p.c,
+        style: 'width:100%;display:flex;align-items:center;gap:0.625rem;padding:0.4375rem 0.5rem;border:0;border-radius:0.5rem;background:' + (s.who === i ? p.bg : 'transparent') + ';box-shadow:' + (s.who === i ? 'inset 0 0 0 1px ' + p.c + '33' : 'none') })),
+      whoFirst: cur.name.split(' ')[0],
+      detect, detecting: s.detect === 'running', notDetecting: s.detect !== 'running',
+      detectLabel: s.detect === 'running' ? 'Reading the page…' : 'Detect fields',
+      detectStyle: 'width:100%;height:2.125rem;display:flex;align-items:center;justify-content:center;gap:0.5rem;border:0;border-radius:0.5rem;font-weight:500;color:#6d28d9;background:#f5f3ff;box-shadow:inset 0 0 0 1px rgba(109,40,217,.2)',
+      library: order.map((k) => ({ label: kinds[k][0], glyph: kinds[k][1], key: kinds[k][2], arm: arm(k),
+        icon: 'width:1.5rem;height:1.5rem;flex:none;border-radius:0.375rem;display:inline-flex;align-items:center;justify-content:center;font-size:0.6875rem;font-weight:600;color:' + cur.c + ';background:' + cur.bg,
+        style: 'width:100%;display:flex;align-items:center;gap:0.625rem;height:2.125rem;padding:0 0.5rem;border:0;border-radius:0.4375rem;text-align:left;background:' + (s.armed === k ? '#f4f3f0' : 'transparent') + ';box-shadow:' + (s.armed === k ? 'inset 0 0 0 1px rgba(24,24,27,.12)' : 'none') })),
+      toolbar: ['sel'].concat(order.slice(0, 5)).concat(['check']).map((k) => {
+        const on = k === 'sel' ? !s.armed : s.armed === k;
+        return { label: k === 'sel' ? 'Select (V)' : kinds[k][0] + ' (' + kinds[k][2] + ')', glyph: k === 'sel' ? '↖' : kinds[k][1],
+          arm: k === 'sel' ? () => this.setState({ armed: null }) : arm(k),
+          style: 'width:2.25rem;height:2.25rem;border:0;border-radius:0.5625rem;font-size:0.8125rem;font-weight:600;color:#fff;background:' + (on ? '#c01622' : 'transparent') };
+      }),
+      armSig: () => this.setState({ armed: 'sig' }),
+      armed: !!s.armed, armLabel: s.armed ? kinds[s.armed][0] : '',
+      armDot: 'width:0.5rem;height:0.5rem;border-radius:50%;background:' + cur.c,
+      disarm: () => this.setState({ armed: null }),
+      showTpl: !s.loading && s.tpl === 'offer', showApplied: s.tpl === 'applied',
+      applyTpl: () => { addMany(tplFields, { tpl: 'applied', ghosts: [], detect: 'idle' }); this.t3 = setTimeout(() => this.setState({ tpl: 'done' }), 4000); },
+      skipTpl: () => this.setState({ tpl: 'dismissed' }),
+      undoTpl: () => this.setState({ fields: [], tpl: 'offer', sel: 0 }),
+      pageStyle: 'position:relative;width:46rem;height:59.5rem;flex:none;background:#fff;padding:4.5rem;box-sizing:border-box;border-radius:0.125rem;box-shadow:0 0 0 1px rgba(24,24,27,.06),0 2px 4px rgba(24,24,27,.04),0 24px 48px -24px rgba(24,24,27,.25);cursor:' + (s.armed ? 'crosshair' : 'default'),
+      place: (e) => {
+        if (!s.armed || !e || !e.currentTarget) { if (!s.armed) this.setState({ sel: 0 }); return; }
+        const r = e.currentTarget.getBoundingClientRect();
+        const x = Math.max(2, Math.min(80, ((e.clientX - r.left) / r.width) * 100 - 6));
+        const y = Math.max(2, Math.min(94, ((e.clientY - r.top) / r.height) * 100 - 2));
+        const req = Object.assign({}, s.req); req[s.next] = true;
+        this.setState({ fields: s.fields.concat({ id: s.next, t: s.armed, who: s.who, x, y }), sel: s.next, next: s.next + 1, armed: null, req });
+      },
+      ghosts: s.ghosts.map((g) => ({ label: kinds[g.t][0], cue: g.cue, style: ghostBox(g),
+        acceptAria: 'Accept ' + kinds[g.t][0] + ': ' + g.cue, dismissAria: 'Dismiss ' + kinds[g.t][0] + ': ' + g.cue,
+        accept: (e) => { if (e && e.stopPropagation) e.stopPropagation(); const req = Object.assign({}, s.req); req[s.next] = true;
+          this.setState({ ghosts: s.ghosts.filter((x) => x.gid !== g.gid), fields: s.fields.concat({ id: s.next, t: g.t, who: s.who, x: g.x, y: g.y }), next: s.next + 1, req }); },
+        dismiss: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ ghosts: s.ghosts.filter((x) => x.gid !== g.gid) }); } })),
+      hasGhosts: nGhosts > 0 && !s.armed, ghostCount: String(nGhosts),
+      acceptAll: () => addMany(s.ghosts.map((g) => ({ t: g.t, who: s.who, x: g.x, y: g.y })), { ghosts: [], detect: 'idle' }),
+      dismissAll: () => this.setState({ ghosts: [], detect: 'idle' }),
+      fields: s.fields.map((f) => {
+        const p = people[f.who]; const k = kinds[f.t]; const on = s.sel === f.id;
+        return { label: k[0], who: p.name.split(' ')[0], on, aria: k[0] + ' for ' + p.name,
+          select: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ sel: f.id, armed: null }); },
+          style: 'position:absolute;left:' + f.x + '%;top:' + f.y + '%;width:' + k[3] + 'rem;height:' + k[4] + 'rem;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:0.0625rem;padding:0 0.5rem;box-sizing:border-box;border:0;border-radius:0.3125rem;text-align:left;overflow:visible;color:' + p.c + ';background:' + p.bg + ';box-shadow:inset 0 0 0 1px ' + p.c + (on ? ',0 0 0 2px #fff,0 0 0 3.5px #2563eb' : '') };
+      }),
+      hasSel: !!sel, noFields: !sel && s.fields.length === 0 && nGhosts === 0, showChecks: !sel && (s.fields.length > 0 || nGhosts > 0),
+      selLabel: sel ? kinds[sel.t][0] : '', selGlyph: sel ? kinds[sel.t][1] : '',
+      selChip: sel ? 'width:1.5rem;height:1.5rem;border-radius:0.375rem;display:inline-flex;align-items:center;justify-content:center;font-size:0.6875rem;font-weight:600;color:' + people[sel.who].c + ';background:' + people[sel.who].bg : '',
+      selX: sel ? Math.round(sel.x * 6.12) + ' pt' : '', selY: sel ? Math.round(sel.y * 7.92) + ' pt' : '',
+      assign: people.map((p, i) => ({ name: p.name, mark: sel && sel.who === i ? '✓' : '',
+        dot: 'width:0.625rem;height:0.625rem;border-radius:0.1875rem;background:' + p.c,
+        pick: () => this.setState({ fields: s.fields.map((f) => f.id === s.sel ? Object.assign({}, f, { who: i }) : f) }),
+        style: 'display:flex;align-items:center;gap:0.5rem;height:2rem;padding:0 0.625rem;border:0;border-radius:0.4375rem;text-align:left;background:' + (sel && sel.who === i ? '#f4f3f0' : 'transparent') })),
+      reqAria: sel && s.req[sel.id] ? 'true' : 'false',
+      reqTrack: 'margin-left:auto;width:2rem;height:1.125rem;border-radius:0.5625rem;padding:0.125rem;box-sizing:border-box;display:flex;transition:background 200ms cubic-bezier(.2,.8,.2,1);background:' + (sel && s.req[sel.id] ? '#18181b' : '#d4d4d8') + ';justify-content:' + (sel && s.req[sel.id] ? 'flex-end' : 'flex-start'),
+      reqKnob: 'width:0.875rem;height:0.875rem;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)',
+      toggleReq: () => { if (!sel) return; const req = Object.assign({}, s.req); req[sel.id] = !req[sel.id]; this.setState({ req }); },
+      remove: () => this.setState({ fields: s.fields.filter((f) => f.id !== s.sel), sel: 0 }),
+      checks: people.map((p, i) => ({ mark: sigFor(i) ? '✓' : '!', text: sigFor(i) ? p.name + ' has a signature field' : p.name + ' has no signature field yet', style: sigFor(i) ? okStyle : warnStyle }))
+        .concat([{ mark: nGhosts ? '!' : '✓', text: nGhosts ? nGhosts + ' suggested fields still need a decision' : 'No suggestions waiting', style: nGhosts ? warnStyle : okStyle },
+          { mark: '✓', text: 'Page 3 is a scan; its text was read by OCR so it can be searched', style: okStyle }]),
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
-// The sender app's shell (WEB-01): session, top bar, navigation, theme, routing,
-// shortcuts. Screens are modules with `mount(container, ctx, params) → cleanup`.
+// The sender app's shell (WEB-01, WEB-17): session, sidebar, navigation, ⌘K, theme,
+// routing, shortcuts. Screens are modules with `mount(container, ctx, params) → cleanup`.
 //
 // Routes (hash, so a static server needs no rewrites):
 //   #/signin  #/home  #/agreements[?status=…]  #/envelopes/{id}  #/prepare  #/prepare/{id}
@@ -7,18 +7,25 @@
 //   #/accept-invite?token=…   (WEB-06; no session needed)
 // Any other route shows "This page does not exist" (UX-04). Verify is its own page,
 // verify.html, usable without an account.
+//
+// Layout (docs/47 §As built: design foundation): the canvas's quiet sidebar (workspace,
+// "Search or jump to… ⌘K", New agreement, sections, saved views, Admin, account) and the
+// routed screen in a white content card that scrolls on its own. Below 60em the sidebar
+// is a drawer and a top row holds Menu, the logo, search, notifications and the account.
 
 import { h, clear, isTyping, initials } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, ApiError, errorMessage } from "./api.js";
-import { register, run, command } from "./commands.js";
+import { register, run, command, all as allCommands } from "./commands.js";
 import { handle, shortcutGroups } from "./keys.js";
 import {
   openPanel, openDialog, closePanel, clearViewToasts, confirmDialog, toast, errorState, noServerState,
   emptyState, button, menuButton, avatar,
 } from "./ui/index.js";
+import { openPalette, closePalette, paletteOpen, registerPaletteProvider, matches } from "./ui/palette.js";
 import { initTheme, setTheme, getTheme, toggleTheme } from "./theme.js";
+import { initMl } from "./ml.js";
 
 const mock = isMockMode();
 let api;
@@ -29,6 +36,7 @@ if (mock) {
   const base = document.querySelector('meta[name="openseal-api-base"]')?.content || "";
   api = createClient({ baseUrl: base, store: safeSession() });
 }
+initMl(api);
 
 function safeSession() {
   try { return globalThis.sessionStorage; } catch { return null; }
@@ -41,6 +49,8 @@ const ctx = {
   /// Go to a route, keeping `?mock=1` in the page URL (it lives in the search part).
   navigate(hash) { if (location.hash !== hash) location.hash = hash; else route(); },
   contexts: ["global"],
+  /// Add a section to ⌘K (ui/palette.js); returns the function that removes it.
+  registerPaletteProvider,
   /// Handle an API error from a screen: a lost session goes to sign-in.
   failed(err) {
     if (err instanceof ApiError && (err.code === "CS-AUTH-0001" || err.code === "CS-AUTH-0002")) {
@@ -118,13 +128,47 @@ async function panelMayClose() {
 /// Put `hash` in the address bar without a new navigation.
 const setHash = (hash) => history.replaceState(null, "", `${location.pathname}${location.search}${hash}`);
 
+/// Drop the screens after `view` once it has something to show: when its first child
+/// arrives (a MutationObserver callback, a microtask, so before the next paint), when its
+/// mount finishes, or after 400 ms, whichever is first. Until then the empty new view sits
+/// above the old, inert one: a route switch never paints an empty card (WEB-17), and the
+/// new view is visible from the start, so a screen can focus its first field.
+function revealWhenReady(main, view, mounted) {
+  let shown = false;
+  const show = () => {
+    if (shown || !view.isConnected) return;
+    shown = true;
+    obs?.disconnect();
+    clearTimeout(timer);
+    for (const old of [...main.children]) if (old !== view) old.remove();
+    view.classList.remove("is-entering");
+    main.scrollTop = 0;
+    if (narrow()) window.scrollTo(0, 0);
+  };
+  const obs = typeof MutationObserver === "function" ? new MutationObserver(() => { if (view.firstElementChild) show(); }) : null;
+  obs?.observe(view, { childList: true });
+  if (view.firstElementChild) show();
+  const timer = setTimeout(show, 400);
+  mounted.then(show, show);
+  return show;
+}
+
+/// Replace whatever `main` shows with a fresh view at once (error and no-server states).
+function freshView(main) {
+  clear(main);
+  const view = h("div", { class: "os-view" });
+  main.append(view);
+  main.scrollTop = 0;
+  return view;
+}
+
 async function route() {
   const seq = ++routeSeq;
   const hash = location.hash || "#/home";
-  // Any navigation closes the drawer and the phone search row first, so a question
-  // asked below (unsaved work) is never answered behind them.
+  // Any navigation closes the drawer and the command menu first, so a question asked
+  // below (unsaved work) is never answered behind them.
   closeNav();
-  closeSearch();
+  closePalette();
   // A screen with unsaved work may hold the user (A12): put the old address back if so.
   if (ctx.leaveGuard && shownHash && hash !== shownHash) {
     const guard = ctx.leaveGuard;
@@ -153,13 +197,10 @@ async function route() {
       ctx.session = await api.session();
     } catch (err) {
       ctx.session = null;
-      if (!mock && isNoServer(err)) { clear(main); const v = h("div", { class: "os-view" }); main.append(v); noServerState(v, route); return; }
+      if (!mock && isNoServer(err)) { noServerState(freshView(main), route); return; }
       if (err?.code === "CS-NET-0001" || (err?.status >= 500)) {
         // Not signed out: unreachable. Say so, with a retry, instead of a sign-in form.
-        clear(main);
-        const view = h("div", { class: "os-view" });
-        main.append(view);
-        errorState(view, err, route);
+        errorState(freshView(main), err, route);
         return;
       }
       location.replace(`${location.pathname}${location.search}#/signin`);
@@ -185,39 +226,65 @@ async function route() {
   ctx.contexts = ["global"];
   ctx.onSearch = null;
   if (!whoLoaded && ctx.session) { whoLoaded = true; loadWho(); }
-  if (ctx.session) refreshActivity();
+  if (ctx.session) { refreshActivity(); drawNavViews().catch(() => { /* the views are a shortcut; the screen still works */ }); }
   const opts = entry[2];
+  const layoutChanges = document.body.classList.contains("is-chromeless") !== (opts.chrome === false)
+    || document.body.classList.contains("is-frame") !== !!opts.frame;
   document.body.classList.toggle("is-chromeless", opts.chrome === false);
   document.body.classList.toggle("is-wide", !!opts.wide);
   document.body.classList.toggle("is-frame", !!opts.frame);
   for (const a of document.querySelectorAll(".os-nav__link")) {
     if (opts.nav && a.dataset.nav === opts.nav) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
-  clear(main);
-  const view = h("div", { class: "os-view" });
-  main.append(view);
+  // The old screen stays, inert, until the new one has something to show.
+  for (const old of main.children) { old.inert = true; old.setAttribute("aria-hidden", "true"); old.classList.add("is-leaving"); }
+  if (layoutChanges) clear(main);
+  const view = h("div", { class: "os-view is-entering" });
+  main.prepend(view);
   const params = new URLSearchParams(hash.split("?")[1] || "");
-  cleanup = (await mod.mount(view, ctx, match.slice(1), params)) || null;
+  const mounted = Promise.resolve().then(() => mod.mount(view, ctx, match.slice(1), params));
+  const show = revealWhenReady(main, view, mounted);
+  try {
+    cleanup = (await mounted) || null;
+  } finally {
+    show();
+  }
+  if (seq !== routeSeq) return;
+  syncScreenSearch();
   if (document.activeElement === document.body || !document.activeElement) main.focus({ preventScroll: true });
 }
 
 // ---- Chrome ------------------------------------------------------------------------
 
-/// Below this width the sections are a drawer and search a button (shell.css, 60em).
+/// Below this width the sidebar is a drawer and the top row shows (shell.css, 60em).
 const narrow = () => matchMedia("(max-width: 60em)").matches;
+const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+
+let wsName = null; // the workspace name in the switcher row
+let acctWrap = null;
+let bellWrap = null;
 
 function buildChrome() {
   applyI18n(document);
   if (mock) {
     const banner = document.getElementById("mock-banner");
     banner.hidden = false;
-    banner.prepend(icon("info", { size: 16 }));
+    banner.title = t("mock.banner");
+    banner.prepend(icon("info", { size: 14, stroke: 1.75 }));
   }
   buildDrawer();
+  buildWorkspace();
 
-  // Start: DocuSign's place for beginning anything (component library menu).
-  const start = h("button", { type: "button", id: "start-btn", class: "os-btn os-btn--primary os-btn--md" },
-    icon("plus", { size: 20 }), h("span", { text: t("start.label") }), icon("chevron-down", { size: 16 }));
+  // Search or jump to… ⌘K (the command menu).
+  const jump = h("button", { type: "button", id: "palette-btn", class: "os-jump", attrs: { "aria-haspopup": "dialog", "aria-keyshortcuts": isMac() ? "Meta+K" : "Control+K" } },
+    icon("os-search", { size: 14, stroke: 1.6 }), h("span", { text: t("palette.jump") }), h("kbd", { text: isMac() ? "⌘K" : "Ctrl K" }));
+  jump.addEventListener("click", () => run("palette.open"));
+  document.getElementById("palette-slot").replaceWith(jump);
+
+  // New agreement: DocuSign's Start menu (send, from a template, verify), in the canvas's
+  // red with the N shortcut beside it.
+  const start = h("button", { type: "button", id: "start-btn", class: "os-btn os-btn--primary os-btn--md", attrs: { "aria-keyshortcuts": "N" } },
+    icon("plus", { size: 16, stroke: 2 }), h("span", { text: t("start.label") }), h("kbd", { attrs: { "aria-hidden": "true" }, text: "N" }));
   document.getElementById("start-slot").replaceWith(Object.assign(menuButton({
     label: t("start.label"), trigger: start, menuLabel: t("start.menu"), align: "start",
     items: () => [
@@ -228,11 +295,8 @@ function buildChrome() {
     ],
   }), { className: "os-menu-wrap os-start" }));
 
-  buildSearch();
-
-  // Help: shortcuts, verify and about (the keyboard and theme buttons it replaces live
-  // here and in the account menu).
-  const helpBtn = h("button", { type: "button", id: "help-btn", class: "os-btn os-btn--ghost os-btn--md os-btn--icon", attrs: { "aria-label": t("help.menu"), title: t("help.menu") } }, icon("circle-help"));
+  // Help: shortcuts, verify and about.
+  const helpBtn = h("button", { type: "button", id: "help-btn", class: "os-btn os-btn--ghost os-btn--md os-btn--icon", attrs: { "aria-label": t("help.menu"), title: t("help.menu") } }, icon("circle-help", { size: 16 }));
   document.getElementById("help-slot").replaceWith(menuButton({
     label: t("help.menu"), trigger: helpBtn, menuLabel: t("help.menu"),
     items: helpItems,
@@ -240,8 +304,8 @@ function buildChrome() {
 
   // Notifications: what happened lately to the envelopes the user can see.
   const bell = h("button", { type: "button", id: "bell-btn", class: "os-btn os-btn--ghost os-btn--md os-btn--icon os-bell", attrs: { "aria-label": t("notify.label"), title: t("notify.label") } },
-    icon("bell"), h("span", { class: "os-bell__dot", attrs: { "aria-hidden": "true" }, hidden: true }));
-  const bellWrap = menuButton({
+    icon("bell", { size: 16 }), h("span", { class: "os-bell__dot", attrs: { "aria-hidden": "true" }, hidden: true }));
+  bellWrap = menuButton({
     label: t("notify.label"), trigger: bell, menuLabel: t("notify.label"), menuClass: "os-menu--notify",
     items: activityItems,
   });
@@ -249,9 +313,9 @@ function buildChrome() {
   document.getElementById("bell-slot").replaceWith(bellWrap);
 
   const acct = h("button", { type: "button", id: "account-btn", class: "os-btn os-btn--ghost os-btn--md os-account-btn", attrs: { "aria-label": t("account.menu") } },
-    avatar(""), icon("chevron-down", { size: 16 }));
-  document.getElementById("account-slot").replaceWith(menuButton({
-    label: t("account.menu"), trigger: acct, menuLabel: t("account.menu"), menuClass: "os-menu--account",
+    avatar(""), h("span", { class: "os-account__name", text: "" }));
+  acctWrap = menuButton({
+    label: t("account.menu"), trigger: acct, menuLabel: t("account.menu"), menuClass: "os-menu--account", align: "start",
     items: () => {
       const theme = getTheme();
       const mark = (v, ic) => (theme === v ? "check" : ic);
@@ -273,12 +337,59 @@ function buildChrome() {
         { label: t("account.signout"), icon: "log-out", run: () => run("account.signout") },
       ];
     },
-  }));
+  });
+  document.getElementById("account-slot").replaceWith(acctWrap);
+  buildScreenSearch();
+  placeChrome();
+  matchMedia("(max-width: 60em)").addEventListener?.("change", placeChrome);
+}
+
+/// Notifications and the account live in the sidebar's foot on a desktop and in the top
+/// row on a phone, where the sidebar is a closed drawer: one set of controls, moved.
+function placeChrome() {
+  const tools = document.getElementById("topbar-tools");
+  const me = document.getElementById("side-me");
+  if (narrow()) {
+    const search = document.getElementById("search-toggle") || makeSearchToggle();
+    tools.append(search, bellWrap, acctWrap);
+  } else {
+    me.prepend(acctWrap);
+    me.insertBefore(bellWrap, acctWrap.nextSibling);
+  }
+}
+
+function makeSearchToggle() {
+  const b = h("button", {
+    type: "button", id: "search-toggle", class: "os-btn os-btn--ghost os-btn--md os-btn--icon",
+    attrs: { "aria-label": t("palette.jump"), title: t("palette.jump"), "aria-haspopup": "dialog" },
+  }, icon("os-search", { size: 18, stroke: 1.6 }));
+  b.addEventListener("click", () => run("palette.open"));
+  return b;
+}
+
+/// The workspace switcher row: the seal mark, the account's name and the product.
+function buildWorkspace() {
+  const btn = h("button", { type: "button", id: "ws-btn", class: "os-ws" },
+    h("span", { class: "os-ws__mark", attrs: { "aria-hidden": "true" } }, icon("os-check", { size: 12, stroke: 2.4 })),
+    h("span", { class: "os-ws__text" }, (wsName = h("span", { class: "os-ws__name", text: t("ws.default") })), h("span", { class: "os-ws__plan", text: t("ws.plan") })),
+    icon("os-updown", { size: 14, stroke: 1.6 }));
+  const wrap = menuButton({
+    label: t("ws.menu"), trigger: btn, menuLabel: t("ws.menu"), align: "start",
+    items: () => [
+      h("div", { class: "os-menu__who" }, h("strong", { text: wsName.textContent }), h("span", { class: "os-muted", text: t("ws.plan") })),
+      ctx.session?.admin ? { label: t("ws.settings"), icon: "settings", run: () => ctx.navigate("#/admin?tab=account") } : null,
+      { label: t("start.verify"), icon: "shield-check", run: () => run("app.verify") },
+      { label: t("help.about"), icon: "info", run: () => run("help.about") },
+    ],
+  });
+  wrap.classList.add("os-ws-wrap");
+  document.getElementById("ws-slot").replaceWith(wrap);
 }
 
 function helpItems() {
   return [
     { label: t("help.shortcuts"), icon: "keyboard", run: () => run("help.shortcuts") },
+    { label: t("palette.label"), icon: "search", run: () => run("palette.open") },
     { label: t("start.verify"), icon: "shield-check", run: () => run("app.verify") },
     "separator",
     { label: t("help.about"), icon: "info", run: () => run("help.about") },
@@ -287,23 +398,22 @@ function helpItems() {
 
 // ---- The phone drawer (UX-04) ------------------------------------------------------------
 //
-// Below 60em the sections are a drawer: a scrim behind it closes it on a tap, Escape
-// closes it and returns focus to Menu, it starts under the bar (and the demo banner),
-// and while closed it is inert, so its links are not in the tab order. Opening another
-// menu closes it.
+// Below 60em the sidebar is a drawer: a scrim behind it closes it on a tap, Escape closes
+// it and returns focus to Menu, it starts under the top row, and while closed it is
+// inert, so its links are not in the tab order. Opening another menu closes it.
 
 function buildDrawer() {
   const menuBtn = document.getElementById("nav-toggle");
   const nav = document.getElementById("nav");
   const scrim = document.getElementById("nav-scrim");
-  menuBtn.append(icon("menu"));
+  menuBtn.append(icon("menu", { size: 20 }));
   menuBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (document.body.classList.contains("nav-open")) closeNav(); else openNav();
   });
   scrim.addEventListener("click", () => closeNav(true));
   for (const a of document.querySelectorAll(".os-nav__link")) {
-    a.prepend(icon(a.dataset.icon, { size: 20 }));
+    a.prepend(icon(a.dataset.icon, { size: 16 }));
     if (mock && !a.getAttribute("href").startsWith("#")) a.href = `${a.getAttribute("href")}?mock=1`;
     // A section already shown starts over when chosen again (its search and selection
     // cleared), as DocuSign's do.
@@ -330,13 +440,15 @@ function buildDrawer() {
 function openNav() {
   const nav = document.getElementById("nav");
   const bar = document.querySelector(".os-topbar");
-  // Under the bar as it stands now: the demo banner above it scrolls away with the page.
   document.documentElement.style.setProperty("--os-nav-top", `${Math.max(0, bar.getBoundingClientRect().bottom)}px`);
   document.body.classList.add("nav-open");
   document.getElementById("nav-toggle").setAttribute("aria-expanded", "true");
   document.getElementById("nav-scrim").hidden = false;
   nav.inert = false;
-  closeSearch();
+  // The drawer is modal: the screen under the scrim leaves the tab order and the
+  // accessibility tree until it closes (WEB-17; axe target-size on the covered links).
+  const content = document.getElementById("content");
+  if (content) content.inert = true;
   nav.querySelector(".os-nav__link:not([hidden])")?.focus({ preventScroll: true });
 }
 
@@ -346,6 +458,8 @@ function closeNav(focus = false) {
   document.getElementById("nav-toggle")?.setAttribute("aria-expanded", "false");
   const scrim = document.getElementById("nav-scrim");
   if (scrim) scrim.hidden = true;
+  const content = document.getElementById("content");
+  if (content) content.inert = false;
   const nav = document.getElementById("nav");
   if (nav) nav.inert = narrow();
   if (was && focus) document.getElementById("nav-toggle")?.focus({ preventScroll: true });
@@ -359,53 +473,95 @@ document.addEventListener("keydown", (e) => {
   }
 }, true);
 
-// ---- Search (UX-04) ------------------------------------------------------------------------
+// ---- A screen's text filter (Agreements) -----------------------------------------------------
 //
-// One input, #top-search (Agreements filters through it). Below 60em a search button
-// opens it as a full-width row under the bar; Escape closes the row. "/" focuses it
-// from any screen with the bar.
+// #top-search is shown at the top of the content card while the screen has set
+// `ctx.onSearch` (dashboard.js filters through it); everything else searches with ⌘K.
 
-function buildSearch() {
+function buildScreenSearch() {
   const form = document.getElementById("top-search-form");
   const search = document.getElementById("top-search");
-  form.prepend(icon("search", { size: 16 }));
+  const box = h("span", { class: "os-screensearch__box" }, icon("os-search", { size: 16, stroke: 1.6 }));
+  search.replaceWith(box);
+  box.append(search);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const q = search.value.trim();
-    if (ctx.onSearch) ctx.onSearch(q);
-    else ctx.navigate(q ? `#/agreements?q=${encodeURIComponent(q)}` : "#/agreements");
-    if (narrow() && !ctx.onSearch) closeSearch();
+    ctx.onSearch?.(search.value.trim());
   });
   search.addEventListener("input", () => ctx.onSearch?.(search.value.trim()));
-  search.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && document.body.classList.contains("search-open")) { e.preventDefault(); e.stopPropagation(); closeSearch(true); }
+}
+
+function syncScreenSearch() {
+  const form = document.getElementById("top-search-form");
+  form.hidden = !ctx.onSearch || document.body.classList.contains("is-chromeless");
+  if (form.hidden) document.getElementById("top-search").value = "";
+}
+
+// ---- ⌘K: the command menu's own sections -----------------------------------------------------
+
+const AGREEMENT_ICON = { draft: "file-pen-line", sent: "send", delivered: "eye", completing: "loader-circle", completed: "circle-check", declined: "circle-x", voided: "ban", expired: "clock" };
+
+/// The command menu's built-in sections: Actions (from the command registry), and
+/// Agreements (titles that match, from the envelope list; envelopes waiting for the
+/// user's signature first, when the server can say which).
+function registerPaletteSections() {
+  const actions = (q) => {
+    const go = (hash) => () => ctx.navigate(hash);
+    const items = [
+      { id: "new", label: t("palette.new"), icon: "plus", kbd: "N", run: () => run("envelope.new") },
+      { id: "template", label: t("start.template"), icon: "layout-template", run: go("#/templates") },
+      { id: "verify", label: t("start.verify"), icon: "shield-check", run: () => run("app.verify") },
+      { id: "go-home", label: t("palette.go", { place: t("nav.home-link") }), icon: "house", run: go("#/home") },
+      { id: "go-agreements", label: t("palette.go", { place: t("nav.agreements") }), icon: "os-agreements", run: go("#/agreements") },
+      { id: "go-templates", label: t("palette.go", { place: t("nav.templates") }), icon: "os-grid", run: go("#/templates") },
+      { id: "go-reports", label: t("palette.go", { place: t("nav.reports") }), icon: "os-bars", run: go("#/reports") },
+      ctx.session?.admin ? { id: "go-admin", label: t("palette.go", { place: t("nav.admin") }), icon: "os-shield", run: go("#/admin") } : null,
+      { id: "theme", label: t("cmd.theme"), icon: "moon", kbd: isMac() ? "⌘⇧L" : "Ctrl⇧L", run: () => run("theme.toggle") },
+      { id: "keys", label: t("help.shortcuts"), icon: "keyboard", kbd: "?", run: () => run("help.shortcuts") },
+    ].filter(Boolean);
+    // Commands a screen registered (its own verbs), by their labels.
+    const seen = new Set(["envelope.new", "theme.toggle", "help.shortcuts", "palette.open", "search.focus", "app.verify"]);
+    for (const c of allCommands()) {
+      if (seen.has(c.id) || !c.label || !c.id.includes(".") || /^(theme|account|help|field|edit|recipient)\./.test(c.id)) continue;
+      if (c.enabled && !c.enabled()) continue;
+      items.push({ id: `cmd:${c.id}`, label: c.label, icon: "arrow-right", run: () => run(c.id) });
+    }
+    const found = q ? items.filter((it) => matches(it.label, q)) : items.slice(0, 6);
+    if (q) found.unshift({ id: "search-all", fallback: true, label: t("palette.search-all", { query: q }), icon: "os-search", run: () => ctx.navigate(`#/agreements?q=${encodeURIComponent(q)}`) });
+    return found;
+  };
+  registerPaletteProvider({ id: "actions", title: t("palette.actions"), order: 10, sync: true, search: (q) => actions(q) });
+
+  registerPaletteProvider({
+    id: "agreements", title: t("palette.agreements"), order: 20,
+    async search(q, signal) {
+      if (!ctx.session) return [];
+      const out = [];
+      if (api.available("inbox")) {
+        try {
+          const box = await api.inbox({ limit: 5 });
+          for (const e of box?.items || []) {
+            if (q && !matches(e.subject, q)) continue;
+            out.push({
+              id: `sign:${e.id}`, label: t("palette.sign", { subject: e.subject || t("notify.untitled") }), icon: "pen-line",
+              hint: t("palette.needs-you"), hintTone: "you",
+              run: async () => { try { const r = await api.signLink(e.id); if (r?.url) location.href = r.url; } catch (err) { if (!ctx.failed(err)) toast(errorMessage(err), "error"); } },
+            });
+          }
+        } catch { /* the Inbox is optional here */ }
+      }
+      if (signal?.aborted) return out;
+      const page = await api.listEnvelopes(q ? { q, limit: 6 } : { sort: "updated_at", order: "desc", limit: 5 });
+      for (const e of page?.items || []) {
+        out.push({
+          id: e.id, label: e.subject || t("notify.untitled"), icon: AGREEMENT_ICON[e.status] || "file-text",
+          hint: t(`status.${e.status}`),
+          run: () => ctx.navigate(e.status === "draft" ? `#/prepare/${encodeURIComponent(e.id)}` : `#/envelopes/${encodeURIComponent(e.id)}`),
+        });
+      }
+      return out;
+    },
   });
-  const toggle = h("button", {
-    type: "button", id: "search-toggle", class: "os-btn os-btn--ghost os-btn--md os-btn--icon os-search-toggle",
-    attrs: { "aria-label": t("agreements.search"), title: t("agreements.search"), "aria-controls": "top-search-form", "aria-expanded": "false" },
-  }, icon("search"));
-  toggle.addEventListener("click", () => { if (document.body.classList.contains("search-open")) closeSearch(true); else openSearch(); });
-  form.before(toggle);
-}
-
-function openSearch() {
-  closeNav();
-  document.body.classList.add("search-open");
-  document.getElementById("search-toggle")?.setAttribute("aria-expanded", "true");
-  document.getElementById("top-search")?.focus();
-}
-
-function closeSearch(focus = false) {
-  if (!document.body.classList.contains("search-open")) return;
-  document.body.classList.remove("search-open");
-  const toggle = document.getElementById("search-toggle");
-  toggle?.setAttribute("aria-expanded", "false");
-  if (focus) toggle?.focus({ preventScroll: true });
-}
-
-function focusSearch() {
-  if (narrow()) openSearch();
-  else document.getElementById("top-search")?.focus();
 }
 
 // ---- Notifications (UX-04) ---------------------------------------------------------------
@@ -463,14 +619,39 @@ function activityItems() {
 
 const STATUS_ICON = { completed: "circle-check", declined: "circle-x", delivered: "eye", voided: "ban", expired: "clock" };
 
+/// The count beside a section (canvas: the red count beside Inbox): a screen that has
+/// read how many envelopes wait for this user's signature sets it (`ctx.setNavCount`);
+/// the shell does not ask the server for it on every route. 0 removes it.
+function setNavCount(nav, n) {
+  const link = document.querySelector(`.os-nav__link[data-nav="${nav}"]`);
+  if (!link) return;
+  link.querySelector(".os-nav__count")?.remove();
+  link.removeAttribute("aria-description");
+  if (n > 0) {
+    link.append(h("span", { class: "os-nav__count", attrs: { "aria-hidden": "true" }, text: String(n) }));
+    link.setAttribute("aria-description", t("nav.waiting-you", { n }));
+  }
+}
+ctx.setNavCount = setNavCount;
+
 // ---- Who is signed in ----------------------------------------------------------------------
 
 /// Who is signed in, for the avatar: an admin can read their own member record; anyone
 /// else shows the account's initials.
 const who = { name: "", email: "" };
 let whoLoaded = false;
+
+/// The sidebar's saved Views on any first screen (WEB-17), without counts. Agreements
+/// and Home redraw them with live counts; this never overwrites what they drew.
+async function drawNavViews() {
+  if (document.getElementById("nav-views")?.childElementCount) return;
+  const { renderNavViews } = await import("./agreementparts.js");
+  if (!document.getElementById("nav-views")?.childElementCount) renderNavViews(ctx);
+}
 async function loadWho() {
   try {
+    const account = await api.account().catch(() => null);
+    if (account?.name && wsName) wsName.textContent = account.name;
     if (api.available("profile")) {
       const me = await api.me();
       who.name = me?.name || "";
@@ -481,17 +662,21 @@ async function loadWho() {
       if (me) { who.name = me.name || ""; who.email = me.email || ""; }
       ctx.who = who;
     }
-    if (!who.name) who.name = (await api.account())?.name || "";
+    if (!who.name) who.name = account?.name || "";
   } catch { /* the avatar falls back to a person icon */ }
   syncAvatar();
 }
 
 function syncAvatar() {
-  const av = document.querySelector("#account-btn .os-avatar");
+  const btn = document.getElementById("account-btn");
+  const av = btn?.querySelector(".os-avatar");
   if (av) {
-    av.textContent = initials(who.name) || "";
-    // The name starts with what is shown (SC 2.5.3, label in name).
-    av.parentElement.setAttribute("aria-label", av.textContent ? `${av.textContent} ${t("account.menu")}` : t("account.menu"));
+    // Initials drawn by CSS (data-initials), so the button's text is the name alone and its
+    // accessible name, "<name>, Account", contains all of it (SC 2.5.3, label in name).
+    av.textContent = "";
+    if (initials(who.name)) av.dataset.initials = initials(who.name); else delete av.dataset.initials;
+    btn.querySelector(".os-account__name").textContent = who.name || t("account.menu");
+    btn.setAttribute("aria-label", who.name ? `${who.name}, ${t("account.menu")}` : t("account.menu"));
   }
 }
 
@@ -500,7 +685,7 @@ function syncAvatar() {
 /// The Keyboard shortcuts panel (UX-04): every table, grouped by where it applies, one
 /// row per action with its keys (aliases together), and ⌘ ⌥ ⇧ on a Mac.
 function shortcutsDialog() {
-  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  const mac = isMac();
   openPanel({
     id: "shortcuts",
     title: t("help.shortcuts"),
@@ -539,15 +724,15 @@ function aboutDialog() {
 
 // ---- Commands and keys ---------------------------------------------------------------
 
+const withChrome = () => !!ctx.session && !document.body.classList.contains("is-chromeless");
+
 function registerCommands() {
   register("help.shortcuts", { label: t("help.shortcuts"), run: shortcutsDialog });
   register("help.about", { label: t("help.about"), run: aboutDialog });
   register("app.verify", { label: t("start.verify"), run: () => { location.href = mock ? "verify.html?mock=1" : "verify.html"; } });
-  register("search.focus", {
-    label: t("cmd.search"),
-    run: focusSearch,
-    enabled: () => !!ctx.session && !document.body.classList.contains("is-chromeless"),
-  });
+  // ⌘K / Ctrl+K, the sidebar's "Search or jump to…" and "/" all open the command menu.
+  register("palette.open", { label: t("palette.label"), run: () => { closeNav(); openPalette(); }, enabled: () => !!ctx.session });
+  register("search.focus", { label: t("cmd.search"), run: () => run("palette.open"), enabled: withChrome });
   register("theme.toggle", { label: t("cmd.theme"), run: () => toggleTheme() });
   register("theme.light", { label: t("theme.light"), run: () => setTheme("light") });
   register("theme.dark", { label: t("theme.dark"), run: () => setTheme("dark") });
@@ -577,12 +762,21 @@ function registerCommands() {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (document.querySelector("dialog[open]")) return;
+  // ⌘K / Ctrl+K toggles the command menu from anywhere, even while typing.
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {
+    if (paletteOpen()) return; // the menu's own handler closes it
+    if (document.querySelector("dialog[open]:not(.is-leaving)") || !command("palette.open")?.enabled()) return;
+    e.preventDefault();
+    run("palette.open");
+    return;
+  }
+  if (document.querySelector("dialog[open]:not(.is-leaving)")) return;
   handle(e, ctx.contexts, isTyping(e));
 });
 
 initTheme();
 buildChrome();
 registerCommands();
+registerPaletteSections();
 window.addEventListener("hashchange", route);
 route();

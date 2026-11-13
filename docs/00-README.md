@@ -35,6 +35,7 @@ Docs are true as of `19518fb` (2026-11-12). **Phases D, 0, 1 and 2 are closed an
 | [33-ML-MODELS](33-ML-MODELS.md) | **Pretrained ML models, no training** (ADR-029): the `casual-sign-modeld` process, OCR for scans, template matching, agreement extraction and search, personal-data detection; protocol, limits, models and licences, weights pinning, threats, fixtures | Accepted (owner, 2026-11-12, instruction 30); built so far: `casual-sign-modeld` skeleton (`ML-09`), `casual-sign-pii` recognisers (`ML-08`), value normalisation (`ML-07`), bundle tooling and fixtures; OCR, template matching and extraction not yet |
 | [40-API-DESIGN](40-API-DESIGN.md) | REST API, auth, resources, webhooks, embedding, SDKs | Draft for owner |
 | [47-UX-AND-FEATURE-MAP](47-UX-AND-FEATURE-MAP.md) | Screens, signer ceremony, emails, keyboard | Draft; recalled, not measured |
+| [assets/design-canvas](assets/design-canvas/README.md) | The approved interactive design canvas: the design of record for the web app (owner instruction 44) | Approved 2026-11-13 |
 | [48-DOCUSIGN-STUDY](48-DOCUSIGN-STUDY.md) | DocuSign eSignature: surface, flows, recipients, tabs, lifecycle, evidence, API, admin, pricing | Live; public sources, 2026-11-10 |
 | [49-SIGNNOW-STUDY](49-SIGNNOW-STUDY.md) | SignNow: editor, fields, roles and groups, auth, API, comparison with DocuSign | Live; public sources, 2026-11-10 |
 | [52-COMPETITOR-STUDY](52-COMPETITOR-STUDY.md) | Open-source competitors, clean-room rule, name collision | Live; public sources, 2026-11-10 |

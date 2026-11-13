@@ -74,3 +74,211 @@ export function csvCell(v) {
 export function toCsv(rows) {
   return `${rows.map((r) => r.map(csvCell).join(",")).join("\r\n")}\r\n`;
 }
+
+// ---- Agreements list and inspector (WEB-17, WEB-18; canvas Main.dc.html) ----------------
+//
+// The list is grouped by where each agreement stands, and the views (the header's pill
+// tabs, the sidebar's Views) are filters over the same loaded rows. Everything below is
+// pure: rows in, rows or plain values out.
+
+/// The status groups, in list order, with the tone of their dot and pill.
+export const GROUPS = Object.freeze([
+  { id: "you", tone: "you" },
+  { id: "wait", tone: "wait" },
+  { id: "done", tone: "done" },
+  { id: "draft", tone: "draft" },
+  { id: "ended", tone: "danger" },
+]);
+
+/// The views. `tab`: one of the header's pill tabs; `nav`: listed under Views in the
+/// sidebar, with `dot` its tone. `groups`: the groups it keeps (none = all);
+/// `statuses`: the envelope statuses it keeps (none = all); `soon`: only those expiring
+/// within `SOON_DAYS`. `inbox`: needs the server's Inbox (hidden where it has none).
+/// The last four have no tab: older addresses and Home's "Declined or expired" open them.
+export const VIEWS = Object.freeze([
+  { id: "all", tab: true },
+  { id: "me", tab: true, nav: true, dot: "you", groups: ["you"], inbox: true },
+  { id: "waiting", tab: true, nav: true, dot: "wait", groups: ["wait"] },
+  { id: "completed", tab: true, nav: true, dot: "done", groups: ["done"] },
+  { id: "drafts", tab: true, nav: true, dot: "draft", groups: ["draft"] },
+  { id: "expiring", tab: true, nav: true, dot: "draft", groups: ["you", "wait"], soon: true },
+  { id: "action", statuses: ["declined", "expired"] },
+  { id: "declined", statuses: ["declined"] },
+  { id: "voided", statuses: ["voided"] },
+  { id: "expired", statuses: ["expired"] },
+]);
+const LEGACY_STATUS = { draft: "drafts", sent: "waiting", delivered: "waiting", completed: "completed", declined: "declined", voided: "voided", expired: "expired" };
+
+/// The view a route's parameters name: `?folder=`, or the older `?status=`; else "all".
+export function viewFrom(params) {
+  const f = params?.get?.("folder");
+  if (VIEWS.some((v) => v.id === f)) return f;
+  return LEGACY_STATUS[params?.get?.("status")] || "all";
+}
+
+/// The group of a list row. `mine`: the ids of envelopes waiting for this user's
+/// signature (the Inbox), which go first whatever their status says.
+export function groupOf(row, mine = new Set()) {
+  if (mine.has(row?.id)) return "you";
+  switch (row?.status) {
+    case "draft": return "draft";
+    case "sent": case "delivered": case "completing": case "created": return "wait";
+    case "completed": return "done";
+    default: return "ended";
+  }
+}
+
+/// The tone of a row's status pill: its group's; a voided or expired one is grey.
+export function toneOf(row, mine = new Set()) {
+  const g = groupOf(row, mine);
+  if (g === "ended") return row.status === "declined" ? "danger" : "draft";
+  return GROUPS.find((x) => x.id === g).tone;
+}
+
+/// A status pill's `{tone, ic}`: its group's tone, except the three ways an agreement
+/// ends, which read as three different states (UX-02): Declined in the danger colour,
+/// Voided neutral with a ban icon, Expired amber with a clock. Grey for all three made
+/// them one state, and the same as a draft.
+export function pillOf(row, mine = new Set()) {
+  if (groupOf(row, mine) === "ended" && ENDED_PILL[row.status]) return ENDED_PILL[row.status];
+  return { tone: toneOf(row, mine), ic: null };
+}
+const ENDED_PILL = Object.freeze({
+  declined: { tone: "declined", ic: "circle-x" },
+  voided: { tone: "voided", ic: "ban" },
+  expired: { tone: "expired", ic: "clock" },
+});
+
+/// Whether `row` belongs in view `id` at `now` (ms).
+export function inView(row, id, mine = new Set(), now = Date.now()) {
+  const v = VIEWS.find((x) => x.id === id) || VIEWS[0];
+  if (v.groups && !v.groups.includes(groupOf(row, mine))) return false;
+  if (v.statuses && !v.statuses.includes(row.status)) return false;
+  if (v.soon && !expiringSoon(row.expires_at, now)) return false;
+  return true;
+}
+
+/// How many rows each view holds: `{all, me, waiting, …}`.
+export function viewCounts(rows, mine = new Set(), now = Date.now()) {
+  const out = {};
+  for (const v of VIEWS) out[v.id] = (rows || []).filter((r) => inView(r, v.id, mine, now)).length;
+  return out;
+}
+
+const newestFirst = (a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""));
+
+/// The rows of view `id`, grouped: `[{group, tone, items}]` in `GROUPS` order, empty
+/// groups left out. `order(a, b)` sorts within a group (latest change first by default).
+export function groupRows(rows, id = "all", mine = new Set(), { now = Date.now(), order = newestFirst } = {}) {
+  const kept = (rows || []).filter((r) => inView(r, id, mine, now));
+  return GROUPS.map((g) => ({ group: g.id, tone: g.tone, items: kept.filter((r) => groupOf(r, mine) === g.id).sort(order) }))
+    .filter((g) => g.items.length);
+}
+
+/// The ids of grouped rows in display order (what ↑ and ↓ move through).
+export const flatIds = (groups) => groups.flatMap((g) => g.items.map((r) => r.id));
+
+/// The id ↑, ↓, Home or End moves to from `current` in `ids`; `current` itself for any
+/// other key, and the first id when nothing is selected yet.
+export function moveSelection(ids, current, key) {
+  if (!ids.length) return null;
+  const i = ids.indexOf(current);
+  if (i < 0) return ids[0];
+  if (key === "ArrowDown") return ids[Math.min(ids.length - 1, i + 1)];
+  if (key === "ArrowUp") return ids[Math.max(0, i - 1)];
+  if (key === "Home") return ids[0];
+  if (key === "End") return ids[ids.length - 1];
+  return current;
+}
+
+const SIGNERS = new Set(["signer", "in_person_signer", "approver"]);
+
+/// Signing progress: `{signed, total}` over the recipients who sign or approve; null
+/// without the envelope's recipients.
+export function signingProgress(env) {
+  if (!env || !Array.isArray(env.recipients)) return null;
+  const s = env.recipients.filter((r) => SIGNERS.has(r.type));
+  return { signed: s.filter((r) => r.status === "completed").length, total: s.length };
+}
+
+/// The inspector's primary action: "sign" (it waits for this user), "remind" (it waits
+/// for someone else), "download" (completed), "edit" (a draft) or "copy-resend" (it
+/// ended without completing); null for anything else.
+export function primaryVerb(status, mine = false) {
+  if (ACTIVE.has(status)) return mine ? "sign" : "remind";
+  if (status === "completed") return "download";
+  if (status === "draft") return "edit";
+  if (ENDED.has(status)) return "copy-resend";
+  return null;
+}
+
+/// How long ago `iso` was, as the list shows it: `{kind, n?}` with kind "now" (under a
+/// minute), "min" (under an hour), "hours" (under 6 hours), "time" (earlier today),
+/// "yesterday", "date" (this year) or "year" (an older year); "none" without a date.
+export function relativeWhen(iso, now = Date.now()) {
+  const at = Date.parse(iso || "");
+  if (!Number.isFinite(at)) return { kind: "none" };
+  const d = now - at;
+  if (d < 60_000 && d > -60_000) return { kind: "now" };
+  if (d > 0 && d < 3_600_000) return { kind: "min", n: Math.floor(d / 60_000) };
+  if (d > 0 && d < 6 * 3_600_000) return { kind: "hours", n: Math.floor(d / 3_600_000) };
+  const a = new Date(at);
+  const b = new Date(now);
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((day(b) - day(a)) / DAY);
+  if (days === 0) return { kind: "time" };
+  if (days === 1) return { kind: "yesterday" };
+  return { kind: a.getFullYear() === b.getFullYear() ? "date" : "year" };
+}
+
+/// A recipient's badge in the signing order (canvas Recipients): `{kind, mark}` with
+/// kind "done" (✓), "declined" (✕), "you" (this user's turn), "wait" (their turn: sent
+/// or opened) or "next" (not reached yet), and `mark` the routing step, or "cc" for a
+/// copy.
+export function recipientBadge(r, { mineId = null } = {}) {
+  const cc = !SIGNERS.has(r?.type) && r?.type !== "viewer";
+  const mark = cc ? "cc" : String(r?.routing_order ?? "");
+  if (r?.status === "completed") return { kind: "done", mark: cc ? "cc" : "✓" };
+  if (r?.status === "declined") return { kind: "declined", mark: "✕" };
+  if (r?.status === "sent" || r?.status === "delivered") return { kind: r.id === mineId ? "you" : "wait", mark };
+  return { kind: "next", mark };
+}
+
+/// The personal data among `suggestions` (kind `personal_data`, not dismissed):
+/// `{items: [{label, n}], pages: [page], total}`, labels in first-seen order.
+export function piiSummary(suggestions) {
+  const list = (suggestions || []).filter((s) => s.kind === "personal_data" && s.state !== "dismissed");
+  const by = new Map();
+  for (const s of list) by.set(s.label || "", (by.get(s.label || "") || 0) + 1);
+  const pages = [...new Set(list.map((s) => s.page).filter((p) => Number.isInteger(p)))].sort((a, b) => a - b);
+  return { items: [...by].map(([label, n]) => ({ label, n })), pages, total: list.length };
+}
+
+/// The audit trail's links as the API returns them (`GET …/audit`): `seq` dense from 0,
+/// each `prev` the hash before it, and `chain_head` the last hash. It checks the links
+/// only and recomputes no hash (that needs the canonical event bytes, docs/32), so a
+/// screen may say "linked", never "verified" or "unchanged". `{ok, n, problems}`.
+export function auditLinks(audit) {
+  const items = Array.isArray(audit?.items) ? audit.items : [];
+  const problems = [];
+  items.forEach((a, i) => {
+    if (a?.seq !== i) problems.push({ seq: i, problem: "seq" });
+    if (typeof a?.hash !== "string" || !/^[0-9a-f]{64}$/.test(a.hash)) problems.push({ seq: i, problem: "hash" });
+    const want = i === 0 ? null : items[i - 1]?.hash ?? null;
+    const prev = a?.prev !== undefined ? a.prev : a?.event?.prev ?? null;
+    if (prev !== want) problems.push({ seq: i, problem: "prev" });
+  });
+  if (items.length && audit?.chain_head != null && audit.chain_head !== items[items.length - 1].hash) problems.push({ seq: items.length, problem: "head" });
+  return { ok: problems.length === 0, n: items.length, problems };
+}
+
+/// The SHA-256 the server recorded for a document, when it returns one: the delivered
+/// file's, else the uploaded one's; null otherwise (and nothing is shown).
+export function documentFingerprint(doc) {
+  const v = doc?.delivered_sha256 || doc?.upload_sha256 || doc?.sha256 || null;
+  const hex = typeof v === "string" ? v.replace(/^sha256:/, "") : null;
+  return hex && /^[0-9a-f]{64}$/i.test(hex) ? hex.toLowerCase() : null;
+}
+
+/// A fingerprint in groups of four, to compare by eye.
+export const groupHex = (hex) => String(hex || "").match(/.{1,4}/g)?.join(" ") || "";

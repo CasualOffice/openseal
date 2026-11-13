@@ -92,7 +92,9 @@ phone or a desktop; everyone downloads a sealed PDF and certificate that pyHanko
 **In progress now:** OCR for scanned pages (`ML-02`), template matching on upload (`ML-05`) and hosting an
 in-person signer (`UXW-36`), each being built on a worker branch and not yet merged. **Next for organizations:** the
 admin audit logs (`ORG-05`), then switching between workspaces (`ORG-04`) and the organization admin screens
-(`ORG-06`), followed by delegated administration, a platform console and plans (ADR-028, aimed at v0.0.2). Model
+(`ORG-06`), followed by delegated administration, a platform console and plans (ADR-028, aimed at v0.0.2). The
+console's server side (operator sign-in with TOTP, its own audit log, organization and health reads) is being built
+on a worker branch; its screens follow the UX overhaul. Model
 features stay off by default and never part of the evidence (ADR-029).
 
 | Phase | Exit gate | State |

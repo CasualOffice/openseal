@@ -1356,7 +1356,7 @@ async fn a_database_with_an_account_without_admin_migrates() {
     assert_eq!(
         report.applied.first(),
         Some(&14),
-        "migration 0014 applies first; later ones (0015, ORG-05's 0016, ...) follow"
+        "migration 0014 applies first; later ones (0015 to 0019, ORG-05's 0020) follow"
     );
     for (i, acct) in accounts.iter().enumerate() {
         let (org, oname, ostatus): (uuid::Uuid, String, String) = sqlx::query_as(

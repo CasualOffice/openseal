@@ -849,6 +849,172 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     fail(405, "CS-API-0012", "Method not allowed");
   }
 
+  // ---- Document intelligence (WEB-18; docs/33 §6, ahead of the server: WEB-19) -------
+  // All four features on, with the canvas's examples: an offer letter's start date,
+  // salary and notice period; a vendor agreement's payment terms and a governing law at
+  // 64 % ("check this"); personal data with page references; the draft "Lease renewal
+  // 2027" matching the template "MSA v4" at 96 % with its last page scanned (read by
+  // OCR). Analysis of a draft reports `running` for about 2 s after it is requested.
+  // Test hook: `sessionStorage["openseal.mock.ml"] = "off"` makes every ML call answer
+  // 404, as the real server does today; `"no-plan"` answers `403 CS-ML-0011`.
+  const ML_FEATURE_KEYS = ["ocr", "template_matching", "extraction", "personal_data"];
+  function mlMode() {
+    try { return store?.getItem("openseal.mock.ml") || "on"; } catch { return "on"; }
+  }
+  function mlGate() {
+    const mode = mlMode();
+    if (mode === "off") fail(404, "CS-API-0002", "Not found");
+    if (mode === "no-plan") fail(403, "CS-ML-0011", "Document intelligence is not in this workspace's plan");
+  }
+  function mlState() {
+    db.ml ||= {
+      settings: { ocr: true, template_matching: true, extraction: true, personal_data: true, personal_data_model: "gliner-multi-pii", ocr_scripts: ["latin"], reread_scanner_text: false },
+      suggestions: {},
+      analysis: {},
+    };
+    return db.ml;
+  }
+  function mlSettings(method, body) {
+    mlGate();
+    const ml = mlState();
+    if (method === "PATCH") {
+      for (const [k, v] of Object.entries(body || {})) {
+        if (ML_FEATURE_KEYS.includes(k) || k === "reread_scanner_text") {
+          if (typeof v !== "boolean") fail(400, "CS-API-0001", "Malformed request", [{ pointer: `/${k}`, code: "type" }]);
+          ml.settings[k] = v;
+        } else if (k === "ocr_scripts" && Array.isArray(v)) ml.settings.ocr_scripts = v.map(String);
+        else if (k === "personal_data_model" && typeof v === "string") ml.settings.personal_data_model = v;
+        else fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+      }
+    } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
+    return json(200, { ...ml.settings, not_in_plan: [], ...mlInstalled() });
+  }
+  /// WEB-18 Admin › Document intelligence (lane D): the additive, read-only members the
+  /// settings answer carries about this server, as the canvas lists them: the models the
+  /// operator installed and the OCR script packs. Hashes are made-up placeholders.
+  function mlInstalled() {
+    const sha = (a, b) => a + "0".repeat(56) + b;
+    return {
+      models: [
+        { id: "pp-ocrv6-small", name: "PP-OCRv6 small (detect + recognise)", profile: "ocr", status: "ready", licence: "Apache-2.0", bytes: 30_000_000, sha256: sha("9c41", "e07a") },
+        { id: "arabic-pp-ocrv5", name: "Arabic OCR pack (PP-OCRv5)", profile: "ocr-pack", status: "installing", licence: "Apache-2.0", bytes: 11_000_000 },
+        { id: "e5-small", name: "multilingual-e5-small", profile: "templates", status: "ready", licence: "MIT", bytes: 470_000_000, sha256: sha("1f8b", "44d2") },
+        { id: "gliner-multi", name: "gliner_multi-v2.1 (int8)", profile: "extraction", status: "ready", licence: "Apache-2.0", bytes: 700_000_000, sha256: sha("a03e", "9b15") },
+        { id: "gliner-pii-base", name: "gliner-pii-base-v1.0", profile: "personal_data", status: "ready", licence: "Apache-2.0", bytes: 197_000_000, sha256: sha("5d27", "c3f0") },
+      ],
+      ocr_packs: [
+        { script: "latin", state: "installed" }, { script: "cyrillic", state: "installed" }, { script: "greek", state: "installed" }, { script: "cjk", state: "installed" },
+        { script: "arabic", state: "installing" }, { script: "devanagari", state: "missing" },
+      ],
+    };
+  }
+  /// The canvas's suggestions for a seeded envelope, by its subject; ids stable per run.
+  function mlSeed(env) {
+    const doc = env.documents[0];
+    if (!doc) return [];
+    const last = Math.max(1, doc.pages || 1);
+    const at = (p) => Math.min(p, last);
+    const s = env.subject || "";
+    const ent = (label, value, score, page) => ({ kind: "entity", label, value, score, page: at(page) });
+    const pii = (label, value, score, page) => ({ kind: "personal_data", label, value, score, page: at(page) });
+    let list = [];
+    if (/^Offer letter/.test(s)) list = [ent("Start date", "December 1, 2026", 0.97, 1), ent("Annual salary", "EUR 84,000", 0.95, 1), ent("Notice period", "1 month", 0.88, 2), pii("Home address", "12 Example Street, Springfield", 0.93, 1), pii("Phone number", "+1 555 0142", 0.9, 1), pii("Date of birth", "1990-04-12", 0.86, 2)];
+    else if (/^Vendor services/.test(s)) list = [ent("Parties", "Initech and Riley Morgan (Vendor)", 0.98, 1), ent("Payment terms", "Net 30 from receipt", 0.91, 2), ent("Governing law", "Portugal", 0.64, 2), pii("Bank account", "IBAN ending 4417", 0.89, 2), pii("Phone number", "+44 20 7946 0958", 0.84, 2)];
+    else if (/^Mutual NDA/.test(s)) list = [ent("Parties", "Acme and Globex", 0.98, 1), ent("Confidentiality period", "3 years", 0.95, 2), pii("Email address", "avery@acme.example", 0.97, 1), pii("Email address", "sam@globex.example", 0.97, 1)];
+    else if (/^Board consent/.test(s)) list = [ent("Resolution", "Approve FY2027 budget", 0.9, 1), ent("Effective date", "November 12, 2026", 0.93, 1)];
+    else if (/^Lease renewal/.test(s)) {
+      const tpl = (db.templates || [])[0];
+      list = [
+        { kind: "template", label: "MSA v4", value: "Master services agreement v4", score: 0.96, page: 1, template_id: tpl?.id || null, pages_matched: `${last} of ${last}` },
+        ent("Term", "24 months from the last signature", 0.96, 1),
+        pii("Email address", "taylor@example.com", 0.97, at(3)),
+        pii("Phone number", "+1 555 0199", 0.88, at(3)),
+      ];
+    }
+    return list.map((x, i) => ({
+      id: `sug-${env.id.slice(0, 8)}-${i}`, document_id: doc.id, rect: null, normalized: null,
+      model: { id: x.kind === "personal_data" ? "gliner-multi-pii" : x.kind === "template" ? "fingerprint-v1" : "gliner-multi-v2.1", sha256: "0".repeat(64) },
+      state: "open", ...x,
+    }));
+  }
+  function mlSuggestions(env) {
+    const ml = mlState();
+    ml.suggestions[env.id] ||= mlSeed(env);
+    return ml.suggestions[env.id];
+  }
+  function mlEnvelope(env, method, sub, subId, subSub, query) {
+    mlGate();
+    if (sub === "suggestions") {
+      const list = mlSuggestions(env);
+      if (!subId && method === "GET") {
+        const kind = query.get("kind");
+        const state = query.get("state");
+        const limit = Math.min(Math.max(Number(query.get("limit")) || 50, 1), 200);
+        const start = Number(query.get("cursor") || 0) || 0;
+        const all = list.filter((x) => (!kind || x.kind === kind) && (!state || x.state === state));
+        const items = all.slice(start, start + limit);
+        return json(200, { items, next_cursor: start + limit < all.length ? String(start + limit) : null });
+      }
+      const sug = list.find((x) => x.id === subId);
+      if (!sug) fail(404, "CS-API-0002", "Not found");
+      if (method === "POST" && (subSub === "accept" || subSub === "dismiss")) {
+        if (sug.state !== "open") fail(409, "CS-ML-0012", "Suggestion already decided");
+        sug.state = subSub === "accept" ? "accepted" : "dismissed";
+        sug.decided_by = "user-demo";
+        sug.decided_at = iso();
+        return json(200, sug);
+      }
+      return null;
+    }
+    // …/documents/{doc}/analysis
+    const doc = env.documents.find((d) => d.id === subId);
+    if (!doc) fail(404, "CS-API-0002", "Not found");
+    const ml = mlState();
+    const last = Math.max(1, doc.pages || 1);
+    const scanned = /^Lease renewal/.test(env.subject || "") ? [Math.min(3, last)] : [];
+    const out = (status) => ({ status, uses: ML_FEATURE_KEYS.filter((k) => ml.settings[k]), ocr_pages: status === "done" ? scanned : [], truncated: false, bundle_id: "bundle-demo" });
+    if (method === "POST") {
+      if (env.status !== "draft") fail(409, "CS-WF-0001", "Not allowed in the current state");
+      ml.analysis[doc.id] ||= { requested_at: now().getTime() };
+      const run = ml.analysis[doc.id];
+      return json(202, out(now().getTime() - run.requested_at < 2000 ? "running" : "done"));
+    }
+    if (method === "GET") {
+      const run = ml.analysis[doc.id];
+      // Seeded documents were analysed when they were added; a requested run takes ~2 s.
+      return json(200, out(!run || now().getTime() - run.requested_at >= 2000 ? "done" : "running"));
+    }
+    return null;
+  }
+  /// Search by meaning (planned, docs/33 §6, WEB-19): the canvas's two payment-terms
+  /// matches for a question about paying, else every clause sharing a word stem.
+  function mlSearch(query) {
+    mlGate();
+    const q = String(query.get("q") || "").trim().toLowerCase();
+    if (query.get("mode") !== "meaning") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/mode", code: "enum" }]);
+    if (!q) return json(200, { items: [] });
+    const find = (re) => db.envelopes.find((e) => re.test(e.subject || "") && !e.deleted_at);
+    const clauses = [
+      [find(/^Vendor services/), 2, ["…invoices are ", { text: "settled net thirty", mark: true }, " from receipt…"], ["pay", "invoice", "net", "thirty", "30", "days", "fee", "settle"]],
+      [find(/^Offer letter/), 1, ["…the company will ", { text: "pay an annual salary", mark: true }, " of EUR 84,000 in twelve instalments…"], ["pay", "salary", "wage", "compens", "money"]],
+      [find(/^Mutual NDA/), 2, ["…each party ", { text: "keeps the other's information confidential", mark: true }, " for three years…"], ["confiden", "secret", "disclos", "privacy", "nda"]],
+      [find(/^Lease renewal/), 1, ["…this agreement ", { text: "renews for 24 months", mark: true }, " from the last signature…"], ["renew", "term", "durat", "month", "year", "expir"]],
+    ];
+    const words = q.split(/\s+/).filter(Boolean);
+    const items = [];
+    for (const [env, page, parts, stems] of clauses) {
+      if (!env) continue;
+      const hits = words.filter((w) => stems.some((s) => w.startsWith(s) || s.startsWith(w.slice(0, 4)))).length;
+      if (!hits) continue;
+      items.push({
+        envelope_id: env.id, document_id: env.documents[0]?.id || null, subject: env.subject, status: env.status, page,
+        snippet: parts.map((p) => (typeof p === "string" ? { text: p } : p)), score: Math.min(0.99, 0.6 + hits * 0.12),
+      });
+    }
+    items.sort((a, b) => b.score - a.score);
+    return json(200, { items: items.slice(0, Math.min(20, Number(query.get("limit")) || 8)) });
+  }
+
   async function staff(method, parts, query, headers, body) {
     if (!db.session) fail(401, "CS-AUTH-0001", "Not authenticated");
     if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
@@ -889,6 +1055,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
       return json(200, { items: [...seen.values()].slice(0, limit) });
     }
+    // WEB-18, ahead of the server (docs/33 §6, WEB-19): the workspace's model settings
+    // and search by meaning.
+    if (res === "account" && id === "settings" && sub === "ml") return mlSettings(method, body);
+    if (res === "search" && !id && method === "GET") return mlSearch(query);
     if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
     if (res === "users" && id === "me" && !sub) return me(method, body);
     if (res === "users") return users(method, id, body, sub);
@@ -950,6 +1120,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       // Not a casual-sign-audit type yet: the restore row adds it (NOT_ON_SERVER.deleted).
       await audit(env, "envelope.restored", {}, { by: "sender" });
       return withEtag(env);
+    }
+    // WEB-18, ahead of the server (docs/33 §6, WEB-19): analysis and suggestions.
+    if (sub === "suggestions" || (sub === "documents" && subSub === "analysis")) {
+      const res = mlEnvelope(env, method, sub, subId, subSub, query);
+      if (res) return res;
     }
     // UX-03, not on the server yet (NOT_ON_SERVER.inbox): the signing page for the
     // signed-in user, when routing has reached them.

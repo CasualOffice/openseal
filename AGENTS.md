@@ -89,6 +89,8 @@ reviewer is used only for risky pieces (security, evidence, database, server; in
   (`compose --profile ml up`, `ML-09`); workflows a switching customer expects (`UXW-*`, e.g. in-person hosting
   `UXW-36`); ADR-028 in stages ([23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)): admin audit logs (`ORG-05`)
   next, then switching (`ORG-04`) and the organization admin screens (`ORG-06`), delegated admin, console and plans
-  (`ORG-*`, `CON-*`, `PLAN-*`). Open: WebKit axe failure on the review step (`E2E-02`).
+  (`ORG-*`, `CON-*`, `PLAN-*`); the console's server side (operators with TOTP, the operator log, organization reads
+  and first writes, health reads; `CON-02` to `CON-05` in part, docs/23 §5.6) on a worker branch, its screens after
+  the UX overhaul. Open: WebKit axe failure on the review step (`E2E-02`).
 - **Next:** slices 1, 2, 5 and 7 to their end points for M3, then v0.0.2 (organizations and switching, the console with
   health, plans with three meters; instruction 29).

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!-- Served at /s/{token}: every URL here is root-relative. CSP as app.html (docs/47 §As built). -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
@@ -18,36 +18,43 @@
 <body class="os-sign">
   <a class="os-skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
   <div id="mock-banner" class="os-mock-banner" role="note" hidden><span data-i18n="mock.banner">Demo mode</span></div>
-  <!-- The signer's bar (WEB-02 redesign): the document's name and progress, zoom, the
-       field list, other actions, and Finish. On phones Finish and the guide move to
-       the bottom bar. -->
+  <!-- The signer's header (WEB-18, the approved canvas Signer.dc.html): the sender's
+       organisation mark, the title, who asked, a neutral "Secured by OpenSeal" chip,
+       Decline and More. On phones (SignerPhone.dc.html) a two-segment progress bar
+       runs under it. Start, Next and Finish live in the guide bar below the page. -->
   <header class="os-sign__bar">
-    <img class="os-sign__mark" src="/assets/mark.svg" alt="OpenSeal" width="28" height="28">
+    <span id="org-mark" class="os-sign__org" aria-hidden="true" hidden></span>
+    <img id="brand-mark" class="os-sign__mark" src="/assets/mark.svg" alt="" width="32" height="32">
     <div class="os-sign__titles">
       <p id="subject" class="os-sign__subject"></p>
-      <p id="bar-progress" class="os-sign__barprogress" role="status"></p>
+      <p id="ask-line" class="os-sign__ask" data-testid="ask-line"></p>
     </div>
-    <span id="loc-chip" class="os-statuschip" role="status" hidden></span>
-    <span id="save-chip" class="os-sign__savechip" role="status"></span>
-    <!-- WEB-06: zoom and the page are in the document's own bar; Fields shows the field
-         list panel (a bottom sheet on phones). -->
-    <div id="sign-tools" class="os-sign__tools" hidden>
-      <!-- G-S1: the Start/Next cue in the bar, so it is visible on arrival. -->
-      <button type="button" id="bar-next" class="os-btn os-btn--tag os-btn--lg" data-testid="bar-next"><span data-i18n="sign.start">Start</span></button>
-      <button type="button" id="fields-btn" class="os-btn os-btn--secondary os-btn--lg" data-i18n-attr="title:sign.fields.open"><span data-i18n="sign.fields.button">Fields</span></button>
+    <div class="os-sign__actions">
+      <span id="loc-chip" class="os-sign__chip os-sign__chip--status" role="status" hidden></span>
+      <span id="save-chip" class="os-sign__savechip" role="status"></span>
+      <span id="secured-chip" class="os-sign__chip" data-testid="secured-chip"><span data-i18n="sign.secured">Secured by OpenSeal</span></span>
+      <button type="button" id="decline-btn" class="os-sign__ghost" data-os-command="signer.decline" data-testid="header-decline" hidden><span data-i18n="sign.decline.confirm">Decline</span></button>
+      <div class="os-menu-wrap">
+        <button type="button" id="more-btn" class="os-sign__ghost os-sign__more" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu" data-i18n-attr="aria-label:sign.more-options" hidden></button>
+        <div id="more-menu" class="os-menu os-menu--end" role="menu" data-i18n-attr="aria-label:sign.more" hidden></div>
+      </div>
     </div>
+    <div id="phone-progress" class="os-sign__segments" aria-hidden="true" hidden><span></span><span></span></div>
+    <p id="bar-progress" class="os-sr-only"></p>
     <span id="finish-reason" class="os-sr-only"></span>
-    <div class="os-menu-wrap">
-      <button type="button" id="more-btn" class="os-btn os-btn--ghost os-btn--lg" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu" hidden></button>
-      <div id="more-menu" class="os-menu os-menu--end" role="menu" data-i18n-attr="aria-label:sign.more" hidden></div>
-    </div>
-    <button type="button" id="bar-finish" class="os-btn os-btn--primary os-btn--lg os-sign__barfinish" aria-disabled="true" hidden><span data-i18n="sign.finish">Finish</span></button>
   </header>
   <main id="main" class="os-sign__main" tabindex="-1"></main>
-  <footer id="guide" class="os-sign__guide" hidden>
-    <p id="guide-progress" class="os-sign__progress" role="status"></p>
-    <button type="button" id="guide-next" class="os-btn os-btn--secondary os-btn--lg"><span data-i18n="sign.start">Start</span></button>
-    <button type="button" id="guide-finish" class="os-btn os-btn--primary os-btn--lg" aria-disabled="true"><span data-i18n="sign.finish">Finish</span></button>
+  <!-- The guide bar (WEB-18): a dark floating bar on desktop with a progress ring, the
+       next action and Start / Next / Finish; on phones the white bottom action bar. -->
+  <footer id="guide" class="os-guide" data-i18n-attr="aria-label:sign.guide.label" hidden>
+    <span id="guide-ring" class="os-guide__ring" aria-hidden="true"></span>
+    <div class="os-guide__text">
+      <b id="guide-title" class="os-guide__title"></b>
+      <span id="guide-sub" class="os-guide__sub"></span>
+    </div>
+    <p id="guide-progress" class="os-sr-only" role="status"></p>
+    <button type="button" id="guide-next" class="os-guide__cta" data-os-command="signer.next"><span data-i18n="sign.start">Start</span></button>
+    <button type="button" id="guide-finish" class="os-guide__cta os-guide__cta--finish" data-os-command="signer.finish" hidden><span data-i18n="sign.finish">Finish</span></button>
   </footer>
 </body>
 </html>

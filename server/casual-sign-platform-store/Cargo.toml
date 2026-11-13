@@ -1,0 +1,27 @@
+[package]
+name = "casual-sign-platform-store"
+version = "0.0.1"
+description = "OpenSeal platform store: the `platform` schema's tables and definer functions, as the console's own database role, with no tenant repository (CON-02, docs/23 §5.2)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# Canonical JSON (RFC 8785) and SHA-256 for the operator log's chain, as every other
+# chain (docs/23 §5.1, ADR-010).
+casual-sign-audit = { path = "../../crates/casual-sign-audit" }
+# PostgreSQL, the same driver and features as casual-sign-store (ADR-014), without the
+# compile-time `query!` macros: this crate's queries call definer functions and read
+# `platform` tables only, are parameterized, and are exercised by its Postgres tests.
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "uuid", "time"] }
+uuid = "1.10"
+time = { version = "0.3.36", features = ["formatting"] }
+
+[dev-dependencies]
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros"] }
+uuid = { version = "1.10", features = ["v4", "v7"] }
+
+[lints]
+workspace = true

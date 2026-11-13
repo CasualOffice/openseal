@@ -1,0 +1,554 @@
+# OpenSeal platform console API (docs/23 §5; ADR-028). Served only by the separate
+# `casual-sign-console` binary on its private listener, never by the public server. The
+# contract: `casual_sign_console::ROUTES` (server/casual-sign-console/src/lib.rs) and
+# this document are kept equal, operation by operation with each operation's `x-roles`,
+# by server/casual-sign-console/tests/contract.rs.
+openapi: 3.1.0
+info:
+  title: OpenSeal platform console API
+  version: 0.1.0-alpha
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: |
+    Operators are not tenant users. They enrol through a one-time link (setting their own
+    password and TOTP), sign in with password then TOTP, and hold a session cookie
+    `__Host-os_op` (Secure, HttpOnly, SameSite=Strict; 8 hours, 30 minutes idle). Every
+    changing request sends `X-CSRF-Token` with the token the sign-in returned. Errors are
+    RFC 9457 problem details with a stable `code` (docs/20 `CS-CON-*`); every response
+    carries `x-request-id`. Responses carry ids, organization and workspace names (tenant
+    metadata), statuses, labels and counts: never a tenant user's e-mail or name, a
+    document, a field value or a job payload. Every operator action is appended to the
+    hash-chained operator log in its own transaction.
+
+    `x-roles` names the operator roles that may call an operation: `public` (no session),
+    `pending` (a session that may still lack its second factor), `any` (any role),
+    `operators` (`platform_owner`, `operator`), `owners` (`platform_owner`).
+servers:
+  - url: /
+security:
+  - session: []
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-os_op
+      description: Operator session from `/console/v1/auth/login` and `/console/v1/auth/totp`.
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 200}
+  responses:
+    Problem:
+      description: A problem (RFC 9457) with `code`; `field` for CS-CON-0010, `retry_after` for CS-CON-0012.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    NoContent:
+      description: Done.
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        code: {type: string, pattern: '^CS-[A-Z]+-[0-9]{4}$'}
+        field: {type: string}
+        retry_after: {type: integer}
+    Counts:
+      type: object
+      additionalProperties: {type: integer}
+    Organization:
+      type: object
+      required: [id, name, status, data_regions, created_at, counts]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, description: Tenant metadata; never logged.}
+        status: {type: string, enum: [active, suspended, closed]}
+        data_regions: {type: array, items: {type: string}, description: Labels only; no residency is provided (docs/23 §7.5).}
+        created_at: {type: string, format: date-time}
+        counts: {$ref: '#/components/schemas/Counts'}
+        workspaces:
+          type: array
+          items: {$ref: '#/components/schemas/Workspace'}
+    Workspace:
+      type: object
+      required: [id, name, status, created_at, counts]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        status: {type: string, enum: [active, archived]}
+        data_region: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+        counts: {$ref: '#/components/schemas/Counts'}
+    Event:
+      type: object
+      required: [seq, hash, action, at, event]
+      properties:
+        seq: {type: integer}
+        hash: {type: string, description: SHA-256 of the canonical bytes, hex.}
+        prev: {type: [string, 'null']}
+        action: {type: string, pattern: '^operator\.'}
+        operator: {type: [string, 'null'], format: uuid}
+        at: {type: string, format: date-time}
+        event: {type: object, description: The canonical RFC 8785 event; details hold ids, codes, labels and counts only.}
+paths:
+  /livez:
+    get:
+      operationId: livez
+      x-roles: public
+      security: []
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+  /readyz:
+    get:
+      operationId: readyz
+      x-roles: public
+      security: []
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '503': {description: The database does not answer.}
+  /console/v1/auth/login:
+    post:
+      operationId: login
+      x-roles: public
+      security: []
+      description: Checks the password and opens a session that reaches nothing until `/auth/totp`. Wrong password and unknown e-mail answer alike (`CS-CON-0001`). Rate limited per address and per e-mail (`CS-CON-0012`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email: {type: string, maxLength: 254}
+                password: {type: string, maxLength: 1024}
+      responses:
+        '200':
+          description: Session opened (cookie set); the second factor is next.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  csrf_token: {type: string}
+                  second_factor: {type: string, enum: [totp]}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/auth/totp:
+    post:
+      operationId: totp
+      x-roles: pending
+      description: The TOTP code (RFC 6238, SHA-1, 6 digits, 30 s). Each time step is accepted once per operator. Also the re-entry sensitive actions will need.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code]
+              properties:
+                code: {type: string, pattern: '^[0-9]{6}$'}
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operator: {type: string, format: uuid}
+                  roles: {type: array, items: {type: string}}
+                  expires_at: {type: string, format: date-time}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/auth/logout:
+    post:
+      operationId: logout
+      x-roles: pending
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/auth/enrolment/begin:
+    post:
+      operationId: enrolmentBegin
+      x-roles: public
+      security: []
+      description: For the operator an unspent enrolment token names, a fresh TOTP seed, shown once as an `otpauth://` URI (labelled with the operator id, never the e-mail).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: The seed to scan.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operator: {type: string, format: uuid}
+                  otpauth_uri: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/auth/enrolment/finish:
+    post:
+      operationId: enrolmentFinish
+      x-roles: public
+      security: []
+      description: The operator sets their password (12 characters to 1 KiB) and proves the seed with a code; the token is spent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, password, code]
+              properties:
+                token: {type: string, maxLength: 64}
+                password: {type: string, minLength: 12, maxLength: 1024}
+                code: {type: string, pattern: '^[0-9]{6}$'}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/me:
+    get:
+      operationId: me
+      x-roles: any
+      responses:
+        '200':
+          description: The signed-in operator.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operator: {type: string, format: uuid}
+                  roles: {type: array, items: {type: string}}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/operators:
+    get:
+      operationId: listOperators
+      x-roles: owners
+      responses:
+        '200':
+          description: Every operator (their sign-in e-mail is operator data, shown to platform owners only).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operators:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, format: uuid}
+                        email: {type: string}
+                        roles: {type: array, items: {type: string, enum: [platform_owner, operator, key_custodian, observer]}}
+                        created_at: {type: string, format: date-time}
+                        disabled_at: {type: [string, 'null'], format: date-time}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createOperator
+      x-roles: owners
+      description: A new operator and a one-time enrolment token (24 hours) the owner passes on. The owner never knows the operator's password or second factor. Adding a `platform_owner` needs a second operator's approval and is refused until approvals exist (`CS-CON-0004`). An e-mail already in use gives `CS-CON-0016`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, roles]
+              properties:
+                email: {type: string, maxLength: 254}
+                roles: {type: array, minItems: 1, items: {type: string, enum: [operator, key_custodian, observer]}}
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  enrolment_token: {type: string}
+                  enrolment_expires_at: {type: string, format: date-time}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/operators/{id}/disable:
+    post:
+      operationId: disableOperator
+      x-roles: owners
+      description: Disables the operator and ends their sessions. An operator cannot disable themself (`CS-CON-0003`).
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/operator-log:
+    get:
+      operationId: operatorLog
+      x-roles: operators
+      parameters:
+        - name: after
+          in: query
+          schema: {type: integer, minimum: 0}
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Events after `after`, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: {type: array, items: {$ref: '#/components/schemas/Event'}}
+                  next_after: {type: [integer, 'null']}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/operator-log/verify:
+    get:
+      operationId: verifyOperatorLog
+      x-roles: operators
+      description: Recomputes every event's hash and link and checks the stored head. A break gives `503 CS-CON-0007` naming the first bad `seq`.
+      responses:
+        '200':
+          description: The log verifies.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified: {type: boolean}
+                  events: {type: integer}
+                  head: {type: [string, 'null']}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/organizations:
+    get:
+      operationId: listOrganizations
+      x-roles: any
+      parameters:
+        - name: after
+          in: query
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: A page of organizations with counts (workspaces, members, envelopes).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organizations: {type: array, items: {$ref: '#/components/schemas/Organization'}}
+                  next_after: {type: [string, 'null'], format: uuid}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/organizations/{id}:
+    get:
+      operationId: getOrganization
+      x-roles: any
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Properties, counts (with owners) and workspaces with their counts.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchOrganization
+      x-roles: operators
+      description: Rename (1 to 255 characters) or set data-region labels (at most 16, each `[a-z0-9-]`, 1 to 32 characters). Suspend and resume are two-person actions (`/approvals`, then `…/suspend` or `…/resume`); close is not yet served.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                name: {type: string, minLength: 1, maxLength: 255}
+                data_regions: {type: array, maxItems: 16, items: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,31}$'}}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/workspaces/{id}:
+    patch:
+      operationId: patchWorkspace
+      x-roles: operators
+      description: Set the data-region label (one of its organization's labels, or null) or archive and restore it. An archived workspace refuses new envelopes, members and settings; envelopes already sent continue (docs/23 §5.3).
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                data_region: {type: [string, 'null']}
+                status: {type: string, enum: [active, archived]}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/approvals:
+    get:
+      operationId: listApprovals
+      x-roles: operators
+      description: Two-person requests of the last 24 hours, newest first, with approvers and whether each was spent.
+      responses:
+        '200':
+          description: Requests.
+          content:
+            application/json:
+              schema: {type: object}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: requestApproval
+      x-roles: operators
+      description: Step 1 of a two-person action (docs/23 §5.1). Needs a second factor entered within 5 minutes (`CS-CON-0002`). The request lives 24 hours.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, organization]
+              properties:
+                action: {type: string, enum: [organization.suspend, organization.resume]}
+                organization: {type: string, format: uuid}
+      responses:
+        '201':
+          description: Requested.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/approvals/{id}/grant:
+    post:
+      operationId: grantApproval
+      x-roles: operators
+      description: Step 2, by an operator other than the requester (`CS-CON-0004` otherwise), with a second factor entered within 5 minutes.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/organizations/{id}/suspend:
+    post:
+      operationId: suspendOrganization
+      x-roles: operators
+      description: Step 3, by the requester with a second factor entered within 5 minutes, spending an unused approval granted by another operator for this action and organization (`CS-CON-0004` otherwise). New work in the organization is refused; envelopes already sent continue (docs/23 §5.3).
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [approval]
+              properties:
+                approval: {type: string, format: uuid}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/organizations/{id}/resume:
+    post:
+      operationId: resumeOrganization
+      x-roles: operators
+      description: As suspend, for a suspended organization.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [approval]
+              properties:
+                approval: {type: string, format: uuid}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/health:
+    get:
+      operationId: health
+      x-roles: any
+      description: Database, job queue depth by kind and status (oldest queued age), dead letters, connections, the configured service targets (probed with a 2-second timeout) and whether the operator log verifies.
+      responses:
+        '200':
+          description: Health.
+          content:
+            application/json:
+              schema: {type: object}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/dead-letters:
+    get:
+      operationId: deadLetters
+      x-roles: any
+      parameters:
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Dead jobs, newest first; never the payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dead_letters:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, format: uuid}
+                        kind: {type: string}
+                        workspace_id: {type: string, format: uuid}
+                        envelope_id: {type: [string, 'null'], format: uuid}
+                        error_code: {type: [string, 'null']}
+                        attempts: {type: integer}
+                        finished_at: {type: [string, 'null'], format: date-time}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/alerts:
+    get:
+      operationId: alerts
+      x-roles: any
+      parameters:
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: The newest alerts.
+          content:
+            application/json:
+              schema: {type: object}
+        default: {$ref: '#/components/responses/Problem'}

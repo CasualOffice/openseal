@@ -1,0 +1,43 @@
+[package]
+name = "casual-sign-console"
+version = "0.0.1"
+description = "OpenSeal platform console: a separate binary on a private listener with its own operator identity (Argon2id and TOTP), sessions, operator log, and tenant metadata without content (ADR-028, docs/23 §5)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# The console never depends on casual-sign-store, -host or -server (docs/23 §5.1, §5.2):
+# its only database door is casual-sign-platform-store, as `openseal_console`.
+[dependencies]
+casual-sign-platform-store = { path = "../casual-sign-platform-store" }
+# The console's database URL and MFA key, from the environment or a file it names.
+casual-sign-secrets = { path = "../casual-sign-secrets" }
+# HTTP (ADR-014; as casual-sign-server). MIT.
+axum = { version = "0.8.4", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path", "original-uri"] }
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.120"
+uuid = { version = "1.10", features = ["v7", "serde"] }
+time = { version = "0.3.36", features = ["formatting", "parsing"] }
+base64 = "0.22.1"
+# Operator passwords: Argon2id, RustCrypto (as the server's staff passwords). MIT OR Apache-2.0.
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "password-hash", "std"] }
+# Randomness, SHA-256, the TOTP HMAC and AES-256-GCM sealing of TOTP seeds (ADR-006:
+# aws-lc-rs in hosts).
+aws-lc-rs = "1.19.0"
+# Health probes of `http` service targets (plain HTTP on the private network), already in
+# the graph through casual-sign-store and the CLI. MIT OR Apache-2.0.
+ureq = { version = "3.5.1", default-features = false }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.19", default-features = false, features = ["fmt", "env-filter", "ansi"] }
+
+[dev-dependencies]
+tower = { version = "0.5.2", default-features = false, features = ["util"] }
+http-body-util = "0.1.2"
+# Reading api/console-openapi.yaml in the contract test. MIT OR Apache-2.0.
+serde_norway = "0.9.42"
+
+[lints]
+workspace = true
