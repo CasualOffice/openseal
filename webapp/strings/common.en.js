@@ -124,9 +124,12 @@ export const COMMON = {
 
   "recipient.order-n": "Routing order {n}",
 
+  "rtype.agent": "Names who signs next",
   "rtype.approver": "Approver",
   "rtype.cc": "Receives a copy",
+  "rtype.editor": "Editor",
   "rtype.in_person_signer": "In-person signer",
+  "rtype.intermediary": "Intermediary",
   "rtype.signer": "Needs to sign",
   "rtype.viewer": "Viewer",
 

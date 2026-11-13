@@ -49,6 +49,12 @@ async function sign(browser, link, name, last) {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(link);
+  await signOn(page, name, last);
+  await context.close();
+}
+
+/// The ceremony's steps on a signing page already open in `page`.
+async function signOn(page, name, last) {
   // The disclosure is asked for only when the account has one (a fresh account has none).
   const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
   // Progress is announced by the guide's status line at every width (the redesign keeps
@@ -70,7 +76,6 @@ async function sign(browser, link, name, last) {
   await expect(page.getByRole("heading", { name: "Review and finish" })).toBeVisible();
   await page.getByTestId("review-finish").click();
   await expect(page.getByTestId("sign-done")).toContainText(last ? "Everyone has signed" : "Your part is done");
-  await context.close();
 }
 
 test("two signers in order sign through emailed links; the sealed PDF and certificate download", async ({ page, browser }, testInfo) => {
@@ -135,4 +140,38 @@ test("two signers in order sign through emailed links; the sealed PDF and certif
   if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, "file\texpect\twhy\tlevel\n");
   fs.appendFileSync(manifest, `${sealed}\tintact\tsealed agreement, ${testInfo.project.name}\tB-T\n`);
   fs.appendFileSync(manifest, `${certificate}\tintact\tcertificate of completion, ${testInfo.project.name}\tB-T\n`);
+});
+
+// UXW-18: the editor offers an in-person signer on the real server, and the sender hosts
+// the signing on this device from the envelope page (`POST …/recipients/{r}/host`): the
+// signer signs in the same tab, with no emailed link.
+test("an in-person signer chosen in the editor is hosted from the envelope page and signs", async ({ page }, testInfo) => {
+  test.skip(!REAL, "runs against the Compose deployment only (OPENSEAL_E2E_BASE_URL)");
+  test.setTimeout(180_000);
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const walk = { name: "Walk In", email: `walkin-${run}@example.com` };
+
+  await signIn(page);
+  await page.locator("#start-btn").click();
+  await page.getByRole("menuitem", { name: "Send an envelope" }).click();
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile("in-person.pdf", "In person agreement"));
+  await expect(page.getByTestId("doc-card")).toHaveCount(1);
+  await page.getByTestId("wizard-next").click();
+  await addRecipient(page, 0, walk);
+  const type = page.locator(".os-rcpt").first().getByTestId("recipient-type");
+  expect(await type.locator("option").evaluateAll((os) => os.map((o) => o.value))).toContain("in_person_signer");
+  await type.selectOption("in_person_signer");
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
+  await expect(page.locator(".os-field")).toHaveCount(1);
+  await page.getByTestId("wizard-next").click();
+  await page.getByLabel("Subject").fill(`In person ${run}`);
+  await page.getByRole("button", { name: "Send", exact: true }).first().click();
+  await page.getByRole("dialog", { name: "Send this envelope?" }).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/#\/envelopes\/[^/]+$/, { timeout: 20_000 });
+
+  await page.getByTestId("host-in-person").click();
+  await expect(page).toHaveURL(/\/s\/[A-Za-z0-9._~%-]+/, { timeout: 20_000 });
+  await signOn(page, walk.name, true);
 });

@@ -573,6 +573,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       decline: (token, reason, location) =>
         data(request("POST", `${S(token)}/decline`, { body: withLocation(reason ? { reason } : {}, location), ceremony: true })),
       finishLater: (token) => data(request("POST", `${S(token)}/finish-later`, { body: {}, ceremony: true })),
+      /// An agent (or intermediary) names later recipients before finishing (VS-02):
+      /// `[{id, name?, email?}]`, ids from the view's `later_recipients`.
+      nameRecipients: (token, recipients, location) =>
+        data(request("POST", `${S(token)}/recipients`, { body: withLocation({ recipients }, location), ceremony: true })),
       /// WEB-06: attach a file (PDF, PNG or JPEG) to an attachment field.
       attach: (token, field, bytes) =>
         data(request("PUT", `${S(token)}/fields/${encodeURIComponent(field)}/attachment`, { body: { content_base64: toBase64(bytes) }, ceremony: true })),

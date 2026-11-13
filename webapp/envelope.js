@@ -150,7 +150,7 @@ export function mount(view, ctx, [rawId]) {
       h("h2", { id: hid, class: "os-card__title", text: title }), node);
     const people = sideCard(t("envelope.recipients"), "rcpt-h",
       (e.recipients || []).length
-        ? recipientsSection(e, audit, { detailed: true, onResend: (r) => resend(r), mock: ctx.mock })
+        ? recipientsSection(e, audit, { detailed: true, onResend: (r) => resend(r), onHost: (r) => host(r), mock: ctx.mock })
         : emptyState({ illus: "recipients", title: t("empty.recipients.title"), text: t("empty.recipients.text"), action: e.status === "draft" ? button(t("envelope.edit"), { variant: "primary", onClick: () => ctx.navigate(`#/prepare/${encodeURIComponent(e.id)}`) }) : null, testId: "empty-recipients" }));
     const side = h("div", { class: "os-env__side" }, people);
     if (mlOn) {
@@ -231,6 +231,16 @@ export function mount(view, ctx, [rawId]) {
   }
 
   /// Resend to everyone still to act, or to one recipient (E-03).
+  /// UXW-18: host an in-person signer here: the server's one-time link acts as this
+  /// member hosting them, so the signing page opens in this tab, on its own path.
+  async function host(r) {
+    try {
+      const v = await ctx.api.hostInPerson(id, r.id);
+      const u = new URL(v.url, location.href);
+      location.assign(`${u.pathname}${u.search}${ctx.mock ? `${u.search ? "&" : "?"}mock=1` : ""}`);
+    } catch (err) { toastError(err); }
+  }
+
   async function resend(r = null) {
     try {
       await ctx.api.resend(id, r ? [r.id] : undefined);

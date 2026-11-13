@@ -1369,14 +1369,31 @@ function review() {
     else shown = v.text;
     dl.append(h("dt", { text: f.label || t(`ftype.${f.type}`) }), h("dd", { text: shown }));
   }
+  // VS-02: an approver approves, a viewer is done once every page was viewed, and an
+  // agent or intermediary names the later recipients before finishing.
+  const rtype = view.recipient?.type;
+  const names = Array.isArray(view.later_recipients) ? laterForm(view.later_recipients) : null;
   const back = button(t("sign.review.back"), { icon: "chevron-left", size: "lg" });
-  const go = button(t("sign.finish"), { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
+  const go = button(t(rtype === "approver" ? "sign.approve" : "sign.finish"), { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
   back.addEventListener("click", () => documents());
   go.addEventListener("click", async () => {
     try {
-      view = await busy(go, () => api.ceremony.finish(token, [], location_));
+      view = await busy(go, async () => {
+        if (rtype === "approver") return api.ceremony.approve(token, location_);
+        if (rtype === "viewer") {
+          // Viewing to the end completed the viewer already; finishing again is refused.
+          const now = await api.ceremony.view(token);
+          if (now.recipient?.status === "completed") return now;
+        }
+        if (names) {
+          const list = names.read();
+          if (!list) throw names.invalid;
+          if (list.length) await api.ceremony.nameRecipients(token, list, location_);
+        }
+        return api.ceremony.finish(token, [], location_);
+      });
       done(everyoneSigned(view.envelope?.status), true);
-    } catch (err) { toastError(err); }
+    } catch (err) { if (err !== names?.invalid) toastError(err); }
   });
   // The values panel beside the pages on desktop. On phones (UX-06) the document comes
   // first, full height, with a bottom bar: "Review values (n)" opens the values as a
@@ -1389,6 +1406,7 @@ function review() {
   if (!onPhone) side.body.append(title);
   side.body.append(
     h("p", { class: "os-muted", text: t("sign.review.text") }),
+    ...(names ? [names.el] : []),
     dl,
     h("p", { class: "os-small", text: t("sign.review.legal") }));
   // The one Finish of this step: pinned below the values on desktop, in the bottom bar
@@ -1588,6 +1606,37 @@ async function finishLater() {
     const until = dateOnly(view?.envelope?.expires_at);
     message({ kind: "later", title: t("sign.later.title"), text: until ? `${t("sign.later.text")} ${t("sign.later.expires", { date: until })}` : t("sign.later.text"), action: again, testId: "sign-later" });
   } catch (err) { toastError(err); }
+}
+
+/// The agent's form (VS-02): a name and email for each later recipient not yet reached,
+/// built from the reassign panel's rows. `read()` answers the changes (only what was
+/// edited), or null after showing what is missing.
+function laterForm(later) {
+  const err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
+  const rows = later.map((r, i) => {
+    const row = (id, label, el) => h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: label }), el);
+    const nameIn = h("input", { id: `later-name-${i}`, class: "os-input", autocomplete: "off", maxLength: 255, value: r.name || "", attrs: { required: true, "data-testid": "later-name" } });
+    const emailIn = h("input", { id: `later-email-${i}`, class: "os-input", type: "email", autocomplete: "off", maxLength: 320, value: r.email || "", attrs: { required: true, "data-testid": "later-email" } });
+    return { r, nameIn, emailIn, el: h("fieldset", { class: "os-stack" }, h("legend", { class: "os-label", text: t("sign.later-recipients.who", { n: i + 1, type: t(`rtype.${r.type}`) }) }), row(nameIn.id, t("sign.reassign.name"), nameIn), row(emailIn.id, t("sign.reassign.email"), emailIn)) };
+  });
+  const el = h("section", { class: "os-stack", attrs: { "data-testid": "later-recipients" } },
+    h("h2", { class: "os-label", text: t("sign.later-recipients.title") }),
+    h("p", { class: "os-muted", text: t("sign.later-recipients.text") }),
+    ...rows.map((x) => x.el), err);
+  const invalid = new Error("later recipients incomplete");
+  const read = () => {
+    err.textContent = "";
+    const out = [];
+    for (const { r, nameIn, emailIn } of rows) {
+      const name = nameIn.value.trim();
+      const email = emailIn.value.trim();
+      if (!name) { err.textContent = t("form.required"); nameIn.focus(); return null; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = t("sign.reassign.bad-email"); emailIn.focus(); return null; }
+      if (name !== (r.name || "") || email !== (r.email || "")) out.push({ id: r.id, name, email });
+    }
+    return out;
+  };
+  return { el, read, invalid };
 }
 
 /// Assign to someone else (G-S2), only when the envelope allows it: their name and

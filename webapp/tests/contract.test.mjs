@@ -187,6 +187,32 @@ test("every engine recipient type is taken; an approver approves and a viewer vi
   await assert.rejects(c.ceremony.approve(st), (e) => e.code === "CS-WF-0001");
 });
 
+test("an agent names the later signer through the ceremony, then finishes (VS-02)", async () => {
+  const c = await signedIn();
+  const env = await sentWith(c,
+    [{ name: "Ag Ent", email: "ag@example.com", type: "agent", routing_order: 1 },
+      { name: "To Name", email: "placeholder@example.com", type: "signer", routing_order: 2 }],
+    [{ to: 1, type: "signature", page: 1, x: 72, y: 600, width: 160, height: 44, required: true }]);
+  const a = tokenOf(env, 0);
+  let v = await c.ceremony.open(a);
+  await c.ceremony.consent(a, MOCK.ersd);
+  v = await c.ceremony.view(a);
+  assert.deepEqual(v.later_recipients.map((r) => [r.id, r.type, r.name]), [[env.recipients[1].id, "signer", "To Name"]]);
+  await assert.rejects(c.ceremony.nameRecipients(a, [{ id: env.recipients[1].id, email: "nope" }]), (e) => e.status === 422);
+  v = await c.ceremony.nameRecipients(a, [{ id: env.recipients[1].id, name: "Bea Buyer", email: "bea@example.com" }]);
+  assert.deepEqual([v.later_recipients[0].name, v.later_recipients[0].email], ["Bea Buyer", "bea@example.com"]);
+  v = await c.ceremony.finish(a);
+  assert.equal(v.recipient.status, "completed");
+  const { envelope: after } = await c.getEnvelope(env.id);
+  assert.deepEqual([after.recipients[1].email, after.recipients[1].status], ["bea@example.com", "sent"]);
+  // The signer's own view has no later recipients and may name no one.
+  const s = after.recipients[1].mock_token;
+  v = await c.ceremony.open(s);
+  await c.ceremony.consent(s, MOCK.ersd);
+  assert.equal((await c.ceremony.view(s)).later_recipients, undefined);
+  await assert.rejects(c.ceremony.nameRecipients(s, [{ id: env.recipients[0].id, name: "X" }]), (e) => e.status === 409);
+});
+
 test("sending refuses a field the recipient's type may not hold", async () => {
   const c = await signedIn();
   await assert.rejects(sentWith(c, [{ name: "Ann", email: "ann@example.com", type: "approver" }],
