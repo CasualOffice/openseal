@@ -39,7 +39,7 @@ ML_MANIFEST = OUT_ML / "manifest.tsv"
 
 # docs/21 PDF limits that have no fixture file, and why.
 NO_FIXTURE = {
-    "Envelope total": "an envelope-level limit, tested by the server with several documents (Phase 2)",
+    "Envelope total (one-call create, or one upload at a time to a draft)": "an envelope-level limit, tested by the server with several documents (Phase 2)",
     "Time budget": "a host-supplied predicate, tested by a test that cancels, not by a file",
     "Values per parsed object": "built in memory by casual-sign-pdf's allocation test (a 40 MB array)",
     "Content-stream operands": "unit tests of ContentLexer and the `content` fuzz target build the cases in memory",
