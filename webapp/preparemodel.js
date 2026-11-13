@@ -15,6 +15,7 @@
 // Messages are returned as `{key, params}` for `t()`, never as English.
 
 import { FIELD_TYPES, clampRect } from "./geometry.js";
+import { settingsOf } from "./templatesync.js";
 
 /// The library's kinds with their single-key shortcuts, in the canvas's order, then the
 /// kinds the canvas leaves under "More" (no key: typed less often).
@@ -112,7 +113,7 @@ export function templateOffer(suggestions) {
 /// roles become recipients in routing order, taking the draft's recipients' places one
 /// for one (the draft's people keep their names and emails), extra roles become new
 /// recipients named after the role; each template field goes on the draft's document of
-/// the same position, on the same page, clamped to it. A field whose document or page the
+/// the same position, on the same page, clamped to it, with its settings (UX-11). A field whose document or page the
 /// draft lacks is dropped and counted. Returns `{recipients, fields, dropped}` where
 /// `recipients` is the new list (existing objects updated in a copy) and `fields` the new
 /// fields; `newKey(prefix)` makes keys.
@@ -144,7 +145,7 @@ export function applyTemplatePlan(template, { docs = [], recipients = [] } = {},
     const rk = roleKey.get(f.role_id);
     if (!doc || !pg || !rk || !FIELD_TYPES.includes(f.type)) { dropped++; continue; }
     const rect = clampRect({ x: Number(p.x), y: Number(p.y), width: Number(p.width), height: Number(p.height) }, pg);
-    fields.push({ key: newKey("f"), id: null, docKey: doc.key, recipientKey: rk, type: f.type, page, ...rect, required: !!f.required, label: f.label || "" });
+    fields.push({ key: newKey("f"), id: null, docKey: doc.key, recipientKey: rk, type: f.type, page, ...rect, required: !!f.required, label: f.label || "", ...settingsOf(f) });
   }
   return { recipients: out, fields, dropped };
 }

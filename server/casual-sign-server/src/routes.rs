@@ -139,6 +139,13 @@ pub fn table() -> Vec<Route> {
         ),
         r(
             "GET",
+            "/api/v1/admin-events",
+            Scope("admin:account"),
+            JSON,
+            admin::admin_events,
+        ),
+        r(
+            "GET",
             "/api/v1/users",
             Scope("admin:users"),
             JSON,

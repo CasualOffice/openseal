@@ -4,7 +4,10 @@
 use axum::extract::FromRequestParts;
 use axum::http::HeaderMap;
 use axum::http::request::Parts;
-use casual_sign_store::TenantTx;
+use casual_sign_audit::Personal;
+use casual_sign_store::{ActorKind, AdminActor, TenantTx};
+
+use crate::auth::Credential;
 
 use crate::apply::{Commands, policy};
 use crate::auth::Principal;
@@ -48,8 +51,26 @@ impl FromRequestParts<AppState> for Call {
 
 impl Call {
     /// A transaction in the principal's account.
+    /// Every admin event it appends (ORG-05) records this principal, the request id and
+    /// the client address.
     pub(crate) async fn tx(&self) -> Result<TenantTx, ApiError> {
-        Ok(self.st.store().for_account(self.p.account).begin().await?)
+        let mut tx = self.st.store().for_account(self.p.account).begin().await?;
+        tx.act_as(self.actor());
+        Ok(tx)
+    }
+
+    /// The admin-log actor of this call (docs/23 §2.5): the user behind a session, or
+    /// the API client behind a key or token.
+    pub(crate) fn actor(&self) -> AdminActor {
+        AdminActor {
+            kind: match self.p.credential {
+                Credential::Session(_) => ActorKind::User(self.p.user),
+                Credential::ApiKey(c) | Credential::AccessToken(c) => ActorKind::ApiClient(c),
+            },
+            at: self.st.now(),
+            request_id: crate::error::request_id(),
+            ip: self.ip.0.map(|i| Personal(i.to_string())),
+        }
     }
 
     /// Command contexts for this request, with the account's policy.

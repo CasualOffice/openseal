@@ -55,7 +55,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(17, "0017_operators.sql"),
     migration!(18, "0018_console_organization_writes.sql"),
     migration!(19, "0019_console_approvals.sql"),
-    // 0020 is another lane's (docs/14 reserves it); this file keeps its reserved number.
+    migration!(20, "0020_admin_events.sql"),
     migration!(21, "0021_ml_analysis.sql"),
 ];
 
