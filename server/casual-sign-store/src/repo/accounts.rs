@@ -158,6 +158,120 @@ impl Accounts<'_> {
             body: r.body,
         }))
     }
+
+    /// Publish `body`, as row `id`, as this account's next disclosure (ERSD, docs/22 §1) version in
+    /// `language` (ERSD-01): one more than the highest version this account has in that
+    /// language, published at `now`, with `sha256` the hash of `body`'s UTF-8 that
+    /// consent records. The account row is locked first, so two publishes never race
+    /// for one number. Appends `ersd.published` (the row's id, version, language and
+    /// hash; never the text) to the admin log. Rows are never updated: a change is a new
+    /// version.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when the account does not exist; `CS-DB-0014` when the event cannot
+    /// be appended.
+    pub async fn publish_disclosure(
+        &mut self,
+        id: uuid::Uuid,
+        language: &str,
+        body: &str,
+        sha256: &[u8; 32],
+        now: OffsetDateTime,
+    ) -> Result<PublishedDisclosure> {
+        let acct = self.tx.acct();
+        sqlx::query_scalar!("SELECT id FROM accounts WHERE id = $1 FOR UPDATE", acct)
+            .fetch_optional(self.tx.conn())
+            .await
+            .map_err(db)?
+            .ok_or(StoreError::NotFound { entity: "account" })?;
+        let version = sqlx::query_scalar!(
+            r#"INSERT INTO ersd_versions (id, account_id, version, language, text_sha256, body, published_at, created_at)
+               SELECT $1, $2, COALESCE(MAX(version), 0) + 1, $3, $4, $5, $6, $6
+               FROM ersd_versions WHERE account_id = $2 AND language = $3
+               RETURNING version"#,
+            id,
+            acct,
+            language,
+            sha256.as_slice(),
+            body,
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        let hex: String = sha256.iter().map(|b| format!("{b:02x}")).collect();
+        self.tx
+            .admin_event(
+                AdminChange::new("ersd.published")
+                    .target("ersd_version", id)
+                    .change(Change::new("version", None, Some(version.into())))
+                    .change(Change::new("language", None, Some(language.into())))
+                    .change(Change::new("sha256", None, Some(hex.into()))),
+            )
+            .await?;
+        Ok(PublishedDisclosure {
+            id,
+            version,
+            language: language.to_owned(),
+            sha256: *sha256,
+            published_at: now,
+        })
+    }
+
+    /// This account's published disclosures, newest first, at most `limit`, without
+    /// their text (ERSD-01, the Admin screen's history).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn disclosures(&mut self, limit: i64) -> Result<Vec<PublishedDisclosure>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query!(
+            r#"SELECT id, version, language, text_sha256, published_at AS "published_at!"
+               FROM ersd_versions
+               WHERE account_id = $1 AND published_at IS NOT NULL
+               ORDER BY published_at DESC, version DESC, language LIMIT $2"#,
+            acct,
+            limit
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                let sha256: [u8; 32] =
+                    r.text_sha256
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| StoreError::Corrupt {
+                            column: "ersd_versions.text_sha256",
+                        })?;
+                Ok(PublishedDisclosure {
+                    id: r.id,
+                    version: r.version,
+                    language: r.language,
+                    sha256,
+                    published_at: r.published_at,
+                })
+            })
+            .collect()
+    }
+}
+
+/// A disclosure as published, without its text (ERSD-01).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedDisclosure {
+    /// The row's id.
+    pub id: uuid::Uuid,
+    /// Its version number in its language, from 1.
+    pub version: i32,
+    /// Its language tag.
+    pub language: String,
+    /// SHA-256 of its text's UTF-8: what the policy names and consent records.
+    pub sha256: [u8; 32],
+    /// When it was published.
+    pub published_at: OffsetDateTime,
 }
 
 /// A published disclosure's text (`ersd_versions`, docs/22 §1). Immutable once
