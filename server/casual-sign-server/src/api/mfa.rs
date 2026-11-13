@@ -195,6 +195,14 @@ pub(crate) async fn confirm(c: Call, body: Bytes) -> Result<Response, ApiError> 
         .confirm_own_totp(s, &sealed, step, &hashes, now)
         .await?
         .ok_or_else(ApiError::second_factor_refused)?;
+    // ASVS-04: the user is told by email that a factor was added.
+    super::admin::security_notice(
+        &mut tx,
+        own.user_id,
+        casual_sign_host::jobs::SecurityNotice::FactorAdded,
+        now,
+    )
+    .await?;
     tx.commit().await?;
     Ok(secret_json(&json!({
         "second_factor": "passed",

@@ -425,6 +425,91 @@ async fn an_expired_reset_link_is_refused() {
     api.db.drop().await;
 }
 
+/// ASVS-02: a password on the bundled breached list (whatever its case) is `422` with
+/// code `common_password` wherever a password is set, changed or reset, and nothing
+/// changes; an unlisted one of the same length still passes.
+#[tokio::test]
+async fn a_breached_password_is_refused_wherever_a_password_is_set() {
+    let Some(api) = Api::new("self_service_breached", Rls::On).await else {
+        return;
+    };
+    let t = api.tenant("alpha").await;
+    let s = login(&api, &t.email, PASSWORD).await.unwrap();
+    let refused = |r: &common::harness::Resp, what: &str| {
+        assert_eq!(
+            r.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{what}: {:?}",
+            r.json()
+        );
+        assert_eq!(r.json()["errors"][0]["pointer"], "/password", "{what}");
+        assert_eq!(r.json()["errors"][0]["code"], "common_password", "{what}");
+    };
+    for listed in ["password1234", "PassWord1234", "qwertyuiopasdfghjkl"] {
+        let r = api
+            .call(
+                "PATCH",
+                "/api/v1/users/me",
+                &s,
+                Some(json!({"password": listed, "current_password": PASSWORD})),
+                &[],
+            )
+            .await;
+        refused(&r, "own change");
+        let r = api
+            .call(
+                "POST",
+                "/api/v1/users",
+                &t.auth,
+                Some(json!({"email": "kim@alpha.example.test", "name": "Kim",
+                    "profile": "sender", "password": listed})),
+                &[],
+            )
+            .await;
+        refused(&r, "new member");
+        let r = api
+            .call(
+                "PATCH",
+                &format!("/api/v1/users/{}", t.boot.admin.0),
+                &t.auth,
+                Some(json!({"password": listed})),
+                &[],
+            )
+            .await;
+        refused(&r, "administrator's change");
+        for path in [
+            "/api/v1/auth/accept-invite",
+            "/api/v1/auth/password-reset/confirm",
+        ] {
+            let r = api
+                .call(
+                    "POST",
+                    path,
+                    &Auth::None,
+                    Some(json!({"token": "an-unknown-token", "password": listed})),
+                    &[],
+                )
+                .await;
+            refused(&r, path);
+        }
+    }
+    assert!(
+        login(&api, &t.email, PASSWORD).await.is_some(),
+        "nothing changed"
+    );
+    let r = api
+        .call(
+            "PATCH",
+            "/api/v1/users/me",
+            &s,
+            Some(json!({"password": NEW, "current_password": PASSWORD})),
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    api.db.drop().await;
+}
+
 #[tokio::test]
 async fn sign_in_lists_no_sso_providers_yet() {
     let Some(api) = Api::new("self_service_providers", Rls::On).await else {

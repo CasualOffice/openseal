@@ -7,6 +7,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use casual_sign_audit::Personal;
+use casual_sign_host::jobs::SecurityNotice;
 use casual_sign_store::repo::accounts::{LoginKind, NewUser};
 use casual_sign_store::repo::api_clients::{ApiClientKind, NewApiClient};
 use casual_sign_store::repo::sessions::{LoginMethod, NewSession};
@@ -414,6 +415,25 @@ async fn invite_member(
     Ok(())
 }
 
+/// Queue the email that tells `user` their password or second factor changed (ASVS-04),
+/// in the transaction that makes the change, so a change that commits always tells them
+/// and one that rolls back never does. The job carries ids only; the mail holds no secret.
+pub(crate) async fn security_notice(
+    tx: &mut TenantTx,
+    user: UserId,
+    notice: casual_sign_host::jobs::SecurityNotice,
+    now: OffsetDateTime,
+) -> Result<(), casual_sign_store::StoreError> {
+    let job = casual_sign_host::jobs::security_notice_job(
+        casual_sign_store::JobId(Uuid::now_v7()),
+        user.0,
+        notice,
+        now,
+    );
+    tx.jobs().enqueue(&job).await?;
+    Ok(())
+}
+
 /// The member as the API shows them, with their latest invitation's state.
 async fn member_with_invitation(
     tx: &mut casual_sign_store::TenantTx,
@@ -513,6 +533,10 @@ fn check_password(p: &str) -> Result<(), ApiError> {
     let n = p.chars().count();
     if !(12..=256).contains(&n) {
         return Err(ApiError::invalid("/password"));
+    }
+    // ASVS-02: nor one seen in breaches, from the bundled list, offline.
+    if crate::passwords::is_common(p) {
+        return Err(ApiError::common_password("/password"));
     }
     Ok(())
 }
@@ -658,6 +682,7 @@ async fn accept_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respon
         if who != Some(user) {
             return Ok(None);
         }
+        security_notice(&mut tx, user, SecurityNotice::PasswordSet, now).await?;
         tx.commit().await?;
         Ok::<_, casual_sign_store::StoreError>(Some(()))
     };
@@ -778,6 +803,9 @@ pub(crate) async fn patch_user(
                 tx.sessions().revoke_all(id, now).await?;
             }
         }
+    }
+    if phc.is_some() {
+        security_notice(&mut tx, id, SecurityNotice::PasswordChanged, now).await?;
     }
     let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
     tx.commit().await?;
@@ -1326,7 +1354,7 @@ pub(crate) fn new_profiles() -> BuiltinProfiles {
 /// # Errors
 ///
 /// Store errors (`CS-DB-0006` when an organization exists); `CS-API-0001` for a password
-/// outside 12 to 256 characters.
+/// outside 12 to 256 characters, or `common_password` for one on the breached list.
 pub async fn bootstrap(
     store: &Store,
     name: &str,
@@ -1366,7 +1394,8 @@ pub async fn bootstrap(
 /// # Errors
 ///
 /// Store errors (`CS-DB-0003` when the organization is not active); `CS-API-0001` for a
-/// password outside 12 to 256 characters.
+/// password outside 12 to 256 characters, or `common_password` for one on the breached
+/// list.
 pub async fn bootstrap_workspace(
     store: &Store,
     organization: OrganizationId,
@@ -1627,6 +1656,7 @@ pub(crate) async fn patch_me(c: Call, body: Bytes) -> Result<Response, ApiError>
         if who != Some(c.p.user) {
             return Err(ApiError::expired());
         }
+        security_notice(&mut tx, c.p.user, SecurityNotice::PasswordChanged, now).await?;
     }
     if let (Some(s), Some(n)) = (session, &name) {
         let who = tx.users().update_own(s, Some(n), None, now).await?;
@@ -1743,6 +1773,7 @@ async fn confirm_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respo
         if who != Some(user) {
             return Ok(false);
         }
+        security_notice(&mut tx, user, SecurityNotice::PasswordReset, now).await?;
         tx.commit().await?;
         Ok::<_, casual_sign_store::StoreError>(true)
     };

@@ -567,7 +567,7 @@ platform, so `shipped` over-counts for any one binary.
 | zune-inflate | 0.2.54 | MIT OR Apache-2.0 OR Zlib | shipped | (none stated) |  |
 | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | shipped | Copyright (c) zune-image developers |  |
 
-## Vendored and embedded files (15)
+## Vendored and embedded files (16)
 
 | Component | Version | Path | Licence | Holder | Licence file | Ships in |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -584,6 +584,7 @@ platform, so `shipped` over-counts for any one binary.
 | Liberation Sans, Serif, Mono; Great Vibes; Allura | see fonts/PROVENANCE.md | `crates/casual-sign-flatten/fonts` | OFL-1.1 | Google Corporation; Red Hat, Inc.; The Great Vibes Pro Project Authors; The Allura Project Authors | crates/casual-sign-flatten/fonts/LICENSES | server and WASM binaries; subsets embedded in flattened PDFs |
 | Adobe Core14 AFM widths, Adobe Glyph List subset | data | `crates/casual-sign-fields/src/tables.rs` | Adobe AFM notice; BSD-3-Clause (AGL) | Adobe | NOTICE | server and WASM binaries |
 | Presidio recogniser patterns (ported, no code) | 2.2.364 | `crates/casual-sign-pii` | MIT | Presidio Contributors | crates/casual-sign-pii/LICENSE-PRESIDIO | server and WASM binaries |
+| SecLists common passwords (Xato 1M, filtered) | c205c36 | `server/casual-sign-server/data` | MIT | Daniel Miessler | server/casual-sign-server/data/LICENSE-SECLISTS | casual-sign-server binary |
 | Lexend SemiBold outlines in the logo | data | `docs/assets` | OFL-1.1 | The Lexend Project Authors | NOTICE | logo SVGs (web app, site, docs) |
 | ONNX Runtime (modeld image only) | 1.28.3 | `deploy/modeld` | MIT; bundles MPL-2.0 (Eigen), BSL-1.0 (Boost) | Microsoft Corporation | deploy/modeld/NOTICE.txt | modeld container image |
 

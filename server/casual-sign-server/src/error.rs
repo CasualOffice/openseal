@@ -93,6 +93,15 @@ impl ApiError {
         }])
     }
 
+    /// `CS-API-0001` 422 with the member's own code `common_password` at `pointer`: a
+    /// password on the bundled list of breached passwords (ASVS-02).
+    pub fn common_password(pointer: &str) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-API-0001").fields(vec![FieldProblem {
+            pointer: pointer.into(),
+            code: "common_password",
+        }])
+    }
+
     /// `CS-API-0001` 422 with the member's own code `exists` at `pointer`: a name the
     /// caller already uses (a folder, UXW-02).
     pub fn exists(pointer: &str) -> Self {
