@@ -375,6 +375,14 @@ archived workspace writes none). Store: the repositories append the events thems
 or system, time, request id, IP); `TenantTx::admin_events`, `verified_admin_log`, `verified_admin_events` (one page, verified
 against the event at its cursor and the stored head) and the same on `OrgTx` read and re-verify. Forty-seven tables.
 
+`0026_console_org_events.sql` (`CON-16`, docs/23 §2.5) holds the console role to the admin logs: the
+`*_admin_change_has_event` triggers now also refuse an `openseal_console` commit that changed an organization or a
+workspace without an `operator.*` event appended to that organization's `org_admin_events` in the same transaction
+(`platform.xact_copied_to_org_log`). Definer functions for the console: `platform.org_log_tip` (organization, next
+`seq` and head, the head row locked) and `platform.copy_to_org_log` (live operator session with role `operator` or
+`platform_owner`, an `operator.*` action, the bytes' actor exactly that operator, their `operator_event` link an existing operator event of that
+operator and action, else `OS005`).
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 

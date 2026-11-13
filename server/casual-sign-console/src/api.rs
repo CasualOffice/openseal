@@ -11,7 +11,9 @@ use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRequest, Path, Query, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use casual_sign_platform_store::{Detail, EventDraft, NewOperator, OrgAction, Role, StoredEvent};
+use casual_sign_platform_store::{
+    Detail, EventDraft, NewOperator, OrgAction, OrgScope, Role, StoredEvent,
+};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -102,6 +104,13 @@ async fn record(state: &AppState, draft: EventDraft) -> Result<(), ConsoleError>
     tx.append(&draft).await?;
     tx.commit().await?;
     Ok(())
+}
+
+/// The outcome of [`casual_sign_platform_store::PlatformTx::append_on`] after a write
+/// that found its target: no organization at that point means it vanished between the
+/// write and its copy, and the transaction must not commit.
+fn copied(copy: Option<(Uuid, u64)>) -> Result<(), ConsoleError> {
+    copy.map(|_| ()).ok_or(ConsoleError::NotFound)
 }
 
 pub(crate) fn event(
@@ -709,11 +718,15 @@ pub async fn patch_organization(
         if !tx.rename_organization(&op.token_sha256, id, n, now).await? {
             return Err(ConsoleError::NotFound);
         }
-        tx.append(
-            &event("operator.organization.renamed", Some(op.id), &op.ctx, now)
-                .with("organization", Detail::Id(id)),
-        )
-        .await?;
+        copied(
+            tx.append_on(
+                &op.token_sha256,
+                OrgScope::Organization(id),
+                &event("operator.organization.renamed", Some(op.id), &op.ctx, now)
+                    .with("organization", Detail::Id(id)),
+            )
+            .await?,
+        )?;
     }
     if let Some(r) = &regions {
         let found = tx
@@ -726,17 +739,21 @@ pub async fn patch_organization(
         if !found {
             return Err(ConsoleError::NotFound);
         }
-        tx.append(
-            &event(
-                "operator.organization.regions_set",
-                Some(op.id),
-                &op.ctx,
-                now,
+        copied(
+            tx.append_on(
+                &op.token_sha256,
+                OrgScope::Organization(id),
+                &event(
+                    "operator.organization.regions_set",
+                    Some(op.id),
+                    &op.ctx,
+                    now,
+                )
+                .with("organization", Detail::Id(id))
+                .with("data_regions", Detail::Codes(r.clone())),
             )
-            .with("organization", Detail::Id(id))
-            .with("data_regions", Detail::Codes(r.clone())),
-        )
-        .await?;
+            .await?,
+        )?;
     }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -780,7 +797,10 @@ pub async fn patch_workspace(
         if let Some(label) = r {
             ev = ev.with("data_region", Detail::Code(label.clone()));
         }
-        tx.append(&ev).await?;
+        copied(
+            tx.append_on(&op.token_sha256, OrgScope::Workspace(id), &ev)
+                .await?,
+        )?;
     }
     if let Some(s) = &status {
         if !tx
@@ -794,8 +814,14 @@ pub async fn patch_workspace(
         } else {
             "operator.workspace.restored"
         };
-        tx.append(&event(action, Some(op.id), &op.ctx, now).with("workspace", Detail::Id(id)))
-            .await?;
+        copied(
+            tx.append_on(
+                &op.token_sha256,
+                OrgScope::Workspace(id),
+                &event(action, Some(op.id), &op.ctx, now).with("workspace", Detail::Id(id)),
+            )
+            .await?,
+        )?;
     }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -985,12 +1011,16 @@ async fn apply_org(
         OrgAction::Suspend => "operator.organization.suspended",
         OrgAction::Resume => "operator.organization.resumed",
     };
-    tx.append(
-        &event(name, Some(op.id), &op.ctx, now)
-            .with("organization", Detail::Id(org))
-            .with("approval", Detail::Id(approval)),
-    )
-    .await?;
+    copied(
+        tx.append_on(
+            &op.token_sha256,
+            OrgScope::Organization(org),
+            &event(name, Some(op.id), &op.ctx, now)
+                .with("organization", Detail::Id(org))
+                .with("approval", Detail::Id(approval)),
+        )
+        .await?,
+    )?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

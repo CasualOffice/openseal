@@ -165,6 +165,112 @@ impl EventDraft {
     }
 }
 
+/// The format version of an organization admin event (`org_admin_events`, docs/23 §2.5);
+/// a console copy is written in that log's own format.
+pub const ORG_EVENT_VERSION: u64 = 1;
+
+/// Where an operator action lands in the tenants' admin logs (docs/23 §5.1): the
+/// organization it changed, or the organization of the workspace it changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrgScope {
+    /// An organization, by id.
+    Organization(Uuid),
+    /// A workspace, by id; the copy goes to its organization's log.
+    Workspace(Uuid),
+}
+
+impl EventDraft {
+    /// The canonical bytes of this event's copy in organization `org`'s admin log, as
+    /// event `seq` after `prev` there, linked to the operator event it copies
+    /// (`operator_event`: its `seq` and hash in the operator log).
+    ///
+    /// The copy is the organization log's v1 event (docs/23 §2.5): `v`, `organization`,
+    /// `seq`, `prev`, `at` (Unix milliseconds), `actor` (`{kind: operator, id}`),
+    /// `action`, `target` (the draft's ids), `details` (its codes, labels, counts and
+    /// flags), `request_id`, and `operator_event` (`{seq, hash}`). The operator's address
+    /// is not copied: tenants see which operator acted, not from where.
+    ///
+    /// # Errors
+    /// `CS-DB-0008` when the draft has no operator, or its action, a detail or its time
+    /// has the wrong shape, or the copy is too large.
+    pub fn org_copy(
+        &self,
+        org: Uuid,
+        seq: u64,
+        prev: Option<&Hash256>,
+        operator_event: (u64, &Hash256),
+    ) -> Result<Vec<u8>> {
+        let bad = || PlatformError::Invalid {
+            sqlstate: "22023".into(),
+        };
+        // The same shape checks as the operator event itself.
+        self.canonical(0, None)?;
+        let operator = self.operator.ok_or_else(bad)?;
+        let ms = self.at.unix_timestamp_nanos() / 1_000_000;
+        let ms = u64::try_from(ms).map_err(|_| bad())?;
+        let mut target = Vec::new();
+        let mut details = Vec::new();
+        for (k, v) in &self.details {
+            match v {
+                Detail::Id(id) => target.push(((*k).to_owned(), Value::String(id.to_string()))),
+                other => details.push(((*k).to_owned(), other.value()?)),
+            }
+        }
+        let opt = |s: Option<String>| s.map_or(Value::Null, Value::String);
+        let value = Value::Object(vec![
+            ("v".into(), number(ORG_EVENT_VERSION)?),
+            ("organization".into(), Value::String(org.to_string())),
+            ("seq".into(), number(seq)?),
+            ("prev".into(), opt(prev.map(Hash256::hex))),
+            ("at".into(), number(ms)?),
+            (
+                "actor".into(),
+                Value::Object(vec![
+                    ("kind".into(), Value::String("operator".into())),
+                    ("id".into(), Value::String(operator.to_string())),
+                ]),
+            ),
+            ("action".into(), Value::String(self.action.clone())),
+            ("target".into(), Value::Object(target)),
+            ("details".into(), Value::Object(details)),
+            (
+                "request_id".into(),
+                opt(self.request.map(|u| u.to_string())),
+            ),
+            (
+                "operator_event".into(),
+                Value::Object(vec![
+                    ("seq".into(), number(operator_event.0)?),
+                    ("hash".into(), Value::String(operator_event.1.hex())),
+                ]),
+            ),
+        ]);
+        let bytes = casual_sign_audit::jcs::to_vec(&value).map_err(|_| bad())?;
+        if bytes.len() > MAX_EVENT_BYTES {
+            return Err(bad());
+        }
+        Ok(bytes)
+    }
+
+    /// This event's time truncated to the millisecond its organization copy states.
+    ///
+    /// # Errors
+    /// `CS-DB-0008` for a time before 1970.
+    pub fn org_copy_at(&self) -> Result<OffsetDateTime> {
+        let ms = self.at.unix_timestamp_nanos() / 1_000_000;
+        if ms < 0 {
+            return Err(PlatformError::Invalid {
+                sqlstate: "22023".into(),
+            });
+        }
+        OffsetDateTime::from_unix_timestamp_nanos(ms.saturating_mul(1_000_000)).map_err(|_| {
+            PlatformError::Invalid {
+                sqlstate: "22023".into(),
+            }
+        })
+    }
+}
+
 /// `n` as a JSON number, refusing one beyond 2^53 − 1.
 fn number(n: u64) -> Result<Value> {
     const MAX_SAFE: u64 = (1 << 53) - 1;
@@ -318,6 +424,40 @@ mod tests {
                 "{d:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_organization_copy_names_the_operator_and_its_operator_event_but_not_the_address() {
+        let op = Uuid::from_u128(7);
+        let d = EventDraft::new("operator.workspace.archived", Some(op), at())
+            .with("workspace", Detail::Id(Uuid::from_u128(5)))
+            .with("data_region", Detail::Code("eu-1".into()))
+            .from_request(Uuid::from_u128(1), Some("192.0.2.1".into()));
+        let h = Hash256::digest(b"op");
+        let text =
+            String::from_utf8(d.org_copy(Uuid::from_u128(9), 0, None, (4, &h)).unwrap()).unwrap();
+        assert_eq!(
+            text,
+            format!(
+                "{{\"action\":\"operator.workspace.archived\",\
+                 \"actor\":{{\"id\":\"00000000-0000-0000-0000-000000000007\",\"kind\":\"operator\"}},\
+                 \"at\":1800000000000,\"details\":{{\"data_region\":\"eu-1\"}},\
+                 \"operator_event\":{{\"hash\":\"{}\",\"seq\":4}},\
+                 \"organization\":\"00000000-0000-0000-0000-000000000009\",\"prev\":null,\
+                 \"request_id\":\"00000000-0000-0000-0000-000000000001\",\"seq\":0,\
+                 \"target\":{{\"workspace\":\"00000000-0000-0000-0000-000000000005\"}},\"v\":1}}",
+                h.hex()
+            )
+        );
+        assert!(!text.contains("192.0.2.1"));
+        // No operator, no copy: a copy always names who acted.
+        let anon = EventDraft::new("operator.x", None, at());
+        assert_eq!(
+            anon.org_copy(Uuid::nil(), 0, None, (0, &h))
+                .unwrap_err()
+                .code(),
+            "CS-DB-0008"
+        );
     }
 
     #[test]

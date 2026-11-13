@@ -56,8 +56,9 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(18, "0018_console_organization_writes.sql"),
     migration!(19, "0019_console_approvals.sql"),
     migration!(20, "0020_admin_events.sql"),
-    // 21 to 23 are taken by rows merging before this one (ML, folders, CON-16).
+    // 21 to 23 and 25 are reserved by rows merging separately.
     migration!(24, "0024_plans.sql"),
+    migration!(26, "0026_console_org_events.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.

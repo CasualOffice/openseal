@@ -202,6 +202,10 @@ async fn platform_grants_are_exactly_the_designed_ones() {
         "grant_approval",
         "apply_suspend_organization",
         "apply_resume_organization",
+        // CON-16, migration 0026: the copy of each organization write into its admin log.
+        "org_log_tip",
+        "copy_to_org_log",
+        "xact_copied_to_org_log",
     ];
     expected.sort_unstable();
     assert_eq!(callable, expected);

@@ -18,7 +18,7 @@ mod plans;
 mod store;
 
 pub use error::{PlatformError, Result};
-pub use event::{ChainReport, Detail, EventDraft, StoredEvent};
+pub use event::{ChainReport, Detail, EventDraft, OrgScope, StoredEvent};
 pub use plans::{NewOverride, PlanRow};
 pub use store::{
     AlertRow, ApprovalRow, DeadJob, JobStat, MAX_PAGE, NewOperator, OperatorLogin, OperatorSummary,
