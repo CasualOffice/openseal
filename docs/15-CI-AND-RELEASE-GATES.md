@@ -1,6 +1,6 @@
 # 15 — CI and release gates
 
-**Status: built and running on GitHub since 2026-11-10** (first run all green at `fd5e8f3`). `ci.yml` jobs: `checks` (fmt, clippy, rustdoc, wasm32, repository gates, hostile and corpus manifest checks), `commit-messages`, `test` (Linux, macOS, Windows), `msrv`, `dependency-policy`, `validators` (pyHanko and EU DSS self-test). The table below is the target; rows not in that list are planned. `tools/ci-local.sh` mirrors `ci.yml` for use before pushing. Adapted from OpenPresent's docs/15. CI on GitHub is
+**Status: built and running on GitHub since 2026-11-10** (first run all green at `fd5e8f3`). `ci.yml` jobs: `checks` (fmt, clippy, rustdoc, wasm32, repository gates, hostile and corpus manifest checks), `commit-messages`, `test` (Linux, macOS, Windows), `msrv`, `dependency-policy`, `validators` (pyHanko and EU DSS self-test; the `HRD-02` interop run and its packet). The table below is the target; rows not in that list are planned. `tools/ci-local.sh` mirrors `ci.yml` for use before pushing. Adapted from OpenPresent's docs/15. CI on GitHub is
 
 ## Jobs on every push to `main` and every pull request
 
@@ -14,7 +14,7 @@
 | `docs` | `cargo doc -D warnings` | Linux |
 | `deny` | `cargo deny check` (advisories, licences, bans, sources) | Linux |
 | `repo` | `tools/check-repo.py`: tracker ids unique and well-formed, doc references resolve, crate DAG, docs/00 lists every doc | Linux |
-| `validators` | `tools/verify-sealed.py`: pyHanko and EU DSS (container) over `fixtures/sealed` and `fixtures/tampered`; expected verdicts in a manifest | Linux |
+| `validators` | `tools/verify-sealed.py`: pyHanko and EU DSS (container) over `fixtures/sealed` and `fixtures/tampered`; expected verdicts in a manifest. `tools/interop/interop.py check` and `verify fixtures/interop` (`HRD-02`): a real-style PKI and TSA served on 127.0.0.1, seals by the CLI at B-T and B-LTA, ours, pyHanko and EU DSS online with revocation and timestamps checked | Linux |
 | `server` | Postgres service container; migrations up from empty; API tests; tenant isolation tests; crash tests (Phase 2) | Linux |
 | `e2e` | Compose deployment; Playwright browser run of the slice scenarios, including mobile viewport and axe accessibility checks (slices) | Linux |
 | `fuzz-smoke` | Each fuzz target 60 s | Linux |

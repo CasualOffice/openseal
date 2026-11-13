@@ -87,6 +87,15 @@ jobs:
       # Rung 3: EU DSS 6.5.1, built here, run with no network (LGPL; never linked).
       - run: docker build -q -t openseal-eu-dss tools/eu-dss
       - run: /tmp/v/bin/python -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
+      # HRD-02: a real-style PKI (offline root, issuing CA, OCSP responder, CRLs, an RFC 3161
+      # TSA) served on 127.0.0.1; the CLI seals at B-T and B-LTA through it; ours, pyHanko
+      # (hard-fail) and EU DSS (--online, the host's network) validate with revocation and
+      # timestamps checked, and revoked and tampered seals must fail. Then the committed
+      # packet (fixtures/interop) again, its revocation data replayed from files.
+      - run: rustup show active-toolchain || { sleep 15; rustup toolchain uninstall 1.96.0; rustup show active-toolchain; }
+      - run: cargo build -q -p casual-sign-cli --locked
+      - run: /tmp/v/bin/python -I tools/interop/interop.py check --dss openseal-eu-dss --openseal target/debug/openseal
+      - run: /tmp/v/bin/python -I tools/interop/interop.py verify fixtures/interop --dss openseal-eu-dss --openseal target/debug/openseal
 
   # Phase 1 exit item 6 (WASM-01): field rules and the verifier give byte-identical JSON
   # native and in WebAssembly, over every corpus PDF, the signed and hostile fixtures.

@@ -137,7 +137,8 @@ organization, a TSA change) need a second operator's approval.
 | Database | PostgreSQL 15+, encrypted, PITR backups, a separate role for migrations; the application role has no `UPDATE`/`DELETE` on `audit_events` |
 | Object store | S3-compatible, versioning on, encryption on; Object Lock (compliance mode) for regulated tenants |
 | Edge | TLS 1.2+ (1.3 preferred), HSTS, a WAF if you have one; `OPENSEAL_PUBLIC_URL` must be HTTPS |
-| Trust | Bundle your organization's roots for verification; enable the EU LOTL if you verify EU signatures |
+| Trust | Bundle your organization's roots for verification; enable the EU LOTL if you verify EU signatures. `OPENSEAL_TRUST_ANCHORS` on the worker must hold the root of your seal certificate **and** the root of every TSA you configure: a CA hands out the certificate and its issuing CA, never the offline root, and a TSA's token stops below its root too, so B-LT and B-LTA seals take the root from these anchors when they collect revocation data (and the seal's self-check needs them anyway) |
+| Interoperability | Before going live, rehearse with `tools/interop/interop.py check` (a real-style PKI and TSA served locally; docs/31 §Verification ladder), and with your production TSA: `OPENSEAL_INTEROP_NETWORK=1 … check --tsa-url URL --tsa-root ROOT.pem`. DigiCert's TSA passed on 2026-11-14; a TSA whose tokens use ESSCertID v1 (SHA-1), such as FreeTSA, is refused with `CS-SEAL-0005` until `SEAL-14` |
 | ERSD | Have counsel review the consumer disclosure for your jurisdictions before sending to consumers |
 | Observability | OTLP endpoint for traces and metrics; alert on seal failures, TSA failover, email bounce rate, job backlog |
 | Retention | Set account retention policies before go-live; document them in your records schedule |
