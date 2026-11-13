@@ -294,8 +294,12 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
       await page.goto(app("#/admin?section=branding"));
       await page.getByTestId("account-branding").getByRole("button", { name: "Edit branding" }).click();
       const br = page.getByRole("dialog", { name: "Branding" });
-      await br.getByLabel("Accent colour", { exact: true }).fill("#f5c518");
-      await expect(br.getByTestId("brand-contrast")).toContainText("needs at least 4.5:1");
+      // The dialog fills its fields from the account once open; on a slow WebKit that can land
+      // after the first fill and replace it, so fill until the warning shows (E2E-04).
+      await expect(async () => {
+        await br.getByLabel("Accent colour", { exact: true }).fill("#f5c518");
+        await expect(br.getByTestId("brand-contrast")).toContainText("needs at least 4.5:1", { timeout: 1000 });
+      }).toPass();
       await expect(br.getByLabel("Pick the accent colour")).toHaveValue("#f5c518");
       await br.getByLabel("Pick the accent colour").fill("#0e7490");
       await expect(br.getByLabel("Accent colour", { exact: true })).toHaveValue("#0e7490");
