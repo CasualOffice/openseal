@@ -41,6 +41,25 @@ use crate::state::AppState;
 /// The cookie binding a ceremony link to a browser.
 pub(crate) const CEREMONY_COOKIE: &str = "os_ceremony";
 
+/// The `auth.lockout` security event (ASVS-08), when the authentication result just
+/// recorded locked `r` out.
+fn locked_out(st: &AppState, o: &Open, r: &Id) {
+    if o.l.state.recipient(r).is_some_and(|x| x.auth_locked) {
+        let mut ev = casual_sign_seclog::SecurityEvent::new(
+            casual_sign_seclog::Kind::Lockout,
+            casual_sign_seclog::Outcome::Failure,
+        )
+        .code("CS-AUTH-0004");
+        if let Ok(id) = uid(r) {
+            ev = ev.principal(casual_sign_seclog::Principal::Recipient(id));
+        }
+        if let Ok(env) = uid(&o.l.state.id) {
+            ev = ev.with("objects", casual_sign_seclog::Value::Ids(vec![env]));
+        }
+        crate::security::emit(st, ev);
+    }
+}
+
 /// An opened ceremony: the recipient, their envelope (locked), and the transaction.
 pub(crate) struct Open {
     tx: TenantTx,
@@ -653,12 +672,13 @@ pub(crate) async fn authenticate(
             None => false,
         };
         o.run(Command::AuthResult {
-            recipient: r,
+            recipient: r.clone(),
             method: req.method,
             passed,
             identity: None,
         })
         .await?;
+        locked_out(&st, &o, &r);
         Ok(if passed {
             StatusCode::OK
         } else {
@@ -803,12 +823,13 @@ pub(crate) async fn sso_verify(
         };
         let passed = identity.is_some();
         o.run(Command::AuthResult {
-            recipient: r,
+            recipient: r.clone(),
             method: AuthMethod::Sso,
             passed,
             identity,
         })
         .await?;
+        locked_out(&st, &o, &r);
         Ok(if passed {
             StatusCode::OK
         } else {
@@ -1051,6 +1072,7 @@ pub(crate) async fn otp_verify(
             identity: None,
         })
         .await?;
+        locked_out(&st, &o, &r);
         if o.l.state.recipient(&r).is_some_and(|x| x.auth_locked) {
             o.tx.recipients()
                 .close_otp(

@@ -77,6 +77,8 @@ pub struct Api {
     /// Whether the server marks cookies `Secure` (and so names its session cookie
     /// `__Host-os_session`, ASVS-05).
     pub secure_cookies: bool,
+    /// Every security event line the server wrote (ASVS-08).
+    pub security: casual_sign_seclog::Memory,
 }
 
 /// An account with an administrator's API key holding every scope.
@@ -138,7 +140,11 @@ impl Api {
             config,
         )
         .unwrap();
+        let (log, security) =
+            casual_sign_seclog::SecurityLog::memory(casual_sign_seclog::Service::Server);
+        st.set_security_log(log);
         Some(Self {
+            security,
             app: app(st.clone()),
             st,
             clock,

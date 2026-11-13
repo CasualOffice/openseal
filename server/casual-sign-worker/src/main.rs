@@ -35,7 +35,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use casual_sign_keyd::{DevKeyConsent, Endpoint, FileKey, RemoteKey, certificates, client_tls};
+use casual_sign_keyd::{DevKeyConsent, Endpoint, FileKey, certificates, client_tls};
 use casual_sign_sdk::{CertificateOptions, Engine, FontSet, Limits, TrustStore};
 use casual_sign_secrets::env_secret;
 use casual_sign_store::Store;
@@ -93,7 +93,7 @@ fn seal_key() -> Result<SealKey, WorkerError> {
         timeout: Duration::from_secs(30),
     };
     let alias = var("OPENSEAL_KEYD_ALIAS").unwrap_or_else(|| "platform".into());
-    let remote = RemoteKey::connect(endpoint, &alias)
+    let remote = casual_sign_worker::seal::connect_keyd(endpoint, &alias)
         .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
     Ok(SealKey::Remote(remote))
 }

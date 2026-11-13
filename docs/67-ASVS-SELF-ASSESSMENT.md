@@ -26,15 +26,15 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 186 | 104 | 76 | 6 |
-| Partly | 48 | 12 | 30 | 6 |
-| Not met | 20 | 5 | 10 | 5 |
+| Met | 193 | 104 | 82 | 7 |
+| Partly | 42 | 12 | 25 | 5 |
+| Not met | 19 | 5 | 9 | 5 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
-The largest gaps: a second factor for tenant staff that accounts must opt into (`ASVS-01` built TOTP; `ASVS-31` makes it the default for administrators), no security event log for staff authentication and
-access refusals (`ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), no malware scan of
+The largest gaps: a second factor for tenant staff that accounts must opt into (`ASVS-01` built TOTP; `ASVS-31` makes it the default for administrators), log shipping shown only as configuration
+(`ASVS-08A`; the security event log itself is built, `ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), no malware scan of
 uploads (`ASVS-11`), no backup and restore drill (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
@@ -53,6 +53,8 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-06 | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
 | ASVS-07 | P1 | ASVS 3.7.1, 4.3.3 | Step-up re-authentication (password or second factor within the last 5 minutes) before creating API clients or keys, granting administrator profiles, changing webhook URLs and changing the user's email |
 | ASVS-08 | P1 | ASVS 1.7.1, 1.7.2, 2.8.5, 7.1.3, 7.1.4, 7.2.1, 7.2.2, 8.3.5, 9.2.5; `SEC-D01` stays (no personal data) | Security event log: staff sign-in success and failure, logout, reset, lockout, operator TOTP rejection, rate-limit hits and every 401/403 with request id and a hashed principal; one JSON log format across server, worker, keyd and modeld; staff document downloads recorded; worker logs keyd and TSA connection failures with their code; docs/65 explains shipping logs to a remote collector |
+| ASVS-08A | P2 | ASVS 1.7.2 | Show the log-forwarding Compose override delivering to a live syslog-over-TLS collector on a Linux Docker host (found by `ASVS-08`) |
+| ASVS-08B | P2 | ASVS 7.2.2 | Ceremony refusals carry their code and recipient in `access.denied`; another account's object (answered 404) is logged as a refusal (found by `ASVS-08`) |
 | ASVS-09 (Done) | P1 | ASVS 4.2.2, 13.1.5, 13.2.5 | Closed 2026-11-13: `/api/v1` answers `415 CS-API-0007` to a body that is not JSON. Was: `/api/v1` refuses a request body that is not `Content-Type: application/json` (`415`), including `POST /auth/login`, closing login CSRF by a cross-site form |
 | ASVS-10 | P2 | ASVS 12.3.4, 14.4.2 | `Content-Disposition` on API responses (`attachment` for JSON; `attachment` or `inline` with a server-made filename for documents and certificates) |
 | ASVS-11 | P1 | ASVS 12.4.2 | Malware scanning seam for uploads: an optional scanner (ICAP or ClamAV in its own container) called before admission, its verdict recorded in the audit chain |
@@ -138,8 +140,8 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.7.1 | 2 | All | Common logging format | Partly | `tracing` in every binary (`-server/src/main.rs`); plain text, not one structured (JSON) format across server, worker, keyd and modeld | ASVS-08 |
-| 1.7.2 | 2 | All | Logs shipped securely to a remote system | Not met | No log forwarding configured or documented beyond "OTLP endpoint" in docs/65 checklist; not built | ASVS-08 |
+| 1.7.1 | 2 | All | Common logging format | Met | One JSON line per event in every host binary, `ts`, `level`, `service`, `event` first (`server/casual-sign-seclog`; server and console through its `tracing` layer, modeld behind its fixed filter, worker and keyd directly); docs/65 §Logs. Checked 2026-11-14 (`ASVS-08`) | — |
+| 1.7.2 | 2 | All | Logs shipped securely to a remote system | Partly | Standard error only, shipped by the container runtime: `deploy/compose.log-forwarding.yml` puts every service on Docker's `syslog` driver over mutual TLS (RFC 5424, `tcp+tls`), the collector may forward as OTLP (docs/65 §Logs); `docker compose config` checked. Delivery to a live TLS collector not yet shown | ASVS-08A |
 
 **V1.8 Data Protection and Privacy Architecture**
 
@@ -275,7 +277,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.8.2 | 2 | All | TOTP seeds highly protected | Met | Operators' seeds sealed with AES-256-GCM under `OPENSEAL_CONSOLE_MFA_KEY`, operator id as associated data; the database holds only the sealed seed (`-console/src/crypto.rs`); staff seeds likewise under `OPENSEAL_MFA_KEY` with the user id (`-server/src/mfa.rs`) | — |
 | 2.8.3 | 2 | All | Approved algorithms for OTP | Met | HMAC-SHA1 TOTP per RFC 6238 vectors (`-console/src/totp.rs` tests); signer codes from `aws_lc_rs::rand` | — |
 | 2.8.4 | 2 | All | TOTP used once within its validity | Met | `platform.operator_mfa.last_step`: a code is accepted only for a step later than the last (`migrations/0017_operators.sql`); `-console/tests/api.rs` `operators_enrol_and_sign_in_with_a_single_use_second_factor` replays the same code on a new session and is refused; staff: `users.totp_last_step` (`migrations/0032_staff_mfa.sql`), `-server/tests/mfa.rs` refuses a replayed code, seen red | — |
-| 2.8.5 | 2 | All | Reused TOTP logged and rejected | Partly | Rejected by `last_step`; the rejection is not written to a security log | ASVS-08 |
+| 2.8.5 | 2 | All | Reused TOTP logged and rejected | Met | Rejected by `last_step`, and logged: `auth.mfa` failure with `reason: reused` for staff (`-server/src/api/mfa.rs`) and operators (`-console/src/api.rs`); `-server/tests/security_log.rs`, `-console/tests/security_log.rs` (the console's reason seen red when removed) | — |
 | 2.8.6 | 2 | All | Physical OTP generators revocable | N/A | No physical generators issued | — |
 | 2.8.7 | 2 | All | Biometrics only as secondary factor | N/A | No biometric authenticators | — |
 
@@ -483,15 +485,15 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 7.1.1 | 1 | All | No credentials or payment details logged | Met | Request log fields: id, method, route template, status, time (`-server/src/http.rs`); secrets `Debug` redacted (`casual-sign-secrets`) | — |
 | 7.1.2 | 1 | All | No other sensitive data logged | Met | Typed errors with ids and counts only (`error.rs`, `SEC-D01`); client IP never logged (`net.rs`); modeld log scrub test (`-modeld/tests/log_scrub.rs`) | — |
-| 7.1.3 | 2 | All | Security-relevant events logged | Partly | Admin changes in the hash-chained admin log (`-store/src/admin_log.rs`); envelope events in the audit chain; staff login success and failure only as an HTTP status in the request log | ASVS-08 |
-| 7.1.4 | 2 | All | Log events carry investigation detail | Partly | Request id, route, status, duration; no principal identifier on staff authentication outcomes | ASVS-08 |
+| 7.1.3 | 2 | All | Security-relevant events logged | Met | Security events (`-server/src/security.rs`, `-console/src/security.rs`, keyd, worker, modeld): sign-in, sign-out, second factor, password reset and change, invitation, token, lockout, every 401/403/429, refused uploads, administrative changes, document reads, key use, refused mTLS callers, back-end failures; each service's `tests/security_log.rs` shows every kind it lists emitted (seen red); admin and envelope events also stay in their hash chains | — |
+| 7.1.4 | 2 | All | Log events carry investigation detail | Met | Each security event names the request id, route template, refusal code, account, principal (user, client, operator or recipient id; a keyed pseudonym for an unverified e-mail or client id) and the client address as a keyed pseudonym (`casual-sign-seclog`) | — |
 
 **V7.2 Log Processing**
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 7.2.1 | 2 | All | Authentication decisions logged | Partly | Ceremony authentication decisions recorded in the audit chain (`recipient.auth_passed`/`auth_challenged`); staff login decisions only as status codes | ASVS-08 |
-| 7.2.2 | 2 | All | Access control decisions logged, failures always | Partly | Refusals answer RFC 9457 errors and appear as 401/403/404 in the request log without the principal | ASVS-08 |
+| 7.2.1 | 2 | All | Authentication decisions logged | Met | Ceremony decisions in the audit chain; staff and operator sign-in, second factor, reset, invitation and token decisions as `auth.*` security events with outcome and principal (`-server/tests/security_log.rs`, `-console/tests/security_log.rs`) | — |
+| 7.2.2 | 2 | All | Access control decisions logged, failures always | Partly | Every 401 and 403 is an `access.unauthenticated` or `access.denied` event with request id, code and principal; another account's object answers 404 (not disclosed) and is not logged as a refusal; a wrong access code's bare 403 carries no code | ASVS-08B |
 
 **V7.3 Log Protection**
 
@@ -539,7 +541,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 8.3.2 | 1 | All | Users can export or remove their data | Not met | No self-service export or erasure (VS-15 enterprise data controls) | ASVS-16 |
 | 8.3.3 | 1 | All | Clear language about personal data use | Partly | ERSD disclosure and consent for signers (`/s/{token}/disclosure`, docs/09); no privacy notice template for operators | ASVS-16 |
 | 8.3.4 | 1 | All | Sensitive data identified with a handling policy | Met | docs/07 data classification; docs/22 marks personal fields (`Personal<T>` wrapper in the store) | — |
-| 8.3.5 | 2 | All | Access to sensitive data audited | Partly | Signer document views recorded (`/s/{token}/documents/{doc}/viewed`); staff downloads of documents not recorded | ASVS-08 |
+| 8.3.5 | 2 | All | Access to sensitive data audited | Met | Signer document views recorded (`/s/{token}/documents/{doc}/viewed`); staff reads of a document, combined PDF, certificate, attachment, form data or audit trail are `data.document_read` events with the user and the ids (`-server/src/security.rs` `classify`; `-server/tests/security_log.rs`) | — |
 | 8.3.6 | 2 | All | Sensitive data in memory overwritten | Partly | Secrets read through `Secret` wiped on drop (`casual-sign-secrets`); request passwords and codes are plain `String`s | ASVS-25 |
 | 8.3.7 | 2 | All | Encryption of required data with approved algorithms | Partly | As 6.1.1 | ASVS-17 |
 | 8.3.8 | 2 | All | Retention classification and deletion | Not met | Retention policies not built (`SEC-D03`, VS-15) | ASVS-18 |
@@ -562,7 +564,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 9.2.2 | 2 | All | TLS for all inbound and outbound connections | Partly | Webhooks and OIDC `https` only (HTTP to loopback for a same-host IdP); PostgreSQL and S3 not over TLS in compose; TSA URLs may be HTTP (RFC 3161 responses are signed) | ASVS-19 |
 | 9.2.3 | 2 | All | Encrypted, authenticated connections to external systems | Met | As 9.2.1; keyd mutual TLS | — |
 | 9.2.4 | 2 | All | OCSP stapling | N/A | At the operator's edge; seal-time revocation checks are separate (`SEC-S11`) | — |
-| 9.2.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backend TLS failures logged | Partly | keyd refuses a bad client at the handshake and records allow-list refusals in its op log; the worker's keyd and TSA connection failures surface as job errors without a dedicated log line | ASVS-08 |
+| 9.2.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backend TLS failures logged | Met | keyd refuses a bad client at the handshake and records allow-list refusals in its op log, and logs both as `transport.caller_refused` (`-keyd/tests/security_log.rs`); the worker logs keyd's and each TSA's failures as `transport.backend_failed` with `CS-KEY-*` or `CS-WRK-0018` (`-worker/tests/security_log.rs`) | — |
 
 ### V10 Malicious Code
 

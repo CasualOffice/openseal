@@ -18,6 +18,7 @@
 //! | `OPENSEAL_TRUSTED_PROXIES` | Comma-separated CIDRs whose forwarding headers count |
 //! | `OPENSEAL_GEOIP_DB` | Optional GeoIP `.mmdb` the operator supplies (row GEO-01) |
 //! | `OPENSEAL_ML_BUNDLE_ID` | The model bundle deployed with `casual-sign-modeld` (docs/33 §7); none: document analysis is not installed |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` (secret) | 32 bytes as base64: keys the pseudonyms security events give a presented e-mail or client address (ASVS-08); share it with the console so they match; none: a key per process |
 //! | `OPENSEAL_MFA_KEY` (secret) | 32 bytes as base64: seals staff TOTP seeds (ASVS-01); none: staff cannot enrol a second factor and no account may require one |
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key and second-factor key, plain-HTTP cookies |
 //! | `OPENSEAL_ADMIN_PASSWORD` (secret) | `bootstrap` only: the first administrator's password |
@@ -198,13 +199,19 @@ async fn migrate() -> ExitCode {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with_ansi(false)
-        .init();
+    {
+        use tracing_subscriber::Layer as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+        // One JSON line per event on standard error (ASVS-08, docs/65 §Logs).
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        let _ = tracing::subscriber::set_global_default(
+            tracing_subscriber::registry().with(
+                casual_sign_seclog::JsonLayer::stderr(casual_sign_seclog::Service::Server)
+                    .with_filter(filter),
+            ),
+        );
+    }
     casual_sign_server::quiet_panics();
     casual_sign_host::crash::startup();
     match std::env::args().nth(1).as_deref() {
@@ -277,6 +284,15 @@ async fn main() -> ExitCode {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
     };
+    // Security events, their pseudonyms keyed by OPENSEAL_LOG_PSEUDONYM_KEY (ASVS-08).
+    match casual_sign_seclog::Pseudonymizer::from_env() {
+        Ok(p) => state.set_security_log(casual_sign_seclog::SecurityLog::new(
+            casual_sign_seclog::Service::Server,
+            Arc::new(casual_sign_seclog::Stderr),
+            p,
+        )),
+        Err(e) => return fail(&e.to_string()),
+    }
     match mfa_key() {
         Ok(Some(k)) => state.set_mfa_key(k),
         Ok(None) => {}

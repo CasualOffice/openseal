@@ -109,10 +109,16 @@ fn run() -> Result<(), ModeldError> {
     let service = service.with_limits(limits);
     let listen = var("OPENSEAL_MODELD_LISTEN").unwrap_or_else(|| "127.0.0.1:7444".into());
     let modeld = Modeld::bind(&listen, tls, service)?;
-    eprintln!(
-        "modeld: bundle {id} ({installed} files), {} slots, on {}",
-        limits.slots,
-        modeld.local_addr()?
+    let mut m = serde_json::Map::new();
+    m.insert("bundle".into(), id.into());
+    m.insert("files".into(), installed.into());
+    m.insert("slots".into(), limits.slots.into());
+    m.insert("listen".into(), modeld.local_addr()?.to_string().into());
+    casual_sign_seclog::write(
+        casual_sign_seclog::Service::Modeld,
+        casual_sign_seclog::Level::Info,
+        "serving",
+        m,
     );
     modeld.serve();
     Ok(())
@@ -129,7 +135,15 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("modeld: {e}");
+            let mut m = serde_json::Map::new();
+            m.insert("code".into(), e.code().into());
+            m.insert("error".into(), e.to_string().into());
+            casual_sign_seclog::write(
+                casual_sign_seclog::Service::Modeld,
+                casual_sign_seclog::Level::Error,
+                "start_failed",
+                m,
+            );
             ExitCode::FAILURE
         }
     }

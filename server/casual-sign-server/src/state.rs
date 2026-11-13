@@ -238,6 +238,7 @@ pub(crate) struct Inner {
     pub webapp: std::sync::OnceLock<Arc<crate::web::WebApp>>,
     pub idps: std::sync::OnceLock<Arc<crate::idp::RecipientIdps>>,
     pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
+    pub security: std::sync::OnceLock<casual_sign_seclog::SecurityLog>,
 }
 
 impl AppState {
@@ -266,6 +267,7 @@ impl AppState {
             webapp: std::sync::OnceLock::new(),
             idps: std::sync::OnceLock::new(),
             mfa: std::sync::OnceLock::new(),
+            security: std::sync::OnceLock::new(),
         })))
     }
 
@@ -292,6 +294,19 @@ impl AppState {
     /// factor. Set once; a second call is ignored.
     pub fn set_mfa_key(&self, key: crate::mfa::MfaKey) {
         let _ = self.0.mfa.set(Arc::new(key));
+    }
+
+    /// Write security events to `log` (`ASVS-08`). Unset, they go to standard error
+    /// with the environment's pseudonym key (`casual_sign_seclog::SecurityLog::from_env`).
+    /// Set once, before the first request; a second call is ignored.
+    pub fn set_security_log(&self, log: casual_sign_seclog::SecurityLog) {
+        let _ = self.0.security.set(log);
+    }
+
+    pub(crate) fn security(&self) -> &casual_sign_seclog::SecurityLog {
+        self.0.security.get_or_init(|| {
+            casual_sign_seclog::SecurityLog::from_env(casual_sign_seclog::Service::Server)
+        })
     }
 
     pub(crate) fn mfa_key(&self) -> Option<&Arc<crate::mfa::MfaKey>> {

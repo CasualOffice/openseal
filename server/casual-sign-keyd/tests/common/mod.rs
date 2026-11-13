@@ -205,6 +205,19 @@ pub fn start_keyd_with_admin(
     limits: KeydLimits,
     dir: &Path,
 ) -> RunningKeyd {
+    start_keyd_logged(pki, keys, allowed, admins, limits, dir, None)
+}
+
+/// As [`start_keyd_with_admin`], its security events written to `log` (ASVS-08).
+pub fn start_keyd_logged(
+    pki: &Pki,
+    keys: Vec<(&str, Arc<dyn DigestSigner>)>,
+    allowed: &[&str],
+    admins: &[&str],
+    limits: KeydLimits,
+    dir: &Path,
+    log: Option<casual_sign_seclog::SecurityLog>,
+) -> RunningKeyd {
     let (cert, key, _) = pki.server_identity();
     let tls = server_tls(cert.as_bytes(), key.as_bytes(), pki.tls_ca.pem().as_bytes()).unwrap();
     let mut allow = AllowList::new();
@@ -221,6 +234,9 @@ pub fn start_keyd_with_admin(
         .unwrap();
     for (alias, key) in keys {
         service.add_key(alias, key).unwrap();
+    }
+    if let Some(log) = log {
+        service = service.with_security_log(log);
     }
     let keyd = Keyd::bind("127.0.0.1:0", tls, service).unwrap();
     let addr = keyd.local_addr().unwrap().to_string();

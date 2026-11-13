@@ -22,6 +22,8 @@ casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
 casual-sign-store = { path = "../casual-sign-store" }
 # The one decide-and-record path and the job contract, shared with the worker.
 casual-sign-host = { path = "../casual-sign-host" }
+# The one JSON log line and the security events (ASVS-08).
+casual-sign-seclog = { path = "../casual-sign-seclog", features = ["tracing-layer"] }
 # The JWT signing key and other secrets, from the environment or a file it names.
 casual-sign-secrets = { path = "../casual-sign-secrets" }
 # HTTP (ADR-014; the sisters' stack, OpenCalc's casual-calc-host). MIT.
@@ -43,7 +45,7 @@ aws-lc-rs = "1.19.0"
 # Access tokens: JWT, ES256 only (docs/40 §2). MIT.
 jsonwebtoken = { version = "10.2.0", default-features = false, features = ["aws_lc_rs"] }
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.19", default-features = false, features = ["fmt", "env-filter", "ansi"] }
+tracing-subscriber = { version = "0.3.19", default-features = false, features = ["fmt", "std", "registry", "env-filter"] }
 # GeoIP approximation of a signer's location from their address (row GEO-01), from an
 # operator-supplied .mmdb file. ISC.
 maxminddb = { version = "0.27", default-features = false }

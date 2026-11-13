@@ -163,6 +163,15 @@ async fn serve() -> ExitCode {
         Ok(s) => s,
         Err(e) => return fail(&e.to_string()),
     };
+    // Security events, their pseudonyms keyed by OPENSEAL_LOG_PSEUDONYM_KEY (ASVS-08).
+    match casual_sign_seclog::Pseudonymizer::from_env() {
+        Ok(p) => state.set_security_log(casual_sign_seclog::SecurityLog::new(
+            casual_sign_seclog::Service::Console,
+            Arc::new(casual_sign_seclog::Stderr),
+            p,
+        )),
+        Err(e) => return fail(&e.to_string()),
+    }
     let listener = match tokio::net::TcpListener::bind(listen).await {
         Ok(l) => l,
         Err(_) => return fail("cannot bind OPENSEAL_CONSOLE_LISTEN"),
@@ -281,12 +290,19 @@ async fn service_target(args: &[String]) -> ExitCode {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    {
+        use tracing_subscriber::Layer as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+        // One JSON line per event on standard error (ASVS-08, docs/65 §Logs).
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        let _ = tracing::subscriber::set_global_default(
+            tracing_subscriber::registry().with(
+                casual_sign_seclog::JsonLayer::stderr(casual_sign_seclog::Service::Console)
+                    .with_filter(filter),
+            ),
+        );
+    }
     casual_sign_console::quiet_panics();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {

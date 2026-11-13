@@ -183,6 +183,8 @@ impl IntoResponse for ConsoleError {
             tracing::warn!(code = self.code(), "console request failed: {self}");
         }
         let mut resp = (status, Json(body)).into_response();
+        resp.extensions_mut()
+            .insert(crate::security::ProblemCode(self.code()));
         resp.headers_mut().insert(
             axum::http::header::CONTENT_TYPE,
             axum::http::HeaderValue::from_static("application/problem+json"),

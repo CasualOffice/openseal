@@ -1090,7 +1090,9 @@ pub fn table() -> Vec<Route> {
 /// request middleware around everything, and problem details for anything unmatched.
 pub fn app(state: AppState) -> Router {
     let mut router: Router<AppState> = Router::new();
-    for route in table() {
+    let routes = table();
+    crate::security::templates(routes.iter().map(|r| r.path));
+    for route in routes {
         let mut h = route.handler.layer(DefaultBodyLimit::max(route.max_body));
         let guarded = match route.access {
             Access::Public => None,
