@@ -19,6 +19,7 @@
 //! | `OPENSEAL_KEYD_PKCS11_PIN` or `OPENSEAL_KEYD_PKCS11_PIN_FILE` | User PIN (the file form is the private one) |
 //! | `OPENSEAL_KEYD_FILE_KEY` | A PEM key file instead of PKCS#11: development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_KEYD_SIGNATURES_PER_MINUTE` | Per-caller rate (default 600) |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: keyd does not start (`CS-LOG-0001`) |
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -31,7 +32,11 @@ use casual_sign_keyd::{
 };
 use casual_sign_secrets::{env_secret, unknown_secret_files};
 
-const KNOWN_SECRET_FILES: &[&str] = &["OPENSEAL_KEYD_PKCS11_PIN_FILE"];
+const KNOWN_SECRET_FILES: &[&str] = &[
+    "OPENSEAL_KEYD_PKCS11_PIN_FILE",
+    // Read by the security log's pseudonym key (`casual-sign-seclog`, ASVS-08).
+    "OPENSEAL_LOG_PSEUDONYM_KEY_FILE",
+];
 
 /// One JSON log line (`casual-sign-seclog`, ASVS-08) with string fields.
 fn log_line(level: casual_sign_seclog::Level, event: &str, fields: &[(&str, String)]) {
@@ -197,6 +202,15 @@ fn run() -> Result<(), KeydError> {
 }
 
 fn main() -> ExitCode {
+    // A malformed pseudonym key stops keyd, as it stops the server and the console.
+    if let Err(e) = casual_sign_seclog::Pseudonymizer::from_env() {
+        log_line(
+            casual_sign_seclog::Level::Error,
+            "start_failed",
+            &[("code", e.code().into()), ("error", e.to_string())],
+        );
+        return ExitCode::FAILURE;
+    }
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

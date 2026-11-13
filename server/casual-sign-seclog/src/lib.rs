@@ -598,6 +598,16 @@ pub fn write(service: Service, level: Level, event: &str, fields: Map<String, Js
     Stderr.write_line(&line(service, level, event, fields));
 }
 
+/// [`write`] with string fields, for a host's own lines (`start_failed`, a development
+/// key in use): ids, codes, setting names and fixed words only (`SEC-D01`).
+pub fn write_strs(service: Service, level: Level, event: &str, fields: &[(&str, &str)]) {
+    let m = fields
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), Json::from(*v)))
+        .collect();
+    write(service, level, event, m);
+}
+
 /// Where lines go.
 pub trait Sink: Send + Sync + fmt::Debug {
     /// Write one line (no newline). Failures are swallowed: a log never fails a request.

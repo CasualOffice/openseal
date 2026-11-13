@@ -166,7 +166,8 @@ pub(crate) fn subject(st: &AppState, id: &str) -> SecPrincipal {
 }
 
 /// What a successful request on `template` is, if it is a security event: a change on
-/// an administrative route, or a staff read of a document or the evidence.
+/// an administrative route, or a staff read of a document, of data taken from one
+/// (analysis, suggestions, field values) or of the evidence.
 #[must_use]
 pub fn classify(method: &str, template: &str) -> Option<Kind> {
     const ADMIN: &[&str] = &[
@@ -187,7 +188,13 @@ pub fn classify(method: &str, template: &str) -> Option<Kind> {
         "/api/v1/envelopes/{id}/attachments/{sha256}",
         "/api/v1/envelopes/{id}/audit",
         "/api/v1/envelopes/{id}/form-data",
+        // What analysis found in a document (the suggestions carry values read from
+        // its text) and the fields with their filled values (ASVS 8.3.5).
+        "/api/v1/envelopes/{id}/documents/{doc}/analysis",
+        "/api/v1/envelopes/{id}/suggestions",
+        "/api/v1/envelopes/{id}/fields",
         "/api/v1/templates/{id}/documents/{doc}/content",
+        "/api/v1/templates/{id}/documents/{doc}/analysis",
         "/api/v1/organizations/me/audit",
         "/api/v1/admin-events",
     ];
@@ -292,6 +299,16 @@ mod tests {
             classify("GET", "/api/v1/envelopes/{id}/documents/{doc}/content"),
             Some(Kind::DocumentRead)
         );
+        // What analysis found in a document and the fields' values are document data
+        // too (ASVS 8.3.5).
+        for t in [
+            "/api/v1/envelopes/{id}/documents/{doc}/analysis",
+            "/api/v1/envelopes/{id}/suggestions",
+            "/api/v1/envelopes/{id}/fields",
+            "/api/v1/templates/{id}/documents/{doc}/analysis",
+        ] {
+            assert_eq!(classify("GET", t), Some(Kind::DocumentRead), "{t}");
+        }
         assert_eq!(classify("PATCH", "/api/v1/users/me"), None);
         assert_eq!(classify("POST", "/api/v1/envelopes"), None);
         assert_eq!(

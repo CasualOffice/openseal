@@ -250,7 +250,7 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 
 | Code | Meaning |
 | --- | --- |
-| CS-LOG-0001 | `OPENSEAL_LOG_PSEUDONYM_KEY` (or its `_FILE`) is not 32 bytes as base64, or both forms are set: the server and the console refuse to start (docs/65 §Logs) |
+| CS-LOG-0001 | `OPENSEAL_LOG_PSEUDONYM_KEY` (or its `_FILE`) is not 32 bytes as base64, or both forms are set: the server, the console, the worker, keyd and modeld refuse to start, with a `start_failed` line (docs/65 §Logs) |
 
 ## Platform console (`casual-sign-console`, `casual-sign-platform-store`; `CON-02`, `CON-03`, `CON-04`, `CON-06`, `CON-07`)
 

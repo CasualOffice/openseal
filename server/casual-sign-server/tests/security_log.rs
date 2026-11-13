@@ -437,3 +437,201 @@ async fn every_server_security_event_is_emitted_without_personal_data() {
         }
     }
 }
+
+/// ASVS 8.3.5: a staff read of what analysis found in a document (the run, the
+/// suggestions with their decrypted values) and of the envelope's fields (their filled
+/// values) is a `data.document_read` event like a read of the document itself.
+#[tokio::test]
+async fn reads_of_analysis_suggestions_and_fields_are_document_reads() {
+    let Some(api) = Api::with("security_log_ml_reads", Rls::On, |c| {
+        c.ml_bundle = Some("bundle-test-1".into());
+    })
+    .await
+    else {
+        return;
+    };
+    let t = api.tenant("seclogml").await;
+    sqlx::query(
+        "INSERT INTO ml_entitlements (account_id, features) VALUES ($1, $2::text[]) \
+         ON CONFLICT (account_id) DO UPDATE SET features = EXCLUDED.features",
+    )
+    .bind(t.boot.account.0)
+    .bind("{ml.ocr,ml.template_matching,ml.extraction,ml.personal_data}")
+    .execute(&api.db.admin)
+    .await
+    .unwrap();
+    ok(
+        api.call(
+            "PATCH",
+            "/api/v1/account/settings/ml",
+            &t.auth,
+            Some(
+                json!({"ocr": true, "template_matching": true, "extraction": true,
+                "personal_data": true}),
+            ),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "analysis on",
+    );
+    let e = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &t.auth,
+            Some(json!({"subject": "Seclog", "documents": [{"name": "m.pdf",
+                "content_base64": b64(&text_pdf(MARKER))}]})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "envelope",
+    );
+    let env = e["id"].as_str().unwrap().to_owned();
+    let doc = e["documents"][0]["id"].as_str().unwrap().to_owned();
+    for path in [
+        format!("/api/v1/envelopes/{env}/documents/{doc}/analysis"),
+        format!("/api/v1/envelopes/{env}/suggestions"),
+        format!("/api/v1/envelopes/{env}/fields"),
+    ] {
+        let r = api.call("GET", &path, &t.auth, None, &[]).await;
+        assert_eq!(r.status, StatusCode::OK, "{path}: {:?}", r.json());
+    }
+    let lines = api.security.json();
+    let reads = of(&lines, Kind::DocumentRead);
+    for route in [
+        "/api/v1/envelopes/{id}/documents/{doc}/analysis",
+        "/api/v1/envelopes/{id}/suggestions",
+        "/api/v1/envelopes/{id}/fields",
+    ] {
+        assert!(
+            reads
+                .iter()
+                .any(|l| l["route"] == route && l["objects"][0] == env.as_str()),
+            "{route} not logged as a read: {reads:?}"
+        );
+    }
+}
+
+/// A lockout is logged only once it is recorded: when the transaction that records
+/// the failed authentication does not commit, no `auth.lockout` line claims it.
+#[tokio::test]
+async fn a_lockout_that_does_not_commit_is_not_logged() {
+    let Some(api) = Api::with("security_log_lockout_commit", Rls::On, |_| {}).await else {
+        return;
+    };
+    let t = api.tenant("seclocklog").await;
+    let e = sent(&api, &t, 1, &[]).await;
+    let env = e["id"].as_str().unwrap().to_owned();
+    let rec = e["recipients"][0]["id"].as_str().unwrap().to_owned();
+    let base = format!("/api/v1/envelopes/{env}");
+    let etag = api.call("GET", &base, &t.auth, None, &[]).await.etag();
+    let r = api
+        .call(
+            "PATCH",
+            &format!("{base}/recipients/{rec}"),
+            &t.auth,
+            Some(json!({"auth": ["access_code"], "access_code": "right-4711"})),
+            &[("if-match", &etag)],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    let token = invite(&api, &t, &env, &rec).await;
+    let (_, h) = open(&api, &token).await;
+    let h: Vec<(&str, &str)> = h.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let path = format!("/s/{token}/authenticate");
+    let wrong = || {
+        api.call(
+            "POST",
+            &path,
+            &Auth::None,
+            Some(json!({"method": "access_code", "code": "wrong-0000"})),
+            &h,
+        )
+    };
+    for _ in 0..2 {
+        assert_eq!(wrong().await.status, StatusCode::FORBIDDEN);
+    }
+    // The third failure locks the recipient out, but its transaction cannot commit: a
+    // deferred constraint trigger refuses every audit event at commit.
+    for sql in [
+        "CREATE FUNCTION seclog_refuse() RETURNS trigger LANGUAGE plpgsql AS \
+         $$ BEGIN RAISE EXCEPTION 'refused at commit'; END $$",
+        "CREATE CONSTRAINT TRIGGER seclog_refuse AFTER INSERT ON audit_events \
+         DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION seclog_refuse()",
+    ] {
+        sqlx::query(sql).execute(&api.db.admin).await.unwrap();
+    }
+    let r = wrong().await;
+    assert!(r.status.is_server_error(), "{}: {:?}", r.status, r.json());
+    let lines = api.security.json();
+    assert!(
+        of(&lines, Kind::Lockout).is_empty(),
+        "a lockout that never committed was logged: {lines:?}"
+    );
+
+    // Once commits pass again, the lockout is recorded and logged.
+    sqlx::query("DROP TRIGGER seclog_refuse ON audit_events")
+        .execute(&api.db.admin)
+        .await
+        .unwrap();
+    assert_eq!(wrong().await.status, StatusCode::FORBIDDEN);
+    let lines = api.security.json();
+    let lock = of(&lines, Kind::Lockout);
+    assert_eq!(lock[0]["principal"], format!("recipient:{rec}"), "{lock:?}");
+}
+
+/// `reason: reused` (the replay alert, ASVS 2.8.5) means only that: a matching code
+/// whose check fails in the database is a failure without that reason.
+#[tokio::test]
+async fn a_database_failure_on_a_second_factor_is_not_logged_as_reused() {
+    let Some(api) = Api::with("security_log_mfa_db", Rls::On, |_| {}).await else {
+        return;
+    };
+    api.st.set_mfa_key(MfaKey::new(&[7u8; 32]).unwrap());
+    let t = api.tenant("seclogmfa").await;
+    let s1 = session_of(&login(&api, &t.email, PASSWORD).await);
+    let r = api
+        .call("POST", "/api/v1/auth/mfa/totp/enrol", &s1, None, &[])
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    let seed = unbase32(r.json()["secret"].as_str().unwrap());
+    let good = totp::code(&seed, totp::step_at(api.clock.now().unix_timestamp()));
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/auth/mfa/totp/confirm",
+            &s1,
+            Some(json!({"code": good})),
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    let s2 = session_of(&login(&api, &t.email, PASSWORD).await);
+    api.clock.advance(Duration::from_secs(30));
+    // The check that records the step fails in the database.
+    sqlx::query(
+        "CREATE OR REPLACE FUNCTION openseal_verify_own_totp(p_session_id uuid, \
+         p_step bigint, p_now timestamptz) RETURNS uuid LANGUAGE plpgsql AS \
+         $$ BEGIN RAISE EXCEPTION 'unavailable'; END $$",
+    )
+    .execute(&api.db.admin)
+    .await
+    .unwrap();
+    let next = totp::code(&seed, totp::step_at(api.clock.now().unix_timestamp()));
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/auth/mfa/verify",
+            &s2,
+            Some(json!({"code": next})),
+            &[],
+        )
+        .await;
+    assert!(r.status.is_server_error(), "{}: {:?}", r.status, r.json());
+    let mfa = of(&api.security.json(), Kind::Mfa);
+    let last = mfa.last().unwrap();
+    assert_eq!(last["outcome"], "failure", "{last}");
+    assert!(last["reason"].is_null(), "not a reused code: {last}");
+}

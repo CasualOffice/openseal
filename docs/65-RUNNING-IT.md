@@ -151,6 +151,9 @@ organization, a TSA change) need a second operator's approval.
 filters the server's and console's operational lines (default `info`); modeld's filter is fixed (docs/33 §3.4). No
 line carries a name, an e-mail address, a client address, a token, a password or document text (`SEC-D01`,
 `SEC-D06`).
+A process's own lines are JSON too: `start_failed` (`ERROR`, with `code` where there is one and the setting that
+failed) whenever a binary does not start, and `development_token_key`, `development_mfa_key` (server) and
+`development_file_key` (keyd) as `WARN` lines when a development key is in use; alert on these in production.
 
 **Security events** are `"event":"security"` lines, never filtered by `RUST_LOG`, with `kind`, `outcome` (`success`,
 `failure`; a failure is `WARN`), and where known `request_id`, `route`, `code` (docs/20), `account_id`, `principal`
@@ -169,7 +172,7 @@ and `client`:
 | `access.unauthenticated`, `access.denied`, `access.rate_limited` | server, console (keyd: denied, rate limited) | Every `401`, `403` and `429`; keyd: an admin operation asked by a signing caller, a signature over the caller's rate |
 | `input.upload_refused` | server | An upload over its size (`413`) or refused by admission (its `CS-PDF-*` or other admission code) |
 | `admin.change` | server, console | A committed change on an administrative route (users, groups, profiles, API clients, webhooks, account and organization settings; every console change), with `method` and the `objects` (ids) the path named |
-| `data.document_read` | server | A staff read of a document, the combined PDF, the certificate, an attachment, form data or an audit trail (ASVS 8.3.5), with the `objects` |
+| `data.document_read` | server | A staff read of a document, the combined PDF, the certificate, an attachment, form data, an audit trail, a document's analysis, the suggestions analysis found (values read from the text) or the envelope's fields with their values (ASVS 8.3.5), with the `objects` |
 | `key.use` | keyd | A signature or a chain given or refused (`op`, `alias`, `envelope_id`; never the digest) |
 | `transport.caller_refused` | keyd, modeld | An mTLS caller refused: a failed handshake (`reason: handshake`) or a certificate off the allow list (`reason: not_allowed`, named by fingerprint) |
 | `transport.backend_failed` | worker | keyd not reached or refusing (its `CS-KEY-*` code) or a time-stamping authority not answering (`CS-WRK-0018`, `backend: tsa`, its `index` in the list and a `reason`: `connect`, `tls`, `timeout`, `status`, `answer`, `address_refused`; never its URL) |
@@ -179,7 +182,8 @@ identifier presented before anyone is known (the e-mail of a refused sign-in, a 
 `subject:p1:<32 hex>`: HMAC-SHA-256 of the value under `OPENSEAL_LOG_PSEUDONYM_KEY`. `client` is the client address
 the same way. Set the key (32 random bytes as base64, or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE`) to the same value on the
 server and the console so the same address gives the same pseudonym in both and across restarts; unset, each process
-draws its own, and a malformed key stops the process (`CS-LOG-0001`). Whoever holds the key and a candidate address
+draws its own. A malformed key stops every service that reads it (server, console, worker, keyd and modeld, each with
+a `start_failed` line, `CS-LOG-0001`). Whoever holds the key and a candidate address
 can confirm it, so keep the key with the other secrets, not with the logs.
 
 **Shipping them off the box** (ASVS 1.7.2). The processes open no log socket: the container runtime ships what they

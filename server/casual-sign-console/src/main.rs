@@ -17,6 +17,7 @@
 //! | `OPENSEAL_CONSOLE_KEYD_CA` | PEM path: the CA keyd's server certificate chains to |
 //! | `OPENSEAL_CONSOLE_KEYD_CLIENT_CERT` | PEM path: the console's admin client certificate, whose fingerprint is on keyd's `OPENSEAL_KEYD_ADMIN_ALLOW_LIST` (never its signing list) |
 //! | `OPENSEAL_CONSOLE_KEYD_CLIENT_KEY` (secret) | Its private key (PEM) |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` (secret) | 32 bytes as base64: keys the pseudonyms security events give a presented e-mail or client address (ASVS-08); the same value as the server's so they match; none: a key per process; malformed: the console does not start (`CS-LOG-0001`) |
 //! | `OPENSEAL_CONSOLE_TSA_ALLOW` | Comma-separated CIDRs a proposed TSA URL may resolve to although not public (`CON-07`; default none) |
 //! | `OPENSEAL_MIGRATE_DATABASE_URL` (secret) | `set-service-target` and `remove-service-target` only: the schema owner |
 //!
@@ -42,8 +43,22 @@ use casual_sign_platform_store::sqlx::postgres::PgPoolOptions;
 use casual_sign_platform_store::{Detail, EventDraft, NewOperator, PlatformStore, ServiceTarget};
 use casual_sign_secrets::env_secret;
 
+/// The `start_failed` line (one JSON line, ASVS 1.7.1) and a failing exit.
 fn fail(what: &str) -> ExitCode {
-    eprintln!("casual-sign-console: {what}");
+    fail_with(None, what)
+}
+
+fn fail_with(code: Option<&str>, what: &str) -> ExitCode {
+    let mut fields = vec![("error", what)];
+    if let Some(c) = code {
+        fields.insert(0, ("code", c));
+    }
+    casual_sign_seclog::write_strs(
+        casual_sign_seclog::Service::Console,
+        casual_sign_seclog::Level::Error,
+        "start_failed",
+        &fields,
+    );
     ExitCode::FAILURE
 }
 
@@ -170,7 +185,7 @@ async fn serve() -> ExitCode {
             Arc::new(casual_sign_seclog::Stderr),
             p,
         )),
-        Err(e) => return fail(&e.to_string()),
+        Err(e) => return fail_with(Some(e.code()), &e.to_string()),
     }
     let listener = match tokio::net::TcpListener::bind(listen).await {
         Ok(l) => l,

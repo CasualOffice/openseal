@@ -127,13 +127,12 @@ async fn verify_inner(
             let step = totp::matching_step(&seed, code.trim(), now_step(c))
                 .ok_or_else(ApiError::second_factor_refused)?;
             let step = i64::try_from(step).map_err(|_| ApiError::internal("step"))?;
-            // The code matched; refused now only for a step already used.
-            *reused = true;
-            tx.sessions()
-                .verify_own_totp(s, step, now)
-                .await?
-                .ok_or_else(ApiError::second_factor_refused)?;
-            *reused = false;
+            // The code matched; refused now only for a step already used. A database
+            // error here is not a reused code (`reason: reused` is the replay alert).
+            if tx.sessions().verify_own_totp(s, step, now).await?.is_none() {
+                *reused = true;
+                return Err(ApiError::second_factor_refused());
+            }
             tx.commit().await?;
             Ok(json(StatusCode::OK, &json!({ "second_factor": "passed" })))
         }

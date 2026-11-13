@@ -25,6 +25,7 @@
 //! | `OPENSEAL_WEBHOOK_ALLOW` | Non-public ranges webhooks may reach anyway, comma-separated CIDRs (default none) |
 //! | `OPENSEAL_WEBHOOK_EXTRA_ROOTS` | PEM file of CAs webhook receivers may chain to besides the platform's roots (a private CA) |
 //! | `OPENSEAL_SEAL_NAME`, `OPENSEAL_SEAL_REASON` | The seal's `/Name` and `/Reason` |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: the worker does not start (`CS-LOG-0001`) |
 //! | `OPENSEAL_SMS_GATEWAY_URL`, `OPENSEAL_SMS_GATEWAY_SECRET` (or `_FILE`) | Optional: the HTTPS gateway that sends SMS and voice one-time codes, and its bearer secret (`messenger::HttpGateway`); unset, such codes fail `CS-WRK-0013` |
 //!
 //! Webhook signing secrets are read by the reference a subscription stores, as an
@@ -304,23 +305,38 @@ async fn serve<B: BlobStore + 'static>(
     Ok(())
 }
 
+/// The `start_failed` line (one JSON line, ASVS 1.7.1) and a failing exit.
+fn start_failed(code: &str, error: &str) -> ExitCode {
+    casual_sign_seclog::write_strs(
+        casual_sign_seclog::Service::Worker,
+        casual_sign_seclog::Level::Error,
+        "start_failed",
+        &[("code", code), ("error", error)],
+    );
+    ExitCode::FAILURE
+}
+
 fn main() -> ExitCode {
     casual_sign_host::crash::startup();
+    // A malformed pseudonym key stops the worker, as it stops the server and the
+    // console; a good one is the worker's security log's.
+    match casual_sign_seclog::Pseudonymizer::from_env() {
+        Ok(p) => casual_sign_worker::set_security_log(casual_sign_seclog::SecurityLog::new(
+            casual_sign_seclog::Service::Worker,
+            Arc::new(casual_sign_seclog::Stderr),
+            p,
+        )),
+        Err(e) => return start_failed(e.code(), &e.to_string()),
+    }
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
     {
         Ok(rt) => rt,
-        Err(_) => {
-            eprintln!("casual-sign-worker: CS-WRK-0001: the runtime does not start");
-            return ExitCode::FAILURE;
-        }
+        Err(_) => return start_failed("CS-WRK-0001", "the runtime does not start"),
     };
     match rt.block_on(run()) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("casual-sign-worker: {e}");
-            ExitCode::FAILURE
-        }
+        Err(e) => start_failed(e.code(), &e.to_string()),
     }
 }

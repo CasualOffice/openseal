@@ -140,7 +140,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.7.1 | 2 | All | Common logging format | Met | One JSON line per event in every host binary, `ts`, `level`, `service`, `event` first (`server/casual-sign-seclog`; server and console through its `tracing` layer, modeld behind its fixed filter, worker and keyd directly); docs/65 §Logs. Checked 2026-11-14 (`ASVS-08`) | — |
+| 1.7.1 | 2 | All | Common logging format | Met | One JSON line per event in every host binary, `ts`, `level`, `service`, `event` first (`server/casual-sign-seclog`; server and console through its `tracing` layer, modeld behind its fixed filter, worker and keyd directly), the binaries' own startup failures and development-key warnings included (`start_failed`, `development_*_key`; each service's `tests/startup_log.rs` runs the binary and parses every standard-error line); docs/65 §Logs. Checked 2026-11-14 (`ASVS-08`) | — |
 | 1.7.2 | 2 | All | Logs shipped securely to a remote system | Partly | Standard error only, shipped by the container runtime: `deploy/compose.log-forwarding.yml` puts every service on Docker's `syslog` driver over mutual TLS (RFC 5424, `tcp+tls`), the collector may forward as OTLP (docs/65 §Logs); `docker compose config` checked. Delivery to a live TLS collector not yet shown | ASVS-08A |
 
 **V1.8 Data Protection and Privacy Architecture**
@@ -541,7 +541,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 8.3.2 | 1 | All | Users can export or remove their data | Not met | No self-service export or erasure (VS-15 enterprise data controls) | ASVS-16 |
 | 8.3.3 | 1 | All | Clear language about personal data use | Partly | ERSD disclosure and consent for signers (`/s/{token}/disclosure`, docs/09); no privacy notice template for operators | ASVS-16 |
 | 8.3.4 | 1 | All | Sensitive data identified with a handling policy | Met | docs/07 data classification; docs/22 marks personal fields (`Personal<T>` wrapper in the store) | — |
-| 8.3.5 | 2 | All | Access to sensitive data audited | Met | Signer document views recorded (`/s/{token}/documents/{doc}/viewed`); staff reads of a document, combined PDF, certificate, attachment, form data or audit trail are `data.document_read` events with the user and the ids (`-server/src/security.rs` `classify`; `-server/tests/security_log.rs`) | — |
+| 8.3.5 | 2 | All | Access to sensitive data audited | Met | Signer document views recorded (`/s/{token}/documents/{doc}/viewed`); staff reads of a document, combined PDF, certificate, attachment, form data, audit trail, a document's analysis, the analysis suggestions (values read from the text) or the envelope's fields are `data.document_read` events with the user and the ids (`-server/src/security.rs` `classify`; `-server/tests/security_log.rs`, including `reads_of_analysis_suggestions_and_fields_are_document_reads`) | — |
 | 8.3.6 | 2 | All | Sensitive data in memory overwritten | Partly | Secrets read through `Secret` wiped on drop (`casual-sign-secrets`); request passwords and codes are plain `String`s | ASVS-25 |
 | 8.3.7 | 2 | All | Encryption of required data with approved algorithms | Partly | As 6.1.1 | ASVS-17 |
 | 8.3.8 | 2 | All | Retention classification and deletion | Not met | Retention policies not built (`SEC-D03`, VS-15) | ASVS-18 |
