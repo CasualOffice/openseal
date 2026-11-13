@@ -184,14 +184,7 @@ export const WEBHOOK_EVENT_TYPES = Object.freeze([
 /// control. `client.available(name)` tells which.
 export const NOT_ON_SERVER = Object.freeze({
   restoreEnvelope: { row: "UXW-02", needs: "POST /envelopes/{id}/restore (a new workflow command and audit type envelope.restored, ADR-031 Proposed)" },
-  updateWebhook: { row: "UXW-31", needs: "PATCH /webhooks/{id} {url?, event_types?, active?} (pause, resume, edit)" },
-  testWebhook: { row: "UXW-32", needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
-  redeliver: { row: "UXW-33", needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
-  clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit event)" },
-  // UX-04: the shell's account menu and sign-in.
-  profile: { row: "UXW-37", needs: "GET/PATCH /api/v1/users/me {name, email (read-only), notifications {completed, declined, viewed}, signature and initials {image_base64} or null, password with current_password}" },
-  passwordReset: { row: "UXW-38", needs: "POST /api/v1/auth/password-reset {email} (no session; 202 whether or not the email has an account) and the emailed one-time link to set a new password" },
-  authProviders: { row: "UXW-39", needs: "GET /api/v1/auth/providers (no session) answering {items: [{id, name, url}]}, the configured SSO identity providers (FG-173)" },
+  clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit type recipient.field_cleared, ADR-032 Proposed)" },
 });
 
 /// Make a client. `baseUrl` is prepended to every path ("" = same origin). `store`
@@ -280,19 +273,20 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     },
     session: () => data(request("GET", "/api/v1/auth/session")),
     account: () => data(request("GET", "/api/v1/accounts/me")),
-    /// The signed-in user's own profile (`NOT_ON_SERVER.profile`, UX-04): `{id, name,
-    /// email, notifications: {completed, declined, viewed}, signature, initials}`, the
-    /// marks as `{image_base64}` or null.
-    me: unbuilt("profile", () => data(request("GET", "/api/v1/users/me"))),
+    /// The signed-in user's own profile (UX-04, UXW-37): `{id, name, email,
+    /// notifications: {completed, declined, viewed}, signature, initials}`, the marks as
+    /// `{image_base64}` or null.
+    me: () => data(request("GET", "/api/v1/users/me")),
     /// Change one's own profile: `{name?, notifications?, signature?, initials?,
-    /// password?, current_password?}` (a new password needs the current one).
-    patchMe: unbuilt("profile", (body) => data(request("PATCH", "/api/v1/users/me", { body }))),
-    /// Ask for a password-reset email (`NOT_ON_SERVER.passwordReset`, UX-04); no
-    /// session. The answer is the same whether or not the address has an account.
-    requestPasswordReset: unbuilt("passwordReset", (email) => data(request("POST", "/api/v1/auth/password-reset", { body: { email } }))),
-    /// The SSO identity providers this server offers on sign-in
-    /// (`NOT_ON_SERVER.authProviders`, UX-04): `{items: [{id, name, url}]}`; no session.
-    authProviders: unbuilt("authProviders", () => data(request("GET", "/api/v1/auth/providers"))),
+    /// password?, current_password?}` (a new password needs the current one, `401
+    /// CS-AUTH-0007` when wrong, and ends the user's other sessions).
+    patchMe: (body) => data(request("PATCH", "/api/v1/users/me", { body })),
+    /// Ask for a password-reset email (UX-04, UXW-38); no session. `202 {}` whether or
+    /// not the address has an account.
+    requestPasswordReset: (email) => data(request("POST", "/api/v1/auth/password-reset", { body: { email } })),
+    /// The SSO identity providers this server offers on sign-in (UX-04, UXW-39):
+    /// `{items: [{id, name, url}]}`, empty until SSO exists (FG-173); no session.
+    authProviders: () => data(request("GET", "/api/v1/auth/providers")),
 
     // ---- Envelopes ---------------------------------------------------------
     /// `q`: text the subject or a recipient's name or email contains (WEB-04).
@@ -447,12 +441,13 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// The latest 100 deliveries, `{items: [{id, event_id, event_type, status: pending|
     /// delivered|failed, attempts, last_status_code}]}`.
     listDeliveries: (w) => data(request("GET", `${W(w)}/deliveries`)),
-    /// `{url?, event_types?, active?}`: edit, pause or resume (`NOT_ON_SERVER.updateWebhook`).
-    updateWebhook: unbuilt("updateWebhook", (w, body) => data(request("PATCH", W(w), { body }))),
-    /// Send a test event now (`NOT_ON_SERVER.testWebhook`).
-    testWebhook: unbuilt("testWebhook", (w) => data(request("POST", `${W(w)}/test`))),
-    /// Deliver one delivery's event again (`NOT_ON_SERVER.redeliver`).
-    redeliver: unbuilt("redeliver", (w, d) => data(request("POST", `${W(w)}/deliveries/${encodeURIComponent(d)}/redeliver`))),
+    /// `{url?, event_types?, active?}`: edit, pause or resume (UXW-31).
+    updateWebhook: (w, body) => data(request("PATCH", W(w), { body })),
+    /// Queue a `webhook.test` event (UXW-32): `202` with the delivery; a paused
+    /// subscription is `409 CS-API-0009`.
+    testWebhook: (w) => data(request("POST", `${W(w)}/test`)),
+    /// Deliver one delivery's event again, through the worker (UXW-33).
+    redeliver: (w, d) => data(request("POST", `${W(w)}/deliveries/${encodeURIComponent(d)}/redeliver`)),
 
     // ---- Account and members (Admin) -------------------------------------------
     /// `PATCH /accounts/me {settings}`: merged into the account's settings (`null`

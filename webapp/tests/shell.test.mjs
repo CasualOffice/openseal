@@ -1,6 +1,6 @@
 // The app shell's pure parts (UX-04): the Keyboard shortcuts panel's grouping, and the
-// calls the shell makes ahead of the server (profile, password reset, SSO providers),
-// served by the mock and refused at once by a client against a server without them.
+// shell's calls for the profile, password reset and SSO providers (UXW-37..39), which
+// reach the server and which the mock answers as the server does.
 // Run: npm test (in webapp/).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -52,14 +52,15 @@ test("/ searches from every screen with the bar, not only Agreements", () => {
   assert.ok(![...SHORTCUTS.global.keys()].includes("Shift+?"), "no binding combo() can never produce");
 });
 
-test("the shell's calls ahead of the server are refused at once against a server", async () => {
+test("the shell's profile, password reset and providers calls reach the server (UXW-37..39)", async () => {
   const seen = [];
-  const c = createClient({ fetch: async (url) => { seen.push(url); return new Response("{}", { status: 200 }); } });
-  for (const name of ["profile", "passwordReset", "authProviders"]) assert.equal(c.available(name), false, name);
-  for (const p of [c.me(), c.patchMe({ name: "x" }), c.requestPasswordReset("a@example.com"), c.authProviders()]) {
-    await assert.rejects(p, (e) => e.status === 501 && e.code === "CS-NET-0002" && Object.hasOwn(NOT_ON_SERVER, e.detail));
-  }
-  assert.deepEqual(seen, []);
+  const c = createClient({ fetch: async (url, init = {}) => { seen.push(`${init.method || "GET"} ${url}`); return new Response("{}", { status: 200 }); } });
+  for (const name of ["profile", "passwordReset", "authProviders"]) assert.ok(c.available(name) && !Object.hasOwn(NOT_ON_SERVER, name), name);
+  await c.me();
+  await c.patchMe({ name: "x" });
+  await c.requestPasswordReset("a@example.com");
+  await c.authProviders();
+  assert.deepEqual(seen, ["GET /api/v1/users/me", "PATCH /api/v1/users/me", "POST /api/v1/auth/password-reset", "GET /api/v1/auth/providers"]);
 });
 
 test("the mock serves the profile: name, notifications and marks saved; a password change needs the current one", async () => {
@@ -78,8 +79,8 @@ test("the mock serves the profile: name, notifications and marks saved; a passwo
   const listed = (await c.users.list()).items.find((u) => u.email === MOCK.email);
   assert.equal(listed.name, "Robin Quinn");
   assert.ok(!("notifications" in listed) && !("signature" in listed));
-  await assert.rejects(c.patchMe({ password: "a-long-enough-password", current_password: "wrong" }), (e) => e.code === "CS-AUTH-0007");
-  await assert.rejects(c.patchMe({ password: "short", current_password: MOCK.password }), (e) => e.code === "CS-API-0001");
+  await assert.rejects(c.patchMe({ password: "a-long-enough-password", current_password: "wrong" }), (e) => e.status === 401 && e.code === "CS-AUTH-0007");
+  await assert.rejects(c.patchMe({ password: "short", current_password: MOCK.password }), (e) => e.status === 422 && e.code === "CS-API-0001");
   await assert.rejects(c.patchMe({ email: "x@example.com" }), (e) => e.code === "CS-API-0001", "email is not the user's to change");
 });
 

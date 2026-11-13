@@ -794,7 +794,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!sub) {
       if (method === "GET") return json(200, publicWebhook(w));
       if (method === "DELETE") { w.active = false; return json(204, null); }
-      // UX-03, not on the server yet (NOT_ON_SERVER.updateWebhook): edit, pause, resume.
+      // UX-03, served since UXW-31: edit, pause, resume.
       if (method === "PATCH") {
         for (const k of Object.keys(body || {})) if (!["url", "event_types", "active"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
         if (body && "url" in body) checkUrl(body.url);
@@ -807,9 +807,15 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
     }
     if (sub === "deliveries" && !subId && method === "GET") return json(200, { items: (db.deliveries[w.id] || []).slice(0, 100) });
-    // UX-03, not on the server yet (NOT_ON_SERVER.testWebhook, .redeliver).
+    // UX-03, served since UXW-32 and UXW-33. As the server: a paused subscription is
+    // 409 CS-API-0009, and a stored URL no longer acceptable is refused (SEC-W01). The
+    // server's worker sends it later (the answer is `pending`); the mock delivers at once.
+    const sendable = () => {
+      if (!w.active) fail(409, "CS-API-0009", "Not available in the current state");
+      checkUrl(w.url);
+    };
     if (sub === "test" && method === "POST") {
-      if (!w.active) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      sendable();
       const d = { id: uid(), event_id: uid(), event_type: "webhook.test", status: "delivered", attempts: 1, last_status_code: 200 };
       (db.deliveries[w.id] ||= []).unshift(d);
       return json(202, d);
@@ -817,6 +823,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "deliveries" && subId && subSub === "redeliver" && method === "POST") {
       const d = (db.deliveries[w.id] || []).find((x) => x.id === subId);
       if (!d) fail(404, "CS-API-0002", "Not found");
+      sendable();
       Object.assign(d, { status: "delivered", attempts: d.attempts + 1, last_status_code: 200 });
       return json(202, d);
     }
@@ -1581,9 +1588,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     for (const [k, v] of Object.entries(db.invites)) if (v === u.id) delete db.invites[k];
     db.invites[`inv-${uid()}`] = u.id;
   }
-  /// The signed-in user's own profile (UX-04, NOT_ON_SERVER.profile): name, email (only
-  /// an administrator changes it), notification choices, a saved signature and initials,
-  /// and a password change that needs the current password.
+  /// The signed-in user's own profile (UX-04; served by the server since UXW-37, whose
+  /// statuses these follow): name, email (only an administrator changes it), notification
+  /// choices, a saved signature and initials, and a password change that needs the
+  /// current password.
   function me(method, body) {
     const u = db.users.find((x) => x.id === "user-demo");
     if (!u) fail(404, "CS-API-0002", "Not found");
@@ -1596,17 +1604,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (method !== "PATCH") fail(405, "CS-API-0012", "Method not allowed");
     const b = body || {};
     for (const k of Object.keys(b)) if (!["name", "notifications", "signature", "initials", "password", "current_password"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
-    if ("name" in b && (typeof b.name !== "string" || !b.name.trim() || b.name.length > 200)) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
+    if ("name" in b && (typeof b.name !== "string" || !b.name.trim() || b.name.trim().length > 255)) fail(422, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
     if ("notifications" in b) {
       const n = b.notifications;
-      if (!n || typeof n !== "object" || Object.entries(n).some(([k, v]) => !["completed", "declined", "viewed"].includes(k) || typeof v !== "boolean")) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/notifications", code: "type" }]);
+      if (!n || typeof n !== "object" || Object.entries(n).some(([k, v]) => !["completed", "declined", "viewed"].includes(k) || typeof v !== "boolean")) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/notifications", code: "type" }]);
     }
     for (const m of ["signature", "initials"]) {
-      if (m in b && b[m] !== null && (typeof b[m]?.image_base64 !== "string" || !b[m].image_base64 || b[m].image_base64.length > 2_000_000)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: `/${m}`, code: "type" }]);
+      if (m in b && b[m] !== null && (typeof b[m]?.image_base64 !== "string" || !b[m].image_base64 || b[m].image_base64.length > 2_000_000)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/${m}`, code: "type" }]);
     }
+    if ("current_password" in b && !("password" in b)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/current_password", code: "CS-API-0001" }]);
     if ("password" in b) {
-      if (b.current_password !== MOCK.password) fail(403, "CS-AUTH-0007", "Invalid credentials");
-      if (typeof b.password !== "string" || b.password.length < 12) fail(400, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
+      if (typeof b.password !== "string" || b.password.length < 12 || b.password.length > 256) fail(422, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
+      if (b.current_password !== MOCK.password) fail(401, "CS-AUTH-0007", "Invalid credentials");
     }
     if ("name" in b) u.name = b.name.trim();
     if ("notifications" in b) p.notifications = { ...p.notifications, ...b.notifications };
@@ -1939,7 +1948,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (offline) throw new TypeError("Failed to fetch");
     const url = new URL(typeof input === "string" ? input : input.url, "http://mock.invalid");
     const method = (init.method || "GET").toUpperCase();
-    // UX-04, ahead of the server (NOT_ON_SERVER.authProviders): no session and no state,
+    // UX-04, served by the server since UXW-39 (empty until SSO): no session and no state,
     // so answered before the state is loaded; the sign-in form asks on arrival, and an
     // early load would let this tab's copy go stale under another writer (the e2e seed).
     if (url.pathname === "/api/v1/auth/providers" && method === "GET") {
@@ -1977,11 +1986,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         save();
         return json(200, { account_id: "acct-demo", user_id: u.id });
       }
-      // UX-04, ahead of the server (NOT_ON_SERVER.passwordReset): no session needed. The
-      // answer is the same for any address (no enumeration).
+      // UX-04, served by the server since UXW-38: no session needed. The answer is the
+      // same for any address (no enumeration); the address check is the server's.
       if (url.pathname === "/api/v1/auth/password-reset" && method === "POST") {
         for (const k of Object.keys(body || {})) if (k !== "email") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
-        if (typeof body?.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
+        const email = typeof body?.email === "string" ? body.email.trim() : "";
+        if (email.length < 3 || email.length > 320 || !email.includes("@")) fail(422, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "CS-API-0001" }]);
         return json(202, {});
       }
       let res;

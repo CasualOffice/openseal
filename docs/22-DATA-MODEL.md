@@ -410,6 +410,19 @@ live template sets it (the template keeps its roles, documents and fields, leave
 `Templates::list_deleted`, `get_deleted` and `restore` serve the Deleted view); deleting it there removes it for good.
 A template has no audit chain, so neither step is evidence. Fifty-four tables with `0022`.
 
+`0023_password_reset.sql` (`UXW-37`, `UXW-38`) adds two tenant tables. `password_resets` (`id`, `user_id`,
+`requested_at`, `token_sha256`, `sent_at`, `expires_at`, `used_at`, `revoked_at`) records a self-service reset: never
+the email or the token, only the token's SHA-256 once the worker has sent it, with a one-hour expiry; a reset is open
+until used or revoked, and a new request, a use or a password change revokes the user's other open resets. Definer
+functions: `openseal_request_password_reset` (by normalized email, a local enabled user with an enabled membership; at
+most one a minute per user; NULL otherwise, so the caller answers alike), `openseal_resolve_password_reset` (an open,
+sent, unexpired reset by its token hash) and `openseal_use_password_reset` (spends it once, sets the password, ends the
+user's sessions in every account). `openseal_own_password_hash` and `openseal_change_own_password` let a live session
+change its own user's password against the hash the server verified, ending every other session of the user.
+`member_profiles` (`notifications` object, `signature_image` and `initials_image` of at most 5 MiB, `updated_at`) holds a
+member's own notice choices and saved marks in this account (personal data, never logged); removing the membership
+removes both tables' rows. Fifty-six tables with `0023`.
+
 `0026_console_org_events.sql` (`CON-16`, docs/23 §2.5) holds the console role to the admin logs: the
 `*_admin_change_has_event` triggers now also refuse an `openseal_console` commit that changed an organization or a
 workspace without an `operator.*` event appended to that organization's `org_admin_events` in the same transaction

@@ -2,9 +2,9 @@
 // own name, saved signature and initials, email notifications and password. DocuSign's
 // "My preferences" and "Signatures", in one panel (owner instruction 22: side panels).
 //
-// The calls are `NOT_ON_SERVER.profile` (`GET/PATCH /api/v1/users/me`, row UXW-37): the
-// mock serves them; against a server without them the panel shows who is signed in and
-// says that changing it is not available yet, never a form that cannot save.
+// The calls are `GET/PATCH /api/v1/users/me` (UXW-37, served). A backend that lists
+// `profile` as unavailable gets a panel that shows who is signed in and says changing
+// it is not available yet, never a form that cannot save.
 
 import { h, initials } from "./dom.js";
 import { t } from "./i18n.js";

@@ -72,11 +72,11 @@ test("webhooks: list, create (public https only), get, deliveries for subscribed
   assert.ok(WEBHOOK_EVENT_TYPES.includes("envelope.completed") && WEBHOOK_EVENT_TYPES.length === 20);
 });
 
-test("webhooks ahead of the server: update, test and redeliver work in the mock", async () => {
+test("webhooks: update, test and redeliver answer in the mock as the server does (UXW-31..33)", async () => {
   const c = await signedIn();
   const [w] = (await c.listWebhooks()).items;
   assert.equal((await c.updateWebhook(w.id, { active: false })).active, false);
-  await assert.rejects(c.testWebhook(w.id), (e) => e.code === "CS-WF-0001");
+  await assert.rejects(c.testWebhook(w.id), (e) => e.status === 409 && e.code === "CS-API-0009");
   await c.updateWebhook(w.id, { active: true, event_types: ["envelope.sent"] });
   await assert.rejects(c.updateWebhook(w.id, { url: "http://x.example/" }), (e) => e.code === "CS-API-0013");
   const d = await c.testWebhook(w.id);
@@ -298,11 +298,7 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   const c = createClient({ fetch: fake });
   assert.equal(c.available("restoreEnvelope"), false);
   assert.equal(c.available("listWebhooks"), true, "a call the server serves is available");
-  const refused = [
-    c.restoreEnvelope("e"),
-    c.updateWebhook("w", { active: false }), c.testWebhook("w"), c.redeliver("w", "d"),
-    c.ceremony.clearField("t", "f"),
-  ];
+  const refused = [c.restoreEnvelope("e"), c.ceremony.clearField("t", "f")];
   for (const p of refused) await assert.rejects(p, (e) => e.status === 501 && e.code === "CS-NET-0002" && Object.hasOwn(NOT_ON_SERVER, e.detail));
   assert.deepEqual(seen, []);
   await c.listEnvelopes({ status: ["sent", "delivered"] });
@@ -311,6 +307,17 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   await c.ceremony.disclosure("t");
   assert.equal(seen.at(-1), "/s/t/disclosure");
   for (const [name, { needs }] of Object.entries(NOT_ON_SERVER)) assert.ok(needs.length > 10, name);
+});
+
+test("webhook edit, test and redelivery reach the server as it serves them (UXW-31..33)", async () => {
+  const seen = [];
+  const fake = async (url, init = {}) => { seen.push(`${init.method || "GET"} ${url}`); return new Response("{}", { status: 200 }); };
+  const c = createClient({ fetch: fake });
+  for (const name of ["updateWebhook", "testWebhook", "redeliver"]) assert.ok(c.available(name) && !Object.hasOwn(NOT_ON_SERVER, name), name);
+  await c.updateWebhook("w", { active: false });
+  await c.testWebhook("w");
+  await c.redeliver("w", "d");
+  assert.deepEqual(seen, ["PATCH /api/v1/webhooks/w", "POST /api/v1/webhooks/w/test", "POST /api/v1/webhooks/w/deliveries/d/redeliver"]);
 });
 
 test("the Inbox, folders, filters, the Deleted views and an ended envelope's certificate reach the server as it serves them (UXW-01/02/03/30)", async () => {

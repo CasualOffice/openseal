@@ -5,9 +5,9 @@
 // authmodel.js. What a DocuSign user expects: a message under each field that is wrong
 // (in its `aria-describedby`), checked again as the person fixes it; an alert above the
 // fields when the server refuses; a reveal toggle in the password field; a busy submit;
-// "Forgot password?" (`NOT_ON_SERVER.passwordReset`: said to be unavailable on a server
-// without it); a company sign-in button only when the server names an identity provider
-// (`NOT_ON_SERVER.authProviders`; SSO itself is slice 3, FG-173); a footer.
+// "Forgot password?" (`POST /auth/password-reset`, UXW-38); a company sign-in button only
+// when the server names an identity provider (`GET /auth/providers`, UXW-39, empty until
+// SSO, slice 3, FG-173); a footer.
 
 import { h } from "./dom.js";
 import { icon } from "./icons.js";

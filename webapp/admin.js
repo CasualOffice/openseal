@@ -16,9 +16,9 @@
 // A webhook's signing secret never passes through the API (docs/40 §4): the panel
 // names the operator's secrets, so there is nothing to show once.
 //
-// Calls the server does not serve yet (api.js `NOT_ON_SERVER`: pause and resume a
-// webhook, a test event, redelivery) are offered all the same; against a server
-// without them they answer CS-NET-0002, "not available on this server yet".
+// Pause and resume a webhook, a test event and redelivery are served (UXW-31..33); a
+// test event and a redelivery are sent by the server's worker, so a delivery shows
+// `pending` until it has been tried.
 //
 // WEB-10, against api/openapi.yaml and the server: a member's `permission_profile_id`
 // is an id, named through the account's `settings.builtin_profiles`; the list has no

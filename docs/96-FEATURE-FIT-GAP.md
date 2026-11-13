@@ -204,7 +204,7 @@ instructions 8 and 9).
 | FG-192 | JWT bearer grant (service integrations) | DS | Build | 8 | Designed |
 | FG-193 | API keys | — | Build | Phase 2 | Works |
 | FG-194 | Webhooks: account and per-envelope, HMAC, rotation | DS, SN | Build | 8 | Works |
-| FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Designed (in part: Admin lists subscriptions and their latest deliveries, `UX-08`; redeliver, test and pause wait for UXW-31 to UXW-33) |
+| FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Partial: Admin lists subscriptions and their latest deliveries (`UX-08`); the server edits, pauses and resumes a subscription, sends a test event and redelivers through the worker (`UXW-31` to `UXW-33`). Not checked on the Compose stack yet |
 | FG-196 | Embedded signing view | DS, SN | Build | 9 | Designed |
 | FG-197 | Embedded sending / prepare view | DS, SN | Build | 9 | Designed |
 | FG-198 | Embedded correct and template edit views | DS, SN | Build | 9 | Designed |

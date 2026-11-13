@@ -280,8 +280,8 @@ The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign us
   ticked), Help and shortcuts, About OpenSeal, Sign out. **Profile and signature** (`profile.js`, a side panel): name,
   email (read-only), saved signature and initials adopted with the signer's own component (`signature.js`, its styles
   loaded on demand), email notification choices (completed, declined, viewed) and a password change that needs the
-  current password. Its calls are `NOT_ON_SERVER.profile` (`UXW-37`): against a server without them the panel shows
-  who is signed in and says changing it is not available yet.
+  current password. Its calls are `GET`/`PATCH /users/me`, served (`UXW-37`); a password change ends the user's other
+  sessions.
 - **Help menu**: Keyboard shortcuts, Verify a signed PDF, About OpenSeal. The **shortcuts panel** lists every table,
   grouped (Everywhere, with ⌘K for the command menu; Send editor; Placing fields, the editor's single-key tools from
   `preparemodel.TOOL_KEYS`, V and S I D N E O T C, which prepare.js dispatches itself on the Fields step), one row per
@@ -293,9 +293,9 @@ The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign us
   per-browser convenience in localStorage).
 - **Sign-in** (`signin.js`): a message under each missing field (in that field's `aria-describedby`); a refused
   sign-in is an alert callout above the fields ("Incorrect email or password."); a Show toggle beside the password field
-  (`aria-pressed`); "Forgot password?" opens the reset request in the card (`NOT_ON_SERVER.passwordReset`, `UXW-38`,
-  the same answer for any address; without it the card says to ask the administrator); a company sign-in button only
-  when the server names an identity provider (`NOT_ON_SERVER.authProviders`, `UXW-39`); a footer (Verify a signed PDF,
+  (`aria-pressed`); "Forgot password?" opens the reset request in the card (`POST /auth/password-reset`, served, `UXW-38`,
+  the same answer for any address; the page the emailed link opens is `UXW-38A`); a company sign-in button only
+  when the server names an identity provider (`GET /auth/providers`, served and empty until SSO, `UXW-39`); a footer (Verify a signed PDF,
   About OpenSeal); edge to edge below 30em. The demo hint gives only the credentials (the banner says demo).
 - **Verify page** (`verify.html`, `verify.js`): the app's bar height and logo, Open OpenSeal on the right, the demo
   banner and `?mock=1` kept on its links in demo mode. Plain copy ("Check who signed a PDF and whether it changed after
@@ -731,8 +731,9 @@ endpoint lands (rows in docs/14). `#/admin?section=<id>`; the older `?tab=` link
   the operator's signing secrets: the secret never passes through the API, so there is nothing to show once; a
   refused address, `CS-API-0013`, is said beside the field), and the selected subscription's latest deliveries
   (event, Delivered/Failed/Pending, attempts, HTTP status) with **Deliver again** on a failed one, **Send test
-  event**, and Pause, Resume and Turn off in the row menu. Pause, resume, test and redelivery are `NOT_ON_SERVER`
-  (UXW-31, -32, -33): the mock answers them; a server without them answers "not available on this server yet".
+  event**, and Pause, Resume and Turn off in the row menu. Pause, resume, test and redelivery are served
+  (UXW-31, -32, -33); on a server a test event or redelivery shows Pending until the worker has tried it (the mock
+  delivers at once).
   Deliveries have no time column: the server's delivery has no timestamp yet (row in docs/14).
 - **API clients**: a **For developers** card with the Account ID and API base URL, each with Copy; Expires with an
   "In N days" badge within 30 days and Expired after; **Show revoked (n)**, off by default; Revoke in the row menu.

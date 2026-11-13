@@ -1853,6 +1853,27 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "password reset confirm",
     )
     .await;
+    // ERSD-01A: the disclosure versions, published and read (ERSD-01's operations), last, as
+    // publishing changes the disclosure the ceremony above asks for.
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/ersd-versions",
+            k,
+            Some(json!({"text": "Electronic records disclosure."})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "ersd publish",
+    )
+    .await;
+    ok(
+        api.call("GET", "/api/v1/ersd-versions", k, None, &[]).await,
+        StatusCode::OK,
+        "ersd versions",
+    )
+    .await;
     ok(
         api.call("POST", "/api/v1/auth/logout", &s, None, &[]).await,
         StatusCode::NO_CONTENT,
