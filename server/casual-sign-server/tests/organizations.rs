@@ -250,11 +250,29 @@ async fn organization_routes(rls: Rls) {
         Some("CS-AUTH-0006"),
         "delegated join",
     );
-    sqlx::query("DELETE FROM organization_admins WHERE user_id = $1")
-        .bind(uuid::Uuid::parse_str(&member_id).unwrap())
-        .execute(&api.db.admin)
-        .await
-        .unwrap();
+    // An owner promotes a delegated admin to admin: the permission set and scope go.
+    let r = api
+        .call(
+            "PATCH",
+            &format!("/api/v1/organizations/me/admins/{member_id}"),
+            &owner,
+            Some(json!({"role": "admin"})),
+            &[],
+        )
+        .await;
+    let promoted = is(&r, StatusCode::OK, None, "promote delegated");
+    assert_eq!(promoted["role"], "admin");
+    assert!(promoted["permission_set_id"].is_null(), "{promoted}");
+    let r = api
+        .call(
+            "DELETE",
+            &format!("/api/v1/organizations/me/admins/{member_id}"),
+            &owner,
+            None,
+            &[],
+        )
+        .await;
+    is(&r, StatusCode::OK, None, "remove promoted");
 
     // The owner joins, visibly: the workspace's log and the organization's.
     let r = api

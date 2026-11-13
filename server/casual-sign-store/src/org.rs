@@ -582,13 +582,15 @@ impl OrgTx {
         .await
     }
 
-    /// Change an administrator's role between owner and admin, appending
-    /// `organization.admin_role_changed`. Leaving no enabled owner is refused at commit.
+    /// Make an administrator an owner or an admin, appending
+    /// `organization.admin_role_changed`; a delegated admin promoted loses its permission
+    /// set and workspace scope, which only a delegated role carries. The same role again
+    /// changes nothing and appends nothing. Leaving no enabled owner is refused at commit.
     ///
     /// # Errors
     ///
-    /// `CS-DB-0003` when `user` holds no role here; `CS-DB-0008` for a delegated row,
-    /// which needs a permission set.
+    /// `CS-DB-0003` when `user` holds no role here; `CS-DB-0008` for
+    /// [`OrganizationRole::Delegated`], which needs a permission set (ORG-07).
     pub async fn set_admin_role(&mut self, user: UserId, role: OrganizationRole) -> Result<()> {
         let org = self.org();
         let old = sqlx::query_scalar!(
@@ -603,8 +605,14 @@ impl OrgTx {
         .ok_or(StoreError::NotFound {
             entity: "organization admin",
         })?;
+        if old == role.as_str() {
+            return Ok(());
+        }
         sqlx::query!(
-            "UPDATE organization_admins SET role = $3 WHERE organization_id = $1 AND user_id = $2",
+            "UPDATE organization_admins SET role = $3, \
+             permission_set_id = CASE WHEN $3 = 'delegated' THEN permission_set_id END, \
+             workspace_scope = CASE WHEN $3 = 'delegated' THEN workspace_scope END \
+             WHERE organization_id = $1 AND user_id = $2",
             org,
             user.0,
             role.as_str()

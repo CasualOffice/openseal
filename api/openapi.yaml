@@ -1243,7 +1243,9 @@ paths:
       operationId: patchOrgAdmin
       summary: "Change an administrator's role (owners only; never one's own), logged as `organization.admin_role_changed`"
       description: >-
-        Leaving no enabled owner is `409 CS-ORG-0008`.
+        A delegated admin made an owner or admin loses its permission set and workspace
+        scope; the same role again changes and logs nothing. Leaving no enabled owner is
+        `409 CS-ORG-0008`.
       x-permission: ""
       requestBody:
         required: true
