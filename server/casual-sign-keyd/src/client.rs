@@ -47,7 +47,8 @@ impl RemoteKey {
     /// Fetch the algorithm and chain of `alias` from keyd.
     ///
     /// # Errors
-    /// `CS-KEY-0011` when keyd cannot be reached or the handshake fails (no or an
+    /// `CS-KEY-0011` when keyd cannot be reached; `CS-KEY-0013` when the handshake is
+    /// refused (keyd's certificate not trusted or not named as configured, or no or an
     /// untrusted client certificate); the code keyd answered otherwise (`CS-KEY-0001`
     /// for a caller not on its allow-list, `CS-KEY-0002` for an unknown alias).
     pub fn connect(endpoint: Endpoint, alias: &str) -> Result<Self, KeydError> {

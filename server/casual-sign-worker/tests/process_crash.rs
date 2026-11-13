@@ -14,6 +14,12 @@
 //! - **never `completed` without a verified seal**: the stored sealed PDF passes our
 //!   verifier and pyHanko (`OPENSEAL_VERIFY_PYTHON`).
 //!
+//! **Failure recovery (`HRD-01`)**, at the end: a worker stopped mid-seal past its
+//! lease while another takes over, keyd unavailable while sealing, PostgreSQL lost
+//! mid-ceremony and mid-seal (TCP gates in front of both; with
+//! `OPENSEAL_CHAOS_PG_CONTAINER` the container is restarted too: run that test alone),
+//! and the blob store refusing writes; each envelope ends archived and sealed once.
+//!
 //! Needs `OPENSEAL_TEST_DATABASE_URL` and binaries built with the feature:
 //! `cargo build -p casual-sign-server --features crash-points` (the worker binary is
 //! this package's own, built with the feature by `cargo test --features crash-points`).
@@ -134,6 +140,15 @@ fn server_bin() -> PathBuf {
     ))
 }
 
+/// The worker binary: `OPENSEAL_WORKER_BIN` (a copy, where another build may replace
+/// the one in a shared target directory), else this package's own.
+fn worker_bin() -> PathBuf {
+    std::env::var("OPENSEAL_WORKER_BIN").map_or_else(
+        |_| PathBuf::from(env!("CARGO_BIN_EXE_casual-sign-worker")),
+        PathBuf::from,
+    )
+}
+
 /// A response: status and JSON body.
 #[derive(Debug)]
 struct Resp {
@@ -168,6 +183,14 @@ struct Stack {
     worker_kills: Vec<String>,
     /// How many times a worker was found dead and restarted.
     worker_restarts: usize,
+    /// The gate both binaries reach PostgreSQL through (`HRD-01`: an outage cuts it).
+    db_gate: Gate,
+    /// The gate the worker reaches keyd through (`HRD-01`: keyd unavailable).
+    keyd_gate: Gate,
+    /// The filesystem blob store's root.
+    blobs: PathBuf,
+    /// keyd's test PKI (`HRD-01`: a worker misconfigured against it).
+    keyd_pki: Pki,
 }
 
 impl Drop for Stack {
@@ -182,15 +205,20 @@ impl Drop for Stack {
     }
 }
 
-async fn app_url(db: &TestDb) -> String {
-    let base = std::env::var(common::db::ENV).unwrap();
+async fn app_url(db: &TestDb, gate: &Gate) -> String {
     let name: String = sqlx::query_scalar::<_, String>("SELECT current_database()")
         .fetch_one(&db.admin)
         .await
         .unwrap();
-    let rest = base.split_once('@').unwrap().1;
-    let host = rest.split('/').next().unwrap();
+    let host = &gate.addr;
     format!("postgres://openseal_app_test:openseal-app-test-only@{host}/{name}")
+}
+
+/// Where the test database listens (`host:port` of `OPENSEAL_TEST_DATABASE_URL`).
+fn db_host() -> String {
+    let base = std::env::var(common::db::ENV).unwrap();
+    let rest = base.split_once('@').unwrap().1;
+    rest.split('/').next().unwrap().to_owned()
 }
 
 impl Stack {
@@ -240,7 +268,9 @@ impl Stack {
             .serialize_pem();
         let port = free_port();
         let base = format!("http://127.0.0.1:{port}");
-        let db_url = app_url(&db).await;
+        let db_gate = Gate::start(db_host());
+        let keyd_gate = Gate::start(keyd.addr.clone());
+        let db_url = app_url(&db, &db_gate).await;
         let s = |k: &str, v: &str| (k.to_owned(), v.to_owned());
         let blob_dir = blobs.display().to_string();
         let server_env = vec![
@@ -265,7 +295,7 @@ impl Stack {
             s("OPENSEAL_SMTP_SECURITY", "plain"),
             s("OPENSEAL_TSA_URLS", &tsa),
             s("OPENSEAL_TRUST_ANCHORS", &anchors),
-            s("OPENSEAL_KEYD_ADDR", &keyd.addr),
+            s("OPENSEAL_KEYD_ADDR", &keyd_gate.addr),
             s("OPENSEAL_KEYD_SERVER_NAME", "localhost"),
             s("OPENSEAL_KEYD_CA", &keyd_ca),
             s("OPENSEAL_KEYD_CLIENT_CERT", &client_cert),
@@ -299,6 +329,10 @@ impl Stack {
             dir,
             worker_kills: Vec::new(),
             worker_restarts: 0,
+            db_gate,
+            keyd_gate,
+            blobs,
+            keyd_pki: kpki,
         };
         stack.probe_features();
         stack.start_server(None);
@@ -329,10 +363,7 @@ impl Stack {
     fn probe_features(&self) {
         for (bin, env) in [
             (server_bin(), &self.server_env),
-            (
-                PathBuf::from(env!("CARGO_BIN_EXE_casual-sign-worker")),
-                &self.worker_env,
-            ),
+            (worker_bin(), &self.worker_env),
         ] {
             let st = Command::new(&bin)
                 .envs(env.iter().cloned())
@@ -397,7 +428,7 @@ impl Stack {
 
     fn start_worker(&mut self, crash: Option<&str>) {
         self.stop_worker();
-        let bin = PathBuf::from(env!("CARGO_BIN_EXE_casual-sign-worker"));
+        let bin = worker_bin();
         self.worker = Some(self.spawn(&bin, &self.worker_env, crash, "worker.log"));
     }
 
@@ -1184,4 +1215,710 @@ async fn a_two_signer_envelope_completes_through_seeded_random_kills() {
         .scalar("SELECT count(*) FROM jobs WHERE status = 'dead'")
         .await;
     assert_eq!(dead, 0);
+}
+
+// ------------------------------------------------------------------ HRD-01 chaos
+
+/// A TCP gate in front of a dependency (PostgreSQL, keyd): it forwards every connection
+/// while up; [`Gate::cut`] tears down every open connection (as a restart of the
+/// dependency does: each in-flight transaction is lost and rolled back by the server)
+/// and refuses new ones until [`Gate::restore`].
+struct Gate {
+    addr: String,
+    up: Arc<std::sync::atomic::AtomicBool>,
+    conns: Arc<std::sync::Mutex<Vec<std::net::TcpStream>>>,
+}
+
+impl Gate {
+    fn start(target: String) -> Self {
+        use std::sync::atomic::Ordering;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let up = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let conns: Arc<std::sync::Mutex<Vec<std::net::TcpStream>>> = Arc::default();
+        let (u, c) = (Arc::clone(&up), Arc::clone(&conns));
+        std::thread::spawn(move || {
+            for conn in listener.incoming() {
+                let Ok(client) = conn else { continue };
+                if !u.load(Ordering::SeqCst) {
+                    let _ = client.shutdown(std::net::Shutdown::Both);
+                    continue;
+                }
+                let Ok(server) = std::net::TcpStream::connect(&target) else {
+                    let _ = client.shutdown(std::net::Shutdown::Both);
+                    continue;
+                };
+                {
+                    let mut list = c.lock().unwrap();
+                    list.push(client.try_clone().unwrap());
+                    list.push(server.try_clone().unwrap());
+                }
+                for (mut from, mut to) in [
+                    (client.try_clone().unwrap(), server.try_clone().unwrap()),
+                    (server, client),
+                ] {
+                    std::thread::spawn(move || {
+                        let _ = std::io::copy(&mut from, &mut to);
+                        let _ = from.shutdown(std::net::Shutdown::Both);
+                        let _ = to.shutdown(std::net::Shutdown::Both);
+                    });
+                }
+            }
+        });
+        Self { addr, up, conns }
+    }
+
+    /// Every open connection torn down; new ones refused.
+    fn cut(&self) {
+        self.up.store(false, std::sync::atomic::Ordering::SeqCst);
+        for s in self.conns.lock().unwrap().drain(..) {
+            let _ = s.shutdown(std::net::Shutdown::Both);
+        }
+    }
+
+    /// Connections forwarded again.
+    fn restore(&self) {
+        self.up.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// A child killed when dropped (a stopped worker must not outlive a failed test).
+struct KillOnDrop(Child);
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Send `sig` (`STOP`, `CONT`) to a child.
+fn signal(child: &Child, sig: &str) {
+    let st = Command::new("kill")
+        .arg(format!("-{sig}"))
+        .arg(child.id().to_string())
+        .status()
+        .unwrap();
+    assert!(st.success(), "kill -{sig}");
+}
+
+fn wait_file(path: &Path, what: &str) {
+    let deadline = Instant::now() + Duration::from_secs(120);
+    while !path.exists() {
+        assert!(Instant::now() < deadline, "{what}: not reached");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Files under `dir`, recursively.
+fn count_files(dir: &Path) -> usize {
+    std::fs::read_dir(dir).map_or(0, |rd| {
+        rd.flatten()
+            .map(|e| {
+                let p = e.path();
+                if p.is_dir() { count_files(&p) } else { 1 }
+            })
+            .sum()
+    })
+}
+
+impl Stack {
+    /// A fresh directory a held worker signals through.
+    fn hold_dir(&self, name: &str) -> PathBuf {
+        let d = self.dir.join(format!("hold-{name}"));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Start a worker (logging to `log`) that holds at `at` until `dir/release` exists.
+    fn start_worker_held(&mut self, at: &str, dir: &Path, log: &str) {
+        self.stop_worker();
+        let bin = worker_bin();
+        let mut env = self.worker_env.clone();
+        env.push(("OPENSEAL_HOLD_AT".into(), at.into()));
+        env.push(("OPENSEAL_HOLD_DIR".into(), dir.display().to_string()));
+        self.worker = Some(self.spawn(&bin, &env, None, log));
+    }
+
+    fn log_has(&self, log: &str, needle: &str) -> bool {
+        std::fs::read_to_string(self.dir.join(log)).is_ok_and(|t| t.contains(needle))
+    }
+
+    fn wait_log(&self, log: &str, needle: &str) {
+        let deadline = Instant::now() + Duration::from_secs(120);
+        while !self.log_has(log, needle) {
+            assert!(Instant::now() < deadline, "{log}: no {needle:?}");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    async fn wait_sql(&self, q: &str, want: i64, what: &str) {
+        let deadline = Instant::now() + Duration::from_secs(120);
+        loop {
+            let got = self.scalar(q).await;
+            if got == want {
+                return;
+            }
+            assert!(Instant::now() < deadline, "{what}: {got}, not {want}");
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Every queued job due now (the engine's 60 s seal retry, a back-off).
+    async fn make_due(&self) {
+        self.sql("UPDATE jobs SET run_at = now() WHERE status = 'queued'")
+            .await;
+    }
+
+    /// The worker process is alive (it did not exit on an unavailable dependency).
+    fn worker_alive(&mut self, what: &str) {
+        let st = self.worker.as_mut().unwrap().try_wait().unwrap();
+        assert!(st.is_none(), "{what}: the worker exited: {st:?}");
+    }
+
+    /// One signer who must pass an access code: sent, the invitation delivered, then
+    /// the worker stopped and the signer authenticated and signed, so the envelope
+    /// stands `completing` with its seal job queued.
+    async fn completing(&mut self) -> String {
+        let tag = Uuid::now_v7().simple().to_string();
+        let email = format!("a-{tag}@crash.example.test");
+        let body = json!({
+            "subject": "Chaos test agreement", "status": "sent",
+            "documents": [{"name": "a.pdf",
+                "content_base64": base64::engine::general_purpose::STANDARD.encode(common::valid_pdf())}],
+            "recipients": [{"ref": "r0", "type": "signer", "name": "Signer A", "email": email,
+                "routing_order": 1, "auth": ["access_code"], "access_code": "chaos-4711"}],
+            "fields": [{"recipient": "r0", "document": 0, "type": "signature",
+                "page": 1, "x": 72, "y": 100, "width": 180, "height": 40, "required": true}],
+        });
+        let e = self.call(&self.staff, "POST", "/api/v1/envelopes", Some(body), &[]);
+        assert_eq!(e.status, 201, "{e:?}");
+        let env = e.body["id"].as_str().unwrap().to_owned();
+        let field = e.body["fields"][0]["id"].as_str().unwrap().to_owned();
+        if self.worker.is_none() {
+            self.start_worker(None);
+        }
+        self.idle().await;
+        self.stop_worker();
+        let (who, s, finish) = self.authenticate_and_adopt(&email, &field);
+        let r = self.call(&who, "POST", &format!("{s}/finish"), Some(finish), &[]);
+        assert_eq!(r.status, 200, "{r:?}");
+        assert_eq!(self.get(&env)["status"], "completing");
+        self.not_served(&env, "before the seal");
+        env
+    }
+
+    /// Open the emailed link, pass the access code, view and adopt; as [`Stack::open`].
+    fn authenticate_and_adopt(&self, email: &str, field: &str) -> (Who, String, Value) {
+        let mails = self.smtp.to(email);
+        let token = mails
+            .last()
+            .expect("an invitation")
+            .token()
+            .expect("a link");
+        let s = format!("/s/{token}");
+        let opened = self.call(
+            &Who::default(),
+            "POST",
+            &format!("{s}/session"),
+            Some(json!({})),
+            &[],
+        );
+        assert_eq!(opened.status, 200, "{opened:?}");
+        let who = Who {
+            cookie: Some(
+                opened.headers["set-cookie"]
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_owned(),
+            ),
+            csrf: None,
+        };
+        let wrong = self.call(
+            &who,
+            "POST",
+            &format!("{s}/authenticate"),
+            Some(json!({"method": "access_code", "code": "wrong"})),
+            &[],
+        );
+        assert_ne!(wrong.status, 200, "a wrong code is refused");
+        let v = self.call(
+            &who,
+            "POST",
+            &format!("{s}/authenticate"),
+            Some(json!({"method": "access_code", "code": "chaos-4711"})),
+            &[],
+        );
+        assert_eq!(v.status, 200, "{v:?}");
+        let doc = v.body["envelope"]["documents"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let seen = self.call(
+            &who,
+            "POST",
+            &format!("{s}/documents/{doc}/viewed"),
+            Some(json!({"pages_seen": [1]})),
+            &[],
+        );
+        assert_eq!(seen.status, 200, "{seen:?}");
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        let a = self.call(
+            &who,
+            "POST",
+            &format!("{s}/adopt"),
+            Some(json!({"mark": "signature", "method": "draw", "image_base64": png})),
+            &[],
+        );
+        assert_eq!(a.status, 200, "{a:?}");
+        let capture = a.body["adoption_id"].as_str().unwrap().to_owned();
+        let finish = json!({"values": [{"field": field, "value": {"signature": capture}}]});
+        (who, s, finish)
+    }
+
+    /// The status of a GET as staff.
+    fn status_of(&self, path: &str) -> u16 {
+        self.call(&self.staff, "GET", path, None, &[]).status
+    }
+
+    /// Nothing sealed is served: no sealed version, no certificate, and the envelope
+    /// is not `completed`.
+    fn not_served(&self, env: &str, what: &str) {
+        let e = self.get(env);
+        assert_ne!(e["status"], "completed", "{what}");
+        let doc = e["documents"][0]["id"].as_str().unwrap();
+        for path in [
+            format!("/api/v1/envelopes/{env}/documents/{doc}/content?version=sealed"),
+            format!("/api/v1/envelopes/{env}/certificate"),
+        ] {
+            let st = self.status_of(&path);
+            assert!(
+                (400..500).contains(&st),
+                "{what}: {path} answered {st} before the seal"
+            );
+        }
+    }
+
+    /// The archive of a completed envelope: the sealed PDF verified by ours and pyHanko
+    /// (with `document.sealed`, `envelope.completing` and `envelope.completed` once in a
+    /// chain that verifies), the certificate and the audit trail served, exactly one
+    /// sealed version per document, and no job dead.
+    async fn archived(&self, env: &str, label: &str) {
+        self.verified_seal(env, label).await;
+        for path in [
+            format!("/api/v1/envelopes/{env}/certificate"),
+            format!("/api/v1/envelopes/{env}/audit"),
+        ] {
+            assert_eq!(self.status_of(&path), 200, "{label}: {path}");
+        }
+        let sealed = self
+            .scalar(&format!(
+                "SELECT count(*) FROM document_versions v JOIN documents d ON d.id = v.document_id \
+                 WHERE d.envelope_id = '{env}' AND v.kind = 'sealed'"
+            ))
+            .await;
+        assert_eq!(sealed, 1, "{label}: sealed versions");
+        let dead = self
+            .scalar("SELECT count(*) FROM jobs WHERE status = 'dead'")
+            .await;
+        assert_eq!(dead, 0, "{label}: a job dead-lettered");
+    }
+
+    fn seal_jobs(env: &str, cond: &str) -> String {
+        format!(
+            "SELECT count(*) FROM jobs WHERE kind = 'seal_envelope' AND envelope_id = '{env}' AND {cond}"
+        )
+    }
+}
+
+/// HRD-01: a worker frozen mid-seal (`SIGSTOP`: a pause, a partition) past its lease
+/// while a second worker takes the job over. When the first wakes and stores its seal
+/// it holds no lease: it must write nothing, and the second seals once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_worker_frozen_mid_seal_past_its_lease_writes_nothing_and_the_seal_happens_once() {
+    let Some(mut st) = Stack::new("hrd01_frozen").await else {
+        return;
+    };
+    let env = st.completing().await;
+    let at = "worker:Sealed:seal_envelope";
+    // Worker A seals and stands before storing; frozen there, its lease lapses.
+    let dir_a = st.hold_dir("a");
+    st.start_worker_held(at, &dir_a, "worker-a.log");
+    wait_file(&dir_a.join("reached"), "worker A");
+    let a = KillOnDrop(st.worker.take().unwrap());
+    signal(&a.0, "STOP");
+    st.after_worker_crash().await;
+    // Worker B takes the job over and seals; it stands before storing too.
+    let dir_b = st.hold_dir("b");
+    st.start_worker_held(at, &dir_b, "worker-b.log");
+    wait_file(&dir_b.join("reached"), "worker B");
+    // A wakes and tries to store its seal under the lease it lost.
+    signal(&a.0, "CONT");
+    std::fs::write(dir_a.join("release"), b"").unwrap();
+    st.wait_log("worker-a.log", "job_failed kind=seal_envelope");
+    let stored = st
+        .scalar(&format!(
+            "SELECT count(*) FROM job_steps s JOIN jobs j ON j.id = s.job_id \
+             WHERE j.envelope_id = '{env}' AND s.step = 'seal.stored'"
+        ))
+        .await;
+    assert_eq!(stored, 0, "a worker that lost its lease recorded a seal");
+    st.not_served(&env, "after the stale worker");
+    drop(a);
+    // B stores and completes, on its first attempt.
+    std::fs::write(dir_b.join("release"), b"").unwrap();
+    st.idle().await;
+    st.archived(&env, "frozen").await;
+    let attempts = st
+        .scalar(&format!(
+            "SELECT attempts::bigint FROM jobs WHERE kind = 'seal_envelope' AND envelope_id = '{env}'"
+        ))
+        .await;
+    assert_eq!(attempts, 2, "A's attempt and B's, no retry");
+}
+
+/// HRD-01: keyd unavailable while sealing. The envelope stays `completing` (nothing
+/// served, no `envelope.completed`), the engine schedules a new seal job each time, a
+/// worker started meanwhile stays up and runs its other jobs, and once keyd is back the
+/// envelope completes once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn keyd_unavailable_while_sealing_keeps_the_envelope_completing_until_it_returns() {
+    let Some(mut st) = Stack::new("hrd01_keyd").await else {
+        return;
+    };
+    let env = st.completing().await;
+    // A worker that reached keyd at its start; keyd goes away before the seal.
+    st.sql(&format!(
+        "UPDATE jobs SET run_at = now() + interval '1 hour' \
+         WHERE kind = 'seal_envelope' AND envelope_id = '{env}'"
+    ))
+    .await;
+    st.start_worker(None);
+    st.idle().await;
+    st.keyd_gate.cut();
+    st.make_due().await;
+    st.wait_sql(
+        &Stack::seal_jobs(&env, "status = 'done'"),
+        1,
+        "the first seal attempt",
+    )
+    .await;
+    st.idle().await;
+    assert!(
+        st.log_has("worker.log", "seal_failed code=CS-SEAL-0001"),
+        "the key provider's failure alerted"
+    );
+    // A worker started while keyd is down must not exit over it.
+    st.start_worker(None);
+    st.idle().await;
+    st.worker_alive("keyd down at start");
+    st.not_served(&env, "keyd down");
+    assert_eq!(st.count(&env, "envelope.completed").await, 0);
+    assert_eq!(
+        st.scalar(&Stack::seal_jobs(&env, "status = 'queued'"))
+            .await,
+        1,
+        "a new seal job scheduled"
+    );
+    // Other work goes on meanwhile: another envelope's invitation is sent.
+    let (other, emails, _) = st.create(1, false);
+    st.idle().await;
+    assert_eq!(
+        st.smtp.to(&emails[0]).len(),
+        1,
+        "an invitation while keyd is down"
+    );
+    assert_eq!(st.count(&other, "invitation.sent").await, 1);
+    // Still down at the retry (from the worker that never reached keyd), then back.
+    st.make_due().await;
+    st.wait_sql(
+        &Stack::seal_jobs(&env, "status = 'done'"),
+        2,
+        "the second seal attempt",
+    )
+    .await;
+    st.idle().await;
+    st.not_served(&env, "keyd still down");
+    st.keyd_gate.restore();
+    st.make_due().await;
+    st.idle().await;
+    st.worker_alive("after keyd returned");
+    st.archived(&env, "keyd").await;
+}
+
+/// HRD-01: a worker whose keyd settings are wrong does not start, even though keyd
+/// unreachable lets it start: keyd's CA not the configured one, keyd's certificate
+/// not under the configured name, or this worker's client certificate from another
+/// CA. Each is a TLS refusal (`CS-KEY-0013`), a misconfiguration no retry cures, and
+/// the worker exits non-zero at start naming it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_worker_misconfigured_against_keyd_exits_at_start() {
+    let Some(mut st) = Stack::new("hrd01_keyd_config").await else {
+        return;
+    };
+    st.stop_worker();
+    let write = |name: &str, text: &str| {
+        let p = st.dir.join(name);
+        std::fs::write(&p, text).unwrap();
+        p.display().to_string()
+    };
+    let other_ca = write("other-ca.pem", &Pki::new().tls_ca.pem());
+    let rogue = st.keyd_pki.rogue_client_identity("worker");
+    let rogue_cert = write("rogue.pem", &rogue.0);
+    let rogue_key = write("rogue-key.pem", &rogue.1);
+    let cases: [(&str, Vec<(&str, String)>); 3] = [
+        ("wrong-ca", vec![("OPENSEAL_KEYD_CA", other_ca)]),
+        (
+            "wrong-name",
+            vec![("OPENSEAL_KEYD_SERVER_NAME", "keyd.elsewhere.test".into())],
+        ),
+        (
+            "untrusted-client",
+            vec![
+                ("OPENSEAL_KEYD_CLIENT_CERT", rogue_cert),
+                ("OPENSEAL_KEYD_CLIENT_KEY", rogue_key),
+            ],
+        ),
+    ];
+    for (name, changes) in cases {
+        let mut env = st.worker_env.clone();
+        for (k, v) in changes {
+            env.iter_mut().find(|(ek, _)| ek == k).unwrap().1 = v;
+        }
+        let log = format!("worker-{name}.log");
+        let mut child = KillOnDrop(st.spawn(&worker_bin(), &env, None, &log));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let status = loop {
+            if let Some(s) = child.0.try_wait().unwrap() {
+                break s;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{name}: the worker started against a keyd that refuses it"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        assert!(!status.success(), "{name}: exited {status:?}");
+        assert!(st.log_has(&log, "CS-KEY-0013"), "{name}: the code named");
+        assert!(
+            !st.log_has(&log, "keyd_unavailable"),
+            "{name}: taken for an outage"
+        );
+    }
+}
+
+/// HRD-01: a database failure on a seal job's last attempt while it reads the job's
+/// steps (before anything is sealed) hands over to a new seal job instead of
+/// dead-lettering it with the envelope `completing`. The failure is a lock timeout:
+/// the worker runs with `lock_timeout` 2 s while the test holds `job_steps` locked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_database_failure_on_the_last_seal_attempt_hands_over_to_a_new_seal_job() {
+    let Some(mut st) = Stack::new("hrd01_last_attempt").await else {
+        return;
+    };
+    let env = st.completing().await;
+    st.sql(&format!(
+        "UPDATE jobs SET attempts = max_attempts - 1, run_at = now() \
+         WHERE kind = 'seal_envelope' AND envelope_id = '{env}' AND status = 'queued'"
+    ))
+    .await;
+    let normal = st.worker_env.clone();
+    for (k, v) in &mut st.worker_env {
+        if k == "OPENSEAL_DATABASE_URL" {
+            v.push_str("?options[lock_timeout]=2000");
+        }
+    }
+    let dir = st.hold_dir("last");
+    st.start_worker_held("worker:Claimed:seal_envelope", &dir, "worker-last.log");
+    st.worker_env = normal;
+    wait_file(&dir.join("reached"), "the held worker");
+    let mut lock = st.db.admin.begin().await.unwrap();
+    sqlx::query("LOCK TABLE job_steps IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    std::fs::write(dir.join("release"), b"").unwrap();
+    // The job's end touches only `jobs` and the envelope: it is written in the lock.
+    st.wait_sql(
+        &Stack::seal_jobs(&env, "status IN ('done', 'dead')"),
+        1,
+        "the last attempt",
+    )
+    .await;
+    lock.rollback().await.unwrap();
+    assert_eq!(
+        st.scalar(&Stack::seal_jobs(&env, "status = 'dead'")).await,
+        0,
+        "the seal job died with the envelope completing"
+    );
+    assert_eq!(
+        st.scalar(&Stack::seal_jobs(&env, "status = 'queued'"))
+            .await,
+        1,
+        "a new seal job scheduled"
+    );
+    assert!(
+        st.log_has("worker-last.log", "seal_failed"),
+        "the handover alerted"
+    );
+    st.not_served(&env, "after the last attempt");
+    st.start_worker(None);
+    st.make_due().await;
+    st.idle().await;
+    st.archived(&env, "last attempt").await;
+}
+
+/// The test database: cut at the gate; with `OPENSEAL_CHAOS_PG_CONTAINER` (a container
+/// this test may restart, run alone) PostgreSQL itself is restarted inside the cut.
+async fn database_outage(st: &Stack) {
+    st.db_gate.cut();
+    if let Ok(name) = std::env::var("OPENSEAL_CHAOS_PG_CONTAINER") {
+        let ok = Command::new("docker")
+            .args(["restart", "-t", "1", &name])
+            .stdout(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(ok.success(), "docker restart {name}");
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !Command::new("docker")
+            .args(["exec", &name, "pg_isready", "-U", "postgres", "-q"])
+            .status()
+            .unwrap()
+            .success()
+        {
+            assert!(Instant::now() < deadline, "PostgreSQL did not come back");
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+}
+
+/// HRD-01: PostgreSQL lost mid-ceremony and mid-seal. Requests during the outage get a
+/// problem answer and the server stays up; the signer's retry afterwards signs once; the
+/// worker whose seal was interrupted stores nothing, its job is claimed again once its
+/// lease lapses, and the envelope completes once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_database_outage_mid_ceremony_and_mid_seal_recovers_without_a_double_seal() {
+    let Some(mut st) = Stack::new("hrd01_database").await else {
+        return;
+    };
+    // Mid-ceremony: the finish lands in the outage.
+    let (env, emails, fields) = st.create(2, false);
+    st.idle().await;
+    let (who, s, finish) = st.open(&emails[0], &fields[0]);
+    database_outage(&st).await;
+    let r = st.call(
+        &who,
+        "POST",
+        &format!("{s}/finish"),
+        Some(finish.clone()),
+        &[],
+    );
+    assert!(r.status >= 500, "a finish in the outage answered {r:?}");
+    let r = st.call(
+        &st.staff,
+        "GET",
+        &format!("/api/v1/envelopes/{env}"),
+        None,
+        &[],
+    );
+    assert!(
+        r.status >= 500,
+        "a read in the outage answered {}",
+        r.status
+    );
+    assert!(
+        st.server.as_mut().unwrap().try_wait().unwrap().is_none(),
+        "the server exited in the outage"
+    );
+    st.db_gate.restore();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while st.status_of(&format!("/api/v1/envelopes/{env}")) != 200 {
+        assert!(Instant::now() < deadline, "the server did not recover");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let r = st.call(&who, "POST", &format!("{s}/finish"), Some(finish), &[]);
+    assert_eq!(r.status, 200, "the retry after the outage: {r:?}");
+    assert_eq!(st.count(&env, "recipient.signed").await, 1);
+    // The worker rode the outage out.
+    st.idle().await;
+    st.worker_alive("after the ceremony outage");
+    // Mid-seal: the worker has sealed and stands before storing when the database goes.
+    st.stop_worker();
+    st.sign(&emails[1], &fields[1]);
+    assert_eq!(st.get(&env)["status"], "completing");
+    let dir = st.hold_dir("db");
+    st.start_worker_held("worker:Sealed:seal_envelope", &dir, "worker-db.log");
+    wait_file(&dir.join("reached"), "the held worker");
+    database_outage(&st).await;
+    std::fs::write(dir.join("release"), b"").unwrap();
+    st.wait_log("worker-db.log", "job_failed kind=seal_envelope");
+    st.db_gate.restore();
+    st.worker_alive("the database outage");
+    // The job runs again: once its lease lapses if its failure could not be recorded
+    // (300 s), after its back-off if it was recorded once the database returned
+    // (30 s or more); here both at once.
+    st.after_worker_crash().await;
+    st.make_due().await;
+    st.idle().await;
+    st.archived(&env, "database").await;
+}
+
+/// HRD-01: the object store refuses writes while sealing. The sealed bytes never land,
+/// nothing is served, the envelope stays `completing`; a job that reaches its last
+/// attempt hands over to a new seal job rather than dying; once the store takes writes
+/// again the envelope completes once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_object_store_refusing_writes_leaves_nothing_served_and_the_seal_recovers() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let Some(mut st) = Stack::new("hrd01_blobs").await else {
+        return;
+    };
+    let env = st.completing().await;
+    let blobs_before = count_files(&st.blobs);
+    let tmp = st.blobs.join("tmp");
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o555)).unwrap();
+    st.start_worker(None);
+    st.wait_sql(
+        &Stack::seal_jobs(
+            &env,
+            "last_error_code = 'CS-BLOB-0001' AND status = 'queued'",
+        ),
+        1,
+        "a refused write",
+    )
+    .await;
+    st.not_served(&env, "the store refusing writes");
+    assert_eq!(count_files(&st.blobs), blobs_before, "a sealed blob landed");
+    assert_eq!(st.count(&env, "document.sealed").await, 0);
+    // A long outage: the job reaches its last attempt.
+    st.sql(&format!(
+        "UPDATE jobs SET attempts = max_attempts - 1, run_at = now() \
+         WHERE kind = 'seal_envelope' AND envelope_id = '{env}' AND status = 'queued'"
+    ))
+    .await;
+    st.wait_sql(
+        &Stack::seal_jobs(&env, "status IN ('done', 'dead')"),
+        1,
+        "the last attempt",
+    )
+    .await;
+    st.idle().await;
+    assert_eq!(
+        st.scalar(&Stack::seal_jobs(&env, "status = 'dead'")).await,
+        0,
+        "the seal job died with the envelope completing"
+    );
+    assert_eq!(
+        st.scalar(&Stack::seal_jobs(&env, "status = 'queued'"))
+            .await,
+        1,
+        "a new seal job scheduled"
+    );
+    st.not_served(&env, "after the last attempt");
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).unwrap();
+    st.make_due().await;
+    st.idle().await;
+    st.archived(&env, "blobs").await;
 }

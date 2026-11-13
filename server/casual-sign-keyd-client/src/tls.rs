@@ -79,8 +79,10 @@ fn transport(e: impl core::fmt::Display) -> KeydError {
 /// One request, one response, on a fresh mTLS connection.
 ///
 /// # Errors
-/// `CS-KEY-0011` when keyd cannot be reached or the handshake fails; `CS-KEY-0007` for
-/// an answer that does not follow the protocol.
+/// `CS-KEY-0011` when keyd cannot be reached or the connection fails before TLS
+/// answers; `CS-KEY-0013` when the handshake is refused (keyd's certificate not trusted
+/// or not named as configured, or this client's refused by keyd); `CS-KEY-0007` for an
+/// answer that does not follow the protocol.
 pub fn call(endpoint: &Endpoint, req: &Request) -> Result<Response, KeydError> {
     let name = ServerName::try_from(endpoint.server_name.clone())
         .map_err(|_| KeydError::TlsConfig("server name".into()))?;
@@ -95,8 +97,16 @@ pub fn call(endpoint: &Endpoint, req: &Request) -> Result<Response, KeydError> {
         .map_err(transport)?;
     sock.set_write_timeout(Some(endpoint.timeout))
         .map_err(transport)?;
-    let conn = ClientConnection::new(endpoint.tls.clone(), name).map_err(transport)?;
+    let conn = ClientConnection::new(endpoint.tls.clone(), name)
+        .map_err(|e| KeydError::TlsConfig(e.to_string()))?;
     let mut s = StreamOwned::new(conn, sock);
+    // The handshake first, on its own: keyd's certificate is checked here, so a wrong
+    // CA or name is `CS-KEY-0013` before anything is sent (`HRD-01`).
+    while s.conn.is_handshaking() {
+        s.conn
+            .complete_io(&mut s.sock)
+            .map_err(|e| KeydError::from_io(&e))?;
+    }
     write_frame(&mut s, &req.encode()?)?;
     let body = read_frame(&mut s)?.ok_or_else(|| transport("keyd closed the connection"))?;
     let resp = Response::decode(&body, req)?;

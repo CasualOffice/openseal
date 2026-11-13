@@ -18,12 +18,12 @@
 //! output in the gates (docs/31 §Verification ladder), not inside the worker.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use casual_sign_audit::{ActorKind, AuthMethod, Chain, EventData, Hash256, Timestamp};
 use casual_sign_certificate::{EndKind, Ending};
-use casual_sign_keyd::{DEV_REASON, DigestSigner, RemoteKey};
+use casual_sign_keyd::{DEV_REASON, DigestSigner, Endpoint, KeydError, RemoteKey};
 use casual_sign_model::{EnvelopeStatus, Field, FieldValue, Id, RecipientType, SealProfile};
 use casual_sign_sdk::evidence::{
     AuthStep, Consent, CopyKind, CopyRow, DocumentRow, EnvelopeSummary, Mark, Outcome, Party,
@@ -52,6 +52,9 @@ pub enum SealKey {
     /// The key in keyd, over mTLS (production). keyd says whether it is a development
     /// key; when it is, every seal carries the development `/Reason` (docs/31 §5).
     Remote(RemoteKey),
+    /// The key in keyd, reached on first use (production; `HRD-01`): what the worker
+    /// binary runs, so a worker started while keyd is unreachable stays up.
+    Keyd(KeydKey),
     /// A key in this process: development only (a `FileKey` behind
     /// `OPENSEAL_DEV_INSECURE_KEY=1`) or tests. `development` must be true for a file key.
     Local {
@@ -66,11 +69,60 @@ impl core::fmt::Debug for SealKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Remote(r) => f.debug_tuple("Remote").field(r).finish(),
+            Self::Keyd(k) => f.debug_tuple("Keyd").field(k).finish(),
             Self::Local { development, .. } => f
                 .debug_struct("Local")
                 .field("development", development)
                 .finish_non_exhaustive(),
         }
+    }
+}
+
+/// The platform key in keyd, connected on first use and kept (`HRD-01`).
+///
+/// [`RemoteKey::connect`] fetches the key's algorithm and chain from keyd. Done once at
+/// the worker's start, a keyd that is down (restarting, not yet up, partitioned) would
+/// stop the worker from starting at all, and with it every email, webhook and timer.
+/// Instead the connection is made by the first seal that needs it: until keyd answers,
+/// each seal fails `CS-KEY-0011` through the engine's `SealFailed` (an operator alert and
+/// a new seal job; the envelope stays `completing`), and the first seal that reaches it
+/// keeps the chain for the rest of the process's life.
+#[derive(Debug, Clone)]
+pub struct KeydKey {
+    endpoint: Endpoint,
+    alias: String,
+    connected: Arc<Mutex<Option<RemoteKey>>>,
+}
+
+impl KeydKey {
+    /// The key `alias` at `endpoint`, not yet connected.
+    #[must_use]
+    pub fn new(endpoint: Endpoint, alias: &str) -> Self {
+        Self {
+            endpoint,
+            alias: alias.to_owned(),
+            connected: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// The connected key, connecting first when no connection succeeded yet.
+    ///
+    /// # Errors
+    ///
+    /// As [`connect_keyd`]: `CS-KEY-0011` while keyd cannot be reached (logged as
+    /// `transport.backend_failed`, `ASVS-08`, as is every signature keyd does not give).
+    pub fn remote(&self) -> core::result::Result<RemoteKey, KeydError> {
+        // A panic while holding the lock left at most `None` or a whole key behind.
+        let mut slot = self
+            .connected
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(r) = slot.as_ref() {
+            return Ok(r.clone());
+        }
+        let r = connect_keyd(self.endpoint.clone(), &self.alias)?;
+        *slot = Some(r.clone());
+        Ok(r)
     }
 }
 
@@ -637,6 +689,14 @@ fn key_for(services: &SealServices, s: &EnvelopeState) -> Result<(Box<dyn KeyPro
         SealKey::Remote(r) => {
             let r = r
                 .for_envelope(s.id.as_str())
+                .map_err(|e| pipeline(e.code()))?;
+            let dev = DigestSigner::is_development(&r);
+            (Box::new(r), dev)
+        }
+        SealKey::Keyd(k) => {
+            let r = k
+                .remote()
+                .and_then(|r| r.for_envelope(s.id.as_str()))
                 .map_err(|e| pipeline(e.code()))?;
             let dev = DigestSigner::is_development(&r);
             (Box::new(r), dev)
