@@ -125,6 +125,9 @@ pub struct Config {
     pub max_json_bytes: usize,
     /// Largest uploaded document (docs/21: 50 MiB).
     pub max_document_bytes: usize,
+    /// Largest total of an envelope's uploaded documents (docs/21: 200 MiB), whether
+    /// they arrive in one create or one upload at a time (`FG-006`).
+    pub max_envelope_bytes: usize,
     /// Largest adopted signature image.
     pub max_image_bytes: usize,
     /// Mark cookies `Secure` (off only for plain-HTTP development).
@@ -148,6 +151,7 @@ impl Default for Config {
             rate: RateLimits::default(),
             max_json_bytes: 1024 * 1024,
             max_document_bytes: 50 * 1024 * 1024,
+            max_envelope_bytes: 200 * 1024 * 1024,
             max_image_bytes: 5 * 1024 * 1024,
             secure_cookies: true,
             trusted_proxies: Vec::new(),

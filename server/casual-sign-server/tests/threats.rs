@@ -495,3 +495,72 @@ async fn sign_in_attempts_are_limited_per_client_address_across_names() {
     assert_eq!(code(&r), (StatusCode::UNAUTHORIZED, "CS-AUTH-0007".into()));
     api.db.drop().await;
 }
+
+/// FG-006 (docs/21): an envelope's documents stay within the envelope total however
+/// they arrive. Uploading them one at a time to a draft is refused at the limit
+/// (`413 CS-API-0006`) just as a one-call create over it is; a smaller limit stands in
+/// for 200 MiB so the test moves kilobytes, not hundreds of megabytes.
+#[tokio::test]
+async fn an_envelopes_documents_stay_within_the_total_when_uploaded_one_at_a_time() {
+    let one = common::harness::pdf(1).len();
+    let Some(api) = Api::with("threat_envelope_total", Rls::On, |c| {
+        c.max_envelope_bytes = one * 2;
+    })
+    .await
+    else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let created = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(json!({"subject": "FG-006", "documents": [
+                {"name": "a.pdf", "content_base64": common::flow::b64(&common::harness::pdf(1))}
+            ]})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create draft",
+    );
+    let id = created["id"].as_str().unwrap().to_owned();
+    let upload = |name: &'static str| {
+        let path = format!("/api/v1/envelopes/{id}/documents?name={name}");
+        let api = &api;
+        let auth = a.auth.clone();
+        async move {
+            api.send(
+                "POST",
+                &path,
+                &auth,
+                Body::from(common::harness::pdf(1)),
+                &[("content-type", "application/pdf")],
+            )
+            .await
+        }
+    };
+    // The second fills the envelope to its limit; the third would pass it.
+    assert_eq!(upload("b.pdf").await.status, StatusCode::CREATED);
+    assert_eq!(
+        code(&upload("c.pdf").await),
+        (StatusCode::PAYLOAD_TOO_LARGE, "CS-API-0006".into())
+    );
+    // And a one-call create over the limit is refused the same way.
+    let doc =
+        json!({"name": "a.pdf", "content_base64": common::flow::b64(&common::harness::pdf(1))});
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(json!({"subject": "FG-006", "documents": [doc.clone(), doc.clone(), doc]})),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        code(&r),
+        (StatusCode::PAYLOAD_TOO_LARGE, "CS-API-0006".into())
+    );
+}

@@ -650,7 +650,7 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
         total = total.saturating_add(b.len());
         decoded.push((d.name.clone(), b));
     }
-    if total > 200 * 1024 * 1024 {
+    if total > c.st.config().max_envelope_bytes {
         return Err(ApiError::too_large());
     }
     let mut tx = c.tx().await?;
@@ -1022,6 +1022,18 @@ pub(crate) async fn add_document_route(
         )?;
         (d.name, b)
     };
+    // The envelope's total stays within the limit however its documents arrive
+    // (FG-006, docs/21), not only in a one-call create.
+    let held = l
+        .state
+        .documents
+        .iter()
+        .fold(0u64, |n, d| n.saturating_add(d.spec.bytes));
+    let limit = u64::try_from(c.st.config().max_envelope_bytes).unwrap_or(u64::MAX);
+    let adding = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    if held.saturating_add(adding) > limit {
+        return Err(ApiError::too_large());
+    }
     let spec = add_document(&c.st, &mut tx, l.id, &name, bytes).await?;
     let doc_id = spec.id.clone();
     let upload = (uid(&spec.id)?, spec.delivered_hash.0);
