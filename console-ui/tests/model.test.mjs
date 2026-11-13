@@ -145,7 +145,7 @@ test("problems become plain sentences, naming the field or the wait", () => {
 });
 
 test("roles map to screens as the API's x-roles do", () => {
-  assert.deepEqual(M.access(["observer"]), { health: true, organizations: true, manage: false, approvals: false, plans: true, log: false, operators: false });
+  assert.deepEqual(M.access(["observer"]), { health: true, organizations: true, keys: true, keysLog: false, manage: false, approvals: false, plans: true, log: false, operators: false });
   assert.equal(M.access(["operator"]).approvals, true);
   assert.equal(M.access(["operator"]).operators, false);
   assert.equal(M.access(["platform_owner"]).operators, true);
@@ -247,4 +247,26 @@ test("override keys follow the effective plan; a workspace may change only works
   assert.equal(M.problemMessage({ status: 422, code: "CS-PLAN-0006", field: "expires_at" }), "The expires at is not valid.");
   assert.equal(M.localToIso(""), null);
   assert.equal(M.localToIso("not a date"), undefined);
+});
+
+test("a key's status says how long it has left or since when it expired (CON-06)", () => {
+  assert.deepEqual(M.keyStatus({ status: "valid", days_left: 400 }), { label: "Valid", tone: "ok", note: "400 days left" });
+  assert.deepEqual(M.keyStatus({ status: "expiring", days_left: 1 }), { label: "Expiring", tone: "warn", note: "1 day left" });
+  assert.deepEqual(M.keyStatus({ status: "expired", days_left: -3 }), { label: "Expired", tone: "bad", note: "expired 3 days ago" });
+  assert.equal(M.keyStatus({ status: "not_yet_valid", days_left: 900 }).note, "");
+  assert.equal(M.keyStatus({}).label, "Unknown");
+});
+
+test("keyd's tile reads its health and names the refusal (CON-06)", () => {
+  assert.equal(M.keydTile({ status: "up", log_seq: 12, keys: [{ alias: "platform", ok: true }] }).note, "1 key · log at 12");
+  const deg = M.keydTile({ status: "degraded", keys: [{ alias: "platform", ok: false }, { alias: "b", ok: true }] });
+  assert.equal(deg.state, "warn");
+  assert.match(deg.note, /^platform not answering$/);
+  const down = M.keydTile({ status: "down", code: "CS-CON-0008" });
+  assert.equal(down.state, "bad");
+  assert.match(down.note, /admin allow-list/);
+  assert.equal(M.keydTile({ status: "not_configured" }).value, "Not set");
+  assert.equal(M.access(["observer"]).keys, true);
+  assert.equal(M.access(["observer"]).keysLog, false);
+  assert.equal(M.access(["operator"]).keysLog, true);
 });

@@ -392,6 +392,7 @@ function showEnrolSecret(token, uri) {
 const NAV = [
   ["health", "Health", "health"],
   ["organizations", "Organizations", "organizations"],
+  ["keys", "Keys and certificates", "keys"],
   ["approvals", "Approvals", "approvals"],
   ["plans", "Plans", "plans"],
   ["operators", "Operators", "operators"],
@@ -551,7 +552,7 @@ async function viewHealth(main, view) {
       const sum = M.healthSummary(r.health, r.alerts);
       put(clear(pill), h("span", { class: `dot live tone-${sum.tone}` }), h("span", { text: sum.text }));
       put(clear(body), 
-        h("div", { class: "tiles" }, M.healthTiles(r.health).map(tile)),
+        h("div", { class: "tiles" }, M.healthTiles(r.health).map(tile), r.health.keyd ? tile(M.keydTile(r.health.keyd)) : null),
         h("div", { class: "split" }, alertsCard(r.alerts), servicesCard(r.health.services || [])),
         h("div", { class: "split" }, queueCard(r.health.jobs || []), deadCard(r.dead)));
       tick();
@@ -567,6 +568,79 @@ async function viewHealth(main, view) {
   }
   await load();
   if (view === state.view) state.timers.push(setInterval(load, 15000), setInterval(tick, 1000));
+}
+
+// Keys and certificates (CON-06) ------------------------------------------------------
+
+command("refreshKeys", async (withLog) => {
+  const keys = await api.get("/keys");
+  const log = withLog && keys.configured ? await api.get("/keys/log?limit=100") : null;
+  return { keys, log };
+});
+
+function keyCard(k) {
+  const st = M.keyStatus(k);
+  const fact = (label, value, mono) => h("div", { class: "row" },
+    h("div", { class: "main" }, h("span", { class: "d", text: label }), h(mono ? "code" : "b", { text: value || "–", attrs: { title: value || "" } })));
+  return h("section", { class: "card rise", attrs: { "aria-label": `Key ${k.alias}` } },
+    h("div", { class: "card-h" }, h("b", {}, h("code", { text: k.alias })),
+      h("span", { class: "right chips" }, k.development ? chip("Development key", "warn") : null, chip(st.label, st.tone))),
+    fact("Signer certificate", k.subject),
+    fact("Issued by", k.issuer),
+    fact("Valid", `${M.shortDate(k.not_before)} to ${M.shortDate(k.not_after)}${st.note ? ` · ${st.note}` : ""}`),
+    fact("Algorithm and backend", `${k.algorithm} · ${k.backend}`),
+    fact("SHA-256", k.sha256, true),
+    h("div", { class: "tbl-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", { text: "Chain" }), h("th", { text: "SHA-256" }), h("th", { class: "num hide-sm", text: "Bytes" }))),
+      h("tbody", {}, (k.chain || []).map((c, i) => h("tr", {},
+        h("td", { text: i === 0 ? "Signer" : `Issuer ${i}` }),
+        h("td", {}, h("code", { text: `${c.sha256.slice(0, 16)}…`, attrs: { title: c.sha256 } })),
+        h("td", { class: "num hide-sm", text: M.count(c.bytes) })))))),
+    h("div", { class: "card-f", text: "Read from keyd's admin interface. The private key never leaves keyd, and the console's keyd identity cannot sign." }));
+}
+
+function keydLogCard(log) {
+  const records = log?.records || [];
+  return h("section", { class: "card rise", attrs: { "aria-labelledby": "kl-h" } },
+    h("div", { class: "card-h" }, h("b", { id: "kl-h", text: "keyd operation log" }), h("span", { class: "sub", text: "oldest first; hash-chained on the keyd host; digests and ids only" })),
+    records.length
+      ? h("div", { class: "tbl-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, h("th", { class: "num", text: "Seq" }), h("th", { text: "Time" }), h("th", { text: "Operation" }), h("th", { class: "hide-sm", text: "Caller" }), h("th", { class: "hide-sm", text: "Envelope" }), h("th", { text: "Outcome" }))),
+        h("tbody", {}, records.map((r) => h("tr", {},
+          h("td", { class: "num mono", text: String(r.seq) }),
+          h("td", { text: M.shortDate(r.at) }),
+          h("td", {}, h("code", { text: r.alias && r.alias !== "-" ? `${r.op} ${r.alias}` : r.op })),
+          h("td", { class: "hide-sm" }, h("code", { text: r.caller.slice(0, 10), attrs: { title: r.caller } })),
+          h("td", { class: "hide-sm" }, h("code", { text: r.envelope_id || "-" })),
+          h("td", {}, chip(r.outcome === "ok" ? "OK" : r.outcome, r.outcome === "ok" ? "ok" : "bad")))))))
+      : emptyState(art.noEntries(), "No records yet", "Every call to keyd is recorded on its host."));
+}
+
+async function viewKeys(main, view) {
+  const can = M.access(state.roles);
+  const body = h("div", { class: "form" }, h("div", { class: "card" }, skeletonRows(4)));
+  page(main, h("div", { class: "head" }, heading("Keys and certificates"),
+    h("span", { class: "right" }, btn("Refresh", "ghost", () => load()))), body);
+  focusHeading(main);
+  async function load() {
+    try {
+      const r = await run("refreshKeys", can.keysLog);
+      if (view !== state.view) return;
+      if (!r.keys.configured) {
+        put(clear(body), h("div", { class: "card" }, emptyState(art.noEntries(), "keyd is not configured",
+          "Set OPENSEAL_CONSOLE_KEYD_ADDR and the console's admin certificate on the host; keyd lists that certificate on its admin allow-list, never its signing list.")));
+        return;
+      }
+      const keys = r.keys.keys || [];
+      put(clear(body),
+        keys.length ? keys.map(keyCard) : h("div", { class: "card" }, emptyState(art.noEntries(), "keyd serves no keys", "Keys are provisioned in the HSM or KMS by the key custodian, on the keyd host.")),
+        r.log ? keydLogCard(r.log) : null);
+    } catch (p) {
+      if (view !== state.view || handleAuth(p)) return;
+      put(clear(body), h("div", { class: "card" }, errorState(p, load)));
+    }
+  }
+  await load();
 }
 
 // Organizations ------------------------------------------------------------------------
@@ -1330,6 +1404,7 @@ function route() {
   const screens = {
     health: () => viewHealth(shell("health"), view),
     organizations: () => (arg ? viewOrganization(shell("organizations"), view, arg) : viewOrganizations(shell("organizations"), view)),
+    keys: () => viewKeys(shell("keys"), view),
     approvals: () => viewApprovals(shell("approvals"), view),
     plans: () => viewPlans(shell("plans"), view),
     operators: () => viewOperators(shell("operators"), view),
