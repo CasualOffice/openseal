@@ -54,8 +54,8 @@ pub use error::{Result, StoreError};
 pub use ids::*;
 pub use migrate::{MIGRATIONS, Migration, MigrationReport, migrate};
 pub use org::{
-    BuiltinProfiles, LAST_OWNER_CONSTRAINT, OrgScope, OrgTx, Organization, OrganizationStatus,
-    Workspace, WorkspaceOf, WorkspaceStatus,
+    BuiltinProfiles, LAST_OWNER_CONSTRAINT, OrgScope, OrgTx, Organization, OrganizationAdmin,
+    OrganizationRole, OrganizationStatus, Workspace, WorkspaceOf, WorkspaceStatus,
 };
 pub use store::{
     ClaimedJob, EntryPoints, RecipientTokenTarget, StaffSessionTarget, Store, Tenant, TenantTx,
