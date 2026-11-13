@@ -136,7 +136,7 @@ function recipientDetail(r, env, audit, prev, mineId) {
 /// one line on where they stand. `detailed` (the envelope page) adds the email, the role,
 /// the Sent / Opened / Signed steps with times, Resend for someone still to act, and the
 /// demo signing link. Each row is `data-testid="recipient-row"`.
-export function recipientsSection(env, audit, { mineId = null, detailed = false, onResend = null, mock = false } = {}) {
+export function recipientsSection(env, audit, { mineId = null, detailed = false, onResend = null, onHost = null, mock = false } = {}) {
   const recs = byOrder(env);
   const list = h("ol", { class: `os-ordl${detailed ? " is-detailed" : ""}`, attrs: { "aria-label": t("envelope.recipients") } });
   if (!recs.length) return h("p", { class: "os-muted os-insp__none", text: t("inspector.no-recipients") });
@@ -156,6 +156,11 @@ export function recipientsSection(env, audit, { mineId = null, detailed = false,
       // A decline's reason is said once, in the envelope's decline callout, not again here.
       const canResend = onResend && ACTIVE.has(env.status) && SIGNING.has(r.type) && (r.status === "sent" || r.status === "delivered");
       if (canResend) li.append(button(t("envelope.resend"), { icon: "rotate-cw", size: "sm", variant: "subtle", attrs: { "aria-label": t("envelope.resend-to", { name: r.name || r.email }) }, onClick: (ev) => busy(ev.currentTarget, () => onResend(r)) }));
+      // UXW-18: an in-person signer whose turn has come signs on this device, in a
+      // session the signed-in member hosts (`POST …/recipients/{r}/host`, UXW-36).
+      if (onHost && r.type === "in_person_signer" && ACTIVE.has(env.status) && (r.status === "sent" || r.status === "delivered")) {
+        li.append(button(t("envelope.host"), { icon: "pen-line", size: "sm", variant: "subtle", attrs: { "aria-label": t("envelope.host-for", { name: r.name || r.email }), "data-testid": "host-in-person" }, onClick: (ev) => busy(ev.currentTarget, () => onHost(r)) }));
+      }
       if (mock && r.mock_token && ACTIVE.has(env.status) && ["sent", "delivered"].includes(r.status)) {
         main.append(h("a", { class: "os-link os-small", href: `/s/${encodeURIComponent(r.mock_token)}?mock=1`, attrs: { "data-testid": "signing-link" } }, icon("external-link", { size: 14 }), h("span", { text: t("mock.signing-link") })));
       }

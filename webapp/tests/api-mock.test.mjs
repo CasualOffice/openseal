@@ -116,6 +116,22 @@ test("the ceremony: access code, consent with location, adopt, fill, finish comp
   for (let i = 1; i < audit.items.length; i++) assert.equal(audit.items[i].prev, audit.items[i - 1].hash);
 });
 
+test("the signer downloads the certificate of completion once the envelope completes (VS-01)", async () => {
+  const c = await signedIn();
+  const t = MOCK.ceremonyToken;
+  await c.ceremony.open(t);
+  let v = await c.ceremony.authenticate(t, "access_code", MOCK.accessCode);
+  await c.ceremony.consent(t, MOCK.ersd);
+  await assert.rejects(c.ceremony.certificate(t), (e) => e.status === 409 && e.code === "CS-API-0009");
+  const a = await c.ceremony.adopt(t, "signature", "draw", PNG);
+  await c.ceremony.fill(t, v.fields.find((f) => f.type === "signature").id, { signature: a.adoption_id });
+  await c.ceremony.fill(t, v.fields.find((f) => f.type === "text").id, { text: "Engineer" });
+  v = await c.ceremony.finish(t);
+  assert.equal(v.envelope.status, "completed");
+  const blob = await c.ceremony.certificate(t);
+  assert.equal(new TextDecoder().decode((await blob.arrayBuffer()).slice(0, 5)), "%PDF-");
+});
+
 test("decline with a reason ends the envelope as declined", async () => {
   const c = await signedIn();
   await c.ceremony.open(MOCK.declineToken);

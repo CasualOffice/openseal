@@ -68,7 +68,7 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - Viewers complete by viewing every document to the end.
 - Approvers complete with Approve or decline with Decline; they never sign.
 - Editors (allowed to edit) may change later recipients and fields before signing.
-- Agents (specify recipients) supply the name and email of later recipients.
+- Agents (specify recipients) supply the name and email of later recipients (`POST /s/{token}/recipients`, docs/40 §6), then finish.
 - In-person signers are hosted by a staff user who authenticates first; the event records both. On the server
   (`UXW-36`), `POST /envelopes/{id}/recipients/{r}/host` runs `HostInPerson` as `InPersonHost` and returns a one-time
   link whose every command runs as that host (docs/40 As built); the signer's emailed link cannot act for them.
@@ -101,6 +101,14 @@ On `Complete`, the engine re-runs everything the browser ran, on the server: req
 checkbox and radio group rules, conditional visibility (a hidden field's value is dropped and recorded as dropped),
 formulas recomputed and compared, `date_signed` stamped with server time in the recipient's zone, attachment uploads
 admitted. A client that lied fails here with field-level codes (`CS-FLD-*`).
+
+**Auto-filled fields.** At the same step the engine fills the recipient's own `name`, `first_name`, `last_name` and
+`email` fields that hold no sender's value, and every `envelope_id`. A recipient has one name, so `first_name` and
+`last_name` are cut from it (`FG-055`, decided 2026-11-13): the first word, and everything after it, spaces around them
+dropped. "Ludwig van Beethoven" is "Ludwig" and "van Beethoven"; "Mary Ann Smith" is "Mary" and "Ann Smith"; a one-word
+name leaves `last_name` empty. Splitting at the last space instead fails as often (surname particles), and both are
+deterministic; a sender who needs another split gives the field a value, which the engine never replaces. The
+ceremony shows the same split before finishing (`signfields.js` `nameParts`).
 
 ## 6. Correct
 
@@ -218,7 +226,7 @@ objects concerned, never their content.
 | Authenticate: challenge, pass, fail with lockout after `max_auth_attempts`, unlock by resend; host-asserted | Built |
 | View documents (hash and pages checked); viewers complete by viewing every document to the end | Built |
 | Adopt signature or initials; complete fields (validated); signature values need adoption | Built |
-| Sign (field rules re-run, hidden values dropped, `date_signed` stamped in the recipient's offset and format, name, email and envelope id filled, payments charged) | Built |
+| Sign (field rules re-run, hidden values dropped, `date_signed` stamped in the recipient's offset and format, name, first and last name, email and envelope id filled, payments charged) | Built |
 | Approve (approver's own field rules re-run) | Built |
 | Agents and intermediaries name later recipients, editors also fields and recipients, then complete; unreachable later recipient refused | Built |
 | In-person signing hosted by a staff user | Built |

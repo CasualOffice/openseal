@@ -138,7 +138,7 @@ one recorded in `envelope.completed`.
 | `label` (data label) | Unique per envelope for data fields; shared fields share a label |
 | `value`, `default` | Typed per `type`; bounded. A `multi_select` value is `{"choices": [...]}`: at most 500 options, none repeated (`ACRO-02`) |
 | `validation` | `{kind, message}` where `kind` carries its own parameters: `email`, `number {min, max, currency, decimals}`, `date {format}`, `zip`, `ssn`, `phone`, `length {min, max}`, `regex {pattern}` (matches the whole value) |
-| `format` | Font family, size, colour, alignment, date format, masking |
+| `format` | Font family, size, colour, alignment, date format, masking, `multiline` (a text box of several lines: the signer types line breaks and the value is set from the top of the box, `FG-057`) |
 | `group` | Checkbox/radio group id and rule (`select_at_least`, `select_at_most`, `select_exactly`, `select_range`) |
 | `conditional` | `{parent_label, when: value|checked|unchecked|any}` |
 | `formula` | Expression over other labels ([`-fields` formula grammar](30-PDF-PIPELINE.md#formulas)) |
@@ -150,7 +150,7 @@ one recorded in `envelope.completed`.
 | `signature`, `initials` | Optional (DocuSign's optional signature) or required |
 | `stamp` | Uploaded company stamp image |
 | `date_signed` | Filled by the server at the recipient's completion, in the account's format and the signer's time zone |
-| `name`, `first_name`, `last_name`, `email`, `company`, `title` | Auto-filled from the recipient, editable per policy |
+| `name`, `first_name`, `last_name`, `email`, `company`, `title` | Auto-filled from the recipient, editable per policy; `first_name` and `last_name` are the name's first word and the rest ([24](24-ENVELOPE-LIFECYCLE-AND-ROUTING.md) §5) |
 | `text`, `number`, `date`, `email_address`, `phone`, `ssn`, `zip` | Data fields with validation |
 | `envelope_id` | Read-only, the envelope id (DocuSign `envelopeIdTabs`) |
 | `checkbox`, `radio_group`, `dropdown` | A radio group converted from a PDF whose buttons are on several pages is a `radio_group` field on each page sharing one label, so one value (`ACRO-02`) |

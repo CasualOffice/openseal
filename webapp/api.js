@@ -60,9 +60,10 @@ export const RECIPIENT_TYPES = Object.freeze(["signer", "in_person_signer", "app
 /// The types a recipient can complete end to end today: through the ceremony (`signer`,
 /// `approver` by `POST /s/{token}/approve`, `viewer` by viewing every document to the
 /// end, `in_person_signer` on the link a staff user's `hostInPerson` returns, UXW-36),
-/// or none (`cc`); the others are the engine's, their ceremony a later slice (editor,
-/// agent and intermediary edit later recipients; witness 16, seal 18, notary 31).
-export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "cc"]);
+/// `agent` naming later recipients by `POST /s/{token}/recipients` then finishing, VS-02),
+/// or none (`cc`); the others are the engine's, their ceremony a later slice (editor and
+/// intermediary, slice 6; witness 16, seal 18, notary 31).
+export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "agent", "cc"]);
 
 /// Every field type the API takes: the engine's `FieldType` (docs/22 §6), in wire spelling.
 export const FIELD_TYPES = Object.freeze([
@@ -73,7 +74,7 @@ export const FIELD_TYPES = Object.freeze([
 /// The types the ceremony fills or shows and the flattener draws today (docs/40 As built,
 /// `WEB-06`); the rest are taken and stored, their signer side a later row.
 export const FIELD_TYPES_READY = Object.freeze([
-  "signature", "initials", "date_signed", "name", "email", "company", "title", "text", "number", "checkbox",
+  "signature", "initials", "date_signed", "name", "first_name", "last_name", "email", "company", "title", "text", "number", "checkbox",
   "radio_group", "dropdown", "attachment", "note",
 ]);
 
@@ -82,7 +83,7 @@ export const FIELD_TYPES_READY = Object.freeze([
 /// and conditions refer to; `value` a sender's value (`{text}`, `{checked}`, `{choice}`),
 /// with `locked` nobody changes it; `validation` `{kind: email|phone|zip|ssn|regex|length|
 /// number|date, …, message?}`; `format` `{font_family, font_size, color, align,
-/// date_format, mask}`; `group` `{id, rule: {rule: select_at_least|…, min|max|count}}`;
+/// date_format, mask, multiline}`; `group` `{id, rule: {rule: select_at_least|…, min|max|count}}`;
 /// `conditional` `{parent_label, when: {value: "…"} | "checked" | "unchecked" | "any"}`;
 /// `formula` `{expression, precision}`; `options` for radio groups, dropdowns and
 /// multi-selects, `allow_custom` for a dropdown.
@@ -579,12 +580,19 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       decline: (token, reason, location) =>
         data(request("POST", `${S(token)}/decline`, { body: withLocation(reason ? { reason } : {}, location), ceremony: true })),
       finishLater: (token) => data(request("POST", `${S(token)}/finish-later`, { body: {}, ceremony: true })),
+      /// An agent (or intermediary) names later recipients before finishing (VS-02):
+      /// `[{id, name?, email?}]`, ids from the view's `later_recipients`.
+      nameRecipients: (token, recipients, location) =>
+        data(request("POST", `${S(token)}/recipients`, { body: withLocation({ recipients }, location), ceremony: true })),
       /// WEB-06: attach a file (PDF, PNG or JPEG) to an attachment field.
       attach: (token, field, bytes) =>
         data(request("PUT", `${S(token)}/fields/${encodeURIComponent(field)}/attachment`, { body: { content_base64: toBase64(bytes) }, ceremony: true })),
       /// WEB-06: after finishing, the sealed copy once complete, else a preview.
       download: async (token, doc) =>
         (await request("GET", `${S(token)}/document`, { raw: true, ceremony: true, query: doc ? { doc } : undefined })).blob,
+      /// VS-01: after finishing, the certificate of completion once the envelope completes.
+      certificate: async (token) =>
+        (await request("GET", `${S(token)}/certificate`, { raw: true, ceremony: true })).blob,
       // WEB-06 (G-S2): the envelope's history as this recipient may see it, and
       // reassignment when the envelope allows it (WEB-07). History events are
       // `{seq, type, at, by}`, `type` the audit event type (`recipient.signed`, …).

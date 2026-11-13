@@ -338,7 +338,9 @@ For each document at completion, one incremental update that:
 - Draws every visible field's value into a **Form XObject** per field and invokes it from a new content stream
   appended to the page's `/Contents` array, wrapped in `q … Q` and positioned with a `cm` derived from §4.
 - Text: shaped with the font the field specifies, from the bundled set (Liberation Sans/Serif/Mono, Noto for other
-  scripts, OFL), **embedded and subset**; auto-shrink to fit when the field allows; multi-line wrap by the engine.
+  scripts, OFL), **embedded and subset**; auto-shrink to fit when the field allows; multi-line wrap by the engine, the signer's line breaks kept. One line sits in
+  the vertical middle of its box, except in a multi-line text box (`format.multiline`, `FG-057`), which is set from its
+  top as the ceremony's text area shows it.
 - Signatures and initials: drawn signatures stored as vector paths (from the pad's strokes) and written as PDF paths;
   uploaded images as image XObjects (PNG and JPEG only, re-encoded after decoding with bounded dimensions); typed
   signatures in a bundled script font (OFL).

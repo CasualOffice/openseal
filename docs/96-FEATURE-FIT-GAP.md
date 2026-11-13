@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 41 of 168 rows work end to end; 16 more have their engine built and tested; 49 are designed, 20 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`, `FG-184`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 48 of 168 rows work end to end; 15 more have their engine built and tested; 42 are designed, 20 are partial (`FG-012`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-073`, `FG-076`, `FG-092`, `FG-095`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-177`, `FG-183`, `FG-184`, `FG-195`) and 43 are not started** (counted with `grep` over the Status column). Counts recounted 2026-11-13 (`VS-01`, `S1-01`, `S1-03`, `S1-04`, `S1-05`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -21,7 +21,7 @@ instructions 8 and 9).
 | FG-003 | Import from URL | SN | Build | 8 | — |
 | FG-004 | Import from cloud storage (Drive, OneDrive, Dropbox, Box) | DS | Plugin | 24 | — |
 | FG-005 | Multiple documents per envelope; reorder | DS, SN (groups) | Build | 2 | Designed |
-| FG-006 | Size limits: 50 MB per file, 200 MB per envelope | DS | Build | 1 | Designed |
+| FG-006 | Size limits: 50 MB per file, 200 MB per envelope | DS | Build | 1 | Works: 50 MiB per file in the editor and the API; 200 MiB per envelope in the API, at create and on every later upload (server `tests/threats.rs`, `VS-01`); in the browser a file over 50 MB is refused with its message and the server's `413` for an envelope over 200 MB is said in the editor (`field-kinds.spec.mjs`, both seen red, `S1-05`) |
 | FG-007 | Neutralize JavaScript, actions, embedded files; report | — | Build | Phase 1 | Engine |
 | FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Engine |
 | FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | Engine (`XFA-01`; gaps `XFA-02`..`XFA-05`) |
@@ -38,12 +38,12 @@ instructions 8 and 9).
 | --- | --- | --- | --- | --- | --- |
 | FG-020 | Signer | DS, SN | Build | 1 | Works |
 | FG-021 | Carbon copy | DS, SN | Build | 2 | Works |
-| FG-022 | Needs to view (viewer) | DS, SN | Build | 2 | Partial: the editor adds viewers, who act in their turn with no fields (`UX-05`); the viewer ceremony is not run end to end |
-| FG-023 | Approver | SN | Build | 2 | Partial: the editor adds approvers, who act in their turn with no fields (`UX-05`); the approver ceremony is not run end to end |
-| FG-024 | Specify recipients (agent) | DS | Build | 2 | Designed |
+| FG-022 | Needs to view (viewer) | DS, SN | Build | 2 | Works (the editor adds viewers, `UX-05`; the viewer completes by viewing every document to the end through the ceremony on the server, `VS-02` tests/routing.rs; the signing page ends their turn and the receipt says viewed, browser run `webapp/e2e/recipient-types.spec.mjs`, `RTE-01`) |
+| FG-023 | Approver | SN | Build | 2 | Works (the editor adds approvers, `UX-05`; the approver approves through the ceremony on the server, `VS-02` tests/routing.rs; the review step offers Approve and the receipt says approved, browser run `webapp/e2e/recipient-types.spec.mjs`, `RTE-01`) |
+| FG-024 | Specify recipients (agent) | DS | Build | 2 | Works (the editor offers the agent; the agent names later recipients through `POST /s/{token}/recipients` and finishes, routing then reaching them, `VS-02` tests/routing.rs; the signing page asks for the names and emails, browser run `webapp/e2e/recipient-types.spec.mjs`, `RTE-01`) |
 | FG-025 | Allow to edit (editor) | DS | Build | 6 | Designed |
 | FG-026 | Update recipients (intermediary) | DS | Build | 6 | Designed |
-| FG-027 | In-person signer | DS, SN | Build | 14 | Engine (hosting served by `POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`; the editor offers it, `UX-05`) |
+| FG-027 | In-person signer | DS, SN | Build | 14 | Engine (hosting served by `POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`; the editor offers it, `UX-05`; the envelope page's "Host signing" opens the hosted session in the tab, `UXW-18`, in a mock-mode browser run, `webapp/e2e/recipient-types.spec.mjs`; Compose spec pending on CI) |
 | FG-028 | Witness | DS | Build | 16 | — |
 | FG-029 | Notary (remote online notarization) | DS, SN | Build, with provider plugins | 31 | — |
 | FG-030 | Electronic seal recipient | DS | Plugin | 18 | — |
@@ -68,9 +68,9 @@ instructions 8 and 9).
 | FG-052 | Optional signature | DS | Build | 4 | Designed |
 | FG-053 | Stamp | DS, SN | Build | 4 | Engine |
 | FG-054 | Date signed | DS | Build | 1 | Works |
-| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Partial: name, email, company and title placed (`UX-05`); first and last name not in the palette |
+| FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Works: name, email, company and title placed (`UX-05`), company and title typed by the signer (pre-filling them from a recipient's account is `S1-07`); first and last name in the palette, shown to the signer and filled at finish from the recipient's name, cut at its first space (docs/24 §5; workflow `transitions.rs` and `field-kinds.spec.mjs`, seen red, `S1-03`) |
 | FG-056 | Envelope id field | DS | Build | 4 | Designed |
-| FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Engine |
+| FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Works: single-line text, with max length and mask in the editor, placed, filled on a phone and sealed (`VS-01`); multi-line (`format.multiline`): offered in the editor, typed with line breaks in a text area, drawn line by line from the box's top (flatten `a_multi_line_text_field_draws_each_line_from_the_top_of_its_box`, `field-kinds.spec.mjs`, seen red, `S1-01`) |
 | FG-058 | Number with locale, currency, min, max | DS, SN | Build | 4 | Engine |
 | FG-059 | Date with format | DS, SN | Build | 4 | Engine |
 | FG-060 | Email, phone, SSN, ZIP validations; regex | DS, SN | Build | 4 | Partial: the editor places and configures it and the mock round-trips it (`UX-05`); the ceremony checks them (`WEB-06`); no real-stack run yet |
@@ -85,7 +85,7 @@ instructions 8 and 9).
 | FG-069 | Drawing area | DS | Build | 4 | — |
 | FG-070 | Payment field | DS, SN | Plugin | 13 | Designed |
 | FG-071 | Prefill (sender-filled) fields | DS, SN | Build | 4 | Partial: a sender's value, read only or starting, on text, company, title, number and checkbox (`UX-05`); no real-stack run yet |
-| FG-072 | Required, read-only, locked | DS, SN | Build | 1 | Partial: required and read only in the editor (`UX-05`); locked not offered |
+| FG-072 | Required, read-only, locked | DS, SN | Build | 1 | Works: required and read only in the editor (`UX-05`); Locked offered in the editor, sent and kept by the API, shown fixed by the ceremony, which refuses a change (`field-kinds.spec.mjs`, seen red, `S1-04`) |
 | FG-073 | Data labels; linked fields (same label mirrors) | DS | Build | 4 | Partial: the data label is set in the editor (`UX-05`); mirroring is the engine's, not run in a browser |
 | FG-074 | Shared fields across signers | DS | Build | 4 | — |
 | FG-075 | Conditional fields | DS, SN | Build | 4 | Engine |
@@ -106,7 +106,7 @@ instructions 8 and 9).
 | FG-092 | Preview as recipient | DS | Build | 2 | Partial: Review's Preview as shows the recipient's fields on the document (`UX-05`); a preview of their signing page is not built |
 | FG-093 | Custom subject and message | DS, SN | Build | 1 | Works |
 | FG-094 | Reminders | DS, SN | Build | 2 | Works |
-| FG-095 | Expiration and warning | DS, SN | Build | 2 | Designed |
+| FG-095 | Expiration and warning | DS, SN | Build | 2 | Partial: an envelope's expiry is set on send or correct; the worker emails the warning (account `workflow_policy.expiry_warning_days`) and expires the envelope on time, telling the sender and the recipients whose turn it was (`VS-02`, worker tests/expiry.rs); no admin control for the warning days (`RTE-03`) |
 | FG-096 | Templates with roles | DS, SN | Build | 3 | Works |
 | FG-097 | Composite templates (several into one envelope) | DS | Build | 3 | Designed |
 | FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Designed |
@@ -162,7 +162,7 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; every signer downloads it too, from the completion email's link (`VS-01`); a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
 | FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
 | FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
 | FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |

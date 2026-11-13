@@ -186,7 +186,7 @@ test("the ceremony's field kinds are placed and configured, and come back from t
   await page.setViewportSize({ width: 1440, height: 900 });
   await toFields(page);
   // The library (canvas): every kind the ceremony fills, the canvas's eight with their keys first.
-  await expect(page.locator(".os-palette .os-lib")).toHaveCount(14);
+  await expect(page.locator(".os-palette .os-lib")).toHaveCount(16);
   await expect(page.locator(".os-palette .os-lib[aria-keyshortcuts]")).toHaveCount(8);
   for (const type of ["Company", "Title", "Number", "Radio group", "Dropdown", "Attachment", "Note"]) await add(page, type);
   await add(page, "Text");
@@ -418,7 +418,7 @@ for (const [label, vp] of [["1440", { width: 1440, height: 900 }], ["390", { wid
     };
     const ana = await addRow(0, "Ana Signer", "ana@example.com");
     // Every ready type is offered (in-person where staff can host it: the mock can).
-    expect(await ana.getByTestId("recipient-type").locator("option").evaluateAll((os) => os.map((o) => o.value))).toEqual(["signer", "in_person_signer", "approver", "viewer", "cc"]);
+    expect(await ana.getByTestId("recipient-type").locator("option").evaluateAll((os) => os.map((o) => o.value))).toEqual(["signer", "in_person_signer", "approver", "viewer", "agent", "cc"]);
     await addRow(1, "Ben Approver", "ben@example.com", "approver");
     await addRow(2, "Vic Viewer", "vic@example.com", "viewer");
     // Contacts: typing part of a name offers the people sent to before; choosing one fills the email.

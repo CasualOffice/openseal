@@ -241,6 +241,8 @@
   width: 100%; min-height: 0; border: 0; border-radius: 0.5rem; padding: 0 0.5rem; background: transparent; color: var(--os-sign-ink);
   font: inherit; font-size: var(--os-fs-12); font-weight: 600;
 }
+/* A multi-line text box (FG-057): the text area fills the field and reads from its top. */
+textarea.os-sfield__input { height: 100%; padding: 0.25rem 0.5rem; resize: none; line-height: 1.25; }
 .os-sfield__input::placeholder { color: color-mix(in srgb, currentColor 80%, transparent); opacity: 1; font-weight: 600; }
 .os-sfield.is-required:not(.is-done) .os-sfield__input::placeholder { color: var(--os-accent-fill); }
 .os-sfield:not(.is-required) .os-sfield__input::placeholder { color: var(--os-info); }

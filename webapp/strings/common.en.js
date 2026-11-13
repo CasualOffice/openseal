@@ -115,6 +115,8 @@ export const COMMON = {
   "ftype.email": "Email",
   "ftype.initials": "Initials",
   "ftype.name": "Name",
+  "ftype.first_name": "First name",
+  "ftype.last_name": "Last name",
   "ftype.signature": "Signature",
   "ftype.text": "Text",
 
@@ -124,9 +126,12 @@ export const COMMON = {
 
   "recipient.order-n": "Routing order {n}",
 
+  "rtype.agent": "Names who signs next",
   "rtype.approver": "Approver",
   "rtype.cc": "Receives a copy",
+  "rtype.editor": "Editor",
   "rtype.in_person_signer": "In-person signer",
+  "rtype.intermediary": "Intermediary",
   "rtype.signer": "Needs to sign",
   "rtype.viewer": "Viewer",
 

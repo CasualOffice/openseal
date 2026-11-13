@@ -22,6 +22,8 @@ export const DEFAULT_SIZE = {
   text: { width: 160, height: 22 },
   checkbox: { width: 16, height: 16 },
   name: { width: 160, height: 22 },
+  first_name: { width: 120, height: 22 },
+  last_name: { width: 120, height: 22 },
   email: { width: 190, height: 22 },
   company: { width: 160, height: 22 },
   title: { width: 160, height: 22 },
@@ -35,13 +37,13 @@ export const DEFAULT_SIZE = {
 /// The field types the editor places, in palette order (wire names of casual-sign-model
 /// `FieldType`): every type the ceremony fills or shows and the flattener draws
 /// (api.js `FIELD_TYPES_READY`, UX-05).
-export const FIELD_TYPES = ["signature", "initials", "date_signed", "name", "email", "company", "title", "text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note"];
+export const FIELD_TYPES = ["signature", "initials", "date_signed", "name", "first_name", "last_name", "email", "company", "title", "text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note"];
 
 /// The palette's groups (UX-05, as DocuSign's "Standard fields" and SignNow's tool
 /// groups): signing, what the recipient's details fill, and what they type or choose.
 export const FIELD_GROUPS = [
   ["sign", ["signature", "initials", "date_signed"]],
-  ["auto", ["name", "email", "company", "title"]],
+  ["auto", ["name", "first_name", "last_name", "email", "company", "title"]],
   ["input", ["text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note"]],
 ];
 

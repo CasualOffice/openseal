@@ -1107,6 +1107,16 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .call("GET", &format!("{s1}/history"), &Auth::None, None, &h1)
         .await;
     assert_eq!(hist.status, StatusCode::OK, "{:?}", hist.json());
+    // VS-01: the signer's certificate waits for the envelope to complete (signer 2 has
+    // not signed yet).
+    let cert = api
+        .call("GET", &format!("{s1}/certificate"), &Auth::None, None, &h1)
+        .await;
+    assert_eq!(
+        (cert.status, cert.code().as_str()),
+        (StatusCode::CONFLICT, "CS-API-0009"),
+        "signer certificate before completion"
+    );
     // WEB-08: a staff download of an attachment no field names (tests/lists.rs serves one).
     let none = api
         .call(
@@ -1334,6 +1344,63 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     .await;
 
     let sig = |r: &str| json!([{"recipient": r, "document": 0, "type": "signature", "page": 1, "x": 72, "y": 600, "width": 180, "height": 40, "required": true}]);
+    // An agent names the later signer (VS-02).
+    let ag = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            k,
+            Some(mk(
+                json!([
+        {"ref": "ag", "type": "agent", "name": "Ag Ent", "email": "ag@example.test", "routing_order": 1},
+        {"ref": "n", "type": "signer", "name": "To Name", "routing_order": 2}]),
+                sig("n"),
+                "sent",
+            )),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "agent env",
+    )
+    .await;
+    let tag = invite(
+        &api,
+        &a,
+        ag["id"].as_str().unwrap(),
+        ag["recipients"][0]["id"].as_str().unwrap(),
+    )
+    .await;
+    let (_, hag) = open(&api, &format!("/s/{tag}")).await;
+    let hag: Vec<(&str, &str)> = hag.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{tag}/consent"),
+            &Auth::None,
+            Some(json!({"ersd_version": "2026-1"})),
+            &hag,
+        )
+        .await,
+        StatusCode::OK,
+        "consent ag",
+    )
+    .await;
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{tag}/recipients"),
+            &Auth::None,
+            Some(json!({"recipients": [{"id": ag["recipients"][1]["id"],
+                "name": "Na Med", "email": "named@example.test"}]})),
+            &hag,
+        )
+        .await,
+        StatusCode::OK,
+        "agent names",
+    )
+    .await;
+
     let de = ok(
         api.call(
             "POST",

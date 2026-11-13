@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { fills, isFilled, isFixed, checkText, isPhone, isZip, fixedText, inputModeFor, nextAction, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments, SSO_KEY, ssoReturn } from "../signfields.js";
+import { fills, isFilled, isFixed, checkText, isPhone, isZip, fixedText, inputModeFor, nextAction, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments, actedAs, SSO_KEY, ssoReturn } from "../signfields.js";
+import { SIGN } from "../strings/sign.en.js";
 
 // ---- The ceremony's model (WEB-18) ---------------------------------------------------------
 
@@ -138,6 +139,31 @@ test("numbers: a number, whole when decimals is 0, within min and max", () => {
   assert.deepEqual(checkText({ type: "number" }, "x"), { key: "sign.check.number" }, "a number field needs a number without a rule");
   assert.equal(inputModeFor(qty), "numeric");
   assert.equal(inputModeFor({ type: "text", validation: { kind: "email" } }), "email");
+});
+
+test("a name splits into first and last as the server's engine fills them (FG-055)", () => {
+  assert.deepEqual(nameParts("Ada Lovelace"), { first: "Ada", last: "Lovelace" });
+  assert.deepEqual(nameParts(" Ludwig  van Beethoven "), { first: "Ludwig", last: "van Beethoven" });
+  assert.deepEqual(nameParts("Plato"), { first: "Plato", last: "" });
+  assert.deepEqual(nameParts(""), { first: "", last: "" });
+  // The same whitespace as Rust's `char::is_whitespace`, so the page shows what is sealed:
+  // U+0085 separates, U+FEFF (a JavaScript `\s`) does not.
+  assert.deepEqual(nameParts("Ada\u0085Lovelace"), { first: "Ada", last: "Lovelace" });
+  assert.deepEqual(nameParts("\uFEFFAda Lovelace\uFEFF"), { first: "\uFEFFAda", last: "Lovelace\uFEFF" });
+  assert.deepEqual(nameParts("Ada\uFEFFLovelace"), { first: "Ada\uFEFFLovelace", last: "" });
+});
+
+// ---- RTE-02: the receipt says what the recipient did ---------------------------------------
+
+test("the receipt says approved, viewed or finished, and signed only to a signing type", () => {
+  assert.deepEqual(["approver", "viewer", "agent", "intermediary", "signer", "in_person_signer", "editor"].map(actedAs),
+    ["approved", "viewed", "finished", "finished", "signed", "signed", "signed"]);
+  for (const act of ["approved", "viewed", "finished"]) {
+    for (const k of [`sign.review.legal.${act}`, `sign.receipt.${act}`, `sign.done.thanks.${act}`, `sign.done.thanks-anon.${act}`, `sign.done.already.${act}`]) {
+      assert.ok(SIGN[k], k);
+      assert.doesNotMatch(SIGN[k], /sign/i, k);
+    }
+  }
 });
 
 // ---- The return from an identity provider (RAUTH-01) ------------------------------------

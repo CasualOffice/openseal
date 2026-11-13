@@ -44,6 +44,8 @@ const ACTING = (r) => r.type !== "cc";
 /// Recipient types that sign (the engine's `signs()`): they may hold any field, and the
 /// mock asks each for at least one before sending.
 const SIGNS = new Set(["signer", "in_person_signer", "editor", "witness", "seal", "notary"]);
+/// Who names later recipients in the ceremony (the engine's `edits_recipients`).
+const NAMES_LATER = new Set(["editor", "intermediary", "agent"]);
 const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
 const RECIPIENT_TYPES = ["signer", "in_person_signer", "approver", "viewer", "cc", "editor", "intermediary", "agent", "witness", "seal", "notary"];
 const FIELD_TYPES = new Set([
@@ -82,6 +84,28 @@ function b64(bytes) {
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
+/// The decoded size of base64 `s`, without decoding it.
+function b64Size(s) {
+  const n = String(s || "").length;
+  const pad = s?.endsWith("==") ? 2 : s?.endsWith("=") ? 1 : 0;
+  return Math.floor((n * 3) / 4) - pad;
+}
+
+/// As the server (docs/21, `FG-006`): a document over 50 MiB, or an envelope whose
+/// documents come to over 200 MiB however they arrive, is refused with `413
+/// CS-API-0006` before anything is decoded or kept.
+const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
+const MAX_ENVELOPE_BYTES = 200 * 1024 * 1024;
+function checkSizes(held, contents) {
+  let total = held;
+  for (const c of contents) {
+    const n = b64Size(c);
+    if (n > MAX_DOCUMENT_BYTES) fail(413, "CS-API-0006", "Request too large");
+    total += n;
+  }
+  if (total > MAX_ENVELOPE_BYTES) fail(413, "CS-API-0006", "Request too large");
+}
+
 function unb64(s) {
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
@@ -365,8 +389,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
       ...(rec.auth.includes("sso") && !rec.auth_passed.includes("sso") ? { sso_providers: [MOCK.ssoProvider] } : {}),
       sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
+      // VS-02, as the server: an agent, intermediary or editor sees the later
+      // recipients not yet reached, which `POST /s/{token}/recipients` may name.
+      ...(shown && NAMES_LATER.has(rec.type) ? { later_recipients: laterOf(env, rec) } : {}),
     };
   }
+  const laterOf = (env, rec) => env.recipients
+    .filter((q) => (q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created")
+    .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "" }));
   const publicRecipient = (r) => {
     const { access_code, auth_passed, token, otp_open, sso_state, viewed_to_end, hosted, ...rest } = r;
     void access_code; void auth_passed; void token; void otp_open; void sso_state; void viewed_to_end; void hosted;
@@ -1145,6 +1175,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "GET") return listEnvelopes(query);
       if (method === "POST") {
         const b = body || {};
+        checkSizes(0, (b.documents || []).map((d) => d.content_base64 || ""));
         const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
         if (b.reminders) env.reminders = b.reminders;
         if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
@@ -1261,6 +1292,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "documents") {
       if (!subId && method === "POST") {
         draftOnly(env);
+        checkSizes(env.documents.reduce((n, x) => n + (x.bytes || 0), 0), [body?.content_base64 || ""]);
         const d = addDocument(env, body?.name, unb64(body?.content_base64 || ""));
         await documentAdded(env, d);
         await edited(env, [`documents.${d.id}`]);
@@ -1769,7 +1801,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     // WEB-06: the signer's copy (`GET /s/{token}/document`; in the mock the first
     // document) and history stay available after finishing or declining.
-    if ((sub === "document" && parts.length === 4) || sub === "history") {
+    if (((sub === "document" || sub === "certificate") && parts.length === 4) || sub === "history") {
       if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
       if (sub === "history") {
@@ -1783,6 +1815,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       // As the server: only after this recipient finished (409 before), `doc` optional
       // for one document; the mock serves the delivered bytes (no preview banner).
       if (rec.status !== "completed") fail(409, "CS-API-0009", "Not available before finishing");
+      // VS-01, as the server: the certificate of completion once the envelope completes.
+      if (sub === "certificate") {
+        if (env.status !== "completed") fail(409, "CS-API-0009", "Not available in the object's state");
+        const lines = [`Envelope ${env.id}`, `Subject: ${env.subject}`, "Outcome: completed", ""];
+        for (const r of env.recipients) lines.push(`${r.name} <${r.email}> - ${r.type} - ${r.status} ${r.completed_at || ""}`);
+        lines.push("", "Mock mode: not a real certificate.");
+        return pdf(makePdf([{ title: "Certificate of completion", lines }]));
+      }
       const want = query?.get("doc");
       const d = want ? env.documents.find((x) => x.id === want) : env.documents[0];
       if (!d) fail(404, "CS-API-0002", "Not found");
@@ -1989,6 +2029,28 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       env.recipients.push(nr);
       for (const f of env.fields) if (f.recipient_id === rec.id) f.recipient_id = nr.id;
       await audit(env, "recipient.reassigned", { recipient_id: rec.id, to_recipient_id: nr.id, ...(body?.reason ? { reason: String(body.reason) } : {}) }, loc);
+      return json(200, view(env, rec, token));
+    }
+    // VS-02, as the server's `RecipientEdit`: an agent or intermediary names later
+    // recipients not yet reached (names and addresses only); anyone else is refused.
+    if (sub === "recipients" && method === "POST") {
+      if (!NAMES_LATER.has(rec.type)) fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const list = Array.isArray(body?.recipients) ? body.recipients : [];
+      if (!list.length || list.length > 100) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/recipients", code: "invalid" }]);
+      const later = laterOf(env, rec).map((q) => q.id);
+      for (const [i, n] of list.entries()) {
+        const q = env.recipients.find((x) => x.id === n?.id);
+        if (!q) fail(404, "CS-API-0002", "Not found");
+        if (!later.includes(q.id)) fail(403, "CS-WF-0003", "Not permitted");
+        if (n.name != null && !String(n.name).trim()) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/name`, code: "invalid" }]);
+        if (n.email != null && !/^[^@\s]+@[^@\s]+$/.test(String(n.email).trim())) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/email`, code: "invalid" }]);
+      }
+      for (const n of list) {
+        const q = env.recipients.find((x) => x.id === n.id);
+        if (n.name != null) q.name = String(n.name).trim();
+        if (n.email != null) q.email = String(n.email).trim();
+      }
+      await audit(env, "envelope.corrected", { changed: list.map((n) => `recipients.${n.id}`) }, loc);
       return json(200, view(env, rec, token));
     }
     if (sub === "finish-later" && method === "POST") {

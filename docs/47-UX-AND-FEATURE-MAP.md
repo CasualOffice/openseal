@@ -786,12 +786,14 @@ click on a page places the field centred there; a double click keeps the type ar
 second click disarms (commands `field.arm-*`, `field.disarm`). Enter or Space on a type still places on the page in
 view, now in the visible part of the page across as well as down. Touch screens get touch help text.
 
-**Field kinds**: the palette places the 14 kinds the ceremony fills or shows (`api.js` `FIELD_TYPES_READY`), in three
-groups: Signing (signature, initials, date signed), About the recipient (name, email, company, title), Recipient
+**Field kinds**: the palette places the 16 kinds the ceremony fills or shows (`api.js` `FIELD_TYPES_READY`), in three
+groups: Signing (signature, initials, date signed), About the recipient (name, first name, last name, email, company,
+title; first and last name cut from the name as docs/24 §5, `S1-03`), Recipient
 enters (text, number, checkbox, radio group, dropdown, attachment, note). Text, company, title, number and choices
-start required. **Properties** are sections: General (recipient, required, read only with the sender's value or a
-checkbox checked when sent, a note's text, data label, tooltip, placeholder), Options (one per line, repeats and
-blanks dropped, a dropdown's typed answer), Formatting (font, size, alignment, hide on the document) and Validation
+start required. **Properties** are sections: General (recipient, required, read only or locked (`S1-04`) with the
+sender's value or a checkbox checked when sent, a note's text, data label, tooltip, placeholder), Options (one per line,
+repeats and blanks dropped, a dropdown's typed answer), Formatting (font, size, alignment, hide on the document, several
+lines for text: a text area for the signer, `S1-01`) and Validation
 (email, phone, ZIP, SSN, number with range, at most N characters, pattern, with a message). Members travel by their
 wire names on create and as a JSON merge on change (`null` removes one); reopening reads them back. A choice with no
 options is a send problem. A field's accessible name starts with the label it shows. Required is a corner flag; focus

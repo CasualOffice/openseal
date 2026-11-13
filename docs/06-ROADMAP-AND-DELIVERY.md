@@ -66,7 +66,8 @@ app has been redesigned (`UX-02` to `UX-08`) and organizations sit above workspa
 | 2 Envelope engine and server | **Closed** 2026-11-12 | Owner, instruction 23; `compose-e2e`, `P2-CRASH`, `P2-THREATS` |
 | Milestones | M0, M1, M2 **reached** | Owner, instruction 38 (`MS-0`–`MS-2` in [14](14-EXECUTION-TRACKER.md)); M3 needs slices 1, 2, 5 and 7 closed |
 | Release 1 / v0.0.1 | **Published** 2026-11-12 | Tagged at `4780d84` after GitHub CI run 43123420112 was green on all 14 jobs; images with SBOM and provenance; pre-release on GitHub. Left in `REL-01`: GHCR packages public, the manual walkthrough in [65](65-RUNNING-IT.md); the boxes below are ticked by `REL-01` from evidence |
-| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point. Slice 5 (`VS-05`): access code, email, SMS and voice codes, sign-in through an OpenID Connect provider (`RAUTH-01`, ADR-033 Proposed), versioned ERSD and withdrawal built, tested and in a mock-mode browser run on desktop and phone; the Compose run and the demo (`RAUTH-02`) and ADR-033's acceptance left. [96](96-FEATURE-FIT-GAP.md) counts 41 of 168 rows working and 17 in part |
+| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point; slice 1 (`VS-01`) is in progress, its boxes below. Slice 5 (`VS-05`): access code, email, SMS and voice codes, sign-in through an OpenID Connect provider (`RAUTH-01`, ADR-033 Proposed), versioned ERSD and withdrawal built, tested and in a mock-mode browser run on desktop and phone; the Compose run and the demo (`RAUTH-02`) and ADR-033's acceptance left. [96](96-FEATURE-FIT-GAP.md) counts 48 of 168 rows working and 20 in part |
+| Slice 2 routing (`VS-02`) | In progress 2026-11-13 | Outcome met by tests: sequential (`E2E-01`); parallel and mixed with a copy, an agent, an approver and a viewer acting through the ceremony (`casual-sign-server` tests/routing.rs); the agent, offered by the editor, names later recipients by `POST /s/{token}/recipients`; decline (worker tests/flow.rs); void; reminders (worker tests/crash.rs); expiry and its warning through the worker (worker tests/expiry.rs). The signing page's approver, viewer and agent steps and the in-person host are in a browser run (`webapp/e2e/recipient-types.spec.mjs`, `RTE-01`), and the receipt says what each type did (`RTE-02`). End point not met: CI green on main after the merge, including the in-person Compose spec (`UXW-18`); the demo (`RTE-04`); owner closure |
 | UI pass (`UX-01`) | **Done** 2026-11-13 | All seven packages `UX-02` to `UX-08` merged: design system and a distinct destructive colour, send editor (click-to-place, every field kind, recipient types), signing page, Home/Agreements/envelope, Templates/Reports/Admin rail, app shell with notifications and profile. Signer view names the sender and serves the disclosure (`UXW-34`). Follow-ups and missing workflows are `UXW-*` and `UX-09` onward |
 | In progress: organizations, console, plans | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | `ORG-02` merged (migration 0014: organizations, organization scope, bootstrap). `ORG-05` (admin audit logs) and switching `ORG-04` built; next admin screens `ORG-06`; `CON-01`, `PLAN-01` and their rows; for v0.0.2 (instruction 29) |
 | In progress: ML | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Merged: `casual-sign-modeld` skeleton and bundle tooling (`ML-09`), GLiNER spans for extraction and personal data with fp16 parity (`ML-07`, `ML-08`), `casual-sign-pii` recognisers, value normalisation. On worker branches, not merged: OCR (`ML-02`), template matching (`ML-05`). Every feature off by default; nothing a model says enters the evidence |
@@ -251,6 +252,26 @@ extraction are part of every UI slice's end point, not a later slice.
 | 34 | **Workflow builder module** | No-code agreement workflows: forms, approvals, conditional steps, envelope sends and integrations, driven by the event stream | — |
 | 35 | **Agreement intelligence module** | Extraction of parties, dates and amounts, search across agreements, renewal alerts; models behind a host seam, off by default | OpenCalc's MCP agent access |
 | 29 | **Advanced routing** | Conditional routing, signing groups, scheduled sending, delayed routing, delegation and auto-delegate | — |
+
+**Slice 1 end point (`VS-01`)**, ticked from evidence only:
+
+- [x] Outcome through the API: a sender sends one signer a signature, date and text field; the signer signs; the worker
+  seals; the sender and the signer (through the completion email's link, in a new browser) each get the sealed PDF and
+  the certificate, the same bytes, accepted by our verifier and pyHanko. Evidence: worker `tests/end_to_end.rs`
+  `one_signer_gets_the_sealed_pdf_and_the_certificate_from_the_completion_email`, red with `GET /s/{token}/certificate`
+  removed (404 for 409), green with it (2026-11-13).
+- [ ] Outcome in a browser on the Compose stack, CI green: `real-stack.spec.mjs` "send and sign … (VS-01)" (document-first
+  editor, signer on an iPhone 13 context, four downloads to pyHanko) runs in `compose-e2e`; not yet seen green on GitHub.
+  In mock mode the signer's certificate button is covered by `ceremony.spec.mjs` on the phone project, seen red without it.
+- [x] [96](96-FEATURE-FIT-GAP.md) rows updated (`FG-006`, `FG-055`, `FG-057`, `FG-072`, `FG-150`); `FG-006`, `FG-055`,
+  `FG-057` and `FG-072` now `Works` (`S1-05`, `S1-03`, `S1-01`, `S1-04`, `field-kinds.spec.mjs` seen red, 2026-11-13);
+  the slice-1 row still short of `Works` is `FG-124` (`A11Y-01`).
+- [ ] Demo recorded (`S1-02`): `compose-e2e` records the VS-01 run (sender and phone) and uploads it as artefact
+  `slice-1-demo`; ticked when a green run's recording is linked from [65](65-RUNNING-IT.md).
+- [ ] Accessibility (WCAG 2.2 AA) and i18n extraction: axe scans the editor (`a11y.spec.mjs`), every ceremony step
+  (`a11y-sign.spec.mjs`) and the done screen with the certificate (`ceremony.spec.mjs`, seen red with an unnamed
+  button), and every string is in `webapp/strings/`; ticked when `e2e` is green on GitHub with them. The WCAG audit
+  `A11Y-01` is a release gate, below.
 
 **Release gates** (before any version is called 1.0): `PV-01` Acrobat verification; `SEC-REV-01` external security
 review of the ceremony, sealing and keyd; `SEC-ASVS-01` ASVS self-assessment; `A11Y-01` accessibility audit;

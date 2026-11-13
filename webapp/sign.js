@@ -23,7 +23,7 @@ import { button, busy, toast, toastError, openDialog, confirmDialog, noServerSta
 import { register, run } from "./commands.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
-import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments, SSO_KEY, ssoReturn } from "./signfields.js";
+import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments, actedAs, SSO_KEY, ssoReturn } from "./signfields.js";
 import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
@@ -554,7 +554,14 @@ function consent() {
 // ---- Documents and fields -------------------------------------------------------------------
 
 const today = () => new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-const AUTO = { date_signed: () => dateText(), name: () => view.recipient?.name || "", email: () => view.recipient?.email || "" };
+const AUTO = {
+  date_signed: () => dateText(),
+  name: () => view.recipient?.name || "",
+  // FG-055: as the engine cuts the name at finish (docs/24 §5).
+  first_name: () => nameParts(view.recipient?.name).first,
+  last_name: () => nameParts(view.recipient?.name).last,
+  email: () => view.recipient?.email || "",
+};
 
 /// The date-signed field's words (WEB-18, the canvas): it fills itself in once this
 /// signer has placed a signature or initials.
@@ -916,7 +923,8 @@ function fieldNode(f, pg) {
     const id = `sf-${f.id}`;
     // A rejected value is said beside the field, not only in a toast (A17).
     const err = h("span", { id: `${id}-err`, class: "os-sfield__err", attrs: { role: "alert" } });
-    const input = h("input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, inputMode: inputModeFor(f), placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}), ...(f.validation?.kind === "email" ? { autocomplete: "email" } : f.validation?.kind === "phone" ? { autocomplete: "tel" } : {}) } });
+    // A multi-line text box (FG-057) is a text area: Enter types a line break.
+    const input = h(f.format?.multiline ? "textarea" : "input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, inputMode: inputModeFor(f), placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}), ...(f.validation?.kind === "email" ? { autocomplete: "email" } : f.validation?.kind === "phone" ? { autocomplete: "tel" } : {}) } });
     // Typing: a problem the field's rule finds is said as soon as the value is left,
     // before the server is asked (it checks again, and at finish).
     const save = async (text) => {
@@ -1035,10 +1043,11 @@ function textSheet(f, label, value, save) {
     className: "os-fieldsheet",
     build(body, close) {
       const id = "fieldsheet-input";
-      input = h("input", { id, class: "os-input os-input--lg", value, maxLength: 4000, autocomplete: "off", inputMode: inputModeFor(f), attrs: { autofocus: true, "aria-describedby": "fieldsheet-err", ...(f.required ? { "aria-required": "true" } : {}) } });
+      const multi = !!f.format?.multiline;
+      input = h(multi ? "textarea" : "input", { id, class: multi ? "os-input os-textarea" : "os-input os-input--lg", value, maxLength: 4000, autocomplete: "off", inputMode: inputModeFor(f), ...(multi ? { rows: 4 } : {}), attrs: { autofocus: true, "aria-describedby": "fieldsheet-err", ...(f.required ? { "aria-required": "true" } : {}) } });
       err = h("p", { id: "fieldsheet-err", class: "os-field-error", attrs: { role: "alert" } });
       input.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter") return;
+        if (e.key !== "Enter" || multi) return;
         e.preventDefault();
         input.closest(".os-sheet")?.querySelector(".os-sheet__foot .os-btn--primary")?.click();
       });
@@ -1433,14 +1442,35 @@ function review() {
     else shown = v.text;
     dl.append(h("dt", { text: f.label || t(`ftype.${f.type}`) }), h("dd", { text: shown }));
   }
+  // VS-02: an approver approves, a viewer is done once every page was viewed, and an
+  // agent or intermediary names the later recipients before finishing.
+  const rtype = view.recipient?.type;
+  const names = Array.isArray(view.later_recipients) ? laterForm(view.later_recipients) : null;
   const back = button(t("sign.review.back"), { icon: "chevron-left", size: "lg" });
-  const go = button(t("sign.finish"), { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
+  const goLabel = t(rtype === "approver" ? "sign.approve" : "sign.finish");
+  const go = button(goLabel, { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
   back.addEventListener("click", () => documents());
   go.addEventListener("click", async () => {
     try {
-      view = await busy(go, () => api.ceremony.finish(token, [], location_));
+      view = await busy(go, async () => {
+        if (rtype === "approver") return api.ceremony.approve(token, location_);
+        if (rtype === "viewer") {
+          // Viewing to the end completed the viewer already; finishing again is refused.
+          const now = await api.ceremony.view(token);
+          if (now.recipient?.status === "completed") return now;
+        }
+        if (names) {
+          let list = names.read();
+          // On a phone the form is in the values sheet: open it so the message and the
+          // focused field can be seen.
+          if (!list && onPhone) { side.openSheet(); list = names.read(); }
+          if (!list) throw names.invalid;
+          if (list.length) await api.ceremony.nameRecipients(token, list, location_);
+        }
+        return api.ceremony.finish(token, [], location_);
+      });
       done(everyoneSigned(view.envelope?.status), true);
-    } catch (err) { toastError(err); }
+    } catch (err) { if (err !== names?.invalid) toastError(err); }
   });
   // The values panel beside the pages on desktop. On phones (UX-06) the document comes
   // first, full height, with a bottom bar: "Review values (n)" opens the values as a
@@ -1453,8 +1483,9 @@ function review() {
   if (!onPhone) side.body.append(title);
   side.body.append(
     h("p", { class: "os-muted", text: t("sign.review.text") }),
+    ...(names ? [names.el] : []),
     dl,
-    h("p", { class: "os-small", text: t("sign.review.legal") }));
+    h("p", { class: "os-small", text: t(actedAs(rtype) === "signed" ? "sign.review.legal" : `sign.review.legal.${actedAs(rtype)}`) }));
   // The one Finish of this step: pinned below the values on desktop, in the bottom bar
   // on phones, so it is always in view.
   const actions = h("div", { class: "os-review__actions os-stack" }, go, back);
@@ -1464,7 +1495,14 @@ function review() {
     const valuesBtn = button(t("sign.review.values-button", { n }), { icon: "list-checks", size: "lg", onClick: () => side.openSheet(), attrs: { "data-testid": "review-values-btn" } });
     actions.classList.add("os-review__actions--bar");
     actions.replaceChildren(valuesBtn, go);
-    side.body.append(h("div", { class: "os-stack" }, back));
+    // VS-02: the agent's names are filled in the sheet, which covers the bar, so the
+    // sheet has the same Finish below them.
+    let inSheet = null;
+    if (names) {
+      inSheet = button(goLabel, { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish-sheet" } });
+      inSheet.addEventListener("click", () => go.click());
+    }
+    side.body.append(h("div", { class: "os-stack" }, ...(inSheet ? [inSheet] : []), back));
     phoneBar = actions;
   } else {
     side.el.append(actions);
@@ -1489,6 +1527,8 @@ function review() {
   top();
   requestAnimationFrame(top);
   if (!onPhone) go.focus({ preventScroll: true });
+  // VS-02: an agent's names are asked in the sheet on a phone, so it opens with them.
+  else if (names) side.openSheet();
 }
 
 /// A field as it will look on the signed page: the value only, no field chrome. Sized
@@ -1545,16 +1585,29 @@ function done(everyone, celebrate = false) {
   const print = button(t("sign.done.print"), { icon: "printer", variant: "ghost", size: "lg", attrs: { "data-testid": "done-print" } });
   print.classList.add("os-state__secondary");
   print.addEventListener("click", () => busy(print, () => downloadCopy(true)));
+  // VS-01: once the envelope is completed (the completion email's link), the
+  // certificate of completion too, so the signer holds what the sender holds.
+  const actions = [copy, print];
+  if (view?.envelope?.status === "completed") {
+    const cert = button(t("sign.done.certificate"), { icon: "file-check", variant: "ghost", size: "lg", attrs: { "data-testid": "done-certificate", "data-os-command": "signer.certificate" } });
+    cert.classList.add("os-state__secondary");
+    cert.addEventListener("click", () => busy(cert, () => downloadCertificate()));
+    actions.push(cert);
+  }
   const MARK = "\u0001";
   const [before, after = ""] = t("sign.done.next-verify", { link: MARK }).split(MARK);
   const name = firstName(view?.recipient?.name);
-  const title = celebrate || !name ? t(name ? "sign.done.thanks" : "sign.done.thanks-anon", { name }) : t("sign.done.already", { name });
+  // RTE-02: an approver approved, a viewer viewed, an agent or intermediary finished;
+  // only a signing type is told it signed.
+  const act = actedAs(view?.recipient?.type);
+  const sfx = act === "signed" ? "" : `.${act}`;
+  const title = celebrate || !name ? t(name ? `sign.done.thanks${sfx}` : `sign.done.thanks-anon${sfx}`, { name }) : t(`sign.done.already${sfx}`, { name });
   screen(stateCard({
     mark: stateMark("check", { seal: true, pop: celebrate }),
     title,
     text: everyone ? t("sign.done.everyone") : t("sign.done.waiting"),
     children: [receiptRows(), h("p", { class: "os-state__note" }, before, h("a", { class: "os-sign__inlink", href: "/verify.html", text: t("sign.done.verify-link") }), after)],
-    actions: [copy, print],
+    actions,
     testId: "sign-done",
     tone: "seal",
   }));
@@ -1565,7 +1618,7 @@ function done(everyone, celebrate = false) {
 function receiptRows() {
   const rows = [];
   const at = dateTimeZone(view?.recipient?.completed_at);
-  if (at) rows.push([t("sign.receipt.signed"), at]);
+  if (at) rows.push([t(`sign.receipt.${actedAs(view?.recipient?.type)}`), at]);
   const kinds = filledKinds(myFields().filter(fills), (f) => isFilled(f, values.get(f.id) || f.value));
   if (kinds.length) rows.push([t("sign.receipt.fields"), kinds.map((k, i) => (i ? t(`ftype.${k}`).toLowerCase() : t(`ftype.${k}`))).join(", ")]);
   if (!rows.length) return null;
@@ -1603,6 +1656,16 @@ async function downloadCopy(print = false) {
     return;
   }
   for (const f of files) download(f.blob, f.name);
+}
+
+/// The certificate of completion (VS-01): `GET /s/{token}/certificate`, offered once
+/// the envelope is completed; the server refuses it before (409), shown as a toast.
+async function downloadCertificate() {
+  closeMore();
+  let blob;
+  try { blob = await api.ceremony.certificate(token); } catch (err) { toastError(err); return; }
+  const base = String(view?.envelope?.subject || "document").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, 100) || "document";
+  download(blob, `${base} - certificate.pdf`);
 }
 
 /// Decline (G-S5): a destructive confirmation, so a true modal. It says what declining
@@ -1664,6 +1727,37 @@ async function finishLater() {
     const until = dateOnly(view?.envelope?.expires_at);
     message({ kind: "later", title: t("sign.later.title"), text: until ? `${t("sign.later.text")} ${t("sign.later.expires", { date: until })}` : t("sign.later.text"), action: again, testId: "sign-later" });
   } catch (err) { toastError(err); }
+}
+
+/// The agent's form (VS-02): a name and email for each later recipient not yet reached,
+/// built from the reassign panel's rows. `read()` answers the changes (only what was
+/// edited), or null after showing what is missing.
+function laterForm(later) {
+  const err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
+  const rows = later.map((r, i) => {
+    const row = (id, label, el) => h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: label }), el);
+    const nameIn = h("input", { id: `later-name-${i}`, class: "os-input", autocomplete: "off", maxLength: 255, value: r.name || "", attrs: { required: true, "data-testid": "later-name" } });
+    const emailIn = h("input", { id: `later-email-${i}`, class: "os-input", type: "email", autocomplete: "off", maxLength: 320, value: r.email || "", attrs: { required: true, "data-testid": "later-email" } });
+    return { r, nameIn, emailIn, el: h("fieldset", { class: "os-stack" }, h("legend", { class: "os-label", text: t("sign.later-recipients.who", { n: i + 1, type: t(`rtype.${r.type}`) }) }), row(nameIn.id, t("sign.reassign.name"), nameIn), row(emailIn.id, t("sign.reassign.email"), emailIn)) };
+  });
+  const el = h("section", { class: "os-stack", attrs: { "data-testid": "later-recipients" } },
+    h("h2", { class: "os-label", text: t("sign.later-recipients.title") }),
+    h("p", { class: "os-muted", text: t("sign.later-recipients.text") }),
+    ...rows.map((x) => x.el), err);
+  const invalid = new Error("later recipients incomplete");
+  const read = () => {
+    err.textContent = "";
+    const out = [];
+    for (const { r, nameIn, emailIn } of rows) {
+      const name = nameIn.value.trim();
+      const email = emailIn.value.trim();
+      if (!name) { err.textContent = t("form.required"); nameIn.focus(); return null; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = t("sign.reassign.bad-email"); emailIn.focus(); return null; }
+      if (name !== (r.name || "") || email !== (r.email || "")) out.push({ id: r.id, name, email });
+    }
+    return out;
+  };
+  return { el, read, invalid };
 }
 
 /// Assign to someone else (G-S2), only when the envelope allows it: their name and
@@ -1846,6 +1940,7 @@ function registerCommands() {
   register("signer.finish", { label: t("sign.finish"), run: finish, enabled: signing });
   register("signer.fields", { label: t("sign.fields.menu"), run: fieldList, enabled: signing });
   register("signer.download", { label: t("sign.menu.download"), run: () => downloadCopy(), enabled: () => stage !== "auth" });
+  register("signer.certificate", { label: t("sign.done.certificate"), run: () => downloadCertificate(), enabled: () => view?.envelope?.status === "completed" });
   register("signer.print", { label: t("sign.menu.print"), run: () => downloadCopy(true), enabled: () => stage !== "auth" });
   register("signer.change-signature", { label: t("sign.field.change-signature"), run: () => changeMark("signature"), enabled: () => stage === "open" && !!adoptions.signature });
   register("signer.reassign", { label: t("sign.menu.reassign"), run: reassign, enabled: () => stage === "open" && opts().allow_reassign === true });

@@ -2,7 +2,7 @@
 // code, location, consent, the Next-field guide, a drawn signature, a text value,
 // finish — ends completed.
 import { test, expect } from "@playwright/test";
-import { signPage, tokens, REAL } from "./helpers.mjs";
+import { signPage, tokens, REAL, expectAccessible } from "./helpers.mjs";
 
 test.use({ viewport: { width: 390, height: 844 }, geolocation: { latitude: 52.37, longitude: 4.89, accuracy: 25 }, permissions: ["geolocation"] });
 
@@ -70,6 +70,12 @@ test("access code, location, consent, guide, draw, fill, finish", async ({ page 
   await page.getByTestId("review-finish").click();
   await expect(page.getByTestId("sign-done")).toBeVisible();
   await expect(page.getByTestId("sign-done")).toContainText("Everyone has signed");
+  // VS-01: the envelope is completed (the mock seals at once), so the signer gets the
+  // certificate of completion as well as the copy.
+  const [cert] = await Promise.all([page.waitForEvent("download"), page.getByTestId("done-certificate").click()]);
+  expect(cert.suggestedFilename()).toMatch(/certificate\.pdf$/);
+  // Slice 1's end point (VS-01): the done screen, certificate button included, passes axe.
+  await expectAccessible(page, "done, with the certificate");
 });
 
 test("the typed signature is the keyboard path", async ({ page }) => {

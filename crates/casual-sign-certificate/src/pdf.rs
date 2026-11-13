@@ -137,6 +137,7 @@ pub(crate) fn draw(
                 align: Some(r.align),
                 date_format: None,
                 mask: false,
+                multiline: false,
             });
             let text =
                 Text::new(r.text.clone()).map_err(|_| CertificateError::Input { what: "text" })?;

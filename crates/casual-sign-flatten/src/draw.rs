@@ -151,6 +151,8 @@ pub(crate) fn text(
         color: color_of(field),
         padding: 2.0,
         comb: None,
+        // A multi-line box reads from its top, as the signer typed it (FG-057).
+        top: format.multiline,
     };
     let mut d = Drawing::default();
     let r = set(&mut d.canvas, ctx.uses, ctx.fonts, &mapped, w, h, &setting);
@@ -231,6 +233,7 @@ fn radio_list(
             color,
             padding: 1.0,
             comb: None,
+            top: false,
         };
         let lx = ring * 1.3;
         d.canvas.line("q");
@@ -382,6 +385,7 @@ fn capture(
                 color: color_of(field),
                 padding: 1.0,
                 comb: None,
+                top: false,
             };
             d.canvas.line("q");
             d.canvas
@@ -420,6 +424,7 @@ fn capture(
                 color: Color([0.25, 0.25, 0.25]),
                 padding: 0.5,
                 comb: None,
+                top: false,
             };
             let y = band - row * (i as f64 + 1.0);
             d.canvas.line("q");
