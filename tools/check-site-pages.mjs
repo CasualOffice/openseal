@@ -23,6 +23,9 @@ const { chromium } = await import(pathToFileURL(path.join(NM, "playwright/index.
 const AxeBuilder = (await import(pathToFileURL(path.join(NM, "@axe-core/playwright/dist/index.mjs")).href)).default;
 
 const BUDGET = 1.5 * 1024 * 1024;
+// The Verify page (SITE-03) loads the verifier's WebAssembly (about 2.4 MB) as it opens,
+// so a check still works once the visitor goes offline; its budget leaves room for it.
+const BUDGETS = { "verify.html": 3.5 * 1024 * 1024 };
 const pages = [];
 (function walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -58,7 +61,8 @@ for (const scheme of ["light", "dark"]) {
       page.on("response", async (r) => { try { bytes += (await r.body()).length; } catch { /* redirects */ } });
       await page.goto(`${BASE}/${rel}`, { waitUntil: "networkidle" });
       const name = `${rel.replace(/\//g, "_").replace(/\.html$/, "")}-${vname}-${scheme}`;
-      if (vname === "1440" && bytes > BUDGET) problems.push(`${rel}: ${(bytes / 1024).toFixed(0)} KiB before scrolling (budget 1536 KiB)`);
+      const budget = BUDGETS[rel] ?? BUDGET;
+      if (vname === "1440" && bytes > budget) problems.push(`${rel}: ${(bytes / 1024).toFixed(0)} KiB before scrolling (budget ${budget / 1024} KiB)`);
       if (vname === "1440" && scheme === "light") console.log(`${rel}: ${(bytes / 1024).toFixed(0)} KiB before scrolling`);
       for (const e of errors) problems.push(`${rel} ${vname} ${scheme}: console: ${e}`);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

@@ -13,6 +13,15 @@ and may use these placeholders, expanded here:
     {{icon:NAME}}            a Lucide icon, 20 px, decorative ({{icon:NAME:24}} for a size)
     {{shot:NAME|ALT}}        a product screenshot, light and dark, lazy-loaded
     {{shot:NAME|ALT|eager}}  the same, loaded at once (above the fold)
+    {{claim:tested|WHAT|PATH}}     a security claim's marking (SITE-05): tested, by WHAT, linked
+                                   to PATH in the repository (a test file or a CI workflow)
+    {{claim:deployment|WHAT}}      a security claim's marking: it depends on the deployment, and
+                                   WHAT says what the operator configures
+
+A claim block is an element with `data-claim` (and every item of a `ul.facts` list or of
+an element with `data-claims`); tools/check-site-claims.py fails on one without exactly
+one marking. A page's metadata may carry `"wasm": true`, which adds 'wasm-unsafe-eval'
+to its Content Security Policy (the Verify page runs the verifier in WebAssembly).
 
 The header and footer shape follows OpenCalc's webapp/docs.html at b23c67c (brand,
 nav links, primary action, a <details> menu on phones); see PROVENANCE.md.
@@ -118,6 +127,7 @@ def shot(name: str, alt: str, root: str, eager: bool = False) -> str:
 
 NAV = [
     ("features", "Product", "index.html#product"),
+    ("verify", "Verify", "verify.html"),
     ("docs", "Docs", "docs/index.html"),
     ("api", "API", "docs/api.html"),
     ("roadmap", "Roadmap", "roadmap.html"),
@@ -150,6 +160,9 @@ def available_docs() -> list[tuple[str, str, str]]:
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'")
+# The Verify page compiles the verifier from WebAssembly, which a browser does only when
+# the policy allows it; no JavaScript eval is allowed (as webapp/verify.html, docs/47).
+CSP_WASM = CSP.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'")
 
 
 def _esc(s: str) -> str:
@@ -176,10 +189,10 @@ def header(root: str, current: str) -> str:
       <button type="button" class="search-open" aria-label="Search the site" aria-keyshortcuts="/">{icon("search", 16)}<span class="search-open__label">Search</span><span class="kbd" aria-hidden="true">/</span></button>
       <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme">{icon("moon", 18, cls="when-light")}{icon("sun", 18, cls="when-dark")}</button>
       <a class="header-gh" href="{REPO}">GitHub</a>
-      <a class="btn btn-strong btn-sm header-cta" href="{root}docs/getting-started.html">Get started</a>
+      <a class="btn btn-strong btn-sm header-cta" href="{root}app/app.html#/signin">Try the demo</a>
       <details class="menu">
         <summary aria-label="Menu">{icon("menu", cls="when-closed")}{icon("x", cls="when-open")}</summary>
-        <nav class="menu-panel" aria-label="Main (mobile)">{nav}{gh}<a class="menu-cta" href="{root}docs/getting-started.html">Get started{icon("arrow-right", 16)}</a></nav>
+        <nav class="menu-panel" aria-label="Main (mobile)">{nav}{gh}<a class="menu-cta" href="{root}app/app.html#/signin">Try the demo{icon("arrow-right", 16)}</a></nav>
       </details>
     </div>
   </div>
@@ -198,7 +211,7 @@ def footer(root: str) -> str:
       <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
       <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
     </div>
-    {col("Product", [("Overview", "index.html#product"), ("Download and deploy", "download.html"), ("Roadmap", "roadmap.html"), ("Changelog", "changelog.html")])}
+    {col("Product", [("Overview", "index.html#product"), ("Try the demo", "app/app.html#/signin"), ("Verify a PDF", "verify.html"), ("Download and deploy", "download.html"), ("Roadmap", "roadmap.html"), ("Changelog", "changelog.html")])}
     {col("Documentation", [("Getting started", "docs/getting-started.html"), ("Self-hosting", "docs/self-hosting.html"), ("API reference", "docs/api.html"), ("Webhooks", "docs/webhooks.html")])}
     {col("Trust", [("Security and evidence", "docs/security.html"), ("Verifying a document", "docs/verifying.html"), ("Security policy", "security.html"), ("Architecture", "docs/architecture.html")])}
     {col("Project", [("GitHub", REPO), ("Contributing", "docs/contributing.html"), ("Brand and attribution", "brand.html")])}
@@ -219,8 +232,9 @@ SEARCH_DIALOG = """<dialog class="search-dialog" aria-label="Search the site">
 </dialog>"""
 
 
-def page(*, title: str, description: str, body: str, root: str, current: str = "", main_class: str = "") -> str:
-    """A whole page around `body` (the contents of <main>)."""
+def page(*, title: str, description: str, body: str, root: str, current: str = "", main_class: str = "",
+         wasm: bool = False) -> str:
+    """A whole page around `body` (the contents of <main>). `wasm`: the page runs WebAssembly."""
     full_title = "OpenSeal: open-source e-signatures" if title == "OpenSeal" else f"{title} | OpenSeal"
     search = SEARCH_DIALOG.format(icon=icon("search", cls="search-icon"), x=icon("x"))
     mc = f' class="{main_class}"' if main_class else ""
@@ -229,7 +243,7 @@ def page(*, title: str, description: str, body: str, root: str, current: str = "
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="{CSP}">
+<meta http-equiv="Content-Security-Policy" content="{CSP_WASM if wasm else CSP}">
 <meta name="referrer" content="no-referrer">
 <title>{_esc(full_title)}</title>
 <meta name="description" content="{_esc(description)}">
@@ -270,12 +284,29 @@ def read_fragment(path: pathlib.Path) -> tuple[dict, str]:
     return json.loads(m.group(1)), text[m.end():]
 
 
+def claim(arg: str, root: str) -> str:
+    """A security claim's marking (SITE-05): "tested|WHAT|PATH" or "deployment|WHAT"."""
+    bits = arg.split("|")
+    if bits[0] == "tested" and len(bits) == 3 and bits[1] and bits[2]:
+        what, path = bits[1], bits[2]
+        if not (ROOT / path).exists():
+            raise SystemExit(f"site: claim marking names {path!r}, which is not in the repository")
+        return (f'<a class="claim-mark claim-mark--tested" data-claim-mark="tested" href="{REPO}/blob/main/{_esc(path)}">'
+                f'{icon("circle-check", 14)}<span>Tested: {_esc(what)}</span></a>')
+    if bits[0] == "deployment" and len(bits) == 2 and bits[1]:
+        return (f'<span class="claim-mark claim-mark--deploy" data-claim-mark="deployment">'
+                f'{icon("server", 14)}<span>Depends on your deployment: {_esc(bits[1])}</span></span>')
+    raise SystemExit(f"site: bad claim marking {{{{claim:{arg}}}}}: use tested|WHAT|PATH or deployment|WHAT")
+
+
 def expand(text: str, root: str) -> str:
-    """Expand {{root}}, {{icon:...}} and {{shot:...}}."""
+    """Expand {{root}}, {{icon:...}}, {{shot:...}} and {{claim:...}}."""
     def sub(m: re.Match) -> str:
         kind, _, arg = m.group(1).partition(":")
         if kind == "root":
             return root
+        if kind == "claim":
+            return claim(arg, root)
         if kind == "icon":
             name, _, size = arg.partition(":")
             return icon(name, int(size) if size else 20)
