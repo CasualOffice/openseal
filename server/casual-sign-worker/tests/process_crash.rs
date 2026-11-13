@@ -1776,6 +1776,10 @@ async fn a_database_failure_on_the_last_seal_attempt_hands_over_to_a_new_seal_jo
         "the handover alerted"
     );
     st.not_served(&env, "after the last attempt");
+    // The released worker may already hold the new seal job; killed, its lease would
+    // outlast idle()'s wait (300 s against 180 s), so lapse it as for a crash.
+    st.stop_worker();
+    st.after_worker_crash().await;
     st.start_worker(None);
     st.make_due().await;
     st.idle().await;
