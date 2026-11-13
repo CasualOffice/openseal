@@ -189,6 +189,8 @@ struct Stack {
     keyd_gate: Gate,
     /// The filesystem blob store's root.
     blobs: PathBuf,
+    /// keyd's test PKI (`HRD-01`: a worker misconfigured against it).
+    keyd_pki: Pki,
 }
 
 impl Drop for Stack {
@@ -204,12 +206,10 @@ impl Drop for Stack {
 }
 
 async fn app_url(db: &TestDb, gate: &Gate) -> String {
-    let base = std::env::var(common::db::ENV).unwrap();
     let name: String = sqlx::query_scalar::<_, String>("SELECT current_database()")
         .fetch_one(&db.admin)
         .await
         .unwrap();
-    let _ = base;
     let host = &gate.addr;
     format!("postgres://openseal_app_test:openseal-app-test-only@{host}/{name}")
 }
@@ -332,6 +332,7 @@ impl Stack {
             db_gate,
             keyd_gate,
             blobs,
+            keyd_pki: kpki,
         };
         stack.probe_features();
         stack.start_server(None);
@@ -1645,6 +1646,128 @@ async fn keyd_unavailable_while_sealing_keeps_the_envelope_completing_until_it_r
     st.idle().await;
     st.worker_alive("after keyd returned");
     st.archived(&env, "keyd").await;
+}
+
+/// HRD-01: a worker whose keyd settings are wrong does not start, even though keyd
+/// unreachable lets it start: keyd's CA not the configured one, keyd's certificate
+/// not under the configured name, or this worker's client certificate from another
+/// CA. Each is a TLS refusal (`CS-KEY-0013`), a misconfiguration no retry cures, and
+/// the worker exits non-zero at start naming it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_worker_misconfigured_against_keyd_exits_at_start() {
+    let Some(mut st) = Stack::new("hrd01_keyd_config").await else {
+        return;
+    };
+    st.stop_worker();
+    let write = |name: &str, text: &str| {
+        let p = st.dir.join(name);
+        std::fs::write(&p, text).unwrap();
+        p.display().to_string()
+    };
+    let other_ca = write("other-ca.pem", &Pki::new().tls_ca.pem());
+    let rogue = st.keyd_pki.rogue_client_identity("worker");
+    let rogue_cert = write("rogue.pem", &rogue.0);
+    let rogue_key = write("rogue-key.pem", &rogue.1);
+    let cases: [(&str, Vec<(&str, String)>); 3] = [
+        ("wrong-ca", vec![("OPENSEAL_KEYD_CA", other_ca)]),
+        (
+            "wrong-name",
+            vec![("OPENSEAL_KEYD_SERVER_NAME", "keyd.elsewhere.test".into())],
+        ),
+        (
+            "untrusted-client",
+            vec![
+                ("OPENSEAL_KEYD_CLIENT_CERT", rogue_cert),
+                ("OPENSEAL_KEYD_CLIENT_KEY", rogue_key),
+            ],
+        ),
+    ];
+    for (name, changes) in cases {
+        let mut env = st.worker_env.clone();
+        for (k, v) in changes {
+            env.iter_mut().find(|(ek, _)| ek == k).unwrap().1 = v;
+        }
+        let log = format!("worker-{name}.log");
+        let mut child = KillOnDrop(st.spawn(&worker_bin(), &env, None, &log));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let status = loop {
+            if let Some(s) = child.0.try_wait().unwrap() {
+                break s;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{name}: the worker started against a keyd that refuses it"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        assert!(!status.success(), "{name}: exited {status:?}");
+        assert!(st.log_has(&log, "CS-KEY-0013"), "{name}: the code named");
+        assert!(
+            !st.log_has(&log, "keyd_unavailable"),
+            "{name}: taken for an outage"
+        );
+    }
+}
+
+/// HRD-01: a database failure on a seal job's last attempt while it reads the job's
+/// steps (before anything is sealed) hands over to a new seal job instead of
+/// dead-lettering it with the envelope `completing`. The failure is a lock timeout:
+/// the worker runs with `lock_timeout` 2 s while the test holds `job_steps` locked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_database_failure_on_the_last_seal_attempt_hands_over_to_a_new_seal_job() {
+    let Some(mut st) = Stack::new("hrd01_last_attempt").await else {
+        return;
+    };
+    let env = st.completing().await;
+    st.sql(&format!(
+        "UPDATE jobs SET attempts = max_attempts - 1, run_at = now() \
+         WHERE kind = 'seal_envelope' AND envelope_id = '{env}' AND status = 'queued'"
+    ))
+    .await;
+    let normal = st.worker_env.clone();
+    for (k, v) in &mut st.worker_env {
+        if k == "OPENSEAL_DATABASE_URL" {
+            v.push_str("?options[lock_timeout]=2000");
+        }
+    }
+    let dir = st.hold_dir("last");
+    st.start_worker_held("worker:Claimed:seal_envelope", &dir, "worker-last.log");
+    st.worker_env = normal;
+    wait_file(&dir.join("reached"), "the held worker");
+    let mut lock = st.db.admin.begin().await.unwrap();
+    sqlx::query("LOCK TABLE job_steps IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    std::fs::write(dir.join("release"), b"").unwrap();
+    // The job's end touches only `jobs` and the envelope: it is written in the lock.
+    st.wait_sql(
+        &Stack::seal_jobs(&env, "status IN ('done', 'dead')"),
+        1,
+        "the last attempt",
+    )
+    .await;
+    lock.rollback().await.unwrap();
+    assert_eq!(
+        st.scalar(&Stack::seal_jobs(&env, "status = 'dead'")).await,
+        0,
+        "the seal job died with the envelope completing"
+    );
+    assert_eq!(
+        st.scalar(&Stack::seal_jobs(&env, "status = 'queued'"))
+            .await,
+        1,
+        "a new seal job scheduled"
+    );
+    assert!(
+        st.log_has("worker-last.log", "seal_failed"),
+        "the handover alerted"
+    );
+    st.not_served(&env, "after the last attempt");
+    st.start_worker(None);
+    st.make_due().await;
+    st.idle().await;
+    st.archived(&env, "last attempt").await;
 }
 
 /// The test database: cut at the gate; with `OPENSEAL_CHAOS_PG_CONTAINER` (a container

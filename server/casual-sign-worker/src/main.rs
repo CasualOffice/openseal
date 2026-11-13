@@ -17,7 +17,7 @@
 //! | `OPENSEAL_TSA_URLS` | RFC 3161 time-stamping authorities, comma-separated, tried in order, while the console has configured none (`platform.tsa_endpoints`, read at most once a minute, `CON-07`) |
 //! | `OPENSEAL_TRUST_ANCHORS` | PEM file of the anchors the sealed output must chain to |
 //! | `OPENSEAL_KEYD_ADDR`, `OPENSEAL_KEYD_SERVER_NAME`, `OPENSEAL_KEYD_CA` | keyd's address, its certificate's name, and the CA it chains to (PEM path) |
-//! | `OPENSEAL_KEYD_CLIENT_CERT`, `OPENSEAL_KEYD_CLIENT_KEY` | This worker's client certificate chain and key (PEM paths); a keyd that cannot be reached at start is reached by the first seal (`HRD-01`), one that refuses is an error |
+//! | `OPENSEAL_KEYD_CLIENT_CERT`, `OPENSEAL_KEYD_CLIENT_KEY` | This worker's client certificate chain and key (PEM paths); a keyd that cannot be reached at start (`CS-KEY-0011`) is reached by the first seal (`HRD-01`); one that refuses (a TLS refusal `CS-KEY-0013`: wrong CA, name or client certificate; or an answer such as `CS-KEY-0001`, `CS-KEY-0002`) stops the worker at start |
 //! | `OPENSEAL_KEYD_ALIAS` | The platform key's alias (default `platform`) |
 //! | `OPENSEAL_MODELD_ADDR`, `OPENSEAL_MODELD_SERVER_NAME`, `OPENSEAL_MODELD_CA` | Optional: the model service's address, its certificate's name and CA (PEM path); unset, document-analysis jobs end as `unavailable` (docs/33 §1) |
 //! | `OPENSEAL_MODELD_CLIENT_CERT`, `OPENSEAL_MODELD_CLIENT_KEY` | This worker's client certificate chain and key for the model service (PEM paths) |
@@ -93,9 +93,12 @@ fn seal_key() -> Result<SealKey, WorkerError> {
         timeout: Duration::from_secs(30),
     };
     let alias = var("OPENSEAL_KEYD_ALIAS").unwrap_or_else(|| "platform".into());
-    // HRD-01: a keyd that cannot be reached now is reached by the first seal that needs
-    // it, so the worker still starts and runs its other jobs; a keyd that answers and
-    // refuses (not on its allow-list, an unknown alias) is a configuration error.
+    // HRD-01: a keyd that cannot be reached now (`CS-KEY-0011`: refused, reset, timed
+    // out, closed before TLS answered) is reached by the first seal that needs it, so
+    // the worker still starts and runs its other jobs. Anything else is a configuration
+    // error that stops it here: a TLS refusal (`CS-KEY-0013`: keyd's CA or name not as
+    // configured, this client's certificate untrusted, expired or revoked) or keyd's
+    // own refusal (not on its allow-list, an unknown alias).
     let key = KeydKey::new(endpoint, &alias);
     match key.remote() {
         Ok(_) => {}

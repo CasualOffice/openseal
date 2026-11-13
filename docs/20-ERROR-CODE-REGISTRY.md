@@ -185,8 +185,9 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-KEY-0008 | keyd rate limit exceeded for this caller |
 | CS-KEY-0009 | keyd operation log cannot be opened, written or synced, or its hash chain does not verify; no signature is released |
 | CS-KEY-0010 | keyd TLS certificates, keys or allow-list do not load |
-| CS-KEY-0011 | keyd unreachable, or the TLS connection failed (a refused handshake included) |
+| CS-KEY-0011 | keyd unreachable, or the connection failed before TLS answered (refused, reset, timed out, closed, the name does not resolve): an outage |
 | CS-KEY-0012 | keyd setting missing or invalid |
+| CS-KEY-0013 | TLS handshake with keyd refused: keyd's certificate does not chain to the configured CA or does not carry the configured name, or keyd refused the client certificate (none, untrusted, expired, revoked); a configuration error, fatal at worker start (`HRD-01`) |
 | CS-CNV-0001 | Conversion failed or timed out |
 | CS-CNV-0002 | Format not supported |
 
