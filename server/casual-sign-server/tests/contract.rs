@@ -1743,6 +1743,28 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         ok(api.call(m, &path, &os, body, &[]).await, want, &path).await;
     }
 
+    // Disclosure (ERSD-01, ERSD-03): publish one and read it back, after the ceremony so
+    // the scenario's envelopes keep the disclosure version they were sent with.
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/ersd-versions",
+            k,
+            Some(json!({"text": "You agree to sign electronically."})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "publish disclosure",
+    )
+    .await;
+    ok(
+        api.call("GET", "/api/v1/ersd-versions", k, None, &[]).await,
+        StatusCode::OK,
+        "read disclosure",
+    )
+    .await;
+
     // Members and sessions last.
     ok(
         api.call("DELETE", &format!("/api/v1/users/{uid}"), k, None, &[])
