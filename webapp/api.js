@@ -390,9 +390,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// one-time signing page to open on this device, acting as this user hosting them.
     hostInPerson: (id, r) => data(request("POST", `${E(id)}/recipients/${encodeURIComponent(r)}/host`)),
 
-    // ---- Document intelligence (docs/33 §6; WEB-18) ---------------------------
-    // The server answers 404 until WEB-19 builds these; `ml.js` reads a 404 or
-    // `CS-ML-0011` as "unavailable" and every ML surface hides.
+    // ---- Document intelligence (docs/33 §6; WEB-18, served since WEB-19) -------
+    // With no feature in effect the server answers `403 CS-ML-0011` (and a server
+    // without the routes 404); `ml.js` reads either as "unavailable" and every ML
+    // surface hides.
     /// The workspace's model features, `{ocr, template_matching, extraction,
     /// personal_data, personal_data_model?, ocr_scripts?, reread_scanner_text?,
     /// not_in_plan?: [feature], installed?: false}`. Workspace admin only.
@@ -400,16 +401,20 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// Turn features on or off: `{ocr?, template_matching?, extraction?, personal_data?, …}`;
     /// a feature the plan lacks is refused with `403 CS-ML-0011`. Answers the settings.
     patchMlSettings: (body) => data(request("PATCH", "/api/v1/account/settings/ml", { body })),
-    /// Ask for a draft's document to be analysed (idempotent): `202 {status:
-    /// queued|running|done|failed|unavailable, uses}`.
+    /// Ask for a draft's document to be analysed (idempotent): `202 {id, document_id,
+    /// status: queued|running|done|failed|unavailable, uses: [ocr|template|entities|
+    /// personal_data], ocr_pages, truncated, bundle_id}`.
     requestAnalysis: (id, doc) => data(request("POST", `${E(id)}/documents/${encodeURIComponent(doc)}/analysis`)),
-    /// `{status, uses, ocr_pages: [page], truncated, bundle_id}`.
+    /// The newest run, as `requestAnalysis` answers it; `ocr_pages` are 1-based.
     getAnalysis: (id, doc) => data(request("GET", `${E(id)}/documents/${encodeURIComponent(doc)}/analysis`)),
     /// `{items: [{id, kind: template|entity|personal_data, document_id, page?, rect?, label,
-    /// value?, normalized?, score, model: {id, sha256}, state: open|accepted|dismissed}],
-    /// next_cursor}`; `kind` and `state` filter.
+    /// value?, normalized?, score, model: {id, sha256}, state: open|accepted|dismissed,
+    /// template_id?, pages_matched?, pages_total?}], next_cursor}`; `kind` and `state`
+    /// filter, `limit` 1 to 200.
     listSuggestions: (id, { kind, state, cursor, limit } = {}) => data(request("GET", `${E(id)}/suggestions`, { query: { kind, state, cursor, limit } })),
-    /// Accept a suggestion (it performs the ordinary action; `409 CS-ML-0012` when stale).
+    /// Record that a person accepted a suggestion (`decided_by`, `decided_at`); the action
+    /// itself is the caller's own edit through the ordinary endpoints (docs/33 §6).
+    /// `409 CS-ML-0012` when already decided or its document left the envelope.
     acceptSuggestion: (id, s) => data(request("POST", `${E(id)}/suggestions/${encodeURIComponent(s)}/accept`)),
     dismissSuggestion: (id, s) => data(request("POST", `${E(id)}/suggestions/${encodeURIComponent(s)}/dismiss`)),
     /// Search agreements by meaning (`ML-07B`, planned in docs/33 §6, `WEB-19`): `{items:

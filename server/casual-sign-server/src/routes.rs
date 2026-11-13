@@ -9,7 +9,7 @@ use axum::handler::Handler;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
 
-use crate::api::{admin, envelopes as env, folders, templates, webhooks};
+use crate::api::{admin, envelopes as env, folders, ml, templates, webhooks};
 use crate::ceremony;
 use crate::http::{Guard, guard, request_context};
 use crate::state::AppState;
@@ -121,6 +121,21 @@ pub fn table() -> Vec<Route> {
             Scope("admin:account"),
             JSON,
             admin::patch_account,
+        ),
+        // The workspace's document-analysis switches (docs/33 §6, §7; WEB-19).
+        r(
+            "GET",
+            "/api/v1/account/settings/ml",
+            Scope("admin:account"),
+            JSON,
+            ml::settings,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/account/settings/ml",
+            Scope("admin:account"),
+            JSON,
+            ml::patch_settings,
         ),
         r(
             "GET",
@@ -298,6 +313,42 @@ pub fn table() -> Vec<Route> {
             ew,
             JSON,
             env::detect_fields,
+        ),
+        // Document analysis (docs/33 §6, WEB-19).
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/documents/{doc}/analysis",
+            ew,
+            JSON,
+            ml::request_envelope,
+        ),
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/documents/{doc}/analysis",
+            er,
+            JSON,
+            ml::envelope_analysis,
+        ),
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/suggestions",
+            er,
+            JSON,
+            ml::suggestions,
+        ),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/suggestions/{s}/accept",
+            ew,
+            JSON,
+            ml::accept,
+        ),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/suggestions/{s}/dismiss",
+            ew,
+            JSON,
+            ml::dismiss,
         ),
         r(
             "GET",
@@ -481,6 +532,20 @@ pub fn table() -> Vec<Route> {
             tr,
             JSON,
             templates::document_content,
+        ),
+        r(
+            "POST",
+            "/api/v1/templates/{id}/documents/{doc}/analysis",
+            tw,
+            JSON,
+            ml::request_template,
+        ),
+        r(
+            "GET",
+            "/api/v1/templates/{id}/documents/{doc}/analysis",
+            tr,
+            JSON,
+            ml::template_analysis,
         ),
         r(
             "POST",

@@ -484,6 +484,8 @@ pub struct Env {
     pub anchors: Mutex<Vec<Vec<u8>>>,
     /// Whether the webhook SSRF policy allow-lists loopback (where the receiver is).
     pub allow_loopback: AtomicBool,
+    /// The model service the worker is given (document analysis; none by default).
+    pub inference: Mutex<Option<Arc<dyn casual_sign_worker::ml::Inference>>>,
     next: AtomicU64,
 }
 
@@ -556,6 +558,7 @@ impl Env {
             key: Mutex::new(None),
             anchors: Mutex::new(Vec::new()),
             allow_loopback: AtomicBool::new(true),
+            inference: Mutex::new(None),
             next: AtomicU64::new(0),
         };
         env.blob_store().put(&env.delivered).await.unwrap();
@@ -659,6 +662,10 @@ impl Env {
             Arc::clone(&self.alerts) as Arc<dyn AlertSink>,
             Arc::clone(&self.clock) as Arc<dyn Clock>,
         );
+        let w = match self.inference.lock().unwrap().clone() {
+            Some(i) => w.with_inference(i),
+            None => w,
+        };
         match faults {
             Some(f) => w.with_fault_hook(f),
             None => w,

@@ -14,6 +14,7 @@ pub mod fields;
 pub mod folders;
 pub mod idempotency;
 pub mod jobs;
+pub mod ml;
 pub mod recipients;
 pub mod sessions;
 pub mod templates;
@@ -141,6 +142,11 @@ impl TenantTx {
     /// Staff sessions.
     pub fn sessions(&mut self) -> sessions::Sessions<'_> {
         sessions::Sessions { tx: self }
+    }
+
+    /// Document analysis: settings, entitlements, runs, suggestions (docs/33, WEB-19).
+    pub fn ml(&mut self) -> ml::Ml<'_> {
+        ml::Ml { tx: self }
     }
 
     /// Idempotency records of API requests.

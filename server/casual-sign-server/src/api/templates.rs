@@ -536,6 +536,9 @@ pub(crate) async fn add_document(
     };
     tx.templates().bump(id, v).await?;
     tx.templates().add_document(&d).await?;
+    // Page hashes for matching uploads (docs/33 §2), only with template matching in
+    // effect; otherwise nothing is written (ML-01).
+    crate::api::ml::on_template_upload(&c.st, &mut tx, c.p.account, id, d.id, d.sha256).await?;
     let r = full(&mut tx, id, StatusCode::CREATED).await?;
     tx.commit().await?;
     Ok(r)
@@ -552,6 +555,7 @@ pub(crate) async fn delete_document(
     found(&mut tx, id).await?;
     let v = if_match(&c, true)?;
     tx.templates().bump(id, v).await?;
+    tx.ml().forget_template_document(id, doc).await?;
     tx.templates().delete_document(id, doc).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT.into_response())

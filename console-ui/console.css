@@ -282,3 +282,4 @@ input.code { font-family: var(--mono); font-size: 1.125rem; letter-spacing: .3em
   .rise, .sk, .dot.live::before, .panel, .scrim, .toast { animation: none; }
   .btn { transition: none; }
 }
+.quota-row select, .quota-row input { flex: 1 1 7rem; min-width: 6rem; }

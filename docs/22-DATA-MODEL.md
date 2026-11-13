@@ -375,6 +375,20 @@ archived workspace writes none). Store: the repositories append the events thems
 or system, time, request id, IP); `TenantTx::admin_events`, `verified_admin_log`, `verified_admin_events` (one page, verified
 against the event at its cursor and the stored head) and the same on `OrgTx` read and re-verify. Forty-seven tables.
 
+`0021_ml_analysis.sql` (`WEB-19`, `ML-01`; docs/33 §7 As built, §13) adds the
+advisory document-analysis tables, each with `account_id`, RLS and the repository `TenantTx::ml`
+(`casual_sign_store::repo::ml`): `ml_settings` (a workspace's four switches, the personal-data model, OCR script
+packs, "re-read scanner text"; no row means every feature off), `ml_entitlements` (the plan's `ml.*` features; the
+application role may only read it), `analysis_runs` (one per document and job key: `kind` `analyze_document` or
+`fingerprint_template`, `uses`, `document_sha256`, `job_key` unique per account and naming the account and the
+document, `status` `queued`/`running`/`done`/`failed`/`unavailable`, `bundle_id`, `ocr_pages`, `truncated`, `code`;
+exactly one of `envelope_id` and `template_id`, each a composite foreign key with `account_id`, `ON DELETE CASCADE`),
+`suggestions` (`kind` `template`/`entity`/`personal_data`, page, rect, label, UTF-8 byte span offsets and never the
+span text, the matched template and its page counts, score, model id and weights hash, `state`
+`open`/`accepted`/`dismissed` with `decided_by`, `decided_at`), `ocr_pages` (a run's OCR words per page: document
+content) and `template_fingerprints` (a template page's dHash and pHash, an optional text embedding, the model). None is
+read by the seal job, the audit chain or the evidence package (docs/33 invariant 2). Fifty-three tables with `0021`.
+
 `0022_folders_and_deleted.sql` (`UXW-01`, `UXW-02`, `UXW-03`) makes **folders each member's own**: 0002's `folders`
 rows of kind `envelopes` with `owner_user_id`, a name unique per member ignoring case (`folders_owner_name`; the API
 bounds names to 100 characters and a member to 500 folders), and `UNIQUE (account_id, id, owner_user_id)`. A new tenant
@@ -394,10 +408,18 @@ reports the member's filing and, in the Inbox, the recipient they are. Restoring
 command and audit type (ADR-031, Proposed), so 0022 adds nothing for it. `templates` gains `deleted_at`: deleting a
 live template sets it (the template keeps its roles, documents and fields, leaves every read, edit and the list, and
 `Templates::list_deleted`, `get_deleted` and `restore` serve the Deleted view); deleting it there removes it for good.
-A template has no audit chain, so neither step is evidence. Forty-eight tables. The migration is numbered
-0022 by plan; 0021 belongs to another lane (`WEB-19`), and the store's "versions are dense" test passes once it lands.
+A template has no audit chain, so neither step is evidence. Fifty-four tables with `0022`.
 
-**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
+`0026_console_org_events.sql` (`CON-16`, docs/23 §2.5) holds the console role to the admin logs: the
+`*_admin_change_has_event` triggers now also refuse an `openseal_console` commit that changed an organization or a
+workspace without an `operator.*` event appended to that organization's `org_admin_events` in the same transaction
+(`platform.xact_copied_to_org_log`). Definer functions for the console: `platform.org_log_tip` (organization, next
+`seq` and head, the head row locked) and `platform.copy_to_org_log` (live operator session with role `operator` or
+`platform_owner`, an `operator.*` action, the bytes' actor exactly that operator, their `operator_event` link an existing operator event of that
+operator and action, else `OS005`).
+
+**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15), including of the
+analysis tables (`SEC-I07`); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 
 **Corrections to the text above.** The setting is `openseal.account_id`, read as
@@ -435,6 +457,13 @@ the rules above, and what does not:
   idempotent by source), `usage_counters`.
 - **Schema `platform`** (operators, approvals, plans, TSA, trust anchors, seal profiles, alerts) is reached by the
   console's role `openseal_console`, which has no grant on any `public` table.
+- **Plans (built, `PLAN-02`, migration 0024):** `platform.plans` (immutable versions of a key; archive only),
+  `plan_entitlements`, `plan_quotas`, `plan_seat_rule`, `plan_assignments` (current on `[starts_at, ends_at)`; only
+  `ends_at` shortens), `plan_overrides` (`workspace_id`, workspace-level quotas only; only `expires_at` shortens).
+  Written only by session-checked definer functions (`OS010` → `CS-PLAN-0006`); constraints refuse `hard` on
+  `api_calls` for any writer. The application reads only `openseal_effective_plan(now)` (current assignment and live
+  overrides for its organization and workspace, no reasons or operator ids). `accounts.settings` holds no plan limits;
+  its column comment says so.
 - **Catalog tests** are scoped to `public` and name their exceptions; the `platform` schema has its own.
 - **Migration order** is fixed in merge order (docs/23 §12): `SEC-ID-01`'s fix, organizations (with organization admins
   and the owner backfill), admin logs, platform schema, operators, approvals, plans, usage; later schema rows take the

@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::error::{PlatformError, Result, db};
-use crate::event::{ChainReport, ChainVerifier, EventDraft, StoredEvent};
+use crate::event::{ChainReport, ChainVerifier, EventDraft, OrgScope, StoredEvent};
 
 /// `pg_advisory_xact_lock` key serializing operator-log appends: "OSEALOPL" as an integer.
 const LOG_LOCK: i64 = 0x4F53_4541_4C4F_504C;
@@ -334,7 +334,7 @@ fn org_row(r: &PgRow, detail: bool) -> Result<OrganizationRow> {
 /// The platform store, over a pool connected as `openseal_console`.
 #[derive(Debug, Clone)]
 pub struct PlatformStore {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
 }
 
 impl PlatformStore {
@@ -750,7 +750,7 @@ impl PlatformStore {
 /// committed together.
 #[derive(Debug)]
 pub struct PlatformTx {
-    tx: Transaction<'static, Postgres>,
+    pub(crate) tx: Transaction<'static, Postgres>,
 }
 
 impl PlatformTx {
@@ -801,6 +801,63 @@ impl PlatformTx {
         .await
         .map_err(db)?;
         Ok((seq, hash))
+    }
+
+    /// Append `draft` to the operator log, as [`Self::append`], and copy it into the
+    /// admin log of the organization `on` names (`org_admin_events`, docs/23 §2.5, §5.1),
+    /// in this transaction: what every console write on an organization or a workspace
+    /// does, so tenants see what the platform did to them. The database refuses to commit
+    /// such a write without its copy (`admin_change_has_event`, migration 0026). Returns
+    /// the copy's organization and `seq`, or `None` when there is no such organization or
+    /// workspace (nothing is appended then).
+    ///
+    /// # Errors
+    /// `CS-DB-0008` for a malformed draft or one without an operator; `CS-DB-0014` when
+    /// either log refuses the link or the copy names another operator than `session`'s;
+    /// the session check's codes (`CS-CON-0001` to `CS-CON-0003`).
+    pub async fn append_on(
+        &mut self,
+        session: &[u8; 32],
+        on: OrgScope,
+        draft: &EventDraft,
+    ) -> Result<Option<(Uuid, u64)>> {
+        let (org, ws) = match on {
+            OrgScope::Organization(o) => (Some(o), None),
+            OrgScope::Workspace(w) => (None, Some(w)),
+        };
+        let Some(tip) = sqlx::query(
+            "SELECT organization_id, next_seq, head FROM platform.org_log_tip($1, $2, $3, $4)",
+        )
+        .bind(session.as_slice())
+        .bind(org)
+        .bind(ws)
+        .bind(draft.at)
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(db)?
+        else {
+            return Ok(None);
+        };
+        let org: Uuid = tip.try_get("organization_id").map_err(db)?;
+        let seq = i64_to_u64(tip.try_get("next_seq").map_err(db)?, "seq")?;
+        let prev = hash_col(&tip, "head")?;
+        let (op_seq, op_hash) = self.append(draft).await?;
+        let canonical = draft.org_copy(org, seq, prev.as_ref(), (op_seq, &op_hash))?;
+        let hash = Hash256::digest(&canonical);
+        sqlx::query("SELECT platform.copy_to_org_log($1, $2, $3, $4, $5, $6, $7, $8, $9)")
+            .bind(session.as_slice())
+            .bind(org)
+            .bind(i64::try_from(seq).map_err(|_| PlatformError::Corrupt { what: "seq" })?)
+            .bind(prev.map(|h| h.0.to_vec()))
+            .bind(hash.0.as_slice())
+            .bind(&draft.action)
+            .bind(draft.org_copy_at()?)
+            .bind(&canonical)
+            .bind(draft.at)
+            .execute(&mut *self.tx)
+            .await
+            .map_err(db)?;
+        Ok(Some((org, seq)))
     }
 
     /// The first platform owner, with an enrolment link; `false` once any operator

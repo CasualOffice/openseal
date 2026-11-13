@@ -145,7 +145,7 @@ test("problems become plain sentences, naming the field or the wait", () => {
 });
 
 test("roles map to screens as the API's x-roles do", () => {
-  assert.deepEqual(M.access(["observer"]), { health: true, organizations: true, manage: false, approvals: false, log: false, operators: false });
+  assert.deepEqual(M.access(["observer"]), { health: true, organizations: true, manage: false, approvals: false, plans: true, log: false, operators: false });
   assert.equal(M.access(["operator"]).approvals, true);
   assert.equal(M.access(["operator"]).operators, false);
   assert.equal(M.access(["platform_owner"]).operators, true);
@@ -165,4 +165,86 @@ test("formatting", () => {
   assert.equal(M.shortDate("2026-11-13T14:05:00Z"), "13 Nov 2026, 14:05 UTC");
   assert.equal(M.eventLabel("operator.organization.suspended"), "Organization suspended");
   assert.deepEqual(M.eventDetails({ event: { details: { organization_id: "x" } } }), [["organization id", "x"]]);
+});
+
+// Plans (PLAN-02) ----------------------------------------------------------------------
+
+const METERS = [
+  { name: "envelopes_sent", kind: "counter", approximate: false },
+  { name: "seats", kind: "gauge", approximate: false },
+  { name: "api_calls", kind: "counter", approximate: true },
+  { name: "workspaces", kind: "gauge", approximate: false },
+];
+
+test("the plan form refuses hard on an approximate meter, as the server does (CS-PLAN-0006)", () => {
+  const base = { key: "team", name: "Team", features: ["api"] };
+  const hard = M.checkPlan({ ...base, quotas: [{ meter: "api_calls", limit: "1000", period: "month", enforcement: "hard", level: "organization" }] }, METERS);
+  assert.equal(hard.ok, false);
+  assert.match(hard.message, /approximately/);
+  const soft = M.checkPlan({ ...base, quotas: [{ meter: "api_calls", limit: "1000", period: "month", enforcement: "soft", level: "organization" }] }, METERS);
+  assert.equal(soft.ok, true);
+  assert.deepEqual(soft.value, {
+    key: "team", name: "Team", seat_rule: "can_send", entitlements: { api: true },
+    quotas: [{ meter: "api_calls", limit: 1000, period: "month", enforcement: "soft", level: "organization" }],
+  });
+});
+
+test("the plan form checks key, name, gauges, levels, limits and duplicates", () => {
+  const q = (o) => ({ meter: "envelopes_sent", limit: "10", period: "month", enforcement: "hard", level: "organization", ...o });
+  const bad = (plan) => M.checkPlan({ key: "team", name: "Team", ...plan }, METERS).ok;
+  assert.equal(bad({ key: "Team" }), false);
+  assert.equal(bad({ key: "9team" }), false);
+  assert.equal(bad({ key: "a".repeat(65) }), false);
+  assert.equal(bad({ name: "  " }), false);
+  assert.equal(bad({ name: "x".repeat(121) }), false);
+  assert.equal(bad({ quotas: [q({ meter: "seats", period: "month" })] }), false);
+  assert.equal(bad({ quotas: [q({ meter: "seats", period: "none" })] }), true);
+  assert.equal(bad({ quotas: [q({ meter: "workspaces", period: "none", level: "workspace" })] }), false);
+  assert.equal(bad({ quotas: [q({ limit: "-1" })] }), false);
+  assert.equal(bad({ quotas: [q({ limit: "1e3" })] }), false);
+  assert.equal(bad({ quotas: [q(), q({ limit: "5" })] }), false);
+  assert.equal(bad({ quotas: [q(), q({ level: "workspace" })] }), true);
+});
+
+test("plan versions group by key, newest first, current skips archived", () => {
+  const g = M.planGroups([
+    { key: "team", version: 1, name: "Team", archived: true },
+    { key: "team", version: 3, name: "Team", archived: true },
+    { key: "team", version: 2, name: "Team", archived: false },
+    { key: "basic", version: 1, name: "Basic", archived: false },
+  ]);
+  assert.deepEqual(g.map((x) => x.key), ["basic", "team"]);
+  assert.deepEqual(g[1].versions.map((v) => v.version), [3, 2, 1]);
+  assert.equal(g[1].latest.version, 3);
+  assert.equal(g[1].current.version, 2);
+});
+
+test("override keys follow the effective plan; a workspace may change only workspace quotas", () => {
+  const cat = { features: ["api", "bulk_send"], meters: METERS };
+  const eff = { quotas: [
+    { meter: "envelopes_sent", level: "organization" },
+    { meter: "api_calls", level: "workspace" },
+  ] };
+  const org = M.overrideKeys(cat, eff).map((k) => k.key);
+  assert.deepEqual(org, [
+    "feature.api", "feature.bulk_send",
+    "quota.envelopes_sent.organization.limit", "quota.envelopes_sent.organization.enforcement",
+    "quota.api_calls.workspace.limit", "quota.api_calls.workspace.enforcement",
+    "seat_rule",
+  ]);
+  const ws = M.overrideKeys(cat, eff, true);
+  assert.deepEqual(ws.map((k) => k.key), ["quota.api_calls.workspace.limit", "quota.api_calls.workspace.enforcement"]);
+  assert.equal(ws[1].approximate, true);
+  assert.equal(M.checkOverrideValue("enforcement", "hard", true).ok, false);
+  assert.equal(M.checkOverrideValue("enforcement", "notify", true).value, "notify");
+  assert.equal(M.checkOverrideValue("limit", "0012").value, "12");
+  assert.equal(M.checkOverrideValue("limit", "1.5").ok, false);
+  assert.equal(M.checkOverrideValue("flag", "yes").ok, false);
+  assert.equal(M.overrideKeyLabel("quota.seats.organization.limit"), "Seats per organization: limit");
+  assert.equal(M.overrideValueLabel("feature.api", "false"), "Off");
+  assert.equal(M.quotaText({ limit: 1000, period: "month", enforcement: "hard", level: "workspace" }), "1,000 per month · hard · per workspace");
+  assert.equal(M.quotaText({ limit: 5, period: "none", enforcement: "soft", level: "organization" }), "5 · soft · per organization");
+  assert.equal(M.problemMessage({ status: 422, code: "CS-PLAN-0006", field: "expires_at" }), "The expires at is not valid.");
+  assert.equal(M.localToIso(""), null);
+  assert.equal(M.localToIso("not a date"), undefined);
 });

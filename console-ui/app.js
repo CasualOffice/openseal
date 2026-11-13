@@ -393,6 +393,7 @@ const NAV = [
   ["health", "Health", "health"],
   ["organizations", "Organizations", "organizations"],
   ["approvals", "Approvals", "approvals"],
+  ["plans", "Plans", "plans"],
   ["operators", "Operators", "operators"],
   ["log", "Operator log", "log"],
 ];
@@ -668,7 +669,9 @@ async function viewOrganization(main, view, id) {
         h("dt", { text: "Owners" }), h("dd", { text: M.count(c.owners) }),
         h("dt", { text: "Envelopes" }), h("dd", { text: M.count(c.envelopes) }))),
       h("div", { class: "card-f", text: "Region labels are labels only: they do not move or confine data." }));
-    put(clear(body), can.manage ? h("div", { class: "split" }, props, twoPersonCard(o)) : props, workspacesCard(o));
+    const planSlot = h("div", {}, h("section", { class: "card" }, skeletonRows(2)));
+    put(clear(body), can.manage ? h("div", { class: "split" }, props, twoPersonCard(o)) : props, planSlot, workspacesCard(o));
+    orgPlanCard(planSlot, o, view);
   }
   function renamePanel(o) {
     openPanel("Rename organization", (close) => {
@@ -789,6 +792,307 @@ async function viewOrganization(main, view, id) {
     });
   }
   await load();
+}
+
+// Plans (PLAN-02; docs/23 §7.1, §10) --------------------------------------------------
+
+command("createPlan", (body) => api.post("/plans", body));
+command("archivePlan", (id) => api.post(`/plans/${id}/archive`));
+command("assignPlan", (org, body) => api.post(`/organizations/${org}/plan`, body));
+command("setOverride", (org, body) => api.post(`/organizations/${org}/plan-overrides`, body));
+command("expireOverride", (id) => api.post(`/plan-overrides/${id}/expire`));
+
+function select(options, value) {
+  return h("select", {}, options.map(([v, label]) => h("option", { value: v, text: label, selected: v === value })));
+}
+
+function featureChips(entitlements) {
+  const on = Object.entries(entitlements || {}).filter(([, v]) => v).map(([f]) => f);
+  if (!on.length) return h("span", { class: "w", text: "No features" });
+  return h("span", { class: "chips" }, on.map((f) => chip(M.featureLabel(f))));
+}
+
+function quotaTable(quotas) {
+  if (!quotas?.length) return h("p", { class: "d", text: "No quotas: nothing is limited." });
+  return h("div", { class: "tbl-wrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, h("th", { text: "Meter" }), h("th", { class: "num", text: "Limit" }), h("th", { text: "Period" }),
+      h("th", { text: "Enforcement" }), h("th", { text: "Level" }))),
+    h("tbody", {}, quotas.map((q) => h("tr", {},
+      h("td", { text: M.meterLabel(q.meter) }), h("td", { class: "num", text: M.count(q.limit) }),
+      h("td", { text: q.period === "none" ? "–" : q.period }),
+      h("td", {}, chip(q.enforcement, q.enforcement === "hard" ? "bad" : q.enforcement === "soft" ? "warn" : "")),
+      h("td", { text: q.level }))))));
+}
+
+async function viewPlans(main, view) {
+  const can = M.access(state.roles);
+  const title = heading("Plans");
+  const head = h("div", { class: "head" }, title);
+  const body = h("div", { class: "form" }, h("section", { class: "card" }, skeletonRows(4)));
+  page(main, head, body);
+  focusHeading(main);
+  let catalogue = null;
+  async function load() {
+    try {
+      const r = await api.get("/plans");
+      if (view !== state.view) return;
+      catalogue = r.catalogue || {};
+      draw(r.plans || []);
+    } catch (p) {
+      if (view !== state.view || handleAuth(p)) return;
+      put(clear(body), h("div", { class: "card" }, errorState(p, load)));
+    }
+  }
+  function draw(plans) {
+    put(clear(head), title, can.manage ? h("span", { class: "right" }, btn("New plan", "primary", () => planPanel(null))) : null);
+    clear(body);
+    const groups = M.planGroups(plans);
+    if (!groups.length) {
+      put(body, h("section", { class: "card" }, emptyState(art.noEntries(), "No plans yet",
+        "A plan sets the features and quotas an organization has. Versions are immutable: changing a plan makes a new version.",
+        can.manage ? btn("New plan", "primary", () => planPanel(null)) : null)));
+      return;
+    }
+    for (const g of groups) put(body, planCard(g));
+  }
+  function planCard(g) {
+    const p = g.current || g.latest;
+    return h("section", { class: "card rise", attrs: { "aria-label": `Plan ${p.name}` } },
+      h("div", { class: "card-h" }, h("b", { text: p.name }), h("span", { class: "sub" }, h("code", { text: g.key }), ` · version ${p.version}`),
+        g.current ? null : chip("Archived"),
+        can.manage ? h("span", { class: "right" }, btn("New version", "ghost", () => planPanel(p), { "aria-label": `New version of ${p.name}` })) : null),
+      h("div", { class: "card-b form" },
+        h("dl", { class: "kv" },
+          h("dt", { text: "Features" }), h("dd", {}, featureChips(p.entitlements)),
+          h("dt", { text: "Seats count" }), h("dd", { text: M.seatRuleLabel(p.seat_rule) })),
+        quotaTable(p.quotas)),
+      h("div", { class: "tbl-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, h("th", { text: "Version" }), h("th", { class: "num", text: "Organizations" }),
+          h("th", { class: "hide-sm", text: "Created" }), h("th", { text: "Status" }), can.manage ? h("th", { text: "", attrs: { "aria-label": "Actions" } }) : null)),
+        h("tbody", {}, g.versions.map((v) => h("tr", {},
+          h("td", { text: `${v.version}` }), h("td", { class: "num", text: M.count(v.organizations) }),
+          h("td", { class: "hide-sm", text: M.shortDate(v.created_at) }),
+          h("td", {}, v.archived ? chip("Archived") : chip("Available", "ok")),
+          can.manage ? h("td", { class: "num" }, v.archived ? null : btn("Archive", "ghost", (e) => archive(e, v), { "aria-label": `Archive ${v.name} version ${v.version}` })) : null))))),
+      h("div", { class: "card-f", text: "Archiving stops new assignments; organizations already on a version keep it." }));
+  }
+  async function archive(e, v) {
+    const t = e.currentTarget;
+    t.disabled = true;
+    try { await run("archivePlan", v.id); toast(`${v.name} version ${v.version} archived`); load(); }
+    catch (p) { if (!handleAuth(p)) toast(M.problemMessage(p), true); }
+    finally { t.disabled = false; }
+  }
+  function planPanel(from) {
+    openPanel(from ? `New version of ${from.name}` : "New plan", (close) => {
+      const key = h("input", { type: "text", value: from?.key || "", attrs: { maxlength: "64", spellcheck: "false", required: true, readonly: from ? true : null } });
+      const name = h("input", { type: "text", value: from?.name || "", attrs: { maxlength: "120", required: true } });
+      const seat = select((catalogue.seat_rules || ["can_send", "every_member"]).map((r) => [r, M.seatRuleLabel(r)]), from?.seat_rule || "can_send");
+      const boxes = (catalogue.features || []).map((f) => h("input", { type: "checkbox", value: f, checked: !!from?.entitlements?.[f] }));
+      const features = h("fieldset", { class: "field checks" }, h("legend", { class: "label", text: "Features" }),
+        boxes.map((b) => h("label", {}, b, M.featureLabel(b.value))));
+      const rows = h("div", { class: "form" });
+      const meters = catalogue.meters || [];
+      function quotaRow(q = {}) {
+        const meter = select(meters.map((m) => [m.name, M.meterLabel(m.name)]), q.meter || meters[0]?.name);
+        const limit = h("input", { type: "text", value: q.limit != null ? String(q.limit) : "", attrs: { inputmode: "numeric", "aria-label": "Limit", placeholder: "Limit" } });
+        const period = select((catalogue.periods || []).map((x) => [x, x]), q.period || "month");
+        const enforcement = select((catalogue.enforcements || []).map((x) => [x, x]), q.enforcement || "hard");
+        const level = select((catalogue.levels || []).map((x) => [x, x]), q.level || "organization");
+        for (const [el, label] of [[meter, "Meter"], [period, "Period"], [enforcement, "Enforcement"], [level, "Level"]]) el.setAttribute("aria-label", label);
+        const row = h("div", { class: "inline-form quota-row" }, meter, limit, period, enforcement, level);
+        row.read = () => ({ meter: meter.value, limit: limit.value, period: period.value, enforcement: enforcement.value, level: level.value });
+        put(row, h("button", { type: "button", class: "linkbtn", text: "Remove", on: { click: () => row.remove() } }));
+        rows.appendChild(row);
+      }
+      for (const q of from?.quotas || []) quotaRow(q);
+      return form({
+        fields: [
+          field("Key", key, from ? "A new version keeps the key." : "Lower-case letters, digits, - and _; it names the plan across versions."),
+          field("Name", name, "1 to 120 characters, shown to operators."),
+          field("Seats count", seat, "Which members of an organization use a seat."),
+          features,
+          h("div", { class: "field" }, h("span", { class: "label", text: "Quotas" }),
+            h("span", { class: "hint", text: "Counts that exist now (seats, storage, workspaces, templates) take period none. API calls are counted approximately and cannot be hard." }),
+            rows, h("div", {}, btn("Add quota", "ghost", () => quotaRow()))),
+        ],
+        submitText: from ? "Create version" : "Create plan",
+        submit: async () => {
+          const r = M.checkPlan({
+            key: key.value, name: name.value, seatRule: seat.value,
+            features: boxes.filter((b) => b.checked).map((b) => b.value),
+            quotas: [...rows.querySelectorAll(".quota-row")].map((x) => x.read()),
+          }, meters);
+          if (!r.ok) throw r.message;
+          const res = await run("createPlan", r.value);
+          close();
+          toast(`${r.value.name} version ${res.version} created`);
+          load();
+        },
+      });
+    });
+  }
+  await load();
+}
+
+/// The plan card on an organization: effective plan now, assignments, overrides.
+async function orgPlanCard(slot, o, view) {
+  const can = M.access(state.roles);
+  let r;
+  let catalogue = null;
+  let plans = [];
+  try {
+    [r] = await Promise.all([
+      api.get(`/organizations/${o.id}/plan`),
+      can.manage ? api.get("/plans").then((x) => { catalogue = x.catalogue || {}; plans = x.plans || []; }) : null,
+    ]);
+  } catch (p) {
+    if (view !== state.view || handleAuth(p)) return;
+    put(clear(slot), h("section", { class: "card" }, errorState(p, () => orgPlanCard(slot, o, view))));
+    return;
+  }
+  if (view !== state.view) return;
+  const reload = () => orgPlanCard(slot, o, view);
+  const e = r.effective;
+  const wsName = (id) => (o.workspaces || []).find((w) => w.id === id)?.name || M.shortId(id);
+  const card = h("section", { class: "card rise", attrs: { "aria-labelledby": "plan-h" } },
+    h("div", { class: "card-h" }, h("b", { id: "plan-h", text: "Plan" }),
+      h("span", { class: "sub", text: e ? `${e.name} · version ${e.version}` : "No plan assigned" }),
+      can.manage ? h("span", { class: "right" },
+        btn("Assign plan", "ghost", () => assignPanel()),
+        e ? btn("Add override", "ghost", () => overridePanel()) : null) : null));
+  const b = h("div", { class: "card-b form" });
+  put(card, b);
+  if (e) {
+    put(b, h("dl", { class: "kv" },
+      h("dt", { text: "Since" }), h("dd", { text: M.shortDate(e.starts_at) }),
+      h("dt", { text: "Until" }), h("dd", { text: e.ends_at ? M.shortDate(e.ends_at) : "Open-ended" }),
+      h("dt", { text: "Features" }), h("dd", {}, featureChips(e.entitlements)),
+      h("dt", { text: "Seats count" }), h("dd", { text: M.seatRuleLabel(e.seat_rule) })),
+    quotaTable(e.quotas),
+    e.applied?.length ? h("p", { class: "d", text: `Includes ${M.plural(e.applied.length, "organization override")}. Workspace overrides apply in their workspace only.` }) : null);
+  } else {
+    put(b, h("p", { class: "d", text: "No plan is current for this organization now." }));
+  }
+  const assignments = r.assignments || [];
+  if (assignments.length) {
+    put(b, h("div", { class: "tbl-wrap" }, h("table", { attrs: { "aria-label": "Assignments" } },
+      h("thead", {}, h("tr", {}, h("th", { text: "Plan" }), h("th", { text: "From" }), h("th", { text: "Until" }), h("th", { text: "" }))),
+      h("tbody", {}, assignments.map((a) => h("tr", {},
+        h("td", { text: `${a.plan.name} · v${a.plan.version}` }), h("td", { text: M.shortDate(a.starts_at) }),
+        h("td", { text: a.ends_at ? M.shortDate(a.ends_at) : "Open-ended" }),
+        h("td", {}, a.current ? chip("Current", "ok") : null)))))));
+  }
+  const overrides = r.overrides || [];
+  if (overrides.length) {
+    put(b, h("div", { class: "tbl-wrap" }, h("table", { attrs: { "aria-label": "Overrides" } },
+      h("thead", {}, h("tr", {}, h("th", { text: "Override" }), h("th", { text: "Value" }), h("th", { class: "hide-sm", text: "Scope" }),
+        h("th", { class: "hide-sm", text: "Reason" }), h("th", { text: "Expires" }), h("th", { text: "" }))),
+      h("tbody", {}, overrides.map((v) => h("tr", {},
+        h("td", { text: M.overrideKeyLabel(v.key) }), h("td", { text: M.overrideValueLabel(v.key, v.value) }),
+        h("td", { class: "hide-sm", text: v.workspace ? `Workspace ${wsName(v.workspace)}` : "Organization" }),
+        h("td", { class: "hide-sm", text: v.reason }),
+        h("td", { text: !v.live ? "Expired" : v.expires_at ? M.until(v.expires_at) : "Never" }),
+        h("td", { class: "num" },
+          v.applied ? chip("Applied", "ok") : v.live && v.workspace ? chip("In workspace") : v.live ? chip("Not applied", "warn") : null,
+          can.manage && v.live ? btn("Expire", "ghost", (ev) => expire(ev, v), { "aria-label": `Expire override ${M.overrideKeyLabel(v.key)}` }) : null)))))));
+  }
+  put(clear(slot), card);
+
+  async function expire(ev, v) {
+    const t = ev.currentTarget;
+    t.disabled = true;
+    try { await run("expireOverride", v.id); toast("Override expired"); reload(); }
+    catch (p) { if (!handleAuth(p)) toast(M.problemMessage(p), true); }
+    finally { t.disabled = false; }
+  }
+  function assignPanel() {
+    openPanel("Assign a plan", (close) => {
+      const open = plans.filter((p) => !p.archived).sort((a, b) => a.name.localeCompare(b.name) || b.version - a.version);
+      if (!open.length) return h("div", { class: "form" }, h("p", { class: "d", text: "No plan versions are available. Create one under Plans first." }),
+        h("a", { class: "btn", href: "#/plans", text: "Go to Plans" }));
+      const plan = select(open.map((p) => [p.id, `${p.name} · version ${p.version} (${p.key})`]), e ? open.find((p) => p.key === e.key)?.id : open[0].id);
+      const starts = h("input", { type: "datetime-local" });
+      const ends = h("input", { type: "datetime-local" });
+      return form({
+        fields: [
+          field("Plan version", plan),
+          field("Starts", starts, "Empty for now. The current assignment ends at this instant."),
+          field("Ends", ends, "Empty for open-ended."),
+        ],
+        submitText: "Assign",
+        submit: async () => {
+          const s = M.localToIso(starts.value);
+          const en = M.localToIso(ends.value);
+          if (s === undefined || en === undefined) throw "Enter a valid date and time.";
+          const body = { plan: plan.value };
+          if (s) body.starts_at = s;
+          if (en) body.ends_at = en;
+          await run("assignPlan", o.id, body);
+          close();
+          toast("Plan assigned");
+          reload();
+        },
+      });
+    });
+  }
+  function overridePanel() {
+    openPanel("Add an override", (close) => {
+      const workspaces = (o.workspaces || []).filter((w) => w.status !== "archived");
+      const scope = select([["", "Whole organization"], ...workspaces.map((w) => [w.id, `Workspace: ${w.name}`])], "");
+      const keySel = h("select", {});
+      const valueSlot = h("div", {});
+      const reason = h("input", { type: "text", attrs: { maxlength: "200", required: true } });
+      const expires = h("input", { type: "datetime-local" });
+      let keys = [];
+      let valueInput = null;
+      function fillKeys() {
+        keys = M.overrideKeys(catalogue, e, !!scope.value);
+        clear(keySel);
+        put(keySel, keys.length ? keys.map((k) => h("option", { value: k.key, text: k.label })) : h("option", { value: "", text: "Nothing a workspace can override" }));
+        fillValue();
+      }
+      function fillValue() {
+        const k = keys.find((x) => x.key === keySel.value);
+        if (!k) { valueInput = null; clear(valueSlot); return; }
+        if (k.kind === "flag") valueInput = select([["true", "On"], ["false", "Off"]], "true");
+        else if (k.kind === "enforcement") valueInput = select(["hard", "soft", "notify"].filter((x) => !(x === "hard" && k.approximate)).map((x) => [x, x]), k.approximate ? "soft" : "hard");
+        else if (k.kind === "seat_rule") valueInput = select((catalogue.seat_rules || []).map((x) => [x, M.seatRuleLabel(x)]), "can_send");
+        else valueInput = h("input", { type: "text", attrs: { inputmode: "numeric" } });
+        put(clear(valueSlot), field("Value", valueInput, k.kind === "limit" ? "A whole number." : null));
+      }
+      scope.addEventListener("change", fillKeys);
+      keySel.addEventListener("change", fillValue);
+      fillKeys();
+      return form({
+        fields: [
+          field("Scope", scope, "A workspace override may change only a workspace-level quota."),
+          field("Override", keySel),
+          valueSlot,
+          field("Reason", reason, "1 to 200 characters, kept in the console; never in the operator log."),
+          field("Expires", expires, "Empty for never. It stops applying at this instant."),
+        ],
+        submitText: "Add override",
+        submit: async () => {
+          const k = keys.find((x) => x.key === keySel.value);
+          if (!k || !valueInput) throw "Choose what to override.";
+          const v = M.checkOverrideValue(k.kind, valueInput.value, k.approximate);
+          if (!v.ok) throw v.message;
+          const why = reason.value.trim();
+          if (!why || [...why].length > 200) throw "Give a reason of 1 to 200 characters.";
+          const ex = M.localToIso(expires.value);
+          if (ex === undefined) throw "Enter a valid date and time.";
+          const body = { key: k.key, value: v.value, reason: why };
+          if (scope.value) body.workspace = scope.value;
+          if (ex) body.expires_at = ex;
+          await run("setOverride", o.id, body);
+          close();
+          toast("Override added");
+          reload();
+        },
+      });
+    });
+  }
 }
 
 // Approvals ----------------------------------------------------------------------------
@@ -1027,6 +1331,7 @@ function route() {
     health: () => viewHealth(shell("health"), view),
     organizations: () => (arg ? viewOrganization(shell("organizations"), view, arg) : viewOrganizations(shell("organizations"), view)),
     approvals: () => viewApprovals(shell("approvals"), view),
+    plans: () => viewPlans(shell("plans"), view),
     operators: () => viewOperators(shell("operators"), view),
     log: () => viewLog(shell("log"), view),
   };

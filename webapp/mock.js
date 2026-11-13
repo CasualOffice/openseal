@@ -855,9 +855,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   // 64 % ("check this"); personal data with page references; the draft "Lease renewal
   // 2027" matching the template "MSA v4" at 96 % with its last page scanned (read by
   // OCR). Analysis of a draft reports `running` for about 2 s after it is requested.
+  // The server serves these since WEB-19 (docs/33 §6); the shapes below are its shapes.
   // Test hook: `sessionStorage["openseal.mock.ml"] = "off"` makes every ML call answer
-  // 404, as the real server does today; `"no-plan"` answers `403 CS-ML-0011`.
+  // 404, as a server without the routes does; `"no-plan"` answers `403 CS-ML-0011`.
   const ML_FEATURE_KEYS = ["ocr", "template_matching", "extraction", "personal_data"];
+  /// What a run does for each feature, in the server's fixed order (docs/33 §2).
+  const ML_USES = { ocr: "ocr", template_matching: "template", extraction: "entities", personal_data: "personal_data" };
   function mlMode() {
     try { return store?.getItem("openseal.mock.ml") || "on"; } catch { return "on"; }
   }
@@ -887,7 +890,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         else fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
       }
     } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
-    return json(200, { ...ml.settings, not_in_plan: [], ...mlInstalled() });
+    return json(200, { ...ml.settings, not_in_plan: [], installed: true, ...mlInstalled() });
   }
   /// WEB-18 Admin › Document intelligence (lane D): the additive, read-only members the
   /// settings answer carries about this server, as the canvas lists them: the models the
@@ -925,7 +928,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     else if (/^Lease renewal/.test(s)) {
       const tpl = (db.templates || []).find((x) => !x.deleted_at);
       list = [
-        { kind: "template", label: "MSA v4", value: "Master services agreement v4", score: 0.96, page: 1, template_id: tpl?.id || null, pages_matched: `${last} of ${last}` },
+        // As the server (WEB-19): a template suggestion's label is the template's name, it
+        // has no span value, and `pages_matched` of `pages_total` are numbers.
+        { kind: "template", label: "MSA v4", value: null, score: 0.96, page: 1, template_id: tpl?.id || null, pages_matched: last, pages_total: last },
         ent("Term", "24 months from the last signature", 0.96, 1),
         pii("Email address", "taylor@example.com", 0.97, at(3)),
         pii("Phone number", "+1 555 0199", 0.88, at(3)),
@@ -972,7 +977,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const ml = mlState();
     const last = Math.max(1, doc.pages || 1);
     const scanned = /^Lease renewal/.test(env.subject || "") ? [Math.min(3, last)] : [];
-    const out = (status) => ({ status, uses: ML_FEATURE_KEYS.filter((k) => ml.settings[k]), ocr_pages: status === "done" ? scanned : [], truncated: false, bundle_id: "bundle-demo" });
+    const out = (status) => ({ id: `run-${doc.id.slice(0, 8)}`, document_id: doc.id, status, uses: ML_FEATURE_KEYS.filter((k) => ml.settings[k]).map((k) => ML_USES[k]), ocr_pages: status === "done" ? scanned : [], truncated: false, bundle_id: status === "done" ? "bundle-demo" : null });
     if (method === "POST") {
       if (env.status !== "draft") fail(409, "CS-WF-0001", "Not allowed in the current state");
       ml.analysis[doc.id] ||= { requested_at: now().getTime() };

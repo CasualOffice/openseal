@@ -240,7 +240,7 @@ is part of the public API or its compatibility promise. As built: docs/23 §5.6.
 
 ## As built (stage 2C, `casual-sign-server`)
 
-The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 87 operations (68 at stage 2C, 19 added by `WEB-06`), each with its `x-permission`
+The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 102 operations (68 at stage 2C, 19 added by `WEB-06`, 9 by `WEB-19`, the rest by later rows), each with its `x-permission`
 (the scope it needs, SEC-A05). The router is built from one table (`routes::table`), and a contract test keeps the
 table and the document equal in both directions, scope by scope.
 
@@ -390,6 +390,31 @@ binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised
 | `GET /envelopes?deleted=true` | The Deleted view (`UXW-02`): exactly the envelopes removed from the lists (`DELETE` of an envelope that ended without completing, `envelope.deleted`), readable by id as before. Restoring one is `NOT_ON_SERVER.restoreEnvelope` (ADR-031 Proposed) |
 | `DELETE /templates/{id}`, `GET /templates?deleted=true`, `POST /templates/{id}/restore` | Templates' Deleted view (`UXW-02`): deleting a live template (`If-Match` required) moves it there, kept with its roles, documents and fields (`templates.deleted_at`, migration 0022); it leaves `GET /templates` and every read and edit (`404`). `?deleted=true` lists them, most recently deleted first (any value but `true` or `false` is `422`). `restore` (`If-Match` honoured) brings it back whole, `200` with the whole template; a live template or none is `404`. Deleting it again in the Deleted view removes it for good. A template has no audit chain, so neither step is evidence. Another account's is `404`. `tests/inbox_folders.rs` `deleted_templates_*`, RLS on and off; seen red with delete removing at once (the Deleted view was empty) |
 | `GET /envelopes/{id}/certificate` (declined, voided, expired) | `UXW-30`: when an envelope is declined, voided or expires, the server queues `seal_ended_certificate`; the worker renders the envelope certificate (docs/32 §6), which says how the envelope ended and never claims completion, seals it on its own with the platform key, stores it, reads it back and verifies it, and records it as the envelope's certificate; the chain is not extended. The endpoint then serves it, recorded as `certificate.downloaded`; before it exists `409 CS-API-0009`, and the read queues the job again (idempotent per envelope, so a repeated `GET` adds no second job; the only write a `GET` makes, under the read scope). Worker `tests/flow.rs`; server `tests/inbox_folders.rs` |
+
+## As built (`WEB-19`, document analysis; docs/33 §6, §7 As built)
+
+Advisory only: nothing here changes an envelope's state, its audit chain, a document or the evidence. Every feature is
+off by default at every level; one is in effect only when the server runs with `OPENSEAL_ML_BUNDLE_ID` (the operator
+deployed modeld), the plan entitles the workspace (`ml_entitlements`, set by the operator) and its administrator turned
+it on. With none in effect an upload enqueues nothing and every response is unchanged (`ML-01`); every route below but
+the settings answers `403 CS-ML-0011`, which the web app reads as "hide every ML surface". Another account's envelope,
+template, document or suggestion is `404` before anything else.
+
+| Endpoint | As built |
+| --- | --- |
+| `GET`/`PATCH /account/settings/ml` | `{ocr, template_matching, extraction, personal_data, personal_data_model, ocr_scripts, reread_scanner_text, not_in_plan: [feature], installed}`. Scope `admin:account` (workspace administrators). `PATCH` merges the members given (an unknown member is refused); turning on a feature the plan lacks, or any feature while `installed` is false, is `403 CS-ML-0011` and changes nothing; turning one off is always allowed; `ocr_scripts` from `latin`, `cyrillic`, `greek`, `cjk`, `arabic`, `devanagari`. A change appends `workspace.ml_settings_changed` to the admin log (`GET /admin-events`, ORG-05) |
+| `POST /envelopes/{id}/documents/{doc}/analysis` | `202` and the run `{id, document_id, status: queued\|running\|done\|failed\|unavailable, uses: [ocr\|template\|entities\|personal_data], ocr_pages, truncated, bundle_id}`, the uses being the features in effect. Idempotent on the job key (account, document, its SHA-256, the uses, the bundle): asking again finds the same run. A draft only (`409 CS-WF-0001`); the sender or an administrator. Scope `envelopes:write`. An upload to a draft with a feature in effect enqueues the same in its own transaction |
+| `GET /envelopes/{id}/documents/{doc}/analysis` | The newest run of the document; `404` when none. Scope `envelopes:read` |
+| `GET /envelopes/{id}/suggestions?kind=&state=&cursor=&limit=` | `{items: [{id, kind: template\|entity\|personal_data, document_id, page?, rect?, label, value?, normalized?, score, model: {id, sha256}, state, decided_by?, decided_at?, template_id?, pages_matched?, pages_total?}], next_cursor}`, by id, `limit` 1 to 200 (default 50), only the kinds whose feature is in effect. `value` is read from the stored text at request time (no span text is stored); a template suggestion has none. Scope `envelopes:read` |
+| `POST /envelopes/{id}/suggestions/{s}/accept`, `…/dismiss` | Records the decision (`state`, `decided_by`, `decided_at`) and answers the suggestion. Accept does **not** itself perform the action docs/33 §6 describes: the caller makes the ordinary edit through the ordinary endpoints (the web app applies a matched template as an undoable edit of the draft), and it is recorded as that edit always is (finding row returned for the owner, docs/33 §7 As built). `409 CS-ML-0012` when already decided or its document has left the envelope. The sender or an administrator; scope `envelopes:write` |
+| `POST`/`GET /templates/{id}/documents/{doc}/analysis` | The same for a template document: `fingerprint_template` (its page hashes, which later uploads are matched against), needing template matching in effect; also enqueued when a document is added to a template. Scopes `templates:write` and `templates:read` |
+
+Tests: `server/tests/ml.rs` with Postgres and RLS on: every feature off writes no run or job and detect-fields answers
+identical bytes (seen red with an enqueue forced while off); settings off by default, `not_in_plan` and `installed`,
+refused outside the plan and to non-administrators; identical bytes uploaded by two accounts make two runs
+(`SEC-I06`); the analysis and suggestion flow end to end, decided once, and another account refused `404`. Worker
+`tests/ml.rs` runs both jobs against a fake modeld. Not built: OCR-sourced members in `detect-fields`, `GET
+/search?mode=meaning`, the settings' `models` and `ocr_packs`.
 
 ## Web client and mock contract (`UX-03`)
 
