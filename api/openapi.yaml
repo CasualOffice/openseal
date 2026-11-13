@@ -547,6 +547,71 @@ components:
         expires_at: {type: [string, 'null'], format: date-time}
         folder_id: {type: [string, 'null'], description: "The caller's own folder it is filed in (UXW-02)"}
         my_recipient_id: {type: [string, 'null'], description: "With waiting_for=me only: the recipient the caller is (UXW-01)"}
+    BulkSendCreate:
+      type: object
+      additionalProperties: false
+      required: [template_id]
+      properties:
+        template_id: {type: string, description: "A template of the caller's account with a document and a role"}
+        name: {type: string, maxLength: 255, description: "Defaults to the template's name"}
+        csv: {type: string, description: "The list as CSV text; exactly one of csv and rows"}
+        rows:
+          type: array
+          maxItems: 1000
+          items: {type: object, additionalProperties: {type: string}, description: "Column to value"}
+        validate_only: {type: boolean, default: false}
+    BulkSendProblem:
+      type: object
+      properties:
+        column: {type: [string, 'null'], description: "The column, or null for the whole row"}
+        code: {type: string, description: "CS-BLK-0001 to 0003, 0006"}
+    BulkSendRow:
+      type: object
+      properties:
+        row: {type: integer, minimum: 0}
+        status: {type: string, enum: [pending, sent, failed, cancelled]}
+        envelope_id: {type: [string, 'null']}
+        error_code: {type: [string, 'null'], description: "A row problem's code, or the code the server refused its envelope with"}
+        recipients:
+          type: array
+          items:
+            type: object
+            properties:
+              role: {type: string}
+              name: {type: string}
+              email: {type: string}
+        problems: {type: array, items: {$ref: '#/components/schemas/BulkSendProblem'}}
+    BulkSend:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        template_id: {type: string}
+        sender_user_id: {type: string}
+        status: {type: string, enum: [queued, sending, completed, cancelled]}
+        row_count: {type: integer}
+        counts:
+          type: object
+          properties:
+            pending: {type: integer}
+            sent: {type: integer}
+            failed: {type: integer}
+            cancelled: {type: integer}
+        created_at: {type: string, format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+    BulkSendWithRows:
+      allOf:
+        - $ref: '#/components/schemas/BulkSend'
+        - type: object
+          properties:
+            rows: {type: array, items: {$ref: '#/components/schemas/BulkSendRow'}}
+    BulkSendCheck:
+      type: object
+      properties:
+        columns: {type: array, items: {type: string}, description: "The template's columns, in order"}
+        row_count: {type: integer}
+        valid: {type: integer}
+        rows: {type: array, items: {$ref: '#/components/schemas/BulkSendRow'}}
     Folder:
       type: object
       properties:
@@ -3242,6 +3307,119 @@ paths:
                 type: object
                 properties:
                   moved: {type: integer}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/bulk-sends:
+    get:
+      operationId: listBulkSends
+      summary: "The caller's bulk sends, newest first, without rows (every member's for an administrator or a member who sees every envelope) (UXW-04)"
+      x-permission: "envelopes:read"
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/BulkSend'}}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createBulkSend
+      summary: "Check a list of recipient sets against a template, and make a bulk send of it (UXW-04)"
+      description: >-
+        The list is CSV text (a header, then one row per envelope) or JSON rows; its
+        columns are two per template role, in role order: `<role>::name` and
+        `<role>::email`, matched ignoring case and surrounding spaces. A header that does
+        not fit the template is 422 (`CS-BLK-0004` missing columns at `/columns`,
+        `CS-BLK-0005` an unknown or repeated column at `/columns/{i}`); no row, more than
+        1000, or CSV that cannot be read is 422 `CS-BLK-0007`. Each row is checked:
+        `CS-BLK-0001` a missing value, `CS-BLK-0002` an email that cannot be one,
+        `CS-BLK-0003` a name over 255 characters or with control characters,
+        `CS-BLK-0006` more values than columns. A row with a problem is stored `failed`
+        and never sent. With `validate_only` nothing is stored: the answer is 200 with
+        each row's check. Send the batch with `POST …/send`. Also needs `envelopes:write`
+        and `envelopes:send`, as `POST /envelopes` with `status: sent` does. A line with
+        no value in any cell is skipped.
+      x-permission: "bulk:send"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BulkSendCreate'}
+      responses:
+        '200':
+          description: "validate_only: each row's check; nothing stored"
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BulkSendCheck'}
+        '201':
+          description: Made, queued
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BulkSendWithRows'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/bulk-sends/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A bulk send the caller may see (another member's or account's is 404)
+        schema: {type: string}
+    get:
+      operationId: getBulkSend
+      summary: "A bulk send: its progress counts and every row"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BulkSendWithRows'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/bulk-sends/{id}/send:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: One of the caller's own bulk sends
+        schema: {type: string}
+    post:
+      operationId: sendBulkSendRows
+      summary: "Send the next pending rows, at most 10, one envelope each; repeat until none is pending"
+      description: >-
+        Each row is made and sent as `POST /envelopes` makes and sends one, in its own
+        transaction; a row the server refuses is `failed` with the refusal's code and the
+        others go on. Once no row is pending the bulk send is `completed`. Only its
+        sender sends it (403 otherwise). Also needs `envelopes:write` and `envelopes:send`.
+      x-permission: "bulk:send"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BulkSendWithRows'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/bulk-sends/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A bulk send of the caller's (or, for an administrator, any)
+        schema: {type: string}
+    post:
+      operationId: cancelBulkSend
+      summary: "Cancel a bulk send: its pending rows are not sent; sent envelopes stay (409 CS-WF-0001 once finished)"
+      x-permission: "bulk:send"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BulkSendWithRows'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/groups:
     get:

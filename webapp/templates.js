@@ -138,6 +138,7 @@ export function mount(view, ctx) {
               // What the caller's access allows (UXW-06); the server decides every call.
               items: () => [
                 canDo(tp, "edit") ? { label: t("templates.edit-fields"), icon: "file-pen-line", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/edit`) } : null,
+                { label: t("templates.bulk.menu"), icon: "send", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/bulk`) },
                 canDo(tp, "edit") ? { label: t("templates.edit"), icon: "pencil", run: () => edit(tp) } : null,
                 canDo(tp, "owner") ? { label: t("templates.share"), icon: "users", run: () => share(tp) } : null,
                 { label: t("templates.duplicate"), icon: "copy", run: () => duplicate(tp) },

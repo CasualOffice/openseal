@@ -29,10 +29,10 @@ GROUPS = {
     "users": "Users and invitations", "api-clients": "API clients", "envelopes": "Envelopes", "templates": "Templates",
     "contacts": "Contacts", "webhooks": "Webhooks", "s": "Signing ceremony (not public API)",
     "account": "Account settings", "admin-events": "Admin audit log", "ersd-versions": "Electronic disclosure",
-    "folders": "Folders", "organizations": "Organizations", "groups": "Groups",
+    "folders": "Folders", "organizations": "Organizations", "groups": "Groups", "bulk-sends": "Bulk send",
     "permission-profiles": "Permission profiles",
 }
-ORDER = ["auth", "oauth", ".well-known", "envelopes", "folders", "templates", "groups", "contacts", "webhooks", "users", "permission-profiles", "api-clients",
+ORDER = ["auth", "oauth", ".well-known", "envelopes", "folders", "templates", "groups", "bulk-sends", "contacts", "webhooks", "users", "permission-profiles", "api-clients",
          "accounts", "account", "ersd-versions", "admin-events", "organizations", "s"]
 
 

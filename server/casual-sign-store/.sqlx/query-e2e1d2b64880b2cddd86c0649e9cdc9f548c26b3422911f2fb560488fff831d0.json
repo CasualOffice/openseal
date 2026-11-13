@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bulk_send_rows SET status = 'failed', error_code = $3 WHERE account_id = $1 AND id = $2 AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e2e1d2b64880b2cddd86c0649e9cdc9f548c26b3422911f2fb560488fff831d0"
+}

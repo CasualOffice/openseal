@@ -9,7 +9,9 @@ use axum::handler::Handler;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
 
-use crate::api::{admin, envelopes as env, folders, groups, ml, org, switch, templates, webhooks};
+use crate::api::{
+    admin, bulk, envelopes as env, folders, groups, ml, org, switch, templates, webhooks,
+};
 use crate::ceremony;
 use crate::http::{Guard, guard, request_context};
 use crate::state::AppState;
@@ -655,6 +657,30 @@ pub fn table() -> Vec<Route> {
             Scope(""),
             JSON,
             env::sign_link,
+        ),
+        // Bulk send from a template (UXW-04).
+        r("GET", "/api/v1/bulk-sends", er, JSON, bulk::list),
+        r(
+            "POST",
+            "/api/v1/bulk-sends",
+            Scope("bulk:send"),
+            JSON,
+            bulk::create,
+        ),
+        r("GET", "/api/v1/bulk-sends/{id}", er, JSON, bulk::get),
+        r(
+            "POST",
+            "/api/v1/bulk-sends/{id}/send",
+            Scope("bulk:send"),
+            JSON,
+            bulk::send,
+        ),
+        r(
+            "POST",
+            "/api/v1/bulk-sends/{id}/cancel",
+            Scope("bulk:send"),
+            JSON,
+            bulk::cancel,
         ),
         // Folders (UXW-02): each member's own.
         r("GET", "/api/v1/folders", er, JSON, folders::list),

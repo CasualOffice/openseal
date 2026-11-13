@@ -8,6 +8,7 @@ use crate::store::TenantTx;
 pub mod accounts;
 pub mod api_clients;
 pub mod audit;
+pub mod bulk_sends;
 pub mod documents;
 pub mod envelopes;
 pub mod fields;
@@ -128,6 +129,11 @@ impl TenantTx {
     /// Webhook subscriptions and deliveries.
     pub fn webhooks(&mut self) -> webhooks::Webhooks<'_> {
         webhooks::Webhooks { tx: self }
+    }
+
+    /// Bulk sends from a template and their rows (UXW-04).
+    pub fn bulk_sends(&mut self) -> bulk_sends::BulkSends<'_> {
+        bulk_sends::BulkSends { tx: self }
     }
 
     /// Members' own envelope folders and their filings (UXW-02).
