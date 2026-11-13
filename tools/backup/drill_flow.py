@@ -93,12 +93,7 @@ class Client:
         except urllib.error.HTTPError as e:
             status, payload = e.code, e.read()
         if status not in ok:
-            code = ""
-            try:
-                code = json.loads(payload).get("code", "")
-            except ValueError:
-                pass
-            raise DrillError(f"{method} {path.split('?')[0][:40]}: HTTP {status} {code}")
+            raise DrillError(f"{method} {path.split('?')[0][:40]}: HTTP {status} {problem(payload)}")
         if raw:
             return payload
         return json.loads(payload) if payload else {}
@@ -106,6 +101,26 @@ class Client:
     def sign_in(self, email: str, password: str) -> None:
         r = self.call("POST", "/api/v1/auth/login", {"email": email, "password": password})
         self.csrf = r["csrf_token"]
+
+
+def problem(payload: bytes) -> str:
+    """A refusal's code and the JSON pointers it names (problem details, docs/40): never
+    values, so the drill's log can say which member the server refused."""
+    try:
+        p = json.loads(payload)
+    except ValueError:
+        return ""
+    if not isinstance(p, dict):
+        return ""
+    pointers = [str(e.get("pointer", "")) for e in p.get("errors") or [] if isinstance(e, dict)]
+    return " ".join([str(p.get("code", "")), *[f"at {x}" for x in pointers if x]]).strip()
+
+
+def idempotency_key(label: str) -> str:
+    """An Idempotency-Key the server takes: 1 to 255 visible ASCII characters, no space
+    (casual-sign-server's http.rs; a key with a space is refused 422 CS-API-0001)."""
+    key = "drill-" + re.sub(r"[^A-Za-z0-9._-]+", "-", label)[:200] + f"-{time.time_ns()}"
+    return key
 
 
 def signing_path(mail: str, to: str, *, timeout: float = 90) -> str:
@@ -179,8 +194,10 @@ def same_start(restored: list[str], seeded: list[str], what: str) -> None:
         raise DrillError(f"the restored {what} envelope's audit chain does not begin with the events seen before the backup")
 
 
-def create(c: Client, subject: str, signers: list[tuple[str, str]]) -> str:
-    body = {
+def envelope_body(subject: str, signers: list[tuple[str, str]]) -> dict:
+    """The one-call create (docs/40 §3): sent at once, signers in order, one signature
+    field each."""
+    return {
         "subject": subject,
         "status": "sent",
         "documents": [{"name": "drill.pdf", "content_base64": base64.b64encode(pdf()).decode()}],
@@ -193,7 +210,11 @@ def create(c: Client, subject: str, signers: list[tuple[str, str]]) -> str:
             for i in range(len(signers))
         ],
     }
-    r = c.call("POST", "/api/v1/envelopes", body, headers={"Idempotency-Key": f"drill-{subject}-{time.time_ns()}"})
+
+
+def create(c: Client, subject: str, signers: list[tuple[str, str]]) -> str:
+    body = envelope_body(subject, signers)
+    r = c.call("POST", "/api/v1/envelopes", body, headers={"Idempotency-Key": idempotency_key(subject)})
     return r["id"]
 
 
@@ -202,6 +223,15 @@ def credentials() -> tuple[str, str]:
     if not email or not password:
         raise DrillError("set OPENSEAL_DRILL_EMAIL and OPENSEAL_DRILL_PASSWORD")
     return email, password
+
+
+def keep(args, name: str, data: bytes) -> None:
+    """A sealed PDF, kept for the independent validator (tools/verify-sealed.py) when
+    `--pdf-dir` is given."""
+    if args.pdf_dir:
+        d = pathlib.Path(args.pdf_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / name).write_bytes(data)
 
 
 def seed(args) -> None:
@@ -215,6 +245,7 @@ def seed(args) -> None:
     second = signing_path(args.mail, f"cy-{run}@example.com")
     e = wait_status(c, done, "completed")
     pdf_bytes = sealed(c, e)
+    keep(args, "completed.pdf", pdf_bytes)
     o = envelope(c, opened)
     state = {
         "completed": {"id": done, "sealed_sha256": hashlib.sha256(pdf_bytes).hexdigest(), "chain": chain(c, done)},
@@ -250,6 +281,7 @@ def resume(args) -> None:
     sign(args.base, state["open"]["second_signer_path"], last=True)
     e = wait_status(c, state["open"]["id"], "completed")
     data = sealed(c, e)
+    keep(args, "resumed.pdf", data)
     after = chain(c, e["id"])
     if len(after) <= len(before) or after[: len(before)] != before:
         raise DrillError("the resumed envelope's audit chain did not continue from its restored head")
@@ -263,6 +295,7 @@ def main(argv: list[str]) -> int:
         p = sub.add_parser(name)
         p.add_argument("--base", required=True)
         p.add_argument("--state", required=True)
+        p.add_argument("--pdf-dir", help="keep the sealed PDFs here (seed: completed.pdf; resume: resumed.pdf)")
         if name == "seed":
             p.add_argument("--mail", required=True)
     args = ap.parse_args(argv)
