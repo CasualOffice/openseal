@@ -528,7 +528,10 @@ mutation of the migration):
   `prev`, `action` and `at` columns to be what the bytes state (`at` exactly the bytes' Unix millisecond, since the API
   serves the column; the verified reads check it again). `at` must be written as plain digits, read from the bytes as
   written rather than through `jsonb` (which would accept `1e3` as 1000 where the reader refuses it), and no later than
-  9999-12-31T23:59:59.999Z, the reader's last instant; anything else is `OS005` before any cast. It refuses an event outside the current scope (`42501`)
+  9999-12-31T23:59:59.999Z, the reader's last instant; anything else is `OS005` before any cast. A top-level field
+  stated twice is `OS005` (`jsonb` keeps the last, the reader refuses a repeated `at`). The reader takes only `at` from
+  the bytes and skips every other value uninterpreted, so whatever JSON the check accepts (a number beyond `f64`,
+  nesting deeper than serde_json's limit) still verifies: no accepted insert can make the log unverifiable. It refuses an event outside the current scope (`42501`)
   before reading that chain, so another scope's head or next `seq` is never revealed. The workspace functions require
   the event's bytes to name their own action and workspace.
 - **Concurrent changes queue on the head.** `openseal_admin_chain_tip()` and `openseal_org_chain_tip()` lock the head

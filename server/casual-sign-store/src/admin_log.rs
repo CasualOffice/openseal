@@ -365,13 +365,42 @@ fn verify_event(e: &StoredAdminEvent) -> Result<()> {
     if Hash256::digest(&e.canonical).as_bytes() != &e.hash {
         return Err(broken);
     }
-    let stated = serde_json::from_slice::<serde_json::Value>(&e.canonical)
-        .ok()
-        .and_then(|v| v.get("at").and_then(serde_json::Value::as_u64));
-    match stated.map(at_of) {
+    match stated_at(&e.canonical).map(at_of) {
         Some(Ok(at)) if at == e.at => Ok(()),
         _ => Err(broken),
     }
+}
+
+/// The `at` an event's bytes state, read as migration 0020's check reads it: the top
+/// level is an object stating `at` once, as a whole number. Every other value is skipped
+/// without being interpreted, so bytes the database accepted (a number beyond `f64`,
+/// nesting deeper than serde_json's own limit) cannot make a stored event unverifiable.
+/// `None` when the bytes state no such `at`.
+fn stated_at(canonical: &[u8]) -> Option<u64> {
+    use serde::de::{Deserializer as _, IgnoredAny, MapAccess, Visitor};
+
+    struct At;
+    impl<'de> Visitor<'de> for At {
+        type Value = Option<u64>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("an admin event object")
+        }
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Option<u64>, A::Error> {
+            let (mut at, mut twice) = (None, false);
+            while let Some(key) = map.next_key::<String>()? {
+                if key == "at" {
+                    twice |= at.is_some();
+                    at = Some(map.next_value::<u64>()?);
+                } else {
+                    map.next_value::<IgnoredAny>()?;
+                }
+            }
+            Ok(if twice { None } else { at })
+        }
+    }
+    let mut de = serde_json::Deserializer::from_slice(canonical);
+    let at = de.deserialize_map(At).ok().flatten()?;
+    de.end().ok().map(|()| at)
 }
 
 /// Verify one page of a log as it is read (docs/23 §2.5), so that walking the whole log

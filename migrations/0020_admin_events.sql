@@ -94,6 +94,7 @@ CREATE FUNCTION openseal_admin_event_check(
 AS $$
 DECLARE
     doc jsonb;
+    raw json;
     at_text text;
     at_ms bigint;
 BEGIN
@@ -102,7 +103,8 @@ BEGIN
             USING ERRCODE = 'OS005';
     END IF;
     BEGIN
-        doc := convert_from(p_canonical, 'UTF8')::jsonb;
+        raw := convert_from(p_canonical, 'UTF8')::json;
+        doc := raw::jsonb;
     EXCEPTION WHEN OTHERS THEN
         RAISE EXCEPTION 'admin event is not JSON (seq %)', p_seq USING ERRCODE = 'OS005';
     END;
@@ -115,11 +117,17 @@ BEGIN
         RAISE EXCEPTION 'admin event columns differ from its canonical bytes (seq %)', p_seq
             USING ERRCODE = 'OS005';
     END IF;
+    -- Each top-level field is stated once: `jsonb` keeps the last of a repeated key, and
+    -- the reader (`stated_at`) refuses a repeated `at`, so a repeat is refused here too.
+    IF (SELECT count(*) <> count(DISTINCT k) FROM json_object_keys(raw) AS k) THEN
+        RAISE EXCEPTION 'admin event states a field twice (seq %)', p_seq
+            USING ERRCODE = 'OS005';
+    END IF;
     -- `at` is read as written (`json`, not `jsonb`, which would turn `1e3` into `1000`):
     -- plain digits only, as the reader (`verify_event`, serde_json's `as_u64`) accepts,
     -- and no later than 9999-12-31T23:59:59.999Z (253402300799999 ms), the reader's
     -- limit. Checked before any cast, so a long number is OS005, never 22008.
-    at_text := convert_from(p_canonical, 'UTF8')::json ->> 'at';
+    at_text := raw ->> 'at';
     IF at_text IS NULL OR at_text !~ '^(0|[1-9][0-9]{0,14})$' THEN
         RAISE EXCEPTION 'admin event time is not whole milliseconds (seq %)', p_seq
             USING ERRCODE = 'OS005';

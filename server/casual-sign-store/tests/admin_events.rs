@@ -257,6 +257,65 @@ async fn an_admin_event_that_does_not_extend_its_chain_is_refused() {
     db.drop().await;
 }
 
+/// The trigger and the reader agree: every event bytes the database accepts as the next
+/// one, the reader verifies, so no application-role insert can break the log for good.
+/// Probes JSON the database parses but a strict reader might not: a number beyond `f64`,
+/// nesting deeper than serde_json's limit, and `at` written twice.
+#[tokio::test]
+async fn every_admin_event_the_database_accepts_the_reader_verifies() {
+    let Some(db) = fresh("admin_accept_verifies", Rls::On).await else {
+        return;
+    };
+    let (_, account, _, _) = workspace_with_admin(&db, "alpha").await;
+    let deep = format!("{}{}", "[".repeat(200), "]".repeat(200));
+    let probes = [
+        ("\"changes\":[]", "\"changes\":[1e400]".to_owned()),
+        ("\"changes\":[]", format!("\"changes\":[{deep}]")),
+        ("\"at\":1,", "\"at\":1,\"at\":1,".to_owned()),
+        ("\"at\":1,", "\"at\":\"x\",\"at\":1,".to_owned()),
+        ("\"at\":1,", "\"at\":1e400,\"at\":1,".to_owned()),
+    ];
+    for (from, to) in probes {
+        let mut tx = db.store.for_account(account).begin().await.unwrap();
+        let log = tx.verified_admin_log().await.unwrap();
+        tx.commit().await.unwrap();
+        let head = log.last().unwrap();
+        let seq = head.seq + 1;
+        let bytes = format!(
+            "{{\"account\":\"{account}\",\"action\":\"member.removed\",\"actor\":{{\"kind\":\"system\"}},\
+             \"at\":1,\"changes\":[],\"prev\":\"{}\",\"seq\":{seq},\"target\":{{}},\"v\":1}}",
+            Hash256(head.hash).hex()
+        )
+        .replace(from, &to)
+        .into_bytes();
+        let sql = format!(
+            "INSERT INTO admin_events (account_id, seq, prev_hash, hash, action, at, canonical) \
+             VALUES ('{account}', {seq}, '\\x{}', '\\x{}', 'member.removed', {AT_1MS}, '\\x{}')",
+            Hash256(head.hash).hex(),
+            Hash256::digest(&bytes).hex(),
+            hex(&bytes),
+        );
+        match as_app(&db.app, "openseal.account_id", account.0, &sql).await {
+            Err(err) => assert_eq!(sqlstate(&err).as_deref(), Some("OS005"), "{to}: {err}"),
+            Ok(_) => {
+                let mut tx = db.store.for_account(account).begin().await.unwrap();
+                let log = tx.verified_admin_log().await;
+                let page = tx.verified_admin_events(None, 100).await;
+                tx.commit().await.unwrap();
+                assert!(
+                    log.is_ok(),
+                    "accepted {to:.60} but the reader refuses: {log:?}"
+                );
+                assert!(
+                    page.is_ok(),
+                    "accepted {to:.60} but a page refuses: {page:?}"
+                );
+            }
+        }
+    }
+    db.drop().await;
+}
+
 /// The instant `"at":1` states: one millisecond after the epoch.
 const AT_1MS: &str = "'epoch'::timestamptz + interval '1 millisecond'";
 
