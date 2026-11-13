@@ -636,11 +636,86 @@ paths:
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         default: {$ref: '#/components/responses/Problem'}
+  /console/v1/keys:
+    get:
+      operationId: keys
+      x-roles: any
+      description: Each key keyd serves, read through keyd's admin interface with the console's admin identity, which keyd never lets sign (CON-06). Certificates by SHA-256 fingerprint, validity and status (expiring from 90 days before notAfter), and keyd's operation-log head; never a key. `configured` is false when the console has no keyd address. A keyd refusal or failure is 502 with keyd's code (`CS-CON-0008` when the console's identity is on keyd's signing list instead of its admin list, `CS-KEY-0011` when unreachable).
+      responses:
+        '200':
+          description: Keys.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured: {type: boolean}
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alias: {type: string}
+                        backend: {type: string, description: '`pkcs11`, `kms:<provider>`, `file-dev` or `remote`'}
+                        algorithm: {type: string}
+                        development: {type: boolean}
+                        subject: {type: string}
+                        issuer: {type: string}
+                        not_before: {type: string, format: date-time}
+                        not_after: {type: string, format: date-time}
+                        days_left: {type: integer}
+                        status: {type: string, enum: [valid, expiring, expired, not_yet_valid]}
+                        sha256: {type: string}
+                        chain:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              sha256: {type: string}
+                              bytes: {type: integer}
+                  log:
+                    type: object
+                    properties:
+                      seq: {type: integer}
+                      sha256: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/keys/log:
+    get:
+      operationId: keysLog
+      x-roles: operators
+      description: keyd's operation-log records (CON-06), from `from` (default 1), at most `limit` (1 to 256, default 100). Hashes, ids and codes only; no document byte or personal data.
+      parameters:
+        - {name: from, in: query, schema: {type: integer, minimum: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 256}}
+      responses:
+        '200':
+          description: Records, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured: {type: boolean}
+                  records:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        seq: {type: integer}
+                        at: {type: string, format: date-time}
+                        caller: {type: string, description: SHA-256 fingerprint of the caller's client certificate}
+                        op: {type: string}
+                        alias: {type: string}
+                        algorithm: {type: string}
+                        digest: {type: string}
+                        envelope_id: {type: string}
+                        outcome: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
   /console/v1/health:
     get:
       operationId: health
       x-roles: any
-      description: Database, job queue depth by kind and status (oldest queued age), dead letters, connections, the configured service targets (probed with a 2-second timeout) and whether the operator log verifies.
+      description: Database, job queue depth by kind and status (oldest queued age), dead letters, connections, the configured service targets (probed with a 2-second timeout) keyd's own health through its admin interface (`keyd.status` is `not_configured`, `up`, `degraded` with each key's backend state, or `down` with keyd's code) and whether the operator log verifies.
       responses:
         '200':
           description: Health.

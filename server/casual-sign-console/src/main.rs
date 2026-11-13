@@ -12,6 +12,11 @@
 //! | `OPENSEAL_CONSOLE_PUBLIC=1` | Allow a non-loopback bind (needs `OPENSEAL_TRUSTED_PROXIES`; TLS terminates at the proxy) |
 //! | `OPENSEAL_TRUSTED_PROXIES` | Comma-separated CIDRs whose forwarding headers count |
 //! | `OPENSEAL_CONSOLE_ORIGIN`, `OPENSEAL_PUBLIC_URL` | When both are set they must differ: the console never shares the application's origin |
+//! | `OPENSEAL_CONSOLE_KEYD_ADDR` | keyd's `host:port`; when set, the Keys page and health read keyd's admin interface (`CON-06`) |
+//! | `OPENSEAL_CONSOLE_KEYD_SERVER_NAME` | The name keyd's server certificate is checked against (default `localhost`) |
+//! | `OPENSEAL_CONSOLE_KEYD_CA` | PEM path: the CA keyd's server certificate chains to |
+//! | `OPENSEAL_CONSOLE_KEYD_CLIENT_CERT` | PEM path: the console's admin client certificate, whose fingerprint is on keyd's `OPENSEAL_KEYD_ADMIN_ALLOW_LIST` (never its signing list) |
+//! | `OPENSEAL_CONSOLE_KEYD_CLIENT_KEY` (secret) | Its private key (PEM) |
 //! | `OPENSEAL_MIGRATE_DATABASE_URL` (secret) | `set-service-target` and `remove-service-target` only: the schema owner |
 //!
 //! Commands:
@@ -85,7 +90,36 @@ fn config() -> Result<(Config, bool), String> {
         }
     }
     let public = std::env::var("OPENSEAL_CONSOLE_PUBLIC").as_deref() == Ok("1");
+    c.keyd = keyd_client()?;
     Ok((c, public))
+}
+
+/// keyd's admin client, when `OPENSEAL_CONSOLE_KEYD_ADDR` is set (`CON-06`).
+fn keyd_client() -> Result<Option<casual_sign_keyd_client::AdminClient>, String> {
+    let Some(addr) = std::env::var("OPENSEAL_CONSOLE_KEYD_ADDR")
+        .ok()
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(None);
+    };
+    let file = |name: &str| -> Result<Vec<u8>, String> {
+        let path = std::env::var(name).map_err(|_| format!("{name} is not set (CS-CON-0017)"))?;
+        std::fs::read(path).map_err(|_| format!("{name}: unreadable (CS-CON-0017)"))
+    };
+    let ca = file("OPENSEAL_CONSOLE_KEYD_CA")?;
+    let cert = file("OPENSEAL_CONSOLE_KEYD_CLIENT_CERT")?;
+    let key = secret("OPENSEAL_CONSOLE_KEYD_CLIENT_KEY")?;
+    let tls = casual_sign_keyd_client::client_tls(&ca, Some((&cert, key.as_bytes())))
+        .map_err(|e| format!("OPENSEAL_CONSOLE_KEYD_*: {}", e.code()))?;
+    Ok(Some(casual_sign_keyd_client::AdminClient::new(
+        casual_sign_keyd_client::Endpoint {
+            addr,
+            server_name: std::env::var("OPENSEAL_CONSOLE_KEYD_SERVER_NAME")
+                .unwrap_or_else(|_| "localhost".into()),
+            tls,
+            timeout: std::time::Duration::from_secs(5),
+        },
+    )))
 }
 
 async fn serve() -> ExitCode {

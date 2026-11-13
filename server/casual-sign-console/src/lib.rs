@@ -10,8 +10,11 @@
 //! The console reads tenant metadata only (ids, names, statuses, labels, counts) through
 //! the `platform` schema's definer functions, as the `openseal_console` database role,
 //! which has no grant on any `public` table. It has no blob store, no keyd signing
-//! identity and no tenant repository: it depends on `casual-sign-platform-store`, never
+//! identity (only keyd's admin identity) and no tenant repository: it depends on `casual-sign-platform-store`, never
 //! on `casual-sign-store`, `-host` or `-server` (docs/23 §5.1, §5.2).
+//!
+//! keyd is read through its admin interface ([`keys`], `CON-06`): keys, certificates,
+//! the operation log and health, with an identity keyd will not let sign.
 //!
 //! It also serves its own web UI (`console-ui/`, embedded at compile time; [`ui`]) at `/`
 //! on the same private listener (CON-17).
@@ -21,6 +24,7 @@ pub mod auth;
 pub mod crypto;
 pub mod error;
 pub mod health;
+pub mod keys;
 pub mod net;
 pub mod plans;
 pub mod state;
@@ -83,6 +87,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
         "/console/v1/plan-overrides/{id}/expire",
         "operators",
     ),
+    ("GET", "/console/v1/keys", "any"),
+    ("GET", "/console/v1/keys/log", "operators"),
     ("GET", "/console/v1/health", "any"),
     ("GET", "/console/v1/dead-letters", "any"),
     ("GET", "/console/v1/alerts", "any"),
@@ -149,6 +155,8 @@ pub fn app(state: AppState) -> Router {
             "/console/v1/plan-overrides/{id}/expire",
             post(plans::expire_override),
         )
+        .route("/console/v1/keys", get(keys::keys))
+        .route("/console/v1/keys/log", get(keys::keys_log))
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))
         .route("/console/v1/alerts", get(api::alerts))

@@ -46,6 +46,10 @@ pub enum ConsoleError {
     /// `CS-CON-0017` (start-up): configuration invalid or a secret missing; names the
     /// variable.
     Config(&'static str),
+    /// keyd's admin interface refused or did not answer (502), with keyd's code:
+    /// `CS-CON-0008` (the console's identity is not on the admin allow-list),
+    /// `CS-KEY-0001`, `CS-KEY-0011` (unreachable), and so on (`CON-06`).
+    Keyd(&'static str),
 }
 
 impl ConsoleError {
@@ -68,6 +72,7 @@ impl ConsoleError {
             Self::Unavailable => "CS-CON-0015",
             Self::Conflict => "CS-CON-0016",
             Self::Config(_) => "CS-CON-0017",
+            Self::Keyd(code) => code,
         }
     }
 
@@ -80,6 +85,7 @@ impl ConsoleError {
             Self::ApprovalRequired | Self::Conflict => StatusCode::CONFLICT,
             Self::Invalid(_) | Self::PlanInvalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Keyd(_) => StatusCode::BAD_GATEWAY,
             Self::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             Self::Unavailable | Self::LogBroken(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::ListenerRefused(_) | Self::Internal(_) | Self::Config(_) => {
@@ -105,6 +111,7 @@ impl ConsoleError {
             Self::Unavailable => "Database unavailable",
             Self::Conflict => "Already exists",
             Self::Config(_) => "Console configuration invalid",
+            Self::Keyd(_) => "keyd refused or did not answer",
         }
     }
 }

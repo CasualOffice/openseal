@@ -14,6 +14,9 @@ publish = false
 casual-sign-platform-store = { path = "../casual-sign-platform-store" }
 # Plan validation and the effective plan (PLAN-02); pure.
 casual-sign-policy = { path = "../casual-sign-policy" }
+# keyd's admin client (CON-06): list-keys, oplog-head, oplog-range and health over mTLS,
+# without cryptoki or any signing path (docs/23 §5.2, §5.4).
+casual-sign-keyd-client = { path = "../casual-sign-keyd-client" }
 # The console's database URL and MFA key, from the environment or a file it names.
 casual-sign-secrets = { path = "../casual-sign-secrets" }
 # HTTP (ADR-014; as casual-sign-server). MIT.
@@ -36,6 +39,10 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
 [dev-dependencies]
+# A real keyd with a development key and a throwaway PKI for the Keys tests (CON-06);
+# test-only, so the console binary carries no cryptoki.
+casual-sign-keyd = { path = "../casual-sign-keyd" }
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
 http-body-util = "0.1.2"
 # Reading api/console-openapi.yaml in the contract test. MIT OR Apache-2.0.

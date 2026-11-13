@@ -847,6 +847,7 @@ pub async fn health(
     let pool = store.pool_stats().await?;
     let targets = store.service_targets().await?;
     let services = crate::health::probe_all(targets, state.config().probe_timeout).await;
+    let keyd = crate::keys::health(&state).await;
     let log = match store.verify_log().await {
         Ok(r) => json!({ "verified": true, "events": r.events }),
         Err(e) => json!({ "verified": false, "code": ConsoleError::from(e).code() }),
@@ -860,6 +861,7 @@ pub async fn health(
         "dead_letters": dead,
         "connections": pool.iter().map(|(s, n)| json!({ "state": s, "connections": n })).collect::<Vec<_>>(),
         "services": services,
+        "keyd": keyd,
         "operator_log": log,
     })))
 }
