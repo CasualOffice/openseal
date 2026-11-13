@@ -46,7 +46,7 @@
   </tbody>
 </table>
 </div>
-<p>Each binary's module documentation lists all of its variables (<code>server/casual-sign-server/src/main.rs</code>, <code>-worker</code>, <code>-keyd</code>), and <code>docker-compose.yml</code> sets every one of them. Ports in the Compose file bind to <code>127.0.0.1</code>; <code>OPENSEAL_HTTP_PORT</code> and <code>OPENSEAL_MAIL_PORT</code> move them.</p>
+<p>Each binary's module documentation lists all of its variables (<code>server/casual-sign-server/src/main.rs</code>, <code>-worker</code>, <code>-keyd</code>), and <code>docker-compose.yml</code> sets the ones the stack needs; the optional ones above (second-factor key, identity providers, trusted proxies, GeoIP, the SMS gateway, webhook allow list) are left for you to set. Ports in the Compose file bind to <code>127.0.0.1</code>; <code>OPENSEAL_HTTP_PORT</code> and <code>OPENSEAL_MAIL_PORT</code> move them.</p>
 
 <h2>Production checklist</h2>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Production checklist">
