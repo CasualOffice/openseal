@@ -1,5 +1,6 @@
 //! `casual-sign-modeld`: the model daemon (ADR-029, docs/33). Configured by environment;
-//! adapted from keyd's `main.rs`. It reads no secret other than its own TLS key, and
+//! adapted from keyd's `main.rs`. It reads no secret other than its own TLS key and the
+//! security log's pseudonym key, and
 //! refuses to start unless the bundle directory matches the manifest compiled into it.
 //!
 //! | Variable | Meaning |
@@ -13,6 +14,7 @@
 //! | `OPENSEAL_MODELD_PROFILES` | Comma-separated profiles that must be complete (`ocr,templates,...`; default none) |
 //! | `OPENSEAL_MODELD_MEMORY_LIMIT` | modeld's memory limit: bytes, or `KiB`/`MiB`/`GiB` (default: the cgroup's `memory.max`, else 4 GiB) |
 //! | `RUST_LOG` | modeld's own log level only; third-party targets stay at WARN (ONNX Runtime at ERROR) whatever it says (`SEC-I05`) |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: modeld does not start (`CS-LOG-0001`) |
 //! | `OPENSEAL_MODELD_SLOTS` | Operations at once (default: half the cores, at least 1, but no more than `(memory limit - resident memory after loading) / 512 MiB`; a value above that bound, or a bound of zero, stops modeld) |
 
 use std::path::Path;
@@ -109,13 +111,30 @@ fn run() -> Result<(), ModeldError> {
     let service = service.with_limits(limits);
     let listen = var("OPENSEAL_MODELD_LISTEN").unwrap_or_else(|| "127.0.0.1:7444".into());
     let modeld = Modeld::bind(&listen, tls, service)?;
-    eprintln!(
-        "modeld: bundle {id} ({installed} files), {} slots, on {}",
-        limits.slots,
-        modeld.local_addr()?
+    let mut m = serde_json::Map::new();
+    m.insert("bundle".into(), id.into());
+    m.insert("files".into(), installed.into());
+    m.insert("slots".into(), limits.slots.into());
+    m.insert("listen".into(), modeld.local_addr()?.to_string().into());
+    casual_sign_seclog::write(
+        casual_sign_seclog::Service::Modeld,
+        casual_sign_seclog::Level::Info,
+        "serving",
+        m,
     );
     modeld.serve();
     Ok(())
+}
+
+/// The `start_failed` line and a failing exit.
+fn start_failed(code: &str, error: &str) -> ExitCode {
+    casual_sign_seclog::write_strs(
+        casual_sign_seclog::Service::Modeld,
+        casual_sign_seclog::Level::Error,
+        "start_failed",
+        &[("code", code), ("error", error)],
+    );
+    ExitCode::FAILURE
 }
 
 fn main() -> ExitCode {
@@ -126,11 +145,12 @@ fn main() -> ExitCode {
     {
         return child_main(rest);
     }
+    // A malformed pseudonym key stops modeld, as it stops the server and the console.
+    if let Err(e) = casual_sign_seclog::Pseudonymizer::from_env() {
+        return start_failed(e.code(), &e.to_string());
+    }
     match run() {
         Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("modeld: {e}");
-            ExitCode::FAILURE
-        }
+        Err(e) => start_failed(e.code(), &e.to_string()),
     }
 }

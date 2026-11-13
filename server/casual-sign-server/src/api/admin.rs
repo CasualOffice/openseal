@@ -31,7 +31,9 @@ use crate::dto::parse;
 use crate::error::ApiError;
 use crate::http::{SecretBearing, limit};
 use crate::net::ClientIp;
+use crate::security::{self, subject, subject_email};
 use crate::state::AppState;
+use casual_sign_seclog::{Kind, Principal as Who, Value as SecValue};
 
 // Account -------------------------------------------------------------------------------
 
@@ -642,12 +644,20 @@ pub(crate) async fn accept_invite(
     axum::Extension(ip): axum::Extension<ClientIp>,
     body: Bytes,
 ) -> Response {
-    match accept_inner(&st, ip, &body).await {
+    let mut who = None;
+    let r = match accept_inner(&st, ip, &body, &mut who).await {
         Ok(r) | Err(r) => r,
-    }
+    };
+    security::answered(&st, Kind::InviteAccept, &r, |ev| identified(ev, who));
+    r
 }
 
-async fn accept_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Response, Response> {
+async fn accept_inner(
+    st: &AppState,
+    ip: ClientIp,
+    body: &[u8],
+    who: &mut Identified,
+) -> Result<Response, Response> {
     let req: AcceptIn = parse(body).map_err(IntoResponse::into_response)?;
     login_limit(st, ip, "accept-invite")?;
     let refuse = || ApiError::expired().into_response();
@@ -665,6 +675,7 @@ async fn accept_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respon
     let Some((account, invitation, user)) = found else {
         return Err(refuse());
     };
+    *who = Some((Who::User(user.0), Some(account.0)));
     let password = req.password.clone();
     let phc = tokio::task::spawn_blocking(move || hash_password(&password))
         .await
@@ -1019,14 +1030,40 @@ pub(crate) async fn login(
     axum::Extension(ip): axum::Extension<ClientIp>,
     body: Bytes,
 ) -> Response {
-    match login_inner(&st, ip, &body).await {
+    let mut who = None;
+    let r = match login_inner(&st, ip, &body, &mut who).await {
         Ok(r) | Err(r) => r,
+    };
+    security::answered(&st, Kind::SignIn, &r, |ev| {
+        identified(ev, who).with("via", SecValue::Word("password"))
+    });
+    r
+}
+
+/// Who a sign-in step names: the user and account once known, before that a pseudonym
+/// of what was presented (ASVS-08).
+type Identified = Option<(Who, Option<Uuid>)>;
+
+fn identified(
+    ev: casual_sign_seclog::SecurityEvent,
+    who: Identified,
+) -> casual_sign_seclog::SecurityEvent {
+    match who {
+        Some((p, Some(a))) => ev.principal(p).account(a),
+        Some((p, None)) => ev.principal(p),
+        None => ev,
     }
 }
 
-async fn login_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Response, Response> {
+async fn login_inner(
+    st: &AppState,
+    ip: ClientIp,
+    body: &[u8],
+    who: &mut Identified,
+) -> Result<Response, Response> {
     let req: LoginIn = parse(body).map_err(IntoResponse::into_response)?;
     let email = req.email.trim().to_lowercase();
+    *who = Some((subject_email(st, &email), None));
     login_limit(st, ip, &email)?;
     let found = st
         .store()
@@ -1069,6 +1106,7 @@ async fn login_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respons
     let (Some((user, account)), true) = (target, ok) else {
         return Err(ApiError::bad_credentials().into_response());
     };
+    *who = Some((Who::User(user.0), Some(account.0)));
     let now = st.now();
     let secret = random_secret().map_err(IntoResponse::into_response)?;
     let csrf = random_secret().map_err(IntoResponse::into_response)?;
@@ -1115,7 +1153,15 @@ async fn login_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respons
 }
 
 /// `POST /auth/logout`: end the current session.
-pub(crate) async fn logout(c: Call) -> Result<Response, ApiError> {
+pub(crate) async fn logout(c: Call) -> Response {
+    let r = logout_inner(&c)
+        .await
+        .unwrap_or_else(IntoResponse::into_response);
+    security::answered(&c.st, Kind::SignOut, &r, |ev| ev);
+    r
+}
+
+async fn logout_inner(c: &Call) -> Result<Response, ApiError> {
     let Credential::Session(s) = c.p.credential else {
         return Err(ApiError::invalid("/credential"));
     };
@@ -1159,13 +1205,14 @@ struct TokenIn {
     scope: Option<String>,
 }
 
-fn oauth_error(status: StatusCode, error: &str, code: &str) -> Response {
+fn oauth_error(status: StatusCode, error: &str, code: &'static str) -> Response {
     let mut r = json(
         status,
         &json!({ "error": error, "error_description": code }),
     );
     r.headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    r.extensions_mut().insert(security::ProblemCode(code));
     r
 }
 
@@ -1194,14 +1241,27 @@ pub(crate) async fn token(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let mut who = None;
+    let r = token_inner(&st, ip, &headers, &body, &mut who).await;
+    security::answered(&st, Kind::Token, &r, |ev| identified(ev, who));
+    r
+}
+
+async fn token_inner(
+    st: &AppState,
+    ip: ClientIp,
+    headers: &HeaderMap,
+    body: &[u8],
+    who: &mut Identified,
+) -> Response {
     let form = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|t| t.starts_with("application/x-www-form-urlencoded"));
     let req: Option<TokenIn> = if form {
-        serde_urlencoded_parse(&body)
+        serde_urlencoded_parse(body)
     } else {
-        serde_json::from_slice(&body).ok()
+        serde_json::from_slice(body).ok()
     };
     let Some(req) = req else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "CS-API-0001");
@@ -1214,11 +1274,15 @@ pub(crate) async fn token(
         );
     }
     let Some((id, secret)) =
-        basic(&headers).or(req.client_id.clone().zip(req.client_secret.clone()))
+        basic(headers).or(req.client_id.clone().zip(req.client_secret.clone()))
     else {
         return oauth_error(StatusCode::UNAUTHORIZED, "invalid_client", "CS-AUTH-0007");
     };
-    if let Err(r) = login_limit(&st, ip, &format!("client:{id}")) {
+    *who = Some((
+        Uuid::parse_str(&id).map_or_else(|_| subject(st, &id), Who::Client),
+        None,
+    ));
+    if let Err(r) = login_limit(st, ip, &format!("client:{id}")) {
         return r;
     }
     let now = st.now();
@@ -1233,6 +1297,7 @@ pub(crate) async fn token(
     if Uuid::parse_str(&id).ok() != Some(client.0) {
         return oauth_error(StatusCode::UNAUTHORIZED, "invalid_client", "CS-AUTH-0007");
     }
+    *who = Some((Who::Client(client.0), Some(account.0)));
     let Ok(mut tx) = st.store().for_account(account).begin().await else {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1599,8 +1664,20 @@ struct MePatch {
 /// password are the user's in every account, so they change only through the user's own
 /// session (SEC-ID-01). A new password needs the current one (`401 CS-AUTH-0007` when
 /// wrong) and ends every other session of the user, in every account; this one stays.
-pub(crate) async fn patch_me(c: Call, body: Bytes) -> Result<Response, ApiError> {
-    let req: MePatch = parse(&body)?;
+pub(crate) async fn patch_me(c: Call, body: Bytes) -> Response {
+    let mut changing = false;
+    let r = patch_me_inner(&c, &body, &mut changing)
+        .await
+        .unwrap_or_else(IntoResponse::into_response);
+    if changing {
+        security::answered(&c.st, Kind::PasswordChange, &r, |ev| ev);
+    }
+    r
+}
+
+async fn patch_me_inner(c: &Call, body: &[u8], changing: &mut bool) -> Result<Response, ApiError> {
+    let req: MePatch = parse(body)?;
+    *changing = req.password.is_some();
     let session = match c.p.credential {
         Credential::Session(s) => Some(s),
         _ => None,
@@ -1704,7 +1781,7 @@ pub(crate) async fn patch_me(c: Call, body: Bytes) -> Result<Response, ApiError>
         };
         tx.users().set_member_profile(c.p.user, &p, now).await?;
     }
-    let v = me_json(&c, &mut tx).await?;
+    let v = me_json(c, &mut tx).await?;
     tx.commit().await?;
     Ok(json(StatusCode::OK, &v))
 }
@@ -1727,14 +1804,25 @@ pub(crate) async fn password_reset(
     axum::Extension(ip): axum::Extension<ClientIp>,
     body: Bytes,
 ) -> Response {
-    match reset_inner(&st, ip, &body).await {
+    let mut who = None;
+    let r = match reset_inner(&st, ip, &body, &mut who).await {
         Ok(r) | Err(r) => r,
-    }
+    };
+    security::answered(&st, Kind::PasswordResetRequest, &r, |ev| {
+        identified(ev, who)
+    });
+    r
 }
 
-async fn reset_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Response, Response> {
+async fn reset_inner(
+    st: &AppState,
+    ip: ClientIp,
+    body: &[u8],
+    who: &mut Identified,
+) -> Result<Response, Response> {
     let req: ResetIn = parse(body).map_err(IntoResponse::into_response)?;
     let email = normalize_email(&req.email).map_err(IntoResponse::into_response)?;
+    *who = Some((subject_email(st, &email), None));
     login_limit(st, ip, &format!("password-reset:{email}"))?;
     let now = st.now();
     let reset = casual_sign_store::PasswordResetId(Uuid::now_v7());
@@ -1761,12 +1849,20 @@ pub(crate) async fn password_reset_confirm(
     axum::Extension(ip): axum::Extension<ClientIp>,
     body: Bytes,
 ) -> Response {
-    match confirm_inner(&st, ip, &body).await {
+    let mut who = None;
+    let r = match confirm_inner(&st, ip, &body, &mut who).await {
         Ok(r) | Err(r) => r,
-    }
+    };
+    security::answered(&st, Kind::PasswordReset, &r, |ev| identified(ev, who));
+    r
 }
 
-async fn confirm_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Response, Response> {
+async fn confirm_inner(
+    st: &AppState,
+    ip: ClientIp,
+    body: &[u8],
+    who: &mut Identified,
+) -> Result<Response, Response> {
     let req: AcceptIn = parse(body).map_err(IntoResponse::into_response)?;
     login_limit(st, ip, "password-reset-confirm")?;
     let refuse = || ApiError::expired().into_response();
@@ -1784,6 +1880,7 @@ async fn confirm_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respo
     let Some((account, reset, user)) = found else {
         return Err(refuse());
     };
+    *who = Some((Who::User(user.0), Some(account.0)));
     let password = req.password.clone();
     let phc = tokio::task::spawn_blocking(move || hash_password(&password))
         .await

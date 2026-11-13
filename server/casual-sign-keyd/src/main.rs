@@ -19,6 +19,7 @@
 //! | `OPENSEAL_KEYD_PKCS11_PIN` or `OPENSEAL_KEYD_PKCS11_PIN_FILE` | User PIN (the file form is the private one) |
 //! | `OPENSEAL_KEYD_FILE_KEY` | A PEM key file instead of PKCS#11: development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_KEYD_SIGNATURES_PER_MINUTE` | Per-caller rate (default 600) |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: keyd does not start (`CS-LOG-0001`) |
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -31,7 +32,20 @@ use casual_sign_keyd::{
 };
 use casual_sign_secrets::{env_secret, unknown_secret_files};
 
-const KNOWN_SECRET_FILES: &[&str] = &["OPENSEAL_KEYD_PKCS11_PIN_FILE"];
+const KNOWN_SECRET_FILES: &[&str] = &[
+    "OPENSEAL_KEYD_PKCS11_PIN_FILE",
+    // Read by the security log's pseudonym key (`casual-sign-seclog`, ASVS-08).
+    "OPENSEAL_LOG_PSEUDONYM_KEY_FILE",
+];
+
+/// One JSON log line (`casual-sign-seclog`, ASVS-08) with string fields.
+fn log_line(level: casual_sign_seclog::Level, event: &str, fields: &[(&str, String)]) {
+    let mut m = serde_json::Map::new();
+    for (k, v) in fields {
+        m.insert((*k).to_owned(), serde_json::Value::String(v.clone()));
+    }
+    casual_sign_seclog::write(casual_sign_seclog::Service::Keyd, level, event, m);
+}
 
 fn var(name: &'static str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
@@ -98,7 +112,11 @@ fn key() -> Result<Arc<dyn DigestSigner>, KeydError> {
                 chain("OPENSEAL_KEYD_CHAIN")?.ok_or(KeydError::Setting("OPENSEAL_KEYD_CHAIN"))?;
             let key = FileKey::load(consent, &key_pem, chain, rsa)?;
             casual_sign_keyd::probe(&key)?;
-            eprintln!("keyd: DEVELOPMENT FILE KEY in use; not for production");
+            log_line(
+                casual_sign_seclog::Level::Warn,
+                "development_file_key",
+                &[("note", "not for production".into())],
+            );
             Ok(Arc::new(key))
         }
         (Some(module), None) => {
@@ -132,7 +150,11 @@ fn key() -> Result<Arc<dyn DigestSigner>, KeydError> {
 
 fn run() -> Result<(), KeydError> {
     for name in unknown_secret_files(std::env::vars().map(|(k, _)| k), KNOWN_SECRET_FILES) {
-        eprintln!("keyd: {name} is set but read by nothing (misspelled?)");
+        log_line(
+            casual_sign_seclog::Level::Warn,
+            "secret_file_unread",
+            &[("variable", name.clone())],
+        );
     }
     let tls = server_tls(
         &read("OPENSEAL_KEYD_TLS_CERT", &need("OPENSEAL_KEYD_TLS_CERT")?)?,
@@ -170,16 +192,33 @@ fn run() -> Result<(), KeydError> {
     service.add_key(&alias, key()?)?;
     let listen = var("OPENSEAL_KEYD_LISTEN").unwrap_or_else(|| "127.0.0.1:7443".into());
     let keyd = Keyd::bind(&listen, tls, service)?;
-    eprintln!("keyd: serving alias {alias} on {}", keyd.local_addr()?);
+    log_line(
+        casual_sign_seclog::Level::Info,
+        "serving",
+        &[("alias", alias), ("listen", keyd.local_addr()?.to_string())],
+    );
     keyd.serve();
     Ok(())
 }
 
 fn main() -> ExitCode {
+    // A malformed pseudonym key stops keyd, as it stops the server and the console.
+    if let Err(e) = casual_sign_seclog::Pseudonymizer::from_env() {
+        log_line(
+            casual_sign_seclog::Level::Error,
+            "start_failed",
+            &[("code", e.code().into()), ("error", e.to_string())],
+        );
+        return ExitCode::FAILURE;
+    }
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("keyd: {e}");
+            log_line(
+                casual_sign_seclog::Level::Error,
+                "start_failed",
+                &[("code", e.code().into()), ("error", e.to_string())],
+            );
             ExitCode::FAILURE
         }
     }

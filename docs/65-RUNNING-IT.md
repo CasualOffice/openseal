@@ -187,8 +187,78 @@ deployment, upload the EICAR test file (the 68-byte string from eicar.org) as a 
 | Trust | Bundle your organization's roots for verification; enable the EU LOTL if you verify EU signatures. `OPENSEAL_TRUST_ANCHORS` on the worker must hold the root of your seal certificate **and** the root of every TSA you configure: a CA hands out the certificate and its issuing CA, never the offline root, and a TSA's token stops below its root too, so B-LT and B-LTA seals take the root from these anchors when they collect revocation data (and the seal's self-check needs them anyway) |
 | Interoperability | Before going live, rehearse with `tools/interop/interop.py check` (a real-style PKI and TSA served locally; docs/31 §Verification ladder), and with your production TSA: `OPENSEAL_INTEROP_NETWORK=1 … check --tsa-url URL --tsa-root ROOT.pem`. DigiCert's TSA passed on 2026-11-14; a TSA whose tokens use ESSCertID v1 (SHA-1), such as FreeTSA, is refused with `CS-SEAL-0005` until `SEAL-14` |
 | ERSD | Have counsel review the consumer disclosure for your jurisdictions before sending to consumers |
-| Observability | OTLP endpoint for traces and metrics; alert on seal failures, TSA failover, email bounce rate, job backlog |
+| Observability | Ship the logs off the box (§Logs: `deploy/compose.log-forwarding.yml`, syslog over mutual TLS) and set `OPENSEAL_LOG_PSEUDONYM_KEY` on the server and the console; alert on the security events §Logs lists, seal failures, `transport.backend_failed` (keyd, TSA failover), email bounce rate and job backlog. OTLP traces and metrics are not built yet (`CON-11`) |
 | Retention | Set account retention policies before go-live; document them in your records schedule |
+
+## Logs
+
+**One format.** The server, worker, keyd, modeld and console write one JSON object per line to standard error
+(`server/casual-sign-seclog`, `ASVS-08`): `ts` (RFC 3339, UTC), `level` (`DEBUG`, `INFO`, `WARN`, `ERROR`), `service`
+(`server`, `worker`, `keyd`, `modeld`, `console`), `event`, then the event's fields. The server's access log is
+`"event":"request"` with `request_id`, `method`, `route` (the template, never the path), `status` and `ms`. `RUST_LOG`
+filters the server's and console's operational lines (default `info`); modeld's filter is fixed (docs/33 §3.4). No
+line carries a name, an e-mail address, a client address, a token, a password or document text (`SEC-D01`,
+`SEC-D06`).
+A process's own lines are JSON too: `start_failed` (`ERROR`, with the setting that failed in `error` and, whenever
+the failure has a docs/20 code, that code in its own `code` field, so alert on `code`) whenever a binary does not
+start, and `development_token_key`, `development_mfa_key` (server) and
+`development_file_key` (keyd) as `WARN` lines when a development key is in use; alert on these in production.
+
+**Security events** are `"event":"security"` lines, never filtered by `RUST_LOG`, with `kind`, `outcome` (`success`,
+`failure`; a failure is `WARN`), and where known `request_id`, `route`, `code` (docs/20), `account_id`, `principal`
+and `client`:
+
+| `kind` | Emitted by | When |
+| --- | --- | --- |
+| `auth.sign_in` | server, console | A password sign-in passed or was refused (`via: password`) |
+| `auth.sign_out` | server, console | A session ended by its holder |
+| `auth.mfa` | server, console | A second factor checked (`factor: totp` or `recovery_code`); `reason: reused` for a code of a time step already used (ASVS 2.8.5) |
+| `auth.mfa_enrol` | server, console | A TOTP factor confirmed, or its confirmation refused |
+| `auth.password_reset_request`, `auth.password_reset`, `auth.password_change` | server | Reset asked for (alike for any address), a reset link spent or refused, a password changed or the current one refused |
+| `auth.invite_accept` | server | An invitation link spent or refused |
+| `auth.token` | server | An OAuth client-credentials token issued or refused |
+| `auth.lockout` | server | A recipient locked out by failed authentications, and each later request refused for it (`CS-AUTH-0004`) |
+| `access.unauthenticated`, `access.denied`, `access.rate_limited` | server, console (keyd: denied, rate limited) | Every `401`, `403` and `429`; keyd: an admin operation asked by a signing caller, a signature over the caller's rate |
+| `input.upload_refused` | server | An upload over its size (`413`) or refused by admission (its `CS-PDF-*` or other admission code) |
+| `admin.change` | server, console | A committed change on an administrative route (users, groups, profiles, API clients, webhooks, account and organization settings; every console change), with `method` and the `objects` (ids) the path named |
+| `data.document_read` | server | A staff read (`GET`) of a document, the combined PDF, the certificate, an attachment, form data, an audit trail, a document's analysis, the suggestions analysis found (values read from the text), the envelope's fields or one field with their values, or the envelope itself (it embeds every field's value) (ASVS 8.3.5), with the `objects`. Not yet: a change to an envelope or a field answers with the field values without a read line (`ASVS-08C`) |
+| `key.use` | keyd | A signature or a chain given or refused (`op`, `alias`, `envelope_id`; never the digest) |
+| `transport.caller_refused` | keyd, modeld | An mTLS caller refused: a failed handshake (`reason: handshake`) or a certificate off the allow list (`reason: not_allowed`, named by fingerprint) |
+| `transport.backend_failed` | worker | keyd not reached or refusing (its `CS-KEY-*` code) or a time-stamping authority not answering (`CS-WRK-0018`, `backend: tsa`, its `index` in the list and a `reason`: `connect`, `tls`, `timeout`, `status`, `answer`, `address_refused`; never its URL) |
+
+`principal` is `user:<id>`, `client:<id>`, `operator:<id>`, `recipient:<id>`, `caller:<fingerprint>`, or, for an
+identifier presented before anyone is known (the e-mail of a refused sign-in, a client id that matched nothing),
+`subject:p1:<32 hex>`: HMAC-SHA-256 of the value under `OPENSEAL_LOG_PSEUDONYM_KEY`. `client` is the client address
+the same way. Set the key (32 random bytes as base64, or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE`) to the same value on the
+server and the console so the same address gives the same pseudonym in both and across restarts; unset, each process
+draws its own. A malformed key stops every service that reads it (server, console, worker, keyd and modeld, each with
+a `start_failed` line, `CS-LOG-0001`). Whoever holds the key and a candidate address
+can confirm it, so keep the key with the other secrets, not with the logs.
+
+**Shipping them off the box** (ASVS 1.7.2). The processes open no log socket: the container runtime ships what they
+write. `deploy/compose.log-forwarding.yml` switches every service to Docker's `syslog` driver over mutual TLS
+(RFC 5425 transport, RFC 5424 messages tagged `openseal/<container>`, facility `authpriv`, non-blocking with a 4 MB
+buffer):
+
+```sh
+OPENSEAL_SYSLOG_ADDRESS=tcp+tls://logs.example.internal:6514 \
+OPENSEAL_SYSLOG_CA=/etc/openseal/syslog/ca.pem \
+OPENSEAL_SYSLOG_CERT=/etc/openseal/syslog/client.pem \
+OPENSEAL_SYSLOG_KEY=/etc/openseal/syslog/client.key \
+docker compose -f docker-compose.yml -f deploy/compose.log-forwarding.yml up -d
+```
+
+All four are required (Compose refuses to start without them) and the three files are read by the Docker daemon on
+the host. The collector can be rsyslog or syslog-ng with a TLS listener, or an OpenTelemetry Collector whose `syslog`
+receiver (`tcp` with `tls`, `protocol: rfc5424`) forwards as OTLP to your log platform; each message's body is the
+JSON line. On Kubernetes, the node's log agent (Fluent Bit, the OpenTelemetry Collector's `filelog` receiver) reads the
+same lines from the container runtime and sends them over TLS. `docker compose logs` reads nothing once the syslog
+driver is on: read the collector. Alert on: `auth.sign_in` failures per `principal` or `client`, `auth.lockout`,
+`auth.mfa` with `reason: reused`, `access.denied` bursts, `transport.caller_refused`, `transport.backend_failed`, and
+on the collector receiving nothing from a service for five minutes (a dropped buffer is otherwise silent). Checked:
+`docker compose -f docker-compose.yml -f deploy/compose.log-forwarding.yml --profile ml config` gives every service
+the driver with these options (2026-11-14); a delivery to a live TLS collector is to be shown on a Linux host
+(`ASVS-08A`).
 
 ## Configuration
 
@@ -201,6 +271,7 @@ All configuration through environment variables; every secret also accepted as `
 generated from the code into this page is still to come. The server's: `OPENSEAL_DATABASE_URL`,
 `OPENSEAL_JWT_SIGNING_KEY`, `OPENSEAL_BLOB_DIR` or `OPENSEAL_S3_*`, `OPENSEAL_PUBLIC_URL`, `OPENSEAL_LISTEN`,
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, `OPENSEAL_WEBAPP_DIR`, `OPENSEAL_RECIPIENT_IDPS_FILE`,
+`OPENSEAL_LOG_PSEUDONYM_KEY` (§Logs; also the console's),
 `OPENSEAL_MFA_KEY` (32 random bytes as base64, sealing staff TOTP seeds; keep it with the database backups, since a
 seed sealed under a lost key cannot be opened and its users must enrol again; ASVS-01), `OPENSEAL_CLAMD_*` (§Malware
 scanning); `migrate` reads

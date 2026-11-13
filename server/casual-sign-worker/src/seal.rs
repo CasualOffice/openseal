@@ -610,6 +610,27 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
     })
 }
 
+/// The platform key `alias` in keyd at `endpoint`, every signature keyd does not give
+/// logged as `transport.backend_failed` with keyd's code (`ASVS-08`, ASVS 9.2.5), as is
+/// a failure to reach it now.
+///
+/// # Errors
+/// keyd's: `CS-KEY-0011` when it cannot be reached or the handshake fails, the code it
+/// answered otherwise.
+pub fn connect_keyd(
+    endpoint: casual_sign_keyd::Endpoint,
+    alias: &str,
+) -> core::result::Result<RemoteKey, casual_sign_keyd::KeydError> {
+    let failed = |e: &casual_sign_keyd::KeydError| crate::backend_failed("keyd", e.code(), &[]);
+    match RemoteKey::connect(endpoint, alias) {
+        Ok(k) => Ok(k.on_failure(Arc::new(failed))),
+        Err(e) => {
+            failed(&e);
+            Err(e)
+        }
+    }
+}
+
 /// The platform key for `s`, and whether it is a development key.
 fn key_for(services: &SealServices, s: &EnvelopeState) -> Result<(Box<dyn KeyProvider>, bool)> {
     Ok(match &services.key {

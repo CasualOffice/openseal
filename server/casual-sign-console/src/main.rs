@@ -17,6 +17,7 @@
 //! | `OPENSEAL_CONSOLE_KEYD_CA` | PEM path: the CA keyd's server certificate chains to |
 //! | `OPENSEAL_CONSOLE_KEYD_CLIENT_CERT` | PEM path: the console's admin client certificate, whose fingerprint is on keyd's `OPENSEAL_KEYD_ADMIN_ALLOW_LIST` (never its signing list) |
 //! | `OPENSEAL_CONSOLE_KEYD_CLIENT_KEY` (secret) | Its private key (PEM) |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` (secret) | 32 bytes as base64: keys the pseudonyms security events give a presented e-mail or client address (ASVS-08); the same value as the server's so they match; none: a key per process; malformed: the console does not start (`CS-LOG-0001`) |
 //! | `OPENSEAL_CONSOLE_TSA_ALLOW` | Comma-separated CIDRs a proposed TSA URL may resolve to although not public (`CON-07`; default none) |
 //! | `OPENSEAL_MIGRATE_DATABASE_URL` (secret) | `set-service-target` and `remove-service-target` only: the schema owner |
 //!
@@ -42,8 +43,10 @@ use casual_sign_platform_store::sqlx::postgres::PgPoolOptions;
 use casual_sign_platform_store::{Detail, EventDraft, NewOperator, PlatformStore, ServiceTarget};
 use casual_sign_secrets::env_secret;
 
+/// The `start_failed` line (one JSON line, ASVS 1.7.1) and a failing exit.
+/// A docs/20 code in `what` is also its `code` field (`casual_sign_seclog::start_failed`).
 fn fail(what: &str) -> ExitCode {
-    eprintln!("casual-sign-console: {what}");
+    casual_sign_seclog::start_failed(casual_sign_seclog::Service::Console, what);
     ExitCode::FAILURE
 }
 
@@ -163,6 +166,15 @@ async fn serve() -> ExitCode {
         Ok(s) => s,
         Err(e) => return fail(&e.to_string()),
     };
+    // Security events, their pseudonyms keyed by OPENSEAL_LOG_PSEUDONYM_KEY (ASVS-08).
+    match casual_sign_seclog::Pseudonymizer::from_env() {
+        Ok(p) => state.set_security_log(casual_sign_seclog::SecurityLog::new(
+            casual_sign_seclog::Service::Console,
+            Arc::new(casual_sign_seclog::Stderr),
+            p,
+        )),
+        Err(e) => return fail(&e.to_string()),
+    }
     let listener = match tokio::net::TcpListener::bind(listen).await {
         Ok(l) => l,
         Err(_) => return fail("cannot bind OPENSEAL_CONSOLE_LISTEN"),
@@ -281,12 +293,19 @@ async fn service_target(args: &[String]) -> ExitCode {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    {
+        use tracing_subscriber::Layer as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+        // One JSON line per event on standard error (ASVS-08, docs/65 §Logs).
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        let _ = tracing::subscriber::set_global_default(
+            tracing_subscriber::registry().with(
+                casual_sign_seclog::JsonLayer::stderr(casual_sign_seclog::Service::Console)
+                    .with_filter(filter),
+            ),
+        );
+    }
     casual_sign_console::quiet_panics();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {

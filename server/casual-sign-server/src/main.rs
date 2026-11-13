@@ -18,6 +18,7 @@
 //! | `OPENSEAL_TRUSTED_PROXIES` | Comma-separated CIDRs whose forwarding headers count |
 //! | `OPENSEAL_GEOIP_DB` | Optional GeoIP `.mmdb` the operator supplies (row GEO-01) |
 //! | `OPENSEAL_ML_BUNDLE_ID` | The model bundle deployed with `casual-sign-modeld` (docs/33 §7); none: document analysis is not installed |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` (secret) | 32 bytes as base64: keys the pseudonyms security events give a presented e-mail or client address (ASVS-08); share it with the console so they match; none: a key per process; malformed: the server does not start (`CS-LOG-0001`) |
 //! | `OPENSEAL_MFA_KEY` (secret) | 32 bytes as base64: seals staff TOTP seeds (ASVS-01); none: staff cannot enrol a second factor and no account may require one |
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key and second-factor key, plain-HTTP cookies |
 //! | `OPENSEAL_CLAMD_ADDR` | `host:port` of ClamAV's clamd (ASVS-11): every upload is scanned before it is read or stored; none: nothing is scanned (a warning at start) |
@@ -43,6 +44,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use base64::Engine as _;
+use casual_sign_seclog::Level;
 use casual_sign_secrets::env_secret;
 use casual_sign_server::net::{Cidr, ClientIp};
 use casual_sign_server::{
@@ -51,9 +53,16 @@ use casual_sign_server::{
 use casual_sign_store::Store;
 use casual_sign_store::blob::{FsBlobStore, S3BlobStore, S3Config};
 
+/// The `start_failed` line (one JSON line, ASVS-08) and a failing exit.
+/// A docs/20 code in `what` is also its `code` field (`casual_sign_seclog::start_failed`).
 fn fail(what: &str) -> ExitCode {
-    eprintln!("casual-sign-server: {what}");
+    casual_sign_seclog::start_failed(casual_sign_seclog::Service::Server, what);
     ExitCode::FAILURE
+}
+
+/// One JSON log line of the server's own (`casual-sign-seclog`, ASVS 1.7.1).
+fn note(level: Level, event: &str, fields: &[(&str, &str)]) {
+    casual_sign_seclog::write_strs(casual_sign_seclog::Service::Server, level, event, fields);
 }
 
 fn secret(name: &str) -> Result<Option<String>, String> {
@@ -76,7 +85,11 @@ fn jwt_key() -> Result<JwtKeys, String> {
             JwtKeys::from_pkcs8(&der).map_err(|e| format!("OPENSEAL_JWT_SIGNING_KEY: {}", e.code()))
         }
         None if std::env::var("OPENSEAL_DEV_INSECURE_KEY").as_deref() == Ok("1") => {
-            eprintln!("casual-sign-server: development token key; never in production");
+            note(
+                Level::Warn,
+                "development_token_key",
+                &[("note", "never in production")],
+            );
             JwtKeys::generate().map_err(|e| e.code().to_owned())
         }
         None => Err("OPENSEAL_JWT_SIGNING_KEY is not set".into()),
@@ -97,7 +110,11 @@ fn mfa_key() -> Result<Option<casual_sign_server::MfaKey>, String> {
                 .map_err(|_| "OPENSEAL_MFA_KEY: not 32 bytes".to_owned())
         }
         None if std::env::var("OPENSEAL_DEV_INSECURE_KEY").as_deref() == Ok("1") => {
-            eprintln!("casual-sign-server: development second-factor key; never in production");
+            note(
+                Level::Warn,
+                "development_mfa_key",
+                &[("note", "never in production")],
+            );
             casual_sign_server::MfaKey::generate()
                 .map(Some)
                 .map_err(|e| e.code().to_owned())
@@ -205,13 +222,19 @@ async fn migrate() -> ExitCode {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with_ansi(false)
-        .init();
+    {
+        use tracing_subscriber::Layer as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+        // One JSON line per event on standard error (ASVS-08, docs/65 §Logs).
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        let _ = tracing::subscriber::set_global_default(
+            tracing_subscriber::registry().with(
+                casual_sign_seclog::JsonLayer::stderr(casual_sign_seclog::Service::Server)
+                    .with_filter(filter),
+            ),
+        );
+    }
     casual_sign_server::quiet_panics();
     casual_sign_host::crash::startup();
     match std::env::args().nth(1).as_deref() {
@@ -308,6 +331,22 @@ async fn main() -> ExitCode {
         }
         None => {
             tracing::warn!("OPENSEAL_CLAMD_ADDR is not set: uploads are not scanned for malware")
+        }
+    }
+    // Security events, their pseudonyms keyed by OPENSEAL_LOG_PSEUDONYM_KEY (ASVS-08).
+    match casual_sign_seclog::Pseudonymizer::from_env() {
+        Ok(p) => state.set_security_log(casual_sign_seclog::SecurityLog::new(
+            casual_sign_seclog::Service::Server,
+            Arc::new(casual_sign_seclog::Stderr),
+            p,
+        )),
+        Err(e) => {
+            note(
+                Level::Error,
+                "start_failed",
+                &[("code", e.code()), ("error", &e.to_string())],
+            );
+            return ExitCode::FAILURE;
         }
     }
     match mfa_key() {

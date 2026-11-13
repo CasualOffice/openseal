@@ -10,7 +10,9 @@
 
 use axum::body::Bytes;
 use axum::http::{HeaderValue, StatusCode, header};
+use axum::response::IntoResponse;
 use axum::response::Response;
+use casual_sign_seclog::{Kind, Value};
 use casual_sign_store::StaffSessionId;
 use serde::Deserialize;
 use serde_json::json;
@@ -78,10 +80,36 @@ struct VerifyIn {
 /// `POST /auth/mfa/verify {code} | {recovery_code}`: pass the session's second factor
 /// with a code from the user's authenticator, or by spending a recovery code. `401
 /// CS-AUTH-0012` for a wrong code, a code already used, or a spent recovery code.
-pub(crate) async fn verify(c: Call, body: Bytes) -> Result<Response, ApiError> {
-    let s = session(&c)?;
-    limit(&c)?;
-    let req: VerifyIn = parse(&body)?;
+pub(crate) async fn verify(c: Call, body: Bytes) -> Response {
+    let mut factor = "totp";
+    let mut reused = false;
+    let r = verify_inner(&c, &body, &mut factor, &mut reused)
+        .await
+        .unwrap_or_else(IntoResponse::into_response);
+    crate::security::answered(&c.st, Kind::Mfa, &r, |ev| {
+        let ev = ev.with("factor", Value::Word(factor));
+        // ASVS 2.8.5: a code for a time step already used is logged as such.
+        if reused {
+            ev.with("reason", Value::Word("reused"))
+        } else {
+            ev
+        }
+    });
+    r
+}
+
+async fn verify_inner(
+    c: &Call,
+    body: &[u8],
+    factor: &mut &'static str,
+    reused: &mut bool,
+) -> Result<Response, ApiError> {
+    let s = session(c)?;
+    limit(c)?;
+    let req: VerifyIn = parse(body)?;
+    if req.recovery_code.is_some() {
+        *factor = "recovery_code";
+    }
     let now = c.st.now();
     let mut tx = c.tx().await?;
     match (req.code, req.recovery_code) {
@@ -95,14 +123,16 @@ pub(crate) async fn verify(c: Call, body: Bytes) -> Result<Response, ApiError> {
                 (true, Some(sealed)) => sealed,
                 _ => return Err(ApiError::second_factor_refused()),
             };
-            let seed = key(&c)?.open(own.user_id.0, &sealed)?;
-            let step = totp::matching_step(&seed, code.trim(), now_step(&c))
+            let seed = key(c)?.open(own.user_id.0, &sealed)?;
+            let step = totp::matching_step(&seed, code.trim(), now_step(c))
                 .ok_or_else(ApiError::second_factor_refused)?;
             let step = i64::try_from(step).map_err(|_| ApiError::internal("step"))?;
-            tx.sessions()
-                .verify_own_totp(s, step, now)
-                .await?
-                .ok_or_else(ApiError::second_factor_refused)?;
+            // The code matched; refused now only for a step already used. A database
+            // error here is not a reused code (`reason: reused` is the replay alert).
+            if tx.sessions().verify_own_totp(s, step, now).await?.is_none() {
+                *reused = true;
+                return Err(ApiError::second_factor_refused());
+            }
             tx.commit().await?;
             Ok(json(StatusCode::OK, &json!({ "second_factor": "passed" })))
         }
@@ -163,11 +193,21 @@ struct ConfirmIn {
 /// enrolment; the answer shows the ten recovery codes once, and the session has passed
 /// its second factor. `401 CS-AUTH-0012` for a wrong code; `409 CS-API-0009` before
 /// `enrol` or after a confirmation.
-pub(crate) async fn confirm(c: Call, body: Bytes) -> Result<Response, ApiError> {
-    let s = session(&c)?;
-    limit(&c)?;
-    let req: ConfirmIn = parse(&body)?;
-    let key = key(&c)?;
+pub(crate) async fn confirm(c: Call, body: Bytes) -> Response {
+    let r = confirm_inner(&c, &body)
+        .await
+        .unwrap_or_else(IntoResponse::into_response);
+    crate::security::answered(&c.st, Kind::MfaEnrol, &r, |ev| {
+        ev.with("factor", Value::Word("totp"))
+    });
+    r
+}
+
+async fn confirm_inner(c: &Call, body: &[u8]) -> Result<Response, ApiError> {
+    let s = session(c)?;
+    limit(c)?;
+    let req: ConfirmIn = parse(body)?;
+    let key = key(c)?;
     let now = c.st.now();
     let mut tx = c.tx().await?;
     let own = tx
@@ -181,7 +221,7 @@ pub(crate) async fn confirm(c: Call, body: Bytes) -> Result<Response, ApiError> 
         (false, None) => return Err(ApiError::not_available("enrol first")),
     };
     let seed = key.open(own.user_id.0, &sealed)?;
-    let step = totp::matching_step(&seed, req.code.trim(), now_step(&c))
+    let step = totp::matching_step(&seed, req.code.trim(), now_step(c))
         .ok_or_else(ApiError::second_factor_refused)?;
     let step = i64::try_from(step).map_err(|_| ApiError::internal("step"))?;
     let mut codes = Vec::with_capacity(RECOVERY_CODES);

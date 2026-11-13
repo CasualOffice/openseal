@@ -14,8 +14,12 @@ use crate::wire::{Request, Response, valid_id};
 /// Largest signature accepted from keyd (RSA 8192 is 1,024 bytes).
 const MAX_SIGNATURE: usize = 1024;
 
+/// Told of each signature keyd did not give (unreachable, handshake refused, refused
+/// by keyd): the caller's security log (`ASVS-08`, ASVS 9.2.5).
+pub type FailureHook = std::sync::Arc<dyn Fn(&KeydError) + Send + Sync>;
+
 /// A key held by a remote keyd.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RemoteKey {
     endpoint: Endpoint,
     alias: String,
@@ -23,6 +27,20 @@ pub struct RemoteKey {
     algorithm: SignatureAlgorithm,
     development: bool,
     chain: Vec<Certificate>,
+    on_failure: Option<FailureHook>,
+}
+
+impl core::fmt::Debug for RemoteKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("RemoteKey")
+            .field("endpoint", &self.endpoint)
+            .field("alias", &self.alias)
+            .field("envelope", &self.envelope)
+            .field("algorithm", &self.algorithm)
+            .field("development", &self.development)
+            .field("chain", &self.chain.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl RemoteKey {
@@ -63,7 +81,15 @@ impl RemoteKey {
             algorithm,
             development,
             chain,
+            on_failure: None,
         })
+    }
+
+    /// The same key, telling `hook` of every signature keyd does not give.
+    #[must_use]
+    pub fn on_failure(mut self, hook: FailureHook) -> Self {
+        self.on_failure = Some(hook);
+        self
     }
 
     /// The same key, with signatures recorded in keyd's log against `envelope`.
@@ -102,7 +128,7 @@ impl DigestSigner for RemoteKey {
     fn sign_digest(&self, digest: &[u8]) -> Result<Vec<u8>, KeydError> {
         crate::signer::check_digest(self.algorithm, digest)?;
         let alg = wire_id(self.algorithm).ok_or(KeydError::Malformed("algorithm"))?;
-        let resp = call(
+        let answer = call(
             &self.endpoint,
             &Request::Sign {
                 alias: self.alias.clone(),
@@ -110,12 +136,16 @@ impl DigestSigner for RemoteKey {
                 digest: digest.to_vec(),
                 envelope: self.envelope.clone(),
             },
-        )?;
-        match resp {
+        )
+        .and_then(|resp| match resp {
             Response::Signature(sig) if !sig.is_empty() && sig.len() <= MAX_SIGNATURE => Ok(sig),
             Response::Error(n) => Err(KeydError::from_number(n)),
             _ => Err(KeydError::Malformed("unexpected answer")),
+        });
+        if let (Err(e), Some(hook)) = (&answer, &self.on_failure) {
+            hook(e);
         }
+        answer
     }
 }
 
