@@ -260,3 +260,26 @@ jobs:
           retention-days: 7
       - if: always()
         run: docker compose down -v
+
+  # ASVS-14 (ASVS 8.1.5, 8.1.6): the restore drill, gated like compose-e2e. A Compose stack
+  # built from this commit signs and seals one envelope and half signs another, is backed
+  # up (encrypted, signed), destroyed with its volumes, and restored into a fresh stack with
+  # its own keys; the sealed PDF must be byte-identical, every chain must verify, and the
+  # half-signed envelope must finish and be sealed there (tools/backup/drill.sh).
+  backup-drill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: tools/backup/drill.sh
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backup-drill
+          path: |
+            target/backup-drill/report.json
+            target/backup-drill/restore.json
+            target/backup-drill/evidence-after.txt
+            target/backup-drill/oplog-after.txt
+            target/backup-drill/compose-*.log
+          if-no-files-found: ignore
+          retention-days: 90

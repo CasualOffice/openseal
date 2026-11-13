@@ -36,7 +36,10 @@ serde = "1.0.200"
 rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
 # S3: SigV4 presigning, sans-IO, BSD-2-Clause. Signing on
 # aws-lc-rs (already in the tree); the HTTP is ureq over rustls, as `casual-sign-cli`.
-rusty-s3 = { version = "0.11.0", default-features = false, features = ["aws-lc-rs"] }
+# `xml`: ListObjectsV2's response read by rusty-s3's own parser (instant-xml, MIT OR
+# Apache-2.0) for `BlobStore::list`, which backups walk (ASVS-14), rather than an XML
+# reader written here.
+rusty-s3 = { version = "0.11.0", default-features = false, features = ["aws-lc-rs", "xml"] }
 ureq = { version = "3.5.1", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 rustls-native-certs = "0.8.5"

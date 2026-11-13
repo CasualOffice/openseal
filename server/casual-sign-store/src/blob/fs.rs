@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{BlobKey, BlobStore, DEFAULT_MAX_BLOB_BYTES, verified, within};
+use super::{BlobKey, BlobListing, BlobStore, DEFAULT_MAX_BLOB_BYTES, verified, within};
 use crate::error::{Result, StoreError};
 
 /// A filesystem blob store. Cheap to clone.
@@ -174,4 +174,125 @@ impl BlobStore for FsBlobStore {
         })
         .await
     }
+
+    async fn list(&self, after: Option<String>) -> Result<BlobListing> {
+        let inner = Arc::clone(&self.inner);
+        blocking(move || inner.list_blocking(after.as_deref())).await
+    }
+}
+
+/// Keys per page of [`FsBlobStore`]'s listing.
+const LIST_PAGE: usize = 1000;
+
+impl Inner {
+    /// Up to [`LIST_PAGE`] keys under the root (`aa/bb/<hex>`), past `after`, walking the
+    /// tree once in key order: each directory's names are read and sorted, the ones
+    /// before the cursor skipped, and the walk stops at the page's last key. A page costs
+    /// the directories it covers, not the whole tree, so listing N blobs reads each
+    /// directory about once. The `tmp` directory holds writes in flight and is not
+    /// listed; anything else that is not a key in its own place is counted as ignored,
+    /// once: all of a directory's strays, those after the page's last key included, on
+    /// the page that enters it from its start (the root's on the first page), never on a
+    /// page that resumes inside it.
+    fn list_blocking(&self, after: Option<&str>) -> Result<BlobListing> {
+        let after = after
+            .map(BlobKey::parse)
+            .transpose()
+            .map_err(|_| StoreError::BlobUnavailable { status: None })?
+            .map(|k| k.hex());
+        let mut page = Page::default();
+        let root = sorted_entries(&self.root)?;
+        if after.is_none() {
+            page.stray(
+                root.iter()
+                    .filter(|(n, d)| n != "tmp" && !(*d && is_hex_pair(n)))
+                    .count(),
+            );
+        }
+        let (resume_a, resume_b) = after
+            .as_deref()
+            .map_or((None, None), |h| (h.get(..2), h.get(2..4)));
+        for (a, is_dir) in &root {
+            if !is_dir || !is_hex_pair(a) || resume_a.is_some_and(|r| a.as_str() < r) {
+                continue;
+            }
+            let a_resumed = resume_a == Some(a.as_str());
+            let a_path = self.root.join(a);
+            let subdirs = sorted_entries(&a_path)?;
+            if !a_resumed {
+                page.stray(subdirs.iter().filter(|(_, d)| !d).count());
+            }
+            for (b, is_dir) in &subdirs {
+                if !is_dir || (a_resumed && resume_b.is_some_and(|r| b.as_str() < r)) {
+                    continue;
+                }
+                let resumed = a_resumed && resume_b == Some(b.as_str());
+                let b_path = a_path.join(b);
+                let files: Vec<(String, Option<BlobKey>)> = sorted_entries(&b_path)?
+                    .into_iter()
+                    .map(|(name, is_dir)| {
+                        let key = BlobKey::parse(&name)
+                            .ok()
+                            .filter(|k| !is_dir && self.path(k) == b_path.join(&name));
+                        (name, key)
+                    })
+                    .collect();
+                // The whole directory's strays, before the walk can stop partway
+                // through it: a page resuming here counts none.
+                if !resumed {
+                    page.stray(files.iter().filter(|(_, k)| k.is_none()).count());
+                }
+                for (name, key) in files {
+                    let past = after.as_deref().is_none_or(|h| name.as_str() > h);
+                    if let Some(k) = key.filter(|_| past) {
+                        page.keys.push(k);
+                        if page.keys.len() == LIST_PAGE {
+                            let next = page.keys.last().map(BlobKey::hex);
+                            return Ok(page.done(next));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(page.done(None))
+    }
+}
+
+/// A listing page being filled.
+#[derive(Default)]
+struct Page {
+    keys: Vec<BlobKey>,
+    ignored: usize,
+}
+
+impl Page {
+    fn stray(&mut self, n: usize) {
+        self.ignored = self.ignored.saturating_add(n);
+    }
+
+    fn done(self, next: Option<String>) -> BlobListing {
+        BlobListing {
+            keys: self.keys,
+            ignored: u64::try_from(self.ignored).unwrap_or(u64::MAX),
+            next,
+        }
+    }
+}
+
+/// Two lower-case hexadecimal digits: a level of the key tree.
+fn is_hex_pair(name: &str) -> bool {
+    name.len() == 2 && name.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// A directory's entries as (name, is a directory), sorted by name; a name that is not
+/// UTF-8 is kept as its lossy form (never a key, so only ever counted as ignored).
+fn sorted_entries(dir: &Path) -> Result<Vec<(String, bool)>> {
+    let mut out = Vec::new();
+    for e in fs::read_dir(dir).map_err(|e| io(&e))? {
+        let e = e.map_err(|e| io(&e))?;
+        let is_dir = e.file_type().map_err(|e| io(&e))?.is_dir();
+        out.push((e.file_name().to_string_lossy().into_owned(), is_dir));
+    }
+    out.sort_unstable();
+    Ok(out)
 }

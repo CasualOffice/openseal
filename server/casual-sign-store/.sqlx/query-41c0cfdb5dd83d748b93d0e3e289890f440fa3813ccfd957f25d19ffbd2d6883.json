@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (r.rolsuper OR r.rolbypassrls\n                       OR (pg_has_role(current_user, c.relowner, 'USAGE')\n                           AND NOT c.relforcerowsecurity)) AS \"sees_all!\"\n               FROM pg_roles r, pg_class c\n               WHERE r.rolname = current_user AND c.oid = 'public.audit_events'::regclass",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sees_all!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "41c0cfdb5dd83d748b93d0e3e289890f440fa3813ccfd957f25d19ffbd2d6883"
+}

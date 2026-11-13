@@ -29,6 +29,10 @@
 //! unless they are exactly the manifest's. `casual-sign-keyd config-manifest` prints the
 //! manifest of the current environment, for the operator to record after an approved
 //! change (docs/65 §Configuration integrity).
+//!
+//! `casual-sign-keyd verify-oplog <path>` verifies an operation log's chain without
+//! starting the daemon (a backup's copy before it is restored, ASVS-14) and prints its
+//! line count and head; it exits non-zero naming the first line that fails.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -290,6 +294,23 @@ fn run() -> Result<(), KeydError> {
 }
 
 fn main() -> ExitCode {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("verify-oplog") {
+        let Some(path) = args.next() else {
+            eprintln!("keyd: usage: verify-oplog <path>");
+            return ExitCode::FAILURE;
+        };
+        return match casual_sign_keyd::oplog::verify(Path::new(&path)) {
+            Ok((lines, head)) => {
+                println!("oplog verified: lines={lines} head={head}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("keyd: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let config = match ConfigDigest::from_env(CONFIG_FILES, CONFIG_VALUES) {
         Ok(c) => c,
         Err(e) => {
