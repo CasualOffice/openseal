@@ -109,7 +109,7 @@ instructions 8 and 9).
 | FG-095 | Expiration and warning | DS, SN | Build | 2 | Partial: an envelope's expiry is set on send or correct; the worker emails the warning (account `workflow_policy.expiry_warning_days`) and expires the envelope on time, telling the sender and the recipients whose turn it was (`VS-02`, worker tests/expiry.rs); an admin sets the warning days on the Organization page (`RTE-03`, `webapp/e2e/admin-screens.spec.mjs`) |
 | FG-096 | Templates with roles | DS, SN | Build | 3 | Works |
 | FG-097 | Composite templates (several into one envelope) | DS | Build | 3 | Designed |
-| FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Designed |
+| FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Partial: sharing with members, groups and the whole workspace (use, or edit with Can edit), Shared with me and Favourites served deny-by-default and in the web app (`UXW-06`), not yet run on the Compose stack; template folders and locking not built (`TSH-03`) |
 | FG-099 | Document group templates | SN | Build | 3 | Designed |
 | FG-100 | Bulk send (CSV, API, test row, progress) | DS, SN | Build | 11 | Designed |
 | FG-101 | Signing links / PowerForms | DS, SN | Build | 11 | Designed |

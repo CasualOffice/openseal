@@ -184,6 +184,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | User invitation link (`WEB-06`) | 256 random bits, 7 days, once | CS-AUTH-0002 |
 | Envelope list `recipient` filter (`UXW-03`) | 200 characters, no control characters | CS-API-0001 |
 | Folders (`UXW-02`): name; folders per member; envelopes per move | 1–100 characters, no control characters; 500; 1–200 | CS-API-0001 |
+| Template shares (`PUT /templates/{id}/shares`, `UXW-06`): shares per template; a member's email | 0–500; 3–320 bytes after trimming | CS-API-0001 |
 | Recipients an agent names in one call (`POST /s/{token}/recipients`, `VS-02`): count; name; email | 1–100; 1–255 characters after trimming; 3–320 bytes with an `@` | CS-API-0001 |
 | Inbox signing link (`POST …/sign-link`, `UXW-01`) | 5 minutes, bound to the first browser | CS-AUTH-0002 |
 | Requests per authenticated principal | 1,200 per minute | CS-API-0003 |
