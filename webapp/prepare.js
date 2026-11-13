@@ -37,7 +37,7 @@ import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from ".
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
 import { sendSummary } from "./people.js";
-import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary } from "./preparemodel.js";
+import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary, recipientPatch } from "./preparemodel.js";
 import { stepControl, recipientRow, libraryItem, toolButton, armHint, ghostBar, templateBanner, appliedChip, loadingPage, checksList, piiCard, assignList, markOcr, sparkle, spinner, KIND_GLYPH } from "./prepareview.js";
 import { mlStatus, featureOn, loadSuggestions, acceptSuggestion, dismissSuggestion, suggestions as mlSuggestions, percent, isUnavailable } from "./ml.js";
 
@@ -1899,11 +1899,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       for (const r of server.recipients || []) if (!keepRecs.has(r.id)) await ctx.api.deleteRecipient(S.id, r.id, await etagNow());
       const serverRecs = new Map((server.recipients || []).map((r) => [r.id, r]));
       for (const r of S.recipients.filter((x) => x.id)) {
-        const s = serverRecs.get(r.id);
-        const want = recipientBody(r);
-        const patch = {};
-        for (const k of ["name", "email", "routing_order"]) if (s && s[k] !== want[k]) patch[k] = want[k];
-        if (Object.keys(patch).length) await ctx.api.patchRecipient(S.id, r.id, await etagNow(), patch);
+        const patch = recipientPatch(serverRecs.get(r.id), recipientBody(r));
+        if (patch) await ctx.api.patchRecipient(S.id, r.id, await etagNow(), patch);
       }
       const fresh = S.recipients.filter((x) => !x.id);
       if (fresh.length) {
