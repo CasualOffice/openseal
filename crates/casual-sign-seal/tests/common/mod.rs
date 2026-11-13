@@ -41,8 +41,9 @@ use der::asn1::{Any, BitString, GeneralizedTime, Int, ObjectIdentifier, OctetStr
 use der::{Decode, Encode, Tag};
 use rcgen::{
     BasicConstraints, CertificateParams, CertificateRevocationListParams, CertifiedIssuer,
-    CustomExtension, DistinguishedName, DnType, IsCa, KeyIdMethod, KeyPair, KeyUsagePurpose,
-    PKCS_ECDSA_P256_SHA256, PKCS_RSA_SHA256, SerialNumber, SigningKey,
+    CrlDistributionPoint, CrlIssuingDistributionPoint, CrlScope, CustomExtension,
+    DistinguishedName, DnType, IsCa, KeyIdMethod, KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256,
+    PKCS_RSA_SHA256, SerialNumber, SigningKey,
 };
 use x509_cert::attr::Attribute;
 use x509_cert::ext::Extension;
@@ -65,6 +66,11 @@ pub const VALIDATION_TIME: Duration = Duration::from_secs(1_796_083_200);
 
 const OCSP_NOCHECK: &[u64] = &[1, 3, 6, 1, 5, 5, 7, 48, 1, 5];
 const EKU: &[u64] = &[2, 5, 29, 37];
+/// The CRL distribution points the certificates name (never fetched: the in-process
+/// source answers), so a CRL scoped by an Issuing Distribution Point can match them.
+const ROOT_CRL_URI: &str = "http://pki.t-1g.test/root.crl";
+const INTER_CRL_URI: &str = "http://pki.t-1g.test/intermediate.crl";
+
 /// A test policy OID under the documentation enterprise number 32473 (RFC 5612).
 const TSA_POLICY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.6.1.4.1.32473.1");
 /// A private extension the TSA can pad its tokens with (overflow tests).
@@ -116,6 +122,13 @@ pub struct Pki {
     rsa_key: KeyPair,
     pub root_crl: Vec<u8>,
     pub inter_crl: Vec<u8>,
+    /// The same CRLs scoped as production CAs issue them (HRD-02): a critical Issuing
+    /// Distribution Point naming the certificates' distribution point, the root's for CA
+    /// certificates only, the intermediate's for end entities only.
+    pub root_crl_scoped: Vec<u8>,
+    pub inter_crl_scoped: Vec<u8>,
+    /// The root cross-certified by a CA that is in no pool and no trust store.
+    pub root_cross: Certificate,
 }
 
 pub fn pki() -> &'static Pki {
@@ -125,6 +138,17 @@ pub fn pki() -> &'static Pki {
         let mut rp = params("T-1G Test Root", 1);
         rp.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         rp.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+        // The root's subject and key cross-certified by another CA no one here holds, as
+        // DigiCert's TSA tokens carry "Trusted Root G4" issued by "Assured ID Root CA".
+        let other_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut op = params("T-1G Other Root", 3);
+        op.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        op.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+        let other = CertifiedIssuer::self_signed(op, other_key).unwrap();
+        let mut cp = rp.clone();
+        cp.serial_number = Some(SerialNumber::from(4u64));
+        cp.use_authority_key_identifier_extension = true;
+        let root_cross = x509(cp.signed_by(&root_key, &other).unwrap().der());
         let root = CertifiedIssuer::self_signed(rp, root_key).unwrap();
 
         let inter_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
@@ -132,6 +156,9 @@ pub fn pki() -> &'static Pki {
         ip.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ip.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
         ip.use_authority_key_identifier_extension = true;
+        ip.crl_distribution_points = vec![CrlDistributionPoint {
+            uris: vec![ROOT_CRL_URI.to_owned()],
+        }];
         let inter = CertifiedIssuer::signed_by(ip, inter_key, &root).unwrap();
 
         let leaf = |cn: &str, serial: u64, key: &KeyPair, ext: Vec<CustomExtension>, nr: bool| {
@@ -146,6 +173,9 @@ pub fn pki() -> &'static Pki {
                 vec![KeyUsagePurpose::DigitalSignature]
             };
             p.use_authority_key_identifier_extension = true;
+            p.crl_distribution_points = vec![CrlDistributionPoint {
+                uris: vec![INTER_CRL_URI.to_owned()],
+            }];
             p.custom_extensions = ext;
             x509(p.signed_by(key, &inter).unwrap().der())
         };
@@ -180,12 +210,13 @@ pub fn pki() -> &'static Pki {
                 .unwrap();
         let rsa = leaf("T-1G Test Seal RSA-3072", 21, &rsa_key, Vec::new(), true);
 
-        let crl = |issuer: &CertifiedIssuer<'static, KeyPair>| {
+        let crl = |issuer: &CertifiedIssuer<'static, KeyPair>,
+                   idp: Option<CrlIssuingDistributionPoint>| {
             CertificateRevocationListParams {
                 this_update: rcgen::date_time_ymd(2026, 11, 2),
                 next_update: rcgen::date_time_ymd(2046, 1, 1),
                 crl_number: SerialNumber::from(1u64),
-                issuing_distribution_point: None,
+                issuing_distribution_point: idp,
                 revoked_certs: Vec::new(),
                 key_identifier_method: KeyIdMethod::Sha256,
             }
@@ -194,8 +225,16 @@ pub fn pki() -> &'static Pki {
             .der()
             .to_vec()
         };
-        let root_crl = crl(&root);
-        let inter_crl = crl(&inter);
+        let root_crl = crl(&root, None);
+        let inter_crl = crl(&inter, None);
+        let scoped = |uri: &str, scope| CrlIssuingDistributionPoint {
+            distribution_point: CrlDistributionPoint {
+                uris: vec![uri.to_owned()],
+            },
+            scope: Some(scope),
+        };
+        let root_crl_scoped = crl(&root, Some(scoped(ROOT_CRL_URI, CrlScope::CaCertsOnly)));
+        let inter_crl_scoped = crl(&inter, Some(scoped(INTER_CRL_URI, CrlScope::UserCertsOnly)));
         Pki {
             root: x509(root.der()),
             inter: x509(inter.der()),
@@ -209,6 +248,9 @@ pub fn pki() -> &'static Pki {
             rsa_key,
             root_crl,
             inter_crl,
+            root_crl_scoped,
+            inter_crl_scoped,
+            root_cross,
         }
     })
 }
@@ -299,6 +341,18 @@ pub fn p256() -> TestProvider {
     }
 }
 
+/// The P-256 signer with the chain a real CA hands out: the certificate and its issuing
+/// CA, never the (offline) root (HRD-02).
+pub fn p256_below_root() -> TestProvider {
+    let p = pki();
+    TestProvider {
+        key: &p.p256_key,
+        algorithm: SignatureAlgorithm::EcdsaP256Sha256,
+        chain: vec![p.p256.clone(), p.inter.clone()],
+        corrupt: false,
+    }
+}
+
 pub fn rsa() -> TestProvider {
     let p = pki();
     TestProvider {
@@ -353,6 +407,8 @@ pub struct TestTsa {
     /// What `token_len_bound` reports; `None` for an honest bound.
     pub bound: Option<usize>,
     pub calls: Cell<usize>,
+    /// Carry the root's cross-certificate in each token too.
+    pub cross_certificate: bool,
 }
 
 impl TestTsa {
@@ -365,6 +421,7 @@ impl TestTsa {
             grow_step: 0,
             bound: None,
             calls: Cell::new(0),
+            cross_certificate: false,
         }
     }
 
@@ -446,10 +503,13 @@ impl TestTsa {
                 econtent_type: oid::ID_CT_TST_INFO,
                 econtent: Some(Any::new(Tag::OctetString, tst_der).unwrap()),
             },
-            certificates: Some(CertificateSet(set_of(vec![
-                CertificateChoices::Certificate(p.tsa.clone()),
-                CertificateChoices::Certificate(p.inter.clone()),
-            ]))),
+            certificates: Some(CertificateSet(set_of(
+                [p.tsa.clone(), p.inter.clone()]
+                    .into_iter()
+                    .chain(self.cross_certificate.then(|| p.root_cross.clone()))
+                    .map(CertificateChoices::Certificate)
+                    .collect(),
+            ))),
             crls: None,
             signer_infos: SignerInfos(set_of(vec![si])),
         };
@@ -512,6 +572,10 @@ pub struct TestRevocation {
     pub no_ocsp: bool,
     /// Answer nothing at all.
     pub nothing: bool,
+    /// Answer with the scoped CRLs (critical Issuing Distribution Point).
+    pub scoped_crls: bool,
+    /// Offer no issuer certificates (a host that fetches none, as the CLI and worker).
+    pub no_issuers: bool,
     pub ocsp_calls: Cell<usize>,
     pub crl_calls: Cell<usize>,
 }
@@ -562,6 +626,9 @@ impl TestRevocation {
 impl RevocationSource for TestRevocation {
     fn certificates(&self) -> &[Certificate] {
         static CHAIN: OnceLock<Vec<Certificate>> = OnceLock::new();
+        if self.no_issuers {
+            return &[];
+        }
         CHAIN.get_or_init(|| vec![pki().inter.clone(), pki().root.clone()])
     }
 
@@ -579,10 +646,15 @@ impl RevocationSource for TestRevocation {
             return Ok(None);
         }
         let p = pki();
+        let (root_crl, inter_crl) = if self.scoped_crls {
+            (&p.root_crl_scoped, &p.inter_crl_scoped)
+        } else {
+            (&p.root_crl, &p.inter_crl)
+        };
         Ok(if *query.issuer == p.root {
-            Some(p.root_crl.clone())
+            Some(root_crl.clone())
         } else if *query.issuer == p.inter {
-            Some(p.inter_crl.clone())
+            Some(inter_crl.clone())
         } else {
             None
         })

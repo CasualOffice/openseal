@@ -84,6 +84,22 @@ impl TrustStore {
     pub fn anchor_count(&self) -> usize {
         self.anchors.len()
     }
+
+    /// Every anchor, then every intermediate. A sealer offers them as issuers when it
+    /// collects validation data for a chain that stops below its root, as a real CA's
+    /// chain does (HRD-02, docs/31 §4 step 9).
+    pub fn certificates(&self) -> impl Iterator<Item = &casual_sign_crypto::Certificate> {
+        self.anchors
+            .iter()
+            .chain(self.intermediates.iter())
+            .map(|c| &c.cert)
+    }
+
+    /// The anchors alone: where a path ends, so a sealer collects no revocation data for
+    /// an anchor, nor for a cross-certificate carrying an anchor's subject and key.
+    pub fn anchors(&self) -> impl Iterator<Item = &casual_sign_crypto::Certificate> {
+        self.anchors.iter().map(|c| &c.cert)
+    }
 }
 
 /// Which time certificates are checked at.

@@ -3,8 +3,11 @@
 //!
 //! For each target signature (or document timestamp) the engine walks every certificate
 //! the CMS carries, its signature timestamp's TSA certificates included, up to a
-//! self-signed certificate, finding issuers in the CMS and in the source's
-//! [`RevocationSource::certificates`]. For each certificate that is not self-signed it
+//! self-signed certificate, finding issuers in the CMS, in the source's
+//! [`RevocationSource::certificates`] and among the request's trust anchors and
+//! intermediates: a real CA's chain stops below its offline root, and so does a TSA's
+//! token (HRD-02). A walk also ends at a trust anchor or a cross-certificate of one (same
+//! subject and key), which needs no revocation data. For each certificate that is not self-signed it
 //! asks the host for an OCSP response (a request with a SHA-256 `CertID`), falls back to
 //! a CRL (docs/31 §9), and embeds an answer only after `casual-sign-crypto` shows the
 //! certificate not revoked at the time asked. A delegated OCSP responder's certificate
@@ -18,9 +21,10 @@ use core::time::Duration;
 use std::collections::BTreeMap;
 
 use casual_sign_crypto::cms::ParsedCms;
-use casual_sign_crypto::revocation::{RevocationStatus, crl_status, ocsp_status};
+use casual_sign_crypto::revocation::{RevocationStatus, crl_status_for, ocsp_status};
 use casual_sign_crypto::{Certificate, DigestAlgorithm, oid};
 use casual_sign_pdf::{Change, Dictionary, IncrementalUpdate, Limits, ObjRef, Object};
+use casual_sign_verify::TrustStore;
 use der::asn1::{Any, Null, ObjectIdentifier, OctetString};
 use der::{Decode, Encode};
 use sha1::{Digest, Sha1};
@@ -151,6 +155,8 @@ struct Answer {
 struct Collector<'s> {
     source: &'s dyn RevocationSource,
     at: Duration,
+    /// The trust anchors: a path ends at one (or at a certificate with its subject and key).
+    anchors: Vec<Certificate>,
     pool: Vec<Certificate>,
     certs: Vec<Certificate>,
     ocsps: Vec<Vec<u8>>,
@@ -184,6 +190,17 @@ fn note(v: &mut Vec<usize>, i: usize) {
 }
 
 impl Collector<'_> {
+    /// Whether `cert` is a trust anchor, or a cross-certificate of one (the same subject
+    /// and public key, issued by someone else): either ends the path.
+    fn is_anchor(&self, cert: &Certificate) -> bool {
+        let tbs = cert.tbs_certificate();
+        self.anchors.iter().any(|a| {
+            let atbs = a.tbs_certificate();
+            atbs.subject() == tbs.subject()
+                && atbs.subject_public_key_info() == tbs.subject_public_key_info()
+        })
+    }
+
     fn issuer_of(&self, cert: &Certificate) -> Option<Certificate> {
         let want = cert.tbs_certificate().issuer();
         self.pool
@@ -216,12 +233,8 @@ impl Collector<'_> {
         else {
             return Ok(None);
         };
-        match crl_status(
-            &crl,
-            cert.tbs_certificate().serial_number(),
-            issuer,
-            self.at,
-        ) {
+        // Scope-aware: a production CA's CRL carries a critical Issuing Distribution Point.
+        match crl_status_for(&crl, cert, issuer, self.at) {
             Ok(RevocationStatus::Good) => Ok(Some(push_unique(&mut self.crls, crl)?)),
             Ok(RevocationStatus::Revoked { .. }) => {
                 Err(SealError::Revocation(RevocationProblem::Revoked { index }))
@@ -293,7 +306,7 @@ impl Collector<'_> {
             }
             let i = push_unique(&mut self.certs, cur.clone())?;
             note(&mut vri.certs, i);
-            if self_signed(&cur) {
+            if self_signed(&cur) || self.is_anchor(&cur) {
                 return Ok(());
             }
             let issuer = self.issuer_of(&cur).ok_or(SealError::Revocation(
@@ -345,17 +358,26 @@ fn existing_items(
 
 /// Append a DSS revision to `input` with validation data for each of `targets` (the
 /// decoded `/Contents` strings of signatures or document timestamps), checked at `at`.
+/// Issuers are looked for in each target's CMS, the source's certificates and `trust`.
 pub(crate) fn add_dss(
     input: &[u8],
     targets: &[Vec<u8>],
     at: Duration,
     source: &dyn RevocationSource,
+    trust: &TrustStore,
     limits: &Limits,
 ) -> Result<(Vec<u8>, DssReport), SealError> {
+    let mut pool: Vec<Certificate> = source.certificates().to_vec();
+    for c in trust.certificates() {
+        if !pool.contains(c) {
+            pool.push(c.clone());
+        }
+    }
     let mut collector = Collector {
         source,
         at,
-        pool: source.certificates().to_vec(),
+        anchors: trust.anchors().cloned().collect(),
+        pool,
         certs: Vec::new(),
         ocsps: Vec::new(),
         crls: Vec::new(),
