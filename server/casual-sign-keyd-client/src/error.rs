@@ -10,6 +10,9 @@ use core::fmt;
 /// The wire number of `CS-CON-0008` (the `CS-KEY-` numbers stay below 1000).
 pub const ADMIN_REFUSED: u16 = 1008;
 
+/// The wire number of `CS-CON-0006`, a seal alias refused (`CON-08`).
+pub const ALIAS_REFUSED: u16 = 1006;
+
 /// Why a key operation failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -47,6 +50,9 @@ pub enum KeydError {
     /// `CS-CON-0008`: an admin call from a caller on the signing allow-list, or a signing
     /// call from a caller on the admin allow-list (docs/23 §5.4, `CON-06`).
     AdminRefused,
+    /// `CS-CON-0006`: a signature asked of an alias whose signer certificate has expired or
+    /// is not yet valid at keyd's clock (docs/23 §5.4, `CON-08`).
+    AliasRefused,
 }
 
 /// What is wrong with a key's configuration (`CS-KEY-0006`).
@@ -91,6 +97,7 @@ impl KeydError {
             Self::Transport(_) => "CS-KEY-0011",
             Self::Setting(_) => "CS-KEY-0012",
             Self::AdminRefused => "CS-CON-0008",
+            Self::AliasRefused => "CS-CON-0006",
         }
     }
 
@@ -112,6 +119,7 @@ impl KeydError {
             Self::Transport(_) => 11,
             Self::Setting(_) => 12,
             Self::AdminRefused => ADMIN_REFUSED,
+            Self::AliasRefused => ALIAS_REFUSED,
         }
     }
 
@@ -131,6 +139,7 @@ impl KeydError {
             8 => Self::RateLimited,
             9 => Self::OperationLog("reported by keyd".into()),
             ADMIN_REFUSED => Self::AdminRefused,
+            ALIAS_REFUSED => Self::AliasRefused,
             _ => Self::Transport(format!("keyd answered with unknown error {n}")),
         }
     }
@@ -182,6 +191,9 @@ impl fmt::Display for KeydError {
             Self::AdminRefused => f.write_str(
                 "admin call refused: a signing caller cannot administer, an admin caller cannot sign",
             ),
+            Self::AliasRefused => {
+                f.write_str("seal alias refused: its certificate is outside its validity")
+            }
         }
     }
 }

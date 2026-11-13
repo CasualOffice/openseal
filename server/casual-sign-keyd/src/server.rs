@@ -434,6 +434,9 @@ impl KeyService {
         if wire_id(key.algorithm()) != Some(alg) {
             return Err(KeydError::Malformed("algorithm is not the key's"));
         }
+        // An alias whose signer certificate has expired, or is not yet valid, signs
+        // nothing (docs/23 §5.4, `CON-08`): a seal under it would not validate.
+        within_validity(key.as_ref(), i64::try_from(now()).unwrap_or(i64::MAX))?;
         key.sign_digest(digest)
     }
 }
@@ -473,6 +476,19 @@ fn name_text(s: &str) -> String {
 
 fn unix(t: &x509_cert::time::Time) -> i64 {
     i64::try_from(t.to_unix_duration().as_secs()).unwrap_or(i64::MAX)
+}
+
+/// `CS-CON-0006` unless `now` (Unix seconds) is within the signer certificate's
+/// validity, both ends included as RFC 5280 §4.1.2.5 defines them.
+fn within_validity(key: &dyn DigestSigner, now: i64) -> Result<(), KeydError> {
+    let leaf = key.certificate_chain().first().ok_or(KeydError::KeyConfig(
+        crate::error::KeyConfigProblem::NoCertificate,
+    ))?;
+    let v = leaf.tbs_certificate().validity();
+    if now < unix(&v.not_before) || now > unix(&v.not_after) {
+        return Err(KeydError::AliasRefused);
+    }
+    Ok(())
 }
 
 /// What `list-keys` reports of one key: the chain, the signer certificate's validity and
