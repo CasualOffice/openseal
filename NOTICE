@@ -23,7 +23,15 @@ BSD-3-Clause, ISC, MIT, NCSA, Unicode-3.0, Unlicense, Zlib), most dual-licensed
 "MIT OR Apache-2.0". Each crate, its version, licence and the copyright lines
 of its licence files are listed in THIRD-PARTY.md; their texts are in
 THIRD-PARTY-LICENSES.txt. Copyright in each belongs to its authors as stated
-there.
+there. Some crates compile in a bundled C library or data set under its own
+licence, also reproduced there: Oniguruma (onig_sys, BSD-2-Clause), AWS-LC and
+fiat-crypto (aws-lc-sys, ring), Adobe CMaps, Foxit fonts and JPEG 2000 data
+(hayro-cmap, hayro-interpret, hayro-jpeg2000), Unicode tables (regex-syntax).
+  rav1e 0.8.1 (AV1 encoder, compiled into casual-sign-modeld through the image
+      crate)   BSD-2-Clause, Copyright (c) 2017-2023, the rav1e contributors;
+      it is also licensed under the Alliance for Open Media Patent License 1.0,
+      which requires that licence to accompany binaries: its text is in
+      THIRD-PARTY-LICENSES.txt ("rav1e 0.8.1 (PATENTS)").
 
 Tools used only in CI, never shipped or linked:
   tools/eu-dss/  builds a validator on the EU Digital Signature Service (DSS)

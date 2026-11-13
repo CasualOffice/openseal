@@ -16,8 +16,9 @@ Writes two files at the repository root from what the repository actually ships:
 
   * either file is missing or differs from what the tree produces now;
   * NOTICE does not point to THIRD-PARTY.md;
-  * NOTICE does not name a component listed below (COMPONENTS), a crate that ships a
-    NOTICE file (Apache-2.0 section 4(d)), or a model repository a bundled profile of
+  * NOTICE does not name a component listed below (COMPONENTS), a shipped crate that
+    carries a NOTICE file (Apache-2.0 section 4(d)) or a PATENTS file (rav1e's AOM
+    patent licence must be reproduced with binaries), or a model repository a bundled profile of
     models.toml loads;
   * a licence file, font or vendored directory exists in a shipped folder that no
     component below accounts for (so something added later cannot go unlisted).
@@ -130,7 +131,9 @@ SHIPPED = ["webapp", "console-ui", "site", "crates", "server", "deploy"]
 SKIP = {"node_modules", "target", "e2e", "tests", ".git"}
 LICENCE_NAME = re.compile(r"^(LICEN[CS]E|COPYING|NOTICE|OFL|UNLICENSE)", re.I)
 FONT = re.compile(r"\.(ttf|otf|woff2?|pfb|pfa)$", re.I)
-CRATE_FILE = re.compile(r"^(LICEN[CS]E|COPYING|NOTICE|UNLICENSE|COPYRIGHT)", re.I)
+CRATE_FILE = re.compile(r"^(LICEN[CS]E|COPYING|NOTICE|UNLICENSE|COPYRIGHT|PATENTS)", re.I)
+# Folders inside a crate package whose files are never compiled into what ships.
+CRATE_SKIP = {"tests", "test", "testdata", "benches", "examples", "fuzz", ".github"}
 COPYRIGHT = re.compile(r"^\s*(?:%%Copyright:\s*|//\s*|#\s*|\*\s*)?(Copyright\b.*?)\s*$")
 TEMPLATE = re.compile(r"\[yyyy\]|\[name of|<year>|<copyright|\{yyyy\}|\{name of|YEAR|"
                       r"Copyright \(c\) \.\.\.|Copyright notice|copyright notices?\b|"
@@ -200,6 +203,11 @@ def copyright_lines(texts):
     return found[:4]
 
 
+def rel(f, d):
+    """A licence file's name inside its package; a `license-file` outside it keeps its name."""
+    return f.relative_to(d).as_posix() if f.is_relative_to(d) else f.name
+
+
 def crates(meta):
     sc = scopes(meta)
     rows, texts, problems = [], {}, []
@@ -207,7 +215,12 @@ def crates(meta):
         if p["id"] not in sc:
             continue
         d = pathlib.Path(p["manifest_path"]).parent
-        files = sorted(f for f in d.iterdir() if f.is_file() and CRATE_FILE.match(f.name))
+        # Licence files anywhere in the package, not only at its root: -sys crates and
+        # crates with embedded data carry the bundled library's or data's own licence in a
+        # subfolder (onig_sys's oniguruma/COPYING, aws-lc-sys's aws-lc/LICENSE, the Adobe
+        # CMaps and Foxit fonts in hayro), and rav1e ships the AOM patent licence as PATENTS.
+        files = sorted(f for f in d.rglob("*") if f.is_file() and CRATE_FILE.match(f.name)
+                       and not CRATE_SKIP & set(f.relative_to(d).parts[:-1]))
         if p.get("license_file"):
             lf = (d / p["license_file"]).resolve()
             if lf.is_file() and lf not in [f.resolve() for f in files]:
@@ -220,8 +233,9 @@ def crates(meta):
                 continue  # the repository's LICENSE carries this text
             key = hashlib.sha256(body.encode()).hexdigest()
             texts.setdefault(key, {"body": body, "crates": []})["crates"].append(
-                f"{p['name']} {p['version']} ({f.name})")
-        notice = [f.name for f in files if f.name.upper().startswith("NOTICE")]
+                f"{p['name']} {p['version']} ({rel(f, d)})")
+        notice = [rel(f, d) for f in files
+                  if f.name.upper().startswith(("NOTICE", "PATENTS"))]
         if not files:
             problems.append(f"{p['name']} {p['version']}: ships no licence file in its package")
         rows.append({"name": p["name"], "version": p["version"],
@@ -272,7 +286,7 @@ def render(rows, texts, mods):
         "",
         f"## Rust crates ({len(rows)}: {shipped} shipped)",
         "",
-        "| Crate | Version | Licence (as declared) | Scope | Copyright lines in its licence files | NOTICE file |",
+        "| Crate | Version | Licence (as declared) | Scope | Copyright lines in its licence files | NOTICE or PATENTS file |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
     for r in rows:
@@ -322,8 +336,8 @@ def notice_problems(root, rows, mods):
                 problems.append(f"{c['name']}: licence file {lf} is missing")
     for r in rows:
         if r["notice"] and r["scope"] == "shipped" and f"{r['name']} {r['version']}" not in flat:
-            problems.append(f"NOTICE does not reproduce the NOTICE of crate {r['name']} {r['version']} "
-                            f"({', '.join(r['notice'])})")
+            problems.append(f"NOTICE does not name crate {r['name']} {r['version']} "
+                            f"(its {', '.join(r['notice'])} must travel with the binaries)")
     for m in mods:
         if m["repo"] not in flat:
             problems.append(f"NOTICE does not name model {m['repo']} ({', '.join(m['licences'])})")

@@ -667,7 +667,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Shipped by: ahash 0.8.12 (LICENSE-APACHE), aligned 0.4.3 (LICENSE-APACHE), arbitrary 1.5.0 (LICENSE-APACHE), arrayvec 0.7.8 (LICENSE-APACHE), as-slice 0.2.1 (LICENSE-APACHE), asn1-rs 0.7.2 (LICENSE-APACHE), asn1-rs-derive 0.6.0 (LICENSE-APACHE), atomic-polyfill 1.0.3 (LICENSE-APACHE), atomic-waker 1.1.2 (LICENSE-APACHE), autocfg 1.5.1 (LICENSE-APACHE), base64 0.13.1 (LICENSE-APACHE), base64 0.22.1 (LICENSE-APACHE), base64 0.23.1 (LICENSE-APACHE), bitflags 2.13.2 (LICENSE-APACHE), bitstream-io 4.10.0 (LICENSE-APACHE), bumpalo 3.20.3 (LICENSE-APACHE), cc 1.11.1 (LICENSE-APACHE), cfg-if 1.0.5 (LICENSE-APACHE), cmake 0.1.58 (LICENSE-APACHE), core-foundation 0.10.1 (LICENSE-APACHE), core-foundation-sys 0.8.7 (LICENSE-APACHE), core_detect 1.0.0 (LICENSE-APACHE), critical-section 1.2.0 (LICENSE-APACHE), crossbeam-deque 0.8.8 (LICENSE-APACHE), crossbeam-epoch 0.9.21 (LICENSE-APACHE), crossbeam-queue 0.3.14 (LICENSE-APACHE), crossbeam-utils 0.8.23 (LICENSE-APACHE), der-parser 10.0.0 (LICENSE-APACHE), displaydoc 0.2.7 (LICENSE-APACHE), either 1.19.0 (LICENSE-APACHE), embedded-io 0.4.0 (LICENSE-APACHE), embedded-io 0.6.1 (LICENSE-APACHE), equivalent 1.0.3 (LICENSE-APACHE), errno 0.3.14 (LICENSE-APACHE), euclid 0.22.14 (LICENSE-APACHE), event-listener 5.4.2 (LICENSE-APACHE), fastrand 2.5.0 (LICENSE-APACHE), ff 0.14.0 (LICENSE-APACHE), find-msvc-tools 0.1.15 (LICENSE-APACHE), flate2 1.1.11 (LICENSE-APACHE), fnv 1.0.7 (LICENSE-APACHE), form_urlencoded 1.2.2 (LICENSE-APACHE), gif 0.14.2 (LICENSE-APACHE), group 0.14.0 (LICENSE-APACHE), hash32 0.2.1 (LICENSE-APACHE), hashbrown 0.16.1 (LICENSE-APACHE), hashbrown 0.17.1 (LICENSE-APACHE), heapless 0.7.17 (LICENSE-APACHE), heck 0.5.0 (LICENSE-APACHE), httparse 1.10.1 (LICENSE-APACHE), idna 1.1.0 (LICENSE-APACHE), idna_adapter 1.2.2 (LICENSE-APACHE), image_hasher 3.1.1 (LICENSE-APACHE), indexmap 2.14.2 (LICENSE-APACHE), itertools 0.14.0 (LICENSE-APACHE), itertools 0.15.0 (LICENSE-APACHE), jobserver 0.1.35 (LICENSE-APACHE), js-sys 0.3.107 (LICENSE-APACHE), lazy_static 1.5.1 (LICENSE-APACHE), libfuzzer-sys 0.4.13 (LICENSE-APACHE), linux-raw-sys 0.12.1 (LICENSE-APACHE), lock_api 0.4.14 (LICENSE-APACHE), log 0.4.35 (LICENSE-APACHE), matrixmultiply 0.3.11 (LICENSE-APACHE), mime 0.3.18 (LICENSE-APACHE), ndarray 0.17.2 (LICENSE-APACHE), num 0.4.3 (LICENSE-APACHE), num-bigint 0.4.8 (LICENSE-APACHE), num-complex 0.4.6 (LICENSE-APACHE), num-derive 0.4.2 (LICENSE-APACHE), num-integer 0.1.47 (LICENSE-APACHE), num-iter 0.1.46 (LICENSE-APACHE), num-rational 0.4.2 (LICENSE-APACHE), num-traits 0.2.19 (LICENSE-APACHE), oid-registry 0.8.1 (LICENSE-APACHE), once_cell 1.21.4 (LICENSE-APACHE), openssl-probe 0.2.2 (LICENSE-APACHE), parking 2.2.1 (LICENSE-APACHE), parking_lot 0.12.5 (LICENSE-APACHE), parking_lot_core 0.9.12 (LICENSE-APACHE), percent-encoding 2.3.2 (LICENSE-APACHE), pkg-config 0.3.34 (LICENSE-APACHE), png 0.18.1 (LICENSE-APACHE), postcard 1.1.3 (LICENSE-APACHE), primal-check 0.3.4 (LICENSE-APACHE), proptest 1.12.0 (LICENSE-APACHE), rawpointer 0.2.1 (LICENSE-APACHE), rayon 1.12.0 (LICENSE-APACHE), rayon-cond 0.4.0 (LICENSE-APACHE), rayon-core 1.13.0 (LICENSE-APACHE), regex 1.13.1 (LICENSE-APACHE), regex-automata 0.4.18 (LICENSE-APACHE), regex-syntax 0.6.29 (LICENSE-APACHE), regex-syntax 0.8.11 (LICENSE-APACHE), rsa 0.10.0 (LICENSE-APACHE), rustc_version 0.4.1 (LICENSE-APACHE), rusticata-macros 4.1.0 (LICENSE-APACHE), rustix 1.1.6 (LICENSE-APACHE), rustls 0.23.46 (LICENSE-APACHE), rustls-native-certs 0.8.5 (LICENSE-APACHE), scopeguard 1.2.0 (LICENSE-APACHE), security-framework 3.7.0 (LICENSE-APACHE), security-framework-sys 2.17.0 (LICENSE-APACHE), signal-hook-registry 1.4.8 (LICENSE-APACHE), smallvec 1.16.5 (LICENSE-APACHE), socket2 0.6.5 (LICENSE-APACHE), stable_deref_trait 1.2.1 (LICENSE-APACHE), thread_local 1.1.10 (LICENSE-APACHE), ttf-parser 0.25.1 (LICENSE-APACHE), unicode-bidi 0.3.18 (LICENSE-APACHE), unicode-normalization 0.1.26 (LICENSE-APACHE), unicode-normalization-alignments 0.1.12 (LICENSE-APACHE), unicode-properties 0.1.5 (LICENSE-APACHE), unicode-segmentation 1.13.3 (LICENSE-APACHE), unicode-width 0.2.3 (LICENSE-APACHE), url 2.5.8 (LICENSE-APACHE), uuid 1.29.2 (LICENSE-APACHE), vcpkg 0.2.15 (LICENSE-APACHE), version_check 0.9.5 (LICENSE-APACHE), wasi 0.11.1+wasi-snapshot-preview1 (LICENSE-APACHE), wasip2 1.0.4+wasi-0.2.12 (LICENSE-APACHE), wasm-bindgen 0.2.130 (LICENSE-APACHE), wasm-bindgen-macro 0.2.130 (LICENSE-APACHE), wasm-bindgen-macro-support 0.2.130 (LICENSE-APACHE), wasm-bindgen-shared 0.2.130 (LICENSE-APACHE), weezl 0.1.12 (LICENSE-APACHE), weezl 0.2.1 (LICENSE-APACHE), wit-bindgen 0.57.1 (LICENSE-APACHE), x509-parser 0.18.1 (LICENSE-APACHE), yasna 0.6.0 (LICENSE-APACHE)
+Shipped by: ahash 0.8.12 (LICENSE-APACHE), aligned 0.4.3 (LICENSE-APACHE), arbitrary 1.5.0 (LICENSE-APACHE), arrayvec 0.7.8 (LICENSE-APACHE), as-slice 0.2.1 (LICENSE-APACHE), asn1-rs 0.7.2 (LICENSE-APACHE), asn1-rs-derive 0.6.0 (LICENSE-APACHE), atomic-polyfill 1.0.3 (LICENSE-APACHE), atomic-waker 1.1.2 (LICENSE-APACHE), autocfg 1.5.1 (LICENSE-APACHE), base64 0.13.1 (LICENSE-APACHE), base64 0.22.1 (LICENSE-APACHE), base64 0.23.1 (LICENSE-APACHE), bitflags 2.13.2 (LICENSE-APACHE), bitstream-io 4.10.0 (LICENSE-APACHE), bumpalo 3.20.3 (LICENSE-APACHE), cc 1.11.1 (LICENSE-APACHE), cfg-if 1.0.5 (LICENSE-APACHE), cmake 0.1.58 (LICENSE-APACHE), core-foundation 0.10.1 (LICENSE-APACHE), core-foundation-sys 0.8.7 (LICENSE-APACHE), core_detect 1.0.0 (LICENSE-APACHE), critical-section 1.2.0 (LICENSE-APACHE), crossbeam-deque 0.8.8 (LICENSE-APACHE), crossbeam-epoch 0.9.21 (LICENSE-APACHE), crossbeam-queue 0.3.14 (LICENSE-APACHE), crossbeam-utils 0.8.23 (LICENSE-APACHE), der-parser 10.0.0 (LICENSE-APACHE), displaydoc 0.2.7 (LICENSE-APACHE), either 1.19.0 (LICENSE-APACHE), embedded-io 0.4.0 (LICENSE-APACHE), embedded-io 0.6.1 (LICENSE-APACHE), equivalent 1.0.3 (LICENSE-APACHE), errno 0.3.14 (LICENSE-APACHE), euclid 0.22.14 (LICENSE-APACHE), event-listener 5.4.2 (LICENSE-APACHE), fastrand 2.5.0 (LICENSE-APACHE), ff 0.14.0 (LICENSE-APACHE), find-msvc-tools 0.1.15 (LICENSE-APACHE), flate2 1.1.11 (LICENSE-APACHE), fnv 1.0.7 (LICENSE-APACHE), form_urlencoded 1.2.2 (LICENSE-APACHE), gif 0.14.2 (LICENSE-APACHE), group 0.14.0 (LICENSE-APACHE), hash32 0.2.1 (LICENSE-APACHE), hashbrown 0.16.1 (LICENSE-APACHE), hashbrown 0.17.1 (LICENSE-APACHE), heapless 0.7.17 (LICENSE-APACHE), heck 0.5.0 (LICENSE-APACHE), httparse 1.10.1 (LICENSE-APACHE), idna 1.1.0 (LICENSE-APACHE), idna_adapter 1.2.2 (LICENSE-APACHE), image_hasher 3.1.1 (LICENSE-APACHE), indexmap 2.14.2 (LICENSE-APACHE), itertools 0.14.0 (LICENSE-APACHE), itertools 0.15.0 (LICENSE-APACHE), jobserver 0.1.35 (LICENSE-APACHE), js-sys 0.3.107 (LICENSE-APACHE), lazy_static 1.5.1 (LICENSE-APACHE), libfuzzer-sys 0.4.13 (LICENSE-APACHE), linux-raw-sys 0.12.1 (LICENSE-APACHE), lock_api 0.4.14 (LICENSE-APACHE), log 0.4.35 (LICENSE-APACHE), matrixmultiply 0.3.11 (LICENSE-APACHE), mime 0.3.18 (LICENSE-APACHE), ndarray 0.17.2 (LICENSE-APACHE), num 0.4.3 (LICENSE-APACHE), num-bigint 0.4.8 (LICENSE-APACHE), num-complex 0.4.6 (LICENSE-APACHE), num-derive 0.4.2 (LICENSE-APACHE), num-integer 0.1.47 (LICENSE-APACHE), num-iter 0.1.46 (LICENSE-APACHE), num-rational 0.4.2 (LICENSE-APACHE), num-traits 0.2.19 (LICENSE-APACHE), oid-registry 0.8.1 (LICENSE-APACHE), once_cell 1.21.4 (LICENSE-APACHE), openssl-probe 0.2.2 (LICENSE-APACHE), parking 2.2.1 (LICENSE-APACHE), parking_lot 0.12.5 (LICENSE-APACHE), parking_lot_core 0.9.12 (LICENSE-APACHE), percent-encoding 2.3.2 (LICENSE-APACHE), pkg-config 0.3.34 (LICENSE-APACHE), png 0.18.1 (LICENSE-APACHE), postcard 1.1.3 (LICENSE-APACHE), primal-check 0.3.4 (LICENSE-APACHE), proptest 1.12.0 (LICENSE-APACHE), rawpointer 0.2.1 (LICENSE-APACHE), rayon 1.12.0 (LICENSE-APACHE), rayon-cond 0.4.0 (LICENSE-APACHE), rayon-core 1.13.0 (LICENSE-APACHE), regex 1.13.1 (LICENSE-APACHE), regex-automata 0.4.18 (LICENSE-APACHE), regex-syntax 0.6.29 (LICENSE-APACHE), regex-syntax 0.8.11 (LICENSE-APACHE), ring 0.17.14 (src/polyfill/once_cell/LICENSE-APACHE), rsa 0.10.0 (LICENSE-APACHE), rustc_version 0.4.1 (LICENSE-APACHE), rusticata-macros 4.1.0 (LICENSE-APACHE), rustix 1.1.6 (LICENSE-APACHE), rustls 0.23.46 (LICENSE-APACHE), rustls-native-certs 0.8.5 (LICENSE-APACHE), scopeguard 1.2.0 (LICENSE-APACHE), security-framework 3.7.0 (LICENSE-APACHE), security-framework-sys 2.17.0 (LICENSE-APACHE), signal-hook-registry 1.4.8 (LICENSE-APACHE), smallvec 1.16.5 (LICENSE-APACHE), socket2 0.6.5 (LICENSE-APACHE), stable_deref_trait 1.2.1 (LICENSE-APACHE), thread_local 1.1.10 (LICENSE-APACHE), ttf-parser 0.25.1 (LICENSE-APACHE), unicode-bidi 0.3.18 (LICENSE-APACHE), unicode-normalization 0.1.26 (LICENSE-APACHE), unicode-normalization-alignments 0.1.12 (LICENSE-APACHE), unicode-properties 0.1.5 (LICENSE-APACHE), unicode-segmentation 1.13.3 (LICENSE-APACHE), unicode-width 0.2.3 (LICENSE-APACHE), url 2.5.8 (LICENSE-APACHE), uuid 1.29.2 (LICENSE-APACHE), vcpkg 0.2.15 (LICENSE-APACHE), version_check 0.9.5 (LICENSE-APACHE), wasi 0.11.1+wasi-snapshot-preview1 (LICENSE-APACHE), wasip2 1.0.4+wasi-0.2.12 (LICENSE-APACHE), wasm-bindgen 0.2.130 (LICENSE-APACHE), wasm-bindgen-macro 0.2.130 (LICENSE-APACHE), wasm-bindgen-macro-support 0.2.130 (LICENSE-APACHE), wasm-bindgen-shared 0.2.130 (LICENSE-APACHE), weezl 0.1.12 (LICENSE-APACHE), weezl 0.2.1 (LICENSE-APACHE), wit-bindgen 0.57.1 (LICENSE-APACHE), x509-parser 0.18.1 (LICENSE-APACHE), yasna 0.6.0 (LICENSE-APACHE)
 ------------------------------------------------------------------------------
 Apache License
                         Version 2.0, January 2004
@@ -2013,7 +2013,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ==============================================================================
-Shipped by: aws-lc-sys 0.47.0 (LICENSE)
+Shipped by: aws-lc-sys 0.47.0 (LICENSE), aws-lc-sys 0.47.0 (aws-lc/LICENSE)
 ------------------------------------------------------------------------------
 AWS Libcrypto (AWS-LC)
 
@@ -2331,6 +2331,32 @@ MIT No Attribution (MIT-0)
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+Shipped by: aws-lc-sys 0.47.0 (aws-lc/third_party/fiat/LICENSE)
+------------------------------------------------------------------------------
+The MIT License (MIT)
+
+Copyright (c) 2015-2020 the fiat-crypto authors (see
+https://github.com/mit-plv/fiat-crypto/blob/master/AUTHORS).
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ==============================================================================
 Shipped by: axum 0.8.9 (LICENSE)
@@ -5745,7 +5771,7 @@ the BSD 1-Clause License <LICENSE-BSD-1> or
 <https://spdx.org/licenses/BSD-1-Clause.html>, at your option.
 
 ==============================================================================
-Shipped by: fiat-crypto 0.3.0 (LICENSE-APACHE)
+Shipped by: fiat-crypto 0.3.0 (LICENSE-APACHE), ring 0.17.14 (third_party/fiat/LICENSE)
 ------------------------------------------------------------------------------
 The Apache License, Version 2.0 (Apache-2.0)
 
@@ -7229,6 +7255,189 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
+Shipped by: hayro-cmap 0.1.0 (assets/LICENSE.txt)
+------------------------------------------------------------------------------
+Copyright 1990-2023 Adobe. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+Neither the name of Adobe nor the names of its contributors may be
+used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+==============================================================================
+Shipped by: hayro-interpret 0.8.0 (assets/LICENSE_FOXIT)
+------------------------------------------------------------------------------
+// Copyright 2014 PDFium Authors. All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//    * Redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer.
+//    * Redistributions in binary form must reproduce the above
+// copyright notice, this list of conditions and the following disclaimer
+// in the documentation and/or other materials provided with the
+// distribution.
+//    * Neither the name of Google Inc. nor the names of its
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+==============================================================================
+Shipped by: hayro-jpeg2000 0.4.1 (assets/LICENSE.txt)
+------------------------------------------------------------------------------
+CC0 1.0 Universal
+
+Statement of Purpose
+
+The laws of most jurisdictions throughout the world automatically confer
+exclusive Copyright and Related Rights (defined below) upon the creator and
+subsequent owner(s) (each and all, an "owner") of an original work of
+authorship and/or a database (each, a "Work").
+
+Certain owners wish to permanently relinquish those rights to a Work for the
+purpose of contributing to a commons of creative, cultural and scientific
+works ("Commons") that the public can reliably and without fear of later
+claims of infringement build upon, modify, incorporate in other works, reuse
+and redistribute as freely as possible in any form whatsoever and for any
+purposes, including without limitation commercial purposes. These owners may
+contribute to the Commons to promote the ideal of a free culture and the
+further production of creative, cultural and scientific works, or to gain
+reputation or greater distribution for their Work in part through the use and
+efforts of others.
+
+For these and/or other purposes and motivations, and without any expectation
+of additional consideration or compensation, the person associating CC0 with a
+Work (the "Affirmer"), to the extent that he or she is an owner of Copyright
+and Related Rights in the Work, voluntarily elects to apply CC0 to the Work
+and publicly distribute the Work under its terms, with knowledge of his or her
+Copyright and Related Rights in the Work and the meaning and intended legal
+effect of CC0 on those rights.
+
+1. Copyright and Related Rights. A Work made available under CC0 may be
+protected by copyright and related or neighboring rights ("Copyright and
+Related Rights"). Copyright and Related Rights include, but are not limited
+to, the following:
+
+  i. the right to reproduce, adapt, distribute, perform, display, communicate,
+  and translate a Work;
+
+  ii. moral rights retained by the original author(s) and/or performer(s);
+
+  iii. publicity and privacy rights pertaining to a person's image or likeness
+  depicted in a Work;
+
+  iv. rights protecting against unfair competition in regards to a Work,
+  subject to the limitations in paragraph 4(a), below;
+
+  v. rights protecting the extraction, dissemination, use and reuse of data in
+  a Work;
+
+  vi. database rights (such as those arising under Directive 96/9/EC of the
+  European Parliament and of the Council of 11 March 1996 on the legal
+  protection of databases, and under any national implementation thereof,
+  including any amended or successor version of such directive); and
+
+  vii. other similar, equivalent or corresponding rights throughout the world
+  based on applicable law or treaty, and any national implementations thereof.
+
+2. Waiver. To the greatest extent permitted by, but not in contravention of,
+applicable law, Affirmer hereby overtly, fully, permanently, irrevocably and
+unconditionally waives, abandons, and surrenders all of Affirmer's Copyright
+and Related Rights and associated claims and causes of action, whether now
+known or unknown (including existing as well as future claims and causes of
+action), in the Work (i) in all territories worldwide, (ii) for the maximum
+duration provided by applicable law or treaty (including future time
+extensions), (iii) in any current or future medium and for any number of
+copies, and (iv) for any purpose whatsoever, including without limitation
+commercial, advertising or promotional purposes (the "Waiver"). Affirmer makes
+the Waiver for the benefit of each member of the public at large and to the
+detriment of Affirmer's heirs and successors, fully intending that such Waiver
+shall not be subject to revocation, rescission, cancellation, termination, or
+any other legal or equitable action to disrupt the quiet enjoyment of the Work
+by the public as contemplated by Affirmer's express Statement of Purpose.
+
+3. Public License Fallback. Should any part of the Waiver for any reason be
+judged legally invalid or ineffective under applicable law, then the Waiver
+shall be preserved to the maximum extent permitted taking into account
+Affirmer's express Statement of Purpose. In addition, to the extent the Waiver
+is so judged Affirmer hereby grants to each affected person a royalty-free,
+non transferable, non sublicensable, non exclusive, irrevocable and
+unconditional license to exercise Affirmer's Copyright and Related Rights in
+the Work (i) in all territories worldwide, (ii) for the maximum duration
+provided by applicable law or treaty (including future time extensions), (iii)
+in any current or future medium and for any number of copies, and (iv) for any
+purpose whatsoever, including without limitation commercial, advertising or
+promotional purposes (the "License"). The License shall be deemed effective as
+of the date CC0 was applied by Affirmer to the Work. Should any part of the
+License for any reason be judged legally invalid or ineffective under
+applicable law, such partial invalidity or ineffectiveness shall not
+invalidate the remainder of the License, and in such case Affirmer hereby
+affirms that he or she will not (i) exercise any of his or her remaining
+Copyright and Related Rights in the Work or (ii) assert any associated claims
+and causes of action with respect to the Work, in either case contrary to
+Affirmer's express Statement of Purpose.
+
+4. Limitations and Disclaimers.
+
+  a. No trademark or patent rights held by Affirmer are waived, abandoned,
+  surrendered, licensed or otherwise affected by this document.
+
+  b. Affirmer offers the Work as-is and makes no representations or warranties
+  of any kind concerning the Work, express, implied, statutory or otherwise,
+  including without limitation warranties of title, merchantability, fitness
+  for a particular purpose, non infringement, or the absence of latent or
+  other defects, accuracy, or the present or absence of errors, whether or not
+  discoverable, all to the greatest extent permissible under applicable law.
+
+  c. Affirmer disclaims responsibility for clearing rights of other persons
+  that may apply to the Work or any use thereof, including without limitation
+  any person's Copyright and Related Rights in the Work. Further, Affirmer
+  disclaims responsibility for obtaining any necessary consents, permissions
+  or other rights required for any use of the Work.
+
+  d. Affirmer understands and acknowledges that Creative Commons is not a
+  party to this document and has no duty or obligation with respect to this
+  CC0 or use of the Work.
+
+For more information, please see
+http://creativecommons.org/publicdomain/zero/1.0/
+
+==============================================================================
 Shipped by: heck 0.5.0 (LICENSE-MIT), linked-hash-map 0.5.6 (LICENSE-MIT), lru-cache 0.1.2 (LICENSE-MIT), unicode-bidi 0.3.18 (LICENSE-MIT), unicode-normalization 0.1.26 (LICENSE-MIT), unicode-normalization-alignments 0.1.12 (LICENSE-MIT), unicode-properties 0.1.5 (LICENSE-MIT), unicode-segmentation 1.13.3 (LICENSE-MIT), unicode-width 0.2.3 (LICENSE-MIT)
 ------------------------------------------------------------------------------
 Copyright (c) 2015 The Rust Project Developers
@@ -8565,6 +8774,34 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+==============================================================================
+Shipped by: libsqlite3-sys 0.30.1 (sqlcipher/LICENSE)
+------------------------------------------------------------------------------
+Copyright (c) 2008-2020 Zetetic LLC
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the ZETETIC LLC nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
 Shipped by: linux-raw-sys 0.12.1 (COPYRIGHT)
@@ -10413,6 +10650,36 @@ information.
 > SOFTWARE.
 
 ==============================================================================
+Shipped by: onig_sys 69.9.3 (oniguruma/COPYING)
+------------------------------------------------------------------------------
+Oniguruma LICENSE
+-----------------
+
+Copyright (c) 2002-2021  K.Kosako  <kkosako0@gmail.com>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.
+
+==============================================================================
 Shipped by: ort 2.0.0-rc.13 (LICENSE-MIT), ort-sys 2.0.0-rc.13 (LICENSE-MIT)
 ------------------------------------------------------------------------------
 MIT License
@@ -11996,6 +12263,117 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
+Shipped by: rav1e 0.8.1 (PATENTS)
+------------------------------------------------------------------------------
+Alliance for Open Media Patent License 1.0
+
+1. License Terms.
+
+1.1. Patent License. Subject to the terms and conditions of this License, each
+     Licensor, on behalf of itself and successors in interest and assigns,
+     grants Licensee a non-sublicensable, perpetual, worldwide, non-exclusive,
+     no-charge, royalty-free, irrevocable (except as expressly stated in this
+     License) patent license to its Necessary Claims to make, use, sell, offer
+     for sale, import or distribute any Implementation.
+
+1.2. Conditions.
+
+1.2.1. Availability. As a condition to the grant of rights to Licensee to make,
+       sell, offer for sale, import or distribute an Implementation under
+       Section 1.1, Licensee must make its Necessary Claims available under
+       this License, and must reproduce this License with any Implementation
+       as follows:
+
+       a. For distribution in source code, by including this License in the
+          root directory of the source code with its Implementation.
+
+       b. For distribution in any other form (including binary, object form,
+          and/or hardware description code (e.g., HDL, RTL, Gate Level Netlist,
+          GDSII, etc.)), by including this License in the documentation, legal
+          notices, and/or other written materials provided with the
+          Implementation.
+
+1.2.2. Additional Conditions. This license is directly from Licensor to
+       Licensee.  Licensee acknowledges as a condition of benefiting from it
+       that no rights from Licensor are received from suppliers, distributors,
+       or otherwise in connection with this License.
+
+1.3. Defensive Termination. If any Licensee, its Affiliates, or its agents
+     initiates patent litigation or files, maintains, or voluntarily
+     participates in a lawsuit against another entity or any person asserting
+     that any Implementation infringes Necessary Claims, any patent licenses
+     granted under this License directly to the Licensee are immediately
+     terminated as of the date of the initiation of action unless 1) that suit
+     was in response to a corresponding suit regarding an Implementation first
+     brought against an initiating entity, or 2) that suit was brought to
+     enforce the terms of this License (including intervention in a third-party
+     action by a Licensee).
+
+1.4. Disclaimers. The Reference Implementation and Specification are provided
+     "AS IS" and without warranty. The entire risk as to implementing or
+     otherwise using the Reference Implementation or Specification is assumed
+     by the implementer and user. Licensor expressly disclaims any warranties
+     (express, implied, or otherwise), including implied warranties of
+     merchantability, non-infringement, fitness for a particular purpose, or
+     title, related to the material. IN NO EVENT WILL LICENSOR BE LIABLE TO
+     ANY OTHER PARTY FOR LOST PROFITS OR ANY FORM OF INDIRECT, SPECIAL,
+     INCIDENTAL, OR CONSEQUENTIAL DAMAGES OF ANY CHARACTER FROM ANY CAUSES OF
+     ACTION OF ANY KIND WITH RESPECT TO THIS LICENSE, WHETHER BASED ON BREACH
+     OF CONTRACT, TORT (INCLUDING NEGLIGENCE), OR OTHERWISE, AND WHETHER OR
+     NOT THE OTHER PARTRY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+2. Definitions.
+
+2.1. Affiliate.  �Affiliate� means an entity that directly or indirectly
+     Controls, is Controlled by, or is under common Control of that party.
+
+2.2. Control. �Control� means direct or indirect control of more than 50% of
+     the voting power to elect directors of that corporation, or for any other
+     entity, the power to direct management of such entity.
+
+2.3. Decoder.  "Decoder" means any decoder that conforms fully with all
+     non-optional portions of the Specification.
+
+2.4. Encoder.  "Encoder" means any encoder that produces a bitstream that can
+     be decoded by a Decoder only to the extent it produces such a bitstream.
+
+2.5. Final Deliverable.  �Final Deliverable� means the final version of a
+     deliverable approved by the Alliance for Open Media as a Final
+     Deliverable.
+
+2.6. Implementation.  "Implementation" means any implementation, including the
+     Reference Implementation, that is an Encoder and/or a Decoder. An
+     Implementation also includes components of an Implementation only to the
+     extent they are used as part of an Implementation.
+
+2.7. License. �License� means this license.
+
+2.8. Licensee. �Licensee� means any person or entity who exercises patent
+     rights granted under this License.
+
+2.9. Licensor.  "Licensor" means (i) any Licensee that makes, sells, offers
+     for sale, imports or distributes any Implementation, or (ii) a person
+     or entity that has a licensing obligation to the Implementation as a
+     result of its membership and/or participation in the Alliance for Open
+     Media working group that developed the Specification.
+
+2.10. Necessary Claims.  "Necessary Claims" means all claims of patents or
+      patent applications, (a) that currently or at any time in the future,
+      are owned or controlled by the Licensor, and (b) (i) would be an
+      Essential Claim as defined by the W3C Policy as of February 5, 2004
+      (https://www.w3.org/Consortium/Patent-Policy-20040205/#def-essential)
+      as if the Specification was a W3C Recommendation; or (ii) are infringed
+      by the Reference Implementation.
+
+2.11. Reference Implementation. �Reference Implementation� means an Encoder
+      and/or Decoder released by the Alliance for Open Media as a Final
+      Deliverable.
+
+2.12. Specification. �Specification� means the specification designated by
+      the Alliance for Open Media as a Final Deliverable for which this
+      License was issued.
+
+==============================================================================
 Shipped by: ravif 0.13.0 (LICENSE)
 ------------------------------------------------------------------------------
 BSD 3-Clause License
@@ -12294,6 +12672,67 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+==============================================================================
+Shipped by: regex-syntax 0.6.29 (src/unicode_tables/LICENSE-UNICODE), regex-syntax 0.8.11 (src/unicode_tables/LICENSE-UNICODE)
+------------------------------------------------------------------------------
+UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE
+
+Unicode Data Files include all data files under the directories
+http://www.unicode.org/Public/, http://www.unicode.org/reports/,
+http://www.unicode.org/cldr/data/, http://source.icu-project.org/repos/icu/, and
+http://www.unicode.org/utility/trac/browser/.
+
+Unicode Data Files do not include PDF online code charts under the
+directory http://www.unicode.org/Public/.
+
+Software includes any source code published in the Unicode Standard
+or under the directories
+http://www.unicode.org/Public/, http://www.unicode.org/reports/,
+http://www.unicode.org/cldr/data/, http://source.icu-project.org/repos/icu/, and
+http://www.unicode.org/utility/trac/browser/.
+
+NOTICE TO USER: Carefully read the following legal agreement.
+BY DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING UNICODE INC.'S
+DATA FILES ("DATA FILES"), AND/OR SOFTWARE ("SOFTWARE"),
+YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT.
+IF YOU DO NOT AGREE, DO NOT DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE
+THE DATA FILES OR SOFTWARE.
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 1991-2018 Unicode, Inc. All rights reserved.
+Distributed under the Terms of Use in http://www.unicode.org/copyright.html.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Unicode data files and any associated documentation
+(the "Data Files") or Unicode software and any associated documentation
+(the "Software") to deal in the Data Files or Software
+without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, and/or sell copies of
+the Data Files or Software, and to permit persons to whom the Data Files
+or Software are furnished to do so, provided that either
+(a) this copyright and permission notice appear with all copies
+of the Data Files or Software, or
+(b) this copyright and permission notice appear in associated
+Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT OF THIRD PARTY RIGHTS.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
+NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
+DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THE DATA FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder
+shall not be used in advertising or otherwise to promote the sale,
+use or other dealings in these Data Files or Software without prior
+written authorization of the copyright holder.
 
 ==============================================================================
 Shipped by: rgb 0.8.53 (LICENSE)
@@ -12624,6 +13063,33 @@ SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
 OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+==============================================================================
+Shipped by: ring 0.17.14 (src/polyfill/once_cell/LICENSE-MIT)
+------------------------------------------------------------------------------
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHOR OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 Shipped by: rust_decimal 1.43.0 (LICENSE)
@@ -13522,7 +13988,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Shipped by: spin 0.9.9 (LICENSE), zip 8.6.0 (LICENSE)
+Shipped by: spin 0.9.9 (LICENSE), tracing-core 0.1.36 (src/spin/LICENSE), zip 8.6.0 (LICENSE)
 ------------------------------------------------------------------------------
 The MIT License (MIT)
 

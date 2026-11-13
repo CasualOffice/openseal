@@ -173,8 +173,10 @@ and is treated here as distributed.
   506 are reached through normal dependencies (`shipped`), 15 only through build-dependencies and 27 only through
   dev-dependencies. Cargo.lock covers every target platform, so `shipped` over-counts for any single binary. For each
   crate it records the declared SPDX expression and the copyright lines found in its licence files.
-  [THIRD-PARTY-LICENSES.txt](../THIRD-PARTY-LICENSES.txt) reproduces every licence and notice file those crates ship,
-  verbatim, one copy per distinct text (339 texts); the standard Apache-2.0 text is LICENSE.
+  [THIRD-PARTY-LICENSES.txt](../THIRD-PARTY-LICENSES.txt) reproduces every licence, notice and patent-licence file
+  those crates ship, verbatim, one copy per distinct text (348 texts), including those in subfolders for bundled C
+  libraries and data (Oniguruma in `onig_sys`, AWS-LC and fiat-crypto, Adobe CMaps and Foxit fonts in `hayro`, the
+  Unicode tables in `regex-syntax`); the standard Apache-2.0 text is LICENSE.
 - **Vendored and embedded files** (15 components): pdf.js 4.10.38 with its CMaps (Adobe, BSD-3-Clause) and standard
   fonts (Foxit, Liberation Sans), Lucide icons, Geist and Geist Mono (web app, console UI, website), Liberation, Great
   Vibes and Allura fonts embedded in flattened PDFs, the Adobe AFM and Glyph List data tables, the Presidio-derived
@@ -194,7 +196,8 @@ one scoped exception, owner instruction 32 (§8).
 **NOTICE check.** `python3 tools/licence-inventory.py --check` fails unless NOTICE points to the inventory and the
 licence texts, names every vendored component and every bundled model repository, reproduces the NOTICE of any
 shipped crate that has one (Apache-2.0 §4(d); on 2026-11-13 none does: the only crate with a notices file,
-`cfg_aliases`, is build-only), and no licence or font file sits in a shipped folder without a component that accounts
+`cfg_aliases`, is build-only), names every shipped crate with a PATENTS file (`rav1e`, whose Alliance for Open Media
+Patent License 1.0 must be reproduced with binaries), and no licence or font file sits in a shipped folder without a component that accounts
 for it. Before `LEG-01` NOTICE omitted the Geist fonts (three copies), the pdf.js CMaps (Adobe BSD-3-Clause), ONNX
 Runtime and all model weights, and said nothing of the Rust crates; it now covers them. The check is a tool for this
 review, not a CI gate (no new gates without the owner).
@@ -217,7 +220,12 @@ review, not a CI gate (no new gates without the owner).
 6. Data and fonts: the Adobe AFM notice ("retain all copyright notices") as met by NOTICE; the OFL-1.1 fonts, embedded
    as subsets in signed PDFs that users distribute; the Presidio patterns ported without code, with the MIT text
    included.
-7. Training-data lineage stays an owner and counsel question under `LEG-02` and §8; this packet covers licences only.
+7. `rav1e` 0.8.1 (an AV1 encoder that `image`'s default features compile into casual-sign-modeld, though modeld
+   encodes no image) is BSD-2-Clause and also under the Alliance for Open Media Patent License 1.0, which requires
+   the licence to accompany binaries and ends the patent grant for a licensee that brings a patent claim over an
+   AV1 implementation. NOTICE names it and THIRD-PARTY-LICENSES.txt holds the text; is that adequate, and should
+   the encoder be dropped from the build instead (`LEG-08`)?
+8. Training-data lineage stays an owner and counsel question under `LEG-02` and §8; this packet covers licences only.
 
 **Not covered here:** trademark (DEC-07), legal claims and the default ERSD (`LEG-02`), the corpus fixtures, which are
 fetched by URL and never distributed (NOTICE lists their attribution), and CI-only tools (EU DSS, pyHanko, Playwright,

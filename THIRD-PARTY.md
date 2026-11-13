@@ -15,7 +15,7 @@ platform, so `shipped` over-counts for any one binary.
 
 ## Rust crates (549: 507 shipped)
 
-| Crate | Version | Licence (as declared) | Scope | Copyright lines in its licence files | NOTICE file |
+| Crate | Version | Licence (as declared) | Scope | Copyright lines in its licence files | NOTICE or PATENTS file |
 | --- | --- | --- | --- | --- | --- |
 | ab_glyph | 0.2.32 | Apache-2.0 | shipped | (none stated) |  |
 | ab_glyph_rasterizer | 0.1.10 | Apache-2.0 | shipped | (none stated) |  |
@@ -196,10 +196,10 @@ platform, so `shipped` over-counts for any one binary.
 | hashlink | 0.11.1 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | hayro | 0.8.0 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors |  |
 | hayro-ccitt | 0.4.0 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors |  |
-| hayro-cmap | 0.1.0 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors |  |
-| hayro-interpret | 0.8.0 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors |  |
+| hayro-cmap | 0.1.0 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors; Copyright 1990-2023 Adobe. All rights reserved. |  |
+| hayro-interpret | 0.8.0 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors; Copyright 2014 PDFium Authors. All rights reserved. |  |
 | hayro-jbig2 | 0.3.1 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors |  |
-| hayro-jpeg2000 | 0.4.1 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors |  |
+| hayro-jpeg2000 | 0.4.1 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors; Copyright and Related Rights in the Work and the meaning and intended legal; Copyright and Related Rights in the Work or (ii) assert any associated claims |  |
 | hayro-postscript | 0.1.0 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors |  |
 | hayro-syntax | 0.8.0 | Apache-2.0 OR MIT | shipped | Copyright (c) The Hayro Authors |  |
 | heapless | 0.7.17 | MIT OR Apache-2.0 | shipped | Copyright (c) 2017 Jorge Aparicio |  |
@@ -253,7 +253,7 @@ platform, so `shipped` over-counts for any one binary.
 | libloading | 0.8.9 | ISC | shipped | Copyright © 2015, Simonas Kazlauskas |  |
 | libloading | 0.9.0 | ISC | shipped | Copyright © 2015, Simonas Kazlauskas |  |
 | libm | 0.2.16 | MIT | shipped | Copyright (c) 2018 Jorge Aparicio; Copyright © 2005-2020 Rich Felker, et al.; Copyright © 1993,2004 Sun Microsystems or; Copyright © 2003-2011 David Schultz or |  |
-| libsqlite3-sys | 0.30.1 | MIT | shipped | Copyright (c) 2014-2021 The rusqlite developers |  |
+| libsqlite3-sys | 0.30.1 | MIT | shipped | Copyright (c) 2014-2021 The rusqlite developers; Copyright (c) 2008-2020 Zetetic LLC |  |
 | linebender_resource_handle | 0.1.1 | Apache-2.0 OR MIT | shipped | (none stated) |  |
 | linked-hash-map | 0.5.6 | MIT/Apache-2.0 | shipped | Copyright (c) 2015 The Rust Project Developers |  |
 | linux-raw-sys | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | shipped | (none stated) |  |
@@ -308,7 +308,7 @@ platform, so `shipped` over-counts for any one binary.
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | oncemutex | 0.1.1 | MIT/Apache-2.0 | shipped | (none stated) |  |
 | onig | 6.5.3 | MIT | shipped | (none stated) |  |
-| onig_sys | 69.9.3 | MIT | shipped | (none stated) |  |
+| onig_sys | 69.9.3 | MIT | shipped | Copyright (c) 2002-2021 K.Kosako <kkosako0@gmail.com> |  |
 | openssl-probe | 0.2.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 Alex Crichton |  |
 | ort | 2.0.0-rc.13 | MIT OR Apache-2.0 | shipped | Copyright (c) 2023-2026 pyke.io; Copyright (c) 2020 Nicolas Bigaouette |  |
 | ort-sys | 2.0.0-rc.13 | MIT OR Apache-2.0 | shipped | Copyright (c) 2023-2026 pyke.io; Copyright (c) 2020 Nicolas Bigaouette |  |
@@ -371,7 +371,7 @@ platform, so `shipped` over-counts for any one binary.
 | rand_distr | 0.6.0 | MIT OR Apache-2.0 | shipped | Copyright 2018 Developers of the Rand project |  |
 | rand_xorshift | 0.5.0 | MIT OR Apache-2.0 | test | Copyright 2018 Developers of the Rand project; Copyright (c) 2014 The Rust Project Developers |  |
 | rangemap | 1.8.0 | MIT/Apache-2.0 | test | Copyright 2019-2022 Jeff Parsons, and [contributors](https://github.com/jeffparsons/rangemap/contributors); Copyright 2019 Jeffrey Parsons |  |
-| rav1e | 0.8.1 | BSD-2-Clause | shipped | Copyright (c) 2017-2023, the rav1e contributors |  |
+| rav1e | 0.8.1 | BSD-2-Clause | shipped | Copyright (c) 2017-2023, the rav1e contributors | PATENTS |
 | ravif | 0.13.0 | BSD-3-Clause | shipped | Copyright (c) 2020, Kornel |  |
 | rawpointer | 0.2.1 | MIT/Apache-2.0 | shipped | Copyright (c) 2015 |  |
 | rayon | 1.12.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2010 The Rust Project Developers |  |
@@ -385,11 +385,11 @@ platform, so `shipped` over-counts for any one binary.
 | regex | 1.13.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | regex-automata | 0.4.18 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | regex-cache | 0.2.1 | MIT | shipped | Copyright 2017 1aim GmbH |  |
-| regex-syntax | 0.6.29 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
-| regex-syntax | 0.8.11 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
+| regex-syntax | 0.6.29 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers; Copyright © 1991-2018 Unicode, Inc. All rights reserved. |  |
+| regex-syntax | 0.8.11 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers; Copyright © 1991-2018 Unicode, Inc. All rights reserved. |  |
 | rfc6979 | 0.6.0 | Apache-2.0 OR MIT | shipped | Copyright 2018-2022 RustCrypto Developers; Copyright (c) 2018-2026 RustCrypto Developers |  |
 | rgb | 0.8.53 | MIT | shipped | Copyright (c) 2019 Kornel |  |
-| ring | 0.17.14 | Apache-2.0 AND ISC | shipped | Copyright (c) 2009 The Go Authors. All rights reserved.; Copyright 2015 The Chromium Authors. All rights reserved.; Copyright 2015-2025 Brian Smith. |  |
+| ring | 0.17.14 | Apache-2.0 AND ISC | shipped | Copyright (c) 2009 The Go Authors. All rights reserved.; Copyright 2015 The Chromium Authors. All rights reserved.; Copyright 2015-2025 Brian Smith.; Copyright 2015-2020 the fiat-crypto authors (see the AUTHORS file) |  |
 | rsa | 0.10.0 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | rust_decimal | 1.43.0 | MIT | shipped | Copyright (c) 2016 Paul Mason |  |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT | shipped | (none stated) |  |
@@ -485,7 +485,7 @@ platform, so `shipped` over-counts for any one binary.
 | tower-service | 0.3.3 | MIT | shipped | Copyright (c) 2019 Tower Contributors |  |
 | tracing | 0.1.44 | MIT | shipped | Copyright (c) 2019 Tokio Contributors |  |
 | tracing-attributes | 0.1.31 | MIT | shipped | Copyright (c) 2019 Tokio Contributors |  |
-| tracing-core | 0.1.36 | MIT | shipped | Copyright (c) 2019 Tokio Contributors |  |
+| tracing-core | 0.1.36 | MIT | shipped | Copyright (c) 2019 Tokio Contributors; Copyright (c) 2014 Mathijs van de Nes |  |
 | tracing-subscriber | 0.3.23 | MIT | shipped | Copyright (c) 2019 Tokio Contributors |  |
 | transpose | 0.2.3 | MIT OR Apache-2.0 | shipped | Copyright 2022 The transpose developers; Copyright (c) 2022 The transpose Developers |  |
 | ttf-parser | 0.25.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018 Yevhenii Reizner |  |
