@@ -241,7 +241,7 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 | CS-WRK-0012 | A sealed document failed the worker's independent verification of the stored bytes (the envelope stays `completing`) |
 | CS-WRK-0013 | No provider for the channel (SMS, WhatsApp; slice 12). *Final* |
 | CS-WRK-0014 | No payment gateway configured (slice 13). *Final* |
-| CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job |
+| CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job; also the code of an analysis run whose last attempt's lease lapsed with its worker gone (`ML-25`) |
 | CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |
 | CS-WRK-0017 | The SMS or voice provider did not accept a one-time code message (its HTTP status, when it answered); retried within the code's attempts (VS-05) |
 

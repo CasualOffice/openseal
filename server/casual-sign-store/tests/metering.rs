@@ -210,7 +210,7 @@ async fn seats_are_distinct_identities_across_the_organization() {
             id: senders,
             name: "Senders".into(),
             kind: ProfileKind::Sender,
-            permissions: vec!["send".into()],
+            permissions: vec!["envelopes:send".into()],
         })
         .await
         .unwrap();

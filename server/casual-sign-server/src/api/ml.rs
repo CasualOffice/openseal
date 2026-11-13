@@ -28,7 +28,8 @@ use casual_sign_model::EnvelopeStatus as MStatus;
 use casual_sign_store::blob::BlobKey;
 use casual_sign_store::repo::documents::VersionKind;
 use casual_sign_store::repo::ml::{
-    MlSettings, NewRun, Run, RunKind, Suggestion, SuggestionFilter, SuggestionKind, SuggestionState,
+    MlSettings, NewRun, Run, RunKind, RunStatus, Suggestion, SuggestionFilter, SuggestionKind,
+    SuggestionState,
 };
 use casual_sign_store::repo::templates::TemplateAccess;
 use casual_sign_store::{
@@ -245,7 +246,20 @@ async fn normalized_sha(tx: &mut TenantTx, doc: Uuid) -> Result<[u8; 32], ApiErr
         .ok_or_else(ApiError::not_found)
 }
 
-/// Record a run and enqueue its job, unless one with the same key exists; the run.
+/// The newest run of `document`, after ending as `failed` each of its runs whose job will
+/// never run again (`ML-25`: a worker that died on the last attempt leaves its run open,
+/// and the web app would show "reading" for good).
+async fn newest(st: &AppState, tx: &mut TenantTx, document: Uuid) -> Result<Run, ApiError> {
+    tx.ml().fail_abandoned_runs(document, st.now()).await?;
+    tx.ml()
+        .latest_run(document)
+        .await?
+        .ok_or_else(ApiError::not_found)
+}
+
+/// Record a run and enqueue its job, unless a run with the same key stands; the run.
+/// A run that ended `failed` or `unavailable` is not the answer to a new request: its
+/// retry is recorded and enqueued under a retry key (`ML-24`), once per failure.
 #[allow(clippy::too_many_arguments)] // One argument per part of the key and payload.
 async fn enqueue(
     st: &AppState,
@@ -258,15 +272,21 @@ async fn enqueue(
     uses: Vec<String>,
 ) -> Result<Run, ApiError> {
     let bundle = bundle(st)?;
-    let key = match owner.1 {
+    let now = st.now();
+    let first = match owner.1 {
         Some(t) => hml::fingerprint_key(account, t.0, document, &sha, bundle),
         None => hml::analyze_key(account, document, &sha, &uses, bundle),
     };
-    if let Some(r) = tx.ml().run_by_key(&key).await? {
-        return Ok(r);
-    }
+    let prefix = hml::retry_prefix(account, owner.1.map(|t| t.0), document);
+    tx.ml().fail_abandoned_runs(document, now).await?;
+    let key = match tx.ml().current_run(&first, &prefix).await? {
+        None => first,
+        Some(r) if matches!(r.status, RunStatus::Failed | RunStatus::Unavailable) => {
+            hml::retry_key(&prefix, r.id.0)
+        }
+        Some(r) => return Ok(r),
+    };
     let run = AnalysisRunId(Uuid::now_v7());
-    let now = st.now();
     tx.ml()
         .insert_run(&NewRun {
             id: run,
@@ -409,11 +429,7 @@ pub(crate) async fn envelope_analysis(
     if in_effect(&c.st, &mut tx).await?.is_empty() {
         return Err(ApiError::ml_off());
     }
-    let run = tx
-        .ml()
-        .latest_run(d)
-        .await?
-        .ok_or_else(ApiError::not_found)?;
+    let run = newest(&c.st, &mut tx, d).await?;
     tx.commit().await?;
     Ok(json(StatusCode::OK, &run_json(&run)))
 }
@@ -480,11 +496,7 @@ pub(crate) async fn template_analysis(
     if in_effect(&c.st, &mut tx).await?.is_empty() {
         return Err(ApiError::ml_off());
     }
-    let run = tx
-        .ml()
-        .latest_run(d.0)
-        .await?
-        .ok_or_else(ApiError::not_found)?;
+    let run = newest(&c.st, &mut tx, d.0).await?;
     tx.commit().await?;
     Ok(json(StatusCode::OK, &run_json(&run)))
 }
