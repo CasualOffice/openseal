@@ -438,6 +438,15 @@ async fn only_the_creating_client_opens_an_embedded_signing_view() {
     let r_id = e["recipients"][0]["id"].as_str().unwrap();
     let body = json!({"recipient_id": r_id, "auth_asserted": "host SSO"});
     let path = format!("/api/v1/envelopes/{id}/views/signing");
+    let audit = format!("/api/v1/envelopes/{id}/audit");
+    let trail = || async {
+        {
+            let r = api.call("GET", &audit, &a.auth, None, &[]).await;
+            assert_eq!(r.status, StatusCode::OK);
+            r.json()["items"].as_array().unwrap().len()
+        }
+    };
+    let before = trail().await;
     // Another client of the same account, and a staff key that is no client of it.
     let r = api.call("POST", &path, &h2, Some(body.clone()), &[]).await;
     assert_eq!(code(&r), (StatusCode::FORBIDDEN, "CS-AUTH-0010".into()));
@@ -445,6 +454,24 @@ async fn only_the_creating_client_opens_an_embedded_signing_view() {
         .call("POST", &path, &a.auth, Some(body.clone()), &[])
         .await;
     assert_eq!(code(&r), (StatusCode::FORBIDDEN, "CS-AUTH-0010".into()));
+    // An API client of another account, holding the same scopes, is refused as for an
+    // envelope that does not exist (WF-05): no view, no host opening, no assertion.
+    let b = api.tenant("beta").await;
+    let kb = api
+        .call(
+            "POST",
+            "/api/v1/api-clients",
+            &b.auth,
+            Some(mk("other host")),
+            &[],
+        )
+        .await
+        .json();
+    let hb = Auth::Bearer(kb["key"].as_str().unwrap().to_owned());
+    let r = api.call("POST", &path, &hb, Some(body.clone()), &[]).await;
+    assert_eq!(code(&r), (StatusCode::NOT_FOUND, "CS-API-0002".into()));
+    // None of the refused requests recorded anything on the envelope.
+    assert_eq!(trail().await, before, "a refused host wrote to the trail");
     let r = api.call("POST", &path, &h1, Some(body), &[]).await;
     assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.json());
     // The view link lives five minutes.

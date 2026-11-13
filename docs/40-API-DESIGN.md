@@ -201,7 +201,9 @@ run on the OpenSeal origin: the signer's session and its evidence must not be re
 `frame-ancestors` is set per account from its allowed embedding origins.
 
 An embedded recipient's authentication is the host's: the view request may carry `auth_asserted: {method, at}`, which
-is recorded as `auth.asserted_by_host` ([49](49-SIGNNOW-STUDY.md) §5). Additional OpenSeal authentication can still be
+is recorded as `auth.asserted_by_host` ([49](49-SIGNNOW-STUDY.md) §5). Only the API client that created the envelope
+acts as its host (`envelopes.host_client_id`, WF-05): any other client of the account or a staff session is refused
+`403 CS-AUTH-0010`, another account's client `404` as for an envelope that does not exist. Additional OpenSeal authentication can still be
 required on top.
 
 ## 6. Ceremony endpoints (not public API)
@@ -264,7 +266,7 @@ table and the document equal in both directions, scope by scope.
 | `/documents/{doc}` `PATCH` | **Not built**: the engine has no rename change (row proposed) |
 | `/documents/{doc}/pages/{n}.png` | **Not built** (thumbnails are rendered by pdf.js in the browser, ADR-007; a server thumbnail needs a renderer) |
 | `/certificate`, `/documents/combined`, `/audit?format=pdf`, `content?version=sealed` | Answer `409 CS-API-0009` until the seal job (stage 2D) stores them; `GET /audit` (JSON) re-verifies the chain on every read |
-| `/views/signing` | Built; only the API client that created the envelope may ask (WF-05, `CS-AUTH-0010`); `auth_asserted` records the host's opening and `auth.asserted_by_host` |
+| `/views/signing` | Built; only the API client that created the envelope may ask (WF-05, `CS-AUTH-0010` to another client of the account or a staff session; `404` to another account's client, nothing recorded; `tests/auth.rs`); `auth_asserted` records the host's opening and `auth.asserted_by_host` |
 | `/views/prepare`, `/views/correct` | **Not built** (slice 9) |
 | `/templates` | `GET`, `POST` (with roles), `GET /{id}` (with documents and fields), `PATCH /{id}` (name, email subject and message, `If-Match`), and editing (`WEB-06`, below); `/templates/{id}/envelopes` is slice 3 |
 | `/ersd-versions` | `ERSD-01`. Scope `admin:account`. `POST {text, language?}` publishes `text` as the next version of `language` (`en` when absent; one more than its highest) and sets `settings.workflow_policy.ersd = {version: "<n>", hash}` in the same transaction, with `ersd.published` and `workspace.settings_changed` on the admin log; answers `201 {id, version, label, language, sha256, published_at}`, never the text. Envelopes already sent then ask for consent to the new version (consent binds version and hash). Published rows are never changed: a new text is a new version. An empty or blank text, one with a NUL, a language tag that is not 2 to 35 letters, digits and `-` starting with a letter, or an unknown member is `422 CS-API-0001`; over 100,000 bytes `413 CS-API-0006`. `GET` answers `{current, items}`: `current` the disclosure the policy names with its text (`text` null when no intact published row has that hash) or null, `items` the published versions newest first, at most 100, without text. `tests/ersd_publish.rs`; seen red without the routes (`404 CS-API-0002`) |
