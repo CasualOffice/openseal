@@ -46,6 +46,9 @@ pub enum ConsoleError {
     /// `CS-CON-0017` (start-up): configuration invalid or a secret missing; names the
     /// variable.
     Config(&'static str),
+    /// `CS-CON-0006` (422): a TSA (or other key-and-trust) change refused: its URL fails
+    /// the `SEC-W01` address policy, or a value fails its check; names the field.
+    KeyRefused(&'static str),
     /// keyd's admin interface refused or did not answer (502), with keyd's code:
     /// `CS-CON-0008` (the console's identity is not on the admin allow-list),
     /// `CS-KEY-0001`, `CS-KEY-0011` (unreachable), and so on (`CON-06`).
@@ -73,6 +76,7 @@ impl ConsoleError {
             Self::Conflict => "CS-CON-0016",
             Self::Config(_) => "CS-CON-0017",
             Self::Keyd(code) => code,
+            Self::KeyRefused(_) => "CS-CON-0006",
         }
     }
 
@@ -83,7 +87,9 @@ impl ConsoleError {
             Self::NotAuthenticated | Self::SecondFactor => StatusCode::UNAUTHORIZED,
             Self::Forbidden | Self::Csrf => StatusCode::FORBIDDEN,
             Self::ApprovalRequired | Self::Conflict => StatusCode::CONFLICT,
-            Self::Invalid(_) | Self::PlanInvalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Invalid(_) | Self::PlanInvalid(_) | Self::KeyRefused(_) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Keyd(_) => StatusCode::BAD_GATEWAY,
             Self::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
@@ -112,6 +118,7 @@ impl ConsoleError {
             Self::Conflict => "Already exists",
             Self::Config(_) => "Console configuration invalid",
             Self::Keyd(_) => "keyd refused or did not answer",
+            Self::KeyRefused(_) => "Key or trust change refused",
         }
     }
 }
@@ -122,6 +129,7 @@ impl core::fmt::Display for ConsoleError {
             Self::ListenerRefused(why)
             | Self::Invalid(why)
             | Self::PlanInvalid(why)
+            | Self::KeyRefused(why)
             | Self::Internal(why)
             | Self::Config(why) => {
                 write!(f, "{}: {} ({why})", self.code(), self.title())
@@ -144,6 +152,7 @@ impl From<PlatformError> for ConsoleError {
             PlatformError::LogBroken { seq } => Self::LogBroken(seq),
             PlatformError::Invalid { .. } => Self::Invalid("value"),
             PlatformError::PlanInvalid => Self::PlanInvalid("plan"),
+            PlatformError::KeyChangeRefused => Self::KeyRefused("payload"),
             PlatformError::Unavailable => Self::Unavailable,
             _ => Self::Internal("database"),
         }
@@ -161,7 +170,7 @@ impl IntoResponse for ConsoleError {
         });
         if let Some(obj) = body.as_object_mut() {
             match &self {
-                Self::Invalid(field) | Self::PlanInvalid(field) => {
+                Self::Invalid(field) | Self::PlanInvalid(field) | Self::KeyRefused(field) => {
                     obj.insert("field".into(), json!(field));
                 }
                 Self::RateLimited(secs) => {

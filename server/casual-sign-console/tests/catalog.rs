@@ -214,6 +214,10 @@ async fn platform_grants_are_exactly_the_designed_ones() {
         "plan_inputs",
         "plans_page",
         "set_plan_override",
+        // CON-07, migration 0034: TSA changes by two key custodians.
+        "request_key_change",
+        "grant_key_change",
+        "apply_key_change",
     ];
     expected.sort_unstable();
     assert_eq!(callable, expected);

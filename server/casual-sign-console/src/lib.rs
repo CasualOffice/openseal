@@ -29,7 +29,9 @@ pub mod net;
 pub mod plans;
 pub mod state;
 pub mod totp;
+pub mod tsa;
 pub mod ui;
+pub mod url_policy;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
@@ -42,7 +44,7 @@ pub use state::{AppState, Clock, Config, RateLimits, SystemClock, check_listener
 pub const PREFIX: &str = "/console/v1";
 
 /// Every route, as `(method, path, roles)` with the path as the OpenAPI document writes it
-/// and `roles` its `x-roles`: `public`, `pending`, `any`, `operators` or `owners` (the
+/// and `roles` its `x-roles`: `public`, `pending`, `any`, `operators`, `custodians` or `owners` (the
 /// [`auth::Need`] its handler takes). The contract tests check this list against
 /// `api/console-openapi.yaml` and against the router.
 pub const ROUTES: &[(&str, &str, &str)] = &[
@@ -89,6 +91,10 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ),
     ("GET", "/console/v1/keys", "any"),
     ("GET", "/console/v1/keys/log", "operators"),
+    ("GET", "/console/v1/tsa", "any"),
+    ("POST", "/console/v1/tsa/changes", "custodians"),
+    ("POST", "/console/v1/tsa/changes/{id}/grant", "custodians"),
+    ("POST", "/console/v1/tsa/changes/{id}/apply", "custodians"),
     ("GET", "/console/v1/health", "any"),
     ("GET", "/console/v1/dead-letters", "any"),
     ("GET", "/console/v1/alerts", "any"),
@@ -157,6 +163,10 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/console/v1/keys", get(keys::keys))
         .route("/console/v1/keys/log", get(keys::keys_log))
+        .route("/console/v1/tsa", get(tsa::tsa))
+        .route("/console/v1/tsa/changes", post(tsa::propose))
+        .route("/console/v1/tsa/changes/{id}/grant", post(tsa::grant))
+        .route("/console/v1/tsa/changes/{id}/apply", post(tsa::apply))
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))
         .route("/console/v1/alerts", get(api::alerts))

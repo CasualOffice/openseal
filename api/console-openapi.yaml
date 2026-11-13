@@ -711,6 +711,88 @@ paths:
                         envelope_id: {type: string}
                         outcome: {type: string}
         default: {$ref: '#/components/responses/Problem'}
+  /console/v1/tsa:
+    get:
+      operationId: tsa
+      x-roles: any
+      description: The time-stamping authorities the worker uses (CON-07), in the order it tries the enabled ones, and the TSA changes of the last day with the payload each proposes, its approvers and whether it was applied. While no endpoint is enabled the worker uses `OPENSEAL_TSA_URLS`.
+      responses:
+        '200':
+          description: Endpoints and changes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endpoints:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, format: uuid}
+                        url: {type: string}
+                        policy_oid: {type: [string, 'null']}
+                        priority: {type: integer}
+                        enabled: {type: boolean}
+                        cert_sha256: {type: [string, 'null']}
+                        changed_at: {type: string, format: date-time}
+                        approval: {type: string, format: uuid}
+                  changes:
+                    type: array
+                    items: {type: object}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/tsa/changes:
+    post:
+      operationId: proposeTsaChange
+      x-roles: custodians
+      description: Propose a TSA change (step 1 of 3, key custodians, a second factor within 5 minutes). `set` adds or replaces an endpoint; its URL must be `http` or `https` and every address its host resolves to now must be public (SEC-W01) unless in `OPENSEAL_CONSOLE_TSA_ALLOW`, else `CS-CON-0006` naming `url`. `remove` names an existing endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: {type: string, enum: [set, remove]}
+                id: {type: string, format: uuid}
+                url: {type: string, maxLength: 2048}
+                policy_oid: {type: string}
+                priority: {type: integer, minimum: 0, maximum: 1000, default: 100}
+                enabled: {type: boolean, default: true}
+                cert_sha256: {type: string, pattern: '^[0-9a-fA-F]{64}$'}
+      responses:
+        '201':
+          description: The change's approval request and the endpoint it is for.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  endpoint: {type: string, format: uuid}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/tsa/changes/{id}/grant:
+    post:
+      operationId: grantTsaChange
+      parameters:
+        - $ref: '#/components/parameters/id'
+      x-roles: custodians
+      description: Approve another key custodian's TSA change (step 2), with a second factor within 5 minutes. Approving one's own is `CS-CON-0004`.
+      responses:
+        '204': {description: Granted.}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/tsa/changes/{id}/apply:
+    post:
+      operationId: applyTsaChange
+      parameters:
+        - $ref: '#/components/parameters/id'
+      x-roles: custodians
+      description: Apply one's own TSA change once another key custodian has granted it (step 3), with a second factor within 5 minutes. Without that approval, or a second time, `CS-CON-0004`.
+      responses:
+        '204': {description: Applied.}
+        default: {$ref: '#/components/responses/Problem'}
   /console/v1/health:
     get:
       operationId: health

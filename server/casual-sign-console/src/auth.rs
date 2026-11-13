@@ -124,6 +124,13 @@ impl Need for Operators {
     const ROLES: &'static [Role] = &[Role::PlatformOwner, Role::Operator];
 }
 
+/// Key custodians: TSA, trust and seal-key changes (docs/23 §5.4, `CON-07`).
+#[derive(Debug)]
+pub struct KeyCustodians;
+impl Need for KeyCustodians {
+    const ROLES: &'static [Role] = &[Role::KeyCustodian];
+}
+
 /// Platform owners only (operators and roles).
 #[derive(Debug)]
 pub struct Owners;

@@ -17,6 +17,7 @@
 //! | `OPENSEAL_CONSOLE_KEYD_CA` | PEM path: the CA keyd's server certificate chains to |
 //! | `OPENSEAL_CONSOLE_KEYD_CLIENT_CERT` | PEM path: the console's admin client certificate, whose fingerprint is on keyd's `OPENSEAL_KEYD_ADMIN_ALLOW_LIST` (never its signing list) |
 //! | `OPENSEAL_CONSOLE_KEYD_CLIENT_KEY` (secret) | Its private key (PEM) |
+//! | `OPENSEAL_CONSOLE_TSA_ALLOW` | Comma-separated CIDRs a proposed TSA URL may resolve to although not public (`CON-07`; default none) |
 //! | `OPENSEAL_MIGRATE_DATABASE_URL` (secret) | `set-service-target` and `remove-service-target` only: the schema owner |
 //!
 //! Commands:
@@ -90,6 +91,13 @@ fn config() -> Result<(Config, bool), String> {
         }
     }
     let public = std::env::var("OPENSEAL_CONSOLE_PUBLIC").as_deref() == Ok("1");
+    if let Ok(p) = std::env::var("OPENSEAL_CONSOLE_TSA_ALLOW") {
+        for part in p.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            c.tsa_allow.push(Cidr::parse(part).ok_or_else(|| {
+                "OPENSEAL_CONSOLE_TSA_ALLOW: not a CIDR (CS-CON-0017)".to_owned()
+            })?);
+        }
+    }
     c.keyd = keyd_client()?;
     Ok((c, public))
 }

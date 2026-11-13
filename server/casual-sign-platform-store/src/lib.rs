@@ -16,6 +16,7 @@ mod error;
 pub mod event;
 mod plans;
 mod store;
+mod tsa;
 
 pub use error::{PlatformError, Result};
 pub use event::{ChainReport, Detail, EventDraft, OrgScope, StoredEvent};
@@ -25,6 +26,7 @@ pub use store::{
     OrgAction, OrganizationRow, PlatformStore, PlatformTx, Role, ServiceTarget, Session,
     WorkspaceRow, remove_service_target, set_service_target,
 };
+pub use tsa::{KeyAction, TsaEndpoint};
 
 /// The driver, re-exported so the console builds its pool with the same version.
 pub use sqlx;
