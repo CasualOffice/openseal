@@ -87,6 +87,8 @@ fn has_ipv4(s: &str) -> bool {
 async fn every_server_security_event_is_emitted_without_personal_data() {
     let Some(api) = Api::with("security_log", Rls::On, |c| {
         c.rate.login_per_minute = 6;
+        // The first 429 trips the abnormal-activity alert (ASVS-13).
+        c.anomaly.rate_limited = 1;
     })
     .await
     else {

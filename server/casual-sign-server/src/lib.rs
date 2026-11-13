@@ -20,6 +20,7 @@
 //! The OpenAPI 3.1 document is `api/openapi.yaml`; the contract tests keep it and
 //! [`routes::table`] equal.
 
+mod anomaly;
 mod apply;
 mod auth;
 mod call;
@@ -43,6 +44,7 @@ pub mod web;
 
 pub mod api;
 
+pub use anomaly::{AbnormalActivity, AlertSink, AnomalyConfig, LogAlerts};
 pub use api::admin::{Bootstrapped, bootstrap, bootstrap_workspace};
 pub use api::envelopes::issue_invitation_token;
 pub use auth::{Credential, Principal, SCOPES, SecondFactor};
