@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ocr, template_matching, extraction, personal_data, personal_data_model, ocr_scripts, reread_scanner_text FROM ml_settings WHERE account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ocr",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ml_settings",
+            "name": "ocr"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "template_matching",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ml_settings",
+            "name": "template_matching"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "extraction",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ml_settings",
+            "name": "extraction"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "personal_data",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ml_settings",
+            "name": "personal_data"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "personal_data_model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ml_settings",
+            "name": "personal_data_model"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "ocr_scripts",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "ml_settings",
+            "name": "ocr_scripts"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reread_scanner_text",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ml_settings",
+            "name": "reread_scanner_text"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "320ca056c81b108244516ce3657b115efd36cc9851575123d31caa9dc9cba38e"
+}

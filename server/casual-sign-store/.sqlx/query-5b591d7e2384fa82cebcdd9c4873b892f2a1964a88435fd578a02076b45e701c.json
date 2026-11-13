@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT template_id, document_id, page, dhash, phash, model_id, weights_sha256 FROM template_fingerprints WHERE account_id = $1 ORDER BY template_id, document_id, page LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "template_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "template_fingerprints",
+            "name": "template_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "document_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "template_fingerprints",
+            "name": "document_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "page",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "template_fingerprints",
+            "name": "page"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "dhash",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "template_fingerprints",
+            "name": "dhash"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "phash",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "template_fingerprints",
+            "name": "phash"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "model_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "template_fingerprints",
+            "name": "model_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "weights_sha256",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "template_fingerprints",
+            "name": "weights_sha256"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5b591d7e2384fa82cebcdd9c4873b892f2a1964a88435fd578a02076b45e701c"
+}

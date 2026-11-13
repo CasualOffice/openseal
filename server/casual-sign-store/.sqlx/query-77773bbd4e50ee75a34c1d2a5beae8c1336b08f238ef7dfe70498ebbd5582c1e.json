@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE suggestions SET state = $3, decided_by = $4, decided_at = $5 WHERE account_id = $1 AND id = $2 AND state = 'open'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "77773bbd4e50ee75a34c1d2a5beae8c1336b08f238ef7dfe70498ebbd5582c1e"
+}
