@@ -13,6 +13,7 @@ pub mod documents;
 pub mod envelopes;
 pub mod fields;
 pub mod folders;
+pub mod groups;
 pub mod idempotency;
 pub mod jobs;
 pub mod ml;
@@ -78,6 +79,11 @@ impl TenantTx {
     /// Staff users through this account's memberships, and permission profiles.
     pub fn users(&mut self) -> accounts::Users<'_> {
         accounts::Users { tx: self }
+    }
+
+    /// Groups of members (UXW-07).
+    pub fn groups(&mut self) -> groups::Groups<'_> {
+        groups::Groups { tx: self }
     }
 
     /// API clients and keys.

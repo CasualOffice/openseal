@@ -11,7 +11,7 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
-    admin, bulk, envelopes as env, folders, mfa, ml, org, switch, templates, webhooks,
+    admin, bulk, envelopes as env, folders, groups, mfa, ml, org, switch, templates, webhooks,
 };
 use crate::ceremony;
 use crate::http::{Guard, OtherMedia, guard, json_only, panicked, request_context};
@@ -357,6 +357,77 @@ pub fn table() -> Vec<Route> {
             Scope("admin:users"),
             JSON,
             admin::reinvite_user,
+        ),
+        // Admin groups and custom permission profiles (UXW-07).
+        r(
+            "POST",
+            "/api/v1/groups",
+            Scope("admin:users"),
+            JSON,
+            groups::create_group,
+        ),
+        r(
+            "GET",
+            "/api/v1/groups/{id}",
+            Scope("admin:users"),
+            JSON,
+            groups::group,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/groups/{id}",
+            Scope("admin:users"),
+            JSON,
+            groups::patch_group,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/groups/{id}",
+            Scope("admin:users"),
+            JSON,
+            groups::delete_group,
+        ),
+        r(
+            "PUT",
+            "/api/v1/groups/{id}/members",
+            Scope("admin:users"),
+            JSON,
+            groups::put_members,
+        ),
+        r(
+            "GET",
+            "/api/v1/permission-profiles",
+            Scope("admin:users"),
+            JSON,
+            groups::profiles,
+        ),
+        r(
+            "POST",
+            "/api/v1/permission-profiles",
+            Scope("admin:users"),
+            JSON,
+            groups::create_profile,
+        ),
+        r(
+            "GET",
+            "/api/v1/permission-profiles/{id}",
+            Scope("admin:users"),
+            JSON,
+            groups::profile,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/permission-profiles/{id}",
+            Scope("admin:users"),
+            JSON,
+            groups::patch_profile,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/permission-profiles/{id}",
+            Scope("admin:users"),
+            JSON,
+            groups::delete_profile,
         ),
         r(
             "GET",

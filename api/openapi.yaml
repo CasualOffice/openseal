@@ -923,6 +923,63 @@ components:
               id: {type: string}
               name: {type: string}
               members: {type: integer}
+    GroupName:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+    Group:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        members: {type: integer}
+        user_ids: {type: array, items: {type: string}}
+    GroupMembers:
+      type: object
+      additionalProperties: false
+      required: [user_ids]
+      properties:
+        user_ids: {type: array, items: {type: string}}
+    PermissionName:
+      type: string
+      enum: [envelopes:read, envelopes:write, envelopes:send, templates:read, templates:write, bulk:send, webhooks:manage, admin:users, admin:account, audit:read, view_all_envelopes]
+    PermissionProfile:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [admin, sender, viewer, custom]}
+        builtin: {type: boolean}
+        permissions:
+          type: array
+          description: What it grants, in docs/40 order; a built-in profile's come from its kind
+          items: {$ref: '#/components/schemas/PermissionName'}
+        members: {type: integer, description: How many members hold it}
+    PermissionProfileList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PermissionProfile'}
+    PermissionProfileCreate:
+      type: object
+      additionalProperties: false
+      required: [name, permissions]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        permissions:
+          type: array
+          items: {$ref: '#/components/schemas/PermissionName'}
+    PermissionProfilePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        permissions:
+          type: array
+          items: {$ref: '#/components/schemas/PermissionName'}
     TemplatePatch:
       type: object
       additionalProperties: false
@@ -3476,6 +3533,170 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/GroupList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createGroup
+      summary: "Make a group of members (UXW-07); a name the account uses is 422 `exists` at /name"
+      x-permission: "admin:users"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GroupName'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/groups/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A group of this account (another account's is 404)
+        schema: {type: string}
+    get:
+      operationId: getGroup
+      summary: "A group with its members' user ids"
+      x-permission: "admin:users"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: renameGroup
+      summary: "Rename a group"
+      x-permission: "admin:users"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GroupName'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteGroup
+      summary: "Delete a group; its template shares go with it"
+      x-permission: "admin:users"
+      responses:
+        '204': {description: Deleted}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/groups/{id}/members:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A group of this account (another account's is 404)
+        schema: {type: string}
+    put:
+      operationId: setGroupMembers
+      summary: "Make the group's members exactly these members of the account"
+      description: >-
+        Each id must be a member of this account (422 at `/user_ids/{i}` otherwise);
+        a repeated id counts once. Each member added or removed is its own admin event.
+      x-permission: "admin:users"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GroupMembers'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/permission-profiles:
+    get:
+      operationId: listPermissionProfiles
+      summary: "The built-in profiles, then the custom ones, with what each grants and how many members hold it (UXW-07)"
+      x-permission: "admin:users"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionProfileList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createPermissionProfile
+      summary: "Make a custom permission profile"
+      description: >-
+        Its permissions are scopes of docs/40 §2 and `view_all_envelopes`; none may go
+        beyond the caller's own (403 CS-AUTH-0006). A name the account uses is 422
+        `exists` at /name.
+      x-permission: "admin:users"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PermissionProfileCreate'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionProfile'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/permission-profiles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A permission profile of this account (another account's is 404)
+        schema: {type: string}
+    get:
+      operationId: getPermissionProfile
+      summary: "A permission profile"
+      x-permission: "admin:users"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionProfile'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: updatePermissionProfile
+      summary: "Change a custom profile; its members hold the new permissions from their next request"
+      description: >-
+        A built-in profile is 409 CS-WF-0001. The profile as it was and as it becomes
+        must both be within the caller's rights (403 CS-AUTH-0006). Giving sending to
+        more members is checked against the plan's seats (CS-PLAN-0003).
+      x-permission: "admin:users"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PermissionProfilePatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionProfile'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deletePermissionProfile
+      summary: "Delete a custom profile no member holds (409 CS-WF-0001 for a built-in or a held one)"
+      x-permission: "admin:users"
+      responses:
+        '204': {description: Deleted}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/webhooks:
     get:

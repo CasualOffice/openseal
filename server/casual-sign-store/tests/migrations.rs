@@ -114,7 +114,8 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // an organization table (PLAN-03); 0028 `quota_notices`, an organization table
     // (PLAN-04); 0023 `password_resets` and `member_profiles` (UXW-37, UXW-38), tenant tables;
     // 0030 `recipient_sso_challenges` (RAUTH-01), a tenant table; 0031
-    // `template_favourites` (UXW-06), a tenant table.
+    // `template_favourites` (UXW-06), a tenant table; 0033 none (UXW-07: cascades,
+    // a check and commit triggers on `groups` and `group_members`).
     assert_eq!(tables.len(), 63, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",

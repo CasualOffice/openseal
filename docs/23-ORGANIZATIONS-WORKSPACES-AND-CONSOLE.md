@@ -546,7 +546,8 @@ mutation of the migration):
   document-analysis switches, `WEB-19`), `ersd.published` (a disclosure version's id, version, language and hash,
   never its text, `ERSD-01`), `organization.created`,
   `organization.admin_added`, `member.added`, `member.removed`, `member.profile_changed`, `member.disabled`,
-  `member.enabled`, `member.renamed`, `member.password_set`, `profile.created`. A user changing their own name or
+  `member.enabled`, `member.renamed`, `member.password_set`, `profile.created`, `profile.changed`, `profile.deleted`,
+  `group.created`, `group.renamed`, `group.deleted`, `group.member_added`, `group.member_removed` (`UXW-07`). A user changing their own name or
   password, and accepting an invitation, are not administrative changes and write none.
 - **The database checks the bytes.** Besides the hash, `seq` and `prev`, the insert trigger requires the owner, `seq`,
   `prev`, `action` and `at` columns to be what the bytes state (`at` exactly the bytes' Unix millisecond, since the API

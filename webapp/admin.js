@@ -36,9 +36,8 @@ import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { WEBHOOK_EVENT_TYPES } from "./api.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { profileName } from "./people.js";
 import {
-  NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
+  NAV, routeFrom, navHref, SCOPE_GROUPS, PERMISSION_GROUPS, profileChoices, profileValue, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
   expiryWarningOf, expiryWarningPatch, MAX_WARNING_DAYS, actorKind, changedKeys, filterAdminEvents, joinCsvPages,
 } from "./adminmodel.js";
 import { intelligence } from "./adminintel.js";
@@ -60,7 +59,10 @@ const LEDE = {
   integrations: () => t("admin.lede.integrations"), intelligence: () => t("intel.lede"), signing: () => t("admin.lede.signing"),
   audit: () => t("admin.lede.audit"),
 };
-const TAB = { api: () => t("admin.api"), webhooks: () => t("admin.webhooks") };
+const TAB = {
+  api: () => t("admin.api"), webhooks: () => t("admin.webhooks"),
+  users: () => t("admin.users"), groups: () => t("admin.groups"), profiles: () => t("admin.profiles"),
+};
 const PART = {
   signing: () => t("admin.sec.signing"), ersd: () => t("admin.sec.ersd"), retention: () => t("admin.sec.retention"),
   sso: () => t("admin.sec.sso"), seal: () => t("admin.sec.seal"), audit: () => t("admin.sec.audit"),
@@ -102,12 +104,12 @@ export function mount(view, ctx, _match, params) {
   for (const n of NAV) register(`admin.go.${n.id}`, { label: t("palette.go", { place: TITLE[n.id]() }), run: () => ctx.navigate(navHref(n.id)) });
 
   if (!item.ready) waiting(body, item, ctx);
-  else if (current === "members") users(body, ctx);
+  else if (current === "members") members(body, ctx, tab);
   else if (current === "integrations") integrations(body, ctx, tab);
   else if (current === "intelligence") intelligence(body, ctx, HEADS.get(body));
   else if (current === "audit") adminLog(body, ctx);
   else account(body, ctx, current);
-  return () => { for (const p of ["users.", "webhooks.", "apiclients.", "admin.go.", "intel.", "adminlog."]) unregisterPrefix(p); };
+  return () => { for (const p of ["users.", "groups.", "profiles.", "webhooks.", "apiclients.", "admin.go.", "intel.", "adminlog."]) unregisterPrefix(p); };
 }
 
 /// The secondary nav (canvas): back to agreements, the workspace, then the pages; the
@@ -155,6 +157,22 @@ function integrations(body, ctx, tab) {
       if (id === "webhooks") webhooks(panel, ctx); else clients(panel, ctx);
     },
     onChange(id) { try { history.replaceState(null, "", navHref("integrations", id)); } catch { /* a sandboxed frame */ } },
+  });
+  HEADS.get(body)?.({});
+  body.append(tb);
+}
+
+/// Members and roles (UXW-07): users, groups and permission profiles as pill tabs of one
+/// page, as API and webhooks are; the URL follows the tab.
+function members(body, ctx, tab) {
+  const tb = tabs({
+    label: t("admin.members-tabs"), variant: "pill", current: tab,
+    tabs: ["users", "groups", "profiles"].map((id) => ({ id, label: TAB[id]() })),
+    render(id, panel) {
+      panel.dataset.section = id;
+      if (id === "groups") groups(panel, ctx); else if (id === "profiles") profiles(panel, ctx); else users(panel, ctx);
+    },
+    onChange(id) { try { history.replaceState(null, "", navHref("members", id)); } catch { /* a sandboxed frame */ } },
   });
   HEADS.get(body)?.({});
   body.append(tb);
@@ -355,18 +373,28 @@ function account(panel, ctx, part) {
 function users(panel, ctx) {
   let builtin = {};
   let items = [];
+  // The account's permission profiles (UXW-07); built-in ones only when they cannot be
+  // read (a member without `admin:users` never gets this far).
+  let profileList = [];
+  const choices = () => profileChoices(profileList, (k) => t(`admin.profile.${k}`));
+  const valueOf = (u) => profileValue(u, builtin, profileList);
+  const labelOf = (u) => { const v = valueOf(u); return choices().find(([c]) => c === v)?.[1] || v || "—"; };
   const filter = { q: "", profile: "all", status: "all" };
   sectionHead(panel, t("admin.users"), null,
     button(t("admin.add-user"), { icon: "user-plus", variant: "primary", command: "users.add", onClick: () => add() }));
   const search = h("input", { id: "u-search", type: "search", class: "os-input os-input--sm", autocomplete: "off", placeholder: t("admin.search-users") });
   search.addEventListener("input", () => { filter.q = search.value; render(); });
   const prof = selectField(t("admin.profile"), [["all", t("admin.filter-all")], ...PROFILES.map((p) => [p, t(`admin.profile.${p}`)])], { id: "u-filter-profile", size: "sm", onChange: (v) => { filter.profile = v; render(); } });
+  const fillFilter = () => {
+    const keep = prof.select.value;
+    clear(prof.select).append(...[["all", t("admin.filter-all")], ...choices()].map(([v, l]) => h("option", { value: v, text: l, selected: v === keep })));
+  };
   const stat = selectField(t("admin.col.status"), [["all", t("admin.filter-all")], ["active", t("admin.active")], ["pending", t("admin.pending")], ["disabled", t("admin.disabled")]], { id: "u-filter-status", size: "sm", onChange: (v) => { filter.status = v; render(); } });
   const tools = h("div", { class: "os-filters os-admin__tools" },
     h("div", { class: "os-fieldrow os-filters__search" }, h("label", { class: "os-label", attrs: { for: "u-search" }, text: t("admin.search-users") }), search), prof.el, stat.el);
   const count = h("p", { class: "os-muted os-small", attrs: { "aria-live": "polite", "data-testid": "users-count" } });
   const list = h("div", { class: "os-list os-surface-card" });
-  panel.append(tools, count, list, h("p", { class: "os-adm__later", attrs: { "data-testid": "members-later" }, text: t("admin.members-later") }));
+  panel.append(tools, count, list);
   register("users.add", { label: t("admin.add-user"), run: () => add() });
 
   async function load() {
@@ -374,8 +402,10 @@ function users(panel, ctx) {
     list.setAttribute("aria-busy", "true");
     list.append(skeletonRows(3));
     try {
-      const [page, acct] = await Promise.all([ctx.api.users.list(), ctx.api.account().catch(() => null)]);
+      const [page, acct, profs] = await Promise.all([ctx.api.users.list(), ctx.api.account().catch(() => null), ctx.api.profiles.list().catch(() => null)]);
       builtin = acct?.settings?.builtin_profiles || {};
+      profileList = profs?.items || [];
+      fillFilter();
       items = page.items || [];
       // The list carries no invitation state; a single read does. Local members who are
       // not disabled, at most 100, in parallel; one that fails just shows no Resend.
@@ -398,7 +428,7 @@ function users(panel, ctx) {
       list.append(emptyState({ illus: "recipients", title: t("empty.users.title"), text: t("empty.users.text"), action: button(t("admin.add-user"), { icon: "user-plus", variant: "primary", onClick: () => add() }), testId: "empty-users" }));
       return;
     }
-    const shown = filterUsers(items, filter, (u) => profileName(u, builtin));
+    const shown = filterUsers(items, filter, valueOf);
     count.textContent = t("admin.users-count", { n: shown.length, total: items.length });
     if (!shown.length) {
       list.append(emptyState({ illus: "search", title: t("admin.no-users-match"), text: "", action: button(t("admin.clear-filters"), { variant: "primary", onClick: clearFilters }), testId: "empty-user-search" }));
@@ -415,7 +445,6 @@ function users(panel, ctx) {
     const tb = h("tbody");
     for (const u of shown) {
       const me = u.id === ctx.session?.user_id;
-      const profile = profileName(u, builtin);
       const state = userState(u);
       const name = u.name || u.email;
       const menu = menuButton({
@@ -433,7 +462,7 @@ function users(panel, ctx) {
       tb.append(h("tr", { attrs: { "data-id": u.id } },
         h("td", {}, h("strong", { text: u.name || "—" }), me ? h("span", { class: "os-muted os-small", text: ` ${t("admin.you")}` }) : null),
         h("td", { class: "os-muted os-col-email", text: u.email || "" }),
-        h("td", { class: "os-col-date", attrs: { "data-label": t("admin.profile") }, text: PROFILES.includes(profile) ? t(`admin.profile.${profile}`) : profile || "—" }),
+        h("td", { class: "os-col-date", attrs: { "data-label": t("admin.profile") }, text: labelOf(u) }),
         h("td", { class: "os-col-date", attrs: { "data-label": t("admin.col.status") } }, h("span", { class: `os-badge os-badge--user-${state}`, text: t(`admin.${state}`) })),
         h("td", { class: "os-col-actions" }, h("div", { class: "os-actions os-actions--row" }, editBtn, menu))));
     }
@@ -457,7 +486,7 @@ function users(panel, ctx) {
       build(body) {
         f.name = h("input", { id: "u-name", class: "os-input", maxLength: 255, autocomplete: "off", attrs: { autofocus: true, "aria-describedby": "u-err" } });
         f.email = h("input", { id: "u-email", class: "os-input", type: "email", autocomplete: "off", attrs: { "aria-describedby": "u-err" } });
-        const profile = selectField(t("admin.profile"), PROFILES.map((p) => [p, t(`admin.profile.${p}`)]), { id: "u-profile", value: "sender" });
+        const profile = selectField(t("admin.profile"), choices(), { id: "u-profile", value: "sender" });
         f.profile = profile.select;
         const inv = toggle(t("admin.send-invite"), { id: "u-invite", checked: true });
         f.invite = inv.input;
@@ -511,7 +540,7 @@ function users(panel, ctx) {
       description: u.email || null,
       build(body) {
         f.name = h("input", { id: "u-name-e", class: "os-input", value: u.name || "", maxLength: 255, attrs: { autofocus: true, "aria-describedby": "u-err-e" } });
-        const profile = selectField(t("admin.profile"), PROFILES.map((p) => [p, t(`admin.profile.${p}`)]), { id: "u-profile-e", value: profileName(u, builtin) || "sender" });
+        const profile = selectField(t("admin.profile"), choices(), { id: "u-profile-e", value: valueOf(u) || "sender" });
         f.profile = profile.select;
         f.profile.disabled = me;
         const dis = toggle(t("admin.disable"), { id: "u-disabled-e", checked: !!u.disabled });
@@ -549,6 +578,264 @@ function users(panel, ctx) {
   async function remove(u) {
     if (!(await confirmDialog(t("admin.remove-title"), t("admin.remove-text", { name: u.name }), { confirm: t("admin.remove"), danger: true }))) return;
     try { await ctx.api.users.remove(u.id); toast(t("admin.user-removed"), "success"); load(); } catch (err) { if (!ctx.failed(err)) toastError(err); }
+  }
+
+  load();
+}
+
+// ---- Groups and permission profiles (UXW-07) ---------------------------------------------
+
+/// The account's groups: name, members, and an administrator's Edit members, Rename and
+/// Delete. A group is what a template can be shared with (UXW-06); deleting one stops
+/// those shares.
+function groups(panel, ctx) {
+  let items = [];
+  sectionHead(panel, t("admin.groups"), t("admin.groups-lede"),
+    button(t("admin.add-group"), { icon: "plus", variant: "primary", command: "groups.add", onClick: () => name() }));
+  const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
+  panel.append(list);
+  register("groups.add", { label: t("admin.add-group"), run: () => name() });
+
+  async function load() {
+    clear(list);
+    list.setAttribute("aria-busy", "true");
+    list.append(skeletonRows(3));
+    try {
+      items = (await ctx.api.groups.list()).items || [];
+      list.removeAttribute("aria-busy");
+      render();
+    } catch (err) {
+      list.removeAttribute("aria-busy");
+      if (ctx.failed(err)) return;
+      errorState(list, err, load);
+    }
+  }
+
+  function render() {
+    clear(list);
+    if (!items.length) {
+      list.append(emptyState({ illus: "recipients", title: t("empty.groups.title"), text: t("empty.groups.text"), action: button(t("admin.add-group"), { icon: "plus", variant: "primary", onClick: () => name() }), testId: "empty-groups" }));
+      return;
+    }
+    const table = h("table", { class: "os-table os-table--rows os-table--cards" },
+      h("caption", { class: "os-sr-only", text: t("admin.groups") }),
+      h("thead", {}, h("tr", {},
+        h("th", { attrs: { scope: "col" }, text: t("prepare.name") }),
+        h("th", { attrs: { scope: "col" }, class: "os-col-date", text: t("admin.col.members") }),
+        h("th", { attrs: { scope: "col" }, class: "os-col-actions", text: t("templates.col.actions") }))));
+    const tb = h("tbody");
+    for (const g of items) {
+      const menu = menuButton({
+        label: t("admin.actions-for", { name: g.name }),
+        buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
+        items: () => [
+          { label: t("admin.edit-members"), icon: "users", run: () => editMembers(g) },
+          { label: t("admin.rename"), icon: "pencil", run: () => name(g) },
+          "separator",
+          { label: t("admin.remove"), icon: "trash-2", danger: true, run: () => remove(g) },
+        ],
+      });
+      const editBtn = button(t("admin.edit-members"), { icon: "users", size: "sm", attrs: { "aria-label": t("admin.edit-members-of", { name: g.name }) }, onClick: () => editMembers(g) });
+      editBtn.classList.add("os-admin__wide-only");
+      tb.append(h("tr", { attrs: { "data-id": g.id } },
+        h("td", {}, h("strong", { text: g.name })),
+        h("td", { class: "os-col-date", attrs: { "data-label": t("admin.col.members") }, text: String(g.members ?? 0) }),
+        h("td", { class: "os-col-actions" }, h("div", { class: "os-actions os-actions--row" }, editBtn, menu))));
+    }
+    table.append(tb);
+    list.append(h("div", { class: "os-table-wrap" }, table));
+  }
+
+  /// New group, or rename `g`: one name field.
+  async function name(g = null) {
+    const f = {};
+    const v = await openPanel({
+      id: "group-name",
+      title: g ? t("admin.rename-group") : t("admin.add-group"),
+      build(body) {
+        f.name = h("input", { id: "g-name", class: "os-input", maxLength: 255, autocomplete: "off", value: g?.name || "", attrs: { autofocus: true, "aria-describedby": "g-err" } });
+        f.err = h("p", { id: "g-err", class: "os-field-error", attrs: { role: "alert" } });
+        body.append(h("label", { class: "os-label", attrs: { for: "g-name" }, text: t("admin.group-name") }), f.name, f.err);
+      },
+      actions: [
+        { label: t("action.cancel"), value: null },
+        {
+          label: g ? t("templates.save") : t("admin.create"), variant: "primary",
+          onClick: async () => {
+            const n = f.name.value.trim();
+            f.name.removeAttribute("aria-invalid");
+            if (!n) { f.err.textContent = t("form.required"); f.name.setAttribute("aria-invalid", "true"); f.name.focus(); return undefined; }
+            try {
+              return g ? await ctx.api.groups.rename(g.id, n) : await ctx.api.groups.create(n);
+            } catch (err) {
+              if (err?.errors?.some((e) => e.code === "exists")) { f.err.textContent = t("admin.group-exists"); f.name.setAttribute("aria-invalid", "true"); f.name.focus(); return undefined; }
+              throw err;
+            }
+          },
+        },
+      ],
+    });
+    if (!v) return;
+    toast(t("admin.group-saved"), "success");
+    load();
+    if (!g) editMembers(v);
+  }
+
+  /// Who is in `g`: every member of the account with a checkbox, a search over them.
+  async function editMembers(g) {
+    let people = [];
+    let current = [];
+    try {
+      const [u, one] = await Promise.all([ctx.api.users.list(), ctx.api.groups.get(g.id)]);
+      people = (u.items || []).slice().sort((a, b) => String(a.name || a.email).localeCompare(String(b.name || b.email)));
+      current = one.user_ids || [];
+    } catch (err) { if (!ctx.failed(err)) toastError(err); return; }
+    const boxes = [];
+    const v = await openPanel({
+      id: "group-members",
+      title: t("admin.members-of", { name: g.name }),
+      width: 30,
+      build(body) {
+        const search = h("input", { id: "gm-search", type: "search", class: "os-input os-input--sm", autocomplete: "off", placeholder: t("admin.search-users") });
+        const fs = h("fieldset", { class: "os-fieldset", attrs: { "data-testid": "group-member-list" } }, h("legend", { class: "os-sr-only", text: t("admin.col.members") }));
+        for (const p of people) {
+          const c = checkbox(p.name ? `${p.name} · ${p.email}` : p.email, { id: `gm-${p.id}`, checked: current.includes(p.id), attrs: { value: p.id } });
+          boxes.push({ p, ...c });
+          fs.append(c.el);
+        }
+        search.addEventListener("input", () => {
+          const q = search.value.trim().toLowerCase();
+          for (const b of boxes) b.el.hidden = !!q && ![b.p.name, b.p.email].some((x) => String(x || "").toLowerCase().includes(q));
+        });
+        body.append(h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "gm-search" }, text: t("admin.search-users") }), search), fs);
+      },
+      actions: [
+        { label: t("action.cancel"), value: null },
+        { label: t("templates.save"), variant: "primary", onClick: () => ctx.api.groups.setMembers(g.id, boxes.filter((b) => b.input.checked).map((b) => b.p.id)) },
+      ],
+    });
+    if (v) { toast(t("admin.group-saved"), "success"); load(); }
+  }
+
+  async function remove(g) {
+    if (!(await confirmDialog(t("admin.group-delete-title"), t("admin.group-delete-text", { name: g.name }), { confirm: t("admin.remove"), danger: true }))) return;
+    try { await ctx.api.groups.remove(g.id); toast(t("admin.group-deleted"), "success"); load(); } catch (err) { if (!ctx.failed(err)) toastError(err); }
+  }
+
+  load();
+}
+
+/// The account's permission profiles: the built-in ones (fixed) and custom ones made
+/// here from the permissions of `PERMISSION_GROUPS`. The server refuses a profile beyond
+/// the caller's own rights (403) and deleting one a member holds (409); both are shown
+/// as the server says.
+function profiles(panel, ctx) {
+  let items = [];
+  sectionHead(panel, t("admin.profiles"), t("admin.profiles-lede"),
+    button(t("admin.add-profile"), { icon: "plus", variant: "primary", command: "profiles.add", onClick: () => edit() }));
+  const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
+  panel.append(list);
+  register("profiles.add", { label: t("admin.add-profile"), run: () => edit() });
+  const label = (p) => (p.builtin && ["admin", "sender", "viewer"].includes(p.kind) ? t(`admin.profile.${p.kind}`) : p.name);
+
+  async function load() {
+    clear(list);
+    list.setAttribute("aria-busy", "true");
+    list.append(skeletonRows(3));
+    try {
+      items = (await ctx.api.profiles.list()).items || [];
+      list.removeAttribute("aria-busy");
+      render();
+    } catch (err) {
+      list.removeAttribute("aria-busy");
+      if (ctx.failed(err)) return;
+      errorState(list, err, load);
+    }
+  }
+
+  function render() {
+    clear(list);
+    const table = h("table", { class: "os-table os-table--rows os-table--cards" },
+      h("caption", { class: "os-sr-only", text: t("admin.profiles") }),
+      h("thead", {}, h("tr", {},
+        h("th", { attrs: { scope: "col" }, text: t("prepare.name") }),
+        h("th", { attrs: { scope: "col" }, text: t("admin.kind") }),
+        h("th", { attrs: { scope: "col" }, class: "os-col-date", text: t("admin.col.permissions") }),
+        h("th", { attrs: { scope: "col" }, class: "os-col-date", text: t("admin.col.members") }),
+        h("th", { attrs: { scope: "col" }, class: "os-col-actions", text: t("templates.col.actions") }))));
+    const tb = h("tbody");
+    for (const p of items) {
+      const actions = p.builtin ? null : menuButton({
+        label: t("admin.actions-for", { name: p.name }),
+        buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
+        items: () => [
+          { label: t("admin.edit"), icon: "pencil", run: () => edit(p) },
+          "separator",
+          { label: t("admin.remove"), icon: "trash-2", danger: true, run: () => remove(p) },
+        ],
+      });
+      tb.append(h("tr", { attrs: { "data-id": p.id } },
+        h("td", {}, h("strong", { text: label(p) })),
+        h("td", {}, h("span", { class: "os-badge", text: t(p.builtin ? "admin.builtin" : "admin.custom") })),
+        h("td", { class: "os-col-date os-muted os-small", attrs: { "data-label": t("admin.col.permissions") }, text: (p.permissions || []).join(", ") || t("admin.no-permissions") }),
+        h("td", { class: "os-col-date", attrs: { "data-label": t("admin.col.members") }, text: String(p.members ?? 0) }),
+        h("td", { class: "os-col-actions" }, actions)));
+    }
+    table.append(tb);
+    list.append(h("div", { class: "os-table-wrap" }, table));
+  }
+
+  /// New custom profile, or change `p`: a name and the permissions it gives.
+  async function edit(p = null) {
+    const f = { boxes: [] };
+    const v = await openPanel({
+      id: "profile-edit",
+      title: p ? t("admin.edit-profile") : t("admin.add-profile"),
+      width: 30,
+      build(body) {
+        f.name = h("input", { id: "pp-name", class: "os-input", maxLength: 255, autocomplete: "off", value: p?.name || "", attrs: { autofocus: true, "aria-describedby": "pp-err" } });
+        const perms = h("div", { class: "os-admin__scopes" });
+        for (const [group, names] of PERMISSION_GROUPS) {
+          const fs = h("fieldset", { class: "os-fieldset" }, h("legend", { class: "os-label", text: t(`admin.scope-group.${group}`) }));
+          for (const s of names) {
+            const id = `pp-${s.replace(":", "-")}`;
+            const box = h("input", { id, type: "checkbox", value: s, checked: (p?.permissions || []).includes(s), attrs: { "aria-describedby": `${id}-d` } });
+            f.boxes.push(box);
+            fs.append(h("label", { class: "os-check os-check--desc", attrs: { for: id } }, box,
+              h("span", {}, h("code", { text: s }), h("span", { id: `${id}-d`, class: "os-muted os-small os-block", text: t(`admin.scope.${s}`) }))));
+          }
+          perms.append(fs);
+        }
+        f.err = h("p", { id: "pp-err", class: "os-field-error", attrs: { role: "alert" } });
+        body.append(h("label", { class: "os-label", attrs: { for: "pp-name" }, text: t("admin.profile-name") }), f.name, f.err,
+          h("p", { class: "os-help", text: t("admin.profile-help") }), perms);
+      },
+      actions: [
+        { label: t("action.cancel"), value: null },
+        {
+          label: p ? t("templates.save") : t("admin.create"), variant: "primary",
+          onClick: async () => {
+            const name = f.name.value.trim();
+            const permissions = f.boxes.filter((b) => b.checked).map((b) => b.value);
+            f.name.removeAttribute("aria-invalid");
+            if (!name) { f.err.textContent = t("form.required"); f.name.setAttribute("aria-invalid", "true"); f.name.focus(); return undefined; }
+            try {
+              return p ? await ctx.api.profiles.patch(p.id, { name, permissions }) : await ctx.api.profiles.create({ name, permissions });
+            } catch (err) {
+              if (err?.errors?.some((e) => e.code === "exists")) { f.err.textContent = t("admin.profile-exists"); f.name.setAttribute("aria-invalid", "true"); f.name.focus(); return undefined; }
+              throw err;
+            }
+          },
+        },
+      ],
+    });
+    if (v) { toast(t("admin.profile-saved"), "success"); load(); }
+  }
+
+  async function remove(p) {
+    if (p.members > 0) { toast(t("admin.profile-held", { n: p.members }), "error"); return; }
+    if (!(await confirmDialog(t("admin.profile-delete-title"), t("admin.profile-delete-text", { name: p.name }), { confirm: t("admin.remove"), danger: true }))) return;
+    try { await ctx.api.profiles.remove(p.id); toast(t("admin.profile-deleted"), "success"); load(); } catch (err) { if (!ctx.failed(err)) toastError(err); }
   }
 
   load();

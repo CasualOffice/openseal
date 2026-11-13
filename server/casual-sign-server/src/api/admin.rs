@@ -463,6 +463,43 @@ pub(crate) async fn profile_id(
         .ok_or_else(|| ApiError::invalid("/profile"))
 }
 
+/// The profile a name or id means, refused (`CS-AUTH-0006`) when it gives more than
+/// the caller holds (UXW-07, `Principal::may_grant`).
+pub(crate) async fn granted_profile(
+    c: &Call,
+    tx: &mut casual_sign_store::TenantTx,
+    name: &str,
+) -> Result<PermissionProfileId, ApiError> {
+    let id = profile_id(tx, name).await?;
+    let p = tx
+        .users()
+        .profile(id)
+        .await?
+        .ok_or_else(|| ApiError::invalid("/profile"))?;
+    c.p.may_grant(p.kind, &p.permissions)?;
+    Ok(id)
+}
+
+/// Refuse (`CS-AUTH-0006`) a change to another member whose profile gives more than
+/// the caller holds (UXW-07): someone who manages users with a custom profile cannot
+/// re-profile, disable, rename, reset, re-invite (PRF-01) or remove a member above
+/// them. The caller's own record is theirs to change as the route allows.
+async fn outranks(
+    c: &Call,
+    tx: &mut casual_sign_store::TenantTx,
+    target: &casual_sign_store::repo::accounts::Member,
+) -> Result<(), ApiError> {
+    if target.user_id == c.p.user {
+        return Ok(());
+    }
+    let p = tx
+        .users()
+        .profile(target.permission_profile_id)
+        .await?
+        .ok_or_else(|| ApiError::internal("profile"))?;
+    c.p.may_grant(p.kind, &p.permissions)
+}
+
 fn normalize_email(e: &str) -> Result<String, ApiError> {
     let e = e.trim();
     if e.len() < 3 || e.len() > 320 || !e.contains('@') {
@@ -504,7 +541,7 @@ pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiErr
         None => None,
     };
     let mut tx = c.tx().await?;
-    let profile = profile_id(&mut tx, &req.profile).await?;
+    let profile = granted_profile(&c, &mut tx, &req.profile).await?;
     let id = UserId(Uuid::now_v7());
     // Seats are checked against the plan under the seat counters' lock, so two parallel
     // invites cannot both take the last seat (PLAN-04, `CS-PLAN-0003`).
@@ -555,6 +592,8 @@ pub(crate) async fn reinvite_user(c: Call, Path(id): Path<String>) -> Result<Res
     let id = UserId(path_id(&id)?);
     let mut tx = c.tx().await?;
     let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    // A member above the caller is not theirs to re-invite either (PRF-01).
+    outranks(&c, &mut tx, &m).await?;
     if m.disabled_at.is_some() || m.login_kind != LoginKind::Local {
         return Err(ApiError::invalid("/id"));
     }
@@ -663,7 +702,8 @@ pub(crate) async fn patch_user(
 ) -> Result<Response, ApiError> {
     let id = UserId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    let target = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    outranks(&c, &mut tx, &target).await?;
     let req: UserPatch = parse(&body)?;
     if id == c.p.user && (req.profile.is_some() || req.disabled.is_some()) {
         return Err(ApiError::invalid(if req.profile.is_some() {
@@ -680,7 +720,7 @@ pub(crate) async fn patch_user(
         None
     };
     if let Some(p) = &req.profile {
-        let profile = profile_id(&mut tx, p).await?;
+        let profile = granted_profile(&c, &mut tx, p).await?;
         tx.users().set_profile(id, profile).await?;
     }
     if let Some(off) = req.disabled {
@@ -751,7 +791,8 @@ pub(crate) async fn delete_user(c: Call, Path(id): Path<String>) -> Result<Respo
         return Err(ApiError::invalid("/id"));
     }
     let mut tx = c.tx().await?;
-    tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    let target = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    outranks(&c, &mut tx, &target).await?;
     tx.users().remove_member(id).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT.into_response())

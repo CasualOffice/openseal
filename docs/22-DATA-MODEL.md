@@ -182,7 +182,11 @@ deny by default and decided per request: the owner and the account's administrat
   more accounts.
 - **Permission profile**: `admin`, `sender`, `viewer`, custom (send, use templates, create templates, bulk send, manage
   users, manage brands, view all envelopes, API access).
-- **Group**: sharing unit for templates and envelopes.
+- **Group**: sharing unit for templates and envelopes. **As built (`UXW-07`, migration 0033):** administrators make,
+  rename and delete groups and set their members; a member's place in a group goes with the group and with their
+  membership of the account; a change to `groups` or `group_members` needs its admin event in the same transaction.
+  A custom permission profile names only the scopes of docs/40 §2 and `view_all_envelopes`
+  (`permission_profiles_known_permissions`); built-in ones are never changed and a held one never deleted.
 - Recipients are **not users**. A recipient who also has an account sees the envelope in their inbox through a match
   on verified email, never through a shared identity.
 
@@ -227,7 +231,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | --- | --- | --- |
 | Account | `accounts` (RLS on `id`) | `TenantTx::account` |
 | User, membership, permission profile | `users`, `account_memberships`, `permission_profiles` | `TenantTx::users` |
-| Group | `groups`, `group_members` | schema only |
+| Group | `groups`, `group_members` | `TenantTx::groups` (`UXW-07`); `TenantTx::templates().groups` lists them for sharing |
 | Brand, Settings, ERSD versions | `brands`, `accounts.settings`, `ersd_versions` | settings; `TenantTx::account().disclosure` reads a published ERSD text by its hash (`UXW-34`); `publish_disclosure` inserts the next version of a language (the account row locked first, so two publishes never share a number) with its `ersd.published` admin event, and `disclosures` lists the published versions without text (`ERSD-01`); rows are never updated, no migration was needed |
 | Template, TemplateDocument, Role, role-bound Field, sharing | `templates`, `template_documents`, `template_roles`, `template_fields`, `template_shares` | `TenantTx::templates` (not shares) |
 | Envelope, folders and recycle folder | `envelopes`, `folders` | `TenantTx::envelopes` |
@@ -364,7 +368,7 @@ definer insert trigger refuses an event outside the current scope (`42501`, befo
 `sha256(canonical) = hash`, that the owner, `seq`, `prev`, `action` and `at` (the bytes' Unix millisecond) columns are what the bytes state, and that
 `seq` is next and `prev` the head under `FOR UPDATE` on the head column (`OS005`, `CS-DB-0014`), and moves the head.
 Deferred constraint triggers named `*_admin_change_has_event` on `accounts` (insert, or update of `name`, `settings`,
-`data_region`, `status`), `account_memberships`, `permission_profiles`, `organizations` (insert, or update of `name`,
+`data_region`, `status`), `account_memberships`, `permission_profiles`, `groups` and `group_members` (0033, `UXW-07`), `organizations` (insert, or update of `name`,
 `policy`, `status`, `data_regions`), `organization_admins` and `org_permission_sets` refuse an application-role commit
 whose transaction appended no event to that workspace's log or its organization's (`admin_change_has_event`,
 `CS-DB-0008`); the owner role is outside, as for the audit chain. Definer functions: `openseal_admin_chain_tip()`

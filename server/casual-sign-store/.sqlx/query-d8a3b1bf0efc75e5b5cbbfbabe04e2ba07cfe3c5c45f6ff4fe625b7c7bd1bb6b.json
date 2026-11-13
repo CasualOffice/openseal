@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM groups WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d8a3b1bf0efc75e5b5cbbfbabe04e2ba07cfe3c5c45f6ff4fe625b7c7bd1bb6b"
+}

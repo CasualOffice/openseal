@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE permission_profiles SET name = $3, permissions = $4 WHERE account_id = $1 AND id = $2 AND kind = 'custom'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f02f186e439f6b05dd755547c430ade6f0102b0264650df9089dc9bbe429c7f"
+}

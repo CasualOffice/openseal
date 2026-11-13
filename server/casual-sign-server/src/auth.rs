@@ -195,6 +195,41 @@ impl Principal {
     }
 }
 
+impl Principal {
+    /// Refuse (`CS-AUTH-0006`) a profile that would give more than the caller holds
+    /// (UXW-07): a member who manages users with a custom profile may make, change or
+    /// hand out only profiles within their own scopes, may give "view all envelopes"
+    /// only when they have it, and may give the administrator profile only as an
+    /// administrator holding every scope. Checked on every request that creates,
+    /// changes, deletes or assigns a profile, so no one raises their own rights or
+    /// anyone else's beyond theirs.
+    ///
+    /// # Errors
+    ///
+    /// `CS-AUTH-0006`.
+    pub fn may_grant(&self, kind: ProfileKind, permissions: &[String]) -> Result<(), ApiError> {
+        if kind == ProfileKind::Admin {
+            return if self.admin && self.scopes.len() == SCOPES.len() {
+                Ok(())
+            } else {
+                Err(ApiError::forbidden("the administrator profile"))
+            };
+        }
+        let (scopes, _, view_all) = profile_scopes(kind, permissions);
+        if let Some(s) = scopes.iter().find(|s| !self.scopes.contains(*s)) {
+            return Err(ApiError::forbidden(s));
+        }
+        if view_all && !self.view_all {
+            return Err(ApiError::forbidden(VIEW_ALL));
+        }
+        Ok(())
+    }
+}
+
+/// The custom-profile permission that shows every envelope of the account; with
+/// [`SCOPES`], every name a profile may carry (0033 `permission_profiles_known_permissions`).
+pub const VIEW_ALL: &str = "view_all_envelopes";
+
 /// The scopes a permission profile grants (docs/22 §8), whether it is an
 /// administrator's, and whether it sees every envelope.
 pub(crate) fn profile_scopes(
@@ -230,7 +265,7 @@ pub(crate) fn profile_scopes(
         ),
         _ => {
             let names: Vec<&str> = permissions.iter().map(String::as_str).collect();
-            (pick(&names), false, names.contains(&"view_all_envelopes"))
+            (pick(&names), false, names.contains(&VIEW_ALL))
         }
     }
 }

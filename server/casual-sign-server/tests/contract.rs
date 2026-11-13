@@ -432,6 +432,91 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     .await;
     // WEB-06: every template-editing operation.
     common::templates::edit_template(&api, k).await;
+    // UXW-07: groups and custom permission profiles.
+    let g = ok(
+        api.call(
+            "POST",
+            "/api/v1/groups",
+            k,
+            Some(json!({"name": "Legal"})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "group",
+    )
+    .await;
+    let gpath = format!("/api/v1/groups/{}", g["id"].as_str().unwrap());
+    ok(
+        api.call("GET", &gpath, k, None, &[]).await,
+        StatusCode::OK,
+        "group get",
+    )
+    .await;
+    ok(
+        api.call("PATCH", &gpath, k, Some(json!({"name": "Legal team"})), &[])
+            .await,
+        StatusCode::OK,
+        "group rename",
+    )
+    .await;
+    ok(
+        api.call(
+            "PUT",
+            &format!("{gpath}/members"),
+            k,
+            Some(json!({"user_ids": [a.boot.admin.to_string()]})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "group members",
+    )
+    .await;
+    let r = api.call("DELETE", &gpath, k, None, &[]).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "group delete");
+    ok(
+        api.call("GET", "/api/v1/permission-profiles", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "profiles",
+    )
+    .await;
+    let pp = ok(
+        api.call(
+            "POST",
+            "/api/v1/permission-profiles",
+            k,
+            Some(json!({"name": "Reader", "permissions": ["envelopes:read"]})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "profile create",
+    )
+    .await;
+    let ppath = format!("/api/v1/permission-profiles/{}", pp["id"].as_str().unwrap());
+    ok(
+        api.call("GET", &ppath, k, None, &[]).await,
+        StatusCode::OK,
+        "profile get",
+    )
+    .await;
+    ok(
+        api.call(
+            "PATCH",
+            &ppath,
+            k,
+            Some(json!({"permissions": ["envelopes:read", "templates:read"]})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "profile patch",
+    )
+    .await;
+    let r = api.call("DELETE", &ppath, k, None, &[]).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "profile delete");
     // UXW-06: groups to share with, sharing, and Favourites.
     ok(
         api.call("GET", "/api/v1/groups", k, None, &[]).await,
