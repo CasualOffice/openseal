@@ -112,10 +112,11 @@ pub(crate) async fn patch_group(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let id = GroupId(path_id(&id)?);
+    let mut tx = c.tx().await?;
+    // Another account's group is 404 whatever the body (docs/07 §Access).
+    tx.groups().get(id).await?.ok_or_else(ApiError::not_found)?;
     let req: GroupIn = parse(&body)?;
     let name = name_of(&req.name)?;
-    let mut tx = c.tx().await?;
-    tx.groups().get(id).await?.ok_or_else(ApiError::not_found)?;
     tx.groups().rename(id, &name).await.map_err(named)?;
     let v = group_out(&mut tx, id).await?;
     tx.commit().await?;
@@ -140,9 +141,9 @@ pub(crate) async fn put_members(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let id = GroupId(path_id(&id)?);
-    let req: MembersIn = parse(&body)?;
     let mut tx = c.tx().await?;
     tx.groups().get(id).await?.ok_or_else(ApiError::not_found)?;
+    let req: MembersIn = parse(&body)?;
     let mut users = BTreeSet::new();
     for (i, u) in req.user_ids.iter().enumerate() {
         let bad = || ApiError::invalid(&format!("/user_ids/{i}"));
@@ -311,11 +312,11 @@ pub(crate) async fn patch_profile(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let id = PermissionProfileId(path_id(&id)?);
+    let mut tx = c.tx().await?;
+    let was = custom(&c, &mut tx, id).await?;
     let req: ProfilePatch = parse(&body)?;
     let name = req.name.as_deref().map(name_of).transpose()?;
     let permissions = req.permissions.as_deref().map(permissions_of).transpose()?;
-    let mut tx = c.tx().await?;
-    let was = custom(&c, &mut tx, id).await?;
     let permissions = permissions.unwrap_or(was.permissions);
     c.p.may_grant(ProfileKind::Custom, &permissions)?;
     let name = name.unwrap_or(was.name);
