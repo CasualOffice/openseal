@@ -450,6 +450,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
         verify_url: None,
         chain: &input.chain,
         generated: input.now,
+        ending: None,
     }
 }
 

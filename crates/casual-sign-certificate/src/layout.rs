@@ -14,8 +14,8 @@ use casual_sign_flatten::Art;
 use casual_sign_model::{Align, Rgb};
 
 use crate::input::{
-    CertificateInput, CertificateOptions, CopyKind, DisclosurePlacement, Mark, Outcome, Role,
-    SealInfo,
+    CertificateInput, CertificateOptions, CopyKind, DisclosurePlacement, EndKind, Mark, Outcome,
+    Role, SealInfo,
 };
 use crate::text::{Face, datetime, email, maybe, wrap, zone};
 
@@ -312,12 +312,11 @@ impl Writer {
     }
 
     /// Every page, with its header and its "Page i of N" footer.
-    fn finish(mut self, envelope_id: &str, generated: &str) -> Vec<PagePlan> {
+    fn finish(mut self, envelope_id: &str, generated: &str, title: &str) -> Vec<PagePlan> {
         self.done.push(core::mem::take(&mut self.cur));
         let total = self.done.len();
         let (w, h) = (self.w, self.h);
         let cw = w - 2.0 * MARGIN;
-        let title = "Certificate of Completion";
         for (i, page) in self.done.iter_mut().enumerate() {
             let page_no = format!("Page {} of {total}", i.saturating_add(1));
             let made = format!("OpenSeal \u{b7} generated {generated}");
@@ -438,21 +437,30 @@ pub(crate) fn plan(
     wr.run(
         MARGIN,
         cw,
-        "Certificate of Completion".to_owned(),
+        title(input).to_owned(),
         18.0,
         Face::Sans,
         NAVY,
         Align::Left,
     );
     wr.y += line_h(18.0);
+    let intro = match &input.ending {
+        None => format!(
+            "This certificate records who received, viewed, consented to and signed the documents of envelope {}, when, and how they were authenticated. The complete audit trail is attached to this PDF as audit-trail.json.",
+            e.id
+        ),
+        Some(end) => format!(
+            "This envelope did not complete: it was {} on {}. No document in it was completed or sealed as an agreement. This certificate records who received, viewed, consented to and acted on the documents of envelope {} until it ended, when, and how they were authenticated. The complete audit trail is attached to this PDF as audit-trail.json.",
+            end.kind.as_str(),
+            datetime(end.at, o),
+            e.id
+        ),
+    };
     wr.para(
         MARGIN,
         cw,
         &Value {
-            text: format!(
-                "This certificate records who received, viewed, consented to and signed the documents of envelope {}, when, and how they were authenticated. The complete audit trail is attached to this PDF as audit-trail.json.",
-                e.id
-            ),
+            text: intro,
             face: Face::Sans,
             size: BODY,
         },
@@ -477,7 +485,30 @@ pub(crate) fn plan(
         ("Account".into(), Value::plain(e.account.clone())),
         ("Created".into(), Value::plain(datetime(e.created, o))),
         ("Sent".into(), Value::plain(maybe(e.sent, o))),
-        ("Completed".into(), Value::plain(maybe(e.completed, o))),
+    ];
+    match &input.ending {
+        None => rows.push(("Completed".into(), Value::plain(maybe(e.completed, o)))),
+        Some(end) => {
+            let how = match (end.kind, &end.by) {
+                (EndKind::Declined, Some(by)) => format!("Declined by {by}"),
+                (EndKind::Voided, Some(by)) => format!("Voided by {by}"),
+                (k, _) => {
+                    let w = k.as_str();
+                    let mut c = w.chars();
+                    c.next()
+                        .map(|f| f.to_uppercase().chain(c).collect())
+                        .unwrap_or_default()
+                }
+            };
+            rows.push(("Outcome".into(), Value::plain(how)));
+            rows.push(("Ended".into(), Value::plain(datetime(end.at, o))));
+            if let Some(why) = &end.reason {
+                rows.push(("Reason".into(), Value::plain(why.clone())));
+            }
+            rows.push(("Completed".into(), Value::plain("Not completed".to_owned())));
+        }
+    }
+    rows.extend([
         ("Time zone".into(), Value::plain(zone(o))),
         ("Seal profile".into(), Value::plain(e.seal_profile.clone())),
         (
@@ -490,7 +521,7 @@ pub(crate) fn plan(
         ),
         ("Audit events".into(), Value::plain(chain.len().to_string())),
         ("Audit chain head".into(), Value::hash(head.clone())),
-    ];
+    ]);
     wr.rows(&rows);
 
     // 2. Documents.
@@ -646,6 +677,17 @@ pub(crate) fn plan(
             ),
             ("Timestamp".into(), Value::plain(maybe(*time, o))),
         ]),
+        _ if input.ending.is_some() => {
+            wr.rows(&[("Profile".into(), Value::plain(e.seal_profile.clone()))]);
+            wr.para(
+                MARGIN,
+                cw,
+                &Value::plain(
+                    "The envelope's documents were not sealed: it did not complete. This certificate is sealed on its own after it is made, with a PAdES digital signature over the whole file: these pages and the attached audit trail. Its certificate, timestamp and validation data are in the file's signature panel.",
+                ),
+                BLACK,
+            );
+        }
         _ => {
             wr.rows(&[("Profile".into(), Value::plain(e.seal_profile.clone()))]);
             wr.para(
@@ -698,7 +740,17 @@ pub(crate) fn plan(
     Plan {
         width: w,
         height: h,
-        pages: wr.finish(&e.id, &generated),
+        pages: wr.finish(&e.id, &generated, title(input)),
+    }
+}
+
+/// The certificate's title: a certificate of completion, or for an envelope that ended
+/// without completing an envelope certificate, which never claims completion (UXW-30).
+pub(crate) fn title(input: &CertificateInput<'_>) -> &'static str {
+    if input.ending.is_some() {
+        "Envelope Certificate (not completed)"
+    } else {
+        "Certificate of Completion"
     }
 }
 

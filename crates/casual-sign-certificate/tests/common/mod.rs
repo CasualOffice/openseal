@@ -445,5 +445,6 @@ pub fn input(chain: &Chain, delivered: Hash256, n: usize) -> CertificateInput<'_
         verify_url: Some("https://sign.example.org/verify".into()),
         chain,
         generated: t(1_000_000),
+        ending: None,
     }
 }

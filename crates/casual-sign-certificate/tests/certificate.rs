@@ -221,6 +221,99 @@ fn signer_attachments_are_listed_by_hash() {
     );
 }
 
+/// An envelope that ended without completing (UXW-30) gets an envelope certificate that
+/// says how it ended, who ended it, when and why, and never claims completion; without
+/// an ending the certificate is one of completion, as before.
+#[test]
+fn an_ended_envelope_certificate_says_how_it_ended_and_never_claims_completion() {
+    let fonts = FontSet::bundled();
+    let (chain, delivered) = chain(2);
+    let render = |inp: &casual_sign_certificate::CertificateInput<'_>| {
+        let r = render_certificate(inp, &fonts, &CertificateOptions::default()).unwrap();
+        let mut a = admit(&r.bytes, &Limits::default(), &never).unwrap();
+        let pages = a.report.pages.clone();
+        let text = casual_sign_fields::extract_text(&mut a.document, &pages, &never)
+            .unwrap()
+            .iter()
+            .flat_map(|p| p.runs.iter().map(|r| r.text.clone()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        (r.bytes, text)
+    };
+    let (_, done) = render(&input(&chain, delivered, 2));
+    assert!(done.contains("Certificate of Completion"), "{done}");
+    assert!(!done.contains("not completed"), "{done}");
+
+    for (kind, by, reason, outcome) in [
+        (
+            casual_sign_certificate::EndKind::Declined,
+            Some(name(1)),
+            Some("Terms changed"),
+            format!("Declined by {}", name(1)),
+        ),
+        (
+            casual_sign_certificate::EndKind::Voided,
+            Some("Sam Sender".to_owned()),
+            Some("Replaced by a new version"),
+            "Voided by Sam Sender".to_owned(),
+        ),
+        (
+            casual_sign_certificate::EndKind::Expired,
+            None,
+            None,
+            "Expired".to_owned(),
+        ),
+    ] {
+        let mut ended = input(&chain, delivered, 2);
+        ended.envelope.status = outcome.split(' ').next().unwrap().to_owned();
+        ended.ending = Some(casual_sign_certificate::Ending {
+            kind,
+            at: t(2_000_000),
+            by,
+            reason: reason.map(str::to_owned),
+        });
+        let (bytes, text) = render(&ended);
+        assert_eq!(bytes, render(&ended).0, "deterministic");
+        assert!(!text.contains("Certificate of Completion"), "{text}");
+        assert!(
+            text.contains("Envelope Certificate (not completed)"),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("it was {}", kind.as_str())),
+            "{text}"
+        );
+        assert!(text.contains(&outcome), "{text}");
+        assert!(text.contains("Not completed"), "{text}");
+        assert!(text.contains("were not sealed"), "{text}");
+        if let Some(why) = reason {
+            assert!(text.contains(why), "{text}");
+        }
+        // The PDF's own title says the same.
+        let needle = b"Envelope Certificate";
+        assert!(bytes.windows(needle.len()).any(|w| w == needle));
+        assert!(!bytes.windows(25).any(|w| w == b"Certificate of Completion"));
+        std::fs::write(
+            out_dir("standalone").join(format!("certificate-{}.pdf", kind.as_str())),
+            &bytes,
+        )
+        .unwrap();
+    }
+    let mut bad = input(&chain, delivered, 2);
+    bad.ending = Some(casual_sign_certificate::Ending {
+        kind: casual_sign_certificate::EndKind::Declined,
+        at: t(2_000_000),
+        by: None,
+        reason: Some("x".repeat(4_001)),
+    });
+    assert_eq!(
+        render_certificate(&bad, &fonts, &CertificateOptions::default())
+            .unwrap_err()
+            .code(),
+        "CS-AUD-0020"
+    );
+}
+
 #[test]
 fn locations_at_their_longest_fit_the_layout() {
     use casual_sign_audit::{FallbackReason, Location, MAX_DATABASE_BYTES, MAX_PLACE_BYTES};

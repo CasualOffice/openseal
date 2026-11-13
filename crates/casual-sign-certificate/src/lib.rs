@@ -41,8 +41,8 @@ use casual_sign_pdf::{Admitted, Change, Dictionary, IncrementalUpdate, Limits, O
 pub use error::CertificateError;
 pub use input::{
     AttachmentRow, AuthStep, CertificateInput, CertificateOptions, Consent, CopyKind, CopyRow,
-    Disclosure, DisclosurePlacement, DocumentRow, EmailMask, EnvelopeSummary, Mark, Outcome,
-    PageSize, Party, RecipientRow, Role, SealInfo,
+    Disclosure, DisclosurePlacement, DocumentRow, EmailMask, EndKind, Ending, EnvelopeSummary,
+    Mark, Outcome, PageSize, Party, RecipientRow, Role, SealInfo,
 };
 
 /// Bounds on certificate input (`CS-AUD-0020`, `CS-AUD-0021`). Decisions of `T-1I`
@@ -180,6 +180,10 @@ fn checked(input: &CertificateInput<'_>) -> Result<Vec<u8>, CertificateError> {
         bounded(tsa.as_deref().unwrap_or(""), "seal.tsa")?;
     }
     bounded(input.verify_url.as_deref().unwrap_or(""), "verify_url")?;
+    if let Some(end) = &input.ending {
+        bounded(end.by.as_deref().unwrap_or(""), "ending.by")?;
+        bounded(end.reason.as_deref().unwrap_or(""), "ending.reason")?;
+    }
     // The chain: not empty, this envelope's, and its own trail must verify.
     if input.chain.is_empty() {
         return Err(CertificateError::Input { what: "chain" });
@@ -270,7 +274,7 @@ pub fn render_certificate(
     let mut info = Dictionary::new();
     info.insert(
         b"Title",
-        Object::String(b"Certificate of Completion".to_vec()),
+        Object::String(layout::title(input).as_bytes().to_vec()),
     );
     info.insert(
         b"Producer",
