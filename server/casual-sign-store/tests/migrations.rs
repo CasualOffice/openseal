@@ -34,11 +34,15 @@ async fn migrations_apply_from_empty_then_a_second_run_applies_nothing() {
         second.applied
     );
     assert_eq!(second.already, all);
-    // Versions are dense from 1.
-    assert_eq!(
-        all,
-        (1..=i64::try_from(all.len()).unwrap()).collect::<Vec<_>>()
-    );
+    // Versions rise from 1 with no gap but a number docs/14 reserves for another lane
+    // (0020; 0021 is WEB-19's and may land first).
+    const RESERVED: &[i64] = &[20];
+    assert!(all.windows(2).all(|w| w[0] < w[1]), "{all:?}");
+    let last = *all.last().unwrap();
+    let missing: Vec<i64> = (1..=last)
+        .filter(|v| !all.contains(v) && !RESERVED.contains(v))
+        .collect();
+    assert!(missing.is_empty(), "migration numbers skipped: {missing:?}");
     db.drop().await;
 }
 
