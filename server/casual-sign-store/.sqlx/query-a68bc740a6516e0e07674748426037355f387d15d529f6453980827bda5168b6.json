@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, row_index, input, status, envelope_id, error_code FROM bulk_send_rows WHERE account_id = $1 AND bulk_send_id = $2 ORDER BY row_index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "bulk_send_rows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "row_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "bulk_send_rows",
+            "name": "row_index"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "input",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "bulk_send_rows",
+            "name": "input"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "bulk_send_rows",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "envelope_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "bulk_send_rows",
+            "name": "envelope_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "error_code",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "bulk_send_rows",
+            "name": "error_code"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "a68bc740a6516e0e07674748426037355f387d15d529f6453980827bda5168b6"
+}

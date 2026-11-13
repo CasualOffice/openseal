@@ -8,6 +8,7 @@
 //! before anything it sent is looked at.
 
 pub mod admin;
+pub(crate) mod bulk;
 pub mod envelopes;
 pub(crate) mod folders;
 pub(crate) mod ml;

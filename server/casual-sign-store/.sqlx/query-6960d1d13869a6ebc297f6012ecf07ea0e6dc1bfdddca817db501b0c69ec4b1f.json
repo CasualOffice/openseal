@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bulk_send_rows SET status = 'sent', envelope_id = $3 WHERE account_id = $1 AND id = $2 AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6960d1d13869a6ebc297f6012ecf07ea0e6dc1bfdddca817db501b0c69ec4b1f"
+}

@@ -637,8 +637,6 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
         }
         Some(_) => return Err(ApiError::invalid("/status")),
     };
-    let subject = dto::subject(&req.subject)?;
-    let message = dto::message(&req.message)?;
     let mut decoded = Vec::with_capacity(req.documents.len());
     let mut total = 0usize;
     for (i, d) in req.documents.iter().enumerate() {
@@ -654,7 +652,29 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
         return Err(ApiError::too_large());
     }
     let mut tx = c.tx().await?;
-    let mut cmds = c.commands(&mut tx).await?;
+    let (env, l) = create_in(&c, &mut tx, &req, decoded, send).await?;
+    tx.commit().await?;
+    let mut r = envelope_response(StatusCode::CREATED, &l.state);
+    if let Ok(v) = HeaderValue::from_str(&format!("/api/v1/envelopes/{env}")) {
+        r.headers_mut().insert(header::LOCATION, v);
+    }
+    Ok(r)
+}
+
+/// Create an envelope from a parsed request and its decoded documents in `tx`, and send
+/// it when `send`; answers its id and state. The one-call create and each row of a bulk
+/// send (UXW-04) both come through here, so a bulk-sent envelope is made exactly as one
+/// created by `POST /envelopes`.
+pub(crate) async fn create_in(
+    c: &Call,
+    tx: &mut TenantTx,
+    req: &EnvelopeCreate,
+    decoded: Vec<(String, Vec<u8>)>,
+    send: bool,
+) -> Result<(EnvelopeId, Loaded), ApiError> {
+    let subject = dto::subject(&req.subject)?;
+    let message = dto::message(&req.message)?;
+    let mut cmds = c.commands(tx).await?;
     let env = EnvelopeId(Uuid::now_v7());
     let me = eid(c.p.user.0)?;
     let principal = WfPrincipal::Sender {
@@ -668,17 +688,17 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
         message,
     };
     let ctx = cmds.ctx(principal, None)?;
-    let mut l = create_env(&mut tx, c.p.account, env, &create, &ctx, c.p.client()).await?;
+    let mut l = create_env(tx, c.p.account, env, &create, &ctx, c.p.client()).await?;
     let mut changes = Vec::new();
     let mut doc_ids = Vec::new();
     let mut uploads = Vec::new();
     for (name, bytes) in decoded {
-        let spec = add_document(&c.st, &mut tx, env, &name, bytes).await?;
+        let spec = add_document(&c.st, tx, env, &name, bytes).await?;
         doc_ids.push(spec.id.clone());
         uploads.push((uid(&spec.id)?, spec.delivered_hash.0));
         changes.push(Change::AddDocument { document: spec });
     }
-    let (rchanges, refs, codes) = recipients_in(&mut tx, &req.recipients, "/recipients").await?;
+    let (rchanges, refs, codes) = recipients_in(tx, &req.recipients, "/recipients").await?;
     changes.extend(rchanges);
     for (i, f) in req.fields.iter().enumerate() {
         let field = dto::field_from(
@@ -713,32 +733,19 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
         changes.push(Change::SetSealProfile { profile: s });
     }
     if !changes.is_empty() {
-        command(
-            &c,
-            &mut tx,
-            &mut cmds,
-            &mut l,
-            Command::Edit { changes },
-            None,
-        )
-        .await?;
+        command(c, tx, &mut cmds, &mut l, Command::Edit { changes }, None).await?;
     }
-    store_codes(&mut tx, codes).await?;
+    store_codes(tx, codes).await?;
     if send {
-        command(&c, &mut tx, &mut cmds, &mut l, Command::Send, None).await?;
+        command(c, tx, &mut cmds, &mut l, Command::Send, None).await?;
     } else {
         // Document analysis of the draft's uploads (docs/33 §2), only with a feature in
         // effect; otherwise nothing is written (ML-01).
         for (doc, sha) in uploads {
-            crate::api::ml::on_envelope_upload(&c.st, &mut tx, c.p.account, env, doc, sha).await?;
+            crate::api::ml::on_envelope_upload(&c.st, tx, c.p.account, env, doc, sha).await?;
         }
     }
-    tx.commit().await?;
-    let mut r = envelope_response(StatusCode::CREATED, &l.state);
-    if let Ok(v) = HeaderValue::from_str(&format!("/api/v1/envelopes/{env}")) {
-        r.headers_mut().insert(header::LOCATION, v);
-    }
-    Ok(r)
+    Ok((env, l))
 }
 
 /// `GET /envelopes/{id}`.

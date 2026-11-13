@@ -1728,6 +1728,9 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .await;
     assert_eq!(gone.status, StatusCode::NO_CONTENT);
 
+    // Bulk send from a template (UXW-04): every operation.
+    common::bulk::bulk_send(&api, k).await;
+
     // The Inbox (UXW-01): an envelope waiting for the administrator, signed in.
     ok(
         api.call(

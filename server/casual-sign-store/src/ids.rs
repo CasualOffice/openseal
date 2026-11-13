@@ -84,4 +84,8 @@ id_type!(
     AnalysisRunId,
     /// One suggestion of an analysis (docs/33 §6).
     SuggestionId,
+    /// A bulk send from a template (UXW-04).
+    BulkSendId,
+    /// One row of a bulk send (UXW-04).
+    BulkSendRowId,
 );

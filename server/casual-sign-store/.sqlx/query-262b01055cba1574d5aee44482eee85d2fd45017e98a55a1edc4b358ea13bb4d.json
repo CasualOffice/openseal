@@ -1,0 +1,143 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.id, b.sender_user_id, b.template_id, b.name, b.status, b.row_count, b.created_at, b.finished_at, count(r.id) FILTER (WHERE r.status = 'pending') AS \"pending!\", count(r.id) FILTER (WHERE r.status = 'sent') AS \"sent!\", count(r.id) FILTER (WHERE r.status = 'failed') AS \"failed!\", count(r.id) FILTER (WHERE r.status = 'cancelled') AS \"cancelled!\" FROM bulk_sends AS b LEFT JOIN bulk_send_rows AS r ON r.account_id = b.account_id AND r.bulk_send_id = b.id WHERE b.account_id = $1 AND ($2::uuid IS NULL OR b.sender_user_id = $2) AND ($3::uuid IS NULL OR b.id = $3) GROUP BY b.id ORDER BY b.created_at DESC, b.id DESC LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "bulk_sends",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "bulk_sends",
+            "name": "sender_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "template_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "bulk_sends",
+            "name": "template_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "bulk_sends",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "bulk_sends",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "row_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "bulk_sends",
+            "name": "row_count"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "bulk_sends",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "bulk_sends",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "sent!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "cancelled!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "262b01055cba1574d5aee44482eee85d2fd45017e98a55a1edc4b358ea13bb4d"
+}

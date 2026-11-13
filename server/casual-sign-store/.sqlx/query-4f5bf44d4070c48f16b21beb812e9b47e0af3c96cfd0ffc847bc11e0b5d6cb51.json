@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE envelopes SET bulk_send_id = $3 WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4f5bf44d4070c48f16b21beb812e9b47e0af3c96cfd0ffc847bc11e0b5d6cb51"
+}

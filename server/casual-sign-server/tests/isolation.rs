@@ -79,8 +79,22 @@ async fn world(api: &Api, t: &Tenant) -> BTreeMap<&'static str, String> {
         )
         .await
         .json();
+    // UXW-04: a bulk send whose one row is refused, so nothing is sent.
+    let lease = common::bulk::lease_template(api, k).await;
+    let bulk = api
+        .call(
+            "POST",
+            "/api/v1/bulk-sends",
+            k,
+            Some(json!({"template_id": lease, "csv": "Tenant::name,Tenant::email,Landlord::name,Landlord::email\nA,,L,l@x.test\n"})),
+            &[],
+        )
+        .await;
+    assert_eq!(bulk.status, StatusCode::CREATED);
+    let bulk = bulk.json();
     let s = |v: &Value| v.as_str().unwrap().to_owned();
     BTreeMap::from([
+        ("bulk", s(&bulk["id"])),
         ("folder", s(&folder["id"])),
         ("envelope", s(&e["id"])),
         ("doc", s(&e["documents"][0]["id"])),
@@ -109,6 +123,8 @@ fn fill(path: &str, ids: &BTreeMap<&'static str, String>, envelope: &str) -> Str
         ids["webhook"].clone()
     } else if path.starts_with("/api/v1/folders/") {
         ids["folder"].clone()
+    } else if path.starts_with("/api/v1/bulk-sends/") {
+        ids["bulk"].clone()
     } else if path.starts_with("/api/v1/organizations/me/") {
         ids["workspace"].clone()
     } else {
@@ -187,6 +203,7 @@ async fn another_accounts_ids_are_not_found_on_every_operation(rls: Rls) {
         "/api/v1/templates",
         "/api/v1/webhooks",
         "/api/v1/folders",
+        "/api/v1/bulk-sends",
     ] {
         let r = api.call("GET", p, &b.auth, None, &[]).await;
         let text = String::from_utf8_lossy(&r.body).into_owned();
