@@ -735,8 +735,15 @@ export function locationFrom(position) {
 ///
 /// Once `?mock=1` is seen on a loopback host, the tab remembers it (sessionStorage,
 /// `openseal.mock`), so links that drop the query stay in mock mode; `?mock=0` forgets.
-export function isMockMode(loc = globalThis.location, store = safeSessionStorage()) {
+///
+/// The one other case is the public demo (SITE-04): the website publishes a copy of
+/// this app with `<meta name="openseal-demo" content="static">` in each page
+/// (`tools/build-site.py --publish`), and that copy is always in mock mode, on any host,
+/// because no server stands behind it. The marker is in the served HTML, which only
+/// whoever publishes the files controls; no link or query can set it.
+export function isMockMode(loc = globalThis.location, store = safeSessionStorage(), doc = globalThis.document) {
   try {
+    if (isDemoBuild(doc)) return true;
     if (!isLoopback(loc)) return false;
     const q = new URLSearchParams(loc?.search || "").get("mock");
     if (q === "1" || q === "0") {
@@ -745,6 +752,12 @@ export function isMockMode(loc = globalThis.location, store = safeSessionStorage
     }
     try { return store?.getItem("openseal.mock") === "1"; } catch { return false; }
   } catch { return false; }
+}
+
+/// Whether this page is the website's static demo copy of the app (SITE-04): its HTML
+/// carries `<meta name="openseal-demo" content="static">`. Never true for a deployment.
+export function isDemoBuild(doc = globalThis.document) {
+  try { return doc?.querySelector?.('meta[name="openseal-demo"]')?.getAttribute("content") === "static"; } catch { return false; }
 }
 
 /// Whether the page is served from this machine (development and tests).
