@@ -51,6 +51,10 @@ export function icon(name, { size = 20, label = null, className = "", stroke = 1
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("width", String(size));
   svg.setAttribute("height", String(size));
+  // Sized in CSS from a token (WEB-12): `size` is in sixteenths of a rem (16 is 1 rem), so
+  // the icon grows with the text when the root size grows; the attributes stay only
+  // for a renderer without the stylesheet.
+  svg.style.setProperty("--os-icon-size", `${size / 16}rem`);
   svg.setAttribute("fill", "none");
   svg.setAttribute("stroke", "currentColor");
   svg.setAttribute("stroke-width", String(stroke));

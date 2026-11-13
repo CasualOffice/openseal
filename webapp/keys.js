@@ -21,6 +21,12 @@ export const SHORTCUTS = {
     // UX-04: search from any screen with the bar, not only Agreements.
     ["/", "search.focus"],
     ["N", "envelope.new"],
+    // WEB-12 (NAV-35): G, then a letter, goes to a section (S for the admin settings).
+    ["G H", "nav.home"],
+    ["G A", "nav.agreements"],
+    ["G T", "nav.templates"],
+    ["G R", "nav.reports"],
+    ["G S", "nav.admin"],
     ["Ctrl+Shift+L", "theme.toggle"],
   ]),
   editor: new Map([
@@ -70,12 +76,33 @@ export function combo(e) {
   return [...mods, key].join("+");
 }
 
+/// When G was pressed, for a two-key sequence ("G A"); 0 when none is pending.
+let leader = 0;
+/// How long after G the second key still counts.
+export const LEADER_MS = 1500;
+
 /// The command id a key means in `contexts` (most specific first), or null. A key with
 /// no Ctrl or Alt is ignored while typing, except Escape and Ctrl/Alt combinations.
-export function commandFor(e, contexts, typing = false) {
+/// A plain G starts a sequence (WEB-12): the next key within `LEADER_MS` is looked up as
+/// "G <key>"; any other key, or typing, ends it. `now` is supplied for the tests.
+export function commandFor(e, contexts, typing = false, now = Date.now()) {
   const k = combo(e);
   const plain = !(e.ctrlKey || e.metaKey || e.altKey);
-  if (typing && plain && k !== "Escape") return null;
+  if (typing && plain && k !== "Escape") { leader = 0; return null; }
+  if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return null;
+  if (leader && now - leader <= LEADER_MS) {
+    leader = 0;
+    for (const c of contexts) {
+      const v = SHORTCUTS[c]?.get(`G ${k}`);
+      if (v) return v;
+    }
+  }
+  leader = 0;
+  if (k === "G" && plain && !contexts.some((c) => SHORTCUTS[c]?.has("G"))
+    && contexts.some((c) => [...(SHORTCUTS[c]?.keys() || [])].some((key) => key.startsWith("G ")))) {
+    leader = now;
+    return null;
+  }
   for (const c of contexts) {
     const v = SHORTCUTS[c]?.get(k);
     if (v) return v;
@@ -113,6 +140,7 @@ const LABEL_KEYS = [
   [/^palette\.open$/, "palette.label"],
   [/^search\.focus$/, "cmd.search"],
   [/^envelope\.new$/, "nav.new"],
+  [/^nav\.(home|agreements|templates|reports|admin)$/, (id) => `cmd.${id}`],
   [/^theme\.toggle$/, "cmd.theme"],
   [/^field\.nudge-[a-z]+-10$/, "cmd.field.nudge-10"],
   [/^field\.nudge-/, "cmd.field.nudge"],
@@ -135,7 +163,8 @@ const ARROWS = { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown:
 /// A table key as the keys to press: `["Ctrl", "Shift", "Z"]`, or `["⌘", "⇧", "Z"]` on
 /// a Mac; arrows as arrows, Escape as Esc.
 export function keyParts(k, mac = false) {
-  return k.split(/\+(?!$)/).map((p) => {
+  // A sequence ("G A") is its keys in turn.
+  return k.split(/\+(?!$)| (?=\S)/).map((p) => {
     if (p === "Ctrl") return mac ? "⌘" : "Ctrl";
     if (p === "Alt") return mac ? "⌥" : "Alt";
     if (p === "Shift") return mac ? "⇧" : "Shift";

@@ -11,7 +11,7 @@
 //   and usable; Escape closes it and focus returns where it was. Remembered width; a
 //   bottom sheet on phones. True modals remain only for destructive confirmations.
 
-import { h, reducedMotion } from "../dom.js";
+import { h, reducedMotion, rootPx } from "../dom.js";
 import { icon } from "../icons.js";
 import { t } from "../i18n.js";
 import { button, busy, toastError } from "./core.js";
@@ -35,7 +35,6 @@ export function clampWidth(w, min, max, dflt) {
   return Math.round(Math.min(max, Math.max(min, w)) * 10) / 10;
 }
 
-const rootPx = () => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 const phone = () => typeof matchMedia === "function" && matchMedia("(max-width: 47.999em)").matches;
 
 /// A docked panel. `side`: "left" | "right" (the handle sits on the inner edge).
@@ -243,7 +242,7 @@ export function openPanel({ id = "side", title, description = null, build = null
       host.append(panel);
     } else {
       const bar = [...document.querySelectorAll(".os-sign__bar, .os-prepare__bar, .os-topbar")].find((b) => b.getClientRects().length);
-      if (bar && !phone()) panel.style.setProperty("--os-sheet-top", `${Math.max(0, bar.getBoundingClientRect().bottom)}px`);
+      if (bar && !phone()) panel.style.setProperty("--os-sheet-top", `${Math.max(0, bar.getBoundingClientRect().bottom)}px`); // px-ok: a measured client rect
       document.body.append(panel);
     }
     document.body.classList.add("has-side-sheet");
