@@ -12,6 +12,8 @@
 //!   document or suggestion is `404`.
 //! - Only the envelope's sender or an administrator asks for an analysis or decides a
 //!   suggestion; a member who may see every envelope but sent this one reads only (`403`).
+//! - A purged draft's analysis and suggestions are `404` before and after the purge job
+//!   (`ML-31`, `SEC-I07`).
 
 #![allow(
     clippy::unwrap_used,
@@ -1001,4 +1003,64 @@ async fn a_template_suggestion_is_shown_only_to_members_who_may_use_the_template
         "shared member",
     );
     assert_eq!(kinds(&shared), ["entity", "personal_data", "template"]);
+}
+
+/// `ML-31`: a deleted (purged) draft's analysis is gone through the API at once, not
+/// only once the purge job has run. No new analysis is accepted for it, and its
+/// suggestions, which carry document text, are neither listed nor decided.
+#[tokio::test]
+async fn a_purged_draft_takes_no_new_analysis_and_shows_none() {
+    let Some(api) = with_bundle("ml_purged_draft").await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    all_on(&api, &a).await;
+    let (id, doc) = draft(&api, &a.auth, &text_pdf(TEXT)).await;
+    let path = format!("/api/v1/envelopes/{id}/documents/{doc}/analysis");
+    let first = ok(
+        api.call("GET", &path, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "analysis",
+    );
+    let run = AnalysisRunId(first["id"].as_str().unwrap().parse().unwrap());
+    let ids = finish_with_suggestions(&api, a.boot.account, run, doc.parse().unwrap(), None).await;
+    let env = format!("/api/v1/envelopes/{id}");
+    let tag = api.call("GET", &env, &a.auth, None, &[]).await.etag();
+    assert_eq!(
+        api.call("DELETE", &env, &a.auth, None, &[("if-match", &tag)])
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    // The purge job has not run yet: the rows are still there, the API shows none.
+    let list = format!("/api/v1/envelopes/{id}/suggestions");
+    assert_eq!(
+        api.call("GET", &list, &a.auth, None, &[]).await.status,
+        StatusCode::NOT_FOUND,
+        "a purged draft lists no suggestion"
+    );
+    assert_eq!(
+        api.call("GET", &path, &a.auth, None, &[]).await.status,
+        StatusCode::NOT_FOUND,
+        "a purged draft has no analysis"
+    );
+    let accept = format!("{list}/{}/accept", ids[0].0);
+    assert_eq!(
+        api.call("POST", &accept, &a.auth, None, &[]).await.status,
+        StatusCode::NOT_FOUND,
+        "a purged draft's suggestion is not decided"
+    );
+    // The purge job ran: asking again writes no run back.
+    sqlx::query("DELETE FROM analysis_runs WHERE id = $1")
+        .bind(run.0)
+        .execute(&api.db.admin)
+        .await
+        .unwrap();
+    let r = api.call("POST", &path, &a.auth, None, &[]).await;
+    assert_eq!(
+        r.status,
+        StatusCode::NOT_FOUND,
+        "no new analysis of a purged draft"
+    );
+    assert_eq!(ml_rows(&api).await.1, 0, "no run was written again");
 }

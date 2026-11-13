@@ -18,7 +18,8 @@
 //! | `OPENSEAL_TRUSTED_PROXIES` | Comma-separated CIDRs whose forwarding headers count |
 //! | `OPENSEAL_GEOIP_DB` | Optional GeoIP `.mmdb` the operator supplies (row GEO-01) |
 //! | `OPENSEAL_ML_BUNDLE_ID` | The model bundle deployed with `casual-sign-modeld` (docs/33 §7); none: document analysis is not installed |
-//! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key, plain-HTTP cookies |
+//! | `OPENSEAL_MFA_KEY` (secret) | 32 bytes as base64: seals staff TOTP seeds (ASVS-01); none: staff cannot enrol a second factor and no account may require one |
+//! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key and second-factor key, plain-HTTP cookies |
 //! | `OPENSEAL_ADMIN_PASSWORD` (secret) | `bootstrap` only: the first administrator's password |
 //!
 //! `casual-sign-server bootstrap <account name> <admin email> <admin name>` creates the
@@ -72,6 +73,29 @@ fn jwt_key() -> Result<JwtKeys, String> {
             JwtKeys::generate().map_err(|e| e.code().to_owned())
         }
         None => Err("OPENSEAL_JWT_SIGNING_KEY is not set".into()),
+    }
+}
+
+/// The key that seals staff TOTP seeds (ASVS-01): `OPENSEAL_MFA_KEY`, 32 bytes as
+/// base64. Unset, staff cannot enrol a second factor, except in development, where a
+/// random key is drawn (seeds then do not survive a restart).
+fn mfa_key() -> Result<Option<casual_sign_server::MfaKey>, String> {
+    match secret("OPENSEAL_MFA_KEY")? {
+        Some(b64) => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64.trim())
+                .map_err(|_| "OPENSEAL_MFA_KEY: not base64".to_owned())?;
+            casual_sign_server::MfaKey::new(&bytes)
+                .map(Some)
+                .map_err(|_| "OPENSEAL_MFA_KEY: not 32 bytes".to_owned())
+        }
+        None if std::env::var("OPENSEAL_DEV_INSECURE_KEY").as_deref() == Ok("1") => {
+            eprintln!("casual-sign-server: development second-factor key; never in production");
+            casual_sign_server::MfaKey::generate()
+                .map(Some)
+                .map_err(|e| e.code().to_owned())
+        }
+        None => Ok(None),
     }
 }
 
@@ -252,6 +276,11 @@ async fn main() -> ExitCode {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
     };
+    match mfa_key() {
+        Ok(Some(k)) => state.set_mfa_key(k),
+        Ok(None) => {}
+        Err(e) => return fail(&e),
+    }
     if let Ok(path) = std::env::var("OPENSEAL_GEOIP_DB") {
         match casual_sign_server::geo::GeoIp::open(std::path::Path::new(&path)) {
             Ok(g) => state.set_geoip(g),

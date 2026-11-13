@@ -182,7 +182,7 @@ deny by default and decided per request: the owner and the account's administrat
   more accounts.
 - **Permission profile**: `admin`, `sender`, `viewer`, custom (send, use templates, create templates, bulk send, manage
   users, manage brands, view all envelopes, API access).
-- **Group**: sharing unit for templates and envelopes. **As built (`UXW-07`, migration 0032):** administrators make,
+- **Group**: sharing unit for templates and envelopes. **As built (`UXW-07`, migration 0033):** administrators make,
   rename and delete groups and set their members; a member's place in a group goes with the group and with their
   membership of the account; a change to `groups` or `group_members` needs its admin event in the same transaction.
   A custom permission profile names only the scopes of docs/40 §2 and `view_all_envelopes`
@@ -368,7 +368,7 @@ definer insert trigger refuses an event outside the current scope (`42501`, befo
 `sha256(canonical) = hash`, that the owner, `seq`, `prev`, `action` and `at` (the bytes' Unix millisecond) columns are what the bytes state, and that
 `seq` is next and `prev` the head under `FOR UPDATE` on the head column (`OS005`, `CS-DB-0014`), and moves the head.
 Deferred constraint triggers named `*_admin_change_has_event` on `accounts` (insert, or update of `name`, `settings`,
-`data_region`, `status`), `account_memberships`, `permission_profiles`, `groups` and `group_members` (0032, `UXW-07`), `organizations` (insert, or update of `name`,
+`data_region`, `status`), `account_memberships`, `permission_profiles`, `groups` and `group_members` (0033, `UXW-07`), `organizations` (insert, or update of `name`,
 `policy`, `status`, `data_regions`), `organization_admins` and `org_permission_sets` refuse an application-role commit
 whose transaction appended no event to that workspace's log or its organization's (`admin_change_has_event`,
 `CS-DB-0008`); the owner role is outside, as for the audit chain. Definer functions: `openseal_admin_chain_tip()`
@@ -453,8 +453,8 @@ administrator `Owner`, else the share right), `list_for` (by view: all, owned, s
 row's access, star and whether it is shared), `shares`, `replace_shares`, `set_favourite`, `is_favourite` and
 `groups` (names and member counts). Sixty-three tables with `0031`.
 
-**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15), including of the
-analysis tables (`SEC-I07`); a database guard
+**Not built yet:** repositories for the "schema only" rows above; the retention purge of blobs (slice 15; the purge
+job already deletes an envelope's analysis runs with their suggestions and OCR pages, `SEC-I07`, `ML-31`); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 
 **Corrections to the text above.** The setting is `openseal.account_id`, read as
@@ -463,6 +463,19 @@ that freezes an envelope's documents after `sent` (the workflow engine enforces 
 (value, its SHA-256, time), not a column of `fields`; the field properties other than type, geometry, flags and label
 are one `spec` JSON object as the model serializes them. "Forgetting the filter does not compile" holds in the sense
 that no other door exists; the isolation tests, not the compiler, prove each method filters.
+
+`0032_staff_mfa.sql` (`ASVS-01`, docs/40 As built `ASVS-01`) gives staff users a TOTP second factor. `users` gains
+`totp_seed_sealed` (AES-256-GCM under the server's `OPENSEAL_MFA_KEY`, the user id as associated data),
+`totp_confirmed_at`, `totp_last_step` (the newest accepted step; a code is accepted only for a later one) and
+`recovery_code_sha256` (up to 16 SHA-256 hashes; ten are issued, each removed as it is used). The factor is the
+person's, so it holds in every account they belong to. The application role cannot read these columns (0014 grants
+`users` SELECT per column) and a trigger refuses its writes to them (`users_factor_guard`); only definer functions
+keyed by the user's own live session of the current account change them: `openseal_own_totp`,
+`openseal_begin_own_totp` (only while unconfirmed), `openseal_confirm_own_totp`, `openseal_verify_own_totp` and
+`openseal_use_own_recovery_code` (`Sessions::own_totp` and siblings). `staff_sessions` gains `mfa_at`, when the session
+passed its factor (a workspace switch carries it); `openseal_resolve_staff_session` now also answers it, whether the
+user enrolled, and the account's `settings.mfa_policy` (`optional` when unset; an unknown value reads as `everyone`).
+No new table.
 
 ### Designed (ADR-028): tenancy with organizations
 

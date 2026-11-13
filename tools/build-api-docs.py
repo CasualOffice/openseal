@@ -97,6 +97,8 @@ def op_html(spec: dict, path: str, method: str, op: dict, shared_params: list) -
     sec = op.get("security")
     if perm == "public" or sec == []:
         parts.append('<p class="op-perm">No API credential (public, or the signing link\'s token)</p>')
+    elif perm == "signing-in":
+        parts.append('<p class="op-perm">Any signed-in caller, also a staff session that still owes its second factor</p>')
     elif perm:
         parts.append(f'<p class="op-perm">Needs scope <code>{esc(perm)}</code></p>')
     else:

@@ -27,18 +27,21 @@ mod error;
 pub mod geo;
 mod http;
 pub mod idp;
+mod mfa;
 pub mod net;
 mod preview;
 pub mod routes;
 mod state;
+pub mod totp;
 pub mod web;
 
 pub mod api;
 
 pub use api::admin::{Bootstrapped, bootstrap, bootstrap_workspace};
 pub use api::envelopes::issue_invitation_token;
-pub use auth::{Credential, Principal, SCOPES};
+pub use auth::{Credential, Principal, SCOPES, SecondFactor};
 pub use crypto::JwtKeys;
 pub use error::{ApiError, FieldProblem};
+pub use mfa::MfaKey;
 pub use routes::{Access, Route, app, table};
 pub use state::{AppState, Blobs, Clock, Config, ManualClock, RateLimits, SystemClock};

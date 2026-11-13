@@ -36,6 +36,7 @@ fn openapi_and_route_table_name_the_same_operations_and_scopes() {
         let perm = match r.access {
             Access::Public => "public".to_owned(),
             Access::Scope(s) => s.to_owned(),
+            Access::SigningIn => "signing-in".to_owned(),
         };
         assert!(
             routes
@@ -2139,6 +2140,40 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         api.call("GET", "/api/v1/ersd-versions", k, None, &[]).await,
         StatusCode::OK,
         "ersd versions",
+    )
+    .await;
+    // The second-factor steps (ASVS-01; `tests/mfa.rs` walks them through with a key).
+    ok(
+        api.call("POST", "/api/v1/auth/mfa/totp/enrol", &s, None, &[])
+            .await,
+        StatusCode::CONFLICT,
+        "mfa enrol without a sealing key",
+    )
+    .await;
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/mfa/totp/confirm",
+            &s,
+            Some(json!({"code": "000000"})),
+            &[],
+        )
+        .await,
+        StatusCode::CONFLICT,
+        "mfa confirm without a sealing key",
+    )
+    .await;
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/mfa/verify",
+            &s,
+            Some(json!({"code": "000000"})),
+            &[],
+        )
+        .await,
+        StatusCode::UNAUTHORIZED,
+        "mfa verify with no factor enrolled",
     )
     .await;
     ok(

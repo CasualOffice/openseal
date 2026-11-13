@@ -10,7 +10,7 @@ use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
 
 use crate::api::{
-    admin, bulk, envelopes as env, folders, groups, ml, org, switch, templates, webhooks,
+    admin, bulk, envelopes as env, folders, groups, mfa, ml, org, switch, templates, webhooks,
 };
 use crate::ceremony;
 use crate::http::{Guard, guard, request_context};
@@ -21,8 +21,12 @@ use crate::state::AppState;
 pub enum Access {
     /// Anyone (login, token, JWKS, ceremony: they authenticate themselves).
     Public,
-    /// An authenticated principal holding this scope (`""`: any).
+    /// An authenticated principal holding this scope (`""`: any) that owes no second
+    /// factor it has not passed.
     Scope(&'static str),
+    /// Any authenticated principal, a staff session that still owes its second factor
+    /// included: the steps of signing in (ASVS-01). `x-permission: signing-in`.
+    SigningIn,
 }
 
 /// One endpoint.
@@ -77,7 +81,7 @@ where
 #[must_use]
 #[allow(clippy::too_many_lines)] // One line per endpoint is the point of the table.
 pub fn table() -> Vec<Route> {
-    use Access::{Public, Scope};
+    use Access::{Public, Scope, SigningIn};
     let er = Scope("envelopes:read");
     let ew = Scope("envelopes:write");
     let es = Scope("envelopes:send");
@@ -96,16 +100,38 @@ pub fn table() -> Vec<Route> {
         r(
             "POST",
             "/api/v1/auth/logout",
-            Scope(""),
+            SigningIn,
             JSON,
             admin::logout,
         ),
         r(
             "GET",
             "/api/v1/auth/session",
-            Scope(""),
+            SigningIn,
             JSON,
             admin::session,
+        ),
+        // The staff second factor (ASVS-01, docs/40 §2).
+        r(
+            "POST",
+            "/api/v1/auth/mfa/verify",
+            SigningIn,
+            JSON,
+            mfa::verify,
+        ),
+        r(
+            "POST",
+            "/api/v1/auth/mfa/totp/enrol",
+            SigningIn,
+            JSON,
+            mfa::enrol,
+        ),
+        r(
+            "POST",
+            "/api/v1/auth/mfa/totp/confirm",
+            SigningIn,
+            JSON,
+            mfa::confirm,
         ),
         r(
             "POST",
@@ -1065,13 +1091,19 @@ pub fn app(state: AppState) -> Router {
     let mut router: Router<AppState> = Router::new();
     for route in table() {
         let mut h = route.handler.layer(DefaultBodyLimit::max(route.max_body));
-        if let Access::Scope(scope) = route.access {
+        let guarded = match route.access {
+            Access::Public => None,
+            Access::Scope(scope) => Some((scope, false)),
+            Access::SigningIn => Some(("", true)),
+        };
+        if let Some((scope, signing_in)) = guarded {
             h = h.route_layer(from_fn_with_state(
                 (
                     state.clone(),
                     Guard {
                         scope,
                         max_body: route.max_body,
+                        signing_in,
                     },
                 ),
                 guard,

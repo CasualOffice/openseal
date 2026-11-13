@@ -184,6 +184,7 @@ components:
         client_id: {type: [string, 'null']}
         scopes: {type: array, items: {type: string}}
         admin: {type: boolean}
+        second_factor: {type: string, enum: [none, passed, verify, enrol]}
     MyWorkspaces:
       type: object
       properties:
@@ -243,7 +244,7 @@ components:
       required: [settings]
       additionalProperties: false
       properties:
-        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy.'}
+        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `mfa_policy` (ASVS-01) is `optional` (the default), `administrators` or `everyone`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`.'}
     User:
       type: object
       properties:
@@ -1260,7 +1261,9 @@ paths:
     post:
       operationId: logout
       summary: "End the current staff session"
-      x-permission: ""
+      description: >-
+        Also for a session that still owes its second factor (`x-permission: signing-in`).
+      x-permission: signing-in
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -1381,13 +1384,110 @@ paths:
     get:
       operationId: getSession
       summary: "Who the credential is"
-      x-permission: ""
+      description: >-
+        Also for a session that still owes its second factor: `second_factor` says what
+        it owes (`verify` or `enrol`), or `passed` or `none` (ASVS-01).
+      x-permission: signing-in
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SessionInfo'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/verify:
+    post:
+      operationId: verifySecondFactor
+      summary: "Pass the session's second factor (ASVS-01)"
+      description: >-
+        With `code`, six digits from the user's authenticator (RFC 6238, 30-second steps,
+        one step of drift either way); or with `recovery_code`, one of the ten codes shown
+        at enrolment, which is spent (case, spaces and dashes do not matter). Each TOTP
+        code is accepted once: a code for a step no later than the last accepted one is
+        refused. `401 CS-AUTH-0012` for a wrong, replayed or spent code. Rate-limited per
+        user as login is. Until a session that owes a factor passes it, every other
+        `/api/v1` call but `GET /auth/session` and `POST /auth/logout` answers
+        `403 CS-AUTH-0011`.
+      x-permission: signing-in
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                code: {type: string}
+                recovery_code: {type: string}
+      responses:
+        '200':
+          description: Passed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  second_factor: {type: string, enum: [passed]}
+                  recovery_codes_left: {type: integer}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/totp/enrol:
+    post:
+      operationId: enrolTotp
+      summary: "Start TOTP enrolment for the session's own user (ASVS-01)"
+      description: >-
+        A new 160-bit seed, shown once as an `otpauth://` URI (for a QR code; labelled
+        with the user id, never the email) and as base32 `secret`; stored only sealed
+        (AES-256-GCM under `OPENSEAL_MFA_KEY`). Calling again before confirming draws a
+        new seed. `409 CS-API-0009` once a factor is confirmed, or when the server has no
+        sealing key. Staff sessions only (`422` for an API key or token).
+      x-permission: signing-in
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: "The seed, shown once (`Cache-Control: no-store`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  otpauth_uri: {type: string}
+                  secret: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/totp/confirm:
+    post:
+      operationId: confirmTotp
+      summary: "Confirm TOTP enrolment with a first code (ASVS-01)"
+      description: >-
+        A code from the new authenticator confirms the enrolment; the session has then
+        passed its second factor, and the answer shows ten one-time recovery codes once
+        (112 random bits each; only their SHA-256 is stored). `401 CS-AUTH-0012` for a
+        wrong code; `409 CS-API-0009` before `enrol` or after a confirmation.
+      x-permission: signing-in
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code]
+              properties:
+                code: {type: string}
+      responses:
+        '200':
+          description: "Confirmed (`Cache-Control: no-store`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  second_factor: {type: string, enum: [passed]}
+                  recovery_codes: {type: array, items: {type: string}, minItems: 10, maxItems: 10}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/oauth/token:
     post:
@@ -2475,7 +2575,8 @@ paths:
       description: >-
         Idempotent on the job key (account, document, its SHA-256, the features, the model
         bundle). `403 CS-ML-0011` with no feature in effect; `409 CS-WF-0001` once the
-        envelope is no longer a draft. The envelope's sender or an administrator.
+        envelope is no longer a draft; `404` once it is purged (a deleted draft). The
+        envelope's sender or an administrator.
       x-permission: "envelopes:write"
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
@@ -2505,7 +2606,7 @@ paths:
       summary: "Suggestions of the envelope's analyses (docs/33 §6, WEB-19)"
       description: >-
         Only kinds whose feature is in effect, only for documents still in the envelope.
-        `403 CS-ML-0011` with no feature in effect.
+        `403 CS-ML-0011` with no feature in effect; `404` once the envelope is purged.
       x-permission: "envelopes:read"
       parameters:
         - {name: kind, in: query, schema: {type: string, enum: [template, entity, personal_data]}}

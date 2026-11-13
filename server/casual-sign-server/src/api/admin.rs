@@ -72,6 +72,19 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
         {
             return Err(ApiError::invalid("/settings/workflow_policy"));
         }
+        // Who must sign in with a second factor (ASVS-01). Requiring one needs the
+        // server's sealing key, or nobody could enrol.
+        if k == "mfa_policy" && !v.is_null() {
+            match v.as_str() {
+                Some("optional") => {}
+                Some("administrators" | "everyone") => {
+                    if c.st.mfa_key().is_none() {
+                        return Err(ApiError::not_available("second factor not configured"));
+                    }
+                }
+                _ => return Err(ApiError::invalid("/settings/mfa_policy")),
+            }
+        }
         if v.is_null() {
             settings.remove(&k);
         } else {
@@ -1101,6 +1114,7 @@ pub(crate) async fn session(c: Call) -> Result<Response, ApiError> {
             "account_id": c.p.account.to_string(), "user_id": c.p.user.to_string(),
             "credential": kind, "client_id": c.p.client().map(|x| x.to_string()),
             "scopes": c.p.scopes, "admin": c.p.admin,
+            "second_factor": c.p.second_factor.as_str(),
         }),
     ))
 }

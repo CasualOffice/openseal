@@ -136,15 +136,16 @@ async function sha256hex(text) {
 }
 
 class Problem extends Error {
-  constructor(status, code, title, errors) {
+  constructor(status, code, title, errors, detail) {
     super(code);
     this.status = status;
     this.code = code;
     this.title = title;
     this.errors = errors;
+    this.detail = detail;
   }
 }
-const fail = (status, code, title, errors) => { throw new Problem(status, code, title, errors); };
+const fail = (status, code, title, errors, detail) => { throw new Problem(status, code, title, errors, detail); };
 
 /// Make the fake. Returns `fetch(url, init)` answering `Response`s, plus `state()` for tests.
 export function createMockFetch({ store = null, now = () => new Date() } = {}) {
@@ -609,7 +610,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   const json = (status, body, headers = {}) =>
     new Response(body == null ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
   const problem = (p) =>
-    new Response(JSON.stringify({ type: "about:blank", title: p.title || p.code, status: p.status, code: p.code, request_id: `mock-${uid().slice(0, 8)}`, ...(p.errors ? { errors: p.errors } : {}) }),
+    new Response(JSON.stringify({ type: "about:blank", title: p.title || p.code, status: p.status, code: p.code, request_id: `mock-${uid().slice(0, 8)}`, ...(p.errors ? { errors: p.errors } : {}), ...(p.detail ? { detail: p.detail } : {}) }),
       { status: p.status, headers: { "Content-Type": "application/problem+json" } });
   const pdf = (bytes) => new Response(bytes, { status: 200, headers: { "Content-Type": "application/pdf" } });
 
@@ -1408,6 +1409,53 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     fail(404, "CS-API-0002", "Not found");
   }
 
+  /// What the session owes (the server's `SecondFactor`): `passed`, `verify` (the demo
+  /// user enrolled), `enrol` (the account's `mfa_policy` asks for one) or `none`.
+  function secondFactor() {
+    if (db.session?.mfa) return "passed";
+    if (db.mfa?.confirmed) return "verify";
+    const policy = account().settings?.mfa_policy;
+    return policy === "administrators" || policy === "everyone" ? "enrol" : "none";
+  }
+
+  function mfa(method, sub, subId, body) {
+    db.mfa ||= { confirmed: false, secret: null, used: [], recovery: [] };
+    const sixDigits = (c) => typeof c === "string" && /^[0-9]{6}$/.test(c.trim());
+    const fresh = (c) => sixDigits(c) && !db.mfa.used.includes(c.trim());
+    if (sub === "verify" && method === "POST") {
+      for (const k of Object.keys(body || {})) if (!["code", "recovery_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+      if (!db.mfa.confirmed) fail(401, "CS-AUTH-0012", "Second factor refused");
+      if (typeof body?.recovery_code === "string") {
+        const canon = body.recovery_code.replace(/[\s-]/g, "").toUpperCase();
+        const i = db.mfa.recovery.indexOf(canon);
+        if (i < 0) fail(401, "CS-AUTH-0012", "Second factor refused");
+        db.mfa.recovery.splice(i, 1);
+        db.session.mfa = true;
+        return json(200, { second_factor: "passed", recovery_codes_left: db.mfa.recovery.length });
+      }
+      if (!fresh(body?.code)) fail(401, "CS-AUTH-0012", "Second factor refused");
+      db.mfa.used.push(body.code.trim());
+      db.session.mfa = true;
+      return json(200, { second_factor: "passed" });
+    }
+    if (sub === "totp" && subId === "enrol" && method === "POST") {
+      if (db.mfa.confirmed) fail(409, "CS-API-0009", "Not available", undefined, "already enrolled");
+      db.mfa.secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+      return json(200, { otpauth_uri: `otpauth://totp/OpenSeal:user-demo?secret=${db.mfa.secret}&issuer=OpenSeal&algorithm=SHA1&digits=6&period=30`, secret: db.mfa.secret });
+    }
+    if (sub === "totp" && subId === "confirm" && method === "POST") {
+      if (db.mfa.confirmed) fail(409, "CS-API-0009", "Not available", undefined, "already enrolled");
+      if (!db.mfa.secret) fail(409, "CS-API-0009", "Not available", undefined, "enrol first");
+      if (!fresh(body?.code)) fail(401, "CS-AUTH-0012", "Second factor refused");
+      const codes = Array.from({ length: 10 }, (_, n) => `DEMO${n}`.padEnd(23, "A"));
+      db.mfa = { ...db.mfa, confirmed: true, used: [body.code.trim()], recovery: codes.slice() };
+      db.session.mfa = true;
+      const shown = codes.map((c) => c.match(/.{1,5}/g).join("-"));
+      return json(200, { second_factor: "passed", recovery_codes: shown });
+    }
+    fail(404, "CS-API-0002", "Not found");
+  }
+
   async function staff(method, parts, query, headers, body) {
     if (!db.session) fail(401, "CS-AUTH-0001", "Not authenticated");
     if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
@@ -1429,13 +1477,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       for (const k of Object.keys(body || {})) if (k !== "account_id") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
       if (typeof body?.account_id !== "string") fail(422, "CS-API-0001", "Invalid request", [{ pointer: "/account_id", code: "type" }]);
       if (!spaces.some((w) => w.id === body.account_id)) fail(403, "CS-ORG-0001", "Not a member of that workspace");
-      db.session = { csrf: uid(), account: body.account_id };
+      db.session = { csrf: uid(), account: body.account_id, mfa: db.session.mfa === true };
       return json(200, { account_id: body.account_id, user_id: "user-demo", csrf_token: db.session.csrf, expires_at: iso(60 * 12) });
     }
     if (res === "auth" && id === "session" && method === "GET") {
-      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true });
+      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true, second_factor: secondFactor() });
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
+    // The staff second factor (ASVS-01), as the server: a TOTP code is six digits (the
+    // mock takes any, once each, as it has no clock), recovery codes are spent.
+    if (res === "auth" && id === "mfa") return mfa(method, sub, subId, body);
+    const owed = secondFactor();
+    if (owed === "verify" || owed === "enrol") fail(403, "CS-AUTH-0011", "Second factor required", undefined, owed);
     if (res === "accounts" && id === "me") {
       // Settings and branding (WEB-06 AD-01), as the server (`AccountPatch`): `PATCH
       // {settings}` only, merged, `null` removing a key; answers `{settings}`. The
@@ -2090,7 +2143,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (method === "DELETE") {
       if (u.id === "user-demo") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/id", code: "self" }]);
       db.users = db.users.filter((x) => x !== u);
-      // As 0032: their places in groups go with them.
+      // As 0033: their places in groups go with them.
       for (const g of db.groups) { g.user_ids = (g.user_ids || []).filter((x) => x !== u.id); g.members = g.user_ids.length; }
       await adminEvent("member.removed", { target: { user: u.id } });
       return json(204, null);

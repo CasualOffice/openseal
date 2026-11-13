@@ -172,9 +172,12 @@ pub(crate) struct Guard {
     pub scope: &'static str,
     /// The largest request body the route reads.
     pub max_body: usize,
+    /// A session that still owes its second factor may call it (ASVS-01).
+    pub signing_in: bool,
 }
 
-/// The guard of every `/api/v1` route: authenticate (401), check the scope (403), count
+/// The guard of every `/api/v1` route: authenticate (401), refuse a session that owes
+/// its second factor anywhere but signing in (403, ASVS-01), check the scope (403), count
 /// the principal's rate (429), then, for a `POST` with `Idempotency-Key`, answer a
 /// replay with the first response (docs/40 §1).
 pub(crate) async fn guard(
@@ -186,6 +189,11 @@ pub(crate) async fn guard(
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
+    if let Some(owed) = p.second_factor.owed()
+        && !g.signing_in
+    {
+        return ApiError::second_factor_required(owed).into_response();
+    }
     if let Err(e) = p.require(g.scope) {
         return e.into_response();
     }

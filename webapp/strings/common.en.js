@@ -66,6 +66,8 @@ export const COMMON = {
   "error.CS-ORG-0018": "An administrator must be a member of one of the organization's workspaces.",
   "error.CS-AUTH-0007": "The email or password is not right.",
   "error.CS-AUTH-0008": "Your session needs refreshing. Reload the page.",
+  "error.CS-AUTH-0011": "Finish signing in with your second factor first.",
+  "error.CS-AUTH-0012": "That code is not right, or it was already used.",
   "error.CS-AUTH-0009": "This signing link is open in another browser. Open it from your email on this device.",
   "error.CS-WF-0001": "That is not possible in the envelope's current state.",
   "error.CS-WF-0002": "Someone else changed this envelope. Reload and try again.",

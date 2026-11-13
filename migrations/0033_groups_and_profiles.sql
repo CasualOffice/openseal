@@ -1,4 +1,4 @@
--- 0032: admin groups and custom permission profiles (UXW-07; docs/22 §8, docs/23 §12).
+-- 0033: admin groups and custom permission profiles (UXW-07; docs/22 §8, docs/23 §12).
 --
 -- 1. `group_members` cascades: a member's place in a group goes with the group, and
 --    with their membership of the account. Before this, a member who belonged to a

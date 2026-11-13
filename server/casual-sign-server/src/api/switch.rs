@@ -118,9 +118,10 @@ pub(crate) async fn switch(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let secret = random_secret()?;
     let csrf = random_secret()?;
     let mut to = c.st.store().for_account(target).begin().await?;
+    let id = StaffSessionId(Uuid::now_v7());
     to.sessions()
         .create(&NewSession {
-            id: StaffSessionId(Uuid::now_v7()),
+            id,
             user_id: c.p.user,
             token_sha256: sha256(secret.as_bytes()),
             csrf_sha256: sha256(csrf.as_bytes()),
@@ -129,6 +130,10 @@ pub(crate) async fn switch(c: Call, body: Bytes) -> Result<Response, ApiError> {
             expires_at: taken.expires_at,
         })
         .await?;
+    // The sign-in's second factor holds in the new workspace too (ASVS-01).
+    if let Some(at) = taken.mfa_at {
+        to.sessions().set_mfa_at(id, at).await?;
+    }
     // The new session first: if it fails, the old one is still in force.
     to.commit().await?;
     from.commit().await?;

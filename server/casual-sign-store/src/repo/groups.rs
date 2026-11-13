@@ -1,6 +1,6 @@
 //! Groups of members (UXW-07; docs/22 §8): made, renamed and deleted by an administrator,
 //! and used to share templates (UXW-06). Every change appends its admin event in the
-//! same transaction; the database refuses a commit without one (0032).
+//! same transaction; the database refuses a commit without one (0033).
 
 use super::affected;
 use super::templates::Group;
@@ -101,7 +101,7 @@ impl Groups<'_> {
     }
 
     /// Delete a group: its members' places in it and the template shares naming it go
-    /// with it (0031, 0032 cascades).
+    /// with it (0031, 0033 cascades).
     ///
     /// # Errors
     ///

@@ -5,7 +5,7 @@
 //! hold exactly its permissions, and a change applies from their next request; nobody
 //! gives a profile, or changes a member, beyond their own rights; built-in profiles are
 //! fixed and a held profile is not deleted. Removing a member who is in a group works
-//! (0032 cascades), and deleting a group takes its template shares with it.
+//! (0033 cascades), and deleting a group takes its template shares with it.
 
 #![allow(
     clippy::unwrap_used,

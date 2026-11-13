@@ -62,6 +62,6 @@ pub use quota::{
     Consumed, GaugeLock, PlanRefusal, QUOTA_REACHED, SEATS_REACHED, STORAGE_REACHED, SUSPENDED,
 };
 pub use store::{
-    ClaimedJob, EntryPoints, RecipientTokenTarget, StaffSessionTarget, Store, Tenant, TenantTx,
-    UserWorkspace,
+    ClaimedJob, EntryPoints, MfaPolicy, RecipientTokenTarget, StaffSessionTarget, Store, Tenant,
+    TenantTx, UserWorkspace,
 };

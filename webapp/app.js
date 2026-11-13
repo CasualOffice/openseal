@@ -27,6 +27,7 @@ import {
 import { openPalette, closePalette, paletteOpen, registerPaletteProvider, matches } from "./ui/palette.js";
 import { initTheme, setTheme, getTheme, toggleTheme } from "./theme.js";
 import { initMl } from "./ml.js";
+import { owedFactor } from "./authmodel.js";
 
 const mock = isMockMode();
 let api;
@@ -54,7 +55,9 @@ const ctx = {
   registerPaletteProvider,
   /// Handle an API error from a screen: a lost session goes to sign-in.
   failed(err) {
-    if (err instanceof ApiError && (err.code === "CS-AUTH-0001" || err.code === "CS-AUTH-0002")) {
+    // CS-AUTH-0011: the session still owes its second factor (ASVS-01); sign-in resumes
+    // at that step.
+    if (err instanceof ApiError && (err.code === "CS-AUTH-0001" || err.code === "CS-AUTH-0002" || err.code === "CS-AUTH-0011")) {
       ctx.session = null;
       toast(errorMessage(err), "error");
       ctx.navigate("#/signin");
@@ -200,6 +203,12 @@ async function route() {
   if (!ctx.session && hash !== "#/signin" && !hash.startsWith("#/accept-invite")) {
     try {
       ctx.session = await api.session();
+      // Half signed in (ASVS-01): the password passed, the second factor not yet.
+      if (owedFactor(ctx.session)) {
+        ctx.session = null;
+        location.replace(`${location.pathname}${location.search}#/signin`);
+        return;
+      }
     } catch (err) {
       ctx.session = null;
       if (!mock && isNoServer(err)) { noServerState(freshView(main), route); return; }
