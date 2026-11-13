@@ -97,6 +97,24 @@ fn a_changed_allow_list_stops_keyd_before_it_starts() {
         stderr(&added)
     );
 
+    // The signature operations log moved elsewhere without a new manifest: refused, as
+    // the log is the record of every signature keyd makes (HRD-06 review).
+    let moved = Command::new(KEYD)
+        .env_clear()
+        .env("OPENSEAL_KEYD_ALLOW_LIST", dir.join("allow"))
+        .env("OPENSEAL_KEYD_CLIENT_CA", dir.join("ca.pem"))
+        .env("OPENSEAL_KEYD_ALIAS", "platform")
+        .env("OPENSEAL_KEYD_OPLOG", dir.join("elsewhere.log"))
+        .env("OPENSEAL_CONFIG_MANIFEST", &path)
+        .output()
+        .unwrap();
+    assert!(!moved.status.success());
+    assert!(
+        stderr(&moved).contains("CS-KEY-0013: OPENSEAL_KEYD_OPLOG is set but not"),
+        "{}",
+        stderr(&moved)
+    );
+
     // A manifest that cannot be read is a refusal, not a skipped check.
     let missing = keyd(&dir, &[], Some(&dir.join("absent")));
     assert!(!missing.status.success());

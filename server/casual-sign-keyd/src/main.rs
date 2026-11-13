@@ -68,6 +68,8 @@ const CONFIG_VALUES: &[&str] = &[
     "OPENSEAL_KEYD_PKCS11_KEY_ID",
     "OPENSEAL_KEYD_FILE_KEY",
     "OPENSEAL_KEYD_SIGNATURES_PER_MINUTE",
+    // A path, not a file: the log grows with every signature.
+    "OPENSEAL_KEYD_OPLOG",
     "OPENSEAL_DEV_INSECURE_KEY",
     "OPENSEAL_KEYD_NEXT_ALIAS",
     "OPENSEAL_KEYD_NEXT_PKCS11_KEY_LABEL",

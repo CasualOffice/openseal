@@ -382,8 +382,10 @@ const CONFIG_FILES: &[&str] = &[
     "OPENSEAL_WORKER_DEV_CHAIN",
 ];
 
-/// Security settings hashed as values: where the worker sends keys, documents and codes.
+/// Security settings hashed as values: where the worker sends keys, documents, codes and
+/// the links that carry signers' bearer tokens.
 const CONFIG_VALUES: &[&str] = &[
+    "OPENSEAL_BASE_URL",
     "OPENSEAL_TSA_URLS",
     "OPENSEAL_KEYD_ADDR",
     "OPENSEAL_KEYD_SERVER_NAME",
@@ -393,7 +395,10 @@ const CONFIG_VALUES: &[&str] = &[
     "OPENSEAL_WEBHOOK_ALLOW",
     "OPENSEAL_SMS_GATEWAY_URL",
     "OPENSEAL_S3_ENDPOINT",
+    "OPENSEAL_S3_BUCKET",
     "OPENSEAL_SMTP_HOST",
+    "OPENSEAL_SMTP_PORT",
+    "OPENSEAL_SMTP_USER",
     "OPENSEAL_SMTP_SECURITY",
     "OPENSEAL_WORKER_DEV_KEY",
     "OPENSEAL_DEV_INSECURE_KEY",

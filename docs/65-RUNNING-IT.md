@@ -192,8 +192,11 @@ injection, is `HRD-01`'s.
 keyd and the worker read their security settings once, at start, so a change on disk does nothing until a restart.
 At start each logs `config NAME sha256:…` for every such setting and `security configuration sha256:…` over them
 all: for keyd its TLS certificate, client CA, allow lists, seal chain, PKCS#11 module (the library's bytes), alias,
-token and key label; for the worker its trust anchors, TSA list, keyd and model service addresses and CAs, its
-client certificates, webhook allowances, object store, SMTP host and SMS gateway. Never a PIN, key or password.
+token and key label, and the path of its signature operations log (`OPENSEAL_KEYD_OPLOG`); for the worker its
+trust anchors, TSA list, keyd and model service addresses and CAs, its client certificates, keyd alias, webhook
+allowances, object store endpoint and bucket, SMTP host, port, user and security, SMS gateway, and the public base
+URL (`OPENSEAL_BASE_URL`) that signer invitation links, which carry bearer tokens, point at. Never a PIN, key or
+password.
 With `OPENSEAL_CONFIG_MANIFEST` (the production profile sets it) the daemon refuses to start, `CS-KEY-0013` naming
 the setting, when any setting differs from the manifest, is set but not listed, or is listed but not set. After an
 approved change, record the new manifest and replace the secret file:
