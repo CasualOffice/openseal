@@ -503,12 +503,18 @@ mutation of the migration):
   caller says who acts (`TenantTx::act_as`, `OrgTx::act_as`, carried by `into_workspace`); every guarded API call acts
   as its principal (the user behind a session, the API client behind a key or token) with the request id and client
   address; without it the event records `system` (bootstrap, tests).
-- **No change commits without its event.** Deferred constraint triggers on `accounts`, `account_memberships`,
+- **No application-role change commits without its event.** Deferred constraint triggers on `accounts`, `account_memberships`,
   `permission_profiles`, `organizations`, `organization_admins` and `org_permission_sets` refuse an application-role
   commit whose transaction appended no event to that workspace's log or its organization's (`23514`, constraint
   `admin_change_has_event`, `CS-DB-0008`). "This transaction" is the event row's `xact` (`pg_current_xact_id()`, the
   top-level id even inside a savepoint), set by the insert trigger, never by the caller. The owner role (migrations,
-  superuser recovery) is outside, as it is for the envelope chain (`SEC-S07`).
+  superuser recovery) is outside, as it is for the envelope chain (`SEC-S07`). **So are the console's writes until
+  `CON-16`:** the check skips every role that is not `openseal_app`, and the console's definer functions from
+  migrations 0018 and 0019 (`platform.set_workspace_status` and the other organization writes, and approvals) commit
+  with no event in `org_admin_events`. A review probe archived a workspace through `platform.set_workspace_status` as
+  a console login with a live operator session, and the organization log had no row. Those changes are recorded only
+  in the operator log (`platform.operator_events`) until `CON-16` copies each into the organization's log in the same
+  transaction.
 - **Canonical event (v1).** RFC 8785 bytes from `casual-sign-audit::jcs`: `v`, `account` or `organization`, `seq`,
   `prev` (hex or null), `at` (Unix milliseconds), `actor` (`{kind: user|api_client, id}` or `{kind: system}`), `action`,
   `target` (ids by name), `changes` (`key`, `old`, `new`), and `request_id` and `ip` when known. Names and e-mail
@@ -519,7 +525,8 @@ mutation of the migration):
   `member.enabled`, `member.renamed`, `member.password_set`, `profile.created`. A user changing their own name or
   password, and accepting an invitation, are not administrative changes and write none.
 - **The database checks the bytes.** Besides the hash, `seq` and `prev`, the insert trigger requires the owner, `seq`,
-  `prev` and `action` columns to be what the bytes state, and refuses an event outside the current scope (`42501`)
+  `prev`, `action` and `at` columns to be what the bytes state (`at` exactly the bytes' Unix millisecond, since the API
+  serves the column; the verified reads check it again), and refuses an event outside the current scope (`42501`)
   before reading that chain, so another scope's head or next `seq` is never revealed. The workspace functions require
   the event's bytes to name their own action and workspace.
 - **Concurrent changes queue on the head.** `openseal_admin_chain_tip()` and `openseal_org_chain_tip()` lock the head
@@ -536,8 +543,13 @@ mutation of the migration):
   actions); the bootstrap writes `organization.created` and `organization.admin_added` there through
   `openseal_append_org_event`; workspace settings, members and profiles go to the workspace log.
 - **Reading.** `TenantTx::admin_events(after, limit)` and `verified_admin_log()`, the same on `OrgTx`; the verified read
-  also requires the stored head to equal the last event's hash. `GET /admin-events` (workspace, `admin:account`)
-  re-verifies the whole log, then answers JSON or CSV. `GET /organizations/me/audit` comes with ORG-03's organization
+  also requires the stored head to equal the last event's hash. `verified_admin_events(after, limit)` verifies one page
+  as it reads it: its first event links to the event at the cursor (whose hash and time are checked), each event to the
+  one before, and a short (last) page ends at the stored head. Walking the log by cursor so checks every link once,
+  instead of re-reading the whole log for every page (about N²/limit rows for an export). `GET /admin-events`
+  (workspace, `admin:account`) answers JSON or CSV from it; `verify=full` re-verifies the whole log first. A single
+  page in the middle does not prove the events before its cursor: an export walks from the start, or asks for
+  `verify=full`. `GET /organizations/me/audit` comes with ORG-03's organization
   routes, over `OrgTx::admin_events`.
 
 ## 3. Organization policy and inheritance

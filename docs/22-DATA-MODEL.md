@@ -357,7 +357,7 @@ chained per organization, head in `organizations.admin_chain_head`). Columns: ow
 by the insert trigger) and `recorded_at`; primary key (owner, `seq`). Append-only as `audit_events`: SELECT and INSERT
 only for `openseal_app`, triggers refuse UPDATE, DELETE and TRUNCATE for every role (`OS001`, `CS-DB-0004`). A
 definer insert trigger refuses an event outside the current scope (`42501`, before the chain is read), then checks
-`sha256(canonical) = hash`, that the owner, `seq`, `prev` and `action` columns are what the bytes state, and that
+`sha256(canonical) = hash`, that the owner, `seq`, `prev`, `action` and `at` (the bytes' Unix millisecond) columns are what the bytes state, and that
 `seq` is next and `prev` the head under `FOR UPDATE` on the head column (`OS005`, `CS-DB-0014`), and moves the head.
 Deferred constraint triggers named `*_admin_change_has_event` on `accounts` (insert, or update of `name`, `settings`,
 `data_region`, `status`), `account_memberships`, `permission_profiles`, `organizations` (insert, or update of `name`,
@@ -372,8 +372,8 @@ archived workspace writes none). Store: the repositories append the events thems
 `Accounts::make_first_owner`, `Users::create_profile`, `create_member`, `add_existing_member`, `rename`,
 `set_password_hash`, `set_profile`, `set_disabled`, `remove_member`, `OrgTx::create_workspace`, `archive_workspace`,
 `Store::bootstrap_organization`); `TenantTx::act_as` and `OrgTx::act_as` set the actor (`AdminActor`: user, API client
-or system, time, request id, IP); `TenantTx::admin_events`, `verified_admin_log` and the same on `OrgTx` read and
-re-verify. Forty-seven tables.
+or system, time, request id, IP); `TenantTx::admin_events`, `verified_admin_log`, `verified_admin_events` (one page, verified
+against the event at its cursor and the stored head) and the same on `OrgTx` read and re-verify. Forty-seven tables.
 
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
