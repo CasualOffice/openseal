@@ -41,6 +41,9 @@ jobs:
       # The Chocolatey package of Adobe Acrobat Reader, pinned; raise it deliberately and record
       # the new version's run in docs/31.
       READER_PACKAGE_VERSION: "2026.2.22031"
+      # Reader draws its banner and Signature Panel itself (no UI Automation text there),
+      # so the driver reads them from screenshots with Tesseract.
+      TESSERACT_PACKAGE_VERSION: "5.5.3.20260724"
       PYTHONUTF8: "1"
     steps:
       # The packet's PDFs and SHA256SUMS must arrive byte for byte.
@@ -59,6 +62,8 @@ jobs:
       - run: python -m pip install --quiet "pywinauto==0.6.9" "pillow==11.3.0" "pyhanko==0.38.1" cryptography
       - name: Install Adobe Acrobat Reader
         run: choco install adobereader --version "${{ env.READER_PACKAGE_VERSION }}" -y --no-progress --params '"/NoUpdates"'
+      - name: Install Tesseract OCR
+        run: choco install tesseract --version "${{ env.TESSERACT_PACKAGE_VERSION }}" -y --no-progress
       - name: Trust the test root and set Reader's verification preferences
         shell: pwsh
         run: tools/interop/acrobat-setup.ps1 -Packet fixtures/interop
