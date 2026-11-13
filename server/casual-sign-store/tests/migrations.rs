@@ -101,7 +101,8 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // 0012 `recipient_otp_codes` (SEC-A02), a tenant table; 0014 `organizations`,
     // `org_permission_sets` and `organization_admins` (ORG-02), organization tables
     // checked by `organizations.rs` instead of the account rules below.
-    assert_eq!(tables.len(), 45, "{tables:?}");
+    // 0022 `folder_envelopes` (UXW-02), a tenant table.
+    assert_eq!(tables.len(), 46, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_permission_sets",

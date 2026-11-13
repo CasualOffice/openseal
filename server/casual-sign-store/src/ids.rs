@@ -74,4 +74,8 @@ id_type!(
     UserInvitationId,
     /// A staff user's session.
     StaffSessionId,
+    /// A member's folder (UXW-02).
+    FolderId,
+    /// A member's filing of an envelope in a folder (UXW-02).
+    FolderEntryId,
 );

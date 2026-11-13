@@ -55,6 +55,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(17, "0017_operators.sql"),
     migration!(18, "0018_console_organization_writes.sql"),
     migration!(19, "0019_console_approvals.sql"),
+    migration!(22, "0022_folders_and_deleted.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.

@@ -11,6 +11,7 @@ pub mod audit;
 pub mod documents;
 pub mod envelopes;
 pub mod fields;
+pub mod folders;
 pub mod idempotency;
 pub mod jobs;
 pub mod recipients;
@@ -120,6 +121,11 @@ impl TenantTx {
     /// Webhook subscriptions and deliveries.
     pub fn webhooks(&mut self) -> webhooks::Webhooks<'_> {
         webhooks::Webhooks { tx: self }
+    }
+
+    /// Members' own envelope folders and their filings (UXW-02).
+    pub fn folders(&mut self) -> folders::Folders<'_> {
+        folders::Folders { tx: self }
     }
 
     /// The workflow engine's envelope states.

@@ -350,6 +350,25 @@ longer create an account outside those functions. Forty-five tables.
 acts as its host hosting the signer (docs/40 As built); the host is a user rather than a membership so that removing
 the member is not refused, and the server refuses the link once the host is no longer an enabled member.
 
+`0022_folders_and_deleted.sql` (`UXW-01`, `UXW-02`, `UXW-03`) makes **folders each member's own**: 0002's `folders`
+rows of kind `envelopes` with `owner_user_id`, a name unique per member ignoring case (`folders_owner_name`; the API
+bounds names to 100 characters and a member to 500 folders), and `UNIQUE (account_id, id, owner_user_id)`. A new tenant
+table `folder_envelopes` (`id`, `user_id`, `envelope_id`, `folder_id`, `filed_at`) records where a member filed an
+envelope, one folder per member and envelope; its reference `(account_id, folder_id, user_id)` to the folder and its
+owner means nobody can file into another member's folder, and removing the folder, the membership or the envelope row
+removes the filing. Filing is a member's view of their lists, not a change of the agreement: no audit event, no
+`updated_at`. 0004's `envelopes.folder_id` (one folder for every member) stays unused. `TenantTx::folders` lists a
+member's folders with the count of filed envelopes not deleted, creates, renames, deletes and files (`file`, all in one
+statement). `recipient_tokens.purpose` may also be `account`, a link a signed-in member obtained for the recipient
+they are (the Inbox's `sign-link`), and `host_user_id` is set exactly for `in_person` and `account`. A partial index
+`recipients_account_live_email` serves the Inbox. `Envelopes::search` also filters by a recipient's name or email, by
+which date a range bounds (`updated_at`, `created_at`, `sent_at`, `completed_at`), by the member's folder (or none),
+by the Deleted view (`deleted_at` set) and by the Inbox (sent envelopes where the member is, by their email, a
+recipient whose turn it is and who acts through a link: not a copy, an in-person signer or an embedded recipient), and
+reports the member's filing and, in the Inbox, the recipient they are. Restoring a deleted envelope needs a workflow
+command and audit type (ADR-031, Proposed), so 0022 adds nothing for it. Forty-six tables. The migration is numbered
+0022 by plan; 0020 and 0021 belong to other lanes, and the store's "versions are dense" test passes once they land.
+
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 

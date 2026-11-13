@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM folders WHERE account_id = $1 AND id = $2 AND owner_user_id = $3 AND kind = 'envelopes'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b56238fcff2af2c8c4e8187e5d7fbc22f8ae4be09c2eb7d9712df87e7e83c892"
+}

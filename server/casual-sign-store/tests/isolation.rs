@@ -390,6 +390,75 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
         })
         .await,);
 
+    // Folders (UXW-02): A's folder, with A's envelope filed in it.
+    let folder = FolderId(id());
+    {
+        let mut ta = db.store.for_account(a.account).begin().await.unwrap();
+        ta.folders()
+            .create(a.user, folder, "Signed NDAs")
+            .await
+            .unwrap();
+        let filed = ta
+            .folders()
+            .file(a.user, Some(folder), &[(FolderEntryId(id()), a.envelope)])
+            .await
+            .unwrap();
+        assert_eq!(filed, 1);
+        ta.commit().await.unwrap();
+    }
+    let mut tx = t.begin().await.unwrap();
+    assert!(tx.folders().list(a.user).await.unwrap().is_empty());
+    assert!(tx.folders().get(a.user, folder).await.unwrap().is_none());
+    assert!(tx.folders().get(b.user, folder).await.unwrap().is_none());
+    assert_eq!(tx.folders().count(a.user).await.unwrap(), 0);
+    tx.commit().await.unwrap();
+    w!("folders.rename (A's folder)", |tx| tx
+        .folders()
+        .rename(b.user, folder, "x")
+        .await);
+    w!("folders.rename (A's folder, A's user)", |tx| tx
+        .folders()
+        .rename(a.user, folder, "x")
+        .await);
+    w!("folders.delete (A's folder)", |tx| tx
+        .folders()
+        .delete(a.user, folder)
+        .await);
+    w!("folders.create (for A's user)", |tx| tx
+        .folders()
+        .create(a.user, FolderId(id()), "x")
+        .await);
+    w!("folders.file (A's folder)", |tx| tx
+        .folders()
+        .file(b.user, Some(folder), &[(FolderEntryId(id()), b.envelope)])
+        .await);
+    w!("folders.file (A's envelope)", |tx| {
+        let r = tx.folders().create(b.user, FolderId(id()), "Mine").await;
+        assert!(r.is_ok());
+        let mine = tx.folders().list(b.user).await.unwrap()[0].id;
+        tx.folders()
+            .file(b.user, Some(mine), &[(FolderEntryId(id()), a.envelope)])
+            .await
+    });
+    {
+        // Unfiling A's envelope from B's account removes nothing of A's.
+        let mut tx = t.begin().await.unwrap();
+        let n = tx
+            .folders()
+            .file(a.user, None, &[(FolderEntryId(id()), a.envelope)])
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+        tx.commit().await.unwrap();
+        let mut ta = db.store.for_account(a.account).begin().await.unwrap();
+        let mine = ta.folders().list(a.user).await.unwrap();
+        assert_eq!(
+            (mine.len(), mine[0].name.0.as_str(), mine[0].count),
+            (1, "Signed NDAs", 1)
+        );
+        ta.commit().await.unwrap();
+    }
+
     // A's rows are exactly as seeded, and A still reaches every one of them (so the
     // checks above were made against ids that exist).
     assert_untouched(&db.store, &a).await;
