@@ -150,11 +150,14 @@ pub enum Kind {
     CallerRefused,
     /// A back end (keyd, a time-stamping authority) not reached or refusing.
     BackendFailed,
+    /// Abnormal activity detected: a principal or client address over a detection
+    /// threshold (`ASVS-13`, ASVS 8.1.4, 11.1.7, 11.1.8), or the detector's table full.
+    Alert,
 }
 
 impl Kind {
     /// Every kind.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::SignIn,
         Self::SignOut,
         Self::Mfa,
@@ -174,6 +177,7 @@ impl Kind {
         Self::KeyUse,
         Self::CallerRefused,
         Self::BackendFailed,
+        Self::Alert,
     ];
 
     /// The name in the line's `kind`.
@@ -199,6 +203,7 @@ impl Kind {
             Self::KeyUse => "key.use",
             Self::CallerRefused => "transport.caller_refused",
             Self::BackendFailed => "transport.backend_failed",
+            Self::Alert => "alert.abnormal_activity",
         }
     }
 
@@ -219,7 +224,8 @@ impl Kind {
             | Self::Token
             | Self::Lockout
             | Self::UploadRefused
-            | Self::DocumentRead => &[Server],
+            | Self::DocumentRead
+            | Self::Alert => &[Server],
             Self::KeyUse => &[Keyd],
             Self::CallerRefused => &[Keyd, Modeld],
             Self::BackendFailed => &[Worker],
@@ -332,7 +338,9 @@ pub enum Principal {
 }
 
 impl Principal {
-    fn text(&self) -> String {
+    /// The text in a line's `principal`: `user:<id>`, `subject:p1:<hex>`, ...
+    #[must_use]
+    pub fn text(&self) -> String {
         match self {
             Self::User(u) => format!("user:{u}"),
             Self::Client(c) => format!("client:{c}"),
@@ -432,6 +440,18 @@ impl SecurityEvent {
     #[must_use]
     pub const fn outcome(&self) -> Outcome {
         self.outcome
+    }
+
+    /// Who acted, if named.
+    #[must_use]
+    pub const fn principal_ref(&self) -> Option<&Principal> {
+        self.principal.as_ref()
+    }
+
+    /// The client address's pseudonym, if named.
+    #[must_use]
+    pub const fn client_ref(&self) -> Option<&Pseudonym> {
+        self.client.as_ref()
     }
 
     /// The request it answers.

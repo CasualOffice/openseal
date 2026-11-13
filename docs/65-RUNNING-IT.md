@@ -347,6 +347,7 @@ and `client`:
 | `key.use` | keyd | A signature or a chain given or refused (`op`, `alias`, `envelope_id`; never the digest) |
 | `transport.caller_refused` | keyd, modeld | An mTLS caller refused: a failed handshake (`reason: handshake`) or a certificate off the allow list (`reason: not_allowed`, named by fingerprint) |
 | `transport.backend_failed` | worker | keyd not reached or refusing (its `CS-KEY-*` code) or a time-stamping authority not answering (`CS-WRK-0018`, `backend: tsa`, its `index` in the list and a `reason`: `connect`, `tls`, `timeout`, `status`, `answer`, `address_refused`; never its URL) |
+| `alert.abnormal_activity` | server | Abnormal activity detected (§Abnormal activity below): `rule`, `count`, `threshold`, `window_s`, `suppressed`, `dropped`, code `CS-LOG-0002` (a threshold reached) or `CS-LOG-0003` (`rule: tracking_full`), and the `principal` and/or `client` over the threshold |
 
 `principal` is `user:<id>`, `client:<id>`, `operator:<id>`, `recipient:<id>`, `caller:<fingerprint>`, or, for an
 identifier presented before anyone is known (the e-mail of a refused sign-in, a client id that matched nothing),
@@ -376,11 +377,57 @@ receiver (`tcp` with `tls`, `protocol: rfc5424`) forwards as OTLP to your log pl
 JSON line. On Kubernetes, the node's log agent (Fluent Bit, the OpenTelemetry Collector's `filelog` receiver) reads the
 same lines from the container runtime and sends them over TLS. `docker compose logs` reads nothing once the syslog
 driver is on: read the collector. Alert on: `auth.sign_in` failures per `principal` or `client`, `auth.lockout`,
-`auth.mfa` with `reason: reused`, `access.denied` bursts, `transport.caller_refused`, `transport.backend_failed`, and
+`auth.mfa` with `reason: reused`, `access.denied` bursts, `transport.caller_refused`, `transport.backend_failed`,
+`abnormal_activity` (§Abnormal activity), and
 on the collector receiving nothing from a service for five minutes (a dropped buffer is otherwise silent). Checked:
 `docker compose -f docker-compose.yml -f deploy/compose.log-forwarding.yml --profile ml config` gives every service
 the driver with these options (2026-11-14); a delivery to a live TLS collector is to be shown on a Linux host
 (`ASVS-08A`).
+
+### Abnormal activity (`ASVS-13`)
+
+The server counts, per principal and per client address (by id or keyed pseudonym, never in clear), what an attack
+or a misuse looks like, over a sliding window (`server/casual-sign-server/src/anomaly.rs`). When a count reaches its
+threshold it writes one `alert.abnormal_activity` security event and raises one **operator alert**: by default a
+`WARN` line `"event":"abnormal_activity"` (`rule`, `code`, `count`, `threshold`, `window_s`, `principal`, `client`,
+`suppressed`, `dropped`), the same channel as the worker's `job_dead` and `seal_failed` lines. Route it to the
+operator's pager or chat from the collector, as those. An embedder can pass its own sink
+(`AppState::set_alert_sink`).
+
+| Rule (`rule`) | Counts | Per | Variable | Default per window |
+| --- | --- | --- | --- | --- |
+| `requests` | Every request | principal, address | `OPENSEAL_ALERT_REQUESTS` | 6000 |
+| `rate_limited` | Answers `429` | principal, address | `OPENSEAL_ALERT_RATE_LIMITED` | 30 |
+| `auth_failures` | Refused sign-ins, second factors, tokens, reset and invitation links, password changes, `401`s and recipient lockouts (one per request) | principal (or the presented e-mail's pseudonym), address | `OPENSEAL_ALERT_AUTH_FAILURES` | 20 |
+| `access_denied` | Answers `403` | principal, address | `OPENSEAL_ALERT_DENIED` | 50 |
+| `document_reads` | Staff reads (`data.document_read`): mass download | principal, address | `OPENSEAL_ALERT_DOCUMENT_READS` | 500 |
+| `voids` | Envelopes voided | principal, address | `OPENSEAL_ALERT_VOIDS` | 25 |
+
+`OPENSEAL_ALERT_WINDOW_SECS` (default 300, 10 to 86,400) is the window; a threshold of `0` turns its rule off. **One
+alert per burst:** after an alert the subject is quiet for `OPENSEAL_ALERT_COOLDOWN_SECS` (default 900); trips
+meanwhile are counted and reported as `suppressed` in its next alert. At most `OPENSEAL_ALERT_MAX_PER_MINUTE`
+(default 20) alerts go out a minute across all subjects; those held back are `dropped` in the next. **Bounded
+memory:** at most `OPENSEAL_ALERT_MAX_TRACKED` subjects (default 50,000, 1,000 to 10,000,000; a few MB) are counted;
+when the table is full, subjects idle for two windows are swept, and if it is still full new subjects are not
+counted, which is itself alerted (`rule: tracking_full`, `CS-LOG-0003`, `count` = subjects not tracked), while the
+subjects already counted keep their counts (spraying addresses cannot reset one). A value out of range stops the
+server at start (`start_failed` naming the variable).
+
+**Several server instances.** Each instance counts only its own traffic, so behind a load balancer a spread attack
+may stay under every instance's threshold. Divide the thresholds by the number of instances, or (better) apply the
+same rules at the collector over every instance's lines. For example, over 5 minutes:
+
+| Alert when | Group by |
+| --- | --- |
+| `event = security` and `kind = access.rate_limited`, count ≥ 30 | `client`; and `principal` |
+| `kind` one of `auth.sign_in`, `auth.mfa`, `auth.token`, `auth.password_reset`, `auth.invite_accept`, `auth.lockout` with `outcome = failure`, count ≥ 20 | `client`; and `principal` |
+| `kind = access.denied`, count ≥ 50 | `client`; and `principal` |
+| `kind = data.document_read`, count ≥ 500 | `principal` |
+| `event = abnormal_activity` or `kind = alert.abnormal_activity` | any: page at once |
+
+The access log (`event = request`) carries neither principal nor client, so the `requests` and `voids` rules have no
+collector-side equivalent per subject; across instances, alert on the total rate of `route =
+/api/v1/envelopes/{id}/void` with `status = 200`, and rely on each instance's own `requests` rule.
 
 ## Configuration
 
