@@ -1621,6 +1621,8 @@ impl<B: BlobStore + 'static> Worker<B> {
         for r in tx.recipients().list(ctx.envelope).await? {
             tx.recipients().revoke_tokens(r.recipient.id, now).await?;
         }
+        // Analysis is derived document content and goes with the envelope (`SEC-I07`).
+        tx.ml().forget_envelope(ctx.envelope).await?;
         // Blobs are write-once with no delete (docs/22 §9); their removal is the
         // retention job's (slice 15, WRK-PURGE row).
         self.complete_in(tx, ctx).await

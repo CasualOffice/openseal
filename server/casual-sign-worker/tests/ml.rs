@@ -29,12 +29,13 @@ use casual_sign_host::ml::{self as hml, AnalysisJob};
 use casual_sign_modeld::wire::{Info, OcrPage, PageHash, Span, SpanRequest, Word};
 use casual_sign_modeld::{Call, ModeldError};
 use casual_sign_sdk::Credentials;
-use casual_sign_store::blob::BlobStore;
+use casual_sign_store::blob::{BlobKey, BlobStore};
 use casual_sign_store::repo::ml::{NewRun, RunKind, RunStatus};
 use casual_sign_store::repo::templates::{Template, TemplateDocument};
 use casual_sign_store::{AnalysisRunId, EnvelopeId, JobId, TemplateDocumentId, TemplateId};
 use casual_sign_worker::JobOutcome;
 use casual_sign_worker::ml::Inference;
+use casual_sign_workflow::Command;
 use common::Env;
 use uuid::Uuid;
 
@@ -528,4 +529,289 @@ async fn a_final_model_error_fails_the_run_and_no_service_leaves_it_unavailable(
         (RunStatus::Failed, Some("CS-ML-0013"))
     );
     assert!(env.alerts.0.lock().unwrap().is_empty());
+}
+
+/// Analysis rows of an envelope or a template, by table (the owner role, for counting):
+/// runs, their suggestions, their OCR pages, and the template's page prints.
+async fn derived(env: &Env, envelope: Option<Uuid>, template: Option<Uuid>) -> [i64; 4] {
+    const QUERIES: [&str; 4] = [
+        "SELECT count(*) FROM analysis_runs WHERE account_id = $1 \
+         AND (envelope_id = $2 OR template_id = $3)",
+        "SELECT count(*) FROM suggestions WHERE account_id = $1 AND (template_id = $3 \
+         OR run_id IN (SELECT id FROM analysis_runs WHERE account_id = $1 \
+         AND (envelope_id = $2 OR template_id = $3)))",
+        "SELECT count(*) FROM ocr_pages WHERE account_id = $1 \
+         AND run_id IN (SELECT id FROM analysis_runs WHERE account_id = $1 \
+         AND (envelope_id = $2 OR template_id = $3))",
+        "SELECT count(*) FROM template_fingerprints WHERE account_id = $1 \
+         AND template_id = $3 AND ($2::uuid IS NULL OR true)",
+    ];
+    let mut out = [0; 4];
+    for (i, q) in QUERIES.into_iter().enumerate() {
+        out[i] = sqlx::query_scalar::<_, i64>(q)
+            .bind(env.account.0)
+            .bind(envelope)
+            .bind(template)
+            .fetch_one(&env.db.admin)
+            .await
+            .unwrap();
+    }
+    out
+}
+
+/// `ML-31`, `SEC-I07`: analysis is derived document content. Purging an envelope (a
+/// deleted draft) removes its runs, their suggestions and OCR pages; deleting a template
+/// removes its run, its page prints and every suggestion naming it. Another envelope's
+/// analysis stays.
+#[tokio::test]
+async fn purging_an_envelope_or_a_template_purges_its_analysis() {
+    let Some(env) = Env::new("ml_purge").await else {
+        return;
+    };
+    let fake = Arc::new(Fake::default());
+    *env.inference.lock().unwrap() = Some(fake);
+    let (sha, pdf) = stored(&env, &two_pages()).await;
+    let t = TemplateId(Uuid::now_v7());
+    let d = TemplateDocumentId(Uuid::now_v7());
+    let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+    tx.templates()
+        .insert(&Template {
+            id: t,
+            owner_user_id: env.sender,
+            name: "Mutual NDA".into(),
+            email_subject: None,
+            email_message: None,
+            settings: serde_json::json!({}),
+            matching_rules: serde_json::json!([]),
+            version: 1,
+        })
+        .await
+        .unwrap();
+    tx.templates()
+        .add_document(&TemplateDocument {
+            id: d,
+            template_id: t,
+            ord: 0,
+            name: "nda.pdf".into(),
+            sha256: sha,
+            byte_len: i64::try_from(pdf.len()).unwrap(),
+            page_count: 2,
+            pages: serde_json::json!([{}, {}]),
+        })
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    enqueue(
+        &env,
+        hml::FINGERPRINT_TEMPLATE,
+        d.0,
+        (None, Some(t.0)),
+        sha,
+        &["template"],
+    )
+    .await;
+    env.run().await;
+
+    let gone = env.draft(vec![]).await;
+    let kept = env.draft(vec![]).await;
+    for ids in [gone, kept] {
+        enqueue(
+            &env,
+            hml::ANALYZE_DOCUMENT,
+            ids.doc,
+            (Some(ids.env), None),
+            sha,
+            &ALL_USES,
+        )
+        .await;
+    }
+    env.run().await;
+    let before = derived(&env, Some(gone.env), None).await;
+    assert!(
+        before[0] == 1 && before[1] > 1 && before[2] == 1,
+        "the envelope has a run, suggestions (a template one too) and an OCR page: {before:?}"
+    );
+    let other = derived(&env, Some(kept.env), None).await;
+
+    env.apply(gone.env, env.as_sender(), Command::DeleteDraft)
+        .await;
+    let out = env.run().await;
+    assert!(
+        out.iter()
+            .any(|(k, o)| k == "delete_draft" && *o == JobOutcome::Done),
+        "{out:?}"
+    );
+    assert_eq!(
+        derived(&env, Some(gone.env), None).await,
+        [0; 4],
+        "a purged envelope keeps no run, suggestion or OCR page"
+    );
+    assert_eq!(derived(&env, Some(kept.env), None).await, other);
+
+    // A template deleted for good takes its run, its page prints and the suggestions
+    // that name it, in every envelope.
+    let prints = derived(&env, None, Some(t.0)).await;
+    assert!(
+        prints[0] == 1 && prints[1] == 1 && prints[3] == 2,
+        "its run, the kept envelope's suggestion of it, two page prints: {prints:?}"
+    );
+    let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+    tx.templates().delete(t).await.unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(derived(&env, None, Some(t.0)).await, [0; 4]);
+    let left = derived(&env, Some(kept.env), None).await;
+    assert_eq!((left[0], left[2]), (other[0], other[2]));
+    assert_eq!(left[1], other[1] - 1, "only its template suggestion went");
+}
+
+/// One envelope taken from draft to sealed in a world of fixed ids; with `ml`, its
+/// document is analysed with every feature on before it is sent and its suggestions are
+/// decided. The sealed bytes, the chain's event types, and the stored original and
+/// delivered documents afterwards.
+async fn sealed_world(
+    name: &str,
+    ml: bool,
+) -> Option<(Vec<Vec<u8>>, Vec<String>, Vec<u8>, Vec<u8>)> {
+    let fixed = |n: u128| Uuid::from_u128(0x0193_0000_0000_7000_8000_0000_0000_0000 | n);
+    let mut env = Env::with_ids(
+        name,
+        casual_sign_store::AccountId(fixed(1)),
+        casual_sign_store::UserId(fixed(2)),
+    )
+    .await?;
+    // A document with text to find and a scanned page to read.
+    env.original = two_pages();
+    let (_, delivered) = stored(&env, &env.original).await;
+    env.delivered = delivered;
+    env.pages = 2;
+    let ids = common::Ids {
+        env: fixed(3),
+        doc: fixed(4),
+        r1: fixed(5),
+        r2: fixed(6),
+        f1: fixed(7),
+        f2: fixed(8),
+    };
+    env.blob_store().put(&env.original).await.unwrap();
+    env.draft_with(ids, vec![]).await;
+    if ml {
+        *env.inference.lock().unwrap() = Some(Arc::new(Fake::default()));
+        let sha = *casual_sign_sdk::Hash256::digest(&env.delivered).as_bytes();
+        let run = enqueue(
+            &env,
+            hml::ANALYZE_DOCUMENT,
+            ids.doc,
+            (Some(ids.env), None),
+            sha,
+            &ALL_USES,
+        )
+        .await;
+        env.run().await;
+        assert_eq!(run_row(&env, run).await.status, RunStatus::Done);
+        let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+        let list = tx
+            .ml()
+            .envelope_suggestions(EnvelopeId(ids.env), Default::default(), 200)
+            .await
+            .unwrap();
+        for (i, s) in list.iter().enumerate() {
+            let state = if i % 2 == 0 {
+                casual_sign_store::repo::ml::SuggestionState::Accepted
+            } else {
+                casual_sign_store::repo::ml::SuggestionState::Dismissed
+            };
+            tx.ml()
+                .decide(s.id, state, env.sender, time::OffsetDateTime::now_utc())
+                .await
+                .unwrap();
+        }
+        tx.commit().await.unwrap();
+        assert!(!list.is_empty(), "the analysis suggested something");
+    }
+    env.send(ids).await;
+    env.run().await;
+    env.sign(ids, ids.r1, ids.f1, "Ada Lovelace").await;
+    env.run().await;
+    env.sign(ids, ids.r2, ids.f2, "Grace Hopper").await;
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    let state = env.state(ids.env).await;
+    assert_eq!(
+        state.status,
+        casual_sign_model::EnvelopeStatus::Completed,
+        "sealed and verified"
+    );
+    let blobs = env.blob_store();
+    let key = |b: &[u8]| BlobKey(*casual_sign_sdk::Hash256::digest(b).as_bytes());
+    let original = blobs.get(&key(&env.original)).await.unwrap();
+    let delivered = blobs.get(&key(&env.delivered)).await.unwrap();
+    assert_eq!(original, env.original);
+    assert_eq!(delivered, env.delivered);
+    Some((
+        env.sealed_bytes(ids.env).await,
+        env.events(ids.env).await,
+        original,
+        delivered,
+    ))
+}
+
+/// `ML-32`, `SEC-I13`: analysis is advisory. An envelope whose document was analysed
+/// with every feature on (OCR, template matching, entities, personal data) and its
+/// suggestions accepted or dismissed seals to the same bytes, with the same audit chain,
+/// as the same envelope with ML off; the original and delivered documents are untouched.
+#[tokio::test]
+async fn analysis_never_changes_the_sealed_or_original_document_bytes() {
+    let Some(off) = sealed_world("ml_seal_off", false).await else {
+        return;
+    };
+    let on = sealed_world("ml_seal_on", true).await.unwrap();
+    assert_eq!(off.0.len(), 1);
+    assert_eq!(off.1, on.1, "the same audit chain");
+    assert_eq!(
+        (&off.2, &off.3),
+        (&on.2, &on.3),
+        "the same stored documents"
+    );
+    // Every byte a signature covers is the same; only each signature's `/Contents` (the
+    // CMS, whose ECDSA values and timestamp tokens differ from one seal to the next even
+    // with ML off) may differ, at the same offsets.
+    let (a, b) = (&off.0[0], &on.0[0]);
+    assert_eq!(a.len(), b.len(), "sealed lengths");
+    let gaps = unsigned_gaps(a);
+    assert!(!gaps.is_empty(), "the sealed PDF has a signature");
+    assert_eq!(gaps, unsigned_gaps(b), "the same byte ranges are signed");
+    let mut at = 0;
+    for (start, end) in gaps.iter().copied().chain([(a.len(), a.len())]) {
+        assert!(
+            a[at..start] == b[at..start],
+            "signed bytes {at}..{start} differ with ML on"
+        );
+        at = end;
+    }
+    // The worker verified its seal before `completed`; pyHanko checks the ML-on one.
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("worker-ml-sealed");
+    common::independent(&dir, &[("ml-on-bt.pdf".into(), b.clone())]);
+}
+
+/// The byte ranges no signature covers (each `/ByteRange [a b c d]`'s gap `a+b..c`),
+/// sorted.
+fn unsigned_gaps(pdf: &[u8]) -> Vec<(usize, usize)> {
+    let needle = b"/ByteRange [";
+    let mut out = Vec::new();
+    for i in 0..pdf.len().saturating_sub(needle.len()) {
+        if &pdf[i..i + needle.len()] != needle {
+            continue;
+        }
+        let rest = &pdf[i + needle.len()..];
+        let close = rest.iter().position(|c| *c == b']').unwrap();
+        let n: Vec<usize> = std::str::from_utf8(&rest[..close])
+            .unwrap()
+            .split_whitespace()
+            .map(|v| v.parse().unwrap())
+            .collect();
+        assert_eq!(n.len(), 4);
+        out.push((n[0] + n[1], n[2]));
+    }
+    out.sort_unstable();
+    out
 }

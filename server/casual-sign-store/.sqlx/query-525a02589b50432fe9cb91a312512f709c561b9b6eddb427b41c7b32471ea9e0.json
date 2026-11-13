@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM analysis_runs WHERE account_id = $1 AND envelope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "525a02589b50432fe9cb91a312512f709c561b9b6eddb427b41c7b32471ea9e0"
+}

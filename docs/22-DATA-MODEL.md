@@ -449,8 +449,8 @@ administrator `Owner`, else the share right), `list_for` (by view: all, owned, s
 row's access, star and whether it is shared), `shares`, `replace_shares`, `set_favourite`, `is_favourite` and
 `groups` (names and member counts). Sixty-three tables with `0031`.
 
-**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15), including of the
-analysis tables (`SEC-I07`); a database guard
+**Not built yet:** repositories for the "schema only" rows above; the retention purge of blobs (slice 15; the purge
+job already deletes an envelope's analysis runs with their suggestions and OCR pages, `SEC-I07`, `ML-31`); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 
 **Corrections to the text above.** The setting is `openseal.account_id`, read as
