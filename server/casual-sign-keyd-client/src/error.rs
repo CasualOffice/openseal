@@ -40,8 +40,15 @@ pub enum KeydError {
     OperationLog(String),
     /// `CS-KEY-0010`: the TLS certificates or keys do not load.
     TlsConfig(String),
-    /// `CS-KEY-0011`: keyd could not be reached, or the connection failed.
+    /// `CS-KEY-0011`: keyd could not be reached, or the connection failed before TLS
+    /// answered (refused, reset, timed out, closed, the name does not resolve): an
+    /// outage, which a later call may not meet.
     Transport(String),
+    /// `CS-KEY-0013`: the TLS handshake was refused: keyd's certificate does not chain
+    /// to the configured CA or does not carry the configured name, or keyd refused this
+    /// client's certificate (untrusted, expired, revoked, none). A configuration error
+    /// that retrying does not cure (`HRD-01`); `what` is the TLS library's reason.
+    TlsRefused(String),
     /// `CS-KEY-0012`: a daemon setting is missing or invalid (named).
     Setting(&'static str),
     /// `CS-CON-0008`: an admin call from a caller on the signing allow-list, or a signing
@@ -89,6 +96,7 @@ impl KeydError {
             Self::OperationLog(_) => "CS-KEY-0009",
             Self::TlsConfig(_) => "CS-KEY-0010",
             Self::Transport(_) => "CS-KEY-0011",
+            Self::TlsRefused(_) => "CS-KEY-0013",
             Self::Setting(_) => "CS-KEY-0012",
             Self::AdminRefused => "CS-CON-0008",
         }
@@ -110,6 +118,7 @@ impl KeydError {
             Self::OperationLog(_) => 9,
             Self::TlsConfig(_) => 10,
             Self::Transport(_) => 11,
+            Self::TlsRefused(_) => 13,
             Self::Setting(_) => 12,
             Self::AdminRefused => ADMIN_REFUSED,
         }
@@ -178,6 +187,7 @@ impl fmt::Display for KeydError {
             Self::OperationLog(why) => write!(f, "operation log: {why}"),
             Self::TlsConfig(why) => write!(f, "TLS configuration: {why}"),
             Self::Transport(why) => write!(f, "keyd unreachable: {why}"),
+            Self::TlsRefused(why) => write!(f, "TLS handshake with keyd refused: {why}"),
             Self::Setting(name) => write!(f, "setting {name} is missing or invalid"),
             Self::AdminRefused => f.write_str(
                 "admin call refused: a signing caller cannot administer, an admin caller cannot sign",
@@ -187,6 +197,22 @@ impl fmt::Display for KeydError {
 }
 
 impl std::error::Error for KeydError {}
+
+impl KeydError {
+    /// The error for a failed read or write on keyd's connection: `CS-KEY-0013` when
+    /// the TLS layer refused (the I/O error carries a `rustls::Error`: a certificate
+    /// not trusted, a name mismatch, an alert from keyd), `CS-KEY-0011` otherwise.
+    #[must_use]
+    pub fn from_io(e: &std::io::Error) -> Self {
+        match e
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+        {
+            Some(tls) => Self::TlsRefused(tls.to_string()),
+            None => Self::Transport(e.kind().to_string()),
+        }
+    }
+}
 
 impl From<casual_sign_secrets::SecretError> for KeydError {
     fn from(e: casual_sign_secrets::SecretError) -> Self {

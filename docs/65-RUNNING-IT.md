@@ -172,6 +172,25 @@ deployment, upload the EICAR test file (the 68-byte string from eicar.org) as a 
 `CS-SCAN-0001` and appear in the admin log. The server's tests run the same check against a real clamd when
 `OPENSEAL_TEST_CLAMD_ADDR` names one (`server/casual-sign-server/tests/malware.rs`); CI does not set it yet (`SCAN-04`).
 
+## Failure recovery
+
+What each failure leaves, and what brings the deployment back (`HRD-01`; tested in
+`server/casual-sign-worker/tests/process_crash.rs` with the real server and worker binaries, keyd over mTLS, a TSA
+and PostgreSQL 17). In every case an envelope ends `completed` on one verified seal or waits safely in
+`completing`; nothing sealed is served before the envelope is `completed`; the audit chain verifies.
+
+| Failure | What happens | What brings it back |
+| --- | --- | --- |
+| Worker killed (crash, OOM, `SIGKILL`) at any point of a job | The job's lease (300 s) lapses and any worker claims it again; an act already recorded is not repeated (docs/24 §Idempotency and crashes) | A restart of the worker process: Compose restarts it (`restart: unless-stopped`); under another orchestrator run it as a service that restarts on exit |
+| Worker paused or partitioned past its lease while another takes its job over | The paused worker records nothing when it resumes: storing a seal first renews the job's lease in the same transaction, which fails for a lease it lost (`CS-WRK-0015`); the other worker seals once | Nothing |
+| keyd unreachable while sealing | The seal fails (`CS-SEAL-0001`, or `CS-KEY-0011` if the worker never reached keyd); the engine raises a `seal_failed` operator alert and schedules a new seal job 60 s later, again and again; the envelope stays `completing`. A worker started while keyd is down (refused, reset, timed out, closed before TLS answered: `CS-KEY-0011`) still starts (it logs `keyd_unavailable`) and runs every other job. A keyd that refuses the worker is a configuration error, not an outage: a TLS refusal (`CS-KEY-0013`: `OPENSEAL_KEYD_CA` or `OPENSEAL_KEYD_SERVER_NAME` not keyd's, the client certificate untrusted, expired or revoked) or keyd's own refusal (`CS-KEY-0001`, `CS-KEY-0002`) stops the worker at start, non-zero, naming the code | keyd back: the next seal job completes the envelope. Alert on `seal_failed`. A worker that exits `CS-KEY-0013` at start: fix its keyd settings or certificate |
+| PostgreSQL restarted or unreachable | API requests answer a `5xx` problem while it is down (the pool waits up to 10 s for a connection) and the server keeps running; the worker logs `claim_failed` and keeps polling. A job interrupted mid-flight runs again after its back-off when its failure was recorded once the database returned, or once its lease lapses when it could not be (up to 300 s) | The database back: both reconnect without a restart. A signer whose request failed retries it; it is applied once |
+| Object store refuses writes | The seal job retries with back-off (`CS-BLOB-0001`); no sealed bytes land and none are served; on its last attempt (15) the job hands over to a new seal job through the engine's `SealFailed` with an operator alert. The same holds for a database failure anywhere before the seal is stored (reading the envelope or the job's steps). Still dead-lettered, with a `job_dead` alert and the envelope `completing`: a failure no retry cures (`CS-DB-0008`–`0010`, `CS-BLOB-0003`/`0005`), a database failure after the seal is stored on the last attempt, and a database outage that lasts through the last attempt, so the handover itself cannot be written | The store back: the next attempt completes the envelope. Alert on `job_dead` and `seal_failed`; after a `job_dead` for `seal_envelope`, once the cause is fixed re-queue that job (`UPDATE jobs SET status = 'queued', attempts = 0, run_at = now() WHERE id = …`): a seal it already stored is read back, not made again |
+
+A seal that failed after keyd signed signs again on the next attempt (keyd's log then shows two signatures for the
+envelope, `KEYD-03` reconciles); sealed bytes stored by an attempt that was not recorded stay in the write-once blob
+store unreferenced, are never served, and are not yet reclaimed (`HRD-09`).
+
 ## Production checklist
 
 | Area | Do |
