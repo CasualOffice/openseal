@@ -2,7 +2,9 @@
 //! account's ids, finds nothing or refuses, and leaves the other account's rows as they
 //! were. Run twice: with row-level security on, and with it disabled on every table, which
 //! proves the repository alone isolates. A third test proves RLS alone isolates, through
-//! raw SQL that bypasses the repository.
+//! raw SQL that bypasses the repository. Document-analysis rows (migration 0021) are
+//! seeded in both accounts with identical template page hashes, so a search that
+//! crossed accounts would match.
 
 // Test code: a panic is the failure report (CLAUDE.md).
 #![allow(
@@ -20,13 +22,17 @@ use casual_sign_store::repo::api_clients::{ApiClientKind, NewApiClient};
 use casual_sign_store::repo::documents::Document;
 use casual_sign_store::repo::envelopes::{EnvelopeStatus, Transition};
 use casual_sign_store::repo::fields::FieldValue;
+use casual_sign_store::repo::ml::{
+    Fingerprint, NewRun, NewSuggestion, RunEnd, RunKind, RunStatus, SuggestionFilter,
+    SuggestionKind, SuggestionState,
+};
 use casual_sign_store::repo::recipients::{NewToken, RecipientStatus, TokenPurpose};
 use casual_sign_store::repo::templates::{Template, TemplateDocument, TemplateField, TemplateRole};
 use casual_sign_store::repo::webhooks::{Delivery, Subscription};
 use casual_sign_store::*;
 use common::world::{
-    self, World, events, id, new_envelope, new_field, new_job, new_recipient, new_version, now,
-    rect,
+    self, MlWorld, World, events, id, new_envelope, new_field, new_job, new_recipient, new_version,
+    now, rect,
 };
 use common::{Rls, fresh};
 use sqlx::Row;
@@ -53,6 +59,19 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
     };
     let a = world::seed(&db, "alpha").await;
     let b = world::seed(&db, "bravo").await;
+    let am = world::seed_ml(&db, &a).await;
+    let bm = world::seed_ml(&db, &b).await;
+    // A's switches and plan differ from B's, so reading A's would show.
+    sqlx::query("UPDATE ml_settings SET ocr_scripts = '{latin,greek}' WHERE account_id = $1")
+        .bind(a.account.0)
+        .execute(&db.admin)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE ml_entitlements SET features = '{ml.ocr}' WHERE account_id = $1")
+        .bind(a.account.0)
+        .execute(&db.admin)
+        .await
+        .unwrap();
     let t = db.store.for_account(b.account);
     // Each refused write runs in a transaction of its own (an error aborts a PostgreSQL
     // transaction), which B then commits: a refused call must leave nothing behind.
@@ -390,10 +409,173 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
         })
         .await,);
 
+    // Document analysis (migration 0021).
+    assert_eq!(
+        tx.ml().settings().await.unwrap().ocr_scripts,
+        vec!["latin".to_owned()]
+    );
+    assert_eq!(tx.ml().entitlements().await.unwrap().len(), 4);
+    assert!(tx.ml().run(am.run).await.unwrap().is_none());
+    assert!(
+        tx.ml()
+            .run_by_key(&format!("analyze:{}:{}", a.account.0, a.document.0))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(tx.ml().latest_run(a.document.0).await.unwrap().is_none());
+    assert!(
+        tx.ml()
+            .envelope_suggestions(a.envelope, SuggestionFilter::default(), 100)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        tx.ml()
+            .envelope_suggestion(a.envelope, am.suggestion)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        tx.ml()
+            .envelope_suggestion(b.envelope, am.suggestion)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !tx.ml()
+            .decide(am.suggestion, SuggestionState::Accepted, b.user, now())
+            .await
+            .unwrap(),
+        "B decided A's suggestion"
+    );
+    assert!(tx.ml().ocr_pages(am.run).await.unwrap().is_empty());
+    // B's upload is compared against B's templates only, though A's pages hash the same.
+    let fps = tx.ml().fingerprints().await.unwrap();
+    assert_eq!(
+        fps.iter().map(|f| f.template_id).collect::<Vec<_>>(),
+        vec![b.template],
+        "B's template search reached another account's pages"
+    );
+    tx.ml().start_run(am.run).await.unwrap();
+    tx.ml()
+        .forget_template_document(a.template, a.template_document)
+        .await
+        .unwrap();
+    w!("ml.finish_run", |tx| tx
+        .ml()
+        .finish_run(
+            am.run,
+            &RunEnd {
+                status: RunStatus::Done,
+                bundle_id: None,
+                ort_version: None,
+                ocr_pages: vec![],
+                truncated: false,
+                code: None,
+                at: now(),
+            },
+        )
+        .await,);
+    w!("ml.insert_run (A's envelope)", |tx| tx
+        .ml()
+        .insert_run(&NewRun {
+            id: AnalysisRunId(id()),
+            document_id: a.document.0,
+            envelope_id: Some(a.envelope),
+            template_id: None,
+            kind: RunKind::AnalyzeDocument,
+            uses: vec!["ocr".into()],
+            document_sha256: world::hash("doc"),
+            job_key: "analyze:forged".into(),
+            created_at: now(),
+        })
+        .await,);
+    w!("ml.insert_run (A's template)", |tx| tx
+        .ml()
+        .insert_run(&NewRun {
+            id: AnalysisRunId(id()),
+            document_id: a.template_document.0,
+            envelope_id: None,
+            template_id: Some(a.template),
+            kind: RunKind::FingerprintTemplate,
+            uses: vec!["template".into()],
+            document_sha256: world::hash("doc"),
+            job_key: "fingerprint:forged".into(),
+            created_at: now(),
+        })
+        .await,);
+    w!("ml.add_suggestions (A's run)", |tx| tx
+        .ml()
+        .add_suggestions(
+            am.run,
+            a.document.0,
+            &[NewSuggestion {
+                id: SuggestionId(id()),
+                kind: SuggestionKind::Entity,
+                page: Some(1),
+                rect: None,
+                label: "x".into(),
+                span: None,
+                normalized: None,
+                template: None,
+                score: 0.5,
+                model_id: "m".into(),
+                weights_sha256: world::hash("w"),
+            }],
+        )
+        .await,);
+    w!("ml.add_suggestions (A's template)", |tx| tx
+        .ml()
+        .add_suggestions(
+            bm.run,
+            b.document.0,
+            &[NewSuggestion {
+                id: SuggestionId(id()),
+                kind: SuggestionKind::Template,
+                page: Some(1),
+                rect: None,
+                label: "x".into(),
+                span: None,
+                normalized: None,
+                template: Some((a.template, 1, 1)),
+                score: 0.5,
+                model_id: "m".into(),
+                weights_sha256: world::hash("w"),
+            }],
+        )
+        .await,);
+    w!("ml.put_ocr_page (A's run)", |tx| tx
+        .ml()
+        .put_ocr_page(am.run, 2, &serde_json::json!([]))
+        .await,);
+    w!("ml.put_fingerprints (A's template)", |tx| tx
+        .ml()
+        .put_fingerprints(
+            a.template,
+            a.template_document,
+            &[Fingerprint {
+                template_id: a.template,
+                document_id: a.template_document,
+                page: 2,
+                dhash: 1,
+                phash: 1,
+                embedding: None,
+                model_id: "m".into(),
+                weights_sha256: world::hash("w"),
+            }],
+        )
+        .await,);
+
     // A's rows are exactly as seeded, and A still reaches every one of them (so the
     // checks above were made against ids that exist).
     assert_untouched(&db.store, &a).await;
     assert_untouched(&db.store, &b).await;
+    assert_ml_untouched(&db.store, &a, &am, 1).await;
+    assert_ml_untouched(&db.store, &b, &bm, 4).await;
     db.drop().await;
 }
 
@@ -445,6 +627,34 @@ async fn assert_untouched(store: &Store, w: &World) {
     assert_eq!((d.len(), d[0].attempts), (1, 0));
 }
 
+/// The seeded analysis rows of `w` are exactly as seeded: the run queued, its suggestion
+/// open, its OCR page and template hashes there, every switch on and `features` entitled.
+async fn assert_ml_untouched(store: &Store, w: &World, m: &MlWorld, features: usize) {
+    let mut tx = store.for_account(w.account).begin().await.unwrap();
+    let s = tx.ml().settings().await.unwrap();
+    assert!(s.ocr && s.template_matching && s.extraction && s.personal_data);
+    assert_eq!(tx.ml().entitlements().await.unwrap().len(), features);
+    let r = tx.ml().run(m.run).await.unwrap().unwrap();
+    assert_eq!((r.status, r.finished_at), (RunStatus::Queued, None));
+    let list = tx
+        .ml()
+        .envelope_suggestions(w.envelope, SuggestionFilter::default(), 100)
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(
+        (list[0].id, list[0].state, list[0].decided_by),
+        (m.suggestion, SuggestionState::Open, None)
+    );
+    assert_eq!(tx.ml().ocr_pages(m.run).await.unwrap().len(), 1);
+    let fps = tx.ml().fingerprints().await.unwrap();
+    assert_eq!(fps.len(), 1);
+    assert_eq!(
+        (fps[0].template_id, fps[0].dhash, fps[0].phash),
+        (w.template, world::FINGERPRINT.0, world::FINGERPRINT.1)
+    );
+}
+
 #[tokio::test]
 async fn every_repository_method_refuses_another_accounts_ids_with_rls() {
     every_repository_method_refuses_another_accounts_ids(Rls::On).await;
@@ -465,7 +675,20 @@ async fn row_level_security_alone_isolates_every_tenant_table() {
     };
     let a = world::seed(&db, "alpha").await;
     let b = world::seed(&db, "bravo").await;
+    world::seed_ml(&db, &a).await;
+    world::seed_ml(&db, &b).await;
     let tables = common::rls_tables(&db.admin).await;
+    // Every analysis table is checked with rows on both sides, not two empty tables.
+    for t in [
+        "ml_settings",
+        "ml_entitlements",
+        "analysis_runs",
+        "suggestions",
+        "ocr_pages",
+        "template_fingerprints",
+    ] {
+        assert!(tables.iter().any(|x| x == t), "{t} is not under RLS");
+    }
     for t in &tables {
         let truth_sql = match t.as_str() {
             "accounts" => "SELECT count(*) FROM accounts WHERE id = $1".to_owned(),
@@ -489,6 +712,14 @@ async fn row_level_security_alone_isolates_every_tenant_table() {
             .fetch_one(&db.admin)
             .await
             .unwrap();
+        if t.starts_with("ml_")
+            || matches!(
+                t.as_str(),
+                "analysis_runs" | "suggestions" | "ocr_pages" | "template_fingerprints"
+            )
+        {
+            assert!(truth > 0, "{t}: no rows seeded for account B");
+        }
         let mut conn = db.app.begin().await.unwrap();
         let unset: i64 =
             sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM {t}")))
