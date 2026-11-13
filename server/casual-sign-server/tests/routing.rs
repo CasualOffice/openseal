@@ -370,3 +370,61 @@ async fn only_an_agent_names_later_recipients() {
     );
     api.db.drop().await;
 }
+
+/// SEC-CER-01: an agent who has not passed their access code learns nothing from
+/// `POST /s/{token}/recipients`, not even whether an id exists, and names no one.
+#[tokio::test]
+async fn an_agent_names_no_one_before_authenticating() {
+    let Some(api) = Api::new("routing_agent_auth", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let e = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(json!({
+                "subject": "VS-02 auth", "status": "sent",
+                "documents": [{"name": "w.pdf", "content_base64": b64(&pdf(1))}],
+                "recipients": [
+                    {"ref": "ag", "type": "agent", "name": "Agent", "email": "agent@example.test",
+                        "routing_order": 1, "auth": ["access_code"], "access_code": "right-4711"},
+                    {"ref": "s1", "type": "signer", "name": "Buyer", "routing_order": 2},
+                ],
+                "fields": [
+                    {"recipient": "s1", "document": 0, "type": "signature", "page": 1,
+                        "x": 72, "y": 100, "width": 180, "height": 40, "required": true},
+                ],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create",
+    );
+    let env = e["id"].as_str().unwrap().to_owned();
+    let ag = e["recipients"][0]["id"].as_str().unwrap().to_owned();
+    let s1 = e["recipients"][1]["id"].as_str().unwrap().to_owned();
+    let agent = invite(&api, &a, &env, &ag).await;
+    let (view, bound) = open(&api, &agent).await;
+    assert!(view.get("later_recipients").is_none(), "{view}");
+    let h = hdr(&bound);
+    for id in [s1.as_str(), "00000000-0000-4000-8000-000000000000"] {
+        let r = api
+            .call(
+                "POST",
+                &format!("/s/{agent}/recipients"),
+                &Auth::None,
+                Some(json!({"recipients": [{"id": id, "email": "x@example.test"}]})),
+                &h,
+            )
+            .await;
+        assert_eq!(
+            (r.status, r.code()),
+            (StatusCode::FORBIDDEN, "CS-AUTH-0003".to_owned()),
+            "{id}"
+        );
+    }
+    api.db.drop().await;
+}

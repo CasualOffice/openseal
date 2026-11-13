@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 49 are designed, 20 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`, `FG-184`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 44 are designed, 25 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-024`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-095`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-177`, `FG-183`, `FG-184`, `FG-195`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -38,12 +38,12 @@ instructions 8 and 9).
 | --- | --- | --- | --- | --- | --- |
 | FG-020 | Signer | DS, SN | Build | 1 | Works |
 | FG-021 | Carbon copy | DS, SN | Build | 2 | Works |
-| FG-022 | Needs to view (viewer) | DS, SN | Build | 2 | Partial: the editor adds viewers, who act in their turn with no fields (`UX-05`); the viewer ceremony is not run end to end |
-| FG-023 | Approver | SN | Build | 2 | Partial: the editor adds approvers, who act in their turn with no fields (`UX-05`); the approver ceremony is not run end to end |
-| FG-024 | Specify recipients (agent) | DS | Build | 2 | Designed |
+| FG-022 | Needs to view (viewer) | DS, SN | Build | 2 | Partial: the editor adds viewers, who act in their turn with no fields (`UX-05`); the viewer completes by viewing every document to the end through the ceremony on the server (`VS-02`, tests/routing.rs) and the signing page ends it; not yet in a browser run (`RTE-01`) |
+| FG-023 | Approver | SN | Build | 2 | Partial: the editor adds approvers, who act in their turn with no fields (`UX-05`); the approver approves through the ceremony on the server (`VS-02`, tests/routing.rs) and the signing page's review step offers Approve; not yet in a browser run (`RTE-01`) |
+| FG-024 | Specify recipients (agent) | DS | Build | 2 | Partial: the agent names later recipients through `POST /s/{token}/recipients` and finishes, routing then reaching them (`VS-02`, tests/routing.rs); the signing page asks for the names and emails; the editor does not offer the agent type yet, and no browser run (`RTE-01`) |
 | FG-025 | Allow to edit (editor) | DS | Build | 6 | Designed |
 | FG-026 | Update recipients (intermediary) | DS | Build | 6 | Designed |
-| FG-027 | In-person signer | DS, SN | Build | 14 | Engine (hosting served by `POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`; the editor offers it, `UX-05`) |
+| FG-027 | In-person signer | DS, SN | Build | 14 | Engine (hosting served by `POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`; the editor offers it, `UX-05`; the envelope page's "Host signing" opens the hosted session in the tab, `UXW-18`, Compose spec pending on CI) |
 | FG-028 | Witness | DS | Build | 16 | — |
 | FG-029 | Notary (remote online notarization) | DS, SN | Build, with provider plugins | 31 | — |
 | FG-030 | Electronic seal recipient | DS | Plugin | 18 | — |
@@ -106,7 +106,7 @@ instructions 8 and 9).
 | FG-092 | Preview as recipient | DS | Build | 2 | Partial: Review's Preview as shows the recipient's fields on the document (`UX-05`); a preview of their signing page is not built |
 | FG-093 | Custom subject and message | DS, SN | Build | 1 | Works |
 | FG-094 | Reminders | DS, SN | Build | 2 | Works |
-| FG-095 | Expiration and warning | DS, SN | Build | 2 | Designed |
+| FG-095 | Expiration and warning | DS, SN | Build | 2 | Partial: an envelope's expiry is set on send or correct; the worker emails the warning (account `workflow_policy.expiry_warning_days`) and expires the envelope on time, telling the sender and the recipients whose turn it was (`VS-02`, worker tests/expiry.rs); no admin control for the warning days (`RTE-03`) |
 | FG-096 | Templates with roles | DS, SN | Build | 3 | Works |
 | FG-097 | Composite templates (several into one envelope) | DS | Build | 3 | Designed |
 | FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Designed |
