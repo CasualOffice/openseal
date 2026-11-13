@@ -70,5 +70,7 @@ docker compose down -v >/dev/null
 trap - EXIT
 unset COMPOSE_PROJECT_NAME OPENSEAL_HTTP_PORT OPENSEAL_MAIL_PORT OPENSEAL_E2E_BASE_URL OPENSEAL_E2E_MAIL_URL OPENSEAL_E2E_EMAIL OPENSEAL_E2E_PASSWORD
 step "backup drill";      OPENSEAL_DRILL_BUILD=0 OPENSEAL_DRILL_VALIDATOR_PYTHON="$VENV/bin/python" tools/backup/drill.sh   # ASVS-14, as ci.yml's backup-drill job; the images the compose e2e step just built
+step "chaos compose";     python3 -I -m unittest discover -s tools/chaos -p 'test_*.py'   # HRD-10, as ci.yml's chaos-compose job; the images the compose e2e step built
+                          python3 -I tools/chaos/chaos_compose.py run --no-build --verify-python "$VENV/bin/python"
 step "wasm parity";       tools/wasm-parity.sh   # WASM-01: native and WASM byte-identical over the corpus
 printf '\nci-local: every job passed\n'
