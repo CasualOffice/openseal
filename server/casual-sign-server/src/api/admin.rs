@@ -84,6 +84,134 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
     Ok(json(StatusCode::OK, &json!({ "settings": settings })))
 }
 
+// Electronic disclosure (ERSD) -----------------------------------------------------------
+
+/// The longest disclosure text taken, in bytes of UTF-8 (docs/21).
+pub(crate) const ERSD_MAX_BYTES: usize = 100_000;
+/// The most published versions `GET /ersd-versions` lists.
+const ERSD_LIST_MAX: i64 = 100;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ErsdPublish {
+    /// The text recipients read and consent to.
+    text: String,
+    /// Its language tag; `en` when absent.
+    #[serde(default)]
+    language: Option<String>,
+}
+
+/// A hash as the API writes it everywhere: `sha256:<hex>`.
+fn hex32(b: &[u8; 32]) -> String {
+    casual_sign_audit::Hash256(*b).to_string()
+}
+
+fn ersd_json(d: &casual_sign_store::repo::accounts::PublishedDisclosure) -> Value {
+    json!({
+        "id": d.id.to_string(), "version": d.version, "label": d.version.to_string(),
+        "language": d.language, "sha256": hex32(&d.sha256),
+        "published_at": rfc3339(d.published_at),
+    })
+}
+
+/// A language tag as `ersd_versions` takes it: 2 to 35 ASCII letters, digits and `-`,
+/// starting with a letter.
+fn language_tag(s: &str) -> bool {
+    (2..=35).contains(&s.len())
+        && s.starts_with(|c: char| c.is_ascii_alphabetic())
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// `POST /ersd-versions {text, language?}` (ERSD-01): publish `text` as the account's
+/// next disclosure version and make it the one recipients must accept, in one step:
+/// the new `ersd_versions` row (version one more than the language's highest), its
+/// `ersd.published` admin event, and `settings.workflow_policy.ersd = {version: "<n>",
+/// hash}` with its `workspace.settings_changed` event commit together. Envelopes
+/// already sent then ask for consent to the new version (the engine's rule: consent
+/// binds the version and the hash). The text is never logged.
+///
+/// `422 CS-API-0001` for an empty or blank text, one with a NUL, or a bad language tag;
+/// `413 CS-API-0006` beyond [`ERSD_MAX_BYTES`].
+pub(crate) async fn publish_ersd(c: Call, body: Bytes) -> Result<Response, ApiError> {
+    let req: ErsdPublish = parse(&body)?;
+    if req.text.len() > ERSD_MAX_BYTES {
+        return Err(ApiError::too_large());
+    }
+    if req.text.trim().is_empty() || req.text.contains('\0') {
+        return Err(ApiError::invalid("/text"));
+    }
+    let language = req.language.unwrap_or_else(|| "en".to_owned());
+    if !language_tag(&language) {
+        return Err(ApiError::invalid("/language"));
+    }
+    let hash = sha256(req.text.as_bytes());
+    let now = c.st.now();
+    let mut tx = c.tx().await?;
+    let d = tx
+        .account()
+        .publish_disclosure(Uuid::now_v7(), &language, &req.text, &hash, now)
+        .await?;
+    let a = tx.account().get().await?;
+    let mut settings = match a.settings {
+        Value::Object(m) => m,
+        _ => serde_json::Map::new(),
+    };
+    let mut policy = settings
+        .get("workflow_policy")
+        .cloned()
+        .filter(|p| serde_json::from_value::<casual_sign_workflow::Policy>(p.clone()).is_ok())
+        .unwrap_or_else(|| {
+            serde_json::to_value(casual_sign_workflow::Policy::default()).unwrap_or(Value::Null)
+        });
+    let Some(p) = policy.as_object_mut() else {
+        return Err(ApiError::internal("workflow policy"));
+    };
+    p.insert(
+        "ersd".into(),
+        json!({"version": d.version.to_string(), "hash": hex32(&hash)}),
+    );
+    if serde_json::from_value::<casual_sign_workflow::Policy>(policy.clone()).is_err() {
+        return Err(ApiError::internal("workflow policy"));
+    }
+    settings.insert("workflow_policy".into(), policy);
+    tx.account().set_settings(&Value::Object(settings)).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::CREATED, &ersd_json(&d)))
+}
+
+/// `GET /ersd-versions` (ERSD-01): `{current, items}`. `current` is the disclosure the
+/// workflow policy names, with its published text (`{label, sha256, version, language,
+/// published_at, text}`; `text` null when no intact published row has that hash), or
+/// null when the account requires none; `items` the published versions, newest first,
+/// at most 100, without their text.
+pub(crate) async fn ersd_versions(c: Call) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let a = tx.account().get().await?;
+    let policy = crate::apply::policy_of(&a.settings);
+    let items = tx.account().disclosures(ERSD_LIST_MAX).await?;
+    let current = match &policy.ersd {
+        None => Value::Null,
+        Some(e) => {
+            let text = tx.account().disclosure(&e.hash.0).await?;
+            let row = items.iter().find(|d| d.sha256 == e.hash.0);
+            let intact = text
+                .as_ref()
+                .is_some_and(|d| sha256(d.body.as_bytes()) == e.hash.0);
+            json!({
+                "label": e.version, "sha256": hex32(&e.hash.0),
+                "version": row.map(|d| d.version), "language": row.map(|d| d.language.clone()),
+                "published_at": row.map(|d| rfc3339(d.published_at)),
+                "text": if intact { text.map(|d| d.body) } else { None },
+            })
+        }
+    };
+    let items: Vec<Value> = items.iter().map(ersd_json).collect();
+    Ok(json(
+        StatusCode::OK,
+        &json!({ "current": current, "items": items }),
+    ))
+}
+
 // Admin log -----------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]

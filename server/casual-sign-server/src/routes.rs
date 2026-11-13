@@ -139,6 +139,20 @@ pub fn table() -> Vec<Route> {
         ),
         r(
             "GET",
+            "/api/v1/ersd-versions",
+            Scope("admin:account"),
+            JSON,
+            admin::ersd_versions,
+        ),
+        r(
+            "POST",
+            "/api/v1/ersd-versions",
+            Scope("admin:account"),
+            JSON,
+            admin::publish_ersd,
+        ),
+        r(
+            "GET",
             "/api/v1/admin-events",
             Scope("admin:account"),
             JSON,

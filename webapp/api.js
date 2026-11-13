@@ -458,6 +458,14 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// `PATCH /accounts/me {settings}`: merged into the account's settings (`null`
     /// removes a key). Answers `{settings}`. The API has no way to rename the account.
     patchAccountSettings: (settings) => data(request("PATCH", "/api/v1/accounts/me", { body: { settings } })),
+    /// The electronic disclosure (ERSD-01): `GET /ersd-versions` answers `{current,
+    /// items}` (`current` the one recipients must accept, with its text, or null);
+    /// `publish({text, language?})` makes `text` the next version and requires it in
+    /// one step, answering the new version without its text.
+    ersd: {
+      get: () => data(request("GET", "/api/v1/ersd-versions")),
+      publish: ({ text, language }) => data(request("POST", "/api/v1/ersd-versions", { body: language ? { text, language } : { text } })),
+    },
     /// An invited member sets their password with the emailed token (no session).
     acceptInvite: (token, password) => data(request("POST", "/api/v1/auth/accept-invite", { body: { token, password } })),
     users: {
