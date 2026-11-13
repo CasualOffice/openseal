@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
 import { signPage, tokens, REAL, expectAccessible } from "./helpers.mjs";
 import { MOCK } from "../mock.js";
 
-test.skip(REAL, "uses the mock's seeded envelopes and its reassignable signing option");
+test.skip(REAL, "uses the mock's seeded envelopes (access code, location, reassign allowed) and their signing tokens; on the Compose stack history and reassign need an envelope sent with reassign allowed and its link read from Mailpit, a test not written yet (WEB-07)");
 
 /// Through access code, location and consent to the documents.
 async function toDocuments(page) {
