@@ -144,7 +144,7 @@ async fn inbox(rls: Rls) {
     };
     let a = api.tenant("alpha").await;
     let b = api.tenant("beta").await;
-    let (sam, _) = member(&api, &a).await;
+    let (sam, sam_uid) = member(&api, &a).await;
     // Routing has not reached Sam; Sam's turn; Sam a copy; a draft for Sam.
     let later = envelope(
         &api,
@@ -282,6 +282,53 @@ async fn inbox(rls: Rls) {
         "{}",
         opened[0]
     );
+    // A member whose email no longer matches the recipient's (an identity provider
+    // changed it; corrections revoke links on their own): an unopened link stops
+    // working, because opening checks the email again.
+    let link = ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/envelopes/{now_id}/sign-link"),
+            &sam,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "sign-link before the email changes",
+    );
+    let set_email = |e: &'static str| {
+        let api = &api;
+        let uid = sam_uid.clone();
+        async move {
+            sqlx::query(
+                "UPDATE users SET email = $1, email_normalized = lower($1) WHERE id = $2::uuid",
+            )
+            .bind(e)
+            .bind(uid)
+            .execute(&api.db.admin)
+            .await
+            .unwrap();
+        }
+    };
+    set_email("sam.moved@alpha.example.test").await;
+    let path = ceremony_path(link["url"].as_str().unwrap());
+    let r = api
+        .call(
+            "POST",
+            &format!("{path}/session"),
+            &Auth::None,
+            Some(json!({})),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        r.status,
+        StatusCode::UNAUTHORIZED,
+        "a link opened by a member who is not the recipient: {}",
+        String::from_utf8_lossy(&r.body)
+    );
+    set_email(SAM).await;
     // Issuing a link changes nothing in the envelope.
     let events = audit_types(&api, &a, &now_id).await.len();
     // A member disabled after asking: their link stops working.
@@ -1006,6 +1053,29 @@ async fn deleted_templates(rls: Rls) {
     );
     let tid = id(&made);
     let path = format!("/api/v1/templates/{tid}");
+    // With a document, so its content is a read the deletion must also refuse.
+    let made = ok(
+        api.call(
+            "POST",
+            &format!("{path}/documents"),
+            &a.auth,
+            Some(json!({"name": "nda.pdf", "content_base64": b64(&pdf(1))})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "template document",
+    );
+    let content = format!(
+        "{path}/documents/{}/content",
+        made["documents"][0]["id"].as_str().unwrap()
+    );
+    let r = api.call("GET", &content, &a.auth, None, &[]).await;
+    assert_eq!(
+        r.status,
+        StatusCode::OK,
+        "a live template's document is read"
+    );
     let names = |v: &Value| -> Vec<String> {
         v["items"]
             .as_array()
@@ -1058,6 +1128,12 @@ async fn deleted_templates(rls: Rls) {
         )
         .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND, "nor edited");
+    let r = api.call("GET", &content, &a.auth, None, &[]).await;
+    assert_eq!(
+        r.status,
+        StatusCode::NOT_FOUND,
+        "nor is its document's content read"
+    );
     let r = api
         .call("GET", "/api/v1/templates?deleted=maybe", &a.auth, None, &[])
         .await;
@@ -1073,6 +1149,8 @@ async fn deleted_templates(rls: Rls) {
     );
     assert_eq!(back["name"], "NDA");
     assert_eq!(back["roles"][0]["name"], "Client", "with its roles");
+    let r = api.call("GET", &content, &a.auth, None, &[]).await;
+    assert_eq!(r.status, StatusCode::OK, "and its document");
     assert_eq!(names(&list(&a.auth, "").await), ["NDA"]);
     assert!(names(&list(&a.auth, "?deleted=true").await).is_empty());
     // A live template is not restored.

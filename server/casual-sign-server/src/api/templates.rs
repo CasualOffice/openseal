@@ -565,6 +565,9 @@ pub(crate) async fn document_content(
     let id = TemplateId(path_id(&id)?);
     let doc = TemplateDocumentId(path_id(&doc)?);
     let mut tx = c.tx().await?;
+    // A deleted template's documents are not read either (UXW-02, SEC-A12): the
+    // documents query does not look at the template's `deleted_at`.
+    found(&mut tx, id).await?;
     let d = tx
         .templates()
         .documents(id)
