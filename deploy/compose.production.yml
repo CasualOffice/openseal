@@ -1,0 +1,303 @@
+# OpenSeal production profile (HRD-06, docs/65 §Production deployment).
+#
+#   deploy/production/init-secrets.sh /srv/openseal/secrets      # once; see docs/65
+#   OPENSEAL_SECRETS_DIR=/srv/openseal/secrets OPENSEAL_PUBLIC_URL=https://sign.example.com \
+#   OPENSEAL_PKCS11_DIR=/opt/hsm OPENSEAL_PKCS11_MODULE=/opt/hsm/libvendor-pkcs11.so ... \
+#       docker compose -f deploy/compose.production.yml up -d --wait
+#
+# Every service: a non-root user, a read-only root file system (tmpfs only where a
+# process must write), every capability dropped, no-new-privileges, memory, CPU and
+# process limits, no core dumps, bounded logs, and a health check. Secrets are Docker
+# secrets (files under /run/secrets), never environment values. Every hop between
+# services is TLS: Postgres (verify-full, TLS 1.3, hostssl only), the object store (the
+# deployment's private CA) and keyd (mutual TLS). keyd and the worker refuse to start
+# unless their security settings match the manifests (CS-KEY-0013, ASVS-24). TLS to
+# browsers terminates at your edge proxy, which forwards to the server's port.
+#
+# tools/check-deploy.py checks every rule above over this file and fails on any
+# violation; run it after every change. Images are pinned by digest or by an
+# OPENSEAL_VERSION you built and signed.
+
+name: openseal-production
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  ulimits: {core: 0}
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "20m", max-file: "5"}
+
+x-s3: &s3
+  OPENSEAL_S3_ENDPOINT: https://s3:8333
+  OPENSEAL_S3_BUCKET: openseal
+  OPENSEAL_S3_ACCESS_KEY: openseal
+  OPENSEAL_S3_SECRET_KEY_FILE: /run/secrets/s3-secret-key
+  OPENSEAL_S3_CA: /run/secrets/internal-ca.pem
+
+services:
+  postgres:
+    <<: *hardened
+    image: postgres:17-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
+    user: "70:70"
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/run/secrets/postgres-tls-chain.pem
+      - -c
+      - ssl_key_file=/run/secrets/postgres-tls.key
+      - -c
+      - ssl_min_protocol_version=TLSv1.3
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - hba_file=/etc/openseal/pg_hba.conf
+    environment:
+      POSTGRES_DB: openseal
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+      OPENSEAL_APP_PASSWORD_FILE: /run/secrets/postgres-app-password
+    secrets: [postgres-password, postgres-app-password, postgres-tls-chain.pem, postgres-tls.key]
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./production/pg_hba.conf:/etc/openseal/pg_hba.conf:ro
+      - ./production/postgres-init:/docker-entrypoint-initdb.d:ro
+    tmpfs: ["/var/run/postgresql:uid=70,gid=70,mode=0700", "/tmp:size=64m,mode=1777"]
+    networks: [data]
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    shm_size: 256m
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "/var/run/postgresql", "-U", "postgres", "-d", "openseal"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  s3:
+    <<: *hardened
+    image: chrislusf/seaweedfs:latest@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    user: "1000:1000"
+    entrypoint: ["/usr/bin/weed"]
+    command:
+      - server
+      - -dir=/data
+      # Master, volume and filer listen on the loopback address only: their plain,
+      # unauthenticated HTTP never reaches the network. Only the S3 gateway (TLS, signed
+      # requests) does.
+      - -ip=127.0.0.1
+      - -ip.bind=127.0.0.1
+      - -master.telemetry=false
+      - -s3
+      - -s3.ip.bind=0.0.0.0
+      - -s3.port=8333
+      - -s3.config=/run/secrets/s3-identities.json
+      - -s3.cert.file=/run/secrets/s3-tls-chain.pem
+      - -s3.key.file=/run/secrets/s3-tls.key
+    secrets: [s3-identities.json, s3-tls-chain.pem, s3-tls.key]
+    volumes: [s3:/data]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    networks: [data]
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 512
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9333/cluster/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  keyd:
+    <<: *hardened
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-keyd:${OPENSEAL_VERSION:?set OPENSEAL_VERSION}
+    user: "10001:10001"
+    # The daemon itself: the development entry point (SoftHSM import) is not used.
+    entrypoint: ["/usr/local/bin/casual-sign-keyd"]
+    environment:
+      OPENSEAL_KEYD_LISTEN: 0.0.0.0:7443
+      OPENSEAL_KEYD_TLS_CERT: /run/secrets/keyd-tls-chain.pem
+      OPENSEAL_KEYD_TLS_KEY: /run/secrets/keyd-tls.key
+      OPENSEAL_KEYD_CLIENT_CA: /run/secrets/internal-ca.pem
+      OPENSEAL_KEYD_ALLOW_LIST: /run/secrets/keyd-allow-list
+      OPENSEAL_KEYD_OPLOG: /var/lib/keyd/oplog
+      OPENSEAL_KEYD_CHAIN: /run/secrets/seal-chain.pem
+      OPENSEAL_KEYD_ALIAS: ${OPENSEAL_SEAL_ALIAS:-platform}
+      OPENSEAL_KEYD_PKCS11_MODULE: ${OPENSEAL_PKCS11_MODULE:?set OPENSEAL_PKCS11_MODULE}
+      OPENSEAL_KEYD_PKCS11_TOKEN: ${OPENSEAL_PKCS11_TOKEN:?set OPENSEAL_PKCS11_TOKEN}
+      OPENSEAL_KEYD_PKCS11_KEY_LABEL: ${OPENSEAL_PKCS11_KEY_LABEL:?set OPENSEAL_PKCS11_KEY_LABEL}
+      OPENSEAL_KEYD_PKCS11_PIN_FILE: /run/secrets/keyd-pkcs11-pin
+      # A seal key rotation's overlap (CON-10, docs/65 §Rotation): the next key on the same
+      # token, its chain read from the token. Empty: keyd serves the current key only.
+      OPENSEAL_KEYD_NEXT_ALIAS: ${OPENSEAL_SEAL_NEXT_ALIAS:-}
+      OPENSEAL_KEYD_NEXT_PKCS11_KEY_LABEL: ${OPENSEAL_PKCS11_NEXT_KEY_LABEL:-}
+      OPENSEAL_CONFIG_MANIFEST: /run/secrets/keyd-config-manifest
+    secrets:
+      - internal-ca.pem
+      - keyd-tls-chain.pem
+      - keyd-tls.key
+      - keyd-allow-list
+      - keyd-pkcs11-pin
+      - seal-chain.pem
+      - keyd-config-manifest
+    volumes:
+      - keyd:/var/lib/keyd
+      - ${OPENSEAL_PKCS11_DIR:?set OPENSEAL_PKCS11_DIR}:${OPENSEAL_PKCS11_DIR}:ro
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    networks: [signing]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/7443"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  migrate:
+    <<: *hardened
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-server:${OPENSEAL_VERSION:?set OPENSEAL_VERSION}
+    user: "65532:65532"
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      OPENSEAL_MIGRATE_DATABASE_URL_FILE: /run/secrets/migrate-database-url
+    secrets: [migrate-database-url, internal-ca.pem]
+    networks: [data]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 64
+    depends_on: {postgres: {condition: service_healthy}}
+    # A one-shot job: it is done when it exits 0, which `depends_on` checks.
+    healthcheck: {disable: true}
+
+  server:
+    <<: *hardened
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-server:${OPENSEAL_VERSION:?set OPENSEAL_VERSION}
+    user: "65532:65532"
+    environment:
+      <<: *s3
+      OPENSEAL_DATABASE_URL_FILE: /run/secrets/database-url
+      OPENSEAL_JWT_SIGNING_KEY_FILE: /run/secrets/jwt-signing-key
+      OPENSEAL_MFA_KEY_FILE: /run/secrets/mfa-key
+      OPENSEAL_PUBLIC_URL: ${OPENSEAL_PUBLIC_URL:?set OPENSEAL_PUBLIC_URL (https)}
+      OPENSEAL_TRUSTED_PROXIES: ${OPENSEAL_TRUSTED_PROXIES:?set OPENSEAL_TRUSTED_PROXIES}
+      OPENSEAL_SECRET_RELOAD_SECONDS: "30"
+    secrets: [database-url, jwt-signing-key, mfa-key, s3-secret-key, internal-ca.pem]
+    # The edge proxy (TLS, HSTS) forwards here; bound to the host's loopback address.
+    ports: ["127.0.0.1:${OPENSEAL_HTTP_PORT:-8080}:8080"]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    networks: [data, edge]
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    # Graceful shutdown: the server drains on SIGINT.
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/casual-sign-server", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      s3: {condition: service_healthy}
+
+  worker:
+    <<: *hardened
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-worker:${OPENSEAL_VERSION:?set OPENSEAL_VERSION}
+    user: "65532:65532"
+    environment:
+      <<: *s3
+      OPENSEAL_DATABASE_URL_FILE: /run/secrets/database-url
+      OPENSEAL_SECRET_RELOAD_SECONDS: "30"
+      OPENSEAL_BASE_URL: ${OPENSEAL_PUBLIC_URL:?set OPENSEAL_PUBLIC_URL (https)}
+      OPENSEAL_MAIL_FROM: ${OPENSEAL_MAIL_FROM:?set OPENSEAL_MAIL_FROM}
+      OPENSEAL_MAIL_FROM_NAME: ${OPENSEAL_MAIL_FROM_NAME:-OpenSeal}
+      OPENSEAL_MAIL_DOMAIN: ${OPENSEAL_MAIL_DOMAIN:?set OPENSEAL_MAIL_DOMAIN}
+      OPENSEAL_ABUSE: ${OPENSEAL_ABUSE:?set OPENSEAL_ABUSE}
+      OPENSEAL_SMTP_HOST: ${OPENSEAL_SMTP_HOST:?set OPENSEAL_SMTP_HOST}
+      OPENSEAL_SMTP_PORT: ${OPENSEAL_SMTP_PORT:-587}
+      OPENSEAL_SMTP_SECURITY: starttls
+      OPENSEAL_SMTP_USER: ${OPENSEAL_SMTP_USER:?set OPENSEAL_SMTP_USER}
+      OPENSEAL_SMTP_PASSWORD_FILE: /run/secrets/smtp-password
+      OPENSEAL_TSA_URLS: ${OPENSEAL_TSA_URLS:?set OPENSEAL_TSA_URLS}
+      OPENSEAL_TRUST_ANCHORS: /run/secrets/trust-anchors.pem
+      OPENSEAL_KEYD_ADDR: keyd:7443
+      OPENSEAL_KEYD_SERVER_NAME: keyd
+      OPENSEAL_KEYD_CA: /run/secrets/internal-ca.pem
+      OPENSEAL_KEYD_CLIENT_CERT: /run/secrets/worker-client-chain.pem
+      OPENSEAL_KEYD_CLIENT_KEY: /run/secrets/worker-client.key
+      OPENSEAL_KEYD_ALIAS: ${OPENSEAL_SEAL_ALIAS:-platform}
+      OPENSEAL_SEAL_NAME: ${OPENSEAL_SEAL_NAME:?set OPENSEAL_SEAL_NAME}
+      OPENSEAL_SEAL_REASON: ${OPENSEAL_SEAL_REASON:-Sealed on completion}
+      OPENSEAL_HEALTH_FILE: /tmp/openseal-worker-health
+      OPENSEAL_CONFIG_MANIFEST: /run/secrets/worker-config-manifest
+    secrets:
+      - database-url
+      - s3-secret-key
+      - internal-ca.pem
+      - smtp-password
+      - trust-anchors.pem
+      - worker-client-chain.pem
+      - worker-client.key
+      - worker-config-manifest
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    # data: Postgres and the object store; signing: keyd; egress: SMTP, TSAs, webhooks.
+    networks: [data, signing, egress]
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/casual-sign-worker", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      server: {condition: service_healthy}
+      keyd: {condition: service_healthy}
+
+networks:
+  # internal: no gateway, nothing on them reaches the internet or the host.
+  data: {internal: true}
+  signing: {internal: true}
+  # The server's published port.
+  edge: {}
+  # The worker's way out (SMTP, TSAs, webhooks; the SSRF policy applies, SEC-W01).
+  egress: {}
+
+volumes:
+  postgres:
+  s3:
+  keyd:
+
+# Files written by deploy/production/init-secrets.sh, or by your secret store. Each is
+# mounted read-only at /run/secrets/<name> in the services that list it, and nowhere else.
+secrets:
+  internal-ca.pem: {file: "${OPENSEAL_SECRETS_DIR:?set OPENSEAL_SECRETS_DIR}/internal-ca.pem"}
+  postgres-password: {file: "${OPENSEAL_SECRETS_DIR}/postgres-password"}
+  postgres-app-password: {file: "${OPENSEAL_SECRETS_DIR}/postgres-app-password"}
+  postgres-tls-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/postgres-tls-chain.pem"}
+  postgres-tls.key: {file: "${OPENSEAL_SECRETS_DIR}/postgres-tls.key"}
+  database-url: {file: "${OPENSEAL_SECRETS_DIR}/database-url"}
+  migrate-database-url: {file: "${OPENSEAL_SECRETS_DIR}/migrate-database-url"}
+  s3-identities.json: {file: "${OPENSEAL_SECRETS_DIR}/s3-identities.json"}
+  s3-secret-key: {file: "${OPENSEAL_SECRETS_DIR}/s3-secret-key"}
+  s3-tls-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/s3-tls-chain.pem"}
+  s3-tls.key: {file: "${OPENSEAL_SECRETS_DIR}/s3-tls.key"}
+  jwt-signing-key: {file: "${OPENSEAL_SECRETS_DIR}/jwt-signing-key"}
+  mfa-key: {file: "${OPENSEAL_SECRETS_DIR}/mfa-key"}
+  keyd-tls-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/keyd-tls-chain.pem"}
+  keyd-tls.key: {file: "${OPENSEAL_SECRETS_DIR}/keyd-tls.key"}
+  keyd-allow-list: {file: "${OPENSEAL_SECRETS_DIR}/keyd-allow-list"}
+  keyd-pkcs11-pin: {file: "${OPENSEAL_SECRETS_DIR}/keyd-pkcs11-pin"}
+  keyd-config-manifest: {file: "${OPENSEAL_SECRETS_DIR}/keyd-config-manifest"}
+  seal-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/seal-chain.pem"}
+  worker-client-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/worker-client-chain.pem"}
+  worker-client.key: {file: "${OPENSEAL_SECRETS_DIR}/worker-client.key"}
+  worker-config-manifest: {file: "${OPENSEAL_SECRETS_DIR}/worker-config-manifest"}
+  smtp-password: {file: "${OPENSEAL_SECRETS_DIR}/smtp-password"}
+  trust-anchors.pem: {file: "${OPENSEAL_SECRETS_DIR}/trust-anchors.pem"}

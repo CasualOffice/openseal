@@ -65,7 +65,9 @@ services:
 
   s3:
     image: chrislusf/seaweedfs:latest@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
-    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/secrets/s3.json", "-ip.bind=0.0.0.0"]
+    # -master.telemetry=false: SeaweedFS otherwise reports cluster statistics to its
+    # vendor (found by HRD-06).
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/secrets/s3.json", "-ip.bind=0.0.0.0", "-master.telemetry=false"]
     volumes: [s3:/data, *secrets]
     depends_on: {pki: {condition: service_completed_successfully}}
     healthcheck:

@@ -797,8 +797,13 @@ workspace (organization admins can too); view usage; and turn self-sign-up on (Q
   Each call is written to keyd's own operation log.
 - **Keys are provisioned out of band** by the key custodian in the HSM or KMS. A CSR is made with the offline CLI on the
   keyd host, never through the console (a CSR is a signature over arbitrary data). **Rotation** is a two-person change
-  of `platform.seal_profiles.active_alias` with `active_from`, read by the worker per seal job; keyd must report the
-  alias, and the worker refuses one it does not list or whose change was not approved (`CS-CON-0006`).
+  of `platform.seal_profiles.active_alias` with `active_from` (built: `CON-10`, migration 0035, `/console/v1/seal`; keyd serves the
+  next key beside the current one with `OPENSEAL_KEYD_NEXT_*` during the overlap), read by the worker per seal job; keyd must report the
+  alias, and the worker refuses one it does not list or whose change was not approved (`CS-CON-0006`). The approval is
+  judged as it stood when given: disabling the approving custodian later, a routine departure, does not unapprove an
+  applied version or stop sealing. A change proposed without `active_from` starts when it is applied. Grant and apply
+  routes take only changes of their own kind (`/console/v1/seal/changes/…` seal alias changes,
+  `/console/v1/tsa/changes/…` TSA changes).
   Per-organization seal identities are a later plan entitlement.
 - **TSA and trust anchors move from environment to database**: `platform.tsa_endpoints` (URL, policy OID, priority,
   enabled, expected TSA certificate hash) and `platform.trust_anchors` (DER, SHA-256, purpose `tsa`, `ocsp`, `verify`;

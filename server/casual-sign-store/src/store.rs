@@ -25,6 +25,25 @@ use crate::ids::{
 };
 use crate::migrate::{MigrationReport, migrate};
 
+/// How long a pooled connection lives before it is replaced: 15 minutes, so a rotated
+/// database credential is in sole use within 15 minutes of the reload (docs/65 §Rotation).
+pub const CONNECTION_LIFETIME: Duration = Duration::from_secs(15 * 60);
+
+/// The seal key alias in force at an instant (`CON-10`, migration 0035).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealAlias {
+    /// keyd's alias for the key.
+    pub alias: String,
+    /// The approval request that made this version.
+    pub approval: Uuid,
+    /// From when it is in force.
+    pub active_from: OffsetDateTime,
+    /// Whether the change is fully approved: spent, granted by another key custodian with
+    /// a fresh second factor, and recorded in the operator chain. The worker refuses an
+    /// alias that is not (`CS-CON-0006`).
+    pub approved: bool,
+}
+
 /// A PostgreSQL-backed store. Cheap to clone (a pool handle).
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -39,14 +58,96 @@ impl Store {
     ///
     /// `CS-DB-0001` when the URL is malformed or the database is unreachable.
     pub async fn connect(url: &str, max_connections: u32) -> Result<Self> {
+        Self::connect_with_lifetime(url, max_connections, CONNECTION_LIFETIME).await
+    }
+
+    /// As [`Store::connect`], with each pooled connection closed after `max_lifetime`:
+    /// the time after a credential rotation by which every connection uses the new
+    /// credential, and so the earliest the old login may be removed (docs/65 §Rotation).
+    ///
+    /// # Errors
+    ///
+    /// As [`Store::connect`].
+    pub async fn connect_with_lifetime(
+        url: &str,
+        max_connections: u32,
+        max_lifetime: Duration,
+    ) -> Result<Self> {
         let options: PgConnectOptions = url.parse().map_err(|_| StoreError::Unavailable)?;
         let pool = PgPoolOptions::new()
             .max_connections(max_connections.max(1))
             .acquire_timeout(Duration::from_secs(10))
+            .max_lifetime(max_lifetime)
             .connect_with(options)
             .await
             .map_err(db)?;
         Ok(Self { pool })
+    }
+
+    /// Use `url` for every connection opened from now on: a rotated database credential
+    /// (`HRD-06`). Open connections keep working on the credential they logged in with
+    /// (PostgreSQL does not end a session when its password changes or its role loses
+    /// `LOGIN`) until their lifetime ends, so requests never see the switch.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001` when the URL is malformed; the pool keeps its current URL.
+    pub fn set_database_url(&self, url: &str) -> Result<()> {
+        let options: PgConnectOptions = url.parse().map_err(|_| StoreError::Unavailable)?;
+        self.pool.set_connect_options(options);
+        Ok(())
+    }
+
+    /// Every `every`, call `read` for the database URL (a deployment reads its secret file
+    /// again) and, when it differs from the one in use, switch to it with
+    /// [`Store::set_database_url`]. `report` hears `"reloaded"` or `"refused"`, never the
+    /// URL. The task ends when the store's pool is closed or the runtime stops.
+    pub fn watch_database_url<R>(
+        &self,
+        every: Duration,
+        current: String,
+        read: R,
+        report: fn(&'static str),
+    ) -> tokio::task::JoinHandle<()>
+    where
+        R: Fn() -> Option<String> + Send + 'static,
+    {
+        let store = self.clone();
+        tokio::spawn(async move {
+            let mut current = zeroize::Zeroizing::new(current);
+            let mut tick = tokio::time::interval(every);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            tick.tick().await;
+            while !store.pool.is_closed() {
+                tick.tick().await;
+                let Some(next) = read().map(zeroize::Zeroizing::new) else {
+                    continue;
+                };
+                if *next == *current {
+                    continue;
+                }
+                match store.set_database_url(&next) {
+                    Ok(()) => {
+                        current = next;
+                        report("reloaded");
+                    }
+                    Err(_) => report("refused"),
+                }
+            }
+        })
+    }
+
+    /// One round trip to the database, for health checks and the rotation drill.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001` when no connection can be had or the query fails.
+    pub async fn ping(&self) -> Result<()> {
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(db)
     }
 
     /// A store over an existing pool.
@@ -355,6 +456,31 @@ impl EntryPoints<'_> {
             .fetch_all(&self.store.pool)
             .await
             .map_err(db)
+    }
+
+    /// The seal key alias in force at `at` from `platform.seal_profiles` (docs/23 §5.4,
+    /// `CON-10`, migration 0035), with whether its change is fully approved; `None` when
+    /// key custodians have set none, and the worker then uses `OPENSEAL_KEYD_ALIAS`.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn seal_alias(&self, at: OffsetDateTime) -> Result<Option<SealAlias>> {
+        let row: Option<(String, Uuid, OffsetDateTime, bool)> = sqlx::query_as(
+            "SELECT alias, approval, active_from, approved FROM openseal_seal_alias($1)",
+        )
+        .bind(at)
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(
+            row.map(|(alias, approval, active_from, approved)| SealAlias {
+                alias,
+                approval,
+                active_from,
+                approved,
+            }),
+        )
     }
 
     /// The recipient an unexpired, unrevoked invitation token names (SEC-A01).

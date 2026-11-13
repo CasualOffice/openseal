@@ -180,6 +180,44 @@ fn a_client_not_on_the_allow_list_is_refused_and_logged() {
     );
 }
 
+/// **Rotating the worker's keyd identity** (`HRD-06`, docs/65 §Rotation): keyd restarts
+/// with both fingerprints listed, the worker moves to its new certificate (old and new
+/// both seal meanwhile, so a worker restart in between loses nothing), then keyd
+/// restarts with the new one alone and the old certificate is refused.
+#[test]
+fn a_worker_identity_rotates_with_an_overlap_and_the_old_one_is_then_refused() {
+    let pki = Pki::new();
+    let old = pki.client_identity("worker");
+    let new = pki.client_identity("worker");
+    assert_ne!(old.2, new.2);
+    let key = || vec![("dev", Arc::new(file_key(&pki)) as Arc<dyn DigestSigner>)];
+
+    let overlap = start_keyd(
+        &pki,
+        key(),
+        &[&old.2, &new.2],
+        KeydLimits::default(),
+        &scratch("keyd-rotate-overlap"),
+    );
+    for who in [&old, &new] {
+        let remote = RemoteKey::connect(endpoint(&pki, &overlap, Some(who)), "dev").unwrap();
+        assert_eq!(KeyProvider::certificate_chain(&remote).len(), 2);
+    }
+
+    let after = start_keyd(
+        &pki,
+        key(),
+        &[&new.2],
+        KeydLimits::default(),
+        &scratch("keyd-rotate-after"),
+    );
+    assert!(RemoteKey::connect(endpoint(&pki, &after, Some(&new)), "dev").is_ok());
+    assert_eq!(
+        RemoteKey::connect(endpoint(&pki, &after, Some(&old)), "dev").unwrap_err(),
+        KeydError::NotAuthorized
+    );
+}
+
 #[test]
 fn an_unknown_alias_is_refused() {
     let (pki, keyd, worker) = refused_setup("keyd-mtls-alias");

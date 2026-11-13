@@ -35,6 +35,10 @@ pub struct S3Config {
     pub secret_key: String,
     /// Path-style URLs (MinIO and most self-hosted stores) rather than virtual hosts.
     pub path_style: bool,
+    /// PEM certificates the store's TLS certificate may chain to besides the platform's
+    /// roots: the deployment's private CA, so the hop to a self-hosted store is TLS too
+    /// (`HRD-06`). Ignored for an `http` endpoint.
+    pub ca_pem: Option<Vec<u8>>,
 }
 
 impl core::fmt::Debug for S3Config {
@@ -106,11 +110,22 @@ impl S3BlobStore {
         )
         .map_err(|_| unavailable(None))?;
         let credentials = Credentials::new(config.access_key.clone(), config.secret_key.clone());
+        let mut extra = Vec::new();
+        if let Some(pem) = &config.ca_pem {
+            for item in ureq::tls::parse_pem(pem) {
+                if let ureq::tls::PemItem::Certificate(c) = item.map_err(|_| unavailable(None))? {
+                    extra.push(c);
+                }
+            }
+            if extra.is_empty() {
+                return Err(unavailable(None));
+            }
+        }
         Ok(Self {
             inner: Arc::new(Inner {
                 bucket,
                 credentials,
-                agent: agent(),
+                agent: agent(extra),
                 max_bytes,
             }),
         })
@@ -140,15 +155,17 @@ impl S3BlobStore {
     }
 }
 
-/// rustls on aws-lc-rs with the platform's roots, 60-second budget, no redirects, and
-/// HTTP error statuses returned as responses so 404 and 412 can be told apart.
-fn agent() -> ureq::Agent {
+/// rustls on aws-lc-rs with the platform's roots and `extra`, 60-second budget, no
+/// redirects, and HTTP error statuses returned as responses so 404 and 412 can be told
+/// apart.
+fn agent(extra: Vec<ureq::tls::Certificate<'static>>) -> ureq::Agent {
     let native = rustls_native_certs::load_native_certs();
-    let roots: Vec<ureq::tls::Certificate<'static>> = native
+    let mut roots: Vec<ureq::tls::Certificate<'static>> = native
         .certs
         .iter()
         .map(|c| ureq::tls::Certificate::from_der(c.as_ref()).to_owned())
         .collect();
+    roots.extend(extra);
     let tls = ureq::tls::TlsConfig::builder()
         .provider(ureq::tls::TlsProvider::Rustls)
         .root_certs(ureq::tls::RootCerts::new_with_certs(&roots))

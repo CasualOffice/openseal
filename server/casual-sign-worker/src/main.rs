@@ -27,6 +27,18 @@
 //! | `OPENSEAL_SEAL_NAME`, `OPENSEAL_SEAL_REASON` | The seal's `/Name` and `/Reason` |
 //! | `OPENSEAL_SMS_GATEWAY_URL`, `OPENSEAL_SMS_GATEWAY_SECRET` (or `_FILE`) | Optional: the HTTPS gateway that sends SMS and voice one-time codes, and its bearer secret (`messenger::HttpGateway`); unset, such codes fail `CS-WRK-0013` |
 //!
+//! | `OPENSEAL_S3_CA` | PEM file of the CA the object store's TLS certificate chains to, besides the platform's roots (a private CA, the production profile) |
+//! | `OPENSEAL_SECRET_RELOAD_SECONDS` | How often the database URL file is read again for a rotated credential (default 30; `0` never) |
+//! | `OPENSEAL_HEALTH_FILE` | Optional: while the database answers, the time is written here every 10 seconds; `casual-sign-worker healthcheck` exits 0 while it is at most 30 seconds old (the container health check; default path `/tmp/openseal-worker-health`) |
+//! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings; the worker refuses to start when they differ (`CS-KEY-0013`, ASVS-24) |
+//!
+//! **Security configuration** (ASVS 14.1.5): trust anchors, the TSA list, the keyd and
+//! model service addresses and CAs, the webhook allowances and the object store are read
+//! once, at start. The worker logs the SHA-256 of each (never of a secret) and one digest
+//! over them all, and with `OPENSEAL_CONFIG_MANIFEST` refuses to start unless they are
+//! the manifest's; `casual-sign-worker config-manifest` prints the current one. The
+//! console's TSA list is two-person in the database (`CON-07`), outside this manifest.
+//!
 //! Webhook signing secrets are read by the reference a subscription stores, as an
 //! environment variable `NAME` or `NAME_FILE`. The worker stops when killed; every job
 //! is crash-safe, so no graceful shutdown is needed for correctness.
@@ -38,13 +50,14 @@ use std::time::Duration;
 use casual_sign_keyd::{DevKeyConsent, Endpoint, FileKey, RemoteKey, certificates, client_tls};
 use casual_sign_sdk::{CertificateOptions, Engine, FontSet, Limits, TrustStore};
 use casual_sign_secrets::env_secret;
+use casual_sign_secrets::integrity::ConfigDigest;
 use casual_sign_store::Store;
 use casual_sign_store::blob::{BlobStore, FsBlobStore, S3BlobStore, S3Config};
 use casual_sign_worker::email::{Mailer, SmtpConfig, SmtpSecurity};
 use casual_sign_worker::seal::{SealKey, SealServices, Shared};
 use casual_sign_worker::webhook::{IpRange, Sender, SsrfPolicy};
 use casual_sign_worker::{
-    EnvSecrets, LogAlerts, NoPayments, SystemClock, Worker, WorkerConfig, WorkerError, tsa,
+    EnvSecrets, LogAlerts, NoPayments, SystemClock, Worker, WorkerConfig, WorkerError, health, tsa,
 };
 
 fn var(name: &'static str) -> Option<String> {
@@ -228,12 +241,65 @@ fn s3_config() -> Result<Option<S3Config>, WorkerError> {
         access_key: need("OPENSEAL_S3_ACCESS_KEY")?,
         secret_key: secret_key.expose().to_owned(),
         path_style: var("OPENSEAL_S3_VIRTUAL_HOST").as_deref() != Some("1"),
+        ca_pem: match var("OPENSEAL_S3_CA") {
+            Some(_) => Some(read("OPENSEAL_S3_CA")?),
+            None => None,
+        },
     }))
 }
 
 async fn run() -> Result<(), WorkerError> {
     let (config, smtp, seal, policy, db) = configure()?;
     let store = Store::connect(&db, 8).await?;
+    // A rotated database credential is picked up from its file without a restart
+    // (HRD-06, docs/65 §Rotation).
+    if var("OPENSEAL_DATABASE_URL_FILE").is_some() {
+        let seconds: u64 = match var("OPENSEAL_SECRET_RELOAD_SECONDS") {
+            Some(s) => s.parse().map_err(|_| WorkerError::Config {
+                setting: "OPENSEAL_SECRET_RELOAD_SECONDS",
+            })?,
+            None => 30,
+        };
+        if seconds > 0 {
+            let _watch = store.watch_database_url(
+                Duration::from_secs(seconds),
+                db,
+                || {
+                    env_secret("OPENSEAL_DATABASE_URL")
+                        .ok()
+                        .flatten()
+                        .map(|s| s.expose().to_owned())
+                },
+                |what| {
+                    casual_sign_worker::log(
+                        "WARN",
+                        "database credential",
+                        &[("what", what.to_owned())],
+                    )
+                },
+            );
+        }
+    }
+    // The container health check's beat (HRD-06): the runtime is alive and the database
+    // answers.
+    if let Some(path) = var("OPENSEAL_HEALTH_FILE") {
+        let store = store.clone();
+        tokio::spawn(async move {
+            let path = std::path::PathBuf::from(path);
+            let mut tick = tokio::time::interval(Duration::from_secs(health::BEAT_SECONDS));
+            loop {
+                tick.tick().await;
+                if store.ping().await.is_ok() {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs());
+                    if health::beat(&path, now).is_err() {
+                        casual_sign_worker::log("WARN", "health file not written", &[]);
+                    }
+                }
+            }
+        });
+    }
     match s3_config()? {
         Some(s3) => {
             let blobs = S3BlobStore::new(&s3)?;
@@ -304,8 +370,70 @@ async fn serve<B: BlobStore + 'static>(
     Ok(())
 }
 
+/// Security settings that name a file: the file's bytes are hashed (ASVS-24).
+const CONFIG_FILES: &[&str] = &[
+    "OPENSEAL_TRUST_ANCHORS",
+    "OPENSEAL_KEYD_CA",
+    "OPENSEAL_KEYD_CLIENT_CERT",
+    "OPENSEAL_MODELD_CA",
+    "OPENSEAL_MODELD_CLIENT_CERT",
+    "OPENSEAL_WEBHOOK_EXTRA_ROOTS",
+    "OPENSEAL_S3_CA",
+    "OPENSEAL_WORKER_DEV_CHAIN",
+];
+
+/// Security settings hashed as values: where the worker sends keys, documents, codes and
+/// the links that carry signers' bearer tokens.
+const CONFIG_VALUES: &[&str] = &[
+    "OPENSEAL_BASE_URL",
+    "OPENSEAL_TSA_URLS",
+    "OPENSEAL_KEYD_ADDR",
+    "OPENSEAL_KEYD_SERVER_NAME",
+    "OPENSEAL_KEYD_ALIAS",
+    "OPENSEAL_MODELD_ADDR",
+    "OPENSEAL_MODELD_SERVER_NAME",
+    "OPENSEAL_WEBHOOK_ALLOW",
+    "OPENSEAL_SMS_GATEWAY_URL",
+    "OPENSEAL_S3_ENDPOINT",
+    "OPENSEAL_S3_BUCKET",
+    "OPENSEAL_SMTP_HOST",
+    "OPENSEAL_SMTP_PORT",
+    "OPENSEAL_SMTP_USER",
+    "OPENSEAL_SMTP_SECURITY",
+    "OPENSEAL_WORKER_DEV_KEY",
+    "OPENSEAL_DEV_INSECURE_KEY",
+];
+
 fn main() -> ExitCode {
+    // The container health check: no configuration read, nothing logged.
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        let path =
+            var("OPENSEAL_HEALTH_FILE").unwrap_or_else(|| "/tmp/openseal-worker-health".into());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        return if health::check(std::path::Path::new(&path), now, health::MAX_AGE_SECONDS) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
     casual_sign_host::crash::startup();
+    let digest = match ConfigDigest::from_env(CONFIG_FILES, CONFIG_VALUES) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("casual-sign-worker: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if std::env::args().nth(1).as_deref() == Some("config-manifest") {
+        print!("{}", digest.manifest());
+        return ExitCode::SUCCESS;
+    }
+    if let Err(e) = digest.log_and_check("casual-sign-worker") {
+        eprintln!("casual-sign-worker: {e}");
+        return ExitCode::FAILURE;
+    }
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

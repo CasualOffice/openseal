@@ -7,11 +7,14 @@
 //! | --- | --- |
 //! | `OPENSEAL_DATABASE_URL` (secret) | PostgreSQL URL of the application role |
 //! | `OPENSEAL_JWT_SIGNING_KEY` (secret) | P-256 PKCS#8 private key, base64 DER or PEM |
+//! | `OPENSEAL_JWT_PREVIOUS_KEY` (secret) | Optional, during a rotation: the key the signing key replaced; tokens it signed verify until they expire and it stays in JWKS (docs/65 §Rotation) |
 //! | `OPENSEAL_BLOB_DIR` | Directory of the file blob store, or: |
 //! | `OPENSEAL_S3_ENDPOINT`, `OPENSEAL_S3_BUCKET` | An S3-compatible bucket instead (created at start when missing) |
 //! | `OPENSEAL_S3_REGION` | Its region (default `us-east-1`) |
 //! | `OPENSEAL_S3_ACCESS_KEY`, `OPENSEAL_S3_SECRET_KEY` (secret) | Its credentials |
 //! | `OPENSEAL_S3_VIRTUAL_HOST=1` | Virtual-host URLs (AWS) rather than path style (MinIO, SeaweedFS) |
+//! | `OPENSEAL_S3_CA` | PEM file of the CA the object store's TLS certificate chains to, besides the platform's roots (a private CA, the production profile) |
+//! | `OPENSEAL_SECRET_RELOAD_SECONDS` | How often the database URL file is read again for a rotated credential (default 30; `0` never; docs/65 §Rotation) |
 //! | `OPENSEAL_WEBAPP_DIR` | The web app's folder (`webapp/`), served at `/` (row WEB-04); none: API only |
 //! | `OPENSEAL_PUBLIC_URL` | Public base URL (links, token issuer) |
 //! | `OPENSEAL_LISTEN` | Address to listen on (default `127.0.0.1:8080`) |
@@ -62,18 +65,34 @@ fn secret(name: &str) -> Result<Option<String>, String> {
         .map_err(|e| format!("{name}: {}", e.code()))
 }
 
+/// The DER of a PKCS#8 key given as base64 or PEM.
+fn pkcs8_der(name: &str, text: &str) -> Result<Vec<u8>, String> {
+    let b64: String = text
+        .lines()
+        .filter(|l| !l.starts_with("-----"))
+        .collect::<Vec<_>>()
+        .join("");
+    base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|_| format!("{name}: not base64 or PEM"))
+}
+
 fn jwt_key() -> Result<JwtKeys, String> {
     match secret("OPENSEAL_JWT_SIGNING_KEY")? {
         Some(k) => {
-            let b64: String = k
-                .lines()
-                .filter(|l| !l.starts_with("-----"))
-                .collect::<Vec<_>>()
-                .join("");
-            let der = base64::engine::general_purpose::STANDARD
-                .decode(b64.trim())
-                .map_err(|_| "OPENSEAL_JWT_SIGNING_KEY: not base64 or PEM".to_owned())?;
-            JwtKeys::from_pkcs8(&der).map_err(|e| format!("OPENSEAL_JWT_SIGNING_KEY: {}", e.code()))
+            let der = pkcs8_der("OPENSEAL_JWT_SIGNING_KEY", &k)?;
+            let keys = JwtKeys::from_pkcs8(&der)
+                .map_err(|e| format!("OPENSEAL_JWT_SIGNING_KEY: {}", e.code()))?;
+            // A rotation's overlap (docs/65 §Rotation): the replaced key still verifies
+            // the tokens it signed until they expire, and stays in JWKS.
+            match secret("OPENSEAL_JWT_PREVIOUS_KEY")? {
+                Some(p) => {
+                    let der = pkcs8_der("OPENSEAL_JWT_PREVIOUS_KEY", &p)?;
+                    keys.with_previous(&der)
+                        .map_err(|e| format!("OPENSEAL_JWT_PREVIOUS_KEY: {}", e.code()))
+                }
+                None => Ok(keys),
+            }
         }
         None if std::env::var("OPENSEAL_DEV_INSECURE_KEY").as_deref() == Ok("1") => {
             eprintln!("casual-sign-server: development token key; never in production");
@@ -81,6 +100,21 @@ fn jwt_key() -> Result<JwtKeys, String> {
         }
         None => Err("OPENSEAL_JWT_SIGNING_KEY is not set".into()),
     }
+}
+
+/// How often to read the database URL's file again (`OPENSEAL_SECRET_RELOAD_SECONDS`,
+/// default 30, `0` never); only a `_FILE` can change under a running process.
+fn reload_every() -> Result<Option<std::time::Duration>, String> {
+    if std::env::var("OPENSEAL_DATABASE_URL_FILE").is_err() {
+        return Ok(None);
+    }
+    let seconds: u64 = match std::env::var("OPENSEAL_SECRET_RELOAD_SECONDS") {
+        Ok(s) => s
+            .parse()
+            .map_err(|_| "OPENSEAL_SECRET_RELOAD_SECONDS: not a number of seconds".to_owned())?,
+        Err(_) => 30,
+    };
+    Ok((seconds > 0).then(|| std::time::Duration::from_secs(seconds)))
 }
 
 /// The key that seals staff TOTP seeds (ASVS-01): `OPENSEAL_MFA_KEY`, 32 bytes as
@@ -128,6 +162,15 @@ fn s3_config() -> Result<Option<S3Config>, String> {
         secret_key: secret("OPENSEAL_S3_SECRET_KEY")?
             .ok_or_else(|| "OPENSEAL_S3_SECRET_KEY is not set".to_owned())?,
         path_style: std::env::var("OPENSEAL_S3_VIRTUAL_HOST").as_deref() != Ok("1"),
+        ca_pem: match std::env::var("OPENSEAL_S3_CA")
+            .ok()
+            .filter(|v| !v.is_empty())
+        {
+            Some(path) => {
+                Some(std::fs::read(path).map_err(|_| "OPENSEAL_S3_CA: unreadable".to_owned())?)
+            }
+            None => None,
+        },
     }))
 }
 
@@ -219,6 +262,14 @@ async fn main() -> ExitCode {
         Some("migrate") => return migrate().await,
         _ => {}
     }
+    // Outside development the public URL is HTTPS (or HTTP to a loopback address): links
+    // in invitations and the token issuer must not travel in clear (ASVS-19, HRD-06).
+    if std::env::var("OPENSEAL_DEV_INSECURE_KEY").as_deref() != Ok("1")
+        && let Ok(u) = std::env::var("OPENSEAL_PUBLIC_URL")
+        && !casual_sign_server::idp::endpoint(&u)
+    {
+        return fail("OPENSEAL_PUBLIC_URL must be https outside development");
+    }
     let url = match secret("OPENSEAL_DATABASE_URL") {
         Ok(Some(u)) => u,
         Ok(None) => return fail("OPENSEAL_DATABASE_URL is not set"),
@@ -248,6 +299,25 @@ async fn main() -> ExitCode {
             }
             Err(e) => fail(e.code()),
         };
+    }
+    // A rotated database credential is picked up from its file without a restart
+    // (HRD-06, docs/65 §Rotation).
+    match reload_every() {
+        Ok(Some(every)) => {
+            let _watch = store.watch_database_url(
+                every,
+                url.clone(),
+                || {
+                    env_secret("OPENSEAL_DATABASE_URL")
+                        .ok()
+                        .flatten()
+                        .map(|s| s.expose().to_owned())
+                },
+                |what| tracing::warn!(target: "openseal::secrets", what, "database credential"),
+            );
+        }
+        Ok(None) => {}
+        Err(e) => return fail(&e),
     }
     let jwt = match jwt_key() {
         Ok(k) => k,
