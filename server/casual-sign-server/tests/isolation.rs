@@ -90,6 +90,8 @@ async fn world(api: &Api, t: &Tenant) -> BTreeMap<&'static str, String> {
         ("client", s(&client["id"])),
         ("template", s(&template["id"])),
         ("webhook", s(&hook["id"])),
+        // ORG-03: another organization must not reach this workspace or this user.
+        ("workspace", t.boot.account.to_string()),
     ])
 }
 
@@ -107,6 +109,8 @@ fn fill(path: &str, ids: &BTreeMap<&'static str, String>, envelope: &str) -> Str
         ids["webhook"].clone()
     } else if path.starts_with("/api/v1/folders/") {
         ids["folder"].clone()
+    } else if path.starts_with("/api/v1/organizations/me/") {
+        ids["workspace"].clone()
     } else {
         panic!("no id kind for {path}")
     };
@@ -114,6 +118,7 @@ fn fill(path: &str, ids: &BTreeMap<&'static str, String>, envelope: &str) -> Str
         .replace("{doc}", &ids["doc"])
         .replace("{r}", &ids["r"])
         .replace("{f}", &ids["f"])
+        .replace("{user}", &ids["user"])
 }
 
 async fn snapshot(api: &Api, a: &Tenant, ids: &BTreeMap<&'static str, String>) -> Vec<String> {
@@ -144,7 +149,12 @@ async fn another_accounts_ids_are_not_found_on_every_operation(rls: Rls) {
     let before = snapshot(&api, &a, &ids_a).await;
     let mut checked = 0;
     for ((method, path), _) in openapi_operations() {
-        if !path.contains('{') || path.starts_with("/s/") {
+        // Organization routes need a staff session, so an API key is refused with 403 before any
+        // id is read; their cross-organization isolation is tested in tests/organizations.rs.
+        if !path.contains('{')
+            || path.starts_with("/s/")
+            || path.starts_with("/api/v1/organizations/")
+        {
             continue;
         }
         let mut variants = vec![fill(&path, &ids_a, &ids_a["envelope"])];
