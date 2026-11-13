@@ -87,6 +87,13 @@ export const MOCK_DISCLOSURE = [
 ].join("\n");
 
 let counter = 0;
+/// The account's built-in permission profiles as `GET /permission-profiles` lists them
+/// (server `auth.rs` `profile_scopes`).
+const builtinProfiles = () => [
+  { id: "profile-admin", name: "Administrator", kind: "admin", builtin: true, permissions: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "bulk:send", "webhooks:manage", "admin:users", "admin:account", "audit:read", "view_all_envelopes"] },
+  { id: "profile-sender", name: "Sender", kind: "sender", builtin: true, permissions: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "bulk:send", "audit:read"] },
+  { id: "profile-viewer", name: "Viewer", kind: "viewer", builtin: true, permissions: ["envelopes:read", "templates:read", "audit:read"] },
+];
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${++counter}`);
 
 function b64(bytes) {
@@ -154,7 +161,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!store) return;
     try { store.setItem(KEY, JSON.stringify(db)); } catch { /* full or off: memory only */ }
   };
-  const fill = () => { db.templates ||= []; db.groups ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; db.ersd ||= []; db.adminLog ||= []; };
+  const fill = () => { db.templates ||= []; db.groups ||= []; db.profiles ||= builtinProfiles(); for (const g of db.groups) g.user_ids ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; db.ersd ||= []; db.adminLog ||= []; };
   async function load() {
     ersdSha ||= `sha256:${await sha256hex(MOCK_DISCLOSURE)}`;
     if (db) return;
@@ -164,7 +171,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (s) { db = JSON.parse(s); fill(); return; }
       } catch { db = null; }
     }
-    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], groups: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [], ersd: [], adminLog: [] };
+    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], groups: [], profiles: builtinProfiles(), users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [], ersd: [], adminLog: [] };
     await seed();
     save();
   }
@@ -579,7 +586,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       { id: "user-robin", email: "sender@openseal.test", name: "Robin Sender", login_kind: "local", permission_profile_id: "profile-sender", disabled: false },
     );
     // UXW-06: a group to share templates with.
-    db.groups.push({ id: "group-legal", name: "Legal", members: 1 });
+    db.groups.push({ id: "group-legal", name: "Legal", members: 1, user_ids: ["user-robin"] });
     db.apiClients.push({ id: uid(), kind: "api_key", name: "CRM integration", owner_user_id: "user-demo", key_prefix: "osk_3f9a12c0", scopes: ["envelopes:read", "envelopes:write", "envelopes:send"], expires_at: null, revoked: false });
     // One webhook subscription with a delivered and a failed delivery (UX-03), so the
     // Admin webhooks screen has rows to show.
@@ -1382,7 +1389,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "api-clients") return apiClients(method, id, body);
     if (res === "webhooks") return webhooks(method, id, sub, subId, subSub, body);
     if (res === "folders") return folders(method, id, sub, body);
-    if (res === "groups" && !id && method === "GET") return json(200, { items: db.groups });
+    if (res === "groups") return groups(method, id, sub, body);
+    if (res === "permission-profiles") return profiles(method, id, body);
     if (res !== "envelopes") fail(404, "CS-API-0002", "Not found");
 
     if (!id) {
@@ -1942,9 +1950,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       for (const k of Object.keys(body)) if (!["email", "name", "profile", "password", "invite"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
       if (typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
       if (typeof body?.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
-      if (!["admin", "sender", "viewer"].includes(body.profile)) fail(400, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "enum" }]);
+      const pid = profileIdOf(body.profile);
       if (db.users.some((u) => u.email.toLowerCase() === body.email.toLowerCase())) fail(400, "CS-API-0001", "Already a member", [{ pointer: "/email", code: "exists" }]);
-      const u = { id: uid(), email: body.email, name: body.name.trim(), login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false, invitation: "sent" };
+      const u = { id: uid(), email: body.email, name: body.name.trim(), login_kind: "local", permission_profile_id: pid, disabled: false, invitation: "sent" };
       db.users.push(u);
       mintInvite(u);
       await adminEvent("member.added", { target: { user: u.id }, changes: [{ key: "profile", old: null, new: u.permission_profile_id }] });
@@ -1963,9 +1971,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "POST") {
         if (!body || typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
         if (typeof body.email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
-        if (!["admin", "sender", "viewer"].includes(body.profile)) fail(400, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "enum" }]);
+        const pid = profileIdOf(body.profile);
         if (body.password != null && (typeof body.password !== "string" || body.password.length < 12)) fail(400, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
-        const u = { id: uid(), email: body.email, name: body.name.trim(), login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false };
+        const u = { id: uid(), email: body.email, name: body.name.trim(), login_kind: "local", permission_profile_id: pid, disabled: false };
         db.users.push(u);
         await adminEvent("member.added", { target: { user: u.id }, changes: [{ key: "profile", old: null, new: u.permission_profile_id }] });
         return json(201, u);
@@ -1985,9 +1993,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
       // Permission profile and disabling (WEB-06 AD-01); nobody disables or demotes themselves.
       if (body?.profile != null) {
-        if (!["admin", "sender", "viewer"].includes(body.profile)) fail(400, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "enum" }]);
-        if (u.id === "user-demo" && body.profile !== "admin") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/profile", code: "self" }]);
-        u.permission_profile_id = `profile-${body.profile}`;
+        const pid = profileIdOf(body.profile);
+        if (u.id === "user-demo" && pid !== "profile-admin") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/profile", code: "self" }]);
+        u.permission_profile_id = pid;
       }
       if (body?.disabled != null) {
         if (typeof body.disabled !== "boolean") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/disabled", code: "type" }]);
@@ -1999,11 +2007,120 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (method === "DELETE") {
       if (u.id === "user-demo") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/id", code: "self" }]);
       db.users = db.users.filter((x) => x !== u);
+      // As 0032: their places in groups go with them.
+      for (const g of db.groups) { g.user_ids = (g.user_ids || []).filter((x) => x !== u.id); g.members = g.user_ids.length; }
       await adminEvent("member.removed", { target: { user: u.id } });
       return json(204, null);
     }
     fail(405, "CS-API-0012", "Method not allowed");
   }
+  /// `profile` as the server reads it: a built-in name or a profile id (422 otherwise).
+  function profileIdOf(name) {
+    if (["admin", "sender", "viewer"].includes(name)) return `profile-${name}`;
+    if (db.profiles.some((p) => p.id === name)) return name;
+    return fail(422, "CS-API-0001", "Unknown profile", [{ pointer: "/profile", code: "CS-API-0001" }]);
+  }
+
+  /// Groups (UXW-06 list; UXW-07 management), as the server: a name used once
+  /// (`exists`), members only from the account, a group's template shares go with it.
+  async function groups(method, id, sub, body) {
+    const named = () => {
+      const n = typeof body?.name === "string" ? body.name.trim() : "";
+      if (!n || n.length > 255) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
+      return n;
+    };
+    const out = (g, full = false) => { const { user_ids: ids, ...rest } = g; return full ? { ...rest, user_ids: [...(ids || [])] } : rest; };
+    if (!id) {
+      if (method === "GET") return json(200, { items: db.groups.slice().sort((a, b) => a.name.localeCompare(b.name)).map((g) => out(g)) });
+      if (method === "POST") {
+        const n = named();
+        if (db.groups.some((g) => g.name === n)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "exists" }]);
+        const g = { id: uid(), name: n, members: 0, user_ids: [] };
+        db.groups.push(g);
+        await adminEvent("group.created", { target: { group: g.id }, changes: [{ key: "name", old: null, new: n }] });
+        return json(201, out(g, true));
+      }
+      fail(405, "CS-API-0012", "Method not allowed");
+    }
+    const g = db.groups.find((x) => x.id === id);
+    if (!g) fail(404, "CS-API-0002", "Not found");
+    if (sub === "members" && method === "PUT") {
+      if (!Array.isArray(body?.user_ids)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/user_ids", code: "CS-API-0001" }]);
+      const want = [];
+      body.user_ids.forEach((u, i) => {
+        if (!db.users.some((x) => x.id === u)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/user_ids/${i}`, code: "CS-API-0001" }]);
+        if (!want.includes(u)) want.push(u);
+      });
+      for (const u of g.user_ids.filter((x) => !want.includes(x))) await adminEvent("group.member_removed", { target: { group: g.id, user: u } });
+      for (const u of want.filter((x) => !g.user_ids.includes(x))) await adminEvent("group.member_added", { target: { group: g.id, user: u } });
+      g.user_ids = want;
+      g.members = want.length;
+      return json(200, out(g, true));
+    }
+    if (sub) fail(404, "CS-API-0002", "Not found");
+    if (method === "GET") return json(200, out(g, true));
+    if (method === "PATCH") {
+      const n = named();
+      if (db.groups.some((x) => x !== g && x.name === n)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "exists" }]);
+      await adminEvent("group.renamed", { target: { group: g.id }, changes: [{ key: "name", old: g.name, new: n }] });
+      g.name = n;
+      return json(200, out(g, true));
+    }
+    if (method === "DELETE") {
+      db.groups = db.groups.filter((x) => x !== g);
+      for (const tp of db.templates) if (Array.isArray(tp.shares)) tp.shares = tp.shares.filter((sh) => sh.group?.id !== g.id);
+      await adminEvent("group.deleted", { target: { group: g.id } });
+      return json(204, null);
+    }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+
+  /// Permission profiles (UXW-07), as the server: built-in ones fixed and listed first,
+  /// custom ones of known permissions only, a held one not deleted (409).
+  async function profiles(method, id, body) {
+    const KNOWN = ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "bulk:send", "webhooks:manage", "admin:users", "admin:account", "audit:read", "view_all_envelopes"];
+    const out = (p) => ({ ...p, members: db.users.filter((u) => u.permission_profile_id === p.id).length });
+    const perms = (list) => {
+      if (!Array.isArray(list)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/permissions", code: "CS-API-0001" }]);
+      list.forEach((x, i) => { if (!KNOWN.includes(x)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/permissions/${i}`, code: "CS-API-0001" }]); });
+      return KNOWN.filter((k) => list.includes(k));
+    };
+    const named = (n, self = null) => {
+      const v = typeof n === "string" ? n.trim() : "";
+      if (!v || v.length > 255) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
+      if (db.profiles.some((p) => p !== self && p.name === v)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "exists" }]);
+      return v;
+    };
+    if (!id) {
+      if (method === "GET") return json(200, { items: [...db.profiles.filter((p) => p.builtin), ...db.profiles.filter((p) => !p.builtin).sort((a, b) => a.name.localeCompare(b.name))].map(out) });
+      if (method === "POST") {
+        const p = { id: uid(), name: named(body?.name), kind: "custom", builtin: false, permissions: perms(body?.permissions) };
+        db.profiles.push(p);
+        await adminEvent("profile.created", { target: { profile: p.id }, changes: [{ key: "permissions", old: null, new: p.permissions }] });
+        return json(201, out(p));
+      }
+      fail(405, "CS-API-0012", "Method not allowed");
+    }
+    const p = db.profiles.find((x) => x.id === id);
+    if (!p) fail(404, "CS-API-0002", "Not found");
+    if (method === "GET") return json(200, out(p));
+    if (p.builtin && (method === "PATCH" || method === "DELETE")) fail(409, "CS-WF-0001", "A built-in profile cannot be changed");
+    if (method === "PATCH") {
+      const name = body?.name != null ? named(body.name, p) : p.name;
+      const permissions = body?.permissions != null ? perms(body.permissions) : p.permissions;
+      await adminEvent("profile.changed", { target: { profile: p.id }, changes: [{ key: "permissions", old: p.permissions, new: permissions }] });
+      Object.assign(p, { name, permissions });
+      return json(200, out(p));
+    }
+    if (method === "DELETE") {
+      if (out(p).members > 0) fail(409, "CS-WF-0001", "Members hold this profile");
+      db.profiles = db.profiles.filter((x) => x !== p);
+      await adminEvent("profile.deleted", { target: { profile: p.id } });
+      return json(204, null);
+    }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+
   function apiClients(method, id, body) {
     if (!id) {
       if (method === "GET") return json(200, { items: db.apiClients });

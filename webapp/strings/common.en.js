@@ -159,6 +159,8 @@ export const COMMON = {
   "empty.use-roles.text": "Continue to add recipients in the editor.",
   "empty.users.title": "No users",
   "empty.users.text": "Add the people who send from this account.",
+  "empty.groups.title": "No groups",
+  "empty.groups.text": "Make a group to share templates with several people at once.",
   "empty.clients.title": "No API clients",
   "empty.clients.text": "Create an API key or OAuth client to connect another system.",
   "empty.no-server.title": "No OpenSeal server is running here",
