@@ -98,6 +98,10 @@ async function signOn(page, name, last) {
   await expect(page.getByTestId("sign-done")).toContainText(last ? "Everyone has signed" : "Your part is done");
 }
 
+// Playwright refuses video inside a describe group (it forces a new worker), so the
+// slice 1 demo recording (S1-02) is set for this file, which runs only on the Compose stack.
+test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } });
+
 test("two signers in order sign through emailed links; the sealed PDF and certificate download", async ({ page, browser }, testInfo) => {
   test.skip(!REAL, "runs against the Compose deployment only (OPENSEAL_E2E_BASE_URL)");
   test.setTimeout(240_000);
@@ -168,9 +172,8 @@ test("two signers in order sign through emailed links; the sealed PDF and certif
 // certificate of completion, the signer through the completion email's link. Every
 // download is written for pyHanko, and the signer's are the sender's bytes.
 test.describe("slice 1 (VS-01)", () => {
-  // Every screen of the run is recorded: the sender's (this page) and the phone's
-  // (recordVideo below), saved to target/e2e-demo as the slice 1 demo (S1-02).
-  test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } });
+  // Every screen of the run is recorded: the sender's (this page, by the file-level
+  // video setting above) and the phone's (recordVideo below), as the slice 1 demo (S1-02).
   test("send and sign: one signer on a phone; both get the sealed PDF and the certificate (VS-01)", async ({ page, browser }, testInfo) => {
     test.skip(!REAL, "runs against the Compose deployment only (OPENSEAL_E2E_BASE_URL)");
     test.setTimeout(240_000);
