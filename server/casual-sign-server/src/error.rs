@@ -167,6 +167,24 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-API-0015")
     }
 
+    /// `CS-ML-0011` 403: the document-analysis feature is not in effect for the workspace
+    /// (not installed, not in its plan, or off; docs/33 §6, §7).
+    pub fn ml_off() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-ML-0011")
+    }
+
+    /// `CS-ML-0012` 409: the suggestion is already decided, or its document left the
+    /// envelope since the analysis (docs/33 §6).
+    pub fn ml_stale() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-ML-0012")
+    }
+
+    /// `CS-WF-0001` 409: not allowed in the object's state (an analysis asked for on an
+    /// envelope that is no longer a draft).
+    pub fn wrong_state(detail: &str) -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-WF-0001").detail(detail)
+    }
+
     /// `CS-AUTH-0001` 401.
     pub fn unauthenticated() -> Self {
         Self::new(StatusCode::UNAUTHORIZED, "CS-AUTH-0001")

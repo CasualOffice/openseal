@@ -599,9 +599,11 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let mut l = create_env(&mut tx, c.p.account, env, &create, &ctx, c.p.client()).await?;
     let mut changes = Vec::new();
     let mut doc_ids = Vec::new();
+    let mut uploads = Vec::new();
     for (name, bytes) in decoded {
         let spec = add_document(&c.st, &mut tx, env, &name, bytes).await?;
         doc_ids.push(spec.id.clone());
+        uploads.push((uid(&spec.id)?, spec.delivered_hash.0));
         changes.push(Change::AddDocument { document: spec });
     }
     let (rchanges, refs, codes) = recipients_in(&mut tx, &req.recipients, "/recipients").await?;
@@ -652,6 +654,12 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
     store_codes(&mut tx, codes).await?;
     if send {
         command(&c, &mut tx, &mut cmds, &mut l, Command::Send, None).await?;
+    } else {
+        // Document analysis of the draft's uploads (docs/33 §2), only with a feature in
+        // effect; otherwise nothing is written (ML-01).
+        for (doc, sha) in uploads {
+            crate::api::ml::on_envelope_upload(&c.st, &mut tx, c.p.account, env, doc, sha).await?;
+        }
     }
     tx.commit().await?;
     let mut r = envelope_response(StatusCode::CREATED, &l.state);
@@ -944,6 +952,7 @@ pub(crate) async fn add_document_route(
     };
     let spec = add_document(&c.st, &mut tx, l.id, &name, bytes).await?;
     let doc_id = spec.id.clone();
+    let upload = (uid(&spec.id)?, spec.delivered_hash.0);
     change(
         &c,
         &mut tx,
@@ -952,6 +961,10 @@ pub(crate) async fn add_document_route(
         v,
     )
     .await?;
+    if l.state.status == MStatus::Draft {
+        crate::api::ml::on_envelope_upload(&c.st, &mut tx, c.p.account, l.id, upload.0, upload.1)
+            .await?;
+    }
     tx.commit().await?;
     let d = l
         .state
@@ -964,7 +977,7 @@ pub(crate) async fn add_document_route(
     ))
 }
 
-fn doc_in<'a>(
+pub(crate) fn doc_in<'a>(
     s: &'a EnvelopeState,
     doc: &str,
 ) -> Result<&'a casual_sign_workflow::DocumentState, ApiError> {

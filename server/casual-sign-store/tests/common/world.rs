@@ -372,3 +372,114 @@ pub async fn seed(db: &super::TestDb, name: &str) -> World {
     tx.commit().await.unwrap();
     w
 }
+
+/// One account's document-analysis rows (migration 0021), written through the
+/// repository except the entitlement, which only the operator writes.
+#[allow(dead_code)] // Only the isolation tests read every analysis row.
+pub struct MlWorld {
+    pub run: AnalysisRunId,
+    pub suggestion: SuggestionId,
+}
+
+/// The page hashes every seeded account gets for its template: identical in every
+/// account, so a search that crossed accounts would match.
+#[allow(dead_code)] // Only the isolation tests compare them.
+pub const FINGERPRINT: (i64, i64) = (0x0123_4567_89ab_cdef, 0x7edc_ba98_7654_3210);
+
+/// Seed `w`'s account with every kind of analysis row: settings, an entitlement, a run on
+/// its draft document with an open suggestion and an OCR page, and its template's page
+/// hashes.
+#[allow(dead_code)] // Only the isolation tests seed analysis rows.
+pub async fn seed_ml(db: &super::TestDb, w: &World) -> MlWorld {
+    use casual_sign_store::repo::ml::{
+        Fingerprint, MlSettings, NewRun, NewSuggestion, RunKind, SuggestionKind,
+    };
+    sqlx::query(
+        "INSERT INTO ml_entitlements (account_id, features) \
+         VALUES ($1, '{ml.ocr,ml.template_matching,ml.extraction,ml.personal_data}')",
+    )
+    .bind(w.account.0)
+    .execute(&db.admin)
+    .await
+    .unwrap();
+    let m = MlWorld {
+        run: AnalysisRunId(id()),
+        suggestion: SuggestionId(id()),
+    };
+    let mut tx = db.store.for_account(w.account).begin().await.unwrap();
+    tx.ml()
+        .set_settings(
+            &MlSettings {
+                ocr: true,
+                template_matching: true,
+                extraction: true,
+                personal_data: true,
+                personal_data_model: None,
+                ocr_scripts: vec!["latin".into()],
+                reread_scanner_text: false,
+            },
+            w.user,
+            now(),
+        )
+        .await
+        .unwrap();
+    assert!(
+        tx.ml()
+            .insert_run(&NewRun {
+                id: m.run,
+                document_id: w.document.0,
+                envelope_id: Some(w.envelope),
+                template_id: None,
+                kind: RunKind::AnalyzeDocument,
+                uses: vec!["ocr".into(), "template".into()],
+                document_sha256: hash("doc"),
+                job_key: format!("analyze:{}:{}", w.account.0, w.document.0),
+                created_at: now(),
+            })
+            .await
+            .unwrap()
+    );
+    tx.ml()
+        .add_suggestions(
+            m.run,
+            w.document.0,
+            &[NewSuggestion {
+                id: m.suggestion,
+                kind: SuggestionKind::Template,
+                page: Some(1),
+                rect: None,
+                label: "NDA".into(),
+                span: None,
+                normalized: None,
+                template: Some((w.template, 1, 1)),
+                score: 0.9,
+                model_id: "page-hash".into(),
+                weights_sha256: hash("weights"),
+            }],
+        )
+        .await
+        .unwrap();
+    tx.ml()
+        .put_ocr_page(m.run, 1, &serde_json::json!([]))
+        .await
+        .unwrap();
+    tx.ml()
+        .put_fingerprints(
+            w.template,
+            w.template_document,
+            &[Fingerprint {
+                template_id: w.template,
+                document_id: w.template_document,
+                page: 1,
+                dhash: FINGERPRINT.0,
+                phash: FINGERPRINT.1,
+                embedding: None,
+                model_id: "page-hash".into(),
+                weights_sha256: hash("weights"),
+            }],
+        )
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    m
+}

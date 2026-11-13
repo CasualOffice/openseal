@@ -1,0 +1,250 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.run_id, s.document_id, s.kind, s.page, s.rect, s.label, s.span_start, s.span_end, s.normalized, s.template_id, s.pages_matched, s.pages_total, s.score, s.model_id, s.weights_sha256, s.state, s.decided_by, s.decided_at FROM suggestions s JOIN analysis_runs r ON r.account_id = s.account_id AND r.id = s.run_id WHERE s.account_id = $1 AND r.envelope_id = $2 AND ($3::text IS NULL OR s.kind = $3) AND ($4::text IS NULL OR s.state = $4) AND ($5::uuid IS NULL OR s.id > $5) AND ($6::uuid IS NULL OR s.id = $6) ORDER BY s.id LIMIT $7",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "run_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "run_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "document_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "document_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "page",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "page"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "rect",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "rect"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "label"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "span_start",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "span_start"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "span_end",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "span_end"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "normalized",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "normalized"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "template_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "template_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "pages_matched",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "pages_matched"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "pages_total",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "pages_total"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "score",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "score"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "model_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "model_id"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "weights_sha256",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "weights_sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "decided_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "decided_by"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "suggestions",
+            "name": "decided_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "24458be5b225270618fbe333cc5504a96998a54ea7212864488dd2ed449d0dfe"
+}

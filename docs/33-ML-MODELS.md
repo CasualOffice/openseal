@@ -2,7 +2,7 @@
 
 Status: **Accepted** (ADR-029; owner, 2026-11-12, instruction 30). **Partly built:** the modeld skeleton (`ML-09`),
 and pieces C and D (2026-11-12): the rasteriser in a killable child, the rule and box finder, OCR with PP-OCRv6
-measured on the synthetic scans (§5.1), DOC_OPEN and OCR on the wire, the fixed log filter. Owner instructions
+measured on the synthetic scans (§5.1), DOC_OPEN and OCR on the wire, the fixed log filter. The server side (`WEB-19`, 2026-11-13): settings, entitlements, runs, suggestions and their routes, and the worker's two jobs (§7 As built). Owner instructions
 27, 28 and 30: ML before LLM, PaddleOCR for OCR, and for now only pretrained models that need no training, built now
 in parallel with the UI and workspace work. Rows: `ML-01` (seam), `ML-09` (the model process), `ML-02` (OCR),
 `ML-02B` (rules and boxes on scans), `ML-05` (template matching), `ML-07` (pretrained extraction and search;
@@ -69,7 +69,7 @@ an exit is claimed.
 
 | Kind | Enqueued by | Payload | Idempotency key |
 | --- | --- | --- | --- |
-| `analyze_document` | server, in the transaction that admits an upload to a draft envelope or template, when the workspace has any ML feature on; or `POST …/analysis` | `{account_id, document_id, envelope_id?, template_id?, uses: [ocr, template, entities, personal_data], document_sha256}` | `analyze:{account_id}:{document_id}:{document_sha256}:{uses}:{bundle_id}` |
+| `analyze_document` | server, in the transaction that admits an upload to a draft envelope, when the workspace has any ML feature on; or `POST …/analysis` (as built, template uploads get `fingerprint_template` only; entities on templates wait, §7 as built) | `{account_id, document_id, envelope_id?, template_id?, uses: [ocr, template, entities, personal_data], document_sha256}` | `analyze:{account_id}:{document_id}:{document_sha256}:{uses}:{bundle_id}` |
 | `fingerprint_template` | server, on template document add or change, when `template` is on | `{account_id, template_id, document_id, document_sha256}` | `fingerprint:{account_id}:{template_id}:{document_id}:{document_sha256}:{bundle_id}` |
 
 **Both keys carry the account and the document id.** Two accounts that upload the same bytes get two runs, and so
@@ -562,6 +562,54 @@ effective switch is (operator deployed modeld) ∧ (plan entitles) ∧ (workspac
 off at every level. A quota of OCR pages per period is metered (`PLAN-01` usage). When modeld is absent, the
 settings show "not installed on this server".
 
+### As built (`WEB-19`, 2026-11-13: the server side of §2, §6, §7, §13)
+
+- **Migration `0021_ml_analysis.sql`** (forward-only): `ml_settings`, `ml_entitlements`, `analysis_runs`,
+  `suggestions`, `ocr_pages`, `template_fingerprints` (docs/22 §9). Every table carries `account_id`, has RLS keyed on
+  the current account, and is reached only through `casual_sign_store::repo::ml` (`tx.ml()`). `ml_entitlements` is
+  read-only to the application role: the operator sets it (as the migrator role, until `PLAN-02` moves entitlements
+  into the platform's plans). `agreement_vectors` (`ML-07B`) is not created yet.
+- **Enablement (§7).** `casual_sign_host::ml::effective`: a feature is in effect only when the server was started with
+  `OPENSEAL_ML_BUNDLE_ID` (the operator deployed modeld), `ml_entitlements` lists it, and `ml_settings` has it on. No
+  row means off; the default is off at every level. With none in effect an upload writes no run and no job, and
+  detect-fields answers the same bytes (`ML-01` exit: `server/tests/ml.rs`
+  `with_every_feature_off_nothing_is_enqueued_and_detect_fields_is_unchanged`, seen red with an enqueue forced while
+  every feature is off). The OCR-page quota (`PLAN-01` usage) is not metered yet.
+- **Jobs (§2).** `analyze_document` is enqueued in the transaction that admits an upload to a draft envelope (create
+  or add-document), or by `POST …/analysis`; `fingerprint_template` in the transaction that adds a template document,
+  when template matching is in effect, or by `POST /templates/{id}/documents/{doc}/analysis`. Keys exactly as §2,
+  built in `casual_sign_host::ml::{analyze_key, fingerprint_key}`; `max_attempts` 3. A template upload is not also
+  run through `analyze_document` (entities on templates wait). The worker (`casual-sign-worker::ml`) calls modeld
+  through the `Inference` seam (`casual-sign-modeld`'s client, `default-features = false`: `SEC-I14`, re-seen red
+  2026-11-13 with the default features on); without `OPENSEAL_MODELD_ADDR` a run ends `unavailable`, a final model
+  error ends it `failed` with its code, and a transient one is retried. OCR reads pages with no text layer;
+  "re-read scanner text" is stored but not yet honoured (invisible-text pages are not re-read). Entities and personal
+  data (`casual-sign-pii` first, then the model's non-overlapping spans) are stored as page and UTF-8 byte offsets
+  into the analysed text (`casual_sign_host::ml::page_text`: the text layer, or the OCR words). Nothing touches an
+  envelope's state, audit chain or documents (`tests/ml.rs` in the worker compares state and events before and
+  after).
+- **Routes (§6)**, as `webapp/api.js` calls them: `GET`/`PATCH /account/settings/ml` (scope `admin:account`; answers
+  also `not_in_plan` and `installed`; `models` and `ocr_packs` are not sent yet; a change appends
+  `workspace.ml_settings_changed` to the workspace's admin log, ORG-05), `POST`/`GET
+  /envelopes/{id}/documents/{doc}/analysis` (a run: `{id, document_id, status, uses, ocr_pages, truncated,
+  bundle_id}`; `POST` is `202`, a draft only, else `409 CS-WF-0001`), `GET /envelopes/{id}/suggestions` (`kind`,
+  `state`, `cursor`, `limit` 1 to 200; only the kinds whose feature is in effect; `value` read from the stored text at
+  request time; a `template` suggestion carries `template_id`, `pages_matched`, `pages_total` and no `value`),
+  `POST …/suggestions/{s}/accept` and `…/dismiss`, and `POST`/`GET /templates/{id}/documents/{doc}/analysis`. With no
+  feature in effect every route but the settings answers `403 CS-ML-0011`. Another account's envelope, template,
+  document or suggestion is `404`; asking for an analysis and deciding a suggestion are the sender's or an
+  administrator's.
+- **Accept differs from the §6 table (finding row, for the owner).** `accept` records `decided_by` and `decided_at`
+  only; it does not itself apply a template, set a custom field or add to a redaction proposal. The web app applies a
+  matched template as an ordinary, undoable edit of the draft and then records the acceptance (`prepare.js`
+  `applyMatchedTemplate`), so a server that also applied it would apply it twice; the redaction proposal (slice 15) and
+  envelope custom fields from entities do not exist yet. `409 CS-ML-0012` is answered when the suggestion is already
+  decided or its document has left the envelope (a stored document's bytes never change, so "changed since the
+  analysis" is a document removed or replaced). §6 is unchanged pending that decision.
+- **Not built:** OCR-sourced suggestions merged into `detect-fields` (`text_source`, `ocr_rule`, `ocr_box`), search by
+  meaning (`ML-07B`), the console's `/console/ml`, the purge of derived data (`SEC-I07`: rows go with their envelope or
+  template by `ON DELETE CASCADE`, not yet by the purge job).
+
 ## 8. Weights: pinning and delivery
 
 - `tools/ml/models.toml` (committed) lists, per file: `id, profile (ocr|templates|extraction|personal_data),
@@ -641,14 +689,16 @@ Reserved in [20](20-ERROR-CODE-REGISTRY.md) §ML: `CS-ML-0001` to `CS-ML-0015` (
 - `agreement_vectors(account_id, envelope_id, document_id, page, embedding bytea, model_id, weights_sha256)` for
   `ML-07B` search.
 
-Every table carries `account_id`, is reached through the scoped repository, and has RLS. The migration number is
-taken when piece F starts; `0013` may be taken first by `ORG-01` or `PLAN-01`.
+Every table carries `account_id`, is reached through the scoped repository, and has RLS. Built as migration
+`0021_ml_analysis.sql` (`WEB-19`), with `ml_settings` and `ml_entitlements` beside these, `analysis_runs` also
+carrying `kind`, `document_sha256` and `job_key` (unique per account), and `pages_ocr` named `ocr_pages`; see §7 As
+built. `agreement_vectors` waits for `ML-07B`.
 
 ## 14. Companion edits
 
 Done with this note: docs/00, docs/07 (`SEC-I*`), docs/08 (ADR-029), docs/09 (§8 weights register), docs/19
-(`casual-sign-modeld`, `casual-sign-pii`), docs/20 (§ML), docs/21 (§ML). Owed by the pieces that build them:
-docs/14 rows (main session), docs/22 (piece F), docs/40 and `api/openapi.yaml` (piece G), docs/47 (piece H), docs/96,
+(`casual-sign-modeld`, `casual-sign-pii`), docs/20 (§ML), docs/21 (§ML). Done with `WEB-19`: docs/22, docs/40 and `api/openapi.yaml`. Owed by the pieces that build them:
+docs/14 rows (main session), docs/47 (piece H), docs/96,
 the wasm exclude list in `tools/ci-local.sh`, `.github/workflows/ci.yml` and CLAUDE.md (piece A).
 
 ## 15. Measured later (must be true before the exits)
