@@ -47,8 +47,9 @@ use casual_sign_store::Store;
 use casual_sign_store::blob::{FsBlobStore, S3BlobStore, S3Config};
 
 /// The `start_failed` line (one JSON line, ASVS-08) and a failing exit.
+/// A docs/20 code in `what` is also its `code` field (`casual_sign_seclog::start_failed`).
 fn fail(what: &str) -> ExitCode {
-    note(Level::Error, "start_failed", &[("error", what)]);
+    casual_sign_seclog::start_failed(casual_sign_seclog::Service::Server, what);
     ExitCode::FAILURE
 }
 

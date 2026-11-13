@@ -58,6 +58,32 @@ fn a_startup_failure_is_a_json_line() {
     assert_eq!(f["error"], "OPENSEAL_DATABASE_URL is not set");
 }
 
+/// A failure that has a docs/20 code carries it in the `code` field, so an alert keyed
+/// on `code` sees it: a secret set twice, and a database that cannot be reached.
+#[test]
+fn a_startup_failure_with_a_code_carries_it_in_the_code_field() {
+    let (ok, lines) = run(&[
+        ("OPENSEAL_DATABASE_URL", "postgres://a@127.0.0.1:1/x"),
+        ("OPENSEAL_DATABASE_URL_FILE", "/nonexistent/openseal-url"),
+    ]);
+    assert!(!ok);
+    let f = event(&lines, "start_failed");
+    assert_eq!(f["code"], "CS-KEY-0005", "{f}");
+    assert!(
+        f["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("OPENSEAL_DATABASE_URL"),
+        "{f}"
+    );
+
+    // Nothing listens on port 1 of the loopback address.
+    let (ok, lines) = run(&[("OPENSEAL_DATABASE_URL", "postgres://a@127.0.0.1:1/x")]);
+    assert!(!ok);
+    let f = event(&lines, "start_failed");
+    assert!(f["code"].as_str().unwrap().starts_with("CS-DB-"), "{f}");
+}
+
 /// Past the database (which needs one): the development keys are announced as JSON
 /// warnings, and a malformed pseudonym key stops the server with `CS-LOG-0001`.
 #[test]

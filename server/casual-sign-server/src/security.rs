@@ -193,6 +193,9 @@ pub fn classify(method: &str, template: &str) -> Option<Kind> {
         "/api/v1/envelopes/{id}/documents/{doc}/analysis",
         "/api/v1/envelopes/{id}/suggestions",
         "/api/v1/envelopes/{id}/fields",
+        "/api/v1/envelopes/{id}/fields/{f}",
+        // The envelope itself embeds every field with its value.
+        "/api/v1/envelopes/{id}",
         "/api/v1/templates/{id}/documents/{doc}/content",
         "/api/v1/templates/{id}/documents/{doc}/analysis",
         "/api/v1/organizations/me/audit",
@@ -305,6 +308,8 @@ mod tests {
             "/api/v1/envelopes/{id}/documents/{doc}/analysis",
             "/api/v1/envelopes/{id}/suggestions",
             "/api/v1/envelopes/{id}/fields",
+            "/api/v1/envelopes/{id}/fields/{f}",
+            "/api/v1/envelopes/{id}",
             "/api/v1/templates/{id}/documents/{doc}/analysis",
         ] {
             assert_eq!(classify("GET", t), Some(Kind::DocumentRead), "{t}");

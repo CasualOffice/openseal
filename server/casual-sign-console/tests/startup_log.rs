@@ -50,7 +50,16 @@ fn event<'a>(lines: &'a [Value], name: &str) -> &'a Value {
 fn a_startup_failure_and_a_usage_error_are_json_lines() {
     let (ok, lines) = run(&[], &[]);
     assert!(!ok);
-    assert_eq!(event(&lines, "start_failed")["level"], "ERROR");
+    let f = event(&lines, "start_failed");
+    assert_eq!(f["level"], "ERROR");
+    // The code is its own field, so an alert keyed on `code` sees it.
+    assert!(
+        f["code"].as_str().unwrap_or("").starts_with("CS-CON-"),
+        "{f}"
+    );
+    let (ok, lines) = run(&["bootstrap-operator", "not-an-address"], &[]);
+    assert!(!ok);
+    assert_eq!(event(&lines, "start_failed")["code"], "CS-CON-0010");
     let (ok, lines) = run(&["no-such-command"], &[]);
     assert!(!ok);
     assert!(

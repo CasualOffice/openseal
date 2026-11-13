@@ -158,7 +158,11 @@ async fn every_server_security_event_is_emitted_without_personal_data() {
             "/api/v1/envelopes",
             &t.auth,
             Some(json!({"subject": "Seclog", "documents": [{"name": "m.pdf",
-                "content_base64": b64(&text_pdf(MARKER))}]})),
+                "content_base64": b64(&text_pdf(MARKER))}],
+                "recipients": [{"ref": "s1", "type": "signer", "name": "S1",
+                    "email": "s1@example.test", "routing_order": 1}],
+                "fields": [{"recipient": "s1", "document": 0, "type": "text", "page": 1,
+                    "x": 72, "y": 100, "width": 180, "height": 20}]})),
             &[],
         )
         .await,
@@ -481,7 +485,11 @@ async fn reads_of_analysis_suggestions_and_fields_are_document_reads() {
             "/api/v1/envelopes",
             &t.auth,
             Some(json!({"subject": "Seclog", "documents": [{"name": "m.pdf",
-                "content_base64": b64(&text_pdf(MARKER))}]})),
+                "content_base64": b64(&text_pdf(MARKER))}],
+                "recipients": [{"ref": "s1", "type": "signer", "name": "S1",
+                    "email": "s1@example.test", "routing_order": 1}],
+                "fields": [{"recipient": "s1", "document": 0, "type": "text", "page": 1,
+                    "x": 72, "y": 100, "width": 180, "height": 20}]})),
             &[],
         )
         .await,
@@ -490,25 +498,66 @@ async fn reads_of_analysis_suggestions_and_fields_are_document_reads() {
     );
     let env = e["id"].as_str().unwrap().to_owned();
     let doc = e["documents"][0]["id"].as_str().unwrap().to_owned();
+    let field = e["fields"][0]["id"].as_str().unwrap().to_owned();
+    // A template's document, its analysis requested so there is one to read.
+    let tpl = ok(
+        api.call(
+            "POST",
+            "/api/v1/templates",
+            &t.auth,
+            Some(json!({"name": "T", "roles": [{"name": "R", "type": "signer"}]})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "template",
+    );
+    let tid = tpl["id"].as_str().unwrap().to_owned();
+    let with = ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/templates/{tid}/documents"),
+            &t.auth,
+            Some(json!({"name": "t.pdf", "content_base64": b64(&text_pdf(MARKER))})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "template document",
+    );
+    let tdoc = with["documents"][0]["id"].as_str().unwrap().to_owned();
+    let tpath = format!("/api/v1/templates/{tid}/documents/{tdoc}/analysis");
+    ok(
+        api.call("POST", &tpath, &t.auth, None, &[]).await,
+        StatusCode::ACCEPTED,
+        "template analysis",
+    );
     for path in [
         format!("/api/v1/envelopes/{env}/documents/{doc}/analysis"),
         format!("/api/v1/envelopes/{env}/suggestions"),
         format!("/api/v1/envelopes/{env}/fields"),
+        format!("/api/v1/envelopes/{env}/fields/{field}"),
+        // The envelope itself carries every field with its value.
+        format!("/api/v1/envelopes/{env}"),
+        tpath.clone(),
     ] {
         let r = api.call("GET", &path, &t.auth, None, &[]).await;
         assert_eq!(r.status, StatusCode::OK, "{path}: {:?}", r.json());
     }
     let lines = api.security.json();
     let reads = of(&lines, Kind::DocumentRead);
-    for route in [
-        "/api/v1/envelopes/{id}/documents/{doc}/analysis",
-        "/api/v1/envelopes/{id}/suggestions",
-        "/api/v1/envelopes/{id}/fields",
+    for (route, object) in [
+        ("/api/v1/envelopes/{id}/documents/{doc}/analysis", &env),
+        ("/api/v1/envelopes/{id}/suggestions", &env),
+        ("/api/v1/envelopes/{id}/fields", &env),
+        ("/api/v1/envelopes/{id}/fields/{f}", &env),
+        ("/api/v1/envelopes/{id}", &env),
+        ("/api/v1/templates/{id}/documents/{doc}/analysis", &tid),
     ] {
         assert!(
             reads
                 .iter()
-                .any(|l| l["route"] == route && l["objects"][0] == env.as_str()),
+                .any(|l| l["route"] == route && l["objects"][0] == object.as_str()),
             "{route} not logged as a read: {reads:?}"
         );
     }

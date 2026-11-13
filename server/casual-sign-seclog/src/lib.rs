@@ -608,6 +608,54 @@ pub fn write_strs(service: Service, level: Level, event: &str, fields: &[(&str, 
     write(service, level, event, m);
 }
 
+/// The `start_failed` line of a host that does not start (`ERROR`): `what` as `error`
+/// (a setting name, a fixed word, a code; never a secret's value) and, when `what`
+/// names a docs/20 code, that code as `code` too, so an alert keyed on `code` sees
+/// every failure that has one (docs/65 §Logs).
+pub fn start_failed(service: Service, what: &str) {
+    let mut fields = Vec::with_capacity(2);
+    if let Some(c) = code_in(what) {
+        fields.push(("code", c));
+    }
+    fields.push(("error", what));
+    write_strs(service, Level::Error, "start_failed", &fields);
+}
+
+/// The first docs/20 code in `text` (`CS-`, two to four capitals, `-`, four digits, not
+/// inside a longer word), if any.
+#[must_use]
+pub fn code_in(text: &str) -> Option<&str> {
+    let b = text.as_bytes();
+    let mut from = 0;
+    while let Some(off) = text.get(from..).and_then(|t| t.find("CS-")) {
+        let at = from.saturating_add(off);
+        from = at.saturating_add(3);
+        let before_ok = at == 0
+            || b.get(at.wrapping_sub(1))
+                .is_some_and(|c| !c.is_ascii_alphanumeric());
+        let rest = b.get(at.saturating_add(3)..).unwrap_or_default();
+        let caps = rest.iter().take_while(|c| c.is_ascii_uppercase()).count();
+        let tail = rest.get(caps..).unwrap_or_default();
+        let digits = tail
+            .get(1..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|c| c.is_ascii_digit())
+            .count();
+        let after = tail.get(1usize.saturating_add(digits));
+        if before_ok
+            && (2..=4).contains(&caps)
+            && tail.first() == Some(&b'-')
+            && digits == 4
+            && after.is_none_or(|c| !c.is_ascii_alphanumeric())
+        {
+            let len = caps.saturating_add(8); // "CS-", the capitals, "-", four digits
+            return text.get(at..at.saturating_add(len));
+        }
+    }
+    None
+}
+
 /// Where lines go.
 pub trait Sink: Send + Sync + fmt::Debug {
     /// Write one line (no newline). Failures are swallowed: a log never fails a request.
@@ -851,6 +899,37 @@ mod tests {
     // Test code: a panic is the failure report.
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
     use super::*;
+
+    #[test]
+    fn a_docs20_code_is_found_in_a_startup_failure_wherever_it_stands() {
+        assert_eq!(code_in("CS-DB-0012"), Some("CS-DB-0012"));
+        assert_eq!(
+            code_in("OPENSEAL_CONSOLE_MFA_KEY is not set (CS-CON-0017)"),
+            Some("CS-CON-0017")
+        );
+        assert_eq!(
+            code_in("OPENSEAL_BLOB_DIR: CS-BLOB-0003"),
+            Some("CS-BLOB-0003")
+        );
+        assert_eq!(
+            code_in("XCS-DB-0012 then CS-AUTH-0001."),
+            Some("CS-AUTH-0001")
+        );
+        for none in [
+            "",
+            "OPENSEAL_DATABASE_URL is not set",
+            "CS-",
+            "CS-D-0001",
+            "CS-TOOLONG-0001",
+            "CS-DB-001",
+            "CS-DB-00123",
+            "CS-db-0012",
+            "CS-DB-0012x",
+            "é CS-DB",
+        ] {
+            assert_eq!(code_in(none), None, "{none}");
+        }
+    }
 
     #[test]
     fn a_security_line_has_the_fixed_fields_first_and_no_free_text_field() {

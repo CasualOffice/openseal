@@ -44,21 +44,9 @@ use casual_sign_platform_store::{Detail, EventDraft, NewOperator, PlatformStore,
 use casual_sign_secrets::env_secret;
 
 /// The `start_failed` line (one JSON line, ASVS 1.7.1) and a failing exit.
+/// A docs/20 code in `what` is also its `code` field (`casual_sign_seclog::start_failed`).
 fn fail(what: &str) -> ExitCode {
-    fail_with(None, what)
-}
-
-fn fail_with(code: Option<&str>, what: &str) -> ExitCode {
-    let mut fields = vec![("error", what)];
-    if let Some(c) = code {
-        fields.insert(0, ("code", c));
-    }
-    casual_sign_seclog::write_strs(
-        casual_sign_seclog::Service::Console,
-        casual_sign_seclog::Level::Error,
-        "start_failed",
-        &fields,
-    );
+    casual_sign_seclog::start_failed(casual_sign_seclog::Service::Console, what);
     ExitCode::FAILURE
 }
 
@@ -185,7 +173,7 @@ async fn serve() -> ExitCode {
             Arc::new(casual_sign_seclog::Stderr),
             p,
         )),
-        Err(e) => return fail_with(Some(e.code()), &e.to_string()),
+        Err(e) => return fail(&e.to_string()),
     }
     let listener = match tokio::net::TcpListener::bind(listen).await {
         Ok(l) => l,

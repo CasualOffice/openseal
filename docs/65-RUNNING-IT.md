@@ -151,8 +151,9 @@ organization, a TSA change) need a second operator's approval.
 filters the server's and console's operational lines (default `info`); modeld's filter is fixed (docs/33 §3.4). No
 line carries a name, an e-mail address, a client address, a token, a password or document text (`SEC-D01`,
 `SEC-D06`).
-A process's own lines are JSON too: `start_failed` (`ERROR`, with `code` where there is one and the setting that
-failed) whenever a binary does not start, and `development_token_key`, `development_mfa_key` (server) and
+A process's own lines are JSON too: `start_failed` (`ERROR`, with the setting that failed in `error` and, whenever
+the failure has a docs/20 code, that code in its own `code` field, so alert on `code`) whenever a binary does not
+start, and `development_token_key`, `development_mfa_key` (server) and
 `development_file_key` (keyd) as `WARN` lines when a development key is in use; alert on these in production.
 
 **Security events** are `"event":"security"` lines, never filtered by `RUST_LOG`, with `kind`, `outcome` (`success`,
@@ -172,7 +173,7 @@ and `client`:
 | `access.unauthenticated`, `access.denied`, `access.rate_limited` | server, console (keyd: denied, rate limited) | Every `401`, `403` and `429`; keyd: an admin operation asked by a signing caller, a signature over the caller's rate |
 | `input.upload_refused` | server | An upload over its size (`413`) or refused by admission (its `CS-PDF-*` or other admission code) |
 | `admin.change` | server, console | A committed change on an administrative route (users, groups, profiles, API clients, webhooks, account and organization settings; every console change), with `method` and the `objects` (ids) the path named |
-| `data.document_read` | server | A staff read of a document, the combined PDF, the certificate, an attachment, form data, an audit trail, a document's analysis, the suggestions analysis found (values read from the text) or the envelope's fields with their values (ASVS 8.3.5), with the `objects` |
+| `data.document_read` | server | A staff read (`GET`) of a document, the combined PDF, the certificate, an attachment, form data, an audit trail, a document's analysis, the suggestions analysis found (values read from the text), the envelope's fields or one field with their values, or the envelope itself (it embeds every field's value) (ASVS 8.3.5), with the `objects`. Not yet: a change to an envelope or a field answers with the field values without a read line (`ASVS-08C`) |
 | `key.use` | keyd | A signature or a chain given or refused (`op`, `alias`, `envelope_id`; never the digest) |
 | `transport.caller_refused` | keyd, modeld | An mTLS caller refused: a failed handshake (`reason: handshake`) or a certificate off the allow list (`reason: not_allowed`, named by fingerprint) |
 | `transport.backend_failed` | worker | keyd not reached or refusing (its `CS-KEY-*` code) or a time-stamping authority not answering (`CS-WRK-0018`, `backend: tsa`, its `index` in the list and a `reason`: `connect`, `tls`, `timeout`, `status`, `answer`, `address_refused`; never its URL) |
