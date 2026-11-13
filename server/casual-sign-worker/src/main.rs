@@ -14,7 +14,7 @@
 //! | `OPENSEAL_SMTP_HOST`, `OPENSEAL_SMTP_PORT` | The SMTP relay (default port 587) |
 //! | `OPENSEAL_SMTP_SECURITY` | `starttls` (default), `implicit`, or `plain` (a local relay only) |
 //! | `OPENSEAL_SMTP_USER`, `OPENSEAL_SMTP_PASSWORD` (or `_FILE`) | Relay credentials, when needed |
-//! | `OPENSEAL_TSA_URLS` | RFC 3161 time-stamping authorities, comma-separated, tried in order |
+//! | `OPENSEAL_TSA_URLS` | RFC 3161 time-stamping authorities, comma-separated, tried in order, while the console has configured none (`platform.tsa_endpoints`, read at most once a minute, `CON-07`) |
 //! | `OPENSEAL_TRUST_ANCHORS` | PEM file of the anchors the sealed output must chain to |
 //! | `OPENSEAL_KEYD_ADDR`, `OPENSEAL_KEYD_SERVER_NAME`, `OPENSEAL_KEYD_CA` | keyd's address, its certificate's name, and the CA it chains to (PEM path) |
 //! | `OPENSEAL_KEYD_CLIENT_CERT`, `OPENSEAL_KEYD_CLIENT_KEY` | This worker's client certificate chain and key (PEM paths) |
@@ -183,11 +183,21 @@ fn configure() -> Result<(WorkerConfig, SmtpConfig, SealServices, SsrfPolicy, St
         .filter(|s| !s.is_empty())
         .collect();
     let fonts = FontSet::bundled();
+    let mut policy = SsrfPolicy::default();
+    if let Some(list) = var("OPENSEAL_WEBHOOK_ALLOW") {
+        for r in list.split(',').filter(|s| !s.trim().is_empty()) {
+            policy.allow.push(IpRange::parse(r)?);
+        }
+    }
+    // The database's TSAs (CON-07), read at most once a minute; these URLs while it has
+    // none. Database URLs pass the webhook address policy at every use.
+    let tsa_directory = tsa::TsaDirectory::new(tsa_urls, policy.clone(), Duration::from_secs(60));
     let seal = SealServices {
         engine: Engine::new(Limits::default(), fonts.clone()),
         fonts,
         key: seal_key()?,
-        timestamps: tsa::http_tsa(tsa_urls),
+        timestamps: tsa_directory.factory(),
+        tsa_directory: Some(tsa_directory),
         revocation: tsa::http_revocation(),
         trust,
         crls: Vec::new(),
@@ -197,12 +207,6 @@ fn configure() -> Result<(WorkerConfig, SmtpConfig, SealServices, SsrfPolicy, St
         certificate: CertificateOptions::default(),
         verify_url: None,
     };
-    let mut policy = SsrfPolicy::default();
-    if let Some(list) = var("OPENSEAL_WEBHOOK_ALLOW") {
-        for r in list.split(',').filter(|s| !s.trim().is_empty()) {
-            policy.allow.push(IpRange::parse(r)?);
-        }
-    }
     let db = secret("OPENSEAL_DATABASE_URL")?.ok_or(WorkerError::Config {
         setting: "OPENSEAL_DATABASE_URL",
     })?;

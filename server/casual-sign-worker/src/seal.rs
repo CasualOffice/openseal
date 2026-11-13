@@ -110,6 +110,9 @@ pub struct SealServices {
     pub key: SealKey,
     /// RFC 3161 time-stamping (B-T and above).
     pub timestamps: TsaFactory,
+    /// When `timestamps` reads the database's TSAs (`CON-07`): refreshed by the worker
+    /// before each seal.
+    pub tsa_directory: Option<Arc<crate::tsa::TsaDirectory>>,
     /// OCSP and CRL fetching (B-LT and above).
     pub revocation: RevocationFactory,
     /// Trust anchors for the seal's self-check and the independent verification.

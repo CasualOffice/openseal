@@ -7,6 +7,7 @@
 //! | `OPENSEAL_KEYD_TLS_CERT`, `OPENSEAL_KEYD_TLS_KEY` | Server certificate chain and key (PEM paths) |
 //! | `OPENSEAL_KEYD_CLIENT_CA` | CA a client certificate must chain to (PEM path) |
 //! | `OPENSEAL_KEYD_ALLOW_LIST` | Allowed callers: `sha256-fingerprint [name]` per line |
+//! | `OPENSEAL_KEYD_ADMIN_ALLOW_LIST` | Optional: admin callers (the console), same format; answered only `list-keys`, `oplog-head`, `oplog-range` and `health`, never a signature (`CON-06`) |
 //! | `OPENSEAL_KEYD_OPLOG` | The operation log (append-only, hash-chained) |
 //! | `OPENSEAL_KEYD_ALIAS` | The key's alias (default `platform`) |
 //! | `OPENSEAL_KEYD_CHAIN` | Signer certificate chain (PEM path); with PKCS#11, optional: the signer certificate is then read from the token |
@@ -158,6 +159,14 @@ fn run() -> Result<(), KeydError> {
     }
     let alias = var("OPENSEAL_KEYD_ALIAS").unwrap_or_else(|| "platform".into());
     let mut service = KeyService::new(allow, log, limits);
+    if let Some(path) = var("OPENSEAL_KEYD_ADMIN_ALLOW_LIST") {
+        let text = read("OPENSEAL_KEYD_ADMIN_ALLOW_LIST", &path)?;
+        let admin = AllowList::parse(
+            core::str::from_utf8(&text)
+                .map_err(|_| KeydError::Setting("OPENSEAL_KEYD_ADMIN_ALLOW_LIST"))?,
+        )?;
+        service = service.with_admin(admin)?;
+    }
     service.add_key(&alias, key()?)?;
     let listen = var("OPENSEAL_KEYD_LISTEN").unwrap_or_else(|| "127.0.0.1:7443".into());
     let keyd = Keyd::bind(&listen, tls, service)?;

@@ -10,6 +10,8 @@ publish = false
 
 [dependencies]
 casual-sign-crypto = { path = "../../crates/casual-sign-crypto" }
+# The wire format, errors and client transport, shared with callers (CON-06, CON-15).
+casual-sign-keyd-client = { path = "../casual-sign-keyd-client" }
 casual-sign-secrets = { path = "../casual-sign-secrets" }
 # PKCS#11 (docs/19, ADR-006): a safe wrapper over the module's C API, Apache-2.0. Its
 # own `unsafe` is behind its API; this crate stays `unsafe_code = "forbid"`.

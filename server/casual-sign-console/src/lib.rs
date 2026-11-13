@@ -10,8 +10,11 @@
 //! The console reads tenant metadata only (ids, names, statuses, labels, counts) through
 //! the `platform` schema's definer functions, as the `openseal_console` database role,
 //! which has no grant on any `public` table. It has no blob store, no keyd signing
-//! identity and no tenant repository: it depends on `casual-sign-platform-store`, never
+//! identity (only keyd's admin identity) and no tenant repository: it depends on `casual-sign-platform-store`, never
 //! on `casual-sign-store`, `-host` or `-server` (docs/23 §5.1, §5.2).
+//!
+//! keyd is read through its admin interface ([`keys`], `CON-06`): keys, certificates,
+//! the operation log and health, with an identity keyd will not let sign.
 //!
 //! It also serves its own web UI (`console-ui/`, embedded at compile time; [`ui`]) at `/`
 //! on the same private listener (CON-17).
@@ -21,11 +24,14 @@ pub mod auth;
 pub mod crypto;
 pub mod error;
 pub mod health;
+pub mod keys;
 pub mod net;
 pub mod plans;
 pub mod state;
 pub mod totp;
+pub mod tsa;
 pub mod ui;
+pub mod url_policy;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
@@ -39,7 +45,7 @@ pub use state::{AppState, Clock, Config, RateLimits, SystemClock, check_listener
 pub const PREFIX: &str = "/console/v1";
 
 /// Every route, as `(method, path, roles)` with the path as the OpenAPI document writes it
-/// and `roles` its `x-roles`: `public`, `pending`, `any`, `operators` or `owners` (the
+/// and `roles` its `x-roles`: `public`, `pending`, `any`, `operators`, `custodians` or `owners` (the
 /// [`auth::Need`] its handler takes). The contract tests check this list against
 /// `api/console-openapi.yaml` and against the router.
 pub const ROUTES: &[(&str, &str, &str)] = &[
@@ -84,6 +90,12 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
         "/console/v1/plan-overrides/{id}/expire",
         "operators",
     ),
+    ("GET", "/console/v1/keys", "any"),
+    ("GET", "/console/v1/keys/log", "operators"),
+    ("GET", "/console/v1/tsa", "any"),
+    ("POST", "/console/v1/tsa/changes", "custodians"),
+    ("POST", "/console/v1/tsa/changes/{id}/grant", "custodians"),
+    ("POST", "/console/v1/tsa/changes/{id}/apply", "custodians"),
     ("GET", "/console/v1/health", "any"),
     ("GET", "/console/v1/dead-letters", "any"),
     ("GET", "/console/v1/alerts", "any"),
@@ -149,6 +161,12 @@ pub fn app(state: AppState) -> Router {
             "/console/v1/plan-overrides/{id}/expire",
             post(plans::expire_override),
         )
+        .route("/console/v1/keys", get(keys::keys))
+        .route("/console/v1/keys/log", get(keys::keys_log))
+        .route("/console/v1/tsa", get(tsa::tsa))
+        .route("/console/v1/tsa/changes", post(tsa::propose))
+        .route("/console/v1/tsa/changes/{id}/grant", post(tsa::grant))
+        .route("/console/v1/tsa/changes/{id}/apply", post(tsa::apply))
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))
         .route("/console/v1/alerts", get(api::alerts));

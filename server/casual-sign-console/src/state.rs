@@ -68,6 +68,11 @@ pub struct Config {
     pub probe_timeout: Duration,
     /// Largest request body.
     pub max_body_bytes: usize,
+    /// Ranges a proposed TSA URL may resolve to although not public
+    /// (`OPENSEAL_CONSOLE_TSA_ALLOW`, `CON-07`; a private TSA in a closed deployment).
+    pub tsa_allow: Vec<Cidr>,
+    /// keyd's admin interface (`OPENSEAL_CONSOLE_KEYD_*`, `CON-06`), when configured.
+    pub keyd: Option<casual_sign_keyd_client::AdminClient>,
 }
 
 impl Default for Config {
@@ -79,6 +84,8 @@ impl Default for Config {
             trusted_proxies: Vec::new(),
             probe_timeout: Duration::from_secs(2),
             max_body_bytes: 64 * 1024,
+            tsa_allow: Vec::new(),
+            keyd: None,
         }
     }
 }

@@ -251,13 +251,18 @@ pub struct Console {
 }
 
 pub fn console(db: &TestDb) -> Console {
+    console_with(db, Config::default())
+}
+
+/// The console app over the test database with `config`.
+pub fn console_with(db: &TestDb, config: Config) -> Console {
     let clock = TestClock::new();
     let store = PlatformStore::new(db.console.clone());
     let state = AppState::new(
         store.clone(),
         MfaKey::new(&MFA_KEY).unwrap(),
         Arc::new(clock.clone()),
-        Config::default(),
+        config,
     )
     .unwrap();
     Console {

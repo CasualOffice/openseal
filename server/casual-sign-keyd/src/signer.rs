@@ -33,6 +33,16 @@ pub trait DigestSigner: Send + Sync {
     /// [`KeydError`]: `CS-KEY-0007` for a digest of the wrong length, `CS-KEY-0003` when
     /// the backend fails.
     fn sign_digest(&self, digest: &[u8]) -> Result<Vec<u8>, KeydError>;
+
+    /// The backend kind keyd's admin interface reports: `pkcs11`, `kms:<provider>`,
+    /// `file-dev` or `remote` (docs/23 §5.4).
+    fn backend(&self) -> &'static str;
+
+    /// Whether the backend answers now (an open HSM session), for keyd's `health`.
+    /// Never signs.
+    fn healthy(&self) -> bool {
+        true
+    }
 }
 
 /// The hash of `data` with `alg`'s digest (aws-lc-rs, ADR-006).

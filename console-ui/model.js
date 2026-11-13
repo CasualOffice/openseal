@@ -14,6 +14,9 @@ export function access(roles = []) {
   return {
     health: true,
     organizations: true,
+    keys: true,
+    keysLog: manager,
+    custodian: has("key_custodian"),
     manage: manager,
     approvals: manager,
     plans: true,
@@ -177,6 +180,55 @@ export function healthSummary(h, alerts = []) {
   return { tone: "ok", text: "All systems normal" };
 }
 
+// Keys (CON-06) ------------------------------------------------------------------------
+
+const KEY_STATUS = {
+  valid: { label: "Valid", tone: "ok" },
+  expiring: { label: "Expiring", tone: "warn" },
+  expired: { label: "Expired", tone: "bad" },
+  not_yet_valid: { label: "Not yet valid", tone: "warn" },
+};
+
+/// A key's certificate state as the Keys page shows it: `{label, tone, note}`, with the
+/// days left (or since expiry) from the API's `days_left`.
+export function keyStatus(k) {
+  const s = KEY_STATUS[k?.status] || { label: "Unknown", tone: "" };
+  const d = typeof k?.days_left === "number" ? k.days_left : null;
+  let note = "";
+  if (d != null && k.status === "expired") note = `expired ${plural(-d, "day")} ago`;
+  else if (d != null && k.status !== "not_yet_valid") note = `${plural(d, "day")} left`;
+  return { ...s, note };
+}
+
+/// A proposed TSA change's text for the approver: what it sets or removes, from the
+/// stored payload (`GET /tsa`).
+export function tsaChangeText(c) {
+  const p = c?.payload || {};
+  if (c?.action === "tsa.remove") return `Remove ${shortId(c.endpoint)}`;
+  const parts = [p.url || "?", `priority ${p.priority ?? "?"}`, p.enabled === false ? "disabled" : "enabled"];
+  if (p.policy_oid) parts.push(`policy ${p.policy_oid}`);
+  if (p.cert_sha256) parts.push(`certificate ${String(p.cert_sha256).slice(0, 12)}…`);
+  return parts.join(" · ");
+}
+
+/// The first sequence number of keyd's latest `n` log records, given the log's head
+/// sequence (`GET /keys` `log.seq`): the Keys page shows the newest records, not the
+/// first ever written.
+export function keydLogFrom(seq, n = 100) {
+  const head = Number.isFinite(seq) ? seq : 0;
+  return Math.max(1, head - n + 1);
+}
+
+/// keyd's health as a tile: up, degraded (a key's backend does not answer), down with
+/// keyd's code, or not configured.
+export function keydTile(keyd) {
+  const st = keyd?.status;
+  if (st === "up") return { id: "keyd", label: "keyd", value: "Up", unit: "", note: `${plural((keyd.keys || []).length, "key")} · log at ${count(keyd.log_seq)}`, state: "ok" };
+  if (st === "degraded") return { id: "keyd", label: "keyd", value: "Degraded", unit: "", note: `${(keyd.keys || []).filter((k) => !k.ok).map((k) => k.alias).join(", ")} not answering`, state: "warn" };
+  if (st === "down") return { id: "keyd", label: "keyd", value: "Down", unit: "", note: problemMessage({ code: keyd.code }), state: "bad" };
+  return { id: "keyd", label: "keyd", value: "Not set", unit: "", note: "No keyd address configured", state: "ok" };
+}
+
 /// Queue rows by kind: `{kind, queued, running, dead, oldest}` sorted by kind.
 export function queueByKind(jobs = []) {
   const by = new Map();
@@ -245,6 +297,8 @@ export function approvalState(a, me, now = Date.now()) {
 const ACTION_LABELS = {
   "organization.suspend": "Suspend organization",
   "organization.resume": "Resume organization",
+  "tsa.set": "Set time-stamping authority",
+  "tsa.remove": "Remove time-stamping authority",
 };
 
 /// An approval action's label.
@@ -291,6 +345,9 @@ const MESSAGES = {
   "CS-CON-0015": "The database is not answering. Try again shortly.",
   "CS-CON-0016": "An operator with this e-mail already exists.",
   "CS-PLAN-0006": "The plan, quota or override is not valid.",
+  "CS-CON-0008": "keyd refused the console: its certificate must be on keyd's admin allow-list, not its signing list.",
+  "CS-KEY-0001": "keyd does not know the console's certificate. Add its fingerprint to keyd's admin allow-list.",
+  "CS-KEY-0011": "keyd cannot be reached. Check that it is running and the console's keyd settings.",
 };
 
 /// What to tell the operator about a problem `{status, code, field, retry_after}`.
