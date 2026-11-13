@@ -72,6 +72,8 @@ pub struct Api {
     pub db: TestDb,
     pub peer: Mutex<SocketAddr>,
     pub called: Mutex<BTreeSet<(String, String)>>,
+    /// The blob directory the server stores into.
+    pub blob_dir: std::path::PathBuf,
 }
 
 /// An account with an administrator's API key holding every scope.
@@ -117,7 +119,7 @@ impl Api {
         let db = fresh(test, rls).await?;
         let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("blobs-{}", uuid::Uuid::now_v7()));
-        let blobs = Blobs::Fs(Arc::new(FsBlobStore::new(dir).unwrap()));
+        let blobs = Blobs::Fs(Arc::new(FsBlobStore::new(dir.clone()).unwrap()));
         let clock = Arc::new(ManualClock::at(start()));
         let mut config = Config {
             public_url: "https://sign.example.test".into(),
@@ -139,6 +141,7 @@ impl Api {
             db,
             peer: Mutex::new("198.51.100.7:50000".parse().unwrap()),
             called: Mutex::new(BTreeSet::new()),
+            blob_dir: dir,
         })
     }
 

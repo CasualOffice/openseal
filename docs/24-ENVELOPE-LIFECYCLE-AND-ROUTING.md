@@ -187,6 +187,15 @@ objects concerned, never their content.
   completing (`declined`, `voided`, `expired`) from the lists. It records `envelope.deleted`, sets the state's
   `deleted_at`, and changes nothing else: no status change, no scrub, no effect; the chain and evidence stay and later
   access is still recorded. Any other status, a purged envelope, or a second time is `CS-WF-0001`.
+  Bringing one back to the lists is a planned command `RestoreDeleted` recording `envelope.restored` (ADR-031,
+  Proposed, `UXW-02`); until it is Accepted the server lists deleted envelopes (the Deleted view) but restores none.
+- **The Inbox's signing link** (`POST …/sign-link`, `UXW-01`) is not a command: a signed-in member who is, by account
+  email, a recipient whose turn it is and who acts through a link gets a one-time link of purpose `account` naming
+  them. Opening and acting on it run as that recipient, exactly as an emailed link, every authentication the sender
+  required included; the trail records `account_login` as how the link was obtained. Routing is unchanged.
+- **An envelope that ends without completing** (declined, voided, expired) queues the worker's
+  `seal_ended_certificate` (`UXW-30`): the envelope certificate is made and sealed on its own and the chain is not
+  extended; the envelope's state and documents are untouched.
 - **Attachment downloaded** (`Access::AttachmentDownloaded {field, hash}`, `WEB-08`) records `attachment.downloaded`
   only when the field's value names that hash (`CS-WF-0008` otherwise).
 - **Withdrawing consent** declines for a recipient with a required action, whatever `allow_decline` says. It needs the same gate as declining (`gate_in`: opened, not locked, every authentication passed; `SEC-CER-01`), since consent outlives a correction that clears the authentication.

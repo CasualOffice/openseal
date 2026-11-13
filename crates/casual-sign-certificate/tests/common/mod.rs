@@ -164,6 +164,14 @@ pub const ERSD: &str = "ELECTRONIC RECORD AND SIGNATURE DISCLOSURE\n\nFrom time 
 /// The chain of an envelope with `n` recipients who all signed, ending at
 /// `envelope.completing`, and the delivered document hash.
 pub fn chain(n: usize) -> (Chain, Hash256) {
+    let (c, delivered, _) = chain_ending(n, EventData::EnvelopeCompleting {});
+    (c, delivered)
+}
+
+/// The chain of [`chain`], ending at `last` instead (an `envelope.declined`, `.voided`
+/// or `.expired` for an envelope that ended, UXW-30): the chain, the delivered document
+/// hash and the time of that last event.
+pub fn chain_ending(n: usize, last: EventData) -> (Chain, Hash256, Timestamp) {
     let mut c = Chain::new(id(ENVELOPE));
     let delivered = Hash256::digest(b"delivered document bytes");
     let mut now = 0;
@@ -304,14 +312,8 @@ pub fn chain(n: usize) -> (Chain, Hash256) {
             &mut now,
         );
     }
-    push(
-        &mut c,
-        Actor::system(),
-        Context::default(),
-        EventData::EnvelopeCompleting {},
-        &mut now,
-    );
-    (c, delivered)
+    push(&mut c, Actor::system(), Context::default(), last, &mut now);
+    (c, delivered, t(now))
 }
 
 /// Recipient `i`'s location: from the device, approximated from the IP after a refusal,
@@ -445,5 +447,6 @@ pub fn input(chain: &Chain, delivered: Hash256, n: usize) -> CertificateInput<'_
         verify_url: Some("https://sign.example.org/verify".into()),
         chain,
         generated: t(1_000_000),
+        ending: None,
     }
 }

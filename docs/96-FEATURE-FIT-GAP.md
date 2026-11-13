@@ -144,9 +144,9 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Designed |
-| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (7 days, filtered in the page), completed, with counts on Home and the rail (`UX-07`); waiting for me needs the Inbox (`UXW-01`); auth failed not yet |
-| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (from every screen and on phones, `UX-04`), status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); custom fields not yet |
+| FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Partial: the Inbox (envelopes waiting for the signed-in member, signed from inside the app, `UXW-01`), each member's own folders, the Deleted view of envelopes and of templates with template restore (`UXW-02`) served; restoring a deleted envelope awaits ADR-031 |
+| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (7 days, filtered in the page), completed, with counts on Home and the rail (`UX-07`); waiting for me from the Inbox (`UXW-01`); auth failed not yet |
+| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (from every screen and on phones, `UX-04`), status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); recipient and a range on created, sent, completed or last change, server-side (`UXW-03`); custom fields not yet |
 | FG-133 | Correct | DS | Build | 6 | Partial: a side panel changes name, email, access code and signing order of recipients who have not acted, adds and removes them, and sets expiry and reminders (`POST /correct` and `PATCH …/recipients/{r}`; `UX-07`, tested in mock mode); fields and documents are `UXW-19` |
 | FG-134 | Void with reason | DS, SN | Build | 2 | Works |
 | FG-135 | Resend | DS, SN | Build | 2 | Works |
@@ -161,7 +161,7 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
 | FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
 | FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
 | FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |
@@ -186,7 +186,7 @@ instructions 8 and 9).
 | FG-174 | Domain claims | DS | Build | 10 | Designed |
 | FG-175 | SCIM provisioning | DS | Build | 10 | Designed |
 | FG-176 | Brands (logo, colours, emails, landing pages) | DS, SN | Build | 12 | — |
-| FG-177 | ERSD editing | DS | Build | 5 | Designed |
+| FG-177 | ERSD editing | DS | Build | 5 | Partial: `POST /ersd-versions` publishes and requires a version in one step (`ERSD-01`); the Admin card edits it against the mock; real-stack e2e left (`UXW-12`) |
 | FG-178 | Retention and purge policies | DS | Build | 15 | Designed |
 | FG-179 | Legal hold | — | Build | 15 | — |
 | FG-180 | Data residency (region tags) | DS | Build | 15 | — |

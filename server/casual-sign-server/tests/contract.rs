@@ -1547,7 +1547,79 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         );
     }
 
-    // The organization (ORG-03), as its owner's session; `uid` an admin and back.
+    // Folders (UXW-02): the caller's own.
+    let f = ok(
+        api.call(
+            "POST",
+            "/api/v1/folders",
+            k,
+            Some(json!({"name": "Q3"})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create folder",
+    )
+    .await;
+    let fid = f["id"].as_str().unwrap();
+    ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/folders/{fid}/envelopes"),
+            k,
+            Some(json!({"envelope_ids": [id]})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "file",
+    )
+    .await;
+    let listed = ok(
+        api.call("GET", "/api/v1/folders", k, None, &[]).await,
+        StatusCode::OK,
+        "folders",
+    )
+    .await;
+    assert_eq!(listed["items"][0]["count"], 1);
+    ok(
+        api.call(
+            "PATCH",
+            &format!("/api/v1/folders/{fid}"),
+            k,
+            Some(json!({"name": "Q4"})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "rename folder",
+    )
+    .await;
+    let gone = api
+        .call("DELETE", &format!("/api/v1/folders/{fid}"), k, None, &[])
+        .await;
+    assert_eq!(gone.status, StatusCode::NO_CONTENT);
+
+    // The Inbox (UXW-01): an envelope waiting for the administrator, signed in.
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            k,
+            Some(json!({
+                "subject": "For me", "status": "sent",
+                "documents": [{"name": "m.pdf", "content_base64": b64(&common::harness::pdf(1))}],
+                "recipients": [{"ref": "me", "type": "signer", "name": "Admin", "email": a.email}],
+                "fields": [{"recipient": "me", "document": 0, "type": "signature", "page": 1,
+                            "x": 72, "y": 100, "width": 180, "height": 40, "required": true}],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "envelope for me",
+    )
+    .await;
     let login = api
         .call(
             "POST",
@@ -1557,6 +1629,30 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             &[],
         )
         .await;
+    let me = session_of(&login);
+    let inbox = ok(
+        api.call("GET", "/api/v1/envelopes?waiting_for=me", &me, None, &[])
+            .await,
+        StatusCode::OK,
+        "inbox",
+    )
+    .await;
+    let mine = inbox["items"][0]["id"].as_str().unwrap();
+    ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/envelopes/{mine}/sign-link"),
+            &me,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "sign-link",
+    )
+    .await;
+
+    // The organization (ORG-03), as its owner's session; `uid` an admin and back.
     let os = session_of(&login);
     for (m, path, body, want) in [
         (

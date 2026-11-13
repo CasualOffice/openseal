@@ -41,13 +41,36 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
       }
       const waiting = page.getByTestId("waiting-signing");
       await expect(waiting).toContainText("Not available on this server yet");
-      for (const part of ["Signing and sending", "Seal and timestamp", "Electronic disclosure"]) await expect(waiting.getByRole("heading", { name: part, level: 2 })).toBeVisible();
+      for (const part of ["Signing and sending", "Seal and timestamp"]) await expect(waiting.getByRole("heading", { name: part, level: 2 })).toBeVisible();
+      // ERSD-01: the disclosure is on this server, drawn above the parts still to come.
+      await expect(page.getByTestId("ersd-card").getByRole("heading", { name: "Electronic disclosure", level: 2 })).toBeVisible();
       // Old links still land: ?section=seal opens the page that now holds it.
       await page.goto(app("#/admin?section=seal"));
       await expect(page.getByTestId("waiting-seal")).toHaveCount(0);
       await expect(page.getByTestId("wait-part-seal")).toBeVisible();
       await expectAccessible(page, "admin waiting section");
       await snap(page, testInfo, `ux08-admin-waiting-${label}`);
+    });
+
+    test("admin › electronic disclosure: publish a new version; the signer is asked to accept it", async ({ page }, testInfo) => {
+      await page.goto(app("#/admin?section=ersd"));
+      const card = page.getByTestId("ersd-card");
+      await expect(card.getByTestId("ersd-version")).toHaveText("2026-1");
+      await card.getByRole("button", { name: "Publish new version" }).click();
+      const sheet = page.getByTestId("sheet-ersd-publish");
+      await sheet.getByLabel("Disclosure text").fill("");
+      await sheet.getByRole("button", { name: "Publish", exact: true }).click();
+      await expect(sheet.getByRole("alert")).toHaveText("Enter the disclosure text.");
+      await sheet.getByLabel("Disclosure text").fill("Our electronic record and signature disclosure, version one.");
+      await sheet.getByRole("button", { name: "Publish", exact: true }).click();
+      await expect(sheet).toHaveCount(0);
+      await expect(card.getByTestId("ersd-version")).toHaveText("1");
+      await expect(card.getByTestId("ersd-preview")).toHaveText("Our electronic record and signature disclosure, version one.");
+      await expect(card.getByTestId("ersd-history")).toContainText("Version 1 (en)");
+      const d = await db(page);
+      expect(d.ersd.at(-1).text).toBe("Our electronic record and signature disclosure, version one.");
+      await expectAccessible(page, "admin electronic disclosure");
+      await snap(page, testInfo, `ersd-admin-${label}`);
     });
 
     test("admin › document intelligence: count, cards, scripts, models; a switch saves and survives a reload", async ({ page }, testInfo) => {

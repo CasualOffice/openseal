@@ -4,13 +4,15 @@
 /// The Admin navigation (WEB-17, canvas Intelligence): one secondary nav inside the
 /// content card, in the canvas's order. `ready`: drawn over endpoints the server has;
 /// the others are pages that say what they will hold and that this server does not have
-/// them yet (`waits`: the parts each one waits for), never dead links. `tabs`: a page
+/// them yet (`waits`: the parts each one waits for), never dead links. `live`: the parts
+/// of such a page the server already has (ERSD-01: the electronic disclosure), drawn
+/// above the waiting ones; a page with one is not marked "Soon". `tabs`: a page
 /// holding more than one part, shown as pill tabs.
 export const NAV = Object.freeze([
   { id: "organization", ready: true },
   { id: "members", ready: true },
   { id: "security", ready: false, waits: ["sso"] },
-  { id: "signing", ready: false, waits: ["signing", "seal", "ersd"] },
+  { id: "signing", ready: false, waits: ["signing", "seal"], live: ["ersd"] },
   { id: "branding", ready: true },
   { id: "intelligence", ready: true, ml: true },
   { id: "retention", ready: false, waits: ["retention"] },
@@ -119,4 +121,42 @@ export function contrastRatio(a, b) {
   if (la == null || lb == null) return null;
   const [hi, lo] = la > lb ? [la, lb] : [lb, la];
   return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+}
+
+// ---- Electronic disclosure (ERSD-01) ------------------------------------------------------
+
+/// The longest disclosure the server takes, in bytes of UTF-8 (docs/21).
+export const ERSD_MAX_BYTES = 100000;
+
+/// Why a disclosure cannot be published, as a strings key, or null when it can: the
+/// server's own rules (`POST /ersd-versions`), said before the request. Pure.
+export function ersdProblem(text, language = "en") {
+  const s = typeof text === "string" ? text : "";
+  if (!s.trim()) return "admin.ersd.need-text";
+  if (s.includes("\0")) return "admin.ersd.bad-text";
+  if (new TextEncoder().encode(s).length > ERSD_MAX_BYTES) return "admin.ersd.too-long";
+  if (!/^[A-Za-z][A-Za-z0-9-]{1,34}$/.test(language || "")) return "admin.ersd.bad-language";
+  return null;
+}
+
+/// The first `max` characters of a disclosure, cut at a word and marked with "…" when
+/// shortened; whitespace runs folded. Pure.
+export function ersdPreview(text, max = 280) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const at = cut.lastIndexOf(" ");
+  return `${(at > max * 0.6 ? cut.slice(0, at) : cut).trimEnd()}…`;
+}
+
+/// The version a new text of `language` will get: one more than that language's
+/// highest published version (the server's rule). Pure.
+export function nextErsdVersion(items, language = "en") {
+  return 1 + Math.max(0, ...(items || []).filter((d) => d.language === language).map((d) => Number(d.version) || 0));
+}
+
+/// A `sha256:<hex>` hash shortened for a card: the first 12 hex digits. Pure.
+export function shortHash(sha) {
+  const hex = String(sha || "").replace(/^sha256:/, "");
+  return hex ? `${hex.slice(0, 12)}…` : "";
 }

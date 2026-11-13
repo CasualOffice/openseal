@@ -85,6 +85,9 @@ text_enum!(
         /// An in-person signing hosted by a staff user (UXW-36): the link acts as its
         /// host, never as the signer alone.
         InPerson = "in_person",
+        /// A link a signed-in member obtained for the recipient they are (the Inbox's
+        /// sign-link, UXW-01): the recipient acts, authenticated by the member's sign-in.
+        Account = "account",
     }
 );
 
@@ -139,8 +142,9 @@ pub struct NewToken {
     pub token_sha256: [u8; 32],
     /// Purpose.
     pub purpose: TokenPurpose,
-    /// The member hosting an in-person signing: set exactly when `purpose` is
-    /// [`TokenPurpose::InPerson`] (migration 0014 checks it).
+    /// The member the link acts for: the host of an in-person signing
+    /// ([`TokenPurpose::InPerson`]) or the signed-in recipient ([`TokenPurpose::Account`]);
+    /// set exactly for those two purposes (migrations 0015 and 0022 check it).
     pub host_user_id: Option<UserId>,
     /// Expiry.
     pub expires_at: OffsetDateTime,
@@ -355,7 +359,8 @@ pub struct TokenRecord {
     pub recipient_id: RecipientId,
     /// What it is for.
     pub purpose: TokenPurpose,
-    /// The hosting member, for an in-person link.
+    /// The member: the host of an in-person link, or the signed-in recipient of an
+    /// account link.
     pub host_user_id: Option<UserId>,
     /// SHA-256 of the browser session it was bound to on first use, once bound.
     pub session_sha256: Option<[u8; 32]>,

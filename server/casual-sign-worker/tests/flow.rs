@@ -218,6 +218,104 @@ async fn an_unverified_seal_never_completes_the_envelope() {
     assert_eq!(env.job_count("seal_envelope", "queued").await, 1);
 }
 
+/// A declined envelope gets its envelope certificate (UXW-30): the end queues one job,
+/// the worker renders the certificate with how it ended (never "Certificate of
+/// Completion"), seals it on its own with the platform key (no document is sealed),
+/// verifies the stored bytes and records it as the envelope's certificate; the chain
+/// is not extended, and running again makes nothing more.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_declined_envelope_gets_a_sealed_envelope_certificate() {
+    use casual_sign_audit::Personal;
+    use casual_sign_model::Text;
+    use casual_sign_store::blob::BlobStore as _;
+    use casual_sign_workflow::{Command, Principal};
+    let Some(env) = Env::new("a_declined_envelope_gets_a_sealed_envelope_certificate").await else {
+        return;
+    };
+    let ids = env.draft(vec![]).await;
+    env.send(ids).await;
+    env.run().await;
+    env.sign(ids, ids.r1, ids.f1, "Ada Lovelace").await;
+    env.run().await;
+    let me = Principal::Recipient {
+        recipient_id: common::id(ids.r2),
+    };
+    env.apply(
+        ids.env,
+        me.clone(),
+        Command::OpenLink {
+            recipient: common::id(ids.r2),
+        },
+    )
+    .await;
+    env.apply(
+        ids.env,
+        me,
+        Command::Decline {
+            recipient: common::id(ids.r2),
+            reason: Some(Personal(Text::new("Terms changed").unwrap())),
+        },
+    )
+    .await;
+    let events = env.events(ids.env).await.len();
+    let before = env.signatures.load(Ordering::SeqCst);
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    assert!(
+        out.iter().any(|(k, _)| k == "seal_ended_certificate"),
+        "{out:?}"
+    );
+    assert_eq!(env.state(ids.env).await.status, EnvelopeStatus::Declined);
+    assert_eq!(
+        env.signatures.load(Ordering::SeqCst) - before,
+        1,
+        "the certificate alone is sealed"
+    );
+    assert_eq!(env.events(ids.env).await.len(), events, "nothing recorded");
+    assert!(
+        env.state(ids.env).await.sealed.is_empty(),
+        "no document sealed"
+    );
+
+    let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+    let sha = tx
+        .envelopes()
+        .certificate(casual_sign_store::EnvelopeId(ids.env))
+        .await
+        .unwrap()
+        .expect("the certificate is recorded");
+    tx.commit().await.unwrap();
+    let bytes = env
+        .blob_store()
+        .get(&casual_sign_store::blob::BlobKey(sha))
+        .await
+        .unwrap();
+    let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    assert!(has(b"Envelope Certificate"), "its title");
+    assert!(
+        !has(b"Certificate of Completion"),
+        "never claims completion"
+    );
+    let mut options = env.engine.verify_options(std::time::Duration::from_millis(
+        u64::try_from(env.clock.ms()).unwrap(),
+    ));
+    options.crls = vec![pki::pki().root_crl.clone(), pki::pki().inter_crl.clone()];
+    let report = env.engine.verify(&bytes, &pki::trust(), &options);
+    casual_sign_worker::seal::check_verified(&report, Profile::BaselineT).unwrap();
+    assert!(report.covered_by_last_signature);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("worker-ended-certificate");
+    independent(
+        &dir,
+        &[("declined-certificate-bt.pdf".into(), bytes.clone())],
+    );
+
+    // Again: nothing more is made.
+    let out = env.run().await;
+    assert!(out.is_empty(), "{out:?}");
+    assert_eq!(env.job_count("seal_ended_certificate", "done").await, 1);
+    assert!(env.alerts.0.lock().unwrap().is_empty());
+}
+
 /// Invitation to an address the SMTP server refuses permanently is a bounce, fed back
 /// as `InvitationBounced`; the sender is told.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

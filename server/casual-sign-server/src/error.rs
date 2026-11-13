@@ -91,6 +91,21 @@ impl ApiError {
         }])
     }
 
+    /// `CS-API-0001` 422 with the member's own code `exists` at `pointer`: a name the
+    /// caller already uses (a folder, UXW-02).
+    pub fn exists(pointer: &str) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-API-0001").fields(vec![FieldProblem {
+            pointer: pointer.into(),
+            code: "exists",
+        }])
+    }
+
+    /// `CS-WF-0007` 409: routing has not reached the caller as a recipient, or has
+    /// passed them (the Inbox's sign-link, UXW-01).
+    pub fn not_reached() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-WF-0007")
+    }
+
     /// `CS-API-0002` 404: no such object, including another account's.
     pub fn not_found() -> Self {
         Self::new(StatusCode::NOT_FOUND, "CS-API-0002")

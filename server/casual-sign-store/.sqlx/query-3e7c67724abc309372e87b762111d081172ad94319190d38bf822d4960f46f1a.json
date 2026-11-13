@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM folders WHERE account_id = $1 AND owner_user_id = $2 AND kind = 'envelopes'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3e7c67724abc309372e87b762111d081172ad94319190d38bf822d4960f46f1a"
+}

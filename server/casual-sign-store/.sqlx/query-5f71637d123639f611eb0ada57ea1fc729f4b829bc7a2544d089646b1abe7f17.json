@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO folders (id, account_id, owner_user_id, kind, name) VALUES ($2, $1, $3, 'envelopes', $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5f71637d123639f611eb0ada57ea1fc729f4b829bc7a2544d089646b1abe7f17"
+}

@@ -33,6 +33,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import { profileName } from "./people.js";
 import { NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio } from "./adminmodel.js";
 import { intelligence } from "./adminintel.js";
+import { ersdCard } from "./adminersd.js";
 import { button, emptyState, skeletonRows, skeletonBlock, errorState, openPanel, confirmDialog, toast, toastError, selectField, toggle, menuButton, checkbox, tabs } from "./ui/index.js";
 
 const PROFILES = ["admin", "sender", "viewer"];
@@ -47,7 +48,7 @@ const TITLE = {
 };
 const LEDE = {
   organization: () => t("admin.lede.organization"), members: () => t("admin.lede.members"), branding: () => t("admin.lede.branding"),
-  integrations: () => t("admin.lede.integrations"), intelligence: () => t("intel.lede"),
+  integrations: () => t("admin.lede.integrations"), intelligence: () => t("intel.lede"), signing: () => t("admin.lede.signing"),
 };
 const TAB = { api: () => t("admin.api"), webhooks: () => t("admin.webhooks") };
 const PART = {
@@ -58,6 +59,8 @@ const WAITS = {
   signing: () => t("admin.wait.signing"), ersd: () => t("admin.wait.ersd"), retention: () => t("admin.wait.retention"),
   sso: () => t("admin.wait.sso"), seal: () => t("admin.wait.seal"), audit: () => t("admin.wait.audit"),
 };
+/// The parts of a waiting page drawn over endpoints the server has (adminmodel.js `live`).
+const LIVE = { ersd: (ctx) => ersdCard(ctx) };
 const WAIT_ILLUS = { security: "keys", signing: "verify", retention: "calendar", audit: "documents" };
 
 /// Where a section draws its own head: a page's body maps to the function that puts the
@@ -73,7 +76,7 @@ export function mount(view, ctx, _match, params) {
   const picker = buildPicker(current, ctx);
   const actions = h("div", { class: "os-adm__actions" });
   const chip = h("span", { class: "os-adm__chip-slot" });
-  const lede = h("p", { class: "os-adm__lede", text: item.ready ? LEDE[current]?.() || "" : t("admin.lede.waiting") });
+  const lede = h("p", { class: "os-adm__lede", text: item.ready || item.live ? LEDE[current]?.() || "" : t("admin.lede.waiting") });
   const head = h("div", { class: "os-adm__head os-rise" },
     h("div", { class: "os-adm__titles" }, h("h1", { class: "os-adm__title", text: TITLE[current]() }), lede), chip, actions);
   const body = h("div", { class: "os-adm__body", attrs: { "data-section": tab || current } });
@@ -88,7 +91,7 @@ export function mount(view, ctx, _match, params) {
   orgName(ctx, org);
   for (const n of NAV) register(`admin.go.${n.id}`, { label: t("palette.go", { place: TITLE[n.id]() }), run: () => ctx.navigate(navHref(n.id)) });
 
-  if (!item.ready) waiting(body, item);
+  if (!item.ready) waiting(body, item, ctx);
   else if (current === "members") users(body, ctx);
   else if (current === "integrations") integrations(body, ctx, tab);
   else if (current === "intelligence") intelligence(body, ctx, HEADS.get(body));
@@ -105,11 +108,11 @@ function buildNav(current, org) {
     org);
   for (const n of NAV) {
     nav.append(h("a", {
-      class: `os-adm__link${n.ready ? "" : " is-waiting"}`, href: navHref(n.id),
+      class: `os-adm__link${n.ready || n.live ? "" : " is-waiting"}`, href: navHref(n.id),
       attrs: { "data-section": n.id, ...(n.id === current ? { "aria-current": "page" } : {}) },
     }, h("span", { class: "os-adm__label", text: TITLE[n.id]() }),
     n.ml ? icon("os-sparkle", { size: 12, className: "os-adm__spark" }) : null,
-    n.ready ? null : h("span", { class: "os-adm__soon", text: t("admin.soon") })));
+    n.ready || n.live ? null : h("span", { class: "os-adm__soon", text: t("admin.soon") })));
   }
   return nav;
 }
@@ -117,7 +120,7 @@ function buildNav(current, org) {
 /// Phones: the nav is a select (it would push the page below the fold).
 function buildPicker(current, ctx) {
   const picker = h("select", { id: "admin-section", class: "os-input os-select" });
-  for (const n of NAV) picker.append(h("option", { value: n.id, selected: n.id === current, text: n.ready ? TITLE[n.id]() : `${TITLE[n.id]()} (${t("admin.soon")})` }));
+  for (const n of NAV) picker.append(h("option", { value: n.id, selected: n.id === current, text: n.ready || n.live ? TITLE[n.id]() : `${TITLE[n.id]()} (${t("admin.soon")})` }));
   picker.addEventListener("change", () => ctx.navigate(navHref(picker.value)));
   return h("div", { class: "os-fieldrow os-adm__picker" }, h("label", { class: "os-label", attrs: { for: "admin-section" }, text: t("admin.section") }), picker);
 }
@@ -157,9 +160,12 @@ function sectionHead(panel, title, lede, ...actions) {
   if (lede) panel.append(h("p", { class: "os-muted os-admin__lede", text: lede }));
 }
 
-/// A page that waits for its server endpoints: an illustrated empty state that says so,
-/// then one card per part saying what it will hold.
-function waiting(panel, item) {
+/// A page that waits for its server endpoints: the parts the server already has drawn
+/// first (`live`; ERSD-01: the electronic disclosure), then an illustrated empty state
+/// that says the rest is not here yet, and one card per waiting part saying what it
+/// will hold.
+function waiting(panel, item, ctx) {
+  for (const part of item.live || []) if (LIVE[part]) panel.append(LIVE[part](ctx));
   panel.append(h("div", { class: "os-adm__waiting", attrs: { "data-testid": `waiting-${item.id}` } },
     emptyState({ illus: WAIT_ILLUS[item.id] || "inbox", title: t("admin.wait.title"), text: t("admin.wait.text") }),
     h("div", { class: "os-adm__cards" }, ...item.waits.map((w) => h("section", { class: "os-adm__card", attrs: { "data-testid": `wait-part-${w}` } },

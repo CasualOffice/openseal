@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use super::{opt_hash32, text_enum};
 use crate::error::{Result, StoreError, db};
-use crate::ids::{EnvelopeId, TemplateId, UserId};
+use crate::ids::{EnvelopeId, FolderId, RecipientId, TemplateId, UserId};
 use crate::store::TenantTx;
 
 text_enum!(
@@ -574,6 +574,7 @@ impl Envelopes<'_> {
             search,
             changed_from: None,
             changed_to: None,
+            ..ListFilter::default()
         };
         let sort = Sort {
             key: SortKey::Created,
@@ -621,6 +622,16 @@ impl Envelopes<'_> {
             .collect();
         let sender = filter.sender.map(|s| s.0);
         let (from, to) = (filter.changed_from, filter.changed_to);
+        let recipient = filter.recipient.map(like_contains);
+        let date_field = filter.date_field.as_str();
+        let member = filter.member.map(|m| m.0);
+        let (folder_mode, folder_id) = match filter.folder {
+            FolderFilter::Any => ("any", None),
+            FolderFilter::None => ("none", None),
+            FolderFilter::In(f) => ("in", Some(f.0)),
+        };
+        let deleted = filter.deleted;
+        let waiting = filter.waiting;
         let lim = i64::from(limit.min(1000));
         let after_id = after.map(|a| a.id.0);
         let has = after.is_some();
@@ -645,8 +656,19 @@ impl Envelopes<'_> {
                      expires_at, reminder_policy, signing_options, seal_profile, \
                      completion_delivery, template_ids, version, chain_head, created_at, \
                      sent_at, completed_at, voided_at, updated_at, deleted_at, \
-                     lower(subject) AS \"subject_key!\" \
-                     FROM envelopes AS e WHERE account_id = $1 AND deleted_at IS NULL \
+                     lower(subject) AS \"subject_key!\", \
+                     (SELECT fe.folder_id FROM folder_envelopes AS fe \
+                       WHERE fe.account_id = e.account_id AND fe.envelope_id = e.id \
+                         AND fe.user_id = $13) AS folder_id, \
+                     (SELECT r.id FROM recipients AS r JOIN users AS u ON u.id = $13 \
+                       WHERE $17::bool AND r.account_id = e.account_id AND r.envelope_id = e.id \
+                         AND r.status IN ('sent', 'delivered', 'authenticated', 'auto_responded') \
+                         AND r.type NOT IN ('cc', 'in_person_signer') \
+                         AND r.embedded_client_user_id IS NULL \
+                         AND lower(r.email) = lower(u.email) \
+                       ORDER BY r.routing_order, r.id LIMIT 1) AS my_recipient_id \
+                     FROM envelopes AS e WHERE account_id = $1 \
+                       AND (deleted_at IS NOT NULL) = $16::bool \
                        AND EXISTS (SELECT 1 FROM envelope_states AS s \
                                     WHERE s.account_id = e.account_id AND s.envelope_id = e.id) \
                        AND (cardinality($2::text[]) = 0 OR status = ANY($2)) \
@@ -656,8 +678,31 @@ impl Envelopes<'_> {
                                        WHERE r.account_id = e.account_id AND r.envelope_id = e.id \
                                          AND (r.name ILIKE $4 ESCAPE '\\' \
                                               OR r.email ILIKE $4 ESCAPE '\\'))) \
-                       AND ($5::timestamptz IS NULL OR updated_at >= $5) \
-                       AND ($6::timestamptz IS NULL OR updated_at < $6) \
+                       AND ($11::text IS NULL \
+                            OR EXISTS (SELECT 1 FROM recipients AS r \
+                                       WHERE r.account_id = e.account_id AND r.envelope_id = e.id \
+                                         AND (r.name ILIKE $11 ESCAPE '\\' \
+                                              OR r.email ILIKE $11 ESCAPE '\\'))) \
+                       AND ($5::timestamptz IS NULL OR (CASE $12::text \
+                              WHEN 'created_at' THEN created_at WHEN 'sent_at' THEN sent_at \
+                              WHEN 'completed_at' THEN completed_at ELSE updated_at END) >= $5) \
+                       AND ($6::timestamptz IS NULL OR (CASE $12::text \
+                              WHEN 'created_at' THEN created_at WHEN 'sent_at' THEN sent_at \
+                              WHEN 'completed_at' THEN completed_at ELSE updated_at END) < $6) \
+                       AND ($14::text = 'any' \
+                            OR ($14::text = 'none' AND NOT EXISTS (SELECT 1 FROM folder_envelopes AS fe \
+                                  WHERE fe.account_id = e.account_id AND fe.envelope_id = e.id \
+                                    AND fe.user_id = $13)) \
+                            OR ($14::text = 'in' AND EXISTS (SELECT 1 FROM folder_envelopes AS fe \
+                                  WHERE fe.account_id = e.account_id AND fe.envelope_id = e.id \
+                                    AND fe.user_id = $13 AND fe.folder_id = $15::uuid))) \
+                       AND (NOT $17::bool OR (status IN ('sent', 'delivered') \
+                            AND EXISTS (SELECT 1 FROM recipients AS r JOIN users AS u ON u.id = $13 \
+                                  WHERE r.account_id = e.account_id AND r.envelope_id = e.id \
+                                    AND r.status IN ('sent', 'delivered', 'authenticated', 'auto_responded') \
+                                    AND r.type NOT IN ('cc', 'in_person_signer') \
+                                    AND r.embedded_client_user_id IS NULL \
+                                    AND lower(r.email) = lower(u.email)))) \
                        AND (NOT $7::bool OR ("
                         + $key
                         + ", id) "
@@ -678,7 +723,14 @@ impl Envelopes<'_> {
                     has,
                     $after,
                     after_id,
-                    lim
+                    lim,
+                    recipient,
+                    date_field,
+                    member,
+                    folder_mode,
+                    folder_id,
+                    deleted,
+                    waiting
                 )
                 .fetch_all(self.tx.conn())
                 .await
@@ -794,7 +846,8 @@ pub struct After {
     pub id: EnvelopeId,
 }
 
-/// What a list keeps (WEB-08). Empty `statuses` keeps every status.
+/// What a list keeps (WEB-08, UXW-01, UXW-02, UXW-03). Empty `statuses` keeps every
+/// status; the default keeps every envelope in the lists (not deleted).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ListFilter<'a> {
     /// Any of these statuses.
@@ -803,10 +856,66 @@ pub struct ListFilter<'a> {
     pub sender: Option<UserId>,
     /// Text the subject or a recipient's name or email contains.
     pub search: Option<&'a str>,
-    /// Last change at or after.
+    /// `date_field` at or after.
     pub changed_from: Option<OffsetDateTime>,
-    /// Last change before.
+    /// `date_field` before.
     pub changed_to: Option<OffsetDateTime>,
+    /// Text a recipient's name or email contains (UXW-03).
+    pub recipient: Option<&'a str>,
+    /// Which date `changed_from` and `changed_to` bound (UXW-03); an envelope without
+    /// that date (not sent, not completed) is outside any range.
+    pub date_field: DateField,
+    /// The member whose folders `folder` names, whose filing each row reports, and who
+    /// `waiting` means.
+    pub member: Option<UserId>,
+    /// Where `member` filed it (UXW-02).
+    pub folder: FolderFilter,
+    /// The Deleted view: only envelopes removed from the lists (UXW-02); otherwise
+    /// only those not removed.
+    pub deleted: bool,
+    /// The Inbox (UXW-01): only sent envelopes in which `member` is, by their email, a
+    /// recipient whose turn it is and who acts through a link (not a copy, not an
+    /// in-person or embedded signer). Each row reports that recipient.
+    pub waiting: bool,
+}
+
+/// Which date a list's range bounds (UXW-03).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DateField {
+    /// The last change (the default).
+    #[default]
+    Updated,
+    /// Creation.
+    Created,
+    /// Sending.
+    Sent,
+    /// Completion.
+    Completed,
+}
+
+impl DateField {
+    /// The column, and the API's spelling.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Updated => "updated_at",
+            Self::Created => "created_at",
+            Self::Sent => "sent_at",
+            Self::Completed => "completed_at",
+        }
+    }
+}
+
+/// Where a list's member filed its envelopes (UXW-02).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FolderFilter {
+    /// Wherever, or nowhere.
+    #[default]
+    Any,
+    /// In none of their folders.
+    None,
+    /// In this folder of theirs (another member's folder matches nothing).
+    In(FolderId),
 }
 
 /// A listed envelope and its subject sort key.
@@ -816,6 +925,10 @@ pub struct Listed {
     pub envelope: Envelope,
     /// The subject as the database lower-cases it: the cursor of a subject sort.
     pub subject_key: Personal<String>,
+    /// The folder the filter's member filed it in.
+    pub folder: Option<FolderId>,
+    /// In the Inbox: the recipient the member is.
+    pub my_recipient: Option<RecipientId>,
 }
 
 struct ListRow {
@@ -840,6 +953,8 @@ struct ListRow {
     updated_at: OffsetDateTime,
     deleted_at: Option<OffsetDateTime>,
     subject_key: String,
+    folder_id: Option<Uuid>,
+    my_recipient_id: Option<Uuid>,
 }
 
 impl TryFrom<ListRow> for Listed {
@@ -870,6 +985,8 @@ impl TryFrom<ListRow> for Listed {
         Ok(Self {
             envelope,
             subject_key: Personal(r.subject_key),
+            folder: r.folder_id.map(FolderId),
+            my_recipient: r.my_recipient_id.map(RecipientId),
         })
     }
 }
