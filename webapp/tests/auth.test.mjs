@@ -4,7 +4,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { EN } from "../strings.en.js";
-import { signInErrors, firstInvalid, resetError, inviteChecks, inviteError, inviteToken, usableProviders, signInFailure, MIN_PASSWORD } from "../authmodel.js";
+import { signInErrors, firstInvalid, resetError, inviteChecks, inviteError, inviteToken, usableProviders, signInFailure, MIN_PASSWORD, owedFactor, factorError, groupSecret } from "../authmodel.js";
+import { createMockFetch, MOCK } from "../mock.js";
+import { createClient } from "../api.js";
 
 test("sign-in names a missing email and password, and a malformed email", () => {
   assert.deepEqual(signInErrors({}), { email: "signin.email-missing", password: "signin.password-missing" });
@@ -76,4 +78,46 @@ test("every key the signed-out pages use has English text", () => {
     "invite.done-title", "invite.show-again", "invite.rule-length", "invite.rule-match", "invite.rule-met", "invite.rule-unmet",
     "invite.password-help", "invite.mismatch", ...inviteChecks().map((r) => r.key)];
   for (const k of keys) assert.ok(k in EN, `missing ${k}`);
+});
+
+// ---- Second factor (ASVS-01) -------------------------------------------------------------
+test("the second-factor step reads what the session owes and checks the code's shape", () => {
+  assert.equal(owedFactor({ second_factor: "verify" }), "verify");
+  assert.equal(owedFactor({ second_factor: "enrol" }), "enrol");
+  assert.equal(owedFactor({ second_factor: "passed" }), null);
+  assert.equal(owedFactor({}), null);
+  assert.equal(factorError("12 34 56"), null);
+  assert.equal(factorError("12345"), "mfa.code-missing");
+  assert.equal(factorError("abcdef"), "mfa.code-missing");
+  assert.equal(factorError("", true), "mfa.recovery-missing");
+  assert.equal(factorError("ABCDE-FGHIJ", true), null);
+  assert.equal(groupSecret("JBSWY3DPEHPK3PXP"), "JBSW Y3DP EHPK 3PXP");
+  for (const k of ["mfa.code-missing", "mfa.recovery-missing", "mfa.invalid", "error.CS-AUTH-0011", "error.CS-AUTH-0012"]) assert.ok(EN[k], k);
+});
+
+test("under a policy, an administrator enrols before anything else; codes and recovery codes work once (mock)", async () => {
+  const c = createClient({ fetch: createMockFetch() });
+  await c.login(MOCK.email, MOCK.password);
+  await c.request("PATCH", "/api/v1/accounts/me", { body: { settings: { mfa_policy: "administrators" } } });
+  assert.equal((await c.session()).second_factor, "enrol");
+  await assert.rejects(c.account(), (e) => e.status === 403 && e.code === "CS-AUTH-0011" && e.detail === "enrol");
+  const seed = await c.enrolTotp();
+  assert.match(seed.otpauth_uri, /^otpauth:\/\/totp\//);
+  await assert.rejects(c.confirmTotp("12345"), (e) => e.code === "CS-AUTH-0012");
+  const done = await c.confirmTotp("111111");
+  assert.equal(done.recovery_codes.length, 10);
+  assert.equal((await c.session()).second_factor, "passed");
+  await c.account();
+
+  await c.login(MOCK.email, MOCK.password);
+  assert.equal((await c.session()).second_factor, "verify");
+  await assert.rejects(c.verifySecondFactor({ code: "111111" }), (e) => e.code === "CS-AUTH-0012");
+  await c.verifySecondFactor({ code: "222222" });
+  await c.account();
+
+  await c.login(MOCK.email, MOCK.password);
+  const r = await c.verifySecondFactor({ recovery_code: done.recovery_codes[0].toLowerCase() });
+  assert.equal(r.recovery_codes_left, 9);
+  await c.login(MOCK.email, MOCK.password);
+  await assert.rejects(c.verifySecondFactor({ recovery_code: done.recovery_codes[0] }), (e) => e.code === "CS-AUTH-0012");
 });

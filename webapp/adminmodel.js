@@ -10,7 +10,7 @@
 /// holding more than one part, shown as pill tabs.
 export const NAV = Object.freeze([
   { id: "organization", ready: true },
-  { id: "members", ready: true },
+  { id: "members", ready: true, tabs: ["users", "groups", "profiles"] },
   { id: "security", ready: false, waits: ["sso"] },
   { id: "signing", ready: false, waits: ["signing", "seal"], live: ["ersd"] },
   { id: "branding", ready: true },
@@ -53,6 +53,35 @@ export const SCOPE_GROUPS = Object.freeze([
   ["templates", ["templates:read", "templates:write"]],
   ["admin", ["admin:users", "admin:account", "webhooks:manage", "audit:read"]],
 ]);
+
+/// What a custom permission profile may grant (UXW-07; server `auth.rs` `SCOPES` and
+/// `VIEW_ALL`), grouped for the profile panel: the scopes, and seeing every envelope of
+/// the account rather than only one's own.
+export const PERMISSION_GROUPS = Object.freeze([
+  ["envelopes", ["envelopes:read", "envelopes:write", "envelopes:send", "bulk:send", "view_all_envelopes"]],
+  ["templates", ["templates:read", "templates:write"]],
+  ["admin", ["admin:users", "admin:account", "webhooks:manage", "audit:read"]],
+]);
+
+/// The choices of a member's permission profile: the built-in ones by name (what the
+/// server's `profile` takes), then the custom ones by id, each `[value, label]`.
+/// `builtinLabel(kind)` names a built-in one. Pure.
+export function profileChoices(profiles, builtinLabel) {
+  const list = Array.isArray(profiles) ? profiles : [];
+  const built = ["admin", "sender", "viewer"].map((k) => [k, builtinLabel(k)]);
+  const custom = list.filter((p) => !p.builtin).map((p) => [p.id, p.name]);
+  return [...built, ...custom];
+}
+
+/// A member's profile as a `profileChoices` value: the built-in name, or the custom
+/// profile's id. Pure.
+export function profileValue(u, builtin = {}, profiles = []) {
+  const id = String(u?.permission_profile_id || "");
+  for (const [name, pid] of Object.entries(builtin || {})) if (pid === id) return name;
+  const p = (profiles || []).find((x) => x.id === id);
+  if (p?.builtin && ["admin", "sender", "viewer"].includes(p.kind)) return p.kind;
+  return p ? p.id : id.replace(/^profile-/, "");
+}
 
 /// The webhook event types grouped by what they are about (the part before the dot).
 export function eventGroups(types) {

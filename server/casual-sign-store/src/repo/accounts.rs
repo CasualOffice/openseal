@@ -446,6 +446,115 @@ impl Users<'_> {
         .transpose()
     }
 
+    /// Every permission profile of this account by kind (built-in first) and name, with
+    /// how many members hold each (UXW-07).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn profiles(&mut self) -> Result<Vec<(PermissionProfile, i64)>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query!(
+            "SELECT p.id, p.name, p.kind, p.permissions, (SELECT count(*) FROM account_memberships m \
+             WHERE m.account_id = $1 AND m.permission_profile_id = p.id) AS \"members!\" \
+             FROM permission_profiles p WHERE p.account_id = $1 \
+             ORDER BY p.kind = 'custom', p.name, p.id",
+            acct
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                Ok((
+                    PermissionProfile {
+                        id: PermissionProfileId(r.id),
+                        name: r.name,
+                        kind: ProfileKind::parse(&r.kind, "kind")?,
+                        permissions: r.permissions,
+                    },
+                    r.members,
+                ))
+            })
+            .collect()
+    }
+
+    /// Change a custom profile's name and permissions (UXW-07); a built-in profile is
+    /// never changed. Its members hold the new permissions from their next request.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` for no such custom profile; `CS-DB-0006` for a name taken;
+    /// `CS-DB-0008` for an unknown permission.
+    pub async fn update_profile(
+        &mut self,
+        id: PermissionProfileId,
+        name: &str,
+        permissions: &[String],
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let old = sqlx::query!(
+            "SELECT name, permissions FROM permission_profiles \
+             WHERE account_id = $1 AND id = $2 AND kind = 'custom' FOR UPDATE",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound { entity: "profile" })?;
+        let done = sqlx::query!(
+            "UPDATE permission_profiles SET name = $3, permissions = $4 \
+             WHERE account_id = $1 AND id = $2 AND kind = 'custom'",
+            acct,
+            id.0,
+            name,
+            permissions
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "profile")?;
+        let mut change = AdminChange::new("profile.changed").target("profile", id.0);
+        if old.name != name {
+            change = change.change(Change::new(
+                "name",
+                Some(old.name.into()),
+                Some(name.into()),
+            ));
+        }
+        if old.permissions != permissions {
+            change = change.change(Change::new(
+                "permissions",
+                Some(serde_json::json!(old.permissions)),
+                Some(serde_json::json!(permissions)),
+            ));
+        }
+        self.tx.admin_event(change).await
+    }
+
+    /// Delete a custom profile no member holds (UXW-07).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` for no such custom profile; `CS-DB-0008` while a member holds it.
+    pub async fn delete_profile(&mut self, id: PermissionProfileId) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "DELETE FROM permission_profiles WHERE account_id = $1 AND id = $2 \
+             AND kind = 'custom'",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "profile")?;
+        self.tx
+            .admin_event(AdminChange::new("profile.deleted").target("profile", id.0))
+            .await
+    }
+
     /// Create a user and make them a member of this account with `profile`.
     ///
     /// # Errors

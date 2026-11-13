@@ -298,6 +298,13 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// The SSO identity providers this server offers on sign-in (UX-04, UXW-39):
     /// `{items: [{id, name, url}]}`, empty until SSO exists (FG-173); no session.
     authProviders: () => data(request("GET", "/api/v1/auth/providers")),
+    /// Pass the session's second factor (ASVS-01): `{code}` from the authenticator, or
+    /// `{recovery_code}`; `401 CS-AUTH-0012` when wrong or already used.
+    verifySecondFactor: (body) => data(request("POST", "/api/v1/auth/mfa/verify", { body })),
+    /// Start TOTP enrolment: `{otpauth_uri, secret}`, shown once.
+    enrolTotp: () => data(request("POST", "/api/v1/auth/mfa/totp/enrol")),
+    /// Confirm enrolment with a first code: `{second_factor, recovery_codes}`, shown once.
+    confirmTotp: (code) => data(request("POST", "/api/v1/auth/mfa/totp/confirm", { body: { code } })),
 
     // ---- Envelopes ---------------------------------------------------------
     /// `q`: text the subject or a recipient's name or email contains (WEB-04).
@@ -556,8 +563,29 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     },
 
     /// The account's groups, `{items: [{id, name, members}]}`, to share a template with
-    /// (UXW-06).
-    groups: { list: () => data(request("GET", "/api/v1/groups")) },
+    /// (UXW-06), and their management by an administrator (UXW-07, `admin:users`): one
+    /// group is `{id, name, members, user_ids}`.
+    groups: {
+      list: () => data(request("GET", "/api/v1/groups")),
+      get: (g) => data(request("GET", `/api/v1/groups/${encodeURIComponent(g)}`)),
+      create: (name) => data(request("POST", "/api/v1/groups", { body: { name } })),
+      rename: (g, name) => data(request("PATCH", `/api/v1/groups/${encodeURIComponent(g)}`, { body: { name } })),
+      remove: (g) => data(request("DELETE", `/api/v1/groups/${encodeURIComponent(g)}`)),
+      /// The group's members become exactly `userIds`.
+      setMembers: (g, userIds) => data(request("PUT", `/api/v1/groups/${encodeURIComponent(g)}/members`, { body: { user_ids: userIds } })),
+    },
+    /// Permission profiles (UXW-07, `admin:users`): `{id, name, kind, builtin,
+    /// permissions, members}`; built-in ones are fixed, a custom one is a set of scopes
+    /// and `view_all_envelopes`, never beyond the caller's own (403 CS-AUTH-0006).
+    profiles: {
+      list: () => data(request("GET", "/api/v1/permission-profiles")),
+      get: (p) => data(request("GET", `/api/v1/permission-profiles/${encodeURIComponent(p)}`)),
+      /// `{name, permissions}`.
+      create: (body) => data(request("POST", "/api/v1/permission-profiles", { body })),
+      /// `{name?, permissions?}`.
+      patch: (p, body) => data(request("PATCH", `/api/v1/permission-profiles/${encodeURIComponent(p)}`, { body })),
+      remove: (p) => data(request("DELETE", `/api/v1/permission-profiles/${encodeURIComponent(p)}`)),
+    },
 
     // ---- Templates (docs/40: roles, documents and fields, as on envelopes) -----
     // A single-template read, and the document and role calls, answer the whole

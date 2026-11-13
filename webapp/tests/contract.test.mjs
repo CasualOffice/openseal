@@ -600,3 +600,38 @@ test("the share panel's rules: access ranks, PUT items and one entry per target 
   assert.equal(isEmail("lee@example.test"), true);
   assert.equal(isEmail("lee"), false);
 });
+
+// ---- groups and permission profiles (UXW-07) --------------------------------------------
+test("groups: make, name once, set members, rename, delete; a member's removal leaves the group", async () => {
+  const c = await signedIn();
+  const g = await c.groups.create("Finance");
+  assert.deepEqual(g.user_ids, []);
+  await assert.rejects(c.groups.create("Finance"), (e) => e.errors?.[0]?.code === "exists");
+  const users = (await c.users.list()).items.map((u) => u.id);
+  await assert.rejects(c.groups.setMembers(g.id, [users[0], "nobody"]), (e) => e.errors?.[0]?.pointer === "/user_ids/1");
+  const set = await c.groups.setMembers(g.id, [users[1], users[1], users[0]]);
+  assert.equal(set.members, 2);
+  assert.equal((await c.groups.rename(g.id, "Finance team")).name, "Finance team");
+  await c.users.remove(users[1]);
+  assert.deepEqual((await c.groups.get(g.id)).user_ids, [users[0]]);
+  const listed = (await c.groups.list()).items.find((x) => x.id === g.id);
+  assert.equal("user_ids" in listed, false, "the list carries counts, as the server's");
+  await c.groups.remove(g.id);
+  await assert.rejects(c.groups.get(g.id), (e) => e.status === 404);
+});
+
+test("permission profiles: built-in fixed, custom of known permissions, held ones kept, assigned by id", async () => {
+  const c = await signedIn();
+  const list = (await c.profiles.list()).items;
+  assert.deepEqual(list.map((p) => p.kind), ["admin", "sender", "viewer"]);
+  await assert.rejects(c.profiles.patch(list[2].id, { permissions: [] }), (e) => e.status === 409);
+  await assert.rejects(c.profiles.create({ name: "X", permissions: ["root"] }), (e) => e.errors?.[0]?.pointer === "/permissions/0");
+  const p = await c.profiles.create({ name: "Author", permissions: ["templates:write", "templates:read"] });
+  assert.deepEqual(p.permissions, ["templates:read", "templates:write"]);
+  const u = await c.users.create({ name: "Kim", email: "kim@openseal.test", profile: p.id, password: "correct horse battery" });
+  assert.equal(u.permission_profile_id, p.id);
+  assert.equal((await c.profiles.get(p.id)).members, 1);
+  await assert.rejects(c.profiles.remove(p.id), (e) => e.status === 409);
+  await c.users.patch(u.id, { profile: "viewer" });
+  await c.profiles.remove(p.id);
+});

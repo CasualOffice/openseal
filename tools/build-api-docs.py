@@ -30,8 +30,9 @@ GROUPS = {
     "contacts": "Contacts", "webhooks": "Webhooks", "s": "Signing ceremony (not public API)",
     "account": "Account settings", "admin-events": "Admin audit log", "ersd-versions": "Electronic disclosure",
     "folders": "Folders", "organizations": "Organizations", "groups": "Groups", "bulk-sends": "Bulk send",
+    "permission-profiles": "Permission profiles",
 }
-ORDER = ["auth", "oauth", ".well-known", "envelopes", "folders", "templates", "groups", "bulk-sends", "contacts", "webhooks", "users", "api-clients",
+ORDER = ["auth", "oauth", ".well-known", "envelopes", "folders", "templates", "groups", "bulk-sends", "contacts", "webhooks", "users", "permission-profiles", "api-clients",
          "accounts", "account", "ersd-versions", "admin-events", "organizations", "s"]
 
 
@@ -96,6 +97,8 @@ def op_html(spec: dict, path: str, method: str, op: dict, shared_params: list) -
     sec = op.get("security")
     if perm == "public" or sec == []:
         parts.append('<p class="op-perm">No API credential (public, or the signing link\'s token)</p>')
+    elif perm == "signing-in":
+        parts.append('<p class="op-perm">Any signed-in caller, also a staff session that still owes its second factor</p>')
     elif perm:
         parts.append(f'<p class="op-perm">Needs scope <code>{esc(perm)}</code></p>')
     else:

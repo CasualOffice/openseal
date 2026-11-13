@@ -21,19 +21,21 @@ test("the admin nav is the canvas's nine pages in order, the waiting ones includ
 });
 
 test("old ?section= and ?tab= links land on the page that now holds them", () => {
-  assert.deepEqual(routeFrom(q("")), { nav: "members", tab: null });
+  assert.deepEqual(routeFrom(q("")), { nav: "members", tab: "users" });
   assert.deepEqual(routeFrom(q("tab=api")), { nav: "integrations", tab: "api" });
   assert.deepEqual(routeFrom(q("section=webhooks")), { nav: "integrations", tab: "webhooks" });
   assert.deepEqual(routeFrom(q("section=integrations")), { nav: "integrations", tab: "api" });
   assert.deepEqual(routeFrom(q("tab=account")), { nav: "organization", tab: null });
   assert.deepEqual(routeFrom(q("section=seal")), { nav: "signing", tab: null });
-  assert.deepEqual(routeFrom(q("section=groups")), { nav: "members", tab: null });
+  assert.deepEqual(routeFrom(q("section=groups")), { nav: "members", tab: "groups" });
+  assert.deepEqual(routeFrom(q("section=profiles")), { nav: "members", tab: "profiles" });
   assert.deepEqual(routeFrom(q("section=intelligence")), { nav: "intelligence", tab: null });
-  assert.deepEqual(routeFrom(q("section=nope")), { nav: "members", tab: null });
+  assert.deepEqual(routeFrom(q("section=nope")), { nav: "members", tab: "users" });
 });
 
 test("nav links: Members is bare #/admin, a tabbed page opens on its first tab", () => {
   assert.equal(navHref("members"), "#/admin");
+  assert.equal(navHref("members", "groups"), "#/admin?section=groups");
   assert.equal(navHref("integrations"), "#/admin?section=api");
   assert.equal(navHref("integrations", "webhooks"), "#/admin?section=webhooks");
   assert.equal(navHref("intelligence"), "#/admin?section=intelligence");
@@ -178,4 +180,16 @@ test("admin events filter by action, by who and by text in keys, targets and nam
   assert.deepEqual(filterAdminEvents(items, { q: "u-77" }).map((e) => e.seq), [1]);
   assert.deepEqual(filterAdminEvents(items, { q: "robin" }, name).map((e) => e.seq), [1]);
   assert.equal(joinCsvPages(["h\r\na\r\n", "h\r\nb\r\n"]), "h\r\na\r\nb\r\n");
+});
+
+test("a member's profile choice: built-in by name, custom by id (UXW-07)", async () => {
+  const { profileChoices, profileValue } = await import("../adminmodel.js");
+  const profiles = [
+    { id: "p-a", kind: "admin", builtin: true, name: "Administrator" },
+    { id: "p-c", kind: "custom", builtin: false, name: "Author" },
+  ];
+  assert.deepEqual(profileChoices(profiles, (k) => k.toUpperCase()), [["admin", "ADMIN"], ["sender", "SENDER"], ["viewer", "VIEWER"], ["p-c", "Author"]]);
+  assert.equal(profileValue({ permission_profile_id: "p-a" }, {}, profiles), "admin");
+  assert.equal(profileValue({ permission_profile_id: "b-s" }, { sender: "b-s" }, profiles), "sender");
+  assert.equal(profileValue({ permission_profile_id: "p-c" }, {}, profiles), "p-c");
 });

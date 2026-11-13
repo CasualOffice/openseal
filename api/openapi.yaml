@@ -184,6 +184,7 @@ components:
         client_id: {type: [string, 'null']}
         scopes: {type: array, items: {type: string}}
         admin: {type: boolean}
+        second_factor: {type: string, enum: [none, passed, verify, enrol]}
     MyWorkspaces:
       type: object
       properties:
@@ -243,7 +244,7 @@ components:
       required: [settings]
       additionalProperties: false
       properties:
-        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy.'}
+        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `mfa_policy` (ASVS-01) is `optional` (the default), `administrators` or `everyone`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`.'}
     User:
       type: object
       properties:
@@ -922,6 +923,63 @@ components:
               id: {type: string}
               name: {type: string}
               members: {type: integer}
+    GroupName:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+    Group:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        members: {type: integer}
+        user_ids: {type: array, items: {type: string}}
+    GroupMembers:
+      type: object
+      additionalProperties: false
+      required: [user_ids]
+      properties:
+        user_ids: {type: array, items: {type: string}}
+    PermissionName:
+      type: string
+      enum: [envelopes:read, envelopes:write, envelopes:send, templates:read, templates:write, bulk:send, webhooks:manage, admin:users, admin:account, audit:read, view_all_envelopes]
+    PermissionProfile:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [admin, sender, viewer, custom]}
+        builtin: {type: boolean}
+        permissions:
+          type: array
+          description: What it grants, in docs/40 order; a built-in profile's come from its kind
+          items: {$ref: '#/components/schemas/PermissionName'}
+        members: {type: integer, description: How many members hold it}
+    PermissionProfileList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PermissionProfile'}
+    PermissionProfileCreate:
+      type: object
+      additionalProperties: false
+      required: [name, permissions]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        permissions:
+          type: array
+          items: {$ref: '#/components/schemas/PermissionName'}
+    PermissionProfilePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        permissions:
+          type: array
+          items: {$ref: '#/components/schemas/PermissionName'}
     TemplatePatch:
       type: object
       additionalProperties: false
@@ -1203,7 +1261,9 @@ paths:
     post:
       operationId: logout
       summary: "End the current staff session"
-      x-permission: ""
+      description: >-
+        Also for a session that still owes its second factor (`x-permission: signing-in`).
+      x-permission: signing-in
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -1324,13 +1384,110 @@ paths:
     get:
       operationId: getSession
       summary: "Who the credential is"
-      x-permission: ""
+      description: >-
+        Also for a session that still owes its second factor: `second_factor` says what
+        it owes (`verify` or `enrol`), or `passed` or `none` (ASVS-01).
+      x-permission: signing-in
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SessionInfo'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/verify:
+    post:
+      operationId: verifySecondFactor
+      summary: "Pass the session's second factor (ASVS-01)"
+      description: >-
+        With `code`, six digits from the user's authenticator (RFC 6238, 30-second steps,
+        one step of drift either way); or with `recovery_code`, one of the ten codes shown
+        at enrolment, which is spent (case, spaces and dashes do not matter). Each TOTP
+        code is accepted once: a code for a step no later than the last accepted one is
+        refused. `401 CS-AUTH-0012` for a wrong, replayed or spent code. Rate-limited per
+        user as login is. Until a session that owes a factor passes it, every other
+        `/api/v1` call but `GET /auth/session` and `POST /auth/logout` answers
+        `403 CS-AUTH-0011`.
+      x-permission: signing-in
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                code: {type: string}
+                recovery_code: {type: string}
+      responses:
+        '200':
+          description: Passed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  second_factor: {type: string, enum: [passed]}
+                  recovery_codes_left: {type: integer}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/totp/enrol:
+    post:
+      operationId: enrolTotp
+      summary: "Start TOTP enrolment for the session's own user (ASVS-01)"
+      description: >-
+        A new 160-bit seed, shown once as an `otpauth://` URI (for a QR code; labelled
+        with the user id, never the email) and as base32 `secret`; stored only sealed
+        (AES-256-GCM under `OPENSEAL_MFA_KEY`). Calling again before confirming draws a
+        new seed. `409 CS-API-0009` once a factor is confirmed, or when the server has no
+        sealing key. Staff sessions only (`422` for an API key or token).
+      x-permission: signing-in
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: "The seed, shown once (`Cache-Control: no-store`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  otpauth_uri: {type: string}
+                  secret: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/totp/confirm:
+    post:
+      operationId: confirmTotp
+      summary: "Confirm TOTP enrolment with a first code (ASVS-01)"
+      description: >-
+        A code from the new authenticator confirms the enrolment; the session has then
+        passed its second factor, and the answer shows ten one-time recovery codes once
+        (112 random bits each; only their SHA-256 is stored). `401 CS-AUTH-0012` for a
+        wrong code; `409 CS-API-0009` before `enrol` or after a confirmation.
+      x-permission: signing-in
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code]
+              properties:
+                code: {type: string}
+      responses:
+        '200':
+          description: "Confirmed (`Cache-Control: no-store`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  second_factor: {type: string, enum: [passed]}
+                  recovery_codes: {type: array, items: {type: string}, minItems: 10, maxItems: 10}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/oauth/token:
     post:
@@ -3376,6 +3533,170 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/GroupList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createGroup
+      summary: "Make a group of members (UXW-07); a name the account uses is 422 `exists` at /name"
+      x-permission: "admin:users"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GroupName'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/groups/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A group of this account (another account's is 404)
+        schema: {type: string}
+    get:
+      operationId: getGroup
+      summary: "A group with its members' user ids"
+      x-permission: "admin:users"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: renameGroup
+      summary: "Rename a group"
+      x-permission: "admin:users"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GroupName'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteGroup
+      summary: "Delete a group; its template shares go with it"
+      x-permission: "admin:users"
+      responses:
+        '204': {description: Deleted}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/groups/{id}/members:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A group of this account (another account's is 404)
+        schema: {type: string}
+    put:
+      operationId: setGroupMembers
+      summary: "Make the group's members exactly these members of the account"
+      description: >-
+        Each id must be a member of this account (422 at `/user_ids/{i}` otherwise);
+        a repeated id counts once. Each member added or removed is its own admin event.
+      x-permission: "admin:users"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GroupMembers'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/permission-profiles:
+    get:
+      operationId: listPermissionProfiles
+      summary: "The built-in profiles, then the custom ones, with what each grants and how many members hold it (UXW-07)"
+      x-permission: "admin:users"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionProfileList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createPermissionProfile
+      summary: "Make a custom permission profile"
+      description: >-
+        Its permissions are scopes of docs/40 §2 and `view_all_envelopes`; none may go
+        beyond the caller's own (403 CS-AUTH-0006). A name the account uses is 422
+        `exists` at /name.
+      x-permission: "admin:users"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PermissionProfileCreate'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionProfile'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/permission-profiles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A permission profile of this account (another account's is 404)
+        schema: {type: string}
+    get:
+      operationId: getPermissionProfile
+      summary: "A permission profile"
+      x-permission: "admin:users"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionProfile'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: updatePermissionProfile
+      summary: "Change a custom profile; its members hold the new permissions from their next request"
+      description: >-
+        A built-in profile is 409 CS-WF-0001. The profile as it was and as it becomes
+        must both be within the caller's rights (403 CS-AUTH-0006). Giving sending to
+        more members is checked against the plan's seats (CS-PLAN-0003).
+      x-permission: "admin:users"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PermissionProfilePatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionProfile'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deletePermissionProfile
+      summary: "Delete a custom profile no member holds (409 CS-WF-0001 for a built-in or a held one)"
+      x-permission: "admin:users"
+      responses:
+        '204': {description: Deleted}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/webhooks:
     get:

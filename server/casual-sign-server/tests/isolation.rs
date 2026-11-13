@@ -92,9 +92,25 @@ async fn world(api: &Api, t: &Tenant) -> BTreeMap<&'static str, String> {
         .await;
     assert_eq!(bulk.status, StatusCode::CREATED);
     let bulk = bulk.json();
+    let group = api
+        .call("POST", "/api/v1/groups", k, Some(json!({"name": "G"})), &[])
+        .await
+        .json();
+    let profile = api
+        .call(
+            "POST",
+            "/api/v1/permission-profiles",
+            k,
+            Some(json!({"name": "P", "permissions": ["envelopes:read"]})),
+            &[],
+        )
+        .await
+        .json();
     let s = |v: &Value| v.as_str().unwrap().to_owned();
     BTreeMap::from([
         ("bulk", s(&bulk["id"])),
+        ("group", s(&group["id"])),
+        ("profile", s(&profile["id"])),
         ("folder", s(&folder["id"])),
         ("envelope", s(&e["id"])),
         ("doc", s(&e["documents"][0]["id"])),
@@ -123,6 +139,10 @@ fn fill(path: &str, ids: &BTreeMap<&'static str, String>, envelope: &str) -> Str
         ids["webhook"].clone()
     } else if path.starts_with("/api/v1/folders/") {
         ids["folder"].clone()
+    } else if path.starts_with("/api/v1/groups/") {
+        ids["group"].clone()
+    } else if path.starts_with("/api/v1/permission-profiles/") {
+        ids["profile"].clone()
     } else if path.starts_with("/api/v1/bulk-sends/") {
         ids["bulk"].clone()
     } else if path.starts_with("/api/v1/organizations/me/") {
@@ -146,6 +166,8 @@ async fn snapshot(api: &Api, a: &Tenant, ids: &BTreeMap<&'static str, String>) -
         format!("/api/v1/api-clients/{}", ids["client"]),
         format!("/api/v1/templates/{}", ids["template"]),
         format!("/api/v1/webhooks/{}", ids["webhook"]),
+        format!("/api/v1/groups/{}", ids["group"]),
+        format!("/api/v1/permission-profiles/{}", ids["profile"]),
     ] {
         let r = api.call("GET", &p, &a.auth, None, &[]).await;
         assert_eq!(r.status, StatusCode::OK, "{p}");

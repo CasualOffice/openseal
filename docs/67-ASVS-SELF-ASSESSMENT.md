@@ -26,14 +26,14 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 173 | 98 | 70 | 5 |
+| Met | 176 | 98 | 73 | 5 |
 | Partly | 55 | 15 | 33 | 7 |
-| Not met | 22 | 8 | 9 | 5 |
-| N/A | 28 | 7 | 19 | 2 |
+| Not met | 23 | 8 | 10 | 5 |
+| N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
-The largest gaps: no second factor for tenant staff (`ASVS-01`), no security event log for staff authentication and
+The largest gaps: a second factor for tenant staff that accounts must opt into (`ASVS-01` built TOTP; `ASVS-31` makes it the default for administrators), no security event log for staff authentication and
 access refusals (`ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), no malware scan of
 uploads (`ASVS-11`), no backup and restore drill (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
@@ -102,7 +102,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 1.2.1 | 2 | All | Low-privilege OS accounts per component | Met | `deploy/Dockerfile`: `USER nonroot` (server, worker, modeld), `USER keyd`; modeld `cap_drop: [ALL]`, `no-new-privileges`, read-only root (`docker-compose.yml`) | — |
 | 1.2.2 | 2 | All | Component-to-component communication authenticated | Partly | keyd and modeld: mTLS with client allow-list (`-keyd/tests/mtls.rs`); PostgreSQL and S3 by password from secret files, no TLS in the compose file | ASVS-19 |
 | 1.2.3 | 2 | All | One vetted authentication mechanism | Met | Staff: Argon2id password, session cookie plus CSRF token, API keys and OAuth client credentials, all resolved in `-server/src/auth.rs`; signers: link token bound to a browser cookie (`-server/src/ceremony.rs`) | — |
-| 1.2.4 | 2 | All | All authentication pathways equally strong | Partly | Login, password reset and invite acceptance share rate limits and Argon2id (`-server/src/api/admin.rs` `login_limit`); staff have no second factor while operators must use TOTP (`-console/src/totp.rs`) | ASVS-01 |
+| 1.2.4 | 2 | All | All authentication pathways equally strong | Partly | Login, password reset and invite acceptance share rate limits and Argon2id (`-server/src/api/admin.rs` `login_limit`); staff TOTP is required only where an account's `mfa_policy` asks for it or the user enrolled (`ASVS-01`, `-server/tests/mfa.rs`), while operators must always use TOTP (`-console/src/totp.rs`) | ASVS-01, ASVS-31 |
 
 **V1.4 Access Control Architecture**
 
@@ -208,7 +208,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2.2.1 | 1 | All | Anti-automation against credential stuffing and brute force | Partly | Login limited per login name and per client address (`login_limit`; `-server/tests/threats.rs` `sign_in_attempts_are_limited_per_client_address_across_names`); unknown emails cost a wrong password's time (`dummy_phc`); no second factor, no breached-password check | ASVS-01, ASVS-02 |
+| 2.2.1 | 1 | All | Anti-automation against credential stuffing and brute force | Partly | Login limited per login name and per client address (`login_limit`; `-server/tests/threats.rs` `sign_in_attempts_are_limited_per_client_address_across_names`); unknown emails cost a wrong password's time (`dummy_phc`); staff TOTP attempts limited per user as logins (`-server/src/api/mfa.rs`), the factor opt-in per account until `ASVS-31`; no breached-password check | ASVS-31, ASVS-02 |
 | 2.2.2 | 1 | All | Weak authenticators (SMS, email) only secondary | Met | Staff have no SMS/email login factor; signers' email/SMS codes are an extra factor on top of the link (`-server/src/ceremony.rs` `otp_send`) | — |
 | 2.2.3 | 1 | All | Notifications after authentication detail changes | Not met | No email when a password is changed, reset or set from an invitation | ASVS-04 |
 | 2.2.4 | 3 | Ceremony, sealing, keyd | L3 (ceremony): phishing-resistant authentication | Not met | Signer methods: link, access code, email/SMS/voice code, OIDC sign-in (`idp.rs`); none is phishing-resistant (no WebAuthn) | ASVS-21 |
@@ -243,16 +243,16 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.5.3 | 1 | All | Recovery never reveals the current password | Met | Reset sets a new Argon2id hash (`password_reset_confirm`); old password never stored in clear | — |
 | 2.5.4 | 1 | All | No shared or default accounts | Met | `bootstrap` names the first administrator and requires `OPENSEAL_ADMIN_PASSWORD` (`docker-compose.yml` header, `-server/tests/bootstrap.rs`) | — |
 | 2.5.5 | 1 | All | User notified when an authentication factor changes | Not met | No notification | ASVS-04 |
-| 2.5.6 | 1 | All | Secure recovery mechanism | Partly | Emailed one-time reset link, 202 for any address, rate-limited (`reset_inner`); no second factor to present during recovery | ASVS-01 |
-| 2.5.7 | 2 | All | Identity proofing when MFA factors are lost | N/A | No staff MFA yet; falls in with ASVS-01 | ASVS-01 |
+| 2.5.6 | 1 | All | Secure recovery mechanism | Partly | Emailed one-time reset link, 202 for any address, rate-limited (`reset_inner`); a reset does not bypass a staff user's TOTP (every session of an enrolled user owes it, `SecondFactor::of` in `-server/src/auth.rs`), but a lost factor has no recovery path but the recovery codes | ASVS-32 |
+| 2.5.7 | 2 | All | Identity proofing when MFA factors are lost | Not met | Staff TOTP exists (`ASVS-01`); nothing yet resets or replaces a lost factor, so there is no proofing step either | ASVS-32 |
 
 **V2.6 Look-up Secret Verifier**
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2.6.1 | 2 | All | Lookup secrets used once | N/A | No lookup secrets (recovery codes) yet; part of ASVS-01 | ASVS-01 |
-| 2.6.2 | 2 | All | Lookup secrets 112 bits | N/A | As 2.6.1 | ASVS-01 |
-| 2.6.3 | 2 | All | Lookup secrets resist offline attack | N/A | As 2.6.1 | ASVS-01 |
+| 2.6.1 | 2 | All | Lookup secrets used once | Met | Staff recovery codes are removed from `users.recovery_code_sha256` as they are used (`openseal_use_own_recovery_code`, `migrations/0032_staff_mfa.sql`); `-server/tests/mfa.rs` refuses a spent code, seen red | — |
+| 2.6.2 | 2 | All | Lookup secrets 112 bits | Met | 14 bytes from `aws_lc_rs::rand` per code (`-server/src/mfa.rs` `recovery_code`) | — |
+| 2.6.3 | 2 | All | Lookup secrets resist offline attack | Met | Random (not user-chosen) 112-bit codes, stored only as SHA-256 (`-server/src/mfa.rs` `recovery_hash`) | — |
 
 **V2.7 Out of Band Verifier**
 
@@ -269,10 +269,10 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2.8.1 | 1 | All | TOTP lifetime defined | Met | Operators' TOTP (RFC 6238, 30 s step, `-console/src/totp.rs`) | — |
-| 2.8.2 | 2 | All | TOTP seeds highly protected | Met | Operators' seeds sealed with AES-256-GCM under `OPENSEAL_CONSOLE_MFA_KEY`, operator id as associated data; the database holds only the sealed seed (`-console/src/crypto.rs`) | — |
+| 2.8.1 | 1 | All | TOTP lifetime defined | Met | Operators' and staff TOTP (RFC 6238, 30 s step, `-console/src/totp.rs`, `-server/src/totp.rs`) | — |
+| 2.8.2 | 2 | All | TOTP seeds highly protected | Met | Operators' seeds sealed with AES-256-GCM under `OPENSEAL_CONSOLE_MFA_KEY`, operator id as associated data; the database holds only the sealed seed (`-console/src/crypto.rs`); staff seeds likewise under `OPENSEAL_MFA_KEY` with the user id (`-server/src/mfa.rs`) | — |
 | 2.8.3 | 2 | All | Approved algorithms for OTP | Met | HMAC-SHA1 TOTP per RFC 6238 vectors (`-console/src/totp.rs` tests); signer codes from `aws_lc_rs::rand` | — |
-| 2.8.4 | 2 | All | TOTP used once within its validity | Met | `platform.operator_mfa.last_step`: a code is accepted only for a step later than the last (`migrations/0017_operators.sql`); `-console/tests/api.rs` `operators_enrol_and_sign_in_with_a_single_use_second_factor` replays the same code on a new session and is refused | — |
+| 2.8.4 | 2 | All | TOTP used once within its validity | Met | `platform.operator_mfa.last_step`: a code is accepted only for a step later than the last (`migrations/0017_operators.sql`); `-console/tests/api.rs` `operators_enrol_and_sign_in_with_a_single_use_second_factor` replays the same code on a new session and is refused; staff: `users.totp_last_step` (`migrations/0032_staff_mfa.sql`), `-server/tests/mfa.rs` refuses a replayed code, seen red | — |
 | 2.8.5 | 2 | All | Reused TOTP logged and rejected | Partly | Rejected by `last_step`; the rejection is not written to a security log | ASVS-08 |
 | 2.8.6 | 2 | All | Physical OTP generators revocable | N/A | No physical generators issued | — |
 | 2.8.7 | 2 | All | Biometrics only as secondary factor | N/A | No biometric authenticators | — |
@@ -374,7 +374,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 4.3.1 | 1 | All | Administrative interfaces use MFA | Partly | Platform console: password plus mandatory TOTP (`-console/src/lib.rs`); tenant administrators: password only | ASVS-01 |
+| 4.3.1 | 1 | All | Administrative interfaces use MFA | Partly | Platform console: password plus mandatory TOTP (`-console/src/lib.rs`); tenant administrators: TOTP when the account's `mfa_policy` is `administrators` or `everyone` (`-server/tests/mfa.rs`), not yet by default | ASVS-31 |
 | 4.3.2 | 1 | All | No directory browsing or metadata exposure | Met | Web app read into memory at start, only the web app's kinds of file served (`-server/src/web.rs`, test `only_the_web_apps_kinds_of_file_are_served`); test folders and Node manifests skipped | — |
 | 4.3.3 | 2 | All | Step-up or adaptive authorization for high-value actions | Not met | None | ASVS-07 |
 

@@ -7,14 +7,17 @@
 // fields when the server refuses; a reveal toggle in the password field; a busy submit;
 // "Forgot password?" (`POST /auth/password-reset`, UXW-38); a company sign-in button only
 // when the server names an identity provider (`GET /auth/providers`, UXW-39, empty until
-// SSO, slice 3, FG-173); a footer.
+// SSO, slice 3, FG-173); a footer. A session that owes a second factor (ASVS-01, `GET
+// /auth/session` → `second_factor`) goes on to the code step, or to setting one up when
+// the workspace's policy asks for it, before the app opens; both use the same card,
+// fields and buttons as sign-in.
 
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { button, busy } from "./ui/index.js";
 import { errorMessage } from "./api.js";
-import { signInErrors, firstInvalid, resetError, usableProviders, signInFailure } from "./authmodel.js";
+import { signInErrors, firstInvalid, resetError, usableProviders, signInFailure, owedFactor, factorError, groupSecret } from "./authmodel.js";
 import { authLayout, cardHead, textField, passwordField, setFieldError, alertBox, footerLinks } from "./authview.js";
 
 export async function mount(view, ctx) {
@@ -25,8 +28,29 @@ export async function mount(view, ctx) {
     aside: true,
     footer: footerLinks([[`verify.html${mockQ}`, t("signin.verify")], [`index.html${mockQ}`, t("signin.about")]]),
   });
-  const screens = { signIn: (prefill) => signIn(card, ctx, hint, prefill, screens), reset: (prefill) => reset(card, ctx, prefill, screens) };
-  screens.signIn("");
+  const screens = {
+    signIn: (prefill) => signIn(card, ctx, hint, prefill, screens),
+    reset: (prefill) => reset(card, ctx, prefill, screens),
+    verify: () => verifyFactor(card, ctx, screens),
+    enrol: () => enrolFactor(card, ctx, screens),
+  };
+  // A session that signed in with its password but still owes the second factor (a
+  // reload mid-sign-in) resumes at that step.
+  // Asked only when this tab opened a session (it holds a CSRF token), so a plain visit
+  // to sign-in makes no call that is bound to fail.
+  let owed = null;
+  if (ctx.api.hasCsrf()) {
+    try { owed = owedFactor(await ctx.api.session()); } catch { owed = null; }
+  }
+  if (owed) screens[owed](); else screens.signIn("");
+}
+
+/// Into the app, or on to the second factor the session still owes.
+async function afterPassword(ctx, screens) {
+  ctx.session = await ctx.api.session();
+  const owed = owedFactor(ctx.session);
+  if (owed) { ctx.session = null; screens[owed](); return; }
+  ctx.navigate("#/home");
 }
 
 // ---- Sign in ---------------------------------------------------------------------------
@@ -67,8 +91,7 @@ function signIn(card, ctx, hint, prefill, screens) {
     if (first) { fields[first].input.focus(); return; }
     try {
       await busy(submit, () => ctx.api.login(email.input.value.trim(), password.input.value));
-      ctx.session = await ctx.api.session();
-      ctx.navigate("#/home");
+      await afterPassword(ctx, screens);
     } catch (err) {
       alert.show(t("signin.invalid-title"), signInFailure(err) ? t(signInFailure(err)) : errorMessage(err));
       password.input.value = "";
@@ -105,6 +128,112 @@ async function providers(ctx, sso) {
     sso.append(h("a", { class: "os-btn os-btn--secondary os-btn--lg os-auth__sso-btn", href: p.url }, icon("key-round", { size: 20 }), h("span", { text: t("signin.sso", { name: p.name }) })));
   }
   sso.hidden = false;
+}
+
+// ---- Second factor (ASVS-01) -------------------------------------------------------------
+
+/// "Sign in as someone else": end the half-signed-in session and start again.
+function otherAccount(ctx, screens) {
+  const b = button(t("mfa.other"), { icon: "chevron-left", variant: "ghost", command: "auth.mfa-other-account", onClick: async () => {
+    try { await ctx.api.logout(); } catch { /* the session may already be gone */ }
+    screens.signIn("");
+  } });
+  b.classList.add("os-auth__back");
+  return b;
+}
+
+/// The code field: six digits, or a recovery code once the person asks for that.
+function codeField(id, recovery) {
+  const f = textField({ id, label: t(recovery ? "mfa.recovery" : "mfa.code"), autocomplete: "one-time-code", maxLength: recovery ? 64 : 8 });
+  if (!recovery) f.input.setAttribute("inputmode", "numeric");
+  return f;
+}
+
+function verifyFactor(card, ctx, screens, recovery = false) {
+  card.replaceChildren();
+  const code = codeField("mfa-code", recovery);
+  const alert = alertBox("mfa-alert");
+  const swap = h("button", { type: "button", class: "os-auth__link", attrs: { "data-os-command": "auth.mfa-switch-method" }, text: t(recovery ? "mfa.use-code" : "mfa.use-recovery") });
+  swap.addEventListener("click", () => verifyFactor(card, ctx, screens, !recovery));
+  const submit = button(t("mfa.submit"), { variant: "primary", size: "lg", type: "submit", command: "auth.mfa-verify" });
+  submit.classList.add("os-auth__submit");
+  const form = h("form", { class: "os-auth__form", attrs: { novalidate: true, "aria-labelledby": "signin-title" } },
+    alert.node, code.block, h("div", { class: "os-auth__row" }, swap), submit);
+  code.input.addEventListener("input", () => {
+    if (code.input.getAttribute("aria-invalid") === "true") { const k = factorError(code.input.value, recovery); setFieldError(code.input, code.error, k ? t(k) : ""); }
+  });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    alert.hide();
+    const k = factorError(code.input.value, recovery);
+    setFieldError(code.input, code.error, k ? t(k) : "");
+    if (k) { code.input.focus(); return; }
+    const v = code.input.value.trim();
+    try {
+      await busy(submit, () => ctx.api.verifySecondFactor(recovery ? { recovery_code: v } : { code: v.replace(/\s+/g, "") }));
+      await afterPassword(ctx, screens);
+    } catch (err) {
+      alert.show(t("signin.invalid-title"), err?.code === "CS-AUTH-0012" ? t("mfa.invalid") : errorMessage(err));
+      code.input.value = "";
+      code.input.focus();
+    }
+  });
+  card.append(cardHead("signin-title", t("mfa.title"), t(recovery ? "mfa.recovery-lede" : "mfa.lede")), form, otherAccount(ctx, screens));
+  code.input.focus();
+}
+
+async function enrolFactor(card, ctx, screens) {
+  card.replaceChildren();
+  let seed = null;
+  try { seed = await ctx.api.enrolTotp(); } catch (err) {
+    card.append(cardHead("signin-title", t("mfa.enrol-title")),
+      h("p", { class: "os-auth__note", attrs: { "data-testid": "mfa-unavailable" } }, icon("info", { size: 16 }), h("span", { text: err?.code === "CS-API-0009" ? t("mfa.unavailable") : errorMessage(err) })),
+      otherAccount(ctx, screens));
+    return;
+  }
+  if (!card.isConnected) return;
+  const code = codeField("mfa-code", false);
+  const alert = alertBox("mfa-alert");
+  const submit = button(t("mfa.enrol-submit"), { variant: "primary", size: "lg", type: "submit", command: "auth.mfa-enrol" });
+  submit.classList.add("os-auth__submit");
+  // The setup key as text (typed into the app), and the `otpauth:` link that opens an
+  // authenticator on the same device. Only an `otpauth:` URI from the server is linked.
+  const uri = typeof seed?.otpauth_uri === "string" && seed.otpauth_uri.startsWith("otpauth://totp/") ? seed.otpauth_uri : null;
+  const key = h("p", { class: "os-auth__note", attrs: { "data-testid": "mfa-secret" } }, icon("key-round", { size: 16 }),
+    h("span", { text: t("mfa.secret", { secret: groupSecret(seed?.secret) }) }));
+  const open = uri ? h("a", { class: "os-auth__link", href: uri, attrs: { "data-os-command": "auth.mfa-open-app" }, text: t("mfa.open-app") }) : null;
+  const form = h("form", { class: "os-auth__form", attrs: { novalidate: true, "aria-labelledby": "signin-title" } },
+    alert.node, key, open ? h("div", { class: "os-auth__row" }, open) : null, code.block, submit);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    alert.hide();
+    const k = factorError(code.input.value, false);
+    setFieldError(code.input, code.error, k ? t(k) : "");
+    if (k) { code.input.focus(); return; }
+    let done = null;
+    try {
+      done = await busy(submit, () => ctx.api.confirmTotp(code.input.value.replace(/\s+/g, "")));
+    } catch (err) {
+      alert.show(t("signin.invalid-title"), err?.code === "CS-AUTH-0012" ? t("mfa.invalid") : errorMessage(err));
+      code.input.value = "";
+      code.input.focus();
+      return;
+    }
+    recoveryCodes(card, ctx, screens, Array.isArray(done?.recovery_codes) ? done.recovery_codes : []);
+  });
+  card.append(cardHead("signin-title", t("mfa.enrol-title"), t("mfa.enrol-lede")), form, otherAccount(ctx, screens));
+  code.input.focus();
+}
+
+/// The ten recovery codes, shown once after enrolment, then into the app.
+function recoveryCodes(card, ctx, screens, codes) {
+  card.replaceChildren();
+  const list = h("div", { class: "os-auth__form", attrs: { "data-testid": "mfa-recovery-codes" } },
+    ...codes.map((c) => h("p", { class: "os-auth__note" }, h("code", { text: String(c) }))));
+  const go = button(t("mfa.continue"), { variant: "primary", size: "lg", command: "auth.mfa-continue", onClick: () => afterPassword(ctx, screens) });
+  go.classList.add("os-auth__submit");
+  card.append(cardHead("signin-title", t("mfa.codes-title"), t("mfa.codes-lede")), list, go);
+  go.focus();
 }
 
 // ---- Forgot password ---------------------------------------------------------------------

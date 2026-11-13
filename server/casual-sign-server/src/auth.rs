@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use axum::http::{HeaderMap, Method, header};
 use casual_sign_store::repo::accounts::ProfileKind;
 use casual_sign_store::repo::api_clients::ApiClientKind;
-use casual_sign_store::{AccountId, ApiClientId, StaffSessionId, TenantTx, UserId};
+use casual_sign_store::{AccountId, ApiClientId, MfaPolicy, StaffSessionId, TenantTx, UserId};
 use uuid::Uuid;
 
 use crate::crypto::{same, sha256};
@@ -51,6 +51,63 @@ pub enum Credential {
     AccessToken(ApiClientId),
 }
 
+/// Where a staff session stands with its second factor (ASVS-01, docs/40 §2). API keys
+/// and access tokens are [`SecondFactor::NotOwed`]: they are credentials of their own,
+/// made by a member who signed in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecondFactor {
+    /// Neither the user nor the account's policy asks for one.
+    NotOwed,
+    /// The session passed it.
+    Passed,
+    /// The user has a factor and the session has not passed it yet.
+    Verify,
+    /// The account's policy asks for a factor the user has not enrolled.
+    Enrol,
+}
+
+impl SecondFactor {
+    /// What a session owes, from its row: passed, the user enrolled, the account's
+    /// policy, and whether the member is an administrator.
+    #[must_use]
+    pub fn of(passed: bool, enrolled: bool, policy: MfaPolicy, admin: bool) -> Self {
+        if passed {
+            return Self::Passed;
+        }
+        if enrolled {
+            return Self::Verify;
+        }
+        let required = match policy {
+            MfaPolicy::Optional => false,
+            MfaPolicy::Administrators => admin,
+            MfaPolicy::Everyone => true,
+        };
+        if required { Self::Enrol } else { Self::NotOwed }
+    }
+
+    /// What is owed before the session reaches anything but signing in: `verify`,
+    /// `enrol`, or nothing.
+    #[must_use]
+    pub fn owed(self) -> Option<&'static str> {
+        match self {
+            Self::Verify => Some("verify"),
+            Self::Enrol => Some("enrol"),
+            Self::NotOwed | Self::Passed => None,
+        }
+    }
+
+    /// The name the API answers for it.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotOwed => "none",
+            Self::Passed => "passed",
+            Self::Verify => "verify",
+            Self::Enrol => "enrol",
+        }
+    }
+}
+
 /// An authenticated caller of `/api/v1`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Principal {
@@ -66,6 +123,9 @@ pub struct Principal {
     pub admin: bool,
     /// May see every envelope of the account, not only their own.
     pub view_all: bool,
+    /// A session's second factor; only [`crate::routes::Access::SigningIn`] routes
+    /// serve a session that owes one.
+    pub second_factor: SecondFactor,
 }
 
 impl Principal {
@@ -126,6 +186,41 @@ impl Principal {
     }
 }
 
+impl Principal {
+    /// Refuse (`CS-AUTH-0006`) a profile that would give more than the caller holds
+    /// (UXW-07): a member who manages users with a custom profile may make, change or
+    /// hand out only profiles within their own scopes, may give "view all envelopes"
+    /// only when they have it, and may give the administrator profile only as an
+    /// administrator holding every scope. Checked on every request that creates,
+    /// changes, deletes or assigns a profile, so no one raises their own rights or
+    /// anyone else's beyond theirs.
+    ///
+    /// # Errors
+    ///
+    /// `CS-AUTH-0006`.
+    pub fn may_grant(&self, kind: ProfileKind, permissions: &[String]) -> Result<(), ApiError> {
+        if kind == ProfileKind::Admin {
+            return if self.admin && self.scopes.len() == SCOPES.len() {
+                Ok(())
+            } else {
+                Err(ApiError::forbidden("the administrator profile"))
+            };
+        }
+        let (scopes, _, view_all) = profile_scopes(kind, permissions);
+        if let Some(s) = scopes.iter().find(|s| !self.scopes.contains(*s)) {
+            return Err(ApiError::forbidden(s));
+        }
+        if view_all && !self.view_all {
+            return Err(ApiError::forbidden(VIEW_ALL));
+        }
+        Ok(())
+    }
+}
+
+/// The custom-profile permission that shows every envelope of the account; with
+/// [`SCOPES`], every name a profile may carry (0033 `permission_profiles_known_permissions`).
+pub const VIEW_ALL: &str = "view_all_envelopes";
+
 /// The scopes a permission profile grants (docs/22 §8), whether it is an
 /// administrator's, and whether it sees every envelope.
 pub(crate) fn profile_scopes(
@@ -161,7 +256,7 @@ pub(crate) fn profile_scopes(
         ),
         _ => {
             let names: Vec<&str> = permissions.iter().map(String::as_str).collect();
-            (pick(&names), false, names.contains(&"view_all_envelopes"))
+            (pick(&names), false, names.contains(&VIEW_ALL))
         }
     }
 }
@@ -218,6 +313,7 @@ async fn as_member(
         scopes,
         admin,
         view_all,
+        second_factor: SecondFactor::NotOwed,
     })
 }
 
@@ -316,14 +412,16 @@ pub(crate) async fn authenticate(
             }
         }
         let mut tx = state.store().for_account(s.account_id).begin().await?;
-        return as_member(
+        let mut p = as_member(
             &mut tx,
             s.account_id,
             s.user_id,
             Credential::Session(s.session_id),
             None,
         )
-        .await;
+        .await?;
+        p.second_factor = SecondFactor::of(s.mfa_verified, s.mfa_enrolled, s.mfa_policy, p.admin);
+        return Ok(p);
     }
     Err(ApiError::unauthenticated())
 }
@@ -353,6 +451,25 @@ mod tests {
         );
         assert_eq!(c.into_iter().collect::<Vec<_>>(), vec!["envelopes:read"]);
         assert!(view);
+    }
+
+    #[test]
+    fn a_session_owes_its_factor_by_enrolment_and_policy() {
+        use MfaPolicy::{Administrators, Everyone, Optional};
+        use SecondFactor::{Enrol, NotOwed, Passed, Verify};
+        // (passed, enrolled, policy, admin) -> owed
+        for (passed, enrolled, policy, admin, want) in [
+            (true, true, Everyone, true, Passed),
+            (false, true, Optional, false, Verify),
+            (false, false, Optional, true, NotOwed),
+            (false, false, Administrators, true, Enrol),
+            (false, false, Administrators, false, NotOwed),
+            (false, false, Everyone, false, Enrol),
+        ] {
+            assert_eq!(SecondFactor::of(passed, enrolled, policy, admin), want);
+        }
+        assert_eq!(Verify.owed(), Some("verify"));
+        assert_eq!(Passed.owed(), None);
     }
 
     #[test]

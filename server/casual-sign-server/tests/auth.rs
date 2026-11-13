@@ -35,7 +35,9 @@ async fn every_guarded_route_refuses_a_request_without_credentials() {
     };
     let id = uuid::Uuid::now_v7();
     for r in table() {
-        let Access::Scope(_) = r.access else { continue };
+        if r.access == Access::Public {
+            continue;
+        }
         let path = r
             .path
             .replace("{id}", &id.to_string())
