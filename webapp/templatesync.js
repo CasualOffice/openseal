@@ -13,6 +13,10 @@
 // document `{id, name, ord, pages, page_geometry, sha256}`; a field is the envelope
 // field's wire form with `role_id` and `document_id`. Adding a document or a role
 // answers the whole template, so the new one is the id that was not there before.
+//
+// A field carries every setting the editor offers (UX-11): `FIELD_SETTINGS`, sent when
+// set, compared for "has it changed", and on a change all named, `null` for a cleared
+// one (the server's `PATCH` is a JSON merge).
 
 import { formatPoints, fromWire } from "./geometry.js";
 
@@ -21,18 +25,40 @@ export function wirePlacement(f) {
   return { page: f.page, x: formatPoints(f.x), y: formatPoints(f.y), width: formatPoints(f.width), height: formatPoints(f.height) };
 }
 
+/// The settings of a field the editor offers besides its place, owner, `required` and
+/// `label` (UX-05, UX-11), by their wire names (api.js `FIELD_MEMBERS`).
+export const FIELD_SETTINGS = Object.freeze(["read_only", "value", "tooltip", "placeholder", "validation", "format", "options", "allow_custom"]);
+
+/// Whether a setting's value means "not set" (as the server leaves it out).
+export const blankSetting = (v) => v == null || v === false || v === "" || (Array.isArray(v) && !v.length);
+
+/// The settings a field has, in `FIELD_SETTINGS` order.
+export function settingsOf(f) {
+  return Object.fromEntries(FIELD_SETTINGS.filter((k) => !blankSetting(f?.[k])).map((k) => [k, f[k]]));
+}
+
+/// Every setting named, `null` for one not set: a `PATCH` that clears what was cleared.
+export function settingsPatch(f) {
+  return Object.fromEntries(FIELD_SETTINGS.map((k) => [k, blankSetting(f?.[k]) ? null : f[k]]));
+}
+
+/// A value with every object's keys sorted: the server answers a setting's members in
+/// its own order (`format` sorted), which is not a change.
+const canonical = (v) => (Array.isArray(v) ? v.map(canonical)
+  : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])])) : v);
+
 /// What identifies a field's content, for "has it changed": role, placement (to the
-/// hundredth of a point), required, label.
-export function fieldSig(roleId, placement, required, label) {
+/// hundredth of a point), required, label, and its settings (in any member order).
+export function fieldSig(roleId, placement, required, label, settings = {}) {
   const p = fromWire(placement) || {};
-  return JSON.stringify([roleId || null, p.page, ...["x", "y", "width", "height"].map((k) => formatPoints(p[k] ?? 0)), !!required, label || ""]);
+  return JSON.stringify([roleId || null, p.page, ...["x", "y", "width", "height"].map((k) => formatPoints(p[k] ?? 0)), !!required, label || "", canonical(settingsOf(settings))]);
 }
 
 /// The editor state (`st`) against the server's template (`server`):
 /// - `st.details`: `{name, email_subject, email_message}`
 /// - `st.roles`: `[{key, id|null, name, type, routing_order}]`
 /// - `st.docs`: `[{key, id|null, name, bytes}]`
-/// - `st.fields`: `[{key, id|null, roleKey, docKey, type, page, x, y, width, height, required, label}]`
+/// - `st.fields`: `[{key, id|null, roleKey, docKey, type, page, x, y, width, height, required, label, …settings}]`
 ///
 /// Returns `{details|null, removeFields, removeRoles, removeDocs, patchRoles, addRoles,
 /// addDocs, patchFields, addFields}`; ids for the removals and patches, keys for the
@@ -67,8 +93,8 @@ export function templatePlan(server, st, { takesInput = () => true } = {}) {
     const s = sFields.find((x) => x.id === f.id);
     if (!s) continue;
     const req = !!f.required && takesInput(f.type);
-    const now = fieldSig(roleIdOf(f.roleKey), wirePlacement(f), req, f.label);
-    if (now === fieldSig(s.role_id, s.placement || s, s.required, s.label)) continue;
+    const now = fieldSig(roleIdOf(f.roleKey), wirePlacement(f), req, f.label, f);
+    if (now === fieldSig(s.role_id, s.placement || s, s.required, s.label, s)) continue;
     patchFields.push({ id: f.id, key: f.key });
   }
   return {
@@ -100,7 +126,7 @@ export function fieldBody(f, roleId, docId, takesInput = () => true) {
   const body = { role_id: roleId, document_id: docId, type: f.type, placement: wirePlacement(f) };
   if (f.required && takesInput(f.type)) body.required = true;
   if (f.label) body.label = f.label;
-  return body;
+  return { ...body, ...settingsOf(f) };
 }
 
 /// Run `plan` for template `id` against `api` (api.js's client). Ids of what is added
@@ -132,7 +158,7 @@ export async function applyTemplate(api, id, st, plan, { takesInput = () => true
   for (const p of plan.patchFields) {
     const f = st.fields.find((x) => x.key === p.key);
     await api.templates.patchField(id, p.id, await etag(), {
-      role_id: roleId(f.roleKey), placement: wirePlacement(f), required: !!f.required && takesInput(f.type), label: f.label || null,
+      role_id: roleId(f.roleKey), placement: wirePlacement(f), required: !!f.required && takesInput(f.type), label: f.label || null, ...settingsPatch(f),
     });
   }
   const fresh = plan.addFields.map((k) => st.fields.find((f) => f.key === k)).filter(Boolean);

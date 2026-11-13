@@ -158,6 +158,7 @@ async fn a_template_field_keeps_every_setting_and_a_patch_clears_one_with_null()
             &format!("{base}/fields/{}", ids[0]),
             &a.auth,
             Some(json!({
+                "role_id": role, "placement": at("100"), "required": true, "label": "po",
                 "tooltip": "Changed", "read_only": null, "value": null, "placeholder": null,
                 "validation": {"kind": "email"}, "format": null, "options": null, "allow_custom": null,
             })),

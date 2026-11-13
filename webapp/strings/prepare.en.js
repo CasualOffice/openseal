@@ -136,7 +136,6 @@ export const PREPARE = {
   "prepare.value-fixed": "Value",
   "prepare.value-start": "Starting value",
   "prepare.value-help": "Filled in before the recipient sees the document.",
-  "prepare.template-settings-later": "Templates keep Required and Label for now. Set tooltips, options, formatting and validation on an envelope made from the template.",
   "prepare.tooltip": "Tooltip",
   "prepare.placeholder": "Placeholder",
   "prepare.options": "Options, one per line",

@@ -105,6 +105,49 @@ test("api.js against the server: templates, account settings, members, correctio
   for (const k of ["inviteState", "getState", "reinviteState"]) expect(["pending", "sent"]).toContain(out[k]);
 });
 
+// UX-11: every field setting the editor offers, through templatesync.js on the server:
+// saved, read back as sent, changed alone, and cleared with null.
+test("a template field's every setting round-trips through templatesync.js on the server (UX-11)", async ({ page }) => {
+  await signIn(page, "home");
+  const out = await inApp(page, async () => {
+    const { api, lib } = window.__web10;
+    const tp = await api.templates.create({ name: `UX-11 ${Date.now()}`, roles: [{ name: "Buyer", type: "signer", routing_order: 1 }] });
+    const whole = await api.templates.addDocument(tp.id, "order.pdf", lib.makePdf([{ title: "Order" }]));
+    const doc = lib.added(tp.documents || [], whole.documents)[0];
+    const settings = {
+      text: { tooltip: "Your purchase order", placeholder: "PO-0000", read_only: true, value: { text: "PO-1234" }, validation: { kind: "length", max: 12 }, format: { font_family: "courier", align: "right", mask: true } },
+      dropdown: { options: ["Red", "Green"], allow_custom: true, tooltip: "Colour" },
+      checkbox: { read_only: true, value: { checked: true } },
+    };
+    const at = (y) => ({ roleKey: "b", docKey: "d", page: 1, x: 72, y, width: 160, height: 24, required: false, label: "" });
+    const st = {
+      details: { name: tp.name, email_subject: "", email_message: "" },
+      roles: [{ key: "b", id: tp.roles[0].id, name: "Buyer", type: "signer", routing_order: 1 }],
+      docs: [{ key: "d", id: doc.id, name: doc.name }],
+      fields: [{ key: "t", id: null, type: "text", ...at(100), ...settings.text }, { key: "dd", id: null, type: "dropdown", ...at(200), ...settings.dropdown }, { key: "c", id: null, type: "checkbox", ...at(300), ...settings.checkbox }],
+    };
+    let after = await lib.applyTemplate(api, tp.id, st, lib.templatePlan(whole, st));
+    const pick = (f, keys) => Object.fromEntries(keys.map((k) => [k, f[k] ?? null]));
+    const of = (k) => after.fields.find((f) => f.id === st.fields.find((x) => x.key === k).id);
+    const r = { saved: { text: pick(of("t"), Object.keys(settings.text)), dropdown: pick(of("dd"), Object.keys(settings.dropdown)), checkbox: pick(of("c"), Object.keys(settings.checkbox)) } };
+    r.unchanged = lib.templatePlan(after, st).patchFields.length;
+    const t = st.fields[0];
+    t.tooltip = "Changed";
+    delete t.read_only; delete t.value; delete t.placeholder; delete t.format;
+    after = await lib.applyTemplate(api, tp.id, st, lib.templatePlan(after, st));
+    r.changed = pick(of("t"), ["tooltip", "read_only", "value", "placeholder", "format", "validation"]);
+    const g = await api.templates.get(tp.id);
+    await api.templates.remove(tp.id, g.etag);
+    return { r, settings };
+  });
+  const { r, settings } = out;
+  expect(r.saved.dropdown).toEqual(settings.dropdown);
+  expect(r.saved.checkbox).toEqual(settings.checkbox);
+  expect(r.saved.text).toEqual(settings.text);
+  expect(r.unchanged).toBe(0);
+  expect(r.changed).toEqual({ tooltip: "Changed", read_only: null, value: null, placeholder: null, format: null, validation: settings.text.validation });
+});
+
 test("the editor on the server: a template saved, reopened and saved back; a parallel step; detection", async ({ page }) => {
   await signIn(page, "home");
   const name = `Editor template ${Date.now()}`;
