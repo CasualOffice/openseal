@@ -10,6 +10,11 @@
 //! fresh one, and after [`MAX_KILLS`] kills or deaths in one document the remaining pages
 //! are not rendered (docs/33 §3.3, review defect 11, `SEC-I01`, `SEC-I02`).
 //!
+//! **Linux only.** The child's limits are the containment, and only Linux enforces
+//! `RLIMIT_AS` (macOS accepts it and ignores it; Windows has no `setrlimit`). modeld ships
+//! in a Linux container, so on any other platform [`Document::open`] starts no child and
+//! answers `CS-ML-0014`, and a child started there by hand exits before reading a byte.
+//!
 //! Inside the child, before anything is allocated for a page ([`render_page`]):
 //!
 //! - **Pixel cap:** the raster size is computed from the page box. A page larger than
@@ -67,6 +72,7 @@ pub const CPU_SECONDS: u64 = 30 * 60;
 /// Child kills or deaths per document after which later pages are not rendered.
 pub const MAX_KILLS: u8 = 3;
 /// File descriptors the child may hold (its three standard streams and a few spare).
+#[cfg(target_os = "linux")]
 const CHILD_FILES: u64 = 16;
 
 /// A rendered page: grey pixels, row by row, top left first, and the geometry the
@@ -367,6 +373,7 @@ pub fn render_bytes(pdf: &[u8], index: usize, dpi: u16) -> Result<Raster, Modeld
 
 // ---- the child's side -------------------------------------------------------------
 
+#[cfg(target_os = "linux")]
 fn set_limit(resource: rustix::process::Resource, value: u64) -> bool {
     rustix::process::setrlimit(
         resource,
@@ -408,6 +415,26 @@ fn write_raster(w: &mut impl Write, r: &Raster) -> std::io::Result<()> {
     w.flush()
 }
 
+/// Set the child's limits on itself; false when any cannot be set.
+#[cfg(target_os = "linux")]
+fn set_limits(address_space: u64, cpu: u64) -> bool {
+    use rustix::process::Resource;
+    set_limit(Resource::Core, 0)
+        && set_limit(Resource::Nofile, CHILD_FILES)
+        && set_limit(Resource::Cpu, cpu)
+        && set_limit(Resource::As, address_space)
+}
+
+/// Off Linux the limits cannot be enforced (see the module notes), so the child refuses
+/// to run at all.
+#[cfg(not(target_os = "linux"))]
+fn set_limits(_address_space: u64, _cpu: u64) -> bool {
+    false
+}
+
+/// Whether this platform can run the raster child: only Linux enforces its limits.
+pub const CHILD_SUPPORTED: bool = cfg!(target_os = "linux");
+
 /// The raster child's main: `casual-sign-modeld raster-child <address-space> <cpu-s>`.
 /// Sets its limits, reads the PDF from stdin (`len:u32be bytes`), answers `0 pages:u32be`
 /// or `1 code:u16be`, then renders each `page:u16be dpi:u16be` asked for until stdin
@@ -418,12 +445,7 @@ pub fn child_main(args: &[String]) -> ExitCode {
     let (Some(Some(address_space)), Some(Some(cpu))) = (nums.next(), nums.next()) else {
         return ExitCode::from(2);
     };
-    use rustix::process::Resource;
-    if !(set_limit(Resource::Core, 0)
-        && set_limit(Resource::Nofile, CHILD_FILES)
-        && set_limit(Resource::Cpu, cpu)
-        && set_limit(Resource::As, address_space))
-    {
+    if !set_limits(address_space, cpu) {
         return ExitCode::from(3);
     }
     // Nothing a renderer prints may reach a log: stderr is discarded by the parent, and
@@ -583,7 +605,8 @@ impl Document {
     ///
     /// # Errors
     /// `CS-ML-0006` when the PDF does not open (or opening it outlasts the page time),
-    /// `CS-ML-0014` when the child cannot start or dies.
+    /// `CS-ML-0014` when the child cannot start or dies, and always off Linux, where the
+    /// child's limits cannot be enforced (no child is started there).
     pub fn open(exe: &Path, pdf: Vec<u8>, limits: RasterLimits) -> Result<Self, ModeldError> {
         let mut doc = Self {
             exe: exe.to_owned(),
@@ -614,6 +637,9 @@ impl Document {
 
     /// Start a child and hand it the PDF; its page count.
     fn start(&mut self) -> Result<u32, ModeldError> {
+        if !CHILD_SUPPORTED {
+            return Err(ModeldError::RasterChild);
+        }
         let mut child = Command::new(&self.exe)
             .arg(CHILD_ARG)
             .arg(self.limits.address_space.to_string())

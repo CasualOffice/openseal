@@ -356,8 +356,10 @@ fn a_request_over_a_bound_is_never_sent() {
 /// **A document handle lives on its connection only** (docs/33 §3.1, `SEC-I06`): one
 /// document open per connection, a handle unknown to another connection, closed once,
 /// and the raster child gone with the connection. Runs without model weights: OCR on an
-/// open document answers `CS-ML-0010`, after the handle is checked.
+/// open document answers `CS-ML-0010`, after the handle is checked. Linux only: the raster
+/// child runs nowhere else (docs/33 §3.3; tests/raster.rs covers the refusal off Linux).
 #[test]
+#[cfg(target_os = "linux")]
 fn a_document_handle_lives_on_its_connection_only() {
     let pki = Pki::new();
     let worker = pki.client_identity("worker");

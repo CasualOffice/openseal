@@ -94,6 +94,15 @@ for (const [name, viewport] of WIDTHS) {
 
     test("the command menu opens from the sidebar or top row, with ⌘K and with /; Escape returns focus (WEB-17)", async ({ page }, testInfo) => {
       await signIn(page, "home");
+      // The mock seeds "Mutual NDA — Acme and Globex"; a real account has no agreements of
+      // its own, so the run makes a draft named for it first, through api.js as the app does.
+      const nda = REAL ? `Mutual NDA ${Date.now()}-${testInfo.project.name}-${name}` : "Mutual NDA";
+      if (REAL) {
+        await page.evaluate(async (subject) => {
+          const { createClient } = await import(new URL("api.js", location.href).href);
+          await createClient({ store: sessionStorage }).createEnvelope({ subject });
+        }, nda);
+      }
       const menu = page.getByRole("dialog", { name: "Command menu" });
       const input = menu.getByRole("combobox", { name: "Type a command or search" });
       // The opener: the sidebar's "Search or jump to…" on a desktop, the top row's search on a phone.
@@ -122,7 +131,7 @@ for (const [name, viewport] of WIDTHS) {
       const options = menu.getByRole("option");
       await expect(options.first()).toHaveAttribute("aria-selected", "true");
       // The agreement itself (document intelligence may add a "what it means" match too).
-      await expect(menu.locator('[role="option"][data-key^="agreements:"]', { hasText: "Mutual NDA" })).toBeVisible();
+      await expect(menu.locator('[role="option"][data-key^="agreements:"]', { hasText: nda })).toBeVisible();
       await page.keyboard.press("End");
       await expect(options.last()).toHaveAttribute("aria-selected", "true");
       const active = await input.getAttribute("aria-activedescendant");

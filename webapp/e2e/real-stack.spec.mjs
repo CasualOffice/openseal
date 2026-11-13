@@ -51,8 +51,9 @@ async function sign(browser, link, name, last) {
   await page.goto(link);
   // The disclosure is asked for only when the account has one (a fresh account has none).
   const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
-  // Progress shows in the bar on a desktop and in the bottom bar on a phone (WEB-02).
-  const progress = page.locator("#bar-progress, #guide-progress").filter({ visible: true });
+  // Progress is announced by the guide's status line at every width (the redesign keeps
+  // a second, silent copy in the top bar: both are screen-reader text, so it is not used).
+  const progress = page.locator("#guide-progress");
   await expect(consent.or(progress)).toBeVisible();
   if (await consent.isVisible()) {
     await page.getByLabel("I agree to use electronic records and signatures.").check();
