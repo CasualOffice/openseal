@@ -873,7 +873,9 @@ long label where their box is constrained.
 `os-stagger` (list rows 40 ms apart). All are off under `prefers-reduced-motion: reduce`.
 
 **Shell** (`app.html`, `app.js`, `shell.css`; the Main artboard). A 15.5rem sidebar on the window colour: the
-workspace row (seal mark, workspace name, product; a menu with workspace settings for admins, verify, about),
+workspace row (seal mark, workspace name, product; a menu with, for a person in more than one workspace, "Switch
+workspace" and each workspace grouped by organization, the current one checked (`ORG-04`, command
+`workspace.switch`, which reloads on Home), then workspace settings for admins, verify, about),
 "Search or jump to… ⌘K" (`#palette-btn`), **New agreement** (`#start-btn`, the Start menu's send / from a template /
 verify, `N` hint), Home, Agreements, Templates, Reports, an empty labelled group `#nav-views` for the Agreements
 screen's saved views, then at the bottom the demo tag, Admin (admins only) and the account row (`#account-btn`:
