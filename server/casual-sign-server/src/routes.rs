@@ -866,6 +866,13 @@ pub fn table() -> Vec<Route> {
         r("POST", "/s/{token}/finish", Public, JSON, ceremony::finish),
         r(
             "POST",
+            "/s/{token}/recipients",
+            Public,
+            JSON,
+            ceremony::recipients,
+        ),
+        r(
+            "POST",
             "/s/{token}/approve",
             Public,
             JSON,

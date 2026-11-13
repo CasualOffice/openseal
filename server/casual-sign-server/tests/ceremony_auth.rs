@@ -274,6 +274,11 @@ async fn every_ceremony_endpoint_refuses_before_the_access_code() {
         ),
         ("POST", format!("{s}/finish"), Some(json!({}))),
         ("POST", format!("{s}/approve"), Some(json!({}))),
+        (
+            "POST",
+            format!("{s}/recipients"),
+            Some(json!({"recipients": [{"id": unknown, "email": "x@example.test"}]})),
+        ),
         ("POST", format!("{s}/decline"), Some(json!({}))),
         ("POST", format!("{s}/withdraw-consent"), Some(json!({}))),
         ("POST", format!("{s}/finish-later"), Some(json!({}))),

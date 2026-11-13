@@ -381,7 +381,7 @@ impl Open {
         } else {
             Vec::new()
         };
-        json!({
+        let mut v = json!({
             "envelope": {
                 "id": s.id, "status": s.status, "subject": s.subject.0, "message": s.message.0,
                 "signing_options": s.options,
@@ -405,7 +405,33 @@ impl Open {
             }),
             "sender": self.sender,
             "auth_required": me.map(|r| r.spec.auth.iter().filter(|m| !r.auth_passed.contains(m)).copied().collect::<Vec<_>>()),
-        })
+        });
+        // VS-02: an agent, intermediary or editor names later recipients, so their view
+        // lists the ones they may still change (later in the order, not yet reached),
+        // once authenticated; nobody else's view has the member.
+        if let (true, Some(r), Some(o)) = (
+            shown && me.is_some_and(|r| r.spec.rtype.edits_recipients()),
+            me,
+            v.as_object_mut(),
+        ) {
+            let later: Vec<Value> = s
+                .recipients
+                .iter()
+                .filter(|q| {
+                    q.spec.routing_order > r.spec.routing_order
+                        && q.status == casual_sign_model::RecipientStatus::Created
+                })
+                .map(|q| {
+                    json!({
+                        "id": q.spec.id, "type": q.spec.rtype,
+                        "routing_order": q.spec.routing_order,
+                        "name": q.spec.name.0, "email": q.spec.email.0,
+                    })
+                })
+                .collect();
+            o.insert("later_recipients".into(), Value::Array(later));
+        }
+        v
     }
 
     async fn finish(self, status: StatusCode) -> Result<Response, ApiError> {
@@ -1202,6 +1228,106 @@ pub(crate) async fn finish(
         Ok(StatusCode::OK)
     })
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NamedIn {
+    id: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecipientsIn {
+    recipients: Vec<NamedIn>,
+    #[serde(default)]
+    location: Option<DeviceLocation>,
+}
+
+/// `POST /s/{token}/recipients {recipients: [{id, name?, email?}], location?}` (VS-02):
+/// an agent (and an intermediary or editor) names later recipients before finishing,
+/// the engine's `RecipientEdit` (docs/24 §3). Only recipients later in the order and
+/// not yet reached may be changed, and an agent changes only names and addresses (the
+/// engine refuses anything else); the chain records `envelope.corrected` with the
+/// recipient as actor. Answers the view, whose `later_recipients` shows the result.
+pub(crate) async fn recipients(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Response {
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        // SEC-CER-01: a link alone never learns which recipient ids exist.
+        o.ready()?;
+        let me = o.recipient.clone();
+        if !o
+            .l
+            .state
+            .recipient(&me)
+            .is_some_and(|r| r.spec.rtype.edits_recipients())
+        {
+            // The engine's own refusal, before any id is looked up.
+            o.run(Command::RecipientEdit {
+                recipient: me,
+                changes: Vec::new(),
+            })
+            .await?;
+            return Err(ApiError::not_found());
+        }
+        let req: RecipientsIn = parse(&body)?;
+        o.locate(req.location.as_ref());
+        if req.recipients.is_empty() || req.recipients.len() > MAX_NAMED {
+            return Err(ApiError::invalid("/recipients"));
+        }
+        let mut changes = Vec::with_capacity(req.recipients.len());
+        for (i, n) in req.recipients.iter().enumerate() {
+            let at = format!("/recipients/{i}");
+            let mut spec =
+                o.l.state
+                    .recipients
+                    .iter()
+                    .find(|r| same_id(r.id(), &n.id))
+                    .map(|r| r.spec.clone())
+                    .ok_or_else(ApiError::not_found)?;
+            if let Some(name) = &n.name {
+                let name = name.trim();
+                if name.is_empty() || name.chars().count() > 255 {
+                    return Err(ApiError::invalid(&format!("{at}/name")));
+                }
+                spec.name = casual_sign_audit::Personal(
+                    casual_sign_model::Text::new(name)
+                        .map_err(|_| ApiError::invalid(&format!("{at}/name")))?,
+                );
+            }
+            if let Some(e) = &n.email {
+                let e = e.trim();
+                if e.len() < 3 || e.len() > 320 || !e.contains('@') {
+                    return Err(ApiError::invalid(&format!("{at}/email")));
+                }
+                spec.email = casual_sign_audit::Personal(
+                    casual_sign_model::Text::new(e)
+                        .map_err(|_| ApiError::invalid(&format!("{at}/email")))?,
+                );
+            }
+            changes.push(casual_sign_workflow::Change::UpdateRecipient { recipient: spec });
+        }
+        let r = o.recipient.clone();
+        o.run(Command::RecipientEdit {
+            recipient: r,
+            changes,
+        })
+        .await?;
+        Ok(StatusCode::OK)
+    })
+}
+
+/// Most recipients one `POST /s/{token}/recipients` names (docs/21).
+pub(crate) const MAX_NAMED: usize = 100;
 
 /// `POST /s/{token}/approve`.
 pub(crate) async fn approve(
