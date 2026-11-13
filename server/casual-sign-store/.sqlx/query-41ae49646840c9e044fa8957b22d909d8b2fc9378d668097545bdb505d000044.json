@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE analysis_runs SET status = $3, bundle_id = $4, ort_version = $5, ocr_pages = $6, truncated = $7, code = $8, finished_at = $9 WHERE account_id = $1 AND id = $2 AND status IN ('queued', 'running')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4Array",
+        "Bool",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "41ae49646840c9e044fa8957b22d909d8b2fc9378d668097545bdb505d000044"
+}

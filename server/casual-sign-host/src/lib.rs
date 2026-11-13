@@ -10,6 +10,8 @@
 //!   revokes, and enqueue every other effect as a job. Nothing is visible until the
 //!   caller commits.
 //! - [`jobs`]: one job per effect: its kind, idempotency key, payload and due time.
+//! - [`ml`]: document analysis (docs/33): the features in effect, the advisory
+//!   `analyze_document` and `fingerprint_template` jobs and their keys (`SEC-I06`).
 //!
 //! It exists so that the server need not depend on the worker, nor the worker on the
 //! server: both depend on this.
@@ -22,6 +24,7 @@ pub mod crash;
 mod error;
 pub mod ids;
 pub mod jobs;
+pub mod ml;
 
 pub use apply::{Applied, Loaded, apply, apply_in, apply_loaded, load_for_update};
 pub use error::{HostError, Result};

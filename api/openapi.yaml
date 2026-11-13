@@ -453,6 +453,78 @@ components:
         source: {type: string, enum: [underline, label, box, acroform]}
         cue: {type: string, description: "The text cue (at most 64 characters), or the form field's data label"}
         confidence: {type: integer, minimum: 0, maximum: 100}
+    MlSettings:
+      type: object
+      description: >-
+        A workspace's document-analysis switches (docs/33 §6, §7). A feature is in effect only
+        when the model service is installed, the plan entitles it and an administrator turned
+        it on; every level is off by default.
+      properties:
+        ocr: {type: boolean}
+        template_matching: {type: boolean}
+        extraction: {type: boolean}
+        personal_data: {type: boolean}
+        personal_data_model: {type: [string, 'null'], pattern: '^[A-Za-z0-9._-]{1,64}$'}
+        ocr_scripts: {type: array, maxItems: 16, items: {type: string, enum: [latin, cyrillic, greek, cjk, arabic, devanagari]}}
+        reread_scanner_text: {type: boolean}
+        not_in_plan: {type: array, readOnly: true, items: {type: string, enum: [ocr, template_matching, extraction, personal_data]}}
+        installed: {type: boolean, readOnly: true, description: false when this server has no model service}
+    MlSettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        ocr: {type: boolean}
+        template_matching: {type: boolean}
+        extraction: {type: boolean}
+        personal_data: {type: boolean}
+        personal_data_model: {type: [string, 'null'], pattern: '^[A-Za-z0-9._-]{1,64}$'}
+        ocr_scripts: {type: array, maxItems: 16, items: {type: string, enum: [latin, cyrillic, greek, cjk, arabic, devanagari]}}
+        reread_scanner_text: {type: boolean}
+    Analysis:
+      type: object
+      description: One analysis of one stored document (docs/33 §2). Advisory; never evidence.
+      properties:
+        id: {type: string}
+        document_id: {type: string}
+        status: {type: string, enum: [queued, running, done, failed, unavailable]}
+        uses: {type: array, items: {type: string, enum: [ocr, template, entities, personal_data]}}
+        ocr_pages: {type: array, description: 1-based pages read by OCR, items: {type: integer, minimum: 1}}
+        truncated: {type: boolean}
+        bundle_id: {type: [string, 'null']}
+        code: {type: string, description: Why it failed (CS-ML-*)}
+        created_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+    Suggestion:
+      type: object
+      description: >-
+        What an analysis suggests; a person accepts or dismisses it (docs/33 §6). `value` is
+        read from the stored document when listed and is document content.
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [template, entity, personal_data]}
+        document_id: {type: string}
+        page: {type: [integer, 'null'], minimum: 1}
+        rect: {type: [object, 'null']}
+        label: {type: string}
+        value: {type: [string, 'null']}
+        normalized: {type: [string, 'null']}
+        score: {type: number, minimum: 0, maximum: 1}
+        model:
+          type: object
+          properties:
+            id: {type: string}
+            sha256: {type: string}
+        state: {type: string, enum: [open, accepted, dismissed]}
+        template_id: {type: string, description: The matched template (kind template)}
+        pages_matched: {type: [integer, 'null']}
+        pages_total: {type: [integer, 'null']}
+        decided_by: {type: string}
+        decided_at: {type: string, format: date-time}
+    SuggestionPage:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Suggestion'}}
+        next_cursor: {type: [string, 'null']}
     DetectedFields:
       type: object
       properties:
@@ -878,6 +950,37 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/account/settings/ml:
+    get:
+      operationId: getMlSettings
+      summary: "The workspace's document-analysis settings (docs/33 §6, WEB-19)"
+      x-permission: "admin:account"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MlSettings'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchMlSettings
+      summary: "Turn document-analysis features on or off"
+      description: >-
+        Turning on a feature the plan lacks, or any feature while the model service is not
+        installed, is `403 CS-ML-0011`; turning one off is always allowed.
+      x-permission: "admin:account"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MlSettingsPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MlSettings'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/admin-events:
     get:
@@ -1527,6 +1630,98 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/DetectedFields'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/documents/{doc}/analysis:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: doc, in: path, required: true, description: Document id, schema: {type: string}}
+    post:
+      operationId: requestAnalysis
+      summary: "Ask for a draft's document to be analysed (docs/33 §6, WEB-19)"
+      description: >-
+        Idempotent on the job key (account, document, its SHA-256, the features, the model
+        bundle). `403 CS-ML-0011` with no feature in effect; `409 CS-WF-0001` once the
+        envelope is no longer a draft. The envelope's sender or an administrator.
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Analysis'}
+        default: {$ref: '#/components/responses/Problem'}
+    get:
+      operationId: getAnalysis
+      summary: "The document's newest analysis"
+      x-permission: "envelopes:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Analysis'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/suggestions:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    get:
+      operationId: listSuggestions
+      summary: "Suggestions of the envelope's analyses (docs/33 §6, WEB-19)"
+      description: >-
+        Only kinds whose feature is in effect, only for documents still in the envelope.
+        `403 CS-ML-0011` with no feature in effect.
+      x-permission: "envelopes:read"
+      parameters:
+        - {name: kind, in: query, schema: {type: string, enum: [template, entity, personal_data]}}
+        - {name: state, in: query, schema: {type: string, enum: [open, accepted, dismissed]}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SuggestionPage'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/suggestions/{s}/accept:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: s, in: path, required: true, description: Suggestion id, schema: {type: string}}
+    post:
+      operationId: acceptSuggestion
+      summary: "Accept a suggestion"
+      description: >-
+        Records who accepted it and when. The action it suggests (applying a template, adding
+        a field) is the person's own, through the ordinary endpoints. `409 CS-ML-0012` when
+        already decided or its document left the envelope.
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Suggestion'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/suggestions/{s}/dismiss:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: s, in: path, required: true, description: Suggestion id, schema: {type: string}}
+    post:
+      operationId: dismissSuggestion
+      summary: "Dismiss a suggestion"
+      x-permission: "envelopes:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Suggestion'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/recipients:
     parameters:
       - name: id
@@ -1918,6 +2113,35 @@ paths:
           content:
             application/pdf:
               schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/documents/{doc}/analysis:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+      - {name: doc, in: path, required: true, description: Template document id, schema: {type: string}}
+    post:
+      operationId: requestTemplateAnalysis
+      summary: "Ask for a template document's page hashes, for matching uploads (docs/33 §6)"
+      description: "`403 CS-ML-0011` unless template matching is in effect."
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Analysis'}
+        default: {$ref: '#/components/responses/Problem'}
+    get:
+      operationId: getTemplateAnalysis
+      summary: "The template document's newest analysis"
+      x-permission: "templates:read"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Analysis'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/templates/{id}/roles:
     parameters:

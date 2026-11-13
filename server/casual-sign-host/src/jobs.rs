@@ -25,7 +25,8 @@ use uuid::Uuid;
 use crate::error::{HostError, Result};
 use crate::ids::odt;
 
-/// Every job kind, one per effect kind that enqueues one.
+/// Every job kind the worker claims: one per effect kind that enqueues one, and the
+/// non-effect kinds below.
 pub const KINDS: &[&str] = &[
     SEND_INVITATION,
     SEND_REMINDER,
@@ -42,6 +43,10 @@ pub const KINDS: &[&str] = &[
     DELETE_DRAFT,
     SEND_USER_INVITATION,
     SEND_EMAIL_OTP,
+    // Advisory, not effects (docs/33 §2, WEB-19): claimed so a worker with a model
+    // service fills them; enqueued only while a workspace has a feature in effect.
+    crate::ml::ANALYZE_DOCUMENT,
+    crate::ml::FINGERPRINT_TEMPLATE,
 ];
 
 /// `SendInvitation`.

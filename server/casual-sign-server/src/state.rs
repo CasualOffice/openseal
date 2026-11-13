@@ -131,6 +131,11 @@ pub struct Config {
     pub secure_cookies: bool,
     /// Proxies whose `Forwarded` / `X-Forwarded-For` is believed (none by default).
     pub trusted_proxies: Vec<crate::net::Cidr>,
+    /// The model bundle the operator deployed with the model service (docs/33 §7,
+    /// WEB-19): its id (`[A-Za-z0-9._-]{1,64}`, from the bundle's `bundle.json`) goes
+    /// into every analysis job's key. `None` (the default): no model service, so no
+    /// feature is in effect and no analysis job is ever enqueued.
+    pub ml_bundle: Option<String>,
 }
 
 impl Default for Config {
@@ -146,6 +151,7 @@ impl Default for Config {
             max_image_bytes: 5 * 1024 * 1024,
             secure_cookies: true,
             trusted_proxies: Vec::new(),
+            ml_bundle: None,
         }
     }
 }

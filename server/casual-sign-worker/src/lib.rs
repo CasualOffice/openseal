@@ -13,6 +13,8 @@
 //!   ([`webhook`]: Standard Webhooks signatures, SSRF-safe delivery, delivery log),
 //!   token revocation, operator alerts, purge, and payments behind [`PaymentGateway`]
 //!   (a stub until slice 13).
+//! - Document analysis ([`ml`], docs/33): the advisory `analyze_document` and
+//!   `fingerprint_template` jobs against the model service, through the client only.
 //!
 //! **Idempotency.** Each effect is one job, keyed by `(envelope, effect id)`. A job's
 //! external act is recorded as a job step when it happens; its result command (with an
@@ -27,6 +29,7 @@ pub use casual_sign_host::capture;
 pub mod email;
 mod error;
 pub mod jobs;
+pub mod ml;
 pub mod seal;
 pub mod tsa;
 pub mod webhook;

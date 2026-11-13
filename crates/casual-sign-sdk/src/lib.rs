@@ -703,6 +703,26 @@ impl Engine {
         Ok(casual_sign_fields::detect_fields(&pages, &form.fields))
     }
 
+    /// The text layer of each page of the delivered document, in page order: NFKC, in
+    /// content order, whitespace inferred and collapsed ([`casual_sign_fields::PageText::text`]).
+    /// An empty string is a page with no text (a scan). Document analysis (docs/33 §2)
+    /// sends these to the model service, and offsets into them name what it found, so the
+    /// same bytes always give the same strings.
+    ///
+    /// # Errors
+    /// [`SdkError::Pdf`] when reading crosses a limit or is cancelled.
+    pub fn page_texts(&self, delivered: &[u8]) -> Result<Vec<String>, SdkError> {
+        let mut admitted = self.open(delivered, &Credentials::default())?;
+        let report = admitted.report.clone();
+        let cancel = || self.cancelled();
+        let pages =
+            casual_sign_fields::extract_text(&mut admitted.document, &report.pages, &cancel)?;
+        Ok(pages
+            .iter()
+            .map(casual_sign_fields::PageText::text)
+            .collect())
+    }
+
     /// Evaluate the fields' values as completion does (linking, locking, formulas,
     /// visibility, validation; docs/30 §6) and flatten the result into the delivered
     /// document as one incremental update (docs/30 §7).

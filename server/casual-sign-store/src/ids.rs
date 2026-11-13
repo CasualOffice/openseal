@@ -74,4 +74,8 @@ id_type!(
     UserInvitationId,
     /// A staff user's session.
     StaffSessionId,
+    /// One analysis of one stored document (docs/33 §2, WEB-19).
+    AnalysisRunId,
+    /// One suggestion of an analysis (docs/33 §6).
+    SuggestionId,
 );
