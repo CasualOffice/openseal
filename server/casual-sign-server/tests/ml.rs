@@ -10,6 +10,8 @@
 //! - Suggestions list with their value read from the stored text, filter and paginate,
 //!   are accepted or dismissed once (`CS-ML-0012`), and another account's envelope,
 //!   document or suggestion is `404`.
+//! - Only the envelope's sender or an administrator asks for an analysis or decides a
+//!   suggestion; a member who may see every envelope but sent this one reads only (`403`).
 
 #![allow(
     clippy::unwrap_used,
@@ -20,11 +22,13 @@
 mod common;
 
 use axum::http::StatusCode;
+use casual_sign_store::repo::accounts::{PermissionProfile, ProfileKind};
 use casual_sign_store::repo::ml::{NewSuggestion, RunEnd, RunStatus, SuggestionKind};
 use casual_sign_store::{AccountId, AnalysisRunId, SuggestionId};
+use casual_sign_store::{PermissionProfileId, UserId};
 use common::Rls;
 use common::flow::{b64, ok};
-use common::harness::{Api, Auth, Tenant, pdf, text_pdf};
+use common::harness::{Api, Auth, PASSWORD, Tenant, pdf, session_of, text_pdf};
 use serde_json::{Value, json};
 use sqlx::Row;
 
@@ -80,12 +84,12 @@ async fn ml_rows(api: &Api) -> (i64, i64) {
     (jobs, runs)
 }
 
-async fn draft(api: &Api, t: &Tenant, bytes: &[u8]) -> (String, String) {
+async fn draft(api: &Api, auth: &Auth, bytes: &[u8]) -> (String, String) {
     let e = ok(
         api.call(
             "POST",
             "/api/v1/envelopes",
-            &t.auth,
+            auth,
             Some(json!({"subject": "d", "documents": [{"name": "d.pdf", "content_base64": b64(bytes)}]})),
             &[],
         )
@@ -109,7 +113,7 @@ async fn with_every_feature_off_nothing_is_enqueued_and_detect_fields_is_unchang
     let a = api.tenant("alpha").await;
     // Entitled but not turned on, then turned on but not entitled: both are "off".
     entitle(&api, &a, ALL).await;
-    let (id, doc) = draft(&api, &a, &text_pdf(TEXT)).await;
+    let (id, doc) = draft(&api, &a.auth, &text_pdf(TEXT)).await;
     ok(
         api.call(
             "POST",
@@ -189,7 +193,7 @@ async fn with_every_feature_off_nothing_is_enqueued_and_detect_fields_is_unchang
     .execute(&bare.db.admin)
     .await
     .unwrap();
-    draft(&bare, &b, &pdf(1)).await;
+    draft(&bare, &b.auth, &pdf(1)).await;
     assert_eq!(
         ml_rows(&bare).await,
         (0, 0),
@@ -327,8 +331,8 @@ async fn identical_bytes_in_two_accounts_are_two_runs() {
     all_on(&api, &a).await;
     all_on(&api, &b).await;
     let bytes = text_pdf(TEXT);
-    let (_, da) = draft(&api, &a, &bytes).await;
-    let (_, db) = draft(&api, &b, &bytes).await;
+    let (_, da) = draft(&api, &a.auth, &bytes).await;
+    let (_, db) = draft(&api, &b.auth, &bytes).await;
     let rows = sqlx::query(
         "SELECT account_id, idempotency_key, payload FROM jobs WHERE kind = 'analyze_document' ORDER BY created_at",
     )
@@ -471,7 +475,7 @@ async fn analysis_and_suggestions_end_to_end_and_other_accounts_are_refused() {
         StatusCode::NOT_FOUND
     );
 
-    let (id, doc) = draft(&api, &a, &text_pdf(TEXT)).await;
+    let (id, doc) = draft(&api, &a.auth, &text_pdf(TEXT)).await;
     let path = format!("/api/v1/envelopes/{id}/documents/{doc}/analysis");
     let first = ok(
         api.call("GET", &path, &a.auth, None, &[]).await,
@@ -589,7 +593,7 @@ async fn analysis_and_suggestions_end_to_end_and_other_accounts_are_refused() {
         );
     }
     // ... nor through B's own envelope.
-    let (bid, _) = draft(&api, &b, &pdf(1)).await;
+    let (bid, _) = draft(&api, &b.auth, &pdf(1)).await;
     let r = api
         .call(
             "POST",
@@ -742,5 +746,132 @@ async fn analysis_and_suggestions_end_to_end_and_other_accounts_are_refused() {
             .iter()
             .all(|t| !t.contains("analysis") && !t.contains("suggestion")),
         "{events:?}"
+    );
+}
+
+/// A member of `t` on a custom profile that may see and write every envelope but is not
+/// an administrator; their session and id.
+async fn reviewer(api: &Api, t: &Tenant) -> (Auth, String) {
+    let u = ok(
+        api.call(
+            "POST",
+            "/api/v1/users",
+            &t.auth,
+            Some(json!({"email": "rae@alpha.example.test", "name": "Rae", "profile": "sender", "password": PASSWORD})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "member",
+    );
+    let uid = u["id"].as_str().unwrap().to_owned();
+    let mut tx = api
+        .db
+        .store
+        .for_account(t.boot.account)
+        .begin()
+        .await
+        .unwrap();
+    let profile = PermissionProfile {
+        id: PermissionProfileId(uuid::Uuid::now_v7()),
+        name: "Reviewers".into(),
+        kind: ProfileKind::Custom,
+        permissions: vec![
+            "envelopes:read".into(),
+            "envelopes:write".into(),
+            "view_all_envelopes".into(),
+        ],
+    };
+    tx.users().create_profile(&profile).await.unwrap();
+    tx.users()
+        .set_profile(UserId(uid.parse().unwrap()), profile.id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let login = api
+        .call(
+            "POST",
+            "/api/v1/auth/login",
+            &Auth::None,
+            Some(json!({"email": "rae@alpha.example.test", "password": PASSWORD})),
+            &[],
+        )
+        .await;
+    (session_of(&login), uid)
+}
+
+/// docs/33 §6: only the envelope's sender or an administrator asks for an analysis or
+/// accepts or dismisses a suggestion. A member who may see every envelope (so the refusal
+/// is not a `404`) but did not send this one is refused with `403` and changes nothing;
+/// the same member may on their own draft, and an administrator may on theirs.
+#[tokio::test]
+async fn only_the_sender_or_an_administrator_requests_analysis_or_decides() {
+    let Some(api) = with_bundle("ml_sender_or_admin").await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    all_on(&api, &a).await;
+    let (rae, _) = reviewer(&api, &a).await;
+    let (id, doc) = draft(&api, &a.auth, &text_pdf(TEXT)).await;
+    let path = format!("/api/v1/envelopes/{id}/documents/{doc}/analysis");
+    let first = ok(
+        api.call("GET", &path, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "analysis",
+    );
+    let run = AnalysisRunId(first["id"].as_str().unwrap().parse().unwrap());
+    let ids = finish_with_suggestions(&api, a.boot.account, run, doc.parse().unwrap(), None).await;
+    let list = format!("/api/v1/envelopes/{id}/suggestions");
+
+    // The member sees the envelope's analysis and suggestions ...
+    ok(
+        api.call("GET", &path, &rae, None, &[]).await,
+        StatusCode::OK,
+        "member reads the analysis",
+    );
+    let seen = ok(
+        api.call("GET", &list, &rae, None, &[]).await,
+        StatusCode::OK,
+        "member reads the suggestions",
+    );
+    assert_eq!(seen["items"].as_array().unwrap().len(), 2);
+    // ... but may not ask for an analysis, accept or dismiss.
+    for p in [
+        path.clone(),
+        format!("{list}/{}/accept", ids[0]),
+        format!("{list}/{}/dismiss", ids[1]),
+    ] {
+        let r = api.call("POST", &p, &rae, None, &[]).await;
+        assert_eq!(
+            (r.status, r.code().as_str()),
+            (StatusCode::FORBIDDEN, "CS-AUTH-0006"),
+            "POST {p}"
+        );
+    }
+    let after = ok(
+        api.call("GET", &format!("{list}?state=open"), &a.auth, None, &[])
+            .await,
+        StatusCode::OK,
+        "still open",
+    );
+    assert_eq!(
+        after["items"].as_array().unwrap().len(),
+        2,
+        "a refused decision changed a suggestion"
+    );
+
+    // On the member's own draft the member is the sender; the administrator, who is not,
+    // may too.
+    let (mid, mdoc) = draft(&api, &rae, &text_pdf(TEXT)).await;
+    let mpath = format!("/api/v1/envelopes/{mid}/documents/{mdoc}/analysis");
+    ok(
+        api.call("POST", &mpath, &rae, None, &[]).await,
+        StatusCode::ACCEPTED,
+        "the sender asks",
+    );
+    ok(
+        api.call("POST", &mpath, &a.auth, None, &[]).await,
+        StatusCode::ACCEPTED,
+        "an administrator asks",
     );
 }
