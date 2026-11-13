@@ -126,6 +126,25 @@ page, with the console's certificate on keyd's admin allow list only; `OPENSEAL_
 that are not public. Operators sign in with a password and a mandatory TOTP code; risky changes (suspending an
 organization, a TSA change) need a second operator's approval.
 
+## Failure recovery
+
+What each failure leaves, and what brings the deployment back (`HRD-01`; tested in
+`server/casual-sign-worker/tests/process_crash.rs` with the real server and worker binaries, keyd over mTLS, a TSA
+and PostgreSQL 17). In every case an envelope ends `completed` on one verified seal or waits safely in
+`completing`; nothing sealed is served before the envelope is `completed`; the audit chain verifies.
+
+| Failure | What happens | What brings it back |
+| --- | --- | --- |
+| Worker killed (crash, OOM, `SIGKILL`) at any point of a job | The job's lease (300 s) lapses and any worker claims it again; an act already recorded is not repeated (docs/24 §Idempotency and crashes) | A restart of the worker process: Compose restarts it (`restart: unless-stopped`); under another orchestrator run it as a service that restarts on exit |
+| Worker paused or partitioned past its lease while another takes its job over | The paused worker records nothing when it resumes: storing a seal first renews the job's lease in the same transaction, which fails for a lease it lost (`CS-WRK-0015`); the other worker seals once | Nothing |
+| keyd unreachable while sealing | The seal fails (`CS-SEAL-0001`, or `CS-KEY-0011` if the worker never reached keyd); the engine raises a `seal_failed` operator alert and schedules a new seal job 60 s later, again and again; the envelope stays `completing`. A worker started while keyd is down still starts (it logs `keyd_unavailable`) and runs every other job | keyd back: the next seal job completes the envelope. Alert on `seal_failed` |
+| PostgreSQL restarted or unreachable | API requests answer a `5xx` problem while it is down (the pool waits up to 10 s for a connection) and the server keeps running; the worker logs `claim_failed` and keeps polling. A job interrupted mid-flight runs again after its back-off when its failure was recorded once the database returned, or once its lease lapses when it could not be (up to 300 s) | The database back: both reconnect without a restart. A signer whose request failed retries it; it is applied once |
+| Object store refuses writes | The seal job retries with back-off (`CS-BLOB-0001`); no sealed bytes land and none are served; on its last attempt (15) the job hands over to a new seal job through the engine's `SealFailed` with an operator alert, so a seal job never dies while its envelope is `completing` | The store back: the next attempt completes the envelope. Alert on `job_dead` and `seal_failed` |
+
+A seal that failed after keyd signed signs again on the next attempt (keyd's log then shows two signatures for the
+envelope, `KEYD-03` reconciles); sealed bytes stored by an attempt that was not recorded stay in the write-once blob
+store unreferenced, are never served, and are not yet reclaimed (`HRD-07`).
+
 ## Production checklist
 
 | Area | Do |

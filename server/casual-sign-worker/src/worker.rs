@@ -1871,8 +1871,17 @@ impl<B: BlobStore + 'static> Worker<B> {
             }
             None => match self.seal_and_store(ctx, state).await {
                 Ok(d) => d,
-                // Infrastructure: the job retries.
-                Err(e @ WorkerError::Store(_)) => return Err(e),
+                // Another worker holds the job now: it decides.
+                Err(e @ WorkerError::LeaseLost) => return Err(e),
+                // Infrastructure (the database, the blob store): the job retries, but
+                // never dies while the envelope is `completing` (HRD-01): its last
+                // attempt hands over to a new seal job through `SealFailed` below, with
+                // an alert, so an outage longer than the back-off still ends sealed.
+                Err(e @ WorkerError::Store(_))
+                    if ctx.job.attempts < jobs::max_attempts(&ctx.job.kind) =>
+                {
+                    return Err(e);
+                }
                 // The seal itself failed: the engine records it, alerts, and schedules a
                 // new seal job; the envelope stays `completing`.
                 Err(e) => {
@@ -2046,6 +2055,18 @@ impl<B: BlobStore + 'static> Worker<B> {
             records.push(record);
         }
         let mut tx = self.tx(ctx).await?;
+        // The lease fence (HRD-01): only the holder of the job's lease records a seal.
+        // A worker that was paused past its lease (a stop, a partition) while another
+        // took the job over writes nothing and leaves the job to that one; the update
+        // also locks the job's row until this transaction ends.
+        let until = jobs::after(self.now(), self.config.lease);
+        tx.jobs()
+            .heartbeat(ctx.job.id, ctx.lease, until)
+            .await
+            .map_err(|e| match e.code() {
+                "CS-DB-0003" => WorkerError::LeaseLost,
+                _ => store_err(e),
+            })?;
         for (doc, key, len, pages) in versions {
             tx.documents()
                 .add_version(&NewVersion {

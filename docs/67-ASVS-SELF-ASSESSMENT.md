@@ -167,7 +167,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 1.11.1 | 2 | All | Components documented by function and security role | Met | docs/19 crate table and dependency DAG; docs/02 | — |
 | 1.11.2 | 2 | All | High-value flows not shared unsynchronized state | Met | Workflow commands run in one database transaction per command; audit chain head locked (`-store/src/repo/audit.rs`); rate limiter behind a mutex that fails closed (`-server/src/state.rs`) | — |
-| 1.11.3 | 3 | Ceremony, sealing, keyd | L3 (ceremony, sealing, keyd): high-value flows thread-safe against TOCTOU | Met | Ceremony: each call one transaction with the recipient row; sealing: job claimed once (`-worker/src/jobs.rs`), crash points tested (`-worker/tests/process_crash.rs`); keyd: op-log line synced before a signature is released (`-keyd/src/oplog.rs`) | — |
+| 1.11.3 | 3 | Ceremony, sealing, keyd | L3 (ceremony, sealing, keyd): high-value flows thread-safe against TOCTOU | Met | Ceremony: each call one transaction with the recipient row; sealing: job claimed once (`-worker/src/jobs.rs`), crash points tested (`-worker/tests/process_crash.rs`), and a seal recorded only under the job's live lease, so a worker paused past its lease while another took over writes nothing (`HRD-01`, `a_worker_frozen_mid_seal_past_its_lease_writes_nothing_and_the_seal_happens_once`, seen red without the fence); keyd: op-log line synced before a signature is released (`-keyd/src/oplog.rs`) | — |
 
 **V1.12 Secure File Upload Architecture**
 
@@ -602,7 +602,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 11.1.3 | 1 | All | Limits on business actions | Met | Plan quotas (`-store/src/quota.rs`), OTP 5 per hour, envelope size caps (docs/21) | — |
 | 11.1.4 | 1 | All | Anti-automation for excessive calls | Met | Per-principal API, per-link and per-address ceremony limits (`-server/tests/threats.rs` `ceremony_calls_are_limited_per_link_and_per_client_address`) | — |
 | 11.1.5 | 1 | All | Limits against business risks | Met | Access-code lockout (`-server/tests/threats.rs` `an_access_code_locks_after_the_accounts_attempts...`); voided envelopes open nothing | — |
-| 11.1.6 | 2 | All | No TOCTOU or race conditions | Met | Quotas by conditional update (`SEC-U01`); chain head locked; workflow commands transactional | — |
+| 11.1.6 | 2 | All | No TOCTOU or race conditions | Met | Quotas by conditional update (`SEC-U01`); chain head locked; workflow commands transactional; the seal's record fenced by the job lease (`SEC-S12`, `HRD-01`) | — |
 | 11.1.7 | 2 | All | Monitor unusual business events | Not met | Not built (VS-20 operations) | ASVS-13 |
 | 11.1.8 | 2 | All | Configurable alerting on automated attacks | Not met | Not built | ASVS-13 |
 

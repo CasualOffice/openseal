@@ -332,6 +332,24 @@ removed (`409 CS-API-0011` on the retry of a send killed before commit), the inv
 (two emails after a kill at `Recorded`). In CI: the `server-db` job (and `tools/ci-local.sh`) builds the server with
 the feature and runs the test.
 
+**Failure recovery (`HRD-01`).** Three rules keep `completing` → `completed` safe when a dependency fails, beside
+the crash rules above: (1) **the lease fence**: the seal job records its stored seal (sealed versions, certificate,
+`seal.stored` step) only in a transaction that first renews the job's lease, so a worker paused or partitioned past
+its lease while another took the job over records nothing (`CS-WRK-0015`) and the holder seals once; (2) **a seal
+job never dies while its envelope is `completing`**: infrastructure failures (database, blob store) retry with
+back-off, and the last attempt answers `SealFailed` instead, so the engine alerts and schedules a new seal job;
+(3) **keyd is reached on first use**: a worker started while keyd is unreachable runs its other jobs, and each seal
+until keyd answers fails through `SealFailed`. Process tests in `server/casual-sign-worker/tests/process_crash.rs`,
+with TCP gates in front of PostgreSQL and keyd and a test-only hold point (`OPENSEAL_HOLD_AT`, the `crash-points`
+feature): a worker stopped (`SIGSTOP`) mid-seal past its lease while a second worker takes over; keyd cut before a
+seal, with a worker started while it is down; PostgreSQL cut mid-ceremony and mid-seal (with
+`OPENSEAL_CHAOS_PG_CONTAINER`, the container itself restarted inside the cut); the blob store refusing writes
+through the last attempt. Each ends with a signer who passed an access code, one sealed version, the sealed PDF
+verified by ours and pyHanko, the certificate and audit trail served, `document.sealed` and `envelope.completed`
+once in a chain that verifies, nothing sealed served before, and no job dead. Seen red before the three rules:
+`a worker that lost its lease recorded a seal` (left 1, right 0), `the seal job died with the envelope completing`
+(left 1, right 0), and the worker exiting `CS-KEY-0011` at start. docs/65 §Failure recovery is the operator's view.
+
 **Integration (T-2C with T-2D, GEO-01).** `tests/end_to_end.rs` drives a two-signer envelope through the API
 server's router (in process, same database, blob store and clock) and the worker to `completed`, signing through the
 ceremony with the links from the worker's emails, then downloads the sealed PDF, the certificate and the combined

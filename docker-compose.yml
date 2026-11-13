@@ -11,7 +11,9 @@
 # a development time-stamping authority, keyd keeps the
 # seal key in SoftHSM, and the server sends cookies over plain HTTP on localhost. For
 # production follow docs/65 §Production checklist. Every image is pinned by digest
-# (docs/04 rule 31); ports bind to the loopback address only.
+# (docs/04 rule 31); ports bind to the loopback address only. Every long-running
+# service restarts after it exits (`restart: unless-stopped`, HRD-01): the worker and
+# the server recover their work from the database (docs/65 §Failure recovery).
 
 name: openseal
 
@@ -39,6 +41,7 @@ services:
 
   tsa:
     image: openseal-devtools:dev
+    restart: unless-stopped
     command: ["python3", "-I", "/usr/local/bin/dev-tsa", "8318"]
     user: tsa
     volumes: [*secrets]
@@ -50,6 +53,7 @@ services:
 
   postgres:
     image: postgres:17-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
+    restart: unless-stopped
     environment:
       POSTGRES_DB: openseal
       POSTGRES_PASSWORD_FILE: /secrets/postgres-password
@@ -65,6 +69,7 @@ services:
 
   s3:
     image: chrislusf/seaweedfs:latest@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    restart: unless-stopped
     command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/secrets/s3.json", "-ip.bind=0.0.0.0"]
     volumes: [s3:/data, *secrets]
     depends_on: {pki: {condition: service_completed_successfully}}
@@ -75,6 +80,7 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    restart: unless-stopped
     ports: ["127.0.0.1:${OPENSEAL_MAIL_PORT:-8025}:8025"]
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
@@ -83,6 +89,7 @@ services:
 
   keyd:
     build: {context: ., dockerfile: deploy/Dockerfile, target: keyd}
+    restart: unless-stopped
     image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-keyd:${OPENSEAL_VERSION:-dev}
     environment:
       OPENSEAL_KEYD_TLS_CERT: /secrets/keyd-tls-chain.pem
@@ -113,6 +120,7 @@ services:
 
   server:
     image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-server:${OPENSEAL_VERSION:-dev}
+    restart: unless-stopped
     environment:
       <<: *s3
       OPENSEAL_DATABASE_URL_FILE: /secrets/database-url
@@ -128,6 +136,7 @@ services:
 
   worker:
     build: {context: ., dockerfile: deploy/Dockerfile, target: worker}
+    restart: unless-stopped
     image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-worker:${OPENSEAL_VERSION:-dev}
     environment:
       <<: *s3
