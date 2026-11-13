@@ -28,6 +28,7 @@ use casual_sign_seclog::{
     Domain, Kind, Outcome, Principal as SecPrincipal, Pseudonym, SecurityEvent, Uuid, Value,
 };
 
+use crate::anomaly::{self, Rule, Subject};
 use crate::auth::Principal;
 use crate::state::AppState;
 
@@ -47,6 +48,9 @@ pub(crate) struct Scope {
     client: Option<Pseudonym>,
     route: Option<&'static str>,
     who: Mutex<Option<(SecPrincipal, Uuid, Option<Uuid>)>>,
+    /// The request already counted toward a detection rule (a refused sign-in is
+    /// both `auth.sign_in` and `access.unauthenticated`: one failure, `ASVS-13`).
+    counted: Mutex<Vec<Rule>>,
 }
 
 tokio::task_local! {
@@ -80,6 +84,7 @@ pub(crate) fn scope(
         }),
         route: template(route),
         who: Mutex::new(None),
+        counted: Mutex::new(Vec::new()),
     })
 }
 
@@ -130,6 +135,148 @@ pub(crate) fn emit(st: &AppState, mut ev: SecurityEvent) {
     });
     let _ = filled;
     st.security().emit(&ev);
+    if let Some(rule) = rule_of(&ev)
+        && first_count(rule)
+    {
+        let mut subjects = Vec::with_capacity(2);
+        if let Some(p) = ev.principal_ref() {
+            subjects.push(Subject::Principal(p));
+        }
+        if let Some(c) = ev.client_ref() {
+            subjects.push(Subject::Address(c));
+        }
+        detect(st, rule, &subjects);
+    }
+}
+
+/// Whether this is the request's first event counted toward `rule` (outside a
+/// request, always).
+fn first_count(rule: Rule) -> bool {
+    SCOPE
+        .try_with(|s| {
+            s.counted.lock().is_ok_and(|mut c| {
+                let first = !c.contains(&rule);
+                if first {
+                    c.push(rule);
+                }
+                first
+            })
+        })
+        .unwrap_or(true)
+}
+
+/// What a security event counts toward (`ASVS-13`).
+fn rule_of(ev: &SecurityEvent) -> Option<Rule> {
+    let failed = ev.outcome() == Outcome::Failure;
+    match ev.kind() {
+        Kind::RateLimited => Some(Rule::RateLimited),
+        Kind::Denied => Some(Rule::Denied),
+        Kind::DocumentRead if !failed => Some(Rule::DocumentReads),
+        Kind::SignIn
+        | Kind::Mfa
+        | Kind::MfaEnrol
+        | Kind::PasswordReset
+        | Kind::PasswordChange
+        | Kind::InviteAccept
+        | Kind::Token
+        | Kind::Lockout
+        | Kind::Unauthenticated
+            if failed =>
+        {
+            Some(Rule::AuthFailures)
+        }
+        _ => None,
+    }
+}
+
+/// Count one `rule` event by `subjects`; raise what is due: an
+/// `alert.abnormal_activity` security event and an operator alert (`ASVS-13`).
+fn detect(st: &AppState, rule: Rule, subjects: &[Subject<'_>]) {
+    for trip in st.anomaly().observe(rule, subjects, st.now()) {
+        let mut ev = SecurityEvent::new(Kind::Alert, Outcome::Failure)
+            .code(if trip.rule.is_some() {
+                anomaly::CODE_THRESHOLD
+            } else {
+                anomaly::CODE_TABLE_FULL
+            })
+            .with(
+                "rule",
+                Value::Word(trip.rule.map_or("tracking_full", Rule::as_str)),
+            )
+            .with("count", Value::Count(trip.count))
+            .with("threshold", Value::Count(trip.threshold))
+            .with("window_s", Value::Count(st.anomaly().window_secs()))
+            .with("suppressed", Value::Count(trip.suppressed))
+            .with("dropped", Value::Count(trip.dropped));
+        let (mut principal, mut client) = (None, None);
+        for i in &trip.over {
+            match subjects.get(*i) {
+                Some(Subject::Principal(p)) => {
+                    ev = ev.principal((*p).clone());
+                    principal = Some(p.text());
+                }
+                Some(Subject::Address(a)) => {
+                    ev = ev.client((*a).clone());
+                    client = Some(a.as_str().to_owned());
+                }
+                None => {}
+            }
+        }
+        // The request that tripped it, never its principal unless that is what
+        // tripped.
+        let _ = SCOPE.try_with(|s| {
+            if let Some(r) = s.request {
+                ev = ev.clone().request(r);
+            }
+            if let Some(r) = s.route {
+                ev = ev.clone().route(r);
+            }
+        });
+        st.security().emit(&ev);
+        st.alerts().alert(&anomaly::AbnormalActivity {
+            rule: trip.rule.map_or("tracking_full", Rule::as_str),
+            code: if trip.rule.is_some() {
+                anomaly::CODE_THRESHOLD
+            } else {
+                anomaly::CODE_TABLE_FULL
+            },
+            count: trip.count,
+            threshold: trip.threshold,
+            window_secs: st.anomaly().window_secs(),
+            principal,
+            client,
+            suppressed: trip.suppressed,
+            dropped: trip.dropped,
+        });
+    }
+}
+
+/// Count the request itself, and a void, by the request's principal and address.
+fn count_request(st: &AppState, method: &Method, resp: &Response) {
+    let Ok((who, client, route)) = SCOPE.try_with(|s| {
+        let who = s
+            .who
+            .lock()
+            .ok()
+            .and_then(|w| w.as_ref().map(|w| w.0.clone()));
+        (who, s.client.clone(), s.route)
+    }) else {
+        return;
+    };
+    let mut subjects = Vec::with_capacity(2);
+    if let Some(p) = &who {
+        subjects.push(Subject::Principal(p));
+    }
+    if let Some(c) = &client {
+        subjects.push(Subject::Address(c));
+    }
+    detect(st, Rule::Requests, &subjects);
+    if *method == Method::POST
+        && resp.status().is_success()
+        && route == Some("/api/v1/envelopes/{id}/void")
+    {
+        detect(st, Rule::Voids, &subjects);
+    }
 }
 
 /// The event of a handler's answer: success on a `2xx`, otherwise failure with the
@@ -265,6 +412,7 @@ pub(crate) fn after(st: &AppState, method: &Method, path: &str, resp: &Response)
     if let Some(ev) = ev {
         emit(st, ev);
     }
+    count_request(st, method, resp);
 }
 
 fn method_word(m: &Method) -> &'static str {

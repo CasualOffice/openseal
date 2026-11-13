@@ -546,6 +546,11 @@ async fn main() -> ExitCode {
         }
         config.ml_bundle = Some(b);
     }
+    // Abnormal-activity thresholds (ASVS-13, docs/65 §Logs).
+    match casual_sign_server::AnomalyConfig::from_vars(|n| std::env::var(n).ok()) {
+        Ok(a) => config.anomaly = a,
+        Err(e) => return fail(&e),
+    }
     let public_url = config.public_url.clone();
     // Malware scanning of uploads through clamd (ASVS-11, docs/65 §Malware scanning).
     let scanner =

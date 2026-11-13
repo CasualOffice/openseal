@@ -16,7 +16,8 @@
 //! [`KeydLimits::max_connections`] at once, with read and write timeouts.
 
 use std::collections::HashMap;
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::Read;
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -690,6 +691,24 @@ impl Keyd {
     }
 }
 
+/// After a refused handshake (its alert already written by `complete_io`): close the
+/// write side and read what the caller already sent, bounded in bytes and time, so the
+/// close is a FIN. Closing with the caller's bytes unread sends a reset, and on Linux the
+/// reset discards the alert before the caller reads it: a refused certificate would read
+/// as keyd unreachable (`CS-KEY-0011`) instead of refused (`CS-KEY-0013`, `HRD-01`).
+fn linger(sock: &mut TcpStream) {
+    let _ = sock.shutdown(Shutdown::Write);
+    let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
+    let mut buf = [0u8; 4096];
+    let mut left: usize = 64 * 1024;
+    while left > 0 {
+        match sock.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => left = left.saturating_sub(n),
+        }
+    }
+}
+
 fn connection(
     stream: TcpStream,
     tls: Arc<ServerConfig>,
@@ -712,6 +731,7 @@ fn connection(
                 Some("CS-KEY-0011"),
                 vec![("reason", Value::Word("handshake"))],
             );
+            linger(&mut s.sock);
             return Err(io(e));
         }
     }

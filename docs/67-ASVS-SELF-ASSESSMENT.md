@@ -26,15 +26,15 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 206 | 107 | 91 | 8 |
-| Partly | 33 | 10 | 16 | 7 |
-| Not met | 15 | 4 | 9 | 2 |
+| Met | 208 | 107 | 93 | 8 |
+| Partly | 34 | 10 | 17 | 7 |
+| Not met | 12 | 4 | 6 | 2 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
 The largest gaps: a second factor for tenant staff beyond TOTP for administrators by default (`ASVS-01` built TOTP and `ASVS-31` made it the default for administrators; WebAuthn and replacing a lost factor remain), log shipping shown only as configuration
-(`ASVS-08A`; the security event log itself is built, `ASVS-08`), a backup and restore drill built but not yet run (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
+(`ASVS-08A`; the security event log itself is built, `ASVS-08`), a backup and restore drill built but not yet run (`ASVS-14`), and anomaly alerting that counts per server instance and not yet envelope sends (`ASVS-13`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
 
@@ -521,7 +521,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 8.1.1 | 2 | All | Sensitive data not cached in intermediaries | Met | `Cache-Control: no-store` on every API response (`http.rs`; `-server/tests/threats.rs` `every_kind_of_response_carries_the_security_headers...`) | — |
 | 8.1.2 | 2 | All | Server-side cached/temporary copies protected | Met | No disk caches of documents; blobs in the store under the tenancy model; modeld derived data keyed by account (`SEC-I06`) | — |
 | 8.1.3 | 2 | All | Minimal request parameters | Met | Ids in paths, typed bodies; no hidden fields carrying authorization | — |
-| 8.1.4 | 2 | All | Detect and alert on abnormal request numbers | Not met | Rate limits answer 429 (`-server/tests/auth.rs` `rate_limits_answer_429_with_retry_after`), but nothing detects or alerts | ASVS-13 |
+| 8.1.4 | 2 | All | Detect and alert on abnormal request numbers | Met | Rate limits answer 429 (`-server/tests/auth.rs` `rate_limits_answer_429_with_retry_after`); the server counts requests and `429`s per principal and per address over a sliding window and raises one `alert.abnormal_activity` event and one operator alert per burst (`-server/src/anomaly.rs`; `-server/tests/anomaly.rs`, seen red; docs/65 §Abnormal activity, with collector rules for several instances; `SEC-D07`) | — |
 | 8.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): regular backups and test restores | Partly | Built (`ASVS-14`): `tools/backup/openseal_backup.py` takes scheduled backups (database snapshot, blobs, keyd's log) and restores only into a fresh install, then `casual-sign-server verify-evidence` rebuilds every chain (the operator log too) and reads back every blob the evidence names: documents, certificates of completion, signature captures and their images, logos and attachments; the backup itself refuses an export lacking any of them (`-store/tests/evidence.rs`, `-server/tests/backup_commands.rs`, `tools/backup/test_openseal_backup.py`; docs/65 §Backups and restore). The restore drill (`tools/backup/drill.sh`, CI job `backup-drill`) is written but has not yet been run to completion, so the test restore is not yet evidenced | ASVS-14 |
 | 8.1.6 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backups stored securely | Partly | Built (`ASVS-14`): CMS AuthEnvelopedData (AES-256-GCM, RSA-OAEP-SHA-256) for an offline recipient key, manifest signed with Ed25519 by a key only the backup host holds (verifiers hold its public half, so they cannot forge a backup a restore would run), roles script limited to role statements with no psql meta-command, no private key or secret in a backup; every check runs on the bytes then used (manifest, signature and payload read from the store once, into a private directory; only that copy decrypted); a flipped payload byte, an edited or re-signed manifest, a payload or manifest swapped in the store between check and use, another key, a roles script with `\!` or a `$` in a role name, and a hostile tar entry are refused (`tools/backup/test_openseal_backup.py`). Partly until the drill has run | ASVS-14 |
 
@@ -605,8 +605,8 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 11.1.4 | 1 | All | Anti-automation for excessive calls | Met | Per-principal API, per-link and per-address ceremony limits (`-server/tests/threats.rs` `ceremony_calls_are_limited_per_link_and_per_client_address`) | — |
 | 11.1.5 | 1 | All | Limits against business risks | Met | Access-code lockout (`-server/tests/threats.rs` `an_access_code_locks_after_the_accounts_attempts...`); voided envelopes open nothing | — |
 | 11.1.6 | 2 | All | No TOCTOU or race conditions | Met | Quotas by conditional update (`SEC-U01`); chain head locked; workflow commands transactional; the seal's record fenced by the job lease (`SEC-S12`, `HRD-01`) | — |
-| 11.1.7 | 2 | All | Monitor unusual business events | Not met | Not built (VS-20 operations) | ASVS-13 |
-| 11.1.8 | 2 | All | Configurable alerting on automated attacks | Not met | Not built | ASVS-13 |
+| 11.1.7 | 2 | All | Monitor unusual business events | Partly | Mass document reads and runs of voids per principal and address are counted and alerted (`-server/src/anomaly.rs`, docs/65 §Abnormal activity); envelope sends and bulk sends are not counted, and the console has no detector | ASVS-13 |
+| 11.1.8 | 2 | All | Configurable alerting on automated attacks | Met | Authentication-failure, `403`, `429` and request bursts alert per principal and address, thresholds, window, cooldown and alert rate set by `OPENSEAL_ALERT_*` (docs/65 §Abnormal activity); one alert per burst, bounded memory (`-server/tests/anomaly.rs`, `anomaly.rs` unit tests, seen red; `SEC-D07`) | — |
 
 ### V12 Files and Resources
 

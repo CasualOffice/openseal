@@ -1241,3 +1241,43 @@ panels for every form, and the danger confirmation for archive and remove.
 Buttons follow the role (`orgCan`); the server decides every request. The mock serves `/organizations/me…` as
 `api/org.rs`, with a chained log. Tests: `tests/org.test.mjs`; `e2e/org.spec.mjs` (mock, 1440 and 390 px, axe on
 each page). Left: the real-stack run, `ORG-33` to `ORG-36`.
+
+## As built: module switching, width and units (WEB-12, 2026-11-14)
+
+Ported onto the approved canvas from the stale `31de7d9` (owner instruction 50); the canvas wins every visual
+conflict, so this carries behaviour and the units rule, not the old looks.
+
+- **Switching between screens** (`app.js` `route`): between two screens of the content card the new screen is built
+  off the page and swapped in, in one frame, once it has drawn (its mount settled and nothing in it `aria-busy`) or
+  after 250 ms; the old screen stays, inert, until then. The page never holds two screens at once, never blanks, and
+  does not fade or rise as a whole (only the first screen of a visit rises in; content inside keeps its own
+  entrances). Focus calls a screen makes while off the page are held and given to their element once it is in.
+  The editor and sign-in, which measure the window while they mount, replace the screen at once.
+  The editor's step the user picks while a saved draft is still opening is kept: the opening reopens it rather
+  than moving them to its default step (the whole-page rise used to hide this race from quick clicks).
+- **Section** moves in the sidebar on the click, before anything loads. **Prefetch**: a section's code starts
+  loading on hover or focus of its link, every section's once the session is known (idle), and Home's and
+  Agreements' with the shell (`modulepreload`).
+- **Scroll**: the top for a new navigation (and when a section is chosen again); where the user left it for Back,
+  Forward and reload. Each history entry carries a key (`history.state.osKey`); positions are kept per tab in
+  session storage (the last 50). The content card scrolls on a desktop, the window below 60em.
+- **Focus and title**: after a switch the new page's `h1` takes focus (no ring; it is not a control) unless the
+  screen focused something itself or a dialog or panel is open, and a polite status says "<heading>, page loaded".
+  The tab's title is "<heading> · OpenSeal", following the heading when a screen fills it in late.
+- **Section links remember**: from elsewhere, a section's link returns to the folder, filter or tab the user was on
+  in it; chosen while there, it goes to the section's own address and starts over.
+- **Drawer** (below 60em) closes at once, without its slide, on navigation. The screen search row is emptied when a
+  screen does not use it.
+- **PDF previews** (`ui/pdfpreview.js`) paint once they have a width and repaint when it changes by more than 4 %
+  (a wider window, a larger root, a panel closing); their height is in rem.
+- **Keyboard**: G then H, A, T, R or S (within 1.5 s; never while typing) goes to Home, Agreements, Templates,
+  Reports or Admin (account admins). Registered commands `nav.*`, listed in the shortcuts panel as "G H".
+- **Width**: the content card has no max-width (the canvas sets none). `--os-gutter` (2rem; 1rem below 60em) is the
+  card's side padding and the screen search row's, so their edges line up. `--os-topbar-h` is the one bar height
+  of the app's phone row, Verify and the site; the editor's and signer's bars keep their artboards' heights.
+- **Units**: every length is rem or em. `tests/units.test.mjs` fails on any px in the app's CSS, in the sizes its
+  scripts write, or in an `<img>`/`<svg>` width or height attribute, except 0 and 1 px hairlines, unless the line
+  says `px-ok:` and why: the root size itself, the WCAG floors in tokens.css (`--os-fs-11`, `--os-fs-12`, the target
+  sizes), a sub-pixel rounding guard, PDF points × scale, canvas pixels, measured client rects, and
+  IntersectionObserver margins. Icons size from `--os-icon-size` (icons.js sets it from the size asked, 16 = 1rem);
+  logos size in CSS; menu offsets are rem (`placeMenu`'s `remPx`); `dom.js` `rootPx()` and `rem()` convert.

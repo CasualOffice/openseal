@@ -22,6 +22,7 @@ env:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 45   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: cargo fmt --all -- --check
@@ -39,6 +40,7 @@ jobs:
   # Conventional Commits over what this push or pull request adds (CLAUDE.md, Git).
   commit-messages:
     runs-on: ubuntu-latest
+    timeout-minutes: 30   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -58,6 +60,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # modeld's feature_gate test runs `cargo tree --offline --target all`, which needs every
@@ -67,6 +70,7 @@ jobs:
 
   msrv:
     runs-on: ubuntu-latest
+    timeout-minutes: 45   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install 1.95.0 --profile minimal
@@ -74,6 +78,7 @@ jobs:
 
   dependency-policy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: cargo install cargo-deny cargo-audit --locked
@@ -84,6 +89,7 @@ jobs:
   # each tell a sealed PDF from a tampered one before they are trusted to judge ours.
   validators:
     runs-on: ubuntu-latest
+    timeout-minutes: 30   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
@@ -105,6 +111,7 @@ jobs:
   # native and in WebAssembly, over every corpus PDF, the signed and hostile fixtures.
   wasm-parity:
     runs-on: ubuntu-latest
+    timeout-minutes: 45   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: cargo install wasm-pack --version 0.14.0 --locked
@@ -124,6 +131,7 @@ jobs:
   # accepted by pyHanko. The module path is checked first so the test cannot skip.
   keyd-softhsm:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Install the pinned toolchain on its own, retried once: a runner image's rustup has
@@ -142,6 +150,7 @@ jobs:
   # cache (ADR-014) must match the migrations.
   store-db:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     services:
       postgres:
         image: postgres:17-alpine
@@ -174,6 +183,7 @@ jobs:
   # sealed PDF and certificate checked by ours and pyHanko), against Postgres 17.
   server-db:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     services:
       postgres:
         image: postgres:17-alpine
@@ -199,6 +209,7 @@ jobs:
   # viewport (mock mode until the Compose deployment, 2F), with axe on every screen.
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - working-directory: webapp
@@ -221,6 +232,7 @@ jobs:
   # generated root. The stack is torn down with its volumes however the job ends.
   compose-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     env:
       OPENSEAL_E2E_BASE_URL: http://localhost:8080
       OPENSEAL_E2E_MAIL_URL: http://127.0.0.1:8025
@@ -265,21 +277,72 @@ jobs:
   # built from this commit signs and seals one envelope and half signs another, is backed
   # up (encrypted, signed), destroyed with its volumes, and restored into a fresh stack with
   # its own keys; the sealed PDF must be byte-identical, every chain must verify, and the
-  # half-signed envelope must finish and be sealed there (tools/backup/drill.sh).
+  # half-signed envelope must finish and be sealed there (tools/backup/drill.sh). The
+  # restore is also compared with what was read from the first stack before the backup
+  # (audit chain hashes, keyd's log bytes, the seal root), and pyHanko validates both
+  # sealed PDFs. The artifact `backup-drill` is the drill's evidence (docs/65 §The drill):
+  # report.json (verdict, commit, restore time), the console log and each check's output;
+  # never the backup, its keys or the drill's signing links.
   backup-drill:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: tools/backup/drill.sh
+      - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
+      - shell: bash # -eo pipefail: the drill's status, not tee's
+        env:
+          OPENSEAL_DRILL_VALIDATOR_PYTHON: /tmp/v/bin/python
+        run: |
+          mkdir -p target
+          tools/backup/drill.sh 2>&1 | tee target/backup-drill.log
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: backup-drill
           path: |
+            target/backup-drill.log
             target/backup-drill/report.json
             target/backup-drill/restore.json
             target/backup-drill/evidence-after.txt
             target/backup-drill/oplog-after.txt
+            target/backup-drill/verify-sealed.txt
+            target/backup-drill/payload-structure.txt
+            target/backup-drill/flipped.err
+            target/backup-drill/edited.err
+            target/backup-drill/sealed-a/
+            target/backup-drill/sealed-b/
+            target/backup-drill/sealed-cross/
             target/backup-drill/compose-*.log
+          if-no-files-found: ignore
+          retention-days: 90
+
+  # HRD-10 (HRD-01's exit gate, docs/06 §Hardening release): the HRD-01 chaos cases on the
+  # hardened profile. deploy/compose.production.yml built from this commit, with throwaway
+  # secrets from deploy/production/init-secrets.sh, SoftHSM as the PKCS#11 token, and the
+  # CI-only tools/chaos/compose.chaos.yml (STARTTLS mail sink, a TSA behind a holding gate,
+  # the evidence verifier; no development switch). Envelopes go through the API while
+  # workers are paused past their lease and SIGKILLed mid-seal, keyd is stopped, and
+  # PostgreSQL and the object store are killed; each must end completed on exactly one
+  # seal (or completing with a job_dead alert), verify-evidence and keyd's log must
+  # verify, and pyHanko must validate every sealed PDF (tools/chaos/chaos_compose.py).
+  chaos-compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 -I -m unittest discover -s tools/chaos -p 'test_*.py'
+      - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
+      - run: python3 -I tools/chaos/chaos_compose.py run --verify-python /tmp/v/bin/python
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: chaos-compose
+          path: |
+            target/chaos-compose/report.json
+            target/chaos-compose/evidence.txt
+            target/chaos-compose/oplog.txt
+            target/chaos-compose/verify-sealed.txt
+            target/chaos-compose/sealed
+            target/chaos-compose/compose.log
           if-no-files-found: ignore
           retention-days: 90

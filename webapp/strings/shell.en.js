@@ -55,6 +55,15 @@ export const SHELL = {
   "shell.panel-leave-title": "Discard your changes?",
   "shell.panel-leave-text": "The open panel has changes that are not saved. If you leave now, they are lost.",
   "shell.panel-leave": "Discard changes",
+  // WEB-12: the tab's title and the announcement after a module switch.
+  "app.name": "OpenSeal",
+  "shell.loaded": "{name}, page loaded",
+  // WEB-12 (NAV-35): G then a letter goes to a section.
+  "cmd.nav.home": "Go to Home",
+  "cmd.nav.agreements": "Go to Agreements",
+  "cmd.nav.templates": "Go to Templates",
+  "cmd.nav.reports": "Go to Reports",
+  "cmd.nav.admin": "Go to Admin",
 
   "nav.reports": "Reports",
 

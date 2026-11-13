@@ -187,6 +187,27 @@ and PostgreSQL 17). In every case an envelope ends `completed` on one verified s
 | PostgreSQL restarted or unreachable | API requests answer a `5xx` problem while it is down (the pool waits up to 10 s for a connection) and the server keeps running; the worker logs `claim_failed` and keeps polling. A job interrupted mid-flight runs again after its back-off when its failure was recorded once the database returned, or once its lease lapses when it could not be (up to 300 s) | The database back: both reconnect without a restart. A signer whose request failed retries it; it is applied once |
 | Object store refuses writes | The seal job retries with back-off (`CS-BLOB-0001`); no sealed bytes land and none are served; on its last attempt (15) the job hands over to a new seal job through the engine's `SealFailed` with an operator alert. The same holds for a database failure anywhere before the seal is stored (reading the envelope or the job's steps). Still dead-lettered, with a `job_dead` alert and the envelope `completing`: a failure no retry cures (`CS-DB-0008`–`0010`, `CS-BLOB-0003`/`0005`), a database failure after the seal is stored on the last attempt, and a database outage that lasts through the last attempt, so the handover itself cannot be written | The store back: the next attempt completes the envelope. Alert on `job_dead` and `seal_failed`; after a `job_dead` for `seal_envelope`, once the cause is fixed re-queue that job (`UPDATE jobs SET status = 'queued', attempts = 0, run_at = now() WHERE id = …`): a seal it already stored is read back, not made again |
 
+**The same cases on the production profile** (`HRD-10`): `tools/chaos/chaos_compose.py run` (CI job `chaos-compose`;
+needs Docker with Compose v2; `--no-build` reuses images built from this checkout) brings up
+`deploy/compose.production.yml` with throwaway secrets from `deploy/production/init-secrets.sh`, a CI seal PKI, the
+seal key in a SoftHSM token in keyd's volume (the PKCS#11 module mounted as an HSM vendor's would be) and recorded
+configuration manifests. The CI-only `tools/chaos/compose.chaos.yml` adds what an operator brings from outside: a
+mail sink that requires STARTTLS with a certificate from the internal CA (the worker trusts that CA through
+`SSL_CERT_FILE`), the development TSA behind a gate that holds each request six seconds so a seal can be caught in
+flight, and `verify-evidence` as a service; it sets no development switch (its unit tests check it against
+`tools/check-deploy.py`'s list). Two workers run. Each envelope has one signer who passes an access code through the
+API and the emailed link: a worker paused (`docker pause`) mid-seal past its lease while the other takes over, then
+resumed (it must record nothing); a worker `SIGKILL`ed from the host's PID namespace mid-seal and right after a
+finish (Docker's restart policy must restart it); keyd stopped while sealing (a `seal_failed` alert, nothing served,
+workers restarted meanwhile stay up); PostgreSQL killed (`docker compose stop -t 0`) between adopt and finish (the
+finish answers `5xx`, the retry signs once) and mid-seal; the object store killed mid-seal and its seal job pushed
+to its last attempt (it hands over, never dead). Retries are made due with `UPDATE jobs SET run_at = now()`; leases
+lapse in real time (the run takes about 20 minutes after the build). It then requires every envelope `completed` on
+exactly one sealed version, served (or `completing` with a `job_dead` alert and nothing served), `verify-evidence`
+and keyd's `verify-oplog` to pass, and pyHanko (`tools/verify-sealed.py`) to validate every sealed PDF; it writes
+`target/chaos-compose/report.json` and exits non-zero naming each problem. The driver's logic has unit tests
+(`python3 -I -m unittest discover -s tools/chaos -p 'test_*.py'`).
+
 A seal that failed after keyd signed signs again on the next attempt (keyd's log then shows two signatures for the
 envelope, `KEYD-03` reconciles); sealed bytes stored by an attempt that was not recorded stay in the write-once blob
 store unreferenced, are never served, and are not yet reclaimed (`HRD-09`).
@@ -252,7 +273,7 @@ Checked by running (2026-11-14, Docker 29.8 on macOS): Postgres and the object s
 their non-root users; a `verify-full` client gets TLS 1.3, a plain connection is refused (`no pg_hba.conf entry …
 no encryption`) and a wrong host name fails verification; the S3 gateway answers TLS 1.3 with the internal CA and
 every other SeaweedFS port is closed to the network. The whole stack end to end on this profile, with failure
-injection, is `HRD-01`'s.
+injection, is CI's `chaos-compose` job (§Failure recovery, `HRD-10`).
 
 ### Configuration integrity (ASVS 14.1.5, `ASVS-24`)
 
@@ -326,6 +347,7 @@ and `client`:
 | `key.use` | keyd | A signature or a chain given or refused (`op`, `alias`, `envelope_id`; never the digest) |
 | `transport.caller_refused` | keyd, modeld | An mTLS caller refused: a failed handshake (`reason: handshake`) or a certificate off the allow list (`reason: not_allowed`, named by fingerprint) |
 | `transport.backend_failed` | worker | keyd not reached or refusing (its `CS-KEY-*` code) or a time-stamping authority not answering (`CS-WRK-0018`, `backend: tsa`, its `index` in the list and a `reason`: `connect`, `tls`, `timeout`, `status`, `answer`, `address_refused`; never its URL) |
+| `alert.abnormal_activity` | server | Abnormal activity detected (§Abnormal activity below): `rule`, `count`, `threshold`, `window_s`, `suppressed`, `dropped`, code `CS-LOG-0002` (a threshold reached) or `CS-LOG-0003` (`rule: tracking_full`), and the `principal` and/or `client` over the threshold |
 
 `principal` is `user:<id>`, `client:<id>`, `operator:<id>`, `recipient:<id>`, `caller:<fingerprint>`, or, for an
 identifier presented before anyone is known (the e-mail of a refused sign-in, a client id that matched nothing),
@@ -355,11 +377,57 @@ receiver (`tcp` with `tls`, `protocol: rfc5424`) forwards as OTLP to your log pl
 JSON line. On Kubernetes, the node's log agent (Fluent Bit, the OpenTelemetry Collector's `filelog` receiver) reads the
 same lines from the container runtime and sends them over TLS. `docker compose logs` reads nothing once the syslog
 driver is on: read the collector. Alert on: `auth.sign_in` failures per `principal` or `client`, `auth.lockout`,
-`auth.mfa` with `reason: reused`, `access.denied` bursts, `transport.caller_refused`, `transport.backend_failed`, and
+`auth.mfa` with `reason: reused`, `access.denied` bursts, `transport.caller_refused`, `transport.backend_failed`,
+`abnormal_activity` (§Abnormal activity), and
 on the collector receiving nothing from a service for five minutes (a dropped buffer is otherwise silent). Checked:
 `docker compose -f docker-compose.yml -f deploy/compose.log-forwarding.yml --profile ml config` gives every service
 the driver with these options (2026-11-14); a delivery to a live TLS collector is to be shown on a Linux host
 (`ASVS-08A`).
+
+### Abnormal activity (`ASVS-13`)
+
+The server counts, per principal and per client address (by id or keyed pseudonym, never in clear), what an attack
+or a misuse looks like, over a sliding window (`server/casual-sign-server/src/anomaly.rs`). When a count reaches its
+threshold it writes one `alert.abnormal_activity` security event and raises one **operator alert**: by default a
+`WARN` line `"event":"abnormal_activity"` (`rule`, `code`, `count`, `threshold`, `window_s`, `principal`, `client`,
+`suppressed`, `dropped`), the same channel as the worker's `job_dead` and `seal_failed` lines. Route it to the
+operator's pager or chat from the collector, as those. An embedder can pass its own sink
+(`AppState::set_alert_sink`).
+
+| Rule (`rule`) | Counts | Per | Variable | Default per window |
+| --- | --- | --- | --- | --- |
+| `requests` | Every request | principal, address | `OPENSEAL_ALERT_REQUESTS` | 6000 |
+| `rate_limited` | Answers `429` | principal, address | `OPENSEAL_ALERT_RATE_LIMITED` | 30 |
+| `auth_failures` | Refused sign-ins, second factors, tokens, reset and invitation links, password changes, `401`s and recipient lockouts (one per request) | principal (or the presented e-mail's pseudonym), address | `OPENSEAL_ALERT_AUTH_FAILURES` | 20 |
+| `access_denied` | Answers `403` | principal, address | `OPENSEAL_ALERT_DENIED` | 50 |
+| `document_reads` | Staff reads (`data.document_read`): mass download | principal, address | `OPENSEAL_ALERT_DOCUMENT_READS` | 500 |
+| `voids` | Envelopes voided | principal, address | `OPENSEAL_ALERT_VOIDS` | 25 |
+
+`OPENSEAL_ALERT_WINDOW_SECS` (default 300, 10 to 86,400) is the window; a threshold of `0` turns its rule off. **One
+alert per burst:** after an alert the subject is quiet for `OPENSEAL_ALERT_COOLDOWN_SECS` (default 900); trips
+meanwhile are counted and reported as `suppressed` in its next alert. At most `OPENSEAL_ALERT_MAX_PER_MINUTE`
+(default 20) alerts go out a minute across all subjects; those held back are `dropped` in the next. **Bounded
+memory:** at most `OPENSEAL_ALERT_MAX_TRACKED` subjects (default 50,000, 1,000 to 10,000,000; a few MB) are counted;
+when the table is full, subjects idle for two windows are swept, and if it is still full new subjects are not
+counted, which is itself alerted (`rule: tracking_full`, `CS-LOG-0003`, `count` = subjects not tracked), while the
+subjects already counted keep their counts (spraying addresses cannot reset one). A value out of range stops the
+server at start (`start_failed` naming the variable).
+
+**Several server instances.** Each instance counts only its own traffic, so behind a load balancer a spread attack
+may stay under every instance's threshold. Divide the thresholds by the number of instances, or (better) apply the
+same rules at the collector over every instance's lines. For example, over 5 minutes:
+
+| Alert when | Group by |
+| --- | --- |
+| `event = security` and `kind = access.rate_limited`, count ≥ 30 | `client`; and `principal` |
+| `kind` one of `auth.sign_in`, `auth.mfa`, `auth.token`, `auth.password_reset`, `auth.invite_accept`, `auth.lockout` with `outcome = failure`, count ≥ 20 | `client`; and `principal` |
+| `kind = access.denied`, count ≥ 50 | `client`; and `principal` |
+| `kind = data.document_read`, count ≥ 500 | `principal` |
+| `event = abnormal_activity` or `kind = alert.abnormal_activity` | any: page at once |
+
+The access log (`event = request`) carries neither principal nor client, so the `requests` and `voids` rules have no
+collector-side equivalent per subject; across instances, alert on the total rate of `route =
+/api/v1/envelopes/{id}/void` with `status = 200`, and rely on each instance's own `requests` rule.
 
 ## Configuration
 
@@ -388,7 +456,7 @@ scanning); `migrate` reads
 
 ## Backups and restore
 
-**Status:** built and tested; the restore drill is written but has not yet run to completion, so no restore time is measured yet (`ASVS-14`, ASVS 8.1.5 and 8.1.6; docs/07 `SEC-D02`). The tool is
+**Status:** built and tested; the restore drill is written but has not yet run to completion (its first CI runs stopped at a unit test, then at the drill's own envelope request, both fixed), so no restore time is measured yet (`ASVS-14`, ASVS 8.1.5 and 8.1.6; docs/07 `SEC-D02`). The tool is
 `tools/backup/openseal_backup.py` (Python standard library and the `openssl` command, OpenSSL 3.0 or later); the drill
 is `tools/backup/drill.sh`, run by CI's `backup-drill` job and `tools/ci-local.sh`.
 
@@ -523,7 +591,41 @@ signs another through the emailed links, backs it up, proves that a flipped payl
 verification, destroys the stack with every volume, restores into a fresh stack with its own keys, and requires: the
 sealed PDF byte-identical, the half-signed envelope as it was, its second signer able to sign with the link emailed
 before the backup, the new worker sealing it, `verify-evidence` passing again, and keyd's log verifying from its
-restored lines on. It writes `target/backup-drill/report.json`, with the measured restore time.
+restored lines on.
+
+`verify-evidence` checks the restored database against itself: each chain against the head stored beside it. So the
+drill also compares the restore with what it read from the first stack *before* the backup, which neither the backup
+nor the restored database can supply: both envelopes' audit chains on the new stack must begin with the event hashes
+the first stack's API answered; the sealed PDF's SHA-256 is the one that API answered; keyd's log on the new stack must
+begin with the exact bytes of the first stack's log, and the backup must carry at least as many lines; the new stack's
+seal root must differ from the first's (keys come from the new HSM, never from a backup, which carries none: the
+backup directory holds only its three files); and pyHanko (`tools/verify-sealed.py`) must validate the first stack's
+sealed PDF against the first stack's root, the new stack's against its own, and refuse the new stack's against the
+first stack's root. A backup that held no envelopes, no keyd log, or no growth after the resume fails too.
+
+*Rerunning it.* On a host with Docker (Compose v2), `python3`, OpenSSL 3, and a virtual environment with pyHanko
+(`python3 -m venv /tmp/v && /tmp/v/bin/pip install "pyhanko==0.38.1" cryptography`), from a checkout:
+
+```sh
+OPENSEAL_DRILL_VALIDATOR_PYTHON=/tmp/v/bin/python tools/backup/drill.sh
+```
+
+It builds the images (`OPENSEAL_DRILL_BUILD=0` reuses images built from the same checkout), uses Compose projects
+`openseal-drill-a` and `openseal-drill-b` on ports 18180, 18125, 18280 and 18225, removes both stacks and their
+volumes however it ends, and exits non-zero naming the step or check that failed. To rerun it on CI, run the `ci`
+workflow again (Actions, the run, "Re-run jobs", `backup-drill`); it runs on every push to `main`. On your production
+hardware, also restore the HSM's own backup (above) and time the whole procedure; the drill measures only the data.
+
+*Where the evidence is.* `target/backup-drill/report.json`: `verdict` (`passed` or `failed`), `problems`, the
+`commit` drilled, `started` and `finished` (UTC), `restore_seconds` (the measured restore time of this data set),
+the counts restored and after the resume, keyd's log lines on the first stack, restored and after the resume, the
+sealed PDFs' hashes, and the list of checks. Beside it: `restore.json` (the restore's own report), `evidence-after.txt`
+and `oplog-after.txt` (`verify-evidence` and `verify-oplog` after the resume), `verify-sealed.txt` (pyHanko's verdict),
+`sealed-a/`, `sealed-b/` and `sealed-cross/` (the sealed PDFs, each stack's seal root and the validator's
+manifests), `payload-structure.txt`, `flipped.err` and `edited.err` (the encryption and the tamper refusals), and, on
+a failure, each stack's Compose logs. CI uploads these and the console log (`target/backup-drill.log`) as the artifact
+`backup-drill` of the run, kept 90 days: `gh run download <run id> -n backup-drill`. Copy the report of each drill you
+count into your audit records before then; the artifact holds no backup, no key and no signing link.
 
 ## Upgrades
 
