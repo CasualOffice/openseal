@@ -2,7 +2,8 @@
 //! Policy and nothing outside it, the signing page at `/s/{token}` for a browser while
 //! the API keeps answering JSON there; the `q` search of `GET /envelopes`, inside one
 //! account only (row-level security on and off); and the access code patchable on a
-//! recipient while the envelope is a draft or being corrected, refused once voided.
+//! recipient while the envelope is a draft or being corrected, refused once voided; and
+//! a draft's recipient changing type through `PATCH` (row UX-12).
 
 // Test code: a panic is the failure report (CLAUDE.md).
 #![allow(
@@ -519,4 +520,72 @@ async fn the_ceremony_cookie_is_secure_unless_the_server_is_plain_http_developme
         );
         assert_eq!(set.contains("Secure"), secure, "{set}");
     }
+}
+
+/// Row UX-12: a draft's saved recipient changes type through `PATCH`, and the change
+/// is stored (read back after a fresh `GET`); a correction may not change it.
+#[tokio::test]
+async fn a_drafts_recipient_changes_type_through_patch_and_a_correction_refuses_it() {
+    let Some(api) = Api::new("web_recipient_type", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let id = draft(&api, &a, "Type later", &[("Ana Type", "ana@example.test")]).await;
+    let base = format!("/api/v1/envelopes/{id}");
+    let env = api.call("GET", &base, &a.auth, None, &[]).await;
+    let rec = env.json()["recipients"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(env.json()["recipients"][0]["type"], "signer");
+    let path = format!("{base}/recipients/{rec}");
+
+    let r = api
+        .call(
+            "PATCH",
+            &path,
+            &a.auth,
+            Some(json!({"type": "approver"})),
+            &[("if-match", &env.etag())],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    assert_eq!(r.json()["type"], "approver");
+    let back = api.call("GET", &base, &a.auth, None, &[]).await;
+    assert_eq!(back.json()["recipients"][0]["type"], "approver");
+    assert_eq!(back.json()["recipients"][0]["id"], rec.as_str());
+
+    // Back to a signer, then sent: a correction keeps the type.
+    let r = api
+        .call(
+            "PATCH",
+            &path,
+            &a.auth,
+            Some(json!({"type": "signer"})),
+            &[("if-match", &back.etag())],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    let sent = api
+        .call("POST", &format!("{base}/send"), &a.auth, None, &[])
+        .await;
+    assert_eq!(
+        sent.status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&sent.body)
+    );
+    let now = api.call("GET", &base, &a.auth, None, &[]).await.etag();
+    let r = api
+        .call(
+            "PATCH",
+            &path,
+            &a.auth,
+            Some(json!({"type": "approver"})),
+            &[("if-match", &now)],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{:?}", r.json());
+    let after = api.call("GET", &base, &a.auth, None, &[]).await;
+    assert_eq!(after.json()["recipients"][0]["type"], "signer");
 }
