@@ -1367,6 +1367,10 @@ struct RecipientPatch {
     email: Option<String>,
     #[serde(default)]
     routing_order: Option<u32>,
+    /// A new type (row UX-12): a draft only; a correction keeps the type, which the
+    /// engine enforces.
+    #[serde(default, rename = "type")]
+    rtype: Option<casual_sign_model::RecipientType>,
     #[serde(default)]
     auth: Option<Vec<casual_sign_audit::AuthMethod>>,
     /// A new access code (row WEB-04); stored only as Argon2id, never returned.
@@ -1374,8 +1378,8 @@ struct RecipientPatch {
     access_code: Option<String>,
 }
 
-/// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, authentication
-/// and the access code, while the envelope is a draft or being corrected (the engine
+/// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, type (a draft
+/// only), authentication and the access code, while the envelope is a draft or being corrected (the engine
 /// refuses the change otherwise, and then no code is stored).
 ///
 /// The access code follows the authentication methods it ends up with: `access_code`
@@ -1411,6 +1415,9 @@ pub(crate) async fn patch_recipient(
     if let Some(o) = req.routing_order {
         spec.routing_order = casual_sign_model::RoutingOrder::new(o)
             .map_err(|_| ApiError::invalid("/routing_order"))?;
+    }
+    if let Some(t) = req.rtype {
+        spec.rtype = t;
     }
     let had_code = spec
         .auth
