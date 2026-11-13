@@ -41,8 +41,8 @@ Docs are true as of `19518fb` (2026-11-12). **Phases D, 0, 1 and 2 are closed an
 | [52-COMPETITOR-STUDY](52-COMPETITOR-STUDY.md) | Open-source competitors, clean-room rule, name collision | Live; public sources, 2026-11-10 |
 | [64-SPK-01-PDF-READER](64-SPK-01-PDF-READER.md) | PDF reader spike: lopdf, pdf-rs and an own bounded sketch on hostile PDFs; recovery, incremental writing, WASM size; why we build our own | Measured, 2026-11-10, macOS only |
 | [66-SPK-02-CRYPTO-STACK](66-SPK-02-CRYPTO-STACK.md) | Crypto stack spike: PAdES B-B sealed with aws-lc-rs keys and RustCrypto CMS, validated by pyHanko; RustCrypto-only WASM verifier; pitfalls; ADR-006 amendments | Measured, 2026-11-10, macOS only |
-| [67-ASVS-SELF-ASSESSMENT](67-ASVS-SELF-ASSESSMENT.md) | **OWASP ASVS 4.0.3 self-assessment**: every requirement at Level 2 (Level 3 for ceremony, sealing and keyd) with status, the evidence checked and a docs/14 row per gap. Not a certification | Self-assessment, 2026-11-13; 30 findings open (`ASVS-01` to `ASVS-30`) |
 | [65-RUNNING-IT](65-RUNNING-IT.md) | Deployment, production checklist, configuration, upgrades | Design; the server does not exist yet (Phase 2) |
+| [67-ASVS-SELF-ASSESSMENT](67-ASVS-SELF-ASSESSMENT.md) | **OWASP ASVS 4.0.3 self-assessment**: every requirement at Level 2 (Level 3 for ceremony, sealing and keyd) with status, the evidence checked and a docs/14 row per gap. Not a certification | Self-assessment, 2026-11-13; 29 findings open (`ASVS-01` to `ASVS-29`) |
 | [96-FEATURE-FIT-GAP](96-FEATURE-FIT-GAP.md) | **Every DocuSign and SignNow feature** (168 rows) with disposition, slice and status — the parity measure | Live |
 
 **Website** ([`site/`](../site/), `SITE-01`): the marketing site and user documentation as static files, published by

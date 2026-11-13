@@ -26,8 +26,8 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 172 | 97 | 70 | 5 |
-| Partly | 56 | 16 | 33 | 7 |
+| Met | 173 | 98 | 70 | 5 |
+| Partly | 55 | 15 | 33 | 7 |
 | Not met | 22 | 8 | 9 | 5 |
 | N/A | 28 | 7 | 19 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
@@ -41,7 +41,7 @@ operation log, and the append-only hash-chained logs are met, with tests that do
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-30` is closed.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-03 | P2 | ASVS 2.1.8 | Password strength indication on the set-password screens; needs the owner's design approval before any UI change |
 | ASVS-04 | P1 | ASVS 2.2.3, 2.5.5 | Email the user when their password is changed, reset or set from an invitation, and when a factor is added or removed (no secret in the mail) |
 | ASVS-05 | P1 | ASVS 3.2.3, 3.4.4 | Name the staff session cookie `__Host-os_session` whenever cookies are `Secure` (and the ceremony cookie with a `__Host-` or narrowest-path equivalent) |
-| ASVS-06 | P1 | ASVS 3.3.2, 3.3.4, 8.2.3; relates to `UXW-13` | Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password; the web app clears its session storage at logout |
+| ASVS-06 | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
 | ASVS-07 | P1 | ASVS 3.7.1, 4.3.3 | Step-up re-authentication (password or second factor within the last 5 minutes) before creating API clients or keys, granting administrator profiles, changing webhook URLs and changing the user's email |
 | ASVS-08 | P1 | ASVS 1.7.1, 1.7.2, 2.8.5, 7.1.3, 7.1.4, 7.2.1, 7.2.2, 8.3.5, 9.2.5; `SEC-D01` stays (no personal data) | Security event log: staff sign-in success and failure, logout, reset, lockout, operator TOTP rejection, rate-limit hits and every 401/403 with request id and a hashed principal; one JSON log format across server, worker, keyd and modeld; staff document downloads recorded; worker logs keyd and TSA connection failures with their code; docs/65 explains shipping logs to a remote collector |
 | ASVS-09 | P1 | ASVS 4.2.2, 13.1.5, 13.2.5 | `/api/v1` refuses a request body that is not `Content-Type: application/json` (`415`), including `POST /auth/login`, closing login CSRF by a cross-site form |
@@ -74,7 +74,7 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-27 | P2 | ASVS 1.1.3 | A security-constraint line in docs/14 rows that add a user-facing feature (who may do it, what is refused), checked when the row is written |
 | ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key | Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
 | ASVS-29 | P2 | ASVS 2.4.5 | Optional password pepper held outside the database (a secret file through `casual-sign-secrets`), with rehash on login |
-| ASVS-30 | P2 | ASVS 5.2.3 | docs/07 `SEC-M02` still reads Planned although `-worker/src/email.rs` refuses CR/LF and encodes headers: confirm its test goes red without the guard and update the row |
+| ASVS-30 (Done) | P2 | ASVS 5.2.3 | Closed 2026-11-13: the test went red without the guard and docs/07 `SEC-M02` was updated. Was: docs/07 `SEC-M02` still read Planned although `-worker/src/email.rs` refuses CR/LF and encodes headers: confirm its test goes red without the guard and update the row |
 
 Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KEYD-01` (cloud KMS), `SEAL-14`
 (SHA-1 only for identifiers).
@@ -272,7 +272,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.8.1 | 1 | All | TOTP lifetime defined | Met | Operators' TOTP (RFC 6238, 30 s step, `-console/src/totp.rs`) | — |
 | 2.8.2 | 2 | All | TOTP seeds highly protected | Met | Operators' seeds sealed with AES-256-GCM under `OPENSEAL_CONSOLE_MFA_KEY`, operator id as associated data; the database holds only the sealed seed (`-console/src/crypto.rs`) | — |
 | 2.8.3 | 2 | All | Approved algorithms for OTP | Met | HMAC-SHA1 TOTP per RFC 6238 vectors (`-console/src/totp.rs` tests); signer codes from `aws_lc_rs::rand` | — |
-| 2.8.4 | 2 | All | TOTP used once within its validity | Met | `platform.operator_mfa.last_step`: a code is accepted only for a step later than the last (`migrations/0017_operators.sql`); no test seen red was found for a replayed step | ASVS-08 |
+| 2.8.4 | 2 | All | TOTP used once within its validity | Met | `platform.operator_mfa.last_step`: a code is accepted only for a step later than the last (`migrations/0017_operators.sql`); `-console/tests/api.rs` `operators_enrol_and_sign_in_with_a_single_use_second_factor` replays the same code on a new session and is refused | — |
 | 2.8.5 | 2 | All | Reused TOTP logged and rejected | Partly | Rejected by `last_step`; the rejection is not written to a security log | ASVS-08 |
 | 2.8.6 | 2 | All | Physical OTP generators revocable | N/A | No physical generators issued | — |
 | 2.8.7 | 2 | All | Biometrics only as secondary factor | N/A | No biometric authenticators | — |
@@ -396,7 +396,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 5.2.1 | 1 | All | HTML sanitizer for WYSIWYG input | N/A | No HTML input is accepted anywhere (`SEC-A07`) | — |
 | 5.2.2 | 1 | All | Unstructured data sanitized (characters, length) | Met | Length caps on names, subjects and messages (`dto.rs`, docs/21) | — |
-| 5.2.3 | 1 | All | Mail input sanitized against SMTP injection | Met | `-worker/src/email.rs` `supplied_text_cannot_inject_headers`, `encoded_words`; docs/07 `SEC-M02` still reads Planned | ASVS-30 |
+| 5.2.3 | 1 | All | Mail input sanitized against SMTP injection | Met | `-worker/src/email.rs` `supplied_text_cannot_inject_headers` (seen red 2026-11-13 with names written unencoded), `bad_addresses_are_refused`, `encoded_words`; docs/07 `SEC-M02` | — |
 | 5.2.4 | 1 | All | No eval or dynamic code execution | Met | No `eval`/`new Function` in `webapp/`; pdf.js `isEvalSupported: false`; CSP `script-src 'self'` (only the Verify page adds `'wasm-unsafe-eval'`, `web.rs`) | — |
 | 5.2.5 | 1 | All | Template injection | Met | Email bodies are fixed templates with escaped values (`SEC-A07`); no server-side template engine over user input | — |
 | 5.2.6 | 1 | All | SSRF protection | Met | Webhook URLs `https` only, every resolved address checked at registration and at connect, no redirects (`-worker/src/webhook.rs`, `SEC-W01`); OIDC endpoints from operator config only | — |
@@ -527,7 +527,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 8.2.1 | 1 | All | Anti-caching headers | Met | `no-store` on API responses; web app files revalidated (`web.rs`) | — |
 | 8.2.2 | 1 | All | No sensitive data in browser storage | Met | `localStorage`: theme, panel state, last-seen notice only; `sessionStorage`: CSRF token and the SSO return state (`webapp/api.js`, `sign.js`) | — |
-| 8.2.3 | 1 | All | Client storage cleared after session end | Partly | Logout clears the cookie; the CSRF token in `sessionStorage` lasts until the tab closes | ASVS-06 |
+| 8.2.3 | 1 | All | Client storage cleared after session end | Met | Logout revokes the session and clears the cookie (`admin.rs` `logout`); the web app's `logout` removes the CSRF token from `sessionStorage` whether or not the call succeeds (`webapp/api.js` `setCsrf(null)`); nothing else of the session is stored in the browser (8.2.2) | — |
 
 **V8.3 Sensitive Private Data**
 
