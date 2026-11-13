@@ -1652,6 +1652,97 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     )
     .await;
 
+    // The organization (ORG-03), as its owner's session; `uid` an admin and back.
+    let os = session_of(&login);
+    for (m, path, body, want) in [
+        (
+            "GET",
+            "/api/v1/organizations/me".to_owned(),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "PATCH",
+            "/api/v1/organizations/me".to_owned(),
+            Some(json!({"name": "Alpha"})),
+            StatusCode::OK,
+        ),
+        (
+            "GET",
+            "/api/v1/organizations/me/workspaces".to_owned(),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "GET",
+            "/api/v1/organizations/me/admins".to_owned(),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "POST",
+            "/api/v1/organizations/me/admins".to_owned(),
+            Some(json!({"user_id": uid, "role": "admin"})),
+            StatusCode::CREATED,
+        ),
+        (
+            "PATCH",
+            format!("/api/v1/organizations/me/admins/{uid}"),
+            Some(json!({"role": "owner"})),
+            StatusCode::OK,
+        ),
+        (
+            "DELETE",
+            format!("/api/v1/organizations/me/admins/{uid}"),
+            None,
+            StatusCode::OK,
+        ),
+    ] {
+        ok(api.call(m, &path, &os, body, &[]).await, want, &path).await;
+    }
+    let w = ok(
+        api.call(
+            "POST",
+            "/api/v1/organizations/me/workspaces",
+            &os,
+            Some(json!({"name": "Second"})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create workspace",
+    )
+    .await;
+    let wid = w["id"].as_str().unwrap().to_owned();
+    for (m, path, body, want) in [
+        (
+            "GET",
+            format!("/api/v1/organizations/me/workspaces/{wid}"),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "POST",
+            format!("/api/v1/organizations/me/workspaces/{wid}/join"),
+            Some(json!({"profile": "viewer"})),
+            StatusCode::CREATED,
+        ),
+        (
+            "POST",
+            format!("/api/v1/organizations/me/workspaces/{wid}/archive"),
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "GET",
+            "/api/v1/organizations/me/audit?verify=full".to_owned(),
+            None,
+            StatusCode::OK,
+        ),
+    ] {
+        ok(api.call(m, &path, &os, body, &[]).await, want, &path).await;
+    }
+
     // Members and sessions last.
     ok(
         api.call("DELETE", &format!("/api/v1/users/{uid}"), k, None, &[])

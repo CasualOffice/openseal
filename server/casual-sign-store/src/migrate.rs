@@ -58,8 +58,9 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(20, "0020_admin_events.sql"),
     migration!(21, "0021_ml_analysis.sql"),
     migration!(22, "0022_folders_and_deleted.sql"),
-    // 23 and 25 are reserved by rows merging separately.
+    // 23 is reserved by a row merging separately.
     migration!(24, "0024_plans.sql"),
+    migration!(25, "0025_metering.sql"),
     migration!(26, "0026_console_org_events.sql"),
 ];
 

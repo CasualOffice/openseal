@@ -9,7 +9,7 @@ use axum::handler::Handler;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
 
-use crate::api::{admin, envelopes as env, folders, ml, templates, webhooks};
+use crate::api::{admin, envelopes as env, folders, ml, org, templates, webhooks};
 use crate::ceremony;
 use crate::http::{Guard, guard, request_context};
 use crate::state::AppState;
@@ -143,6 +143,91 @@ pub fn table() -> Vec<Route> {
             Scope("admin:account"),
             JSON,
             admin::admin_events,
+        ),
+        // Organization (ORG-03): the role is checked per request in the handler.
+        r(
+            "GET",
+            "/api/v1/organizations/me",
+            Scope(""),
+            JSON,
+            org::organization,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/organizations/me",
+            Scope(""),
+            JSON,
+            org::patch_organization,
+        ),
+        r(
+            "GET",
+            "/api/v1/organizations/me/workspaces",
+            Scope(""),
+            JSON,
+            org::workspaces,
+        ),
+        r(
+            "POST",
+            "/api/v1/organizations/me/workspaces",
+            Scope(""),
+            JSON,
+            org::create_workspace,
+        ),
+        r(
+            "GET",
+            "/api/v1/organizations/me/workspaces/{id}",
+            Scope(""),
+            JSON,
+            org::workspace,
+        ),
+        r(
+            "POST",
+            "/api/v1/organizations/me/workspaces/{id}/archive",
+            Scope(""),
+            JSON,
+            org::archive_workspace,
+        ),
+        r(
+            "POST",
+            "/api/v1/organizations/me/workspaces/{id}/join",
+            Scope(""),
+            JSON,
+            org::join_workspace,
+        ),
+        r(
+            "GET",
+            "/api/v1/organizations/me/admins",
+            Scope(""),
+            JSON,
+            org::admins,
+        ),
+        r(
+            "POST",
+            "/api/v1/organizations/me/admins",
+            Scope(""),
+            JSON,
+            org::add_admin,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/organizations/me/admins/{user}",
+            Scope(""),
+            JSON,
+            org::patch_admin,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/organizations/me/admins/{user}",
+            Scope(""),
+            JSON,
+            org::remove_admin,
+        ),
+        r(
+            "GET",
+            "/api/v1/organizations/me/audit",
+            Scope(""),
+            JSON,
+            org::audit,
         ),
         r(
             "GET",

@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT oa.user_id, oa.role, oa.permission_set_id, oa.workspace_scope, oa.created_at,\n                      ps.permissions AS \"permissions?\"\n               FROM organization_admins oa\n               LEFT JOIN org_permission_sets ps\n                 ON ps.organization_id = oa.organization_id AND ps.id = oa.permission_set_id\n               WHERE oa.organization_id = $1 AND ($2::uuid IS NULL OR oa.user_id = $2)\n               ORDER BY CASE oa.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,\n                        oa.created_at, oa.user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "organization_admins",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "organization_admins",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "permission_set_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "organization_admins",
+            "name": "permission_set_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "workspace_scope",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "organization_admins",
+            "name": "workspace_scope"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "organization_admins",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "permissions?",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "org_permission_sets",
+            "name": "permissions"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "9ec619190f1b1232c6ad8dd2b807248a92bb6e70820cd194f6e801aea4425c02"
+}

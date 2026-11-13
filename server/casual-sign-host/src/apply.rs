@@ -14,7 +14,7 @@
 //! take turns, and the state is written back at the revision read (`CS-DB-0007`
 //! otherwise).
 
-use casual_sign_audit::{Chain, Personal};
+use casual_sign_audit::{Chain, EventData, Personal};
 use casual_sign_model::{
     Delivery as MDelivery, EnvelopeStatus as MStatus, RecipientStatus as MRStatus,
     RecipientType as MRType, SealProfile as MSeal,
@@ -25,7 +25,7 @@ use casual_sign_store::repo::envelopes::{
 };
 use casual_sign_store::repo::recipients::{Delivery, NewRecipient, RecipientStatus, RecipientType};
 use casual_sign_store::{
-    AccountId, DocumentId, EnvelopeId, RecipientId, Store, StoreError, TenantTx, UserId,
+    AccountId, DocumentId, EnvelopeId, Meter, RecipientId, Store, StoreError, TenantTx, UserId,
 };
 use casual_sign_workflow::{Command, Context, EffectKind, EnvelopeState, decide};
 
@@ -141,6 +141,12 @@ pub async fn apply_loaded(
     for pending in decision.events {
         let event = pending.into_audit(&chain);
         tx.audit().append(envelope, &event).await?;
+        // `envelope.sent` is metered in the deciding transaction, once per envelope
+        // (docs/23 §7.2): a correction or resend that sends again is not counted twice.
+        if matches!(event.data, EventData::EnvelopeSent { .. }) {
+            tx.record_usage(Meter::EnvelopesSent, 1, now, "envelope", envelope.0)
+                .await?;
+        }
         chain
             .append(event)
             .map_err(|e| HostError::Chain { code: e.code() })?;

@@ -199,11 +199,11 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0001 | Database unreachable, connection failed, or pool exhausted |
 | CS-DB-0002 | A migration failed, or an applied migration's text changed (migrations are forward-only) |
 | CS-DB-0003 | Not found in this account (another account's object answers the same) |
-| CS-DB-0004 | Update, delete or truncate of the audit chain, a tombstone, an admin log (`admin_events`, `org_admin_events`; `ORG-05`, migration 0020), or the operator log (`CON-03`) refused (SQLSTATE `OS001`) |
+| CS-DB-0004 | Update, delete or truncate of the audit chain, a tombstone, an admin log (`admin_events`, `org_admin_events`; `ORG-05`, migration 0020), the operator log (`CON-03`), or the usage ledger (`usage_ledger`; `PLAN-03`, migration 0025) refused (SQLSTATE `OS001`) |
 | CS-DB-0005 | Audit event does not extend its envelope's chain: hash, `seq` or `prev` (SQLSTATE `OS002`) |
 | CS-DB-0006 | Already exists (a unique constraint, named) |
 | CS-DB-0007 | Stale version: the object changed since it was read |
-| CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object; with constraint `organization_keeps_an_owner` (SQLSTATE `23514`, `ORG-02`), a commit that would leave an active organization with no enabled owner (`StoreError::is_last_owner`, served as `CS-ORG-0008` once ORG-03's routes issue it); with constraint `organization_admin_is_a_member` (SQLSTATE `23503`, `ORG-02`), an organization administrator who is not an enabled member of one of that organization's workspaces; with constraint `admin_change_has_event` (SQLSTATE `23514`, `ORG-05`), a commit by the application role that changed settings, a member, a profile, a workspace or the organization without appending that change's admin event, or by the console role (`CON-16`) that changed an organization or workspace without its `operator.*` copy in that organization's log |
+| CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object; with constraint `organization_keeps_an_owner` (SQLSTATE `23514`, `ORG-02`), a commit that would leave an active organization with no enabled owner (`StoreError::is_last_owner`, served as `CS-ORG-0008` by ORG-03's routes); with constraint `organization_admin_is_a_member` (SQLSTATE `23503`, `ORG-02`), an organization administrator who is not an enabled member of one of that organization's workspaces (ORG-03's routes check first and answer `CS-ORG-0018`); with constraint `admin_change_has_event` (SQLSTATE `23514`, `ORG-05`), a commit by the application role that changed settings, a member, a profile, a workspace or the organization without appending that change's admin event, or by the console role (`CON-16`) that changed an organization or workspace without its `operator.*` copy in that organization's log; from `TenantTx::record_usage` (SQLSTATE `23514`, `PLAN-03`), a gauge meter (`seats`, `storage_bytes`, `workspaces`, `templates`) or a quantity below 1 offered for counting |
 | CS-DB-0009 | Refused by the database: missing privilege, or a row row-level security does not admit; SQLSTATE `OS003` (the store's own) when the user to change is also a member of another account (`SEC-ID-01`, served as `CS-API-0015`) |
 | CS-DB-0010 | A stored value could not be read back as its type |
 | CS-DB-0011 | The database has a migration this build does not know |
@@ -296,6 +296,7 @@ the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`
 | CS-ORG-0015 | Organization closed: read-only (409) |
 | CS-ORG-0016 | Cross-workspace template copy not allowed by the organization's policy (403) |
 | CS-ORG-0017 | Imported evidence package does not verify (422; names the failing check) |
+| CS-ORG-0018 | An organization administrator must be an enabled member of one of that organization's workspaces (422, `POST /organizations/me/admins`, ORG-03) |
 | CS-PLAN-0001 | Feature not in the plan (403; names the feature) |
 | CS-PLAN-0002 | Quota for the period reached (403; meter, limit, used, period end) |
 | CS-PLAN-0003 | Seat limit reached (403) |

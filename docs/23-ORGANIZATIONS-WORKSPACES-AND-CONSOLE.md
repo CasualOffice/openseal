@@ -261,12 +261,12 @@ Built as sketched above, with these decisions taken within the design (each test
 - **An organization admin is a member.** A `BEFORE INSERT OR UPDATE OF organization_id, user_id` trigger on
   `organization_admins` refuses a user who is not an enabled member of a workspace of that organization (SQLSTATE
   `23503`, constraint `organization_admin_is_a_member`, store `CS-DB-0008`); the foreign key to `users` ignores row
-  security, so without it a user of another organization could be named. ORG-03's routes also check it, with their
-  own error code. A membership disabled later leaves the row; removal is ORG-03's. Test:
+  security, so without it a user of another organization could be named. ORG-03's routes also check it, answering
+  `422 CS-ORG-0018`. A membership disabled later leaves the row; removal is ORG-03's. Test:
   `organizations.rs::an_organization_admin_must_be_a_member_of_one_of_its_workspaces`, seen red without the trigger.
 - **The last-owner constraint** fires on UPDATE or DELETE of an `owner` row and raises SQLSTATE `23514` with
   constraint `organization_keeps_an_owner` (store `CS-DB-0008`, `StoreError::is_last_owner`; the API code `CS-ORG-0008`
-  is issued with ORG-03's routes). An organization that never had an owner (an account with no admin at migration) can
+  is issued by ORG-03's routes). An organization that never had an owner (an account with no admin at migration) can
   still gain administrators. Disabling an owner's identity (`users.disabled_at`) is not checked here; the platform's
   identity disable (CON-04) must check it.
 - **Backfill** makes owners of admin-profile members whose membership is enabled; a disabled one is not an owner.
@@ -280,7 +280,7 @@ Built as sketched above, with these decisions taken within the design (each test
   create the role first (`CREATE ROLE openseal_org_mover NOLOGIN NOINHERIT`). With that, test 6 holds on a
   non-superuser CREATEROLE migrator (`catalog_6_holds_on_a_non_superuser_createrole_migrator`).
 - **Catalog test 1** names `accounts` (keyed on `id`) beside `account_memberships`; `org_workspace_allocations` does
-  not exist yet. The route half of `SEC-O01` waits for ORG-03's routes.
+  not exist yet. The route half of `SEC-O01` is ORG-03's (`tests/organizations.rs`, generated from the route table).
 
 ### 2.2 Roles and permissions
 
@@ -564,8 +564,8 @@ mutation of the migration):
   instead of re-reading the whole log for every page (about N²/limit rows for an export). `GET /admin-events`
   (workspace, `admin:account`) answers JSON or CSV from it; `verify=full` re-verifies the whole log first. A single
   page in the middle does not prove the events before its cursor: an export walks from the start, or asks for
-  `verify=full`. `GET /organizations/me/audit` comes with ORG-03's organization
-  routes, over `OrgTx::admin_events`.
+  `verify=full`. `GET /organizations/me/audit` (ORG-03) answers the organization's
+  log the same way, over `OrgTx::verified_admin_events`, with the same `verify=page|full`.
 
 ## 3. Organization policy and inheritance
 
@@ -1023,6 +1023,23 @@ Allocations (`PLAN-07`) and enforcement (`PLAN-04`) are not built.
 - **Counters.** `usage_counters (account_id, meter, period_start, value)` per workspace, and **`org_usage_counters
   (organization_id, meter, period_start, value)`** per organization (review finding 8), updated in the same
   transaction as the ledger row.
+
+**As built (`PLAN-03`, migration `0025_metering.sql`).** The ledger and both counter tables above, plus `org_quantity`
+on each ledger row (the organization's change, equal to `quantity` except for `seats`, where one person in two
+workspaces is two workspace seats and one organization seat) and `usage_blob_refs` (how many rows of a workspace name a
+blob). Counters are by calendar month (UTC); gauges have one period starting at the Unix epoch. The application role
+has SELECT only; every write goes through the definer `openseal_meter_apply`, which inserts the ledger row (`ON
+CONFLICT DO NOTHING` on `(account_id, meter, source_kind, source_id)`) and, only when it was new, moves both counters
+in the same transaction. Counter meters are counted by `TenantTx::record_usage` → `openseal_meter_record`, which
+refuses gauges and quantities below 1 (`CS-DB-0008`). `envelopes_sent` is counted in `casual-sign-host::apply` when
+`envelope.sent` is appended, keyed by the envelope id. Gauges are kept by triggers in the transaction of the change:
+`storage_bytes` on `document_versions` and `template_documents` insert and delete, once per blob per workspace;
+`seats` recounted through `openseal_org_seats()` under a lock on the organization's `seats` counter row, on membership
+insert, delete, enable or disable, re-profile, profile permission change, user disable, workspace archive or restore,
+and a seat-rule change by plan assignment or organization override; `workspaces` on create, archive and restore.
+Existing rows are counted once by the migration. Not counted yet: signer captures in `storage_bytes` (`PLAN-12`), a
+seat rule changing only by time passing (`PLAN-13`), the `templates` gauge (`PLAN-14`). Tests:
+`casual-sign-store/tests/metering.rs`, `casual-sign-server/tests/metering.rs`.
 
 ### 7.3 Enforcement (only on actions that create or start something)
 

@@ -425,6 +425,54 @@ impl Users<'_> {
             .await
     }
 
+    /// An organization owner or admin joins this workspace with `profile`
+    /// (`org.workspaces.join`, docs/23 §2.2: the only way an organization role reaches
+    /// content). Appends `member.added` with `via: organization` to this workspace's
+    /// log and `org.workspace_joined` to its organization's, in this transaction. The
+    /// caller (an organization transaction continued here with
+    /// [`crate::OrgTx::into_workspace`]) has checked the role.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::add_existing_member`].
+    pub async fn join_from_organization(
+        &mut self,
+        user: UserId,
+        email_normalized: &Personal<String>,
+        profile: PermissionProfileId,
+    ) -> Result<()> {
+        let added = sqlx::query_scalar!(
+            r#"SELECT openseal_add_existing_member($1, $2, $3) AS "added!""#,
+            user.0,
+            email_normalized.get(),
+            profile.0
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        if !added {
+            return Err(StoreError::NotFound { entity: "user" });
+        }
+        let acct = self.tx.acct();
+        let profile = Some(serde_json::Value::from(profile.0.to_string()));
+        self.tx
+            .admin_event(
+                AdminChange::new("member.added")
+                    .target("user", user.0)
+                    .change(Change::new("profile", None, profile.clone()))
+                    .change(Change::new("via", None, Some("organization".into()))),
+            )
+            .await?;
+        self.tx
+            .org_admin_event(
+                AdminChange::new("org.workspace_joined")
+                    .target("workspace", acct)
+                    .target("user", user.0)
+                    .change(Change::new("profile", None, profile)),
+            )
+            .await
+    }
+
     /// A member of this account.
     ///
     /// # Errors
