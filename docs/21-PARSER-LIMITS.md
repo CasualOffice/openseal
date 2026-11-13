@@ -173,6 +173,16 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Uploaded signature image read by the seal job | 5 MiB | CS-WRK-0016 |
 | TSA or OCSP answer / CRL | 1 MiB / 32 MiB (as the CLI) | CS-SEAL-0002 |
 
+## Blob store and backups (`casual-sign-store`, `tools/backup`; `ASVS-14`)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| One S3 listing response (`ListObjectsV2`, 1,000 keys a page) read | 8 MiB (`MAX_LISTING_BYTES`); more is refused as unreadable | CS-BLOB-0001 |
+| Keys per listing page (filesystem and S3) | 1,000; the filesystem walks its tree once in key order, reading only the directories a page covers | — |
+| Blob read back by `blobs-export`, `blobs-import` and `verify-evidence` | the store's cap (`DEFAULT_MAX_BLOB_BYTES`) | CS-BLOB-0004 |
+| Signature capture read by `verify-evidence` and the backup tool | 1 MiB, parsed as the seal job does (`capture::parse`) | CS-WRK-0016 |
+| Backup roles script | one CREATE ROLE, ALTER ROLE, GRANT or SET statement a line; no backslash; no comment or dollar quote outside quotes | — (the tool exits non-zero naming the line) |
+
 ## API (built, stage 2C)
 
 | Limit | Default | Code |

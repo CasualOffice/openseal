@@ -250,7 +250,7 @@ jobs:
 
   # ASVS-14 (ASVS 8.1.5, 8.1.6): the restore drill, gated like compose-e2e. A Compose stack
   # built from this commit signs and seals one envelope and half signs another, is backed
-  # up (encrypted, MAC'd), destroyed with its volumes, and restored into a fresh stack with
+  # up (encrypted, signed), destroyed with its volumes, and restored into a fresh stack with
   # its own keys; the sealed PDF must be byte-identical, every chain must verify, and the
   # half-signed envelope must finish and be sealed there (tools/backup/drill.sh).
   backup-drill:

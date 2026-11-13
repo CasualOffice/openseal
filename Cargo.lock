@@ -863,6 +863,7 @@ dependencies = [
  "casual-sign-host",
  "casual-sign-model",
  "casual-sign-pdf",
+ "casual-sign-platform-store",
  "casual-sign-sdk",
  "casual-sign-secrets",
  "casual-sign-store",

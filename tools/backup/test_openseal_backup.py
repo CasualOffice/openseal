@@ -22,7 +22,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import openseal_backup as ob  # noqa: E402
 
-COUNTS = {"envelopes": 2, "audit_events": 9, "workspaces": 1, "admin_events": 4, "organizations": 1, "org_admin_events": 2, "document_blobs": 2}
+COUNTS = {"envelopes": 2, "audit_events": 9, "workspaces": 1, "admin_events": 4, "organizations": 1, "org_admin_events": 2, "operator_events": 3, "blobs": 2}
 ROLES = """--
 -- Roles
 --
@@ -35,7 +35,9 @@ GRANT openseal_app TO openseal WITH INHERIT TRUE GRANTED BY postgres;
 
 # The fake tools: one Python program, the tool's name first. State lives in FAKE_DIR:
 # `calls` (one line per call), `store/` (the blob store), `oplog` (keyd's log), and the
-# answers the test sets: `fresh` (the count FRESH_SQL returns), `restored_counts`.
+# answers the test sets: `fresh` (the count FRESH_SQL returns), `restored_counts`, `named`
+# and `captures` (the blob keys the database names: by default every blob in the store),
+# `restored_named`.
 FAKE = r'''
 import os, pathlib, sys, shutil, hashlib
 d = pathlib.Path(os.environ["FAKE_DIR"])
@@ -43,22 +45,39 @@ tool, args = sys.argv[1], sys.argv[2:]
 with open(d / "calls", "a") as f:
     f.write(" ".join([tool] + [a if len(a) < 60 else a[:60] for a in args]) + "\n")
 counts = (d / "counts").read_text().strip()
+def keys(name):
+    p = d / name
+    if p.exists():
+        return p.read_text().split()
+    return sorted(q.name for q in (d / "store").iterdir()) if name == "named" else []
 if tool == "psql" and "-c" in args:
     sql = args[args.index("-c") + 1]
     if "pg_namespace" in sql:
         print((d / "fresh").read_text().strip())
+    elif sql.startswith("SELECT DISTINCT encode(k"):
+        # What the restored dump names (the source's pg_dump wrote its keys into it).
+        restored = (d / "restored.dump").read_text().splitlines()[1:]
+        print("\n".join(keys("restored_named") if (d / "restored_named").exists() else restored))
     else:
         print((d / "restored_counts").read_text().strip() if (d / "restored_counts").exists() else counts)
 elif tool == "psql":
     for line in sys.stdin:
         if "pg_export_snapshot" in line:
             print("00000003-00000002-1", flush=True)
-        elif "count(*)" in line:
+        elif line.startswith("SELECT count(*) FROM (SELECT DISTINCT encode(k"):
+            print(len(keys("named")), flush=True)
+        elif line.startswith("SELECT DISTINCT encode(k"):
+            print("\n".join(keys("named")), flush=True) if keys("named") else None
+        elif line.startswith("SELECT count(*) FROM (SELECT DISTINCT encode(image_sha256"):
+            print(len(keys("captures")), flush=True)
+        elif line.startswith("SELECT DISTINCT encode(image_sha256"):
+            print("\n".join(keys("captures")), flush=True) if keys("captures") else None
+        elif line.startswith("SELECT (SELECT count(*) FROM envelopes)"):
             print(counts, flush=True)
         elif "openseal_schema_migrations" in line:
             print("34", flush=True)
 elif tool == "pg_dump":
-    sys.stdout.buffer.write(b"PGDMP fake dump " + args[-2].encode())
+    sys.stdout.buffer.write(b"PGDMP fake dump " + args[-2].encode() + b"\n" + "\n".join(keys("named")).encode())
 elif tool == "pg_dumpall":
     sys.stdout.write(os.environ["FAKE_ROLES"])
 elif tool == "pg_restore":
@@ -77,9 +96,9 @@ elif tool == "server" and args[0] == "blobs-import":
         shutil.copyfile(p, target / p.name)
     print(f"blobs imported={len(list(target.iterdir()))}")
 elif tool == "server" and args[0] == "verify-evidence":
-    keys = ["envelopes", "audit_events", "workspaces", "admin_events", "organizations", "org_admin_events", "document_blobs"]
-    vals = (d / "evidence_counts").read_text().strip() if (d / "evidence_counts").exists() else counts
-    print("evidence verified: " + " ".join(f"{k}={v}" for k, v in zip(keys, vals.split("|"))))
+    names = ["envelopes", "audit_events", "workspaces", "admin_events", "organizations", "org_admin_events", "operator_events", "blobs"]
+    vals = (d / "evidence_counts").read_text().strip() if (d / "evidence_counts").exists() else counts + "|" + os.environ.get("FAKE_BLOBS", "2")
+    print("evidence verified: " + " ".join(f"{k}={v}" for k, v in zip(names, vals.split("|"))))
 else:
     sys.exit(f"fake: unknown call {tool} {args}")
 '''
@@ -157,7 +176,8 @@ class Base(unittest.TestCase):
 
     def args(self, **kw):
         base = {
-            "mac_key": str(self.keys / "backup-mac.key"),
+            "signing_key": str(self.keys / "backup-signing.key"),
+            "verify_key": str(self.keys / "backup-signing.pub"),
             "recipient": str(self.keys / "backup-recipient.pem"),
             "key": str(self.keys / "backup-recipient.key"),
             "work_dir": None,
@@ -188,7 +208,7 @@ class Base(unittest.TestCase):
 class CreateAndRestore(Base):
     def test_a_backup_restores_into_a_fresh_target_with_every_count_and_blob(self):
         b, src = self.backup(oplog=oplog_lines(2) + b"3\tpartial line")
-        self.assertEqual(sorted(p.name for p in b.iterdir()), [ob.MANIFEST, ob.MANIFEST_MAC, ob.PAYLOAD])
+        self.assertEqual(sorted(p.name for p in b.iterdir()), [ob.MANIFEST, ob.MANIFEST_SIG, ob.PAYLOAD])
         manifest = json.loads((b / ob.MANIFEST).read_text())
         self.assertEqual(manifest["schema_version"], 34)
         # Nothing readable in the payload: CMS, not a tar.
@@ -202,9 +222,9 @@ class CreateAndRestore(Base):
         self.assertEqual(dst.written_oplog, oplog_lines(2))
         self.assertTrue((dst.d / "restored.dump").read_bytes().startswith(b"PGDMP fake dump"))
         self.assertEqual(sorted(p.name for p in (dst.d / "restored-store").iterdir()), sorted(p.name for p in (src.d / "store").iterdir()))
-        # In this order: fresh check, roles, the database, counts, blobs, evidence.
+        # In this order: fresh check, roles, the database, counts, blob keys, blobs, evidence.
         steps = [c for c in dst.calls()]
-        self.assertEqual([s.split()[0] for s in steps], ["psql", "psql", "pg_restore", "psql", "server", "server"])
+        self.assertEqual([s.split()[0] for s in steps], ["psql", "psql", "pg_restore", "psql", "psql", "server", "server"])
         self.assertEqual(steps[-2:], ["server blobs-import", "server verify-evidence"])
         # The roles script that ran tolerates roles the target already has.
         # (The fake recorded the call; the transform itself is tested below.)
@@ -226,22 +246,60 @@ class CreateAndRestore(Base):
     def test_restore_fails_when_the_restored_counts_or_the_evidence_differ(self):
         b, _ = self.backup()
         dst = self.target()
-        (dst.d / "restored_counts").write_text("2|8|1|4|1|2|2")
+        (dst.d / "restored_counts").write_text("2|8|1|4|1|2|3")
         with self.assertRaisesRegex(ob.BackupError, "restored row counts"):
             ob.restore(self.args(backup=str(b)), dst)
         dst2 = self.tmp / "dst2"
         dst2.mkdir()
         fake2 = Fake(dst2)
-        (dst2 / "evidence_counts").write_text("2|9|1|4|1|2|1")
+        (dst2 / "evidence_counts").write_text("2|9|1|4|1|2|3|1")
         with self.assertRaisesRegex(ob.BackupError, "verify-evidence counted"):
             ob.restore(self.args(backup=str(b)), fake2)
+        dst3 = self.tmp / "dst3"
+        dst3.mkdir()
+        fake3 = Fake(dst3)
+        (dst3 / "restored_named").write_text(ob.hashlib.sha256(b"other").hexdigest())
+        with self.assertRaisesRegex(ob.BackupError, "names other blobs"):
+            ob.restore(self.args(backup=str(b)), fake3)
 
-    def test_a_store_with_fewer_blobs_than_the_documents_is_refused(self):
+    def test_a_capture_s_image_is_named_too_and_must_be_in_the_export(self):
         src = self.source()
-        (src.d / "counts").write_text("2|9|1|4|1|2|3")
-        with self.assertRaisesRegex(ob.BackupError, "fewer than"):
+        image = b"\x89PNG signature"
+        ih = ob.hashlib.sha256(image).hexdigest()
+        capture = json.dumps({"kind": "image", "image": ih}).encode()
+        ch = ob.hashlib.sha256(capture).hexdigest()
+        (src.d / "store" / ch).write_bytes(capture)
+        named = sorted(p.name for p in (src.d / "store").iterdir())
+        (src.d / "named").write_text("\n".join(named))
+        (src.d / "captures").write_text(ch)
+        with self.assertRaisesRegex(ob.BackupError, "name 1 image"):
             ob.create(self.args(), src)
-        self.assertEqual(list((self.tmp / "out").iterdir()), [])
+        (src.d / "store" / ih).write_bytes(image)
+        b = ob.create(self.args(), src)
+        dst = self.target()
+        os.environ["FAKE_BLOBS"] = "4"
+        self.addCleanup(os.environ.pop, "FAKE_BLOBS", None)
+        report = ob.restore(self.args(backup=str(b)), dst)
+        self.assertEqual(report["counts"]["blobs"], 4)
+        # A drawn capture names no image; a capture that is not one is refused.
+        drawn = b'{"kind": "drawn", "strokes": [[[0, 1], [2, 3]]]}'
+        dh = ob.hashlib.sha256(drawn).hexdigest()
+        (src.d / "store" / dh).write_bytes(drawn)
+        (src.d / "named").write_text("\n".join(sorted(named + [ih, dh])))
+        (src.d / "captures").write_text(f"{ch}\n{dh}")
+        (self.tmp / "out2").mkdir()
+        b2 = ob.create(self.args(out=str(self.tmp / "out2")), src)
+        contents_keys = ob.verify_outer(b2, self.keys / "backup-signing.pub")
+        self.assertTrue(contents_keys)
+        (src.d / "store" / ch).unlink()
+        (src.d / "store" / dh).unlink()
+        bad = b'{"kind": "strokes"}'
+        bh = ob.hashlib.sha256(bad).hexdigest()
+        (src.d / "store" / bh).write_bytes(bad)
+        (src.d / "named").write_text("\n".join(sorted(set(named) - {ch} | {bh})))
+        (src.d / "captures").write_text(bh)
+        with self.assertRaisesRegex(ob.BackupError, "not a capture"):
+            ob.create(self.args(), src)
 
     def test_keep_prunes_the_oldest(self):
         out = self.tmp / "out"
@@ -249,43 +307,67 @@ class CreateAndRestore(Base):
         for stamp in ("20260101T000000Z", "20260102T000000Z", "20260103T000000Z"):
             d = out / f"openseal-backup-{stamp}"
             d.mkdir()
-            (d / ob.MANIFEST_MAC).write_text("x")
+            (d / ob.MANIFEST_SIG).write_text("x")
         (out / "unrelated").mkdir()
         ob.prune(out, 2)
         self.assertEqual(sorted(p.name for p in out.iterdir()), ["openseal-backup-20260102T000000Z", "openseal-backup-20260103T000000Z", "unrelated"])
 
 
 class Integrity(Base):
+    def verify_args(self, b, *extra):
+        return ["verify", str(b), "--verify-key", str(self.keys / "backup-signing.pub"), *extra]
+
     def test_verify_passes_with_and_without_the_private_key(self):
         b, _ = self.backup()
-        self.assertEqual(ob.main(["verify", str(b), "--mac-key", str(self.keys / "backup-mac.key")]), 0)
+        self.assertEqual(ob.main(self.verify_args(b)), 0)
         self.assertEqual(
-            ob.main(["verify", str(b), "--mac-key", str(self.keys / "backup-mac.key"), "--key", str(self.keys / "backup-recipient.key"), "--recipient", str(self.keys / "backup-recipient.pem")]),
+            ob.main(self.verify_args(b, "--key", str(self.keys / "backup-recipient.key"), "--recipient", str(self.keys / "backup-recipient.pem"))),
             0,
         )
 
-    def test_an_edited_manifest_or_another_mac_key_is_refused(self):
+    def test_an_edited_manifest_or_another_signing_key_is_refused(self):
         b, _ = self.backup()
-        key = ob.read_mac_key(self.keys / "backup-mac.key")
+        pub = self.keys / "backup-signing.pub"
         m = (b / ob.MANIFEST).read_bytes()
         (b / ob.MANIFEST).write_bytes(m.replace(b'"schema_version": 34', b'"schema_version": 35'))
-        with self.assertRaisesRegex(ob.BackupError, "MAC does not verify"):
-            ob.verify_outer(b, key)
+        with self.assertRaisesRegex(ob.BackupError, "signature does not verify"):
+            ob.verify_outer(b, pub)
         (b / ob.MANIFEST).write_bytes(m)
-        ob.verify_outer(b, key)
-        with self.assertRaisesRegex(ob.BackupError, "MAC does not verify"):
-            ob.verify_outer(b, ob.read_mac_key(self.other / "backup-mac.key"))
+        ob.verify_outer(b, pub)
+        with self.assertRaisesRegex(ob.BackupError, "signature does not verify"):
+            ob.verify_outer(b, self.other / "backup-signing.pub")
+
+    def test_what_a_verifier_holds_cannot_make_a_backup_that_verifies(self):
+        """Review finding 1: a verifier held the MAC key, so it could forge a manifest,
+        and a forged backup's roles script ran `\\!` commands at restore. Now a verifier
+        holds a public key: signing with it fails, and a backup signed by any other key
+        (the forger's own) is refused even when its manifest names that key."""
+        b, _ = self.backup()
+        pub = self.keys / "backup-signing.pub"
+        self.assertIn(b"PUBLIC KEY", pub.read_bytes())
+        self.assertNotIn(b"PRIVATE", pub.read_bytes())
+        with self.assertRaises(ob.BackupError):
+            ob.sign(pub, b / ob.MANIFEST, self.tmp / "forged.sig")
+        manifest = json.loads((b / ob.MANIFEST).read_bytes())
+        manifest["signing_key_sha256"] = ob.hashlib.sha256(ob.ed25519_public_der(self.other / "backup-signing.key", private=True)).hexdigest()
+        (b / ob.MANIFEST).write_bytes((json.dumps(manifest, indent=1, sort_keys=True) + "\n").encode())
+        ob.sign(self.other / "backup-signing.key", b / ob.MANIFEST, b / ob.MANIFEST_SIG)
+        with self.assertRaisesRegex(ob.BackupError, "signature does not verify"):
+            ob.verify_outer(b, pub)
+        # And the verify key must be an Ed25519 public key, not, say, the certificate.
+        with self.assertRaisesRegex(ob.BackupError, "verify key|not an Ed25519 key"):
+            ob.verify_outer(b, self.keys / "backup-recipient.pem")
 
     def test_an_altered_payload_is_refused_before_and_by_decryption(self):
         b, _ = self.backup()
-        key = ob.read_mac_key(self.keys / "backup-mac.key")
+        pub = self.keys / "backup-signing.pub"
         data = bytearray((b / ob.PAYLOAD).read_bytes())
         data[len(data) // 2] ^= 1
         (b / ob.PAYLOAD).write_bytes(bytes(data))
         with self.assertRaisesRegex(ob.BackupError, "differs from the manifest"):
-            ob.verify_outer(b, key)
-        # Even with the manifest rewritten to match (by someone without the MAC key, the
-        # MAC fails; here the check under it): GCM refuses the altered ciphertext.
+            ob.verify_outer(b, pub)
+        # Even with the manifest rewritten to match (by someone without the signing key,
+        # the signature fails; here the check under it): GCM refuses the altered ciphertext.
         manifest = json.loads((b / ob.MANIFEST).read_bytes())
         digest, size = ob.sha256_file(b / ob.PAYLOAD)
         manifest["payload"].update(sha256=digest, bytes=size)
@@ -296,24 +378,34 @@ class Integrity(Base):
 
     def test_another_recipient_cannot_decrypt(self):
         b, _ = self.backup()
-        manifest = ob.verify_outer(b, ob.read_mac_key(self.keys / "backup-mac.key"))
+        manifest = ob.verify_outer(b, self.keys / "backup-signing.pub")
         with self.assertRaisesRegex(ob.BackupError, "not the one this backup was encrypted for"):
             ob.decrypt(b, manifest, self.other / "backup-recipient.key", self.other / "backup-recipient.pem", self.tmp)
         # The right certificate with the wrong private key: openssl refuses.
         with self.assertRaisesRegex(ob.BackupError, "openssl exited"):
             ob.decrypt(b, manifest, self.other / "backup-recipient.key", self.keys / "backup-recipient.pem", self.tmp)
 
-    def test_a_mac_key_others_can_read_is_refused(self):
-        k = self.tmp / "mac"
-        k.write_text("ab" * 32)
+    def test_a_signing_key_others_can_read_is_refused(self):
+        k = self.tmp / "signing.key"
+        k.write_bytes((self.keys / "backup-signing.key").read_bytes())
         os.chmod(k, 0o644)
         with self.assertRaisesRegex(ob.BackupError, "readable by others"):
-            ob.read_mac_key(k)
-        os.chmod(k, 0o600)
-        self.assertEqual(len(ob.read_mac_key(k)), 32)
-        k.write_text("short")
-        with self.assertRaisesRegex(ob.BackupError, "64 lower-case"):
-            ob.read_mac_key(k)
+            ob.create(self.args(signing_key=str(k)), self.source())
+        self.assertEqual(os.stat(self.keys / "backup-signing.key").st_mode & 0o777, 0o600)
+
+    def test_the_blob_key_sql_is_the_store_s_own(self):
+        rs = (pathlib.Path(__file__).resolve().parents[2] / "server/casual-sign-store/src/evidence.rs").read_text()
+        def const(name):
+            at = rs.index(f"pub const {name}: &str =")
+            rest = rs[at:].split("=", 1)[1].strip()
+            if rest.startswith('r#"'):
+                return rest[3 : rest.index('"#;')]
+            return rest[rest.index('"') + 1 : rest.index('";')]
+        self.assertEqual(const("EVIDENCE_BLOB_KEYS_SQL"), ob.EVIDENCE_BLOB_KEYS_SQL)
+        self.assertEqual(const("CAPTURE_BLOB_KEYS_SQL"), ob.CAPTURE_BLOB_KEYS_SQL)
+        host = (pathlib.Path(__file__).resolve().parents[2] / "server/casual-sign-host/src/capture.rs").read_text()
+        self.assertIn("pub const MAX_CAPTURE_BYTES: usize = 1024 * 1024;", host)
+        self.assertEqual(ob.MAX_CAPTURE_BYTES, 1024 * 1024)
 
 
 def tar_of(entries: list[tuple[str, bytes, bytes]]) -> io.BytesIO:
@@ -333,6 +425,46 @@ def tar_of(entries: list[tuple[str, bytes, bytes]]) -> io.BytesIO:
     return buf
 
 
+class ReviewFindings(Base):
+    """ASVS-14 review: a backup a verifier could forge ran commands on restore (1), a
+    blob the database names could be missing from a backup that still passed (3), and a
+    tool's DETAIL line could carry row values into the log (7)."""
+
+    def test_a_roles_script_with_a_psql_meta_command_is_refused(self):
+        for line in [
+            "\\! echo PWNED",
+            "GRANT a TO b; \\! echo PWNED",
+            "GRANT a TO b; COPY x TO PROGRAM 'echo PWNED';",
+            "SET x = 1 /* ; */;",
+            "SELECT pg_read_file('/etc/passwd');",
+            "DROP ROLE openseal;",
+            "ALTER ROLE a SET b TO $q$x$q$;",
+            "COMMENT ON ROLE a IS 'x';",
+        ]:
+            with self.subTest(line=line), self.assertRaises(ob.BackupError):
+                ob.idempotent_roles(ROLES + line + "\n")
+
+    def test_an_export_missing_a_blob_the_database_names_is_refused_whatever_the_count(self):
+        src = self.source()
+        # The store holds two blobs, the database names two: one of them is not there.
+        named = sorted(p.name for p in (src.d / "store").iterdir())
+        gone = ob.hashlib.sha256(b"%PDF-1.7 lost").hexdigest()
+        (src.d / "named").write_text("\n".join([named[0], gone]) + "\n")
+        with self.assertRaisesRegex(ob.BackupError, "names 1 blob"):
+            ob.create(self.args(), src)
+
+    def test_tool_errors_keep_their_codes_and_drop_lines_that_quote_row_values(self):
+        err = (
+            b'pg_restore: error: could not execute query: ERROR:  duplicate key value violates unique constraint "users_email_key"\n'
+            b"DETAIL:  Key (email)=(ada@example.com) already exists.\n"
+            b"CONTEXT:  COPY users, line 3: \"ada@example.com\"\n"
+            b"Command was: COPY public.users FROM stdin;\n"
+        )
+        out = ob.tail(err)
+        self.assertIn("users_email_key", out)
+        self.assertNotIn("ada@example.com", out)
+
+
 class Payload(Base):
     def test_extract_refuses_paths_links_and_names_a_backup_never_holds(self):
         for entries, why in [
@@ -350,13 +482,17 @@ class Payload(Base):
     def test_contents_must_list_exactly_the_files_with_their_hashes(self):
         blob = b"%PDF-1.7 x"
         h = ob.hashlib.sha256(blob).hexdigest()
-        good = {"format": ob.FORMAT, "files": {f"blobs/{h}": {"sha256": h, "bytes": len(blob)}}}
+        good = {"format": ob.FORMAT, "files": {f"blobs/{h}": {"sha256": h, "bytes": len(blob)}}, "blob_keys": {"named": [h], "images": []}}
+        other = ob.hashlib.sha256(b"other").hexdigest()
+        lacking = dict(good, blob_keys={"named": [h], "images": [other]})
         cases = [
             (good, [(f"blobs/{h}", blob)], None),
             (good, [(f"blobs/{h}", blob + b"!")], "differs from contents.json"),
             (good, [], "missing"),
             (good, [(f"blobs/{h}", blob), ("keyd/oplog", b"")], "unlisted"),
             ({"format": "other", "files": {}}, [], "not a backup's contents"),
+            (lacking, [(f"blobs/{h}", blob)], "lacks 1 blob"),
+            (dict(good, blob_keys=None), [(f"blobs/{h}", blob)], "does not list the blob keys"),
         ]
         for contents, files, why in cases:
             dest = pathlib.Path(tempfile.mkdtemp(dir=self.tmp))
@@ -371,7 +507,9 @@ class Payload(Base):
                         ob.check_contents(dest, names)
 
     def test_roles_tolerate_roles_the_target_already_has(self):
-        out = ob.idempotent_roles(ROLES)
+        out = ob.idempotent_roles(ROLES + "\\restrict abc123XYZ\nSET default_transaction_read_only = off;\n\\unrestrict abc123XYZ\n")
+        self.assertNotIn("restrict", out)
+        self.assertIn("SET default_transaction_read_only = off;", out)
         self.assertIn("DO $openseal_restore$ BEGIN CREATE ROLE openseal; EXCEPTION WHEN duplicate_object THEN NULL; END $openseal_restore$;", out)
         self.assertIn('CREATE ROLE "Odd ""quoted"" role";', out)
         self.assertNotIn("\nCREATE ROLE openseal;", out)

@@ -171,7 +171,12 @@ snapshot together with the row counts the restore must reproduce), the cluster's
 (`pg_dumpall --roles-only --no-role-passwords`), every blob of the object store (`casual-sign-server blobs-export`,
 each checked against its SHA-256 name on the way out), and keyd's operation log, cut at its last whole line. The
 database holds the audit chains, the admin logs and the platform's operator log. Blobs are copied after the database
-snapshot: they are written before the rows that name them and never replaced, so every blob the dump names is there.
+snapshot: they are written before the rows that name them and never replaced. The backup checks that rather than
+trusting it: in the dump's own snapshot it reads every blob key the evidence names (the documents' versions, template
+documents, certificates of completion, adopted signatures' captures, brand logos, and signers' attachments, which the
+envelope's workflow state names; the same query as `casual-sign-server verify-evidence`), then reads each capture in
+the export for the signature image it names, and refuses to write a backup that lacks any of them. The keys go into
+`contents.json`, so `verify --key` and `restore` check them again.
 
 **What a backup never holds.** A private key, a role password, or the platform's secrets. The seal key stays in the
 HSM or KMS, which keeps its own backup (below). The JWT signing key, `OPENSEAL_MFA_KEY` (without it, staff TOTP seeds
@@ -180,27 +185,39 @@ by its own procedure; certificates and chains are public and kept with the confi
 
 **Format and keys.** A backup is a directory `openseal-backup-<UTC time>/` with three files: `payload.cms`, CMS
 AuthEnvelopedData (RFC 5083: AES-256-GCM, the content key wrapped with RSA-OAEP-SHA-256 for a recipient certificate)
-of a tar holding the files above and `contents.json` (each file's SHA-256 and size, the row counts, keyd's line count
-and head); `manifest.json` (format, time, schema version, the payload's size and SHA-256, the recipient certificate's
-SHA-256); and `manifest.json.hmac`, HMAC-SHA-256 of the manifest under the backup MAC key. Both keys are separate from
-every platform key. `keygen` makes them:
+of a tar holding the files above and `contents.json` (each file's SHA-256 and size, the row counts, the blob keys the
+database names, keyd's line count and head); `manifest.json` (format `openseal-backup/2`, time, schema version, the
+payload's size and SHA-256, the recipient certificate's SHA-256, the signing key's SHA-256); and `manifest.json.sig`,
+an Ed25519 signature (RFC 8032, made by `openssl pkeyutl`) of the manifest's exact bytes. Two key pairs, both
+separate from every platform key. `keygen` makes them:
 
 ```sh
 python3 -I tools/backup/openseal_backup.py keygen backup-keys
 #   backup-recipient.pem  the backup host: encrypts (public)
-#   backup-mac.key        the backup and restore hosts: authenticates manifests (mode 0600; refused otherwise)
+#   backup-signing.key    the backup host only: signs manifests (mode 0600; refused otherwise)
+#   backup-signing.pub    everyone who checks or restores backups: verifies manifests (public)
 #   backup-recipient.key  offline, with the people who restore: the only key that decrypts
 ```
 
 The backup host never holds the decryption key, so a compromised backup host or store cannot read past backups. Keep
 `backup-recipient.key` offline (a password manager vault or an HSM-backed escrow, two custodians), and test that it
-opens a backup at every drill.
+opens a backup at every drill. Only the backup host can sign: the off-site store, a monitoring job and the restore
+host hold `backup-signing.pub`, which checks a backup but cannot make one. That matters because a restore runs the
+backup's roles script with `psql` and its dump with `pg_restore`, both as the database superuser, so a backup someone
+could forge would run their SQL (and, through `psql`, commands) on the restore host. A restore therefore trusts only a
+backup whose manifest the signing key signed, and even then lets through from `roles.sql` only blank and `--` comment
+lines and CREATE ROLE, ALTER ROLE, GRANT and SET statements, one per line, with no backslash anywhere (no psql
+meta-command) and nothing outside quotes that starts a comment or a dollar quote; PostgreSQL 17.6's `\restrict`
+guard lines are dropped. Anything else fails the backup when it is taken, and the restore naming the line. Keep
+`backup-signing.key` as you keep the backup host's database credentials: whoever holds it can make a backup that a
+restore will load. If it may have leaked, make a new pair with `keygen`, and check the next backups with the new
+public key.
 
 **Taking backups.** On the Compose stack (`--compose-project` names the stack; the tools run in its own containers):
 
 ```sh
 python3 -I tools/backup/openseal_backup.py create --compose-project openseal --out /backups \
-    --recipient backup-keys/backup-recipient.pem --mac-key backup-keys/backup-mac.key --keep 48
+    --recipient backup-keys/backup-recipient.pem --signing-key backup-keys/backup-signing.key --keep 48
 ```
 
 Elsewhere, `--direct` runs `pg_dump`, `pg_dumpall`, `psql`, `pg_restore`, `casual-sign-server` and `casual-sign-keyd`
@@ -211,13 +228,14 @@ from this host: the database from `OPENSEAL_BACKUP_DATABASE_URL` or `_FILE` (a s
 hourly with `--keep 48`, and copy each finished directory to off-site, write-once storage (S3 Object Lock, compliance
 mode). A backup directory appears only when complete (it is written under a hidden name and renamed).
 
-**Checking backups.** `verify` with only the MAC key checks the manifest and the payload's SHA-256, so the off-site
-store or a monitoring job can check every copy without the private key; with `--key` and `--recipient` it also
-decrypts and checks every file against `contents.json`:
+**Checking backups.** `verify` with only the public `backup-signing.pub` checks the manifest's signature and the
+payload's SHA-256, so the off-site store or a monitoring job can check every copy without the private key and without
+the power to sign one; with `--key` and `--recipient` it also decrypts, checks every file against `contents.json`, and
+checks that every blob key the database named is in the payload:
 
 ```sh
-python3 -I tools/backup/openseal_backup.py verify /backups/openseal-backup-20261114T020000Z --mac-key backup-mac.key
-python3 -I tools/backup/openseal_backup.py verify /backups/openseal-backup-20261114T020000Z --mac-key backup-mac.key \
+python3 -I tools/backup/openseal_backup.py verify /backups/openseal-backup-20261114T020000Z --verify-key backup-signing.pub
+python3 -I tools/backup/openseal_backup.py verify /backups/openseal-backup-20261114T020000Z --verify-key backup-signing.pub \
     --key backup-recipient.key --recipient backup-recipient.pem
 ```
 
@@ -227,21 +245,25 @@ started, so a restore can never overwrite evidence. With Compose:
 ```sh
 docker compose up -d --wait postgres s3                      # nothing else yet
 python3 -I tools/backup/openseal_backup.py restore /backups/openseal-backup-20261114T020000Z \
-    --compose-project openseal --mac-key backup-mac.key --key backup-recipient.key --recipient backup-recipient.pem
+    --compose-project openseal --verify-key backup-signing.pub --key backup-recipient.key --recipient backup-recipient.pem
 docker compose up -d --wait                                  # migrate finds every migration applied
 ```
 
-`restore` checks the MAC and the payload, decrypts (OpenSSL checks the GCM tag), refuses any tar entry that is not a
-regular file with a backup's name and any file that differs from `contents.json`, then loads the roles (an existing
-role is kept), the database in one transaction (`pg_restore --single-transaction --exit-on-error`), and compares the
-row counts with the backup's; it imports the blobs (`casual-sign-server blobs-import`, each refused unless its bytes
+`restore` checks the signature and the payload, decrypts (OpenSSL checks the GCM tag), refuses any tar entry that is not
+a regular file with a backup's name, any file that differs from `contents.json` and a payload lacking any blob the
+database named, then checks and loads the roles (only the statements above; an existing role is kept), the database in
+one transaction (`pg_restore --single-transaction --exit-on-error`), and compares the row counts and the blob keys the
+restored database names with the backup's; it imports the blobs (`casual-sign-server blobs-import`, each refused unless its bytes
 are its name), restores keyd's log (`casual-sign-keyd verify-oplog` first; keyd continues the chain from its last line
 on start), and runs `casual-sign-server verify-evidence` as the schema owner: every envelope's audit chain rebuilt and
-checked against its stored head, every workspace's and organization's admin log, every document blob read back
-against its SHA-256, and the counts equal to the backup's. Any difference fails the restore, naming the step. Login
+checked against its stored head, every workspace's and organization's admin log, the platform's operator log
+(`platform.operator_events`, against its stored head, as `casual-sign-console verify-log` does), every blob the
+evidence names read back against its SHA-256 (each capture also read for the signature image it names, and that
+image read too), and the counts equal to the backup's. Any difference fails the restore, naming the step. Login
 roles come back without passwords: set them from your secret store before the services start (the Compose stack's
-own `openseal` role keeps the password its fresh install made). Then verify the operator log with
-`casual-sign-console verify-log` before the console serves.
+own `openseal` role keeps the password its fresh install made). The log of a failed step carries the tools' error
+lines but not PostgreSQL's DETAIL and CONTEXT lines, which can quote row values; an error line itself can still name
+a value (an invalid input), so keep the restore's log where personal data may be kept.
 
 **The HSM's own backup.** keyd never exports a private key, and no OpenSeal backup carries one. Back the key up with
 the HSM's own mechanism: a backup HSM or cloning within the security domain (keys leave only wrapped under the

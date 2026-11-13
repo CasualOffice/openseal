@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::blob::BlobKey;
 use crate::error::{Result, StoreError, db};
 use crate::ids::{AccountId, EnvelopeId, OrganizationId};
-use crate::repo::{hash32, opt_hash32};
+use crate::repo::opt_hash32;
 use crate::store::Store;
 
 /// Rows read per page while walking a table.
@@ -241,25 +241,67 @@ impl Store {
         }
     }
 
-    /// Every blob key a document version or a template document names, each once, in
-    /// order: what a restored blob store must hold. Call with an owner-role store.
+    /// Every blob key the evidence names, each once, ascending, with the subset that
+    /// are signature captures: what a restored blob store must hold. An uploaded
+    /// signature's image is named only inside its capture (`casual-sign-host`'s
+    /// `capture::parse`), so the caller reads each capture for it. Call with an
+    /// owner-role store.
     ///
     /// # Errors
     ///
     /// `CS-DB-0015` when the role is filtered by row-level security; `CS-DB-0010` for a
-    /// stored hash that is not 32 bytes; `CS-DB-0001`.
-    pub async fn document_blob_keys(&self) -> Result<Vec<BlobKey>> {
+    /// stored key that is not 64 hexadecimal digits; `CS-DB-0001`.
+    pub async fn evidence_blob_keys(&self) -> Result<EvidenceBlobKeys> {
         self.require_unfiltered_role().await?;
-        let rows = sqlx::query_scalar!(
-            r#"SELECT sha256 AS "sha256!" FROM document_versions
-               UNION SELECT sha256 FROM template_documents
-               ORDER BY 1"#
-        )
-        .fetch_all(self.pool())
-        .await
-        .map_err(db)?;
-        rows.into_iter()
-            .map(|h| hash32(h, "sha256").map(BlobKey))
-            .collect()
+        let named = sqlx::query_scalar::<_, String>(EVIDENCE_BLOB_KEYS_SQL)
+            .fetch_all(self.pool())
+            .await
+            .map_err(db)?;
+        let captures = sqlx::query_scalar::<_, String>(CAPTURE_BLOB_KEYS_SQL)
+            .fetch_all(self.pool())
+            .await
+            .map_err(db)?;
+        Ok(EvidenceBlobKeys {
+            named: parse_keys(named)?,
+            captures: parse_keys(captures)?,
+        })
     }
+}
+
+fn parse_keys(hex: Vec<String>) -> Result<Vec<BlobKey>> {
+    hex.iter()
+        .map(|h| BlobKey::parse(h).map_err(|_| StoreError::Corrupt { column: "blob key" }))
+        .collect()
+}
+
+/// The blob keys the evidence names (ASVS-14), as lower-case hexadecimal, each once,
+/// ascending: the documents' versions (uploaded, delivered, flattened, sealed), the
+/// template documents, each envelope's certificate of completion, each adopted
+/// signature's capture, each brand's logo, and each attachment a signer uploaded (named
+/// only in the envelope's workflow state, `fields[*].value.attachment`). The backup tool
+/// runs this same text in its dump's snapshot (tools/backup/openseal_backup.py, whose
+/// tests check the two are identical).
+pub const EVIDENCE_BLOB_KEYS_SQL: &str = r#"SELECT DISTINCT encode(k, 'hex') FROM (
+    SELECT sha256 AS k FROM document_versions
+    UNION ALL SELECT sha256 FROM template_documents
+    UNION ALL SELECT certificate_sha256 FROM envelopes WHERE certificate_sha256 IS NOT NULL
+    UNION ALL SELECT image_sha256 FROM signature_adoptions
+    UNION ALL SELECT logo_sha256 FROM brands WHERE logo_sha256 IS NOT NULL
+    UNION ALL SELECT decode(a #>> '{}', 'hex') FROM envelope_states,
+        jsonb_path_query(state, '$.fields[*].value.attachment') AS a
+        WHERE jsonb_typeof(a) = 'string' AND (a #>> '{}') ~ '^[0-9a-f]{64}$'
+) AS keys ORDER BY 1"#;
+
+/// The signature captures among [`EVIDENCE_BLOB_KEYS_SQL`]'s keys: drawn, typed, or
+/// naming the image the signer uploaded.
+pub const CAPTURE_BLOB_KEYS_SQL: &str =
+    "SELECT DISTINCT encode(image_sha256, 'hex') FROM signature_adoptions ORDER BY 1";
+
+/// What [`Store::evidence_blob_keys`] found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EvidenceBlobKeys {
+    /// Every key the database names, ascending.
+    pub named: Vec<BlobKey>,
+    /// The signature captures among them, ascending.
+    pub captures: Vec<BlobKey>,
 }

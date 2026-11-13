@@ -20,6 +20,9 @@ casual-sign-model = { path = "../../crates/casual-sign-model" }
 casual-sign-sdk = { path = "../../crates/casual-sign-sdk" }
 casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
 casual-sign-store = { path = "../casual-sign-store" }
+# `verify-evidence` verifies the operator log (`platform` schema) beside the tenants'
+# chains after a restore (ASVS-14); in-tree, no new external dependency.
+casual-sign-platform-store = { path = "../casual-sign-platform-store" }
 # The one decide-and-record path and the job contract, shared with the worker.
 casual-sign-host = { path = "../casual-sign-host" }
 # The JWT signing key and other secrets, from the environment or a file it names.

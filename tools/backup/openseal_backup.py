@@ -5,28 +5,35 @@
 One backup is a directory, `openseal-backup-<UTC time>/`, holding three files:
 
     manifest.json       what the backup is: format, time, source, schema version, the
-                        payload's size and SHA-256, the recipient certificate's SHA-256
-    manifest.json.hmac  HMAC-SHA-256 of manifest.json's exact bytes under the backup MAC key
+                        payload's size and SHA-256, the recipient certificate's SHA-256,
+                        the signing key's SHA-256
+    manifest.json.sig   Ed25519 signature (RFC 8032) of manifest.json's exact bytes by the
+                        backup signing key, which only the backup host holds
     payload.cms         CMS AuthEnvelopedData (RFC 5083, AES-256-GCM, the content key
                         wrapped with RSA-OAEP-SHA-256 for the recipient certificate) of a
-                        tar of: contents.json (every file's SHA-256 and size, and the row
-                        counts the restore must reproduce), postgres/openseal.dump
+                        tar of: contents.json (every file's SHA-256 and size, the row
+                        counts the restore must reproduce, and every blob key the
+                        database names, read in the dump's snapshot), postgres/openseal.dump
                         (pg_dump, custom format, from one snapshot), postgres/roles.sql
                         (pg_dumpall --roles-only --no-role-passwords), blobs/<sha256>
                         (every blob, from `casual-sign-server blobs-export`), and
                         keyd/oplog (keyd's operation log, cut at its last whole line)
 
 Never in a backup: a private key (signing keys stay in the HSM or KMS, which has its own
-backup, docs/65), a role password, or the platform's secrets. Two keys, both separate from
-every platform key: the recipient certificate encrypts (the backup host needs only the
-certificate; the private key stays offline with the people who restore), and the MAC key
-authenticates the manifest, so a backup host or store that only keeps backups can check
-them (`verify` without the private key) and tell a swapped or edited manifest.
+backup, docs/65), a role password, or the platform's secrets. Two key pairs, both separate
+from every platform key. The recipient certificate encrypts: the backup host needs only
+the certificate, and the private key stays offline with the people who restore. The
+signing key signs the manifest: only the backup host holds it, and anyone who checks
+backups (an off-site store, a monitoring job, the restore host) holds only its public
+half, so checking a backup never gives the power to make one. A restore runs the backup's
+roles script and database dump as the superuser, so it trusts only a backup whose
+manifest that key signed, and even then runs from the roles script only CREATE ROLE,
+ALTER ROLE, GRANT and SET statements, one per line, with no psql meta-command.
 
     openseal_backup.py keygen DIR
-    openseal_backup.py create  --out DIR --recipient CERT --mac-key FILE [--keep N] SOURCE
-    openseal_backup.py verify  BACKUP --mac-key FILE [--key KEY --recipient CERT]
-    openseal_backup.py restore BACKUP --mac-key FILE --key KEY --recipient CERT TARGET
+    openseal_backup.py create  --out DIR --recipient CERT --signing-key KEY [--keep N] SOURCE
+    openseal_backup.py verify  BACKUP --verify-key PUB [--key KEY --recipient CERT]
+    openseal_backup.py restore BACKUP --verify-key PUB --key KEY --recipient CERT TARGET
 
 SOURCE and TARGET are either `--compose-project NAME` (the Compose stack, docs/65 §Single
 node: the tools run inside its containers) or `--direct` (pg_dump, pg_restore, psql,
@@ -38,12 +45,16 @@ from the server's own OPENSEAL_BLOB_DIR or OPENSEAL_S3_* variables; keyd's log f
 `restore` restores only into a fresh install: an empty database (no table yet, before
 `migrate` ever ran) and a keyd that has not started. It decrypts and checks everything
 first, then loads roles, the database (one transaction), the blobs and keyd's log, checks
-the row counts against the backup's, and runs `casual-sign-server verify-evidence`: every
-audit chain and admin log rebuilt and verified, every document blob read back against its
-SHA-256, the counts equal. Anything less fails non-zero naming the step.
+the row counts and the blob keys the database names against the backup's, and runs
+`casual-sign-server verify-evidence`: every audit chain, admin log and the operator log
+rebuilt and verified, every blob the evidence names read back against its SHA-256, the
+counts equal. Anything less fails non-zero naming the step.
 
 Standard library and the `openssl` command (OpenSSL 3.0 or later) only. Exits non-zero
-and names the problem; prints no document content or personal data.
+and names the problem. Prints no document content; a failing tool's error lines are
+passed on without the DETAIL, CONTEXT and similar lines in which PostgreSQL quotes row
+values, but an error line itself can still name a value (an invalid input, for example),
+so keep the log where personal data may be kept.
 """
 
 from __future__ import annotations
@@ -51,7 +62,6 @@ from __future__ import annotations
 import argparse
 import datetime
 import hashlib
-import hmac
 import json
 import os
 import pathlib
@@ -64,11 +74,12 @@ import tempfile
 import time
 import urllib.parse
 
-FORMAT = "openseal-backup/1"
+FORMAT = "openseal-backup/2"
 MANIFEST = "manifest.json"
-MANIFEST_MAC = "manifest.json.hmac"
+MANIFEST_SIG = "manifest.json.sig"
 PAYLOAD = "payload.cms"
 CONTENTS = "contents.json"
+# The rows each chain verification counts, and the operator log's events.
 COUNT_KEYS = (
     "envelopes",
     "audit_events",
@@ -76,16 +87,38 @@ COUNT_KEYS = (
     "admin_events",
     "organizations",
     "org_admin_events",
-    "document_blobs",
+    "operator_events",
 )
+# What `casual-sign-server verify-evidence` reports: the rows, and every blob it read.
+EVIDENCE_KEYS = (*COUNT_KEYS, "blobs")
 # The row counts, read in the dump's own snapshot so they describe exactly the dump.
 COUNTS_SQL = (
     "SELECT (SELECT count(*) FROM envelopes), (SELECT count(*) FROM audit_events), "
     "(SELECT count(*) FROM accounts), (SELECT count(*) FROM admin_events), "
     "(SELECT count(*) FROM organizations), (SELECT count(*) FROM org_admin_events), "
-    "(SELECT count(*) FROM (SELECT sha256 FROM document_versions "
-    "UNION SELECT sha256 FROM template_documents) d)"
+    "(SELECT count(*) FROM platform.operator_events)"
 )
+# Every blob key the evidence names, and the signature captures among them (each names
+# its image inside). The same text as casual-sign-store's EVIDENCE_BLOB_KEYS_SQL and
+# CAPTURE_BLOB_KEYS_SQL (src/evidence.rs); the tests check they are identical.
+EVIDENCE_BLOB_KEYS_SQL = r"""SELECT DISTINCT encode(k, 'hex') FROM (
+    SELECT sha256 AS k FROM document_versions
+    UNION ALL SELECT sha256 FROM template_documents
+    UNION ALL SELECT certificate_sha256 FROM envelopes WHERE certificate_sha256 IS NOT NULL
+    UNION ALL SELECT image_sha256 FROM signature_adoptions
+    UNION ALL SELECT logo_sha256 FROM brands WHERE logo_sha256 IS NOT NULL
+    UNION ALL SELECT decode(a #>> '{}', 'hex') FROM envelope_states,
+        jsonb_path_query(state, '$.fields[*].value.attachment') AS a
+        WHERE jsonb_typeof(a) = 'string' AND (a #>> '{}') ~ '^[0-9a-f]{64}$'
+) AS keys ORDER BY 1"""
+CAPTURE_BLOB_KEYS_SQL = "SELECT DISTINCT encode(image_sha256, 'hex') FROM signature_adoptions ORDER BY 1"
+# casual-sign-host's capture::MAX_CAPTURE_BYTES: the largest capture document.
+MAX_CAPTURE_BYTES = 1024 * 1024
+# A capture is drawn, typed, or names the image the signer uploaded (casual-sign-host).
+CAPTURE_KINDS_WITHOUT_IMAGE = ("drawn", "typed")
+HEX64_RE = re.compile(r"\A[0-9a-f]{64}\Z")
+# An Ed25519 public key's DER (SubjectPublicKeyInfo) is this prefix and 32 bytes.
+ED25519_SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")
 SCHEMA_SQL = "SELECT coalesce(max(version), 0) FROM openseal_schema_migrations"
 FRESH_SQL = (
     "SELECT count(*) FROM pg_namespace n WHERE n.nspname = 'platform' OR EXISTS "
@@ -98,7 +131,12 @@ NAME_RE = re.compile(
     r"|blobs/[0-9a-f]{64})\Z"
 )
 BACKUP_DIR_RE = re.compile(r"\Aopenseal-backup-\d{8}T\d{6}Z\Z")
-CREATE_ROLE_RE = re.compile(r'\ACREATE ROLE ((?:"(?:[^"]|"")+")|[A-Za-z_][A-Za-z0-9_$]*);\Z')
+CREATE_ROLE_RE = re.compile(r'\ACREATE ROLE ((?:"(?:[^"]|"")+")|[a-z_][a-z0-9_]*);\Z')
+# The statements a roles script may hold (pg_dumpall --roles-only writes only these).
+ROLE_STATEMENT_RE = re.compile(r"\A(?:CREATE ROLE|ALTER ROLE|GRANT|SET) ")
+# PostgreSQL 17.6's psql guard lines, which pg_dumpall writes around its output: dropped
+# (no other line starting with a backslash is allowed at all).
+RESTRICT_RE = re.compile(r"\A\\(?:un)?restrict [A-Za-z0-9]+\Z")
 EVIDENCE_RE = re.compile(r"^evidence verified: (.*)$", re.M)
 # The recipient key: RSA 3072 (NIST SP 800-57: 128-bit security), wrapped with OAEP-SHA-256.
 CMS_ENCRYPT = [
@@ -127,22 +165,46 @@ def sha256_file(path: pathlib.Path) -> tuple[str, int]:
     return h.hexdigest(), n
 
 
-def read_mac_key(path: pathlib.Path) -> bytes:
-    """The MAC key: 64 hexadecimal digits (32 bytes) in a file only its owner can read."""
+def private_key_file(path: pathlib.Path, what: str) -> pathlib.Path:
+    """A private key file only its owner can read."""
     try:
         st = path.stat()
-        text = path.read_text(encoding="ascii").strip()
-    except (OSError, UnicodeDecodeError) as e:
-        raise BackupError(f"MAC key {path}: cannot read ({e.__class__.__name__})") from None
+    except OSError as e:
+        raise BackupError(f"{what} {path}: cannot read ({e.__class__.__name__})") from None
     if os.name == "posix" and st.st_mode & 0o077:
-        raise BackupError(f"MAC key {path}: readable by others (mode {st.st_mode & 0o777:o}); chmod 600")
-    if not re.fullmatch(r"[0-9a-f]{64}", text):
-        raise BackupError(f"MAC key {path}: not 64 lower-case hexadecimal digits")
-    return bytes.fromhex(text)
+        raise BackupError(f"{what} {path}: readable by others (mode {st.st_mode & 0o777:o}); chmod 600")
+    return path
 
 
-def mac_of(key: bytes, data: bytes) -> str:
-    return hmac.new(key, data, hashlib.sha256).hexdigest()
+def ed25519_public_der(key: pathlib.Path, *, private: bool) -> bytes:
+    """The Ed25519 public key (SubjectPublicKeyInfo DER) of a signing key or its public
+    half; anything that is not an Ed25519 key is refused."""
+    cmd = ["openssl", "pkey", "-in", str(key), "-pubout", "-outform", "DER"]
+    if not private:
+        cmd.insert(2, "-pubin")
+    der = run_capture(cmd, what=f"read the {'signing' if private else 'verify'} key")
+    if len(der) != len(ED25519_SPKI_PREFIX) + 32 or not der.startswith(ED25519_SPKI_PREFIX):
+        raise BackupError(f"{key}: not an Ed25519 key")
+    return der
+
+
+def sign(signing_key: pathlib.Path, body_file: pathlib.Path, sig_file: pathlib.Path) -> None:
+    run_capture(
+        ["openssl", "pkeyutl", "-sign", "-inkey", str(signing_key), "-rawin", "-in", str(body_file), "-out", str(sig_file)],
+        what="sign the manifest",
+    )
+
+
+def signature_verifies(verify_key: pathlib.Path, body_file: pathlib.Path, sig_file: pathlib.Path) -> bool:
+    """Whether `sig_file` is the verify key's Ed25519 signature of `body_file`."""
+    try:
+        p = subprocess.run(
+            ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(verify_key), "-rawin", "-in", str(body_file), "-sigfile", str(sig_file)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+    except OSError as e:
+        raise BackupError(f"verify the manifest: cannot run openssl ({e.__class__.__name__})") from None
+    return p.returncode == 0
 
 
 def cert_sha256(cert: pathlib.Path) -> str:
@@ -179,10 +241,15 @@ def run_from_file(cmd: list[str], src: pathlib.Path, *, what: str, env=None) -> 
         return run_capture(cmd, what=what, stdin=f, env=env, text=True)
 
 
+# PostgreSQL's lines that quote row values or statements (`DETAIL:  Key (email)=(...)`,
+# a COPY line in CONTEXT, pg_restore's `Command was:`): never passed on.
+VALUE_LINE_RE = re.compile(r"\A\s*(?:DETAIL|CONTEXT|HINT|QUERY|STATEMENT|LINE \d+|Command was)\b|\A\s*\^")
+
+
 def tail(err: bytes) -> str:
-    """The last lines of a tool's stderr: codes and object names, never row data (pg tools
-    and ours do not print row values on these paths)."""
-    lines = err.decode("utf-8", "replace").strip().splitlines()
+    """The last error lines of a tool's stderr, without the lines in which PostgreSQL
+    quotes row values or statements."""
+    lines = [ln for ln in err.decode("utf-8", "replace").strip().splitlines() if ln.strip() and not VALUE_LINE_RE.match(ln)]
     return " | ".join(lines[-3:]) if lines else "(no message)"
 
 
@@ -396,24 +463,74 @@ def check_contents(dest: pathlib.Path, names: list[str]) -> dict:
             raise BackupError(f"{name}: SHA-256 or size differs from contents.json")
         if name.startswith("blobs/") and want.get("sha256") != name[6:]:
             raise BackupError(f"{name}: bytes do not hash to the blob's name")
+    keys = contents.get("blob_keys")
+    try:
+        named, images = set(keys["named"]), set(keys["images"])
+        if not all(isinstance(k, str) and HEX64_RE.match(k) for k in named | images):
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        raise BackupError("contents.json does not list the blob keys the database names") from None
+    missing = sorted(k for k in named | images if f"blobs/{k}" not in files)
+    if missing:
+        raise BackupError(f"payload lacks {len(missing)} blob(s) the database names (first {missing[0]})")
     return contents
 
 
 # ---- roles ----------------------------------------------------------------------------
 
 
+def one_statement(line: str) -> bool:
+    """Whether `line` is exactly one SQL statement ending in its only `;`, with nothing
+    outside its quoted strings and identifiers that could start another statement, a
+    comment, a dollar quote or a psql meta-command: no backslash anywhere, and outside
+    quotes no `$`, `--` or `/*`."""
+    if "\\" in line or not line.endswith(";"):
+        return False
+    quote = None
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if quote:
+            if c == quote:
+                if line[i + 1 : i + 2] == quote:
+                    i += 1  # a doubled quote stays inside
+                else:
+                    quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "$" or line[i : i + 2] in ("--", "/*"):
+            return False
+        elif c == ";" and i != len(line) - 1:
+            return False
+        i += 1
+    return quote is None
+
+
 def idempotent_roles(sql: str) -> str:
-    """pg_dumpall's roles script, made to run on a cluster that already has some of them
-    (the restore target's init created its login role and `openseal_app`): each `CREATE
-    ROLE` tolerates an existing role; ALTER, GRANT and psql's own lines are kept."""
-    out = []
-    for line in sql.splitlines():
+    """pg_dumpall's roles script, checked and made to run on a cluster that already has
+    some of the roles (the restore target's init created its login role and
+    `openseal_app`). Only blank lines, `--` comment lines and single CREATE ROLE, ALTER
+    ROLE, GRANT or SET statements are allowed (psql runs the script as the superuser,
+    where a meta-command such as `\\!` or a statement such as COPY ... TO PROGRAM would
+    run commands on the restore host); PostgreSQL 17.6's `\\restrict` guard lines are
+    dropped; anything else fails the restore naming its line. Each CREATE ROLE then
+    tolerates an existing role."""
+    out = ["SET standard_conforming_strings = on;"]
+    for n, line in enumerate(sql.splitlines(), 1):
+        if not line.strip() or line.startswith("--") and "\\" not in line:
+            continue
+        if RESTRICT_RE.match(line):
+            continue
+        if not ROLE_STATEMENT_RE.match(line) or not one_statement(line):
+            raise BackupError(f"roles.sql line {n}: not a CREATE ROLE, ALTER ROLE, GRANT or SET statement on its own line")
         m = CREATE_ROLE_RE.match(line)
         if m:
             out.append(
                 f"DO $openseal_restore$ BEGIN CREATE ROLE {m.group(1)}; "
                 "EXCEPTION WHEN duplicate_object THEN NULL; END $openseal_restore$;"
             )
+        elif line.startswith("CREATE ROLE"):
+            raise BackupError(f"roles.sql line {n}: CREATE ROLE with more than a role name")
         else:
             out.append(line)
     return "\n".join(out) + "\n"
@@ -429,8 +546,28 @@ def parse_counts(line: str) -> dict:
     return dict(zip(COUNT_KEYS, map(int, parts)))
 
 
-def dump_database(src, stage: pathlib.Path) -> tuple[dict, int]:
-    """pg_dump in the snapshot a psql session holds, the counts read in the same snapshot."""
+def one_line(sql: str) -> str:
+    """The statement on one line, for a psql session read line by line."""
+    return " ".join(sql.split())
+
+
+def read_keys(session, sql: str, what: str) -> list[str]:
+    """Run `sql` (one key per row) in the session: its count first, then its rows."""
+    assert session.stdin and session.stdout
+    session.stdin.write(f"SELECT count(*) FROM ({one_line(sql)}) AS q;\n{one_line(sql)};\n")
+    session.stdin.flush()
+    n = session.stdout.readline().strip()
+    if not n.isdigit():
+        raise BackupError(f"{what}: unexpected answer from psql")
+    keys = [session.stdout.readline().strip() for _ in range(int(n))]
+    if not all(HEX64_RE.match(k) for k in keys):
+        raise BackupError(f"{what}: unexpected answer from psql")
+    return keys
+
+
+def dump_database(src, stage: pathlib.Path) -> tuple[dict, int, list[str], list[str]]:
+    """pg_dump in the snapshot a psql session holds; the row counts, the blob keys the
+    database names and the signature captures among them, read in the same snapshot."""
     (stage / "postgres").mkdir(mode=0o700)
     cmd, env = src.pg("psql", ["-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1"])
     try:
@@ -450,6 +587,8 @@ def dump_database(src, stage: pathlib.Path) -> tuple[dict, int]:
         schema = session.stdout.readline().strip()
         if not schema.isdigit():
             raise BackupError("schema version: unexpected answer from psql")
+        named = read_keys(session, EVIDENCE_BLOB_KEYS_SQL, "blob keys")
+        captures = read_keys(session, CAPTURE_BLOB_KEYS_SQL, "signature captures")
         dcmd, denv = src.pg("pg_dump", ["-Fc", f"--snapshot={snapshot}", "--no-password"])
         run_to_file(dcmd, stage / "postgres/openseal.dump", what="dump the database", env=denv)
         session.stdin.write("COMMIT;\n")
@@ -462,7 +601,41 @@ def dump_database(src, stage: pathlib.Path) -> tuple[dict, int]:
             session.wait()
     rcmd, renv = src.pg("pg_dumpall", ["--roles-only", "--no-role-passwords"])
     run_to_file(rcmd, stage / "postgres/roles.sql", what="dump the roles", env=renv)
-    return counts, int(schema)
+    # Checked now, so a roles script a restore would refuse fails the backup instead.
+    idempotent_roles((stage / "postgres/roles.sql").read_text(encoding="utf-8"))
+    return counts, int(schema), named, captures
+
+
+def capture_image(path: pathlib.Path) -> str | None:
+    """The image key a signature capture names, or None for a drawn or typed one
+    (casual-sign-host's capture::parse checks the rest at verify-evidence)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(MAX_CAPTURE_BYTES + 1)
+        c = json.loads(data) if len(data) <= MAX_CAPTURE_BYTES else None
+    except (OSError, ValueError):
+        c = None
+    kind = c.get("kind") if isinstance(c, dict) else None
+    if kind in CAPTURE_KINDS_WITHOUT_IMAGE:
+        return None
+    image = c.get("image") if kind == "image" else None
+    if not isinstance(image, str) or not HEX64_RE.match(image):
+        raise BackupError(f"signature capture {path.name}: not a capture")
+    return image
+
+
+def blob_keys(blobs: pathlib.Path, named: list[str], captures: list[str]) -> dict:
+    """Every key the snapshot names must be in the export, and every image a capture
+    names: the backup is refused now, not found wanting at restore."""
+    exported = {p.name for p in blobs.iterdir()}
+    missing = [k for k in named if k not in exported]
+    if missing:
+        raise BackupError(f"the database names {len(missing)} blob(s) the store export lacks (first {missing[0]})")
+    images = sorted({capture_image(blobs / k) for k in captures} - {None} - set(named))
+    missing = [k for k in images if k not in exported]
+    if missing:
+        raise BackupError(f"signature captures name {len(missing)} image(s) the store export lacks (first {missing[0]})")
+    return {"named": named, "images": images}
 
 
 def cut_oplog(path: pathlib.Path) -> tuple[int, str]:
@@ -479,7 +652,8 @@ def cut_oplog(path: pathlib.Path) -> tuple[int, str]:
 
 def create(args, src) -> pathlib.Path:
     started = time.monotonic()
-    key = read_mac_key(pathlib.Path(args.mac_key))
+    signing_key = private_key_file(pathlib.Path(args.signing_key), "signing key")
+    signer = hashlib.sha256(ed25519_public_der(signing_key, private=True)).hexdigest()
     recipient = pathlib.Path(args.recipient)
     recipient_sha = cert_sha256(recipient)
     out_root = pathlib.Path(args.out)
@@ -493,7 +667,7 @@ def create(args, src) -> pathlib.Path:
     try:
         os.chmod(stage, 0o700)
         log("database: one snapshot, dumped with its row counts")
-        counts, schema = dump_database(src, stage)
+        counts, schema, named, captures = dump_database(src, stage)
         # Blobs after the database: they are written before the rows that name them and
         # never replaced, so every blob the dump names is in the store by now.
         log("blobs: exporting the store")
@@ -519,13 +693,14 @@ def create(args, src) -> pathlib.Path:
             digest, size = sha256_file(stage / name)
             files[name] = {"sha256": digest, "bytes": size}
         blob_count = sum(1 for n in names if n.startswith("blobs/"))
-        if blob_count < counts["document_blobs"]:
-            raise BackupError(f"the store holds {blob_count} blobs, fewer than the {counts['document_blobs']} documents the database names")
+        keys = blob_keys(blobs, named, captures)
+        counts["blobs"] = len(keys["named"]) + len(keys["images"])
         contents = {
             "format": FORMAT,
             "created_at": stamp,
             "schema_version": schema,
             "counts": counts,
+            "blob_keys": keys,
             "keyd_oplog": oplog,
             "files": files,
         }
@@ -542,17 +717,19 @@ def create(args, src) -> pathlib.Path:
             "payload": {"name": PAYLOAD, "sha256": digest, "bytes": size},
             "encryption": "CMS AuthEnvelopedData, AES-256-GCM, RSA-OAEP-SHA-256",
             "recipient_certificate_sha256": recipient_sha,
+            "signature": "Ed25519",
+            "signing_key_sha256": signer,
         }
         body = (json.dumps(manifest, indent=1, sort_keys=True) + "\n").encode()
         (partial / MANIFEST).write_bytes(body)
-        (partial / MANIFEST_MAC).write_text(mac_of(key, body) + "\n", encoding="ascii")
+        sign(signing_key, partial / MANIFEST, partial / MANIFEST_SIG)
         os.replace(partial, final)
     finally:
         shutil.rmtree(stage, ignore_errors=True)
         shutil.rmtree(partial, ignore_errors=True)
     log(
         f"backup {final.name}: {counts['envelopes']} envelopes, {counts['audit_events']} audit events, "
-        f"{blob_count} blobs, keyd log {'%d lines' % oplog['lines'] if oplog['present'] else 'absent'}; "
+        f"{blob_count} blobs ({counts['blobs']} named by the database), keyd log {'%d lines' % oplog['lines'] if oplog['present'] else 'absent'}; "
         f"{size} bytes encrypted in {time.monotonic() - started:.1f} s"
     )
     if args.keep:
@@ -580,7 +757,7 @@ def encrypt(stage: pathlib.Path, names: list[str], recipient: pathlib.Path, out:
 
 def prune(root: pathlib.Path, keep: int) -> None:
     """Keep the newest `keep` complete backups in `root` (names sort by time)."""
-    done = sorted(p for p in root.iterdir() if p.is_dir() and BACKUP_DIR_RE.match(p.name) and (p / MANIFEST_MAC).exists())
+    done = sorted(p for p in root.iterdir() if p.is_dir() and BACKUP_DIR_RE.match(p.name) and (p / MANIFEST_SIG).exists())
     for old in done[:-keep] if keep > 0 else []:
         shutil.rmtree(old)
         log(f"pruned {old.name}")
@@ -589,17 +766,25 @@ def prune(root: pathlib.Path, keep: int) -> None:
 # ---- verify and restore -----------------------------------------------------------------
 
 
-def verify_outer(backup: pathlib.Path, key: bytes) -> dict:
-    """The manifest's MAC, then the payload's size and SHA-256: what any holder of the MAC
-    key can check without the private key."""
+def verify_outer(backup: pathlib.Path, verify_key: pathlib.Path) -> dict:
+    """The manifest's signature, then the payload's size and SHA-256: what anyone holding
+    the signing key's public half can check, without the recipient's private key and
+    without being able to sign a backup themselves."""
+    signer = hashlib.sha256(ed25519_public_der(verify_key, private=False)).hexdigest()
     try:
         body = (backup / MANIFEST).read_bytes()
-        tag = (backup / MANIFEST_MAC).read_text(encoding="ascii").strip()
-    except (OSError, UnicodeDecodeError):
-        raise BackupError(f"{backup}: no manifest.json and manifest.json.hmac") from None
-    if not hmac.compare_digest(mac_of(key, body), tag):
-        raise BackupError(f"{backup.name}: manifest MAC does not verify (edited, or another MAC key)")
-    manifest = json.loads(body)
+        if (backup / MANIFEST_SIG).stat().st_size != 64:
+            raise BackupError(f"{backup.name}: manifest.json.sig is not an Ed25519 signature")
+    except OSError:
+        raise BackupError(f"{backup}: no manifest.json and manifest.json.sig") from None
+    if not signature_verifies(verify_key, backup / MANIFEST, backup / MANIFEST_SIG):
+        raise BackupError(f"{backup.name}: manifest signature does not verify (edited, or another signing key)")
+    try:
+        manifest = json.loads(body)
+    except ValueError:
+        raise BackupError(f"{backup.name}: manifest is not JSON") from None
+    if manifest.get("signing_key_sha256") != signer:
+        raise BackupError(f"{backup.name}: manifest names another signing key")
     if manifest.get("format") != FORMAT:
         raise BackupError(f"{backup.name}: format {manifest.get('format')!r} is not {FORMAT}")
     payload = manifest["payload"]
@@ -647,14 +832,17 @@ def decrypt(backup: pathlib.Path, manifest: dict, key: pathlib.Path, recipient: 
 
 def verify(args) -> None:
     backup = pathlib.Path(args.backup)
-    manifest = verify_outer(backup, read_mac_key(pathlib.Path(args.mac_key)))
+    manifest = verify_outer(backup, pathlib.Path(args.verify_key))
     if not args.key:
-        log(f"{backup.name}: manifest MAC and payload SHA-256 verify (decrypt with --key to check the contents)")
+        log(f"{backup.name}: manifest signature and payload SHA-256 verify (decrypt with --key to check the contents)")
         return
     with tempfile.TemporaryDirectory(prefix="openseal-verify-", dir=args.work_dir) as tmp:
         os.chmod(tmp, 0o700)
         contents = decrypt(backup, manifest, pathlib.Path(args.key), pathlib.Path(args.recipient), pathlib.Path(tmp))
-    log(f"{backup.name}: verified: MAC, payload, and {len(contents['files'])} files against contents.json")
+    log(
+        f"{backup.name}: verified: signature, payload, {len(contents['files'])} files against contents.json, "
+        f"and every one of the {contents['counts']['blobs']} blobs the database names present"
+    )
 
 
 def psql(dst, sql: str, what: str) -> str:
@@ -668,7 +856,7 @@ def evidence_counts(out: str) -> dict:
         raise BackupError("verify-evidence: no summary line")
     got = dict(kv.split("=", 1) for kv in m.group(1).split())
     try:
-        return {k: int(got[k]) for k in COUNT_KEYS}
+        return {k: int(got[k]) for k in EVIDENCE_KEYS}
     except (KeyError, ValueError):
         raise BackupError("verify-evidence: unexpected summary line") from None
 
@@ -676,7 +864,7 @@ def evidence_counts(out: str) -> dict:
 def restore(args, dst) -> dict:
     started = time.monotonic()
     backup = pathlib.Path(args.backup)
-    manifest = verify_outer(backup, read_mac_key(pathlib.Path(args.mac_key)))
+    manifest = verify_outer(backup, pathlib.Path(args.verify_key))
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="openseal-restore-", dir=args.work_dir))
     try:
         os.chmod(tmp, 0o700)
@@ -695,8 +883,12 @@ def restore(args, dst) -> dict:
         cmd, env = dst.pg("pg_restore", ["--exit-on-error", "--single-transaction", "--no-password"])
         run_from_file(cmd, tmp / "postgres/openseal.dump", what="restore the database", env=env)
         counts = parse_counts(psql(dst, COUNTS_SQL, "count the restored rows"))
-        if counts != contents["counts"]:
-            raise BackupError(f"restored row counts {counts} differ from the backup's {contents['counts']}")
+        want = {k: contents["counts"][k] for k in COUNT_KEYS}
+        if counts != want:
+            raise BackupError(f"restored row counts {counts} differ from the backup's {want}")
+        named = psql(dst, one_line(EVIDENCE_BLOB_KEYS_SQL), "read the restored blob keys").split()
+        if named != contents["blob_keys"]["named"]:
+            raise BackupError("the restored database names other blobs than the backup's")
         log("blobs")
         blobs = tmp / "blobs"
         blobs.mkdir(exist_ok=True, mode=0o700)
@@ -704,7 +896,7 @@ def restore(args, dst) -> dict:
         if contents["keyd_oplog"]["present"]:
             log("keyd's operation log")
             log(dst.write_oplog(tmp / "keyd/oplog").strip())
-        log("verify-evidence: every chain and every document blob")
+        log("verify-evidence: every chain, the operator log, and every blob the evidence names")
         out = run_capture(dst.server(["verify-evidence"], owner_db=True), what="verify the restored evidence", text=True)
         got = evidence_counts(out)
         if got != contents["counts"]:
@@ -721,12 +913,15 @@ def restore(args, dst) -> dict:
 
 
 def keygen(args) -> None:
-    """A recipient key pair and certificate (RSA 3072) and a MAC key, in a new directory.
-    The private key belongs offline with whoever restores; the backup host gets the
-    certificate and the MAC key only."""
+    """A recipient key pair and certificate (RSA 3072) and a signing key pair (Ed25519),
+    in a new directory. The recipient's private key belongs offline with whoever
+    restores; the signing key's private half stays on the backup host only; the
+    certificate goes to the backup host, the signing key's public half to everyone who
+    checks or restores backups."""
     out = pathlib.Path(args.dir)
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
-    key, cert, mac = out / "backup-recipient.key", out / "backup-recipient.pem", out / "backup-mac.key"
+    key, cert = out / "backup-recipient.key", out / "backup-recipient.pem"
+    signing, verify_key = out / "backup-signing.key", out / "backup-signing.pub"
     run_capture(
         ["openssl", "req", "-x509", "-newkey", "rsa:3072", "-nodes", "-keyout", str(key), "-out", str(cert),
          "-days", str(args.days), "-subj", "/CN=OpenSeal backup recipient", "-addext", "keyUsage=critical,keyEncipherment"],
@@ -734,10 +929,18 @@ def keygen(args) -> None:
     )
     os.chmod(key, 0o600)
     os.chmod(cert, 0o644)
-    fd = os.open(mac, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="ascii") as f:
-        f.write(os.urandom(32).hex() + "\n")
-    log(f"wrote {cert.name} (backup host), {mac.name} (backup and restore hosts), {key.name} (offline: restore only)")
+    # The private key is created 0600 by its own process's umask, not chmod after.
+    old = os.umask(0o077)
+    try:
+        run_capture(["openssl", "genpkey", "-algorithm", "ed25519", "-out", str(signing)], what="generate the signing key")
+    finally:
+        os.umask(old)
+    run_capture(["openssl", "pkey", "-in", str(signing), "-pubout", "-out", str(verify_key)], what="write the verify key")
+    os.chmod(verify_key, 0o644)
+    log(
+        f"wrote {cert.name} and {signing.name} (backup host only), {verify_key.name} (everyone who verifies or "
+        f"restores), {key.name} (offline: restore only)"
+    )
 
 
 # ---- command line -----------------------------------------------------------------------
@@ -763,24 +966,24 @@ def main(argv: list[str]) -> int:
         p.add_argument("--keyd-oplog", help="--direct: keyd's operation log file")
         p.add_argument("--work-dir", help="where plaintext is staged (on an encrypted disk; default: the system's temporary directory)")
 
-    k = sub.add_parser("keygen", help="make a recipient key pair and a MAC key")
+    k = sub.add_parser("keygen", help="make a recipient key pair and a signing key pair")
     k.add_argument("dir")
     k.add_argument("--days", type=int, default=3650)
     c = sub.add_parser("create", help="take a backup")
     c.add_argument("--out", required=True)
     c.add_argument("--recipient", required=True, help="the recipient certificate (PEM)")
-    c.add_argument("--mac-key", required=True)
+    c.add_argument("--signing-key", required=True, help="the backup signing key (Ed25519, private; the backup host only)")
     c.add_argument("--keep", type=int, default=0, help="then keep only the newest N backups in --out")
     target(c)
     v = sub.add_parser("verify", help="check a backup")
     v.add_argument("backup")
-    v.add_argument("--mac-key", required=True)
+    v.add_argument("--verify-key", required=True, help="the signing key's public half (PEM)")
     v.add_argument("--key", help="the recipient private key: also decrypt and check every file")
     v.add_argument("--recipient", help="the recipient certificate, with --key")
     v.add_argument("--work-dir")
     r = sub.add_parser("restore", help="restore into a fresh install")
     r.add_argument("backup")
-    r.add_argument("--mac-key", required=True)
+    r.add_argument("--verify-key", required=True, help="the signing key's public half (PEM)")
     r.add_argument("--key", required=True)
     r.add_argument("--recipient", required=True)
     r.add_argument("--report", help="write the restore's counts and duration here (JSON)")

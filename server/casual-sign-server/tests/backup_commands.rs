@@ -48,6 +48,15 @@ fn run(args: &[&str], env: &[(&str, &str)]) -> Output {
     cmd.output().unwrap()
 }
 
+/// Run SQL as the superuser.
+async fn admin(api: &Api, sql: &str) {
+    api.db
+        .admin
+        .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(sql.to_owned())))
+        .await
+        .unwrap();
+}
+
 fn stdout(o: &Output) -> String {
     String::from_utf8_lossy(&o.stdout).into_owned()
 }
@@ -137,7 +146,8 @@ async fn verify_evidence_passes_on_an_intact_install_and_names_what_is_broken() 
         "{line}"
     );
     assert!(line.contains(" workspaces=1 "), "{line}");
-    assert!(!line.contains("document_blobs=0"), "{line}");
+    assert!(!line.contains(" blobs=0"), "{line}");
+    assert!(line.contains(" operator_events=0"), "{line}");
 
     // As the application role it would see nothing: refused, not "verified".
     let app = api.db.app_url();
@@ -169,6 +179,153 @@ async fn verify_evidence_passes_on_an_intact_install_and_names_what_is_broken() 
         stderr(&o)
     );
     std::fs::rename(&moved, &path).unwrap();
+
+    // Every blob the evidence names, not only the documents (`ASVS-14` review finding
+    // 2): an adopted signature's capture and the image it names, and the certificate of
+    // completion. Each missing one fails, naming its key.
+    let blobs = FsBlobStore::new(&api.blob_dir).unwrap();
+    let image = BlobKey::of(b"\x89PNG drill signature image");
+    let capture = blobs
+        .put(format!(r#"{{"kind":"image","image":"{}"}}"#, image.hex()).as_bytes())
+        .await
+        .unwrap();
+    let recipient: uuid::Uuid = sqlx::query_scalar("SELECT id FROM recipients LIMIT 1")
+        .fetch_one(&api.db.admin)
+        .await
+        .unwrap();
+    admin(
+        &api,
+        &format!(
+            "INSERT INTO signature_adoptions (id, account_id, recipient_id, mark, method, image_sha256, adopted_at) \
+             SELECT gen_random_uuid(), account_id, id, 'signature', 'draw', '\\x{}', now() \
+             FROM recipients WHERE id = '{recipient}'",
+            capture.hex()
+        ),
+    )
+    .await;
+    let o = run(&["verify-evidence"], &env);
+    assert!(!o.status.success(), "{}", stdout(&o));
+    assert!(
+        stderr(&o).contains("CS-BLOB-0002") && stderr(&o).contains(&image.hex()),
+        "{}",
+        stderr(&o)
+    );
+    assert_eq!(
+        blobs.put(b"\x89PNG drill signature image").await.unwrap(),
+        image
+    );
+    let o = run(&["verify-evidence"], &env);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let named = |line: &str, key: &str| -> u64 {
+        let at = line.find(&format!(" {key}=")).unwrap() + key.len() + 2;
+        line[at..]
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    assert_eq!(
+        named(&stdout(&o), "blobs"),
+        named(&line, "blobs") + 2,
+        "{}",
+        stdout(&o)
+    );
+    // A drawn capture names no image and verifies; a capture the seal job could not read
+    // fails, naming it.
+    let adopt = |capture: BlobKey| {
+        format!(
+            "INSERT INTO signature_adoptions (id, account_id, recipient_id, mark, method, image_sha256, adopted_at) \
+             SELECT gen_random_uuid(), account_id, id, 'initials', 'draw', '\\x{}', now() \
+             FROM recipients WHERE id = '{recipient}'",
+            capture.hex()
+        )
+    };
+    let drawn = blobs
+        .put(br#"{"kind":"drawn","strokes":[[[0,1],[2,3]]]}"#)
+        .await
+        .unwrap();
+    admin(&api, &adopt(drawn)).await;
+    let o = run(&["verify-evidence"], &env);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(
+        named(&stdout(&o), "blobs"),
+        named(&line, "blobs") + 3,
+        "{}",
+        stdout(&o)
+    );
+    let bad = blobs.put(br#"{"kind":"strokes"}"#).await.unwrap();
+    admin(&api, &adopt(bad)).await;
+    let o = run(&["verify-evidence"], &env);
+    assert!(!o.status.success());
+    assert!(
+        stderr(&o).contains("CS-WRK-0016") && stderr(&o).contains(&bad.hex()),
+        "{}",
+        stderr(&o)
+    );
+    admin(
+        &api,
+        &format!(
+            "ALTER TABLE signature_adoptions DISABLE TRIGGER USER; \
+             DELETE FROM signature_adoptions WHERE image_sha256 = '\\x{}'; \
+             ALTER TABLE signature_adoptions ENABLE TRIGGER USER",
+            bad.hex()
+        ),
+    )
+    .await;
+
+    let certificate = BlobKey::of(b"a certificate the restore lost");
+    admin(
+        &api,
+        &format!(
+            "ALTER TABLE envelopes DISABLE TRIGGER USER; \
+             UPDATE envelopes SET certificate_sha256 = '\\x{}' WHERE id = '{envelope}'; \
+             ALTER TABLE envelopes ENABLE TRIGGER USER",
+            certificate.hex()
+        ),
+    )
+    .await;
+    let o = run(&["verify-evidence"], &env);
+    assert!(!o.status.success());
+    assert!(
+        stderr(&o).contains("CS-BLOB-0002") && stderr(&o).contains(&certificate.hex()),
+        "{}",
+        stderr(&o)
+    );
+    admin(
+        &api,
+        &format!(
+            "ALTER TABLE envelopes DISABLE TRIGGER USER; \
+             UPDATE envelopes SET certificate_sha256 = NULL WHERE id = '{envelope}'; \
+             ALTER TABLE envelopes ENABLE TRIGGER USER"
+        ),
+    )
+    .await;
+
+    // The operator log (platform.operator_events) is verified too (review finding 6): a
+    // stored head that no event produced fails it.
+    admin(
+        &api,
+        &format!(
+            "ALTER TABLE platform.operator_chain DISABLE TRIGGER USER; \
+             UPDATE platform.operator_chain SET seq = 0, head = '\\x{}'; \
+             ALTER TABLE platform.operator_chain ENABLE TRIGGER USER",
+            "ab".repeat(32)
+        ),
+    )
+    .await;
+    let o = run(&["verify-evidence"], &env);
+    assert!(!o.status.success());
+    assert!(stderr(&o).contains("CS-CON-0007"), "{}", stderr(&o));
+    admin(
+        &api,
+        "ALTER TABLE platform.operator_chain DISABLE TRIGGER USER; \
+         UPDATE platform.operator_chain SET seq = NULL, head = NULL; \
+         ALTER TABLE platform.operator_chain ENABLE TRIGGER USER",
+    )
+    .await;
+    let o = run(&["verify-evidence"], &env);
+    assert!(o.status.success(), "{}", stderr(&o));
 
     // An audit event altered behind the triggers' back.
     api.db

@@ -51,8 +51,58 @@ async fn every_chain_verifies_and_is_counted() {
     assert_eq!(report.admin_events, u64::try_from(admin).unwrap());
     assert_eq!(report.org_admin_events, u64::try_from(org_admin).unwrap());
     // The documents' blobs, each once, ascending: both seeds use the same bytes.
-    let keys = owner.document_blob_keys().await.unwrap();
+    let keys = owner.evidence_blob_keys().await.unwrap().named;
     let mut want = vec![BlobKey(hash("pdf")), BlobKey(hash("nda"))];
+    want.sort();
+    assert_eq!(keys, want);
+    db.drop().await;
+}
+
+/// Every blob the evidence relies on, not only the documents (`ASVS-14` review finding
+/// 2): the certificate of completion, each adopted signature's capture, a brand's logo,
+/// and a signer's attachment (named only in the envelope's workflow state).
+#[tokio::test]
+async fn the_blob_keys_cover_certificates_captures_logos_and_attachments() {
+    let Some(db) = fresh("evidence_blob_keys_cover_everything", Rls::On).await else {
+        return;
+    };
+    let w = world::seed(&db, "alpha").await;
+    let (cert, capture, logo, attachment) = (
+        hash("cert"),
+        hash("capture"),
+        hash("logo"),
+        hash("attachment"),
+    );
+    let hex = |h: &[u8; 32]| h.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    admin_sql(
+        &db,
+        &format!(
+            "UPDATE envelopes SET certificate_sha256 = '\\x{cert}' WHERE id = '{env}'; \
+             INSERT INTO signature_adoptions (id, account_id, recipient_id, mark, method, image_sha256, adopted_at) \
+               VALUES (gen_random_uuid(), '{acct}', '{rcpt}', 'signature', 'draw', '\\x{capture}', now()); \
+             INSERT INTO brands (id, account_id, name, logo_sha256) \
+               VALUES (gen_random_uuid(), '{acct}', 'Brand', '\\x{logo}'); \
+             INSERT INTO envelope_states (account_id, envelope_id, state, revision, updated_at) \
+               VALUES ('{acct}', '{env}', '{{\"fields\": [{{\"value\": {{\"attachment\": \"{attachment}\"}}}}, \
+                 {{\"value\": {{\"text\": \"{capture}\"}}}}, {{\"value\": {{\"attachment\": \"not-a-key\"}}}}]}}', 1, now())",
+            cert = hex(&cert),
+            capture = hex(&capture),
+            logo = hex(&logo),
+            attachment = hex(&attachment),
+            env = w.envelope,
+            acct = w.account,
+            rcpt = w.recipient,
+        ),
+    )
+    .await;
+    let owner = Store::from_pool(db.admin.clone());
+    let keys = owner.evidence_blob_keys().await.unwrap();
+    assert_eq!(keys.captures, vec![BlobKey(capture)]);
+    let keys = keys.named;
+    let mut want: Vec<BlobKey> = [hash("pdf"), hash("nda"), cert, capture, logo, attachment]
+        .into_iter()
+        .map(BlobKey)
+        .collect();
     want.sort();
     assert_eq!(keys, want);
     db.drop().await;
@@ -69,7 +119,7 @@ async fn a_role_that_row_level_security_filters_is_refused() {
     let err = db.store.verify_evidence().await.unwrap_err();
     assert_eq!(err.code(), "CS-DB-0015", "{err}");
     assert_eq!(err.subject, None);
-    let err = db.store.document_blob_keys().await.unwrap_err();
+    let err = db.store.evidence_blob_keys().await.unwrap_err();
     assert_eq!(err.code(), "CS-DB-0015");
     db.drop().await;
 }

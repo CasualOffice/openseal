@@ -223,3 +223,62 @@ async fn an_import_refuses_altered_or_foreign_files_and_an_export_an_altered_one
     assert_eq!(err.code(), "CS-BLOB-0005");
     assert!(list_all(&target).await.0.is_empty());
 }
+
+/// A page that resumes after a key reads only the directories at or after that key, and
+/// stops once the page is full: listing a store pages through it once, not once per page
+/// (`ASVS-14` review finding 5). Shown with the directories before the cursor made
+/// unreadable, and one after the page made unreadable too.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_reads_only_the_directories_from_its_cursor_to_its_last_key() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = scratch("list-cursor");
+    let store = FsBlobStore::new(&root).unwrap();
+    let mut keys = Vec::new();
+    for i in 0u32..1500 {
+        keys.push(store.put(&i.to_le_bytes()).await.unwrap());
+    }
+    keys.sort();
+    let first = store.list(None).await.unwrap();
+    assert_eq!(first.keys, keys[..1000]);
+    let after = first.next.clone().unwrap();
+    assert_eq!(after, keys[999].hex());
+    // Every first-level directory wholly before the cursor: unreadable.
+    let cursor_dir = &after[..2];
+    let mut locked = Vec::new();
+    for e in std::fs::read_dir(&root).unwrap() {
+        let e = e.unwrap();
+        let name = e.file_name().into_string().unwrap();
+        if name.len() == 2 && name.as_str() < cursor_dir {
+            std::fs::set_permissions(e.path(), std::fs::Permissions::from_mode(0o000)).unwrap();
+            locked.push(e.path());
+        }
+    }
+    assert!(!locked.is_empty());
+    let second = store.list(Some(after)).await;
+    for p in &locked {
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let second = second.unwrap();
+    assert_eq!(second.keys, keys[1000..]);
+    assert_eq!(second.next, None);
+
+    // A full page stops at its last key: a directory past it is not read.
+    let small = scratch("list-stop");
+    let store = FsBlobStore::new(&small).unwrap();
+    let mut keys = Vec::new();
+    for i in 0u32..1000 {
+        keys.push(store.put(&i.to_le_bytes()).await.unwrap());
+    }
+    keys.sort();
+    let past = small.join("ff").join("ff");
+    std::fs::create_dir_all(&past).unwrap();
+    std::fs::set_permissions(&past, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let page = store.list(None).await;
+    std::fs::set_permissions(&past, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let page = page.unwrap();
+    assert_eq!(page.keys, keys);
+    assert_eq!(page.next, Some(keys[999].hex()));
+    let last = store.list(page.next).await.unwrap();
+    assert!(last.keys.is_empty() && last.next.is_none());
+}

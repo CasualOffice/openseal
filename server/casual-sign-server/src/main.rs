@@ -255,7 +255,9 @@ async fn blobs_copy(export: bool, dir: Option<&String>) -> ExitCode {
     }
 }
 
-/// `verify-evidence` (ASVS-14): every chain, then every document blob.
+/// `verify-evidence` (ASVS-14): every chain, the operator log, then every blob the
+/// evidence names (documents, certificates of completion, signature captures and the
+/// images they name, logos, attachments), each read back against its key.
 async fn verify_evidence() -> ExitCode {
     use casual_sign_store::blob::BlobStore as _;
     let url = match secret("OPENSEAL_MIGRATE_DATABASE_URL") {
@@ -271,7 +273,24 @@ async fn verify_evidence() -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(&e.to_string()),
     };
-    let keys = match store.document_blob_keys().await {
+    // The operator log lives in the same database (`platform` schema, docs/23 §5.1); the
+    // owner role reads it as the console's role would.
+    let pool = match casual_sign_platform_store::sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&url)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => return fail("CS-DB-0001: database unavailable (operator log)"),
+    };
+    let operator = match casual_sign_platform_store::PlatformStore::new(pool)
+        .verify_log()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => return fail(&format!("{e} (operator log)")),
+    };
+    let keys = match store.evidence_blob_keys().await {
         Ok(k) => k,
         Err(e) => return fail(&e.to_string()),
     };
@@ -279,25 +298,57 @@ async fn verify_evidence() -> ExitCode {
         Ok(b) => b,
         Err(code) => return code,
     };
-    for key in &keys {
+    let captures: std::collections::BTreeSet<_> = keys.captures.iter().collect();
+    let mut checked: std::collections::BTreeSet<casual_sign_store::blob::BlobKey> =
+        std::collections::BTreeSet::new();
+    let mut images = Vec::new();
+    for key in &keys.named {
         let read = match &blobs {
             Blobs::Fs(s) => s.get(key).await,
             Blobs::S3(s) => s.get(key).await,
         };
+        let bytes = match read {
+            Ok(b) => b,
+            Err(e) => return fail(&format!("{e} (blob {key})")),
+        };
+        // A capture is drawn, typed, or names the image the signer uploaded: that image
+        // is evidence too. A capture the seal job could not read fails here as well.
+        if captures.contains(key) {
+            use casual_sign_host::capture::{Parsed, parse};
+            match parse(&bytes) {
+                Ok(Parsed::Image(hex)) => match casual_sign_store::blob::BlobKey::parse(&hex) {
+                    Ok(image) => images.push(image),
+                    Err(e) => return fail(&format!("{e} (capture {key})")),
+                },
+                Ok(Parsed::Art(_)) => {}
+                Err(e) => return fail(&format!("{e} (capture {key})")),
+            }
+        }
+        checked.insert(*key);
+    }
+    for image in images {
+        if !checked.insert(image) {
+            continue;
+        }
+        let read = match &blobs {
+            Blobs::Fs(s) => s.get(&image).await,
+            Blobs::S3(s) => s.get(&image).await,
+        };
         if let Err(e) = read {
-            return fail(&format!("{e} (document blob {key})"));
+            return fail(&format!("{e} (signature image {image})"));
         }
     }
     println!(
         "evidence verified: envelopes={} audit_events={} workspaces={} admin_events={} \
-         organizations={} org_admin_events={} document_blobs={}",
+         organizations={} org_admin_events={} operator_events={} blobs={}",
         report.envelopes,
         report.audit_events,
         report.workspaces,
         report.admin_events,
         report.organizations,
         report.org_admin_events,
-        keys.len()
+        operator.events,
+        checked.len()
     );
     ExitCode::SUCCESS
 }

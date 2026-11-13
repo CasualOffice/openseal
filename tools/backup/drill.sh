@@ -9,14 +9,14 @@
 # 2. Stack A (Compose project `openseal-drill-a`): built, bootstrapped, and given two
 #    envelopes through the API and the emailed links: one signed and sealed, one with the
 #    first of two signers signed (tools/backup/drill_flow.py seed).
-# 3. A backup of A with a fresh recipient key and MAC key, verified with and without the
-#    private key; a copy with one payload byte flipped, and one with an edited manifest,
-#    must fail verification.
+# 3. A backup of A with a fresh recipient key and signing key, verified with the signing
+#    key's public half, with and without the recipient's private key; a copy with one
+#    payload byte flipped, and one with an edited manifest, must fail verification.
 # 4. A destroyed (`down -v`: database, store, keyd's log, its keys, all gone).
 # 5. Stack B (`openseal-drill-b`), a fresh install with its own keys: only the database
 #    and the store started, the backup restored (roles, database, blobs, keyd's log, then
-#    verify-evidence: every audit chain and admin log, every document blob, the backup's
-#    row counts), the rest started.
+#    verify-evidence: every audit chain, admin log and the operator log, every blob the
+#    evidence names, the backup's row counts and blob keys), the rest started.
 # 6. On B: the sealed PDF is byte-identical, the open envelope is as it was, and its second
 #    signer signs with the link emailed by A; B's worker seals it; verify-evidence passes
 #    again with one more envelope completed, and keyd's log verifies from its restored
@@ -59,10 +59,11 @@ $FLOW seed --base "http://localhost:$PORT_A" --mail "http://127.0.0.1:$MAIL_A" -
 
 step "backup of A"
 $TOOL keygen "$WORK/keys"
-KEYS="--mac-key $WORK/keys/backup-mac.key --recipient $WORK/keys/backup-recipient.pem"
-$TOOL create --compose-project "$A" --out "$WORK/backups" $KEYS > "$WORK/backup-path"
+RECIPIENT="--recipient $WORK/keys/backup-recipient.pem"
+KEYS="--verify-key $WORK/keys/backup-signing.pub $RECIPIENT"
+$TOOL create --compose-project "$A" --out "$WORK/backups" --signing-key "$WORK/keys/backup-signing.key" $RECIPIENT > "$WORK/backup-path"
 BACKUP=$(cat "$WORK/backup-path")
-$TOOL verify "$BACKUP" --mac-key "$WORK/keys/backup-mac.key"
+$TOOL verify "$BACKUP" --verify-key "$WORK/keys/backup-signing.pub"
 $TOOL verify "$BACKUP" $KEYS --key "$WORK/keys/backup-recipient.key"
 # The payload is CMS AuthEnvelopedData with the key wrapped by RSA-OAEP.
 openssl cms -cmsout -print -inform DER -in "$BACKUP/payload.cms" > "$WORK/payload-structure.txt"
@@ -76,8 +77,8 @@ if $TOOL verify "$WORK/flipped" $KEYS --key "$WORK/keys/backup-recipient.key" 2>
 grep -q 'payload.cms differs' "$WORK/flipped.err" || fail "flipped payload: wrong reason"
 cp -R "$BACKUP" "$WORK/edited"
 sed 's/"schema_version": [0-9]*/"schema_version": 1/' "$BACKUP/manifest.json" > "$WORK/edited/manifest.json"
-if $TOOL verify "$WORK/edited" --mac-key "$WORK/keys/backup-mac.key" 2>"$WORK/edited.err"; then fail "an edited manifest verified"; fi
-grep -q 'MAC does not verify' "$WORK/edited.err" || fail "edited manifest: wrong reason"
+if $TOOL verify "$WORK/edited" --verify-key "$WORK/keys/backup-signing.pub" 2>"$WORK/edited.err"; then fail "an edited manifest verified"; fi
+grep -q 'signature does not verify' "$WORK/edited.err" || fail "edited manifest: wrong reason"
 
 step "stack A destroyed"
 docker compose -p "$A" down -v
