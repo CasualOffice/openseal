@@ -346,6 +346,9 @@ components:
         name: {type: string}
         email: {type: string}
         routing_order: {type: integer}
+        type:
+          allOf: [{$ref: '#/components/schemas/RecipientType'}]
+          description: "A new type (UX-12), on a draft only; a correction keeps the type and is refused `409`."
         auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}}
         access_code:
           type: string

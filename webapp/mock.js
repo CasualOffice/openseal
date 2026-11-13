@@ -1295,7 +1295,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         checkIfMatch(env, headers);
         const correcting = editable(env);
         if (correcting && settled(r)) fail(409, "CS-WF-0001", "Recipient has already acted");
-        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "auth", "access_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "type", "auth", "access_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        // A type change is a draft's only (UX-12): a correction keeps the type.
+        if (body?.type != null && body.type !== r.type && correcting) fail(409, "CS-WF-0001", "Not allowed in the current state");
         if (body?.name != null && !String(body.name).trim()) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
         if (body?.email != null && !String(body.email).includes("@")) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/email", code: "CS-API-0001" }]);
         const had = r.auth.includes("access_code");
@@ -1306,6 +1308,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (body?.name != null) r.name = String(body.name).trim();
         if (body?.email != null) r.email = String(body.email);
         if (body?.routing_order != null) r.routing_order = body.routing_order;
+        if (body?.type != null) r.type = String(body.type);
         r.auth = auth;
         if (code) { r.access_code = code; r.auth_passed = []; } else if (had && !wants) r.access_code = null;
         if (correcting) await corrected(env, [`recipients.${r.id}`]);
