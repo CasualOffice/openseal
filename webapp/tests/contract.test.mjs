@@ -424,3 +424,22 @@ test("every call not on the server names the tracker row that builds it, and doc
     assert.ok(doc.includes(`\`${row}\``), `${name}'s row ${row} is not in docs/40`);
   }
 });
+
+// ---- workspace switching (ORG-04) ------------------------------------------------------
+test("workspaces: listed by organization, a switch replaces the CSRF token, a stranger's id is CS-ORG-0001", async () => {
+  const c = await signedIn();
+  const l = await c.workspaces();
+  assert.equal(l.current, "acct-demo");
+  const ws = l.organizations.flatMap((o) => o.workspaces);
+  assert.deepEqual(ws.map((w) => [w.id, w.current]), [["acct-demo", true], ["acct-legal", false]]);
+  assert.deepEqual(Object.keys(ws[0]).sort(), ["current", "id", "name", "status"]);
+  await assert.rejects(c.switchWorkspace("acct-elsewhere"), (e) => e.status === 403 && e.code === "CS-ORG-0001");
+  const r = await c.switchWorkspace("acct-legal");
+  assert.equal(r.account_id, "acct-legal");
+  assert.equal((await c.session()).account_id, "acct-legal");
+  assert.equal((await c.account()).name, "Legal");
+  assert.equal((await c.workspaces()).current, "acct-legal");
+  // The new CSRF token is the one sent: a changing call still passes.
+  await c.switchWorkspace("acct-demo");
+  assert.equal((await c.session()).account_id, "acct-demo");
+});

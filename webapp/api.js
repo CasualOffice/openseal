@@ -283,6 +283,16 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       try { await request("POST", "/api/v1/auth/logout"); } finally { setCsrf(null); }
     },
     session: () => data(request("GET", "/api/v1/auth/session")),
+    /// The signed-in person's workspaces (ORG-04, docs/23 §2.3): `{current,
+    /// organizations: [{id, name, workspaces: [{id, name, status, current}]}]}`.
+    workspaces: () => data(request("GET", "/api/v1/auth/workspaces")),
+    /// Move this session to another of the person's workspaces: the server ends this
+    /// session and sets a new cookie; the new CSRF token replaces the old one.
+    async switchWorkspace(accountId) {
+      const r = await data(request("POST", "/api/v1/auth/switch", { body: { account_id: accountId } }));
+      setCsrf(r?.csrf_token || null);
+      return r;
+    },
     account: () => data(request("GET", "/api/v1/accounts/me")),
     /// The signed-in user's own profile (`NOT_ON_SERVER.profile`, UX-04): `{id, name,
     /// email, notifications: {completed, declined, viewed}, signature, initials}`, the
