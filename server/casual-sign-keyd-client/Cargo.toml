@@ -1,0 +1,20 @@
+[package]
+name = "casual-sign-keyd-client"
+version = "0.0.1"
+description = "OpenSeal keyd's wire format and mTLS client, without cryptoki, the file key or the server: what the worker and the console carry (docs/23 §5.2, CON-06, CON-15)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# The PIN error keyd reports through KeydError (`CS-KEY-0005`).
+casual-sign-secrets = { path = "../casual-sign-secrets" }
+# mTLS to keyd, as casual-sign-keyd (moved here with the client): TLS 1.3 only, the
+# aws-lc-rs provider (ADR-006), no process-wide default.
+rustls = { version = "0.23.46", default-features = false, features = ["std", "aws_lc_rs", "logging"] }
+rustls-pki-types = { version = "1.15.1", features = ["std"] }
+
+[lints]
+workspace = true

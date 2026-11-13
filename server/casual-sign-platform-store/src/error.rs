@@ -22,6 +22,9 @@ pub enum PlatformError {
     /// `CS-PLAN-0006`: a plan, quota, assignment or override the database refused.
     /// SQLSTATE `OS010`.
     PlanInvalid,
+    /// `CS-CON-0006`: a key change's payload fails the database's checks. SQLSTATE
+    /// `OS012` (CON-07, migration 0034).
+    KeyChangeRefused,
     /// `CS-CON-0007`: the operator log does not verify at `seq`.
     LogBroken {
         /// The first event that does not verify.
@@ -63,6 +66,7 @@ impl PlatformError {
             Self::Forbidden => "CS-CON-0003",
             Self::ApprovalRequired => "CS-CON-0004",
             Self::PlanInvalid => "CS-PLAN-0006",
+            Self::KeyChangeRefused => "CS-CON-0006",
             Self::LogBroken { .. } => "CS-CON-0007",
             Self::ChainBroken => "CS-DB-0014",
             Self::AppendOnly => "CS-DB-0004",
@@ -84,6 +88,7 @@ impl PlatformError {
                     Some("OS008") => Self::Forbidden,
                     Some("OS009") => Self::ApprovalRequired,
                     Some("OS010") => Self::PlanInvalid,
+                    Some("OS012") => Self::KeyChangeRefused,
                     Some("OS005") => Self::ChainBroken,
                     Some("OS001") => Self::AppendOnly,
                     Some("42501") => Self::Refused,

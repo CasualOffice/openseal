@@ -896,13 +896,14 @@ the platform store never runs migrations. The numbers were the next free ones wh
    equal the application's (`CS-CON-0005`). The console verifies the whole operator log at start and refuses to start
    when it does not verify (`CS-CON-0007`).
 7. **Health probes** read `platform.service_targets`: `http` (GET, healthy on 2xx, no redirects, plain HTTP on the
-   private network) or `tcp` (connect), 2-second timeout, at most 64. keyd and TLS endpoints (TSA) are `tcp` targets
-   until keyd's admin `health` and `list-keys` (`CON-06`) and the servers' ops listeners (`CON-05`) exist.
+   private network) or `tcp` (connect), 2-second timeout, at most 64. TLS endpoints (TSA) are `tcp` targets until the
+   servers' ops listeners (`CON-05`) exist; keyd's own `health` is read through its admin interface (`CON-06`, below).
 
 **API** (`/console/v1`, `api/console-openapi.yaml`): `auth/login`, `auth/totp`, `auth/logout`,
 `auth/enrolment/begin`, `auth/enrolment/finish`, `me`, `operators` (GET, POST), `operators/{id}/disable`,
 `operator-log` and `operator-log/verify`, `organizations` and `organizations/{id}` (GET, PATCH), `workspaces/{id}`
-(PATCH), `approvals` (GET, POST), `approvals/{id}/grant`, `organizations/{id}/suspend` and `…/resume`, `health`,
+(PATCH), `approvals` (GET, POST), `approvals/{id}/grant`, `organizations/{id}/suspend` and `…/resume`, `keys` and
+`keys/log` (`CON-06`), `tsa`, `tsa/changes`, `tsa/changes/{id}/grant` and `…/apply` (`CON-07`), `health`,
 `dead-letters`, `alerts`; `/livez`, `/readyz`.
 
 **Tests** (Postgres 17, `server/casual-sign-console/tests/`): `catalog.rs` (`SEC-X01`, `SEC-X02` grants, the exact
@@ -947,12 +948,51 @@ returned kept in `sessionStorage` for the tab), `model.js` (pure logic, unit-tes
   migrated database with the console's own LOGIN role, then two operators enrol, sign in, rename, label, request,
   grant (re-entering a second factor the test makes stale), apply a suspension, verify the log and sign out.
 
+**Keys (`CON-06`).** keyd's admin interface is built as §5.4 designs it: `OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, disjoint
+from the signing list (a fingerprint on both refuses to start, `CS-KEY-0010`); `list-keys`, `oplog-head`,
+`oplog-range(from, n ≤ 256)` and `health` are answered only to it, chain and sign only to the signing list, and every
+call and refusal (`CS-CON-0008`, wire number 1008) is in keyd's log. `oplog-range` reads the log file after releasing
+the log's lock, up to the head taken under it, so a read never holds up a signature. The wire format, `KeydError`, the client
+transport and `AdminClient` moved to the new crate `casual-sign-keyd-client` (no `cryptoki`); keyd re-exports them, and
+the worker still depends on keyd until `CON-15` moves it. The console reads keyd when `OPENSEAL_CONSOLE_KEYD_ADDR` is
+set (with `_SERVER_NAME`, `_CA`, `_CLIENT_CERT` and the secret `_CLIENT_KEY`): `GET /keys` (any role: each key's
+algorithm, backend, development flag, signer subject and issuer, validity, days left, status `valid`, `expiring`
+within 90 days, `expired` or `not_yet_valid`, SHA-256 of each chain certificate, and the log head), `GET /keys/log`
+(operators: records with caller fingerprint, operation, alias, digest, envelope id and outcome; the page asks for the
+latest 100), and a `keyd` block in
+`/health` (`up`, `degraded`, `down` with keyd's code, or `not_configured`). keyd's refusals and failures are 502 with
+keyd's code. The UI's Keys and certificates page and a keyd Health tile show them. *Decided:* the subject and issuer
+are sent by keyd as RFC 4514 text, so the console parses no certificate; a key's status is computed by the console
+from its clock. Tests: `casual-sign-keyd/tests/admin.rs` (admin client cannot sign, signing client cannot list, both
+seen red by removing each half of the role check), `casual-sign-keyd-client` wire round-trips and truncations,
+`casual-sign-console/tests/keys.rs` against a real keyd (seen red with the role check removed), `model.test.mjs`.
+
+**TSA endpoints (`CON-07`, migration 0034).** `platform.tsa_endpoints` and `platform.approval_payloads`, written
+only through `platform.request_key_change`, `grant_key_change` and `apply_key_change`, each for the role
+`key_custodian` with a second factor from the last 5 minutes; the approver must be another, enabled key custodian, and
+the stored payload is re-hashed at apply. `platform.grant_approval` now grants organization actions only, and
+`GET /approvals` lists only those. Console: `GET /tsa` (endpoints, and the last day's changes with their payloads),
+`POST /tsa/changes` (`set` or `remove`), `…/{id}/grant`, `…/{id}/apply`; the Keys page shows them, with Add, Change
+and Remove for custodians. The worker's `TsaDirectory` reads `openseal_tsa_endpoints()` at most once a minute before
+a seal and uses `OPENSEAL_TSA_URLS` while no row is enabled. *Decided:* TSA URLs may be `http` as well as `https`
+(RFC 3161 tokens are signed, and many public TSAs serve plain HTTP); the address policy is what `SEC-W01` adds. The
+console resolves a proposed URL's host and refuses any non-public address unless it is in `OPENSEAL_CONSOLE_TSA_ALLOW`
+(`CS-CON-0006`, field `url`); the worker checks the addresses of each database URL again before every request with
+its webhook policy (`OPENSEAL_WEBHOOK_ALLOW`); the deployment's own `OPENSEAL_TSA_URLS` are not checked, as service
+targets are not. The approver reads the whole payload, so the request stores it rather than only its hash. Operator
+events carry the approval and endpoint ids, never a URL. Not yet: the expected certificate hash and policy OID are
+stored but not enforced on the TSA's answer (`CON-23`); trust anchors in the database (`CON-22`). Tests:
+`casual-sign-console/tests/tsa.rs` (`SEC-X05`, `SEC-X06`, the stale second factor, the console's lack of a write
+grant, the insert-only payload), `casual-sign-worker/tests/tsa_directory.rs` (a seal time-stamps with the database's
+TSA while the environment's is unreachable; a database TSA on a refused address is never contacted).
+
 **Not yet built** (rows in docs/14): the Compose
-service and the console's LOGIN role in deployment (`CON-02`); `casual-sign-keyd-client` (`CON-15`); the other
+service and the console's LOGIN role in deployment (`CON-02`); moving the worker onto `casual-sign-keyd-client`
+(`CON-15`); the other
 two-person actions (organization create, close, owner recovery, identity disable, adding a platform owner) and the
-server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); TOTP re-entry
-for key and trust actions (`CON-07`); ops listeners and metrics on server and worker, keyd health (`CON-05`); keys,
-certificates and expiry (`CON-06`, `CON-08`); plans and limits (`PLAN-02`).
+server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); trust anchors in
+the database (`CON-22`) and the TSA's certificate and policy checked against the configured ones (`CON-23`); ops listeners and metrics on server and worker, readiness on keyd (`CON-05`);
+expiry alerts (`CON-08`).
 
 ## 6. API additions (`/api/v1`, additive)
 

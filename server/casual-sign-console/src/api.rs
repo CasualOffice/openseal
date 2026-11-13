@@ -847,6 +847,7 @@ pub async fn health(
     let pool = store.pool_stats().await?;
     let targets = store.service_targets().await?;
     let services = crate::health::probe_all(targets, state.config().probe_timeout).await;
+    let keyd = crate::keys::health(&state).await;
     let log = match store.verify_log().await {
         Ok(r) => json!({ "verified": true, "events": r.events }),
         Err(e) => json!({ "verified": false, "code": ConsoleError::from(e).code() }),
@@ -860,6 +861,7 @@ pub async fn health(
         "dead_letters": dead,
         "connections": pool.iter().map(|(s, n)| json!({ "state": s, "connections": n })).collect::<Vec<_>>(),
         "services": services,
+        "keyd": keyd,
         "operator_log": log,
     })))
 }
@@ -909,7 +911,14 @@ pub async fn approvals(
     _op: Authed<Operators>,
 ) -> Result<Json<Value>, ConsoleError> {
     let now = state.now();
-    let list = state.store().approvals(now).await?;
+    // Organization actions only; key changes are the key custodians' (`GET /tsa`).
+    let list: Vec<_> = state
+        .store()
+        .approvals(now)
+        .await?
+        .into_iter()
+        .filter(|a| a.action.starts_with("organization."))
+        .collect();
     Ok(Json(json!({
         "approvals": list.iter().map(|a| json!({
             "id": a.id,

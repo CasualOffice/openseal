@@ -56,7 +56,15 @@ fn the_route_table_and_the_openapi_document_are_equal() {
     );
     for (_, _, r) in ROUTES {
         assert!(
-            ["public", "pending", "any", "operators", "owners"].contains(r),
+            [
+                "public",
+                "pending",
+                "any",
+                "operators",
+                "custodians",
+                "owners"
+            ]
+            .contains(r),
             "unknown roles {r}"
         );
     }

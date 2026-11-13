@@ -3,8 +3,8 @@
 //! deployment configuration, never by an operator, `SEC-X06`), each probed with a short
 //! timeout: `http` targets with a GET (healthy on 2xx), `tcp` targets by connecting.
 //!
-//! keyd's key and certificate inventory and its `health` operation arrive with its admin
-//! interface (`CON-06`); until then keyd is a `tcp` target.
+//! keyd's own `health` operation is read through its admin interface ([`crate::keys`],
+//! `CON-06`) when the console is configured with keyd's address.
 
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};

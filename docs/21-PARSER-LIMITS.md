@@ -107,6 +107,9 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Concurrent connections | 64 | — (refused at accept) |
 | Connection idle timeout | 30 s | CS-KEY-0011 |
 | Signatures per caller per minute | 600 | CS-KEY-0008 |
+| Keys in one `list-keys` answer (admin, `CON-06`) | 64 | CS-KEY-0007 |
+| Records in one `oplog-range` answer (admin, `CON-06`) | 1 to 256 | CS-KEY-0007 |
+| Subject or issuer name in `list-keys` | 1,024 bytes, no control characters (keyd replaces them) | CS-KEY-0007 |
 
 ## Images (signatures, stamps, attachments shown inline)
 
@@ -202,7 +205,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | API client expiry | 1–3,650 days | CS-API-0001 |
 | Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 
-## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, built)
+## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, `CON-06`, `CON-07`, built)
 
 | Limit | Default | Code |
 | --- | ---: | --- |
@@ -222,6 +225,10 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Data-region labels | 16 per organization, each `[a-z0-9-]`, 1–32 characters | CS-CON-0010 |
 | Operator event | 64 KiB canonical; 32 details; codes and labels 64 characters of `[A-Za-z0-9_.:-]` | CS-DB-0008 |
 | Service targets probed; probe timeout | 64; 2 seconds | — |
+| keyd admin call timeout; keyd log page (`GET /keys/log`) | 5 seconds; 1–256 records | CS-KEY-0011; CS-CON-0010 |
+| TSA URL (`CON-07`) | 2,048 bytes, `http` or `https`, no user information; addresses checked on at most 16 resolved | CS-CON-0006 |
+| TSA priority; policy OID; expected certificate hash; endpoints listed | 0–1,000; 2–32 arcs; 64 hex digits; 64 | CS-CON-0006 |
+| Key-change payload stored for the approver | 4 KiB of JSON | CS-DB-0008 |
 
 ## ML (`casual-sign-modeld`, the worker's ML jobs; designed, ADR-029)
 

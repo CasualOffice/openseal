@@ -270,7 +270,7 @@ pub fn profile_grant(
 
 /// The custom-profile permission that shows every envelope of the account; with
 /// [`SCOPES`] and the action names of [`authz::Action`], every name a profile may carry
-/// (0034 `permission_profiles_known_permissions`).
+/// (0035 `permission_profiles_known_permissions`).
 pub const VIEW_ALL: &str = authz::VIEW_ALL;
 
 /// The scopes a permission profile grants (docs/22 §8): those whose every action it

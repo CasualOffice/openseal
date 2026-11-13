@@ -42,7 +42,7 @@ casual-sign-secrets = { path = "../casual-sign-secrets" }
 # blocking pool. MIT.
 tokio = { version = "1.40", default-features = false, features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
 # Ids, times and JSON as the store takes them; all already in the tree.
-uuid = { version = "1.10", features = ["v4", "serde"] }
+uuid = { version = "1.10", features = ["v4", "v7", "serde"] }
 time = { version = "0.3.36", features = ["formatting"] }
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"

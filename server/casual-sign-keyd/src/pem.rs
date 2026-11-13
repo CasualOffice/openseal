@@ -6,10 +6,12 @@ use der::Decode;
 use rustls_pki_types::CertificateDer;
 use rustls_pki_types::pem::PemObject;
 
+pub(crate) use casual_sign_keyd_client::tls_certificates;
+
 use crate::error::{KeyConfigProblem, KeydError};
 
 /// Most certificates a chain may hold.
-pub const MAX_CHAIN: usize = 8;
+pub const MAX_CHAIN: usize = casual_sign_keyd_client::wire::MAX_CHAIN;
 
 /// The certificates of a PEM file (or one DER certificate), in order. At least one, at
 /// most [`MAX_CHAIN`].
@@ -34,18 +36,4 @@ pub fn certificates(bytes: &[u8]) -> Result<Vec<Certificate>, KeydError> {
     ders.iter()
         .map(|d| Certificate::from_der(d).map_err(|_| bad()))
         .collect()
-}
-
-/// TLS certificates from PEM, for rustls.
-///
-/// # Errors
-/// `CS-KEY-0010` when none parse.
-pub(crate) fn tls_certificates(bytes: &[u8]) -> Result<Vec<CertificateDer<'static>>, KeydError> {
-    let out = CertificateDer::pem_slice_iter(bytes)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| KeydError::TlsConfig(format!("a certificate PEM block: {e}")))?;
-    if out.is_empty() {
-        return Err(KeydError::TlsConfig("no CERTIFICATE block".into()));
-    }
-    Ok(out)
 }
