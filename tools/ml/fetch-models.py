@@ -604,6 +604,37 @@ def gliner_parity_mismatches(entries):
     return out
 
 
+# Where the image and compose name the profiles a default build fetches. Each default must
+# be fetchable for every arch, or `docker build` / `docker compose --profile ml build`
+# fails out of the box (ML-21: an unhosted profile left in a default).
+DEFAULT_PROFILE_SOURCES = {
+    HERE.parent.parent / "deploy" / "Dockerfile": re.compile(r'^ARG OPENSEAL_ML_PROFILES="([^"]*)"', re.M),
+    HERE.parent.parent / "docker-compose.yml": re.compile(r'OPENSEAL_ML_PROFILES:-([^}"]*)\}'),
+}
+
+
+def default_profile_refusals(entries):
+    """Each default profile list (deploy/Dockerfile, docker-compose.yml) that the manifest
+    refuses to fetch, named with the reason; empty when every default can be fetched.
+    Skipped where those files are not present (the image build copies only the manifest)."""
+    out = []
+    for path, pattern in DEFAULT_PROFILE_SOURCES.items():
+        if not path.is_file():
+            continue
+        found = pattern.findall(path.read_text(encoding="utf8"))
+        if not found:
+            out.append(f"{path.name}: no default OPENSEAL_ML_PROFILES found")
+        for listed in found:
+            profiles = listed.split()
+            for arch in ARCHES:
+                try:
+                    select(entries, profiles, arch)
+                except Refused as err:
+                    out.append(f"{path.name}: default profiles {listed!r} cannot be fetched on {arch}: {err}")
+                    break
+    return out
+
+
 def _entry(eid, profile, payload, **over):
     e = {"id": eid, "profile": profile, "arch": "any", "role": "model", "dest": f"{eid}/model.onnx",
          "source_url": f"https://huggingface.co/acme/{eid}/resolve/{'0' * 40}/model.onnx",
@@ -882,6 +913,7 @@ def self_test():
                     continue
                 select(entries, [p], arch)
         failures += gliner_parity_mismatches(entries)
+        failures += default_profile_refusals(entries)
     except (Refused, OSError, ValueError, KeyError) as err:
         failures.append(f"models.toml: {err}")
     if DENY_TOML.is_file():
