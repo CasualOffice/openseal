@@ -531,7 +531,9 @@ mutation of the migration):
   9999-12-31T23:59:59.999Z, the reader's last instant; anything else is `OS005` before any cast. A top-level field
   stated twice is `OS005` (`jsonb` keeps the last, the reader refuses a repeated `at`). The reader takes only `at` from
   the bytes and skips every other value uninterpreted, so whatever JSON the check accepts (a number beyond `f64`,
-  nesting deeper than serde_json's limit) still verifies: no accepted insert can make the log unverifiable. It refuses an event outside the current scope (`42501`)
+  nesting deeper than serde_json's limit) still verifies: no accepted insert can make the log unverifiable. The JSON
+  form of `GET /admin-events` serves such an event as `"event": null` (its hash still links); the CSV form carries its
+  bytes as stored. It refuses an event outside the current scope (`42501`)
   before reading that chain, so another scope's head or next `seq` is never revealed. The workspace functions require
   the event's bytes to name their own action and workspace.
 - **Concurrent changes queue on the head.** `openseal_admin_chain_tip()` and `openseal_org_chain_tip()` lock the head
