@@ -247,6 +247,7 @@ async fn main() -> ExitCode {
         }
         config.ml_bundle = Some(b);
     }
+    let public_url = config.public_url.clone();
     let state = match AppState::new(store, blobs, jwt, Arc::new(SystemClock), config) {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
@@ -255,6 +256,18 @@ async fn main() -> ExitCode {
         match casual_sign_server::geo::GeoIp::open(std::path::Path::new(&path)) {
             Ok(g) => state.set_geoip(g),
             Err(e) => return fail(&format!("OPENSEAL_GEOIP_DB: {e}")),
+        }
+    }
+    // Recipient sign-in through OpenID Connect providers (`sso`, RAUTH-01): the
+    // operator's JSON file of providers, client secrets included, so mounted as a secret.
+    if let Ok(path) = std::env::var("OPENSEAL_RECIPIENT_IDPS_FILE") {
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(_) => return fail("OPENSEAL_RECIPIENT_IDPS_FILE: cannot read the file"),
+        };
+        match casual_sign_server::idp::RecipientIdps::from_json(&bytes, &public_url) {
+            Ok(i) => state.set_recipient_idps(i),
+            Err(e) => return fail(&format!("OPENSEAL_RECIPIENT_IDPS_FILE: {e}")),
         }
     }
     if let Ok(dir) = std::env::var("OPENSEAL_WEBAPP_DIR") {

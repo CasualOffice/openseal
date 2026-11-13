@@ -121,7 +121,11 @@ impl RecipientIn {
             return Err(ApiError::invalid(&format!("{at}/access_code")));
         }
         // An email one-time code needs an address to send it to (SEC-A02).
-        if self.auth.contains(&AuthMethod::EmailOtp) && email.is_empty() {
+        // A sign-in through an identity provider is bound to the recipient by email
+        // (RAUTH-01), as an emailed code is.
+        if (self.auth.contains(&AuthMethod::EmailOtp) || self.auth.contains(&AuthMethod::Sso))
+            && email.is_empty()
+        {
             return Err(ApiError::invalid(&format!("{at}/auth")));
         }
         // A code by SMS or voice call needs a number to send it to (slice 5).

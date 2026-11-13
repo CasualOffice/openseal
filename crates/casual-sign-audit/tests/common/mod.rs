@@ -103,6 +103,7 @@ pub fn random_event(r: &mut Rng) -> (Actor, Context, EventData) {
             EventData::RecipientAuthPassed {
                 recipient_id: rid,
                 method: AuthMethod::SmsOtp,
+                identity: None,
             },
         ),
         4 => (

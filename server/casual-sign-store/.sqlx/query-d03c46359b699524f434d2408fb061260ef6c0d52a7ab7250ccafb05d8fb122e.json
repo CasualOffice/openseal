@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recipient_sso_challenges SET closed_at = $3, closed_reason = 'superseded' WHERE account_id = $1 AND recipient_id = $2 AND closed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d03c46359b699524f434d2408fb061260ef6c0d52a7ab7250ccafb05d8fb122e"
+}

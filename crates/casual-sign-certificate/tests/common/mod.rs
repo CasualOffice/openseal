@@ -257,6 +257,7 @@ pub fn chain_ending(n: usize, last: EventData) -> (Chain, Hash256, Timestamp) {
             EventData::RecipientAuthPassed {
                 recipient_id: rid.clone(),
                 method: AuthMethod::SmsOtp,
+                identity: None,
             },
             &mut now,
         );

@@ -857,6 +857,8 @@ dependencies = [
  "jsonwebtoken",
  "maxminddb",
  "rust_decimal",
+ "rustls",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "serde_norway",
@@ -867,6 +869,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "ureq",
  "uuid",
 ]
 

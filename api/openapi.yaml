@@ -885,6 +885,15 @@ components:
             sha256: {type: string, description: '`sha256:<hex>` over the text''s UTF-8, the hash consent records'}
             url: {type: string, description: '`/s/{token}/disclosure`, present only when the account has published that text (UXW-34)'}
         auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
+        sso_providers:
+          type: array
+          description: 'While `sso` is still to pass (RAUTH-01): the identity providers the signer may sign in with; empty when the server has none'
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+        sso_authorization_url: {type: string, description: 'After `POST /s/{token}/sso`: where the page sends the browser to sign in (RAUTH-01)'}
         sender:
           type: object
           description: Who sent the envelope, so the recipient can judge whether the request is genuine (UXW-34).
@@ -926,6 +935,21 @@ components:
       properties:
         code: {type: string, pattern: '^[0-9]{6}$'}
         method: {type: string, enum: [email_otp, sms_otp, voice_otp]}
+    SsoStartRequest:
+      description: Which of the server's identity providers to sign in with (RAUTH-01).
+      type: object
+      additionalProperties: false
+      required: [provider]
+      properties:
+        provider: {type: string, pattern: '^[a-z0-9-]{1,32}$'}
+    SsoVerifyRequest:
+      description: What the identity provider sent the browser back with (RAUTH-01).
+      type: object
+      additionalProperties: false
+      required: [state, code]
+      properties:
+        state: {type: string, maxLength: 256}
+        code: {type: string, maxLength: 2048}
     ViewedRequest:
       type: object
       required: [pages_seen]
@@ -3317,6 +3341,81 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/OtpVerifyRequest'}
+      responses:
+        '200':
+          description: Passed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        '403':
+          description: Not passed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/sso:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonySsoStart
+      summary: "Start signing in through an identity provider"
+      description: >-
+        For a recipient whose sender required `sso` (slice 5, RAUTH-01): opens a sign-in
+        at one of the operator's OpenID Connect providers (listed in the view's
+        `sso_providers`) and answers the view with `sso_authorization_url`, the
+        provider's authorization endpoint with `state`, `nonce` and a PKCE S256
+        challenge. The server keeps the nonce and verifier, and `state` only as a hash;
+        a newer sign-in replaces an open one, and each works for 10 minutes. Records
+        `recipient.auth_challenged` (`sso`). `CS-API-0014` when `sso` is not required or
+        the server has no provider; `422` for a provider it does not list; `CS-API-0009`
+        once `sso` has passed; `CS-API-0003` past 5 a minute per link.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SsoStartRequest'}
+      responses:
+        '200':
+          description: Started; send the browser to `sso_authorization_url`
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/sso/verify:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonySsoVerify
+      summary: "Finish signing in through an identity provider"
+      description: >-
+        Takes the `state` and `code` the provider sent the browser back with (to the
+        redirect URI, `/s/oidc` by default). The sign-in for that `state` closes whatever
+        happens, so a replay fails. The code is exchanged with the PKCE verifier, and the
+        ID token must be signed by a key in the provider's JWKS with an asymmetric
+        algorithm, name the provider as issuer and the server's client as audience, be
+        unexpired, carry the sign-in's nonce, and assert a verified email equal to the
+        recipient's. `200` with the view on a pass, recorded as `recipient.auth_passed`
+        (`sso`) with the issuer and the SHA-256 of the subject; `403` with the view
+        otherwise, recorded as a failed attempt and counted to the account's
+        `max_auth_attempts`. `502 CS-API-0016` when the provider cannot be reached; that
+        counts nothing.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SsoVerifyRequest'}
       responses:
         '200':
           description: Passed

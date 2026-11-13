@@ -929,6 +929,27 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     assert!(otp.status.is_client_error(), "{:?}", otp.json());
+    // So is a sign-in through an identity provider (the sign-in itself:
+    // tests/ceremony_sso.rs).
+    for (path, body) in [
+        ("sso", json!({"provider": "corp"})),
+        ("sso/verify", json!({"state": "s", "code": "c"})),
+    ] {
+        let r = api
+            .call(
+                "POST",
+                &format!("{s1}/{path}"),
+                &Auth::None,
+                Some(body),
+                &h1,
+            )
+            .await;
+        assert_eq!(
+            (r.status, r.code().as_str()),
+            (StatusCode::CONFLICT, "CS-API-0014"),
+            "{path}"
+        );
+    }
     ok(
         api.call(
             "POST",

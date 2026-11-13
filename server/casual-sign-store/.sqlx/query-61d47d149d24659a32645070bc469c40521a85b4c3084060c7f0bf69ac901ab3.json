@@ -1,0 +1,67 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recipient_sso_challenges SET closed_at = $4, closed_reason = 'used' WHERE account_id = $1 AND recipient_id = $2 AND state_sha256 = $3 AND closed_at IS NULL RETURNING provider, nonce, code_verifier, expires_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipient_sso_challenges",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "nonce",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipient_sso_challenges",
+            "name": "nonce"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "code_verifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipient_sso_challenges",
+            "name": "code_verifier"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "recipient_sso_challenges",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "61d47d149d24659a32645070bc469c40521a85b4c3084060c7f0bf69ac901ab3"
+}

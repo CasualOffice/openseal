@@ -362,6 +362,10 @@ pub enum Command {
         method: AuthMethod,
         /// Whether it passed.
         passed: bool,
+        /// For a passed `sso`, who the identity provider said signed in (RAUTH-01); the
+        /// engine refuses a pass by `sso` without it, and it with any other method.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        identity: Option<casual_sign_audit::SignInIdentity>,
     },
     /// The embedding host asserts it authenticated the recipient.
     HostAssertAuth {

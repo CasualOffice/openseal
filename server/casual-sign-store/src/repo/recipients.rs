@@ -909,4 +909,111 @@ impl Recipients<'_> {
         .map_err(db)?;
         Ok(())
     }
+
+    /// Open sign-in `id` for `recipient` through `provider` (RAUTH-01), found again by
+    /// `state_sha256`, expiring at `expires`, closing any open one (`superseded`): at most
+    /// one is open (a partial unique index).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` when the recipient is not this account's.
+    #[allow(clippy::too_many_arguments)]
+    // One row's columns, each a distinct value the caller drew; a struct would only
+    // rename them.
+    pub async fn open_sso(
+        &mut self,
+        recipient: RecipientId,
+        id: Uuid,
+        provider: &str,
+        state_sha256: &[u8; 32],
+        nonce: &str,
+        code_verifier: &str,
+        now: OffsetDateTime,
+        expires: OffsetDateTime,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "UPDATE recipient_sso_challenges SET closed_at = $3, closed_reason = 'superseded' \
+             WHERE account_id = $1 AND recipient_id = $2 AND closed_at IS NULL",
+            acct,
+            recipient.0,
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        sqlx::query!(
+            "INSERT INTO recipient_sso_challenges (id, account_id, recipient_id, provider, \
+             state_sha256, nonce, code_verifier, created_at, expires_at) \
+             VALUES ($3, $1, $2, $4, $5, $6, $7, $8, $9)",
+            acct,
+            recipient.0,
+            id,
+            provider,
+            &state_sha256[..],
+            nonce,
+            code_verifier,
+            now,
+            expires
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    /// Take `recipient`'s open sign-in whose state hashes to `state_sha256`, closing it
+    /// (`used`) whatever happens next, so a state or nonce works once; `None` when there
+    /// is none open (never started, already used, superseded) or it has expired by
+    /// `now`.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn take_sso(
+        &mut self,
+        recipient: RecipientId,
+        state_sha256: &[u8; 32],
+        now: OffsetDateTime,
+    ) -> Result<Option<SsoChallenge>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "UPDATE recipient_sso_challenges SET closed_at = $4, closed_reason = 'used' \
+             WHERE account_id = $1 AND recipient_id = $2 AND state_sha256 = $3 \
+               AND closed_at IS NULL \
+             RETURNING provider, nonce, code_verifier, expires_at",
+            acct,
+            recipient.0,
+            &state_sha256[..],
+            now
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.filter(|r| r.expires_at > now).map(|r| SsoChallenge {
+            provider: r.provider,
+            nonce: r.nonce,
+            code_verifier: r.code_verifier,
+        }))
+    }
+}
+
+/// An open recipient sign-in (RAUTH-01), as [`Recipients::take_sso`] hands it over.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SsoChallenge {
+    /// The operator's id for the provider.
+    pub provider: String,
+    /// The nonce the ID token must carry.
+    pub nonce: String,
+    /// The PKCE verifier for the token request.
+    pub code_verifier: String,
+}
+
+impl core::fmt::Debug for SsoChallenge {
+    /// The provider only: the nonce and the verifier are secrets.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SsoChallenge")
+            .field("provider", &self.provider)
+            .finish_non_exhaustive()
+    }
 }

@@ -553,7 +553,8 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             recipient,
             method,
             passed,
-        } => auth_result(s, cmd, recipient, *method, *passed, out),
+            identity,
+        } => auth_result(s, cmd, recipient, *method, *passed, identity.as_ref(), out),
         Command::HostAssertAuth { recipient, claim } => {
             let (i, r) = rec(s, recipient)?;
             if !matches!(ctx.principal, Principal::Host { .. })
@@ -1321,10 +1322,15 @@ fn auth_result(
     recipient: &Id,
     method: AuthMethod,
     passed: bool,
+    identity: Option<&casual_sign_audit::SignInIdentity>,
     out: &mut Out<'_>,
 ) -> Result<(), WorkflowError> {
     let ctx = out.ctx;
     let (i, r) = rec(s, recipient)?;
+    // A pass by sign-in names who signed in; nothing else carries an identity (RAUTH-01).
+    if (method == AuthMethod::Sso && passed) != identity.is_some() {
+        return Err(recipient_refused(cmd, r));
+    }
     authorize_recipient_or_system(r, cmd, ctx)?;
     gate_opened(s, r, cmd)?;
     if r.auth_locked {
@@ -1339,6 +1345,7 @@ fn auth_result(
         out.event(EventData::RecipientAuthPassed {
             recipient_id: recipient.clone(),
             method,
+            identity: identity.cloned(),
         });
         return pass_auth(s, i, method, out);
     }

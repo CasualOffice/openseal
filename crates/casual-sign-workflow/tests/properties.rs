@@ -248,6 +248,7 @@ fn try_ready(hx: &mut Harness, rid: &str) {
                 recipient: id(rid),
                 method: m,
                 passed: true,
+                identity: None,
             },
         );
     }
@@ -281,6 +282,7 @@ fn step(hx: &mut Harness, a: &Act, seen: &mut Seen, salt: &mut u8) {
                     recipient: id(&r),
                     method: AuthMethod::SmsOtp,
                     passed: *passed,
+                    identity: None,
                 },
             )
         }),

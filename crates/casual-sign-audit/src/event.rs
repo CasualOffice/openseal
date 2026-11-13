@@ -130,6 +130,18 @@ pub enum AuthMethod {
     EmailOtp,
 }
 
+/// Who an identity provider said signed in (`sso`, slice 5, row RAUTH-01): the ID token's
+/// issuer and the SHA-256 of its subject (`iss` and `sub`, OpenID Connect Core §2). The
+/// subject itself is never recorded: whoever holds it can recompute the hash and
+/// confirm the match, and nobody can read it off the trail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInIdentity {
+    /// The issuer that signed the ID token, exactly as in its `iss` claim.
+    pub issuer: String,
+    /// SHA-256 of the token's `sub` claim as UTF-8.
+    pub subject_sha256: Hash256,
+}
+
 /// Request context. IP, user agent and location are personal data.
 ///
 /// Every member is absent from the wire when unset, so an event without a location
@@ -377,6 +389,10 @@ pub enum EventData {
         recipient_id: Id,
         /// The method.
         method: AuthMethod,
+        /// For `sso`, who the identity provider said signed in (RAUTH-01). Absent from
+        /// the wire otherwise, so every earlier chain hashes as it did.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        identity: Option<SignInIdentity>,
     },
     /// An authentication attempt failed.
     #[serde(rename = "recipient.auth_failed")]

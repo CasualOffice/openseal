@@ -55,6 +55,11 @@ pub(crate) struct Open {
     geoip: Option<std::sync::Arc<crate::geo::GeoIp>>,
     /// The capture this request adopted, answered as `adoption_id`.
     adoption: Option<String>,
+    /// The providers a recipient may sign in with (`sso`, RAUTH-01), when configured.
+    idps: Option<std::sync::Arc<crate::idp::RecipientIdps>>,
+    /// Where this request sends the browser to sign in, answered as
+    /// `sso_authorization_url` (RAUTH-01).
+    sso_url: Option<String>,
     /// Whether the cookie says `Secure` (the server's `secure_cookies`, as the staff
     /// session's: off only for plain-HTTP development on localhost).
     secure: bool,
@@ -249,6 +254,8 @@ async fn open(
             ip,
             geoip: st.0.geoip.get().cloned(),
             adoption: None,
+            idps: st.0.idps.get().cloned(),
+            sso_url: None,
             secure: st.config().secure_cookies,
             sender,
             link: format!("/s/{token}"),
@@ -353,6 +360,21 @@ impl Open {
         let mut v = self.view_of(s, me);
         if let (Some(a), Some(o)) = (&self.adoption, v.as_object_mut()) {
             o.insert("adoption_id".into(), Value::String(a.clone()));
+        }
+        if let (Some(u), Some(o)) = (&self.sso_url, v.as_object_mut()) {
+            o.insert("sso_authorization_url".into(), Value::String(u.clone()));
+        }
+        // The providers to choose from while `sso` is still to pass (RAUTH-01): an empty
+        // list says this server has none, so the page can say so.
+        let sso_pending = me.is_some_and(|r| {
+            r.spec.auth.contains(&AuthMethod::Sso) && !r.auth_passed.contains(&AuthMethod::Sso)
+        });
+        if sso_pending && let Some(o) = v.as_object_mut() {
+            let list = self
+                .idps
+                .as_ref()
+                .map_or_else(|| Value::Array(Vec::new()), |i| i.listing());
+            o.insert("sso_providers".into(), list);
         }
         v
     }
@@ -608,6 +630,157 @@ pub(crate) async fn authenticate(
             recipient: r,
             method: req.method,
             passed,
+            identity: None,
+        })
+        .await?;
+        Ok(if passed {
+            StatusCode::OK
+        } else {
+            StatusCode::FORBIDDEN
+        })
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SsoStartIn {
+    provider: String,
+}
+
+/// How long a sign-in at the provider may take (RAUTH-01).
+const SSO_TTL: time::Duration = time::Duration::minutes(10);
+/// Sign-ins started per link a minute.
+const SSO_PER_MINUTE: u32 = 5;
+
+/// `POST /s/{token}/sso {provider}`: start signing in through one of the operator's
+/// identity providers (`sso`, RAUTH-01), `200` with the view and
+/// `sso_authorization_url`, where the page sends the browser. Records
+/// `recipient.auth_challenged` (`sso`) and opens a sign-in holding the nonce and PKCE
+/// verifier, found again only by the SHA-256 of `state`; any earlier open sign-in stops
+/// working. `CS-API-0014` when `sso` is not required or no provider is configured;
+/// `422` for a provider this server does not list; `CS-API-0003` past 5 a minute.
+pub(crate) async fn sso_start(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Response {
+    let link = Hash256(sha256(token.as_bytes())).hex();
+    if let Err(r) = limit(&st, "sso", &format!("sso-link:{link}"), SSO_PER_MINUTE) {
+        return r;
+    }
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let req: SsoStartIn = parse(&body)?;
+        let r = o.recipient.clone();
+        let me = o.l.state.recipient(&r).ok_or_else(ApiError::expired)?;
+        if !me.spec.auth.contains(&AuthMethod::Sso) {
+            return Err(ApiError::method_unavailable());
+        }
+        if me.auth_passed.contains(&AuthMethod::Sso) {
+            return Err(ApiError::not_available("already authenticated"));
+        }
+        let idps = o.idps.clone().ok_or_else(ApiError::method_unavailable)?;
+        let p = idps
+            .get(&req.provider)
+            .ok_or_else(|| ApiError::invalid("/provider"))?;
+        o.run(Command::ChallengeAuth {
+            recipient: r.clone(),
+            method: AuthMethod::Sso,
+        })
+        .await?;
+        let (state, nonce, verifier) = (random_secret()?, random_secret()?, random_secret()?);
+        let now = o.cmds.now;
+        o.tx.recipients()
+            .open_sso(
+                RecipientId(uid(&r)?),
+                uuid::Uuid::now_v7(),
+                &p.id,
+                &sha256(state.as_bytes()),
+                &nonce,
+                &verifier,
+                now,
+                now.saturating_add(SSO_TTL),
+            )
+            .await?;
+        o.sso_url = Some(crate::idp::authorization_url(p, &state, &nonce, &verifier));
+        Ok(StatusCode::OK)
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SsoVerifyIn {
+    state: String,
+    code: String,
+}
+
+/// `POST /s/{token}/sso/verify {state, code}`: finish a sign-in (RAUTH-01) with what the
+/// provider sent the browser back with. The sign-in whose `state` this is closes whatever
+/// happens (a replay finds nothing); the code is exchanged with its PKCE verifier and the
+/// ID token checked (`crate::idp::verify`). A pass records `recipient.auth_passed`
+/// (`sso`) with the issuer and the SHA-256 of the subject; anything else (no such
+/// sign-in, expired, refused code, a token that fails any check) records
+/// `recipient.auth_failed`, counted to the lockout like a wrong code, `403` with the
+/// view. A provider that cannot be reached is `502 CS-API-0016` and counts nothing.
+pub(crate) async fn sso_verify(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Response {
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let req: SsoVerifyIn = parse(&body)?;
+        if req.state.is_empty() || req.state.len() > 256 {
+            return Err(ApiError::invalid("/state"));
+        }
+        if req.code.is_empty() || req.code.len() > 2048 {
+            return Err(ApiError::invalid("/code"));
+        }
+        let r = o.recipient.clone();
+        let me = o.l.state.recipient(&r).ok_or_else(ApiError::expired)?;
+        if !me.spec.auth.contains(&AuthMethod::Sso) {
+            return Err(ApiError::method_unavailable());
+        }
+        if me.auth_passed.contains(&AuthMethod::Sso) {
+            return Err(ApiError::not_available("already authenticated"));
+        }
+        let email = me.spec.email.0.as_str().to_owned();
+        let idps = o.idps.clone().ok_or_else(ApiError::method_unavailable)?;
+        let now = o.cmds.now;
+        let taken =
+            o.tx.recipients()
+                .take_sso(RecipientId(uid(&r)?), &sha256(req.state.as_bytes()), now)
+                .await?;
+        let identity = match taken {
+            Some(c) if idps.get(&c.provider).is_some() => {
+                let code = req.code;
+                tokio::task::spawn_blocking(move || {
+                    let Some(p) = idps.get(&c.provider) else {
+                        return Ok::<_, ApiError>(None);
+                    };
+                    match idps.exchange(p, &code, &c.code_verifier)? {
+                        crate::idp::Exchange::Refused => Ok(None),
+                        crate::idp::Exchange::IdToken(t) => {
+                            let jwks = idps.jwks(p)?;
+                            Ok(crate::idp::verify(p, &jwks, &t, &c.nonce, &email, now))
+                        }
+                    }
+                })
+                .await
+                .map_err(|_| ApiError::internal("sign-in"))??
+            }
+            _ => None,
+        };
+        let passed = identity.is_some();
+        o.run(Command::AuthResult {
+            recipient: r,
+            method: AuthMethod::Sso,
+            passed,
+            identity,
         })
         .await?;
         Ok(if passed {
@@ -849,6 +1022,7 @@ pub(crate) async fn otp_verify(
             recipient: r.clone(),
             method,
             passed,
+            identity: None,
         })
         .await?;
         if o.l.state.recipient(&r).is_some_and(|x| x.auth_locked) {

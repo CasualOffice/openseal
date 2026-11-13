@@ -356,6 +356,7 @@ fn authentication_gates_signing_and_locks_after_failures() {
         recipient: id("r1"),
         method: AuthMethod::SmsOtp,
         passed: false,
+        identity: None,
     };
     hx.ok(r1(), fail.clone());
     hx.ok(r1(), fail.clone());
@@ -372,6 +373,7 @@ fn authentication_gates_signing_and_locks_after_failures() {
         recipient: id("r1"),
         method: AuthMethod::Kba,
         passed: true,
+        identity: None,
     };
     assert_eq!(code(hx.run(r1(), other)), "CS-AUTH-0004");
     // The sender's resend unlocks.
@@ -384,10 +386,51 @@ fn authentication_gates_signing_and_locks_after_failures() {
             recipient: id("r1"),
             method: AuthMethod::SmsOtp,
             passed: true,
+            identity: None,
         },
     );
     assert_eq!(hx.rstatus("r1"), RecipientStatus::Authenticated);
     hx.ok(r1(), adopt);
+}
+
+#[test]
+fn a_sign_in_passes_only_with_the_identity_it_proved() {
+    let mut hx = Harness::new();
+    hx.draft(&[auth(&[AuthMethod::Sso], recipient("r1", Signer, 1))]);
+    hx.send();
+    let r1 = || as_recipient("r1");
+    hx.ok(
+        r1(),
+        Command::OpenLink {
+            recipient: id("r1"),
+        },
+    );
+    let who = casual_sign_audit::SignInIdentity {
+        issuer: "https://idp.example.test".into(),
+        subject_sha256: h(7),
+    };
+    let pass = |identity| Command::AuthResult {
+        recipient: id("r1"),
+        method: AuthMethod::Sso,
+        passed: true,
+        identity,
+    };
+    // A pass by sign-in without who signed in is refused, and so is an identity on a
+    // failure (RAUTH-01).
+    assert_eq!(code(hx.run(r1(), pass(None))), "CS-WF-0001");
+    let failed = Command::AuthResult {
+        recipient: id("r1"),
+        method: AuthMethod::Sso,
+        passed: false,
+        identity: Some(who.clone()),
+    };
+    assert_eq!(code(hx.run(r1(), failed)), "CS-WF-0001");
+    let d = hx.ok(r1(), pass(Some(who.clone())));
+    assert!(d.events.iter().any(|e| matches!(
+        &e.data,
+        EventData::RecipientAuthPassed { identity: Some(i), .. } if *i == who
+    )));
+    assert_eq!(hx.rstatus("r1"), RecipientStatus::Authenticated);
 }
 
 #[test]
@@ -503,6 +546,7 @@ fn withdrawing_consent_needs_the_authentication_first() {
             recipient: id("r1"),
             method: AuthMethod::AccessCode,
             passed: true,
+            identity: None,
         },
     );
     hx.ok(

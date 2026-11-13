@@ -827,6 +827,14 @@ pub fn table() -> Vec<Route> {
             JSON,
             ceremony::otp_verify,
         ),
+        r("POST", "/s/{token}/sso", Public, JSON, ceremony::sso_start),
+        r(
+            "POST",
+            "/s/{token}/sso/verify",
+            Public,
+            JSON,
+            ceremony::sso_verify,
+        ),
         r(
             "GET",
             "/s/{token}/documents/{doc}/content",

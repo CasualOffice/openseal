@@ -184,6 +184,13 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-API-0015")
     }
 
+    /// `CS-API-0016` 502: the recipient's identity provider could not be reached or
+    /// answered something other than a token or a refusal (RAUTH-01). Not counted as a
+    /// failed sign-in: the signer did nothing wrong.
+    pub fn idp_unavailable() -> Self {
+        Self::new(StatusCode::BAD_GATEWAY, "CS-API-0016")
+    }
+
     /// `CS-ML-0011` 403: the document-analysis feature is not in effect for the workspace
     /// (not installed, not in its plan, or off; docs/33 §6, §7).
     pub fn ml_off() -> Self {
@@ -291,6 +298,7 @@ impl ApiError {
             "CS-API-0013" => "Webhook URL refused",
             "CS-API-0014" => "Authentication method not available",
             "CS-API-0015" => "User belongs to another account too",
+            "CS-API-0016" => "Identity provider unavailable",
             "CS-AUTH-0001" => "Not authenticated",
             "CS-AUTH-0002" => "Credential expired or revoked",
             "CS-AUTH-0003" => "Recipient authentication required or failed",

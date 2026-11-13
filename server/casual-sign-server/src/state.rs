@@ -232,6 +232,7 @@ pub(crate) struct Inner {
     pub dummy_phc: String,
     pub geoip: std::sync::OnceLock<Arc<crate::geo::GeoIp>>,
     pub webapp: std::sync::OnceLock<Arc<crate::web::WebApp>>,
+    pub idps: std::sync::OnceLock<Arc<crate::idp::RecipientIdps>>,
 }
 
 impl AppState {
@@ -258,6 +259,7 @@ impl AppState {
             dummy_phc: crate::crypto::dummy_phc()?,
             geoip: std::sync::OnceLock::new(),
             webapp: std::sync::OnceLock::new(),
+            idps: std::sync::OnceLock::new(),
         })))
     }
 
@@ -271,6 +273,12 @@ impl AppState {
     /// WEB-04). Set once; a second call is ignored.
     pub fn set_webapp(&self, webapp: crate::web::WebApp) {
         let _ = self.0.webapp.set(Arc::new(webapp));
+    }
+
+    /// Let recipients sign in through `idps` (`sso`, RAUTH-01). Set once; a second call
+    /// is ignored.
+    pub fn set_recipient_idps(&self, idps: crate::idp::RecipientIdps) {
+        let _ = self.0.idps.set(Arc::new(idps));
     }
 
     pub(crate) fn webapp(&self) -> Option<&Arc<crate::web::WebApp>> {

@@ -26,6 +26,7 @@ mod dto;
 mod error;
 pub mod geo;
 mod http;
+pub mod idp;
 pub mod net;
 mod preview;
 pub mod routes;

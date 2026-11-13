@@ -261,6 +261,7 @@ impl Harness {
                     recipient: id(rid),
                     method: m,
                     passed: true,
+                    identity: None,
                 },
             );
         }

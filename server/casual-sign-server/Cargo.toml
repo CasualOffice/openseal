@@ -48,6 +48,12 @@ tracing-subscriber = { version = "0.3.19", default-features = false, features = 
 # operator-supplied .mmdb file. ISC.
 maxminddb = { version = "0.27", default-features = false }
 rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
+# Recipient sign-in through an OpenID Connect provider (RAUTH-01): the token endpoint and
+# the JWKS over HTTPS, with the HTTP stack the worker and store already use (ureq over
+# rustls on aws-lc-rs, the platform's roots). All already in the tree.
+ureq = { version = "3.5.1", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+rustls-native-certs = "0.8.5"
 
 [dev-dependencies]
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
