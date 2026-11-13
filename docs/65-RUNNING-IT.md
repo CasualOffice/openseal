@@ -161,12 +161,16 @@ What happens:
   reason. With `OPENSEAL_CLAMD_FAIL_OPEN=1` the upload is admitted, recorded as `upload.unscanned_admitted`, and a
   document's report says `"malware_scan": "unscanned"`. Fail-open trades this control for availability; alert on
   `upload.unscanned_*` events and on the server's `upload not scanned` warnings if you choose it.
+- **Waiting:** a request waits for its scan holding no database connection or lock, so a slow or stopped clamd delays
+  uploads (up to `OPENSEAL_CLAMD_TIMEOUT_SECS`) without starving other requests of the server's 16 connections.
+- **Bulk send** scans its template's documents again on each send call that has rows pending (a template may be
+  older than the scanner): malware sends nothing and is recorded with the template and the batch.
 
 Signature scanning finds known malware only. The PDF pipeline still removes active content, embedded files and
 external references from every document whatever the scanner says (docs/07 `SEC-P06` to `SEC-P08`). To check a
 deployment, upload the EICAR test file (the 68-byte string from eicar.org) as a document: it must be refused with
 `CS-SCAN-0001` and appear in the admin log. The server's tests run the same check against a real clamd when
-`OPENSEAL_TEST_CLAMD_ADDR` names one (`server/casual-sign-server/tests/malware.rs`).
+`OPENSEAL_TEST_CLAMD_ADDR` names one (`server/casual-sign-server/tests/malware.rs`); CI does not set it yet (`SCAN-04`).
 
 ## Production checklist
 

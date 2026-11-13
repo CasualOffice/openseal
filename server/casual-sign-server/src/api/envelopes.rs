@@ -1021,8 +1021,12 @@ pub(crate) async fn add_document_route(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     c.p.require("envelopes:write")?;
+    // Found and checked in a short transaction, ended before the scan: a scan can wait
+    // up to its timeout, and must hold neither a pooled connection nor the envelope's
+    // row lock meanwhile (ASVS-11).
     let mut tx = c.tx().await?;
-    let mut l = find(&mut tx, &c.p, &id).await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    tx.commit().await?;
     let v = expected(&c, false)?;
     let pdf = c
         .headers
@@ -1044,18 +1048,7 @@ pub(crate) async fn add_document_route(
         )?;
         (d.name, b)
     };
-    // The envelope's total stays within the limit however its documents arrive
-    // (FG-006, docs/21), not only in a one-call create.
-    let held = l
-        .state
-        .documents
-        .iter()
-        .fold(0u64, |n, d| n.saturating_add(d.spec.bytes));
-    let limit = u64::try_from(c.st.config().max_envelope_bytes).unwrap_or(u64::MAX);
-    let adding = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-    if held.saturating_add(adding) > limit {
-        return Err(ApiError::too_large());
-    }
+    within_envelope_limit(&c, &l, bytes.len())?;
     let scan = screen(
         &c.st,
         c.uploader(),
@@ -1064,6 +1057,10 @@ pub(crate) async fn add_document_route(
         &bytes,
     )
     .await?;
+    // Found again, locked, and checked again: it may have changed during the scan.
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    within_envelope_limit(&c, &l, bytes.len())?;
     let spec = add_document(&c.st, &mut tx, l.id, &name, bytes, scan).await?;
     let doc_id = spec.id.clone();
     let upload = (uid(&spec.id)?, spec.delivered_hash.0);
@@ -1089,6 +1086,22 @@ pub(crate) async fn add_document_route(
         &dto::document(d),
         &dto::etag(&l.state),
     ))
+}
+
+/// The envelope's total stays within the limit however its documents arrive (FG-006,
+/// docs/21), not only in a one-call create.
+fn within_envelope_limit(c: &Call, l: &Loaded, adding: usize) -> Result<(), ApiError> {
+    let held = l
+        .state
+        .documents
+        .iter()
+        .fold(0u64, |n, d| n.saturating_add(d.spec.bytes));
+    let limit = u64::try_from(c.st.config().max_envelope_bytes).unwrap_or(u64::MAX);
+    let adding = u64::try_from(adding).unwrap_or(u64::MAX);
+    if held.saturating_add(adding) > limit {
+        return Err(ApiError::too_large());
+    }
+    Ok(())
 }
 
 pub(crate) fn doc_in<'a>(

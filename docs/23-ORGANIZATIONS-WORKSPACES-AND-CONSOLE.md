@@ -551,7 +551,8 @@ mutation of the migration):
   `upload.malware_refused`, `upload.unscanned_refused`, `upload.unscanned_admitted` (a malware scan's refusal or an upload
   admitted unscanned under fail-open: target `kind` and the ids it was for, changes `signature` or `reason`, `sha256`,
   `bytes`; appended in a transaction of its own so a refused request still leaves it; a recipient's upload is recorded
-  with the `system` actor and the recipient among the targets; `ASVS-11`). A user changing their own name or
+  with the `system` actor and the recipient among the targets; a bulk send's rescan of its template's documents names the
+  template and the `bulk_send`; `ASVS-11`). A user changing their own name or
   password, and accepting an invitation, are not administrative changes and write none.
 - **The database checks the bytes.** Besides the hash, `seq` and `prev`, the insert trigger requires the owner, `seq`,
   `prev`, `action` and `at` columns to be what the bytes state (`at` exactly the bytes' Unix millisecond, since the API

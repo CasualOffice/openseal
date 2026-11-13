@@ -138,6 +138,21 @@ async fn open(
         &format!("ceremony-ip:{ipkey}"),
         per.saturating_mul(4),
     )?;
+    reopen(st, token, headers, ip, method, bind).await
+}
+
+/// [`open`] without counting against the link's rate limits: for a request that ended
+/// its first transaction to wait on a malware scan (ASVS-11) and opens the link again,
+/// checking everything again, to act on what it scanned.
+async fn reopen(
+    st: &AppState,
+    token: &str,
+    headers: &HeaderMap,
+    ip: ClientIp,
+    method: &Method,
+    bind: bool,
+) -> Result<Open, Response> {
+    let hash = sha256(token.as_bytes());
     let inner = async {
         json_body(method, headers)?;
         if token.len() > 128 {
@@ -283,6 +298,22 @@ impl Open {
                     .map(|i| casual_sign_audit::Personal(i.to_string())),
             },
         }
+    }
+
+    /// This link's recipient's attachment field `field`, or `404`.
+    fn attachment_field(&self, field: &str) -> Result<Id, ApiError> {
+        self.l
+            .state
+            .fields
+            .0
+            .iter()
+            .find(|f| {
+                same_id(&f.id, field)
+                    && f.recipient_id.as_ref() == Some(&self.recipient)
+                    && f.field_type == casual_sign_model::FieldType::Attachment
+            })
+            .map(|f| f.id.clone())
+            .ok_or_else(ApiError::not_found)
     }
 
     /// The envelope and recipient of this link, then `more`, as an event's targets.
@@ -510,6 +541,51 @@ macro_rules! ceremony {
             Err(r) => return r,
         };
         let result: Result<StatusCode, ApiError> = async { $body }.await;
+        match result {
+            Ok(status) => $o
+                .finish(status)
+                .await
+                .unwrap_or_else(IntoResponse::into_response),
+            Err(e) => e.into_response(),
+        }
+    }};
+}
+
+/// A ceremony request carrying an upload (ASVS-11), in two transactions with the scan
+/// between: the link is opened and `check` runs (nothing written; it answers what it
+/// read, the event targets and the upload's bytes); that transaction ends; the bytes
+/// are scanned, which may wait up to the scan timeout holding no pooled connection and
+/// no row lock; then the link is opened again (not counted twice against its rate
+/// limits), everything checked again, and `act` runs on what was read and scanned.
+macro_rules! ceremony_upload {
+    ($st:expr, $token:expr, $headers:expr, $ip:expr, $method:expr, $kind:expr,
+     |$o:ident| $check:block, |$read:pat_param, $bytes:ident| $act:block) => {{
+        let (read, target, bytes, who) = {
+            let $o = match open(&$st, &$token, &$headers, $ip, &$method, false).await {
+                Ok(o) => o,
+                Err(r) => return r,
+            };
+            let checked: Result<(_, Vec<(&'static str, String)>, Vec<u8>), ApiError> =
+                async { $check }.await;
+            let (read, target, bytes) = match checked {
+                Ok(c) => c,
+                Err(e) => return e.into_response(),
+            };
+            let who = $o.uploader(&$st);
+            if let Err(e) = $o.tx.rollback().await {
+                return ApiError::from(e).into_response();
+            }
+            (read, target, bytes, who)
+        };
+        if let Err(e) = screen(&$st, who, $kind, target, &bytes).await {
+            return e.into_response();
+        }
+        let mut $o = match reopen(&$st, &$token, &$headers, $ip, &$method, false).await {
+            Ok(o) => o,
+            Err(r) => return r,
+        };
+        let ($read, $bytes) = (read, bytes);
+        let result: Result<StatusCode, ApiError> = async { $act }.await;
         match result {
             Ok(status) => $o
                 .finish(status)
@@ -1373,49 +1449,53 @@ pub(crate) async fn adopt(
     body: Bytes,
 ) -> Response {
     let max = st.config().max_image_bytes;
-    ceremony!(st, token, headers, ip, method, false, |o| {
-        o.ready()?;
-        let req: AdoptIn = parse(&body)?;
-        o.locate(req.location.as_ref());
-        if req.image_base64.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
-            return Err(ApiError::too_large());
+    ceremony_upload!(
+        st,
+        token,
+        headers,
+        ip,
+        method,
+        UploadKind::SignatureImage,
+        |o| {
+            o.ready()?;
+            let req: AdoptIn = parse(&body)?;
+            if req.image_base64.len().div_ceil(4) > max.div_ceil(3).saturating_add(1) {
+                return Err(ApiError::too_large());
+            }
+            let image = STANDARD
+                .decode(&req.image_base64)
+                .map_err(|_| ApiError::invalid("/image_base64"))?;
+            if image.len() > max {
+                return Err(ApiError::invalid("/image_base64"));
+            }
+            // Scanned before anything else reads it, its type included (ASVS-11).
+            Ok((req, o.targets(&[]), image))
+        },
+        |req, image| {
+            o.ready()?;
+            o.locate(req.location.as_ref());
+            let png = image.starts_with(b"\x89PNG\r\n\x1a\n");
+            let jpeg = image.starts_with(&[0xFF, 0xD8, 0xFF]);
+            if !(png || jpeg) {
+                return Err(ApiError::invalid("/image_base64"));
+            }
+            let key = st.0.blobs.put(&image).await?;
+            let capture =
+                serde_json::to_vec(&json!({"kind": "image", "image": Hash256(key.0).hex()}))
+                    .map_err(|_| ApiError::internal("capture"))?;
+            let capture = Hash256(st.0.blobs.put(&capture).await?.0);
+            let r = o.recipient.clone();
+            o.run(Command::AdoptSignature {
+                recipient: r,
+                mark: req.mark,
+                method: req.method,
+                image_hash: capture,
+            })
+            .await?;
+            o.adoption = Some(capture.hex());
+            Ok(StatusCode::OK)
         }
-        let image = STANDARD
-            .decode(&req.image_base64)
-            .map_err(|_| ApiError::invalid("/image_base64"))?;
-        if image.len() > max {
-            return Err(ApiError::invalid("/image_base64"));
-        }
-        // Scanned before anything reads or stores it (ASVS-11).
-        let target = o.targets(&[]);
-        screen(
-            &st,
-            o.uploader(&st),
-            UploadKind::SignatureImage,
-            target,
-            &image,
-        )
-        .await?;
-        let png = image.starts_with(b"\x89PNG\r\n\x1a\n");
-        let jpeg = image.starts_with(&[0xFF, 0xD8, 0xFF]);
-        if image.len() > max || !(png || jpeg) {
-            return Err(ApiError::invalid("/image_base64"));
-        }
-        let key = st.0.blobs.put(&image).await?;
-        let capture = serde_json::to_vec(&json!({"kind": "image", "image": Hash256(key.0).hex()}))
-            .map_err(|_| ApiError::internal("capture"))?;
-        let capture = Hash256(st.0.blobs.put(&capture).await?.0);
-        let r = o.recipient.clone();
-        o.run(Command::AdoptSignature {
-            recipient: r,
-            mark: req.mark,
-            method: req.method,
-            image_hash: capture,
-        })
-        .await?;
-        o.adoption = Some(capture.hex());
-        Ok(StatusCode::OK)
-    })
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -1483,65 +1563,67 @@ pub(crate) async fn attach(
     Path((token, field)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
-    ceremony!(st, token, headers, ip, method, false, |o| {
-        o.ready()?;
-        let f =
-            o.l.state
-                .fields
-                .0
-                .iter()
-                .find(|f| {
-                    same_id(&f.id, &field)
-                        && f.recipient_id.as_ref() == Some(&o.recipient)
-                        && f.field_type == casual_sign_model::FieldType::Attachment
-                })
-                .map(|f| f.id.clone())
-                .ok_or_else(ApiError::not_found)?;
-        let req: AttachmentIn = parse(&body)?;
-        if req.content_base64.len()
-            > MAX_ATTACHMENT_BYTES
-                .div_ceil(3)
-                .saturating_mul(4)
-                .saturating_add(4)
-        {
-            return Err(ApiError::too_large());
-        }
-        let bytes = STANDARD
-            .decode(&req.content_base64)
-            .map_err(|_| ApiError::invalid("/content_base64"))?;
-        if bytes.is_empty() || bytes.len() > MAX_ATTACHMENT_BYTES {
-            return Err(ApiError::invalid("/content_base64"));
-        }
-        // Scanned before anything reads or stores it (ASVS-11).
-        let target = o.targets(&[("field", f.to_string())]);
-        screen(&st, o.uploader(&st), UploadKind::Attachment, target, &bytes).await?;
-        match casual_sign_host::capture::media_type(&bytes) {
-            "application/pdf" => {
-                let engine = st.0.engine.clone();
-                let b = bytes.clone();
-                tokio::task::spawn_blocking(move || {
-                    engine.admit(&b, &casual_sign_sdk::Credentials::default())
-                })
-                .await
-                .map_err(|_| ApiError::internal("admission"))?
-                .map_err(|_| ApiError::invalid("/content_base64"))?;
+    ceremony_upload!(
+        st,
+        token,
+        headers,
+        ip,
+        method,
+        UploadKind::Attachment,
+        |o| {
+            o.ready()?;
+            let f = o.attachment_field(&field)?;
+            let req: AttachmentIn = parse(&body)?;
+            if req.content_base64.len()
+                > MAX_ATTACHMENT_BYTES
+                    .div_ceil(3)
+                    .saturating_mul(4)
+                    .saturating_add(4)
+            {
+                return Err(ApiError::too_large());
             }
-            "image/png" | "image/jpeg" => {}
-            _ => return Err(ApiError::invalid("/content_base64")),
+            let bytes = STANDARD
+                .decode(&req.content_base64)
+                .map_err(|_| ApiError::invalid("/content_base64"))?;
+            if bytes.is_empty() || bytes.len() > MAX_ATTACHMENT_BYTES {
+                return Err(ApiError::invalid("/content_base64"));
+            }
+            // Scanned before anything else reads it, its type included (ASVS-11).
+            let target = o.targets(&[("field", f.to_string())]);
+            Ok(((), target, bytes))
+        },
+        |(), bytes| {
+            // Checked again: the envelope may have been corrected during the scan.
+            o.ready()?;
+            let f = o.attachment_field(&field)?;
+            match casual_sign_host::capture::media_type(&bytes) {
+                "application/pdf" => {
+                    let engine = st.0.engine.clone();
+                    let b = bytes.clone();
+                    tokio::task::spawn_blocking(move || {
+                        engine.admit(&b, &casual_sign_sdk::Credentials::default())
+                    })
+                    .await
+                    .map_err(|_| ApiError::internal("admission"))?
+                    .map_err(|_| ApiError::invalid("/content_base64"))?;
+                }
+                "image/png" | "image/jpeg" => {}
+                _ => return Err(ApiError::invalid("/content_base64")),
+            }
+            let key = st.0.blobs.put(&bytes).await?;
+            let id = Id::new(Hash256(key.0).hex()).map_err(|_| ApiError::internal("attachment"))?;
+            let r = o.recipient.clone();
+            o.run(Command::CompleteField {
+                recipient: r,
+                entry: FieldEntry {
+                    field: f,
+                    value: casual_sign_audit::Personal(FieldValue::Attachment(id)),
+                },
+            })
+            .await?;
+            Ok(StatusCode::OK)
         }
-        let key = st.0.blobs.put(&bytes).await?;
-        let id = Id::new(Hash256(key.0).hex()).map_err(|_| ApiError::internal("attachment"))?;
-        let r = o.recipient.clone();
-        o.run(Command::CompleteField {
-            recipient: r,
-            entry: FieldEntry {
-                field: f,
-                value: casual_sign_audit::Personal(FieldValue::Attachment(id)),
-            },
-        })
-        .await?;
-        Ok(StatusCode::OK)
-    })
+    )
 }
 
 #[derive(Debug, Deserialize)]

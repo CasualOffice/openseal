@@ -477,8 +477,12 @@ card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a 
 - **Recorded.** Each refusal, and each upload admitted unscanned, appends `upload.malware_refused`,
   `upload.unscanned_refused` or `upload.unscanned_admitted` to `GET /admin-events` (docs/23 §2.5); a document's
   admission report says `"malware_scan": "clean"` or `"unscanned"` when a scanner is configured. Bulk send's CSV is a
-  list read into rows, never stored as a file, and is not scanned; a bulk send's documents are its template's, scanned
-  when the template took them.
+  list read into rows, never stored as a file, and is not scanned; a bulk send's documents are its template's, which
+  may have been stored before a scanner was configured, so each `POST /bulk-sends/{id}/send` that has rows pending
+  scans them again (`422 CS-SCAN-0001` sends nothing; each envelope's report records the verdict).
+- **No transaction waits on a scan.** A scan may wait up to `OPENSEAL_CLAMD_TIMEOUT_SECS`; each route authorizes in a
+  short transaction (or none), scans, then opens the transaction that stores, checking access and state again. The
+  upload's type signature is checked after the scan.
 
 ## As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`)
 
