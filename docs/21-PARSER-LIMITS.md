@@ -205,6 +205,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Requests per authenticated principal | 1,200 per minute | CS-API-0003 |
 | Ceremony requests per token / per client address | 300 / 1,200 per minute | CS-API-0003 |
 | Login and token attempts per login name or client / per address | 10 / 100 per minute | CS-API-0003 |
+| Subjects (principal or address, per rule) the abnormal-activity detector counts (`ASVS-13`, docs/65 §Abnormal activity); alerts per minute | 50,000 (`OPENSEAL_ALERT_MAX_TRACKED`, 1,000 to 10,000,000); 20 | CS-LOG-0003 (no answer changes) |
 | Idempotency key | 1–255 printable ASCII; replays answered for 24 hours | CS-API-0001, CS-API-0004 |
 | Page size of lists | 1–200, default 50 | CS-API-0001 |
 | User agent recorded in events | 512 bytes (cut at a character boundary) | — |

@@ -23,12 +23,17 @@
   display: flex; flex-direction: column; background: var(--os-bg); border-radius: var(--os-radius-lg);
   box-shadow: var(--os-shadow); overflow: hidden; position: relative;
 }
-.os-main { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow: auto; padding: var(--os-s6) var(--os-s8) var(--os-s12); outline: none; position: relative; }
+.os-main { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow: auto; padding: var(--os-s6) var(--os-gutter) var(--os-s12); outline: none; position: relative; }
 .is-wide .os-main { padding: 0; }
-/* A route switch shows the new screen as soon as it has content; until then the old one
- * stays, inert, under it (app.js), so the card never flashes blank. Each screen rises in. */
-.os-view { animation: os-rise var(--os-dur-enter) var(--os-ease-out) both; }
+/* A route switch (WEB-12): the new screen is built off the page and swapped in, in one
+ * frame, once it has drawn or after 250 ms (app.js); the old one stays, inert, until
+ * then, so the card never
+ * flashes blank and the page as a whole does not fade or rise. Only the first screen of a
+ * visit rises in (`is-first`); content inside a screen keeps its own entrances. */
+.os-view.is-first { animation: os-rise var(--os-dur-enter) var(--os-ease-out) both; }
 .os-view.is-leaving { pointer-events: none; }
+/* The page heading takes focus after a switch (NAV-05) without a ring: it is not a control. */
+.os-view h1[tabindex="-1"]:focus { outline: none; }
 
 /* The workspace switcher row (canvas): the seal mark, the workspace and plan. */
 .os-ws {
@@ -40,7 +45,7 @@
 .os-ws__mark {
   width: 1.5rem; height: 1.5rem; flex: none; border-radius: var(--os-radius-ctl);
   display: inline-flex; align-items: center; justify-content: center; color: #fff;
-  background: linear-gradient(145deg, #d42a35, #8e0b14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 1px 2px rgba(142, 11, 20, .4);
+  background: linear-gradient(145deg, #d42a35, #8e0b14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 1px 0.125rem rgba(142, 11, 20, .4);
 }
 .os-ws__mark > svg { width: 0.75rem; height: 0.75rem; }
 .os-ws__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
@@ -56,7 +61,7 @@
   color: var(--os-muted); text-align: left; cursor: pointer; white-space: nowrap;
   transition: box-shadow var(--os-dur-fast) var(--os-ease-state), color var(--os-dur-fast) var(--os-ease-state);
 }
-.os-jump:hover { color: var(--os-text-2); box-shadow: 0 0 0 1px rgba(24, 24, 27, .12), 0 1px 2px rgba(24, 24, 27, .06); }
+.os-jump:hover { color: var(--os-text-2); box-shadow: 0 0 0 1px rgba(24, 24, 27, .12), 0 1px 0.125rem rgba(24, 24, 27, .06); }
 .os-jump > svg { width: 0.875rem; height: 0.875rem; flex: none; }
 .os-jump > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .os-jump > kbd { margin-left: auto; }
@@ -76,7 +81,7 @@
 .os-nav__link > svg { width: 1rem; height: 1rem; flex: none; }
 .os-nav__link > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .os-nav__link:hover { background: color-mix(in srgb, var(--os-text) 5%, transparent); color: var(--os-text); }
-.os-nav__link[aria-current="page"] { background: var(--os-bg); color: var(--os-text); font-weight: 500; box-shadow: 0 0 0 1px var(--os-hairline), 0 1px 2px rgba(24, 24, 27, .05); }
+.os-nav__link[aria-current="page"] { background: var(--os-bg); color: var(--os-text); font-weight: 500; box-shadow: 0 0 0 1px var(--os-hairline), 0 1px 0.125rem rgba(24, 24, 27, .05); }
 .os-nav__link--drawer { display: none; }
 .os-nav__count {
   margin-left: auto; min-width: 1.25rem; height: 1.25rem; padding: 0 0.3125rem; border-radius: 0.625rem;
@@ -118,7 +123,7 @@
 .os-keys kbd { display: inline-block; min-width: 1.5rem; padding: 0.0625rem var(--os-s1); border-radius: var(--os-radius-sm); background: var(--os-surface-2); color: var(--os-text-2); font-size: var(--os-fs-12); text-align: center; }
 
 /* A screen's text filter (Agreements): a quiet row at the top of the card. */
-.os-screensearch { position: relative; flex: none; display: flex; justify-content: flex-end; padding: 0.625rem var(--os-s5) 0; }
+.os-screensearch { position: relative; flex: none; display: flex; justify-content: flex-end; padding: 0.625rem var(--os-gutter) 0; }
 .os-screensearch__box { position: relative; width: min(16rem, 100%); }
 .os-screensearch__box > svg { position: absolute; left: 0.625rem; top: 50%; transform: translateY(-50%); width: 1rem; height: 1rem; color: var(--os-muted); pointer-events: none; }
 .os-screensearch__input { padding-left: 2rem; background: var(--os-surface-2); border-color: transparent; }
@@ -144,7 +149,7 @@
   display: flex; flex-direction: column; animation: os-pop var(--os-dur-slow) var(--os-ease-out);
 }
 .os-cmdk:not([open]) { display: none; }
-.os-cmdk::backdrop { background: var(--os-overlay); backdrop-filter: blur(2px); animation: os-fade var(--os-dur) var(--os-ease-state); }
+.os-cmdk::backdrop { background: var(--os-overlay); backdrop-filter: blur(0.125rem); animation: os-fade var(--os-dur) var(--os-ease-state); }
 .os-cmdk.is-leaving { animation: os-dialog-out var(--os-dur-fast) var(--os-ease-state) forwards; }
 .os-cmdk__head { flex: none; display: flex; align-items: center; gap: 0.625rem; height: 3.25rem; padding: 0 1rem; border-bottom: 1px solid var(--os-hairline); }
 .os-cmdk__head > svg { width: 1rem; height: 1rem; color: var(--os-muted); flex: none; }
@@ -181,7 +186,7 @@
   .os-cmdk__foot { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .os-view, .os-cmdk, .os-cmdk::backdrop { animation: none !important; }
+  .os-view.is-first, .os-cmdk, .os-cmdk::backdrop { animation: none !important; }
 }
 
 /* ---- Below 60em: a top row and the sidebar as a drawer ------------------------------ */
@@ -208,13 +213,16 @@
     transition: transform var(--os-dur) var(--os-ease-out), visibility 0s linear var(--os-dur);
   }
   .nav-open .os-side { transform: none; visibility: visible; transition: transform var(--os-dur-slow) var(--os-ease-out); }
+  /* A navigation closes the drawer at once, without its slide (NAV-34; app.js route). */
+  .nav-instant .os-side { transition: none; }
   .os-nav-scrim { position: fixed; z-index: 45; inset: var(--os-nav-top, var(--os-topbar-h)) 0 0 0; background: var(--os-overlay); animation: os-fade var(--os-dur-fast) var(--os-ease-state); }
   .os-nav__link { min-height: var(--os-btn-lg); }
   .os-nav__link--drawer { display: flex; }
   .os-content { margin: 0; border-radius: 0; box-shadow: none; overflow: visible; display: block; }
-  .os-main { overflow: visible; padding: var(--os-s4); }
+  .os-app { --os-gutter: var(--os-s4); }
+  .os-main { overflow: visible; padding: var(--os-s4) var(--os-gutter); }
   .is-wide .os-main { padding: 0; }
-  .os-screensearch { padding: var(--os-s3) var(--os-s4) 0; }
+  .os-screensearch { padding: var(--os-s3) var(--os-gutter) 0; }
   .os-screensearch__box { width: 100%; }
   .os-screensearch__input { min-height: var(--os-btn-lg); font-size: var(--os-fs-16); }
   .is-frame.os-app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
@@ -234,6 +242,7 @@
   padding: 0 var(--os-s6); border-bottom: 1px solid var(--os-hairline); background: var(--os-bg);
 }
 .os-verify > .os-topbar .os-brand { display: flex; align-items: center; min-height: var(--os-target-min); border-radius: var(--os-radius-sm); }
+.os-verify > .os-topbar .os-brand img { width: 7.6875rem; height: auto; } /* 123 × 24 at a 16 px root (WEB-12) */
 .os-verify > .os-mock-banner { display: flex; border-radius: 0; }
 @media (max-width: 47.5em) {
   .os-verify > .os-topbar { padding: 0 var(--os-s3); }

@@ -22,6 +22,7 @@ env:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 45   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: cargo fmt --all -- --check
@@ -39,6 +40,7 @@ jobs:
   # Conventional Commits over what this push or pull request adds (CLAUDE.md, Git).
   commit-messages:
     runs-on: ubuntu-latest
+    timeout-minutes: 30   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -58,6 +60,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # modeld's feature_gate test runs `cargo tree --offline --target all`, which needs every
@@ -67,6 +70,7 @@ jobs:
 
   msrv:
     runs-on: ubuntu-latest
+    timeout-minutes: 45   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install 1.95.0 --profile minimal
@@ -74,6 +78,7 @@ jobs:
 
   dependency-policy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: cargo install cargo-deny cargo-audit --locked
@@ -84,6 +89,7 @@ jobs:
   # each tell a sealed PDF from a tampered one before they are trusted to judge ours.
   validators:
     runs-on: ubuntu-latest
+    timeout-minutes: 30   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
@@ -105,6 +111,7 @@ jobs:
   # native and in WebAssembly, over every corpus PDF, the signed and hostile fixtures.
   wasm-parity:
     runs-on: ubuntu-latest
+    timeout-minutes: 45   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: cargo install wasm-pack --version 0.14.0 --locked
@@ -124,6 +131,7 @@ jobs:
   # accepted by pyHanko. The module path is checked first so the test cannot skip.
   keyd-softhsm:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Install the pinned toolchain on its own, retried once: a runner image's rustup has
@@ -142,6 +150,7 @@ jobs:
   # cache (ADR-014) must match the migrations.
   store-db:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     services:
       postgres:
         image: postgres:17-alpine
@@ -174,6 +183,7 @@ jobs:
   # sealed PDF and certificate checked by ours and pyHanko), against Postgres 17.
   server-db:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     services:
       postgres:
         image: postgres:17-alpine
@@ -199,6 +209,7 @@ jobs:
   # viewport (mock mode until the Compose deployment, 2F), with axe on every screen.
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - working-directory: webapp
@@ -221,6 +232,7 @@ jobs:
   # generated root. The stack is torn down with its volumes however the job ends.
   compose-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     env:
       OPENSEAL_E2E_BASE_URL: http://localhost:8080
       OPENSEAL_E2E_MAIL_URL: http://127.0.0.1:8025
@@ -273,6 +285,7 @@ jobs:
   # never the backup, its keys or the drill's signing links.
   backup-drill:
     runs-on: ubuntu-latest
+    timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography

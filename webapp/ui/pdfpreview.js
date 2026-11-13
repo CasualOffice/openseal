@@ -4,7 +4,7 @@
 // links). Used by the envelope detail, Templates and Verify; the editor and the signing
 // page draw their own pages because fields sit on them.
 
-import { h, clear, reducedMotion } from "../dom.js";
+import { h, clear, reducedMotion, rem } from "../dom.js";
 import { icon } from "../icons.js";
 import { t } from "../i18n.js";
 import { openPdf, fitScale } from "../pdfview.js";
@@ -13,8 +13,11 @@ import { button } from "./core.js";
 /// `load()` resolves the PDF's bytes (a Uint8Array) or a Blob. `name` labels the pages.
 /// `decorate(pageEl, pageNo, scale)` (UX-08), when given, adds to each drawn page (a
 /// template's role outlines), `scale` being CSS pixels per PDF point.
-/// Returns `{el, destroy()}`; the pages paint as soon as the bytes arrive.
-export function pdfPreview({ load, name = "", height = 640, testId = "pdf-preview", decorate = null }) {
+/// `height` is the pages' box in rem (WEB-12; it was px: 640 px is 40 rem).
+/// Returns `{el, destroy()}`; the pages paint as soon as the bytes arrive and the
+/// preview has a width, and again when that width changes (a wider window, a larger
+/// root size, a panel closing).
+export function pdfPreview({ load, name = "", height = 40, testId = "pdf-preview", decorate = null }) {
   let pdf = null;
   let zoom = 1;
   const label = h("span", { class: "os-zoom__label", attrs: { "aria-live": "polite" } });
@@ -30,32 +33,45 @@ export function pdfPreview({ load, name = "", height = 640, testId = "pdf-previe
     button(t("prepare.zoom-fit"), { size: "sm", variant: "ghost", onClick: () => { zoom = 1; paint(); } }));
   const el = h("div", { class: "os-preview", attrs: { "data-testid": testId, "aria-busy": "true" } }, bar,
     h("div", { class: "os-preview__body" }, h("nav", { class: "os-preview__rail", attrs: { "aria-label": t("preview.thumbs") } }, thumbs), pages));
-  el.style.setProperty("--os-preview-h", `${height}px`);
+  el.style.setProperty("--os-preview-h", `${height}rem`);
   pages.append(h("div", { class: "os-page os-skeleton-page", attrs: { "aria-hidden": "true" } }));
 
+  let paintedWidth = 0;
   function paint() {
     if (!pdf) return;
+    // Not laid out yet (a screen built before it is shown): the observer below paints
+    // once it has a width.
+    if (!pages.clientWidth) return;
+    paintedWidth = pages.clientWidth;
     clear(pages);
     clear(thumbs);
     label.textContent = `${Math.round(zoom * 100)}%`;
     count.textContent = (pdf.pages.length === 1 ? t("prepare.page-one") : t("prepare.pages-long", { n: pdf.pages.length }));
-    const width = Math.max(240, (pages.clientWidth || 720) - 32);
+    const width = Math.max(rem(15), pages.clientWidth - rem(2));
     pdf.pages.forEach((p, i) => {
       const scale = Math.min(fitScale(p.width, width), 1.6) * zoom;
       const canvas = h("canvas", { attrs: { "aria-hidden": "true" } });
       const page = h("div", { class: "os-page is-loading", attrs: { role: "img", "aria-label": t("preview.page", { n: i + 1, total: pdf.pages.length, name }), "data-page": String(i + 1) } }, canvas);
-      page.style.width = `${p.width * scale}px`;
-      page.style.height = `${p.height * scale}px`;
+      page.style.width = `${p.width * scale}px`; // px-ok: PDF points × scale
+      page.style.height = `${p.height * scale}px`; // px-ok: PDF points × scale
       pages.append(page);
       decorate?.(page, i + 1, scale);
       pdf.render(i + 1, canvas, scale).then(() => page.classList.remove("is-loading")).catch(() => page.classList.add("is-error"));
       const tc = h("canvas", { attrs: { "aria-hidden": "true" } });
-      pdf.render(i + 1, tc, 64 / p.width).catch(() => {});
+      pdf.render(i + 1, tc, rem(4) / p.width).catch(() => {});
       const tb = h("button", { type: "button", class: "os-thumb", attrs: { "aria-label": t("preview.go-page", { n: i + 1 }) } }, tc, h("span", { class: "os-thumb__n", text: String(i + 1) }));
       tb.addEventListener("click", () => page.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" }));
       thumbs.append(h("li", {}, tb));
     });
   }
+
+  // Repaint when the pages' width changes by more than a few percent (not on every
+  // pixel of a drag), so a page always fits the column it is in.
+  const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
+    const w = pages.clientWidth;
+    if (pdf && w && Math.abs(w - paintedWidth) > Math.max(rem(1), paintedWidth * 0.04)) requestAnimationFrame(paint);
+  }) : null;
+  ro?.observe(pages);
 
   (async () => {
     try {
@@ -70,5 +86,5 @@ export function pdfPreview({ load, name = "", height = 640, testId = "pdf-previe
       pages.append(h("p", { class: "os-field-error", attrs: { "data-testid": "preview-error" }, text: t("preview.error") }));
     }
   })();
-  return { el, destroy() { pdf?.destroy(); } };
+  return { el, destroy() { ro?.disconnect(); pdf?.destroy(); } };
 }

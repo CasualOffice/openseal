@@ -139,6 +139,8 @@ pub struct Config {
     /// into every analysis job's key. `None` (the default): no model service, so no
     /// feature is in effect and no analysis job is ever enqueued.
     pub ml_bundle: Option<String>,
+    /// Abnormal-activity detection thresholds (`ASVS-13`, docs/65 §Logs).
+    pub anomaly: crate::anomaly::AnomalyConfig,
 }
 
 impl Default for Config {
@@ -156,6 +158,7 @@ impl Default for Config {
             secure_cookies: true,
             trusted_proxies: Vec::new(),
             ml_bundle: None,
+            anomaly: crate::anomaly::AnomalyConfig::default(),
         }
     }
 }
@@ -240,6 +243,8 @@ pub(crate) struct Inner {
     pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
     pub scanner: std::sync::OnceLock<Arc<crate::scan::Scanner>>,
     pub security: std::sync::OnceLock<casual_sign_seclog::SecurityLog>,
+    pub anomaly: crate::anomaly::Detector,
+    pub alerts: std::sync::OnceLock<Arc<dyn crate::anomaly::AlertSink>>,
 }
 
 impl AppState {
@@ -255,6 +260,7 @@ impl AppState {
         clock: Arc<dyn Clock>,
         config: Config,
     ) -> Result<Self, ApiError> {
+        let anomaly = crate::anomaly::Detector::new(config.anomaly);
         Ok(Self(Arc::new(Inner {
             store,
             blobs,
@@ -270,6 +276,8 @@ impl AppState {
             mfa: std::sync::OnceLock::new(),
             scanner: std::sync::OnceLock::new(),
             security: std::sync::OnceLock::new(),
+            anomaly,
+            alerts: std::sync::OnceLock::new(),
         })))
     }
 
@@ -319,6 +327,24 @@ impl AppState {
         self.0.security.get_or_init(|| {
             casual_sign_seclog::SecurityLog::from_env(casual_sign_seclog::Service::Server)
         })
+    }
+
+    /// Raise abnormal-activity alerts through `sink` (`ASVS-13`). Unset, they are
+    /// `abnormal_activity` lines through the security log ([`crate::LogAlerts`]). Set
+    /// once, before the first request; a second call is ignored.
+    pub fn set_alert_sink(&self, sink: Arc<dyn crate::anomaly::AlertSink>) {
+        let _ = self.0.alerts.set(sink);
+    }
+
+    pub(crate) fn alerts(&self) -> &Arc<dyn crate::anomaly::AlertSink> {
+        self.0.alerts.get_or_init(|| {
+            Arc::new(crate::anomaly::LogAlerts(self.security().clone()))
+                as Arc<dyn crate::anomaly::AlertSink>
+        })
+    }
+
+    pub(crate) fn anomaly(&self) -> &crate::anomaly::Detector {
+        &self.0.anomaly
     }
 
     pub(crate) fn mfa_key(&self) -> Option<&Arc<crate::mfa::MfaKey>> {
