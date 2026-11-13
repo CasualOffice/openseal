@@ -204,6 +204,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!RECIPIENT_TYPES.includes(type)) fail(400, "CS-API-0001", "Unknown recipient type", [{ pointer: "/type", code: "enum" }]);
     if (r.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email)) fail(400, "CS-API-0001", "Invalid email", [{ pointer: "/email", code: "format" }]);
     if (r.routing_order != null && (!Number.isInteger(r.routing_order) || r.routing_order < 1 || r.routing_order > 999)) fail(422, "CS-WF-0004", "Routing order out of range", [{ pointer: "/routing_order", code: "range" }]);
+    if (Array.isArray(r.auth) && (r.auth.includes("sms_otp") || r.auth.includes("voice_otp")) && !/^\+[1-9][0-9 .()-]{7,}$/.test(r.phone || "")) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/phone", code: "CS-API-0001" }]);
     if (r.delivery != null && !["email", "sms", "none"].includes(r.delivery)) fail(400, "CS-API-0001", "Unknown delivery", [{ pointer: "/delivery", code: "enum" }]);
     const rec = {
       id: r.id || uid(), type, routing_order: Number.isInteger(r.routing_order) ? r.routing_order : 1, name: r.name.trim(), email: r.email || "",
@@ -1795,26 +1796,29 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: "access_code" });
       return json(200, view(env, rec, token));
     }
-    // The emailed one-time code (SEC-A02): "sent" is MOCK.emailCode; a wrong code answers
-    // 403 with the view, as the server does; five failures lock.
-    if (sub === "otp" && method === "POST") {
-      if (!rec.auth.includes("email_otp")) fail(409, "CS-API-0014", "Method not available");
-      if (rec.auth_passed.includes("email_otp")) fail(409, "CS-API-0009", "Already authenticated");
-      rec.otp_open = true;
-      await audit(env, "recipient.auth_challenged", { recipient_id: rec.id, method: "email_otp" });
+    // A sent one-time code (SEC-A02) by email, SMS or voice call (slice 5): "sent" is
+    // MOCK.emailCode whatever the channel; a wrong code answers 403 with the view, as
+    // the server does; five failures lock. The open code's method is what a pass meets.
+    if (sub === "otp" && !parts[4] && method === "POST") {
+      const m = body?.method || "email_otp";
+      if (!["email_otp", "sms_otp", "voice_otp"].includes(m) || !rec.auth.includes(m)) fail(409, "CS-API-0014", "Method not available");
+      if (rec.auth_passed.includes(m)) fail(409, "CS-API-0009", "Already authenticated");
+      rec.otp_open = m;
+      await audit(env, "recipient.auth_challenged", { recipient_id: rec.id, method: m });
       return json(202, view(env, rec, token));
     }
     if (sub === "otp" && parts[4] === "verify" && method === "POST") {
       const n = (db.attempts[token] || 0);
       if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
-      if (!rec.auth.includes("email_otp") || !rec.otp_open || body?.code !== MOCK.emailCode) {
+      const m = typeof rec.otp_open === "string" ? rec.otp_open : (body?.method || "email_otp");
+      if (!rec.auth.includes(m) || !rec.otp_open || (body?.method && body.method !== m) || body?.code !== MOCK.emailCode) {
         db.attempts[token] = n + 1;
-        await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "email_otp", attempt: n + 1 });
+        await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: m, attempt: n + 1 });
         return json(403, view(env, rec, token));
       }
       rec.otp_open = false;
-      if (!rec.auth_passed.includes("email_otp")) rec.auth_passed.push("email_otp");
-      await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: "email_otp" });
+      if (!rec.auth_passed.includes(m)) rec.auth_passed.push(m);
+      await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: m });
       return json(200, view(env, rec, token));
     }
     if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");

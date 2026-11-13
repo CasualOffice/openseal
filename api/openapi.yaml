@@ -911,13 +911,21 @@ components:
       properties:
         method: {$ref: '#/components/schemas/AuthMethod'}
         code: {type: string}
+    OtpSendRequest:
+      description: Which one-time code to send (SEC-A02); `email_otp` when absent.
+      type: object
+      additionalProperties: false
+      properties:
+        method: {type: string, enum: [email_otp, sms_otp, voice_otp]}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
     OtpVerifyRequest:
-      description: An emailed one-time code (SEC-A02), six digits.
+      description: A one-time code sent by email, SMS or voice call (SEC-A02), six digits.
       type: object
       additionalProperties: false
       required: [code]
       properties:
         code: {type: string, pattern: '^[0-9]{6}$'}
+        method: {type: string, enum: [email_otp, sms_otp, voice_otp]}
     ViewedRequest:
       type: object
       required: [pages_seen]
@@ -3260,21 +3268,24 @@ paths:
         schema: {type: string}
     post:
       operationId: ceremonyOtpSend
-      summary: "Email a one-time code"
+      summary: "Send a one-time code"
       description: >-
-        Emails the recipient a 6-digit code (SEC-A02) when the sender required `email_otp`.
-        The worker draws the code and stores only its Argon2id hash; it works once, for 10
-        minutes, and asking again replaces it. Limited per link and per address (3 a
-        minute) and per recipient (30 seconds apart, 5 an hour): `CS-API-0003` with
-        `Retry-After`. `CS-API-0014` when the recipient does not require it;
-        `CS-API-0009` once it has passed.
+        Sends the recipient a 6-digit code (SEC-A02) for `method`: by email (`email_otp`,
+        the default), by SMS (`sms_otp`) or read aloud in a voice call (`voice_otp`) to
+        the recipient's phone (slice 5), when the sender required that method. The
+        worker draws the code and stores only its Argon2id hash; it works once, for 10
+        minutes, and asking again (by any method) replaces it. Limited per link and per
+        address or phone number (3 a minute) and per recipient (30 seconds apart, 5 an
+        hour): `CS-API-0003` with `Retry-After`. `CS-API-0014` when the recipient does
+        not require that method; `CS-API-0009` once it has passed. Without an SMS and
+        voice provider on the worker such a code is never sent (`CS-WRK-0013`).
       security: []
       x-permission: public
       requestBody:
         required: false
         content:
           application/json:
-            schema: {type: object, additionalProperties: false}
+            schema: {$ref: '#/components/schemas/OtpSendRequest'}
       responses:
         '202':
           description: Accepted; the code is on its way
@@ -3291,10 +3302,11 @@ paths:
         schema: {type: string}
     post:
       operationId: ceremonyOtpVerify
-      summary: "Check an emailed one-time code"
+      summary: "Check a one-time code"
       description: >-
-        `200` with the view when the code matches the open, unexpired code (which is then
-        spent); `403` with the view otherwise (wrong, expired, replaced or already used),
+        `200` with the view when the code matches the open, unexpired code, whichever
+        method sent it (the code is then spent and that method passed); a `method` other
+        than the open code's fails; `403` with the view otherwise (wrong, expired, replaced or already used),
         recorded as a failed attempt. The account's `max_auth_attempts` failures lock the
         recipient and revoke the link (`CS-AUTH-0004`, then `CS-AUTH-0002`); five wrong
         tries spend a code.

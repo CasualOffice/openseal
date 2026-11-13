@@ -597,16 +597,32 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const otpBox = h("input", { id: `rotp-${r.key}`, type: "checkbox", checked: !!r.emailOtp, disabled: !!r.id, attrs: { "data-testid": "recipient-email-otp" } });
     otpBox.addEventListener("change", () => { r.emailOtp = otpBox.checked; S.dirty = true; });
     const otp = h("label", { class: "os-check os-rcpt__otp", attrs: { for: `rotp-${r.key}` } }, otpBox, h("span", { text: t("prepare.email-otp") }));
+    // A code by text message or read in a phone call (slice 5, VS-05): to the number
+    // given here, in international form (+ and country code); set at creation, like
+    // the email code, so a saved recipient shows them read-only.
+    const phone = h("input", { id: `rp-${r.key}`, class: "os-input os-input--sm", type: "tel", value: r.phone || "", disabled: !!r.id, autocomplete: "off", inputMode: "tel", placeholder: t("prepare.phone-placeholder"), maxLength: 32, attrs: { "data-testid": "recipient-phone", "aria-describedby": `rp-${r.key}-help` } });
+    phone.addEventListener("input", () => { r.phone = phone.value.trim(); S.dirty = true; });
+    const phoneBox = (key, testid, label) => {
+      const box = h("input", { id: `r${key}-${r.key}`, type: "checkbox", checked: !!r[key], disabled: !!r.id, attrs: { "data-testid": testid } });
+      box.addEventListener("change", () => { r[key] = box.checked; S.dirty = true; });
+      return h("label", { class: "os-check os-rcpt__otp", attrs: { for: `r${key}-${r.key}` } }, box, h("span", { text: t(label) }));
+    };
+    const smsOtp = phoneBox("smsOtp", "recipient-sms-otp", "prepare.sms-otp");
+    const voiceOtp = phoneBox("voiceOtp", "recipient-voice-otp", "prepare.voice-otp");
     // Per-recipient options (UX-05, DocuSign's "More" on each row): how they prove who
     // they are. Set when the recipient is created (the API has no later change).
     const acting = r.type !== "cc";
-    const more = TPL || !acting ? null : h("details", { class: "os-details os-rcpt__more", open: !!(r.accessCode || r.emailOtp) && !r.id, attrs: { "data-testid": "recipient-more" } },
+    const more = TPL || !acting ? null : h("details", { class: "os-details os-rcpt__more", open: !!(r.accessCode || r.emailOtp || r.smsOtp || r.voiceOtp) && !r.id, attrs: { "data-testid": "recipient-more" } },
       h("summary", {}, h("span", { text: t("prepare.more-options") }), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })),
       h("div", { class: "os-rcpt__opts" },
         h("div", { class: "os-rcpt__cell" },
           h("label", { class: "os-label os-rcpt__label", attrs: { for: `ra-${r.key}` } }, t("prepare.access-code-label"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })),
           access, h("p", { id: `ra-${r.key}-help`, class: "os-help", text: t("prepare.access-code-help") })),
-        otp));
+        otp,
+        h("div", { class: "os-rcpt__cell" },
+          h("label", { class: "os-label os-rcpt__label", attrs: { for: `rp-${r.key}` } }, t("prepare.phone"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })),
+          phone, h("p", { id: `rp-${r.key}-help`, class: "os-help", text: t("prepare.phone-help") })),
+        h("div", {}, smsOtp, voiceOtp)));
     // One dense row (UX-05): type, step, name, email, options, then the row's tools.
     const tools = h("div", { class: "os-rcpt__tools" }, up, down, del);
     const li = h("li", { class: `os-rcpt os-rcpt--row${TPL ? " os-rcpt--role" : ""} os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key, "data-type": r.type } },
@@ -1748,7 +1764,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const prevActive = Math.max(0, S.recipients.findIndex((r) => r.key === S.active));
     const prevAccess = new Map(S.recipients.map((r) => [r.id, r.accessCode]));
     const steps = fromServer(recs.map((r) => r.routing_order));
-    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), order: steps[i] }));
+    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), phone: r.phone || "", smsOtp: (r.auth || []).includes("sms_otp"), voiceOtp: (r.auth || []).includes("voice_otp"), order: steps[i] }));
     // Signers all at one step with copies after them is the switch off; anything else is steps.
     S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type !== "cc");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
@@ -1808,6 +1824,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const body = { type: r.type, name: r.name || t("prepare.recipient-n", { n: S.recipients.indexOf(r) + 1 }), email: r.email, routing_order: orderOf(r) };
     if (r.type !== "cc" && r.accessCode) { body.auth = ["access_code"]; body.access_code = r.accessCode; }
     if (r.type !== "cc" && r.emailOtp && r.email) body.auth = (body.auth || []).concat(["email_otp"]);
+    if (r.phone) body.phone = r.phone;
+    if (r.type !== "cc" && r.phone) {
+      if (r.smsOtp) body.auth = (body.auth || []).concat(["sms_otp"]);
+      if (r.voiceOtp) body.auth = (body.auth || []).concat(["voice_otp"]);
+    }
     return body;
   }
   function fieldBody(f, recipientRef, documentRef) {

@@ -158,3 +158,26 @@ test("a problem response becomes an ApiError with its code; a non-JSON error sti
   const c3 = createClient({ fetch: async () => { throw new TypeError("offline"); } });
   await assert.rejects(c3.session(), (e) => e.code === "CS-NET-0001");
 });
+
+test("SMS and voice codes (VS-05): a phone in international form, the method sent and checked", async () => {
+  const c = await signedIn();
+  const pdf = makePdf([{ title: "T" }]);
+  const doc = { name: "a.pdf", content_base64: btoa(String.fromCharCode(...pdf)) };
+  await assert.rejects(c.createEnvelope({ documents: [doc], recipients: [{ type: "signer", name: "A", email: "a@example.com", auth: ["sms_otp"], phone: "020 7946 0000" }] }),
+    (e) => e.status === 422 && e.errors.some((x) => x.pointer === "/phone"));
+  const env = await c.createEnvelope({
+    documents: [doc],
+    recipients: [{ ref: "r1", type: "signer", name: "A", email: "a@example.com", phone: "+44 20 7946 0001", auth: ["sms_otp"] }],
+    fields: [{ recipient: "r1", document: 0, type: "signature", page: 1, x: "72", y: "600", width: "160", height: "44", required: true }],
+  });
+  const sent = await c.sendEnvelope(env.id);
+  const t = sent.recipients[0].mock_token;
+  let v = await c.ceremony.open(t);
+  assert.deepEqual(v.auth_required, ["sms_otp"]);
+  await assert.rejects(c.ceremony.otpSend(t), (e) => e.code === "CS-API-0014");
+  await c.ceremony.otpSend(t, "sms_otp");
+  await assert.rejects(c.ceremony.otpVerify(t, "000000", "sms_otp"), (e) => e.status === 403);
+  await c.ceremony.otpSend(t, "sms_otp");
+  v = await c.ceremony.otpVerify(t, MOCK.emailCode, "sms_otp");
+  assert.deepEqual(v.auth_required, []);
+});

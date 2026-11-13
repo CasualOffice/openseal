@@ -263,12 +263,13 @@ function next() {
   if (r.status === "reassigned") return message({ kind: "reassigned", title: t("sign.reassigned.title"), text: t("sign.reassigned.done"), testId: "sign-reassigned" });
   if (["voided", "declined", "expired"].includes(env.status)) return message({ kind: env.status === "expired" ? "expired" : "closed", title: t("sign.closed.title"), text: t(`sign.closed.${env.status}`), testId: "sign-closed" });
   const pending = view.auth_required || [];
-  const authing = pending.includes("access_code") || pending.includes("email_otp");
+  const authing = ["access_code", ...SENT_CODES].some((m) => pending.includes(m));
   buildMenu(authing ? "auth" : "open");
   moreBtn.hidden = false;
   declineBtn.hidden = authing || env.signing_options?.allow_decline === false;
   if (pending.includes("access_code")) return asCard(accessCode);
-  if (pending.includes("email_otp")) return asCard(emailCode);
+  const sent = SENT_CODES.find((m) => pending.includes(m));
+  if (sent) return asCard(() => sentCode(sent));
   if (env.signing_options?.capture_location && !location_) return asCard(askLocation);
   if (view.consent_required && !r.consented) return asCard(consent);
   return documents();
@@ -307,27 +308,34 @@ function accessCode() {
   input.focus();
 }
 
-/// The emailed one-time code (SEC-A02), on the access-code screen's design: ask for a
-/// code, then enter it. A wrong code answers 403 with the view; the server counts it.
-function emailCode() {
+/// The one-time codes the server sends, in the order the page asks for them (SEC-A02;
+/// SMS and voice since slice 5).
+const SENT_CODES = ["email_otp", "sms_otp", "voice_otp"];
+
+/// A sent one-time code (SEC-A02), on the access-code screen's design: ask for a code
+/// by `method` (email, text message or phone call), then enter it. A wrong code answers
+/// 403 with the view; the server counts it.
+function sentCode(method) {
   guide.hidden = true;
+  const k = { email_otp: "otp", sms_otp: "sms", voice_otp: "voice" }[method];
+  const id = method === "email_otp" ? "email-code" : `${k}-code`;
   const err = h("p", { id: "otp-err", class: "os-field-error", attrs: { role: "alert" } });
   const status = h("p", { id: "otp-status", class: "os-muted", attrs: { role: "status", "aria-live": "polite" } });
-  const input = h("input", { id: "email-code", class: "os-input os-input--lg", autocomplete: "one-time-code", inputMode: "numeric", maxLength: 6, required: true, attrs: { pattern: "[0-9]{6}", "aria-describedby": "otp-err otp-help", "data-testid": "email-code" } });
-  const send = button(t("sign.otp.send"), { size: "lg", type: "button" });
-  send.dataset.testid = "email-code-send";
+  const input = h("input", { id, class: "os-input os-input--lg", autocomplete: "one-time-code", inputMode: "numeric", maxLength: 6, required: true, attrs: { pattern: "[0-9]{6}", "aria-describedby": "otp-err otp-help", "data-testid": id } });
+  const send = button(t(`sign.${k}.send`), { size: "lg", type: "button" });
+  send.dataset.testid = `${id}-send`;
   const submit = button(t("sign.code.submit"), { variant: "primary", size: "lg", type: "submit" });
   const form = h("form", { class: "os-sign__card", attrs: { novalidate: true } },
     icon("lock", { size: 24 }),
-    h("h1", { class: "os-sign__title", text: t("sign.otp.title") }),
-    h("p", { id: "otp-help", class: "os-muted", text: t("sign.otp.text") }),
+    h("h1", { class: "os-sign__title", text: t(`sign.${k}.title`) }),
+    h("p", { id: "otp-help", class: "os-muted", text: t(`sign.${k}.text`) }),
     send, status,
-    h("label", { class: "os-label", attrs: { for: "email-code" }, text: t("sign.otp.label") }), input, err, submit);
+    h("label", { class: "os-label", attrs: { for: id }, text: t("sign.otp.label") }), input, err, submit);
   send.addEventListener("click", async () => {
     err.textContent = "";
     try {
-      view = await busy(send, () => api.ceremony.otpSend(token));
-      status.textContent = t("sign.otp.sent");
+      view = await busy(send, () => api.ceremony.otpSend(token, method));
+      status.textContent = t(`sign.${k}.sent`);
       send.textContent = t("sign.otp.resend");
       input.focus();
     } catch (ex) {
@@ -339,7 +347,7 @@ function emailCode() {
     const code = input.value.trim();
     if (!/^[0-9]{6}$/.test(code)) { err.textContent = t("form.required"); input.setAttribute("aria-invalid", "true"); input.focus(); return; }
     try {
-      view = await busy(submit, () => api.ceremony.otpVerify(token, code));
+      view = await busy(submit, () => api.ceremony.otpVerify(token, code, method));
       next();
     } catch (ex) {
       err.textContent = ex.status === 403 || ex.code === "CS-AUTH-0003" ? t("sign.code.wrong") : errorMessage(ex);
