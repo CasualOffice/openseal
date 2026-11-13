@@ -19,7 +19,7 @@ import { h, clear, skipTo, download, reducedMotion } from "./dom.js";
 import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { createClient, isMockMode, isNoServer, errorMessage, locationFrom, ApiError } from "./api.js";
-import { button, busy, toast, toastError, openDialog, noServerState, dockPanel, openPanel, closePanel, placeMenu } from "./ui/index.js";
+import { button, busy, toast, toastError, openDialog, confirmDialog, noServerState, dockPanel, openPanel, closePanel, placeMenu } from "./ui/index.js";
 import { register, run } from "./commands.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
@@ -242,7 +242,7 @@ async function start() {
   let ssoFailed = false;
   if (ssoBack) {
     const back = location.pathname.startsWith("/s/") ? `/s/${encodeURIComponent(token)}` : `?t=${encodeURIComponent(token)}`;
-    try { history.replaceState(null, "", back); } catch { /* the address bar keeps the return address */ }
+    try { window.history.replaceState(null, "", back); } catch { /* the address bar keeps the return address */ }
     if ((view.auth_required || []).includes("sso")) {
       try {
         view = await api.ceremony.ssoVerify(token, ssoBack.state, ssoBack.code);
@@ -1643,6 +1643,18 @@ async function decline() {
   } catch (ex) { toastError(ex); }
 }
 
+/// Withdraw consent to electronic records (`POST /s/{token}/withdraw-consent`): after
+/// a confirmation, as declining, since it ends this signer's part in the envelope.
+async function withdrawConsent() {
+  closeMore();
+  const ok = await confirmDialog(t("sign.withdraw.title"), `${t("sign.withdraw.consequence")} ${t("sign.withdraw.consequence-more")}`, { confirm: t("sign.withdraw.confirm"), danger: true, icon: "circle-x" });
+  if (!ok) return;
+  try {
+    view = await api.ceremony.withdrawConsent(token, location_);
+    message({ kind: "declined", title: t("sign.withdrawn.title"), text: t("sign.withdrawn.text"), testId: "sign-withdrawn" });
+  } catch (ex) { toastError(ex); }
+}
+
 async function finishLater() {
   closeMore();
   try {
@@ -1818,6 +1830,9 @@ function buildMenu(stage_ = "open") {
     items.push(sep());
     if (opts.allow_finish_later !== false) items.push(item("clock", t("sign.later"), "signer.finish-later"));
     if (opts.allow_decline !== false) items.push(item("circle-x", t("sign.decline"), "signer.decline", { danger: true }));
+    // Withdrawing consent to electronic records is a right whatever the envelope allows
+    // (ESIGN §7001(c)(1)(B); the engine's `WithdrawConsent`), offered once given.
+    if (view?.recipient?.consented) items.push(item("circle-x", t("sign.withdraw"), "signer.withdraw-consent", { danger: true, testId: "menu-withdraw-consent" }));
   }
   moreMenu.replaceChildren(...items);
 }
@@ -1838,6 +1853,7 @@ function registerCommands() {
   register("signer.help", { label: t("sign.menu.help"), run: help });
   register("signer.finish-later", { label: t("sign.later"), run: finishLater, enabled: () => stage === "open" && opts().allow_finish_later !== false });
   register("signer.decline", { label: t("sign.decline"), run: decline, enabled: () => stage === "open" && opts().allow_decline !== false });
+  register("signer.withdraw-consent", { label: t("sign.withdraw"), run: withdrawConsent, enabled: () => stage === "open" && !!view?.recipient?.consented });
 }
 
 /// The guide bar's progress ring (the canvas's 36-unit SVG): a faint track, the arc
