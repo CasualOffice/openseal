@@ -127,11 +127,18 @@ export function pdfFile(name = "contract.pdf", title = "Services contract") {
 export async function expectAccessible(page, what) {
   // Let entrance transitions finish: axe measures colours as painted, and a view
   // fading in is a view at partial opacity. Endless ones (shimmer, spinner) excepted.
-  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
-  const bad = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  const summary = bad.map((v) => `${v.id} (${v.impact}): ${v.nodes.length} × ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(", ")} — ${(v.nodes[0]?.any?.[0]?.message || v.nodes[0]?.failureSummary || "").slice(0, 160)}`);
-  expect(summary, `axe on ${what}`).toEqual([]);
+  // E2E-02: on CI's WebKit a view's fade was still at its first frames when axe ran,
+  // although this wait had just seen nothing running (text measured at about 2 %
+  // opacity). So the scan is taken again, after the animations settle, until it is
+  // clean or the timeout (15 s: one axe pass on a slow CI WebKit can take seconds,
+  // and the deadline covers the scan itself): a violation of the settled page fails.
+  const scan = async () => {
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
+    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+    const bad = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+    return bad.map((v) => `${v.id} (${v.impact}): ${v.nodes.length} × ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(", ")} — ${(v.nodes[0]?.any?.[0]?.message || v.nodes[0]?.failureSummary || "").slice(0, 160)}`);
+  };
+  await expect.poll(scan, { message: `axe on ${what}`, intervals: [250, 500, 1000], timeout: 15_000 }).toEqual([]);
 }
 
 /// Save a screenshot for people to look at (the visual check), and attach it.
