@@ -82,7 +82,7 @@ export const FIELD_TYPES_READY = Object.freeze([
 /// and conditions refer to; `value` a sender's value (`{text}`, `{checked}`, `{choice}`),
 /// with `locked` nobody changes it; `validation` `{kind: email|phone|zip|ssn|regex|length|
 /// number|date, …, message?}`; `format` `{font_family, font_size, color, align,
-/// date_format, mask}`; `group` `{id, rule: {rule: select_at_least|…, min|max|count}}`;
+/// date_format, mask, multiline}`; `group` `{id, rule: {rule: select_at_least|…, min|max|count}}`;
 /// `conditional` `{parent_label, when: {value: "…"} | "checked" | "unchecked" | "any"}`;
 /// `formula` `{expression, precision}`; `options` for radio groups, dropdowns and
 /// multi-selects, `allow_custom` for a dropdown.
