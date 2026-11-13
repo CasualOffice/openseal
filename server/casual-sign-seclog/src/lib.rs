@@ -598,7 +598,7 @@ pub fn write(service: Service, level: Level, event: &str, fields: Map<String, Js
     Stderr.write_line(&line(service, level, event, fields));
 }
 
-/// [`write`] with string fields, for a host's own lines (`start_failed`, a development
+/// [`write()`] with string fields, for a host's own lines (`start_failed`, a development
 /// key in use): ids, codes, setting names and fixed words only (`SEC-D01`).
 pub fn write_strs(service: Service, level: Level, event: &str, fields: &[(&str, &str)]) {
     let m = fields

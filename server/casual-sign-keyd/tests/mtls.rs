@@ -154,12 +154,15 @@ fn a_client_without_a_certificate_is_refused() {
 }
 
 /// **A certificate from another CA never completes the handshake** (`CS-KEY-0013`).
+/// In TLS 1.3 the client finishes its side before keyd checks its certificate, so keyd's
+/// alert can lose the race to a reset and read as `CS-KEY-0011` (seen on Linux CI; the
+/// HRD-01 open note). Either way nothing is signed.
 #[test]
 fn a_client_with_an_untrusted_certificate_is_refused() {
     let (pki, keyd, _) = refused_setup("keyd-mtls-rogue");
     let rogue = pki.rogue_client_identity("worker");
     let err = RemoteKey::connect(endpoint(&pki, &keyd, Some(&rogue)), "dev").unwrap_err();
-    assert_eq!(err.code(), "CS-KEY-0013", "{err}");
+    assert!(matches!(err.code(), "CS-KEY-0013" | "CS-KEY-0011"), "{err}");
     eprintln!("untrusted certificate: {err}");
 }
 

@@ -469,6 +469,17 @@ async fn an_emailed_one_time_code_authenticates_once_and_locks_after_wrong_tries
             !steps.iter().any(|j| j.contains(code.as_str())),
             "a code in a step"
         );
-        assert!(!logged.contains(code.as_str()), "a code in the log");
+        // As a value of its own: six digits also occur inside timestamps and hex ids.
+        assert!(!standalone(&logged, code), "a code in the log");
     }
+}
+
+/// Whether `code` occurs in `text` with no letter or digit on either side.
+fn standalone(text: &str, code: &str) -> bool {
+    text.match_indices(code).any(|(i, _)| {
+        let before = text[..i].chars().next_back();
+        let after = text[i + code.len()..].chars().next();
+        !before.is_some_and(|c| c.is_ascii_alphanumeric())
+            && !after.is_some_and(|c| c.is_ascii_alphanumeric())
+    })
 }

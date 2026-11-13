@@ -310,8 +310,10 @@ class CreateAndRestore(Base):
         (src.d / "store" / bh).write_bytes(bad)
         (src.d / "named").write_text("\n".join(sorted(set(named) - {ch} | {bh})))
         (src.d / "captures").write_text(bh)
+        # A directory of its own: backups named by the second collide within one.
+        (self.tmp / "out3").mkdir()
         with self.assertRaisesRegex(ob.BackupError, "not a capture"):
-            ob.create(self.args(), src)
+            ob.create(self.args(out=str(self.tmp / "out3")), src)
 
     def test_keep_prunes_the_oldest(self):
         out = self.tmp / "out"
