@@ -469,8 +469,8 @@ pub(crate) async fn granted_profile(
 
 /// Refuse (`CS-AUTH-0006`) a change to another member whose profile gives more than
 /// the caller holds (UXW-07): someone who manages users with a custom profile cannot
-/// re-profile, disable, rename, reset or remove a member above them. The caller's own
-/// record is theirs to change as the route allows.
+/// re-profile, disable, rename, reset, re-invite (PRF-01) or remove a member above
+/// them. The caller's own record is theirs to change as the route allows.
 async fn outranks(
     c: &Call,
     tx: &mut casual_sign_store::TenantTx,
@@ -579,6 +579,8 @@ pub(crate) async fn reinvite_user(c: Call, Path(id): Path<String>) -> Result<Res
     let id = UserId(path_id(&id)?);
     let mut tx = c.tx().await?;
     let m = tx.users().get(id).await?.ok_or_else(ApiError::not_found)?;
+    // A member above the caller is not theirs to re-invite either (PRF-01).
+    outranks(&c, &mut tx, &m).await?;
     if m.disabled_at.is_some() || m.login_kind != LoginKind::Local {
         return Err(ApiError::invalid("/id"));
     }

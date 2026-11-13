@@ -244,6 +244,19 @@ async fn groups_and_profiles(rls: Rls) {
             "kim changing mia, a sender, with {m}"
         );
     }
+    // Nor re-send mia's invitation (PRF-01).
+    assert_eq!(
+        status(
+            &api,
+            "POST",
+            &format!("/api/v1/users/{mia_id}/invite"),
+            &kim,
+            None
+        )
+        .await,
+        forbidden(),
+        "kim re-inviting mia, a sender"
+    );
     let reader = ok(
         api.call(
             "POST",
