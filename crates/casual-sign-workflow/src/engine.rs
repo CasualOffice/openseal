@@ -2038,5 +2038,16 @@ mod name_tests {
         );
         assert_eq!(split_name("Plato"), ("Plato", ""));
         assert_eq!(split_name("   "), ("", ""));
+        // Unicode White_Space only: U+0085 separates, U+FEFF does not (webapp
+        // `nameParts` matches this, so the signing page shows what is sealed).
+        assert_eq!(split_name("Ada\u{85}Lovelace"), ("Ada", "Lovelace"));
+        assert_eq!(
+            split_name("\u{feff}Ada Lovelace\u{feff}"),
+            ("\u{feff}Ada", "Lovelace\u{feff}")
+        );
+        assert_eq!(
+            split_name("Ada\u{feff}Lovelace"),
+            ("Ada\u{feff}Lovelace", "")
+        );
     }
 }

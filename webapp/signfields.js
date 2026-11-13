@@ -194,10 +194,17 @@ export function firstName(name) {
 /// `last_name` at finish (`FG-055`, docs/24 §5): the first word, and everything after it.
 /// "Ludwig van Beethoven" → {first: "Ludwig", last: "van Beethoven"}; one word has no last.
 export function nameParts(name) {
-  const s = String(name || "").trim();
-  const at = s.search(/\s/);
-  return at < 0 ? { first: s, last: "" } : { first: s.slice(0, at), last: s.slice(at).trimStart() };
+  const s = String(name || "").replace(LEAD_WS, "").replace(TRAIL_WS, "");
+  const at = s.search(WS);
+  return at < 0 ? { first: s, last: "" } : { first: s.slice(0, at), last: s.slice(at).replace(LEAD_WS, "") };
 }
+
+// Unicode White_Space, as Rust's `char::is_whitespace` and `str::trim` (the engine's
+// `split_name`): JavaScript's `\s` and `trim` also take U+FEFF and leave U+0085.
+const WS_CLASS = "[\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]";
+const WS = new RegExp(WS_CLASS);
+const LEAD_WS = new RegExp(`^${WS_CLASS}+`);
+const TRAIL_WS = new RegExp(`${WS_CLASS}+$`);
 
 /// The organisation's two-letter mark ("Acme Corporation" → "AC", "Northwind" → "NO").
 export function orgMark(org) {

@@ -146,6 +146,11 @@ test("a name splits into first and last as the server's engine fills them (FG-05
   assert.deepEqual(nameParts(" Ludwig  van Beethoven "), { first: "Ludwig", last: "van Beethoven" });
   assert.deepEqual(nameParts("Plato"), { first: "Plato", last: "" });
   assert.deepEqual(nameParts(""), { first: "", last: "" });
+  // The same whitespace as Rust's `char::is_whitespace`, so the page shows what is sealed:
+  // U+0085 separates, U+FEFF (a JavaScript `\s`) does not.
+  assert.deepEqual(nameParts("Ada\u0085Lovelace"), { first: "Ada", last: "Lovelace" });
+  assert.deepEqual(nameParts("\uFEFFAda Lovelace\uFEFF"), { first: "\uFEFFAda", last: "Lovelace\uFEFF" });
+  assert.deepEqual(nameParts("Ada\uFEFFLovelace"), { first: "Ada\uFEFFLovelace", last: "" });
 });
 
 // ---- RTE-02: the receipt says what the recipient did ---------------------------------------
