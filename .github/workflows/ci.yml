@@ -224,6 +224,17 @@ jobs:
       - run: docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
       - run: /tmp/v/bin/python tools/verify-sealed.py target/e2e-sealed
+      # The slice 1 demo (S1-02): the VS-01 run recorded, sender and phone, kept with
+      # the sealed PDFs and certificates it downloaded.
+      - if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-1-demo
+          path: |
+            target/e2e-demo
+            target/e2e-sealed/*vs01-*
+          if-no-files-found: error
+          retention-days: 90
       - if: failure()
         run: mkdir -p target && docker compose logs --no-color > target/compose.log 2>&1
       - if: failure()

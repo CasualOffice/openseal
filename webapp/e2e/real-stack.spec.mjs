@@ -16,6 +16,8 @@ import { signIn, pdfFile, REAL, placingFor } from "./helpers.mjs";
 
 const MAIL = (process.env.OPENSEAL_E2E_MAIL_URL || "http://127.0.0.1:8025").replace(/\/$/, "");
 const OUT = path.resolve(fileURLToPath(new URL("../../target/e2e-sealed", import.meta.url)));
+// The slice 1 demo (S1-02): the VS-01 run's screens, recorded, uploaded by compose-e2e.
+const DEMO = path.resolve(fileURLToPath(new URL("../../target/e2e-demo", import.meta.url)));
 
 /// The signing link in the newest email to `to`, waiting for the worker to send it.
 async function signingLink(to, after) {
@@ -160,96 +162,107 @@ test("two signers in order sign through emailed links; the sealed PDF and certif
 // the signer signs on a phone (iPhone 13: touch, 390 px); both get the sealed PDF and the
 // certificate of completion, the signer through the completion email's link. Every
 // download is written for pyHanko, and the signer's are the sender's bytes.
-test("send and sign: one signer on a phone; both get the sealed PDF and the certificate (VS-01)", async ({ page, browser }, testInfo) => {
-  test.skip(!REAL, "runs against the Compose deployment only (OPENSEAL_E2E_BASE_URL)");
-  test.setTimeout(240_000);
-  const run = `${Date.now()}-${testInfo.project.name}`;
-  const cara = { name: "Cara Signer", email: `cara-${run}@example.com` };
-  const started = Date.now() - 5_000;
-  const phone = { ...devices["iPhone 13"] };
-  delete phone.defaultBrowserType;
+test.describe("slice 1 (VS-01)", () => {
+  // Every screen of the run is recorded: the sender's (this page) and the phone's
+  // (recordVideo below), saved to target/e2e-demo as the slice 1 demo (S1-02).
+  test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } });
+  test("send and sign: one signer on a phone; both get the sealed PDF and the certificate (VS-01)", async ({ page, browser }, testInfo) => {
+    test.skip(!REAL, "runs against the Compose deployment only (OPENSEAL_E2E_BASE_URL)");
+    test.setTimeout(240_000);
+    const run = `${Date.now()}-${testInfo.project.name}`;
+    const cara = { name: "Cara Signer", email: `cara-${run}@example.com` };
+    const started = Date.now() - 5_000;
+    const phone = { ...devices["iPhone 13"], recordVideo: { dir: testInfo.outputPath("phone-video"), size: { width: 390, height: 844 } } };
+    delete phone.defaultBrowserType;
+    fs.mkdirSync(DEMO, { recursive: true });
+    const demo = (step) => path.join(DEMO, `vs01-${testInfo.project.name}-${step}.webm`);
 
-  await signIn(page);
-  await page.locator("#start-btn").click();
-  await page.getByRole("menuitem", { name: "Send an envelope" }).click();
-  await page.getByTestId("pdf-input").setInputFiles(pdfFile("send-and-sign.pdf", "Send and sign agreement"));
-  await expect(page.getByTestId("doc-card")).toHaveCount(1);
-  await page.getByTestId("wizard-next").click();
-  await addRecipient(page, 0, cara);
-  await page.getByTestId("wizard-next").click();
-  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
-  for (const kind of ["Signature", "Date signed", "Text"]) {
-    await page.locator(".os-palette").getByRole("button", { name: `Add ${kind} field` }).press("Enter");
-  }
-  await expect(page.locator(".os-field")).toHaveCount(3);
-  await page.getByTestId("wizard-next").click();
-  await page.getByLabel("Subject").fill(`Send and sign ${run}`);
-  await page.getByRole("button", { name: "Send", exact: true }).first().click();
-  await page.getByRole("dialog", { name: "Send this envelope?" }).getByRole("button", { name: "Send" }).click();
-  await expect(page).toHaveURL(/#\/envelopes\/[^/]+$/, { timeout: 20_000 });
-  await expect(page.locator(".os-page-head .os-badge")).toHaveText("Sent");
-  const detail = page.url();
+    await signIn(page);
+    await page.locator("#start-btn").click();
+    await page.getByRole("menuitem", { name: "Send an envelope" }).click();
+    await page.getByTestId("pdf-input").setInputFiles(pdfFile("send-and-sign.pdf", "Send and sign agreement"));
+    await expect(page.getByTestId("doc-card")).toHaveCount(1);
+    await page.getByTestId("wizard-next").click();
+    await addRecipient(page, 0, cara);
+    await page.getByTestId("wizard-next").click();
+    await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+    for (const kind of ["Signature", "Date signed", "Text"]) {
+      await page.locator(".os-palette").getByRole("button", { name: `Add ${kind} field` }).press("Enter");
+    }
+    await expect(page.locator(".os-field")).toHaveCount(3);
+    await page.getByTestId("wizard-next").click();
+    await page.getByLabel("Subject").fill(`Send and sign ${run}`);
+    await page.getByRole("button", { name: "Send", exact: true }).first().click();
+    await page.getByRole("dialog", { name: "Send this envelope?" }).getByRole("button", { name: "Send" }).click();
+    await expect(page).toHaveURL(/#\/envelopes\/[^/]+$/, { timeout: 20_000 });
+    await expect(page.locator(".os-page-head .os-badge")).toHaveText("Sent");
+    const detail = page.url();
 
-  // The signer, on a phone, through the emailed link.
-  const signer = await browser.newContext(phone);
-  const sp = await signer.newPage();
-  await sp.goto(await signingLink(cara.email, started));
-  const consent = sp.getByRole("heading", { name: "Electronic records and signatures" });
-  const progress = sp.locator("#guide-progress");
-  await expect(consent.or(progress)).toBeVisible();
-  if (await consent.isVisible()) {
-    await sp.getByLabel("I agree to use electronic records and signatures.").check();
-    await sp.getByRole("button", { name: "Continue" }).click();
-  }
-  await expect(progress).toHaveText(/^0 of \d required$/);
-  await expect(sp.locator('.os-sfield[data-field="date_signed"]').first()).toBeAttached();
-  const text = sp.getByRole("textbox", { name: /^Text/ });
-  await text.fill("Phase one deliverables");
-  await text.blur();
-  await sp.getByRole("button", { name: /Signature, required/ }).click();
-  const dlg = sp.getByRole("dialog", { name: "Adopt your signature" });
-  await expect(dlg.getByLabel("Your full name")).toHaveValue(cara.name);
-  await dlg.getByTestId("adopt-confirm").click();
-  await expect(dlg).toBeHidden();
-  await sp.getByRole("button", { name: "Finish" }).click();
-  await expect(sp.getByRole("heading", { name: "Review and finish" })).toBeVisible();
-  await expect(sp.locator(".os-review")).toContainText("Phase one deliverables");
-  await sp.getByTestId("review-finish").click();
-  await expect(sp.getByTestId("sign-done")).toContainText("Everyone has signed");
-  await signer.close();
+    // The signer, on a phone, through the emailed link.
+    const signer = await browser.newContext(phone);
+    const sp = await signer.newPage();
+    await sp.goto(await signingLink(cara.email, started));
+    const consent = sp.getByRole("heading", { name: "Electronic records and signatures" });
+    const progress = sp.locator("#guide-progress");
+    await expect(consent.or(progress)).toBeVisible();
+    if (await consent.isVisible()) {
+      await sp.getByLabel("I agree to use electronic records and signatures.").check();
+      await sp.getByRole("button", { name: "Continue" }).click();
+    }
+    await expect(progress).toHaveText(/^0 of \d required$/);
+    await expect(sp.locator('.os-sfield[data-field="date_signed"]').first()).toBeAttached();
+    const text = sp.getByRole("textbox", { name: /^Text/ });
+    await text.fill("Phase one deliverables");
+    await text.blur();
+    await sp.getByRole("button", { name: /Signature, required/ }).click();
+    const dlg = sp.getByRole("dialog", { name: "Adopt your signature" });
+    await expect(dlg.getByLabel("Your full name")).toHaveValue(cara.name);
+    await dlg.getByTestId("adopt-confirm").click();
+    await expect(dlg).toBeHidden();
+    await sp.getByRole("button", { name: "Finish" }).click();
+    await expect(sp.getByRole("heading", { name: "Review and finish" })).toBeVisible();
+    await expect(sp.locator(".os-review")).toContainText("Phase one deliverables");
+    await sp.getByTestId("review-finish").click();
+    await expect(sp.getByTestId("sign-done")).toContainText("Everyone has signed");
+    await signer.close();
+    await sp.video()?.saveAs(demo("2-signer-signs-on-a-phone"));
 
-  // The worker seals; the sender sees it completed and downloads both.
-  await expect(async () => {
-    await page.reload();
-    expect(page.url()).toBe(detail);
-    await expect(page.locator(".os-page-head .os-badge")).toHaveText("Completed", { timeout: 2_000 });
-  }).toPass({ timeout: 120_000, intervals: [2_000] });
-  fs.mkdirSync(OUT, { recursive: true });
-  const keep = async (p, click, file) => {
-    const [dl] = await Promise.all([p.waitForEvent("download"), click()]);
-    const to = path.join(OUT, `${testInfo.project.name}-${file}`);
-    await dl.saveAs(to);
-    const bytes = fs.readFileSync(to);
-    expect(bytes.subarray(0, 5).toString("latin1"), `${file} is a PDF`).toBe("%PDF-");
-    return { name: path.basename(to), bytes };
-  };
-  const sealed = await keep(page, () => page.getByRole("button", { name: "Download signed PDF" }).click(), "vs01-sender-sealed.pdf");
-  const certificate = await keep(page, () => page.getByRole("button", { name: "Certificate" }).click(), "vs01-sender-certificate.pdf");
+    // The worker seals; the sender sees it completed and downloads both.
+    await expect(async () => {
+      await page.reload();
+      expect(page.url()).toBe(detail);
+      await expect(page.locator(".os-page-head .os-badge")).toHaveText("Completed", { timeout: 2_000 });
+    }).toPass({ timeout: 120_000, intervals: [2_000] });
+    fs.mkdirSync(OUT, { recursive: true });
+    const keep = async (p, click, file) => {
+      const [dl] = await Promise.all([p.waitForEvent("download"), click()]);
+      const to = path.join(OUT, `${testInfo.project.name}-${file}`);
+      await dl.saveAs(to);
+      const bytes = fs.readFileSync(to);
+      expect(bytes.subarray(0, 5).toString("latin1"), `${file} is a PDF`).toBe("%PDF-");
+      return { name: path.basename(to), bytes };
+    };
+    const sealed = await keep(page, () => page.getByRole("button", { name: "Download signed PDF" }).click(), "vs01-sender-sealed.pdf");
+    const certificate = await keep(page, () => page.getByRole("button", { name: "Certificate" }).click(), "vs01-sender-certificate.pdf");
 
-  // The signer's copies, from the completion email, on the phone.
-  const after = await browser.newContext(phone);
-  const ap = await after.newPage();
-  await ap.goto(await completionLink(cara.email));
-  await expect(ap.getByTestId("sign-done")).toContainText("Everyone has signed");
-  const mine = await keep(ap, () => ap.getByTestId("done-download").click(), "vs01-signer-sealed.pdf");
-  const cert = await keep(ap, () => ap.getByTestId("done-certificate").click(), "vs01-signer-certificate.pdf");
-  await after.close();
-  expect(mine.bytes.equals(sealed.bytes), "the signer's PDF is the sender's sealed PDF").toBe(true);
-  expect(cert.bytes.equals(certificate.bytes), "the signer's certificate is the sender's").toBe(true);
+    // The signer's copies, from the completion email, on the phone.
+    const after = await browser.newContext(phone);
+    const ap = await after.newPage();
+    await ap.goto(await completionLink(cara.email));
+    await expect(ap.getByTestId("sign-done")).toContainText("Everyone has signed");
+    const mine = await keep(ap, () => ap.getByTestId("done-download").click(), "vs01-signer-sealed.pdf");
+    const cert = await keep(ap, () => ap.getByTestId("done-certificate").click(), "vs01-signer-certificate.pdf");
+    await after.close();
+    await ap.video()?.saveAs(demo("4-signer-downloads"));
+    await page.close();
+    await page.video()?.saveAs(demo("1-3-sender-sends-and-downloads"));
+    expect(mine.bytes.equals(sealed.bytes), "the signer's PDF is the sender's sealed PDF").toBe(true);
+    expect(cert.bytes.equals(certificate.bytes), "the signer's certificate is the sender's").toBe(true);
 
-  const manifest = path.join(OUT, "manifest.tsv");
-  if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, "file\texpect\twhy\tlevel\n");
-  for (const [f, why] of [[sealed, "sender"], [certificate, "sender certificate"], [mine, "signer"], [cert, "signer certificate"]]) {
-    fs.appendFileSync(manifest, `${f.name}\tintact\tVS-01 ${why}, ${testInfo.project.name}\tB-T\n`);
-  }
+    const manifest = path.join(OUT, "manifest.tsv");
+    if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, "file\texpect\twhy\tlevel\n");
+    for (const [f, why] of [[sealed, "sender"], [certificate, "sender certificate"], [mine, "signer"], [cert, "signer certificate"]]) {
+      fs.appendFileSync(manifest, `${f.name}\tintact\tVS-01 ${why}, ${testInfo.project.name}\tB-T\n`);
+    }
+  });
 });
