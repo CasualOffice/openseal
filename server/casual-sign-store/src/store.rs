@@ -170,6 +170,29 @@ impl TenantTx {
     pub async fn rollback(self) -> Result<()> {
         self.tx.rollback().await.map_err(db)
     }
+
+    /// This workspace's organization's plan rows at `now`, through
+    /// `openseal_effective_plan` (docs/23 §7.1): the assignment current at `now` and the
+    /// overrides live at `now` for the organization and this workspace. Resolve them with
+    /// [`casual_sign_policy::plans::effective`] for this workspace. The application has no
+    /// other grant in the `platform` schema.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0003` when the account does not exist; `CS-DB-0010` when the
+    /// rows do not read back.
+    pub async fn plan_inputs(
+        &mut self,
+        now: OffsetDateTime,
+    ) -> Result<casual_sign_policy::plans::PlanInputs> {
+        let v = sqlx::query_scalar!("SELECT openseal_effective_plan($1)", now)
+            .fetch_one(&mut *self.tx)
+            .await
+            .map_err(db)?
+            .ok_or(StoreError::NotFound { entity: "account" })?;
+        casual_sign_policy::plans::PlanInputs::from_json(&v)
+            .map_err(|_| StoreError::Corrupt { column: "plan" })
+    }
 }
 
 /// A workspace a signed-in person can switch to (docs/23 §2.3): metadata only.

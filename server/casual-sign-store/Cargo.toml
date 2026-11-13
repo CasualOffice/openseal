@@ -12,6 +12,8 @@ publish = false
 casual-sign-model = { path = "../../crates/casual-sign-model" }
 # Audit events' canonical bytes and hash, and chain re-verification on read (docs/32).
 casual-sign-audit = { path = "../../crates/casual-sign-audit" }
+# Reads the organization's plan rows into its types (`TenantTx::plan_inputs`, PLAN-02).
+casual-sign-policy = { path = "../casual-sign-policy" }
 # PostgreSQL (ADR-014, owner instruction 14): compile-time checked `query!` and
 # `query_as!` against the committed offline cache in `.sqlx/` (`SQLX_OFFLINE=true` builds
 # need no database). TLS by rustls on ring with the platform's roots
@@ -36,6 +38,7 @@ url = "2.5"
 [dev-dependencies]
 tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros"] }
 uuid = { version = "1.10", features = ["v4", "v7"] }
+time = { version = "0.3.36", features = ["macros"] }
 
 [lints]
 workspace = true

@@ -873,6 +873,7 @@ version = "0.0.1"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-model",
+ "casual-sign-policy",
  "rust_decimal",
  "rustls",
  "rustls-native-certs",

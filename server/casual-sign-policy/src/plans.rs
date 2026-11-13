@@ -722,6 +722,18 @@ impl WirePlan {
     }
 }
 
+impl Plan {
+    /// Read one plan version as `platform.plan_json` writes it.
+    ///
+    /// # Errors
+    /// [`InputsError`] when the shape is wrong or a name is unknown to this build.
+    pub fn from_json(v: &serde_json::Value) -> Result<Self, InputsError> {
+        WirePlan::deserialize(v)
+            .map_err(|_| InputsError { what: "shape" })?
+            .into_plan()
+    }
+}
+
 impl PlanInputs {
     /// Read the JSON `openseal_effective_plan(now)` and `platform.plan_inputs` return.
     ///
