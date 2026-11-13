@@ -1,6 +1,7 @@
 // Shared steps for the e2e specs (WEB-01). Every spec runs in mock mode by default and
 // against a real server when OPENSEAL_E2E_BASE_URL is set (playwright.config.mjs).
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,6 +77,7 @@ export async function signIn(page, land = "agreements") {
   await page.getByLabel("Email").fill(creds.email);
   await page.getByLabel("Password").fill(creds.password);
   await page.getByRole("button", { name: "Sign in" }).click();
+  if (REAL) await passFactor(page, home);
   await expect(home).toBeVisible();
   if (REAL) {
     realSession = {
@@ -85,6 +87,63 @@ export async function signIn(page, land = "agreements") {
     await seedReal(page);
   }
   if (land !== "home" || REAL) await goLand();
+}
+
+/// Against a real server, the run's administrator owes a second factor (ASVS-31: the
+/// default for administrators). The first sign-in enrols through the sign-in card, as a
+/// person would with an authenticator app; later ones answer the code step with a code
+/// for a time step not used yet, else a recovery code (each code is accepted once).
+const factor = { seed: null, lastStep: -1, recovery: [] };
+
+function unbase32(s) {
+  const out = [];
+  let buf = 0, bits = 0;
+  for (const c of s.replace(/[\s=]/g, "").toUpperCase()) {
+    const v = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(c);
+    if (v < 0) throw new Error("the setup key is not base32");
+    buf = ((buf << 5) | v) & 0xffff;
+    bits += 5;
+    if (bits >= 8) { bits -= 8; out.push((buf >> bits) & 0xff); }
+  }
+  return Buffer.from(out);
+}
+
+/// RFC 6238: six digits, 30-second steps, HMAC-SHA1.
+function totp(seed, step) {
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(step));
+  const mac = crypto.createHmac("sha1", seed).update(msg).digest();
+  const off = mac[mac.length - 1] & 0x0f;
+  return String((mac.readUInt32BE(off) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
+
+async function passFactor(page, home) {
+  const enrol = page.getByRole("heading", { name: "Set up two-step verification" });
+  const verify = page.getByRole("heading", { name: "Two-step verification", exact: true });
+  await expect(home.or(enrol).or(verify)).toBeVisible();
+  const now = Math.floor(Date.now() / 1000 / 30);
+  if (await enrol.isVisible()) {
+    const text = await page.getByTestId("mfa-secret").textContent();
+    factor.seed = unbase32(text.split(":").pop());
+    factor.lastStep = now;
+    await page.getByLabel("Verification code").fill(totp(factor.seed, now));
+    await page.getByRole("button", { name: "Turn on two-step verification" }).click();
+    const codes = page.getByTestId("mfa-recovery-codes").locator("code");
+    await expect(codes.first()).toBeVisible();
+    factor.recovery = await codes.allTextContents();
+    await page.getByRole("button", { name: "I saved them, continue" }).click();
+  } else if (await verify.isVisible()) {
+    if (!factor.seed) throw new Error("the e2e administrator enrolled a second factor outside this run");
+    const step = [now, now + 1].find((s) => s > factor.lastStep);
+    if (step !== undefined) {
+      factor.lastStep = step;
+      await page.getByLabel("Verification code").fill(totp(factor.seed, step));
+    } else {
+      await page.getByRole("button", { name: "Use a recovery code instead" }).click();
+      await page.getByLabel("Recovery code").fill(factor.recovery.pop());
+    }
+    await page.getByRole("button", { name: "Verify" }).click();
+  }
 }
 
 /// A real account needs something to list: a draft and a sent envelope, made through

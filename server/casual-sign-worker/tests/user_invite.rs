@@ -169,6 +169,7 @@ async fn an_invited_user_sets_a_password_once_and_can_be_disabled() {
         },
     )
     .unwrap();
+    st.set_mfa_key(common::mfa_key());
     let app = casual_sign_server::app(st);
     // `Env` already made an organization; this workspace gets one of its own.
     let org = env.db.organization("Invites").await;
@@ -183,6 +184,14 @@ async fn an_invited_user_sets_a_password_once_and_can_be_disabled() {
     .await
     .unwrap();
     let admin = session(&app, &login(&app, "admin@inv.example.test", PASSWORD).await);
+    // An administrator owes a second factor by default (ASVS-31).
+    common::pass_factor(
+        &app,
+        admin.cookie.as_deref().unwrap(),
+        admin.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
 
     let u = admin
         .ok(

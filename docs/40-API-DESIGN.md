@@ -433,8 +433,14 @@ binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised
 ## As built (`ASVS-01`, staff second factor)
 
 A staff user may add a TOTP authenticator (RFC 6238: HMAC-SHA1, six digits, 30-second steps, one step of drift either
-way); an account may require one with `settings.mfa_policy` (`PATCH /accounts/me`): `optional` (the default: only
-users who enrolled), `administrators` or `everyone`. A user with a confirmed factor owes it in every session, whatever
+way); an account chooses who must have one with `settings.mfa_policy` (`PATCH /accounts/me`): `administrators` (the
+default, also when unset: administrators and anyone who enrolled; `ASVS-31`, migration 0036), `everyone`, or
+`optional` (only users who enrolled). An administrator without a factor enrols at their next sign-in: until they do,
+every call but the sign-in steps is `403 CS-AUTH-0011` with `detail` `enrol`. An explicit choice stands: accounts that
+had written `optional` before the default changed keep it, as a recorded decision of their administrators, and
+`mfa_policy: null` removes any choice and returns the account to the default. Because the default asks for a factor,
+the server does not start without `OPENSEAL_MFA_KEY` outside development (docs/65); an administrator who loses their
+authenticator signs in with one of their recovery codes (`ASVS-32` adds replacing the factor). A user with a confirmed factor owes it in every session, whatever
 the policy, so a password reset or a new password does not bypass it. A session that owes a factor reaches only the
 routes marked `x-permission: signing-in` (`GET /auth/session`, `POST /auth/logout` and the three below); every other
 `/api/v1` call is `403 CS-AUTH-0011` with `detail` `verify` or `enrol`. API keys and access tokens are not asked for
@@ -448,7 +454,7 @@ one (they are credentials of their own, made by a member who signed in). `GET /a
 | `POST /auth/mfa/verify {code}` or `{recovery_code}` | Passes the session's factor. A TOTP code is accepted only for a step later than the last accepted one for the user, so a code works once; a recovery code is spent (case, spaces and dashes ignored) and the answer says how many are left. `401 CS-AUTH-0012` for a wrong, replayed or spent code |
 
 All three are staff sessions only (`422 CS-API-0001` for a key or token) and are rate-limited per user at the login
-rate. Not built yet: WebAuthn (`CON-13`), `administrators` as the default policy (`ASVS-31`), replacing or resetting a
+rate. Not built yet: WebAuthn (`CON-13`), replacing or resetting a
 lost factor and regenerating recovery codes (`ASVS-32`). The web app shows the code step and enrolment on the sign-in
 card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a QR code is `ASVS-33`.
 

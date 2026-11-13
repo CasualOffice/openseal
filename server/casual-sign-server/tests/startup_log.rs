@@ -78,7 +78,14 @@ fn a_startup_failure_with_a_code_carries_it_in_the_code_field() {
     );
 
     // Nothing listens on port 1 of the loopback address.
-    let (ok, lines) = run(&[("OPENSEAL_DATABASE_URL", "postgres://a@127.0.0.1:1/x")]);
+    let (ok, lines) = run(&[
+        ("OPENSEAL_DATABASE_URL", "postgres://a@127.0.0.1:1/x"),
+        // Required outside development (ASVS-31); 32 bytes as base64.
+        (
+            "OPENSEAL_MFA_KEY",
+            "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        ),
+    ]);
     assert!(!ok);
     let f = event(&lines, "start_failed");
     assert!(f["code"].as_str().unwrap().starts_with("CS-DB-"), "{f}");

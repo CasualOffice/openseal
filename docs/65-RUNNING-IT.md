@@ -366,7 +366,7 @@ the driver with these options (2026-11-14); a delivery to a live TLS collector i
 All configuration through environment variables; every secret also accepted as `NAME_FILE` (the sisters'
 `-secrets` rule: both set is an error). Each binary's module documentation lists its variables
 (`server/casual-sign-server/src/main.rs`, `-worker`, `-keyd`); `docker-compose.yml` sets the ones the stack needs and leaves the optional ones unset
-(`OPENSEAL_MFA_KEY`, where `OPENSEAL_DEV_INSECURE_KEY` draws a throwaway key instead, `OPENSEAL_RECIPIENT_IDPS_FILE`,
+(`OPENSEAL_RECIPIENT_IDPS_FILE`,
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, the SMS gateway, the model service, `OPENSEAL_WEBHOOK_ALLOW` and
 `OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, checked 2026-11-13, `DOC-008`; `OPENSEAL_CLAMD_ADDR` is passed through empty unless set, `ASVS-11`). A list
 generated from the code into this page is still to come. The server's: `OPENSEAL_DATABASE_URL`,
@@ -374,8 +374,11 @@ generated from the code into this page is still to come. The server's: `OPENSEAL
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, `OPENSEAL_WEBAPP_DIR`, `OPENSEAL_RECIPIENT_IDPS_FILE`,
 `OPENSEAL_JWT_PREVIOUS_KEY` (during a rotation), `OPENSEAL_S3_CA` (also the worker's), `OPENSEAL_SECRET_RELOAD_SECONDS`
 (also the worker's), `OPENSEAL_LOG_PSEUDONYM_KEY` (§Logs; also the console's),
-`OPENSEAL_MFA_KEY` (32 random bytes as base64, sealing staff TOTP seeds; keep it with the database backups, since a
-seed sealed under a lost key cannot be opened and its users must enrol again; ASVS-01), `OPENSEAL_CLAMD_*` (§Malware
+`OPENSEAL_MFA_KEY` (32 random bytes as base64, sealing staff TOTP seeds, ASVS-01; **required**: administrators owe
+a second factor by default, so the server does not start without it outside development, ASVS-31; the development
+stack keeps one in its secrets volume as `mfa-key`; keep it with the database backups, since a seed sealed under a
+lost key cannot be opened and its users can then sign in only with their recovery codes until the factor can be
+replaced, `ASVS-32`), `OPENSEAL_CLAMD_*` (§Malware
 scanning); `migrate` reads
 `OPENSEAL_MIGRATE_DATABASE_URL`. The worker's SMS and voice gateway is `OPENSEAL_SMS_GATEWAY_URL` and
 `OPENSEAL_SMS_GATEWAY_SECRET`; its model service `OPENSEAL_MODELD_ADDR` with `OPENSEAL_MODELD_CA`,

@@ -40,7 +40,10 @@ async fn login(api: &Api, email: &str) -> (Auth, Value) {
         )
         .await;
     let v = is(&r, StatusCode::OK, None, "login");
-    (session_of(&r), v)
+    // An administrator owes a second factor by default (ASVS-31).
+    let s = session_of(&r);
+    api.pass_factor(email, &s).await;
+    (s, v)
 }
 
 async fn create_envelope(api: &Api, s: &Auth, subject: &str) -> String {

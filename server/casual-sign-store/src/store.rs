@@ -378,17 +378,20 @@ pub struct StaffSessionTarget {
     pub mfa_verified: bool,
     /// The user has a confirmed second factor, so every session of theirs owes it.
     pub mfa_enrolled: bool,
-    /// The account's `settings.mfa_policy`.
+    /// The account's `settings.mfa_policy`; `administrators` when unset (migration
+    /// 0036, ASVS-31).
     pub mfa_policy: MfaPolicy,
 }
 
 /// Who in an account must sign in with a second factor (`settings.mfa_policy`, ASVS-01).
 /// A user with a confirmed factor always owes it, whatever the policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MfaPolicy {
-    /// Only users who enrolled (`optional`, and when unset).
+    /// Only users who enrolled (`optional`, an account's explicit choice).
     Optional,
-    /// Administrators, and anyone who enrolled (`administrators`).
+    /// Administrators, and anyone who enrolled (`administrators`, and when unset:
+    /// migration 0036, ASVS-31).
+    #[default]
     Administrators,
     /// Every staff user (`everyone`).
     Everyone,

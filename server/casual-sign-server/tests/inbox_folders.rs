@@ -243,11 +243,13 @@ async fn inbox(rls: Rls) {
             &[],
         )
         .await;
+    let bs = session_of(&blogin);
+    api.pass_factor(&b.email, &bs).await;
     let r = api
         .call(
             "POST",
             &format!("/api/v1/envelopes/{now_id}/sign-link"),
-            &session_of(&blogin),
+            &bs,
             None,
             &[],
         )

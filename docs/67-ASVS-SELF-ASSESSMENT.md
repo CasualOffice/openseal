@@ -26,14 +26,14 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 204 | 105 | 91 | 8 |
-| Partly | 35 | 12 | 16 | 7 |
+| Met | 206 | 107 | 91 | 8 |
+| Partly | 33 | 10 | 16 | 7 |
 | Not met | 15 | 4 | 9 | 2 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
-The largest gaps: a second factor for tenant staff that accounts must opt into (`ASVS-01` built TOTP; `ASVS-31` makes it the default for administrators), log shipping shown only as configuration
+The largest gaps: a second factor for tenant staff beyond TOTP for administrators by default (`ASVS-01` built TOTP and `ASVS-31` made it the default for administrators; WebAuthn and replacing a lost factor remain), log shipping shown only as configuration
 (`ASVS-08A`; the security event log itself is built, `ASVS-08`), a backup and restore drill built but not yet run (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
@@ -106,7 +106,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 1.2.1 | 2 | All | Low-privilege OS accounts per component | Met | `deploy/Dockerfile`: `USER nonroot` (server, worker, modeld), `USER keyd`; modeld `cap_drop: [ALL]`, `no-new-privileges`, read-only root (`docker-compose.yml`) | — |
 | 1.2.2 | 2 | All | Component-to-component communication authenticated | Met | keyd and modeld: mTLS with client allow-list (`-keyd/tests/mtls.rs`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): PostgreSQL by SCRAM over TLS with `sslmode=verify-full`, the object store by signed requests over TLS verified against the internal CA (`-store/tests/blob_s3_tls.rs`) | — |
 | 1.2.3 | 2 | All | One vetted authentication mechanism | Met | Staff: Argon2id password, session cookie plus CSRF token, API keys and OAuth client credentials, all resolved in `-server/src/auth.rs`; signers: link token bound to a browser cookie (`-server/src/ceremony.rs`) | — |
-| 1.2.4 | 2 | All | All authentication pathways equally strong | Partly | Login, password reset and invite acceptance share rate limits and Argon2id (`-server/src/api/admin.rs` `login_limit`); staff TOTP is required only where an account's `mfa_policy` asks for it or the user enrolled (`ASVS-01`, `-server/tests/mfa.rs`), while operators must always use TOTP (`-console/src/totp.rs`) | ASVS-01, ASVS-31 |
+| 1.2.4 | 2 | All | All authentication pathways equally strong | Partly | Login, password reset and invite acceptance share rate limits and Argon2id (`-server/src/api/admin.rs` `login_limit`); staff TOTP is required of every administrator by default (`ASVS-31`, `-server/tests/mfa.rs` `a_fresh_accounts_administrator_owes_a_factor_with_no_setting`), of everyone where an account's `mfa_policy` asks, and of any user who enrolled, while operators must always use TOTP (`-console/src/totp.rs`); other staff, and administrators of an account that explicitly chose `optional`, may sign in with a password alone, and WebAuthn is not built | ASVS-01 |
 
 **V1.4 Access Control Architecture**
 
@@ -212,7 +212,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2.2.1 | 1 | All | Anti-automation against credential stuffing and brute force | Partly | Login limited per login name and per client address (`login_limit`; `-server/tests/threats.rs` `sign_in_attempts_are_limited_per_client_address_across_names`); unknown emails cost a wrong password's time (`dummy_phc`); staff TOTP attempts limited per user as logins (`-server/src/api/mfa.rs`), the factor opt-in per account until `ASVS-31`; no breached-password check | ASVS-31, ASVS-02 |
+| 2.2.1 | 1 | All | Anti-automation against credential stuffing and brute force | Met | Login limited per login name and per client address (`login_limit`; `-server/tests/threats.rs` `sign_in_attempts_are_limited_per_client_address_across_names`); unknown emails cost a wrong password's time (`dummy_phc`); staff TOTP attempts limited per user as logins (`-server/src/api/mfa.rs`), a second factor required of administrators by default (`ASVS-31`, `-server/tests/mfa.rs`); breached passwords refused (`ASVS-02`, `-server/tests/self_service.rs`) | — |
 | 2.2.2 | 1 | All | Weak authenticators (SMS, email) only secondary | Met | Staff have no SMS/email login factor; signers' email/SMS codes are an extra factor on top of the link (`-server/src/ceremony.rs` `otp_send`) | — |
 | 2.2.3 | 1 | All | Notifications after authentication detail changes | Met | A password set from an invitation, changed by the user or an administrator, or reset, and a factor added, each queue one `send_security_notice` email in the same transaction, with no secret (`-worker/tests/security_notice.rs`, seen red; `ASVS-04`) | ASVS-04 |
 | 2.2.4 | 3 | Ceremony, sealing, keyd | L3 (ceremony): phishing-resistant authentication | Not met | Signer methods: link, access code, email/SMS/voice code, OIDC sign-in (`idp.rs`); none is phishing-resistant (no WebAuthn) | ASVS-21 |
@@ -378,7 +378,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 4.3.1 | 1 | All | Administrative interfaces use MFA | Partly | Platform console: password plus mandatory TOTP (`-console/src/lib.rs`); tenant administrators: TOTP when the account's `mfa_policy` is `administrators` or `everyone` (`-server/tests/mfa.rs`), not yet by default | ASVS-31 |
+| 4.3.1 | 1 | All | Administrative interfaces use MFA | Met | Platform console: password plus mandatory TOTP (`-console/src/lib.rs`); tenant administrators: TOTP by default (`mfa_policy` unset reads as `administrators`, migration 0036; `-server/tests/mfa.rs` `a_fresh_accounts_administrator_owes_a_factor_with_no_setting`), and the server does not start without the key that seals the seeds (`-server/tests/startup.rs`). An account's administrators may explicitly choose `optional` (docs/40 §2) | — |
 | 4.3.2 | 1 | All | No directory browsing or metadata exposure | Met | Web app read into memory at start, only the web app's kinds of file served (`-server/src/web.rs`, test `only_the_web_apps_kinds_of_file_are_served`); test folders and Node manifests skipped | — |
 | 4.3.3 | 2 | All | Step-up or adaptive authorization for high-value actions | Not met | None | ASVS-07 |
 

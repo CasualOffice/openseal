@@ -214,6 +214,7 @@ async fn sms_and_voice_codes_authenticate_through_the_messenger() {
         },
     )
     .unwrap();
+    st.set_mfa_key(common::mfa_key());
     let app = casual_sign_server::app(st);
     let org = env.db.organization("Phones").await;
     casual_sign_server::bootstrap_workspace(
@@ -242,6 +243,14 @@ async fn sms_and_voice_codes_authenticate_through_the_messenger() {
     let set = login.headers["set-cookie"].to_str().unwrap();
     staff.cookie = Some(set.split(';').next().unwrap().to_owned());
     staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    // An administrator owes a second factor by default (ASVS-31).
+    common::pass_factor(
+        &staff.app,
+        staff.cookie.as_deref().unwrap(),
+        staff.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
 
     // A code by SMS or voice needs an E.164 number: none, or a local one, is refused.
     for (method, phone) in [("sms_otp", None), ("voice_otp", Some("020 7946 0000"))] {
