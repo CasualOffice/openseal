@@ -24,6 +24,9 @@ pub enum ConsoleError {
     ListenerRefused(&'static str),
     /// `CS-CON-0007`: the operator log does not verify at `seq`; writes refused.
     LogBroken(u64),
+    /// `CS-PLAN-0006` (422): a plan, quota, assignment or override is invalid, including
+    /// `hard` enforcement on an approximate meter; names the field.
+    PlanInvalid(&'static str),
     /// `CS-CON-0010` (400 or 422): the request is malformed or a value is invalid; names
     /// the field.
     Invalid(&'static str),
@@ -56,6 +59,7 @@ impl ConsoleError {
             Self::ApprovalRequired => "CS-CON-0004",
             Self::ListenerRefused(_) => "CS-CON-0005",
             Self::LogBroken(_) => "CS-CON-0007",
+            Self::PlanInvalid(_) => "CS-PLAN-0006",
             Self::Invalid(_) => "CS-CON-0010",
             Self::NotFound => "CS-CON-0011",
             Self::RateLimited(_) => "CS-CON-0012",
@@ -74,7 +78,7 @@ impl ConsoleError {
             Self::NotAuthenticated | Self::SecondFactor => StatusCode::UNAUTHORIZED,
             Self::Forbidden | Self::Csrf => StatusCode::FORBIDDEN,
             Self::ApprovalRequired | Self::Conflict => StatusCode::CONFLICT,
-            Self::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Invalid(_) | Self::PlanInvalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             Self::Unavailable | Self::LogBroken(_) => StatusCode::SERVICE_UNAVAILABLE,
@@ -92,6 +96,7 @@ impl ConsoleError {
             Self::ApprovalRequired => "Needs a second operator's approval",
             Self::ListenerRefused(_) => "Console listener refused",
             Self::LogBroken(_) => "Operator log does not verify",
+            Self::PlanInvalid(_) => "Plan, quota or override invalid",
             Self::Invalid(_) => "Request invalid",
             Self::NotFound => "Not found",
             Self::RateLimited(_) => "Too many requests",
@@ -109,6 +114,7 @@ impl core::fmt::Display for ConsoleError {
         match self {
             Self::ListenerRefused(why)
             | Self::Invalid(why)
+            | Self::PlanInvalid(why)
             | Self::Internal(why)
             | Self::Config(why) => {
                 write!(f, "{}: {} ({why})", self.code(), self.title())
@@ -130,6 +136,7 @@ impl From<PlatformError> for ConsoleError {
             PlatformError::ApprovalRequired => Self::ApprovalRequired,
             PlatformError::LogBroken { seq } => Self::LogBroken(seq),
             PlatformError::Invalid { .. } => Self::Invalid("value"),
+            PlatformError::PlanInvalid => Self::PlanInvalid("plan"),
             PlatformError::Unavailable => Self::Unavailable,
             _ => Self::Internal("database"),
         }
@@ -147,7 +154,7 @@ impl IntoResponse for ConsoleError {
         });
         if let Some(obj) = body.as_object_mut() {
             match &self {
-                Self::Invalid(field) => {
+                Self::Invalid(field) | Self::PlanInvalid(field) => {
                     obj.insert("field".into(), json!(field));
                 }
                 Self::RateLimited(secs) => {

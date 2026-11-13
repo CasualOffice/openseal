@@ -12,6 +12,8 @@ publish = false
 # its only database door is casual-sign-platform-store, as `openseal_console`.
 [dependencies]
 casual-sign-platform-store = { path = "../casual-sign-platform-store" }
+# Plan validation and the effective plan (PLAN-02); pure.
+casual-sign-policy = { path = "../casual-sign-policy" }
 # The console's database URL and MFA key, from the environment or a file it names.
 casual-sign-secrets = { path = "../casual-sign-secrets" }
 # HTTP (ADR-014; as casual-sign-server). MIT.

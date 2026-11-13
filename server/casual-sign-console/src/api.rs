@@ -66,11 +66,11 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for Body<T> {
     }
 }
 
-fn rfc3339(t: OffsetDateTime) -> Value {
+pub(crate) fn rfc3339(t: OffsetDateTime) -> Value {
     t.format(&Rfc3339).map_or(Value::Null, Value::String)
 }
 
-fn opt_time(t: Option<OffsetDateTime>) -> Value {
+pub(crate) fn opt_time(t: Option<OffsetDateTime>) -> Value {
     t.map_or(Value::Null, rfc3339)
 }
 
@@ -104,7 +104,12 @@ async fn record(state: &AppState, draft: EventDraft) -> Result<(), ConsoleError>
     Ok(())
 }
 
-fn event(action: &str, operator: Option<Uuid>, ctx: &Ctx, now: OffsetDateTime) -> EventDraft {
+pub(crate) fn event(
+    action: &str,
+    operator: Option<Uuid>,
+    ctx: &Ctx,
+    now: OffsetDateTime,
+) -> EventDraft {
     EventDraft::new(action, operator, now).from_request(ctx.request, ctx.ip_text())
 }
 

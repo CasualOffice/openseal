@@ -334,7 +334,7 @@ fn org_row(r: &PgRow, detail: bool) -> Result<OrganizationRow> {
 /// The platform store, over a pool connected as `openseal_console`.
 #[derive(Debug, Clone)]
 pub struct PlatformStore {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
 }
 
 impl PlatformStore {
@@ -750,7 +750,7 @@ impl PlatformStore {
 /// committed together.
 #[derive(Debug)]
 pub struct PlatformTx {
-    tx: Transaction<'static, Postgres>,
+    pub(crate) tx: Transaction<'static, Postgres>,
 }
 
 impl PlatformTx {

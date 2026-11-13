@@ -611,6 +611,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "casual-sign-platform-store",
+ "casual-sign-policy",
  "casual-sign-secrets",
  "http-body-util",
  "serde",
@@ -766,6 +767,8 @@ name = "casual-sign-platform-store"
 version = "0.0.1"
 dependencies = [
  "casual-sign-audit",
+ "casual-sign-policy",
+ "serde_json",
  "sqlx",
  "time",
  "tokio",
