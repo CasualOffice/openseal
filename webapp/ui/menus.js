@@ -1,7 +1,7 @@
 // Menus, tabs and the drawer of the component library (WEB-02 redesign). The ARIA
 // menu-button, tabs and dialog patterns: arrow keys, Home, End, Escape, focus return.
 
-import { h, clear } from "../dom.js";
+import { h, clear, rootPx } from "../dom.js";
 import { icon } from "../icons.js";
 import { t } from "../i18n.js";
 import { button } from "./core.js";
@@ -14,12 +14,14 @@ document.addEventListener("click", (e) => { for (const m of [...open]) if (!m.co
 // `overflow: hidden` clips it, and it is placed from its button's box: below it, or
 // above when there is more room there; inside the viewport, scrolling when taller.
 const POPOVER = typeof HTMLElement !== "undefined" && typeof HTMLElement.prototype.showPopover === "function";
-const EDGE = 8; // px kept clear of the viewport's edges
-const GAP = 4; // px between the button and its menu
 
 /// Where a menu of `menu` size goes for a button at `anchor` in a `view`-sized
-/// viewport: `{left, top, maxHeight, above}` in px. Pure, for the tests.
-export function placeMenu(anchor, menu, view, align = "end") {
+/// viewport: `{left, top, maxHeight, above}` in px. 0.5 rem stays clear of the
+/// viewport's edges and 0.25 rem between the button and its menu; `remPx` is 1 rem in
+/// px (the root size; WEB-12). Pure, for the tests.
+export function placeMenu(anchor, menu, view, align = "end", remPx = rootPx()) {
+  const EDGE = 0.5 * remPx;
+  const GAP = 0.25 * remPx;
   const width = Math.min(menu.width, view.width - 2 * EDGE);
   let left = align === "start" ? anchor.left : anchor.right - width;
   left = Math.max(EDGE, Math.min(left, view.width - EDGE - width));
@@ -48,9 +50,9 @@ export function menuButton({ label, items, trigger = null, buttonOpts = {}, alig
     const r = btn.getBoundingClientRect();
     const root = document.documentElement;
     const p = placeMenu(r, { width: list.offsetWidth, height: list.scrollHeight }, { width: root.clientWidth, height: root.clientHeight }, align);
-    list.style.left = `${p.left}px`;
-    list.style.top = `${p.top}px`;
-    list.style.maxHeight = `${p.maxHeight}px`;
+    list.style.left = `${p.left}px`; // px-ok: measured client rects (placeMenu)
+    list.style.top = `${p.top}px`; // px-ok: measured client rects (placeMenu)
+    list.style.maxHeight = `${p.maxHeight}px`; // px-ok: measured client rects (placeMenu)
     list.classList.toggle("is-above", p.above);
   };
   const onMove = (e) => { if (!list.contains(e.target)) place(); };

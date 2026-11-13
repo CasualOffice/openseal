@@ -133,32 +133,166 @@ async function panelMayClose() {
   return confirmDialog(t("shell.panel-leave-title"), t("shell.panel-leave-text"), { confirm: t("shell.panel-leave"), danger: true });
 }
 
-/// Put `hash` in the address bar without a new navigation.
-const setHash = (hash) => history.replaceState(null, "", `${location.pathname}${location.search}${hash}`);
+/// Put `hash` in the address bar without a new navigation (keeping the entry's key).
+const setHash = (hash) => history.replaceState(history.state, "", `${location.pathname}${location.search}${hash}`);
 
-/// Drop the screens after `view` once it has something to show: when its first child
-/// arrives (a MutationObserver callback, a microtask, so before the next paint), when its
-/// mount finishes, or after 400 ms, whichever is first. Until then the empty new view sits
-/// above the old, inert one: a route switch never paints an empty card (WEB-17), and the
-/// new view is visible from the start, so a screen can focus its first field.
-function revealWhenReady(main, view, mounted) {
-  let shown = false;
-  const show = () => {
-    if (shown || !view.isConnected) return;
-    shown = true;
-    obs?.disconnect();
-    clearTimeout(timer);
-    for (const old of [...main.children]) if (old !== view) old.remove();
-    view.classList.remove("is-entering");
-    main.scrollTop = 0;
-    if (narrow()) window.scrollTo(0, 0);
+// ---- Module switching (WEB-12: L-06, L-10, NAV-01…06, NAV-32, NAV-34, NAV-36) -------------
+//
+// A switch between two screens of the content card never blanks or fades the page: the
+// new screen is built off the page (so the page never holds two screens at once, and
+// its focus calls are held until it is in; a document preview paints once it has a
+// width) and swapped in, in one frame, once it has drawn (its mount settled and nothing in it `aria-busy`) or
+// after `SWAP_BUDGET_MS`, whichever is first. A quick answer shows no skeleton at all; a
+// slow one shows the old screen for a moment, then the new one's skeleton. The section
+// in the sidebar moves the moment the address changes. After the swap the scroll is the
+// top for a new navigation, or where the user left it for Back, Forward and reload
+// (`history.state.osKey` names each history entry); focus moves to the new page's
+// heading, which is announced; the tab's title is the heading's text.
+
+/// How long the old screen may stay while the new one draws.
+const SWAP_BUDGET_MS = 250;
+
+/// Where each history entry was scrolled to, by its key, for the tab's life.
+const SCROLL_KEY = "openseal.scroll";
+const scrolls = new Map((() => { try { return JSON.parse(globalThis.sessionStorage?.getItem(SCROLL_KEY) || "[]"); } catch { return []; } })());
+function saveScrolls() {
+  try { globalThis.sessionStorage?.setItem(SCROLL_KEY, JSON.stringify([...scrolls].slice(-50))); } catch { /* storage off: this page only */ }
+}
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+/// The history entry on screen, by its key.
+let shownKey = null;
+/// The options of the route on screen (chrome, frame), or null before the first.
+let shownOpts = null;
+
+/// The content card scrolls on its own on a desktop; below 60em the window does.
+const scrollPos = () => (narrow() ? window.scrollY : document.getElementById("main")?.scrollTop || 0);
+function scrollToY(y) {
+  if (narrow()) window.scrollTo(0, y);
+  else { const main = document.getElementById("main"); if (main) main.scrollTop = y; }
+}
+
+/// The key of the current history entry, and whether it is new (never shown before: a
+/// link or a typed address, not Back, Forward or a reload).
+function entryKey() {
+  const have = history.state?.osKey;
+  if (have) return [have, false];
+  const key = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  history.replaceState({ ...(history.state || {}), osKey: key }, "");
+  return [key, true];
+}
+
+/// Scroll to `y` once the page is tall enough for it (content may still be drawing),
+/// for up to 1.5 s or until the user scrolls, presses a key or touches the page.
+function restoreScroll(y) {
+  scrollToY(y);
+  if (!y || Math.abs(scrollPos() - y) < 2) return;
+  let stop = false;
+  const evs = ["wheel", "touchstart", "keydown", "pointerdown"];
+  const end = () => { stop = true; for (const ev of evs) removeEventListener(ev, end, true); };
+  for (const ev of evs) addEventListener(ev, end, { passive: true, capture: true });
+  const t0 = performance.now();
+  const tick = () => {
+    if (stop) return;
+    if (performance.now() - t0 > 1500) { end(); return; }
+    scrollToY(y);
+    if (Math.abs(scrollPos() - y) < 2) { end(); return; }
+    requestAnimationFrame(tick);
   };
-  const obs = typeof MutationObserver === "function" ? new MutationObserver(() => { if (view.firstElementChild) show(); }) : null;
-  obs?.observe(view, { childList: true });
-  if (view.firstElementChild) show();
-  const timer = setTimeout(show, 400);
-  mounted.then(show, show);
-  return show;
+  requestAnimationFrame(tick);
+}
+
+/// The route entry and match for `hash`, or null.
+function matchRoute(hash) {
+  for (const r of ROUTES) {
+    const m = hash.match(r[0]);
+    if (m) return [r, m];
+  }
+  return null;
+}
+
+/// Mark the section of `opts` current in the sidebar (on the click, before anything loads).
+function markSection(opts) {
+  for (const a of document.querySelectorAll(".os-nav__link")) {
+    if (opts?.nav && a.dataset.nav === opts.nav) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  }
+}
+
+/// Each section's link returns to where the user last was in it (a folder, a search, an
+/// admin tab), as DocuSign's do; its `data-base` is the section's own address.
+function rememberSection(hash, opts) {
+  if (!opts?.nav) return;
+  for (const a of document.querySelectorAll(`.os-nav__link[data-nav="${opts.nav}"]`)) {
+    const base = a.dataset.base;
+    if (base && (hash === base || hash.startsWith(`${base}?`))) a.setAttribute("href", hash);
+  }
+}
+
+/// Start loading the code a screen needs before it is chosen (hover, focus, idle).
+const prefetched = new Set();
+function prefetch(hash) {
+  const hit = matchRoute(hash || "");
+  if (!hit || prefetched.has(hit[0])) return;
+  prefetched.add(hit[0]);
+  Promise.resolve().then(() => hit[0][1]()).catch(() => prefetched.delete(hit[0]));
+}
+let prefetchedAll = false;
+function prefetchAll() {
+  if (prefetchedAll) return;
+  prefetchedAll = true;
+  const idle = globalThis.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+  idle(() => { for (const hash of ["#/home", "#/agreements", "#/templates", "#/reports", "#/envelopes/x", "#/prepare"]) prefetch(hash); });
+}
+
+/// The tab's title: the page heading's text, then the product.
+function syncTitle(view) {
+  const text = view.querySelector("h1")?.textContent.trim() || "";
+  const want = text ? `${text} · ${t("app.name")}` : t("app.name");
+  if (document.title !== want) document.title = want;
+  return text;
+}
+let titleWatch = null;
+
+/// Resolve once `view` has drawn: `mounted` settled and nothing in it busy (a document
+/// preview may keep loading its pages), or `budget` ms spent.
+function drawn(view, mounted, budget) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    mounted.then(() => { settled = true; }, () => { settled = true; });
+    const t0 = performance.now();
+    const check = () => {
+      if (done) return;
+      if (settled && !view.querySelector('[aria-busy="true"]:not(.os-preview)')) { finish(); return; }
+      if (performance.now() - t0 >= budget) { finish(); return; }
+      setTimeout(check, 16);
+    };
+    // After a microtask: a screen that draws synchronously swaps in at once.
+    queueMicrotask(check);
+  });
+}
+
+/// While `view` is built off the page, a screen's call to focus one of its own elements
+/// (a form's first field) cannot take effect: hold the last such call and give it to its
+/// element once the view is in the page. `release(true)` applies it, `release(false)`
+/// only stops holding.
+const nativeFocus = HTMLElement.prototype.focus;
+let staging = null;
+function holdFocus(view) {
+  staging = { view, call: null };
+  if (HTMLElement.prototype.focus === nativeFocus) {
+    HTMLElement.prototype.focus = function focus(...args) {
+      if (staging && !this.isConnected && staging.view.contains(this)) { staging.call = [this, args]; return undefined; }
+      return nativeFocus.apply(this, args);
+    };
+  }
+  const mine = staging;
+  return {
+    release(apply) {
+      if (staging === mine) { staging = null; HTMLElement.prototype.focus = nativeFocus; }
+      if (apply && mine.call && mine.call[0].isConnected) nativeFocus.apply(mine.call[0], mine.call[1]);
+    },
+  };
 }
 
 /// Replace whatever `main` shows with a fresh view at once (error and no-server states).
@@ -167,14 +301,24 @@ function freshView(main) {
   const view = h("div", { class: "os-view" });
   main.append(view);
   main.scrollTop = 0;
+  shownOpts = { chrome: true };
   return view;
 }
 
-async function route() {
+/// `how.reset`: a section chosen again starts over at the top (NAV-32).
+async function route(how) {
   const seq = ++routeSeq;
+  const reset = how?.reset === true;
   const hash = location.hash || "#/home";
+  // Where the screen being left was scrolled to, under its history entry's key.
+  if (shownKey) { scrolls.set(shownKey, scrollPos()); saveScrolls(); }
   // Any navigation closes the drawer and the command menu first, so a question asked
-  // below (unsaved work) is never answered behind them.
+  // below (unsaved work) is never answered behind them. The drawer closes at once,
+  // without its slide (NAV-34).
+  if (document.body.classList.contains("nav-open")) {
+    document.body.classList.add("nav-instant");
+    requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.remove("nav-instant")));
+  }
   closeNav();
   closePalette();
   // A screen with unsaved work may hold the user (A12): put the old address back if so.
@@ -195,6 +339,10 @@ async function route() {
     if (seq !== routeSeq) return;
     setHash(hash);
   }
+  const [key, fresh] = entryKey();
+  // The click is acknowledged at once: the section moves before anything loads.
+  const early = matchRoute(hash);
+  if (early) markSection(early[0][2]);
   // Panels and the toasts about the screen belong to it: a new screen starts clean.
   closePanel();
   clearViewToasts();
@@ -221,12 +369,7 @@ async function route() {
       return;
     }
   }
-  let match = null;
-  let entry = null;
-  for (const r of ROUTES) {
-    match = hash.match(r[0]);
-    if (match) { entry = r; break; }
-  }
+  let [entry, match] = matchRoute(hash) || [null, null];
   // Admin is shown to account admins only; the server enforces it on every call.
   const adminLink = document.getElementById("nav-admin");
   if (adminLink) adminLink.hidden = !ctx.session?.admin;
@@ -234,38 +377,117 @@ async function route() {
   if (!entry && /^#\/?$/.test(hash)) { ctx.navigate("#/home"); return; }
   if (!entry) { entry = NOT_FOUND; match = [hash]; }
   if (hash === "#/signin" && ctx.session) { ctx.navigate("#/home"); return; }
-  const mod = await entry[1]();
+  const opts = entry[2];
+  markSection(opts);
+  let mod;
+  try {
+    mod = await entry[1]();
+  } catch (err) {
+    // The screen's code did not arrive (offline, a new deployment): say so, with a retry.
+    if (seq !== routeSeq) return;
+    errorState(freshView(main), err, route);
+    return;
+  }
   if (seq !== routeSeq) return;
   if (cleanup) { try { cleanup(); } catch { /* a screen's own teardown */ } cleanup = null; }
+  titleWatch?.disconnect();
   ctx.contexts = ["global"];
   ctx.onSearch = null;
   if (!whoLoaded && ctx.session) { whoLoaded = true; loadWho(); }
-  if (ctx.session) { refreshActivity(); drawNavViews().catch(() => { /* the views are a shortcut; the screen still works */ }); }
-  const opts = entry[2];
-  const layoutChanges = document.body.classList.contains("is-chromeless") !== (opts.chrome === false)
-    || document.body.classList.contains("is-frame") !== !!opts.frame;
-  document.body.classList.toggle("is-chromeless", opts.chrome === false);
-  document.body.classList.toggle("is-wide", !!opts.wide);
-  document.body.classList.toggle("is-frame", !!opts.frame);
-  for (const a of document.querySelectorAll(".os-nav__link")) {
-    if (opts.nav && a.dataset.nav === opts.nav) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  if (ctx.session) {
+    refreshActivity();
+    drawNavViews().catch(() => { /* the views are a shortcut; the screen still works */ });
+    prefetchAll();
   }
-  // The old screen stays, inert, until the new one has something to show.
-  for (const old of main.children) { old.inert = true; old.setAttribute("aria-hidden", "true"); old.classList.add("is-leaving"); }
-  if (layoutChanges) clear(main);
-  const view = h("div", { class: "os-view is-entering" });
-  main.prepend(view);
+  rememberSection(hash, opts);
+
+  // Staged only between two screens of the content card: the editor and sign-in measure
+  // the whole window while they mount, and the first screen has nothing to replace.
+  const first = !shownOpts;
+  const managed = (o) => !!o && o.chrome !== false && !o.frame;
+  const old = [...main.children].filter((c) => c.classList.contains("os-view"));
+  const stage = old.length > 0 && managed(opts) && managed(shownOpts);
+  const applyFrame = () => {
+    document.body.classList.toggle("is-chromeless", opts.chrome === false);
+    document.body.classList.toggle("is-wide", !!opts.wide);
+    document.body.classList.toggle("is-frame", !!opts.frame);
+    shownOpts = opts;
+  };
+  const view = h("div", { class: first ? "os-view is-first" : "os-view" });
   const params = new URLSearchParams(hash.split("?")[1] || "");
-  const mounted = Promise.resolve().then(() => mod.mount(view, ctx, match.slice(1), params));
-  const show = revealWhenReady(main, view, mounted);
+  let mounted;
+  if (stage) {
+    // The old screen stays, inert, until the new one has drawn off the page.
+    for (const o of old) { o.inert = true; o.classList.add("is-leaving"); }
+    const held = holdFocus(view);
+    mounted = Promise.resolve().then(() => mod.mount(view, ctx, match.slice(1), params));
+    mounted.catch(() => { /* reported below */ });
+    await drawn(view, mounted, SWAP_BUDGET_MS);
+    held.release(false);
+    if (seq !== routeSeq) {
+      // Overtaken by another navigation while it drew: never shown.
+      mounted.then((c) => { try { c?.(); } catch { /* its own teardown */ } }, () => {});
+      return;
+    }
+    applyFrame();
+    main.replaceChildren(view);
+    held.release(true);
+  } else {
+    applyFrame();
+    clear(main);
+    main.append(view);
+    mounted = Promise.resolve().then(() => mod.mount(view, ctx, match.slice(1), params));
+  }
+
+  // Scroll: the top for a new navigation (NAV-02), where it was for Back, Forward and a
+  // reload (NAV-03). The editor's frame keeps its own.
+  shownKey = key;
+  if (!opts.frame) {
+    if (fresh || reset || !scrolls.has(key)) { main.scrollTop = 0; if (narrow()) window.scrollTo(0, 0); } else restoreScroll(scrolls.get(key));
+  }
+
   try {
     cleanup = (await mounted) || null;
-  } finally {
-    show();
+  } catch (err) {
+    if (seq !== routeSeq) return;
+    if (!ctx.failed(err)) errorState(view, err, route);
+    return;
   }
-  if (seq !== routeSeq) return;
+  if (seq !== routeSeq) {
+    // Overtaken while it finished mounting: its own teardown, not the next screen's.
+    try { cleanup?.(); } catch { /* its own teardown */ }
+    cleanup = null;
+    return;
+  }
   syncScreenSearch();
-  if (document.activeElement === document.body || !document.activeElement) main.focus({ preventScroll: true });
+
+  // The tab's title follows the page heading, which a screen may fill in late (an
+  // envelope's subject).
+  const heading = syncTitle(view);
+  if (typeof MutationObserver === "function") {
+    titleWatch = new MutationObserver(() => syncTitle(view));
+    titleWatch.observe(view, { childList: true, subtree: true, characterData: true });
+  }
+
+  // Focus (NAV-05): after a switch, the new screen's heading, so the next Tab starts in
+  // it and a screen reader says where the user is; not when the screen put focus in
+  // itself, a dialog or a panel is open, or on the first screen of a visit.
+  const active = document.activeElement;
+  const inView = active && active !== document.body && view.contains(active);
+  const elsewhere = active?.closest?.("dialog[open], .os-sheet, .os-cmdk");
+  if (!first && managed(opts) && !inView && !elsewhere) {
+    const h1 = view.querySelector("h1");
+    if (h1) {
+      if (!h1.hasAttribute("tabindex")) h1.setAttribute("tabindex", "-1");
+      h1.focus({ preventScroll: true });
+    } else {
+      main.focus({ preventScroll: true });
+    }
+    const live = document.getElementById("route-status");
+    if (live) live.textContent = heading ? t("shell.loaded", { name: heading }) : "";
+  } else if (document.activeElement === document.body || !document.activeElement) {
+    main.focus({ preventScroll: true });
+  }
 }
 
 // ---- Chrome ------------------------------------------------------------------------
@@ -454,13 +676,21 @@ function buildDrawer() {
   for (const a of document.querySelectorAll(".os-nav__link")) {
     a.prepend(icon(a.dataset.icon, { size: 16 }));
     if (mock && !a.getAttribute("href").startsWith("#")) a.href = `${a.getAttribute("href")}?mock=1`;
-    // A section already shown starts over when chosen again (its search and selection
-    // cleared), as DocuSign's do.
+    const base = a.getAttribute("href");
+    if (base.startsWith("#")) a.dataset.base = base;
+    // A section already shown starts over when chosen again (its search, folder and
+    // selection cleared, scrolled to the top), as DocuSign's do; from elsewhere its link
+    // returns to where the user was in it (rememberSection, WEB-12).
     a.addEventListener("click", async (e) => {
-      if (a.getAttribute("href") !== location.hash) return;
+      if (!base.startsWith("#")) return;
+      const here = location.hash === base || location.hash.startsWith(`${base}?`);
+      if (!here) return;
       e.preventDefault();
-      if (await panelMayClose()) route();
+      if (location.hash !== base) { a.setAttribute("href", base); ctx.navigate(base); return; }
+      if (await panelMayClose()) route({ reset: true });
     });
+    // Load the section's code before it is chosen (NAV-36).
+    for (const ev of ["pointerenter", "focus"]) a.addEventListener(ev, () => { if (ctx.session) prefetch(a.getAttribute("href")); }, { passive: true });
   }
   // Another menu opening closes the drawer.
   document.addEventListener("click", (e) => {
@@ -479,7 +709,7 @@ function buildDrawer() {
 function openNav() {
   const nav = document.getElementById("nav");
   const bar = document.querySelector(".os-topbar");
-  document.documentElement.style.setProperty("--os-nav-top", `${Math.max(0, bar.getBoundingClientRect().bottom)}px`);
+  document.documentElement.style.setProperty("--os-nav-top", `${Math.max(0, bar.getBoundingClientRect().bottom)}px`); // px-ok: a measured client rect
   document.body.classList.add("nav-open");
   document.getElementById("nav-toggle").setAttribute("aria-expanded", "true");
   document.getElementById("nav-scrim").hidden = false;
@@ -780,6 +1010,15 @@ function registerCommands() {
   register("theme.dark", { label: t("theme.dark"), run: () => setTheme("dark") });
   register("theme.system", { label: t("theme.system"), run: () => setTheme("system") });
   register("envelope.new", { label: t("nav.new"), run: () => ctx.navigate("#/prepare"), enabled: () => !!ctx.session });
+  // G then a letter goes to a section (NAV-35; keys.js), from any screen of the app's
+  // frame; Admin only for an account admin.
+  for (const [id, hash] of [["home", "#/home"], ["agreements", "#/agreements"], ["templates", "#/templates"], ["reports", "#/reports"], ["admin", "#/admin"]]) {
+    register(`nav.${id}`, {
+      label: t(`cmd.nav.${id}`),
+      run: () => ctx.navigate(hash),
+      enabled: () => withChrome() && (id !== "admin" || !!ctx.session?.admin),
+    });
+  }
   register("account.profile", {
     label: t("account.profile"),
     run: async () => (await import("./profile.js")).openProfile(ctx, { onSaved: (me) => { who.name = me.name || who.name; syncAvatar(); } }),
