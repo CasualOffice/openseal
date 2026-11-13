@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::{affected, hash32, text_enum};
+use crate::admin_log::{AdminChange, settings_changes};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{AnalysisRunId, EnvelopeId, SuggestionId, TemplateDocumentId, TemplateId, UserId};
 use crate::store::TenantTx;
@@ -268,6 +269,19 @@ pub struct Ml<'t> {
     pub(crate) tx: &'t mut TenantTx,
 }
 
+/// The switches as the admin log records them: no document content, no personal data.
+fn settings_value(s: &MlSettings) -> serde_json::Value {
+    serde_json::json!({
+        "ocr": s.ocr,
+        "template_matching": s.template_matching,
+        "extraction": s.extraction,
+        "personal_data": s.personal_data,
+        "personal_data_model": s.personal_data_model,
+        "ocr_scripts": s.ocr_scripts,
+        "reread_scanner_text": s.reread_scanner_text,
+    })
+}
+
 fn status(s: &str) -> Result<RunStatus> {
     RunStatus::parse(s, "analysis_runs.status")
 }
@@ -299,7 +313,10 @@ impl Ml<'_> {
         }))
     }
 
-    /// Store the workspace's switches, as `by` set them.
+    /// Store the workspace's switches, as `by` set them, and append
+    /// `workspace.ml_settings_changed` to the workspace's admin log in the same
+    /// transaction (ORG-05, docs/23 §2.5), naming each switch that changed with its old
+    /// and new value. A save that changes nothing writes no event.
     ///
     /// # Errors
     ///
@@ -310,6 +327,7 @@ impl Ml<'_> {
         by: UserId,
         now: OffsetDateTime,
     ) -> Result<()> {
+        let old = self.settings().await?;
         let acct = self.tx.acct();
         sqlx::query!(
             "INSERT INTO ml_settings (account_id, ocr, template_matching, extraction, personal_data, \
@@ -336,7 +354,16 @@ impl Ml<'_> {
         .execute(self.tx.conn())
         .await
         .map_err(db)?;
-        Ok(())
+        let changes = settings_changes(&settings_value(&old), &settings_value(s));
+        if changes.is_empty() {
+            return Ok(());
+        }
+        let mut change =
+            AdminChange::new("workspace.ml_settings_changed").target("workspace", acct);
+        for c in changes {
+            change = change.change(c);
+        }
+        self.tx.admin_event(change).await
     }
 
     /// The `ml.*` entitlements the workspace's plan grants; none without a row.

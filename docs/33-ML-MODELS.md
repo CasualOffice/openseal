@@ -589,7 +589,8 @@ settings show "not installed on this server".
   envelope's state, audit chain or documents (`tests/ml.rs` in the worker compares state and events before and
   after).
 - **Routes (§6)**, as `webapp/api.js` calls them: `GET`/`PATCH /account/settings/ml` (scope `admin:account`; answers
-  also `not_in_plan` and `installed`; `models` and `ocr_packs` are not sent yet), `POST`/`GET
+  also `not_in_plan` and `installed`; `models` and `ocr_packs` are not sent yet; a change appends
+  `workspace.ml_settings_changed` to the workspace's admin log, ORG-05), `POST`/`GET
   /envelopes/{id}/documents/{doc}/analysis` (a run: `{id, document_id, status, uses, ocr_pages, truncated,
   bundle_id}`; `POST` is `202`, a draft only, else `409 CS-WF-0001`), `GET /envelopes/{id}/suggestions` (`kind`,
   `state`, `cursor`, `limit` 1 to 200; only the kinds whose feature is in effect; `value` read from the stored text at

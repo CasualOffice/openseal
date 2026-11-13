@@ -282,6 +282,31 @@ async fn settings_are_off_by_default_and_gated_by_plan_and_admin() {
         StatusCode::OK,
         "reset model",
     );
+    // Each change is on the workspace's admin log, in its transaction (ORG-05): the
+    // switches by name with old and new values; a save that changes nothing writes none.
+    let log = ok(
+        api.call("GET", "/api/v1/admin-events?limit=1000", &a.auth, None, &[])
+            .await,
+        StatusCode::OK,
+        "admin events",
+    );
+    let ml: Vec<&Value> = log["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["action"] == "workspace.ml_settings_changed")
+        .collect();
+    assert_eq!(ml.len(), 2, "{log}");
+    let keys: Vec<&str> = ml[0]["event"]["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, ["ocr", "ocr_scripts", "personal_data_model"], "{log}");
+    assert_eq!(ml[0]["event"]["changes"][0]["old"], false);
+    assert_eq!(ml[0]["event"]["changes"][0]["new"], true);
+    assert_eq!(ml[1]["event"]["changes"][0]["key"], "personal_data_model");
     // A credential without admin:account is refused.
     let key = ok(
         api.call(
