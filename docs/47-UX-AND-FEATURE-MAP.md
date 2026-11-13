@@ -340,7 +340,7 @@ this branch's last commit.
 
 | # | Screen | Problem | Heuristic / SC | Sev | Fix | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| A1 | Editor | The pages get 56 % of the width at 1440 and ~690 px of height: app bar, demo banner, step bar, zoom bar and wizard footer stack ~290 px of chrome | H8; owner | P0 | Editor frame `100dvh` without the app bar; one toolbar row; panels 13.5 / 15 rem; pages ≥ 65 % of the width | Fixed |
+| A1 | Editor | The pages get 56 % of the width at 1440 and ~690 px of height: app bar, demo banner, step bar, zoom bar and wizard footer stack ~290 px of chrome | H8; owner | P0 | Editor frame `100dvh` without the app bar; one toolbar row; panels 13.5 / 15 rem (now following the window, 13 / 14 to 16.5 / 17.5 rem, WEB-17); pages ≥ 65 % of the width | Fixed |
 | A2 | Editor, phone | Palette, zoom bar and a 60–75 vh stage inside a scrolling body: two scrollbars, the page scroll fights the stage | H8; owner | P0 | One scroll container; palette and properties in bottom sheets | Fixed |
 | A3 | Editor, signer, previews | Zoom repaints every page and jumps to the top; "Fit width" sets 100 % (capped at 1.5× fit); no fit page, presets, Ctrl/Cmd +/−/0 or trackpad pinch | H4, H7; owner | P0 | `docview.js`: fit width, fit page, 50–200 %; keys; Ctrl+wheel and touch pinch; scroll anchored at the pointer or the centre | Fixed |
 | A4 | Editor, signer, previews | Every page and thumbnail painted at once; long documents are slow and hold every bitmap | H7 | P1 | Pages near the viewport painted, far ones released; placeholders keep their size | Fixed |
@@ -1060,7 +1060,8 @@ The signer page rebuilt on `docs/assets/design-canvas/Signer.dc.html` and `Signe
 - **Tests.** `ceremony`, `guided-ceremony`, `decline`, `sign-layout` and `a11y-sign` specs updated to the new UI with
   their behavioural assertions kept (Finish hidden until ready instead of `aria-disabled`; the field list through More;
   the page centred instead of the Start flag; the receipt's facts and Verify link instead of the "What happens next"
-  list); `decline.spec` scopes the sender's "Reason given" to the callout (it matched twice on the sender's page).
+  list); `decline.spec` scopes the sender's "Reason given" to the callout. It matched twice because the recipient row
+  repeated it; the row no longer does, and the spec checks it is said once (integration fix).
 
 ## As built: Agreements, the inspector, the envelope page and Home on the approved canvas (WEB-17 / WEB-18 lane A, 2026-11-13)
 
@@ -1163,6 +1164,14 @@ commands and the server, as before.
   reads `ml.js`; with the mock's `openseal.mock.ml = off` (the real server's 404 today) none of it appears.
 - **Phones**: the bar is two rows (title and Continue, then the steps); the tool bar becomes the bottom bar with the page
   indicator, Field settings and Add field; the library and properties are bottom sheets as before.
+- **Panel widths** (integration fix): the canvas's 16.5 / 17.5 rem panels left the pages 59 % of a 1280 window and 63 %
+  of a 1440 one, under the 65 % rule (owner instruction 22). Their default widths now follow the window: 13 / 14 rem at
+  1280 px and below, the canvas's widths from 1700 px up, half-rem steps between (14.5 / 15.5 rem at 1440). Resizing,
+  the rail and memory are unchanged. The canvas hides the dock header while a panel is open, which also hid the
+  collapse control; **Hide Fields** now sits beside Pages. The right panel collapses from its handle (Enter) and
+  folds itself below 75em.
+- **ML found missing late**: a suggestions call that answers 404 or `CS-ML-0011` marks ML unavailable for the session
+  (`ml.js`), so the fine print hides even when the status was read before the server stopped answering.
 
 Tests: `tests/editor.test.mjs` (10 new: library and keys, key to tool, step marks, Continue held, checks, recipients
 list, template offer, template plan, OCR pages, personal data). `e2e/editor.spec.mjs` adds three canvas specs
