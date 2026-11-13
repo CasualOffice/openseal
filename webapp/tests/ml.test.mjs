@@ -137,6 +137,19 @@ test("with ML off on the server (404) or not in the plan (CS-ML-0011), the layer
   }
 });
 
+test("a suggestions call that answers 404 after the status said available hides ML for the session", async () => {
+  // The status was read while the server still answered (or a non-admin's 403 assumed
+  // every feature); then the envelope's own call answers 404: every surface that asks
+  // the status from now on must hide (the editor's fine print, WEB-18).
+  const c = await signedIn();
+  const gone = { ...c, listSuggestions: () => Promise.reject(new ApiError({ status: 404, code: "CS-API-0002" })) };
+  initMl(gone);
+  assert.equal((await mlStatus()).available, true);
+  const vendor = await byPrefix(c, "Vendor services");
+  assert.deepEqual(await loadSuggestions(vendor.id), []);
+  assert.equal((await mlStatus()).available, false);
+});
+
 // ---- the store: optimistic, rolled back, announced -------------------------------------------------
 
 test("accept and dismiss show at once, roll back when refused, and tell listeners", async () => {

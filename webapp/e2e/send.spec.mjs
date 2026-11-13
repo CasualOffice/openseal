@@ -76,11 +76,11 @@ test("upload, two signers in order and a CC, fields for each, send", async ({ pa
   await confirm.getByRole("button", { name: "Send" }).click();
   await expect(page.getByRole("heading", { name: "Recipients" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".os-page-head .os-badge")).toHaveText("Sent");
-  await expect(page.locator(".os-timeline__item")).toHaveCount(3);
+  await expect(page.getByTestId("recipient-row")).toHaveCount(3);
 
   await page.getByRole("link", { name: "Agreements" }).first().click();
-  const row = page.locator("tr", { hasText: subject });
-  await expect(row).toContainText("Sent");
+  const row = page.locator(".os-agr-row[data-id]", { hasText: subject });
+  await expect(row).toHaveAttribute("data-status", "sent");
 });
 
 test("send refuses an envelope that is not ready, and says what is missing", async ({ page }) => {

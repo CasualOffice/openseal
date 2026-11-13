@@ -153,7 +153,7 @@ export function recipientsSection(env, audit, { mineId = null, detailed = false,
       h("span", { class: "os-sr-only", text: t("recipient.order-n", { n: r.routing_order }) }), main);
     if (detailed) {
       main.append(stepsOf(r, env, audit));
-      if (r.declined_reason) main.append(h("p", { class: "os-muted os-small", text: t("envelope.declined-reason", { reason: r.declined_reason }) }));
+      // A decline's reason is said once, in the envelope's decline callout, not again here.
       const canResend = onResend && ACTIVE.has(env.status) && SIGNING.has(r.type) && (r.status === "sent" || r.status === "delivered");
       if (canResend) li.append(button(t("envelope.resend"), { icon: "rotate-cw", size: "sm", variant: "subtle", attrs: { "aria-label": t("envelope.resend-to", { name: r.name || r.email }) }, onClick: (ev) => busy(ev.currentTarget, () => onResend(r)) }));
       if (mock && r.mock_token && ACTIVE.has(env.status) && ["sent", "delivered"].includes(r.status)) {

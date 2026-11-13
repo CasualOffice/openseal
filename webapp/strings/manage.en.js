@@ -180,7 +180,6 @@ export const MANAGE = {
   "envelope.audit-empty": "No events recorded yet.",
   "envelope.certificate": "Certificate",
   "envelope.created": "Created",
-  "envelope.declined-reason": "Reason given: {reason}",
   "envelope.documents": "Documents",
   "envelope.download": "Download signed PDF",
   "envelope.edit": "Edit draft",

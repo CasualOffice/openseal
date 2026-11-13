@@ -171,15 +171,26 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const palettePanel = h("section", { class: "os-panel os-panel--palette", attrs: { "aria-labelledby": "pal-h" } });
   const thumbsBox = h("nav", { class: "os-thumbs", attrs: { "aria-label": t("prepare.thumbs") } });
   const thumbs = thumbnails(dv, thumbsBox, { width: 56, byDocument: true });
-  const leftDock = dockPanel({ id: "editor-fields", side: "left", title: t("prepare.fields"), icon: "signature", width: 16.5, min: 13, max: 24, testId: "panel-fields" });
+  // The docked panels' default widths follow the window (owner instruction 22: the
+  // document gets the space, at least 65 % of the width on a desktop): their minimums
+  // at 1280 px and below, the canvas's 16.5 and 17.5 rem from 1700 px up, in half-rem
+  // steps between. A width the user sets by dragging or by keys is remembered instead.
+  const grown = Math.min(1, Math.max(0, (innerWidth - 1280) / (1700 - 1280)));
+  const dockWidth = (lo, hi) => Math.round((lo + grown * (hi - lo)) * 2) / 2;
+  const leftDock = dockPanel({ id: "editor-fields", side: "left", title: t("prepare.fields"), icon: "signature", width: dockWidth(13, 16.5), min: 13, max: 24, testId: "panel-fields" });
   leftDock.el.classList.add("os-prepdock");
   leftDock.body.append(palettePanel);
   leftDock.body.classList.add("os-dock__body--split");
+  // The canvas hides the dock's own header while the panel is open on a desktop, so the
+  // panel's collapse to the icon rail (WEB-06) lives here, beside Pages.
+  const hideLabel = t("panel.collapse", { name: t("prepare.fields") });
+  const hideFields = h("button", { type: "button", class: "os-prep-add os-prep-hide", attrs: { "aria-label": hideLabel, title: hideLabel, "aria-controls": "pb-editor-fields" } }, icon("panel-left-close", { size: 16 }));
+  hideFields.addEventListener("click", () => { leftDock.collapse(true); leftDock.el.querySelector(".os-dock__toggle")?.focus(); });
   const rail = h("section", { class: "os-prepare__rail os-panel--thumbs", attrs: { "aria-labelledby": "thumbs-h", "data-testid": "thumbs-rail" } },
-    h("h3", { id: "thumbs-h", class: "os-prep-h", text: t("prepare.pages-short") }), thumbsBox);
+    h("div", { class: "os-prep-h" }, h("h3", { id: "thumbs-h", text: t("prepare.pages-short") }), hideFields), thumbsBox);
   leftDock.body.append(rail);
   const props = h("div", { class: "os-props" });
-  const rightDock = dockPanel({ id: "editor-props", side: "right", title: t("prepare.properties"), icon: "settings", width: 17.5, min: 14, max: 30, testId: "panel-props", collapsed: matchMedia("(max-width: 74.999em)").matches });
+  const rightDock = dockPanel({ id: "editor-props", side: "right", title: t("prepare.properties"), icon: "settings", width: dockWidth(14, 17.5), min: 14, max: 30, testId: "panel-props", collapsed: matchMedia("(max-width: 74.999em)").matches });
   rightDock.el.classList.add("os-prepdock");
   rightDock.body.append(props);
   // Phones: the palette and the properties are bottom sheets; this opens the palette.
@@ -2084,6 +2095,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!mlOn) return;
     let items = [];
     try { items = await loadSuggestions(S.id, { refresh: true }); } catch (err) { if (!isUnavailable(err)) items = []; }
+    if (seq !== mlSeq) return;
+    // The suggestions call itself can answer 404 when the settings call did not (or the
+    // status was read before): then nothing ML shows, the fine print included.
+    if (!(await mlStatus()).available) { mlOn = false; renderProps(); return; }
     if (seq !== mlSeq) return;
     pii = featureOn(st, "personal_data") ? piiSummary(items) : null;
     const offer = featureOn(st, "template_matching") && tplState === "none" ? templateOffer(items) : null;
