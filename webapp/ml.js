@@ -158,7 +158,9 @@ export async function loadSuggestions(envId, { kind = null, refresh = false } = 
         if (!cursor || items.length >= 500) break;
       }
     } catch (err) {
-      if (isUnavailable(err)) return [];
+      // The server has no suggestions here (404, CS-ML-0011): ML is unavailable for the
+      // session, so every surface that asks `mlStatus` from now on hides too.
+      if (isUnavailable(err)) { status = Promise.resolve(statusFrom({ error: err })); return []; }
       throw err;
     }
     store.set(envId, items);

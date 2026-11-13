@@ -40,24 +40,26 @@ test.describe("document view", () => {
     const panel = page.getByTestId("panel-fields");
     const handle = page.getByRole("separator", { name: "Resize Fields" });
     const px = await rootPx(page);
-    await expect(handle).toHaveAttribute("aria-valuenow", "13.5");
+    // The default follows the window (13 rem at 1280 px up to the canvas's 16.5 rem at
+    // 1700 px, owner instruction 22): 14.5 rem at 1440 px.
+    await expect(handle).toHaveAttribute("aria-valuenow", "14.5");
     const w0 = await width(panel);
     await handle.focus();
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
-    await expect(handle).toHaveAttribute("aria-valuenow", "15.5");
+    await expect(handle).toHaveAttribute("aria-valuenow", "16.5");
     expect(await width(panel)).toBeCloseTo(w0 + 2 * px, 0);
     await page.keyboard.press("End");
     await expect(handle).toHaveAttribute("aria-valuenow", "24");
     await page.keyboard.press("Home");
-    await expect(handle).toHaveAttribute("aria-valuenow", "11");
+    await expect(handle).toHaveAttribute("aria-valuenow", "13");
     // Pointer: drag the inner edge 64 px to the right.
     const b = await handle.boundingBox();
     await page.mouse.move(b.x + b.width / 2, b.y + 200);
     await page.mouse.down();
     await page.mouse.move(b.x + b.width / 2 + 64, b.y + 200, { steps: 4 });
     await page.mouse.up();
-    expect(Number(await handle.getAttribute("aria-valuenow"))).toBeCloseTo(11 + 64 / px, 0);
+    expect(Number(await handle.getAttribute("aria-valuenow"))).toBeCloseTo(13 + 64 / px, 0);
     // Collapse to the icon rail; the body leaves, the rail stays.
     await page.getByRole("button", { name: "Hide Fields" }).click();
     expect(await width(panel)).toBeCloseTo(3 * px, 0);

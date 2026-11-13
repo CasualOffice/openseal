@@ -190,13 +190,14 @@ test("the signer page and its review show hostile names, labels and subjects as 
   }
   await page.goto(link);
   const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
-  const progress = page.locator("#bar-progress, #guide-progress").filter({ visible: true });
-  await expect(consent.or(progress)).toBeVisible();
+  // The progress, once there is some: the guide's, or the bar's screen-reader copy (empty on consent).
+  const progress = page.locator("#guide-progress, #bar-progress:not(:empty)").filter({ visible: true });
+  await expect(consent.or(progress).first()).toBeVisible();
   await clean(page, dialogs, "signer page (first screen)");
   if (await consent.isVisible()) {
     await page.getByLabel("I agree to use electronic records and signatures.").check();
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(progress).toBeVisible();
+    await expect(progress.first()).toBeVisible();
   }
   await clean(page, dialogs, "signer page");
   await page.getByRole("button", { name: "Finish" }).click();

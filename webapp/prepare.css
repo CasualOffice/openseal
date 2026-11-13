@@ -358,6 +358,9 @@
 .os-prep-h__aside { margin-left: auto; font-size: var(--os-fs-12); color: var(--os-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding-left: var(--os-s2); }
 .os-prep-add { margin-left: auto; display: inline-grid; place-items: center; width: var(--os-target-min); height: var(--os-target-min); border: 0; border-radius: 0.3125rem; background: transparent; color: var(--os-text); cursor: pointer; }
 .os-prep-add:hover { background: color-mix(in srgb, var(--os-text) 6%, transparent); }
+/* Hide the Fields panel to its rail (a desktop control; phones show the panel as a sheet). */
+.os-prep-hide { color: var(--os-muted); }
+@media (max-width: 47.999em) { .os-prep-hide { display: none; } }
 .os-prep-sep { height: 1px; margin: 0.625rem 0; background: var(--os-hairline); }
 .os-dock__body--split > .os-panel--palette { margin: 0; padding: 0 0 var(--os-s2); }
 
