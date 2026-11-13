@@ -187,6 +187,27 @@ and PostgreSQL 17). In every case an envelope ends `completed` on one verified s
 | PostgreSQL restarted or unreachable | API requests answer a `5xx` problem while it is down (the pool waits up to 10 s for a connection) and the server keeps running; the worker logs `claim_failed` and keeps polling. A job interrupted mid-flight runs again after its back-off when its failure was recorded once the database returned, or once its lease lapses when it could not be (up to 300 s) | The database back: both reconnect without a restart. A signer whose request failed retries it; it is applied once |
 | Object store refuses writes | The seal job retries with back-off (`CS-BLOB-0001`); no sealed bytes land and none are served; on its last attempt (15) the job hands over to a new seal job through the engine's `SealFailed` with an operator alert. The same holds for a database failure anywhere before the seal is stored (reading the envelope or the job's steps). Still dead-lettered, with a `job_dead` alert and the envelope `completing`: a failure no retry cures (`CS-DB-0008`–`0010`, `CS-BLOB-0003`/`0005`), a database failure after the seal is stored on the last attempt, and a database outage that lasts through the last attempt, so the handover itself cannot be written | The store back: the next attempt completes the envelope. Alert on `job_dead` and `seal_failed`; after a `job_dead` for `seal_envelope`, once the cause is fixed re-queue that job (`UPDATE jobs SET status = 'queued', attempts = 0, run_at = now() WHERE id = …`): a seal it already stored is read back, not made again |
 
+**The same cases on the production profile** (`HRD-10`): `tools/chaos/chaos_compose.py run` (CI job `chaos-compose`;
+needs Docker with Compose v2; `--no-build` reuses images built from this checkout) brings up
+`deploy/compose.production.yml` with throwaway secrets from `deploy/production/init-secrets.sh`, a CI seal PKI, the
+seal key in a SoftHSM token in keyd's volume (the PKCS#11 module mounted as an HSM vendor's would be) and recorded
+configuration manifests. The CI-only `tools/chaos/compose.chaos.yml` adds what an operator brings from outside: a
+mail sink that requires STARTTLS with a certificate from the internal CA (the worker trusts that CA through
+`SSL_CERT_FILE`), the development TSA behind a gate that holds each request six seconds so a seal can be caught in
+flight, and `verify-evidence` as a service; it sets no development switch (its unit tests check it against
+`tools/check-deploy.py`'s list). Two workers run. Each envelope has one signer who passes an access code through the
+API and the emailed link: a worker paused (`docker pause`) mid-seal past its lease while the other takes over, then
+resumed (it must record nothing); a worker `SIGKILL`ed from the host's PID namespace mid-seal and right after a
+finish (Docker's restart policy must restart it); keyd stopped while sealing (a `seal_failed` alert, nothing served,
+workers restarted meanwhile stay up); PostgreSQL killed (`docker compose stop -t 0`) between adopt and finish (the
+finish answers `5xx`, the retry signs once) and mid-seal; the object store killed mid-seal and its seal job pushed
+to its last attempt (it hands over, never dead). Retries are made due with `UPDATE jobs SET run_at = now()`; leases
+lapse in real time (the run takes about 20 minutes after the build). It then requires every envelope `completed` on
+exactly one sealed version, served (or `completing` with a `job_dead` alert and nothing served), `verify-evidence`
+and keyd's `verify-oplog` to pass, and pyHanko (`tools/verify-sealed.py`) to validate every sealed PDF; it writes
+`target/chaos-compose/report.json` and exits non-zero naming each problem. The driver's logic has unit tests
+(`python3 -I -m unittest discover -s tools/chaos -p 'test_*.py'`).
+
 A seal that failed after keyd signed signs again on the next attempt (keyd's log then shows two signatures for the
 envelope, `KEYD-03` reconciles); sealed bytes stored by an attempt that was not recorded stay in the write-once blob
 store unreferenced, are never served, and are not yet reclaimed (`HRD-09`).
@@ -252,7 +273,7 @@ Checked by running (2026-11-14, Docker 29.8 on macOS): Postgres and the object s
 their non-root users; a `verify-full` client gets TLS 1.3, a plain connection is refused (`no pg_hba.conf entry …
 no encryption`) and a wrong host name fails verification; the S3 gateway answers TLS 1.3 with the internal CA and
 every other SeaweedFS port is closed to the network. The whole stack end to end on this profile, with failure
-injection, is `HRD-01`'s.
+injection, is CI's `chaos-compose` job (§Failure recovery, `HRD-10`).
 
 ### Configuration integrity (ASVS 14.1.5, `ASVS-24`)
 

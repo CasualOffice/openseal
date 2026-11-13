@@ -283,3 +283,34 @@ jobs:
             target/backup-drill/compose-*.log
           if-no-files-found: ignore
           retention-days: 90
+
+  # HRD-10 (HRD-01's exit gate, docs/06 §Hardening release): the HRD-01 chaos cases on the
+  # hardened profile. deploy/compose.production.yml built from this commit, with throwaway
+  # secrets from deploy/production/init-secrets.sh, SoftHSM as the PKCS#11 token, and the
+  # CI-only tools/chaos/compose.chaos.yml (STARTTLS mail sink, a TSA behind a holding gate,
+  # the evidence verifier; no development switch). Envelopes go through the API while
+  # workers are paused past their lease and SIGKILLed mid-seal, keyd is stopped, and
+  # PostgreSQL and the object store are killed; each must end completed on exactly one
+  # seal (or completing with a job_dead alert), verify-evidence and keyd's log must
+  # verify, and pyHanko must validate every sealed PDF (tools/chaos/chaos_compose.py).
+  chaos-compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 -I -m unittest discover -s tools/chaos -p 'test_*.py'
+      - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
+      - run: python3 -I tools/chaos/chaos_compose.py run --verify-python /tmp/v/bin/python
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: chaos-compose
+          path: |
+            target/chaos-compose/report.json
+            target/chaos-compose/evidence.txt
+            target/chaos-compose/oplog.txt
+            target/chaos-compose/verify-sealed.txt
+            target/chaos-compose/sealed
+            target/chaos-compose/compose.log
+          if-no-files-found: ignore
+          retention-days: 90
