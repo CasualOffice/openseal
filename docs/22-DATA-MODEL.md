@@ -389,7 +389,7 @@ advisory document-analysis tables, each with `account_id`, RLS and the repositor
 packs, "re-read scanner text"; no row means every feature off), `ml_entitlements` (the plan's `ml.*` features; the
 application role may only read it), `analysis_runs` (one per document and job key: `kind` `analyze_document` or
 `fingerprint_template`, `uses`, `document_sha256`, `job_key` unique per account and naming the account and the
-document, `status` `queued`/`running`/`done`/`failed`/`unavailable`, `bundle_id`, `ocr_pages`, `truncated`, `code`;
+document (a retry after a `failed` or `unavailable` run takes `…:retry:{failed run id}`, `ML-24`), `status` `queued`/`running`/`done`/`failed`/`unavailable`, `bundle_id`, `ocr_pages`, `truncated`, `code`;
 exactly one of `envelope_id` and `template_id`, each a composite foreign key with `account_id`, `ON DELETE CASCADE`),
 `suggestions` (`kind` `template`/`entity`/`personal_data`, page, rect, label, UTF-8 byte span offsets and never the
 span text, the matched template and its page counts, score, model id and weights hash, `state`

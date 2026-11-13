@@ -9,6 +9,8 @@
 //!   that matches them gets a `template` suggestion.
 //! - A final model error ends the run `failed` with its code (the job completes); with no
 //!   model service the run ends `unavailable`.
+//! - A job that dies any other way (its last attempt failing after the run started, a
+//!   malformed payload) ends its run `failed` with the job's code (`ML-25`).
 //!
 //! Needs `OPENSEAL_TEST_DATABASE_URL`; without it the tests pass vacuously.
 
@@ -529,6 +531,71 @@ async fn a_final_model_error_fails_the_run_and_no_service_leaves_it_unavailable(
         (RunStatus::Failed, Some("CS-ML-0013"))
     );
     assert!(env.alerts.0.lock().unwrap().is_empty());
+}
+
+/// `ML-25`: every way an analysis job ends closes its run. A failure the analysis path
+/// does not handle itself, on the job's last attempt after the run started (the stored
+/// PDF gone), and a malformed payload buried at once, both end the run `failed` with
+/// the job's code instead of leaving it `running` or `queued` behind a dead job.
+#[tokio::test]
+async fn a_job_that_dies_any_way_ends_its_run_failed() {
+    let Some(env) = Env::new("ml_dead_job_ends_run").await else {
+        return;
+    };
+    *env.inference.lock().unwrap() = Some(Arc::new(Fake::default()));
+    let ids = env.draft(vec![]).await;
+    // A document whose bytes were never stored, on the job's last attempt.
+    let gone = enqueue(
+        &env,
+        hml::ANALYZE_DOCUMENT,
+        ids.doc,
+        (Some(ids.env), None),
+        [0x5a; 32],
+        &["entities"],
+    )
+    .await;
+    sqlx::query("UPDATE jobs SET attempts = max_attempts - 1 WHERE account_id = $1")
+        .bind(env.account.0)
+        .execute(&env.db.admin)
+        .await
+        .unwrap();
+    let out = env.run().await;
+    assert!(
+        out.iter().any(|(_, o)| matches!(o, JobOutcome::Dead(_))),
+        "{out:?}"
+    );
+    let r = run_row(&env, gone).await;
+    assert_eq!(
+        (r.status, r.code.as_deref(), r.finished_at.is_some()),
+        (RunStatus::Failed, Some("CS-WRK-0011"), true),
+        "a job dead after its run started ends the run"
+    );
+    // A payload that does not match its run: buried on its first attempt.
+    let (sha, _) = stored(&env, &two_pages()).await;
+    let bad = enqueue(
+        &env,
+        hml::ANALYZE_DOCUMENT,
+        ids.doc,
+        (Some(ids.env), None),
+        sha,
+        &["ocr"],
+    )
+    .await;
+    sqlx::query(
+        "UPDATE jobs SET payload = jsonb_set(payload, '{document_sha256}', to_jsonb(repeat('0', 64))) \
+         WHERE account_id = $1 AND status = 'queued'",
+    )
+    .bind(env.account.0)
+    .execute(&env.db.admin)
+    .await
+    .unwrap();
+    env.run().await;
+    let r = run_row(&env, bad).await;
+    assert_eq!(
+        (r.status, r.code.as_deref()),
+        (RunStatus::Failed, Some("CS-WRK-0004")),
+        "a malformed job ends its run"
+    );
 }
 
 /// Analysis rows of an envelope or a template, by table (the owner role, for counting):

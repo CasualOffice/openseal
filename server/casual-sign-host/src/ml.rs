@@ -172,6 +172,35 @@ pub fn fingerprint_key(
     )
 }
 
+/// The key prefix of a retry (`ML-24`): asking again after a run of this document ended
+/// `failed` or `unavailable` starts a new run keyed this prefix followed by the failed
+/// run's hyphenated id, `analyze:{account}:{document}:retry:{run}` or
+/// `fingerprint:{account}:{template}:{document}:retry:{run}`. It names the account and
+/// the document (`SEC-I06`) and, unlike the first key, stays within the 255 characters
+/// of a job key; asking twice after the same failure finds the same retry.
+#[must_use]
+pub fn retry_prefix(account: AccountId, template: Option<Uuid>, document: Uuid) -> String {
+    match template {
+        Some(t) => format!(
+            "fingerprint:{}:{}:{}:retry:",
+            account.0.hyphenated(),
+            t.hyphenated(),
+            document.hyphenated()
+        ),
+        None => format!(
+            "analyze:{}:{}:retry:",
+            account.0.hyphenated(),
+            document.hyphenated()
+        ),
+    }
+}
+
+/// The key of the run that retries `failed` (see [`retry_prefix`]).
+#[must_use]
+pub fn retry_key(prefix: &str, failed: Uuid) -> String {
+    format!("{prefix}{}", failed.hyphenated())
+}
+
 /// The payload of both analysis jobs: ids only, never document content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -305,6 +334,11 @@ mod tests {
         assert!(ka.len() <= 255);
         let kf = fingerprint_key(a, d, d, &sha, "b1");
         assert!(kf.starts_with("fingerprint:00000000-0000-0000-0000-000000000001:"));
+        let r = retry_key(&retry_prefix(a, None, d), Uuid::from_u128(5));
+        assert!(r.starts_with("analyze:00000000-0000-0000-0000-000000000001:"));
+        let rf = retry_key(&retry_prefix(a, Some(d), d), Uuid::from_u128(u128::MAX));
+        assert!(rf.starts_with("fingerprint:00000000-0000-0000-0000-000000000001:"));
+        assert!(r.len() <= 255 && rf.len() <= 255);
     }
 
     #[test]

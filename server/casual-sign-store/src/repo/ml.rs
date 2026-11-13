@@ -11,7 +11,9 @@ use uuid::Uuid;
 use super::{affected, hash32, text_enum};
 use crate::admin_log::{AdminChange, settings_changes};
 use crate::error::{Result, StoreError, db};
-use crate::ids::{AnalysisRunId, EnvelopeId, SuggestionId, TemplateDocumentId, TemplateId, UserId};
+use crate::ids::{
+    AnalysisRunId, EnvelopeId, JobId, SuggestionId, TemplateDocumentId, TemplateId, UserId,
+};
 use crate::store::TenantTx;
 
 /// The most template page hashes one account's search reads (docs/33 §4: 50,000 page
@@ -431,6 +433,94 @@ impl Ml<'_> {
             Some(id) => self.run(AnalysisRunId(id)).await,
             None => Ok(None),
         }
+    }
+
+    /// The run that now stands for `key` (`ML-24`): the run keyed `key`, or, when that
+    /// one ended `failed` or `unavailable` and was asked for again, its retry keyed
+    /// `retry_prefix` followed by the failed run's hyphenated id, and so on down the
+    /// chain. `None` when no run has `key`. One query, however long the chain.
+    ///
+    /// # Errors
+    ///
+    /// As [`Ml::run`].
+    pub async fn current_run(&mut self, key: &str, retry_prefix: &str) -> Result<Option<Run>> {
+        let acct = self.tx.acct();
+        let id = sqlx::query_scalar!(
+            r#"WITH RECURSIVE chain (id, status, depth) AS (
+                 SELECT id, status, 0 FROM analysis_runs WHERE account_id = $1 AND job_key = $2
+                 UNION ALL
+                 SELECT r.id, r.status, c.depth + 1 FROM chain c
+                   JOIN analysis_runs r ON r.account_id = $1 AND r.job_key = $3 || c.id::text
+                  WHERE c.status IN ('failed', 'unavailable'))
+               SELECT id AS "id!" FROM chain ORDER BY depth DESC LIMIT 1"#,
+            acct,
+            key,
+            retry_prefix
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        match id {
+            Some(id) => self.run(AnalysisRunId(id)).await,
+            None => Ok(None),
+        }
+    }
+
+    /// End as `failed` every open run of `document` whose job will never run again
+    /// (`ML-25`): the job is dead, or its last attempt's lease lapsed at `now` (its
+    /// worker died, and no worker has claimed since to bury it). The run's code is the
+    /// job's last error code, or `CS-WRK-0015` (lease lost) when it has none. Returns how many
+    /// runs it ended.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn fail_abandoned_runs(
+        &mut self,
+        document: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<u64> {
+        self.fail_abandoned(Some(document), None, now).await
+    }
+
+    /// End as `failed` the open run that `job` fills, when the job is dead (`ML-25`):
+    /// called in the transaction that records a job's last failure, whatever ended it (a
+    /// database error, a malformed payload, a failure after the run started). Returns
+    /// how many runs it ended (0 or 1).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn fail_run_of_dead_job(&mut self, job: JobId, now: OffsetDateTime) -> Result<u64> {
+        self.fail_abandoned(None, Some(job), now).await
+    }
+
+    async fn fail_abandoned(
+        &mut self,
+        document: Option<Uuid>,
+        job: Option<JobId>,
+        now: OffsetDateTime,
+    ) -> Result<u64> {
+        let acct = self.tx.acct();
+        let r = sqlx::query!(
+            "UPDATE analysis_runs r SET status = 'failed', \
+               code = CASE WHEN j.last_error_code ~ '^CS-[A-Z]+-[0-9]{4}$' \
+               THEN j.last_error_code ELSE 'CS-WRK-0015' END, finished_at = $4 \
+             FROM jobs j \
+             WHERE r.account_id = $1 AND j.account_id = $1 AND j.idempotency_key = r.job_key \
+               AND r.status IN ('queued', 'running') \
+               AND ($2::uuid IS NULL OR r.document_id = $2) AND ($3::uuid IS NULL OR j.id = $3) \
+               AND (j.status = 'dead' \
+                 OR (j.status = 'running' AND j.locked_until < $4 AND j.attempts >= j.max_attempts))",
+            acct,
+            document,
+            job.map(|j| j.0),
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(r.rows_affected())
     }
 
     /// The newest run of `document` (`documents.id` or `template_documents.id`).

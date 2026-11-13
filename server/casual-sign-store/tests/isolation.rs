@@ -72,6 +72,20 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
         .execute(&db.admin)
         .await
         .unwrap();
+    // A's run stands behind a dead job, so B ending A's abandoned runs would show
+    // (`ML-25`: `assert_ml_untouched` finds A's run still queued).
+    let a_job = id();
+    sqlx::query(
+        "INSERT INTO jobs (id, account_id, kind, idempotency_key, payload, run_at, max_attempts, \
+         status, last_error_code) VALUES ($1, $2, 'analyze_document', $3, '{}', now(), 3, 'dead', \
+         'CS-ML-0008')",
+    )
+    .bind(a_job)
+    .bind(a.account.0)
+    .bind(format!("analyze:{}:{}", a.account.0, a.document.0))
+    .execute(&db.admin)
+    .await
+    .unwrap();
     let t = db.store.for_account(b.account);
     // Each refused write runs in a transaction of its own (an error aborts a PostgreSQL
     // transaction), which B then commits: a refused call must leave nothing behind.
@@ -424,6 +438,32 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
             .is_none()
     );
     assert!(tx.ml().latest_run(a.document.0).await.unwrap().is_none());
+    assert!(
+        tx.ml()
+            .current_run(
+                &format!("analyze:{}:{}", a.account.0, a.document.0),
+                &format!("analyze:{}:{}:retry:", a.account.0, a.document.0)
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        tx.ml()
+            .fail_abandoned_runs(a.document.0, now())
+            .await
+            .unwrap(),
+        0,
+        "B ended A's abandoned run"
+    );
+    assert_eq!(
+        tx.ml()
+            .fail_run_of_dead_job(JobId(a_job), now())
+            .await
+            .unwrap(),
+        0,
+        "B ended the run of A's dead job"
+    );
     assert!(
         tx.ml()
             .envelope_suggestions(a.envelope, SuggestionFilter::default(), 100)

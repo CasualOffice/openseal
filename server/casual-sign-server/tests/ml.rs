@@ -14,6 +14,9 @@
 //!   suggestion; a member who may see every envelope but sent this one reads only (`403`).
 //! - A purged draft's analysis and suggestions are `404` before and after the purge job
 //!   (`ML-31`, `SEC-I07`).
+//! - Asking again after a run ended `failed` or `unavailable` starts a new run (`ML-24`);
+//!   a run behind a dead job, or a last attempt whose lease lapsed, shows `failed`
+//!   (`ML-25`).
 
 #![allow(
     clippy::unwrap_used,
@@ -1063,4 +1066,172 @@ async fn a_purged_draft_takes_no_new_analysis_and_shows_none() {
         "no new analysis of a purged draft"
     );
     assert_eq!(ml_rows(&api).await.1, 0, "no run was written again");
+}
+
+/// End a run as a worker would, with `status` and `code`.
+async fn end_run(api: &Api, account: AccountId, run: AnalysisRunId, status: RunStatus, code: &str) {
+    let mut tx = api.db.store.for_account(account).begin().await.unwrap();
+    tx.ml()
+        .finish_run(
+            run,
+            &RunEnd {
+                status,
+                bundle_id: None,
+                ort_version: None,
+                ocr_pages: vec![],
+                truncated: false,
+                code: Some(code.into()).filter(|c: &String| !c.is_empty()),
+                at: common::harness::start(),
+            },
+        )
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+}
+
+fn run_id(v: &Value) -> AnalysisRunId {
+    AnalysisRunId(v["id"].as_str().unwrap().parse().unwrap())
+}
+
+/// `ML-24`: asking again after a run ended `failed` or `unavailable` starts a new run
+/// and enqueues its job (once per failure: asking twice finds the same retry), while a
+/// run that stands (queued, running, done) is still the answer.
+#[tokio::test]
+async fn asking_again_after_a_failed_run_starts_a_new_run() {
+    let Some(api) = with_bundle("ml_retry_failed").await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    all_on(&api, &a).await;
+    let (id, doc) = draft(&api, &a.auth, &text_pdf(TEXT)).await;
+    let path = format!("/api/v1/envelopes/{id}/documents/{doc}/analysis");
+    let first = run_id(&ok(
+        api.call("GET", &path, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "the upload's run",
+    ));
+    let again = ok(
+        api.call("POST", &path, &a.auth, None, &[]).await,
+        StatusCode::ACCEPTED,
+        "asked while queued",
+    );
+    assert_eq!(run_id(&again), first, "a queued run is the answer");
+    assert_eq!(ml_rows(&api).await, (1, 1));
+
+    end_run(&api, a.boot.account, first, RunStatus::Failed, "CS-ML-0013").await;
+    let retry = ok(
+        api.call("POST", &path, &a.auth, None, &[]).await,
+        StatusCode::ACCEPTED,
+        "asked after a failure",
+    );
+    let second = run_id(&retry);
+    assert_ne!(second, first, "a failed run is retried by a new run");
+    assert_eq!(retry["status"], "queued");
+    assert_eq!(ml_rows(&api).await, (2, 2), "a new run and its job");
+    let twice = ok(
+        api.call("POST", &path, &a.auth, None, &[]).await,
+        StatusCode::ACCEPTED,
+        "asked twice",
+    );
+    assert_eq!(run_id(&twice), second, "one retry per failure");
+    assert_eq!(ml_rows(&api).await, (2, 2));
+    let shown = ok(
+        api.call("GET", &path, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "newest",
+    );
+    assert_eq!(run_id(&shown), second);
+
+    end_run(&api, a.boot.account, second, RunStatus::Unavailable, "").await;
+    let third = run_id(&ok(
+        api.call("POST", &path, &a.auth, None, &[]).await,
+        StatusCode::ACCEPTED,
+        "asked after unavailable",
+    ));
+    assert!(
+        third != first && third != second,
+        "unavailable is retried too"
+    );
+    assert_eq!(ml_rows(&api).await, (3, 3));
+    let key: String = sqlx::query_scalar("SELECT job_key FROM analysis_runs WHERE id = $1")
+        .bind(third.0)
+        .fetch_one(&api.db.admin)
+        .await
+        .unwrap();
+    assert!(
+        key.starts_with(&format!("analyze:{}:{doc}:retry:", a.boot.account.0)),
+        "a retry key names the account and the document: {key}"
+    );
+}
+
+/// `ML-25`: a run whose job will never run again (dead, or its last attempt's lease
+/// lapsed because its worker died) is shown `failed` with the job's code, never
+/// "reading" for good, and asking again starts a new run.
+#[tokio::test]
+async fn a_run_behind_a_dead_or_lapsed_job_is_shown_failed() {
+    let Some(api) = with_bundle("ml_abandoned_run").await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    all_on(&api, &a).await;
+    let (id, doc) = draft(&api, &a.auth, &text_pdf(TEXT)).await;
+    let path = format!("/api/v1/envelopes/{id}/documents/{doc}/analysis");
+    let first = ok(
+        api.call("GET", &path, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "the upload's run",
+    );
+    // Its worker died holding the last attempt: running, lease lapsed, no error code.
+    sqlx::query("UPDATE analysis_runs SET status = 'running' WHERE account_id = $1")
+        .bind(a.boot.account.0)
+        .execute(&api.db.admin)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE jobs SET status = 'running', attempts = max_attempts, \
+         lease_token = gen_random_uuid(), locked_until = $2 \
+         WHERE account_id = $1 AND kind = 'analyze_document'",
+    )
+    .bind(a.boot.account.0)
+    .bind(common::harness::start() - time::Duration::minutes(1))
+    .execute(&api.db.admin)
+    .await
+    .unwrap();
+    let shown = ok(
+        api.call("GET", &path, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "lapsed",
+    );
+    assert_eq!(shown["id"], first["id"]);
+    assert_eq!(
+        (shown["status"].as_str(), shown["code"].as_str()),
+        (Some("failed"), Some("CS-WRK-0015")),
+        "a lapsed last attempt is failed, lease lost"
+    );
+    // A dead job (buried, or dead by the claim) with its code.
+    let retry = ok(
+        api.call("POST", &path, &a.auth, None, &[]).await,
+        StatusCode::ACCEPTED,
+        "asked again",
+    );
+    assert_ne!(retry["id"], first["id"]);
+    sqlx::query(
+        "UPDATE jobs SET status = 'dead', last_error_code = 'CS-ML-0008' \
+         WHERE account_id = $1 AND idempotency_key LIKE '%:retry:%'",
+    )
+    .bind(a.boot.account.0)
+    .execute(&api.db.admin)
+    .await
+    .unwrap();
+    let shown = ok(
+        api.call("GET", &path, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "dead",
+    );
+    assert_eq!(shown["id"], retry["id"]);
+    assert_eq!(
+        (shown["status"].as_str(), shown["code"].as_str()),
+        (Some("failed"), Some("CS-ML-0008")),
+        "a dead job's run is failed with its code"
+    );
 }

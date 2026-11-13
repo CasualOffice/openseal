@@ -78,7 +78,21 @@ does one account that uses the same bytes in two envelopes; no run is ever share
 
 These are advisory jobs in the `jobs` table (ADR-012) beside the effect jobs (ADR-011). They are added to
 `casual-sign-host::jobs` as non-effect kinds and touch no envelope state. `max_attempts` is 3. A dead job means only
-"no suggestions"; it never blocks sending or sealing. Steps:
+"no suggestions"; it never blocks sending or sealing.
+
+**Failed, stuck and retried runs (`ML-24`, `ML-25`, as built 2026-11-13).** Every way a job ends closes its run: a final
+model error ends it `failed` with its code (the job completes); a job that dies any other way (a database error on its
+last attempt, a malformed payload, a failure after the run started) ends it `failed` with the job's code in the
+transaction that buries the job (`Ml::fail_run_of_dead_job`); and a run whose job a dead worker left behind (dead by the
+claim, or its last attempt's lease lapsed) is ended `failed` when the run is next read or asked for
+(`Ml::fail_abandoned_runs`), with the job's code or `CS-WRK-0015`. The sender sees `failed` and its code, never
+"reading" for good, and sending is never held by it. **Asking again** (`POST …/analysis`, or the same upload again)
+after a run ended `failed` or `unavailable` starts a new run under the retry key
+`analyze:{account_id}:{document_id}:retry:{failed_run_id}` (templates:
+`fingerprint:{account_id}:{template_id}:{document_id}:retry:{failed_run_id}`), which names the account and document
+(`SEC-I06`) and stays within 255 characters; asking twice after one failure finds the same retry, and the run that
+stands for a key is found down that chain in one query (`Ml::current_run`). A queued, running or done run is still
+the answer. Steps:
 
 1. Load the stored normalized PDF and the engine's `PageText` per page (existing code).
 2. **OCR pages** = pages with no text runs, or whose only text is invisible (render mode 3: a scanner's OCR layer)
@@ -532,7 +546,7 @@ as a decision row (`DEC-15`) and not designed here.
 
 | Endpoint | Behaviour |
 | --- | --- |
-| `POST /envelopes/{id}/documents/{doc}/analysis` | Requests analysis (idempotent on the job key); `202 {status: queued\|running\|done\|failed\|unavailable, uses}`. `403 CS-ML-0011` when the workspace has no ML feature on or the plan lacks it. A draft envelope only. Scope `envelopes:write` |
+| `POST /envelopes/{id}/documents/{doc}/analysis` | Requests analysis (idempotent on the job key; after a `failed` or `unavailable` run, a new run under its retry key, §2); `202 {status: queued\|running\|done\|failed\|unavailable, uses}`. `403 CS-ML-0011` when the workspace has no ML feature on or the plan lacks it. A draft envelope only. Scope `envelopes:write` |
 | `GET /envelopes/{id}/documents/{doc}/analysis` | Status, `ocr_pages`, `truncated`, `bundle_id`. Scope `envelopes:read` |
 | `POST /envelopes/{id}/documents/{doc}/detect-fields` (existing) | When analysis is done, OCR-sourced suggestions are merged into the same response. Additive members `text_source: "layer"\|"ocr"`, `source` gains `ocr_rule` and `ocr_box`, and `confidence` becomes min(cue, OCR word confidence). Unchanged when ML is off (the test asserts identical bytes) |
 | `GET /envelopes/{id}/suggestions?kind=template\|entity\|personal_data&state=open` | Cursor-paginated `{id, kind, document_id, page?, rect?, label, value?, normalized?, score, model:{id, sha256}, state}`. `value` is the span text, read from the stored text at request time and shown only to users who may read the document. A `template` suggestion is listed only to a member who may use the matched template (UXW-06, TSH-01) |

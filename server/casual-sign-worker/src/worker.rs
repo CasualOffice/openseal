@@ -514,6 +514,15 @@ impl<B: BlobStore + 'static> Worker<B> {
                 tx.jobs().bury(job.id, lease, now, code).await?;
             }
             let state = tx.jobs().get(job.id).await?;
+            // An analysis job that ends dead, whatever ended it (a database error on its
+            // last attempt, a malformed payload, a failure after its run started), ends
+            // its run `failed` with its code in the same transaction (`ML-25`), so no run
+            // stays `running` behind a job that will never run again.
+            let analysis = job.kind == casual_sign_host::ml::ANALYZE_DOCUMENT
+                || job.kind == casual_sign_host::ml::FINGERPRINT_TEMPLATE;
+            if analysis && state.as_ref().is_some_and(|s| s.status == "dead") {
+                tx.ml().fail_run_of_dead_job(job.id, now).await?;
+            }
             tx.commit().await?;
             Ok::<_, casual_sign_store::StoreError>(state)
         }
