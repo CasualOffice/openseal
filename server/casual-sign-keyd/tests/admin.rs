@@ -172,3 +172,40 @@ fn a_fingerprint_on_both_lists_is_refused_at_start() {
         .unwrap_err();
     assert_eq!(err.code(), "CS-KEY-0010");
 }
+
+/// `oplog-range` reads the file without holding the log (a long read never holds up a
+/// signature), so it stops at the head taken under the lock: a line being appended
+/// meanwhile, possibly half written, is not read and does not fail the read.
+#[test]
+fn a_range_read_stops_at_the_head_and_never_reads_a_line_being_written() {
+    use std::io::Write as _;
+    let dir = scratch("keyd-admin-range");
+    let path = dir.join("log.tsv");
+    let mut log = OpLog::open(&path).unwrap();
+    for i in 0..3_u64 {
+        log.append(&oplog::OpRecord {
+            time: 1_800_000_000 + i,
+            caller: "c".into(),
+            op: "health",
+            alias: String::new(),
+            alg: String::new(),
+            digest: String::new(),
+            envelope: String::new(),
+            outcome: "ok",
+        })
+        .unwrap();
+    }
+    let upto = log.head().0;
+    assert_eq!(upto, 3);
+    // Another thread's append, cut off mid-line.
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    f.write_all(b"4\t18000").unwrap();
+    let all = oplog::read_range(&path, 1, 256, upto).unwrap();
+    assert_eq!(all.iter().map(|r| r.seq).collect::<Vec<_>>(), [1, 2, 3]);
+    let one = oplog::read_range(&path, 2, 1, upto).unwrap();
+    assert_eq!(one.iter().map(|r| r.seq).collect::<Vec<_>>(), [2]);
+    assert!(oplog::read_range(&path, 4, 10, upto).unwrap().is_empty());
+}

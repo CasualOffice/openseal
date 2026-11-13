@@ -382,7 +382,17 @@ impl KeyService {
                 })
             }
             Request::OplogRange { from, n } => {
-                Ok(Response::Range(log()?.range(*from, usize::from(*n))?))
+                // The head under the lock; the file is read after it is released.
+                let (path, upto) = {
+                    let log = log()?;
+                    (log.path().to_path_buf(), log.head().0)
+                };
+                Ok(Response::Range(crate::oplog::read_range(
+                    &path,
+                    *from,
+                    usize::from(*n),
+                    upto,
+                )?))
             }
             Request::Health => {
                 let log_seq = log()?.head().0;

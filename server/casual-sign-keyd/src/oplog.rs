@@ -145,42 +145,50 @@ impl OpLog {
         (self.next_seq.saturating_sub(1), &self.head)
     }
 
-    /// Up to `n` records from sequence `from`, read back from the file (the lines this
-    /// log verified at open and has written since). Hashes, ids and codes only.
-    ///
-    /// # Errors
-    /// `CS-KEY-0009` when the file cannot be read or a line does not have its fields.
-    pub fn range(&self, from: u64, n: usize) -> Result<Vec<LogEntry>, KeydError> {
-        let file = File::open(&self.path)
-            .map_err(|e| KeydError::OperationLog(format!("read: {}", e.kind())))?;
-        let mut out = Vec::new();
-        for line in BufReader::new(file).lines() {
-            if out.len() >= n {
-                break;
-            }
-            let line = line.map_err(|e| KeydError::OperationLog(format!("read: {}", e.kind())))?;
-            let f: Vec<&str> = line.split('\t').collect();
-            let [
-                seq,
-                time,
-                caller,
-                op,
-                alias,
-                alg,
-                digest,
-                envelope,
-                outcome,
-                _prev,
-                _hash,
-            ] = f.as_slice()
-            else {
-                return Err(KeydError::OperationLog("a line without its fields".into()));
-            };
-            let bad = || KeydError::OperationLog("a line with a bad number".into());
-            let seq: u64 = seq.parse().map_err(|_| bad())?;
-            if seq < from {
-                continue;
-            }
+    /// The file this log appends to.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+/// Up to `n` records of the log at `path` from sequence `from`, and none after `upto`
+/// (the head when the caller held the log's lock). It reads without the lock, so a
+/// signature is never held up by a long read, and stops at `upto`: a line appended
+/// since, possibly still half written, is never read. Hashes, ids and codes only.
+///
+/// # Errors
+/// `CS-KEY-0009` when the file cannot be read or a line up to `upto` does not have its
+/// fields.
+pub fn read_range(path: &Path, from: u64, n: usize, upto: u64) -> Result<Vec<LogEntry>, KeydError> {
+    let mut out = Vec::new();
+    if n == 0 || from > upto {
+        return Ok(out);
+    }
+    let file =
+        File::open(path).map_err(|e| KeydError::OperationLog(format!("read: {}", e.kind())))?;
+    for line in BufReader::new(file).lines() {
+        let line = line.map_err(|e| KeydError::OperationLog(format!("read: {}", e.kind())))?;
+        let f: Vec<&str> = line.split('\t').collect();
+        let [
+            seq,
+            time,
+            caller,
+            op,
+            alias,
+            alg,
+            digest,
+            envelope,
+            outcome,
+            _prev,
+            _hash,
+        ] = f.as_slice()
+        else {
+            return Err(KeydError::OperationLog("a line without its fields".into()));
+        };
+        let bad = || KeydError::OperationLog("a line with a bad number".into());
+        let seq: u64 = seq.parse().map_err(|_| bad())?;
+        if seq >= from {
             out.push(LogEntry {
                 seq,
                 time: time.parse().map_err(|_| bad())?,
@@ -193,8 +201,11 @@ impl OpLog {
                 outcome: (*outcome).to_owned(),
             });
         }
-        Ok(out)
+        if seq >= upto || out.len() >= n {
+            break;
+        }
     }
+    Ok(out)
 }
 
 /// Verify the chain of the log at `path`: sequence numbers from 1, each `prev` the

@@ -951,13 +951,15 @@ returned kept in `sessionStorage` for the tab), `model.js` (pure logic, unit-tes
 **Keys (`CON-06`).** keyd's admin interface is built as §5.4 designs it: `OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, disjoint
 from the signing list (a fingerprint on both refuses to start, `CS-KEY-0010`); `list-keys`, `oplog-head`,
 `oplog-range(from, n ≤ 256)` and `health` are answered only to it, chain and sign only to the signing list, and every
-call and refusal (`CS-CON-0008`, wire number 1008) is in keyd's log. The wire format, `KeydError`, the client
+call and refusal (`CS-CON-0008`, wire number 1008) is in keyd's log. `oplog-range` reads the log file after releasing
+the log's lock, up to the head taken under it, so a read never holds up a signature. The wire format, `KeydError`, the client
 transport and `AdminClient` moved to the new crate `casual-sign-keyd-client` (no `cryptoki`); keyd re-exports them, and
 the worker still depends on keyd until `CON-15` moves it. The console reads keyd when `OPENSEAL_CONSOLE_KEYD_ADDR` is
 set (with `_SERVER_NAME`, `_CA`, `_CLIENT_CERT` and the secret `_CLIENT_KEY`): `GET /keys` (any role: each key's
 algorithm, backend, development flag, signer subject and issuer, validity, days left, status `valid`, `expiring`
 within 90 days, `expired` or `not_yet_valid`, SHA-256 of each chain certificate, and the log head), `GET /keys/log`
-(operators: records with caller fingerprint, operation, alias, digest, envelope id and outcome), and a `keyd` block in
+(operators: records with caller fingerprint, operation, alias, digest, envelope id and outcome; the page asks for the
+latest 100), and a `keyd` block in
 `/health` (`up`, `degraded`, `down` with keyd's code, or `not_configured`). keyd's refusals and failures are 502 with
 keyd's code. The UI's Keys and certificates page and a keyd Health tile show them. *Decided:* the subject and issuer
 are sent by keyd as RFC 4514 text, so the console parses no certificate; a key's status is computed by the console
