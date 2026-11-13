@@ -62,3 +62,8 @@ foreach ($product in 'Acrobat Reader', 'Adobe Acrobat') {
     Set-Dword $p 'bDisableJavaScript' 1
 }
 Write-Host 'Reader preferences set'
+
+# A larger screen, so the Signature Panel's lines are not cut off (best effort: the runner's
+# default is 1024x768, and not every image allows changing it).
+try { Set-DisplayResolution -Width 1920 -Height 1080 -Force; Write-Host 'screen 1920x1080' }
+catch { Write-Host "screen left as is: $($_.Exception.Message)" }

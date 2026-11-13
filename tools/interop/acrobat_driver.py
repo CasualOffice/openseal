@@ -9,19 +9,20 @@ preferences and put the packet's test root in the machine's trusted root store
 
 For each file in `manifest.tsv` the driver starts Reader on it, waits for validation to
 finish, and records the screen: the document message bar (the banner), then the Signature
-Panel, expanded, then Signature Properties of each signature in it. Reader draws its banner
-and panel itself, so UI Automation sees no text there; the driver reads them from the
-screenshots with Tesseract OCR (word boxes also tell it where to click), and adds whatever
-UI Automation does expose (menus, dialogs). The B-LTA files and the tampered one are opened
-with no PKI served (the long-term material alone); the B-T files with `interop.py serve`
-answering the packet's OCSP, CRL and AIA URLs on 127.0.0.1:47380, as the checklist's step 5.
+Panel, widened and expanded, then Signature Properties of each signature in it. Reader draws
+its banner and panel itself, so UI Automation has no text there (only the panel's node
+boxes, which tell the driver where to click); the driver reads the text from the screenshots
+with Tesseract, region by region, and adds whatever UI Automation does expose (menus,
+dialogs). The B-LTA files and the tampered one are opened with no PKI served (the long-term
+material alone); the B-T files with `interop.py serve` answering the packet's OCSP, CRL and
+AIA URLs on 127.0.0.1:47380, as the checklist's step 5.
 
     python -I tools/interop/acrobat_driver.py fixtures/interop --out acrobat-out
 
 writes `acrobat-out/acrobat-report.json` (read by `acrobat_report.py`, which judges it),
-`acrobat-out/*.png` (the screenshots), `*.ocr.txt` (what OCR read from each) and
-`uia-*.txt` (the raw UI Automation trees). The driver itself judges nothing; it exits
-non-zero only when it could not run Reader at all.
+`acrobat-out/*.png` (the screenshots), `*.ocr.txt` (what OCR read, by region) and
+`uia-*.txt` (the UI Automation trees with element boxes). The driver itself judges nothing;
+it exits non-zero only when it could not run Reader at all.
 """
 
 import argparse
@@ -38,7 +39,8 @@ import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 SCHEMA = 1
-READER_PROCESSES = ("Acrobat.exe", "AcroRd32.exe", "AcroCEF.exe", "RdrCEF.exe", "AdobeCollabSync.exe")
+READER_MAIN = ("Acrobat.exe", "AcroRd32.exe")
+READER_PROCESSES = READER_MAIN + ("AcroCEF.exe", "RdrCEF.exe", "AdobeCollabSync.exe")
 READER_CANDIDATES = (
     r"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe",
     r"C:\Program Files (x86)\Adobe\Acrobat Reader DC\Reader\AcroRd32.exe",
@@ -50,13 +52,13 @@ TESSERACT_CANDIDATES = (
 )
 # Buttons that close Reader's first-run, restore-session and upsell prompts. Never "Cancel":
 # Reader's own "Progress" window (signature validation) has one.
-DISMISS = ("No, thanks", "No thanks", "Not now", "Maybe later", "Skip", "Got it", "Dismiss", "Close", "No")
-NEVER_DISMISS = ("progress",)
+DISMISS = ("No, thanks", "No thanks", "Not now", "Maybe later", "Skip", "Got it", "Dismiss")
 BANNER_HINTS = ("signatures are valid", "certified by", "signature is invalid", "signatures is invalid",
-                "has problems", "validity is unknown", "signed and")
+                "has problems", "is unknown", "signed and")
+BANNER_RX = re.compile("|".join(re.escape(h) for h in BANNER_HINTS), re.I)
 MAX_ELEMENTS = 6000
 SERVE_PORT = 47380
-OCR_SCALE = 2
+OCR_SCALE = 3
 
 
 def log(msg):
@@ -91,12 +93,12 @@ def file_version(path):
     return run.stdout.strip() or "unknown"
 
 
-def reader_pids():
+def pids_of(names):
     run = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True)
     pids = set()
     for line in run.stdout.splitlines():
         cells = [c.strip('"') for c in line.split('","')]
-        if len(cells) > 1 and cells[0] in READER_PROCESSES:
+        if len(cells) > 1 and cells[0] in names:
             try:
                 pids.add(int(cells[1]))
             except ValueError:
@@ -105,7 +107,7 @@ def reader_pids():
 
 
 def reader_windows(desktop):
-    pids = reader_pids()
+    pids = pids_of(READER_PROCESSES)
     out = []
     for w in desktop.windows():
         try:
@@ -117,16 +119,20 @@ def reader_windows(desktop):
 
 
 def close_reader(desktop):
-    """Close Reader as a user would (so it does not offer to restore a crashed session next
+    """Quit Reader as a user would (so it does not offer to restore a crashed session next
     time), then make sure nothing of it is left."""
+    from pywinauto import keyboard
     for w in reader_windows(desktop):
         try:
-            w.close()
+            if w.window_text().lower().endswith(("adobe acrobat reader (64-bit)", "adobe acrobat reader")):
+                keyboard.send_keys("{ESC}")
+                w.set_focus()
+                keyboard.send_keys("^q")
         except Exception:
             pass
-    for _ in range(10):
-        if not reader_pids():
-            return
+    for _ in range(30):
+        if not pids_of(READER_MAIN):
+            break
         for w in reader_windows(desktop):
             try:
                 for b in w.descendants(control_type="Button"):
@@ -143,6 +149,11 @@ def close_reader(desktop):
 # --- what the screen says ------------------------------------------------------------------
 
 
+def rect_of(el):
+    r = el.element_info.rectangle
+    return (r.left, r.top, r.right, r.bottom)
+
+
 def elements(win):
     out = []
     try:
@@ -152,9 +163,8 @@ def elements(win):
     for el in items[:MAX_ELEMENTS]:
         try:
             info = el.element_info
-            r = info.rectangle
             out.append((info.control_type or "", info.name or "", info.automation_id or "",
-                        f"{r.left},{r.top},{r.right},{r.bottom}"))
+                        ",".join(str(v) for v in rect_of(el))))
         except Exception:
             continue
         try:
@@ -182,7 +192,7 @@ def uia_strings(snap):
     for title, els in snap:
         for s in [title] + [e[1] for e in els]:
             s = " ".join(str(s).split())
-            if s and s not in out and not s.startswith("http"):
+            if s and s not in out and not s.startswith("http") and not s.startswith("AV"):
                 out.append(s)
     return out
 
@@ -196,24 +206,45 @@ def dump(path, label, snap):
                 f.write("\t".join(e) + "\n")
 
 
+def panes(win, name):
+    """Reader's own views by class-like name (AVTreeNodeSimpleView, PrimaryHostView, ...)."""
+    out = []
+    try:
+        for el in win.descendants(control_type="Pane"):
+            if (el.element_info.name or "") == name:
+                r = rect_of(el)
+                if r[2] > r[0] and r[3] > r[1]:
+                    out.append(r)
+    except Exception:
+        pass
+    return out
+
+
 class Screen:
-    """Screenshots, OCR'd with Tesseract into lines with their boxes (screen coordinates)."""
+    """Screenshots, read with Tesseract into lines with their boxes (screen coordinates).
+    A region (left, top, right, bottom) is read on its own, so a narrow panel's lines are
+    not merged with the page beside it."""
 
     def __init__(self, out_dir, tesseract):
         self.out_dir = out_dir
         self.tesseract = tesseract
 
-    def capture(self, name):
+    def grab(self, name=None):
         from PIL import ImageGrab
-        path = self.out_dir / f"{name}.png"
         image = ImageGrab.grab(all_screens=True)
-        image.save(path)
-        big = image.resize((image.width * OCR_SCALE, image.height * OCR_SCALE)).convert("L")
-        big_path = self.out_dir / f"_{name}.ocr.png"
-        big.save(big_path)
-        run = subprocess.run([str(self.tesseract), str(big_path), "stdout", "--psm", "3", "-l", "eng", "tsv"],
+        if name:
+            image.save(self.out_dir / f"{name}.png")
+        return image
+
+    def read(self, image, region=None, label=None):
+        crop = image.crop(region) if region else image
+        dx, dy = (region[0], region[1]) if region else (0, 0)
+        big = crop.resize((max(1, crop.width * OCR_SCALE), max(1, crop.height * OCR_SCALE))).convert("L")
+        tmp = self.out_dir / "_ocr.png"
+        big.save(tmp)
+        run = subprocess.run([str(self.tesseract), str(tmp), "stdout", "--psm", "3", "-l", "eng", "tsv"],
                              capture_output=True, text=True, encoding="utf8", errors="replace")
-        big_path.unlink()
+        tmp.unlink()
         lines = {}
         for row in run.stdout.splitlines()[1:]:
             cells = row.split("\t")
@@ -224,29 +255,35 @@ class Screen:
                 left, top, width, height = (int(c) // OCR_SCALE for c in cells[6:10])
             except ValueError:
                 continue
-            line = lines.setdefault(key, {"words": [], "boxes": []})
-            line["words"].append(cells[11])
-            line["boxes"].append((left, top, left + width, top + height))
+            lines.setdefault(key, []).append(
+                (cells[11], (left + dx, top + dy, left + dx + width, top + dy + height)))
         out = []
-        for line in lines.values():
-            text = " ".join(line["words"])
-            box = (min(b[0] for b in line["boxes"]), min(b[1] for b in line["boxes"]),
-                   max(b[2] for b in line["boxes"]), max(b[3] for b in line["boxes"]))
-            out.append({"text": text, "box": box, "words": list(zip(line["words"], line["boxes"]))})
-        (self.out_dir / f"{name}.ocr.txt").write_text(
-            "\n".join(f"{ln['box']}\t{ln['text']}" for ln in out) + "\n", encoding="utf8")
-        return path.name, out
+        for words in lines.values():
+            boxes = [b for _w, b in words]
+            out.append({"text": " ".join(w for w, _b in words), "words": words,
+                        "box": (min(b[0] for b in boxes), min(b[1] for b in boxes),
+                                max(b[2] for b in boxes), max(b[3] for b in boxes))})
+        if label:
+            with open(self.out_dir / f"{label}.ocr.txt", "a", encoding="utf8") as f:
+                f.write(f"# region {region or 'screen'}\n" + "".join(f"{ln['box']}\t{ln['text']}\n" for ln in out))
+        return out
 
     @staticmethod
-    def find(lines, pattern, region=None):
-        """The first OCR line matching `pattern` (inside `region` if given): (text, box)."""
+    def find_words(lines, pattern):
+        """The box spanning the words of the first line matching `pattern`."""
         rx = re.compile(pattern, re.I)
         for ln in lines:
-            x0, y0, x1, y1 = ln["box"]
-            if region and not (region[0] <= x0 and x1 <= region[2] and region[1] <= y0 and y1 <= region[3]):
+            m = rx.search(ln["text"])
+            if not m:
                 continue
-            if rx.search(ln["text"]):
-                return ln
+            pos, hit = 0, []
+            for w, b in ln["words"]:
+                if pos + len(w) > m.start() and pos < m.end():
+                    hit.append(b)
+                pos += len(w) + 1
+            if hit:
+                return (min(b[0] for b in hit), min(b[1] for b in hit),
+                        max(b[2] for b in hit), max(b[3] for b in hit))
         return None
 
 
@@ -258,21 +295,23 @@ def centre(box):
 
 
 def dismiss_prompts(desktop, notes):
-    """Close first-run, restore-session and upsell prompts, wherever they are drawn."""
+    """Close first-run, restore-session and upsell prompts. In the document window, only the
+    restore-session prompt's own button (Reader's web view, automation id `skip-button`)."""
     for w in reader_windows(desktop):
         try:
             title = w.window_text()
-            if any(n in title.lower() for n in NEVER_DISMISS) or not w.is_visible():
+            if "progress" in title.lower() or not w.is_visible():
                 continue
+            in_doc = title.lower().endswith(("adobe acrobat reader (64-bit)", "adobe acrobat reader"))
             for b in w.descendants(control_type="Button"):
                 name = (b.element_info.name or "").strip()
-                aid = b.element_info.automation_id or ""
-                in_doc = title.lower().endswith(("adobe acrobat reader (64-bit)", "adobe acrobat reader"))
-                # In the document window only the web-view prompts' own buttons (restore session).
-                if in_doc and aid not in ("skip-button",):
+                if in_doc and (b.element_info.automation_id or "") != "skip-button":
                     continue
                 if name in DISMISS:
-                    b.invoke()
+                    try:
+                        b.invoke()
+                    except Exception:
+                        b.click_input()
                     notes.append(f"dismissed {title!r} with {name!r}")
                     time.sleep(1)
                     break
@@ -300,12 +339,18 @@ def validating(desktop):
     return False
 
 
-def menu_texts(desktop):
+def menu_items(desktop):
     out = []
-    for w in reader_windows(desktop) + list(desktop.windows(control_type="Menu")):
+    for w in list(desktop.windows()):
         try:
-            for m in w.descendants(control_type="MenuItem"):
-                out.append(m)
+            if w.element_info.control_type == "Menu" or w.element_info.class_name == "#32768":
+                out += w.descendants(control_type="MenuItem")
+        except Exception:
+            pass
+    for w in reader_windows(desktop):
+        try:
+            for m in w.descendants(control_type="Menu"):
+                out += m.descendants(control_type="MenuItem")
         except Exception:
             pass
     return out
@@ -315,10 +360,11 @@ def context_menu_choose(desktop, pattern, notes):
     """In an open context menu, invoke the first item matching `pattern`; Escape if none."""
     from pywinauto import keyboard
     rx = re.compile(pattern, re.I)
-    for _ in range(5):
-        items = menu_texts(desktop)
-        for m in items:
+    seen = set()
+    for _ in range(4):
+        for m in menu_items(desktop):
             name = m.element_info.name or ""
+            seen.add(name)
             if rx.search(name):
                 try:
                     m.invoke()
@@ -327,8 +373,7 @@ def context_menu_choose(desktop, pattern, notes):
                 notes.append(f"menu: {name!r}")
                 return True
         time.sleep(1)
-    names = sorted({m.element_info.name or "" for m in menu_texts(desktop)})
-    notes.append(f"no menu item like {pattern!r} (saw {names[:30]})")
+    notes.append(f"no menu item like {pattern!r} (saw {sorted(seen)[:25]})")
     keyboard.send_keys("{ESC}")
     return False
 
@@ -336,15 +381,19 @@ def context_menu_choose(desktop, pattern, notes):
 def run_file(desktop, screen, exe, pdf, row, served):
     from pywinauto import keyboard, mouse
     stem = pdf.stem
-    out_dir = screen.out_dir
     entry = {"file": pdf.name, "expect": row["expect"], "level": row["level"], "served_pki": served,
              "banner": "", "texts": [], "properties": [], "screenshots": [], "notes": []}
     notes = entry["notes"]
-    uia_file = out_dir / f"uia-{stem}.txt"
+    uia_file = screen.out_dir / f"uia-{stem}.txt"
 
-    def shot(step):
-        name, lines = screen.capture(f"{stem}-{step}")
-        entry["screenshots"].append(name)
+    def shot(step, regions=()):
+        """Screenshot, OCR of the whole screen and of each region, UI Automation dump."""
+        name = f"{stem}-{step}"
+        image = screen.grab(name)
+        entry["screenshots"].append(f"{name}.png")
+        lines = screen.read(image, None, name)
+        for r in regions:
+            lines += screen.read(image, r, name)
         snap = snapshot(desktop)
         dump(uia_file, step, snap)
         return lines, snap
@@ -368,63 +417,92 @@ def run_file(desktop, screen, exe, pdf, row, served):
         win.maximize()
     except Exception:
         pass
-    # Reader validates on open (bValidateOnOpen) behind a "Progress" window; let it finish.
-    deadline = time.time() + 90
-    time.sleep(5)
-    while time.time() < deadline and validating(desktop):
-        time.sleep(2)
-    time.sleep(3)
-    dismiss_prompts(desktop, notes)
-    time.sleep(1)
-    lines, snap = shot("1-opened")
+
+    # Reader validates on open (bValidateOnOpen) and then writes its verdict in the message
+    # bar above the page; wait for it.
+    header = None
+    banner = None
+    t0 = time.time()
+    while time.time() - t0 < 150:
+        dismiss_prompts(desktop, notes)
+        if not validating(desktop):
+            heads = panes(win, "AVDocumentHeaderView")
+            header = heads[0] if heads else None
+            if header:
+                lines = screen.read(screen.grab(), header)
+                banner = next((ln for ln in lines if BANNER_RX.search(ln["text"])), None)
+                if banner:
+                    break
+        time.sleep(3)
+    notes.append(f"banner after {time.time() - t0:.0f} s" if banner else "no banner within 150 s")
+    time.sleep(2)
+    lines, snap = shot("1-opened", [header] if header else [])
     texts = [ln["text"] for ln in lines]
-    banner = Screen.find(lines, "|".join(re.escape(h) for h in BANNER_HINTS))
-    entry["banner"] = banner["text"] if banner else ""
+    entry["banner"] = " ".join(ln["text"] for ln in (screen.read(screen.grab(), header) if header else [])
+                               if BANNER_RX.search(ln["text"]) or "unknown" in ln["text"].lower())
 
     # The Signature Panel: the banner's button, found by OCR; else View > Show/Hide.
-    button = Screen.find(lines, r"signature\s*panel")
-    opened = False
+    button = Screen.find_words(lines, r"signature\s*panel|signature\s*p")
     if button is not None:
-        mouse.click(coords=centre(button["box"]))
+        mouse.click(coords=centre(button))
         notes.append("opened the panel from the banner's button")
-        opened = True
     else:
         try:
             win.menu_select("View->Show/Hide->Navigation Panes->Signatures")
             notes.append("opened the panel from the View menu")
-            opened = True
         except Exception as e:
             notes.append(f"could not open the panel: {type(e).__name__}: {e}")
     time.sleep(4)
-    lines, snap = shot("2-panel")
+    # Widen it, so its lines are not cut off: drag its right edge most of the way across.
+    hosts = panes(win, "PrimaryHostView")
+    if hosts:
+        left, top, right, bottom = hosts[0]
+        target = max(right, int(win.rectangle().width() * 0.72))
+        y = (top + bottom) // 2
+        mouse.press(coords=(right + 1, y))
+        for x in range(right + 1, target, 40):
+            mouse.move(coords=(x, y))
+        mouse.release(coords=(target, y))
+        time.sleep(2)
+        notes.append(f"panel widened from {right} to {target}")
+    hosts = panes(win, "PrimaryHostView")
+    lines, snap = shot("2-panel", hosts[:1])
     texts += [ln["text"] for ln in lines]
-    # The panel's rows: "Rev. 1: Signed by …", "Certified by …", the document timestamp.
-    width = win.rectangle().width() if opened else 0
-    panel = (0, 150, max(420, width // 2), 760)
-    rows = [ln for ln in lines if re.search(r"^\s*rev\.?\s*\d|signed by|certified by|timestamp", ln["text"], re.I)
-            and panel[0] <= ln["box"][0] <= panel[2] and ln["box"][1] >= panel[1]]
-    notes.append(f"panel rows: {[r['text'] for r in rows]}")
-    if rows:
-        # Expand everything: the panel's context menu has "Expand All".
-        mouse.right_click(coords=centre(rows[0]["box"]))
-        time.sleep(1.5)
-        if context_menu_choose(desktop, r"expand all|^expand$", notes):
-            time.sleep(3)
-        lines, snap = shot("3-expanded")
-        texts += [ln["text"] for ln in lines]
-        rows = [ln for ln in lines if re.search(r"^\s*rev\.?\s*\d|certified by|signed by", ln["text"], re.I)
-                and panel[0] <= ln["box"][0] <= panel[2] and ln["box"][1] >= panel[1]]
-        # Signature Properties of each signature row (the seal, then the document timestamp).
-        for i, r in enumerate(rows[:3]):
-            mouse.right_click(coords=centre(r["box"]))
+
+    # Expand every signature: click each top-level node's chevron, bottom first so the
+    # positions above do not move.
+    nodes = panes(win, "AVTreeNodeSimpleView")
+    if nodes:
+        indent = min(n[0] for n in nodes)
+        tops = sorted((n for n in nodes if n[0] == indent), key=lambda n: -n[1])
+        for n in tops:
+            mouse.click(coords=(n[0] + 12, (n[1] + n[3]) // 2))
             time.sleep(1.5)
-            if not context_menu_choose(desktop, r"properties", notes):
+        notes.append(f"expanded {len(tops)} signature node(s)")
+        time.sleep(3)
+    hosts = panes(win, "PrimaryHostView")
+    lines, snap = shot("3-expanded", hosts[:1])
+    texts += [ln["text"] for ln in lines]
+
+    # Signature Properties of each top-level node (the seal, the document timestamp).
+    nodes = panes(win, "AVTreeNodeSimpleView")
+    if nodes:
+        indent = min(n[0] for n in nodes)
+        tops = sorted((n for n in nodes if n[0] == indent), key=lambda n: n[1])
+        for i, n in enumerate(tops[:3]):
+            mouse.right_click(coords=((n[0] + n[2]) // 2, (n[1] + n[3]) // 2))
+            time.sleep(1.5)
+            if not context_menu_choose(desktop, r"signature properties|^properties|show .*properties", notes):
                 continue
-            time.sleep(4)
+            time.sleep(5)
             plines, psnap = shot(f"4-properties-{i}")
             entry["properties"] += [ln["text"] for ln in plines] + uia_strings(psnap)
             keyboard.send_keys("{ESC}")
             time.sleep(1.5)
+            # Positions shift if a dialog changed the panel; read them again.
+            nodes = panes(win, "AVTreeNodeSimpleView")
+            if not nodes:
+                break
     entry["texts"] = texts + uia_strings(snap)
     return entry
 
@@ -460,14 +538,16 @@ def main(argv):
     out_dir.mkdir(parents=True, exist_ok=True)
     head, *lines = [ln for ln in (packet / "manifest.tsv").read_text(encoding="utf8").splitlines() if ln]
     rows = [dict(zip(head.split("\t"), ln.split("\t"))) for ln in lines]
-    exe = find_exe(args.reader, ("Acrobat.exe", "AcroRd32.exe"), READER_CANDIDATES, "Acrobat Reader")
+    exe = find_exe(args.reader, READER_MAIN, READER_CANDIDATES, "Acrobat Reader")
     tesseract = find_exe(args.tesseract, ("tesseract.exe",), TESSERACT_CANDIDATES, "Tesseract OCR")
-    report = {"schema": SCHEMA, "reader": str(exe), "reader_version": file_version(exe),
-              "os": f"{platform.system()} {platform.version()}", "trust": {"method": args.trust_method},
-              "text_source": "Tesseract OCR of screenshots, and UI Automation", "files": []}
-    log(f"Reader {report['reader_version']} at {exe}; OCR {tesseract}")
-    desktop = Desktop(backend="uia")
     screen = Screen(out_dir, tesseract)
+    size = screen.grab().size
+    report = {"schema": SCHEMA, "reader": str(exe), "reader_version": file_version(exe),
+              "os": f"{platform.system()} {platform.version()}", "screen": list(size),
+              "trust": {"method": args.trust_method},
+              "text_source": "Tesseract OCR of screenshots, and UI Automation", "files": []}
+    log(f"Reader {report['reader_version']} at {exe}; OCR {tesseract}; screen {size}")
+    desktop = Desktop(backend="uia")
     # Long-term material alone first (B-LTA, tampered), then B-T with the PKI served.
     offline = [r for r in rows if r["level"] != "B-T"]
     online = [r for r in rows if r["level"] == "B-T"]

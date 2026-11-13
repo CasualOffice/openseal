@@ -55,6 +55,8 @@ BAD = (
     "signature validity is unknown",
     "validity of the signature is unknown",
     "signer's identity is unknown",
+    "certification is unknown",
+    "author could not be verified",
     "document has been altered or corrupted",
     "has been modified since",
 )
