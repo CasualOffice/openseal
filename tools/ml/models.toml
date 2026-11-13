@@ -22,7 +22,12 @@
 # runtime and notice entries name one archive member (extract, extract_sha256,
 # extract_bytes); nothing else in the archive is written. An entry with an empty sha256
 # is pending: produced_by names the offline export that will pin it, and a profile
-# holding one is refused until then. Profiles named export-* are inputs to those
+# holding one is refused until then. An entry with a sha256 and an empty source_url is
+# pinned but not hosted: produced_by made it, the hash is fixed, bytes is its size (0
+# where the export did not record it), and a profile holding one is refused until
+# OpenSeal's mirror serves it (ML-15). GLiNER files are the fp16 exports the golden
+# parity ran on (owner instruction 34; the quint8 exports lose spans, ML-14; ML-21);
+# --self-test checks their hashes against fixtures/ml/gliner-golden/. Profiles named export-* are inputs to those
 # exports, never bundled. Size caps: 1 GiB per bundled file, 2 GiB per bundle.
 #
 # Weights in bundled profiles are ONNX only; pickle (.bin, .pt) is never bundled.
@@ -435,13 +440,14 @@ profile = "personal_data"
 arch = "any"
 role = "model"
 dest = "personal_data/gliner-pii-base/model.onnx"
-source_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0/resolve/61726e0ad791dcab3e29339bbec3ad42ded65641/onnx/model_quint8.onnx"
-sha256 = "0514c8fd86d0513ce5351a3267f132b57d5bcd8f99a90d43cde1228092881d19"
-bytes = 196757174
+source_url = ""
+sha256 = "5b1c9ae158c4b71787ca58bf7e876d00c5811f585e9270a31320b6e049d3f4dc"
+bytes = 332987248
 licence = "Apache-2.0"
 licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
 card_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0"
-provenance = "GLiNER-PII base v1.0, official uint8 ONNX. Encoder microsoft/deberta-v3-small (MIT), English vocabulary: English-only despite the card's tag (review defect 7). Training data undisclosed; the card names only an evaluation set. max_len 2048 per its gliner_config.json (D13)"
+provenance = "GLiNER-PII base v1.0, our fp16 export (fp16 weights, fp32 inputs and outputs) of pytorch_model.bin at the pinned revision; equals the torch reference on 57 of 57 golden spans, where our quint8 export keeps 47 (the official model_quint8.onnx, used before, was never measured against the golden) (ML-14, owner instruction 34). Not hosted until OpenSeal's mirror holds it (ML-15). Encoder microsoft/deberta-v3-small (MIT), English vocabulary: English-only despite the card's tag (review defect 7). Training data undisclosed; the card names only an evaluation set. max_len 2048 per its gliner_config.json (D13)"
+produced_by = "tools/ml/export-gliner.py"
 
 [[file]]
 id = "gliner-pii-base-tokenizer"
@@ -449,13 +455,14 @@ profile = "personal_data"
 arch = "any"
 role = "tokenizer"
 dest = "personal_data/gliner-pii-base/tokenizer.json"
-source_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0/resolve/61726e0ad791dcab3e29339bbec3ad42ded65641/tokenizer.json"
-sha256 = "ee028763434d18611c1c36356ea1d050e90a9fa94ede57fac48b39f85f818ad1"
-bytes = 8649232
+source_url = ""
+sha256 = "e5bc31c9671429c7ce84162ac3d47648518a2338089daa1280f9d411cf336213"
+bytes = 0
 licence = "Apache-2.0"
 licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
 card_url = "https://huggingface.co/knowledgator/gliner-pii-base-v1.0"
-provenance = "DeBERTa-v3 tokenizer with GLiNER's added tokens"
+provenance = "tokenizer.json as the fp16 export writes it (gliner 0.2.29 save_pretrained of the pinned tokenizer files), the file the golden parity ran; size not recorded by that export (ML-15 records it at upload)"
+produced_by = "tools/ml/export-gliner.py"
 
 [[file]]
 id = "gliner-pii-base-config"
@@ -479,12 +486,12 @@ arch = "any"
 role = "model"
 dest = "extraction/gliner-multi/model.onnx"
 source_url = ""
-sha256 = ""
-bytes = 0
+sha256 = "47e1dddee2784670a82738b93e03c4767d06806a61ddcec5720865550aa7c95b"
+bytes = 579687008
 licence = "Apache-2.0"
 licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
 card_url = "https://huggingface.co/urchade/gliner_multi-v2.1"
-provenance = "GLiNER v2.1 (Apache-2.0; v0 and v1 are CC-BY-NC-4.0 and never used). Training data: LLM-annotated Pile-derived urchade/pile-mistral-v0.1 (D13); int8 export of model.safetensors with the gliner library, offline (piece X); size unverified, est. 0.6-0.8 GB (review defect 6). Pending"
+provenance = "GLiNER v2.1 (Apache-2.0; v0 and v1 are CC-BY-NC-4.0 and never used). Training data: LLM-annotated Pile-derived urchade/pile-mistral-v0.1 (D13); fp16 export of model.safetensors with the gliner library, offline (piece X; fp16 weights, fp32 inputs and outputs); equals the torch reference on 185 of 185 golden spans, where the quint8 export keeps none (ML-14, owner instruction 34). Not hosted until OpenSeal's mirror holds it (ML-15)"
 produced_by = "tools/ml/export-gliner.py"
 
 [[file]]
@@ -494,12 +501,12 @@ arch = "any"
 role = "tokenizer"
 dest = "extraction/gliner-multi/tokenizer.json"
 source_url = ""
-sha256 = ""
+sha256 = "c5b8041501fcdee792b9b112dd592861f04391a24633a73fd9f05aaaf6e8eff1"
 bytes = 0
 licence = "MIT"
 licence_url = "https://huggingface.co/microsoft/mdeberta-v3-base"
 card_url = "https://huggingface.co/urchade/gliner_multi-v2.1"
-provenance = "tokenizer.json written by the export from the base encoder's spm.model. Pending"
+provenance = "tokenizer.json written by the fp16 export from the base encoder's spm.model, the file the golden parity ran; size not recorded by that export (ML-15 records it at upload)"
 produced_by = "tools/ml/export-gliner.py"
 
 [[file]]
@@ -524,12 +531,12 @@ arch = "any"
 role = "model"
 dest = "extraction/gliner-small/model.onnx"
 source_url = ""
-sha256 = ""
-bytes = 0
+sha256 = "6e7691c98f290b10943d43b0d3b9a20ac06d55c44c8fd3ace990f9b566d8f46c"
+bytes = 306237114
 licence = "Apache-2.0"
 licence_url = "https://www.apache.org/licenses/LICENSE-2.0"
 card_url = "https://huggingface.co/urchade/gliner_small-v2.1"
-provenance = "GLiNER v2.1 (Apache-2.0; v0 and v1 are CC-BY-NC-4.0 and never used). Training data: LLM-annotated Pile-derived urchade/pile-mistral-v0.1 (D13); int8 export of pytorch_model.bin (pickle: torch.load weights_only=True, network off; review defect 9). Pending"
+provenance = "GLiNER v2.1 (Apache-2.0; v0 and v1 are CC-BY-NC-4.0 and never used). Training data: LLM-annotated Pile-derived urchade/pile-mistral-v0.1 (D13); fp16 export of pytorch_model.bin (pickle: torch.load weights_only=True, network off; review defect 9; fp16 weights, fp32 inputs and outputs); equals the torch reference on 159 of 159 golden spans, where the quint8 export keeps 97 (ML-14, owner instruction 34). Not hosted until OpenSeal's mirror holds it (ML-15)"
 produced_by = "tools/ml/export-gliner.py"
 
 [[file]]
@@ -539,12 +546,12 @@ arch = "any"
 role = "tokenizer"
 dest = "extraction/gliner-small/tokenizer.json"
 source_url = ""
-sha256 = ""
+sha256 = "1731c431e5e851a4a73487b5bbfbef265b29ab64de190c402b4e6df9ce2cb0ab"
 bytes = 0
 licence = "MIT"
 licence_url = "https://huggingface.co/microsoft/deberta-v3-small"
 card_url = "https://huggingface.co/urchade/gliner_small-v2.1"
-provenance = "tokenizer.json written by the export from the base encoder's spm.model. Pending"
+provenance = "tokenizer.json written by the fp16 export from the base encoder's spm.model, the file the golden parity ran; size not recorded by that export (ML-15 records it at upload)"
 produced_by = "tools/ml/export-gliner.py"
 
 [[file]]

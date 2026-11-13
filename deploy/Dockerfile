@@ -100,13 +100,15 @@ ENTRYPOINT ["/usr/local/bin/keyd-entrypoint"]
 # exception for the ONNX Runtime library), and writes bundle.json. A mismatch fails
 # the build. The cache mount only saves downloads; every cached file is re-hashed.
 # `docker build --build-arg OPENSEAL_ML_PROFILES="ocr templates" --target modeld .`
-# picks profiles; `extraction` joins the default once its export is pinned (piece X).
+# picks profiles. The GLiNER profiles (`personal_data`, `extraction`, `extraction-en`)
+# are pinned to the fp16 exports the parity ran on (ML-21) and join the default once
+# OpenSeal's mirror serves them (ML-15); until then asking for one fails the build.
 FROM ${DEBIAN_IMAGE} AS models
 RUN apt-get update -q \
  && apt-get install -y -q --no-install-recommends python3 ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 ARG TARGETARCH
-ARG OPENSEAL_ML_PROFILES="ocr templates personal_data"
+ARG OPENSEAL_ML_PROFILES="ocr templates"
 COPY tools/ml/fetch-models.py tools/ml/models.toml /src/tools/ml/
 RUN --mount=type=cache,target=/var/cache/openseal-models \
     set -- \

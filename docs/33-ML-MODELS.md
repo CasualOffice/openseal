@@ -210,7 +210,7 @@ combining marks.
 | Fingerprints searched per account | 50,000 page vectors in process (more need pgvector) | — |
 | Concurrent slots | derived from memory (§3.3) | CS-ML-0001, CS-ML-0009 |
 | modeld memory | 4 GiB container limit (provisional; set from the measured RSS of the chosen profiles) | (process restarts) |
-| Model bundle | 2 GiB total; each file ≤ 1 GiB (provisional; re-set from the measured int8 exports, §5.3) | CS-ML-0002 |
+| Model bundle | 2 GiB total; each file ≤ 1 GiB (provisional; re-set from the measured fp16 exports, §5.3) | CS-ML-0002 |
 
 ## 5. Models chosen (pretrained, no training)
 
@@ -311,8 +311,8 @@ to meet ML-05's false-match bound.
 
 | Model | Weights licence (source) | ONNX | Size | CPU (est.) | Languages |
 | --- | --- | --- | --- | --- | --- |
-| urchade/gliner_multi-v2.1 (default, D5(a)) | Apache-2.0 (https://huggingface.co/urchade/gliner_multi-v2.1) | exported by us from `model.safetensors` with the `gliner` library's export, then int8-quantized (onnx-community copies carry no licence) | **about 289M parameters** (encoder microsoft/mdeberta-v3-base, MIT); fp32 1,155,830,112 B, over the 1 GiB file cap; int8 est. 0.6–0.8 GB because the 250k-word embedding stays fp32 under ORT dynamic quantization (**unverified; measured in piece X**, and the caps of §4 set from it) | est. 0.2–0.5 s per 384-word window per core | multilingual (list unverified) |
-| urchade/gliner_small-v2.1 (English profile) | Apache-2.0 (https://huggingface.co/urchade/gliner_small-v2.1) | exported by us; ships only `pytorch_model.bin` (pickle), so the export follows §8's pickle rule | 166M; int8 183 MB (est.) | faster than multi | English |
+| urchade/gliner_multi-v2.1 (default, D5(a)) | Apache-2.0 (https://huggingface.co/urchade/gliner_multi-v2.1) | exported by us from `model.safetensors` with the `gliner` library's export, fp16 (onnx-community copies carry no licence; the int8 export loses every span, `ML-14`) | **about 289M parameters** (encoder microsoft/mdeberta-v3-base, MIT); fp32 1,155,830,112 B, over the 1 GiB file cap; fp16 579,687,008 B (measured, piece X) | est. 0.2–0.5 s per 384-word window per core | multilingual (list unverified) |
+| urchade/gliner_small-v2.1 (English profile) | Apache-2.0 (https://huggingface.co/urchade/gliner_small-v2.1) | exported by us; ships only `pytorch_model.bin` (pickle), so the export follows §8's pickle rule | 166M; fp16 306,237,114 B (measured) | faster than multi | English |
 
 Labels are passed at inference: `party organization`, `person`, `effective date`, `date`, `monetary amount`,
 `duration`, `address`. **Only v2 and v2.1 checkpoints are allowed:** v0 and v1 (`gliner_base`, `gliner_multi`) are
@@ -333,8 +333,11 @@ category of an error, never its message. modeld loads `gliner-multi` (else `glin
 parity (`tests/gliner_golden.rs`, run with `OPENSEAL_MODELD_TEST_BUNDLE`): spans equal the golden fp16 spans of
 `fixtures/ml/gliner-golden/` on all 50 texts for `gliner_multi-v2.1` (185 spans), `gliner_small-v2.1` (159) and
 `gliner-pii-base-v1.0` (57), and the feeds equal the reference's `input_ids`, `words_mask` and `text_lengths`.
-fp16 sizes: multi 579,687,008 B, small 306,237,114 B, PII 332,987,248 B. `tools/ml/models.toml` still lists the
-quint8 and int8 files; switching it to the fp16 exports is open.
+fp16 sizes: multi 579,687,008 B, small 306,237,114 B, PII 332,987,248 B. `tools/ml/models.toml` pins these fp16
+files and their `tokenizer.json` by the golden files' SHA-256 (`ML-21`; `fetch-models.py --self-test` refuses a
+GLiNER entry that is not the file the parity ran on). They are "pinned but not hosted": no URL serves our exports
+until OpenSeal's mirror holds them (`ML-15`), so the three GLiNER profiles are refused at fetch and `personal_data`
+left the image's default profiles; the tokenizer sizes were not recorded by the export and are filled at upload.
 
 **Parity is checked in two separate steps** (`tools/ml/`, offline): our Rust decoder's spans equal those of Python
 `onnxruntime` running **the same quantized file** through `gliner` 0.2.29's decoding (exact, after threshold); and
@@ -433,7 +436,7 @@ in modeld.
 
 | Model | Weights licence (source) | ONNX | Size | CPU (est.) | Languages | Verdict |
 | --- | --- | --- | --- | --- | --- | --- |
-| knowledgator/gliner-pii-base-v1.0 | Apache-2.0 (https://huggingface.co/knowledgator/gliner-pii-base-v1.0) | official `model_quint8.onnx` | 196,757,174 B | unverified | **English only**: encoder microsoft/deberta-v3-small (MIT), English vocabulary, despite the card's "multilingual" tag. Training data **undisclosed** (the card names only an evaluation set). Window from its config, `max_len` 2,048 | default (D6(a)); F1 81.0% on synthetic-multi-pii-ner-v1 per card |
+| knowledgator/gliner-pii-base-v1.0 | Apache-2.0 (https://huggingface.co/knowledgator/gliner-pii-base-v1.0) | our fp16 export of `pytorch_model.bin` (the official `model_quint8.onnx`, used before `ML-21`, was never measured against the golden spans; our quint8 export keeps 47 of 57) | 332,987,248 B | unverified | **English only**: encoder microsoft/deberta-v3-small (MIT), English vocabulary, despite the card's "multilingual" tag. Training data **undisclosed** (the card names only an evaluation set). Window from its config, `max_len` 2,048 | default (D6(a)); F1 81.0% on synthetic-multi-pii-ner-v1 per card |
 | urchade/gliner_multi_pii-v1 | Apache-2.0 (https://huggingface.co/urchade/gliner_multi_pii-v1) | ships only `pytorch_model.bin` (1,155,900,362 B, pickle), over the file cap: usable **only as our own int8 export under the cap** (piece X, §8 pickle rule) | int8 unmeasured | unverified | 6 (unnamed) | fallback for non-Latin names, once the export fits the caps |
 | openai/privacy-filter | Apache-2.0 (https://huggingface.co/openai/privacy-filter) | — | about 1.5B parameters, about 6 GB fp32, over the 4 GiB container limit | — | English-primary | **not usable within the caps; not evaluated** (D6(d) not chosen) |
 
