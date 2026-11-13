@@ -953,7 +953,8 @@ Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list la
   `api`/`webhooks` → the tabs of API and webhooks). Each page has the canvas head (h1, lede, actions right). Below
   48em the nav is a "Section" select. Each nav page is a command (`admin.go.*`), so ⌘K reaches it.
 - **API and webhooks**: one page, pill tabs (`tabs({variant: "pill"})`, arrow keys); the URL follows the tab
-  (`history.replaceState`) so a reload or link opens the same one. Organization and Branding are separate pages over
+  (`ctx.replaceHash`, which writes only while the address is still the screen's own, so a newer address arriving
+  as the screen opens is never written over: E2E-07) so a reload or link opens the same one. Organization and Branding are separate pages over
   `/accounts/me`. Members says groups and custom profiles are not on this server yet. A webhook's row menu has Edit
   (UXW-10): the address and events prefilled, only what changed sent to `PATCH /webhooks/{id}` (a new address is
   checked again, `CS-API-0013` said in place); its signing secrets are named, not editable.

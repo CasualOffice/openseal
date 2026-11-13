@@ -3,13 +3,13 @@
 // API secret that Escape cannot lose; one Add user panel with search and filters;
 // branding with a colour picker and a contrast check; Reports that say how many
 // envelopes each figure rests on; and a template used with an extra recipient.
-// Runs in mock mode (the webhook test event and redelivery are mock answers ahead of the
-// server, api.js NOT_ON_SERVER), at 1440 and at 390 px.
+// Runs in mock mode, over its seeded members, webhooks, templates and reports, at 1440 and
+// at 390 px; publishing a disclosure (UXW-12) also runs on any server, at the end.
 
 import { test, expect } from "@playwright/test";
 import { app, signIn, expectAccessible, snap, REAL } from "./helpers.mjs";
 
-const mockOnly = () => test.skip(REAL, "uses the mock's seeded data and its answers ahead of the server");
+const mockOnly = () => test.skip(REAL, "uses the mock's seeded members, webhooks, templates and reports; a real server's disclosure is the test at the end (UXW-12), its admin log and webhooks are admin-screens.spec.mjs's (UXW-09, UXW-10)");
 const db = (page) => page.evaluate(() => JSON.parse(sessionStorage.getItem("openseal.mock.v1")));
 const templateId = async (page, name) => (await db(page)).templates.find((x) => x.name === name).id;
 
@@ -367,3 +367,29 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
     });
   });
 }
+
+// E2E-11: publishing a disclosure over `POST /ersd-versions` on any server, the Compose
+// stack included (UXW-12). The text is the run's own; the version is the next one.
+test("admin › electronic disclosure on any server: a published version becomes the current one (UXW-12)", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await page.goto(app("#/admin?section=ersd"));
+  const card = page.getByTestId("ersd-card");
+  await expect(card.getByRole("heading", { name: "Electronic disclosure", level: 2 })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Publish new version" })).toBeVisible();
+  const before = (await card.getByTestId("ersd-version").count()) ? (await card.getByTestId("ersd-version").textContent()).trim() : null;
+  const text = `Our electronic record and signature disclosure, ${Date.now()}-${testInfo.project.name}.`;
+  await card.getByRole("button", { name: "Publish new version" }).click();
+  const sheet = page.getByTestId("sheet-ersd-publish");
+  await sheet.getByLabel("Disclosure text").fill("");
+  await sheet.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(sheet.getByRole("alert")).toHaveText("Enter the disclosure text.");
+  await sheet.getByLabel("Disclosure text").fill(text);
+  await sheet.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(card.getByTestId("ersd-preview")).toHaveText(text);
+  await expect(card.getByTestId("ersd-version")).not.toHaveText(before ?? "");
+  const now = (await card.getByTestId("ersd-version").textContent()).trim();
+  await expect(card.getByTestId("ersd-history")).toContainText(`Version ${now} (en)`);
+  await expectAccessible(page, "admin electronic disclosure on any server");
+});

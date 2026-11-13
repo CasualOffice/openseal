@@ -3,7 +3,9 @@
 // check), webhooks end to end (list, create, edit, test, deliveries, deliver again; the
 // `/webhooks` routes of UXW-31..33), and the expiry warning days an admin sets on the
 // Organization page (`settings.workflow_policy` through `PATCH /accounts/me`).
-// Runs in mock mode, whose answers follow the server's for these routes.
+// The first block runs in mock mode, over its seeded log, webhooks and deliveries (whose
+// answers follow the server's for these routes); "admin screens on any server" runs in
+// both modes, so on the Compose stack too (E2E-11).
 
 import { test, expect } from "@playwright/test";
 import { app, signIn, expectAccessible, REAL } from "./helpers.mjs";
@@ -12,7 +14,7 @@ const db = (page) => page.evaluate(() => JSON.parse(sessionStorage.getItem("open
 
 test.describe("admin screens", () => {
   test.beforeEach(async ({ page }) => {
-    test.skip(REAL, "uses the mock's seeded data");
+    test.skip(REAL, "uses the mock's seeded log, webhooks and failed delivery; on a real server the block \"admin screens on any server\" below runs instead (UXW-09, UXW-10, UXW-31, UXW-32; delivering again, UXW-33, needs a failed delivery the stack cannot make on demand)");
     await page.setViewportSize({ width: 1440, height: 900 });
     await signIn(page);
   });
@@ -149,5 +151,103 @@ test.describe("admin screens", () => {
     await expect(card.getByTestId("expiry-warning")).toHaveText("No warning");
     expect((await db(page)).account.settings.workflow_policy.expiry_warning_days).toBe(0);
     await expectAccessible(page, "organization settings");
+  });
+});
+
+/// `text` as a regular expression matching itself.
+const literal = (text) => new RegExp(text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"));
+
+// E2E-11: the same screens over what any server holds, so they run on the Compose stack
+// too (compose-e2e), not only over the mock's seeded log and webhooks. Every name is the
+// run's own, and a setting changed is put back.
+test.describe("admin screens on any server", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await signIn(page);
+  });
+
+  test("audit log: a settings change is the newest event, with its change, the CSV and the chain check (UXW-09)", async ({ page }) => {
+    await page.goto(app("#/admin?section=organization"));
+    const edit = page.getByTestId("account-settings").getByRole("button", { name: "Edit settings" });
+    const sheet = page.getByRole("dialog", { name: "Settings" });
+    const days = sheet.getByLabel("Envelopes expire after (days)");
+    await edit.click();
+    const was = await days.inputValue();
+    const now = was === "45" ? "46" : "45";
+    await days.fill(now);
+    await sheet.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Settings saved.")).toBeVisible();
+
+    await page.goto(app("#/admin?section=audit"));
+    await expect(page.getByRole("heading", { name: "Audit log", level: 1 })).toBeVisible();
+    const rows = page.getByTestId("audit-row");
+    await expect(rows.first()).toContainText("workspace.settings_changed");
+    await expect(rows.first()).toContainText("default_expiry_days");
+    await rows.first().getByRole("button", { name: /^Details/ }).click();
+    const details = page.getByRole("dialog", { name: /^Event \d+$/ });
+    await expect(details.getByTestId("audit-change")).toContainText("default_expiry_days");
+    await expect(details.getByTestId("audit-change")).toContainText(now);
+    await expect(details.getByTestId("audit-hash")).toHaveText(/^[0-9a-f]{64}$/);
+    await details.getByRole("button", { name: "Close" }).first().click();
+
+    // The server's CSV: every event, so at least the rows on the screen.
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Export CSV" }).click(),
+    ]);
+    const csv = await (await download.createReadStream()).toArray().then((c) => Buffer.concat(c).toString("utf8"));
+    const lines = csv.trim().split(/\r?\n/);
+    expect(lines[0]).toBe("seq,at,action,hash,prev,event");
+    expect(lines.length).toBeGreaterThanOrEqual((await rows.count()) + 1);
+    await page.getByRole("button", { name: "Verify the log" }).click();
+    await expect(page.getByText("The whole log checks out")).toBeVisible();
+
+    // The setting back as it was.
+    await page.goto(app("#/admin?section=organization"));
+    await edit.click();
+    await days.fill(was);
+    await sheet.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Settings saved.")).toBeVisible();
+  });
+
+  test("webhooks: add, edit (a private address refused), a test event in its deliveries (UXW-10, UXW-31, UXW-32)", async ({ page }, testInfo) => {
+    const run = `${Date.now()}-${testInfo.project.name}`;
+    const first = `https://hooks.example.com/e2e-${run}`;
+    const second = `https://crm.example.net/e2e-${run}`;
+    await page.goto(app("#/admin?section=webhooks"));
+    await expect(page.getByRole("heading", { name: "API and webhooks", level: 1 })).toBeVisible();
+    await page.getByRole("button", { name: "New webhook" }).first().click();
+    const add = page.getByRole("dialog", { name: "New webhook" });
+    await add.getByLabel("Endpoint URL").fill(first);
+    await add.getByLabel("Signing secret names").fill("e2e_signing_secret");
+    await add.getByRole("button", { name: "Create" }).click();
+    await expect(page.getByText("Webhook added.")).toBeVisible();
+    const row = page.getByRole("row", { name: literal(first) });
+    await expect(row).toContainText("Active");
+
+    // Edit: the address and events prefilled; a private address refused by the server.
+    await row.getByRole("button", { name: `Actions for ${first}` }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+    const panel = page.getByRole("dialog", { name: "Edit webhook" });
+    await expect(panel.getByLabel("Endpoint URL")).toHaveValue(first);
+    await expect(panel.getByTestId("webhook-secrets")).toContainText("e2e_signing_secret");
+    await panel.getByLabel("Endpoint URL").fill("https://10.1.2.3/hook");
+    await panel.getByRole("button", { name: "Save" }).click();
+    await expect(panel.getByText("This address is refused")).toBeVisible();
+    await panel.getByLabel("Endpoint URL").fill(second);
+    await panel.getByLabel("envelope.sent").check();
+    await panel.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Webhook saved.")).toBeVisible();
+    const edited = page.getByRole("row", { name: literal(second) });
+    await expect(edited).toBeVisible();
+
+    // A test event is recorded as a delivery of that webhook.
+    await edited.getByRole("button", { name: `Deliveries for ${second}` }).click();
+    const del = page.getByTestId("deliveries");
+    await expect(del).toContainText(second);
+    await del.getByTestId("webhook-test").click();
+    await expect(page.getByText("Test event sent.")).toBeVisible();
+    await expect(del.getByTestId("delivery-row").first()).toContainText("webhook.test");
+    await expectAccessible(page, "webhooks on any server");
   });
 });
