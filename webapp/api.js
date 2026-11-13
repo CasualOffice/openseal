@@ -419,7 +419,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// template_id?, pages_matched?, pages_total?}], next_cursor}`; `kind` and `state`
     /// filter, `limit` 1 to 200.
     listSuggestions: (id, { kind, state, cursor, limit } = {}) => data(request("GET", `${E(id)}/suggestions`, { query: { kind, state, cursor, limit } })),
-    /// Accept a suggestion (it performs the ordinary action; `409 CS-ML-0012` when stale).
+    /// Record that a person accepted a suggestion (`decided_by`, `decided_at`); the action
+    /// itself is the caller's own edit through the ordinary endpoints (docs/33 §6).
+    /// `409 CS-ML-0012` when already decided or its document left the envelope.
     acceptSuggestion: (id, s) => data(request("POST", `${E(id)}/suggestions/${encodeURIComponent(s)}/accept`)),
     dismissSuggestion: (id, s) => data(request("POST", `${E(id)}/suggestions/${encodeURIComponent(s)}/dismiss`)),
     /// Search agreements by meaning (`ML-07B`, planned in docs/33 §6, `WEB-19`): `{items:
