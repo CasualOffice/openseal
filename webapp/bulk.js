@@ -129,7 +129,7 @@ export function mount(view, ctx, [rawId]) {
       const batchName = h("input", { id: "bulk-name", class: "os-input", maxLength: 255, value: name, attrs: { "data-testid": "bulk-name" } });
       const send = button(t("templates.bulk.send", { n: checked.valid }), { icon: "send", variant: "primary", command: "bulk.send", attrs: { "data-testid": "bulk-send", disabled: checked.valid ? null : true }, onClick: () => startSend(batchName.value.trim()) });
       checkOut.append(card({ title: t("templates.bulk.checked"), testId: "bulk-check-card" },
-        h("p", { "data-testid": "bulk-summary", text: t("templates.bulk.summary", { n: checked.row_count, ok: checked.valid, bad: bad.length }) }),
+        h("p", { attrs: { "data-testid": "bulk-summary" }, text: t("templates.bulk.summary", { n: checked.row_count, ok: checked.valid, bad: bad.length }) }),
         bad.length ? h("p", { class: "os-muted os-small", text: t("templates.bulk.bad-help") }) : null,
         rowsTable(checked.rows, t("templates.bulk.checked")),
         h("label", { class: "os-label", attrs: { for: "bulk-name" }, text: t("templates.bulk.name") }), batchName,

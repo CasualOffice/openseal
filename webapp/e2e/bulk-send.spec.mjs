@@ -39,6 +39,7 @@ test("bulk send from a template: check a CSV list, send it with progress, see ea
 
   // The template list's row menu leads to the bulk send page.
   await page.goto(app("#/templates"));
+  if (!REAL) await page.reload(); // the page's mock reads the template written above on load
   const row = page.locator(`tr[data-id="${id}"]`);
   await row.getByRole("button", { name: /Actions for/ }).click();
   await page.getByRole("menuitem", { name: "Bulk send" }).click();
