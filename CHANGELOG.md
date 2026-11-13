@@ -28,6 +28,12 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 - Model manifest and hash-checking fetch script, an offline GLiNER export tool, and synthetic scanned-form fixtures
   (`ML-01`, `ML-02`, `ML-05`).
 
+### Changed
+- The website (`site/`) is redesigned in the web app's approved design language (owner instruction 44, `SITE-01`):
+  Geist type, the warm neutral canvas, the seal red only for the primary action, new screenshots of the rebuilt
+  sign-in, Home, command menu, signing ceremony, Verify and platform console, and sections on evidence, document
+  intelligence, the console, self-hosting and the API.
+
 ### Security
 - Security hardening of the signing ceremony and of accounts shared between workspaces.
 
