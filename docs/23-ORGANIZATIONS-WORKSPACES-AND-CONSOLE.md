@@ -508,13 +508,19 @@ mutation of the migration):
   commit whose transaction appended no event to that workspace's log or its organization's (`23514`, constraint
   `admin_change_has_event`, `CS-DB-0008`). "This transaction" is the event row's `xact` (`pg_current_xact_id()`, the
   top-level id even inside a savepoint), set by the insert trigger, never by the caller. The owner role (migrations,
-  superuser recovery) is outside, as it is for the envelope chain (`SEC-S07`). **So are the console's writes until
-  `CON-16`:** the check skips every role that is not `openseal_app`, and the console's definer functions from
-  migrations 0018 and 0019 (`platform.set_workspace_status` and the other organization writes, and approvals) commit
-  with no event in `org_admin_events`. A review probe archived a workspace through `platform.set_workspace_status` as
-  a console login with a live operator session, and the organization log had no row. Those changes are recorded only
-  in the operator log (`platform.operator_events`) until `CON-16` copies each into the organization's log in the same
-  transaction.
+  superuser recovery) is outside, as it is for the envelope chain (`SEC-S07`).
+- **No console change commits without its copy (`CON-16`, migration 0026).** The same deferred triggers hold the
+  console role (`openseal_console`): a console commit that changed an organization or a workspace (the definer writes
+  of migrations 0018 and 0019: rename, data-region labels, a workspace's label and status through
+  `platform.set_workspace_status`, suspend and resume) fails with `admin_change_has_event` (`23514`, `CS-DB-0008`)
+  unless the same transaction appended an `operator.*` event to that organization's `org_admin_events`. The console
+  takes the next `seq` and head with `platform.org_log_tip` (head row locked) and appends through
+  `platform.copy_to_org_log`, which requires a live operator session with the `operator` or `platform_owner` role,
+  an `operator.*` action, and an actor in the bytes that is exactly `{kind: operator, id}` of that session's operator
+  (`OS005` otherwise); the 0020 chain trigger then checks hash, `seq`, `prev`, owner, action and time as for every
+  event. The copy is the organization log's v1 format with no IP address, and links the operator event it copies. A
+  copy that fails therefore rolls its write back, and a write that skips its copy cannot commit
+  (`server/casual-sign-console/tests/org_copies.rs`).
 - **Canonical event (v1).** RFC 8785 bytes from `casual-sign-audit::jcs`: `v`, `account` or `organization`, `seq`,
   `prev` (hex or null), `at` (Unix milliseconds), `actor` (`{kind: user|api_client, id}` or `{kind: system}`), `action`,
   `target` (ids by name), `changes` (`key`, `old`, `new`), and `request_id` and `ip` when known. Names and e-mail
@@ -918,8 +924,7 @@ returned kept in `sessionStorage` for the tab), `model.js` (pure logic, unit-tes
 **Not yet built** (rows in docs/14): the Compose
 service and the console's LOGIN role in deployment (`CON-02`); `casual-sign-keyd-client` (`CON-15`); the other
 two-person actions (organization create, close, owner recovery, identity disable, adding a platform owner) and the
-server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); copies of
-operator actions into organization logs through `platform.copy_to_org_log` (`CON-16`, needs `ORG-05`); TOTP re-entry
+server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); TOTP re-entry
 for key and trust actions (`CON-07`); ops listeners and metrics on server and worker, keyd health (`CON-05`); keys,
 certificates and expiry (`CON-06`, `CON-08`); plans and limits (`PLAN-02`).
 
