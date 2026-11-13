@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { fills, isFilled, isFixed, checkText, isPhone, isZip, fixedText, inputModeFor, nextAction, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments } from "../signfields.js";
+import { fills, isFilled, isFixed, checkText, isPhone, isZip, fixedText, inputModeFor, nextAction, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments, SSO_KEY, ssoReturn } from "../signfields.js";
 
 // ---- The ceremony's model (WEB-18) ---------------------------------------------------------
 
@@ -138,4 +138,27 @@ test("numbers: a number, whole when decimals is 0, within min and max", () => {
   assert.deepEqual(checkText({ type: "number" }, "x"), { key: "sign.check.number" }, "a number field needs a number without a rule");
   assert.equal(inputModeFor(qty), "numeric");
   assert.equal(inputModeFor({ type: "text", validation: { kind: "email" } }), "email");
+});
+
+// ---- The return from an identity provider (RAUTH-01) ------------------------------------
+
+test("the return from an identity provider finds the link this tab saved, once", () => {
+  const store = () => {
+    const m = new Map();
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) };
+  };
+  const s = store();
+  s.setItem(SSO_KEY, "tok-1");
+  const back = { search: "?state=st-9&code=c%2F1" };
+  assert.deepEqual(ssoReturn(back, s), { token: "tok-1", state: "st-9", code: "c/1" });
+  // Taken out: a reload of the return address does not reuse it.
+  assert.equal(ssoReturn(back, s), null);
+  // A refusal comes back with `error` and no code.
+  s.setItem(SSO_KEY, "tok-2");
+  assert.deepEqual(ssoReturn({ search: "?state=st&error=access_denied" }, s), { token: "tok-2", state: "st", code: "" });
+  // Not a return, or another tab's: nothing.
+  s.setItem(SSO_KEY, "tok-3");
+  assert.equal(ssoReturn({ search: "?t=abc" }, s), null);
+  assert.equal(ssoReturn({ search: "?state=st&code=c" }, store()), null);
+  assert.equal(ssoReturn({ search: "?state=st&code=c" }, null), null);
 });

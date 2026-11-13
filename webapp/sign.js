@@ -23,7 +23,7 @@ import { button, busy, toast, toastError, openDialog, noServerState, dockPanel, 
 import { register, run } from "./commands.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
-import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments } from "./signfields.js";
+import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments, SSO_KEY, ssoReturn } from "./signfields.js";
 import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
@@ -47,7 +47,11 @@ export function tokenFrom(loc) {
   return new URLSearchParams(loc.search).get("t");
 }
 
-const token = tokenFrom(location);
+// Back from an identity provider (`sso`, RAUTH-01; signfields.js `ssoReturn`).
+let session = null;
+try { session = window.sessionStorage; } catch { session = null; }
+const ssoBack = ssoReturn(location, session);
+const token = ssoBack ? ssoBack.token : tokenFrom(location);
 const main = document.getElementById("main");
 const guide = document.getElementById("guide");
 const subjectEl = document.getElementById("subject");
@@ -233,8 +237,29 @@ async function start() {
   try {
     view = await api.ceremony.open(token);
   } catch (err) { return fail(err); }
+  // Back from the identity provider (RAUTH-01): the address bar shows the link again,
+  // then the sign-in is checked; a refusal shows the sign-in step with why.
+  let ssoFailed = false;
+  if (ssoBack) {
+    const back = location.pathname.startsWith("/s/") ? `/s/${encodeURIComponent(token)}` : `?t=${encodeURIComponent(token)}`;
+    try { history.replaceState(null, "", back); } catch { /* the address bar keeps the return address */ }
+    if ((view.auth_required || []).includes("sso")) {
+      try {
+        view = await api.ceremony.ssoVerify(token, ssoBack.state, ssoBack.code);
+      } catch (err) {
+        if (err.status !== 403) return fail(err);
+        ssoFailed = true;
+      }
+    }
+  }
   loader.reach(1);
   fillHeader();
+  if (ssoFailed && (view.auth_required || []).includes("sso")) {
+    buildMenu("auth");
+    moreBtn.hidden = false;
+    declineBtn.hidden = true;
+    return asCard(() => ssoSignIn(true));
+  }
   next();
 }
 
@@ -263,13 +288,14 @@ function next() {
   if (r.status === "reassigned") return message({ kind: "reassigned", title: t("sign.reassigned.title"), text: t("sign.reassigned.done"), testId: "sign-reassigned" });
   if (["voided", "declined", "expired"].includes(env.status)) return message({ kind: env.status === "expired" ? "expired" : "closed", title: t("sign.closed.title"), text: t(`sign.closed.${env.status}`), testId: "sign-closed" });
   const pending = view.auth_required || [];
-  const authing = ["access_code", ...SENT_CODES].some((m) => pending.includes(m));
+  const authing = ["access_code", ...SENT_CODES, "sso"].some((m) => pending.includes(m));
   buildMenu(authing ? "auth" : "open");
   moreBtn.hidden = false;
   declineBtn.hidden = authing || env.signing_options?.allow_decline === false;
   if (pending.includes("access_code")) return asCard(accessCode);
   const sent = SENT_CODES.find((m) => pending.includes(m));
   if (sent) return asCard(() => sentCode(sent));
+  if (pending.includes("sso")) return asCard(() => ssoSignIn(false));
   if (env.signing_options?.capture_location && !location_) return asCard(askLocation);
   if (view.consent_required && !r.consented) return asCard(consent);
   return documents();
@@ -358,6 +384,36 @@ function sentCode(method) {
   });
   screen(form);
   send.focus();
+}
+
+/// Sign in through an identity provider (`sso`, RAUTH-01), on the access-code screen's
+/// design: one button per provider the server lists; the browser goes there and comes
+/// back to `/s/oidc`. `failed`: the last sign-in did not pass.
+function ssoSignIn(failed) {
+  guide.hidden = true;
+  const providers = Array.isArray(view.sso_providers) ? view.sso_providers : [];
+  const err = h("p", { id: "sso-err", class: "os-field-error", attrs: { role: "alert" }, text: failed ? t("sign.sso.failed") : "" });
+  const buttons = providers.map((p) => {
+    const b = button(t("sign.sso.with", { name: p.name }), { variant: "primary", size: "lg", type: "button" });
+    b.dataset.testid = `sso-${p.id}`;
+    b.addEventListener("click", async () => {
+      err.textContent = "";
+      try {
+        const v = await busy(b, () => api.ceremony.ssoStart(token, p.id));
+        try { session?.setItem(SSO_KEY, token); } catch { /* the return then cannot find the link */ }
+        location.assign(v.sso_authorization_url);
+      } catch (ex) {
+        err.textContent = ex.code === "CS-API-0003" ? t("sign.otp.wait") : errorMessage(ex);
+      }
+    });
+    return b;
+  });
+  screen(h("div", { class: "os-sign__card", attrs: { "data-testid": "sign-sso" } },
+    icon("lock", { size: 24 }),
+    h("h1", { class: "os-sign__title", text: t("sign.sso.title") }),
+    h("p", { class: "os-muted", text: t(providers.length ? "sign.sso.text" : "sign.sso.none") }),
+    h("div", { class: "os-stack" }, ...buttons), err));
+  buttons[0]?.focus();
 }
 
 function askLocation() {

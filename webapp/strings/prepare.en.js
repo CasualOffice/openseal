@@ -90,6 +90,7 @@ export const PREPARE = {
   "prepare.access-code-none": "No access code",
   "prepare.access-code-set": "Access code set",
   "prepare.email-otp": "Require a code sent by email",
+  "prepare.sso": "Require sign-in with an account (identity provider)",
   "prepare.sms-otp": "Require a code sent by text message",
   "prepare.voice-otp": "Require a code read in a phone call",
   "prepare.phone": "Phone",

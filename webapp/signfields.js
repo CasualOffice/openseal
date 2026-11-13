@@ -218,3 +218,21 @@ export function dateField(signedAny, date) {
 export function phoneSegments(ready, finished) {
   return [!!ready || !!finished, !!finished];
 }
+
+/// Where the signing page keeps the link while the signer signs in at an identity
+/// provider (`sso`, RAUTH-01): the provider sends the browser back to one fixed address
+/// (`/s/oidc`), which cannot carry the link. Only the tab's session storage holds it, and
+/// only until the page comes back.
+export const SSO_KEY = "openseal.sign.sso";
+
+/// The return from an identity provider: `{token, state, code}` when `loc` is the
+/// redirect back (`state`, and `code` or `error`, in the query) and this tab started a
+/// sign-in (the link in `storage`); `null` otherwise. Takes the link out of `storage`.
+export function ssoReturn(loc, storage) {
+  const q = new URLSearchParams(loc.search);
+  if (!q.get("state") || !(q.has("code") || q.has("error"))) return null;
+  let saved = null;
+  try { saved = storage?.getItem(SSO_KEY) || null; storage?.removeItem(SSO_KEY); } catch { saved = null; }
+  if (!saved) return null;
+  return { token: saved, state: q.get("state"), code: q.get("code") || "" };
+}

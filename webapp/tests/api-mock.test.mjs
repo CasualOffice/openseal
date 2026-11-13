@@ -181,3 +181,31 @@ test("SMS and voice codes (VS-05): a phone in international form, the method sen
   v = await c.ceremony.otpVerify(t, MOCK.emailCode, "sms_otp");
   assert.deepEqual(v.auth_required, []);
 });
+
+test("sign-in through an identity provider (RAUTH-01): providers listed, the state works once", async () => {
+  const c = await signedIn();
+  const pdf = makePdf([{ title: "T" }]);
+  const doc = { name: "a.pdf", content_base64: btoa(String.fromCharCode(...pdf)) };
+  const env = await c.createEnvelope({
+    documents: [doc],
+    recipients: [{ ref: "r1", type: "signer", name: "A", email: "a@example.com", auth: ["sso"] }],
+    fields: [{ recipient: "r1", document: 0, type: "signature", page: 1, x: "72", y: "600", width: "160", height: "44", required: true }],
+  });
+  const sent = await c.sendEnvelope(env.id);
+  const t = sent.recipients[0].mock_token;
+  let v = await c.ceremony.open(t);
+  assert.deepEqual(v.auth_required, ["sso"]);
+  assert.deepEqual(v.sso_providers, [MOCK.ssoProvider]);
+  assert.deepEqual(v.envelope.documents, []);
+  await assert.rejects(c.ceremony.ssoStart(t, "other"), (e) => e.status === 422);
+  const started = await c.ceremony.ssoStart(t, MOCK.ssoProvider.id);
+  const q = new URLSearchParams(started.sso_authorization_url.split("?")[1]);
+  await assert.rejects(c.ceremony.ssoVerify(t, q.get("state"), "wrong-code"), (e) => e.status === 403);
+  // That state is spent: the right code no longer passes with it.
+  await assert.rejects(c.ceremony.ssoVerify(t, q.get("state"), MOCK.ssoCode), (e) => e.status === 403);
+  const again = new URLSearchParams((await c.ceremony.ssoStart(t, MOCK.ssoProvider.id)).sso_authorization_url.split("?")[1]);
+  v = await c.ceremony.ssoVerify(t, again.get("state"), again.get("code"));
+  assert.deepEqual(v.auth_required, []);
+  assert.equal(v.envelope.documents.length, 1);
+  assert.equal(v.sso_providers, undefined);
+});

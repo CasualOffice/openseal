@@ -25,6 +25,10 @@ export const MOCK = {
   accessCode: "2468",
   // The emailed one-time code every mock `POST /s/{token}/otp` "sends" (SEC-A02).
   emailCode: "135790",
+  // Recipient sign-in (`sso`, RAUTH-01): the one provider the mock lists, and the code
+  // its "provider" sends the browser back with (straight back, no real sign-in).
+  ssoProvider: { id: "demo", name: "Demo identity provider" },
+  ssoCode: "mock-sso-code",
   // A member with this email also belongs to another account (SEC-ID-01): only they may
   // change their name or password, so an administrator's change is 403 CS-API-0015.
   sharedEmail: "shared@openseal.test",
@@ -359,12 +363,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       capture_location: !!env.signing_options?.capture_location,
       consent_required: { version: disclosure().version, sha256: disclosure().sha256, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
+      ...(rec.auth.includes("sso") && !rec.auth_passed.includes("sso") ? { sso_providers: [MOCK.ssoProvider] } : {}),
       sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
     };
   }
   const publicRecipient = (r) => {
-    const { access_code, auth_passed, token, otp_open, viewed_to_end, hosted, ...rest } = r;
-    void access_code; void auth_passed; void token; void otp_open; void viewed_to_end; void hosted;
+    const { access_code, auth_passed, token, otp_open, sso_state, viewed_to_end, hosted, ...rest } = r;
+    void access_code; void auth_passed; void token; void otp_open; void sso_state; void viewed_to_end; void hosted;
     return { ...rest, authenticated: r.auth.every((m) => r.auth_passed.includes(m)) };
   };
   const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
@@ -1819,6 +1824,34 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       rec.otp_open = false;
       if (!rec.auth_passed.includes(m)) rec.auth_passed.push(m);
       await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: m });
+      return json(200, view(env, rec, token));
+    }
+    // Sign-in through an identity provider (`sso`, RAUTH-01), as the server: start
+    // answers the view with `sso_authorization_url` (here straight back to the signing
+    // page, a relative `?state=…&code=MOCK.ssoCode`); verify takes `{state, code}`, the state works once, and a
+    // failure answers 403 with the view and counts.
+    if (sub === "sso" && !parts[4] && method === "POST") {
+      if (!rec.auth.includes("sso")) fail(409, "CS-API-0014", "Method not available");
+      if (rec.auth_passed.includes("sso")) fail(409, "CS-API-0009", "Already authenticated");
+      if (body?.provider !== MOCK.ssoProvider.id) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/provider", code: "CS-API-0001" }]);
+      rec.sso_state = uid();
+      await audit(env, "recipient.auth_challenged", { recipient_id: rec.id, method: "sso" });
+      return json(200, { ...view(env, rec, token), sso_authorization_url: `?state=${encodeURIComponent(rec.sso_state)}&code=${encodeURIComponent(MOCK.ssoCode)}` });
+    }
+    if (sub === "sso" && parts[4] === "verify" && method === "POST") {
+      if (!rec.auth.includes("sso")) fail(409, "CS-API-0014", "Method not available");
+      if (rec.auth_passed.includes("sso")) fail(409, "CS-API-0009", "Already authenticated");
+      const n = (db.attempts[token] || 0);
+      if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
+      const open = rec.sso_state;
+      rec.sso_state = null;
+      if (!open || body?.state !== open || body?.code !== MOCK.ssoCode) {
+        db.attempts[token] = n + 1;
+        await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "sso", attempt: n + 1 });
+        return json(403, view(env, rec, token));
+      }
+      rec.auth_passed.push("sso");
+      await audit(env, "recipient.auth_passed", { recipient_id: rec.id, method: "sso", identity: { issuer: "https://idp.mock.test", subject_sha256: `sha256:${"0".repeat(64)}` } });
       return json(200, view(env, rec, token));
     }
     if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");

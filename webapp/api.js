@@ -561,6 +561,11 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// `sms_otp` or `voice_otp` (slice 5); `otpVerify` checks it.
       otpSend: (token, method) => data(request("POST", `${S(token)}/otp`, { body: method && method !== "email_otp" ? { method } : {}, ceremony: true })),
       otpVerify: (token, code, method) => data(request("POST", `${S(token)}/otp/verify`, { body: method && method !== "email_otp" ? { code, method } : { code }, ceremony: true })),
+      /// Sign in through one of the server's identity providers (`sso`, RAUTH-01):
+      /// `ssoStart` answers the view with `sso_authorization_url`, where the page sends
+      /// the browser; `ssoVerify` finishes with the `state` and `code` it came back with.
+      ssoStart: (token, provider) => data(request("POST", `${S(token)}/sso`, { body: { provider }, ceremony: true })),
+      ssoVerify: (token, state, code) => data(request("POST", `${S(token)}/sso/verify`, { body: { state, code }, ceremony: true })),
       document: async (token, doc) =>
         (await request("GET", `${S(token)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, ceremony: true })).blob,
       viewed: (token, doc, pages, location) =>
