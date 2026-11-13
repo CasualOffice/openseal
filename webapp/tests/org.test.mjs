@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { createMockFetch, MOCK } from "../mock.js";
 import { createClient } from "../api.js";
 import { EN } from "../strings.en.js";
-import { ORG_NAV, ORG_ACTIONS, orgRouteFrom, orgHref, orgCan, workspaceCounts, adminCounts, auditRow, filterAudit, shortId } from "../orgmodel.js";
+import { ORG_NAV, ORG_ACTIONS, orgRouteFrom, orgHref, orgCan, workspaceCounts, adminCounts, auditRow, auditAll, changeText, filterAudit, shortId } from "../orgmodel.js";
 
 async function signedIn() {
   const c = createClient({ fetch: createMockFetch() });
@@ -70,4 +70,25 @@ test("mock org routes: owner role, create, join, archive, admins, last owner, ch
   const page = await c.org.audit({ limit: 3 });
   assert.equal(page.next_cursor, 2);
   assert.equal((await c.org.audit({ cursor: page.next_cursor, limit: 100 })).items[0].seq, 3);
+});
+
+test("audit log: the newest entry is read even when the log is longer than a page (server pages oldest first)", async () => {
+  const c = await signedIn();
+  for (let i = 0; i < 120; i++) await c.org.rename(`Acme ${i}`);
+  const rows = await auditAll((q) => c.org.audit(q), { limit: 50 });
+  assert.equal(rows.length, 121);
+  assert.equal(rows.at(-1).action, "organization.renamed");
+  assert.deepEqual(rows.at(-1).changes[0].new, "Acme 119");
+  for (let i = 1; i < rows.length; i++) assert.equal(rows[i].seq, rows[i - 1].seq + 1);
+  // A walk stops at its cap rather than looping on a server that keeps answering.
+  let calls = 0;
+  const endless = async ({ cursor }) => { calls += 1; return { items: [{ seq: (cursor ?? -1) + 1, action: "x" }], next_cursor: (cursor ?? -1) + 1 }; };
+  const capped = await auditAll(endless, { pages: 3 });
+  assert.equal(calls, 3);
+  assert.equal(capped.length, 3);
+});
+
+test("audit row change values: objects are shown as JSON, never [object Object]", () => {
+  assert.equal(changeText({ key: "policy", old: null, new: { a: 1 } }), "policy: — → {\"a\":1}");
+  assert.equal(changeText({ key: "name", old: "A", new: "B" }), "name: A → B");
 });

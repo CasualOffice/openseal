@@ -63,6 +63,32 @@ export function auditRow(item) {
   return { seq: item?.seq ?? null, at: item?.at || null, action, known: ORG_ACTIONS.includes(action), actor, targets, changes };
 }
 
+/// The whole organization log as rows, oldest first. The server pages oldest first and
+/// its cursor moves forward (`GET /organizations/me/audit`, each page verified as it is
+/// read), so the newest entries are on the last page: a screen that shows newest first
+/// must walk to the end. `fetchPage({cursor, limit})` is the client's `org.audit`; the
+/// walk stops at `pages` pages (a page-by-newest route is ORG-35) and says whether it
+/// did (`rows.truncated`).
+export async function auditAll(fetchPage, { limit = 1000, pages = 50 } = {}) {
+  const rows = [];
+  let cursor = null;
+  for (let i = 0; i < pages; i++) {
+    const out = await fetchPage({ cursor, limit });
+    for (const item of out?.items || []) rows.push(auditRow(item));
+    cursor = out?.next_cursor ?? null;
+    if (cursor == null) return rows;
+  }
+  rows.truncated = true;
+  return rows;
+}
+
+/// One changed key as a line: `key: old → new`; a value that is not text (a policy
+/// object, a list) as its JSON. Pure.
+export function changeText(c) {
+  const v = (x) => (x == null ? "—" : typeof x === "object" ? JSON.stringify(x) : String(x));
+  return `${c?.key ?? ""}: ${v(c?.old)} → ${v(c?.new)}`;
+}
+
 /// The log's rows that match a filter (`q` in the action, a target id or the actor's
 /// name), in the order given. `nameOf(id)` names a user id when the screen knows it.
 export function filterAudit(rows, q = "", nameOf = () => "") {

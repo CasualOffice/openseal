@@ -1205,7 +1205,7 @@ suggestion bar with their behavioural assertions kept.
 ## As built: organization admin, first cut (ORG-06, 2026-11-13)
 
 `#/org` (`webapp/org.js`; pure rules in `orgmodel.js`: `ORG_NAV`, `orgRouteFrom`, `orgHref`, `orgCan`, counts,
-`auditRow`, `filterAudit`), for a person who holds an organization role (`GET /organizations/me` read once after
+`auditRow`, `auditAll`, `changeText`, `filterAudit`), for a person who holds an organization role (`GET /organizations/me` read once after
 sign-in): "Organization settings" in the workspace menu and in ⌘K. There is no canvas artboard for it, so it is built
 from the Admin screen's parts only, with no new CSS: the secondary nav inside the content card ("Back to
 agreements", "{organization} · Organization", five pages) and the "Section" select below 48em, the page head (h1,
@@ -1222,7 +1222,9 @@ panels for every form, and the danger confirmation for archive and remove.
 - **Administrators**: name, email, role, since; owners add a member as admin or owner, change a role, remove, or step
   down; the last owner's refusal (`CS-ORG-0008`) is a toast with its code.
 - **Audit log**: newest first, a sentence per known action with its changed keys, who acted (the server for a system
-  event), what it was about; filter, load older entries (cursor), Verify chain (`verify=full`).
+  event), what it was about; filter, Verify chain (`verify=full`). The server pages oldest first, so the screen
+  reads every page (`auditAll`, at most 50 of 1,000, said on screen when cut) before showing newest first; a
+  newest-first route is `ORG-35`.
 
 Buttons follow the role (`orgCan`); the server decides every request. The mock serves `/organizations/me…` as
 `api/org.rs`, with a chained log. Tests: `tests/org.test.mjs`; `e2e/org.spec.mjs` (mock, 1440 and 390 px, axe on

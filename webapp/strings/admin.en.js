@@ -465,7 +465,7 @@ export const ADMIN = {
   "admin.org.audit.filter": "Filter the log",
   "admin.org.audit.count": "{n} of {total} entries",
   "admin.org.audit.none": "No entries match",
-  "admin.org.audit.more": "Load older entries",
+  "admin.org.audit.capped": "Only the first 50,000 entries were read. A view that starts from the newest entries is not on this server yet.",
   "admin.org.audit.when": "When",
   "admin.org.audit.what": "What",
   "admin.org.audit.by": "By",

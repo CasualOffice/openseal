@@ -14,7 +14,7 @@ import { h, clear, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { register, unregisterPrefix } from "./commands.js";
-import { ORG_NAV, orgRouteFrom, orgHref, orgCan, workspaceCounts, adminCounts, auditRow, filterAudit, shortId } from "./orgmodel.js";
+import { ORG_NAV, orgRouteFrom, orgHref, orgCan, workspaceCounts, adminCounts, auditAll, changeText, filterAudit, shortId } from "./orgmodel.js";
 import { button, emptyState, skeletonRows, skeletonBlock, errorState, openPanel, confirmDialog, toast, toastError, selectField, menuButton } from "./ui/index.js";
 
 const TITLE = {
@@ -421,31 +421,31 @@ async function audit(page) {
     h("div", { class: "os-fieldrow os-filters__search" }, h("label", { class: "os-label", attrs: { for: "org-audit-q" }, text: t("admin.org.audit.filter") }), search));
   const count = h("p", { class: "os-muted os-small", attrs: { "aria-live": "polite", "data-testid": "org-audit-count" } });
   const box = h("div");
-  const more = button(t("admin.org.audit.more"), { onClick: () => load(cursor) });
-  more.hidden = true;
-  body.append(tools, count, box, h("div", { class: "os-actions" }, more));
+  const capped = h("p", { class: "os-adm__later", attrs: { "data-testid": "org-audit-capped" }, text: t("admin.org.audit.capped") });
+  capped.hidden = true;
+  body.append(tools, count, box, capped);
   let rows = [];
-  let cursor = null;
   search.addEventListener("input", () => render());
 
-  async function load(after = null) {
-    if (after == null) { rows = []; loadingList(box); }
+  // The server pages oldest first with a forward cursor, so newest first means reading
+  // to the last page (orgmodel.js `auditAll`); each page is verified as it is read.
+  async function load() {
+    rows = [];
+    loadingList(box);
     try {
-      const out = await ctx.api.org.audit({ cursor: after });
-      rows = rows.concat((out?.items || []).map(auditRow));
-      cursor = out?.next_cursor ?? null;
+      rows = await auditAll((q) => ctx.api.org.audit(q));
+      capped.hidden = !rows.truncated;
       box.removeAttribute("aria-busy");
       render();
     } catch (err) {
       box.removeAttribute("aria-busy");
       if (ctx.failed(err)) return;
-      if (after == null) errorState(box, err, () => load()); else toastError(err);
+      errorState(box, err, () => load());
     }
   }
 
   function render() {
     clear(box);
-    more.hidden = cursor == null;
     const shown = filterAudit(rows, search.value, (id) => page.names.get(id) || "").slice().reverse();
     count.textContent = t("admin.org.audit.count", { n: shown.length, total: rows.length });
     if (!shown.length) {
@@ -456,7 +456,7 @@ async function audit(page) {
     for (const r of shown) {
       const by = r.actor.kind === "system" ? t("admin.org.audit.system") : r.actor.id ? who(page, r.actor.id) : r.actor.kind || "—";
       const about = r.targets.map(([k, id]) => `${k}: ${k === "user" ? who(page, id) : shortId(id)}`).join(", ");
-      const change = r.changes.map((c) => `${c.key}: ${c.old ?? "—"} → ${c.new ?? "—"}`).join("; ");
+      const change = r.changes.map(changeText).join("; ");
       tb.append(h("tr", { attrs: { "data-seq": String(r.seq), "data-action": r.action } },
         cell(t("admin.org.audit.when"), h("span", { text: r.at ? fmtDate(r.at) : "—" }), "os-col-date"),
         h("td", {}, h("strong", { text: r.known ? t(`admin.org.act.${r.action}`) : r.action }), change ? h("div", { class: "os-muted os-small", text: change }) : null),
