@@ -17,9 +17,9 @@
 mod common;
 
 use casual_sign_audit::Personal;
-use casual_sign_store::repo::accounts::{PermissionProfile, ProfileKind};
+use casual_sign_store::repo::accounts::{LoginKind, NewUser, PermissionProfile, ProfileKind};
 use casual_sign_store::{
-    AccountId, DocumentVersionId, Meter, OrganizationId, PermissionProfileId, StoreError,
+    AccountId, DocumentVersionId, Meter, OrganizationId, PermissionProfileId, StoreError, UserId,
 };
 use common::world::{World, id, new_version, now, seed};
 use common::{Rls, TestDb, fresh};
@@ -257,6 +257,192 @@ async fn an_archived_workspace_leaves_the_workspaces_gauge() {
     tx.commit().await.unwrap();
     assert_eq!(org(&db, o, "workspaces").await, 1);
     assert_eq!(ws(&db, archived.account_id(), "workspaces").await, 0);
+    counters_equal_ledger_sums(&db).await;
+    db.drop().await;
+}
+
+/// Every counter at both levels, `(level, owner, meter, period, value)`, ordered.
+async fn snapshot(db: &TestDb) -> Vec<(String, Uuid, String, String, i64)> {
+    sqlx::query_as(
+        "SELECT 'ws', account_id, meter, period_start::text, value FROM usage_counters \
+          WHERE value <> 0 \
+         UNION ALL \
+         SELECT 'org', organization_id, meter, period_start::text, value FROM org_usage_counters \
+          WHERE value <> 0 \
+         ORDER BY 1, 2, 3, 4",
+    )
+    .fetch_all(&db.admin)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn storage_drops_when_the_last_reference_to_a_blob_goes() {
+    let Some(db) = fresh(
+        "storage_drops_when_the_last_reference_to_a_blob_goes",
+        Rls::On,
+    )
+    .await
+    else {
+        return;
+    };
+    let w = seed(&db, "a").await;
+    assert_eq!(ws(&db, w.account, "storage_bytes").await, 1234 + 99);
+    let mut tx = db.store.for_account(w.account).begin().await.unwrap();
+    tx.templates().delete(w.template).await.unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(ws(&db, w.account, "storage_bytes").await, 1234);
+    assert_eq!(org(&db, w.organization, "storage_bytes").await, 1234);
+    counters_equal_ledger_sums(&db).await;
+    db.drop().await;
+}
+
+#[tokio::test]
+async fn the_seat_rule_decides_who_holds_a_seat() {
+    let Some(db) = fresh("the_seat_rule_decides_who_holds_a_seat", Rls::On).await else {
+        return;
+    };
+    let w = seed(&db, "a").await;
+    let viewers = PermissionProfileId(id());
+    let viewer = UserId(id());
+    let mut tx = db.store.for_account(w.account).begin().await.unwrap();
+    tx.users()
+        .create_profile(&PermissionProfile {
+            id: viewers,
+            name: "Viewers".into(),
+            kind: ProfileKind::Viewer,
+            permissions: vec![],
+        })
+        .await
+        .unwrap();
+    tx.users()
+        .create_member(
+            &NewUser {
+                id: viewer,
+                email: Personal("v@example.test".into()),
+                email_normalized: Personal("v@example.test".into()),
+                name: Personal("Viewer".into()),
+                login_kind: LoginKind::Local,
+                idp: None,
+            },
+            viewers,
+        )
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    // `can_send` (the default): a viewer holds no seat.
+    assert_eq!(ws(&db, w.account, "seats").await, 1);
+    assert_eq!(org(&db, w.organization, "seats").await, 1);
+
+    // An organization override to `every_member` recounts in its own transaction.
+    let op = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO platform.operators (id, email, roles, created_at) \
+         VALUES ($1, 'op@ops.example', ARRAY['operator'], now())",
+    )
+    .bind(op)
+    .execute(&db.admin)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO platform.plan_overrides (id, organization_id, workspace_id, key, value, \
+           reason, expires_at, operator_id, created_at) \
+         VALUES ($1, $2, NULL, 'seat_rule', 'every_member', 'Internal note 1', NULL, $3, now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(w.organization.0)
+    .bind(op)
+    .execute(&db.admin)
+    .await
+    .unwrap();
+    assert_eq!(ws(&db, w.account, "seats").await, 2);
+    assert_eq!(org(&db, w.organization, "seats").await, 2);
+
+    // Removing the viewer gives the seat back at both levels.
+    let mut tx = db.store.for_account(w.account).begin().await.unwrap();
+    tx.users().remove_member(viewer).await.unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(ws(&db, w.account, "seats").await, 1);
+    assert_eq!(org(&db, w.organization, "seats").await, 1);
+    counters_equal_ledger_sums(&db).await;
+    db.drop().await;
+}
+
+/// The migration's own count of what exists (its section 7), run again on emptied
+/// metering tables, gives the counters the triggers kept, and counts each sent envelope
+/// once (the seed appends `envelope.sent` directly, so only this count sees it).
+#[tokio::test]
+async fn the_migration_counts_existing_rows_as_the_triggers_do() {
+    let Some(db) = fresh(
+        "the_migration_counts_existing_rows_as_the_triggers_do",
+        Rls::On,
+    )
+    .await
+    else {
+        return;
+    };
+    let a = seed(&db, "a").await;
+    let _b = seed(&db, "b").await;
+    let second = db.workspace(a.organization, "a2").await;
+    let mut tx = db.store.for_account(second).begin().await.unwrap();
+    let senders = PermissionProfileId(id());
+    tx.users()
+        .create_profile(&PermissionProfile {
+            id: senders,
+            name: "Senders".into(),
+            kind: ProfileKind::Sender,
+            permissions: vec![],
+        })
+        .await
+        .unwrap();
+    tx.users()
+        .add_existing_member(a.user, &Personal("a@example.test".into()), senders)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let kept: Vec<_> = snapshot(&db)
+        .await
+        .into_iter()
+        .filter(|r| r.2 != "envelopes_sent")
+        .collect();
+    assert!(kept.iter().any(|r| r.2 == "seats"), "{kept:?}");
+
+    sqlx::raw_sql(
+        "ALTER TABLE usage_ledger DISABLE TRIGGER USER; \
+         DELETE FROM usage_ledger; DELETE FROM usage_counters; \
+         DELETE FROM org_usage_counters; DELETE FROM usage_blob_refs; \
+         ALTER TABLE usage_ledger ENABLE TRIGGER USER;",
+    )
+    .execute(&db.admin)
+    .await
+    .unwrap();
+    let migration = include_str!("../../../migrations/0025_metering.sql");
+    let (_, recount) = migration
+        .split_once("-- 7. What exists already")
+        .expect("section 7");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(recount.to_owned()))
+        .execute(&db.admin)
+        .await
+        .unwrap();
+
+    let again = snapshot(&db).await;
+    let (sent, gauges): (Vec<_>, Vec<_>) = again.into_iter().partition(|r| r.2 == "envelopes_sent");
+    assert_eq!(gauges, kept);
+    let sent_envelopes: i64 = sqlx::query_scalar(
+        "SELECT count(DISTINCT envelope_id) FROM audit_events WHERE event_type = 'envelope.sent'",
+    )
+    .fetch_one(&db.admin)
+    .await
+    .unwrap();
+    assert!(sent_envelopes > 0);
+    assert_eq!(ws(&db, a.account, "envelopes_sent").await, 1);
+    assert_eq!(
+        sent.iter()
+            .filter(|r| r.0 == "ws")
+            .map(|r| r.4)
+            .sum::<i64>(),
+        sent_envelopes
+    );
     counters_equal_ledger_sums(&db).await;
     db.drop().await;
 }
