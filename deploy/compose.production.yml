@@ -130,6 +130,10 @@ services:
       OPENSEAL_KEYD_PKCS11_TOKEN: ${OPENSEAL_PKCS11_TOKEN:?set OPENSEAL_PKCS11_TOKEN}
       OPENSEAL_KEYD_PKCS11_KEY_LABEL: ${OPENSEAL_PKCS11_KEY_LABEL:?set OPENSEAL_PKCS11_KEY_LABEL}
       OPENSEAL_KEYD_PKCS11_PIN_FILE: /run/secrets/keyd-pkcs11-pin
+      # A seal key rotation's overlap (CON-10, docs/65 §Rotation): the next key on the same
+      # token, its chain read from the token. Empty: keyd serves the current key only.
+      OPENSEAL_KEYD_NEXT_ALIAS: ${OPENSEAL_SEAL_NEXT_ALIAS:-}
+      OPENSEAL_KEYD_NEXT_PKCS11_KEY_LABEL: ${OPENSEAL_PKCS11_NEXT_KEY_LABEL:-}
       OPENSEAL_CONFIG_MANIFEST: /run/secrets/keyd-config-manifest
     secrets:
       - internal-ca.pem
