@@ -186,7 +186,7 @@ test("the ceremony's field kinds are placed and configured, and come back from t
   await page.setViewportSize({ width: 1440, height: 900 });
   await toFields(page);
   // The library (canvas): every kind the ceremony fills, the canvas's eight with their keys first.
-  await expect(page.locator(".os-palette .os-lib")).toHaveCount(14);
+  await expect(page.locator(".os-palette .os-lib")).toHaveCount(16);
   await expect(page.locator(".os-palette .os-lib[aria-keyshortcuts]")).toHaveCount(8);
   for (const type of ["Company", "Title", "Number", "Radio group", "Dropdown", "Attachment", "Note"]) await add(page, type);
   await add(page, "Text");
