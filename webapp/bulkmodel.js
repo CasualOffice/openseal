@@ -25,7 +25,7 @@ export function sampleCsv(roles) {
 }
 
 /// RFC 4180 records: commas, double-quoted values with `""` for a quote, CRLF or LF
-/// line ends, a leading byte-order mark ignored, empty lines skipped. `null` when a quote
+/// line ends, a leading byte-order mark ignored, lines with no value in any cell skipped. `null` when a quote
 /// is never closed or there are more than `max` records.
 export function csvRecords(text, max = MAX_ROWS + 1) {
   const src = String(text ?? "").replace(/^﻿/, "");
@@ -34,7 +34,8 @@ export function csvRecords(text, max = MAX_ROWS + 1) {
   let cell = "";
   let quoted = false;
   const finish = () => {
-    const blank = record.length === 1 && !record[0].trim();
+    // A line of empty cells (",,," as a spreadsheet writes its unused rows) is blank.
+    const blank = record.every((c) => !c.trim());
     if (!blank) {
       if (out.length >= max) return false;
       out.push(record);

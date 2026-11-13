@@ -16,7 +16,7 @@ mod common;
 use axum::http::StatusCode;
 use common::Rls;
 use common::bulk::{CSV, bulk_send, lease_template};
-use common::harness::Api;
+use common::harness::{Api, Auth};
 use serde_json::json;
 
 #[tokio::test]
@@ -171,4 +171,58 @@ async fn a_list_whose_columns_do_not_fit_the_template_is_refused_whole() {
         .call("GET", "/api/v1/bulk-sends", &a.auth, None, &[])
         .await;
     assert_eq!(listed.json()["items"], json!([]));
+}
+
+#[tokio::test]
+async fn a_caller_who_may_not_write_envelopes_cannot_bulk_send() {
+    let Some(api) = Api::new("bulk_send_scopes", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let tid = lease_template(&api, &a.auth).await;
+    // A key that may send and bulk send, but not create envelopes.
+    let key = api
+        .call(
+            "POST",
+            "/api/v1/api-clients",
+            &a.auth,
+            Some(json!({"name": "no write", "kind": "api_key",
+                "scopes": ["envelopes:read", "envelopes:send", "bulk:send"]})),
+            &[],
+        )
+        .await;
+    assert_eq!(key.status, StatusCode::CREATED, "{:?}", key.json());
+    let narrow = Auth::Bearer(key.json()["key"].as_str().unwrap().to_owned());
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/bulk-sends",
+            &narrow,
+            Some(json!({"template_id": tid, "csv": CSV})),
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{:?}", r.json());
+    // Nor can it send a batch its member made with a full key.
+    let made = api
+        .call(
+            "POST",
+            "/api/v1/bulk-sends",
+            &a.auth,
+            Some(json!({"template_id": tid, "csv": CSV})),
+            &[],
+        )
+        .await;
+    assert_eq!(made.status, StatusCode::CREATED);
+    let id = made.json()["id"].as_str().unwrap().to_owned();
+    let r = api
+        .call(
+            "POST",
+            &format!("/api/v1/bulk-sends/{id}/send"),
+            &narrow,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{:?}", r.json());
 }

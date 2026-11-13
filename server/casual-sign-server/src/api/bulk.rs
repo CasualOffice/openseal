@@ -77,7 +77,7 @@ pub(crate) struct BulkCreate {
 // CSV -----------------------------------------------------------------------------------
 
 /// RFC 4180 records: commas, double-quoted values with `""` for a quote, CRLF or LF line
-/// ends, a leading byte-order mark ignored, empty lines skipped. At most `max_records`
+/// ends, a leading byte-order mark ignored, lines with no value in any cell skipped. At most `max_records`
 /// records are read; `None` when there are more, or a quote is never closed.
 pub(crate) fn csv_records(text: &str, max_records: usize) -> Option<Vec<Vec<String>>> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -87,7 +87,8 @@ pub(crate) fn csv_records(text: &str, max_records: usize) -> Option<Vec<Vec<Stri
     let mut quoted = false;
     let mut chars = text.chars().peekable();
     let finish = |record: &mut Vec<String>, out: &mut Vec<Vec<String>>| -> bool {
-        let blank = record.len() == 1 && record.first().is_some_and(|c| c.trim().is_empty());
+        // A line of empty cells (",,," as a spreadsheet writes its unused rows) is blank.
+        let blank = record.iter().all(|c| c.trim().is_empty());
         if !blank {
             if out.len() >= max_records {
                 return false;
@@ -475,6 +476,8 @@ async fn load_template(tx: &mut TenantTx, id: TemplateId) -> Result<Option<Loade
 
 /// `POST /bulk-sends {template_id, name?, csv | rows, validate_only?}`.
 pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
+    // Each row becomes a sent envelope: what `POST /envelopes` with `status: sent` needs.
+    c.p.require("envelopes:write")?;
     c.p.require("envelopes:send")?;
     let req: BulkCreate = parse(&body)?;
     let tid = TemplateId(
@@ -609,6 +612,7 @@ pub(crate) async fn get(c: Call, Path(id): Path<String>) -> Result<Response, Api
 /// in its own transaction; answers the batch with its rows. Only its sender sends it:
 /// each envelope is theirs.
 pub(crate) async fn send(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
     c.p.require("envelopes:send")?;
     let mut tx = c.tx().await?;
     let b = visible(&mut tx, &c, &id).await?;
@@ -694,6 +698,7 @@ pub(crate) async fn cancel(c: Call, Path(id): Path<String>) -> Result<Response, 
 }
 
 #[cfg(test)]
+// Tests may unwrap, index and panic (CLAUDE.md).
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
@@ -709,6 +714,12 @@ mod tests {
         assert!(csv_records("a,\"b\n", 10).is_none());
         assert!(csv_records("a\nb\nc\n", 2).is_none());
         assert_eq!(csv_records("a\nb\n", 2).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn csv_skips_a_line_of_empty_cells_as_a_spreadsheet_writes_it() {
+        let r = csv_records("a,b\nx,y\n,\n , \n", 10).unwrap();
+        assert_eq!(r, vec![vec!["a", "b"], vec!["x", "y"]]);
     }
 
     #[test]

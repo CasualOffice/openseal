@@ -19,6 +19,8 @@ test("CSV is read as the server reads it: quotes, CRLF, a BOM, blank lines; an o
   assert.deepEqual(csvRecords("﻿a,\"b, \"\"c\"\"\"\r\n\r\nx,y\n"), [["a", "b, \"c\""], ["x", "y"]]);
   assert.equal(csvRecords("a,\"b\n"), null);
   assert.equal(csvRecords("a\nb\nc\n", 2), null);
+  // A line of empty cells, as a spreadsheet writes its unused rows, is blank too.
+  assert.deepEqual(csvRecords("a,b\nx,y\n,\n , \n"), [["a", "b"], ["x", "y"]]);
   assert.equal(csvCell("Bo, \"Jr\""), "\"Bo, \"\"Jr\"\"\"");
   const sample = sampleCsv(ROLES);
   assert.deepEqual(csvRecords(sample)[0], columnsOf(ROLES));

@@ -3177,7 +3177,9 @@ paths:
         `CS-BLK-0003` a name over 255 characters or with control characters,
         `CS-BLK-0006` more values than columns. A row with a problem is stored `failed`
         and never sent. With `validate_only` nothing is stored: the answer is 200 with
-        each row's check. Send the batch with `POST …/send`. Also needs `envelopes:send`.
+        each row's check. Send the batch with `POST …/send`. Also needs `envelopes:write`
+        and `envelopes:send`, as `POST /envelopes` with `status: sent` does. A line with
+        no value in any cell is skipped.
       x-permission: "bulk:send"
       requestBody:
         required: true
@@ -3228,7 +3230,7 @@ paths:
         Each row is made and sent as `POST /envelopes` makes and sends one, in its own
         transaction; a row the server refuses is `failed` with the refusal's code and the
         others go on. Once no row is pending the bulk send is `completed`. Only its
-        sender sends it (403 otherwise). Also needs `envelopes:send`.
+        sender sends it (403 otherwise). Also needs `envelopes:write` and `envelopes:send`.
       x-permission: "bulk:send"
       responses:
         '200':
