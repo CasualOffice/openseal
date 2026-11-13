@@ -227,3 +227,12 @@ export function dateField(signedAny, date) {
 export function phoneSegments(ready, finished) {
   return [!!ready || !!finished, !!finished];
 }
+
+/// What finishing meant for this recipient type (RTE-02): the receipt never says
+/// "signed" to someone who did not sign.
+export function actedAs(type) {
+  if (type === "approver") return "approved";
+  if (type === "viewer") return "viewed";
+  if (type === "agent" || type === "intermediary") return "finished";
+  return "signed";
+}

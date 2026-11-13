@@ -418,7 +418,7 @@ for (const [label, vp] of [["1440", { width: 1440, height: 900 }], ["390", { wid
     };
     const ana = await addRow(0, "Ana Signer", "ana@example.com");
     // Every ready type is offered (in-person where staff can host it: the mock can).
-    expect(await ana.getByTestId("recipient-type").locator("option").evaluateAll((os) => os.map((o) => o.value))).toEqual(["signer", "in_person_signer", "approver", "viewer", "cc"]);
+    expect(await ana.getByTestId("recipient-type").locator("option").evaluateAll((os) => os.map((o) => o.value))).toEqual(["signer", "in_person_signer", "approver", "viewer", "agent", "cc"]);
     await addRow(1, "Ben Approver", "ben@example.com", "approver");
     await addRow(2, "Vic Viewer", "vic@example.com", "viewer");
     // Contacts: typing part of a name offers the people sent to before; choosing one fills the email.

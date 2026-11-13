@@ -68,7 +68,7 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - Viewers complete by viewing every document to the end.
 - Approvers complete with Approve or decline with Decline; they never sign.
 - Editors (allowed to edit) may change later recipients and fields before signing.
-- Agents (specify recipients) supply the name and email of later recipients.
+- Agents (specify recipients) supply the name and email of later recipients (`POST /s/{token}/recipients`, docs/40 §6), then finish.
 - In-person signers are hosted by a staff user who authenticates first; the event records both. On the server
   (`UXW-36`), `POST /envelopes/{id}/recipients/{r}/host` runs `HostInPerson` as `InPersonHost` and returns a one-time
   link whose every command runs as that host (docs/40 As built); the signer's emailed link cannot act for them.

@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { fills, isFilled, isFixed, checkText, isPhone, isZip, fixedText, inputModeFor, nextAction, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments } from "../signfields.js";
+import { fills, isFilled, isFixed, checkText, isPhone, isZip, fixedText, inputModeFor, nextAction, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments, actedAs } from "../signfields.js";
+import { SIGN } from "../strings/sign.en.js";
 
 // ---- The ceremony's model (WEB-18) ---------------------------------------------------------
 
@@ -145,4 +146,17 @@ test("a name splits into first and last as the server's engine fills them (FG-05
   assert.deepEqual(nameParts(" Ludwig  van Beethoven "), { first: "Ludwig", last: "van Beethoven" });
   assert.deepEqual(nameParts("Plato"), { first: "Plato", last: "" });
   assert.deepEqual(nameParts(""), { first: "", last: "" });
+});
+
+// ---- RTE-02: the receipt says what the recipient did ---------------------------------------
+
+test("the receipt says approved, viewed or finished, and signed only to a signing type", () => {
+  assert.deepEqual(["approver", "viewer", "agent", "intermediary", "signer", "in_person_signer", "editor"].map(actedAs),
+    ["approved", "viewed", "finished", "finished", "signed", "signed", "signed"]);
+  for (const act of ["approved", "viewed", "finished"]) {
+    for (const k of [`sign.review.legal.${act}`, `sign.receipt.${act}`, `sign.done.thanks.${act}`, `sign.done.thanks-anon.${act}`, `sign.done.already.${act}`]) {
+      assert.ok(SIGN[k], k);
+      assert.doesNotMatch(SIGN[k], /sign/i, k);
+    }
+  }
 });

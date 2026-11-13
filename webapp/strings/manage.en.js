@@ -186,6 +186,7 @@ export const MANAGE = {
   "envelope.ended": "Ended",
   "envelope.recipients": "Recipients",
   "envelope.resend": "Resend",
+  "envelope.host": "Host signing",
   "envelope.resent": "Resent to everyone who has not finished.",
   "envelope.sent": "Sent",
   "envelope.untitled": "Untitled envelope",
@@ -293,6 +294,7 @@ export const MANAGE = {
   "agreements.download-current": "Download current PDF",
 
   "envelope.resend-to": "Resend to {name}",
+  "envelope.host-for": "Host the signing for {name} on this device",
   "envelope.resent-to": "Resent to {name}.",
   "envelope.expires": "Expires",
   "envelope.sender": "Sender",

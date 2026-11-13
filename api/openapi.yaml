@@ -885,6 +885,20 @@ components:
             sha256: {type: string, description: '`sha256:<hex>` over the text''s UTF-8, the hash consent records'}
             url: {type: string, description: '`/s/{token}/disclosure`, present only when the account has published that text (UXW-34)'}
         auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
+        later_recipients:
+          type: array
+          description: >-
+            Only for an agent, intermediary or editor who has authenticated (VS-02): the
+            recipients later in the routing order not yet reached, which
+            `POST /s/{token}/recipients` may name. Absent for every other recipient.
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              type: {type: string}
+              routing_order: {type: integer}
+              name: {type: string}
+              email: {type: string}
         sender:
           type: object
           description: Who sent the envelope, so the recipient can judge whether the request is genuine (UXW-34).
@@ -892,6 +906,24 @@ components:
             name: {type: [string, 'null'], description: "The sending user's name as the account holds it now; null once they are no longer a member"}
             email: {type: [string, 'null'], description: "The sending user's email address; null once they are no longer a member"}
             organisation: {type: string, description: "The account's brand name (`settings.branding.name`), else the account's name"}
+    NameRecipientsRequest:
+      type: object
+      required: [recipients]
+      additionalProperties: false
+      properties:
+        recipients:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            required: [id]
+            additionalProperties: false
+            properties:
+              id: {type: string, description: 'A recipient in `later_recipients`'}
+              name: {type: string, minLength: 1, maxLength: 255}
+              email: {type: string, minLength: 3, maxLength: 320}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
     CeremonyDisclosure:
       type: object
       required: [version, sha256, text]
@@ -3529,6 +3561,38 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/FinishRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/recipients:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyNameRecipients
+      summary: "Name later recipients (agent, intermediary, editor; VS-02)"
+      description: >-
+        An agent supplies the name and email of recipients later in the routing order who
+        have not been reached yet (the view's `later_recipients`), then finishes with
+        `POST /s/{token}/finish`. An intermediary or editor may call it too. Any other
+        recipient type is refused (`409`); a recipient of the caller's own order or
+        earlier, or one already reached, is refused by the workflow (`403`). The change is
+        recorded as `envelope.corrected` with the recipient as actor. At most 100
+        recipients per call.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NameRecipientsRequest'}
       responses:
         '200':
           description: OK

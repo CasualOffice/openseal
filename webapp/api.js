@@ -60,9 +60,10 @@ export const RECIPIENT_TYPES = Object.freeze(["signer", "in_person_signer", "app
 /// The types a recipient can complete end to end today: through the ceremony (`signer`,
 /// `approver` by `POST /s/{token}/approve`, `viewer` by viewing every document to the
 /// end, `in_person_signer` on the link a staff user's `hostInPerson` returns, UXW-36),
-/// or none (`cc`); the others are the engine's, their ceremony a later slice (editor,
-/// agent and intermediary edit later recipients; witness 16, seal 18, notary 31).
-export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "cc"]);
+/// `agent` naming later recipients by `POST /s/{token}/recipients` then finishing, VS-02),
+/// or none (`cc`); the others are the engine's, their ceremony a later slice (editor and
+/// intermediary, slice 6; witness 16, seal 18, notary 31).
+export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "agent", "cc"]);
 
 /// Every field type the API takes: the engine's `FieldType` (docs/22 §6), in wire spelling.
 export const FIELD_TYPES = Object.freeze([
@@ -573,6 +574,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       decline: (token, reason, location) =>
         data(request("POST", `${S(token)}/decline`, { body: withLocation(reason ? { reason } : {}, location), ceremony: true })),
       finishLater: (token) => data(request("POST", `${S(token)}/finish-later`, { body: {}, ceremony: true })),
+      /// An agent (or intermediary) names later recipients before finishing (VS-02):
+      /// `[{id, name?, email?}]`, ids from the view's `later_recipients`.
+      nameRecipients: (token, recipients, location) =>
+        data(request("POST", `${S(token)}/recipients`, { body: withLocation({ recipients }, location), ceremony: true })),
       /// WEB-06: attach a file (PDF, PNG or JPEG) to an attachment field.
       attach: (token, field, bytes) =>
         data(request("PUT", `${S(token)}/fields/${encodeURIComponent(field)}/attachment`, { body: { content_base64: toBase64(bytes) }, ceremony: true })),

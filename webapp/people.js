@@ -32,7 +32,7 @@ export function recipientCorrection(r, { name, email, requireCode, code }) {
 /// staff host. An approver and a viewer act in their turn and fill nothing; a copy only
 /// receives the completed envelope.
 export const FIELD_TAKERS = new Set(["signer", "in_person_signer"]);
-const ACTING = new Set(["signer", "in_person_signer", "approver", "viewer"]);
+const ACTING = new Set(["signer", "in_person_signer", "approver", "viewer", "agent"]);
 
 /// What the send confirmation says (R-02, UX-05), as `[key, params]` for `t`:
 /// `people` are `{name, type, order}` (order: the routing step). With one step for
@@ -41,7 +41,8 @@ const ACTING = new Set(["signer", "in_person_signer", "approver", "viewer"]);
 export function sendSummary(people, subject) {
   const acting = people.filter((r) => ACTING.has(r.type));
   const signing = acting.filter((r) => FIELD_TAKERS.has(r.type));
-  const reviewers = acting.filter((r) => !FIELD_TAKERS.has(r.type));
+  const reviewers = acting.filter((r) => !FIELD_TAKERS.has(r.type) && r.type !== "agent");
+  const agents = acting.filter((r) => r.type === "agent");
   const copies = people.filter((r) => !ACTING.has(r.type));
   const names = (list) => list.map((r) => r.name).join(", ");
   const steps = [...new Set(acting.map((r) => r.order))].sort((a, b) => a - b);
@@ -55,6 +56,7 @@ export function sendSummary(people, subject) {
     out.push(["send.confirm-order", { order: steps.map(at).join(" → ") }]);
   }
   if (reviewers.length) out.push(["send.confirm-reviewers", { names: names(reviewers) }]);
+  if (agents.length) out.push(["send.confirm-agents", { names: names(agents) }]);
   if (copies.length) out.push(["send.confirm-copies", { names: names(copies) }]);
   return out;
 }

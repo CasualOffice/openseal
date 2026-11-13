@@ -387,9 +387,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const signers = () => S.recipients.filter(takesFields);
   /// The types a recipient may be given (UX-05): the engine's ready ones (api.js
   /// RECIPIENT_TYPES_READY), and an in-person signer only where staff can host one
-  /// (NOT_ON_SERVER.hostInPerson); a type already set stays offered.
+  /// (NOT_ON_SERVER.hostInPerson); an agent, who names later recipients in their turn
+  /// (VS-02); a type already set stays offered.
   const recipientTypes = (current) => {
-    const out = ["signer", ...(ctx.api.available?.("hostInPerson") ? ["in_person_signer"] : []), "approver", "viewer", "cc"];
+    const out = ["signer", ...(ctx.api.available?.("hostInPerson") ? ["in_person_signer"] : []), "approver", "viewer", "agent", "cc"];
     return out.includes(current) || !current ? out : [...out, current];
   };
   const displayName = (r, i) => r?.name?.trim() || t(TPL ? "template.role-n" : "prepare.recipient-n", { n: i + 1 });

@@ -40,6 +40,8 @@ const ACTING = (r) => r.type !== "cc";
 /// Recipient types that sign (the engine's `signs()`): they may hold any field, and the
 /// mock asks each for at least one before sending.
 const SIGNS = new Set(["signer", "in_person_signer", "editor", "witness", "seal", "notary"]);
+/// Who names later recipients in the ceremony (the engine's `edits_recipients`).
+const NAMES_LATER = new Set(["editor", "intermediary", "agent"]);
 const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
 const RECIPIENT_TYPES = ["signer", "in_person_signer", "approver", "viewer", "cc", "editor", "intermediary", "agent", "witness", "seal", "notary"];
 const FIELD_TYPES = new Set([
@@ -381,8 +383,14 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       consent_required: { version: disclosure().version, sha256: disclosure().sha256, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
       sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
+      // VS-02, as the server: an agent, intermediary or editor sees the later
+      // recipients not yet reached, which `POST /s/{token}/recipients` may name.
+      ...(shown && NAMES_LATER.has(rec.type) ? { later_recipients: laterOf(env, rec) } : {}),
     };
   }
+  const laterOf = (env, rec) => env.recipients
+    .filter((q) => (q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created")
+    .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "" }));
   const publicRecipient = (r) => {
     const { access_code, auth_passed, token, otp_open, viewed_to_end, hosted, ...rest } = r;
     void access_code; void auth_passed; void token; void otp_open; void viewed_to_end; void hosted;
@@ -1984,6 +1992,28 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       env.recipients.push(nr);
       for (const f of env.fields) if (f.recipient_id === rec.id) f.recipient_id = nr.id;
       await audit(env, "recipient.reassigned", { recipient_id: rec.id, to_recipient_id: nr.id, ...(body?.reason ? { reason: String(body.reason) } : {}) }, loc);
+      return json(200, view(env, rec, token));
+    }
+    // VS-02, as the server's `RecipientEdit`: an agent or intermediary names later
+    // recipients not yet reached (names and addresses only); anyone else is refused.
+    if (sub === "recipients" && method === "POST") {
+      if (!NAMES_LATER.has(rec.type)) fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const list = Array.isArray(body?.recipients) ? body.recipients : [];
+      if (!list.length || list.length > 100) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/recipients", code: "invalid" }]);
+      const later = laterOf(env, rec).map((q) => q.id);
+      for (const [i, n] of list.entries()) {
+        const q = env.recipients.find((x) => x.id === n?.id);
+        if (!q) fail(404, "CS-API-0002", "Not found");
+        if (!later.includes(q.id)) fail(403, "CS-WF-0003", "Not permitted");
+        if (n.name != null && !String(n.name).trim()) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/name`, code: "invalid" }]);
+        if (n.email != null && !/^[^@\s]+@[^@\s]+$/.test(String(n.email).trim())) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/email`, code: "invalid" }]);
+      }
+      for (const n of list) {
+        const q = env.recipients.find((x) => x.id === n.id);
+        if (n.name != null) q.name = String(n.name).trim();
+        if (n.email != null) q.email = String(n.email).trim();
+      }
+      await audit(env, "envelope.corrected", { changed: list.map((n) => `recipients.${n.id}`) }, loc);
       return json(200, view(env, rec, token));
     }
     if (sub === "finish-later" && method === "POST") {

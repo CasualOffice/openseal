@@ -56,7 +56,7 @@ const chromiumChannel = process.env.OPENSEAL_E2E_CHROMIUM_CHANNEL || undefined; 
 const chrome = { ...devices["Desktop Chrome"], channel: chromiumChannel, launchOptions: { args: chromiumArgs } };
 
 const desktop = /(prepare-layout|field-kinds|admin|shell|manage|signin-dashboard|send|editor|keyboard|a11y|screens|empty-states|web02|redesign-screens|visual|docview|real-stack|real-api|inbox-folders|xss)\.spec\.mjs$/;
-const signer = /(ceremony|decline|a11y-sign|sign-layout|xss)\.spec\.mjs$/;
+const signer = /(ceremony|decline|a11y-sign|sign-layout|xss|recipient-types)\.spec\.mjs$/;
 
 export default defineConfig({
   testDir: ".",
