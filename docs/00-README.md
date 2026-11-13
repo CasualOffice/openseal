@@ -45,6 +45,7 @@ by `tools/licence-inventory.py`, `LEG-01`).
 | [66-SPK-02-CRYPTO-STACK](66-SPK-02-CRYPTO-STACK.md) | Crypto stack spike: PAdES B-B sealed with aws-lc-rs keys and RustCrypto CMS, validated by pyHanko; RustCrypto-only WASM verifier; pitfalls; ADR-006 amendments | Measured, 2026-11-10, macOS only |
 | [65-RUNNING-IT](65-RUNNING-IT.md) | Deployment, production checklist, configuration, upgrades | Live: the single-node Compose stack, its services and configuration (the console's included), the production checklist; the cluster (slice 20) is design |
 | [67-ASVS-SELF-ASSESSMENT](67-ASVS-SELF-ASSESSMENT.md) | **OWASP ASVS 4.0.3 self-assessment**: every requirement at Level 2 (Level 3 for ceremony, sealing and keyd) with status, the evidence checked and a docs/14 row per gap. Not a certification | Self-assessment, 2026-11-13; 38 findings, 8 closed, `ASVS-01` in progress, 29 open |
+| [68-PEN-TEST-SCOPE](68-PEN-TEST-SCOPE.md) | External penetration test scope: objective, in and out of scope, environment, rules of engagement, deliverables, vendor criteria (`HRD-05`) | Ready to send; vendor and budget are the owner's |
 | [96-FEATURE-FIT-GAP](96-FEATURE-FIT-GAP.md) | **Every DocuSign and SignNow feature** (168 rows) with disposition, slice and status — the parity measure | Live |
 
 **Website** ([`site/`](../site/), `SITE-01`): the marketing site and user documentation as static files, published by
