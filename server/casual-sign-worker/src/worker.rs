@@ -1991,6 +1991,17 @@ impl<B: BlobStore + 'static> Worker<B> {
                     .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
                 Ok(seal::SealKey::Remote(key))
             }
+            seal::SealKey::Keyd(k) if k.alias() == chosen.alias => Ok(self.seal.key.clone()),
+            seal::SealKey::Keyd(k) => {
+                let k = k.clone();
+                let key = tokio::task::spawn_blocking(move || k.connect_alias(&chosen.alias))
+                    .await
+                    .map_err(|_| WorkerError::Pipeline {
+                        code: "CS-KEY-0011",
+                    })?
+                    .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+                Ok(seal::SealKey::Remote(key))
+            }
             seal::SealKey::Local { .. } => Err(WorkerError::Pipeline {
                 code: "CS-CON-0006",
             }),

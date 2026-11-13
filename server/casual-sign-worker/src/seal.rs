@@ -123,6 +123,23 @@ impl KeydKey {
         *slot = Some(r.clone());
         Ok(r)
     }
+
+    /// The alias this key is fetched under.
+    #[must_use]
+    pub fn alias(&self) -> &str {
+        &self.alias
+    }
+
+    /// The key `alias` at the same keyd, fetched now: the seal key alias the key
+    /// custodians put in force (`CON-10`), one connection per seal.
+    ///
+    /// # Errors
+    ///
+    /// As [`RemoteKey::connect`]: `CS-KEY-0011` while keyd cannot be reached,
+    /// `CS-KEY-0002` when keyd does not serve `alias`.
+    pub fn connect_alias(&self, alias: &str) -> core::result::Result<RemoteKey, KeydError> {
+        RemoteKey::connect(self.endpoint.clone(), alias)
+    }
 }
 
 /// A key provider shared between seals (a development `FileKey` loaded once).
