@@ -490,6 +490,8 @@ pub struct Env {
     pub allow_loopback: AtomicBool,
     /// The model service the worker is given (document analysis; none by default).
     pub inference: Mutex<Option<Arc<dyn casual_sign_worker::ml::Inference>>>,
+    /// The SMS and voice provider the worker is given (none by default).
+    pub messenger: Mutex<Option<Arc<dyn casual_sign_worker::messenger::Messenger>>>,
     next: AtomicU64,
 }
 
@@ -563,6 +565,7 @@ impl Env {
             anchors: Mutex::new(Vec::new()),
             allow_loopback: AtomicBool::new(true),
             inference: Mutex::new(None),
+            messenger: Mutex::new(None),
             next: AtomicU64::new(0),
         };
         env.blob_store().put(&env.delivered).await.unwrap();
@@ -668,6 +671,10 @@ impl Env {
         );
         let w = match self.inference.lock().unwrap().clone() {
             Some(i) => w.with_inference(i),
+            None => w,
+        };
+        let w = match self.messenger.lock().unwrap().clone() {
+            Some(m) => w.with_messenger(m),
             None => w,
         };
         match faults {
