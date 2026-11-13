@@ -2068,7 +2068,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         tx.envelopes()
             .set_certificate(ctx.envelope, &certificate.0)
             .await?;
-        let _ = &signatures;
+        record_signatures(&mut tx, ctx.envelope, signatures.as_ref(), self.now()).await?;
         tx.job_steps()
             .record(
                 ctx.job.id,

@@ -25,6 +25,7 @@ pub mod crypto;
 pub mod error;
 pub mod health;
 pub mod keys;
+pub mod monitor;
 pub mod net;
 pub mod plans;
 pub mod state;
@@ -92,6 +93,9 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ),
     ("GET", "/console/v1/keys", "any"),
     ("GET", "/console/v1/keys/log", "operators"),
+    ("POST", "/console/v1/keys/expiry-scan", "operators"),
+    ("GET", "/console/v1/reconciliation", "any"),
+    ("POST", "/console/v1/reconciliation", "operators"),
     ("GET", "/console/v1/tsa", "any"),
     ("POST", "/console/v1/tsa/changes", "custodians"),
     ("POST", "/console/v1/tsa/changes/{id}/grant", "custodians"),
@@ -163,6 +167,14 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/console/v1/keys", get(keys::keys))
         .route("/console/v1/keys/log", get(keys::keys_log))
+        .route(
+            "/console/v1/keys/expiry-scan",
+            post(monitor::expiry_scan_now),
+        )
+        .route(
+            "/console/v1/reconciliation",
+            get(monitor::runs).post(monitor::reconcile_now),
+        )
         .route("/console/v1/tsa", get(tsa::tsa))
         .route("/console/v1/tsa/changes", post(tsa::propose))
         .route("/console/v1/tsa/changes/{id}/grant", post(tsa::grant))
