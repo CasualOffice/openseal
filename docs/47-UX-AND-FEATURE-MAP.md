@@ -958,9 +958,9 @@ Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list la
   (UXW-10): the address and events prefilled, only what changed sent to `PATCH /webhooks/{id}` (a new address is
   checked again, `CS-API-0013` said in place); its signing secrets are named, not editable.
 - **Organization** also holds "Warn signers before expiry (days)" (RTE-03): 0 to 365, 0 for none, shown as "No
-  warning" or "n days before". The server takes `settings.workflow_policy` only whole, so the page sends the
-  account's own policy (its disclosure kept) or the engine's defaults with the new days (`adminmodel.js`
-  `withExpiryWarning`).
+  warning" or "n days before". The server takes `settings.workflow_policy` only whole, so the page reads the
+  account's policy again on save and sends it (its disclosure kept) or the engine's defaults with the new days
+  (`adminmodel.js` `expiryWarningPatch`).
 - **Audit log** (UXW-09, `GET /admin-events`): the workspace's admin log, newest first of the events loaded (pages of
   1,000, five at a time, then "Load more"), with When, Action, Made by (a member's or API client's name, or "The
   server") and the changed keys; a search box and Action and Made by filters over the loaded events (the route takes

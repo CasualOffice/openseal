@@ -67,7 +67,6 @@ const WEBHOOK_EVENTS = [
   "recipient.completed", "recipient.declined", "recipient.reassigned", "recipient.finish_later", "recipient.bounced",
   "template.created", "template.updated", "template.deleted", "bulk_send.completed",
 ];
-/// The demo disclosure (ERSD) every mock recipient consents to. Not legal text.
 /// Whether a value is a whole workflow policy as the server's `Policy` deserializes it
 /// (casual-sign-workflow, no defaults): every member present and of its type; others ignored.
 const POLICY_INTS = { max_auth_attempts: 0xffffffff, max_recipients: Number.MAX_SAFE_INTEGER, max_fields: Number.MAX_SAFE_INTEGER, max_documents: Number.MAX_SAFE_INTEGER, expiry_warning_days: 0xffff, seal_retry_ms: 0xffffffff };
@@ -78,6 +77,7 @@ function policyOk(p) {
   return DATE_FORMATS.includes(p.date_format) && (p.ersd == null || (typeof p.ersd === "object" && typeof p.ersd.version === "string" && typeof p.ersd.hash === "string"));
 }
 
+/// The demo disclosure (ERSD) every mock recipient consents to. Not legal text.
 export const MOCK_DISCLOSURE = [
   "Electronic record and signature disclosure (mock mode demo text).",
   "",

@@ -187,6 +187,15 @@ export function withExpiryWarning(settings, days) {
   return { ...POLICY_DEFAULTS, ...base, expiry_warning_days: days };
 }
 
+/// The settings patch that sets the expiry warning to `days`, or null when it already is.
+/// The policy is read again from the account first: the server takes it only whole and
+/// `PATCH /accounts/me` has no If-Match, so a policy built from the copy the page loaded
+/// would undo a disclosure published, or any policy change made, since it loaded.
+export async function expiryWarningPatch(api, days) {
+  const now = (await api.account())?.settings || {};
+  return days === expiryWarningOf(now) ? null : { workflow_policy: withExpiryWarning(now, days) };
+}
+
 // ---- Admin audit log (UXW-09) -----------------------------------------------------------
 
 /// Who made an admin event: `user`, `api_client` or `system`. Pure.

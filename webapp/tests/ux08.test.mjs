@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 import {
   NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
-  POLICY_DEFAULTS, expiryWarningOf, withExpiryWarning, filterAdminEvents, joinCsvPages,
+  POLICY_DEFAULTS, expiryWarningOf, withExpiryWarning, expiryWarningPatch, filterAdminEvents, joinCsvPages,
 } from "../adminmodel.js";
 import { createClient } from "../api.js";
 import { createMockFetch, MOCK } from "../mock.js";
@@ -123,6 +123,21 @@ test("expiry warning days go back in the whole workflow policy, the account's ow
   const ersd = { version: "2026-1", hash: `sha256:${"ab".repeat(32)}` };
   const own = { ...POLICY_DEFAULTS, max_auth_attempts: 5, ersd };
   assert.deepEqual(withExpiryWarning({ workflow_policy: own }, 7), { ...own, expiry_warning_days: 7 });
+});
+
+test("the expiry warning is set on the policy as it is now, not as the page loaded it (RTE-03)", async () => {
+  const c = createClient({ fetch: createMockFetch() });
+  await c.login(MOCK.email, MOCK.password);
+  // The page loads the account; then another admin changes the policy (a disclosure
+  // required, more sign-in attempts) before this one saves the warning days.
+  await c.account();
+  const ersd = { version: "2", hash: `sha256:${"a".repeat(64)}` };
+  await c.patchAccountSettings({ workflow_policy: { ...POLICY_DEFAULTS, ersd, max_auth_attempts: 5 } });
+  const patch = await expiryWarningPatch(c, 7);
+  const out = await c.patchAccountSettings(patch);
+  assert.deepEqual(out.settings.workflow_policy, { ...POLICY_DEFAULTS, ersd, max_auth_attempts: 5, expiry_warning_days: 7 });
+  // Already those days: nothing to send.
+  assert.equal(await expiryWarningPatch(c, 7), null);
 });
 
 test("the mock takes a workflow policy only whole, as the server does, and logs the change (RTE-03, UXW-09)", async () => {

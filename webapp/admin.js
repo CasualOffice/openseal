@@ -39,7 +39,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import { profileName } from "./people.js";
 import {
   NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
-  expiryWarningOf, withExpiryWarning, MAX_WARNING_DAYS, actorKind, changedKeys, filterAdminEvents, joinCsvPages,
+  expiryWarningOf, expiryWarningPatch, MAX_WARNING_DAYS, actorKind, changedKeys, filterAdminEvents, joinCsvPages,
 } from "./adminmodel.js";
 import { intelligence } from "./adminintel.js";
 import { ersdCard } from "./adminersd.js";
@@ -276,10 +276,9 @@ function account(panel, ctx, part) {
             if (expiry != null && !(expiry >= 1 && expiry <= 365)) { f.err.textContent = t("admin.need-days"); f.expiry.focus(); return undefined; }
             const warn = f.warn.value === "" ? 0 : Number(f.warn.value);
             if (!Number.isInteger(warn) || warn < 0 || warn > MAX_WARNING_DAYS) { f.err.textContent = t("admin.need-warning-days", { n: MAX_WARNING_DAYS }); f.warn.focus(); return undefined; }
-            const patch = { default_expiry_days: expiry, first_reminder_days: remind || null };
-            // RTE-03: the server takes the workflow policy whole, so the account's own
-            // policy (its disclosure kept) goes back with the new warning days.
-            if (warn !== expiryWarningOf(s())) patch.workflow_policy = withExpiryWarning(s(), warn);
+            // RTE-03: the server takes the workflow policy whole, so the account's policy
+            // as it is now (its disclosure kept) goes back with the new warning days.
+            const patch = { default_expiry_days: expiry, first_reminder_days: remind || null, ...(await expiryWarningPatch(ctx.api, warn)) };
             const out = await ctx.api.patchAccountSettings(patch);
             acct = { ...acct, settings: out?.settings || acct.settings };
             return true;
