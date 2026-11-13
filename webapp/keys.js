@@ -8,12 +8,16 @@
 
 import { command, run } from "./commands.js";
 import { t } from "./i18n.js";
+import { TOOL_KEYS } from "./preparemodel.js";
 
 /// Context → key → command id. The editor's table is checked before the global one.
 export const SHORTCUTS = {
   global: new Map([
     // "?" is matched without Shift (see `combo`), whichever keyboard needs Shift for it.
     ["?", "help.shortcuts"],
+    // WEB-17: the command menu. app.js handles it ahead of this table (it works while
+    // typing too); it is listed here so the shortcuts panel shows it.
+    ["Ctrl+K", "palette.open"],
     // UX-04: search from any screen with the bar, not only Agreements.
     ["/", "search.focus"],
     ["N", "envelope.new"],
@@ -106,6 +110,7 @@ export function bindings(contexts) {
 /// and the editor use, available whether or not that screen is open.
 const LABEL_KEYS = [
   [/^help\.shortcuts$/, "help.shortcuts"],
+  [/^palette\.open$/, "palette.label"],
   [/^search\.focus$/, "cmd.search"],
   [/^envelope\.new$/, "nav.new"],
   [/^theme\.toggle$/, "cmd.theme"],
@@ -146,7 +151,9 @@ export function keyParts(k, mac = false) {
 /// `label(id)` names a command no table entry names (a registered command's own label).
 export function shortcutGroups(contexts = ["global"], { mac = false, label = null } = {}) {
   const order = [...new Set([...contexts.filter((c) => SHORTCUTS[c]), ...Object.keys(SHORTCUTS)])];
-  return order.map((context) => {
+  return [...order.map(tableGroup), toolGroup()];
+
+  function tableGroup(context) {
     const rows = new Map();
     for (const [k, id] of SHORTCUTS[context]) {
       const name = labelOf(id, label);
@@ -175,5 +182,16 @@ export function shortcutGroups(contexts = ["global"], { mac = false, label = nul
       }
     }
     return { context, rows: [...rows.values()] };
-  });
+  }
+}
+
+/// The editor's single-key tools (WEB-17; preparemodel.js `TOOL_KEYS`), last in the
+/// panel. prepare.js dispatches them itself on the fields step (a bare letter, not while
+/// typing), so they are listed here rather than bound in `SHORTCUTS`.
+function toolGroup() {
+  const rows = Object.entries(TOOL_KEYS).map(([tool, key]) => ({
+    label: tool === "select" ? t("cmd.tool.select") : t("cmd.tool.place", { type: t(`ftype.${tool}`) }),
+    keys: [[key]],
+  }));
+  return { context: "tools", rows };
 }

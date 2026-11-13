@@ -226,7 +226,7 @@ async function route() {
   ctx.contexts = ["global"];
   ctx.onSearch = null;
   if (!whoLoaded && ctx.session) { whoLoaded = true; loadWho(); }
-  if (ctx.session) refreshActivity();
+  if (ctx.session) { refreshActivity(); drawNavViews().catch(() => { /* the views are a shortcut; the screen still works */ }); }
   const opts = entry[2];
   const layoutChanges = document.body.classList.contains("is-chromeless") !== (opts.chrome === false)
     || document.body.classList.contains("is-frame") !== !!opts.frame;
@@ -445,6 +445,10 @@ function openNav() {
   document.getElementById("nav-toggle").setAttribute("aria-expanded", "true");
   document.getElementById("nav-scrim").hidden = false;
   nav.inert = false;
+  // The drawer is modal: the screen under the scrim leaves the tab order and the
+  // accessibility tree until it closes (WEB-17; axe target-size on the covered links).
+  const content = document.getElementById("content");
+  if (content) content.inert = true;
   nav.querySelector(".os-nav__link:not([hidden])")?.focus({ preventScroll: true });
 }
 
@@ -454,6 +458,8 @@ function closeNav(focus = false) {
   document.getElementById("nav-toggle")?.setAttribute("aria-expanded", "false");
   const scrim = document.getElementById("nav-scrim");
   if (scrim) scrim.hidden = true;
+  const content = document.getElementById("content");
+  if (content) content.inert = false;
   const nav = document.getElementById("nav");
   if (nav) nav.inert = narrow();
   if (was && focus) document.getElementById("nav-toggle")?.focus({ preventScroll: true });
@@ -634,6 +640,14 @@ ctx.setNavCount = setNavCount;
 /// else shows the account's initials.
 const who = { name: "", email: "" };
 let whoLoaded = false;
+
+/// The sidebar's saved Views on any first screen (WEB-17), without counts. Agreements
+/// and Home redraw them with live counts; this never overwrites what they drew.
+async function drawNavViews() {
+  if (document.getElementById("nav-views")?.childElementCount) return;
+  const { renderNavViews } = await import("./agreementparts.js");
+  if (!document.getElementById("nav-views")?.childElementCount) renderNavViews(ctx);
+}
 async function loadWho() {
   try {
     const account = await api.account().catch(() => null);

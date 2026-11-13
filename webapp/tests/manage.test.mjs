@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 import {
   envelopeActions, rowActions, agreementsHash, expiringSoon, csvCell, toCsv, ENDED,
-  viewFrom, groupOf, toneOf, inView, viewCounts, groupRows, flatIds, moveSelection, signingProgress, primaryVerb,
+  viewFrom, groupOf, toneOf, pillOf, inView, viewCounts, groupRows, flatIds, moveSelection, signingProgress, primaryVerb,
   relativeWhen, recipientBadge, piiSummary, auditLinks, documentFingerprint, groupHex,
 } from "../managemodel.js";
 import { fmtShortDate } from "../dom.js";
@@ -107,6 +107,17 @@ test("an envelope waiting for my signature is in Needs me, not Waiting, whatever
   assert.equal(inView(ROWS[0], "waiting", MINE, NOW), false);
   assert.equal(toneOf(ROWS[5]), "danger");
   assert.equal(toneOf(ROWS[6]), "draft");
+});
+
+test("Declined, Voided and Expired pills are three different states, none a draft's (UX-02)", () => {
+  const pill = (status) => pillOf({ id: "x", status });
+  assert.deepEqual(pill("declined"), { tone: "declined", ic: "circle-x" });
+  assert.deepEqual(pill("voided"), { tone: "voided", ic: "ban" });
+  assert.deepEqual(pill("expired"), { tone: "expired", ic: "clock" });
+  assert.equal(new Set(["declined", "voided", "expired", "draft"].map((s) => pill(s).tone)).size, 4);
+  assert.deepEqual(pill("completed"), { tone: toneOf({ status: "completed" }), ic: null });
+  // Waiting for my signature wins over the status.
+  assert.equal(pillOf({ id: "x", status: "sent" }, new Set(["x"])).tone, toneOf({ id: "x", status: "sent" }, new Set(["x"])));
 });
 
 test("view counts: Expiring is within seven days and still open; Declined or expired keeps both", () => {

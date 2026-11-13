@@ -13,8 +13,14 @@ const row = (group, label) => group.rows.find((r) => r.label === label);
 
 test("the shortcuts panel has one row per action, aliases together, global first", () => {
   const groups = shortcutGroups(["global"]);
-  assert.deepEqual(groups.map((g) => g.context), ["global", "editor"]);
-  const [global, editor] = groups;
+  assert.deepEqual(groups.map((g) => g.context), ["global", "editor", "tools"]);
+  const [global, editor, tools] = groups;
+  // WEB-17: the command menu and the editor's single-key tools are in the panel.
+  assert.deepEqual(row(global, "Command menu").keys, [["Ctrl", "K"]]);
+  assert.deepEqual(shortcutGroups(["global"], { mac: true })[0].rows.find((r) => r.label === "Command menu").keys, [["⌘", "K"]]);
+  assert.deepEqual(row(tools, "Select and move fields").keys, [["V"]]);
+  assert.deepEqual(row(tools, "Signature field").keys, [["S"]]);
+  assert.deepEqual(row(tools, "Checkbox field")?.keys, [["C"]]);
   // "?" once (it was listed twice, as "?" and "Shift+?").
   assert.equal(global.rows.filter((r) => r.label === "Keyboard shortcuts").length, 1);
   assert.deepEqual(row(global, "Keyboard shortcuts").keys, [["?"]]);

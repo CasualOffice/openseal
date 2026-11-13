@@ -11,15 +11,18 @@ for (const scheme of ["light", "dark"]) {
     await page.emulateMedia({ colorScheme: scheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await signIn(page, "home");
-    await expect(page.locator(".os-counters:not([aria-busy])")).toBeVisible();
+    await expect(page.locator(".os-home2__stats:not([aria-busy])")).toBeVisible();
     await expect(page.locator(".os-recent__item").first()).toBeVisible();
     await snap(page, testInfo, `${scheme}-r1-home`);
 
     await page.goto(app("#/agreements"));
-    await expect(page.locator(".os-row__sub").first()).not.toBeEmpty();
+    await expect(page.locator(".os-agr-row[data-id] .os-agr-sub").first()).not.toBeEmpty();
     await snap(page, testInfo, `${scheme}-r2-agreements`);
-    await page.locator("tbody .os-checkbox").nth(1).check();
-    await page.locator("tbody .os-checkbox").nth(2).check();
+    await page.getByTestId("display-toggle").click();
+    await page.getByRole("menuitem", { name: "Select agreements" }).click();
+    await page.locator(".os-agr-row[data-id] .os-checkbox").nth(1).check();
+    await page.locator(".os-agr-row[data-id] .os-checkbox").nth(2).check();
+    await expect(page.getByTestId("bulk-bar")).toBeVisible();
     await snap(page, testInfo, `${scheme}-r3-agreements-bulk`);
 
     await page.goto(app("#/reports"));
@@ -28,7 +31,7 @@ for (const scheme of ["light", "dark"]) {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(app("#/home"));
-    await expect(page.locator(".os-counters:not([aria-busy])")).toBeVisible();
+    await expect(page.locator(".os-home2__stats:not([aria-busy])")).toBeVisible();
     await snap(page, testInfo, `${scheme}-r5-home-390`);
   });
 }

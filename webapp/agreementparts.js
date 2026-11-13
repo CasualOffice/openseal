@@ -13,7 +13,7 @@ import { t } from "./i18n.js";
 import { button, busy, statusPill, avatarStack, mlHeading, suggestion, toast, toastError } from "./ui/index.js";
 import { mlStatus, loadSuggestions, suggestions as storedSuggestions, acceptSuggestion, dismissSuggestion, onSuggestions, openOf, featureOn } from "./ml.js";
 import {
-  VIEWS, toneOf, groupOf, signingProgress, relativeWhen, recipientBadge, piiSummary, auditLinks, documentFingerprint, groupHex, agreementsHash,
+  VIEWS, toneOf, pillOf, groupOf, signingProgress, relativeWhen, recipientBadge, piiSummary, auditLinks, documentFingerprint, groupHex, agreementsHash,
 } from "./managemodel.js";
 import { statusLine, historyVerb, actorOf, copyText, shortDate, downloadCertificate, hasCertificate, historyPanel, ACTIVE } from "./envactions.js";
 
@@ -81,7 +81,7 @@ export function statusText(row, env, mine) {
 
 /// A status pill in its group's tone (class `os-row__status`, for tests and styles).
 export function statusPillFor(row, env, mine) {
-  const p = statusPill(statusText(row, env, mine), { tone: toneOf(row, mine) });
+  const p = statusPill(statusText(row, env, mine), pillOf(row, mine));
   p.classList.add("os-row__status");
   p.dataset.status = row.status;
   return p;

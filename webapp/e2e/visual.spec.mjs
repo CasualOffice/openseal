@@ -56,7 +56,11 @@ async function checkLayout(page, what) {
       if (!styled) out.push(`unstyled ${el.tagName.toLowerCase()}: ${(el.getAttribute("aria-label") || el.textContent || el.name || "").trim().slice(0, 40)}`);
     }
     // Overlaps between interactive elements that are not nested in each other.
-    const skip = (el) => el.closest(".os-page__overlay, .os-menu, dialog:not([open])");
+    // Under an open modal dialog the page is inert: only the dialog's controls can meet.
+    // (The canvas draws the phone's adopt dialog as a bottom sheet over the signer's bar,
+    // docs/assets/design-canvas/SignerPhone.dc.html.)
+    const modal = document.querySelector("dialog:modal");
+    const skip = (el) => el.closest(".os-page__overlay, .os-menu, dialog:not([open])") || (modal && !modal.contains(el));
     const live = controls.filter((x) => !skip(x.el));
     for (let i = 0; i < live.length; i++) {
       for (let j = i + 1; j < live.length; j++) {
@@ -130,6 +134,13 @@ async function expectPainted(page, selector, what) {
   await expect.poll(blank, { message: `blank canvases on ${what}`, timeout: 10_000 }).toBe(0);
 }
 
+/// Open an agreement's detail page from the Agreements list (rows open on double-click or
+/// from the inspector; the address is the row's).
+async function openEnvelope(page, subject) {
+  const id = await page.locator(".os-agr-row[data-id]", { hasText: subject }).getAttribute("data-id");
+  await page.goto(app(`#/envelopes/${id}`));
+}
+
 async function shot(page, name, viewport, fullPage = true) {
   fs.mkdirSync(SHOTS, { recursive: true });
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -148,17 +159,18 @@ for (const [vp, size] of [["desktop", { width: 1440, height: 900 }], ["phone", {
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
       await check("01-signin");
       await signIn(page, "home");
-      await expect(page.locator(".os-counters:not([aria-busy])")).toBeVisible();
+      await expect(page.locator(".os-home2__stats:not([aria-busy])")).toBeVisible();
       await expect(page.locator(".os-recent__item").first()).toBeVisible();
       await check("02-home");
       await page.goto(app("#/agreements"));
-      await expect(page.locator(".os-row__sub").first()).not.toBeEmpty();
+      await expect(page.locator(".os-agr-row[data-id] .os-agr-sub").first()).not.toBeEmpty();
       await check("03-agreements");
-      await page.getByRole("link", { name: "Mutual NDA — Acme and Globex" }).click();
+      await openEnvelope(page, "Mutual NDA — Acme and Globex");
       await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();
       await check("04-envelope-summary");
-      await page.getByRole("tab", { name: "Documents" }).click();
-      await expectPainted(page, ".os-preview__pages", "envelope documents");
+      // The documents are a card on the envelope page, not a tab (WEB-17).
+      await page.getByTestId("envelope-documents").scrollIntoViewIfNeeded();
+      await expectPainted(page, "[data-testid=envelope-documents] .os-preview__pages", "envelope documents");
       await check("05-envelope-documents");
 
       await page.goto(app("#/prepare"));
@@ -291,14 +303,18 @@ for (const [vp, size] of [["1440", { width: 1440, height: 900 }], ["1366", { wid
     test("row menus, the Start menu and the account menu stay inside the viewport", async ({ page }, testInfo) => {
       test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
       await signIn(page, "agreements");
-      await expect(page.locator(".os-row__sub").first()).not.toBeEmpty();
-      const rowMenus = page.getByRole("button", { name: /^Actions for / });
-      await rowMenus.last().click();
-      await menuInView(page, `${vp} agreements: last row's menu`);
-      await page.keyboard.press("Escape");
-      await rowMenus.first().click();
-      await menuInView(page, `${vp} agreements: first row's menu`);
-      await page.keyboard.press("Escape");
+      await expect(page.locator(".os-agr-row[data-id] .os-agr-sub").first()).not.toBeEmpty();
+      // A row's actions are in the inspector's More menu (WEB-17): select the row, open it.
+      const rows = page.locator(".os-agr-row[data-id]");
+      for (const [which, r] of [["last", rows.last()], ["first", rows.first()]]) {
+        await r.click();
+        await page.getByRole("button", { name: /^Actions for / }).click();
+        await menuInView(page, `${vp} agreements: ${which} row's menu`);
+        await page.keyboard.press("Escape");
+        // On a phone the inspector is a full page: close it to reach the list again.
+        const close = page.getByRole("button", { name: "Close details" });
+        if (await close.isVisible()) await close.click();
+      }
       // On a phone New agreement lives in the drawer (WEB-17); the account is in the top row.
       if (await page.locator("#nav-toggle").isVisible()) await page.locator("#nav-toggle").click();
       await page.locator("#start-btn").click();
@@ -378,7 +394,7 @@ test.describe("components at 390", () => {
   test("the envelope's details stack in one column on a phone", async ({ page }, testInfo) => {
     test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
     await signIn(page, "agreements");
-    await page.getByRole("link", { name: "Mutual NDA — Acme and Globex" }).click();
+    await openEnvelope(page, "Mutual NDA — Acme and Globex");
     const meta = page.locator(".os-meta").first();
     await expect(meta).toBeVisible();
     const cols = await meta.evaluate((dl) => getComputedStyle(dl).gridTemplateColumns.split(" ").length);
@@ -390,7 +406,10 @@ test("row checkboxes have a 44 px target (SC 2.5.8 and the touch size)", async (
   test.skip(REAL || testInfo.project.name !== "chromium", "mock data, one browser");
   await page.setViewportSize({ width: 1440, height: 900 });
   await signIn(page, "agreements");
-  const box = page.locator("tbody .os-checkbox").first();
+  // Rows take a checkbox in select mode (Display → Select agreements, WEB-17).
+  await page.getByTestId("display-toggle").click();
+  await page.getByRole("menuitem", { name: "Select agreements" }).click();
+  const box = page.locator(".os-agr-row[data-id] .os-checkbox").first();
   await expect(box).toBeVisible();
   const r = await box.evaluate((el) => {
     const b = el.getBoundingClientRect();

@@ -135,6 +135,20 @@ export function toneOf(row, mine = new Set()) {
   return GROUPS.find((x) => x.id === g).tone;
 }
 
+/// A status pill's `{tone, ic}`: its group's tone, except the three ways an agreement
+/// ends, which read as three different states (UX-02): Declined in the danger colour,
+/// Voided neutral with a ban icon, Expired amber with a clock. Grey for all three made
+/// them one state, and the same as a draft.
+export function pillOf(row, mine = new Set()) {
+  if (groupOf(row, mine) === "ended" && ENDED_PILL[row.status]) return ENDED_PILL[row.status];
+  return { tone: toneOf(row, mine), ic: null };
+}
+const ENDED_PILL = Object.freeze({
+  declined: { tone: "declined", ic: "circle-x" },
+  voided: { tone: "voided", ic: "ban" },
+  expired: { tone: "expired", ic: "clock" },
+});
+
 /// Whether `row` belongs in view `id` at `now` (ms).
 export function inView(row, id, mine = new Set(), now = Date.now()) {
   const v = VIEWS.find((x) => x.id === id) || VIEWS[0];

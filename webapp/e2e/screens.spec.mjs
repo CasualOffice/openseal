@@ -15,11 +15,11 @@ for (const scheme of ["light", "dark"]) {
     await snap(page, testInfo, `${scheme}-1-signin`);
 
     await signIn(page);
-    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
     await snap(page, testInfo, `${scheme}-2-dashboard`);
 
     if (!REAL) {
-      await page.getByRole("link", { name: "Offer letter — Jordan Rivera" }).click();
+      await page.locator(".os-agr-row[data-id]", { hasText: "Offer letter — Jordan Rivera" }).dblclick();
       await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible();
       await snap(page, testInfo, `${scheme}-3-envelope`);
     }

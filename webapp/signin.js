@@ -81,7 +81,9 @@ function signIn(card, ctx, hint, prefill, screens) {
     cardHead("signin-title", t("signin.title"), t("signin.lede")),
     form,
     sso,
-    hint ? h("p", { class: "os-auth__hint" }, icon("info", { size: 16 }), h("span", { text: t("signin.mock-hint", hint) })) : null,
+    // Sign-in has no sidebar, so its demo tag is not shown: the hint says demo mode itself.
+    hint ? h("p", { class: "os-auth__hint", attrs: { role: "note" } }, icon("info", { size: 16 }),
+      h("span", {}, h("strong", { text: `${t("mock.tag")}. ` }), document.createTextNode(t("signin.mock-hint", hint)))) : null,
   );
   providers(ctx, sso);
   // Focused here, not by an `autofocus` attribute: WebKit runs a page's autofocus at a

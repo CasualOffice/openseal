@@ -301,7 +301,7 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
       await expect(page.getByTestId("report-note")).toContainText("6 envelopes");
       await expectAccessible(page, "reports");
       await snap(page, testInfo, `ux08-reports-${label}`);
-      await page.getByRole("link", { name: /^Completed/ }).click();
+      await page.getByTestId("report-bars").getByRole("link", { name: /^Completed/ }).click();
       await expect(page).toHaveURL(/#\/agreements\?status=completed$/);
     });
 

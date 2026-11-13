@@ -267,7 +267,8 @@ The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign us
   Start lists Send an envelope, Use a template, then (after a rule) Verify a signed PDF.
 - **Phone drawer** (below 60em): opens under the bar as measured when it opens (so never over the demo banner or the
   bar), with a scrim that closes it on a tap; Escape closes it and returns focus to Menu; focus goes to its first link
-  on open; while closed it is `inert` (no link in the tab order); opening any other menu, or any navigation, closes it.
+  on open; while closed it is `inert` (no link in the tab order), and while open the content under the scrim
+  (`#content`) is `inert` (WEB-17: the drawer is modal); opening any other menu, or any navigation, closes it.
 - **Search everywhere**: below 60em a search button opens the same `#top-search` as a full-width row under the bar
   (Escape closes it, focus back on the button); `/` focuses it from every screen with the bar (`search.focus`, global),
   not only Agreements. Enter outside Agreements opens Agreements with `?q=`.
@@ -282,8 +283,10 @@ The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign us
   current password. Its calls are `NOT_ON_SERVER.profile` (`UXW-37`): against a server without them the panel shows
   who is signed in and says changing it is not available yet.
 - **Help menu**: Keyboard shortcuts, Verify a signed PDF, About OpenSeal. The **shortcuts panel** lists every table,
-  grouped (Everywhere, Send editor), one row per action with its keys (Delete or Backspace; Redo's two; four arrows as
-  one ←↑→↓ key; the nine recipient digits as 1–9), with ⌘ ⌥ ⇧ on a Mac.
+  grouped (Everywhere, with ⌘K for the command menu; Send editor; Placing fields, the editor's single-key tools from
+  `preparemodel.TOOL_KEYS`, V and S I D N E O T C, which prepare.js dispatches itself on the Fields step), one row per
+  action with its keys (Delete or Backspace; Redo's two; four arrows as one ←↑→↓ key; the nine recipient digits as
+  1–9), with ⌘ ⌥ ⇧ on a Mac.
 - **Notifications**: the bell lists the latest completed, declined, viewed, voided and expired envelopes (newest
   change first, from `GET /envelopes?status=…&sort=updated_at`; no notification store exists), each opening its
   envelope, and View all agreements. A dot and "Notifications, n new" mark changes since it was last opened (a
@@ -1096,7 +1099,8 @@ Spec: `docs/assets/design-canvas/Main.dc.html`. Replaces the UX-07 folder rail a
   `delivered_sha256` / `upload_sha256` (the mock returns none, so none shows); Download certificate and Verify for a
   completed agreement. There is no "evidence package" download because the app has none.
 - **Views** (`agreementparts.renderNavViews`): the sidebar's `#nav-views` with dots and live counts, filled by
-  Agreements and Home; on Agreements they switch in place and keep the search in their links.
+  Agreements and Home; on Agreements they switch in place and keep the search in their links. The shell draws them
+  once, without counts, on whatever screen comes first (`app.js` `drawNavViews`), never over what a screen drew.
 - **Matches by meaning** (`meaning.js`): a ⌘K provider over `api.searchByMeaning`, registered by Agreements, the
   envelope page and Home only when extraction is available; snippets drawn as text nodes and `<mark>`.
 - **Envelope page** (`envelope.js`): header in the inspector's language (pill and status line, name, sent date and

@@ -26,7 +26,7 @@ import {
   statusLine, auditTable, copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, downloadCertificate, hasCertificate,
   correctPanel, historyPanel, voidEnvelopes, copyText, shortDate, DELETABLE, ENDED,
 } from "./envactions.js";
-import { envelopeActions, toneOf } from "./managemodel.js";
+import { envelopeActions, pillOf } from "./managemodel.js";
 import { recipientsSection, evidenceSection, insightsSection, insightsAvailable } from "./agreementparts.js";
 import { registerMeaningSearch } from "./meaning.js";
 
@@ -126,7 +126,7 @@ export function mount(view, ctx, [rawId]) {
     const sub = [e.sent_at ? t("agreements.sub.sent", { date: shortDate(e.sent_at) }) : t("agreements.sub.draft", { date: shortDate(e.updated_at || e.created_at) }), pages ? (pages === 1 ? t("agreements.sub.page") : t("agreements.sub.pages", { n: pages })) : null].filter(Boolean).join(" · ");
     const head = h("div", { class: "os-page-head os-detail__head os-env__head" },
       h("div", { class: "os-page-head__main os-env__title" },
-        h("div", { class: "os-env__pillrow" }, statusPill(t(`status.${e.status}`), { tone: toneOf(e) }),
+        h("div", { class: "os-env__pillrow" }, statusPill(t(`status.${e.status}`), pillOf(e)),
           line ? h("p", { class: "os-env__line os-detail__line", attrs: { "data-testid": "status-line" }, text: line }) : null),
         h("h1", { class: "os-page-title", text: subject }),
         h("p", { class: "os-env__sub", text: sub })),

@@ -121,7 +121,8 @@ for (const [name, viewport] of WIDTHS) {
       await input.fill("NDA");
       const options = menu.getByRole("option");
       await expect(options.first()).toHaveAttribute("aria-selected", "true");
-      await expect(menu.getByRole("option", { name: /Mutual NDA/ })).toBeVisible();
+      // The agreement itself (document intelligence may add a "what it means" match too).
+      await expect(menu.locator('[role="option"][data-key^="agreements:"]', { hasText: "Mutual NDA" })).toBeVisible();
       await page.keyboard.press("End");
       await expect(options.last()).toHaveAttribute("aria-selected", "true");
       const active = await input.getAttribute("aria-activedescendant");
@@ -257,6 +258,10 @@ for (const [name, viewport] of WIDTHS) {
       const keys = page.getByRole("dialog", { name: "Keyboard shortcuts" });
       await expect(keys.getByRole("heading", { name: "Everywhere" })).toBeVisible();
       await expect(keys.getByRole("heading", { name: "Send editor" })).toBeVisible();
+      // WEB-17: ⌘K and the editor's single-key tools are listed too.
+      await expect(keys.getByRole("heading", { name: "Placing fields" })).toBeVisible();
+      await expect(keys.getByRole("row", { name: /^Command menu/ })).toHaveCount(1);
+      await expect(keys.getByRole("row", { name: /^Signature field/ }).locator("kbd")).toHaveText("S");
       // One row per action: the two help keys are one row; Redo lists both of its keys.
       await expect(keys.getByRole("row", { name: /Keyboard shortcuts/ })).toHaveCount(1);
       await expect(keys.getByRole("row", { name: /^Redo/ }).locator("kbd")).toHaveCount(5);
