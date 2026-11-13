@@ -333,6 +333,9 @@ pub enum Template {
     EmailOtp,
     /// A user asked to reset their password (UXW-38); the link sets a new one once.
     PasswordReset,
+    /// A user's password or second factor changed (ASVS-04). It carries no link and
+    /// no secret: it tells the user what changed and what to do if it was not them.
+    SecurityNotice(casual_sign_host::jobs::SecurityNotice),
 }
 
 /// What fills a template: the only supplied text.
@@ -408,6 +411,36 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
             format!("Reset your {} password", f.product),
             "Someone asked to reset the password of your account. Set a new password with the link below. It works once and expires in 1 hour. If you did not ask for this, ignore this email: your password stays as it is.",
         ),
+        Template::SecurityNotice(n) => {
+            use casual_sign_host::jobs::SecurityNotice as N;
+            let (what, lead) = match n {
+                N::PasswordChanged => (
+                    "password was changed",
+                    "The password of your account was changed. If you changed it, or asked an administrator to, there is nothing to do.",
+                ),
+                N::PasswordReset => (
+                    "password was reset",
+                    "The password of your account was reset with a link sent to this address. If you did this, there is nothing to do.",
+                ),
+                N::PasswordSet => (
+                    "password was set",
+                    "A password was set for your account with the invitation link sent to this address. If you did this, there is nothing to do.",
+                ),
+                N::FactorAdded => (
+                    "second factor was added",
+                    "An authenticator app was added to your account as a second factor for signing in. If you did this, there is nothing to do.",
+                ),
+                N::FactorRemoved => (
+                    "second factor was removed",
+                    "A second factor was removed from your account. If you did this, there is nothing to do.",
+                ),
+                _ => (
+                    "sign-in settings changed",
+                    "The sign-in settings of your account changed. If you did this, there is nothing to do.",
+                ),
+            };
+            (format!("Your {} {what}", f.product), lead)
+        }
         Template::EmailOtp => (
             format!("Your verification code: {}", f.subject),
             "Enter this code on the signing page to open the documents. It works once and expires in 10 minutes. If you did not ask for it, ignore this email.",
@@ -435,6 +468,8 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
         "Do not share this code: it opens the documents"
     } else if template == Template::PasswordReset {
         "Do not share this email: its link sets your password"
+    } else if matches!(template, Template::SecurityNotice(_)) {
+        "If you did not make this change, reset your password now and tell your administrator"
     } else {
         "Do not share this email: its link gives access to the documents"
     };

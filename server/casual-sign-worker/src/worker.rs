@@ -556,6 +556,9 @@ impl<B: BlobStore + 'static> Worker<B> {
         if job.kind == casual_sign_host::jobs::SEND_PASSWORD_RESET {
             return self.password_reset(job, lease).await;
         }
+        if job.kind == casual_sign_host::jobs::SEND_SECURITY_NOTICE {
+            return self.security_notice(job, lease).await;
+        }
         if job.kind == casual_sign_host::jobs::SEAL_ENDED_CERTIFICATE {
             return self.ended_certificate(job, lease).await;
         }
@@ -1003,6 +1006,72 @@ impl<B: BlobStore + 'static> Worker<B> {
             .record(
                 job.id,
                 "email.password_reset",
+                &serde_json::json!({
+                    "outcome": if matches!(sent, Sent::Accepted) { "accepted" } else { "bounced" },
+                    "message_id": msg.message_id,
+                }),
+                now,
+            )
+            .await?;
+        self.close_job(tx, job, lease).await
+    }
+
+    /// `send_security_notice` (ASVS-04): tell the user by email that their password or
+    /// second factor changed. The mail names what changed and holds no secret and no
+    /// link that signs in; it goes once per job (a job step), to the user's address now,
+    /// and to nobody when the user no longer exists.
+    async fn security_notice(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: casual_sign_host::jobs::SecurityNoticeJob =
+            serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        if job.envelope_id.is_some() {
+            return Err(bad());
+        }
+        let account = job.account_id;
+        let mut tx = self.store.for_account(account).begin().await?;
+        let done = tx
+            .job_steps()
+            .list(job.id)
+            .await?
+            .iter()
+            .any(|s| s.step == "email.security_notice");
+        let user = tx.users().get(casual_sign_store::UserId(p.user_id)).await?;
+        let (Some(user), false) = (user, done) else {
+            return self.close_job(tx, job, lease).await;
+        };
+        tx.commit().await?;
+        let now = self.now();
+        let mailer = self.mailer.as_ref().ok_or(WorkerError::NoChannel)?;
+        let (subject, body) = email::render(
+            Template::SecurityNotice(p.notice),
+            &Fill {
+                name: user.name.get(),
+                subject: "",
+                message: "",
+                link: None,
+                product: &self.config.product,
+                abuse: &self.config.abuse,
+            },
+        );
+        let msg = Message {
+            from: self.config.mail_from.clone(),
+            from_name: self.config.mail_from_name.clone(),
+            to: user.email.get().clone(),
+            to_name: user.name.get().clone(),
+            subject,
+            body,
+            message_id: self.message_id(job.id, "notice"),
+            date: now,
+        };
+        let sent = mailer.send(&msg).await?;
+        self.boundary(Boundary::EmailSent, &job.kind).await;
+        let mut tx = self.store.for_account(account).begin().await?;
+        tx.job_steps()
+            .record(
+                job.id,
+                "email.security_notice",
                 &serde_json::json!({
                     "outcome": if matches!(sent, Sent::Accepted) { "accepted" } else { "bounced" },
                     "message_id": msg.message_id,

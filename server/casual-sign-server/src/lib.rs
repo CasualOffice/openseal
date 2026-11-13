@@ -29,6 +29,7 @@ mod http;
 pub mod idp;
 mod mfa;
 pub mod net;
+mod passwords;
 mod preview;
 pub mod routes;
 mod state;

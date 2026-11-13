@@ -75,6 +75,13 @@ Personal-data recognisers in crates/casual-sign-pii/:
       libphonenumber, whose phone-number metadata (Apache-2.0, Copyright Google
       LLC) is compiled into the crate.
 
+Breached-password list in server/casual-sign-server/data/common-passwords.txt,
+compiled into casual-sign-server (ASVS-02):
+  SecLists (commit c205c36), xato-net-10-million-passwords-1000000.txt, filtered
+      to passwords of 12 to 256 characters; MIT, Copyright (c) 2018 Daniel
+      Miessler; the licence text is beside it (LICENSE-SECLISTS) and
+      data/PROVENANCE.md records the source and transformation.
+
 Web app (webapp/), shipped to browsers:
   pdf.js 4.10.38 (webapp/vendor/pdfjs/)   Apache-2.0, Copyright Mozilla
       Foundation; its LICENSE is beside it. Its standard_fonts/ carry their own

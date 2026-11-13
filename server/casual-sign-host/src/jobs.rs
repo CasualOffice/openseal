@@ -45,6 +45,7 @@ pub const KINDS: &[&str] = &[
     SEND_EMAIL_OTP,
     SEND_WEBHOOK_DELIVERY,
     SEND_PASSWORD_RESET,
+    SEND_SECURITY_NOTICE,
     SEAL_ENDED_CERTIFICATE,
     // Advisory, not effects (docs/33 §2, WEB-19): claimed so a worker with a model
     // service fills them; enqueued only while a workspace has a feature in effect.
@@ -226,6 +227,59 @@ pub fn password_reset_job(id: JobId, reset: Uuid, now: time::OffsetDateTime) -> 
         payload: serde_json::json!({ "reset_id": reset }),
         run_at: now,
         max_attempts: max_attempts(SEND_PASSWORD_RESET),
+    }
+}
+
+/// Not an effect (ASVS-04, ASVS 2.2.3, 2.5.5): tell a user by email that their password
+/// was changed, reset or set, or that a second factor was added or removed. Its payload
+/// is [`SecurityNoticeJob`]: the user's id and what changed, never a password, code,
+/// seed or link that signs in. Queued in the transaction that makes the change.
+pub const SEND_SECURITY_NOTICE: &str = "send_security_notice";
+
+/// What a [`SEND_SECURITY_NOTICE`] job tells the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum SecurityNotice {
+    /// The password was changed, by the user or by an administrator.
+    PasswordChanged,
+    /// The password was set through a reset link.
+    PasswordReset,
+    /// The password was set through an invitation link.
+    PasswordSet,
+    /// A second factor was added.
+    FactorAdded,
+    /// A second factor was removed.
+    FactorRemoved,
+}
+
+/// The payload of a [`SEND_SECURITY_NOTICE`] job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityNoticeJob {
+    /// The user told (`users.id`).
+    pub user_id: Uuid,
+    /// What changed.
+    pub notice: SecurityNotice,
+}
+
+/// Job `id` telling user `user` of `notice`, due at `now`. Each change is its own
+/// notice, so the key names the job.
+#[must_use]
+pub fn security_notice_job(
+    id: JobId,
+    user: Uuid,
+    notice: SecurityNotice,
+    now: time::OffsetDateTime,
+) -> NewJob {
+    NewJob {
+        id,
+        envelope_id: None,
+        kind: SEND_SECURITY_NOTICE.to_owned(),
+        idempotency_key: format!("security-notice:{}", id.0),
+        payload: serde_json::json!({ "user_id": user, "notice": notice }),
+        run_at: now,
+        max_attempts: max_attempts(SEND_SECURITY_NOTICE),
     }
 }
 
