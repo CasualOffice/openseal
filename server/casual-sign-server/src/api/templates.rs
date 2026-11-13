@@ -754,7 +754,7 @@ pub(crate) async fn add_fields(
 }
 
 /// `PATCH /templates/{id}/fields/{f}` with `If-Match`: members given replace the
-/// field's (the field is checked whole again).
+/// field's, `null` removes one (the field is checked whole again).
 pub(crate) async fn patch_field(
     c: Call,
     Path((id, field)): Path<(String, String)>,
@@ -793,7 +793,13 @@ pub(crate) async fn patch_field(
                 }
                 continue;
             }
-            o.insert(k, val);
+            // `null` removes a member (a JSON merge, as an envelope field's `PATCH`): how
+            // the editor clears a setting (UX-11).
+            if val.is_null() {
+                o.remove(&k);
+            } else {
+                o.insert(k, val);
+            }
         }
     }
     let roles = tx.templates().roles(id).await?;
