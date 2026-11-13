@@ -898,9 +898,11 @@ impl<B: BlobStore + 'static> Worker<B> {
     }
 
     /// `send_password_reset` (UXW-38): mint the reset's one-time link (256 random bits,
-    /// base64url, only its SHA-256 stored, 1 hour) and email it to the user; once (the
-    /// row's `sent_at`, then a job step), nothing for a reset spent, revoked or sent
-    /// meanwhile. The link is `{base_url}/#/reset-password?token=`, in the fragment.
+    /// base64url, only its SHA-256 stored, 1 hour), replacing any link an earlier attempt
+    /// minted (an email that failed must be sent again, and its token cannot be read
+    /// back), and email it to the user; once per job (a job step), nothing for a reset
+    /// spent or revoked meanwhile. The link is `{base_url}/#/reset-password?token=`, in
+    /// the fragment.
     async fn password_reset(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
         use casual_sign_store::PasswordResetId;
         let bad = || WorkerError::BadJob {
@@ -924,7 +926,7 @@ impl<B: BlobStore + 'static> Worker<B> {
             .users()
             .password_reset(id)
             .await?
-            .filter(|r| r.sent_at.is_none() && r.used_at.is_none() && r.revoked_at.is_none());
+            .filter(|r| r.used_at.is_none() && r.revoked_at.is_none());
         let (Some(reset), false) = (open, done) else {
             return self.close_job(tx, job, lease).await;
         };

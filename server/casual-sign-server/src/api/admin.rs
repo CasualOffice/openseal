@@ -1611,26 +1611,18 @@ async fn reset_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Respons
     login_limit(st, ip, &format!("password-reset:{email}"))?;
     let now = st.now();
     let reset = casual_sign_store::PasswordResetId(Uuid::now_v7());
-    let inner = async {
-        let Some(account) = st
-            .store()
-            .entry_points()
-            .request_password_reset(&email, reset, now)
-            .await?
-        else {
-            return Ok(());
-        };
-        let mut tx = st.store().for_account(account).begin().await?;
-        let job = casual_sign_host::jobs::password_reset_job(
-            casual_sign_store::JobId(Uuid::now_v7()),
-            reset.0,
-            now,
-        );
-        tx.jobs().enqueue(&job).await?;
-        tx.commit().await?;
-        Ok::<_, casual_sign_store::StoreError>(())
-    };
-    inner.await.map_err(|e| ApiError::from(e).into_response())?;
+    // The reset and its job are one statement whether or not the address has an
+    // account, so the answer takes as long either way (SEC-A13, UXW-38C).
+    let job = casual_sign_host::jobs::password_reset_job(
+        casual_sign_store::JobId(Uuid::now_v7()),
+        reset.0,
+        now,
+    );
+    st.store()
+        .entry_points()
+        .request_password_reset(&email, reset, &job, now)
+        .await
+        .map_err(|e| ApiError::from(e).into_response())?;
     Ok(json(StatusCode::ACCEPTED, &json!({})))
 }
 

@@ -1074,7 +1074,8 @@ impl Users<'_> {
     }
 
     /// Store the SHA-256 of a reset's link as the worker sends it, with its expiry, while
-    /// the reset is open and not yet sent (a link is sent once). Returns whether it was.
+    /// the reset is open; a link an earlier, failed attempt minted is replaced. Returns
+    /// whether it was stored.
     ///
     /// # Errors
     ///
@@ -1089,8 +1090,7 @@ impl Users<'_> {
         let acct = self.tx.acct();
         let done = sqlx::query!(
             "UPDATE password_resets SET token_sha256 = $3, expires_at = $4, sent_at = $5 \
-             WHERE account_id = $1 AND id = $2 AND sent_at IS NULL AND used_at IS NULL \
-             AND revoked_at IS NULL",
+             WHERE account_id = $1 AND id = $2 AND used_at IS NULL AND revoked_at IS NULL",
             acct,
             id.0,
             token_sha256.as_slice(),

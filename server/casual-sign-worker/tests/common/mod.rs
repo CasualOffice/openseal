@@ -144,12 +144,13 @@ impl Mail {
 }
 
 /// A blocking, in-process SMTP server: enough of RFC 5321 for lettre; refuses the
-/// recipients in `reject` with 550.
+/// recipients in `reject` with 550, and those in `tempfail` with 451 (try again later).
 #[derive(Debug, Clone)]
 pub struct Smtp {
     pub port: u16,
     pub mails: Arc<Mutex<Vec<Mail>>>,
     pub reject: Arc<Mutex<Vec<String>>>,
+    pub tempfail: Arc<Mutex<Vec<String>>>,
 }
 
 impl Smtp {
@@ -160,6 +161,7 @@ impl Smtp {
             port,
             mails: Arc::new(Mutex::new(Vec::new())),
             reject: Arc::new(Mutex::new(Vec::new())),
+            tempfail: Arc::new(Mutex::new(Vec::new())),
         };
         let me = s.clone();
         std::thread::spawn(move || {
@@ -199,6 +201,8 @@ impl Smtp {
                     .unwrap_or_default();
                 if self.reject.lock().unwrap().contains(&addr) {
                     say(&mut w, "550 5.1.1 no such user\r\n");
+                } else if self.tempfail.lock().unwrap().contains(&addr) {
+                    say(&mut w, "451 4.3.0 try again later\r\n");
                 } else {
                     to.push(addr);
                     say(&mut w, "250 OK\r\n");

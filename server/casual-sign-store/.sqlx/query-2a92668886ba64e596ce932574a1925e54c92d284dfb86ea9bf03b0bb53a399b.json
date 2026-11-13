@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE password_resets SET token_sha256 = $3, expires_at = $4, sent_at = $5 WHERE account_id = $1 AND id = $2 AND used_at IS NULL AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2a92668886ba64e596ce932574a1925e54c92d284dfb86ea9bf03b0bb53a399b"
+}

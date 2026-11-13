@@ -415,23 +415,33 @@ impl EntryPoints<'_> {
     }
 
     /// Record a password reset (UXW-38) for the local, enabled user whose normalized
-    /// email is `email_normalized`, unless one was requested for them in the last minute;
-    /// earlier open resets of theirs are revoked. Returns the account whose worker sends
-    /// the email, or `None` (no such user, or throttled): the caller answers alike.
+    /// email is `email_normalized`, unless one was requested for them in the last minute,
+    /// and queue `job` (the one that emails the link; its `run_at` and `envelope_id` are
+    /// ignored: due at `now`, no envelope) in that user's account; earlier open resets of
+    /// theirs are revoked. One statement whether or not the address has an account, so
+    /// the caller's answer takes as long either way (SEC-A13). Returns the account whose
+    /// worker sends the email, or `None` (no such user, or throttled): the caller answers
+    /// alike.
     ///
     /// # Errors
     ///
-    /// `CS-DB-0001`.
+    /// `CS-DB-0001`; `CS-DB-0008` a job the table refuses.
     pub async fn request_password_reset(
         &self,
         email_normalized: &str,
         reset: crate::ids::PasswordResetId,
+        job: &crate::repo::jobs::NewJob,
         now: OffsetDateTime,
     ) -> Result<Option<AccountId>> {
         let acct = sqlx::query_scalar!(
-            "SELECT openseal_request_password_reset($1, $2, $3)",
+            "SELECT openseal_request_password_reset($1, $2, $3, $4, $5, $6, $7, $8)",
             email_normalized,
             reset.0,
+            job.id.0,
+            job.kind,
+            job.idempotency_key,
+            &job.payload,
+            job.max_attempts,
             now
         )
         .fetch_one(&self.store.pool)

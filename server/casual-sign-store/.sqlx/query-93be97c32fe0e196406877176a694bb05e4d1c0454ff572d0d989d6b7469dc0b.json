@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT openseal_request_password_reset($1, $2, $3)",
+  "query": "SELECT openseal_request_password_reset($1, $2, $3, $4, $5, $6, $7, $8)",
   "describe": {
     "columns": [
       {
@@ -14,6 +14,11 @@
       "Left": [
         "Text",
         "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Int4",
         "Timestamptz"
       ]
     },
@@ -21,5 +26,5 @@
       null
     ]
   },
-  "hash": "58b4a059446edce88efcf3a22cdcfe071341d54d6c2394b05cabfa492142625b"
+  "hash": "93be97c32fe0e196406877176a694bb05e4d1c0454ff572d0d989d6b7469dc0b"
 }

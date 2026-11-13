@@ -296,6 +296,33 @@ async fn a_password_reset_answers_alike_and_its_link_works_once() {
     // A second request within the minute sends nothing more.
     assert_eq!(reset(t.email.clone()).await.status, StatusCode::ACCEPTED);
     assert_eq!(jobs(&api, "send_password_reset").await, 1);
+    // The reset and its job are one statement (SEC-A13: no extra round trip for a known
+    // address): a job that cannot be queued records no reset either.
+    let other = api.tenant("bravo").await;
+    let now = common::harness::start();
+    let mut bad = casual_sign_host::jobs::password_reset_job(
+        casual_sign_store::JobId(uuid::Uuid::now_v7()),
+        uuid::Uuid::now_v7(),
+        now,
+    );
+    bad.kind = "Not A Kind".into();
+    let refused = api
+        .db
+        .store
+        .entry_points()
+        .request_password_reset(
+            &other.email.to_lowercase(),
+            PasswordResetId(uuid::Uuid::now_v7()),
+            &bad,
+            now,
+        )
+        .await;
+    assert!(refused.is_err(), "{refused:?}");
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM password_resets")
+        .fetch_one(&api.db.admin)
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "no reset without its job");
 
     // The worker's part: only the token's hash is stored, with an hour's expiry.
     let token = "test-reset-token-0123456789abcdefghijklmnop";
