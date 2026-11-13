@@ -35,6 +35,11 @@ out; the one exception is noted where it applies):
   the offline exports in tools/ml/export-*.py and are never put in an image.
 - An entry whose `sha256` is empty is pending: it is produced by an offline export
   (`produced_by`) that has not been pinned yet. A profile with a pending entry is refused.
+- An entry with a `sha256`, `produced_by` and an empty `source_url` is pinned but not
+  hosted: the offline export made it and its hash is fixed, but no URL serves it until
+  OpenSeal's mirror holds it (ML-15). `bytes` is its size, or 0 where the export's size
+  was not recorded (the mirror upload records it). A profile holding one is refused,
+  naming it, so no bundle ever carries a file that was not fetched and checked.
 - `--verify DIR` refuses any symlink in DIR, any file bundle.json does not list, a
   bundle.json that lacks (or adds to) the manifest's entries for the profiles and arch it
   names, a file whose size or SHA-256 differs from the manifest, and a bundle_id that is
@@ -119,9 +124,9 @@ PROFILES = {
     "ocr-orientation": "ML-02: PP-LCNet text-line orientation (pending export)",
     "templates": "ML-05: multilingual-e5-small page embeddings (fp32, CPU-portable)",
     "templates-small": "ML-05: all-MiniLM-L6-v2 page embeddings, English (fp32)",
-    "extraction": "ML-07: GLiNER multi-v2.1 entities (pending export)",
-    "extraction-en": "ML-07: GLiNER small-v2.1 entities, English (pending export)",
-    "personal_data": "ML-08 layer 2: knowledgator GLiNER-PII base, English (official uint8)",
+    "extraction": "ML-07: GLiNER multi-v2.1 entities, our fp16 export (pinned, hosted by ML-15)",
+    "extraction-en": "ML-07: GLiNER small-v2.1 entities, English, our fp16 export (pinned, hosted by ML-15)",
+    "personal_data": "ML-08 layer 2: knowledgator GLiNER-PII base, English, our fp16 export (pinned, hosted by ML-15)",
     "export-gliner-multi": "export input: gliner_multi-v2.1 safetensors and mDeBERTa tokenizer",
     "export-gliner-small": "export input: gliner_small-v2.1 (pickle; weights_only, no network)",
     "export-paddle": "export input: Paddle-format OCR packs for paddle2onnx",
@@ -298,6 +303,11 @@ def validate(doc):
         if pending:
             if "produced_by" not in e or e["source_url"] != "":
                 raise Refused(f"{eid}: a pending entry names produced_by and no source_url")
+        elif unhosted(e):
+            if not SHA_RE.match(e["sha256"]):
+                raise Refused(f"{eid}: sha256 must be 64 lowercase hex characters")
+            if "produced_by" not in e:
+                raise Refused(f"{eid}: an entry with no source_url names the export that produced it")
         else:
             if not SHA_RE.match(e["sha256"]):
                 raise Refused(f"{eid}: sha256 must be 64 lowercase hex characters")
@@ -324,9 +334,14 @@ def validate(doc):
     return entries
 
 
+def unhosted(e):
+    """Pinned by an offline export but served by no URL yet (ML-15)."""
+    return e["sha256"] != "" and e["source_url"] == ""
+
+
 def select(entries, profiles, arch):
     """The entries a bundle of these profiles holds, with `runtime` added for any model
-    profile. Refuses pending entries and over-size bundles."""
+    profile. Refuses pending and unhosted entries and over-size bundles."""
     want = set(profiles)
     if any(not p.startswith("export-") and p != "runtime" for p in want):
         want.add("runtime")
@@ -346,6 +361,10 @@ def select(entries, profiles, arch):
     if pending:
         how = sorted({e["produced_by"] for e in chosen if e["sha256"] == ""})
         raise Refused(f"pending, not yet pinned: {', '.join(pending)} (produced by {', '.join(how)})")
+    waiting = [e["id"] for e in chosen if unhosted(e)]
+    if waiting:
+        raise Refused(f"pinned but not hosted yet: {', '.join(waiting)} (no source_url until OpenSeal's "
+                      "mirror holds the export, ML-15)")
     if not any(p.startswith("export-") for p in want):
         total = sum(e.get("extract_bytes", e["bytes"]) for e in chosen)
         if total > MAX_BUNDLE_BYTES:
@@ -552,6 +571,70 @@ def host_arch(given):
 
 # ---- self-test -----------------------------------------------------------------------
 
+# The GLiNER files modeld loads are the fp16 exports the golden parity ran on (owner
+# instruction 34; ML-14: the quint8 exports lose spans; ML-21). Manifest id -> (golden
+# file in GLINER_GOLDEN, which hash in it).
+GLINER_GOLDEN = HERE.parent.parent / "fixtures" / "ml" / "gliner-golden"
+GLINER_PARITY = {
+    "gliner-multi": ("gliner_multi-v2.1", "fp16 model"),
+    "gliner-multi-tokenizer": ("gliner_multi-v2.1", "tokenizer.json"),
+    "gliner-small": ("gliner_small-v2.1", "fp16 model"),
+    "gliner-small-tokenizer": ("gliner_small-v2.1", "tokenizer.json"),
+    "gliner-pii-base": ("gliner-pii-base-v1.0", "fp16 model"),
+    "gliner-pii-base-tokenizer": ("gliner-pii-base-v1.0", "tokenizer.json"),
+}
+
+
+def gliner_parity_mismatches(entries):
+    """Each GLiNER model and tokenizer entry whose SHA-256 is not the one the golden
+    parity ran on (the fp16 export and its tokenizer.json), named; empty when they all
+    match. Skipped where the fixtures are not present (the image build copies only the
+    manifest)."""
+    if not GLINER_GOLDEN.is_dir():
+        return []
+    by_id = {e["id"]: e for e in entries}
+    out = []
+    for eid, (model, kind) in sorted(GLINER_PARITY.items()):
+        golden = json.loads((GLINER_GOLDEN / f"{model}.json").read_text(encoding="utf8"))
+        want = golden["onnx"][f"{model}.fp16.onnx"] if kind == "fp16 model" else golden["tokenizer_json_sha256"]
+        got = by_id.get(eid, {}).get("sha256")
+        if got != want:
+            out.append(f"models.toml: {eid} is {got or 'unpinned'}, not the {kind} the golden parity ran "
+                       f"({model}: {want})")
+    return out
+
+
+# Where the image and compose name the profiles a default build fetches. Each default must
+# be fetchable for every arch, or `docker build` / `docker compose --profile ml build`
+# fails out of the box (ML-21: an unhosted profile left in a default).
+DEFAULT_PROFILE_SOURCES = {
+    HERE.parent.parent / "deploy" / "Dockerfile": re.compile(r'^ARG OPENSEAL_ML_PROFILES="([^"]*)"', re.M),
+    HERE.parent.parent / "docker-compose.yml": re.compile(r'OPENSEAL_ML_PROFILES:-([^}"]*)\}'),
+}
+
+
+def default_profile_refusals(entries):
+    """Each default profile list (deploy/Dockerfile, docker-compose.yml) that the manifest
+    refuses to fetch, named with the reason; empty when every default can be fetched.
+    Skipped where those files are not present (the image build copies only the manifest)."""
+    out = []
+    for path, pattern in DEFAULT_PROFILE_SOURCES.items():
+        if not path.is_file():
+            continue
+        found = pattern.findall(path.read_text(encoding="utf8"))
+        if not found:
+            out.append(f"{path.name}: no default OPENSEAL_ML_PROFILES found")
+        for listed in found:
+            profiles = listed.split()
+            for arch in ARCHES:
+                try:
+                    select(entries, profiles, arch)
+                except Refused as err:
+                    out.append(f"{path.name}: default profiles {listed!r} cannot be fetched on {arch}: {err}")
+                    break
+    return out
+
+
 def _entry(eid, profile, payload, **over):
     e = {"id": eid, "profile": profile, "arch": "any", "role": "model", "dest": f"{eid}/model.onnx",
          "source_url": f"https://huggingface.co/acme/{eid}/resolve/{'0' * 40}/model.onnx",
@@ -694,6 +777,12 @@ def self_test():
                     produced_by="tools/ml/export-gliner.py")
         expect_refused("pending entry", lambda: select(validate(parse_manifest(_manifest([pend, runtime]))),
                        ["extraction"], "x86_64"), "pending")
+        waiting = dict(good, id="gliner-multi", profile="extraction", source_url="",
+                       produced_by="tools/ml/export-gliner.py")
+        expect_refused("unhosted entry", lambda: select(validate(parse_manifest(_manifest([waiting, runtime]))),
+                       ["extraction"], "x86_64"), "not hosted")
+        expect_refused("unhosted entry without produced_by", lambda: validate(parse_manifest(_manifest(
+                       [{k: v for k, v in waiting.items() if k != "produced_by"}]))), "produced it")
         expect_refused("unknown key", lambda: validate(parse_manifest(_manifest([dict(good, revision="x")]))),
                        "unknown key")
         expect_refused("toml outside the subset", lambda: parse_manifest("schema = 1\nx = [1, 2]\n"), "neither")
@@ -820,10 +909,12 @@ def self_test():
             pass
         for arch in ARCHES:
             for p in PROFILES:
-                if p == "runtime" or any(e["sha256"] == "" for e in entries if e["profile"] == p):
+                if p == "runtime" or any(e["sha256"] == "" or unhosted(e) for e in entries if e["profile"] == p):
                     continue
                 select(entries, [p], arch)
-    except (Refused, OSError) as err:
+        failures += gliner_parity_mismatches(entries)
+        failures += default_profile_refusals(entries)
+    except (Refused, OSError, ValueError, KeyError) as err:
         failures.append(f"models.toml: {err}")
     if DENY_TOML.is_file():
         m = re.search(r"\[licenses\][^\[]*?allow\s*=\s*\[(.*?)\]", DENY_TOML.read_text(encoding="utf8"), re.S)
@@ -861,7 +952,8 @@ def main(argv=None, opener=https_open):
                 print(f"{p}: {what}")
                 for e in entries:
                     if e["profile"] == p:
-                        state = "pending" if not e["sha256"] else f"{e.get('extract_bytes', e['bytes'])} B"
+                        state = ("pending" if not e["sha256"] else "not hosted (ML-15)" if unhosted(e)
+                                 else f"{e.get('extract_bytes', e['bytes'])} B")
                         print(f"  {e['id']} [{e['arch']}] {e['licence']} {state}")
             return 0
         if args.verify:

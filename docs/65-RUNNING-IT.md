@@ -72,7 +72,7 @@ The weights and the ONNX Runtime library are fetched once, while the image build
 Every file is pinned in `tools/ml/models.toml` by source revision, SHA-256 and size. The build fails on any mismatch,
 and on any licence that is not on deny.toml's allow list. Files are baked into the image read-only (`0444`, owned
 by root), and modeld hashes them again at start. The one licence exception is described below. `OPENSEAL_ML_PROFILES` chooses the profiles (the default is
-`ocr templates personal_data`); `runtime` is always added.
+`ocr templates`); `runtime` is always added.
 
 | Profile | What | Size |
 | --- | --- | ---: |
@@ -80,10 +80,10 @@ by root), and modeld hashes them again at start. The one licence exception is de
 | `ocr` | PP-OCRv6 small detection and recognition (Apache-2.0) | 31.2 MB |
 | `templates` | multilingual-e5-small, fp32 (MIT) | 487.4 MB |
 | `templates-small` | all-MiniLM-L6-v2, fp32, English (Apache-2.0) | 90.9 MB |
-| `personal_data` | knowledgator GLiNER-PII base, uint8, English (Apache-2.0) | 205.4 MB |
-| `extraction`, `extraction-en`, `ocr-arabic`, `ocr-devanagari`, `ocr-orientation` | Pending: built by offline exports, not yet pinned; asking for them fails | — |
+| `personal_data`, `extraction`, `extraction-en` | GLiNER-PII base (English), GLiNER multi-v2.1 and small-v2.1 (English), our fp16 exports (Apache-2.0): pinned by SHA-256 to the files the parity tests ran on, but not hosted until OpenSeal's mirror holds them (`ML-15`); asking for them fails, and modeld answers `CS-ML-0010` for a model it does not have | 333.0 MB, 579.7 MB, 306.2 MB (models) |
+| `ocr-arabic`, `ocr-devanagari`, `ocr-orientation` | Pending: built by offline exports, not yet pinned; asking for them fails | — |
 
-The default bundle is 748.6 MB. Caps are 1 GiB per file and 2 GiB per bundle.
+The default bundle is 543.2 MB. Caps are 1 GiB per file and 2 GiB per bundle.
 
 **Air-gapped hosts.** On a connected machine, run
 `python3 -I tools/ml/fetch-models.py --profile ocr --profile templates --arch x86_64 --dest DIR`. Copy `DIR` across,

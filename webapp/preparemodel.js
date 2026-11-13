@@ -178,3 +178,15 @@ export function piiSummary(suggestions) {
   for (const s of list) labels.set(String(s.label || ""), (labels.get(String(s.label || "")) || 0) + 1);
   return { page, total: list.length, pages: byPage.size, labels: [...labels.entries()] };
 }
+
+/// The `PATCH` body that brings a saved recipient (`server`, as the API answers it) in
+/// line with the editor's (`want`, as `recipientBody` builds it), or null when nothing
+/// changed. A type change is sent (UX-12); a copy (`cc`) takes no authentication, so
+/// turning a recipient into one clears theirs. Saved authentication is otherwise kept:
+/// the editor does not change it on a saved recipient.
+export function recipientPatch(server, want) {
+  const patch = {};
+  for (const k of ["name", "email", "routing_order", "type"]) if (server && want[k] !== undefined && server[k] !== want[k]) patch[k] = want[k];
+  if (patch.type === "cc" && (server.auth || []).length) patch.auth = [];
+  return Object.keys(patch).length ? patch : null;
+}
