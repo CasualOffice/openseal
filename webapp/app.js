@@ -50,6 +50,16 @@ const ctx = {
   session: null,
   /// Go to a route, keeping `?mock=1` in the page URL (it lives in the search part).
   navigate(hash) { if (location.hash !== hash) location.hash = hash; else route(); },
+  /// Put the shown screen's own address in the bar (its tab, a new draft's id) without a
+  /// navigation. Skipped when the address has moved on since the screen was routed: the
+  /// browser changes the address at once and fires its hashchange later, and a screen
+  /// still opening in between must not write over the newer address (E2E-07).
+  replaceHash(hash) {
+    if ((location.hash || "#/home") !== shownHash) return false;
+    setHash(hash);
+    shownHash = hash;
+    return true;
+  },
   contexts: ["global"],
   /// Add a section to ⌘K (ui/palette.js); returns the function that removes it.
   registerPaletteProvider,

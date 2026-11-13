@@ -128,6 +128,29 @@ test("module switching: one screen at a time, heading focused and announced, tit
   await expect.poll(() => scroller.evaluate((m) => m.scrollTop)).toBe(kept);
 });
 
+// E2E-07: an address that arrives while the previous one is still opening wins. The
+// browser changes the address at once but fires its hashchange later; a screen mounting
+// in between wrote its own tab into the address (`#/admin?section=users`) over the newer
+// one, and the newer route then read that and opened the old screen again. Here the new
+// address is set at the moment the admin screen puts itself in the page.
+test("an address set while the last one is still opening is the one that opens (E2E-07)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page, "home");
+  await page.evaluate(() => {
+    const append = Element.prototype.append;
+    Element.prototype.append = function (...nodes) {
+      if (nodes.some((n) => n?.classList?.contains("os-adm"))) {
+        Element.prototype.append = append;
+        location.hash = "#/admin?tab=api";
+      }
+      return append.apply(this, nodes);
+    };
+    location.hash = "#/admin";
+  });
+  await expect(page.getByRole("heading", { name: "API and webhooks", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/#\/admin\?section=api$/);
+});
+
 test("a section's link returns to where the user was in it; chosen there, it starts over (WEB-12)", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await signIn(page, "home");
@@ -232,7 +255,8 @@ for (const [name, viewport] of WIDTHS) {
       await ask.getByRole("button", { name: "Cancel" }).click();
       await expect(panel).toBeVisible();
       await expect(panel.getByRole("textbox", { name: "Email" })).toHaveValue("kai@example.com");
-      await expect(page).toHaveURL(/#\/admin$/);
+      // The address the screen had: Members and roles writes its tab into it (E2E-07).
+      await expect(page).toHaveURL(/#\/admin\?section=users$/);
       // Discard: the panel goes and the new screen shows.
       await goTemplates();
       await page.getByRole("dialog", { name: "Discard your changes?" }).getByRole("button", { name: "Discard changes" }).click();
@@ -286,8 +310,9 @@ for (const [name, viewport] of WIDTHS) {
       await snap(page, testInfo, `shell-signin-error-${name}`);
     });
 
+    // On the Compose stack too: `POST /auth/password-reset` answers 202 alike for any
+    // address (UXW-38).
     test("forgot password sends a reset link, saying the same for any address", async ({ page }) => {
-      test.skip(REAL, "the reset request is not on the server yet (UXW-38)");
       await page.goto(app("#/signin"));
       await page.getByLabel("Email").fill("someone@example.com");
       await page.getByRole("button", { name: "Forgot password?" }).click();
@@ -345,8 +370,9 @@ for (const [name, viewport] of WIDTHS) {
       await expect(page).toHaveURL(/#\/envelopes\//);
     });
 
+    // On the Compose stack too, over `GET`/`PATCH /users/me` (UXW-37); there the shared
+    // account's name and notice are put back afterwards.
     test("profile and signature: the name is saved and the avatar follows it", async ({ page }) => {
-      test.skip(REAL, "the profile calls are not on the server yet (UXW-37)");
       await signIn(page, "home");
       await page.locator("#account-btn").click();
       await page.getByRole("menuitem", { name: "Profile and signature" }).click();
@@ -354,6 +380,7 @@ for (const [name, viewport] of WIDTHS) {
       await expect(panel).toBeVisible();
       await expect(panel).toContainText(creds.email);
       await expect(panel.getByTestId("profile-signature")).toContainText("None saved yet.");
+      const was = { name: await panel.getByLabel("Name").inputValue(), opened: await panel.getByLabel("a recipient opens an envelope").isChecked() };
       await panel.getByLabel("Name").fill("Robin Quinn");
       await panel.getByLabel("a recipient opens an envelope").check();
       await expectAccessible(page, "profile");
@@ -364,15 +391,26 @@ for (const [name, viewport] of WIDTHS) {
       await page.getByRole("menuitem", { name: "Notification settings" }).click();
       await expect(panel.getByLabel("a recipient opens an envelope")).toBeChecked();
       await expect(panel.getByLabel("Name")).toHaveValue("Robin Quinn");
+      if (REAL) {
+        await panel.getByLabel("Name").fill(was.name);
+        await panel.getByLabel("a recipient opens an envelope").setChecked(was.opened);
+        await panel.getByTestId("profile-save").click();
+        await expect(panel).toHaveCount(0);
+      }
     });
   });
 }
 
 test("a company sign-in button shows only when the server names an identity provider", async ({ page }) => {
-  test.skip(REAL, "the provider list is not on the server yet (UXW-39)");
+  // `GET /auth/providers` is served (UXW-39) and names none until SSO exists, so on the
+  // Compose stack the test ends after its first half: no provider named, no button once
+  // the list has been read. A named provider is the mock's until SSO (FG-173).
+  const listed = REAL ? page.waitForResponse((r) => r.url().includes("/api/v1/auth/providers")) : null;
   await page.goto(app("#/signin"));
   await expect(page.getByLabel("Email")).toBeFocused();
+  if (REAL) expect((await listed).status()).toBe(200);
   await expect(page.getByTestId("signin-sso")).toBeHidden();
+  if (REAL) return;
   await page.evaluate(() => sessionStorage.setItem("openseal.mock.idp", "Acme SSO"));
   await page.reload();
   await expect(page.getByRole("link", { name: "Sign in with Acme SSO" })).toBeVisible();

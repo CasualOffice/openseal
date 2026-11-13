@@ -165,10 +165,13 @@ test("recipients sharing a step sign at the same time: grouped by number, drag a
   const env = (await mockDb(page)).envelopes.find((e) => e.recipients.some((r) => r.name === "Dev"));
   expect(Object.fromEntries(env.recipients.map((r) => [r.name, r.routing_order]))).toEqual({ Dev: 1, Ana: 2, Ben: 3, Cleo: 3 });
   // Reopened, the steps are as saved; the send confirmation names them in order.
+  // The saved draft opens on its fields once loaded (E2E-09): until then it has no people,
+  // so the steps are read only after that, and polled, never read once.
   await page.reload();
+  await expect(page.locator('.os-stepper__btn[aria-current="step"]')).toContainText("Fields");
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   await step(page, "Recipients");
-  expect(await stepsOf(page)).toEqual([["Dev"], ["Ana"], ["Ben", "Cleo"]]);
+  await expect.poll(() => stepsOf(page)).toEqual([["Dev"], ["Ana"], ["Ben", "Cleo"]]);
   await step(page, "Review");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Dev → Ana → Ben & Cleo");
