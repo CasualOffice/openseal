@@ -30,7 +30,7 @@ test("Inbox, folders, Deleted, server filters and the ended certificate on the s
   const out = await inApp(page, async ({ stamp, me, mine, other }) => {
     const api = window.__uxw42;
     const r = {};
-    const field = { recipient: "a", document: 0, type: "signature", page: 1, x: "72", y: "600", width: "160", height: "44" };
+    const field = { recipient: "a", document: 0, type: "signature", page: 1, x: "72", y: "600", width: "160", height: "44", required: true };
     // UXW-01: an envelope sent to the signed-in member waits in their Inbox.
     const inbox = await api.createEnvelope({
       subject: `UXW-42 inbox ${stamp}`, status: "sent",
