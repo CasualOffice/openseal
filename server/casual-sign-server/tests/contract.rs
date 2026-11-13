@@ -467,6 +467,46 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     )
     .await;
     ok(
+        api.call(
+            "PATCH",
+            &format!("/api/v1/webhooks/{wid}"),
+            k,
+            Some(json!({"event_types": ["envelope.completed", "envelope.voided"]})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "webhook patch",
+    )
+    .await;
+    let td = ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/webhooks/{wid}/test"),
+            k,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::ACCEPTED,
+        "webhook test",
+    )
+    .await;
+    let tdid = td["id"].as_str().unwrap().to_owned();
+    ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/webhooks/{wid}/deliveries/{tdid}/redeliver"),
+            k,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::ACCEPTED,
+        "webhook redeliver",
+    )
+    .await;
+    ok(
         api.call("DELETE", &format!("/api/v1/webhooks/{wid}"), k, None, &[])
             .await,
         StatusCode::NO_CONTENT,
@@ -1519,6 +1559,58 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     let s = session_of(&login);
+    ok(
+        api.call("GET", "/api/v1/users/me", &s, None, &[]).await,
+        StatusCode::OK,
+        "me",
+    )
+    .await;
+    ok(
+        api.call(
+            "PATCH",
+            "/api/v1/users/me",
+            &s,
+            Some(json!({"notifications": {"viewed": true}})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "patch me",
+    )
+    .await;
+    ok(
+        api.call("GET", "/api/v1/auth/providers", &Auth::None, None, &[])
+            .await,
+        StatusCode::OK,
+        "providers",
+    )
+    .await;
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/password-reset",
+            &Auth::None,
+            Some(json!({"email": a.email})),
+            &[],
+        )
+        .await,
+        StatusCode::ACCEPTED,
+        "password reset",
+    )
+    .await;
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/password-reset/confirm",
+            &Auth::None,
+            Some(json!({"token": "not-a-token", "password": "a new long passphrase"})),
+            &[],
+        )
+        .await,
+        StatusCode::UNAUTHORIZED,
+        "password reset confirm",
+    )
+    .await;
     ok(
         api.call("POST", "/api/v1/auth/logout", &s, None, &[]).await,
         StatusCode::NO_CONTENT,

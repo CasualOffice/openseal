@@ -1228,3 +1228,320 @@ fn _csrf_header_is_documented() -> &'static str {
     let _ = same;
     CSRF_HEADER
 }
+
+// One's own profile (UXW-37) ----------------------------------------------------------
+
+/// Every notice a member can turn on or off, with its default.
+const NOTICES: &[(&str, bool)] = &[("completed", true), ("declined", true), ("viewed", false)];
+
+/// At most this many bytes of a saved signature or initials image (the table's limit).
+const MARK_MAX: usize = 5 * 1024 * 1024;
+
+/// The longest base64 text of a [`MARK_MAX`] image.
+const MARK_B64_MAX: usize = MARK_MAX.div_ceil(3) * 4;
+
+fn notices_json(saved: Option<&Value>) -> Value {
+    let mut out = serde_json::Map::new();
+    for (k, default) in NOTICES {
+        let v = saved
+            .and_then(|s| s.get(*k))
+            .and_then(Value::as_bool)
+            .unwrap_or(*default);
+        out.insert((*k).to_owned(), Value::Bool(v));
+    }
+    Value::Object(out)
+}
+
+fn mark_json(m: Option<&Personal<Vec<u8>>>) -> Value {
+    use base64::Engine as _;
+    m.map_or(
+        Value::Null,
+        |m| json!({ "image_base64": base64::engine::general_purpose::STANDARD.encode(m.get()) }),
+    )
+}
+
+/// A saved mark from a request: `null` removes it; `{image_base64}` is a PNG or JPEG.
+fn mark_in(v: &Value, pointer: &str) -> Result<Option<Personal<Vec<u8>>>, ApiError> {
+    use base64::Engine as _;
+    if v.is_null() {
+        return Ok(None);
+    }
+    let bad = || ApiError::invalid(pointer);
+    let obj = v.as_object().filter(|o| o.len() == 1).ok_or_else(bad)?;
+    let s = obj
+        .get("image_base64")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty() && s.len() <= MARK_B64_MAX)
+        .ok_or_else(bad)?;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(s)
+        .map_err(|_| bad())?;
+    let png = raw.starts_with(b"\x89PNG\r\n\x1a\n");
+    let jpeg = raw.starts_with(b"\xff\xd8\xff");
+    if raw.is_empty() || raw.len() > MARK_MAX || !(png || jpeg) {
+        return Err(bad());
+    }
+    Ok(Some(Personal(raw)))
+}
+
+async fn me_json(c: &Call, tx: &mut TenantTx) -> Result<Value, ApiError> {
+    let m = tx
+        .users()
+        .get(c.p.user)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let p = tx.users().member_profile(c.p.user).await?;
+    Ok(json!({
+        "id": m.user_id.to_string(), "name": m.name.get(), "email": m.email.get(),
+        "notifications": notices_json(p.as_ref().map(|p| &p.notifications)),
+        "signature": mark_json(p.as_ref().and_then(|p| p.signature.as_ref())),
+        "initials": mark_json(p.as_ref().and_then(|p| p.initials.as_ref())),
+    }))
+}
+
+/// `GET /users/me` (UXW-37): the signed-in user's own profile `{id, name, email,
+/// notifications {completed, declined, viewed}, signature, initials}`, each mark
+/// `{image_base64}` or null. Personal data, to its own user only.
+pub(crate) async fn me(c: Call) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let v = me_json(&c, &mut tx).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::OK, &v))
+}
+
+/// `{"a": null}` is `Some(Null)`, an absent member `None`.
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(d).map(Some)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MePatch {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    notifications: Option<serde_json::Map<String, Value>>,
+    #[serde(default, deserialize_with = "present")]
+    signature: Option<Value>,
+    #[serde(default, deserialize_with = "present")]
+    initials: Option<Value>,
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    current_password: Option<String>,
+}
+
+/// `PATCH /users/me {name?, notifications?, signature?, initials?, password?,
+/// current_password?}` (UXW-37). Notices and marks are this account's; the name and the
+/// password are the user's in every account, so they change only through the user's own
+/// session (SEC-ID-01). A new password needs the current one (`401 CS-AUTH-0007` when
+/// wrong) and ends every other session of the user, in every account; this one stays.
+pub(crate) async fn patch_me(c: Call, body: Bytes) -> Result<Response, ApiError> {
+    let req: MePatch = parse(&body)?;
+    let session = match c.p.credential {
+        Credential::Session(s) => Some(s),
+        _ => None,
+    };
+    if req.current_password.is_some() && req.password.is_none() {
+        return Err(ApiError::invalid("/current_password"));
+    }
+    let name = match &req.name {
+        Some(n) => {
+            let n = n.trim();
+            if n.is_empty() || n.chars().count() > 255 {
+                return Err(ApiError::invalid("/name"));
+            }
+            Some(Personal(n.to_owned()))
+        }
+        None => None,
+    };
+    if let Some(n) = &req.notifications
+        && n.iter()
+            .any(|(k, v)| !NOTICES.iter().any(|(x, _)| x == k) || !v.is_boolean())
+    {
+        return Err(ApiError::invalid("/notifications"));
+    }
+    let signature = req
+        .signature
+        .as_ref()
+        .map(|v| mark_in(v, "/signature"))
+        .transpose()?;
+    let initials = req
+        .initials
+        .as_ref()
+        .map(|v| mark_in(v, "/initials"))
+        .transpose()?;
+    if session.is_none() && (name.is_some() || req.password.is_some()) {
+        return Err(ApiError::invalid("/credential"));
+    }
+    let now = c.st.now();
+    let mut tx = c.tx().await?;
+    if let (Some(s), Some(new)) = (session, req.password.clone()) {
+        let per = c.st.config().rate.login_per_minute;
+        let key = casual_sign_audit::Hash256(sha256(c.p.user.to_string().as_bytes())).hex();
+        if let Err(r) = limit(&c.st, "login", &format!("password-change:{key}"), per) {
+            return Ok(r);
+        }
+        check_password(&new)?;
+        let current = req.current_password.clone().unwrap_or_default();
+        let stored = tx.users().own_password_hash(s, now).await?;
+        let dummy = c.st.0.dummy_phc.clone();
+        let phc = stored.as_ref().map(|p| p.get().clone());
+        let verified = tokio::task::spawn_blocking(move || {
+            let ok = verify_password(&current, phc.as_deref().unwrap_or(&dummy));
+            ok.then(|| hash_password(&new))
+        })
+        .await
+        .map_err(|_| ApiError::internal("argon2"))?;
+        let (Some(stored), Some(new_phc)) = (stored, verified) else {
+            return Err(ApiError::bad_credentials());
+        };
+        let who = tx
+            .users()
+            .change_own_password(s, &stored, &Personal(new_phc?), now)
+            .await?;
+        if who != Some(c.p.user) {
+            return Err(ApiError::expired());
+        }
+    }
+    if let (Some(s), Some(n)) = (session, &name) {
+        let who = tx.users().update_own(s, Some(n), None, now).await?;
+        if who != Some(c.p.user) {
+            return Err(ApiError::expired());
+        }
+    }
+    if req.notifications.is_some() || signature.is_some() || initials.is_some() {
+        let old = tx.users().member_profile(c.p.user).await?;
+        let mut notices = notices_json(old.as_ref().map(|p| &p.notifications));
+        if let (Some(n), Some(o)) = (&req.notifications, notices.as_object_mut()) {
+            for (k, v) in n {
+                o.insert(k.clone(), v.clone());
+            }
+        }
+        let p = casual_sign_store::repo::accounts::MemberProfile {
+            notifications: notices,
+            signature: signature.unwrap_or_else(|| old.as_ref().and_then(|p| p.signature.clone())),
+            initials: initials.unwrap_or_else(|| old.as_ref().and_then(|p| p.initials.clone())),
+        };
+        tx.users().set_member_profile(c.p.user, &p, now).await?;
+    }
+    let v = me_json(&c, &mut tx).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::OK, &v))
+}
+
+// Password reset (UXW-38) ---------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResetIn {
+    email: String,
+}
+
+/// `POST /auth/password-reset {email}` (UXW-38), no session: `202 {}` for any
+/// well-formed address, so the answer never tells whether it has an account. For a
+/// local, enabled user it records a reset and queues the job that emails the one-time
+/// link (the worker draws the token and stores only its SHA-256, for an hour). Rate
+/// limited as login, per address and per client; at most one email a minute per user.
+pub(crate) async fn password_reset(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    body: Bytes,
+) -> Response {
+    match reset_inner(&st, ip, &body).await {
+        Ok(r) | Err(r) => r,
+    }
+}
+
+async fn reset_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Response, Response> {
+    let req: ResetIn = parse(body).map_err(IntoResponse::into_response)?;
+    let email = normalize_email(&req.email).map_err(IntoResponse::into_response)?;
+    login_limit(st, ip, &format!("password-reset:{email}"))?;
+    let now = st.now();
+    let reset = casual_sign_store::PasswordResetId(Uuid::now_v7());
+    let inner = async {
+        let Some(account) = st
+            .store()
+            .entry_points()
+            .request_password_reset(&email, reset, now)
+            .await?
+        else {
+            return Ok(());
+        };
+        let mut tx = st.store().for_account(account).begin().await?;
+        let job = casual_sign_host::jobs::password_reset_job(
+            casual_sign_store::JobId(Uuid::now_v7()),
+            reset.0,
+            now,
+        );
+        tx.jobs().enqueue(&job).await?;
+        tx.commit().await?;
+        Ok::<_, casual_sign_store::StoreError>(())
+    };
+    inner.await.map_err(|e| ApiError::from(e).into_response())?;
+    Ok(json(StatusCode::ACCEPTED, &json!({})))
+}
+
+/// `POST /auth/password-reset/confirm {token, password}` (UXW-38): spend the emailed
+/// link once and set the user's password; their sessions end in every account. An
+/// unknown, expired, spent or revoked link is `401 CS-AUTH-0002`, all alike.
+pub(crate) async fn password_reset_confirm(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    body: Bytes,
+) -> Response {
+    match confirm_inner(&st, ip, &body).await {
+        Ok(r) | Err(r) => r,
+    }
+}
+
+async fn confirm_inner(st: &AppState, ip: ClientIp, body: &[u8]) -> Result<Response, Response> {
+    let req: AcceptIn = parse(body).map_err(IntoResponse::into_response)?;
+    login_limit(st, ip, "password-reset-confirm")?;
+    let refuse = || ApiError::expired().into_response();
+    if req.token.is_empty() || req.token.len() > 128 {
+        return Err(refuse());
+    }
+    check_password(&req.password).map_err(IntoResponse::into_response)?;
+    let now = st.now();
+    let found = st
+        .store()
+        .entry_points()
+        .resolve_password_reset(&sha256(req.token.as_bytes()), now)
+        .await
+        .map_err(|e| ApiError::from(e).into_response())?;
+    let Some((account, reset, user)) = found else {
+        return Err(refuse());
+    };
+    let password = req.password.clone();
+    let phc = tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .map_err(|_| ApiError::internal("argon2").into_response())?
+        .map_err(IntoResponse::into_response)?;
+    let inner = async {
+        let mut tx = st.store().for_account(account).begin().await?;
+        let who = tx
+            .users()
+            .use_password_reset(reset, &Personal(phc), now)
+            .await?;
+        if who != Some(user) {
+            return Ok(false);
+        }
+        tx.commit().await?;
+        Ok::<_, casual_sign_store::StoreError>(true)
+    };
+    match inner.await {
+        Ok(true) => Ok(json(
+            StatusCode::OK,
+            &json!({"account_id": account.to_string(), "user_id": user.to_string()}),
+        )),
+        Ok(false) => Err(refuse()),
+        Err(e) => Err(ApiError::from(e).into_response()),
+    }
+}
+
+/// `GET /auth/providers` (UXW-39), no session: the SSO identity providers sign-in
+/// offers, `{items: [{id, name, url}]}`. Empty until SSO is built (FG-173).
+pub(crate) async fn providers() -> Response {
+    json(StatusCode::OK, &json!({ "items": [] }))
+}

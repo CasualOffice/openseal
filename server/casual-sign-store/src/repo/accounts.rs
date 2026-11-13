@@ -979,14 +979,10 @@ impl Users<'_> {
         session: StaffSessionId,
         now: OffsetDateTime,
     ) -> Result<Option<Personal<String>>> {
-        let phc = sqlx::query_scalar!(
-            "SELECT openseal_own_password_hash($1, $2)",
-            session.0,
-            now
-        )
-        .fetch_one(self.tx.conn())
-        .await
-        .map_err(db)?;
+        let phc = sqlx::query_scalar!("SELECT openseal_own_password_hash($1, $2)", session.0, now)
+            .fetch_one(self.tx.conn())
+            .await
+            .map_err(db)?;
         Ok(phc.map(Personal))
     }
 

@@ -902,9 +902,11 @@ impl<B: BlobStore + 'static> Worker<B> {
             .await?
             .iter()
             .any(|s| s.step == "email.password_reset");
-        let open = tx.users().password_reset(id).await?.filter(|r| {
-            r.sent_at.is_none() && r.used_at.is_none() && r.revoked_at.is_none()
-        });
+        let open = tx
+            .users()
+            .password_reset(id)
+            .await?
+            .filter(|r| r.sent_at.is_none() && r.used_at.is_none() && r.revoked_at.is_none());
         let (Some(reset), false) = (open, done) else {
             return self.close_job(tx, job, lease).await;
         };

@@ -808,6 +808,74 @@ paths:
       responses:
         '204': {description: Done}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/password-reset:
+    post:
+      operationId: requestPasswordReset
+      summary: "Ask for a password-reset email (UXW-38)"
+      description: >-
+        No session. `202 {}` for any well-formed address, whether or not it has an
+        account (no enumeration). For a local, enabled user the worker emails a one-time
+        link that expires in an hour; only the SHA-256 of its token is stored. At most
+        one email a minute per user; rate-limited as login, per address and per client.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: {type: string}
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/password-reset/confirm:
+    post:
+      operationId: confirmPasswordReset
+      summary: "Spend a password-reset link and set a new password (UXW-38)"
+      description: >-
+        An unknown, expired, spent or revoked link is `401 CS-AUTH-0002`, all alike.
+        Setting the password ends the user's sessions in every account and revokes their
+        other open resets. Rate-limited as login.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AcceptInvite'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id: {type: string}
+                  user_id: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/providers:
+    get:
+      operationId: authProviders
+      summary: "SSO identity providers offered on sign-in (UXW-39)"
+      description: "No session. `{items: [{id, name, url}]}`; empty until SSO is built (FG-173)."
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/auth/session:
     get:
       operationId: getSession
@@ -905,6 +973,45 @@ paths:
               schema: {$ref: '#/components/schemas/AdminEventList'}
             text/csv:
               schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/me:
+    get:
+      operationId: getMe
+      summary: "The signed-in user's own profile (UXW-37)"
+      description: >-
+        `{id, name, email, notifications {completed, declined, viewed}, signature,
+        initials}`; each mark is `{image_base64}` or null. Notices and marks are this
+        account's.
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchMe
+      summary: "Change one's own profile (UXW-37)"
+      description: >-
+        `{name?, notifications?, signature?, initials?, password?, current_password?}`.
+        A mark is `{image_base64}` (PNG or JPEG, at most 5 MiB) or null to remove it.
+        The name and password are the user's in every account and change only through
+        their own session (`422` with another credential). A new password needs the
+        current one (`401 CS-AUTH-0007` when wrong) and ends every other session of the
+        user in every account; this session stays.
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/users:
     get:
@@ -2082,6 +2189,25 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Webhook'}
         default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchWebhook
+      summary: "Edit, pause or resume a subscription (UXW-31)"
+      description: >-
+        `{url?, event_types?, active?}`; `active: false` pauses, `true` resumes. A new URL
+        must be public HTTPS (`422 CS-API-0013`, SEC-W01).
+      x-permission: "webhooks:manage"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Webhook'}
+        default: {$ref: '#/components/responses/Problem'}
     delete:
       operationId: deleteWebhook
       summary: "Disable a subscription"
@@ -2103,6 +2229,56 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/webhooks/{id}/test:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: testWebhook
+      summary: "Send a test event through the worker (UXW-32)"
+      description: >-
+        Records a `webhook.test` delivery (ids only) and queues it; the worker signs and
+        sends it as any delivery (SEC-W01 at connect time) and records the answer in the
+        delivery log. `202` with the delivery as recorded; a paused or disabled
+        subscription is `409 CS-API-0009`.
+      x-permission: "webhooks:manage"
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/webhooks/{id}/deliveries/{delivery}/redeliver:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+      - name: delivery
+        in: path
+        required: true
+        description: Delivery id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: redeliverWebhook
+      summary: "Deliver one delivery's event again (UXW-33)"
+      description: >-
+        The same event id and payload, through the worker; the URL is checked again
+        (SEC-W01). `202` with the delivery back to `pending`; a paused or disabled
+        subscription is `409 CS-API-0009`.
+      x-permission: "webhooks:manage"
+      responses:
+        '202':
+          description: Accepted
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Object'}
