@@ -30,6 +30,7 @@ pub mod ui;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, patch, post};
+use tower_http::catch_panic::CatchPanicLayer;
 
 pub use error::ConsoleError;
 pub use state::{AppState, Clock, Config, RateLimits, SystemClock, check_listener};
@@ -90,8 +91,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
 
 /// The console's router.
 pub fn app(state: AppState) -> Router {
-    let max_body = state.config().max_body_bytes;
-    Router::new()
+    let router = Router::new()
         .route("/livez", get(api::livez))
         .route("/readyz", get(api::readyz))
         .route("/console/v1/auth/login", post(api::login))
@@ -151,12 +151,90 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))
-        .route("/console/v1/alerts", get(api::alerts))
+        .route("/console/v1/alerts", get(api::alerts));
+    finish(router, state)
+}
+
+/// Around the routes: the UI for anything unmatched, the body limit, the last-resort
+/// panic answer and the request middleware.
+fn finish(router: Router<AppState>, state: AppState) -> Router {
+    let max_body = state.config().max_body_bytes;
+    router
         .fallback(ui::fallback)
         .layer(DefaultBodyLimit::max(max_body))
+        // ASVS-26: inside the request middleware, so the answer carries `x-request-id`.
+        .layer(CatchPanicLayer::custom(panicked))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::context,
         ))
         .with_state(state)
+}
+
+/// The last-resort answer to a handler that panicked (ASVS-26): `500 CS-CON-0014`
+/// problem details naming the step `panic`, and nothing of the panic's message.
+fn panicked(_payload: Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response {
+    axum::response::IntoResponse::into_response(ConsoleError::Internal("panic"))
+}
+
+/// Replaces the default panic hook, which prints the panic's message (it may carry a
+/// value from a request) to standard error, with one that logs where the panic happened
+/// only (ASVS-26). The binary installs it at start-up; the answer to the request is the
+/// router's last-resort `500 CS-CON-0014` problem.
+pub fn quiet_panics() {
+    std::panic::set_hook(Box::new(|info| {
+        let at = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        tracing::error!(at = %at, "panicked");
+    }));
+}
+
+#[cfg(test)]
+// Test code: a panic is the failure report (CLAUDE.md).
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use casual_sign_platform_store::PlatformStore;
+    use casual_sign_platform_store::sqlx::postgres::PgPoolOptions;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    use super::*;
+
+    async fn boom() -> &'static str {
+        panic!("secret-in-panic")
+    }
+
+    /// ASVS-26: a handler that panics answers `500 CS-CON-0014` problem details with the
+    /// request id in `x-request-id`, and nothing of the panic.
+    #[tokio::test]
+    async fn a_handler_that_panics_answers_a_problem_with_the_request_id_only() {
+        // A pool that never connects: no route here reaches the database.
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://nobody:none@127.0.0.1:9/none")
+            .unwrap();
+        let state = AppState::new(
+            PlatformStore::new(pool),
+            crypto::MfaKey::new(&[1u8; 32]).unwrap(),
+            Arc::new(SystemClock),
+            Config::default(),
+        )
+        .unwrap();
+        let app = finish(Router::new().route("/boom", get(boom)), state);
+        let r = app
+            .oneshot(Request::get("/boom").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(r.headers().contains_key("x-request-id"));
+        let body = r.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("CS-CON-0014"), "{body}");
+        assert!(!body.contains("secret-in-panic"), "{body}");
+    }
 }

@@ -265,7 +265,7 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 | CS-CON-0011 | No such object (404) |
 | CS-CON-0012 | Rate limit: sign-in per address and per e-mail, TOTP per operator, requests per session; `retry_after` seconds (429) |
 | CS-CON-0013 | A changing request without its session's CSRF token, with a wrong one, or not `application/json` (403) |
-| CS-CON-0014 | Internal failure; names the step, never a value (500) |
+| CS-CON-0014 | Internal failure; names the step, never a value (500; `panic` for a handler that panicked, `ASVS-26`) |
 | CS-CON-0015 | The database is unavailable (503) |
 | CS-CON-0016 | Already exists: an operator with that e-mail (409) |
 | CS-CON-0017 | Console configuration invalid or a secret missing; names the variable (start-up) |

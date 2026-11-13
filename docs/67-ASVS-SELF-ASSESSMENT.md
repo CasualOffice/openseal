@@ -26,8 +26,8 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 182 | 101 | 75 | 6 |
-| Partly | 49 | 12 | 31 | 6 |
+| Met | 183 | 101 | 76 | 6 |
+| Partly | 48 | 12 | 30 | 6 |
 | Not met | 23 | 8 | 10 | 5 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
@@ -41,7 +41,7 @@ operation log, and the append-only hash-chained logs are met, with tests that do
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26` and `ASVS-30` are closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
@@ -70,12 +70,13 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-23 | P2 | ASVS 10.1.1, 10.2.3 to 10.2.6 (L3) | Malicious-code review for ceremony, sealing and keyd: a static scan for hard-coded credentials, time comparisons and hidden routes in CI, and a recorded manual review (feeds `SEC-REV-01`) |
 | ASVS-24 | P2 | ASVS 14.1.5 (L3 sealing, keyd) | keyd and the worker log the SHA-256 of their security configuration (allow list, client CA, trust anchors, TSA list) at start and refuse a change without a restart; the operator can compare it |
 | ASVS-25 | P2 | ASVS 8.3.6 | Hold passwords, one-time codes and link tokens from requests in zeroizing buffers and drop them after use |
-| ASVS-26 (Done) | P1 | ASVS 7.4.3 | Closed 2026-11-13 for the server; the console's layer is `ASVS-34`. Was: A last-resort panic layer on the server answering `500` problem details with the request id (and the same in the console) |
+| ASVS-26 (Done) | P1 | ASVS 7.4.3 | Closed 2026-11-13, server and console (`ASVS-34` with it). Was: A last-resort panic layer on the server answering `500` problem details with the request id (and the same in the console) |
 | ASVS-27 | P2 | ASVS 1.1.3 | A security-constraint line in docs/14 rows that add a user-facing feature (who may do it, what is refused), checked when the row is written |
 | ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key | Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
 | ASVS-29 | P2 | ASVS 2.4.5 | Optional password pepper held outside the database (a secret file through `casual-sign-secrets`), with rehash on login |
 | ASVS-30 (Done) | P2 | ASVS 5.2.3 | Closed 2026-11-13: the test went red without the guard and docs/07 `SEC-M02` was updated. Was: docs/07 `SEC-M02` still read Planned although `-worker/src/email.rs` refuses CR/LF and encodes headers: confirm its test goes red without the guard and update the row |
-| ASVS-34 | P2 | ASVS 7.4.3 | The console's last-resort panic layer answering a `500` problem, as the server's since `ASVS-26` |
+| ASVS-34 (Done) | P2 | ASVS 7.4.3 | Closed 2026-11-13 with `ASVS-26`. Was: The console's last-resort panic layer answering a `500` problem, as the server's since `ASVS-26` |
+| ASVS-35 | P2 | ASVS 7.1.2, 7.4.3 | The worker's and keyd's binaries replace the default panic hook (it prints the message) with one logging the place only, as the server and console since `ASVS-26` |
 
 Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KEYD-01` (cloud KMS), `SEAL-14`
 (SHA-1 only for identifiers).
@@ -507,7 +508,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 7.4.1 | 1 | All | Generic error messages with an id | Met | RFC 9457 problem details: fixed title per code plus request id (`-server/src/error.rs`) | — |
 | 7.4.2 | 2 | All | Exception handling across the codebase | Met | Typed `Result` errors; untrusted input never panics (CLAUDE.md; fuzz targets in `fuzz/`) | — |
-| 7.4.3 | 2 | All | Last-resort error handler | Partly | The server catches a handler panic and answers `500 CS-API-0010` with the request id (`-server/src/routes.rs` `finish`, `http.rs` `panicked`; `routes::tests::a_handler_that_panics_answers_a_problem_with_the_request_id_only`); the console has no such layer yet | ASVS-26, ASVS-34 |
+| 7.4.3 | 2 | All | Last-resort error handler | Met | The server and the console catch a handler panic: the server answers `500 CS-API-0010` with the request id (`-server/src/routes.rs` `finish`, `http.rs` `panicked`; `routes::tests::a_handler_that_panics_answers_a_problem_with_the_request_id_only`), the console `500 CS-CON-0014` with `x-request-id` (`-console/src/lib.rs` `finish`; its `tests::a_handler_that_panics_answers_a_problem_with_the_request_id_only`); both binaries' panic hooks log the place and never the message (`quiet_panics`; `tests/panic_hook.rs` in each) | ASVS-26 |
 
 ### V8 Data Protection
 

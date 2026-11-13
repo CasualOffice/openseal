@@ -32,6 +32,8 @@ aws-lc-rs = "1.19.0"
 # Health probes of `http` service targets (plain HTTP on the private network), already in
 # the graph through casual-sign-store and the CLI. MIT OR Apache-2.0.
 ureq = { version = "3.5.1", default-features = false }
+# The last-resort panic answer (ASVS-26), as the server. MIT.
+tower-http = { version = "0.6.6", default-features = false, features = ["catch-panic"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 

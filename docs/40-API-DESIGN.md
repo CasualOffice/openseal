@@ -458,7 +458,7 @@ card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a 
   a raw `application/pdf`. A body-less action (`POST …/send`) needs no `Content-Type`. A cross-site HTML form therefore
   cannot reach `POST /auth/login` or any other route.
 - **A panic is a problem.** A handler that panics answers `500 CS-API-0010` (`detail: panic`) with the request id;
-  the panic's message is neither sent nor logged.
+  the panic's message is never sent, and the binary's panic hook logs only where it happened and the request id. The console answers the same way with `500 CS-CON-0014`.
 
 ## As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`)
 
