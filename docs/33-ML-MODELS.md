@@ -69,7 +69,7 @@ an exit is claimed.
 
 | Kind | Enqueued by | Payload | Idempotency key |
 | --- | --- | --- | --- |
-| `analyze_document` | server, in the transaction that admits an upload to a draft envelope or template, when the workspace has any ML feature on; or `POST …/analysis` | `{account_id, document_id, envelope_id?, template_id?, uses: [ocr, template, entities, personal_data], document_sha256}` | `analyze:{account_id}:{document_id}:{document_sha256}:{uses}:{bundle_id}` |
+| `analyze_document` | server, in the transaction that admits an upload to a draft envelope, when the workspace has any ML feature on; or `POST …/analysis` (as built, template uploads get `fingerprint_template` only; entities on templates wait, §7 as built) | `{account_id, document_id, envelope_id?, template_id?, uses: [ocr, template, entities, personal_data], document_sha256}` | `analyze:{account_id}:{document_id}:{document_sha256}:{uses}:{bundle_id}` |
 | `fingerprint_template` | server, on template document add or change, when `template` is on | `{account_id, template_id, document_id, document_sha256}` | `fingerprint:{account_id}:{template_id}:{document_id}:{document_sha256}:{bundle_id}` |
 
 **Both keys carry the account and the document id.** Two accounts that upload the same bytes get two runs, and so
