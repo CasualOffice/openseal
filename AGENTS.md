@@ -84,7 +84,8 @@ reviewer is used only for risky pieces (security, evidence, database, server; in
   `casual-sign-modeld`, the skeleton and bundle tooling (`ML-09`) and GLiNER spans for extraction and personal data
   (`ML-07`, `ML-08`, fp16 exports equal to the golden spans), beside `casual-sign-pii`'s validated recognisers and
   value normalisation. Security fixes `SEC-ID-01` and `SEC-CER-01` are merged. [96](docs/96-FEATURE-FIT-GAP.md)
-  counts 39 of 167 rows working end to end and 17 in part.
+  counts 41 of 168 rows working end to end and 17 in part. Slice 5 (`VS-05`): every identity step, consent and
+  its withdrawal built and in a mock-mode browser run; its Compose run and demo (`RAUTH-02`) left.
 - **In progress:** OCR (`ML-02`) and template matching (`ML-05`) on worker branches, not merged; the modeld exit
   (`compose --profile ml up`, `ML-09`); workflows a switching customer expects (`UXW-*`, e.g. in-person hosting
   `UXW-36`); ADR-028 in stages ([23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)): admin audit logs (`ORG-05`)

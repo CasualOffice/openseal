@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 49 are designed, 20 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`, `FG-184`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 41 of 168 rows work end to end; 16 more have their engine built and tested; 49 are designed, 20 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`, `FG-184`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -130,7 +130,8 @@ instructions 8 and 9).
 | FG-116 | Decline with reason | DS, SN | Build | 2 | Works |
 | FG-117 | Access code | DS, SN | Build | 5 | Works |
 | FG-118 | Email OTP | — | Build | 5 | Works |
-| FG-119 | SMS OTP, phone call | DS, SN | Plugin | 5 | Partial: `sms_otp` and `voice_otp` built through the worker's `Messenger` with an HTTPS gateway, in the signing page and the editor (VS-05, `tests/sms_otp.rs`); provider adapters `MSG-01`; no browser run on the real stack yet (`RAUTH-02`) |
+| FG-119 | SMS OTP, phone call | DS, SN | Plugin | 5 | Works: `sms_otp` and `voice_otp` through the worker's `Messenger` with an HTTPS gateway, in the signing page and the editor (VS-05, `tests/sms_otp.rs`; browser run `e2e/recipient-auth.spec.mjs`, mock mode); provider-specific adapters `MSG-01`; the Compose run `RAUTH-02` |
+| FG-217 | Signer sign-in through an identity provider (OpenID Connect) | DS | Build | 5 | Works: `sso`, the operator's providers, PKCE, state and nonce, the verified email bound to the recipient, issuer and subject hash in the chain (`RAUTH-01`, ADR-033 Proposed, `tests/ceremony_sso.rs`; browser run `e2e/recipient-auth.spec.mjs`, mock mode); the Compose run `RAUTH-02` |
 | FG-120 | Knowledge-based authentication | DS | Plugin | 18 | — |
 | FG-121 | ID verification (document + selfie, eID) | DS | Plugin | 18 | — |
 | FG-122 | Kiosk mode | SN | Build | 14 | — |

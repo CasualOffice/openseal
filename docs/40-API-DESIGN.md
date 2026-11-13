@@ -351,7 +351,14 @@ browser is `403 CS-AUTH-0009`. Changing calls must be
 sends one by email (`email_otp`, the default), SMS (`sms_otp`) or a voice call (`voice_otp`, read digit by digit), the
 last two to the recipient's E.164 `phone` (required with them, `422` otherwise) through the worker's `Messenger`
 (slice 5, VS-05); `POST /s/{token}/otp/verify {code, method?}` passes the open code's method. `CS-API-0014` for a
-method the recipient does not require. `POST /s/{token}/adopt` stores the image, then the capture document the seal job reads
+method the recipient does not require. Sign-in through an identity provider (`sso`, RAUTH-01): the view lists
+the operator's providers as `sso_providers` while `sso` is pending; `POST /s/{token}/sso {provider}` answers the view
+with `sso_authorization_url` (authorization code with PKCE S256, `state` and `nonce`; the server keeps the nonce and
+verifier, `state` only hashed); the provider sends the browser back to `/s/oidc`, where the page finds its link in the
+tab's session storage and calls `POST /s/{token}/sso/verify {state, code}`. The sign-in closes at first use; the ID
+token must be signed by the provider's JWKS with an asymmetric algorithm, name its issuer and the client, be unexpired
+by the server's clock, carry the nonce and assert a verified email equal to the recipient's. A refusal is `403` with
+the view, counted to the lockout; an unreachable provider is `502 CS-API-0016`, counted nothing. `POST /s/{token}/adopt` stores the image, then the capture document the seal job reads
 (`{"kind":"image","image":"<hex>"}`), and answers its hash as `adoption_id`; a signature or initials value must name
 a capture this recipient adopted (`422 CS-API-0001` otherwise), so no value can draw another person's capture.
 `POST /s/{token}/withdraw-consent` withdraws consent to electronic records (declining a required action).

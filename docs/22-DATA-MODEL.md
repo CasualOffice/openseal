@@ -118,7 +118,7 @@ one recorded in `envelope.completed`.
 | `role_name` | From the template, when any |
 | `name`, `email`, `phone` | PII, classified (docs/07 §Data) |
 | `status` | `created`, `sent`, `delivered`, `authenticated`, `completed`, `declined`, `auto_responded`, `reassigned` |
-| `auth` | List of requirements: `access_code` (hash), `email_otp`, `sms_otp`, `voice_otp` (the phone call; designed as `phone_call`), `idp` (OIDC issuer, `RAUTH-01`), `idv` (provider), `kba` (plugin). `sms_otp` and `voice_otp` need an E.164 `phone`; their codes are rows of `recipient_otp_codes` with `channel` `sms` or `voice` (migration 0029) |
+| `auth` | List of requirements: `access_code` (hash), `email_otp`, `sms_otp`, `voice_otp` (the phone call; designed as `phone_call`), `sso` (sign-in through one of the operator's OpenID Connect providers, `RAUTH-01`; designed as `idp`), `idv` (provider), `kba` (plugin). `sms_otp` and `voice_otp` need an E.164 `phone`; their codes are rows of `recipient_otp_codes` with `channel` `sms` or `voice` (migration 0029). `sso` needs an `email`, which the provider's verified email must equal; each sign-in is a row of `recipient_sso_challenges` (migration 0030: provider id, SHA-256 of `state`, nonce, PKCE verifier, 10-minute expiry, closed at first use or when superseded, at most one open per recipient, a tenant table under RLS) |
 | `delivery` | `email`, `sms`, `none` (embedded: host delivers) |
 | `embedded_client_user_id` | When set, the recipient signs only through the integrator's embedded session |
 | `signing_group_id` | Any member may act (slice 29) |
