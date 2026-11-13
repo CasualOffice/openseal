@@ -3,8 +3,10 @@
     python3 -I -m unittest discover -s tools/interop -p 'test_*.py'
 """
 
+import contextlib
 import copy
 import importlib.util
+import io
 import json
 import pathlib
 import tempfile
@@ -14,6 +16,11 @@ HERE = pathlib.Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("acrobat_report", HERE / "acrobat_report.py")
 ar = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ar)
+
+def quiet(argv):
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        return ar.main(argv)
+
 
 MANIFEST = HERE.parent.parent / "fixtures" / "interop" / "manifest.tsv"
 
@@ -117,13 +124,13 @@ class Judge(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             good = pathlib.Path(tmp, "good.json")
             good.write_text(json.dumps(self.report), encoding="utf8")
-            self.assertEqual(ar.main(["x", str(good), "--manifest", str(MANIFEST)]), 0)
+            self.assertEqual(quiet(["x", str(good), "--manifest", str(MANIFEST)]), 0)
             bad = copy.deepcopy(self.report)
             self.entry(bad, "agreement-p256-blta.pdf")["banner"] = "At least one signature is invalid."
             badp = pathlib.Path(tmp, "bad.json")
             badp.write_text(json.dumps(bad), encoding="utf8")
-            self.assertEqual(ar.main(["x", str(badp), "--manifest", str(MANIFEST)]), 1)
-            self.assertEqual(ar.main(["x", str(pathlib.Path(tmp, "absent.json"))]), 2)
+            self.assertEqual(quiet(["x", str(badp), "--manifest", str(MANIFEST)]), 1)
+            self.assertEqual(quiet(["x", str(pathlib.Path(tmp, "absent.json"))]), 2)
 
 
 if __name__ == "__main__":

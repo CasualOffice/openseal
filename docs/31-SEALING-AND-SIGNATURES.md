@@ -234,6 +234,72 @@ does not match the OCSP issuer certificate!") without falling back, so the run g
 public TSA. **FreeTSA** (`https://freetsa.org/tsr`) is refused by the engine with `CS-SEAL-0005`: its tokens name
 their signer by ESSCertID v1 (SHA-1), which `SEAL-14` decides. CI uses the local TSA only.
 
+### Rung 4 on a Windows runner (HRD-03): Adobe Acrobat Reader
+
+The owner has no Acrobat (owner instruction 49), and Reader never runs on a desktop (rule 17 in
+[04](04-MISTAKES-AND-RULES.md)), so the checklist runs on a disposable GitHub `windows-latest` runner in its own
+workflow, `.github/workflows/acrobat.yml`. It is not part of `ci.yml` and never blocks `main`: it runs by hand
+(Actions > acrobat > Run workflow, or `gh workflow run acrobat.yml`), every Monday, and on any push or pull request
+that changes `fixtures/interop/`, `tools/interop/acrobat*` or the workflow.
+
+What the job does, in order:
+
+1. checks the packet against `SHA256SUMS` (checked out with `core.autocrlf false`), and runs the judge's own tests;
+2. installs Adobe Acrobat Reader from Chocolatey at a pinned package version (`READER_PACKAGE_VERSION`), and
+   Tesseract OCR (`TESSERACT_PACKAGE_VERSION`);
+3. `tools/interop/acrobat-setup.ps1` **trusts the test root without a dialog**: it checks the root's SHA-256 against
+   `trust/FINGERPRINT.txt`, imports it into the runner's `LocalMachine\Root` store, and sets Reader's documented
+   preference `Security\cASPKI\cMSCAPI_DirectoryProvider\iMSStoreTrusted = 0x62` (trust the Windows store for
+   signatures and certified documents; Adobe's Preference Reference, Windows Integration). Reader's own trusted-identity
+   list (`addressbook.acrodata`) has no documented non-interactive import, so the root is not in that list: Reader
+   trusts it through the Windows store instead, which is what an enterprise deploying a private CA does. It also sets
+   the checklist's step 3 (verify on open, revocation must succeed when possible, embedded long-term data always
+   used) and turns off what blocks an unattended run (first-run screens, sign-in, upsell, updater, Protected Mode,
+   JavaScript);
+4. `tools/interop/acrobat_driver.py` opens each packet PDF in Reader, waits for validation to finish, screenshots the
+   whole screen with the banner, clicks **Signature Panel**, chooses **Expand All** from the panel's context menu,
+   screenshots again, and opens **Show Signature Properties** for each signature, screenshotting each. Reader draws
+   its message bar and panel without UI Automation text, so the driver reads them with Tesseract from the
+   screenshots (and adds what UI Automation does expose: menus, dialogs). The B-LTA and tampered files are opened
+   with nothing served, the B-T files with `interop.py serve` answering the packet's OCSP, CRL and AIA URLs on
+   127.0.0.1:47380;
+5. uploads the artifact **`acrobat-reader-<run id>`** (kept 90 days): every screenshot (`<file>-1-opened.png`,
+   `-2-panel.png`, `-3-expanded.png`, `-4-properties-N.png`), what OCR read from each (`*.ocr.txt`), the UI
+   Automation trees (`uia-*.txt`) and `acrobat-report.json`;
+6. `tools/interop/acrobat_report.py` (standard library, any OS; tests in `tools/interop/test_acrobat_report.py`,
+   `python3 -I -m unittest discover -s tools/interop -p 'test_*.py'`) judges the report against the checklist and
+   fails the job naming each file and missing phrase: a valid file needs the banner "Signed and all signatures are
+   valid" (or "Certified by" for the certification seal), "Signature is valid", "Document has not been modified
+   since this signature was applied", "Signer's identity is valid" and an embedded timestamp, plus "Signature is
+   LTV enabled" at B-LTA, and none of Reader's words for an invalid, unknown or altered signature; the tampered file
+   needs "At least one signature is invalid" or "altered or corrupted". The verdict is also on the run's summary page.
+
+To read a run: `gh run download <run id> -n acrobat-reader-<run id>` and open the PNGs, or
+`python3 -I tools/interop/acrobat_report.py acrobat-report.json`.
+
+**Not automated:** the checklist's last half of step 5 (stop `serve` and reopen a B-T file: "revocation could not be
+checked", never "invalid"), and step 7 (clean-up: the runner is discarded). The Help > About version is taken from
+the executable's file version instead.
+
+**Result so far (run `43527032537`, 2026-11-13, Reader 26.2.22031.0 64-bit, Windows Server 2025 build 26100,
+1920×1080; artifact `acrobat-reader-43527032537`): not green, so rung 4 is not yet met.** The automation works end to
+end (trust import, banner, panel, expansion and Signature Properties for every file), and Reader says:
+
+| File | Reader shows | As expected? |
+| --- | --- | --- |
+| `agreement-p256-bt.pdf` | "Signed and all signatures are valid."; signature valid, document not modified, signer's identity valid, embedded timestamp, not LTV enabled; trust from the Windows store | Yes |
+| `agreement-rsa3072-bt.pdf` | the same | Yes |
+| `agreement-p256-blta.pdf` | "At least one signature has problems."; seal and document timestamp: "Signature validity is UNKNOWN", document not modified, "valid, but revocation checks could not be made" ("Revocation checks could not be done, possibly because you are not currently connected to a network"); validated as of the secure timestamp time | **No**: Reader does not use the packet's embedded long-term material offline |
+| `agreement-rsa3072-blta.pdf` | the same as `agreement-p256-blta.pdf` | **No** |
+| `agreement-p256-certified-p2-blta.pdf` | "The validity of the document certification is UNKNOWN. The author could not be verified."; the same revocation finding | **No** |
+| `tampered-p256-blta.pdf` | "At least one signature is invalid." | Yes |
+
+So Reader accepts the signatures, the timestamps and the trust path, and detects tampering; it does not accept the
+B-LTA files' embedded revocation data as sufficient offline, where pyHanko and EU DSS do. That is a finding against
+the B-LTA output (or Reader's expectations of the DSS), to be tracked as its own row; the ladder row 4 says what it
+proves only after a green run.
+
+
 ## 8. Algorithms and crate choices
 
 ADR-006 settles this, confirmed by `SPK-02` ([66](66-SPK-02-CRYPTO-STACK.md)): **`aws-lc-rs`** (ISC, Apache-2.0, MIT,
