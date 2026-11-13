@@ -17,6 +17,7 @@
 //! | `OPENSEAL_LISTEN` | Address to listen on (default `127.0.0.1:8080`) |
 //! | `OPENSEAL_TRUSTED_PROXIES` | Comma-separated CIDRs whose forwarding headers count |
 //! | `OPENSEAL_GEOIP_DB` | Optional GeoIP `.mmdb` the operator supplies (row GEO-01) |
+//! | `OPENSEAL_ML_BUNDLE_ID` | The model bundle deployed with `casual-sign-modeld` (docs/33 §7); none: document analysis is not installed |
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key, plain-HTTP cookies |
 //! | `OPENSEAL_ADMIN_PASSWORD` (secret) | `bootstrap` only: the first administrator's password |
 //!
@@ -237,6 +238,15 @@ async fn main() -> ExitCode {
         }
     }
     config.secure_cookies = std::env::var("OPENSEAL_DEV_INSECURE_KEY").as_deref() != Ok("1");
+    if let Ok(b) = std::env::var("OPENSEAL_ML_BUNDLE_ID") {
+        let ok = (1..=64).contains(&b.len())
+            && b.bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b'-'));
+        if !ok {
+            return fail("OPENSEAL_ML_BUNDLE_ID: not an id ([A-Za-z0-9._-]{1,64})");
+        }
+        config.ml_bundle = Some(b);
+    }
     let state = match AppState::new(store, blobs, jwt, Arc::new(SystemClock), config) {
         Ok(s) => s,
         Err(e) => return fail(e.code()),

@@ -34,11 +34,15 @@ async fn migrations_apply_from_empty_then_a_second_run_applies_nothing() {
         second.applied
     );
     assert_eq!(second.already, all);
-    // Versions are dense from 1.
-    assert_eq!(
-        all,
-        (1..=i64::try_from(all.len()).unwrap()).collect::<Vec<_>>()
-    );
+    // Versions rise from 1 with no gap but a number docs/14 reserves for another lane
+    // (22, 23 and 25 are reserved by rows merging separately).
+    const RESERVED: &[i64] = &[22, 23, 25];
+    assert!(all.windows(2).all(|w| w[0] < w[1]), "{all:?}");
+    let last = *all.last().unwrap();
+    let missing: Vec<i64> = (1..=last)
+        .filter(|v| !all.contains(v) && !RESERVED.contains(v))
+        .collect();
+    assert!(missing.is_empty(), "migration numbers skipped: {missing:?}");
     db.drop().await;
 }
 
@@ -103,8 +107,9 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // checked by `organizations.rs` instead of the account rules below; 0015 none (in-person
     // hosting adds a column); 0016 to 0019 none in `public` (the console's tables are in
     // `platform`); 0020 `admin_events`, a tenant table, and `org_admin_events`, an
-    // organization table (ORG-05).
-    assert_eq!(tables.len(), 47, "{tables:?}");
+    // organization table (ORG-05); 0021 `ml_settings`, `ml_entitlements`, `analysis_runs`,
+    // `suggestions`, `ocr_pages` and `template_fingerprints` (WEB-19), all tenant tables.
+    assert_eq!(tables.len(), 53, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_admin_events",

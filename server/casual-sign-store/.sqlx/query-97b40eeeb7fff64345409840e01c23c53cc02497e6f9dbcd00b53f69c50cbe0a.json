@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM template_fingerprints WHERE account_id = $1 AND template_id = $2 AND document_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "97b40eeeb7fff64345409840e01c23c53cc02497e6f9dbcd00b53f69c50cbe0a"
+}
