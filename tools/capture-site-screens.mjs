@@ -318,14 +318,18 @@ async function run(scheme, consoleBase) {
   await scene("agreements", DESK, async (page) => {
     await signIn(page);
     await page.goto(`${BASE}/app.html?mock=1#/agreements`);
-    await page.locator(".os-row__sub, [data-testid='agreement-row']").first().waitFor();
+    // The grouped list with the inspector open on an agreement with suggestions (WEB-17/18).
+    await page.getByText("Vendor services agreement").first().click();
+    await page.getByTestId("inspector-open").waitFor();
+    await page.waitForTimeout(600);
     await shot(page, "agreements");
   });
 
   await scene("envelope", DESK, async (page) => {
     await signIn(page);
     await page.goto(`${BASE}/app.html?mock=1#/agreements`);
-    await page.getByRole("link", { name: /Mutual NDA/ }).first().click();
+    await page.getByText(/Mutual NDA/).first().click();
+    await page.getByTestId("inspector-open").click();
     await page.getByRole("heading", { name: /Audit trail|Activity/ }).first().waitFor();
     await shot(page, "envelope");
   });
@@ -364,12 +368,10 @@ async function run(scheme, consoleBase) {
   await scene("admin", DESK, async (page) => {
     await signIn(page);
     await page.goto(`${BASE}/app.html?mock=1#/admin`);
-    const api = page.getByRole("tab", { name: /API clients/ }).or(page.getByRole("link", { name: /API clients/ }));
-    await api.first().click();
+    await page.goto(`${BASE}/app.html?mock=1#/admin?section=api`);
     await page.getByText("CRM integration").first().waitFor();
     await shot(page, "admin-api");
-    const tab = page.getByRole("tab", { name: /Document intelligence/ }).or(page.getByRole("link", { name: /Document intelligence/ }));
-    await tab.first().click();
+    await page.goto(`${BASE}/app.html?mock=1#/admin?section=intelligence`);
     await page.getByRole("switch").first().waitFor();
     await shot(page, "admin-intelligence");
   });
