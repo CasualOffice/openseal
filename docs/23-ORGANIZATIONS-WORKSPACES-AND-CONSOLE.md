@@ -526,7 +526,9 @@ mutation of the migration):
   password, and accepting an invitation, are not administrative changes and write none.
 - **The database checks the bytes.** Besides the hash, `seq` and `prev`, the insert trigger requires the owner, `seq`,
   `prev`, `action` and `at` columns to be what the bytes state (`at` exactly the bytes' Unix millisecond, since the API
-  serves the column; the verified reads check it again), and refuses an event outside the current scope (`42501`)
+  serves the column; the verified reads check it again). `at` must be written as plain digits, read from the bytes as
+  written rather than through `jsonb` (which would accept `1e3` as 1000 where the reader refuses it), and no later than
+  9999-12-31T23:59:59.999Z, the reader's last instant; anything else is `OS005` before any cast. It refuses an event outside the current scope (`42501`)
   before reading that chain, so another scope's head or next `seq` is never revealed. The workspace functions require
   the event's bytes to name their own action and workspace.
 - **Concurrent changes queue on the head.** `openseal_admin_chain_tip()` and `openseal_org_chain_tip()` lock the head

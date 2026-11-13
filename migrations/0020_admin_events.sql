@@ -94,6 +94,8 @@ CREATE FUNCTION openseal_admin_event_check(
 AS $$
 DECLARE
     doc jsonb;
+    at_text text;
+    at_ms bigint;
 BEGIN
     IF sha256(p_canonical) <> p_hash THEN
         RAISE EXCEPTION 'admin event hash does not match its canonical bytes (seq %)', p_seq
@@ -104,17 +106,29 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
         RAISE EXCEPTION 'admin event is not JSON (seq %)', p_seq USING ERRCODE = 'OS005';
     END;
-    -- `at` is a whole number of milliseconds (at most 2^53, as the Rust side writes it),
-    -- and the column must be exactly that instant: the API serves the column.
     IF jsonb_typeof(doc) <> 'object'
        OR doc ->> p_owner_key IS DISTINCT FROM p_owner::text
        OR doc ->> 'seq' IS DISTINCT FROM p_seq::text
        OR doc ->> 'action' IS DISTINCT FROM p_action
        OR (doc ->> 'prev') IS DISTINCT FROM encode(p_prev, 'hex')
-       OR jsonb_typeof(doc -> 'at') IS DISTINCT FROM 'number'
-       OR (doc ->> 'at') !~ '^(0|[1-9][0-9]{0,15})$'
+       OR jsonb_typeof(doc -> 'at') IS DISTINCT FROM 'number' THEN
+        RAISE EXCEPTION 'admin event columns differ from its canonical bytes (seq %)', p_seq
+            USING ERRCODE = 'OS005';
+    END IF;
+    -- `at` is read as written (`json`, not `jsonb`, which would turn `1e3` into `1000`):
+    -- plain digits only, as the reader (`verify_event`, serde_json's `as_u64`) accepts,
+    -- and no later than 9999-12-31T23:59:59.999Z (253402300799999 ms), the reader's
+    -- limit. Checked before any cast, so a long number is OS005, never 22008.
+    at_text := convert_from(p_canonical, 'UTF8')::json ->> 'at';
+    IF at_text IS NULL OR at_text !~ '^(0|[1-9][0-9]{0,14})$' THEN
+        RAISE EXCEPTION 'admin event time is not whole milliseconds (seq %)', p_seq
+            USING ERRCODE = 'OS005';
+    END IF;
+    at_ms := at_text::bigint;
+    -- The column must be exactly that instant: the API serves the column.
+    IF at_ms > 253402300799999
        OR p_at IS NULL
-       OR p_at <> 'epoch'::timestamptz + (doc ->> 'at')::bigint * interval '1 millisecond' THEN
+       OR p_at <> 'epoch'::timestamptz + at_ms * interval '1 millisecond' THEN
         RAISE EXCEPTION 'admin event columns differ from its canonical bytes (seq %)', p_seq
             USING ERRCODE = 'OS005';
     END IF;

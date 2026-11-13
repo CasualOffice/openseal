@@ -183,6 +183,14 @@ async fn an_admin_event_that_does_not_extend_its_chain_is_refused() {
     let good = canonical(1, Some(head));
     let good_hash = *Hash256::digest(&good).as_bytes();
     let wrong_prev = canonical(1, Some([7; 32]));
+    // The next event with `at` written as `at` and the column set to `column`.
+    let at_written = |at: &str, column: &str| {
+        let bytes = String::from_utf8(good.clone())
+            .unwrap()
+            .replace("\"at\":1,", &format!("\"at\":{at},"))
+            .into_bytes();
+        insert(1, Some(head), *Hash256::digest(&bytes).as_bytes(), bytes).replace(AT_1MS, column)
+    };
     let cases = [
         // Hash is not SHA-256 of the bytes.
         insert(1, Some(head), [9; 32], good.clone()),
@@ -213,6 +221,16 @@ async fn an_admin_event_that_does_not_extend_its_chain_is_refused() {
         insert(1, Some(head), good_hash, good.clone()).replace(
             AT_1MS,
             "'epoch'::timestamptz + interval '1001 microseconds'",
+        ),
+        // `"at":1e3` with the column at that instant: `jsonb` reads it as 1000, but the
+        // reader (`as_u64`) refuses it, so accepting it would break the log for good.
+        at_written("1e3", "'epoch'::timestamptz + interval '1000 milliseconds'"),
+        // 16 digits: refused as OS005 before any cast can overflow (was 22008).
+        at_written("9999999999999999", AT_1MS),
+        // One millisecond past 9999-12-31, the reader's last instant.
+        at_written(
+            "253402300800000",
+            "'epoch'::timestamptz + 253402300800000 * interval '1 millisecond'",
         ),
     ];
     for sql in cases {
