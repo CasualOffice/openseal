@@ -72,6 +72,8 @@ id_type!(
     SigningLinkId,
     /// A user invitation (WEB-06).
     UserInvitationId,
+    /// A password reset (UXW-38).
+    PasswordResetId,
     /// A staff user's session.
     StaffSessionId,
 );

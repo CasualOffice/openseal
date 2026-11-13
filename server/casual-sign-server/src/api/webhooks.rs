@@ -1,5 +1,6 @@
 //! Webhook subscriptions (docs/40 §4, ADR-016). Delivery and signing are the worker's
-//! (stage 2D); here a subscription is registered, read, listed and disabled, and its
+//! (stage 2D); here a subscription is registered, read, listed, edited, paused and
+//! disabled, a test event or a redelivery is queued for the worker (UXW-31..33), and its
 //! URL is refused unless it is HTTPS to a public address (SEC-W01, at registration;
 //! the worker checks again after resolving the name, against DNS rebinding).
 
@@ -9,8 +10,8 @@ use axum::body::Bytes;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use casual_sign_store::repo::webhooks::Subscription;
-use casual_sign_store::{EnvelopeId, WebhookSubscriptionId};
+use casual_sign_store::repo::webhooks::{Delivery, Subscription};
+use casual_sign_store::{EnvelopeId, WebhookDeliveryId, WebhookSubscriptionId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -157,15 +158,7 @@ struct SubIn {
 pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let req: SubIn = parse(&body)?;
     check_url(&req.url)?;
-    if req.event_types.is_empty()
-        || req.event_types.len() > EVENT_TYPES.len()
-        || req
-            .event_types
-            .iter()
-            .any(|e| !EVENT_TYPES.contains(&e.as_str()))
-    {
-        return Err(ApiError::invalid("/event_types"));
-    }
+    check_events(&req.event_types)?;
     let ok_ref = |r: &String| {
         (1..=64).contains(&r.len())
             && r.bytes()
@@ -239,14 +232,169 @@ pub(crate) async fn deliveries(c: Call, Path(id): Path<String>) -> Result<Respon
         .deliveries(id, 100)
         .await?
         .iter()
-        .map(|d| {
-            json!({
-                "id": d.id.to_string(), "event_id": d.event_id.to_string(), "event_type": d.event_type,
-                "status": d.status, "attempts": d.attempts, "last_status_code": d.last_status_code,
-            })
-        })
+        .map(delivery_json)
         .collect();
     Ok(json(StatusCode::OK, &json!({ "items": items })))
+}
+
+fn delivery_json(d: &Delivery) -> Value {
+    json!({
+        "id": d.id.to_string(), "event_id": d.event_id.to_string(), "event_type": d.event_type,
+        "status": d.status, "attempts": d.attempts, "last_status_code": d.last_status_code,
+    })
+}
+
+/// The event types of a request, checked as at registration.
+fn check_events(types: &[String]) -> Result<(), ApiError> {
+    if types.is_empty()
+        || types.len() > EVENT_TYPES.len()
+        || types.iter().any(|e| !EVENT_TYPES.contains(&e.as_str()))
+    {
+        return Err(ApiError::invalid("/event_types"));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubPatch {
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    event_types: Option<Vec<String>>,
+    #[serde(default)]
+    active: Option<bool>,
+}
+
+/// `PATCH /webhooks/{id} {url?, event_types?, active?}` (UXW-31): edit, pause
+/// (`active: false`) or resume (`true`) a subscription. A new URL passes the
+/// registration check (SEC-W01); the worker checks it again at every delivery.
+pub(crate) async fn patch(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let id = WebhookSubscriptionId(path_id(&id)?);
+    let mut tx = c.tx().await?;
+    tx.webhooks()
+        .get(id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let req: SubPatch = parse(&body)?;
+    if let Some(u) = &req.url {
+        check_url(u)?;
+    }
+    if let Some(t) = &req.event_types {
+        check_events(t)?;
+    }
+    tx.webhooks()
+        .update(
+            id,
+            req.url.as_deref(),
+            req.event_types.as_deref(),
+            req.active,
+        )
+        .await?;
+    let s = tx
+        .webhooks()
+        .get(id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    tx.commit().await?;
+    Ok(json(StatusCode::OK, &sub_json(&s)))
+}
+
+/// Queue the job that sends `delivery` (UXW-32, UXW-33).
+async fn queue_delivery(
+    c: &Call,
+    tx: &mut casual_sign_store::TenantTx,
+    delivery: WebhookDeliveryId,
+) -> Result<(), ApiError> {
+    let job = casual_sign_host::jobs::webhook_delivery_job(
+        casual_sign_store::JobId(Uuid::now_v7()),
+        delivery.0,
+        c.st.now(),
+    );
+    tx.jobs().enqueue(&job).await?;
+    Ok(())
+}
+
+/// `POST /webhooks/{id}/test` (UXW-32, docs/40 §4): record a `webhook.test` delivery
+/// (ids only: the subscription and the account) and queue it for the worker, which
+/// signs and sends it as any other (SEC-W01 at connect time) and records the answer in
+/// the delivery log. `202` with the delivery as recorded (`pending`); a paused or
+/// disabled subscription is `409 CS-API-0009`.
+pub(crate) async fn test(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let id = WebhookSubscriptionId(path_id(&id)?);
+    let mut tx = c.tx().await?;
+    let s = tx
+        .webhooks()
+        .get(id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    if !s.active {
+        return Err(ApiError::not_available("subscription not active"));
+    }
+    check_url(&s.url)?;
+    let event_id = Uuid::now_v7();
+    let d = Delivery {
+        id: WebhookDeliveryId(Uuid::now_v7()),
+        subscription_id: id,
+        event_id,
+        event_type: "webhook.test".into(),
+        payload: json!({
+            "id": event_id.to_string(),
+            "type": "webhook.test",
+            "created_at": super::envelopes::rfc3339(c.st.now()),
+            "account_id": c.p.account.to_string(),
+            "data": { "subscription_id": id.to_string() },
+        }),
+        status: "pending".into(),
+        attempts: 0,
+        last_status_code: None,
+    };
+    tx.webhooks().record_delivery(&d).await?;
+    queue_delivery(&c, &mut tx, d.id).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::ACCEPTED, &delivery_json(&d)))
+}
+
+/// `POST /webhooks/{id}/deliveries/{d}/redeliver` (UXW-33, docs/40 §4): send one
+/// delivery's event again, the same event id and payload, through the worker (SEC-W01
+/// checked again: the URL as registered here, every resolved address at connect time).
+/// `202` with the delivery, back to `pending`; a paused or disabled subscription is
+/// `409 CS-API-0009`.
+pub(crate) async fn redeliver(
+    c: Call,
+    Path((id, delivery)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let id = WebhookSubscriptionId(path_id(&id)?);
+    let delivery = WebhookDeliveryId(path_id(&delivery)?);
+    let mut tx = c.tx().await?;
+    let s = tx
+        .webhooks()
+        .get(id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let d = tx
+        .webhooks()
+        .delivery(delivery)
+        .await?
+        .filter(|d| d.subscription_id == id)
+        .ok_or_else(ApiError::not_found)?;
+    if !s.active {
+        return Err(ApiError::not_available("subscription not active"));
+    }
+    check_url(&s.url)?;
+    tx.webhooks().requeue(d.id).await?;
+    queue_delivery(&c, &mut tx, d.id).await?;
+    let d = tx
+        .webhooks()
+        .delivery(delivery)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    tx.commit().await?;
+    Ok(json(StatusCode::ACCEPTED, &delivery_json(&d)))
 }
 
 #[allow(dead_code)]

@@ -357,6 +357,62 @@ impl EntryPoints<'_> {
         }))
     }
 
+    /// Record a password reset (UXW-38) for the local, enabled user whose normalized
+    /// email is `email_normalized`, unless one was requested for them in the last minute;
+    /// earlier open resets of theirs are revoked. Returns the account whose worker sends
+    /// the email, or `None` (no such user, or throttled): the caller answers alike.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn request_password_reset(
+        &self,
+        email_normalized: &str,
+        reset: crate::ids::PasswordResetId,
+        now: OffsetDateTime,
+    ) -> Result<Option<AccountId>> {
+        let acct = sqlx::query_scalar!(
+            "SELECT openseal_request_password_reset($1, $2, $3)",
+            email_normalized,
+            reset.0,
+            now
+        )
+        .fetch_one(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(acct.map(AccountId))
+    }
+
+    /// The open, sent, unexpired password reset a link's hash names (UXW-38): its
+    /// account, id and user.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn resolve_password_reset(
+        &self,
+        token_sha256: &[u8; 32],
+        now: OffsetDateTime,
+    ) -> Result<Option<(AccountId, crate::ids::PasswordResetId, UserId)>> {
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!", reset_id AS "reset_id!",
+                      user_id AS "user_id!"
+                 FROM openseal_resolve_password_reset($1, $2)"#,
+            token_sha256.as_slice(),
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| {
+            (
+                AccountId(r.account_id),
+                crate::ids::PasswordResetId(r.reset_id),
+                UserId(r.user_id),
+            )
+        }))
+    }
+
     /// Every workspace the user of a live staff session belongs to, enabled there, with
     /// its organization (switching, docs/23 §2.3). The user comes from the session's
     /// hash, never from an id the caller names. Empty for a session that is not live.

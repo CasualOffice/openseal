@@ -42,6 +42,8 @@ pub const KINDS: &[&str] = &[
     DELETE_DRAFT,
     SEND_USER_INVITATION,
     SEND_EMAIL_OTP,
+    SEND_WEBHOOK_DELIVERY,
+    SEND_PASSWORD_RESET,
 ];
 
 /// `SendInvitation`.
@@ -132,6 +134,63 @@ pub fn email_otp_job(
     }
 }
 
+/// Not an effect (UXW-32, UXW-33): send one recorded webhook delivery (a test event, or
+/// a delivery an administrator asked to deliver again) to its subscription. Its payload
+/// is [`WebhookDeliveryJob`]; it has no envelope.
+pub const SEND_WEBHOOK_DELIVERY: &str = "send_webhook_delivery";
+
+/// The payload of a [`SEND_WEBHOOK_DELIVERY`] job: the delivery's id only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebhookDeliveryJob {
+    /// The delivery (`webhook_deliveries.id`).
+    pub delivery_id: Uuid,
+}
+
+/// Job `id` sending delivery `delivery`, due at `now`. Each request (a test, or one
+/// "deliver again") is its own job, so the key names the job too; a few attempts, as
+/// the person who asked is waiting for the answer.
+#[must_use]
+pub fn webhook_delivery_job(id: JobId, delivery: Uuid, now: time::OffsetDateTime) -> NewJob {
+    NewJob {
+        id,
+        envelope_id: None,
+        kind: SEND_WEBHOOK_DELIVERY.to_owned(),
+        idempotency_key: format!("webhook-delivery:{delivery}:{}", id.0),
+        payload: serde_json::json!({ "delivery_id": delivery }),
+        run_at: now,
+        max_attempts: max_attempts(SEND_WEBHOOK_DELIVERY),
+    }
+}
+
+/// Not an effect (UXW-38): mint a password reset's one-time link and email it to the
+/// user. Its payload is [`PasswordResetJob`]: the reset's id only, never the token, which
+/// the worker draws as it sends.
+pub const SEND_PASSWORD_RESET: &str = "send_password_reset";
+
+/// The payload of a [`SEND_PASSWORD_RESET`] job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordResetJob {
+    /// The reset (`password_resets.id`).
+    pub reset_id: Uuid,
+}
+
+/// Job `id` emailing the link of reset `reset`, due at `now`. A link lives an hour, so
+/// only a few attempts; the person asks again otherwise.
+#[must_use]
+pub fn password_reset_job(id: JobId, reset: Uuid, now: time::OffsetDateTime) -> NewJob {
+    NewJob {
+        id,
+        envelope_id: None,
+        kind: SEND_PASSWORD_RESET.to_owned(),
+        idempotency_key: format!("password-reset:{reset}"),
+        payload: serde_json::json!({ "reset_id": reset }),
+        run_at: now,
+        max_attempts: max_attempts(SEND_PASSWORD_RESET),
+    }
+}
+
 /// The payload of a job made from an effect: everything a job needs to find its work,
 /// ids only (the effect itself carries ids and parameters, never personal data).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +238,8 @@ pub fn kind_of(effect: &EffectKind) -> Option<&'static str> {
 pub fn max_attempts(kind: &str) -> i32 {
     match kind {
         ALERT_OPERATOR | TIMER => 20,
+        SEND_WEBHOOK_DELIVERY => 5,
+        SEND_PASSWORD_RESET => 3,
         _ => 15,
     }
 }

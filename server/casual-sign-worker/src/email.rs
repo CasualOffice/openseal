@@ -331,6 +331,8 @@ pub enum Template {
     Corrected,
     /// A recipient's email one-time code (SEC-A02): `link` carries the code.
     EmailOtp,
+    /// A user asked to reset their password (UXW-38); the link sets a new one once.
+    PasswordReset,
 }
 
 /// What fills a template: the only supplied text.
@@ -402,6 +404,10 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
             format!("You are invited to {} on {}", f.subject, f.product),
             "An administrator added you to this account. Set your password with the link below. It works once and expires in 7 days; if it has expired, ask the administrator to send it again.",
         ),
+        Template::PasswordReset => (
+            format!("Reset your {} password", f.product),
+            "Someone asked to reset the password of your account. Set a new password with the link below. It works once and expires in 1 hour. If you did not ask for this, ignore this email: your password stays as it is.",
+        ),
         Template::EmailOtp => (
             format!("Your verification code: {}", f.subject),
             "Enter this code on the signing page to open the documents. It works once and expires in 10 minutes. If you did not ask for it, ignore this email.",
@@ -427,6 +433,8 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
     }
     let warning = if template == Template::EmailOtp {
         "Do not share this code: it opens the documents"
+    } else if template == Template::PasswordReset {
+        "Do not share this email: its link sets your password"
     } else {
         "Do not share this email: its link gives access to the documents"
     };

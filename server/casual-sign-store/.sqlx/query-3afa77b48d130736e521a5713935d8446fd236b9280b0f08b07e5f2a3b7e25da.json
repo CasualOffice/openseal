@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT notifications, signature_image, initials_image FROM member_profiles WHERE account_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "notifications",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "member_profiles",
+            "name": "notifications"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "signature_image",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "member_profiles",
+            "name": "signature_image"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "initials_image",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "member_profiles",
+            "name": "initials_image"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "3afa77b48d130736e521a5713935d8446fd236b9280b0f08b07e5f2a3b7e25da"
+}

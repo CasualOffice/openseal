@@ -521,6 +521,12 @@ impl<B: BlobStore + 'static> Worker<B> {
         if job.kind == casual_sign_host::jobs::SEND_EMAIL_OTP {
             return self.email_otp(job, lease).await;
         }
+        if job.kind == casual_sign_host::jobs::SEND_WEBHOOK_DELIVERY {
+            return self.webhook_delivery(job, lease).await;
+        }
+        if job.kind == casual_sign_host::jobs::SEND_PASSWORD_RESET {
+            return self.password_reset(job, lease).await;
+        }
         let payload = jobs::parse(&job.kind, &job.payload)?;
         let envelope = EnvelopeId(payload.envelope_id);
         if job.envelope_id != Some(envelope) {
@@ -871,6 +877,187 @@ impl<B: BlobStore + 'static> Worker<B> {
             )
             .await?;
         self.close_job(tx, job, lease).await
+    }
+
+    /// `send_password_reset` (UXW-38): mint the reset's one-time link (256 random bits,
+    /// base64url, only its SHA-256 stored, 1 hour) and email it to the user; once (the
+    /// row's `sent_at`, then a job step), nothing for a reset spent, revoked or sent
+    /// meanwhile. The link is `{base_url}/#/reset-password?token=`, in the fragment.
+    async fn password_reset(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        use casual_sign_store::PasswordResetId;
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: casual_sign_host::jobs::PasswordResetJob =
+            serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        if job.envelope_id.is_some() {
+            return Err(bad());
+        }
+        let id = PasswordResetId(p.reset_id);
+        let account = job.account_id;
+        let mut tx = self.store.for_account(account).begin().await?;
+        let done = tx
+            .job_steps()
+            .list(job.id)
+            .await?
+            .iter()
+            .any(|s| s.step == "email.password_reset");
+        let open = tx.users().password_reset(id).await?.filter(|r| {
+            r.sent_at.is_none() && r.used_at.is_none() && r.revoked_at.is_none()
+        });
+        let (Some(reset), false) = (open, done) else {
+            return self.close_job(tx, job, lease).await;
+        };
+        let Some(user) = tx.users().get(reset.user_id).await? else {
+            return self.close_job(tx, job, lease).await;
+        };
+        let mut raw = [0u8; 32];
+        aws_lc_rs::rand::fill(&mut raw).map_err(|_| WorkerError::Config { setting: "rng" })?;
+        let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
+        let now = self.now();
+        let expires = jobs::after(now, Duration::from_secs(3600));
+        if !tx
+            .users()
+            .set_password_reset_token(
+                id,
+                Hash256::digest(token.as_bytes()).as_bytes(),
+                expires,
+                now,
+            )
+            .await?
+        {
+            return self.close_job(tx, job, lease).await;
+        }
+        tx.commit().await?;
+        let link = format!(
+            "{}/#/reset-password?token={token}",
+            self.config.base_url.trim_end_matches('/')
+        );
+        let mailer = self.mailer.as_ref().ok_or(WorkerError::NoChannel)?;
+        let (subject, body) = email::render(
+            Template::PasswordReset,
+            &Fill {
+                name: user.name.get(),
+                subject: "",
+                message: "",
+                link: Some(&link),
+                product: &self.config.product,
+                abuse: &self.config.abuse,
+            },
+        );
+        let msg = Message {
+            from: self.config.mail_from.clone(),
+            from_name: self.config.mail_from_name.clone(),
+            to: user.email.get().clone(),
+            to_name: user.name.get().clone(),
+            subject,
+            body,
+            message_id: self.message_id(job.id, "reset"),
+            date: now,
+        };
+        let sent = mailer.send(&msg).await?;
+        self.boundary(Boundary::EmailSent, &job.kind).await;
+        let mut tx = self.store.for_account(account).begin().await?;
+        tx.job_steps()
+            .record(
+                job.id,
+                "email.password_reset",
+                &serde_json::json!({
+                    "outcome": if matches!(sent, Sent::Accepted) { "accepted" } else { "bounced" },
+                    "message_id": msg.message_id,
+                }),
+                now,
+            )
+            .await?;
+        self.close_job(tx, job, lease).await
+    }
+
+    /// `send_webhook_delivery` (UXW-32, UXW-33): send one recorded delivery (a test
+    /// event, or one asked to be delivered again) to its subscription, signed as every
+    /// delivery (Standard Webhooks, the delivery's own event id), through the same SSRF
+    /// policy (SEC-W01), and record the answer. A refused URL fails the delivery with no
+    /// retry; another failure is retried with back-off within the job's few attempts. A
+    /// subscription paused or disabled meanwhile sends nothing.
+    async fn webhook_delivery(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: casual_sign_host::jobs::WebhookDeliveryJob =
+            serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        if job.envelope_id.is_some() {
+            return Err(bad());
+        }
+        let account = job.account_id;
+        let mut tx = self.store.for_account(account).begin().await?;
+        let done = tx
+            .job_steps()
+            .list(job.id)
+            .await?
+            .iter()
+            .any(|s| s.step == "webhook.sent");
+        let Some(delivery) = tx
+            .webhooks()
+            .delivery(WebhookDeliveryId(p.delivery_id))
+            .await?
+        else {
+            return self.close_job(tx, job, lease).await;
+        };
+        let sub = tx
+            .webhooks()
+            .get(delivery.subscription_id)
+            .await?
+            .filter(|s| s.active);
+        let (Some(sub), false) = (sub, done) else {
+            return self.close_job(tx, job, lease).await;
+        };
+        tx.commit().await?;
+        let body = serde_json::to_vec(&delivery.payload).map_err(|_| bad())?;
+        let mut keys = Vec::new();
+        for r in &sub.secret_refs {
+            if let Some(s) = self.secrets.secret(r) {
+                keys.push(webhook::secret_key(s.expose())?);
+            }
+        }
+        if keys.is_empty() {
+            return Err(WorkerError::SecretMissing);
+        }
+        let ts = self.now().unix_timestamp();
+        let headers = webhook::headers(&keys, &delivery.event_id.to_string(), ts, &body);
+        let sender = self.webhooks.clone();
+        let url = sub.url.clone();
+        let answer = tokio::task::spawn_blocking(move || sender.post(&url, &headers, &body))
+            .await
+            .map_err(|_| WorkerError::WebhookFailed { status: None })?;
+        self.boundary(Boundary::WebhookAnswered, &job.kind).await;
+        let (status, delivered) = match &answer {
+            Ok(a) => (Some(i32::from(a.status)), a.delivered()),
+            Err(_) => (None, false),
+        };
+        let refused = matches!(answer, Err(WorkerError::WebhookRefused));
+        let last = job.attempts >= jobs::max_attempts(&job.kind);
+        let now = self.now();
+        let next = if delivered || last || refused {
+            None
+        } else {
+            Some(jobs::after(now, jobs::backoff(job.attempts, 0.5)))
+        };
+        let mut tx = self.store.for_account(account).begin().await?;
+        tx.webhooks()
+            .record_attempt(delivery.id, status, delivered, next, now)
+            .await?;
+        if delivered || refused {
+            tx.job_steps()
+                .record(
+                    job.id,
+                    "webhook.sent",
+                    &serde_json::json!({ "status": status, "refused": refused }),
+                    now,
+                )
+                .await?;
+            return self.close_job(tx, job, lease).await;
+        }
+        tx.commit().await?;
+        Err(WorkerError::WebhookFailed { status: None })
     }
 
     /// `send_email_otp` (SEC-A02): draw the recipient's 6-digit code (uniform, from the

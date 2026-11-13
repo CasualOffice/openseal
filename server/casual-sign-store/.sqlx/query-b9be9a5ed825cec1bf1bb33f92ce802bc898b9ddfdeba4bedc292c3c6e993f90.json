@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO member_profiles (account_id, user_id, notifications, signature_image, initials_image, updated_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (account_id, user_id) DO UPDATE SET notifications = $3, signature_image = $4, initials_image = $5, updated_at = $6",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb",
+        "Bytea",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b9be9a5ed825cec1bf1bb33f92ce802bc898b9ddfdeba4bedc292c3c6e993f90"
+}

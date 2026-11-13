@@ -158,6 +158,87 @@ impl Webhooks<'_> {
         affected(done.rows_affected(), "webhook subscription")
     }
 
+    /// Edit a subscription (UXW-31): a new URL, new event types, or pause (`false`) and
+    /// resume (`true`); `None` leaves each unchanged. The caller has checked the URL
+    /// (SEC-W01) and the event types.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when this account has no such subscription; `CS-DB-0008` a URL or
+    /// event list the table refuses.
+    pub async fn update(
+        &mut self,
+        id: WebhookSubscriptionId,
+        url: Option<&str>,
+        event_types: Option<&[String]>,
+        active: Option<bool>,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let status = active.map(|a| if a { "active" } else { "disabled" });
+        let done = sqlx::query!(
+            "UPDATE webhook_subscriptions SET url = COALESCE($3, url), \
+               event_types = COALESCE($4, event_types), status = COALESCE($5, status) \
+             WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0,
+            url,
+            event_types,
+            status
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "webhook subscription")
+    }
+
+    /// One delivery of this account (UXW-32, UXW-33).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn delivery(&mut self, id: WebhookDeliveryId) -> Result<Option<Delivery>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "SELECT id, subscription_id, event_id, event_type, payload, status, attempts, \
+             last_status_code FROM webhook_deliveries WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| Delivery {
+            id: WebhookDeliveryId(r.id),
+            subscription_id: WebhookSubscriptionId(r.subscription_id),
+            event_id: r.event_id,
+            event_type: r.event_type,
+            payload: r.payload,
+            status: r.status,
+            attempts: r.attempts,
+            last_status_code: r.last_status_code,
+        }))
+    }
+
+    /// Put a delivery back to `pending` for a manual redelivery (UXW-33); its attempts
+    /// and last status stay as they were.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when this account has no such delivery.
+    pub async fn requeue(&mut self, id: WebhookDeliveryId) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE webhook_deliveries SET status = 'pending', next_attempt_at = NULL \
+             WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "webhook delivery")
+    }
+
     /// Record a pending delivery.
     ///
     /// # Errors

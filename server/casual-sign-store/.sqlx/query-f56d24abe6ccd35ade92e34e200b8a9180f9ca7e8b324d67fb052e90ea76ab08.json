@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webhook_subscriptions SET url = COALESCE($3, url), event_types = COALESCE($4, event_types), status = COALESCE($5, status) WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f56d24abe6ccd35ade92e34e200b8a9180f9ca7e8b324d67fb052e90ea76ab08"
+}

@@ -8,7 +8,8 @@ use super::{affected, text_enum};
 use crate::admin_log::{AdminChange, Change, settings_changes};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{
-    AccountId, OrganizationId, PermissionProfileId, StaffSessionId, UserId, UserInvitationId,
+    AccountId, OrganizationId, PasswordResetId, PermissionProfileId, StaffSessionId, UserId,
+    UserInvitationId,
 };
 use crate::org::WorkspaceStatus;
 use crate::store::TenantTx;
@@ -883,4 +884,218 @@ impl Users<'_> {
         .map_err(db)?;
         Ok(done.rows_affected())
     }
+
+    /// A password reset of this account (UXW-38): ids and times only.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn password_reset(&mut self, id: PasswordResetId) -> Result<Option<PasswordReset>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "SELECT id, user_id, sent_at, expires_at, used_at, revoked_at \
+             FROM password_resets WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| PasswordReset {
+            id: PasswordResetId(r.id),
+            user_id: UserId(r.user_id),
+            sent_at: r.sent_at,
+            expires_at: r.expires_at,
+            used_at: r.used_at,
+            revoked_at: r.revoked_at,
+        }))
+    }
+
+    /// Store the SHA-256 of a reset's link as the worker sends it, with its expiry, while
+    /// the reset is open and not yet sent (a link is sent once). Returns whether it was.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn set_password_reset_token(
+        &mut self,
+        id: PasswordResetId,
+        token_sha256: &[u8; 32],
+        expires_at: OffsetDateTime,
+        sent_at: OffsetDateTime,
+    ) -> Result<bool> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE password_resets SET token_sha256 = $3, expires_at = $4, sent_at = $5 \
+             WHERE account_id = $1 AND id = $2 AND sent_at IS NULL AND used_at IS NULL \
+             AND revoked_at IS NULL",
+            acct,
+            id.0,
+            token_sha256.as_slice(),
+            expires_at,
+            sent_at
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// Spend an open, sent, unexpired reset of this account and set its user's password
+    /// (an Argon2id PHC string): the link reached the user's own address. Their other open
+    /// resets are revoked and their sessions end in every account. Returns the user, or
+    /// `None` when the reset was not open (a second use of the link).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn use_password_reset(
+        &mut self,
+        id: PasswordResetId,
+        phc: &Personal<String>,
+        now: OffsetDateTime,
+    ) -> Result<Option<UserId>> {
+        let user = sqlx::query_scalar!(
+            "SELECT openseal_use_password_reset($1, $2, $3)",
+            id.0,
+            phc.get(),
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(user.map(UserId))
+    }
+
+    /// The stored password hash (an Argon2id PHC string) of a live session's own user,
+    /// for verifying their current password before a change (UXW-37); `None` when the
+    /// session is not live or the user has no password.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn own_password_hash(
+        &mut self,
+        session: StaffSessionId,
+        now: OffsetDateTime,
+    ) -> Result<Option<Personal<String>>> {
+        let phc = sqlx::query_scalar!(
+            "SELECT openseal_own_password_hash($1, $2)",
+            session.0,
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(phc.map(Personal))
+    }
+
+    /// Change a live session's own user's password, while the stored hash is still
+    /// `expected` (the one verified); every other session of theirs ends, in every
+    /// account, and the session making the change stays (UXW-37). Returns the user, or
+    /// `None` when the session is not live or the password changed meanwhile.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn change_own_password(
+        &mut self,
+        session: StaffSessionId,
+        expected: &Personal<String>,
+        phc: &Personal<String>,
+        now: OffsetDateTime,
+    ) -> Result<Option<UserId>> {
+        let user = sqlx::query_scalar!(
+            "SELECT openseal_change_own_password($1, $2, $3, $4)",
+            session.0,
+            expected.get(),
+            phc.get(),
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(user.map(UserId))
+    }
+
+    /// A member's own settings in this account (UXW-37); `None` before they saved any.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn member_profile(&mut self, user: UserId) -> Result<Option<MemberProfile>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "SELECT notifications, signature_image, initials_image FROM member_profiles \
+             WHERE account_id = $1 AND user_id = $2",
+            acct,
+            user.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| MemberProfile {
+            notifications: r.notifications,
+            signature: r.signature_image.map(Personal),
+            initials: r.initials_image.map(Personal),
+        }))
+    }
+
+    /// Write a member's own settings in this account (UXW-37), whole.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` not a member of this account, or an image the table refuses.
+    pub async fn set_member_profile(
+        &mut self,
+        user: UserId,
+        p: &MemberProfile,
+        now: OffsetDateTime,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "INSERT INTO member_profiles (account_id, user_id, notifications, signature_image, \
+             initials_image, updated_at) VALUES ($1, $2, $3, $4, $5, $6) \
+             ON CONFLICT (account_id, user_id) DO UPDATE SET notifications = $3, \
+             signature_image = $4, initials_image = $5, updated_at = $6",
+            acct,
+            user.0,
+            &p.notifications,
+            p.signature.as_ref().map(|s| s.get().as_slice()),
+            p.initials.as_ref().map(|s| s.get().as_slice()),
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+}
+
+/// A password reset (UXW-38): ids and times only; the token is stored as SHA-256.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PasswordReset {
+    /// Its id.
+    pub id: PasswordResetId,
+    /// The user.
+    pub user_id: UserId,
+    /// When the worker sent its link.
+    pub sent_at: Option<OffsetDateTime>,
+    /// When the link expires.
+    pub expires_at: Option<OffsetDateTime>,
+    /// When it was spent.
+    pub used_at: Option<OffsetDateTime>,
+    /// When it was revoked.
+    pub revoked_at: Option<OffsetDateTime>,
+}
+
+/// A member's own settings in one account (UXW-37).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemberProfile {
+    /// `{completed, declined, viewed}`: which notices they want.
+    pub notifications: serde_json::Value,
+    /// A saved signature image (PNG or JPEG): personal data.
+    pub signature: Option<Personal<Vec<u8>>>,
+    /// Saved initials (PNG or JPEG): personal data.
+    pub initials: Option<Personal<Vec<u8>>>,
 }

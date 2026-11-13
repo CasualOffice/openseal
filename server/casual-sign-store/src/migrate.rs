@@ -56,6 +56,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(18, "0018_console_organization_writes.sql"),
     migration!(19, "0019_console_approvals.sql"),
     migration!(20, "0020_admin_events.sql"),
+    migration!(23, "0023_password_reset.sql"),
     migration!(26, "0026_console_org_events.sql"),
 ];
 
