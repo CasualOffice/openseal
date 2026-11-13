@@ -106,7 +106,7 @@ instructions 8 and 9).
 | FG-092 | Preview as recipient | DS | Build | 2 | Partial: Review's Preview as shows the recipient's fields on the document (`UX-05`); a preview of their signing page is not built |
 | FG-093 | Custom subject and message | DS, SN | Build | 1 | Works |
 | FG-094 | Reminders | DS, SN | Build | 2 | Works |
-| FG-095 | Expiration and warning | DS, SN | Build | 2 | Partial: an envelope's expiry is set on send or correct; the worker emails the warning (account `workflow_policy.expiry_warning_days`) and expires the envelope on time, telling the sender and the recipients whose turn it was (`VS-02`, worker tests/expiry.rs); no admin control for the warning days (`RTE-03`) |
+| FG-095 | Expiration and warning | DS, SN | Build | 2 | Partial: an envelope's expiry is set on send or correct; the worker emails the warning (account `workflow_policy.expiry_warning_days`) and expires the envelope on time, telling the sender and the recipients whose turn it was (`VS-02`, worker tests/expiry.rs); an admin sets the warning days on the Organization page (`RTE-03`, `webapp/e2e/admin-screens.spec.mjs`) |
 | FG-096 | Templates with roles | DS, SN | Build | 3 | Works |
 | FG-097 | Composite templates (several into one envelope) | DS | Build | 3 | Designed |
 | FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Designed |
@@ -193,7 +193,7 @@ instructions 8 and 9).
 | FG-180 | Data residency (region tags) | DS | Build | 15 | — |
 | FG-181 | BYOK per-tenant keys | — | Build | 15 | — |
 | FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | — |
-| FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization's through `GET /organizations/me/audit` (`ORG-03`); screens wait for ORG-06 |
+| FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization's through `GET /organizations/me/audit` (`ORG-03`); the workspace's log has its Admin screen (list, filters over loaded events, details, CSV export, full chain check; `UXW-09`, mock-mode e2e); left: the check on the Compose stack (`UXW-09`), server-side filters (`UXW-44`), the organization's log screen (ORG-06) |
 | FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Partial: one identity in several workspaces lists them and switches between them (`GET /auth/workspaces`, `POST /auth/switch`, the sidebar's workspace menu; `ORG-04`), organization routes (`ORG-03`); admin screens wait for ORG-06 |
 
 ## Developer surface
@@ -205,7 +205,7 @@ instructions 8 and 9).
 | FG-192 | JWT bearer grant (service integrations) | DS | Build | 8 | Designed |
 | FG-193 | API keys | — | Build | Phase 2 | Works |
 | FG-194 | Webhooks: account and per-envelope, HMAC, rotation | DS, SN | Build | 8 | Works |
-| FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Partial: Admin lists subscriptions and their latest deliveries (`UX-08`); the server edits, pauses and resumes a subscription, sends a test event and redelivers through the worker (`UXW-31` to `UXW-33`). Not checked on the Compose stack yet |
+| FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Partial: Admin lists subscriptions and their latest deliveries (`UX-08`); the server edits, pauses and resumes a subscription, sends a test event and redelivers through the worker (`UXW-31` to `UXW-33`), and the Admin screen edits, pauses, resumes, tests and redelivers (`UXW-10`, mock-mode e2e `webapp/e2e/admin-screens.spec.mjs`). Not checked on the Compose stack yet |
 | FG-196 | Embedded signing view | DS, SN | Build | 9 | Designed |
 | FG-197 | Embedded sending / prepare view | DS, SN | Build | 9 | Designed |
 | FG-198 | Embedded correct and template edit views | DS, SN | Build | 9 | Designed |

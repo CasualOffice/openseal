@@ -17,7 +17,7 @@ export const NAV = Object.freeze([
   { id: "intelligence", ready: true, ml: true },
   { id: "retention", ready: false, waits: ["retention"] },
   { id: "integrations", ready: true, tabs: ["api", "webhooks"] },
-  { id: "audit", ready: false, waits: ["audit"] },
+  { id: "audit", ready: true },
 ]);
 
 /// Section names from before WEB-17 (`?section=` and `?tab=` links in other screens and
@@ -159,4 +159,62 @@ export function nextErsdVersion(items, language = "en") {
 export function shortHash(sha) {
   const hex = String(sha || "").replace(/^sha256:/, "");
   return hex ? `${hex.slice(0, 12)}…` : "";
+}
+
+// ---- Workflow policy (RTE-03) ---------------------------------------------------------------
+
+/// The server's workflow policy defaults (casual-sign-workflow `Policy::default`), sent
+/// whole when an account has none: the server takes `settings.workflow_policy` only as a
+/// complete policy (`422 CS-API-0001` at `/settings/workflow_policy` otherwise).
+export const POLICY_DEFAULTS = Object.freeze({
+  max_auth_attempts: 3, max_recipients: 100, max_fields: 3000, max_documents: 100,
+  ersd: null, expiry_warning_days: 0, seal_retry_ms: 60000, date_format: "yyyy_mm_dd",
+});
+/// The most expiry warning days the screen takes (an envelope expires within 365 days).
+export const MAX_WARNING_DAYS = 365;
+
+/// The days before expiry the account warns recipients (0: none). Pure.
+export function expiryWarningOf(settings) {
+  const n = settings?.workflow_policy?.expiry_warning_days;
+  return Number.isInteger(n) && n >= 0 ? n : 0;
+}
+
+/// The whole workflow policy with `days` as its expiry warning: the account's own
+/// policy (its disclosure and every other member kept), or the defaults. Pure.
+export function withExpiryWarning(settings, days) {
+  const own = settings?.workflow_policy;
+  const base = own && typeof own === "object" && !Array.isArray(own) ? own : POLICY_DEFAULTS;
+  return { ...POLICY_DEFAULTS, ...base, expiry_warning_days: days };
+}
+
+// ---- Admin audit log (UXW-09) -----------------------------------------------------------
+
+/// Who made an admin event: `user`, `api_client` or `system`. Pure.
+export const actorKind = (item) => {
+  const k = item?.event?.actor?.kind;
+  return k === "user" || k === "api_client" ? k : "system";
+};
+
+/// The keys an admin event changed, in order. Pure.
+export const changedKeys = (item) => (Array.isArray(item?.event?.changes) ? item.event.changes.map((c) => String(c?.key ?? "")) : []);
+
+/// The events a search and filters leave: `action` an action or "all", `actor` an
+/// `actorKind` or "all", `q` any text in the action, the target ids, the changed keys or
+/// the actor's name (`nameOf(item)`), any case. Pure.
+export function filterAdminEvents(items, { q = "", action = "all", actor = "all" } = {}, nameOf = () => "") {
+  const s = String(q).trim().toLowerCase();
+  return (items || []).filter((e) => (action === "all" || e.action === action)
+    && (actor === "all" || actorKind(e) === actor)
+    && (!s || [e.action, nameOf(e), ...changedKeys(e), ...Object.values(e?.event?.target || {})].some((v) => String(v || "").toLowerCase().includes(s))));
+}
+
+/// The CSV pages of an export joined into one file: the header once. Pure.
+export function joinCsvPages(pages) {
+  const out = [];
+  for (const [i, text] of (pages || []).entries()) {
+    const lines = String(text).split(/\r\n/);
+    if (lines.at(-1) === "") lines.pop();
+    out.push(...(i === 0 ? lines : lines.slice(1)));
+  }
+  return out.length ? `${out.join("\r\n")}\r\n` : "";
 }

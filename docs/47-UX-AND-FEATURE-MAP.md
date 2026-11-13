@@ -228,7 +228,7 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
 | Agreements | `app.html#/agreements[?folder=&q=]` (`dashboard.js`) | as WEB-01, plus `GET …/{id}` per row for recipients and last change |
 | Templates | `#/templates`, `#/templates/new`, `#/templates/{id}`, `#/templates/{id}/edit` (`templates.js`, `prepare.js` in template mode) | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{id}`, the template's documents, roles and fields (`templatesync.js`, WEB-09 and WEB-10 below); using one is a single `POST /api/v1/envelopes` (`templatemodel.js`) |
 | Reports | `#/reports` (`reports.js`, `reportmodel.js`) | `GET /api/v1/envelopes` (up to 1,000; the summaries' `sent_at` and `completed_at` give the median, UX-08), `GET /api/v1/users` for sender names when allowed |
-| Admin | `#/admin[?section=…]` (account, users, webhooks, api, …) (`admin.js`, `adminmodel.js`; the older `?tab=` still lands) | `GET/PATCH /api/v1/accounts/me`, `GET/POST /api/v1/users`, `GET/PATCH/DELETE /api/v1/users/{id}`, `POST …/invite`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}`, `GET/POST /api/v1/webhooks`, `DELETE /api/v1/webhooks/{id}`, `GET …/deliveries` (UX-08); ahead of the server: `PATCH /webhooks/{id}`, `POST …/test`, `POST …/deliveries/{d}/redeliver` (api.js `NOT_ON_SERVER`) |
+| Admin | `#/admin[?section=…]` (account, users, webhooks, api, …) (`admin.js`, `adminmodel.js`; the older `?tab=` still lands) | `GET/PATCH /api/v1/accounts/me`, `GET/POST /api/v1/users`, `GET/PATCH/DELETE /api/v1/users/{id}`, `POST …/invite`, `GET/POST /api/v1/api-clients`, `DELETE /api/v1/api-clients/{id}`, `GET/POST /api/v1/webhooks`, `DELETE /api/v1/webhooks/{id}`, `GET …/deliveries` (UX-08); `PATCH /webhooks/{id}` (edit, pause, resume), `POST …/test`, `POST …/deliveries/{d}/redeliver` (UXW-31..33, UXW-10); `GET /api/v1/admin-events` (the Audit log page, UXW-09); `settings.workflow_policy.expiry_warning_days` through `PATCH /accounts/me` (RTE-03) |
 | Verify | `verify.html` (`verify.js`, `verifyreport.js`, `trail.js`) | none: casual-sign-wasm's `verify()` in the page; `audit-trail.json` read by pdf.js |
 
 - **Every call is in `api.js`** (WEB-10 moved `api-extra.js` there; see below). **Mock mode** serves templates, users
@@ -954,7 +954,19 @@ Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list la
   48em the nav is a "Section" select. Each nav page is a command (`admin.go.*`), so ⌘K reaches it.
 - **API and webhooks**: one page, pill tabs (`tabs({variant: "pill"})`, arrow keys); the URL follows the tab
   (`history.replaceState`) so a reload or link opens the same one. Organization and Branding are separate pages over
-  `/accounts/me`. Members says groups and custom profiles are not on this server yet.
+  `/accounts/me`. Members says groups and custom profiles are not on this server yet. A webhook's row menu has Edit
+  (UXW-10): the address and events prefilled, only what changed sent to `PATCH /webhooks/{id}` (a new address is
+  checked again, `CS-API-0013` said in place); its signing secrets are named, not editable.
+- **Organization** also holds "Warn signers before expiry (days)" (RTE-03): 0 to 365, 0 for none, shown as "No
+  warning" or "n days before". The server takes `settings.workflow_policy` only whole, so the page sends the
+  account's own policy (its disclosure kept) or the engine's defaults with the new days (`adminmodel.js`
+  `withExpiryWarning`).
+- **Audit log** (UXW-09, `GET /admin-events`): the workspace's admin log, newest first of the events loaded (pages of
+  1,000, five at a time, then "Load more"), with When, Action, Made by (a member's or API client's name, or "The
+  server") and the changed keys; a search box and Action and Made by filters over the loaded events (the route takes
+  no filters, UXW-44); Details opens a side panel with the targets, each change before and after, and the event's
+  hash and previous hash. Head actions: Export CSV (the server's own CSV, every page, one header) and Verify the log
+  (`verify=full`; a broken chain, `CS-DB-0014`, is said as such). Commands `adminlog.export`, `adminlog.verify`.
 - **Document intelligence** (`intelmodel.js` pure and tested, `adminintel.js` view): "n of 5 on" chip; the three
   promises; one card per feature with model name, description and a violet spring switch bound to
   `PATCH /account/settings/ml`: it changes at once, the count follows, a polite live region says "… is on/off", and a
