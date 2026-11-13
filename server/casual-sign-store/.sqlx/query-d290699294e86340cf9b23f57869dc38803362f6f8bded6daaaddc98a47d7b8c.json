@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT template_id, document_id, page, dhash, phash, model_id, weights_sha256 FROM template_fingerprints WHERE account_id = $1 ORDER BY template_id, document_id, page LIMIT $2",
+  "query": "SELECT template_id, document_id, page, dhash, phash, embedding, model_id, weights_sha256 FROM template_fingerprints WHERE account_id = $1 ORDER BY template_id, document_id, page LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "embedding",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "template_fingerprints",
+            "name": "embedding"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "model_id",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "weights_sha256",
         "type_info": "Bytea",
         "origin": {
@@ -93,9 +104,10 @@
       false,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "5b591d7e2384fa82cebcdd9c4873b892f2a1964a88435fd578a02076b45e701c"
+  "hash": "d290699294e86340cf9b23f57869dc38803362f6f8bded6daaaddc98a47d7b8c"
 }

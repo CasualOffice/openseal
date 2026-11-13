@@ -84,6 +84,12 @@ pub enum WorkerError {
         /// Its code.
         code: &'static str,
     },
+    /// The model service failed or refused (`CS-ML-*`, docs/33 §12); retried only when it
+    /// was unreachable, busy or out of time.
+    Model {
+        /// Its code.
+        code: &'static str,
+    },
 }
 
 impl WorkerError {
@@ -108,7 +114,7 @@ impl WorkerError {
             Self::LeaseLost => "CS-WRK-0015",
             Self::BadCapture => "CS-WRK-0016",
             Self::Store(e) => e.code(),
-            Self::Workflow { code } | Self::Pipeline { code } => code,
+            Self::Workflow { code } | Self::Pipeline { code } | Self::Model { code } => code,
         }
     }
 
@@ -128,6 +134,7 @@ impl WorkerError {
             | Self::NoPaymentGateway
             | Self::BadCapture
             | Self::Workflow { .. } => false,
+            Self::Model { code } => matches!(*code, "CS-ML-0007" | "CS-ML-0008" | "CS-ML-0009"),
             Self::Store(e) => !matches!(
                 e.code(),
                 "CS-DB-0008" | "CS-DB-0009" | "CS-DB-0010" | "CS-BLOB-0003" | "CS-BLOB-0005"
@@ -165,11 +172,18 @@ impl fmt::Display for WorkerError {
             Self::Store(e) => write!(f, "{e}"),
             Self::Workflow { .. } => write!(f, "{code}: the engine refused the worker's command"),
             Self::Pipeline { .. } => write!(f, "{code}: a pipeline step failed"),
+            Self::Model { .. } => write!(f, "{code}: the model service failed"),
         }
     }
 }
 
 impl std::error::Error for WorkerError {}
+
+impl From<casual_sign_modeld::ModeldError> for WorkerError {
+    fn from(e: casual_sign_modeld::ModeldError) -> Self {
+        Self::Model { code: e.code() }
+    }
+}
 
 impl From<casual_sign_host::capture::BadCapture> for WorkerError {
     fn from(_: casual_sign_host::capture::BadCapture) -> Self {

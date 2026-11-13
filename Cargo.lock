@@ -920,6 +920,8 @@ dependencies = [
  "casual-sign-host",
  "casual-sign-keyd",
  "casual-sign-model",
+ "casual-sign-modeld",
+ "casual-sign-pii",
  "casual-sign-sdk",
  "casual-sign-seal",
  "casual-sign-secrets",

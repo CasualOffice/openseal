@@ -30,6 +30,12 @@ casual-sign-host = { path = "../casual-sign-host" }
 casual-sign-store = { path = "../casual-sign-store" }
 # `RemoteKey` (the platform key over mTLS) and, in development only, `FileKey` (docs/31 §5).
 casual-sign-keyd = { path = "../casual-sign-keyd" }
+# The model service's client and wire format only (docs/33 §1, ADR-029 review defect 4):
+# `default-features = false` leaves out the `server` feature and with it ONNX Runtime,
+# the rasteriser and the tokenizers (`SEC-I14`, tests/ml.rs checks `cargo tree`).
+casual-sign-modeld = { path = "../casual-sign-modeld", default-features = false }
+# Deterministic personal-data recognisers (docs/33 §5.4 layer 1); a pure engine crate.
+casual-sign-pii = { path = "../../crates/casual-sign-pii" }
 # The SMTP password and webhook signing secrets: `NAME` or `NAME_FILE`, redacted `Debug`.
 casual-sign-secrets = { path = "../casual-sign-secrets" }
 # The runtime the store already uses; the seal (blocking keyd and TSA calls) runs on its

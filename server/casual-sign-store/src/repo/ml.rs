@@ -243,6 +243,8 @@ pub struct Fingerprint {
     pub dhash: i64,
     /// DCT perceptual hash.
     pub phash: i64,
+    /// The page text's passage embedding (little-endian `f32`s), when it has text.
+    pub embedding: Option<Vec<u8>>,
     /// The hashing method's id.
     pub model_id: String,
     /// Its SHA-256.
@@ -739,13 +741,15 @@ impl Ml<'_> {
         for f in pages {
             sqlx::query!(
                 "INSERT INTO template_fingerprints (account_id, template_id, document_id, page, \
-                   dhash, phash, model_id, weights_sha256) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                   dhash, phash, embedding, model_id, weights_sha256) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
                 acct,
                 template.0,
                 document.0,
                 f.page,
                 f.dhash,
                 f.phash,
+                f.embedding.as_deref(),
                 f.model_id,
                 f.weights_sha256.as_slice()
             )
@@ -788,7 +792,7 @@ impl Ml<'_> {
     pub async fn fingerprints(&mut self) -> Result<Vec<Fingerprint>> {
         let acct = self.tx.acct();
         let rows = sqlx::query!(
-            "SELECT template_id, document_id, page, dhash, phash, model_id, weights_sha256 \
+            "SELECT template_id, document_id, page, dhash, phash, embedding, model_id, weights_sha256 \
              FROM template_fingerprints WHERE account_id = $1 \
              ORDER BY template_id, document_id, page LIMIT $2",
             acct,
@@ -805,6 +809,7 @@ impl Ml<'_> {
                     page: r.page,
                     dhash: r.dhash,
                     phash: r.phash,
+                    embedding: r.embedding,
                     model_id: r.model_id,
                     weights_sha256: hash32(
                         r.weights_sha256,
