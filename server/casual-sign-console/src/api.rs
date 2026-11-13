@@ -27,6 +27,7 @@ use crate::crypto::{
     verify_password,
 };
 use crate::error::ConsoleError;
+use crate::security::SecSlot;
 use crate::state::AppState;
 use crate::totp;
 
@@ -154,7 +155,13 @@ pub async fn login(State(state): State<AppState>, req: Request) -> Result<Respon
         request: Uuid::nil(),
         ip: None,
     });
+    let slot = req
+        .extensions()
+        .get::<SecSlot>()
+        .cloned()
+        .unwrap_or_default();
     let Body(body) = Body::<Login>::from_request(req, &state).await?;
+    slot.identify(crate::security::subject_email(&state, &body.email));
     let now = state.now();
     let rate = state.config().rate;
     let ip_key = ctx.ip.map_or_else(|| "none".to_owned(), |i| i.to_string());
@@ -195,6 +202,7 @@ pub async fn login(State(state): State<AppState>, req: Request) -> Result<Respon
             return Err(ConsoleError::NotAuthenticated);
         }
     };
+    slot.identify(casual_sign_seclog::Principal::Operator(operator));
     let token = random_secret()?;
     let csrf = random_secret()?;
     let ttl = time::Duration::try_from(state.config().session_ttl)
@@ -243,6 +251,7 @@ pub struct Code {
 /// sensitive actions need. Each code is single-use.
 pub async fn totp_step(
     State(state): State<AppState>,
+    slot: SecSlot,
     pending: Pending,
     Body(body): Body<Code>,
 ) -> Result<Json<Value>, ConsoleError> {
@@ -266,6 +275,8 @@ pub async fn totp_step(
     };
     if !accepted {
         drop(tx);
+        // ASVS 2.8.5: the code matched a step already used.
+        slot.reason(if step.is_some() { "reused" } else { "wrong" });
         record(
             &state,
             event(
@@ -392,6 +403,11 @@ pub async fn enrol_finish(
         request: Uuid::nil(),
         ip: None,
     });
+    let slot = req
+        .extensions()
+        .get::<SecSlot>()
+        .cloned()
+        .unwrap_or_default();
     let Body(body) = Body::<EnrolFinish>::from_request(req, &state).await?;
     let now = state.now();
     let ip_key = ctx.ip.map_or_else(|| "none".to_owned(), |i| i.to_string());
@@ -420,6 +436,7 @@ pub async fn enrol_finish(
         .finish_enrolment(&token, &phc, step, now)
         .await?
         .ok_or(ConsoleError::NotAuthenticated)?;
+    slot.identify(casual_sign_seclog::Principal::Operator(id));
     tx.append(&event("operator.enrolled", Some(id), &ctx, now))
         .await?;
     tx.commit().await?;

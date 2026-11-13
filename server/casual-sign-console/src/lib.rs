@@ -28,6 +28,7 @@ pub mod keys;
 pub mod net;
 pub mod plans;
 pub mod seal;
+pub mod security;
 pub mod state;
 pub mod totp;
 pub mod tsa;

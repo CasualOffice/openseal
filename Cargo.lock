@@ -614,6 +614,7 @@ dependencies = [
  "casual-sign-keyd-client",
  "casual-sign-platform-store",
  "casual-sign-policy",
+ "casual-sign-seclog",
  "casual-sign-secrets",
  "http-body-util",
  "rcgen",
@@ -698,6 +699,7 @@ dependencies = [
  "casual-sign-crypto",
  "casual-sign-keyd-client",
  "casual-sign-seal",
+ "casual-sign-seclog",
  "casual-sign-secrets",
  "casual-sign-verify",
  "cryptoki",
@@ -705,6 +707,7 @@ dependencies = [
  "rcgen",
  "rustls",
  "rustls-pki-types",
+ "serde_json",
  "spki",
  "x509-cert",
 ]
@@ -732,6 +735,7 @@ name = "casual-sign-modeld"
 version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
+ "casual-sign-seclog",
  "hayro",
  "image",
  "image_hasher",
@@ -844,6 +848,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-seclog"
+version = "0.0.1"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "casual-sign-secrets",
+ "serde_json",
+ "time",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "casual-sign-secrets"
 version = "0.0.1"
 dependencies = [
@@ -866,6 +884,7 @@ dependencies = [
  "casual-sign-pdf",
  "casual-sign-platform-store",
  "casual-sign-sdk",
+ "casual-sign-seclog",
  "casual-sign-secrets",
  "casual-sign-store",
  "casual-sign-workflow",
@@ -960,6 +979,7 @@ dependencies = [
  "casual-sign-pii",
  "casual-sign-sdk",
  "casual-sign-seal",
+ "casual-sign-seclog",
  "casual-sign-secrets",
  "casual-sign-server",
  "casual-sign-store",
@@ -3142,15 +3162,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 
 [[package]]
-name = "nu-ansi-term"
-version = "0.50.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
-dependencies = [
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5250,7 +5261,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
 dependencies = [
  "matchers",
- "nu-ansi-term",
  "once_cell",
  "regex-automata",
  "sharded-slab",

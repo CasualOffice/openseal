@@ -109,7 +109,8 @@ impl KeydKey {
     ///
     /// # Errors
     ///
-    /// As [`RemoteKey::connect`]: `CS-KEY-0011` while keyd cannot be reached.
+    /// As [`connect_keyd`]: `CS-KEY-0011` while keyd cannot be reached (logged as
+    /// `transport.backend_failed`, `ASVS-08`, as is every signature keyd does not give).
     pub fn remote(&self) -> core::result::Result<RemoteKey, KeydError> {
         // A panic while holding the lock left at most `None` or a whole key behind.
         let mut slot = self
@@ -119,7 +120,7 @@ impl KeydKey {
         if let Some(r) = slot.as_ref() {
             return Ok(r.clone());
         }
-        let r = RemoteKey::connect(self.endpoint.clone(), &self.alias)?;
+        let r = connect_keyd(self.endpoint.clone(), &self.alias)?;
         *slot = Some(r.clone());
         Ok(r)
     }
@@ -676,6 +677,27 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
         documents: out,
         certificate,
     })
+}
+
+/// The platform key `alias` in keyd at `endpoint`, every signature keyd does not give
+/// logged as `transport.backend_failed` with keyd's code (`ASVS-08`, ASVS 9.2.5), as is
+/// a failure to reach it now.
+///
+/// # Errors
+/// keyd's: `CS-KEY-0011` when it cannot be reached or the handshake fails, the code it
+/// answered otherwise.
+pub fn connect_keyd(
+    endpoint: casual_sign_keyd::Endpoint,
+    alias: &str,
+) -> core::result::Result<RemoteKey, casual_sign_keyd::KeydError> {
+    let failed = |e: &casual_sign_keyd::KeydError| crate::backend_failed("keyd", e.code(), &[]);
+    match RemoteKey::connect(endpoint, alias) {
+        Ok(k) => Ok(k.on_failure(Arc::new(failed))),
+        Err(e) => {
+            failed(&e);
+            Err(e)
+        }
+    }
 }
 
 /// The platform key for `s`, and whether it is a development key.

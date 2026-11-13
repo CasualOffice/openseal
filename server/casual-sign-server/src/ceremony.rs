@@ -42,6 +42,26 @@ use crate::state::AppState;
 /// The cookie binding a ceremony link to a browser.
 pub(crate) const CEREMONY_COOKIE: &str = "os_ceremony";
 
+/// The `auth.lockout` security event (ASVS-08), when the authentication result just
+/// recorded locked `r` out. Held until the ceremony's transaction commits
+/// ([`Open::finish`]): a lockout that is not recorded is not logged.
+fn locked_out(o: &mut Open, r: &Id) {
+    if o.l.state.recipient(r).is_some_and(|x| x.auth_locked) {
+        let mut ev = casual_sign_seclog::SecurityEvent::new(
+            casual_sign_seclog::Kind::Lockout,
+            casual_sign_seclog::Outcome::Failure,
+        )
+        .code("CS-AUTH-0004");
+        if let Ok(id) = uid(r) {
+            ev = ev.principal(casual_sign_seclog::Principal::Recipient(id));
+        }
+        if let Ok(env) = uid(&o.l.state.id) {
+            ev = ev.with("objects", casual_sign_seclog::Value::Ids(vec![env]));
+        }
+        o.on_commit.push(ev);
+    }
+}
+
 /// An opened ceremony: the recipient, their envelope (locked), and the transaction.
 pub(crate) struct Open {
     tx: TenantTx,
@@ -72,6 +92,8 @@ pub(crate) struct Open {
     /// The account's published disclosure text for the policy's ERSD, when there is
     /// one, with whether its text still hashes to the hash consent records (UXW-34).
     disclosure: Option<(casual_sign_store::repo::accounts::Disclosure, bool)>,
+    /// Security events this request records, written once its transaction commits.
+    on_commit: Vec<casual_sign_seclog::SecurityEvent>,
 }
 
 /// Who sent the envelope, for the recipient to judge whether the request is genuine
@@ -276,6 +298,7 @@ async fn reopen(
             sender,
             link: format!("/s/{token}"),
             disclosure,
+            on_commit: Vec::new(),
         })
     };
     inner.await.map_err(IntoResponse::into_response)
@@ -516,10 +539,13 @@ impl Open {
         v
     }
 
-    async fn finish(self, status: StatusCode) -> Result<Response, ApiError> {
+    async fn finish(self, st: &AppState, status: StatusCode) -> Result<Response, ApiError> {
         let body = self.view();
         let cookie = self.cookie.clone();
         self.tx.commit().await?;
+        for ev in self.on_commit {
+            crate::security::emit(st, ev);
+        }
         let mut r = json_resp(status, &body);
         if let Some(secret) = cookie
             && let Ok(v) = HeaderValue::from_str(&format!(
@@ -543,7 +569,7 @@ macro_rules! ceremony {
         let result: Result<StatusCode, ApiError> = async { $body }.await;
         match result {
             Ok(status) => $o
-                .finish(status)
+                .finish(&$st, status)
                 .await
                 .unwrap_or_else(IntoResponse::into_response),
             Err(e) => e.into_response(),
@@ -588,7 +614,7 @@ macro_rules! ceremony_upload {
         let result: Result<StatusCode, ApiError> = async { $act }.await;
         match result {
             Ok(status) => $o
-                .finish(status)
+                .finish(&$st, status)
                 .await
                 .unwrap_or_else(IntoResponse::into_response),
             Err(e) => e.into_response(),
@@ -758,12 +784,13 @@ pub(crate) async fn authenticate(
             None => false,
         };
         o.run(Command::AuthResult {
-            recipient: r,
+            recipient: r.clone(),
             method: req.method,
             passed,
             identity: None,
         })
         .await?;
+        locked_out(&mut o, &r);
         Ok(if passed {
             StatusCode::OK
         } else {
@@ -908,12 +935,13 @@ pub(crate) async fn sso_verify(
         };
         let passed = identity.is_some();
         o.run(Command::AuthResult {
-            recipient: r,
+            recipient: r.clone(),
             method: AuthMethod::Sso,
             passed,
             identity,
         })
         .await?;
+        locked_out(&mut o, &r);
         Ok(if passed {
             StatusCode::OK
         } else {
@@ -1156,6 +1184,7 @@ pub(crate) async fn otp_verify(
             identity: None,
         })
         .await?;
+        locked_out(&mut o, &r);
         if o.l.state.recipient(&r).is_some_and(|x| x.auth_locked) {
             o.tx.recipients()
                 .close_otp(

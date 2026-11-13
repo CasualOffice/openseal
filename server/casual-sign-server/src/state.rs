@@ -239,6 +239,7 @@ pub(crate) struct Inner {
     pub idps: std::sync::OnceLock<Arc<crate::idp::RecipientIdps>>,
     pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
     pub scanner: std::sync::OnceLock<Arc<crate::scan::Scanner>>,
+    pub security: std::sync::OnceLock<casual_sign_seclog::SecurityLog>,
 }
 
 impl AppState {
@@ -268,6 +269,7 @@ impl AppState {
             idps: std::sync::OnceLock::new(),
             mfa: std::sync::OnceLock::new(),
             scanner: std::sync::OnceLock::new(),
+            security: std::sync::OnceLock::new(),
         })))
     }
 
@@ -304,6 +306,19 @@ impl AppState {
 
     pub(crate) fn scanner(&self) -> Option<&Arc<crate::scan::Scanner>> {
         self.0.scanner.get()
+    }
+
+    /// Write security events to `log` (`ASVS-08`). Unset, they go to standard error
+    /// with the environment's pseudonym key (`casual_sign_seclog::SecurityLog::from_env`).
+    /// Set once, before the first request; a second call is ignored.
+    pub fn set_security_log(&self, log: casual_sign_seclog::SecurityLog) {
+        let _ = self.0.security.set(log);
+    }
+
+    pub(crate) fn security(&self) -> &casual_sign_seclog::SecurityLog {
+        self.0.security.get_or_init(|| {
+            casual_sign_seclog::SecurityLog::from_env(casual_sign_seclog::Service::Server)
+        })
     }
 
     pub(crate) fn mfa_key(&self) -> Option<&Arc<crate::mfa::MfaKey>> {

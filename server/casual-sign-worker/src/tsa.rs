@@ -20,7 +20,13 @@ use x509_cert::ext::pkix::crl::dp::DistributionPoint;
 use x509_cert::ext::pkix::name::{DistributionPointName, GeneralName};
 use x509_cert::ext::pkix::{AuthorityInfoAccessSyntax, CrlDistributionPoints};
 
+use casual_sign_seclog::Value;
+
 use crate::seal::{RevocationFactory, TsaFactory};
+
+/// The code a time-stamping authority's failure is logged with (docs/20): not reached,
+/// refused by the address policy, or answering no time-stamp; the next one is tried.
+pub const TSA_FAILED: &str = "CS-WRK-0018";
 use crate::webhook::SsrfPolicy;
 
 /// Largest answer read from a TSA or responder (docs/21: 1 MiB), and from a CRL (32 MiB).
@@ -126,22 +132,38 @@ impl TimestampSource for HttpTsa {
 
     fn timestamp(&self, request_der: &[u8]) -> Result<Vec<u8>, SourceError> {
         for (i, url) in self.urls.iter().enumerate() {
+            // The TSA by its place in the list, never its URL (ASVS-08, 9.2.5).
+            let failed = |reason: &'static str| {
+                crate::backend_failed(
+                    "tsa",
+                    TSA_FAILED,
+                    &[
+                        ("index", Value::Count(u64::try_from(i).unwrap_or(u64::MAX))),
+                        ("reason", Value::Word(reason)),
+                    ],
+                );
+            };
             if let Some(policy) = &self.policy
                 && !address_permitted(url, policy)
             {
-                crate::log("WARN", "tsa_refused", &[("tsa", i.to_string())]);
+                failed("address_refused");
                 continue;
             }
             let answer = self
                 .agent
                 .post(url)
                 .header("Content-Type", "application/timestamp-query")
-                .send(request_der)
-                .ok()
-                .and_then(|r| read(r, MAX_ANSWER));
+                .send(request_der);
+            let answer = match answer {
+                Ok(r) => read(r, MAX_ANSWER).ok_or("answer"),
+                Err(ureq::Error::StatusCode(_)) => Err("status"),
+                Err(ureq::Error::Timeout(_)) => Err("timeout"),
+                Err(ureq::Error::Tls(_) | ureq::Error::Rustls(_)) => Err("tls"),
+                Err(_) => Err("connect"),
+            };
             match answer {
-                Some(a) => return Ok(a),
-                None => crate::log("WARN", "tsa_failed", &[("tsa", i.to_string())]),
+                Ok(a) => return Ok(a),
+                Err(reason) => failed(reason),
             }
         }
         Err(SourceError::Unavailable)

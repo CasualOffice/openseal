@@ -53,13 +53,23 @@ pub(crate) async fn request_context(
         .map_or_else(|| "unmatched".to_owned(), |m| m.as_str().to_owned());
     let started = Instant::now();
     let crash_subject = route_of_crash(&method, &route);
+    // The path is kept only to take the ids a security event names (UUIDs, never a
+    // ceremony token: `security::after`).
+    let path = req.uri().path().to_owned();
+    let sec = crate::security::scope(&state, &id, ip, &route);
+    let (st, m) = (state.clone(), method.clone());
     let mut resp = REQUEST_ID
-        .scope(id.clone(), async move {
-            let resp = next.run(req).await;
-            // P2-CRASH: the handler committed and answered; nothing is sent yet.
-            casual_sign_host::crash::point("after_commit", &crash_subject);
-            normalize(resp)
-        })
+        .scope(
+            id.clone(),
+            crate::security::within(sec, async move {
+                let resp = next.run(req).await;
+                // P2-CRASH: the handler committed and answered; nothing is sent yet.
+                casual_sign_host::crash::point("after_commit", &crash_subject);
+                let resp = normalize(resp);
+                crate::security::after(&st, &m, &path, &resp);
+                resp
+            }),
+        )
         .await;
     let h = resp.headers_mut();
     // A web app page sets its own policy and permissions (row WEB-04, `web.rs`).
@@ -236,6 +246,8 @@ pub(crate) async fn guard(
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
+    // Later security events of this request name the principal (ASVS-08).
+    crate::security::authenticated(&p);
     if let Some(owed) = p.second_factor.owed()
         && !g.signing_in
     {

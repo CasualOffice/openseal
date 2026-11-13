@@ -40,6 +40,9 @@ pub struct ApiError {
     errors: Vec<FieldProblem>,
     retry_after: Option<u64>,
     plan: Option<Box<casual_sign_store::PlanRefusal>>,
+    /// Refused by upload admission (`casual-sign-sdk`): an `input.upload_refused`
+    /// security event (ASVS-08).
+    admission: bool,
 }
 
 impl ApiError {
@@ -51,6 +54,7 @@ impl ApiError {
             errors: Vec::new(),
             retry_after: None,
             plan: None,
+            admission: false,
         }
     }
 
@@ -419,6 +423,13 @@ impl IntoResponse for ApiError {
         {
             resp.headers_mut().insert(header::RETRY_AFTER, v);
         }
+        // For the request's security event (ASVS-08).
+        resp.extensions_mut()
+            .insert(crate::security::ProblemCode(self.code));
+        if self.admission {
+            resp.extensions_mut()
+                .insert(crate::security::AdmissionRefused);
+        }
         if self.status == StatusCode::UNAUTHORIZED {
             resp.headers_mut().insert(
                 header::WWW_AUTHENTICATE,
@@ -497,7 +508,10 @@ impl From<casual_sign_host::HostError> for ApiError {
 
 impl From<casual_sign_sdk::SdkError> for ApiError {
     fn from(e: casual_sign_sdk::SdkError) -> Self {
-        Self::new(StatusCode::UNPROCESSABLE_ENTITY, e.code())
+        Self {
+            admission: true,
+            ..Self::new(StatusCode::UNPROCESSABLE_ENTITY, e.code())
+        }
     }
 }
 

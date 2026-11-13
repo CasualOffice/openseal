@@ -10,7 +10,8 @@
 # volume on first start (and modeld's TLS identity alone into `modeld-secrets`), `tsa` is
 # a development time-stamping authority, keyd keeps the
 # seal key in SoftHSM, and the server sends cookies over plain HTTP on localhost. For
-# production follow docs/65 §Production checklist. Every image is pinned by digest
+# production follow docs/65 §Production checklist, and ship the logs off the box with
+# deploy/compose.log-forwarding.yml (docs/65 §Logs). Every image is pinned by digest
 # (docs/04 rule 31); ports bind to the loopback address only. Every long-running
 # service restarts after it exits (`restart: unless-stopped`, HRD-01): the worker and
 # the server recover their work from the database (docs/65 §Failure recovery).

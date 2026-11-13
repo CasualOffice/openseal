@@ -46,7 +46,7 @@ mod wire {
 
 pub use casual_sign_keyd_client::{AdminClient, Endpoint, client_tls};
 pub use cert_key::{MIN_RSA_SIGN_BITS, algorithm_for, probe};
-pub use client::RemoteKey;
+pub use client::{FailureHook, RemoteKey};
 pub use error::{KeyConfigProblem, KeydError};
 pub use file_key::{DEV_KEY_VARIABLE, DEV_REASON, DevKeyConsent, FileKey};
 pub use oplog::{OpLog, OpRecord};

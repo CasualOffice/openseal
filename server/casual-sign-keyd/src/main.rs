@@ -21,6 +21,7 @@
 //! | `OPENSEAL_KEYD_SIGNATURES_PER_MINUTE` | Per-caller rate (default 600) |
 //! | `OPENSEAL_KEYD_NEXT_ALIAS` | Optional, during a seal key rotation (`CON-10`): a second key served beside the first, on the same token: `OPENSEAL_KEYD_NEXT_PKCS11_KEY_LABEL` and/or `_KEY_ID` (one is required), `OPENSEAL_KEYD_NEXT_CHAIN` or `_INTERMEDIATES`; development: `OPENSEAL_KEYD_NEXT_FILE_KEY` with `OPENSEAL_KEYD_NEXT_CHAIN` |
 //! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings below; keyd refuses to start when they differ (`CS-KEY-0014`, ASVS-24) |
+//! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: keyd does not start (`CS-LOG-0001`) |
 //!
 //! **Security configuration** (ASVS 14.1.5): every setting above except the PIN is read
 //! once, at start, so a change takes effect only on a restart. At start keyd logs the
@@ -46,7 +47,20 @@ use casual_sign_keyd::{
 use casual_sign_secrets::integrity::ConfigDigest;
 use casual_sign_secrets::{env_secret, unknown_secret_files};
 
-const KNOWN_SECRET_FILES: &[&str] = &["OPENSEAL_KEYD_PKCS11_PIN_FILE"];
+const KNOWN_SECRET_FILES: &[&str] = &[
+    "OPENSEAL_KEYD_PKCS11_PIN_FILE",
+    // Read by the security log's pseudonym key (`casual-sign-seclog`, ASVS-08).
+    "OPENSEAL_LOG_PSEUDONYM_KEY_FILE",
+];
+
+/// One JSON log line (`casual-sign-seclog`, ASVS-08) with string fields.
+fn log_line(level: casual_sign_seclog::Level, event: &str, fields: &[(&str, String)]) {
+    let mut m = serde_json::Map::new();
+    for (k, v) in fields {
+        m.insert((*k).to_owned(), serde_json::Value::String(v.clone()));
+    }
+    casual_sign_seclog::write(casual_sign_seclog::Service::Keyd, level, event, m);
+}
 
 /// Security settings that name a file: the file's bytes are hashed (ASVS-24). The
 /// PKCS#11 module is the HSM vendor's library, so it is hashed too.
@@ -196,9 +210,13 @@ fn keys() -> Result<Vec<AliasedKey>, KeydError> {
                 let chain = chain(slot.chain)?.ok_or(KeydError::Setting(slot.chain))?;
                 let key = FileKey::load(consent, &key_pem, chain, rsa)?;
                 casual_sign_keyd::probe(&key)?;
-                eprintln!(
-                    "keyd: DEVELOPMENT FILE KEY in use for {}; not for production",
-                    slot.alias
+                log_line(
+                    casual_sign_seclog::Level::Warn,
+                    "development_file_key",
+                    &[
+                        ("alias", slot.alias.clone()),
+                        ("note", "not for production".into()),
+                    ],
                 );
                 out.push((slot.alias, Arc::new(key)));
             }
@@ -243,7 +261,11 @@ fn keys() -> Result<Vec<AliasedKey>, KeydError> {
 
 fn run() -> Result<(), KeydError> {
     for name in unknown_secret_files(std::env::vars().map(|(k, _)| k), KNOWN_SECRET_FILES) {
-        eprintln!("keyd: {name} is set but read by nothing (misspelled?)");
+        log_line(
+            casual_sign_seclog::Level::Warn,
+            "secret_file_unread",
+            &[("variable", name.clone())],
+        );
     }
     let tls = server_tls(
         &read("OPENSEAL_KEYD_TLS_CERT", &need("OPENSEAL_KEYD_TLS_CERT")?)?,
@@ -284,10 +306,13 @@ fn run() -> Result<(), KeydError> {
     }
     let listen = var("OPENSEAL_KEYD_LISTEN").unwrap_or_else(|| "127.0.0.1:7443".into());
     let keyd = Keyd::bind(&listen, tls, service)?;
-    eprintln!(
-        "keyd: serving alias {} on {}",
-        aliases.join(" and "),
-        keyd.local_addr()?
+    log_line(
+        casual_sign_seclog::Level::Info,
+        "serving",
+        &[
+            ("alias", aliases.join(" and ")),
+            ("listen", keyd.local_addr()?.to_string()),
+        ],
     );
     keyd.serve();
     Ok(())
@@ -314,7 +339,11 @@ fn main() -> ExitCode {
     let config = match ConfigDigest::from_env(CONFIG_FILES, CONFIG_VALUES) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("keyd: {e}");
+            log_line(
+                casual_sign_seclog::Level::Error,
+                "start_failed",
+                &[("code", e.code().into()), ("error", e.to_string())],
+            );
             return ExitCode::FAILURE;
         }
     };
@@ -325,13 +354,30 @@ fn main() -> ExitCode {
     // Before anything else is read: a configuration that is not the approved one never
     // reaches the HSM or the network.
     if let Err(e) = config.log_and_check("keyd") {
-        eprintln!("keyd: {e}");
+        log_line(
+            casual_sign_seclog::Level::Error,
+            "start_failed",
+            &[("code", e.code().into()), ("error", e.to_string())],
+        );
+        return ExitCode::FAILURE;
+    }
+    // A malformed pseudonym key stops keyd, as it stops the server and the console.
+    if let Err(e) = casual_sign_seclog::Pseudonymizer::from_env() {
+        log_line(
+            casual_sign_seclog::Level::Error,
+            "start_failed",
+            &[("code", e.code().into()), ("error", e.to_string())],
+        );
         return ExitCode::FAILURE;
     }
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("keyd: {e}");
+            log_line(
+                casual_sign_seclog::Level::Error,
+                "start_failed",
+                &[("code", e.code().into()), ("error", e.to_string())],
+            );
             ExitCode::FAILURE
         }
     }

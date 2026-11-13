@@ -60,18 +60,39 @@ pub fn filter(rust_log: Option<&str>) -> Targets {
     targets
 }
 
-/// A subscriber writing plain lines (level and target, no ANSI) to `writer`, behind the
-/// fixed [`filter`].
+/// `writer` as the JSON layer's sink: one write per line.
+struct WriterSink<W>(W);
+
+impl<W> core::fmt::Debug for WriterSink<W> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("WriterSink")
+    }
+}
+
+impl<W> casual_sign_seclog::Sink for WriterSink<W>
+where
+    W: for<'w> MakeWriter<'w> + Send + Sync,
+{
+    fn write_line(&self, line: &str) {
+        let mut buf = Vec::with_capacity(line.len().saturating_add(1));
+        buf.extend_from_slice(line.as_bytes());
+        buf.push(b'\n');
+        let _ = self.0.make_writer().write_all(&buf);
+    }
+}
+
+/// A subscriber writing OpenSeal's JSON line (`casual-sign-seclog`, `"service":"modeld"`,
+/// ASVS-08) to `writer`, behind the fixed [`filter`].
 pub fn subscriber<W>(writer: W, rust_log: Option<&str>) -> impl tracing::Subscriber + Send + Sync
 where
     W: for<'w> MakeWriter<'w> + Send + Sync + 'static,
 {
     tracing_subscriber::registry().with(
-        tracing_subscriber::fmt::layer()
-            .with_ansi(false)
-            .with_target(true)
-            .with_writer(writer)
-            .with_filter(filter(rust_log)),
+        casual_sign_seclog::JsonLayer::new(
+            casual_sign_seclog::Service::Modeld,
+            std::sync::Arc::new(WriterSink(writer)),
+        )
+        .with_filter(filter(rust_log)),
     )
 }
 

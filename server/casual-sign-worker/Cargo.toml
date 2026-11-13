@@ -72,6 +72,9 @@ x509-cert = { version = "0.3.0", default-features = false }
 # The sealing certificate's DER for its fingerprint (ADR-006's der-0.8 generation).
 der = { version = "0.8.3", default-features = false, features = ["alloc"] }
 
+# The one JSON log line and the security events (ASVS-08).
+casual-sign-seclog = { path = "../casual-sign-seclog" }
+
 [dev-dependencies]
 tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres"] }

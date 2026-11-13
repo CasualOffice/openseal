@@ -13,6 +13,9 @@ casual-sign-crypto = { path = "../../crates/casual-sign-crypto" }
 # The wire format, errors and client transport, shared with callers (CON-06, CON-15).
 casual-sign-keyd-client = { path = "../casual-sign-keyd-client" }
 casual-sign-secrets = { path = "../casual-sign-secrets" }
+# The one JSON log line and the security events: key use, refused callers (ASVS-08).
+casual-sign-seclog = { path = "../casual-sign-seclog" }
+serde_json = "1.0.120"
 # PKCS#11 (docs/19, ADR-006): a safe wrapper over the module's C API, Apache-2.0. Its
 # own `unsafe` is behind its API; this crate stays `unsafe_code = "forbid"`.
 cryptoki = "0.12.1"
