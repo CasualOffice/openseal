@@ -100,11 +100,15 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // `idempotency_keys` and `staff_sessions` (stage 2C); 0010 `user_invitations` (WEB-06);
     // 0012 `recipient_otp_codes` (SEC-A02), a tenant table; 0014 `organizations`,
     // `org_permission_sets` and `organization_admins` (ORG-02), organization tables
-    // checked by `organizations.rs` instead of the account rules below.
-    // 0022 `folder_envelopes` (UXW-02), a tenant table.
-    assert_eq!(tables.len(), 46, "{tables:?}");
+    // checked by `organizations.rs` instead of the account rules below; 0015 none (in-person
+    // hosting adds a column); 0016 to 0019 none in `public` (the console's tables are in
+    // `platform`); 0020 `admin_events`, a tenant table, and `org_admin_events`, an
+    // organization table (ORG-05); 0022 `folder_envelopes`
+    // (UXW-02), a tenant table.
+    assert_eq!(tables.len(), 48, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
+        "org_admin_events",
         "org_permission_sets",
         "organization_admins",
     ];

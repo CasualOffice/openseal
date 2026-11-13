@@ -8,7 +8,7 @@ import { h, fmtDate, fmtShortDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { toBase64, corrections } from "./api.js";
-import { added } from "./templatesync.js";
+import { added, templateFieldsFrom } from "./templatesync.js";
 import { recipientCorrection } from "./people.js";
 import { DELETABLE, ACTIVE, ENDED } from "./managemodel.js";
 import { openPanel, toast, confirmDialog, reasonDialog, emptyState, button } from "./ui/index.js";
@@ -221,13 +221,9 @@ export async function saveAsTemplate(ctx, id) {
     ids.set(d.id, added(known, next?.documents)[0]?.id);
     known = next?.documents || known;
   }
-  const fields = (e.fields || []).filter((f) => ids.get(f.document_id) && roleId.get(f.recipient_id));
-  if (fields.length) {
-    await ctx.api.templates.addFields(tpl.id, fields.map((f) => ({
-      role_id: roleId.get(f.recipient_id), document_id: ids.get(f.document_id), type: f.type, placement: f.placement,
-      ...(f.required ? { required: true } : {}), ...(f.label ? { label: f.label } : {}),
-    })));
-  }
+  // Each field with its settings (UX-11).
+  const fields = templateFieldsFrom(e.fields, roleId, ids);
+  if (fields.length) await ctx.api.templates.addFields(tpl.id, fields);
   toast(t("agreements.template-saved", { name }), "success");
   return tpl;
 }

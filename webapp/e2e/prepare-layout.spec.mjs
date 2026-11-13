@@ -455,9 +455,9 @@ for (const [label, vp] of [["1440", { width: 1440, height: 900 }], ["390", { wid
   });
 }
 
-// UX-05 review defect 1: a template saves only Required and Label (templatesync.js, UX-11), so
-// its field panel must not offer settings that would vanish on save.
-test("a template's field panel offers only what a template saves, and says so", async ({ page }) => {
+// UX-11: a template keeps every field setting the panel offers (templatesync.js), so the
+// panel offers them all; saved, reopened, they are as set, and a cleared one is cleared.
+test("a template's field panel offers every setting, and the template keeps them", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await signIn(page);
   await page.goto(app("#/templates/new"));
@@ -469,9 +469,56 @@ test("a template's field panel offers only what a template saves, and says so", 
   await page.getByTestId("wizard-next").click();
   await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
   await page.locator(".os-palette").getByRole("button", { name: "Add Text field" }).press("Enter");
-  await expect(page.getByTestId("props-general")).toBeVisible();
-  for (const sec of ["props-format", "props-validation", "props-options"]) await expect(page.getByTestId(sec)).toHaveCount(0);
-  for (const id of ["#fp-tooltip", "#fp-placeholder", "#fp-value", "#fp-readonly"]) await expect(page.locator(id)).toHaveCount(0);
-  await expect(page.locator("#fp-label")).toBeVisible();
-  await expect(page.getByTestId("props-template-note")).toContainText("Templates keep");
+  for (const sec of ["props-general", "props-format", "props-validation"]) await expect(page.getByTestId(sec)).toBeVisible();
+  const fill = async (id, v) => { await page.locator(id).fill(v); await page.locator(id).dispatchEvent("change"); };
+  await fill("#fp-tooltip", "Your purchase order");
+  await fill("#fp-placeholder", "PO-0000");
+  await page.locator("#fp-readonly").check();
+  await fill("#fp-value", "PO-1234");
+  await fill("#fp-label", "po");
+  await page.locator("#fp-font").selectOption("courier");
+  await page.locator("#fp-align").selectOption("right");
+  await page.locator("#fp-mask").check();
+  await page.locator("#fp-validate").selectOption("length");
+  await fill("#fp-maxlen", "12");
+  await page.locator(".os-palette").getByRole("button", { name: "Add Dropdown field" }).press("Enter");
+  await expect(page.getByTestId("props-options")).toBeVisible();
+  await fill("#fp-options", "Red\nGreen");
+  await page.locator("#fp-custom").check();
+  await page.locator(".os-stepper__btn", { hasText: "Review" }).click();
+  await page.getByLabel("Template name").fill("Order form");
+  await page.getByRole("button", { name: "Save template" }).click();
+  await expect(page.locator(".os-toast").last()).toContainText("Template saved.");
+  const saved = async () => (await mockDb(page)).templates.find((x) => x.name === "Order form");
+  let tp = await saved();
+  const text = () => tp.fields.find((f) => f.type === "text");
+  expect(text()).toMatchObject({ label: "po", tooltip: "Your purchase order", placeholder: "PO-0000", read_only: true, value: { text: "PO-1234" }, validation: { kind: "length", max: 12 }, format: { font_family: "courier", align: "right", mask: true } });
+  expect(tp.fields.find((f) => f.type === "dropdown")).toMatchObject({ options: ["Red", "Green"], allow_custom: true });
+
+  // Reopened, the panel shows what was saved; a setting cleared is cleared on the server.
+  await page.getByRole("button", { name: "Actions for Order form" }).click();
+  await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+  await expect(page.locator(".os-field")).toHaveCount(2);
+  await page.locator(".os-stepper__btn", { hasText: "Fields" }).click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await page.locator('.os-field[data-field="text"]').click();
+  await expect(page.locator("#fp-tooltip")).toHaveValue("Your purchase order");
+  await expect(page.locator("#fp-placeholder")).toHaveValue("PO-0000");
+  await expect(page.locator("#fp-readonly")).toBeChecked();
+  await expect(page.locator("#fp-value")).toHaveValue("PO-1234");
+  await expect(page.locator("#fp-font")).toHaveValue("courier");
+  await expect(page.locator("#fp-validate")).toHaveValue("length");
+  await expect(page.locator("#fp-maxlen")).toHaveValue("12");
+  await fill("#fp-tooltip", "");
+  await page.locator("#fp-readonly").uncheck();
+  await page.locator('.os-field[data-field="dropdown"]').click();
+  await expect(page.locator("#fp-options")).toHaveValue("Red\nGreen");
+  await expect(page.locator("#fp-custom")).toBeChecked();
+  await page.locator(".os-stepper__btn", { hasText: "Review" }).click();
+  await page.getByRole("button", { name: "Save template" }).click();
+  await expect(page).toHaveURL(/#\/templates$/);
+  tp = await saved();
+  expect(text().tooltip).toBeUndefined();
+  expect(text().read_only).toBeUndefined();
+  expect(text()).toMatchObject({ placeholder: "PO-0000", value: { text: "PO-1234" }, validation: { kind: "length", max: 12 } });
 });

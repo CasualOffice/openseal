@@ -10,7 +10,7 @@ import { summarize, coverage, certificatesFrom, CHECKS } from "../verifyreport.j
 import { parseTrail, eventLabel, MAX_TRAIL_BYTES } from "../trail.js";
 import { clampZoom, pinchZoom, enlargeFor, MIN_ZOOM, MAX_ZOOM } from "../zoom.js";
 import { createClient, isMockMode, isNoServer } from "../api.js";
-import { templatePlan, applyTemplate, emptyPlan, added, fieldSig } from "../templatesync.js";
+import { templatePlan, applyTemplate, emptyPlan, added, fieldSig, fieldBody, templateFieldsFrom } from "../templatesync.js";
 import { profileName, invitePending, recipientCorrection } from "../people.js";
 import { createMockFetch, MOCK } from "../mock.js";
 import { makePdf } from "../mockpdf.js";
@@ -51,6 +51,24 @@ test("envelopeFromTemplate maps roles to recipients and fields, dropping orphans
   assert.equal(body.status, "sent");
   assert.deepEqual(body.recipients.map((r) => [r.ref, r.name, r.type, r.routing_order]), [["role0", "Ada", "signer", 1], ["role1", "Lin", "cc", 2]]);
   assert.deepEqual(body.fields, [{ recipient: "role0", document: 0, type: "signature", page: 1, x: "72", y: "600", width: "160", height: "44", required: true }]);
+});
+
+// UX-11: the settings a template keeps reach the envelope made from it, and an envelope
+// saved as a template keeps its fields' settings.
+test("a template's field settings reach its envelope, and an envelope's reach its template (UX-11)", () => {
+  const tp = { name: "PO", roles: [{ id: "r1", name: "Buyer", type: "signer", routing_order: 1 }] };
+  const placement = { page: 1, x: "72", y: "600", width: "160", height: "24" };
+  const settings = { tooltip: "Your purchase order", placeholder: "PO-0000", read_only: true, value: { text: "PO-1234" }, validation: { kind: "length", max: 12 }, format: { font_family: "courier", align: "right" } };
+  const pick = { options: ["Red", "Green"], allow_custom: true };
+  const { body } = envelopeFromTemplate(tp, { Buyer: { name: "Ada", email: "ada@example.com" } }, {
+    docs: [{ id: "d1", name: "po.pdf", base64: "JVBERi0=" }],
+    fields: [{ id: "f1", document_id: "d1", role_id: "r1", type: "text", placement, label: "po", ...settings }, { id: "f2", document_id: "d1", role_id: "r1", type: "dropdown", placement, ...pick }],
+  });
+  assert.deepEqual(body.fields[0], { recipient: "role0", document: 0, type: "text", page: 1, x: "72", y: "600", width: "160", height: "24", label: "po", ...settings });
+  assert.deepEqual(body.fields[1], { recipient: "role0", document: 0, type: "dropdown", page: 1, x: "72", y: "600", width: "160", height: "24", ...pick });
+  const env = [{ id: "e1", recipient_id: "p1", document_id: "ed1", type: "text", placement, required: true, label: "po", ...settings }, { id: "e2", recipient_id: "p9", document_id: "ed1", type: "text", placement }];
+  const out = templateFieldsFrom(env, new Map([["p1", "r1"]]), new Map([["ed1", "d1"]]));
+  assert.deepEqual(out, [{ role_id: "r1", document_id: "d1", type: "text", placement, required: true, label: "po", ...settings }]);
 });
 
 test("countLabel says when the list went on", () => {
@@ -231,11 +249,60 @@ test("templatePlan: what to remove, change and add; applyTemplate makes it so (W
   assert.equal(after.fields.filter((f) => f.role_id === counterparty.id).length, 1);
 });
 
+// UX-11: a template keeps every field setting the editor offers; a change to a setting
+// alone is a change, and a cleared one is cleared on the server.
+test("a template field's every setting is saved, read back, changed and cleared (UX-11)", async () => {
+  const api = await signedIn();
+  const nda = (await api.templates.list()).items.find((x) => x.name === "Mutual NDA");
+  const { template: server } = await api.templates.get(nda.id);
+  const doc = server.documents[0];
+  const role = server.roles[0];
+  const roles = server.roles.map((r) => ({ key: r.id, id: r.id, name: r.name, type: r.type, routing_order: r.routing_order }));
+  const num = (v) => Number.parseFloat(v);
+  const fields = server.fields.map((f) => ({ key: f.id, id: f.id, roleKey: f.role_id, docKey: doc.id, type: f.type, page: f.placement.page, x: num(f.placement.x), y: num(f.placement.y), width: num(f.placement.width), height: num(f.placement.height), required: !!f.required, label: f.label || "" }));
+  const settings = {
+    text: { tooltip: "Your purchase order", placeholder: "PO-0000", read_only: true, value: { text: "PO-1234" }, validation: { kind: "length", max: 12 }, format: { font_family: "courier", font_size: "11", align: "right", mask: true } },
+    dropdown: { options: ["Red", "Green"], allow_custom: true, tooltip: "Colour" },
+    checkbox: { read_only: true, value: { checked: true } },
+  };
+  const at = (y) => ({ docKey: doc.id, roleKey: role.id, page: 1, x: 72, y, width: 160, height: 24, required: false, label: "" });
+  fields.push({ key: "t", id: null, type: "text", ...at(100), ...settings.text });
+  fields.push({ key: "d", id: null, type: "dropdown", ...at(200), ...settings.dropdown });
+  fields.push({ key: "c", id: null, type: "checkbox", ...at(300), ...settings.checkbox });
+  assert.deepEqual(fieldBody(fields.at(-1), role.id, doc.id).value, { checked: true }, "a new field's body carries its settings");
+  const st = { details: { name: server.name, email_subject: server.email_subject, email_message: server.email_message }, roles, docs: [{ key: doc.id, id: doc.id, name: doc.name }], fields };
+  let after = await applyTemplate(api, nda.id, st, templatePlan(server, st));
+  const byKey = (tpl, k) => tpl.fields.find((f) => f.id === fields.find((x) => x.key === k).id);
+  for (const [k, type] of [["t", "text"], ["d", "dropdown"], ["c", "checkbox"]]) {
+    const got = byKey(after, k);
+    for (const [m, v] of Object.entries(settings[type])) assert.deepEqual(got[m], v, `${type} ${m} read back`);
+  }
+  assert.ok(emptyPlan(templatePlan(after, st)), "read back as saved: nothing to change");
+  // A setting changed alone is a change; cleared ones are cleared.
+  const t = fields.find((x) => x.key === "t");
+  t.tooltip = "Changed";
+  delete t.read_only; delete t.value; delete t.placeholder; delete t.format;
+  const plan = templatePlan(after, st);
+  assert.deepEqual(plan.patchFields.map((x) => x.key), ["t"]);
+  after = await applyTemplate(api, nda.id, st, plan);
+  const got = byKey(after, "t");
+  assert.equal(got.tooltip, "Changed");
+  assert.deepEqual(got.validation, settings.text.validation);
+  for (const m of ["read_only", "value", "placeholder", "format"]) assert.equal(got[m], undefined, `${m} cleared`);
+});
+
 test("fieldSig ignores how a placement is written, not what it says", () => {
   const a = fieldSig("r1", { page: 1, x: "72", y: "600.50", width: 160, height: "44" }, true, "");
   assert.equal(a, fieldSig("r1", { page: 1, x: 72, y: "600.5", width: "160", height: "44.00" }, 1, null));
   assert.notEqual(a, fieldSig("r1", { page: 1, x: 72.01, y: 600.5, width: 160, height: 44 }, true, ""));
   assert.notEqual(a, fieldSig("r2", { page: 1, x: 72, y: 600.5, width: 160, height: 44 }, true, ""));
+  // Settings in another member order are the same (the server sorts them, UX-11); a
+  // different setting is not.
+  const at = { page: 1, x: 72, y: 600, width: 160, height: 44 };
+  const s = fieldSig("r1", at, false, "", { format: { font_family: "courier", align: "right" }, tooltip: "Hi" });
+  assert.equal(s, fieldSig("r1", at, false, "", { tooltip: "Hi", format: { align: "right", font_family: "courier" } }));
+  assert.notEqual(s, fieldSig("r1", at, false, "", { format: { font_family: "courier", align: "left" }, tooltip: "Hi" }));
+  assert.notEqual(s, fieldSig("r1", at, false, ""));
 });
 
 test("account settings: PATCH takes {settings} only and answers {settings}; profiles are named by id (WEB-10)", async () => {

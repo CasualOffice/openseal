@@ -226,6 +226,21 @@ components:
       type: object
       properties:
         items: {type: array, items: {$ref: '#/components/schemas/User'}}
+    AdminEvent:
+      type: object
+      required: [seq, at, action, hash, prev, event]
+      properties:
+        seq: {type: integer, minimum: 0}
+        at: {type: string, format: date-time}
+        action: {type: string, description: "`workspace.settings_changed`, `member.added`, `member.profile_changed`, `member.disabled`, `member.enabled`, `member.removed`, `member.renamed`, `member.password_set`, `profile.created`, ..."}
+        hash: {type: string, description: "SHA-256 of the canonical bytes, hex"}
+        prev: {type: [string, 'null'], description: "The previous event's hash, hex; null for the first"}
+        event: {type: object, description: "The canonical event: v, account, seq, prev, at (ms), actor, action, target, changes (key, old, new; secrets as \"rotated\"), request_id, ip"}
+    AdminEventList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/AdminEvent'}}
+        next_cursor: {type: [integer, 'null']}
     UserCreate:
       type: object
       required: [email, name, profile]
@@ -883,6 +898,33 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/admin-events:
+    get:
+      operationId: listAdminEvents
+      summary: "The workspace's admin audit log (ORG-05), oldest first, verified before it is answered"
+      description: >-
+        Every settings, member, profile and workspace change, hash-chained per workspace.
+        Each item carries its `seq`, `hash`, `prev` and the event as its RFC 8785 canonical
+        JSON; `hash` is SHA-256 of those bytes. Each page is verified as it is read: linked
+        to the event at its cursor, the last page to the stored head, and each `at` to its
+        bytes, so walking the log by cursor checks every link once. `verify=full` re-verifies
+        the whole log first. A broken chain is `500 CS-DB-0014`. `format=csv` answers `text/csv` with columns
+        `seq,at,action,hash,prev,event` and the next cursor in `X-Next-Cursor`.
+      x-permission: "admin:account"
+      parameters:
+        - {name: cursor, in: query, required: false, description: "The `seq` after which to start", schema: {type: integer, minimum: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
+        - {name: format, in: query, required: false, schema: {type: string, enum: [json, csv], default: json}}
+        - {name: verify, in: query, required: false, description: "`page` verifies the page read; `full` re-verifies the whole log first; another value is `422 CS-API-0001`", schema: {type: string, enum: [page, full], default: page}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminEventList'}
+            text/csv:
+              schema: {type: string}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/users:
     get:
@@ -2086,7 +2128,7 @@ paths:
       - {name: f, in: path, required: true, description: Field id, schema: {type: string}}
     patch:
       operationId: patchTemplateField
-      summary: "Change a field: the members given replace its own; checked whole again (WEB-06)"
+      summary: "Change a field: the members given replace its own, null removes one (UX-11); checked whole again (WEB-06)"
       x-permission: "templates:write"
       parameters:
         - $ref: '#/components/parameters/ifMatch'
