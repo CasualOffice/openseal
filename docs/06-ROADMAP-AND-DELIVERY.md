@@ -85,6 +85,15 @@ authorities (`CON-03` to `CON-07`, `CON-16`, `CON-17`, `PLAN-02` to `PLAN-04`), 
 | W-2 (retired 2026-11-11: Phase 0 closed) | Phase 1 opens before Phase 0 closes: CI cannot run on GitHub while the repository is private (instruction 7), so "CI green on three platforms" is unmet | Platform-specific failures (Linux, Windows) found late; the local run is macOS only, with Linux only for the validators in Docker | Owner's "proceed", 2026-11-10, with instruction 7 | Phase 0 still closes only on a green GitHub run, at the latest when the repository goes public for the pre-release alpha (M3); failures found then are fixed first |
 | W-1 | Phase 2 opens before Phase 1 closes, once stages 1A and 1B are closed | The model or API may need a change when sealing lands | Owner, 2026-11-11 (instruction 12, `DEC-13`); Phase 2 open | Phase 2 work adapts; Phase 2 cannot close before Phase 1 |
 
+## Freeze until M3 — engine first (owner instruction 51, `FRZ-01`)
+
+OpenSeal leads with its Apache-2.0 signing and verification engine you embed (Rust engine, WASM verifier, API and
+SDK); the web app is the reference product built on it (`POS-01`). Until M3 "first signature" closes and the core flow
+runs reliably on the real stack in CI, only these move: the core flow (send → sign → seal → verify), the hardening
+release below, the verifier, and the API and SDK. **Paused** (sequenced after M3, nothing removed): ML (`ML-*`,
+`WEB-19`), the platform console (`CON-*`), plans and metering (`PLAN-*`). Right after M3: the verifier as a standalone
+crate and npm/WASM package (`VER-01`).
+
 ## Hardening release — one production-grade deployment first (owner instruction 48)
 
 Feature work pauses (sequenced after this, nothing dropped) until one deployment runs send → authenticate → sign →

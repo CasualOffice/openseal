@@ -94,9 +94,13 @@ fn keyd_serves_the_next_key_beside_the_current_one() {
     let mut lines = BufReader::new(child.0.stderr.take().unwrap()).lines();
     let addr = loop {
         let line = lines.next().expect("keyd exited").unwrap();
-        if let Some(rest) = line.strip_prefix("keyd: serving alias ") {
-            assert!(rest.starts_with("platform and platform-2027 on "), "{line}");
-            break rest.rsplit(' ').next().unwrap().to_owned();
+        // keyd's lines are JSON (ASVS-08): `"event":"serving"` with `alias` and `listen`.
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        if v["event"] == "serving" {
+            assert_eq!(v["alias"], "platform and platform-2027", "{line}");
+            break v["listen"].as_str().unwrap().to_owned();
         }
     };
     let keyd = RunningKeyd {

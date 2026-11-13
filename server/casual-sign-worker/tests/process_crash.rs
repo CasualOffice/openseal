@@ -1341,8 +1341,20 @@ impl Stack {
         self.worker = Some(self.spawn(&bin, &env, None, log));
     }
 
+    /// Whether `log` holds `needle`: `"event key=value …"` matches a JSON line (ASVS-08)
+    /// with that `event` and those fields; anything else is a plain substring.
     fn log_has(&self, log: &str, needle: &str) -> bool {
-        std::fs::read_to_string(self.dir.join(log)).is_ok_and(|t| t.contains(needle))
+        let Ok(text) = std::fs::read_to_string(self.dir.join(log)) else {
+            return false;
+        };
+        let mut words = needle.split(' ');
+        let event = words.next().unwrap_or_default();
+        let fields: Vec<(&str, &str)> = words.filter_map(|w| w.split_once('=')).collect();
+        let json = text.lines().any(|l| {
+            serde_json::from_str::<serde_json::Value>(l)
+                .is_ok_and(|v| v["event"] == event && fields.iter().all(|(k, want)| v[*k] == *want))
+        });
+        json || text.contains(needle)
     }
 
     fn wait_log(&self, log: &str, needle: &str) {
