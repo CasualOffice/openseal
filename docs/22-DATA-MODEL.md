@@ -350,7 +350,22 @@ longer create an account outside those functions. Forty-five tables.
 acts as its host hosting the signer (docs/40 As built); the host is a user rather than a membership so that removing
 the member is not refused, and the server refuses the link once the host is no longer an enabled member.
 
-**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
+`0021_ml_analysis.sql` (`WEB-19`, `ML-01`; docs/33 §7 As built, §13; `0020` is reserved for another lane) adds the
+advisory document-analysis tables, each with `account_id`, RLS and the repository `TenantTx::ml`
+(`casual_sign_store::repo::ml`): `ml_settings` (a workspace's four switches, the personal-data model, OCR script
+packs, "re-read scanner text"; no row means every feature off), `ml_entitlements` (the plan's `ml.*` features; the
+application role may only read it), `analysis_runs` (one per document and job key: `kind` `analyze_document` or
+`fingerprint_template`, `uses`, `document_sha256`, `job_key` unique per account and naming the account and the
+document, `status` `queued`/`running`/`done`/`failed`/`unavailable`, `bundle_id`, `ocr_pages`, `truncated`, `code`;
+exactly one of `envelope_id` and `template_id`, each a composite foreign key with `account_id`, `ON DELETE CASCADE`),
+`suggestions` (`kind` `template`/`entity`/`personal_data`, page, rect, label, UTF-8 byte span offsets and never the
+span text, the matched template and its page counts, score, model id and weights hash, `state`
+`open`/`accepted`/`dismissed` with `decided_by`, `decided_at`), `ocr_pages` (a run's OCR words per page: document
+content) and `template_fingerprints` (a template page's dHash and pHash, an optional text embedding, the model). None is
+read by the seal job, the audit chain or the evidence package (docs/33 invariant 2).
+
+**Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15), including of the
+analysis tables (`SEC-I07`); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).
 
 **Corrections to the text above.** The setting is `openseal.account_id`, read as
