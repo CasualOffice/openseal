@@ -425,3 +425,214 @@ async fn api_and_worker_take_two_signers_to_completed_with_a_verified_seal() {
     assert!(types.contains(&"document.downloaded"), "{types:?}");
     assert!(env.alerts.0.lock().unwrap().is_empty());
 }
+
+/// VS-01 (slice 1, send and sign): one signer with a signature, a date and a text field,
+/// sent through the API, signed through the ceremony, sealed by the worker. Both parties
+/// get the sealed PDF and the certificate of completion: the sender through the API, the
+/// signer through the link in the completion email (a fresh link, opened in a new
+/// browser), and the two copies are the same bytes, each verified.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_signer_gets_the_sealed_pdf_and_the_certificate_from_the_completion_email() {
+    let Some(env) = Env::new("end_to_end_send_and_sign").await else {
+        return;
+    };
+    let st = AppState::new(
+        env.db.store.clone(),
+        Blobs::Fs(Arc::new(env.blob_store())),
+        JwtKeys::generate().unwrap(),
+        Arc::new(Shared(Arc::clone(&env.clock))),
+        Config {
+            public_url: "https://sign.example.test".into(),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    let app = casual_sign_server::app(st);
+    let org = env.db.organization("Send and Sign").await;
+    casual_sign_server::bootstrap_workspace(
+        &env.db.store,
+        org,
+        "Send and Sign",
+        "admin@vs01.example.test",
+        "Admin",
+        PASSWORD,
+    )
+    .await
+    .unwrap();
+    let mut staff = Http {
+        app: app.clone(),
+        cookie: None,
+        csrf: None,
+    };
+    let login = staff
+        .call(
+            "POST",
+            "/api/v1/auth/login",
+            Some(json!({"email": "admin@vs01.example.test", "password": PASSWORD})),
+            &[],
+        )
+        .await;
+    assert_eq!(login.status, StatusCode::OK, "{:?}", login.json());
+    let set = login.headers["set-cookie"].to_str().unwrap();
+    staff.cookie = Some(set.split(';').next().unwrap().to_owned());
+    staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    let field = |t: &str, y: u32| {
+        json!({"recipient": "a", "document": 0, "type": t, "page": 1,
+               "x": 72, "y": y, "width": 180, "height": 30, "required": true})
+    };
+    let e = staff
+        .ok(
+            "POST",
+            "/api/v1/envelopes",
+            Some(json!({
+                "subject": "Consulting agreement", "status": "sent",
+                "documents": [{"name": "consulting.pdf", "content_base64": b64(&env.original)}],
+                "recipients": [
+                    {"ref": "a", "type": "signer", "name": "Ada Lovelace", "email": "ada@vs01.example.test", "routing_order": 1},
+                ],
+                "fields": [field("signature", 100), field("date_signed", 160), field("text", 220)],
+            })),
+            StatusCode::CREATED,
+        )
+        .await;
+    let id = e["id"].as_str().unwrap().to_owned();
+    let doc = e["documents"][0]["id"].as_str().unwrap().to_owned();
+    let of = |t: &str| {
+        e["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["type"] == t)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (f_sig, f_text) = (of("signature"), of("text"));
+    let base = format!("/api/v1/envelopes/{id}");
+
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    let mails = env.smtp.to("ada@vs01.example.test");
+    assert_eq!(mails.len(), 1, "one invitation");
+    let s = format!("/s/{}", mails[0].token().expect("a signing link"));
+    let mut ada = Http {
+        app: app.clone(),
+        cookie: None,
+        csrf: None,
+    };
+    let opened = ada
+        .call("POST", &format!("{s}/session"), Some(json!({})), &[])
+        .await;
+    assert_eq!(opened.status, StatusCode::OK, "{:?}", opened.json());
+    let set = opened.headers["set-cookie"].to_str().unwrap();
+    ada.cookie = Some(set.split(';').next().unwrap().to_owned());
+    ada.ok(
+        "POST",
+        &format!("{s}/documents/{doc}/viewed"),
+        Some(json!({"pages_seen": [1]})),
+        StatusCode::OK,
+    )
+    .await;
+    let adopted = ada
+        .ok(
+            "POST",
+            &format!("{s}/adopt"),
+            Some(json!({"mark": "signature", "method": "draw", "image_base64": b64(&png())})),
+            StatusCode::OK,
+        )
+        .await;
+    let capture = adopted["adoption_id"].as_str().unwrap();
+    ada.ok(
+        "POST",
+        &format!("{s}/finish"),
+        Some(json!({"values": [
+            {"field": f_sig, "value": {"signature": capture}},
+            {"field": f_text, "value": {"text": "Analytical Engine, phase one"}},
+        ]})),
+        StatusCode::OK,
+    )
+    .await;
+    // Before the seal, the signer's certificate is not there yet.
+    let early = ada
+        .call("GET", &format!("{s}/certificate"), None, &[])
+        .await;
+    assert_eq!(early.status, StatusCode::CONFLICT, "{:?}", early.json());
+
+    // The worker seals, completes and emails the completion copies.
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    let done = staff.ok("GET", &base, None, StatusCode::OK).await;
+    assert_eq!(done["status"], "completed", "{done}");
+
+    // The sender's copies.
+    let get = |path: String| {
+        let staff = &staff;
+        async move {
+            let r = staff.call("GET", &path, None, &[]).await;
+            assert_eq!(r.status, StatusCode::OK, "{path}");
+            r.body
+        }
+    };
+    let sealed = get(format!("{base}/documents/{doc}/content?version=sealed")).await;
+    let certificate = get(format!("{base}/certificate")).await;
+
+    // The signer's: the completion email's link, opened in a new browser.
+    let mails = env.smtp.to("ada@vs01.example.test");
+    let completed = mails
+        .iter()
+        .find(|m| m.body().contains("All parties have completed"))
+        .unwrap_or_else(|| panic!("a completion email among {} to the signer", mails.len()));
+    let c = format!(
+        "/s/{}",
+        completed.token().expect("a link in the completion email")
+    );
+    let mut copy = Http {
+        app: app.clone(),
+        cookie: None,
+        csrf: None,
+    };
+    let opened = copy
+        .call("POST", &format!("{c}/session"), Some(json!({})), &[])
+        .await;
+    assert_eq!(opened.status, StatusCode::OK, "{:?}", opened.json());
+    let set = opened.headers["set-cookie"].to_str().unwrap();
+    copy.cookie = Some(set.split(';').next().unwrap().to_owned());
+    let mine = copy.call("GET", &format!("{c}/document"), None, &[]).await;
+    assert_eq!(mine.status, StatusCode::OK, "{:?}", mine.json());
+    assert_eq!(mine.headers["x-openseal-document"], "sealed");
+    assert_eq!(mine.body, sealed, "the signer's copy is the sealed PDF");
+    let cert = copy
+        .call("GET", &format!("{c}/certificate"), None, &[])
+        .await;
+    assert_eq!(cert.status, StatusCode::OK, "{:?}", cert.json());
+    assert_eq!(cert.headers["content-type"], "application/pdf");
+    assert_eq!(
+        cert.body, certificate,
+        "the signer's certificate is the sender's"
+    );
+    ours(&env, &sealed);
+    ours(&env, &certificate);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("end-to-end-send-and-sign");
+    pyhanko(
+        &dir,
+        &[
+            ("vs01-sealed-bt.pdf", &sealed),
+            ("vs01-certificate-bt.pdf", &cert.body),
+        ],
+    );
+
+    // The signer's downloads are in the chain, by the recipient.
+    let audit = staff
+        .ok("GET", &format!("{base}/audit"), None, StatusCode::OK)
+        .await;
+    let by_ada = audit["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "certificate.downloaded")
+        .count();
+    assert_eq!(by_ada, 2, "the sender's download and the signer's");
+}

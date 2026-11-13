@@ -926,6 +926,78 @@ pub(crate) async fn download(
     }
 }
 
+/// `GET /s/{token}/certificate` (VS-01): a recipient who has finished downloads the
+/// certificate of completion once the envelope is `completed`, the same sealed PDF the
+/// sender downloads (`GET /envelopes/{id}/certificate`), so every party holds it, not only
+/// the sender. While the link is valid and in the browser it is bound to; `409
+/// CS-API-0009` before the recipient has finished or before the seal job has made it.
+/// Recorded as `certificate.downloaded` by the recipient.
+pub(crate) async fn certificate(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+) -> Response {
+    let mut o = match open(&st, &token, &headers, ip, &method, false).await {
+        Ok(o) => o,
+        Err(r) => return r,
+    };
+    let result = async {
+        let me =
+            o.l.state
+                .recipient(&o.recipient)
+                .ok_or_else(ApiError::expired)?;
+        authenticated(me)?;
+        if me.status != casual_sign_model::RecipientStatus::Completed {
+            return Err(ApiError::not_available(
+                "the certificate can be downloaded once you have finished",
+            ));
+        }
+        if o.l.state.status != casual_sign_model::EnvelopeStatus::Completed {
+            return Err(ApiError::not_available(
+                "the certificate is made by the seal job when the envelope completes",
+            ));
+        }
+        let sha = o.tx.envelopes().certificate(o.l.id).await?.ok_or_else(|| {
+            ApiError::not_available(
+                "the certificate is made by the seal job when the envelope completes",
+            )
+        })?;
+        let bytes =
+            st.0.blobs
+                .get(&casual_sign_store::blob::BlobKey(sha))
+                .await?;
+        let hash = Hash256::digest(&bytes);
+        if hash != Hash256(sha) {
+            return Err(ApiError::internal("certificate"));
+        }
+        o.run(Command::RecordAccess {
+            access: casual_sign_workflow::Access::CertificateDownloaded { hash },
+        })
+        .await?;
+        o.tx.commit().await?;
+        Ok(bytes)
+    }
+    .await;
+    match result {
+        Ok(bytes) => {
+            let mut r = (StatusCode::OK, bytes).into_response();
+            let h = r.headers_mut();
+            h.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/pdf"),
+            );
+            h.insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_static("attachment"),
+            );
+            r
+        }
+        Err(e) => e.into_response(),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ViewedIn {

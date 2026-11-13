@@ -3375,6 +3375,29 @@ paths:
             application/pdf:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/certificate:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyCertificate
+      summary: "After completion: the certificate of completion, the same sealed PDF the sender downloads (VS-01)"
+      description: >-
+        Only for a recipient who has finished, once the envelope is `completed` (`409
+        CS-API-0009` before), in the browser the link is bound to, while the link is valid
+        (the completion email's link is a fresh one). Recorded as `certificate.downloaded`.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
   /s/{token}/documents/{doc}/viewed:
     parameters:
       - name: token

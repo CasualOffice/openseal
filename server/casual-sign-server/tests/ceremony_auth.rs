@@ -248,6 +248,7 @@ async fn every_ceremony_endpoint_refuses_before_the_access_code() {
     let calls: Vec<(&str, String, Option<Value>)> = vec![
         ("GET", format!("{s}/documents/{doc}/content"), None),
         ("GET", format!("{s}/document"), None),
+        ("GET", format!("{s}/certificate"), None),
         ("GET", format!("{s}/history"), None),
         ("GET", format!("{s}/disclosure"), None),
         (
