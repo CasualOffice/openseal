@@ -65,7 +65,7 @@ fn a_changed_allow_list_stops_keyd_before_it_starts() {
         "{err}"
     );
     assert!(err.contains("matches OPENSEAL_CONFIG_MANIFEST"), "{err}");
-    assert!(!err.contains("CS-KEY-0013"), "{err}");
+    assert!(!err.contains("CS-KEY-0014"), "{err}");
 
     // A caller added to the allow list without a new manifest: refused, by name.
     std::fs::write(dir.join("allow"), "ab12 worker\ncd34 intruder\n").unwrap();
@@ -73,7 +73,7 @@ fn a_changed_allow_list_stops_keyd_before_it_starts() {
     let err = stderr(&changed);
     assert!(!changed.status.success());
     assert!(
-        err.contains("CS-KEY-0013: OPENSEAL_KEYD_ALLOW_LIST differs"),
+        err.contains("CS-KEY-0014: OPENSEAL_KEYD_ALLOW_LIST differs"),
         "{err}"
     );
     assert!(!err.contains("intruder"), "a value reached the log: {err}");
@@ -92,7 +92,7 @@ fn a_changed_allow_list_stops_keyd_before_it_starts() {
         .unwrap();
     assert!(!added.status.success());
     assert!(
-        stderr(&added).contains("CS-KEY-0013: OPENSEAL_KEYD_ADMIN_ALLOW_LIST is set but not"),
+        stderr(&added).contains("CS-KEY-0014: OPENSEAL_KEYD_ADMIN_ALLOW_LIST is set but not"),
         "{}",
         stderr(&added)
     );
@@ -110,7 +110,7 @@ fn a_changed_allow_list_stops_keyd_before_it_starts() {
         .unwrap();
     assert!(!moved.status.success());
     assert!(
-        stderr(&moved).contains("CS-KEY-0013: OPENSEAL_KEYD_OPLOG is set but not"),
+        stderr(&moved).contains("CS-KEY-0014: OPENSEAL_KEYD_OPLOG is set but not"),
         "{}",
         stderr(&moved)
     );
@@ -118,6 +118,6 @@ fn a_changed_allow_list_stops_keyd_before_it_starts() {
     // A manifest that cannot be read is a refusal, not a skipped check.
     let missing = keyd(&dir, &[], Some(&dir.join("absent")));
     assert!(!missing.status.success());
-    assert!(stderr(&missing).contains("CS-KEY-0013: OPENSEAL_CONFIG_MANIFEST could not be read"));
+    assert!(stderr(&missing).contains("CS-KEY-0014: OPENSEAL_CONFIG_MANIFEST could not be read"));
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -11,7 +11,7 @@
 # secrets (files under /run/secrets), never environment values. Every hop between
 # services is TLS: Postgres (verify-full, TLS 1.3, hostssl only), the object store (the
 # deployment's private CA) and keyd (mutual TLS). keyd and the worker refuse to start
-# unless their security settings match the manifests (CS-KEY-0013, ASVS-24). TLS to
+# unless their security settings match the manifests (CS-KEY-0014, ASVS-24). TLS to
 # browsers terminates at your edge proxy, which forwards to the server's port.
 #
 # tools/check-deploy.py checks every rule above over this file and fails on any

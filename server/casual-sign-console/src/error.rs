@@ -51,7 +51,8 @@ pub enum ConsoleError {
     KeyRefused(&'static str),
     /// keyd's admin interface refused or did not answer (502), with keyd's code:
     /// `CS-CON-0008` (the console's identity is not on the admin allow-list),
-    /// `CS-KEY-0001`, `CS-KEY-0011` (unreachable), and so on (`CON-06`).
+    /// `CS-KEY-0001`, `CS-KEY-0011` (unreachable), `CS-KEY-0013` (TLS refused), and so on
+    /// (`CON-06`, `HRD-01`).
     Keyd(&'static str),
 }
 

@@ -348,6 +348,7 @@ const MESSAGES = {
   "CS-CON-0008": "keyd refused the console: its certificate must be on keyd's admin allow-list, not its signing list.",
   "CS-KEY-0001": "keyd does not know the console's certificate. Add its fingerprint to keyd's admin allow-list.",
   "CS-KEY-0011": "keyd cannot be reached. Check that it is running and the console's keyd settings.",
+  "CS-KEY-0013": "keyd refused the TLS connection. Check the console's keyd CA, server name and client certificate.",
 };
 
 /// What to tell the operator about a problem `{status, code, field, retry_after}`.

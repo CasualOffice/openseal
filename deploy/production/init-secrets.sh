@@ -15,7 +15,7 @@
 # add them: seal-chain.pem (your seal certificate chain; the key stays in the HSM),
 # keyd-pkcs11-pin, trust-anchors.pem, smtp-password. keyd-config-manifest and
 # worker-config-manifest start empty, so keyd and the worker refuse to start
-# (CS-KEY-0013) until you record them with `config-manifest` (docs/65).
+# (CS-KEY-0014) until you record them with `config-manifest` (docs/65).
 #
 # This is not the seal key's PKI: the internal CA only authenticates services to each
 # other. Never reuse it for signing.

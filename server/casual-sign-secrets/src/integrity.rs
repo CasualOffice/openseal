@@ -249,10 +249,10 @@ pub enum IntegrityError {
 }
 
 impl IntegrityError {
-    /// The stable docs/20 code: always `CS-KEY-0013`.
+    /// The stable docs/20 code: always `CS-KEY-0014`.
     #[must_use]
     pub const fn code(&self) -> &'static str {
-        "CS-KEY-0013"
+        "CS-KEY-0014"
     }
 }
 
@@ -385,7 +385,7 @@ mod tests {
         let e = IntegrityError::Changed {
             name: "OPENSEAL_TSA_URLS".into(),
         };
-        assert_eq!(e.code(), "CS-KEY-0013");
+        assert_eq!(e.code(), "CS-KEY-0014");
         assert!(e.to_string().contains("OPENSEAL_TSA_URLS"));
         assert!(!e.to_string().contains("sha256:"));
     }

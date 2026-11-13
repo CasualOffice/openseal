@@ -20,7 +20,7 @@
 //! | `OPENSEAL_KEYD_FILE_KEY` | A PEM key file instead of PKCS#11: development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_KEYD_SIGNATURES_PER_MINUTE` | Per-caller rate (default 600) |
 //! | `OPENSEAL_KEYD_NEXT_ALIAS` | Optional, during a seal key rotation (`CON-10`): a second key served beside the first, on the same token: `OPENSEAL_KEYD_NEXT_PKCS11_KEY_LABEL` and/or `_KEY_ID` (one is required), `OPENSEAL_KEYD_NEXT_CHAIN` or `_INTERMEDIATES`; development: `OPENSEAL_KEYD_NEXT_FILE_KEY` with `OPENSEAL_KEYD_NEXT_CHAIN` |
-//! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings below; keyd refuses to start when they differ (`CS-KEY-0013`, ASVS-24) |
+//! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings below; keyd refuses to start when they differ (`CS-KEY-0014`, ASVS-24) |
 //!
 //! **Security configuration** (ASVS 14.1.5): every setting above except the PIN is read
 //! once, at start, so a change takes effect only on a restart. At start keyd logs the

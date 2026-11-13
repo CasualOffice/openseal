@@ -17,7 +17,7 @@
 //! | `OPENSEAL_TSA_URLS` | RFC 3161 time-stamping authorities, comma-separated, tried in order, while the console has configured none (`platform.tsa_endpoints`, read at most once a minute, `CON-07`) |
 //! | `OPENSEAL_TRUST_ANCHORS` | PEM file of the anchors the sealed output must chain to |
 //! | `OPENSEAL_KEYD_ADDR`, `OPENSEAL_KEYD_SERVER_NAME`, `OPENSEAL_KEYD_CA` | keyd's address, its certificate's name, and the CA it chains to (PEM path) |
-//! | `OPENSEAL_KEYD_CLIENT_CERT`, `OPENSEAL_KEYD_CLIENT_KEY` | This worker's client certificate chain and key (PEM paths) |
+//! | `OPENSEAL_KEYD_CLIENT_CERT`, `OPENSEAL_KEYD_CLIENT_KEY` | This worker's client certificate chain and key (PEM paths); a keyd that cannot be reached at start (`CS-KEY-0011`) is reached by the first seal (`HRD-01`); one that refuses (a TLS refusal `CS-KEY-0013`: wrong CA, name or client certificate; or an answer such as `CS-KEY-0001`, `CS-KEY-0002`) stops the worker at start |
 //! | `OPENSEAL_KEYD_ALIAS` | The platform key's alias (default `platform`) |
 //! | `OPENSEAL_MODELD_ADDR`, `OPENSEAL_MODELD_SERVER_NAME`, `OPENSEAL_MODELD_CA` | Optional: the model service's address, its certificate's name and CA (PEM path); unset, document-analysis jobs end as `unavailable` (docs/33 §1) |
 //! | `OPENSEAL_MODELD_CLIENT_CERT`, `OPENSEAL_MODELD_CLIENT_KEY` | This worker's client certificate chain and key for the model service (PEM paths) |
@@ -30,7 +30,7 @@
 //! | `OPENSEAL_S3_CA` | PEM file of the CA the object store's TLS certificate chains to, besides the platform's roots (a private CA, the production profile) |
 //! | `OPENSEAL_SECRET_RELOAD_SECONDS` | How often the database URL file is read again for a rotated credential (default 30; `0` never) |
 //! | `OPENSEAL_HEALTH_FILE` | Optional: while the database answers, the time is written here every 10 seconds; `casual-sign-worker healthcheck` exits 0 while it is at most 30 seconds old (the container health check; default path `/tmp/openseal-worker-health`) |
-//! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings; the worker refuses to start when they differ (`CS-KEY-0013`, ASVS-24) |
+//! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings; the worker refuses to start when they differ (`CS-KEY-0014`, ASVS-24) |
 //!
 //! **Security configuration** (ASVS 14.1.5): trust anchors, the TSA list, the keyd and
 //! model service addresses and CAs, the webhook allowances and the object store are read
@@ -47,14 +47,14 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use casual_sign_keyd::{DevKeyConsent, Endpoint, FileKey, RemoteKey, certificates, client_tls};
+use casual_sign_keyd::{DevKeyConsent, Endpoint, FileKey, certificates, client_tls};
 use casual_sign_sdk::{CertificateOptions, Engine, FontSet, Limits, TrustStore};
 use casual_sign_secrets::env_secret;
 use casual_sign_secrets::integrity::ConfigDigest;
 use casual_sign_store::Store;
 use casual_sign_store::blob::{BlobStore, FsBlobStore, S3BlobStore, S3Config};
 use casual_sign_worker::email::{Mailer, SmtpConfig, SmtpSecurity};
-use casual_sign_worker::seal::{SealKey, SealServices, Shared};
+use casual_sign_worker::seal::{KeydKey, SealKey, SealServices, Shared};
 use casual_sign_worker::webhook::{IpRange, Sender, SsrfPolicy};
 use casual_sign_worker::{
     EnvSecrets, LogAlerts, NoPayments, SystemClock, Worker, WorkerConfig, WorkerError, health, tsa,
@@ -106,9 +106,21 @@ fn seal_key() -> Result<SealKey, WorkerError> {
         timeout: Duration::from_secs(30),
     };
     let alias = var("OPENSEAL_KEYD_ALIAS").unwrap_or_else(|| "platform".into());
-    let remote = RemoteKey::connect(endpoint, &alias)
-        .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
-    Ok(SealKey::Remote(remote))
+    // HRD-01: a keyd that cannot be reached now (`CS-KEY-0011`: refused, reset, timed
+    // out, closed before TLS answered) is reached by the first seal that needs it, so
+    // the worker still starts and runs its other jobs. Anything else is a configuration
+    // error that stops it here: a TLS refusal (`CS-KEY-0013`: keyd's CA or name not as
+    // configured, this client's certificate untrusted, expired or revoked) or keyd's
+    // own refusal (not on its allow-list, an unknown alias).
+    let key = KeydKey::new(endpoint, &alias);
+    match key.remote() {
+        Ok(_) => {}
+        Err(e) if e.code() == "CS-KEY-0011" => {
+            casual_sign_worker::log("WARN", "keyd_unavailable", &[("code", e.code().to_owned())]);
+        }
+        Err(e) => return Err(WorkerError::Pipeline { code: e.code() }),
+    }
+    Ok(SealKey::Keyd(key))
 }
 
 /// The model service's client, when `OPENSEAL_MODELD_ADDR` is set (docs/33 §1): the
@@ -361,7 +373,10 @@ async fn serve<B: BlobStore + 'static>(
     #[cfg(feature = "crash-points")]
     let worker = worker.with_fault_hook(Arc::new(|at, kind| {
         // P2-CRASH: `OPENSEAL_CRASH_AT=worker:<Boundary>:<job kind>` kills the process.
-        casual_sign_host::crash::point("worker", &format!("{at:?}:{kind}"));
+        let subject = format!("{at:?}:{kind}");
+        casual_sign_host::crash::point("worker", &subject);
+        // HRD-01: `OPENSEAL_HOLD_AT=worker:<Boundary>:<job kind>` holds it there.
+        casual_sign_host::crash::hold("worker", &subject);
         false
     }));
     let (_stop, rx) = tokio::sync::watch::channel(false);

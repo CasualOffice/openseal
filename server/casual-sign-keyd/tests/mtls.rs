@@ -143,23 +143,76 @@ fn refused_setup(name: &str) -> (Pki, RunningKeyd, (String, String, String)) {
     (pki, keyd, worker)
 }
 
-/// **A client without a certificate never completes the handshake.**
+/// **A client without a certificate never completes the handshake**, and is told so
+/// as a TLS refusal (`CS-KEY-0013`), not as keyd being unreachable (`HRD-01`).
 #[test]
 fn a_client_without_a_certificate_is_refused() {
     let (pki, keyd, _) = refused_setup("keyd-mtls-nocert");
     let err = RemoteKey::connect(endpoint(&pki, &keyd, None), "dev").unwrap_err();
-    assert_eq!(err.code(), "CS-KEY-0011", "{err}");
+    assert_eq!(err.code(), "CS-KEY-0013", "{err}");
     eprintln!("no certificate: {err}");
 }
 
-/// **A certificate from another CA never completes the handshake.**
+/// **A certificate from another CA never completes the handshake** (`CS-KEY-0013`).
 #[test]
 fn a_client_with_an_untrusted_certificate_is_refused() {
     let (pki, keyd, _) = refused_setup("keyd-mtls-rogue");
     let rogue = pki.rogue_client_identity("worker");
     let err = RemoteKey::connect(endpoint(&pki, &keyd, Some(&rogue)), "dev").unwrap_err();
-    assert_eq!(err.code(), "CS-KEY-0011", "{err}");
+    assert_eq!(err.code(), "CS-KEY-0013", "{err}");
     eprintln!("untrusted certificate: {err}");
+}
+
+/// **A client that does not trust keyd's CA refuses keyd** (`CS-KEY-0013`, `HRD-01`):
+/// a misconfiguration, never mistaken for keyd being down.
+#[test]
+fn a_client_with_the_wrong_ca_refuses_keyd() {
+    let (pki, keyd, worker) = refused_setup("keyd-mtls-wrongca");
+    let other = Pki::new();
+    let mut ep = endpoint(&pki, &keyd, Some(&worker));
+    ep.tls = casual_sign_keyd::client_tls(
+        other.tls_ca.pem().as_bytes(),
+        Some((worker.0.as_bytes(), worker.1.as_bytes())),
+    )
+    .unwrap();
+    let err = RemoteKey::connect(ep, "dev").unwrap_err();
+    assert_eq!(err.code(), "CS-KEY-0013", "{err}");
+}
+
+/// **keyd's certificate under another name is refused** (`CS-KEY-0013`, `HRD-01`).
+#[test]
+fn a_server_name_mismatch_refuses_keyd() {
+    let (pki, keyd, worker) = refused_setup("keyd-mtls-name");
+    let mut ep = endpoint(&pki, &keyd, Some(&worker));
+    ep.server_name = "keyd.elsewhere.test".into();
+    let err = RemoteKey::connect(ep, "dev").unwrap_err();
+    assert_eq!(err.code(), "CS-KEY-0013", "{err}");
+}
+
+/// **keyd that cannot be reached is `CS-KEY-0011`**, not a TLS refusal: nothing
+/// listening, and a listener that closes before TLS answers (`HRD-01`).
+#[test]
+fn an_unreachable_keyd_is_a_transport_failure() {
+    let (pki, keyd, worker) = refused_setup("keyd-mtls-unreachable");
+    // Nothing listens on a port just freed.
+    let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = free.local_addr().unwrap().to_string();
+    drop(free);
+    let mut ep = endpoint(&pki, &keyd, Some(&worker));
+    ep.addr = addr;
+    let err = RemoteKey::connect(ep, "dev").unwrap_err();
+    assert_eq!(err.code(), "CS-KEY-0011", "{err}");
+    // A listener that accepts and closes at once.
+    let closer = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut ep = endpoint(&pki, &keyd, Some(&worker));
+    ep.addr = closer.local_addr().unwrap().to_string();
+    std::thread::spawn(move || {
+        for c in closer.incoming().flatten() {
+            let _ = c.shutdown(std::net::Shutdown::Both);
+        }
+    });
+    let err = RemoteKey::connect(ep, "dev").unwrap_err();
+    assert_eq!(err.code(), "CS-KEY-0011", "{err}");
 }
 
 /// **A certificate from the right CA but not on the allow-list is answered
