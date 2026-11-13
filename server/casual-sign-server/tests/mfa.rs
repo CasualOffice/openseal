@@ -19,8 +19,8 @@ mod common;
 use std::time::Duration;
 
 use axum::http::StatusCode;
-use casual_sign_server::totp;
 use casual_sign_server::Clock as _;
+use casual_sign_server::totp;
 use common::Rls;
 use common::harness::{Api, Auth, PASSWORD, Resp, session_of, unbase32};
 use serde_json::json;
@@ -85,9 +85,7 @@ async fn a_fresh_accounts_administrator_owes_a_factor_with_no_setting() {
         );
         assert_eq!(r.json()["detail"], "enrol", "{path}");
     }
-    let r = api
-        .call("GET", "/api/v1/auth/session", &s, None, &[])
-        .await;
+    let r = api.call("GET", "/api/v1/auth/session", &s, None, &[]).await;
     assert_eq!(r.json()["second_factor"], "enrol");
     // Enrolment through the API lets them in, with the setting still unset.
     api.pass_factor(&email, &s).await;

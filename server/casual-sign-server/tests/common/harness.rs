@@ -337,7 +337,9 @@ impl Api {
                         f.last_step = Some(st);
                         json!({"code": totp::code(&f.seed, st)})
                     }
-                    None => json!({"recovery_code": f.recovery.pop().expect("recovery codes left")}),
+                    None => {
+                        json!({"recovery_code": f.recovery.pop().expect("recovery codes left")})
+                    }
                 };
                 let r = self
                     .call("POST", "/api/v1/auth/mfa/verify", s, Some(body), &[])

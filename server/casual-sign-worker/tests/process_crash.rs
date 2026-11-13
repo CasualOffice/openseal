@@ -282,7 +282,10 @@ impl Stack {
             s("OPENSEAL_DEV_INSECURE_KEY", "1"),
             // A fixed key, so an enrolled second factor survives the server's restarts
             // (ASVS-31: the administrator below owes one by default).
-            s("OPENSEAL_MFA_KEY", "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="),
+            s(
+                "OPENSEAL_MFA_KEY",
+                "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+            ),
             s("RUST_LOG", "warn"),
         ];
         let worker_env = vec![
@@ -370,7 +373,13 @@ impl Stack {
         if r.body["second_factor"] != "enrol" {
             return;
         }
-        let r = self.call(&self.staff, "POST", "/api/v1/auth/mfa/totp/enrol", None, &[]);
+        let r = self.call(
+            &self.staff,
+            "POST",
+            "/api/v1/auth/mfa/totp/enrol",
+            None,
+            &[],
+        );
         assert_eq!(r.status, 200, "{r:?}");
         let seed = common::unbase32(r.body["secret"].as_str().unwrap());
         let now = std::time::SystemTime::now()
