@@ -443,6 +443,16 @@ the rules above, and what does not:
   `api_calls` for any writer. The application reads only `openseal_effective_plan(now)` (current assignment and live
   overrides for its organization and workspace, no reasons or operator ids). `accounts.settings` holds no plan limits;
   its column comment says so.
+- **Metering (built, `PLAN-03`, migration 0025):** `usage_ledger` (tenant, append-only by trigger, primary key
+  `(account_id, meter, source_kind, source_id)` so a retried job or a decision recorded again counts once; `quantity`
+  for the workspace and `org_quantity` for the organization, which differ only for `seats`), `usage_counters` (tenant)
+  and `org_usage_counters` (organization), `(meter, period_start) → value`, calendar month (UTC) for counters and one
+  epoch period for gauges, and `usage_blob_refs` (tenant; references per content-addressed blob, so a blob is counted
+  once per workspace). The application role has SELECT only on all four; every write is through the definer
+  `openseal_meter_apply`, which writes the ledger row and both counters in one transaction, so each counter equals its
+  ledger sum at both levels. The application counts counter meters through `openseal_meter_record` (gauges refused,
+  `CS-DB-0008`; `TenantTx::record_usage`); `seats`, `storage_bytes` and `workspaces` are kept by triggers in the
+  transaction of the change (docs/23 §7.2).
 - **Catalog tests** are scoped to `public` and name their exceptions; the `platform` schema has its own.
 - **Migration order** is fixed in merge order (docs/23 §12): `SEC-ID-01`'s fix, organizations (with organization admins
   and the owner backfill), admin logs, platform schema, operators, approvals, plans, usage; later schema rows take the

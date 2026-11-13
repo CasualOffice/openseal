@@ -188,7 +188,8 @@ impl TenantTx {
     ///
     /// # Errors
     ///
-    /// `CS-DB-0001`, including a gauge, a quantity below 1 or a malformed source.
+    /// `CS-DB-0008` for a gauge, a quantity below 1 or a malformed source; `CS-DB-0009`
+    /// outside a workspace scope.
     pub async fn record_usage(
         &mut self,
         meter: casual_sign_policy::plans::Meter,

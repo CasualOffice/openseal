@@ -1024,6 +1024,23 @@ Allocations (`PLAN-07`) and enforcement (`PLAN-04`) are not built.
   (organization_id, meter, period_start, value)`** per organization (review finding 8), updated in the same
   transaction as the ledger row.
 
+**As built (`PLAN-03`, migration `0025_metering.sql`).** The ledger and both counter tables above, plus `org_quantity`
+on each ledger row (the organization's change, equal to `quantity` except for `seats`, where one person in two
+workspaces is two workspace seats and one organization seat) and `usage_blob_refs` (how many rows of a workspace name a
+blob). Counters are by calendar month (UTC); gauges have one period starting at the Unix epoch. The application role
+has SELECT only; every write goes through the definer `openseal_meter_apply`, which inserts the ledger row (`ON
+CONFLICT DO NOTHING` on `(account_id, meter, source_kind, source_id)`) and, only when it was new, moves both counters
+in the same transaction. Counter meters are counted by `TenantTx::record_usage` → `openseal_meter_record`, which
+refuses gauges and quantities below 1 (`CS-DB-0008`). `envelopes_sent` is counted in `casual-sign-host::apply` when
+`envelope.sent` is appended, keyed by the envelope id. Gauges are kept by triggers in the transaction of the change:
+`storage_bytes` on `document_versions` and `template_documents` insert and delete, once per blob per workspace;
+`seats` recounted through `openseal_org_seats()` under a lock on the organization's `seats` counter row, on membership
+insert, delete, enable or disable, re-profile, profile permission change, user disable, workspace archive or restore,
+and a seat-rule change by plan assignment or organization override; `workspaces` on create, archive and restore.
+Existing rows are counted once by the migration. Not counted yet: signer captures in `storage_bytes` (`PLAN-12`), a
+seat rule changing only by time passing (`PLAN-13`), the `templates` gauge (`PLAN-14`). Tests:
+`casual-sign-store/tests/metering.rs`, `casual-sign-server/tests/metering.rs`.
+
 ### 7.3 Enforcement (only on actions that create or start something)
 
 | Point | Checks | Code |

@@ -26,7 +26,8 @@
 --
 -- Not counted yet: signer captures in `storage_bytes` (no byte length is stored;
 -- PLAN-12); a seat rule that changes only by time passing (an assignment starting, an
--- override expiring) is recounted at the next seat change (PLAN-13).
+-- override expiring) is recounted at the next seat change (PLAN-13); the `templates` gauge
+-- (PLAN-14).
 
 -- 1. Periods ------------------------------------------------------------------------------
 
@@ -99,7 +100,7 @@ SELECT openseal_org_table('org_usage_counters', false);
 REVOKE INSERT ON org_usage_counters FROM openseal_app;
 
 -- How many rows of a workspace name each content-addressed blob, and its size, so a blob
--- is counted once per workspace however many versions or templates name it. No grant.
+-- is counted once per workspace however many versions or templates name it. Read only.
 CREATE TABLE usage_blob_refs (
     account_id  uuid NOT NULL REFERENCES accounts (id),
     sha256      bytea NOT NULL CHECK (octet_length(sha256) = 32),
@@ -108,7 +109,7 @@ CREATE TABLE usage_blob_refs (
     PRIMARY KEY (account_id, sha256)
 );
 SELECT openseal_tenant_table('usage_blob_refs', false);
-REVOKE ALL ON usage_blob_refs FROM openseal_app;
+REVOKE INSERT ON usage_blob_refs FROM openseal_app;
 
 -- 3. The one writer -----------------------------------------------------------------------
 
@@ -139,15 +140,25 @@ BEGIN
     IF NOT FOUND THEN
         RETURN false;
     END IF;
+    -- Update first: a CHECK is evaluated on the proposed row of an INSERT before ON
+    -- CONFLICT, so a negative change must never be offered as a new row's value.
     IF p_quantity <> 0 THEN
-        INSERT INTO usage_counters AS c (account_id, meter, period_start, value)
-        VALUES (p_account, p_meter, period, p_quantity)
-        ON CONFLICT (account_id, meter, period_start) DO UPDATE SET value = c.value + EXCLUDED.value;
+        UPDATE usage_counters c SET value = c.value + p_quantity
+         WHERE c.account_id = p_account AND c.meter = p_meter AND c.period_start = period;
+        IF NOT FOUND THEN
+            INSERT INTO usage_counters AS c (account_id, meter, period_start, value)
+            VALUES (p_account, p_meter, period, p_quantity)
+            ON CONFLICT (account_id, meter, period_start) DO UPDATE SET value = c.value + EXCLUDED.value;
+        END IF;
     END IF;
     IF p_org_quantity <> 0 THEN
-        INSERT INTO org_usage_counters AS c (organization_id, meter, period_start, value)
-        VALUES (org, p_meter, period, p_org_quantity)
-        ON CONFLICT (organization_id, meter, period_start) DO UPDATE SET value = c.value + EXCLUDED.value;
+        UPDATE org_usage_counters c SET value = c.value + p_org_quantity
+         WHERE c.organization_id = org AND c.meter = p_meter AND c.period_start = period;
+        IF NOT FOUND THEN
+            INSERT INTO org_usage_counters AS c (organization_id, meter, period_start, value)
+            VALUES (org, p_meter, period, p_org_quantity)
+            ON CONFLICT (organization_id, meter, period_start) DO UPDATE SET value = c.value + EXCLUDED.value;
+        END IF;
     END IF;
     RETURN true;
 END
@@ -171,7 +182,7 @@ BEGIN
     END IF;
     IF p_meter IS NULL OR p_meter IN ('seats', 'storage_bytes', 'workspaces', 'templates')
        OR p_quantity IS NULL OR p_quantity <= 0 THEN
-        RAISE EXCEPTION 'not a counter meter or quantity' USING ERRCODE = '22023';
+        RAISE EXCEPTION 'not a counter meter or quantity' USING ERRCODE = '23514';
     END IF;
     RETURN openseal_meter_apply(acct, p_meter, p_quantity, p_quantity, p_at, p_source_kind, p_source_id);
 END

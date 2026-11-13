@@ -35,8 +35,8 @@ async fn migrations_apply_from_empty_then_a_second_run_applies_nothing() {
     );
     assert_eq!(second.already, all);
     // Versions rise from 1 with no gap but a number docs/14 reserves for another lane
-    // (22, 23 and 25 are reserved by rows merging separately).
-    const RESERVED: &[i64] = &[22, 23, 25];
+    // (22 and 23 are reserved by rows merging separately).
+    const RESERVED: &[i64] = &[22, 23];
     assert!(all.windows(2).all(|w| w[0] < w[1]), "{all:?}");
     let last = *all.last().unwrap();
     let missing: Vec<i64> = (1..=last)
@@ -108,11 +108,14 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // hosting adds a column); 0016 to 0019 none in `public` (the console's tables are in
     // `platform`); 0020 `admin_events`, a tenant table, and `org_admin_events`, an
     // organization table (ORG-05); 0021 `ml_settings`, `ml_entitlements`, `analysis_runs`,
-    // `suggestions`, `ocr_pages` and `template_fingerprints` (WEB-19), all tenant tables.
-    assert_eq!(tables.len(), 53, "{tables:?}");
+    // `suggestions`, `ocr_pages` and `template_fingerprints` (WEB-19), all tenant tables;
+    // 0025 `usage_ledger`, `usage_counters` and `usage_blob_refs`, tenant tables, and
+    // `org_usage_counters`, an organization table (PLAN-03).
+    assert_eq!(tables.len(), 57, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_admin_events",
+        "org_usage_counters",
         "org_permission_sets",
         "organization_admins",
     ];
