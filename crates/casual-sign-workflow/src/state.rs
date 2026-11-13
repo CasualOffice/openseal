@@ -54,6 +54,20 @@ pub struct RecipientSpec {
     /// For a witness: the recipient they witness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub witness_for: Option<Id>,
+    /// Documents this recipient may not see (document visibility, `WF-02`, docs/24 §4).
+    /// They are never served to them, never count toward what they view, and their act
+    /// records only the documents they saw. A recipient sees at least one document and
+    /// is never hidden a document that carries one of their fields.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_documents: Vec<Id>,
+}
+
+impl RecipientSpec {
+    /// Whether the recipient may see document `id` (`WF-02`).
+    #[must_use]
+    pub fn sees(&self, id: &Id) -> bool {
+        !self.excluded_documents.contains(id)
+    }
 }
 
 /// Consent to electronic records as recorded.
@@ -283,6 +297,10 @@ pub struct EnvelopeState {
     /// When it was sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sent_at: Option<Timestamp>,
+    /// A draft scheduled to send itself at this time (`WF-02`, docs/24 §2); cleared when
+    /// it is sent or the schedule is cancelled. A scheduled draft cannot be edited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_at: Option<Timestamp>,
     /// When it reached a terminal status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<Timestamp>,
@@ -341,6 +359,19 @@ impl EnvelopeState {
                 || q.spec.routing_order >= me.spec.routing_order
                 || q.status == RecipientStatus::Completed
         })
+    }
+
+    /// The documents recipient `index` may see, as events record them (`WF-02`).
+    #[must_use]
+    pub fn visible_documents(&self, index: usize) -> Vec<DocumentHash> {
+        let Some(r) = self.recipients.get(index) else {
+            return Vec::new();
+        };
+        self.documents
+            .iter()
+            .filter(|d| r.spec.sees(d.id()))
+            .map(DocumentState::hash)
+            .collect()
     }
 
     /// Everything but the engine's bookkeeping and the version: what an audit event must

@@ -1,5 +1,5 @@
 //! What must hold before an envelope is sent or a correction saved (`CS-WF-0004`):
-//! `Envelope::validate_for_send` of docs/22 §10, returning every violation.
+//! `violations` (docs/22 §10), returning every violation.
 
 use casual_sign_audit::Timestamp;
 use casual_sign_fields::check_for_send;
@@ -84,6 +84,17 @@ pub(crate) fn violations(
         if needs && !has_address(r) {
             push(Some(r.id()), Problem::MissingAddress);
         }
+        // Document visibility (`WF-02`).
+        if r.spec
+            .excluded_documents
+            .iter()
+            .any(|d| s.document(d).is_none())
+        {
+            push(Some(r.id()), Problem::ExcludedUnknownDocument);
+        }
+        if !s.documents.is_empty() && !s.documents.iter().any(|d| r.spec.sees(d.id())) {
+            push(Some(r.id()), Problem::NoVisibleDocument);
+        }
         if let Some(w) = &r.spec.witness_for
             && !s.recipient(w).is_some_and(|q| q.spec.rtype.signs())
         {
@@ -97,6 +108,9 @@ pub(crate) fn violations(
         };
         match s.recipient(rid) {
             None => push(Some(&f.id), Problem::FieldOnUnknownRecipient),
+            Some(r) if !r.spec.sees(&f.document_id) => {
+                push(Some(&f.id), Problem::FieldOnHiddenDocument);
+            }
             Some(r) if !field_allowed(r.spec.rtype, f.field_type) => {
                 push(Some(&f.id), Problem::FieldNotAllowedForType);
             }

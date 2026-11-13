@@ -37,6 +37,8 @@ struct RSpec {
     rtype: u8,
     order: u32,
     auth: bool,
+    /// Hidden `doc-2` (WF-02), when there is one.
+    hide: bool,
 }
 
 /// A random envelope.
@@ -48,6 +50,8 @@ struct Config {
     reminders: (u8, u8),
     ersd: bool,
     max_auth_attempts: u32,
+    /// Scheduled to send at this many eighths of a day instead of sent at once (WF-02).
+    schedule: Option<u8>,
 }
 
 fn rtype(n: u8) -> RecipientType {
@@ -77,6 +81,7 @@ enum Act {
     Decline(u8),
     Reassign(u8),
     FinishLater(u8),
+    Schedule(Option<u8>),
     Void,
     Resend,
     Remind,
@@ -111,6 +116,7 @@ fn act() -> impl Strategy<Value = Act> {
         1 => r.prop_map(Act::Decline),
         1 => r.prop_map(Act::Reassign),
         1 => r.prop_map(Act::FinishLater),
+        1 => prop::option::of(r).prop_map(Act::Schedule),
         1 => Just(Act::Void),
         1 => Just(Act::Resend),
         1 => Just(Act::Remind),
@@ -137,10 +143,11 @@ fn act() -> impl Strategy<Value = Act> {
 fn config() -> impl Strategy<Value = Config> {
     (
         prop::collection::vec(
-            (any::<u8>(), 1u32..=3, any::<bool>()).prop_map(|(t, o, a)| RSpec {
+            (any::<u8>(), 1u32..=3, any::<bool>(), any::<bool>()).prop_map(|(t, o, a, h)| RSpec {
                 rtype: t,
                 order: o,
                 auth: a,
+                hide: h,
             }),
             1..=5,
         ),
@@ -149,15 +156,19 @@ fn config() -> impl Strategy<Value = Config> {
         (0u8..=3, 0u8..=3),
         any::<bool>(),
         1u32..=3,
+        prop::option::weighted(0.25, 1u8..=12),
     )
         .prop_map(
-            |(recipients, documents, expiry_days, reminders, ersd, max_auth_attempts)| Config {
-                recipients,
-                documents,
-                expiry_days,
-                reminders,
-                ersd,
-                max_auth_attempts,
+            |(recipients, documents, expiry_days, reminders, ersd, max_auth_attempts, schedule)| {
+                Config {
+                    recipients,
+                    documents,
+                    expiry_days,
+                    reminders,
+                    ersd,
+                    max_auth_attempts,
+                    schedule,
+                }
             },
         )
 }
@@ -187,6 +198,9 @@ fn setup(c: &Config) -> Harness {
         if r.auth {
             spec.auth = vec![AuthMethod::SmsOtp];
         }
+        if r.hide && c.documents >= 2 {
+            spec.excluded_documents = vec![id("doc-2")];
+        }
         changes.push(Change::AddRecipient { recipient: spec });
         if rtype(r.rtype).signs() {
             changes.push(add_field(field(
@@ -207,8 +221,32 @@ fn setup(c: &Config) -> Harness {
         reminders: ReminderPolicy::new(u16::from(c.reminders.0), u16::from(c.reminders.1)).unwrap(),
     });
     hx.ok(sender(), Command::Edit { changes });
-    let _ = hx.run(sender(), Command::Send);
+    match c.schedule {
+        Some(n) => {
+            let at = t(i64::from(n) * DAY / 8);
+            let _ = hx.run(sender(), Command::ScheduleSend { at: Some(at) });
+        }
+        None => {
+            let _ = hx.run(sender(), Command::Send);
+        }
+    }
     hx
+}
+
+/// Fires a scheduled draft's send timer at its time.
+fn fire_schedule(hx: &mut Harness) {
+    let Some(t) = hx
+        .state()
+        .book
+        .scheduled
+        .iter()
+        .find(|t| t.timer == casual_sign_workflow::Timer::ScheduledSend)
+        .cloned()
+    else {
+        return;
+    };
+    hx.now = hx.now.max(t.at.unix_millis() - common::t(0).unix_millis());
+    hx.ok(Principal::System, Command::TimerDue { timer: t.id });
 }
 
 /// What the interpreter saw across a sequence, for the coverage check.
@@ -486,6 +524,12 @@ fn step(hx: &mut Harness, a: &Act, seen: &mut Seen, salt: &mut u8) {
                 },
             )
         }),
+        Act::Schedule(n) => Some(hx.run(
+            sender(),
+            Command::ScheduleSend {
+                at: n.map(|n| t(hx.now + i64::from(n) * DAY / 16)),
+            },
+        )),
         Act::Tick(n) => {
             hx.now += i64::from(*n) * DAY / 8;
             None
@@ -651,6 +695,7 @@ proptest! {
     #[test]
     fn every_valid_envelope_can_be_completed(c in config()) {
         let mut hx = setup(&c);
+        fire_schedule(&mut hx);
         prop_assume!(hx.status() == EnvelopeStatus::Sent);
         for _round in 0..12 {
             if hx.status() == EnvelopeStatus::Completing {

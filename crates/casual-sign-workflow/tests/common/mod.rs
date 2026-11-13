@@ -68,6 +68,7 @@ pub fn recipient(rid: &str, rtype: RecipientType, order: u32) -> RecipientSpec {
         time_zone_offset_minutes: 0,
         date_format: None,
         witness_for: None,
+        excluded_documents: Vec::new(),
     }
 }
 
@@ -484,6 +485,85 @@ pub fn check_invariants(prev: Option<&EnvelopeState>, cmd: &Command, ctx: &Conte
                 assert!(next.turn_reached(i), "{} active out of turn", r.id());
             }
         }
+    }
+
+    // Document visibility (WF-02): nobody is recorded viewing or acting on a document
+    // hidden from them.
+    for e in &d.events {
+        let (rid, docs): (&Id, Vec<&Id>) = match &e.data {
+            EventData::RecipientViewedDocument {
+                recipient_id,
+                document,
+                ..
+            } => (recipient_id, vec![&document.document_id]),
+            EventData::RecipientSigned {
+                recipient_id,
+                documents,
+                ..
+            }
+            | EventData::RecipientApproved {
+                recipient_id,
+                documents,
+            } => (
+                recipient_id,
+                documents.iter().map(|d| &d.document_id).collect(),
+            ),
+            _ => continue,
+        };
+        let r = next.recipient(rid).expect("acting recipient exists");
+        for doc in docs {
+            assert!(r.spec.sees(doc), "{rid} recorded on hidden {doc}");
+        }
+    }
+    for r in &next.recipients {
+        for doc in &r.acted_documents {
+            assert!(
+                r.spec.sees(&doc.document_id),
+                "{} acted on a hidden document",
+                r.id()
+            );
+        }
+    }
+
+    // Scheduled sending (WF-02): a draft leaves `draft` only by the sender's Send or by
+    // its own schedule at or after its time; a scheduled draft holds exactly one pending
+    // send timer, at its time; only a draft is scheduled.
+    if let Some(p) = prev
+        && p.status == EnvelopeStatus::Draft
+        && next.status == EnvelopeStatus::Sent
+    {
+        match cmd {
+            Command::Send => {}
+            Command::TimerDue { .. } => {
+                assert!(
+                    p.send_at.is_some_and(|at| at <= ctx.now),
+                    "sent before its schedule"
+                );
+            }
+            other => panic!("{} sent a draft", other.name()),
+        }
+    }
+    let send_timers: Vec<_> = next
+        .book
+        .scheduled
+        .iter()
+        .filter(|t| t.timer == casual_sign_workflow::Timer::ScheduledSend)
+        .collect();
+    match next.send_at {
+        Some(at) => {
+            assert_eq!(
+                next.status,
+                EnvelopeStatus::Draft,
+                "a sent envelope keeps a schedule"
+            );
+            assert_eq!(
+                send_timers.len(),
+                1,
+                "a scheduled draft without one send timer"
+            );
+            assert_eq!(send_timers[0].at, at);
+        }
+        None => assert!(send_timers.is_empty(), "a send timer with no schedule"),
     }
 
     // Recipient states and envelope states agree.

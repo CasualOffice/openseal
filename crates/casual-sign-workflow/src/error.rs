@@ -87,6 +87,14 @@ pub enum Problem {
     ExpiryInPast,
     /// A document has no pages, or more than docs/21 allows.
     DocumentPages,
+    /// A recipient is hidden a document the envelope does not have (`CS-WF-0008`,
+    /// `WF-02`).
+    ExcludedUnknownDocument,
+    /// A field is on a document hidden from the recipient it belongs to (`CS-WF-0021`,
+    /// `WF-02`).
+    FieldOnHiddenDocument,
+    /// A recipient is hidden every document (`CS-WF-0004`, `WF-02`).
+    NoVisibleDocument,
     /// A field rule failed (`CS-FLD-*`).
     Field(FieldError),
 }
@@ -108,7 +116,9 @@ impl Violation {
             Problem::MissingAddress => "CS-WF-0005",
             Problem::FieldOnUnknownRecipient
             | Problem::FieldOnUnknownDocument
-            | Problem::UnknownWitnessed => "CS-WF-0008",
+            | Problem::UnknownWitnessed
+            | Problem::ExcludedUnknownDocument => "CS-WF-0008",
+            Problem::FieldOnHiddenDocument => "CS-WF-0021",
             Problem::Field(e) => e.code(),
             _ => "CS-WF-0004",
         }
@@ -236,6 +246,20 @@ pub enum WorkflowError {
         /// The envelope's `capture_location`.
         capture_location: bool,
     },
+    /// The document is hidden from this recipient (`CS-WF-0021`, `WF-02`).
+    DocumentHidden {
+        /// The recipient.
+        recipient: Id,
+        /// The document.
+        document: Id,
+    },
+    /// The draft is scheduled to send; cancel the schedule before editing it
+    /// (`CS-WF-0022`, `WF-02`).
+    Scheduled,
+    /// The schedule time is not after now, is more than
+    /// [`crate::limits::MAX_SCHEDULE_DAYS`] ahead, or is not before the envelope's expiry
+    /// (`CS-WF-0023`, `WF-02`).
+    ScheduleOutOfRange,
     /// The recipient has not passed every authentication requirement (`CS-AUTH-0003`).
     AuthRequired {
         /// The recipient.
@@ -285,6 +309,9 @@ impl WorkflowError {
             Self::Encoding => "CS-WF-0018",
             Self::LocationRequired { .. } => "CS-WF-0019",
             Self::LocationInconsistent { .. } => "CS-WF-0020",
+            Self::DocumentHidden { .. } => "CS-WF-0021",
+            Self::Scheduled => "CS-WF-0022",
+            Self::ScheduleOutOfRange => "CS-WF-0023",
             Self::AuthRequired { .. } => "CS-AUTH-0003",
             Self::AuthLocked { .. } => "CS-AUTH-0004",
             Self::ConsentRequired { .. } => "CS-AUTH-0005",
@@ -359,6 +386,15 @@ impl fmt::Display for WorkflowError {
                 f,
                 "{code}: location does not match capture_location = {capture_location}"
             ),
+            Self::DocumentHidden {
+                recipient,
+                document,
+            } => write!(
+                f,
+                "{code}: document {document} is hidden from recipient {recipient}"
+            ),
+            Self::Scheduled => write!(f, "{code}: draft is scheduled to send"),
+            Self::ScheduleOutOfRange => write!(f, "{code}: schedule time out of range"),
             Self::AuthRequired { recipient } => {
                 write!(f, "{code}: recipient {recipient} not authenticated")
             }
