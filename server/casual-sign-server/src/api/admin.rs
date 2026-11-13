@@ -97,7 +97,7 @@ pub(crate) struct AdminEventsQuery {
     /// `json` (default) or `csv`.
     #[serde(default)]
     format: Option<String>,
-    /// `full`: re-verify the whole log before answering, not only this page's links.
+    /// `page` (the default) verifies the page read; `full` re-verifies the whole log first.
     #[serde(default)]
     verify: Option<String>,
 }
@@ -115,7 +115,7 @@ fn csv_field(s: &str) -> String {
     }
 }
 
-/// `GET /admin-events?cursor&limit&format=json|csv&verify=full` (ORG-05, docs/23 §2.5):
+/// `GET /admin-events?cursor&limit&format=json|csv&verify=page|full` (ORG-05, docs/23 §2.5):
 /// a page of this workspace's admin log, oldest first, each event with its hash, `prev`
 /// and its canonical bytes as the JSON they are. Each page is verified as it is read
 /// (each event against the one before it, the event at the cursor included; the last

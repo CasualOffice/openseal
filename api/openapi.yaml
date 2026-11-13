@@ -2009,7 +2009,7 @@ paths:
       - {name: f, in: path, required: true, description: Field id, schema: {type: string}}
     patch:
       operationId: patchTemplateField
-      summary: "Change a field: the members given replace its own; checked whole again (WEB-06)"
+      summary: "Change a field: the members given replace its own, null removes one (UX-11); checked whole again (WEB-06)"
       x-permission: "templates:write"
       parameters:
         - $ref: '#/components/parameters/ifMatch'

@@ -7,6 +7,8 @@
 // `POST /api/v1/envelopes` body (documents, recipients, fields in one call), so it
 // runs on today's envelope API.
 
+import { settingsOf } from "./templatesync.js";
+
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /// Roles for `POST /api/v1/templates` from the editor's recipients. `routing` is either
@@ -72,7 +74,7 @@ export function extraProblems(extra) {
 ///
 /// - `docs`: `[{id, name, base64}]`, the template's documents with their bytes.
 /// - `fields`: the template's fields, `{document_id, role_id, type, placement, required?,
-///   label?}` as the server answers them (a `role` name is taken too).
+///   label?, …settings}` as the server answers them (a `role` name is taken too).
 /// - `status`: "draft" (open it in the editor) or "sent" (send at once).
 ///
 /// A field whose role or document is not in the template is left out (the template
@@ -117,6 +119,8 @@ export function envelopeFromTemplate(template, people, { docs = [], fields = [],
     const field = { recipient: rf, document: di, type: f.type, page: f.placement.page, x: f.placement.x, y: f.placement.y, width: f.placement.width, height: f.placement.height };
     if (f.required) field.required = true;
     if (f.label) field.label = f.label;
+    // Every setting the template kept (UX-11): tooltip, value, options, validation, format…
+    Object.assign(field, settingsOf(f));
     body.fields.push(field);
   }
   return { body, dropped };
