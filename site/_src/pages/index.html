@@ -1,150 +1,286 @@
-<!--meta {"title": "OpenSeal", "description": "OpenSeal is an open-source, Apache-2.0 alternative to DocuSign: send documents for signature, self-host it, and verify every sealed PDF offline.", "nav": "home"} -->
-<section class="hero">
-  <div class="wrap hero-grid">
+<!--meta {"title": "OpenSeal", "description": "OpenSeal is an open-source, Apache-2.0 e-signature platform: send documents for signature, sign on any device, self-host it, and verify every sealed PDF offline.", "nav": "home"} -->
+<!-- Product screenshots come from tools/capture-site-screens.mjs. A "shot:wanted,current"
+     placeholder names the file the script writes once that screen is rebuilt and shows the
+     current image until then (data-pending in the output): agreements, editor and
+     admin-intelligence are re-captured after the Agreements, Prepare and Admin screens merge. -->
+<section class="hero" aria-labelledby="hero-h">
+  <div class="wrap">
     <div class="hero-copy">
-      <span class="eyebrow">{{icon:scale:16}}Apache-2.0 e-signature platform</span>
-      <h1>Agreements, signed <em>and provable.</em></h1>
-      <p class="lede">The open-source DocuSign alternative. Self-host it, embed it, and let anyone verify the sealed PDF offline.</p>
+      <a class="release-pill" href="changelog.html"><b>v0.0.1</b><span>First pre-release, for evaluation</span>{{icon:arrow-right:14}}</a>
+      <h1 id="hero-h">Agreements with evidence <span class="soft">anyone can verify offline.</span></h1>
+      <p class="lede">OpenSeal is an open-source e-signature platform. Send documents for signature, sign on any device, and get back a sealed PDF that anyone can check offline, with no account and no server of ours.</p>
       <div class="cta-row">
         <a class="btn btn-primary" href="docs/getting-started.html">Get started with Docker<span class="btn-icon">{{icon:arrow-right:16}}</span></a>
-        <a class="btn btn-secondary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon">{{icon:arrow-up-right:16}}</span></a>
+        <a class="btn btn-secondary" href="download.html">Download and deploy</a>
       </div>
+      <ul class="hero-meta" aria-label="In short">
+        <li>{{icon:circle-check:16}}Apache-2.0, no copyleft</li>
+        <li>{{icon:circle-check:16}}Self-hosted with Docker Compose</li>
+        <li>{{icon:circle-check:16}}Keys in your HSM</li>
+      </ul>
     </div>
-    <div class="hero-art">
-      <svg viewBox="0 0 520 470" role="img" aria-labelledby="hero-art-t" focusable="false">
-        <title id="hero-art-t">A document receives a handwritten signature, then the OpenSeal seal stamps onto it and the audit trail links up: sent, viewed, signed, sealed.</title>
-        <g class="anim a-page">
-          <rect class="h-sheet" x="72" y="44" width="330" height="398" rx="16" transform="rotate(-4 237 243)"/>
-          <rect class="h-shadow" x="96" y="40" width="330" height="404" rx="16"/>
-          <rect class="h-page" x="90" y="30" width="330" height="404" rx="16"/>
-          <rect class="h-title" x="122" y="66" width="150" height="13" rx="6.5"/>
-          <rect class="h-line" x="122" y="100" width="264" height="7" rx="3.5"/>
-          <rect class="h-line" x="122" y="118" width="246" height="7" rx="3.5"/>
-          <rect class="h-line" x="122" y="136" width="258" height="7" rx="3.5"/>
-          <rect class="h-line" x="122" y="154" width="190" height="7" rx="3.5"/>
-          <rect class="h-line" x="122" y="186" width="264" height="7" rx="3.5"/>
-          <rect class="h-line" x="122" y="204" width="232" height="7" rx="3.5"/>
-          <rect class="h-line" x="122" y="222" width="250" height="7" rx="3.5"/>
-          <rect class="h-line" x="122" y="240" width="140" height="7" rx="3.5"/>
-          <line class="h-base" x1="122" y1="380" x2="318" y2="380"/>
-          <rect class="h-line" x="122" y="392" width="88" height="6" rx="3"/>
-        </g>
-        <g class="anim a-field">
-          <rect class="h-field" x="122" y="300" width="196" height="68" rx="9"/>
-          <rect class="h-tag" x="122" y="276" width="74" height="20" rx="10"/>
-          <text class="h-tag-text" x="134" y="290">Sign here</text>
-        </g>
-        <path class="a-sig h-sig" pathLength="1" d="M136 352c5-16 13-34 21-31 7 3-8 33-1 35 8 2 14-23 22-21 6 2 -3 19 4 20 8 1 12-15 20-13 6 2 0 13 8 12 9-1 15-17 26-15 7 1-3 12 6 12 12 0 25-10 40-12 10-1 21 0 30 2"/>
-        <circle class="anim a-ring h-ring" cx="370" cy="336" r="58"/>
-        <image class="anim a-seal" href="{{root}}assets/mark.svg" x="320" y="286" width="100" height="100"/>
-        <g class="anim a-chip">
-          <rect class="h-chip" x="214" y="418" width="206" height="34" rx="17"/>
-          <path class="h-chip-ok" d="M232 435l5 5 9-10"/>
-          <text class="h-chip-text" x="256" y="439.5">Sealed with PAdES B-T</text>
-        </g>
-        <g>
-          <line class="h-link-bar" x1="462" y1="92" x2="462" y2="290"/>
-          <g class="anim a-l1"><rect class="h-link" x="430" y="70" width="64" height="40" rx="10"/><text class="h-link-text" x="444" y="88">sent</text><text class="h-hash" x="444" y="101">a3f1</text></g>
-          <g class="anim a-l2"><rect class="h-link" x="430" y="134" width="64" height="40" rx="10"/><text class="h-link-text" x="444" y="152">viewed</text><text class="h-hash" x="444" y="165">9c0e</text></g>
-          <g class="anim a-l3"><rect class="h-link" x="430" y="198" width="64" height="40" rx="10"/><text class="h-link-text" x="444" y="216">signed</text><text class="h-hash" x="444" y="229">5d72</text></g>
-          <g class="anim a-l4"><rect class="h-link" x="430" y="262" width="64" height="40" rx="10"/><text class="h-link-text" x="444" y="280">sealed</text><text class="h-hash" x="444" y="293">205a</text></g>
-        </g>
-      </svg>
+
+    <div class="stage-hero">
+      <div class="window">
+        <div class="window__bar" aria-hidden="true"><span class="window__dots"><i></i><i></i><i></i></span><span class="window__url">{{icon:lock:12}}sign.example.com</span><span></span></div>
+        {{shot:home|OpenSeal's Home screen: a quiet sidebar with Search or jump to and New agreement, counters for declined, waiting, expiring, draft and completed agreements, a drop zone for PDFs, and recent envelopes and templates.|eager}}
+      </div>
+      <div class="device">{{shot:sign-phone|The signing page on a phone: the offer letter with its Job title and Sign fields marked, and a guide bar at the bottom saying two required fields are left.|eager}}</div>
+      <p class="float-chip" aria-hidden="true"><span class="chip-ic">{{icon:check:18}}</span><b>Signed and unchanged</b><span>Checked in the browser, nothing uploaded</span></p>
     </div>
   </div>
 </section>
 
-<section class="section-tight" aria-labelledby="product-h">
+<section class="standards" aria-labelledby="std-h">
   <div class="wrap">
-    <h2 id="product-h" class="sr-only">The product</h2>
-    <p class="status reveal">{{icon:info}}<span><strong>v0.0.1 pre-release is out.</strong> Send, sign on a phone or a desktop, and download a sealed PDF with its certificate, on one machine with Docker Compose. It is for evaluation, not yet for production agreements; see the <a href="changelog.html">changelog</a> and the <a href="roadmap.html">roadmap</a>.</span></p>
-    <figure class="showcase reveal reveal-d1">
-      <div class="frame">{{shot:editor|The send editor: a two-page services agreement with signature, date and text fields placed for two signers, a field palette on the left and field properties on the right.}}</div>
-      <figcaption>The document-first editor: the page gets the screen, fields go where you drop them.</figcaption>
+    <p id="std-h">Built on open standards, checked by independent validators</p>
+    <ul>
+      <li>{{icon:stamp:16}}PAdES B-T to B-LTA</li>
+      <li>{{icon:clock:16}}RFC 3161 timestamps</li>
+      <li>{{icon:link:16}}RFC 8785 audit chain</li>
+      <li>{{icon:key-round:16}}PKCS#11 key custody</li>
+      <li>{{icon:badge-check:16}}pyHanko and EU DSS</li>
+      <li>{{icon:webhook:16}}Standard Webhooks</li>
+    </ul>
+  </div>
+</section>
+
+<section class="section" id="product" aria-labelledby="send-h">
+  <div class="wrap feature">
+    <div class="feature__copy reveal">
+      <span class="eyebrow eyebrow--dot">Prepare and send</span>
+      <h2 id="send-h">Send in minutes, not meetings.</h2>
+      <p>Upload a PDF, add the people in order or in parallel, and place fields where they belong. The page gets the screen; tools stay out of the way until you pick one.</p>
+      <ul class="points">
+        <li><span class="pt-ic">{{icon:pen-line}}</span><strong>Pick a tool, click to place</strong><span>Signature, initials, date, name, text, checkbox and more, each with its own properties and recipient.</span></li>
+        <li><span class="pt-ic">{{icon:list-ordered}}</span><strong>Routing that matches the deal</strong><span>Signing order, parallel signers, approvers and people who only receive a copy.</span></li>
+        <li><span class="pt-ic">{{icon:layout-template}}</span><strong>Templates with roles</strong><span>Save documents, fields and routing once; fill in the people when you send.</span></li>
+      </ul>
+    </div>
+    <figure class="feature__media reveal reveal-d1">
+      <div class="window">
+        <div class="window__bar" aria-hidden="true"><span class="window__dots"><i></i><i></i><i></i></span><span class="window__url">{{icon:lock:12}}sign.example.com/prepare</span><span></span></div>
+        {{shot:editor|The send editor: a two-page services agreement with signature, date and text fields placed for two signers, with the field tools beside the page.}}
+      </div>
     </figure>
   </div>
 </section>
 
-<section class="section section-alt" id="features" aria-labelledby="features-h">
+<section class="section-tight" aria-labelledby="track-h">
+  <div class="wrap">
+    <h2 id="track-h" class="sr-only">Track and find</h2>
+    <div class="bento">
+      <article class="cell c-7 reveal">
+        <h3>Every agreement in one list</h3>
+        <p>Drafts, waiting for others, expiring soon, completed: grouped so you see what needs you first.</p>
+        <div class="cell-media cell-media--inset">{{shot:agreements|The Agreements list with drafts, sent, completed, declined and voided envelopes, each with its status.}}</div>
+      </article>
+      <article class="cell c-5 reveal reveal-d1">
+        <h3>Jump anywhere with <kbd>⌘K</kbd></h3>
+        <p>Search agreements, templates and actions from one box, by keyboard alone.</p>
+        <div class="cell-media crop crop--palette">{{shot:palette|The command menu open over Home: the query "nda" offers Search agreements for nda and the Mutual NDA agreement, completed.}}</div>
+      </article>
+      <article class="cell c-5 reveal">
+        <h3>A receipt for every signer</h3>
+        <p>When the last person signs, everyone can download the sealed copy, and anyone can check it later.</p>
+        <div class="cell-media crop crop--done">{{shot:sign-done|The signer's receipt: Signed. Thank you, Jordan. Everyone has signed, with the time signed, the fields filled, Download a copy and Print.}}</div>
+      </article>
+      <article class="cell c-7 reveal reveal-d1">
+        <h3>Admin for each workspace</h3>
+        <p>People, invitations, roles and API clients per workspace, with organizations above them.</p>
+        <div class="cell-media cell-media--inset">{{shot:admin-intelligence,admin-api|The workspace Admin screen.}}</div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="sign-h">
+  <div class="wrap feature feature--flip">
+    <div class="feature__copy reveal">
+      <span class="eyebrow eyebrow--dot">Sign</span>
+      <h2 id="sign-h">A guided signing on any device.</h2>
+      <p>Signers need no account. A guide takes them from field to field, shows what is left, and finishes with a review of exactly what they signed.</p>
+      <ul class="points">
+        <li><span class="pt-ic">{{icon:lock}}</span><strong>They are who you sent it to</strong><span>An access code or an email code before any content is shown, then consent to electronic records.</span></li>
+        <li><span class="pt-ic">{{icon:signature}}</span><strong>Type, draw or upload</strong><span>A signature and initials adopted once and used for every field in the agreement.</span></li>
+        <li><span class="pt-ic">{{icon:smartphone}}</span><strong>Phone first</strong><span>A bottom bar and sheets on small screens, large targets, and a design that aims at WCAG 2.2 AA.</span></li>
+      </ul>
+    </div>
+    <figure class="feature__media media-pair reveal reveal-d1">
+      <div class="window">
+        <div class="window__bar" aria-hidden="true"><span class="window__dots"><i></i><i></i><i></i></span><span class="window__url">{{icon:lock:12}}sign.example.com/s/…</span><span></span></div>
+        {{shot:sign-desktop|Signing on a desktop: the offer letter with Job title filled in, the signature field marked next, and a guide bar showing one required field left.}}
+      </div>
+      <div class="device">{{shot:adopt-phone|Adopting a signature on a phone: the typed name in two script styles in a bottom sheet, with Adopt and sign.}}</div>
+    </figure>
+  </div>
+</section>
+
+<section class="section band-dark" id="evidence" aria-labelledby="evidence-h">
+  <div class="wrap">
+    <div class="evidence-grid">
+      <div class="reveal">
+        <div class="sec-head flush">
+          <span class="eyebrow eyebrow--ok">Evidence and verification</span>
+          <h2 id="evidence-h">Proof that outlives the platform.</h2>
+          <p>A completed agreement shows which document every party saw, who signed it, when and how. Drop the sealed PDF on the verify page: the check runs in your browser in WebAssembly, and the file never leaves your machine.</p>
+        </div>
+        <ol class="chain" aria-label="The audit trail is a chain: each event carries the hash of the one before it">
+          <li>{{icon:send}}sent</li><li class="sep" aria-hidden="true">{{icon:arrow-right}}</li>
+          <li>{{icon:eye}}viewed</li><li class="sep" aria-hidden="true">{{icon:arrow-right}}</li>
+          <li>{{icon:signature}}signed</li><li class="sep" aria-hidden="true">{{icon:arrow-right}}</li>
+          <li class="sealed">{{icon:stamp}}sealed</li>
+        </ol>
+      </div>
+      <div class="evidence-stack reveal reveal-d1">
+        <div class="window">
+          <div class="window__bar" aria-hidden="true"><span class="window__dots"><i></i><i></i><i></i></span><span class="window__url">{{icon:lock:12}}verify</span><span></span></div>
+          <div class="crop crop--verify">{{shot:verify|The verify page reporting Signed and unchanged: one valid signature, three revisions, the trusted certificate used, and the time it was checked.}}</div>
+        </div>
+        <div class="paper">{{shot:certificate|Page one of a certificate of completion: envelope summary, document hashes, and the first signer's events with authentication, IP address, location, times and drawn signature.}}</div>
+      </div>
+    </div>
+    <ul class="facts">
+      <li class="reveal"><span class="cell-icon">{{icon:stamp}}</span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation is one setting per envelope.</span></li>
+      <li class="reveal reveal-d1"><span class="cell-icon">{{icon:link}}</span><strong>Hash-chained audit trail</strong><span>Every event is canonical JSON linked by SHA-256 to the one before it, embedded in the PDF. Deleting, inserting, reordering or editing an event is detected.</span></li>
+      <li class="reveal reveal-d2"><span class="cell-icon">{{icon:badge-check}}</span><strong>Independent validators agree</strong><span>Our verifier, pyHanko and EU DSS check every sealed and tampered fixture; all 417 admissible PDFs of a 422-file real-world corpus pass all three.</span></li>
+      <li class="reveal"><span class="cell-icon">{{icon:key-round}}</span><strong>Keys in your HSM</strong><span>keyd, a separate service, holds the seal key behind PKCS#11 and signs digests, never documents.</span></li>
+      <li class="reveal reveal-d1"><span class="cell-icon">{{icon:shield}}</span><strong>Every upload treated as hostile</strong><span>A bounded PDF reader, fuzzed for 24 hours per entry point, rewrites the file without active content before anyone signs it.</span></li>
+      <li class="reveal reveal-d2"><span class="cell-icon">{{icon:terminal}}</span><strong>Verify without us</strong><span>In the browser, offline, or with the openseal command line. The seal is standard PAdES, so other validators read it too.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="section" id="intelligence" aria-labelledby="ml-h">
+  <div class="wrap feature">
+    <div class="feature__copy reveal">
+      <span class="eyebrow eyebrow--dot eyebrow--ml">Document intelligence</span>
+      <h2 id="ml-h">Help from models that run on your servers.</h2>
+      <p>A separate model service runs beside the rest of the stack, so documents never leave your servers to be read. What it finds is a suggestion a person accepts or dismisses; every feature is off by default, and none of it enters the sealed PDF or the audit trail.</p>
+      <ul class="points points--ml">
+        <li><span class="pt-ic">{{icon:file-search}}</span><strong>Fields where they belong <span class="pill pill-done">In the editor</span></strong><span>Detect fields suggests where signatures, dates and text go on an uploaded PDF.</span></li>
+        <li><span class="pt-ic">{{icon:shield-check}}</span><strong>Parties, dates, amounts and personal data <span class="pill pill-progress">Reaching the app</span></strong><span>Built in the model service, with validated recognisers for card numbers, IBANs and national identifiers; the app's suggestion screens are being built now.</span></li>
+        <li><span class="pt-ic">{{icon:cpu}}</span><strong>Pretrained, never trained on your documents</strong><span>Designed so nothing learns from what you send: pretrained open models only, on your own hardware. Text from scans and template matching are in progress.</span></li>
+      </ul>
+    </div>
+    <div class="feature__media reveal reveal-d1" role="img" aria-label="Illustration: a contract page with two suggested fields outlined in violet, and a suggestion card listing the parties, the effective date and one IBAN found, with Accept and Dismiss.">
+      <div class="ml-stage" aria-hidden="true">
+        <div class="ml-doc">
+          <span class="ln t"></span>
+          <p class="txt">This agreement is made between <span class="ml-mark">Halden Logistics B.V.</span> and <span class="ml-mark">Ferro Analytics Ltd</span>, effective <span class="ml-mark">1 December 2026</span>.</p>
+          <span class="ln w9"></span><span class="ln w8"></span><span class="ln w9"></span><span class="ln w6"></span>
+          <p class="txt">Fees are paid to account <span class="ml-mark">NL91 ABNA 0417 1643 00</span> within 30 days.</p>
+          <span class="ln w7"></span>
+          <div class="ml-fields">
+            <div class="ml-field"><span class="box">{{icon:signature}}Signature</span><span class="lbl">Suggested for signer 1</span></div>
+            <div class="ml-field"><span class="box">{{icon:clock}}Date signed</span><span class="lbl">Suggested for signer 1</span></div>
+          </div>
+        </div>
+        <div class="ml-card">
+          <div class="ml-card__h">{{icon:file-search}}Found in this document</div>
+          <ul>
+            <li>Parties<b>Halden Logistics, Ferro Analytics</b></li>
+            <li>Effective date<b>1 Dec 2026</b></li>
+            <li>Personal data<b>1 IBAN</b></li>
+          </ul>
+          <div class="acts"><span class="ok">Accept</span><span class="no">Dismiss</span></div>
+        </div>
+      </div>
+      <p class="ml-note">Illustration. In the app, violet marks model suggestions and nothing else.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section section-alt" id="console" aria-labelledby="console-h">
   <div class="wrap">
     <div class="sec-head reveal">
-      <h2 id="features-h">Everything a signature needs, nothing behind a paywall.</h2>
-      <p>Bulk send, conditional fields, SSO, embedding and webhooks are planned for the open core, not a higher tier.</p>
+      <span class="eyebrow eyebrow--dot">Operate</span>
+      <h2 id="console-h">A platform console for the people who run it.</h2>
+      <p>A separate console, with its own sign-in and second factor, for operators of a deployment: health, organizations, approvals and an operator log. It sees counts and states, never document content.</p>
     </div>
-    <div class="bento">
-      <article class="cell c-send reveal">
-        <span class="cell-icon">{{icon:send}}</span>
-        <h3>Send in minutes</h3>
-        <p>Upload a PDF, add signers in order or in parallel, place fields and send. Every agreement is tracked from one list.</p>
-        <div class="cell-media">{{shot:agreements|The Agreements list with drafts, sent, completed, declined and voided envelopes, each with its status.}}</div>
-      </article>
-      <article class="cell c-phone reveal reveal-d1">
-        <span class="cell-icon">{{icon:smartphone}}</span>
-        <h3>Sign on any phone</h3>
-        <p>Access code, consent, a guide through every required field, and a signature typed, drawn or uploaded. Designed for WCAG 2.2 AA.</p>
-        <div class="cell-media">{{shot:adopt-phone|The signing page on a phone: the adopt-your-signature panel with the typed name shown in two script styles.}}</div>
-      </article>
-      <article class="cell c-verify reveal">
-        <span class="cell-icon">{{icon:shield-check}}</span>
-        <h3>Verify without us</h3>
-        <p>Drop a sealed PDF on the verify page. The check runs in your browser in WebAssembly, and the file is never uploaded.</p>
-        <div class="cell-media">{{shot:verify|The verify page reporting "Signed and unchanged": one valid approval signature with its timestamp, and the later revision classified as allowed validation data.}}</div>
-      </article>
-      <article class="cell c-templates reveal reveal-d1">
-        <span class="cell-icon">{{icon:layout-template}}</span>
-        <h3>Templates with roles</h3>
-        <p>Save documents, fields and routing once. Fill in the people when you send.</p>
-        <div class="cell-media">{{shot:templates|The Templates list with a mutual NDA and a contractor onboarding template.}}</div>
-      </article>
-      <article class="cell c-api reveal">
-        <span class="cell-icon">{{icon:braces}}</span>
-        <h3>An API you already know</h3>
-        <p>Envelopes, recipients, routing orders, fields and signed webhooks, in the shapes DocuSign and SignNow integrators expect.</p>
+    <figure class="reveal">
+      <div class="window">
+        <div class="window__bar" aria-hidden="true"><span class="window__dots"><i></i><i></i><i></i></span><span class="window__url">{{icon:lock:12}}console.example.com</span><span></span></div>
+        {{shot:console|The platform console's Health screen: tiles for job queue depth, dead letters, database, services and the verified operator log, then open alerts, service probes, the job queue by kind and dead letters.}}
+      </div>
+      <figcaption>The console's Health screen, shown with demo data.</figcaption>
+    </figure>
+    <ul class="facts facts--light">
+      <li class="reveal"><span class="cell-icon">{{icon:users}}</span><strong>Two people for risky actions</strong><span>Suspending or resuming an organization needs a second operator's approval.</span></li>
+      <li class="reveal reveal-d1"><span class="cell-icon">{{icon:lock}}</span><strong>Operators sign in with TOTP</strong><span>Roles decide what each operator can open, and the server enforces them on every request.</span></li>
+      <li class="reveal reveal-d2"><span class="cell-icon">{{icon:link}}</span><strong>A hash-chained operator log</strong><span>The console verifies the chain, so an edited or missing entry shows.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="section" id="self-host" aria-labelledby="selfhost-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow eyebrow--dot">Self-host and integrate</span>
+      <h2 id="selfhost-h">Your servers, your keys, your data.</h2>
+      <p>One command builds and starts the whole stack on a machine with Docker. Nothing calls home. Then drive it from your own product with an API in the shapes DocuSign and SignNow integrators expect.</p>
+    </div>
+    <div class="duo">
+      <div class="duo-cell reveal">
+        <div class="terminal">
+          <div class="terminal__bar"><span class="window__dots" aria-hidden="true"><i></i><i></i><i></i></span>Run it</div>
+<pre><code><span class="c-cmt"># Build and start everything</span>
+git clone https://github.com/CasualOffice/openseal
+cd openseal
+docker compose up -d --build --wait
+
+<span class="c-cmt"># Create the first account and administrator</span>
+docker compose exec \
+  -e OPENSEAL_ADMIN_PASSWORD='a long passphrase' \
+  server casual-sign-server bootstrap \
+  "Acme" admin@acme.example "Ada Admin"</code></pre>
+        </div>
+      </div>
+      <div class="duo-cell reveal reveal-d1">
+        <div class="terminal">
+          <div class="terminal__bar"><span class="window__dots" aria-hidden="true"><i></i><i></i><i></i></span>Send from your product</div>
 <pre><code><span class="c-cmt"># Create and send an envelope in one call</span>
 curl https://sign.example.com/api/v1/envelopes \
   -H "Authorization: Bearer $OPENSEAL_KEY" \
   -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
-  -d @envelope.json</code></pre>
-      </article>
-    </div>
-  </div>
-</section>
+  -d @envelope.json
 
-<section class="section" aria-labelledby="how-h">
-  <div class="wrap">
-    <div class="sec-head reveal">
-      <h2 id="how-h">From upload to sealed PDF.</h2>
-      <p>Four moves for the sender and the signers. The evidence is assembled for you at every step.</p>
-    </div>
-    <ol class="steps">
-      <li class="reveal"><span class="step-icon">{{icon:file-up:24}}</span><h3>Upload</h3><p>Bring a PDF. Scripts, actions and embedded files are stripped before anyone sees it.</p></li>
-      <li class="reveal reveal-d1"><span class="step-icon">{{icon:pen-line:24}}</span><h3>Place fields</h3><p>Signature, initials, date, name, text and checkbox, dropped on the page or suggested by Detect fields.</p></li>
-      <li class="reveal reveal-d2"><span class="step-icon">{{icon:signature:24}}</span><h3>Sign</h3><p>Each signer is invited in turn, authenticates, consents and signs on any device.</p></li>
-      <li class="reveal reveal-d3"><span class="step-icon">{{icon:stamp:24}}</span><h3>Seal</h3><p>A PAdES seal with a trusted timestamp, a certificate of completion and the audit trail inside the PDF.</p></li>
-    </ol>
-  </div>
-</section>
-
-<section class="section section-alt" aria-labelledby="evidence-h">
-  <div class="wrap split">
-    <div class="reveal">
-      <span class="eyebrow">{{icon:shield-check:16}}Evidence first</span>
-      <div class="sec-head">
-        <h2 id="evidence-h">Proof that outlives the platform.</h2>
-        <p>A completed agreement shows which document every party saw, who signed it, when and how. Anyone can check that for decades, with no account and no server.</p>
+<span class="c-cmt"># Events arrive as signed webhooks</span>
+<span class="c-cmt"># (Standard Webhooks), retried with backoff</span></code></pre>
+        </div>
       </div>
-      <ul class="facts">
-        <li><span class="cell-icon">{{icon:stamp}}</span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation (B-LT, B-LTA) is one setting per envelope; scheduled archive renewal is planned.</span></li>
-        <li><span class="cell-icon">{{icon:link}}</span><strong>Hash-chained audit trail</strong><span>Every event is canonical JSON (RFC 8785) linked by SHA-256 to the one before it. Deleting, inserting, reordering or editing any event is detected.</span></li>
-        <li><span class="cell-icon">{{icon:badge-check}}</span><strong>Checked by independent validators</strong><span>Our verifier, pyHanko and EU DSS must agree on every sealed and tampered fixture; all 417 admissible PDFs of a 422-file real-world corpus pass all three.</span></li>
-        <li><span class="cell-icon">{{icon:key-round}}</span><strong>Keys in your HSM</strong><span>Seals are made by keyd, a separate daemon that holds the key behind PKCS#11 and signs digests, never documents. Cloud KMS backends are planned.</span></li>
-        <li><span class="cell-icon">{{icon:shield}}</span><strong>Every upload treated as hostile</strong><span>A bounded PDF reader, fuzzed for 24 hours per entry point, rewrites the file without active content before it is signed.</span></li>
+    </div>
+    <ul class="services reveal">
+      <li>{{icon:server:18}}<span><b>server</b>The API, the signing ceremony and the web app</span></li>
+      <li>{{icon:workflow:18}}<span><b>worker</b>Email, reminders, sealing and webhooks</span></li>
+      <li>{{icon:key-round:18}}<span><b>keyd</b>The seal key behind PKCS#11, over mutual TLS</span></li>
+      <li>{{icon:database:18}}<span><b>PostgreSQL</b>Row-level security per account</span></li>
+      <li>{{icon:package:18}}<span><b>S3-compatible store</b>Write-once documents</span></li>
+      <li>{{icon:clock:18}}<span><b>Timestamp authority</b>A development TSA, or yours</span></li>
+    </ul>
+    <p class="cta-row cta-row--after reveal"><a class="btn btn-secondary" href="docs/self-hosting.html">Self-hosting guide<span class="btn-icon">{{icon:arrow-right:16}}</span></a><a class="btn btn-secondary" href="docs/api.html">API reference<span class="btn-icon">{{icon:arrow-right:16}}</span></a></p>
+  </div>
+</section>
+
+<section class="section section-alt" aria-labelledby="oss-h">
+  <div class="wrap os-band">
+    <div class="reveal">
+      <div class="sec-head flush">
+        <span class="eyebrow eyebrow--dot">Open source</span>
+        <h2 id="oss-h">Apache-2.0. Commercial use welcome.</h2>
+        <p>Every serious open-source e-signature project is AGPL, which most companies cannot ship inside their products. OpenSeal can go anywhere, and bulk send, conditional fields, SSO, embedding and webhooks are planned for the open core, not a paid tier.</p>
+      </div>
+      <ul class="os-points">
+        <li>{{icon:circle-check}}<span>Use it in SaaS, on-premises, desktop and mobile products. No royalties and no separate commercial licence.</span></li>
+        <li>{{icon:circle-check}}<span>Fork it, rename it, sell what you build. Keep the LICENSE and NOTICE when you redistribute it.</span></li>
+        <li>{{icon:circle-check}}<span>OpenSeal never adds its name to your application or to the PDFs it produces.</span></li>
       </ul>
     </div>
-    <div class="cert-stack reveal reveal-d1">
-      <div class="frame">{{shot:certificate|Page one of a certificate of completion: envelope summary, document hashes, and the first signer's events with authentication, IP address, location, times and drawn signature.}}</div>
-      <p class="chain-chip"><b>{{icon:circle-check:16}}audit-trail.json embedded</b><span>Chain head <code>sha256:205ae758…fd01</code></span></p>
+    <div class="badge-card reveal reveal-d1">
+      <a class="powered" href="https://github.com/CasualOffice/openseal"><img class="logo-light" src="assets/logo.svg" alt="" width="84" height="16" loading="lazy"><img class="logo-dark" src="assets/logo-dark.svg" alt="" width="84" height="16" loading="lazy"><span>Powered by OpenSeal</span></a>
+      <p class="muted">A credit like this is appreciated, never required.</p>
+      <a class="btn btn-secondary btn-sm" href="brand.html">Logos and snippets</a>
     </div>
   </div>
 </section>
@@ -175,109 +311,7 @@ curl https://sign.example.com/api/v1/envelopes \
   </div>
 </section>
 
-<section class="section section-alt" id="next" aria-labelledby="next-h">
-  <div class="wrap">
-    <div class="sec-head reveal">
-      <h2 id="next-h">What is new, and what is coming next.</h2>
-      <p>Merged since v0.0.1 and in the next release, then the work in progress now, in the open and tracked on the <a href="roadmap.html">roadmap</a>. See the <a href="changelog.html">changelog</a> for detail.</p>
-    </div>
-    <h3 class="cards-label reveal">New since v0.0.1</h3>
-    <div class="cards">
-      <article class="card reveal">
-        <span class="cell-icon">{{icon:palette}}</span>
-        <h3>A redesigned web app</h3>
-        <p>A full pass over every screen against what a DocuSign or SignNow user expects: a send editor with click-to-place fields and every field kind, a reworked signing page, clearer agreement lists and envelope pages, templates, reports and an admin section, and an app shell with notifications that works on phones.</p>
-      </article>
-      <article class="card reveal reveal-d1">
-        <span class="cell-icon">{{icon:building}}</span>
-        <h3>Organizations above workspaces</h3>
-        <p>An organization now holds its workspaces, with organization owners and the organization boundary enforced in the database. Signers also see who sent the agreement and can read the electronic-records disclosure before they start.</p>
-      </article>
-      <article class="card reveal reveal-d2">
-        <span class="cell-icon">{{icon:file-search}}</span>
-        <h3>Finding parties, dates and personal data</h3>
-        <p>The self-hosted model service can now pick out parties, dates and amounts and mark personal data, beside rule-based recognisers that validate card numbers, IBANs, social security numbers and other identifiers. Off by default, suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
-      </article>
-    </div>
-    <h3 class="cards-label cards-label-next reveal">Coming next</h3>
-    <div class="cards">
-      <article class="card reveal">
-        <span class="cell-icon">{{icon:users-round}}</span>
-        <h3>Workspaces and an admin console</h3>
-        <p>Switching between workspaces, organization admin screens and audit logs, delegated administrators, and a separate console for the operator: plans and limits, keys and certificates, service health. Built in stages, aimed at v0.0.2.</p>
-      </article>
-      <article class="card reveal reveal-d1">
-        <span class="cell-icon">{{icon:cpu}}</span>
-        <h3>Scans and templates</h3>
-        <p>Text from scanned pages, so fields are found on paper forms too, and "is this one of your templates?" when a document is uploaded. In progress, with the same rule: off by default, and never part of the evidence.</p>
-      </article>
-      <article class="card reveal reveal-d2">
-        <span class="cell-icon">{{icon:layers}}</span>
-        <h3>The workflows switching customers expect</h3>
-        <p>Signing in person with a host, folders, an inbox, bulk send and signing links, among the workflows a DocuSign or SignNow customer would miss.</p>
-      </article>
-    </div>
-  </div>
-</section>
-
-<section class="section" aria-labelledby="selfhost-h">
-  <div class="wrap split">
-    <div class="reveal">
-      <div class="sec-head">
-        <h2 id="selfhost-h">Your servers, your keys, your data.</h2>
-        <p>One command builds and starts the whole stack on a machine with Docker. Nothing calls home.</p>
-      </div>
-      <ul class="services">
-        <li>{{icon:server:16}}<span><b>server</b>: the API, the signing ceremony and the web app</span></li>
-        <li>{{icon:workflow:16}}<span><b>worker</b>: email, reminders, sealing and webhooks</span></li>
-        <li>{{icon:key-round:16}}<span><b>keyd</b>: the seal key behind PKCS#11, over mutual TLS</span></li>
-        <li>{{icon:database:16}}<span><b>PostgreSQL</b>: row-level security per account</span></li>
-        <li>{{icon:package:16}}<span><b>S3-compatible store</b>: write-once documents</span></li>
-        <li>{{icon:clock:16}}<span><b>Timestamp authority</b>: a development TSA, or yours</span></li>
-      </ul>
-      <p class="cta-row"><a class="btn btn-secondary" href="docs/self-hosting.html">Self-hosting guide<span class="btn-icon">{{icon:arrow-right:16}}</span></a></p>
-    </div>
-    <div class="terminal reveal reveal-d1">
-<pre><code><span class="c-cmt"># Build and start everything</span>
-git clone https://github.com/CasualOffice/openseal
-cd openseal
-docker compose up -d --build --wait
-
-<span class="c-cmt"># Create the first account and administrator</span>
-docker compose exec \
-  -e OPENSEAL_ADMIN_PASSWORD='a long passphrase' \
-  server casual-sign-server bootstrap \
-  "Acme" admin@acme.example "Ada Admin"
-
-<span class="c-cmt"># Web app  http://localhost:8080</span>
-<span class="c-cmt"># Mail     http://localhost:8025</span></code></pre>
-    </div>
-  </div>
-</section>
-
-<section class="section section-alt" aria-labelledby="oss-h">
-  <div class="wrap os-band">
-    <div class="reveal">
-      <span class="eyebrow">{{icon:heart-handshake:16}}Open source</span>
-      <div class="sec-head">
-        <h2 id="oss-h">Apache-2.0. Commercial use welcome.</h2>
-        <p>Every serious open-source e-signature project is AGPL, which most companies cannot ship inside their products. OpenSeal can go anywhere.</p>
-      </div>
-      <ul class="os-points">
-        <li>{{icon:circle-check}}<span>Use it in SaaS, on-premises, desktop and mobile products. No royalties and no separate commercial licence.</span></li>
-        <li>{{icon:circle-check}}<span>Fork it, rename it, sell what you build. Keep the LICENSE and NOTICE when you redistribute it.</span></li>
-        <li>{{icon:circle-check}}<span>OpenSeal never adds its name to your application or to the PDFs it produces.</span></li>
-      </ul>
-    </div>
-    <div class="badge-card reveal reveal-d1">
-      <a class="powered" href="https://github.com/CasualOffice/openseal"><img class="logo-light" src="assets/logo.svg" alt="" width="84" height="16" loading="lazy"><img class="logo-dark" src="assets/logo-dark.svg" alt="" width="84" height="16" loading="lazy"><span>Powered by OpenSeal</span></a>
-      <p class="muted">A credit like this is appreciated, never required.</p>
-      <a class="btn btn-secondary btn-sm" href="brand.html">Logos and snippets</a>
-    </div>
-  </div>
-</section>
-
-<section class="section" aria-labelledby="faq-h">
+<section class="section section-alt" aria-labelledby="faq-h">
   <div class="wrap faq-grid">
     <div class="sec-head reveal">
       <h2 id="faq-h">Questions people ask.</h2>
@@ -287,6 +321,7 @@ docker compose exec \
       <details><summary>Can I use it for real agreements today?{{icon:chevron-down}}</summary><div><p>Not yet. v0.0.1 is a pre-release for evaluation: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the development stack makes its own certificate authority, and the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what comes next.</p></div></details>
       <details><summary>Are the signatures legally binding?{{icon:chevron-down}}</summary><div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. Whether a given signature is valid depends on your deployment, its configuration, the jurisdiction and the transaction. Nothing here is legal advice.</p></div></details>
       <details><summary>How do I check a document without your servers?{{icon:chevron-down}}</summary><div><p>Open the verify page from any OpenSeal install, or run it locally; the check runs in your browser and the file stays on your machine. The seal is standard PAdES, so independent tools such as pyHanko and EU DSS validate it too.</p></div></details>
+      <details><summary>Do the models see or learn from my documents?{{icon:chevron-down}}</summary><div><p>The model service runs on your own servers, beside the rest of the stack, and every feature is off until an administrator turns it on. It uses pretrained models only and is designed so that nothing learns from your documents. What it finds is a suggestion; nothing a model says enters the sealed PDF or the audit trail.</p></div></details>
       <details><summary>Can I build a commercial product on it?{{icon:chevron-down}}</summary><div><p>Yes. Apache-2.0 allows commercial and proprietary use, embedding, hosting and resale. When you redistribute it, keep the LICENSE and the NOTICE file. See <a href="brand.html">brand and attribution</a>.</p></div></details>
       <details><summary>Does it have an API and webhooks?{{icon:chevron-down}}</summary><div><p>Yes: a REST API under <code>/api/v1</code> with API keys and OAuth client credentials, idempotency keys, ETags, and webhooks signed with the Standard Webhooks scheme. Read the <a href="docs/api.html">API reference</a>.</p></div></details>
       <details><summary>Where are the signing keys?{{icon:chevron-down}}</summary><div><p>In a separate service, keyd, which talks PKCS#11 to your HSM (SoftHSM in the development stack) and signs digests only. File keys are refused outside development.</p></div></details>
@@ -294,13 +329,16 @@ docker compose exec \
   </div>
 </section>
 
-<section class="section section-alt" aria-labelledby="closing-h">
-  <div class="wrap closing reveal">
-    <h2 id="closing-h">Run it on your machine in one command.</h2>
-    <p class="lede">Docker Compose brings up the server, the worker, the key service, the database, storage, a mail catcher and a timestamp authority.</p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="docs/getting-started.html">Get started with Docker<span class="btn-icon">{{icon:arrow-right:16}}</span></a>
-      <a class="btn btn-secondary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon">{{icon:arrow-up-right:16}}</span></a>
+<section class="section" aria-labelledby="closing-h">
+  <div class="wrap">
+    <div class="closing reveal">
+      <h2 id="closing-h">Run it on your machine in one command.</h2>
+      <p class="lede">Docker Compose brings up the server, the worker, the key service, the database, storage, a mail catcher and a timestamp authority.</p>
+      <p class="cmd"><code><span class="c-cmt">$ </span>docker compose up -d --build --wait</code></p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="docs/getting-started.html">Get started with Docker<span class="btn-icon">{{icon:arrow-right:16}}</span></a>
+        <a class="btn btn-secondary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon">{{icon:arrow-up-right:16}}</span></a>
+      </div>
     </div>
   </div>
 </section>
