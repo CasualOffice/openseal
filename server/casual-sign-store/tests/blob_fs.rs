@@ -282,3 +282,29 @@ async fn a_page_reads_only_the_directories_from_its_cursor_to_its_last_key() {
     let last = store.list(page.next).await.unwrap();
     assert!(last.keys.is_empty() && last.next.is_none());
 }
+
+/// ASVS-14 second review: a page that fills partway through a directory used to stop
+/// before counting the strays after its last key, and the page resuming there counted
+/// none, so a stray past a page boundary was never counted. Each is counted once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stray_after_a_page_boundary_in_the_same_directory_is_counted_once() {
+    let root = scratch("list-boundary");
+    let store = FsBlobStore::new(&root).unwrap();
+    let mut keys = Vec::new();
+    for i in 0u32..1500 {
+        keys.push(store.put(&i.to_le_bytes()).await.unwrap());
+    }
+    keys.sort();
+    let boundary = final_path(&root, &keys[999]);
+    let leaf = boundary.parent().unwrap();
+    // One stray before the page's last key and one after it, in the same directory
+    // ('0' sorts before every key's name there, 'z' after).
+    std::fs::write(leaf.join("0-stray"), b"before").unwrap();
+    std::fs::write(leaf.join("z-stray"), b"after").unwrap();
+    let first = store.list(None).await.unwrap();
+    assert_eq!(first.keys, keys[..1000]);
+    let (all, ignored, pages) = list_all(&store).await;
+    assert_eq!(all, keys);
+    assert_eq!(pages, 2);
+    assert_eq!(ignored, 2);
+}

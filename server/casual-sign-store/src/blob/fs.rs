@@ -191,8 +191,9 @@ impl Inner {
     /// the directories it covers, not the whole tree, so listing N blobs reads each
     /// directory about once. The `tmp` directory holds writes in flight and is not
     /// listed; anything else that is not a key in its own place is counted as ignored,
-    /// once: a directory's strays on the page that enters it from its start (the root's
-    /// on the first page), never on a page that resumes inside it.
+    /// once: all of a directory's strays, those after the page's last key included, on
+    /// the page that enters it from its start (the root's on the first page), never on a
+    /// page that resumes inside it.
     fn list_blocking(&self, after: Option<&str>) -> Result<BlobListing> {
         let after = after
             .map(BlobKey::parse)
@@ -227,23 +228,28 @@ impl Inner {
                 }
                 let resumed = a_resumed && resume_b == Some(b.as_str());
                 let b_path = a_path.join(b);
-                let files = sorted_entries(&b_path)?;
-                for (name, is_dir) in files {
-                    let key = BlobKey::parse(&name)
-                        .ok()
-                        .filter(|k| !is_dir && self.path(k) == b_path.join(&name));
+                let files: Vec<(String, Option<BlobKey>)> = sorted_entries(&b_path)?
+                    .into_iter()
+                    .map(|(name, is_dir)| {
+                        let key = BlobKey::parse(&name)
+                            .ok()
+                            .filter(|k| !is_dir && self.path(k) == b_path.join(&name));
+                        (name, key)
+                    })
+                    .collect();
+                // The whole directory's strays, before the walk can stop partway
+                // through it: a page resuming here counts none.
+                if !resumed {
+                    page.stray(files.iter().filter(|(_, k)| k.is_none()).count());
+                }
+                for (name, key) in files {
                     let past = after.as_deref().is_none_or(|h| name.as_str() > h);
-                    match key {
-                        Some(k) if past => {
-                            page.keys.push(k);
-                            if page.keys.len() == LIST_PAGE {
-                                let next = page.keys.last().map(BlobKey::hex);
-                                return Ok(page.done(next));
-                            }
+                    if let Some(k) = key.filter(|_| past) {
+                        page.keys.push(k);
+                        if page.keys.len() == LIST_PAGE {
+                            let next = page.keys.last().map(BlobKey::hex);
+                            return Ok(page.done(next));
                         }
-                        Some(_) => {}
-                        None if !resumed => page.stray(1),
-                        None => {}
                     }
                 }
             }

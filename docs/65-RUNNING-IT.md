@@ -207,8 +207,14 @@ backup's roles script with `psql` and its dump with `pg_restore`, both as the da
 could forge would run their SQL (and, through `psql`, commands) on the restore host. A restore therefore trusts only a
 backup whose manifest the signing key signed, and even then lets through from `roles.sql` only blank and `--` comment
 lines and CREATE ROLE, ALTER ROLE, GRANT and SET statements, one per line, with no backslash anywhere (no psql
-meta-command) and nothing outside quotes that starts a comment or a dollar quote; PostgreSQL 17.6's `\restrict`
+meta-command), nothing outside quotes that starts a comment or a dollar quote, and no `$` in a role name (the restore
+wraps each CREATE ROLE in a dollar quote); PostgreSQL 17.6's `\restrict`
 guard lines are dropped. Anything else fails the backup when it is taken, and the restore naming the line. Keep
+Each check runs on the bytes the restore then uses: `verify` and `restore` read `manifest.json`,
+`manifest.json.sig` and `payload.cms` from the store once each, into a fresh `0700` directory, check the signature over
+those manifest bytes, hash the payload as they copy it, and decrypt only that copy. A store that serves one file to the
+checks and another to a later read (a network or FUSE mount someone else controls) therefore cannot get unsigned bytes
+restored; `--work-dir` needs room for the payload as well as its plaintext. Keep
 `backup-signing.key` as you keep the backup host's database credentials: whoever holds it can make a backup that a
 restore will load. If it may have leaked, make a new pair with `keygen`, and check the next backups with the new
 public key.

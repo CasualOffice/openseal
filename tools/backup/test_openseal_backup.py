@@ -18,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import openseal_backup as ob  # noqa: E402
@@ -200,6 +201,17 @@ class Base(unittest.TestCase):
         d.mkdir()
         return Fake(d, **kw)
 
+    def work(self) -> pathlib.Path:
+        """A fresh private directory for verify_outer's copies."""
+        w = pathlib.Path(tempfile.mkdtemp(dir=self.tmp))
+        os.chmod(w, 0o700)
+        return w
+
+    def outer(self, b: pathlib.Path, verify_key: pathlib.Path) -> tuple[dict, pathlib.Path]:
+        """verify_outer, and the payload copy it checked."""
+        w = self.work()
+        return ob.verify_outer(b, verify_key, w), ob.checked_payload(w)
+
     def backup(self, **kw) -> tuple[pathlib.Path, Fake]:
         src = self.source(**kw)
         return ob.create(self.args(), src), src
@@ -289,7 +301,7 @@ class CreateAndRestore(Base):
         (src.d / "captures").write_text(f"{ch}\n{dh}")
         (self.tmp / "out2").mkdir()
         b2 = ob.create(self.args(out=str(self.tmp / "out2")), src)
-        contents_keys = ob.verify_outer(b2, self.keys / "backup-signing.pub")
+        contents_keys = self.outer(b2, self.keys / "backup-signing.pub")[0]
         self.assertTrue(contents_keys)
         (src.d / "store" / ch).unlink()
         (src.d / "store" / dh).unlink()
@@ -331,11 +343,11 @@ class Integrity(Base):
         m = (b / ob.MANIFEST).read_bytes()
         (b / ob.MANIFEST).write_bytes(m.replace(b'"schema_version": 34', b'"schema_version": 35'))
         with self.assertRaisesRegex(ob.BackupError, "signature does not verify"):
-            ob.verify_outer(b, pub)
+            self.outer(b, pub)[0]
         (b / ob.MANIFEST).write_bytes(m)
-        ob.verify_outer(b, pub)
+        self.outer(b, pub)[0]
         with self.assertRaisesRegex(ob.BackupError, "signature does not verify"):
-            ob.verify_outer(b, self.other / "backup-signing.pub")
+            self.outer(b, self.other / "backup-signing.pub")[0]
 
     def test_what_a_verifier_holds_cannot_make_a_backup_that_verifies(self):
         """Review finding 1: a verifier held the MAC key, so it could forge a manifest,
@@ -353,10 +365,10 @@ class Integrity(Base):
         (b / ob.MANIFEST).write_bytes((json.dumps(manifest, indent=1, sort_keys=True) + "\n").encode())
         ob.sign(self.other / "backup-signing.key", b / ob.MANIFEST, b / ob.MANIFEST_SIG)
         with self.assertRaisesRegex(ob.BackupError, "signature does not verify"):
-            ob.verify_outer(b, pub)
+            self.outer(b, pub)[0]
         # And the verify key must be an Ed25519 public key, not, say, the certificate.
         with self.assertRaisesRegex(ob.BackupError, "verify key|not an Ed25519 key"):
-            ob.verify_outer(b, self.keys / "backup-recipient.pem")
+            self.outer(b, self.keys / "backup-recipient.pem")[0]
 
     def test_an_altered_payload_is_refused_before_and_by_decryption(self):
         b, _ = self.backup()
@@ -365,7 +377,7 @@ class Integrity(Base):
         data[len(data) // 2] ^= 1
         (b / ob.PAYLOAD).write_bytes(bytes(data))
         with self.assertRaisesRegex(ob.BackupError, "differs from the manifest"):
-            ob.verify_outer(b, pub)
+            self.outer(b, pub)[0]
         # Even with the manifest rewritten to match (by someone without the signing key,
         # the signature fails; here the check under it): GCM refuses the altered ciphertext.
         manifest = json.loads((b / ob.MANIFEST).read_bytes())
@@ -374,16 +386,16 @@ class Integrity(Base):
         out = self.tmp / "x"
         out.mkdir()
         with self.assertRaisesRegex(ob.BackupError, "openssl exited"):
-            ob.decrypt(b, manifest, self.keys / "backup-recipient.key", self.keys / "backup-recipient.pem", out)
+            ob.decrypt(b / ob.PAYLOAD, manifest, self.keys / "backup-recipient.key", self.keys / "backup-recipient.pem", out)
 
     def test_another_recipient_cannot_decrypt(self):
         b, _ = self.backup()
-        manifest = ob.verify_outer(b, self.keys / "backup-signing.pub")
+        manifest, payload = self.outer(b, self.keys / "backup-signing.pub")
         with self.assertRaisesRegex(ob.BackupError, "not the one this backup was encrypted for"):
-            ob.decrypt(b, manifest, self.other / "backup-recipient.key", self.other / "backup-recipient.pem", self.tmp)
+            ob.decrypt(payload, manifest, self.other / "backup-recipient.key", self.other / "backup-recipient.pem", self.tmp)
         # The right certificate with the wrong private key: openssl refuses.
         with self.assertRaisesRegex(ob.BackupError, "openssl exited"):
-            ob.decrypt(b, manifest, self.other / "backup-recipient.key", self.keys / "backup-recipient.pem", self.tmp)
+            ob.decrypt(payload, manifest, self.other / "backup-recipient.key", self.keys / "backup-recipient.pem", self.tmp)
 
     def test_a_signing_key_others_can_read_is_refused(self):
         k = self.tmp / "signing.key"
@@ -463,6 +475,81 @@ class ReviewFindings(Base):
         out = ob.tail(err)
         self.assertIn("users_email_key", out)
         self.assertNotIn("ada@example.com", out)
+
+
+class SecondReview(Base):
+    """ASVS-14 second review: every check ran on bytes read from the backup store, and
+    the restore then read the store again, so a store that serves the genuine bytes to
+    the checks and other bytes afterwards (an NFS, SMB or FUSE mount) got a forged dump
+    restored as the superuser (finding 1, verify-then-use). And a role name holding
+    the restore's dollar-quote tag ended that quote early."""
+
+    def forged_payload(self, b: pathlib.Path) -> bytes:
+        """A payload holding another dump, made from what the store and the recipient
+        certificate expose (the private key is used here only to start from the real
+        file list; a forger can write the same files from scratch)."""
+        stage = self.tmp / "forge"
+        stage.mkdir()
+        p = subprocess.run(
+            ["openssl", "cms", "-decrypt", "-binary", "-inform", "DER", "-inkey", str(self.keys / "backup-recipient.key"),
+             "-recip", str(self.keys / "backup-recipient.pem"), "-in", str(b / ob.PAYLOAD)],
+            stdout=subprocess.PIPE, check=True,
+        )
+        names = ob.extract_tar(io.BytesIO(p.stdout), stage)
+        dump = stage / "postgres/openseal.dump"
+        lines = dump.read_bytes().split(b"\n", 1)
+        dump.write_bytes(b"PGDMP EVIL forged dump\n" + (lines[1] if len(lines) > 1 else b""))
+        contents = json.loads((stage / ob.CONTENTS).read_text())
+        digest, size = ob.sha256_file(dump)
+        contents["files"]["postgres/openseal.dump"] = {"sha256": digest, "bytes": size}
+        (stage / ob.CONTENTS).write_text(json.dumps(contents))
+        out = self.tmp / "forged.cms"
+        ob.encrypt(stage, [ob.CONTENTS, *[n for n in names if n != ob.CONTENTS]], self.keys / "backup-recipient.pem", out)
+        return out.read_bytes()
+
+    def test_a_payload_swapped_after_the_checks_is_never_restored(self):
+        b, _ = self.backup()
+        forged = self.forged_payload(b)
+        real = ob.verify_outer
+
+        def then_swap(*a, **kw):
+            got = real(*a, **kw)
+            (b / ob.PAYLOAD).write_bytes(forged)
+            return got
+
+        dst = self.target()
+        with mock.patch.object(ob, "verify_outer", then_swap):
+            try:
+                ob.restore(self.args(backup=str(b)), dst)
+            except ob.BackupError:
+                pass
+        restored = dst.d / "restored.dump"
+        self.assertTrue(restored.exists(), "the signed backup restores: its checked copy is what is used")
+        self.assertNotIn(b"EVIL", restored.read_bytes())
+        self.assertTrue(restored.read_bytes().startswith(b"PGDMP fake dump"))
+
+    def test_a_manifest_swapped_between_reading_and_verifying_is_refused(self):
+        b, _ = self.backup()
+        genuine = (b / ob.MANIFEST).read_bytes()
+        forged = genuine.replace(b'"schema_version": 34', b'"schema_version": 35')
+        self.assertNotEqual(forged, genuine)
+        (b / ob.MANIFEST).write_bytes(forged)
+        real = ob.signature_verifies
+
+        def store_serves_genuine(*a, **kw):
+            (b / ob.MANIFEST).write_bytes(genuine)
+            return real(*a, **kw)
+
+        work = self.tmp / "work"
+        work.mkdir(mode=0o700)
+        with mock.patch.object(ob, "signature_verifies", store_serves_genuine):
+            with self.assertRaisesRegex(ob.BackupError, "signature does not verify"):
+                ob.verify_outer(b, self.keys / "backup-signing.pub", work)
+
+    def test_a_role_name_holding_a_dollar_is_refused(self):
+        for name in ['"x$openseal_restore$; DROP ROLE postgres; --"', '"a$b"', '"$$"']:
+            with self.subTest(name=name), self.assertRaisesRegex(ob.BackupError, "role name"):
+                ob.idempotent_roles(ROLES + f"CREATE ROLE {name};\n")
 
 
 class Payload(Base):

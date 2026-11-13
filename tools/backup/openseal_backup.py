@@ -28,7 +28,10 @@ backups (an off-site store, a monitoring job, the restore host) holds only its p
 half, so checking a backup never gives the power to make one. A restore runs the backup's
 roles script and database dump as the superuser, so it trusts only a backup whose
 manifest that key signed, and even then runs from the roles script only CREATE ROLE,
-ALTER ROLE, GRANT and SET statements, one per line, with no psql meta-command.
+ALTER ROLE, GRANT and SET statements, one per line, with no psql meta-command. Every
+check runs on the bytes then used: the manifest, its signature and the payload are read
+from the backup store once each, into a private directory, and only that copy is hashed
+and decrypted, so a store that changes a file between reads gains nothing.
 
     openseal_backup.py keygen DIR
     openseal_backup.py create  --out DIR --recipient CERT --signing-key KEY [--keep N] SOURCE
@@ -131,7 +134,9 @@ NAME_RE = re.compile(
     r"|blobs/[0-9a-f]{64})\Z"
 )
 BACKUP_DIR_RE = re.compile(r"\Aopenseal-backup-\d{8}T\d{6}Z\Z")
-CREATE_ROLE_RE = re.compile(r'\ACREATE ROLE ((?:"(?:[^"]|"")+")|[a-z_][a-z0-9_]*);\Z')
+# No `$` in a role name: the restore wraps each CREATE ROLE in a dollar quote, and a name
+# holding the quote's tag would end it early (idempotent_roles refuses such a name).
+CREATE_ROLE_RE = re.compile(r'\ACREATE ROLE ((?:"(?:[^"$]|"")+")|[a-z_][a-z0-9_]*);\Z')
 # The statements a roles script may hold (pg_dumpall --roles-only writes only these).
 ROLE_STATEMENT_RE = re.compile(r"\A(?:CREATE ROLE|ALTER ROLE|GRANT|SET) ")
 # PostgreSQL 17.6's psql guard lines, which pg_dumpall writes around its output: dropped
@@ -143,6 +148,8 @@ CMS_ENCRYPT = [
     "cms", "-encrypt", "-binary", "-stream", "-aes-256-gcm", "-outform", "DER",
 ]
 CHUNK = 1 << 20
+# A manifest is under 1 KiB; a larger file is not one and is not read into memory.
+MAX_MANIFEST_BYTES = 64 * 1024
 
 
 class BackupError(Exception):
@@ -529,6 +536,8 @@ def idempotent_roles(sql: str) -> str:
                 f"DO $openseal_restore$ BEGIN CREATE ROLE {m.group(1)}; "
                 "EXCEPTION WHEN duplicate_object THEN NULL; END $openseal_restore$;"
             )
+        elif line.startswith("CREATE ROLE") and "$" in line:
+            raise BackupError(f"roles.sql line {n}: a role name holding `$` (refused: the restore dollar-quotes it)")
         elif line.startswith("CREATE ROLE"):
             raise BackupError(f"roles.sql line {n}: CREATE ROLE with more than a role name")
         else:
@@ -766,18 +775,53 @@ def prune(root: pathlib.Path, keep: int) -> None:
 # ---- verify and restore -----------------------------------------------------------------
 
 
-def verify_outer(backup: pathlib.Path, verify_key: pathlib.Path) -> dict:
+def read_once(path: pathlib.Path, limit: int) -> bytes:
+    """`path`'s bytes, read once and at most `limit` of them (a manifest and its signature
+    are small; anything larger is not one)."""
+    with open(path, "rb") as f:
+        body = f.read(limit + 1)
+    if len(body) > limit:
+        raise BackupError(f"{path.name}: larger than {limit} bytes")
+    return body
+
+
+def copy_hashing(src: pathlib.Path, out: pathlib.Path) -> tuple[str, int]:
+    """Copy `src` to a new file `out` (mode 0600), reading it once, and return the
+    SHA-256 and size of exactly the bytes written."""
+    h, n = hashlib.sha256(), 0
+    with open(src, "rb") as f, open(out, "xb") as g:
+        os.chmod(out, 0o600)
+        while chunk := f.read(CHUNK):
+            h.update(chunk)
+            g.write(chunk)
+            n += len(chunk)
+    return h.hexdigest(), n
+
+
+def verify_outer(backup: pathlib.Path, verify_key: pathlib.Path, work: pathlib.Path) -> dict:
     """The manifest's signature, then the payload's size and SHA-256: what anyone holding
     the signing key's public half can check, without the recipient's private key and
-    without being able to sign a backup themselves."""
+    without being able to sign a backup themselves.
+
+    Each file is read from the backup store exactly once, into `work` (a private
+    directory: the caller makes it 0700): the signature is checked over the manifest
+    bytes this function parses, and the payload is hashed as it is copied, so
+    `work/payload.cms` is the very byte string the manifest vouches for. Everything
+    after reads that copy, never the store again: a store that serves the checks one
+    file and a later read another (a network or FUSE mount) gains nothing."""
     signer = hashlib.sha256(ed25519_public_der(verify_key, private=False)).hexdigest()
     try:
-        body = (backup / MANIFEST).read_bytes()
-        if (backup / MANIFEST_SIG).stat().st_size != 64:
-            raise BackupError(f"{backup.name}: manifest.json.sig is not an Ed25519 signature")
+        body = read_once(backup / MANIFEST, MAX_MANIFEST_BYTES)
+        sig = read_once(backup / MANIFEST_SIG, 64)
     except OSError:
         raise BackupError(f"{backup}: no manifest.json and manifest.json.sig") from None
-    if not signature_verifies(verify_key, backup / MANIFEST, backup / MANIFEST_SIG):
+    if len(sig) != 64:
+        raise BackupError(f"{backup.name}: manifest.json.sig is not an Ed25519 signature")
+    signed = work / "signed"
+    signed.mkdir(mode=0o700)
+    (signed / MANIFEST).write_bytes(body)
+    (signed / MANIFEST_SIG).write_bytes(sig)
+    if not signature_verifies(verify_key, signed / MANIFEST, signed / MANIFEST_SIG):
         raise BackupError(f"{backup.name}: manifest signature does not verify (edited, or another signing key)")
     try:
         manifest = json.loads(body)
@@ -791,7 +835,7 @@ def verify_outer(backup: pathlib.Path, verify_key: pathlib.Path) -> dict:
     if payload.get("name") != PAYLOAD:
         raise BackupError(f"{backup.name}: unexpected payload name")
     try:
-        digest, size = sha256_file(backup / PAYLOAD)
+        digest, size = copy_hashing(backup / PAYLOAD, signed / PAYLOAD)
     except OSError:
         raise BackupError(f"{backup.name}: payload.cms missing or unreadable") from None
     if (digest, size) != (payload["sha256"], payload["bytes"]):
@@ -799,12 +843,18 @@ def verify_outer(backup: pathlib.Path, verify_key: pathlib.Path) -> dict:
     return manifest
 
 
-def decrypt(backup: pathlib.Path, manifest: dict, key: pathlib.Path, recipient: pathlib.Path, dest: pathlib.Path) -> dict:
-    """Decrypt and extract into `dest`; trusted only once openssl has checked the GCM tag
-    (it exits non-zero otherwise) and every file matches contents.json."""
+def checked_payload(work: pathlib.Path) -> pathlib.Path:
+    """Where verify_outer(…, work) left the payload it checked."""
+    return work / "signed" / PAYLOAD
+
+
+def decrypt(payload: pathlib.Path, manifest: dict, key: pathlib.Path, recipient: pathlib.Path, dest: pathlib.Path) -> dict:
+    """Decrypt `payload` (the private copy verify_outer checked, never the store's file)
+    and extract into `dest`; trusted only once openssl has checked the GCM tag (it exits
+    non-zero otherwise) and every file matches contents.json."""
     if cert_sha256(recipient) != manifest["recipient_certificate_sha256"]:
         raise BackupError("the recipient certificate given is not the one this backup was encrypted for")
-    cmd = ["openssl", "cms", "-decrypt", "-binary", "-inform", "DER", "-inkey", str(key), "-recip", str(recipient), "-in", str(backup / PAYLOAD)]
+    cmd = ["openssl", "cms", "-decrypt", "-binary", "-inform", "DER", "-inkey", str(key), "-recip", str(recipient), "-in", str(payload)]
     try:
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except OSError as e:
@@ -832,13 +882,16 @@ def decrypt(backup: pathlib.Path, manifest: dict, key: pathlib.Path, recipient: 
 
 def verify(args) -> None:
     backup = pathlib.Path(args.backup)
-    manifest = verify_outer(backup, pathlib.Path(args.verify_key))
-    if not args.key:
-        log(f"{backup.name}: manifest signature and payload SHA-256 verify (decrypt with --key to check the contents)")
-        return
     with tempfile.TemporaryDirectory(prefix="openseal-verify-", dir=args.work_dir) as tmp:
-        os.chmod(tmp, 0o700)
-        contents = decrypt(backup, manifest, pathlib.Path(args.key), pathlib.Path(args.recipient), pathlib.Path(tmp))
+        work = pathlib.Path(tmp)
+        os.chmod(work, 0o700)
+        manifest = verify_outer(backup, pathlib.Path(args.verify_key), work)
+        if not args.key:
+            log(f"{backup.name}: manifest signature and payload SHA-256 verify (decrypt with --key to check the contents)")
+            return
+        plain = work / "plain"
+        plain.mkdir(mode=0o700)
+        contents = decrypt(checked_payload(work), manifest, pathlib.Path(args.key), pathlib.Path(args.recipient), plain)
     log(
         f"{backup.name}: verified: signature, payload, {len(contents['files'])} files against contents.json, "
         f"and every one of the {contents['counts']['blobs']} blobs the database names present"
@@ -864,12 +917,15 @@ def evidence_counts(out: str) -> dict:
 def restore(args, dst) -> dict:
     started = time.monotonic()
     backup = pathlib.Path(args.backup)
-    manifest = verify_outer(backup, pathlib.Path(args.verify_key))
-    tmp = pathlib.Path(tempfile.mkdtemp(prefix="openseal-restore-", dir=args.work_dir))
+    work = pathlib.Path(tempfile.mkdtemp(prefix="openseal-restore-", dir=args.work_dir))
     try:
-        os.chmod(tmp, 0o700)
+        os.chmod(work, 0o700)
+        # The store is read once, here; everything after uses the private copies.
+        manifest = verify_outer(backup, pathlib.Path(args.verify_key), work)
+        tmp = work / "plain"
+        tmp.mkdir(mode=0o700)
         log("decrypting and checking every file")
-        contents = decrypt(backup, manifest, pathlib.Path(args.key), pathlib.Path(args.recipient), tmp)
+        contents = decrypt(checked_payload(work), manifest, pathlib.Path(args.key), pathlib.Path(args.recipient), tmp)
         if psql(dst, FRESH_SQL, "check the target database is fresh") != "0":
             raise BackupError("the target database is not empty: restore only into a fresh install, before migrate runs")
         if contents["keyd_oplog"]["present"] and dst.running("keyd"):
@@ -903,7 +959,7 @@ def restore(args, dst) -> dict:
             raise BackupError(f"verify-evidence counted {got}, the backup holds {contents['counts']}")
         log(out.strip())
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(work, ignore_errors=True)
     elapsed = time.monotonic() - started
     log(f"restored {backup.name} in {elapsed:.1f} s; start the remaining services (docker compose up -d --wait)")
     return {"counts": contents["counts"], "seconds": round(elapsed, 1), "keyd_oplog": contents["keyd_oplog"]}

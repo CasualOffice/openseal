@@ -30,7 +30,7 @@
 //! `casual-sign-server migrate` applies every missing migration as the schema owner
 //! named by `OPENSEAL_MIGRATE_DATABASE_URL` (secret), never the application role (T-2F).
 //!
-//! Backups and restores (ASVS-14, docs/65 §Backups; `tools/backup/openseal-backup.py`
+//! Backups and restores (ASVS-14, docs/65 §Backups; `tools/backup/openseal_backup.py`
 //! runs them):
 //!
 //! - `casual-sign-server blobs-export <dir>` writes every blob of the configured store
@@ -40,9 +40,11 @@
 //!   refusing a name that is not a key or bytes that are not the name's.
 //! - `casual-sign-server verify-evidence` connects as the schema owner
 //!   (`OPENSEAL_MIGRATE_DATABASE_URL`, secret), rebuilds and verifies every envelope's
-//!   audit chain, each workspace's and organization's admin log, and reads back every
-//!   document blob from the store (each verified against its key). It exits 0 only when
-//!   all of it verifies, printing the counts.
+//!   audit chain, each workspace's and organization's admin log, and the operator log,
+//!   then reads back every blob the evidence names from the store, each verified against
+//!   its key: documents, certificates of completion, signature captures and the images
+//!   they name, logos and attachments. It exits 0 only when all of it verifies,
+//!   printing the counts.
 //!
 //! `casual-sign-server healthcheck` asks the server on `OPENSEAL_LISTEN` (its port, on
 //! the loopback address) for `/.well-known/jwks.json` and exits 0 on `200`: a
