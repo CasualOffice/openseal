@@ -42,6 +42,17 @@ export function settingsPatch(f) {
   return Object.fromEntries(FIELD_SETTINGS.map((k) => [k, blankSetting(f?.[k]) ? null : f[k]]));
 }
 
+/// An envelope's fields as `POST /templates/{id}/fields` takes them (save as template):
+/// each bound to the role of its recipient (`roleOf`, recipient id → role id) and the
+/// template's copy of its document (`docOf`), with its settings (UX-11). A field whose
+/// recipient or document has no counterpart is left out.
+export function templateFieldsFrom(fields, roleOf, docOf) {
+  return (fields || []).filter((f) => roleOf.get(f.recipient_id) && docOf.get(f.document_id)).map((f) => ({
+    role_id: roleOf.get(f.recipient_id), document_id: docOf.get(f.document_id), type: f.type, placement: f.placement,
+    ...(f.required ? { required: true } : {}), ...(f.label ? { label: f.label } : {}), ...settingsOf(f),
+  }));
+}
+
 /// A value with every object's keys sorted: the server answers a setting's members in
 /// its own order (`format` sorted), which is not a change.
 const canonical = (v) => (Array.isArray(v) ? v.map(canonical)

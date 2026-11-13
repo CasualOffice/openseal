@@ -261,6 +261,27 @@ test("a template lands on the draft: roles take the draft's people in order, fie
   assert.equal(out.fields[1].y + out.fields[1].height <= 792, true); // clamped to the page
 });
 
+// UX-11: a template applied in the editor brings each field's settings with it.
+test("a template applied to a draft keeps its fields' settings (UX-11)", () => {
+  let n = 0;
+  const key = (p) => `${p}${++n}`;
+  const settings = { tooltip: "Your purchase order", placeholder: "PO-0000", read_only: true, value: { text: "PO-1234" }, validation: { kind: "length", max: 12 }, format: { font_family: "courier" } };
+  const tpl = {
+    roles: [{ id: "r1", name: "Buyer", type: "signer", routing_order: 1 }],
+    documents: [{ id: "td", ord: 0 }],
+    fields: [
+      { role_id: "r1", document_id: "td", type: "text", placement: { page: 1, x: "72", y: "600", width: "160", height: "24" }, label: "po", ...settings },
+      { role_id: "r1", document_id: "td", type: "dropdown", placement: { page: 1, x: "72", y: "500", width: "160", height: "24" }, options: ["Red", "Green"], allow_custom: true },
+    ],
+  };
+  const docs = [{ key: "d", pages: [{ width: 612, height: 792 }] }];
+  const out = applyTemplatePlan(tpl, { docs, recipients: [] }, key);
+  assert.deepEqual(out.fields.map((f) => f.label), ["po", ""]);
+  for (const [k, v] of Object.entries(settings)) assert.deepEqual(out.fields[0][k], v, k);
+  assert.deepEqual(out.fields[1].options, ["Red", "Green"]);
+  assert.equal(out.fields[1].allow_custom, true);
+});
+
 test("OCR pages are numbered as laid out; personal data groups by its busiest page", () => {
   assert.deepEqual(ocrPagesFrom([{ status: "done", ocr_pages: [3] }, null, { status: "running", ocr_pages: [1] }, { status: "done", ocr_pages: [1, 2] }], [0, 3, 5, 6]), [3, 7, 8]);
   const p = piiSummary([{ kind: "personal_data", label: "Email address", page: 3 }, { kind: "personal_data", label: "Email address", page: 3 }, { kind: "personal_data", label: "Phone number", page: 3 }, { kind: "personal_data", label: "Phone number", page: 1 }, { kind: "personal_data", label: "x", page: 3, state: "dismissed" }]);

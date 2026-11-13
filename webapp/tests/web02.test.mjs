@@ -10,7 +10,7 @@ import { summarize, coverage, certificatesFrom, CHECKS } from "../verifyreport.j
 import { parseTrail, eventLabel, MAX_TRAIL_BYTES } from "../trail.js";
 import { clampZoom, pinchZoom, enlargeFor, MIN_ZOOM, MAX_ZOOM } from "../zoom.js";
 import { createClient, isMockMode, isNoServer } from "../api.js";
-import { templatePlan, applyTemplate, emptyPlan, added, fieldSig, fieldBody } from "../templatesync.js";
+import { templatePlan, applyTemplate, emptyPlan, added, fieldSig, fieldBody, templateFieldsFrom } from "../templatesync.js";
 import { profileName, invitePending, recipientCorrection } from "../people.js";
 import { createMockFetch, MOCK } from "../mock.js";
 import { makePdf } from "../mockpdf.js";
@@ -51,6 +51,24 @@ test("envelopeFromTemplate maps roles to recipients and fields, dropping orphans
   assert.equal(body.status, "sent");
   assert.deepEqual(body.recipients.map((r) => [r.ref, r.name, r.type, r.routing_order]), [["role0", "Ada", "signer", 1], ["role1", "Lin", "cc", 2]]);
   assert.deepEqual(body.fields, [{ recipient: "role0", document: 0, type: "signature", page: 1, x: "72", y: "600", width: "160", height: "44", required: true }]);
+});
+
+// UX-11: the settings a template keeps reach the envelope made from it, and an envelope
+// saved as a template keeps its fields' settings.
+test("a template's field settings reach its envelope, and an envelope's reach its template (UX-11)", () => {
+  const tp = { name: "PO", roles: [{ id: "r1", name: "Buyer", type: "signer", routing_order: 1 }] };
+  const placement = { page: 1, x: "72", y: "600", width: "160", height: "24" };
+  const settings = { tooltip: "Your purchase order", placeholder: "PO-0000", read_only: true, value: { text: "PO-1234" }, validation: { kind: "length", max: 12 }, format: { font_family: "courier", align: "right" } };
+  const pick = { options: ["Red", "Green"], allow_custom: true };
+  const { body } = envelopeFromTemplate(tp, { Buyer: { name: "Ada", email: "ada@example.com" } }, {
+    docs: [{ id: "d1", name: "po.pdf", base64: "JVBERi0=" }],
+    fields: [{ id: "f1", document_id: "d1", role_id: "r1", type: "text", placement, label: "po", ...settings }, { id: "f2", document_id: "d1", role_id: "r1", type: "dropdown", placement, ...pick }],
+  });
+  assert.deepEqual(body.fields[0], { recipient: "role0", document: 0, type: "text", page: 1, x: "72", y: "600", width: "160", height: "24", label: "po", ...settings });
+  assert.deepEqual(body.fields[1], { recipient: "role0", document: 0, type: "dropdown", page: 1, x: "72", y: "600", width: "160", height: "24", ...pick });
+  const env = [{ id: "e1", recipient_id: "p1", document_id: "ed1", type: "text", placement, required: true, label: "po", ...settings }, { id: "e2", recipient_id: "p9", document_id: "ed1", type: "text", placement }];
+  const out = templateFieldsFrom(env, new Map([["p1", "r1"]]), new Map([["ed1", "d1"]]));
+  assert.deepEqual(out, [{ role_id: "r1", document_id: "d1", type: "text", placement, required: true, label: "po", ...settings }]);
 });
 
 test("countLabel says when the list went on", () => {
