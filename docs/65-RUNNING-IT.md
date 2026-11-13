@@ -385,7 +385,7 @@ scanning); `migrate` reads
 
 ## Backups and restore
 
-**Status:** built and tested; the restore drill is written but has not yet run to completion, so no restore time is measured yet (`ASVS-14`, ASVS 8.1.5 and 8.1.6; docs/07 `SEC-D02`). The tool is
+**Status:** built and tested; the restore drill is written but has not yet run to completion (its first CI runs stopped at a unit test, then at the drill's own envelope request, both fixed), so no restore time is measured yet (`ASVS-14`, ASVS 8.1.5 and 8.1.6; docs/07 `SEC-D02`). The tool is
 `tools/backup/openseal_backup.py` (Python standard library and the `openssl` command, OpenSSL 3.0 or later); the drill
 is `tools/backup/drill.sh`, run by CI's `backup-drill` job and `tools/ci-local.sh`.
 
@@ -520,7 +520,41 @@ signs another through the emailed links, backs it up, proves that a flipped payl
 verification, destroys the stack with every volume, restores into a fresh stack with its own keys, and requires: the
 sealed PDF byte-identical, the half-signed envelope as it was, its second signer able to sign with the link emailed
 before the backup, the new worker sealing it, `verify-evidence` passing again, and keyd's log verifying from its
-restored lines on. It writes `target/backup-drill/report.json`, with the measured restore time.
+restored lines on.
+
+`verify-evidence` checks the restored database against itself: each chain against the head stored beside it. So the
+drill also compares the restore with what it read from the first stack *before* the backup, which neither the backup
+nor the restored database can supply: both envelopes' audit chains on the new stack must begin with the event hashes
+the first stack's API answered; the sealed PDF's SHA-256 is the one that API answered; keyd's log on the new stack must
+begin with the exact bytes of the first stack's log, and the backup must carry at least as many lines; the new stack's
+seal root must differ from the first's (keys come from the new HSM, never from a backup, which carries none: the
+backup directory holds only its three files); and pyHanko (`tools/verify-sealed.py`) must validate the first stack's
+sealed PDF against the first stack's root, the new stack's against its own, and refuse the new stack's against the
+first stack's root. A backup that held no envelopes, no keyd log, or no growth after the resume fails too.
+
+*Rerunning it.* On a host with Docker (Compose v2), `python3`, OpenSSL 3, and a virtual environment with pyHanko
+(`python3 -m venv /tmp/v && /tmp/v/bin/pip install "pyhanko==0.38.1" cryptography`), from a checkout:
+
+```sh
+OPENSEAL_DRILL_VALIDATOR_PYTHON=/tmp/v/bin/python tools/backup/drill.sh
+```
+
+It builds the images (`OPENSEAL_DRILL_BUILD=0` reuses images built from the same checkout), uses Compose projects
+`openseal-drill-a` and `openseal-drill-b` on ports 18180, 18125, 18280 and 18225, removes both stacks and their
+volumes however it ends, and exits non-zero naming the step or check that failed. To rerun it on CI, run the `ci`
+workflow again (Actions, the run, "Re-run jobs", `backup-drill`); it runs on every push to `main`. On your production
+hardware, also restore the HSM's own backup (above) and time the whole procedure; the drill measures only the data.
+
+*Where the evidence is.* `target/backup-drill/report.json`: `verdict` (`passed` or `failed`), `problems`, the
+`commit` drilled, `started` and `finished` (UTC), `restore_seconds` (the measured restore time of this data set),
+the counts restored and after the resume, keyd's log lines on the first stack, restored and after the resume, the
+sealed PDFs' hashes, and the list of checks. Beside it: `restore.json` (the restore's own report), `evidence-after.txt`
+and `oplog-after.txt` (`verify-evidence` and `verify-oplog` after the resume), `verify-sealed.txt` (pyHanko's verdict),
+`sealed-a/`, `sealed-b/` and `sealed-cross/` (the sealed PDFs, each stack's seal root and the validator's
+manifests), `payload-structure.txt`, `flipped.err` and `edited.err` (the encryption and the tamper refusals), and, on
+a failure, each stack's Compose logs. CI uploads these and the console log (`target/backup-drill.log`) as the artifact
+`backup-drill` of the run, kept 90 days: `gh run download <run id> -n backup-drill`. Copy the report of each drill you
+count into your audit records before then; the artifact holds no backup, no key and no signing link.
 
 ## Upgrades
 
