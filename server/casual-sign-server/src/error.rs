@@ -39,6 +39,7 @@ pub struct ApiError {
     detail: Option<String>,
     errors: Vec<FieldProblem>,
     retry_after: Option<u64>,
+    plan: Option<Box<casual_sign_store::PlanRefusal>>,
 }
 
 impl ApiError {
@@ -49,6 +50,7 @@ impl ApiError {
             detail: None,
             errors: Vec::new(),
             retry_after: None,
+            plan: None,
         }
     }
 
@@ -242,6 +244,14 @@ impl ApiError {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-ORG-0018")
     }
 
+    /// `CS-PLAN-0002` to `CS-PLAN-0005` 403: the organization's plan refused (docs/23
+    /// §7.3). The body carries the meter, limit, usage and period end, nothing else.
+    pub fn plan(refusal: casual_sign_store::PlanRefusal) -> Self {
+        let mut e = Self::new(StatusCode::FORBIDDEN, refusal.code);
+        e.plan = Some(Box::new(refusal));
+        e
+    }
+
     /// The fixed title of a code.
     fn title(&self) -> &'static str {
         match self.code {
@@ -274,6 +284,11 @@ impl ApiError {
             "CS-ORG-0008" => "Organization must keep an enabled owner",
             "CS-ORG-0010" => "Workspace archived",
             "CS-ORG-0018" => "Not a member of the organization's workspaces",
+            "CS-PLAN-0001" => "Feature not in the plan",
+            "CS-PLAN-0002" => "Quota for the period reached",
+            "CS-PLAN-0003" => "Seat limit reached",
+            "CS-PLAN-0004" => "Storage limit reached",
+            "CS-PLAN-0005" => "Organization suspended",
             c if c.starts_with("CS-WF") => "Workflow refused the command",
             c if c.starts_with("CS-FLD") => "Field rules refused the value",
             c if c.starts_with("CS-PDF") || c.starts_with("CS-WRT") => "Document refused",
@@ -296,6 +311,14 @@ struct Problem<'a> {
     request_id: Option<String>,
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     errors: &'a [FieldProblem],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    meter: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    used: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    period_end: Option<String>,
 }
 
 impl IntoResponse for ApiError {
@@ -308,6 +331,13 @@ impl IntoResponse for ApiError {
             detail: self.detail.as_deref(),
             request_id: request_id(),
             errors: &self.errors,
+            meter: self.plan.as_ref().and_then(|p| p.meter).map(|m| m.as_str()),
+            limit: self.plan.as_ref().and_then(|p| p.limit),
+            used: self.plan.as_ref().and_then(|p| p.used),
+            period_end: self.plan.as_ref().and_then(|p| p.period_end).and_then(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .ok()
+            }),
         };
         let bytes = serde_json::to_vec(&body).unwrap_or_default();
         let mut resp = (self.status, bytes).into_response();
@@ -344,6 +374,7 @@ impl From<StoreError> for ApiError {
                 Self::new(StatusCode::SERVICE_UNAVAILABLE, e.code())
             }
             StoreError::BlobTooLarge { .. } => Self::too_large(),
+            StoreError::Plan(r) => Self::plan(r),
             _ => Self::new(StatusCode::INTERNAL_SERVER_ERROR, e.code()),
         }
     }

@@ -1003,7 +1003,7 @@ resolve through the pure `casual-sign-policy::plans::effective`. Console API: `G
 `POST /plan-overrides/{id}/expire` (`api/console-openapi.yaml`); operator events carry ids, keys and values, never an
 override's reason. Console UI: a Plans page (versions by key, features, quotas, organizations per version, new plan or
 version, archive) and a Plan card on each organization (effective plan, assignments, overrides; assign, add, expire).
-Allocations (`PLAN-07`) and enforcement (`PLAN-04`) are not built.
+Allocations (`PLAN-07`) are not built; enforcement is §7.3 (`PLAN-04`).
 
 ### 7.2 Meters
 
@@ -1066,6 +1066,29 @@ seat rule changing only by time passing (`PLAN-13`), the `templates` gauge (`PLA
   envelope is metered even when the quota is spent, and flagged as overage.
 - `soft` allows the action, records the overage, notifies organization admins; `notify` only notifies.
 - **Problem details** carry `meter`, `limit`, `used`, `period_end` and `feature`, nothing else.
+
+**As built (`PLAN-04`, migration `0027_quota_enforcement.sql`).** `openseal_consume_quota(p_meter, p_n, p_at,
+p_source_kind, p_source_id, p_quota)` takes the source (so it also does the metering of §7.2) and the limits as JSON
+(`{"workspace": {"limit", "enforcement", "period"}, "organization": …}`, from `plans::effective` for this workspace in
+the same transaction; no assignment current means no quota). In one subtransaction it appends the ledger row (a source
+counted before answers `replayed` here, before any check, so a sent envelope's later events are never refused), refuses
+when the organization is suspended, then runs the conditional update on the organization counter and then on the
+workspace counter; a refusal rolls back the ledger row and both counters and answers the level, limit, usage and the
+period's end. Counters stay monthly: a `year` quota adds the earlier months of the calendar year, a `none` quota every
+earlier period. `openseal_meter_apply` now moves the organization row first, so every writer takes the two rows in
+one order. Gauges: `openseal_quota_gauge_lock` locks the organization's and the workspace's `seats` or
+`storage_bytes` row before the change (and refuses a suspended organization), the change's own trigger recounts under
+those locks, and `openseal_quota_gauge_check` refuses only when the change raised the gauge past a `hard` limit, so
+removing, disabling or re-profiling down is never refused even over the limit. `soft` and `notify` write
+`quota_notices` (organization table, append-only, ids and counts; the column is `workspace_id`): `soft` one row per
+action over the limit with its overage, `notify` one row for the action that crossed it. Where it runs:
+`casual-sign-host::apply` on `envelope.sent` (API send, create-and-send, every later send path), `POST /users` and
+`PATCH /users/{id}` (profile or enable) for seats, envelope and template document uploads for storage; the worker's
+sealed versions are metered and never checked. Store: `TenantTx::consume_quota`, `gauge_lock`, `gauge_check`,
+`StoreError::Plan` (`CS-PLAN-0002` to `0005`); the server answers 403 with `meter`, `limit`, `used`, `period_end`.
+Not built here: delivering notices to organization admins (`PLAN-15`); entitlement checks (`CS-PLAN-0001`) and the
+suspension check at the other creation points (`PLAN-16`); allocations (`PLAN-07`). Tests:
+`casual-sign-store/tests/quota.rs`, `casual-sign-server/tests/quota.rs`, `casual-sign-worker/tests/plan_enforcement.rs`.
 
 ### 7.4 Usage export
 

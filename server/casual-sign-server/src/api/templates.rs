@@ -473,7 +473,12 @@ pub(crate) async fn add_document(
         pages: pages_json(&delivered.admission),
     };
     tx.templates().bump(id, v).await?;
+    let storage = tx
+        .gauge_lock(casual_sign_store::Meter::StorageBytes)
+        .await?;
     tx.templates().add_document(&d).await?;
+    tx.gauge_check(storage, c.st.now(), "template_document", d.id.0)
+        .await?;
     // Page hashes for matching uploads (docs/33 §2), only with template matching in
     // effect; otherwise nothing is written (ML-01).
     crate::api::ml::on_template_upload(&c.st, &mut tx, c.p.account, id, d.id, d.sha256).await?;

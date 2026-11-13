@@ -142,9 +142,13 @@ pub async fn apply_loaded(
         let event = pending.into_audit(&chain);
         tx.audit().append(envelope, &event).await?;
         // `envelope.sent` is metered in the deciding transaction, once per envelope
-        // (docs/23 §7.2): a correction or resend that sends again is not counted twice.
+        // (docs/23 §7.2), within the plan's quotas (§7.3, PLAN-04): a `hard` quota reached
+        // or a suspended organization refuses the send (`CS-PLAN-0002`, `CS-PLAN-0005`)
+        // and nothing commits. A correction or resend that sends again was counted
+        // before, so it is neither counted twice nor checked: nothing in a sent
+        // envelope's life is refused for plan reasons (`SEC-U02`).
         if matches!(event.data, EventData::EnvelopeSent { .. }) {
-            tx.record_usage(Meter::EnvelopesSent, 1, now, "envelope", envelope.0)
+            tx.consume_quota(Meter::EnvelopesSent, 1, now, "envelope", envelope.0)
                 .await?;
         }
         chain

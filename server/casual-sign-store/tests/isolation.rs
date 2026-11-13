@@ -705,7 +705,8 @@ async fn row_level_security_alone_isolates_every_tenant_table() {
             "organization_admins"
             | "org_permission_sets"
             | "org_admin_events"
-            | "org_usage_counters" => "SELECT 0::bigint WHERE $1::uuid IS NOT NULL".to_owned(),
+            | "org_usage_counters"
+            | "quota_notices" => "SELECT 0::bigint WHERE $1::uuid IS NOT NULL".to_owned(),
             _ => format!("SELECT count(*) FROM {t} WHERE account_id = $1"),
         };
         let truth: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(truth_sql))

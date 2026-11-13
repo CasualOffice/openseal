@@ -110,12 +110,14 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // organization table (ORG-05); 0021 `ml_settings`, `ml_entitlements`, `analysis_runs`,
     // `suggestions`, `ocr_pages` and `template_fingerprints` (WEB-19), all tenant tables;
     // 0025 `usage_ledger`, `usage_counters` and `usage_blob_refs`, tenant tables, and
-    // `org_usage_counters`, an organization table (PLAN-03).
-    assert_eq!(tables.len(), 57, "{tables:?}");
+    // `org_usage_counters`, an organization table (PLAN-03); 0027 `quota_notices`, an
+    // organization table (PLAN-04).
+    assert_eq!(tables.len(), 58, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_admin_events",
         "org_usage_counters",
+        "quota_notices",
         "org_permission_sets",
         "organization_admins",
     ];
