@@ -235,6 +235,31 @@ async fn a_bad_disclosure_is_refused_before_anything_is_written() {
         let (st, v) = publish(&api, &a, body.clone()).await;
         assert_eq!(st, want, "{body}: {v}");
     }
+    // A credential without admin:account can neither read nor publish.
+    let key = ok(
+        api.call(
+            "POST",
+            "/api/v1/api-clients",
+            &a.auth,
+            Some(json!({"name": "k", "kind": "api_key",
+                "scopes": ["envelopes:read", "envelopes:write"]})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "key",
+    );
+    let narrow = Auth::Bearer(key["key"].as_str().unwrap().to_owned());
+    for (m, body) in [("GET", None), ("POST", Some(json!({"text": FIRST})))] {
+        let r = api
+            .call(m, "/api/v1/ersd-versions", &narrow, body, &[])
+            .await;
+        assert_eq!(
+            (r.status, r.code().as_str()),
+            (StatusCode::FORBIDDEN, "CS-AUTH-0006"),
+            "{m}"
+        );
+    }
     let n: i64 = sqlx::query("SELECT count(*) FROM ersd_versions")
         .fetch_one(&api.db.admin)
         .await
