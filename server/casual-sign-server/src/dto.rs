@@ -84,6 +84,21 @@ fn one() -> u32 {
     1
 }
 
+/// Whether `p` is a phone number a code can be sent to: E.164, a `+` and 8 to 15 digits
+/// (spaces, dots, dashes and brackets allowed between them), so an SMS or voice
+/// provider is never handed a local number it would guess the country of.
+pub(crate) fn phone_number(p: &str) -> bool {
+    let p = p.trim();
+    let Some(rest) = p.strip_prefix('+') else {
+        return false;
+    };
+    let digits = rest.bytes().filter(u8::is_ascii_digit).count();
+    rest.bytes()
+        .all(|b| b.is_ascii_digit() || matches!(b, b' ' | b'.' | b'-' | b'(' | b')'))
+        && (8..=15).contains(&digits)
+        && !rest.starts_with('0')
+}
+
 impl RecipientIn {
     /// The engine's recipient with id `id`.
     pub(crate) fn spec(&self, id: Id, at: &str) -> Result<RecipientSpec, ApiError> {
@@ -108,6 +123,12 @@ impl RecipientIn {
         // An email one-time code needs an address to send it to (SEC-A02).
         if self.auth.contains(&AuthMethod::EmailOtp) && email.is_empty() {
             return Err(ApiError::invalid(&format!("{at}/auth")));
+        }
+        // A code by SMS or voice call needs a number to send it to (slice 5).
+        if (self.auth.contains(&AuthMethod::SmsOtp) || self.auth.contains(&AuthMethod::VoiceOtp))
+            && !self.phone.as_deref().is_some_and(phone_number)
+        {
+            return Err(ApiError::invalid(&format!("{at}/phone")));
         }
         let embedded = self
             .embedded_client_user_id

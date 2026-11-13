@@ -1530,6 +1530,16 @@ pub(crate) async fn patch_recipient(
     if let Some(a) = req.auth {
         spec.auth = a;
     }
+    // A code by SMS or voice call needs the recipient's number (slice 5).
+    if (spec.auth.contains(&casual_sign_audit::AuthMethod::SmsOtp)
+        || spec.auth.contains(&casual_sign_audit::AuthMethod::VoiceOtp))
+        && !spec
+            .phone
+            .as_ref()
+            .is_some_and(|p| crate::dto::phone_number(p.0.as_str()))
+    {
+        return Err(ApiError::invalid("/auth"));
+    }
     let wants_code = spec
         .auth
         .contains(&casual_sign_audit::AuthMethod::AccessCode);

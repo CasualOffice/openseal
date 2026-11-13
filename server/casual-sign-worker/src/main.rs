@@ -25,6 +25,7 @@
 //! | `OPENSEAL_WEBHOOK_ALLOW` | Non-public ranges webhooks may reach anyway, comma-separated CIDRs (default none) |
 //! | `OPENSEAL_WEBHOOK_EXTRA_ROOTS` | PEM file of CAs webhook receivers may chain to besides the platform's roots (a private CA) |
 //! | `OPENSEAL_SEAL_NAME`, `OPENSEAL_SEAL_REASON` | The seal's `/Name` and `/Reason` |
+//! | `OPENSEAL_SMS_GATEWAY_URL`, `OPENSEAL_SMS_GATEWAY_SECRET` (or `_FILE`) | Optional: the HTTPS gateway that sends SMS and voice one-time codes, and its bearer secret (`messenger::HttpGateway`); unset, such codes fail `CS-WRK-0013` |
 //!
 //! Webhook signing secrets are read by the reference a subscription stores, as an
 //! environment variable `NAME` or `NAME_FILE`. The worker stops when killed; every job
@@ -273,6 +274,18 @@ async fn serve<B: BlobStore + 'static>(
     );
     let worker = match inference()? {
         Some(i) => worker.with_inference(i),
+        None => worker,
+    };
+    // SMS and voice one-time codes (slice 5), when a gateway is configured.
+    let worker = match var("OPENSEAL_SMS_GATEWAY_URL") {
+        Some(url) => {
+            let secret = secret("OPENSEAL_SMS_GATEWAY_SECRET")?.ok_or(WorkerError::Config {
+                setting: "OPENSEAL_SMS_GATEWAY_SECRET",
+            })?;
+            worker.with_messenger(Arc::new(casual_sign_worker::messenger::HttpGateway::new(
+                &url, secret,
+            )?))
+        }
         None => worker,
     };
     #[cfg(feature = "crash-points")]

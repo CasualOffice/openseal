@@ -71,6 +71,12 @@ pub enum WorkerError {
     LeaseLost,
     /// `CS-WRK-0016`: a capture (signature art) is malformed or over its limits.
     BadCapture,
+    /// `CS-WRK-0017`: the SMS or voice provider did not accept the message (slice 5);
+    /// `status` is its HTTP status, when it answered.
+    MessengerFailed {
+        /// The provider's HTTP status, when it answered.
+        status: Option<u16>,
+    },
     /// The store's error (`CS-DB-*`, `CS-BLOB-*`).
     Store(StoreError),
     /// The engine refused the worker's command (`CS-WF-*`, `CS-FLD-*`, `CS-AUTH-*`).
@@ -113,6 +119,7 @@ impl WorkerError {
             Self::NoPaymentGateway => "CS-WRK-0014",
             Self::LeaseLost => "CS-WRK-0015",
             Self::BadCapture => "CS-WRK-0016",
+            Self::MessengerFailed { .. } => "CS-WRK-0017",
             Self::Store(e) => e.code(),
             Self::Workflow { code } | Self::Pipeline { code } | Self::Model { code } => code,
         }
@@ -169,6 +176,10 @@ impl fmt::Display for WorkerError {
             Self::NoPaymentGateway => write!(f, "{code}: no payment gateway configured"),
             Self::LeaseLost => write!(f, "{code}: job lease lost"),
             Self::BadCapture => write!(f, "{code}: capture malformed or over its limits"),
+            Self::MessengerFailed { status } => match status {
+                Some(s) => write!(f, "{code}: the SMS or voice provider answered {s}"),
+                None => write!(f, "{code}: the SMS or voice provider could not be reached"),
+            },
             Self::Store(e) => write!(f, "{e}"),
             Self::Workflow { .. } => write!(f, "{code}: the engine refused the worker's command"),
             Self::Pipeline { .. } => write!(f, "{code}: a pipeline step failed"),

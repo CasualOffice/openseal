@@ -138,7 +138,9 @@ pub fn user_invitation_job(id: JobId, invitation: Uuid, now: time::OffsetDateTim
 
 /// Not an effect (SEC-A02): draw a recipient's email one-time code, store only its
 /// Argon2id hash and email it. Its payload is [`EmailOtpJob`]: ids only, never the code,
-/// which the worker draws as it sends.
+/// which the worker draws as it sends. Since slice 5 the same job sends a code by SMS or
+/// voice call too: the code's row names its channel (migration 0029); the kind keeps
+/// its first name so queued jobs still run.
 pub const SEND_EMAIL_OTP: &str = "send_email_otp";
 
 /// The payload of a [`SEND_EMAIL_OTP`] job.

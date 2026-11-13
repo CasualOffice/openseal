@@ -648,13 +648,46 @@ pub struct Contact {
     pub last_used: OffsetDateTime,
 }
 
-/// A recipient's open email one-time code (SEC-A02): only its Argon2id PHC string.
+/// How a one-time code reaches the recipient (migration 0029), and so which
+/// authentication method a pass satisfies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OtpChannel {
+    /// By email (`email_otp`).
+    Email,
+    /// By SMS to the recipient's phone (`sms_otp`).
+    Sms,
+    /// Spoken in a voice call to the recipient's phone (`voice_otp`).
+    Voice,
+}
+
+impl OtpChannel {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::Sms => "sms",
+            Self::Voice => "voice",
+        }
+    }
+
+    fn parse(s: &str) -> Result<Self> {
+        match s {
+            "email" => Ok(Self::Email),
+            "sms" => Ok(Self::Sms),
+            "voice" => Ok(Self::Voice),
+            _ => Err(StoreError::Corrupt { column: "channel" }),
+        }
+    }
+}
+
+/// A recipient's open one-time code (SEC-A02): only its Argon2id PHC string.
 #[derive(Clone, PartialEq, Eq)]
 pub struct OtpCode {
     /// The code's row.
     pub id: Uuid,
     /// The recipient.
     pub recipient_id: RecipientId,
+    /// How it is sent.
+    pub channel: OtpChannel,
     /// The code's Argon2id PHC string; `None` until the worker has sent it.
     pub code_hash: Option<String>,
     /// When it stops working.
@@ -668,6 +701,7 @@ impl core::fmt::Debug for OtpCode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("OtpCode")
             .field("id", &self.id)
+            .field("channel", &self.channel)
             .field("attempts", &self.attempts)
             .finish_non_exhaustive()
     }
@@ -698,8 +732,9 @@ impl OtpClosed {
 }
 
 impl Recipients<'_> {
-    /// Open a new email one-time code `id` for `recipient`, expiring at `expires`,
-    /// closing any open one (`superseded`): at most one is open (a partial unique index).
+    /// Open a new one-time code `id` for `recipient`, sent by `channel`, expiring at
+    /// `expires`, closing any open one (`superseded`), whatever its channel: at most one
+    /// is open (a partial unique index).
     ///
     /// # Errors
     ///
@@ -708,6 +743,7 @@ impl Recipients<'_> {
         &mut self,
         recipient: RecipientId,
         id: Uuid,
+        channel: OtpChannel,
         now: OffsetDateTime,
         expires: OffsetDateTime,
     ) -> Result<()> {
@@ -724,12 +760,13 @@ impl Recipients<'_> {
         .map_err(db)?;
         sqlx::query!(
             "INSERT INTO recipient_otp_codes (id, account_id, recipient_id, created_at, \
-             expires_at) VALUES ($3, $1, $2, $4, $5)",
+             expires_at, channel) VALUES ($3, $1, $2, $4, $5, $6)",
             acct,
             recipient.0,
             id,
             now,
-            expires
+            expires,
+            channel.as_str()
         )
         .execute(self.tx.conn())
         .await
@@ -776,7 +813,8 @@ impl Recipients<'_> {
     ) -> Result<Option<OtpCode>> {
         let acct = self.tx.acct();
         let row = sqlx::query!(
-            "SELECT id, recipient_id, code_hash, expires_at, attempts FROM recipient_otp_codes \
+            "SELECT id, recipient_id, code_hash, expires_at, attempts, channel \
+             FROM recipient_otp_codes \
              WHERE account_id = $1 AND closed_at IS NULL \
                AND ($2::uuid IS NULL OR recipient_id = $2) AND ($3::uuid IS NULL OR id = $3) \
              FOR UPDATE",
@@ -787,13 +825,17 @@ impl Recipients<'_> {
         .fetch_optional(self.tx.conn())
         .await
         .map_err(db)?;
-        Ok(row.map(|r| OtpCode {
-            id: r.id,
-            recipient_id: RecipientId(r.recipient_id),
-            code_hash: r.code_hash,
-            expires_at: r.expires_at,
-            attempts: r.attempts,
-        }))
+        row.map(|r| {
+            Ok(OtpCode {
+                id: r.id,
+                recipient_id: RecipientId(r.recipient_id),
+                channel: OtpChannel::parse(&r.channel)?,
+                code_hash: r.code_hash,
+                expires_at: r.expires_at,
+                attempts: r.attempts,
+            })
+        })
+        .transpose()
     }
 
     /// Record that open, unsent code `id` was sent, with its Argon2id PHC string; false

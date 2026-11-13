@@ -29,6 +29,7 @@ pub use casual_sign_host::capture;
 pub mod email;
 mod error;
 pub mod jobs;
+pub mod messenger;
 pub mod ml;
 pub mod seal;
 pub mod tsa;

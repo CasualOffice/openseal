@@ -21,7 +21,7 @@ use base64::engine::general_purpose::STANDARD;
 use casual_sign_audit::{AdoptionMethod, AuthMethod, EventData, Hash256, MarkKind};
 use casual_sign_model::{FieldValue, Id};
 use casual_sign_store::repo::documents::VersionKind;
-use casual_sign_store::repo::recipients::TokenPurpose;
+use casual_sign_store::repo::recipients::{OtpChannel, TokenPurpose};
 use casual_sign_store::{DocumentId, RecipientId, TenantTx};
 use casual_sign_workflow::{Command, FieldEntry, Principal as WfPrincipal, ReassignTo};
 use serde::Deserialize;
@@ -629,11 +629,50 @@ const OTP_PER_MINUTE: u32 = 3;
 /// Wrong tries that spend one code, whatever the account's lockout limit.
 const OTP_TRIES: i32 = 5;
 
-/// `POST /s/{token}/otp`: email the recipient a one-time code (SEC-A02), `202` with
-/// the view. Records `recipient.auth_challenged` (`email_otp`) and queues the worker's
-/// `send_email_otp` job, which draws the code, stores only its Argon2id hash and emails
-/// it; any earlier code stops working. Limited per link and per address (3 a minute),
-/// and per recipient (30 seconds apart, 5 an hour): `CS-API-0003` with `Retry-After`.
+/// The body of `POST /s/{token}/otp`: which code to send (`email_otp` when absent, as
+/// before slice 5), and the device's location.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OtpSendIn {
+    #[serde(default)]
+    method: Option<AuthMethod>,
+    /// Accepted as on every ceremony call, so the page may send it; this call records
+    /// no location of its own (as before, when its body was only checked).
+    #[serde(default)]
+    #[allow(dead_code)]
+    // Read only by `Deserialize`, to accept the member; nothing here uses its value.
+    location: Option<DeviceLocation>,
+}
+
+/// The channel that sends a one-time code for `method`, or `None` for a method that is
+/// not a sent code.
+fn otp_channel(method: AuthMethod) -> Option<OtpChannel> {
+    match method {
+        AuthMethod::EmailOtp => Some(OtpChannel::Email),
+        AuthMethod::SmsOtp => Some(OtpChannel::Sms),
+        AuthMethod::VoiceOtp => Some(OtpChannel::Voice),
+        _ => None,
+    }
+}
+
+/// The authentication method a code sent by `channel` satisfies.
+fn otp_method(channel: OtpChannel) -> AuthMethod {
+    match channel {
+        OtpChannel::Email => AuthMethod::EmailOtp,
+        OtpChannel::Sms => AuthMethod::SmsOtp,
+        OtpChannel::Voice => AuthMethod::VoiceOtp,
+    }
+}
+
+/// `POST /s/{token}/otp {method?}`: send the recipient a one-time code (SEC-A02), `202`
+/// with the view: by email (`email_otp`, the default), by SMS (`sms_otp`) or spoken in
+/// a voice call (`voice_otp`) to the recipient's phone (slice 5). Records
+/// `recipient.auth_challenged` with the method and queues the worker's `send_email_otp`
+/// job (named for its first channel), which draws the code, stores only its Argon2id
+/// hash and sends it by the code's channel; any earlier code, of any channel, stops
+/// working. Limited per link and per address or phone number (3 a minute), and per
+/// recipient (30 seconds apart, 5 an hour, all channels together): `CS-API-0003` with
+/// `Retry-After`.
 pub(crate) async fn otp_send(
     State(st): State<AppState>,
     axum::Extension(ip): axum::Extension<ClientIp>,
@@ -648,20 +687,41 @@ pub(crate) async fn otp_send(
     }
     let limiter = st.clone();
     ceremony!(st, token, headers, ip, method, false, |o| {
-        let _ = location_in(&body)?;
+        let req: OtpSendIn = if body.iter().all(u8::is_ascii_whitespace) {
+            OtpSendIn::default()
+        } else {
+            parse(&body)?
+        };
+        let method = req.method.unwrap_or(AuthMethod::EmailOtp);
+        let channel = otp_channel(method).ok_or_else(ApiError::method_unavailable)?;
         let r = o.recipient.clone();
         let me = o.l.state.recipient(&r).ok_or_else(ApiError::expired)?;
-        if !me.spec.auth.contains(&AuthMethod::EmailOtp) {
+        if !me.spec.auth.contains(&method) {
             return Err(ApiError::method_unavailable());
         }
-        if me.auth_passed.contains(&AuthMethod::EmailOtp) {
+        if me.auth_passed.contains(&method) {
             return Err(ApiError::not_available("already authenticated"));
         }
-        let email = me.spec.email.0.as_str().trim().to_lowercase();
-        if email.is_empty() {
+        // Where the code goes, normalized: an email address, or a phone number's digits
+        // (with a leading `+`), so one number's limit holds however it was typed.
+        let to = match channel {
+            OtpChannel::Email => me.spec.email.0.as_str().trim().to_lowercase(),
+            OtpChannel::Sms | OtpChannel::Voice => me
+                .spec
+                .phone
+                .as_ref()
+                .map(|p| {
+                    p.0.as_str()
+                        .chars()
+                        .filter(|c| c.is_ascii_digit() || *c == '+')
+                        .collect::<String>()
+                })
+                .unwrap_or_default(),
+        };
+        if to.is_empty() {
             return Err(ApiError::method_unavailable());
         }
-        let addr = Hash256(sha256(email.as_bytes())).hex();
+        let addr = Hash256(sha256(to.as_bytes())).hex();
         let now = o.cmds.now;
         let d = limiter
             .0
@@ -690,12 +750,12 @@ pub(crate) async fn otp_send(
         }
         o.run(Command::ChallengeAuth {
             recipient: r,
-            method: AuthMethod::EmailOtp,
+            method,
         })
         .await?;
         let code = uuid::Uuid::now_v7();
         o.tx.recipients()
-            .open_otp(rid, code, now, now.saturating_add(OTP_TTL))
+            .open_otp(rid, code, channel, now, now.saturating_add(OTP_TTL))
             .await?;
         let job = casual_sign_host::jobs::email_otp_job(
             casual_sign_store::JobId(uuid::Uuid::now_v7()),
@@ -712,11 +772,17 @@ pub(crate) async fn otp_send(
 #[serde(deny_unknown_fields)]
 struct OtpIn {
     code: String,
+    /// Which code this is (`email_otp` when absent, as before slice 5). The open code's
+    /// own channel decides what a pass satisfies; a code for another method fails.
+    #[serde(default)]
+    method: Option<AuthMethod>,
 }
 
-/// `POST /s/{token}/otp/verify {code}`: check the recipient's open email one-time code
-/// (Argon2id, whose comparison is constant-time). A pass spends the code (a replay
-/// fails) and records `recipient.auth_passed`; anything else (wrong, expired, spent,
+/// `POST /s/{token}/otp/verify {code, method?}`: check the recipient's open one-time
+/// code (Argon2id, whose comparison is constant-time), whatever channel sent it. A pass
+/// spends the code (a replay fails) and records `recipient.auth_passed` for the code's
+/// method (`email_otp`, `sms_otp` or `voice_otp`); a `method` that is not the open
+/// code's fails; anything else (wrong, expired, spent,
 /// none sent) records `recipient.auth_failed`, which the engine counts to the account's
 /// lockout (`max_auth_attempts`), when it locks the recipient and revokes the link, as
 /// for an access code. Five wrong tries spend a code whatever that limit.
@@ -734,6 +800,17 @@ pub(crate) async fn otp_verify(
         let rid = RecipientId(uid(&r)?);
         let now = o.cmds.now;
         let open = o.tx.recipients().open_otp_code(Some(rid), None).await?;
+        // What a pass satisfies: the open code's method; without one, the method asked
+        // about (or `email_otp`), which then fails and counts.
+        let method = open
+            .as_ref()
+            .map(|c| otp_method(c.channel))
+            .or(req.method)
+            .unwrap_or(AuthMethod::EmailOtp);
+        let meant = req.method.is_none_or(|m| m == method);
+        if otp_channel(method).is_none() {
+            return Err(ApiError::method_unavailable());
+        }
         let code = req.code.trim().to_owned();
         let well_formed = code.len() == 6 && code.bytes().all(|b| b.is_ascii_digit());
         let mut passed = false;
@@ -741,6 +818,7 @@ pub(crate) async fn otp_verify(
             && let Some(phc) = c.code_hash.clone()
             && c.expires_at > now
             && well_formed
+            && meant
         {
             passed = tokio::task::spawn_blocking(move || verify_password(&code, &phc))
                 .await
@@ -769,7 +847,7 @@ pub(crate) async fn otp_verify(
         }
         o.run(Command::AuthResult {
             recipient: r.clone(),
-            method: AuthMethod::EmailOtp,
+            method,
             passed,
         })
         .await?;

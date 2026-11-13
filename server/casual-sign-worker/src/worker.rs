@@ -252,6 +252,7 @@ pub struct Worker<B: BlobStore> {
     clock: Arc<dyn Clock>,
     faults: Option<FaultHook>,
     inference: Option<Arc<dyn crate::ml::Inference>>,
+    messenger: Option<Arc<dyn crate::messenger::Messenger>>,
 }
 
 impl<B: BlobStore> core::fmt::Debug for Worker<B> {
@@ -345,7 +346,16 @@ impl<B: BlobStore + 'static> Worker<B> {
             clock,
             faults: None,
             inference: None,
+            messenger: None,
         }
+    }
+
+    /// Send SMS and voice one-time codes through `messenger` (slice 5). Without it, a
+    /// code by SMS or voice fails `CS-WRK-0013` and the recipient asks again.
+    #[must_use]
+    pub fn with_messenger(mut self, messenger: Arc<dyn crate::messenger::Messenger>) -> Self {
+        self.messenger = Some(messenger);
+        self
     }
 
     /// Run document-analysis jobs against `inference` (docs/33 §2). Without it, such a
@@ -1084,11 +1094,14 @@ impl<B: BlobStore + 'static> Worker<B> {
 
     /// `send_email_otp` (SEC-A02): draw the recipient's 6-digit code (uniform, from the
     /// system's random source), store only its Argon2id PHC string on the open code's
-    /// row, and email it; nothing for a code closed, sent or expired meanwhile. The code
-    /// lives only in this function and the message: never in the job, a step, a log or
-    /// the audit chain. A message lost after the row is marked sent is not resent (the
-    /// recipient asks for another code).
+    /// row, and send it by the row's channel: email, SMS or a voice call to the
+    /// recipient's phone (slice 5, through the [`Messenger`](crate::messenger::Messenger));
+    /// nothing for a code closed, sent or expired meanwhile. The code lives only in this
+    /// function and the message: never in the job, a step, a log or the audit chain. A
+    /// message lost after the row is marked sent is not resent (the recipient asks for
+    /// another code).
     async fn email_otp(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        use casual_sign_store::repo::recipients::OtpChannel;
         let bad = || WorkerError::BadJob {
             kind: job.kind.clone(),
         };
@@ -1110,11 +1123,35 @@ impl<B: BlobStore + 'static> Worker<B> {
             .get(code_row.recipient_id)
             .await?
             .ok_or(WorkerError::SealInput { what: "recipient" })?;
-        let to = person
-            .recipient
-            .email
-            .clone()
-            .ok_or(WorkerError::NoChannel)?;
+        let text_channel = match code_row.channel {
+            OtpChannel::Email => None,
+            OtpChannel::Sms => Some(crate::messenger::TextChannel::Sms),
+            OtpChannel::Voice => Some(crate::messenger::TextChannel::Voice),
+        };
+        // Before a code is drawn: no provider, or nowhere to send it, ends the job.
+        let to = match text_channel {
+            None => person
+                .recipient
+                .email
+                .clone()
+                .ok_or(WorkerError::NoChannel)?
+                .get()
+                .clone(),
+            Some(_) => {
+                if self.messenger.is_none() {
+                    return Err(WorkerError::NoChannel);
+                }
+                person
+                    .recipient
+                    .phone
+                    .clone()
+                    .ok_or(WorkerError::NoChannel)?
+                    .get()
+                    .chars()
+                    .filter(|c| c.is_ascii_digit() || *c == '+')
+                    .collect()
+            }
+        };
         let subject = tx
             .envelopes()
             .get(envelope)
@@ -1136,6 +1173,28 @@ impl<B: BlobStore + 'static> Worker<B> {
             return self.close_job(tx, job, lease).await;
         }
         tx.commit().await?;
+        if let (Some(channel), Some(messenger)) = (text_channel, self.messenger.clone()) {
+            let text = crate::messenger::Text {
+                channel,
+                to,
+                body: crate::messenger::code_text(channel, &self.config.product, &code),
+                id: format!("{}.otp", job.id.0.simple()),
+            };
+            tokio::task::spawn_blocking(move || messenger.send(&text))
+                .await
+                .map_err(|_| WorkerError::MessengerFailed { status: None })??;
+            self.boundary(Boundary::EmailSent, &job.kind).await;
+            let mut tx = self.store.for_account(job.account_id).begin().await?;
+            tx.job_steps()
+                .record(
+                    job.id,
+                    &format!("{}.otp", channel.as_str()),
+                    &serde_json::json!({ "outcome": "accepted" }),
+                    now,
+                )
+                .await?;
+            return self.close_job(tx, job, lease).await;
+        }
         let mailer = self.mailer.as_ref().ok_or(WorkerError::NoChannel)?;
         let (subject, body) = email::render(
             Template::EmailOtp,
@@ -1151,7 +1210,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         let msg = Message {
             from: self.config.mail_from.clone(),
             from_name: self.config.mail_from_name.clone(),
-            to: to.get().clone(),
+            to,
             to_name: person.recipient.name.get().clone(),
             subject,
             body,
