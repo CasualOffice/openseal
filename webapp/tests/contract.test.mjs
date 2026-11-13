@@ -296,13 +296,12 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   const seen = [];
   const fake = async (url) => { seen.push(url); return new Response(JSON.stringify({ items: [] }), { status: 200 }); };
   const c = createClient({ fetch: fake });
-  assert.equal(c.available("inbox"), false);
+  assert.equal(c.available("restoreEnvelope"), false);
   assert.equal(c.available("listWebhooks"), true, "a call the server serves is available");
   const refused = [
-    c.inbox(), c.listFolders(), c.createFolder("x"), c.moveEnvelopes("f", ["e"]), c.restoreEnvelope("e"),
+    c.restoreEnvelope("e"),
     c.updateWebhook("w", { active: false }), c.testWebhook("w"), c.redeliver("w", "d"),
-    c.signLink("e"), c.ceremony.clearField("t", "f"),
-    c.listEnvelopes({ recipient: "ann" }), c.listEnvelopes({ date_field: "sent_at" }), c.listEnvelopes({ folder: "f" }), c.listEnvelopes({ deleted: true }),
+    c.ceremony.clearField("t", "f"),
   ];
   for (const p of refused) await assert.rejects(p, (e) => e.status === 501 && e.code === "CS-NET-0002" && Object.hasOwn(NOT_ON_SERVER, e.detail));
   assert.deepEqual(seen, []);
@@ -312,6 +311,61 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   await c.ceremony.disclosure("t");
   assert.equal(seen.at(-1), "/s/t/disclosure");
   for (const [name, { needs }] of Object.entries(NOT_ON_SERVER)) assert.ok(needs.length > 10, name);
+});
+
+test("the Inbox, folders, filters, the Deleted views and an ended envelope's certificate reach the server as it serves them (UXW-01/02/03/30)", async () => {
+  const seen = [];
+  const fake = async (url, init = {}) => {
+    seen.push(`${init.method || "GET"} ${url}`);
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+  const c = createClient({ fetch: fake });
+  for (const name of ["inbox", "envelopeFilters", "folders", "deleted", "certificateEnded"]) {
+    assert.ok(!Object.hasOwn(NOT_ON_SERVER, name), name);
+  }
+  await c.inbox();
+  await c.signLink("e1");
+  await c.listEnvelopes({ recipient: "ann", date_field: "sent_at", folder: "f1", deleted: true });
+  await c.listFolders();
+  await c.createFolder("Leases");
+  await c.renameFolder("f1", "Old leases");
+  await c.deleteFolder("f1");
+  await c.moveEnvelopes("f1", ["e1"]);
+  await c.moveEnvelopes(null, ["e1"]);
+  await c.templates.listDeleted();
+  await c.templates.restore("t1");
+  await c.certificate("e1");
+  assert.deepEqual(seen, [
+    "GET /api/v1/envelopes?waiting_for=me&limit=25",
+    "POST /api/v1/envelopes/e1/sign-link",
+    "GET /api/v1/envelopes?limit=25&recipient=ann&date_field=sent_at&folder=f1&deleted=true",
+    "GET /api/v1/folders",
+    "POST /api/v1/folders",
+    "PATCH /api/v1/folders/f1",
+    "DELETE /api/v1/folders/f1",
+    "POST /api/v1/folders/f1/envelopes",
+    "POST /api/v1/folders/none/envelopes",
+    "GET /api/v1/templates?deleted=true",
+    "POST /api/v1/templates/t1/restore",
+    "GET /api/v1/envelopes/e1/certificate",
+  ]);
+});
+
+test("the mock keeps a deleted template whole, lists it in the Deleted view and restores it (UXW-02)", async () => {
+  const c = await signedIn();
+  const tp = await c.templates.create({ name: "Kept", roles: [{ name: "Client", type: "signer", routing_order: 1 }] });
+  const { etag } = await c.templates.get(tp.id);
+  await c.templates.remove(tp.id, etag);
+  assert.ok(!(await c.templates.list()).items.some((x) => x.id === tp.id), "left the list");
+  assert.deepEqual((await c.templates.listDeleted()).items.map((x) => x.id), [tp.id]);
+  await assert.rejects(c.templates.get(tp.id), (e) => e.status === 404);
+  const back = await c.templates.restore(tp.id);
+  assert.equal(back.roles[0].name, "Client", "with its roles");
+  assert.ok((await c.templates.list()).items.some((x) => x.id === tp.id));
+  await assert.rejects(c.templates.restore(tp.id), (e) => e.status === 404, "a live template is not restored");
+  await c.templates.remove(tp.id, (await c.templates.get(tp.id)).etag);
+  await c.templates.remove(tp.id, `"v${back.version + 1}"`);
+  assert.deepEqual((await c.templates.listDeleted()).items, [], "deleted twice: gone for good");
 });
 
 test("ahead of the server, the mock serves the Inbox and signing from it", async () => {
@@ -423,4 +477,23 @@ test("every call not on the server names the tracker row that builds it, and doc
     assert.match(String(row), /^[A-Z]+-\d+$/, `${name} has no tracker row`);
     assert.ok(doc.includes(`\`${row}\``), `${name}'s row ${row} is not in docs/40`);
   }
+});
+
+// ---- workspace switching (ORG-04) ------------------------------------------------------
+test("workspaces: listed by organization, a switch replaces the CSRF token, a stranger's id is CS-ORG-0001", async () => {
+  const c = await signedIn();
+  const l = await c.workspaces();
+  assert.equal(l.current, "acct-demo");
+  const ws = l.organizations.flatMap((o) => o.workspaces);
+  assert.deepEqual(ws.map((w) => [w.id, w.current]), [["acct-demo", true], ["acct-legal", false]]);
+  assert.deepEqual(Object.keys(ws[0]).sort(), ["current", "id", "name", "status"]);
+  await assert.rejects(c.switchWorkspace("acct-elsewhere"), (e) => e.status === 403 && e.code === "CS-ORG-0001");
+  const r = await c.switchWorkspace("acct-legal");
+  assert.equal(r.account_id, "acct-legal");
+  assert.equal((await c.session()).account_id, "acct-legal");
+  assert.equal((await c.account()).name, "Legal");
+  assert.equal((await c.workspaces()).current, "acct-legal");
+  // The new CSRF token is the one sent: a changing call still passes.
+  await c.switchWorkspace("acct-demo");
+  assert.equal((await c.session()).account_id, "acct-demo");
 });

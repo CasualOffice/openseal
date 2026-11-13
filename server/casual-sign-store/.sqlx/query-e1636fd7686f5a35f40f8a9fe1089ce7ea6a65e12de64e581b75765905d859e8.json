@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE templates SET version = version + 1, updated_at = now() WHERE account_id = $1 AND id = $2 AND ($3::int IS NULL OR version = $3) RETURNING version",
+  "query": "UPDATE templates SET deleted_at = now(), version = version + 1, updated_at = now() WHERE account_id = $1 AND id = $2 AND deleted_at IS NULL AND ($3::int IS NULL OR version = $3) RETURNING version",
   "describe": {
     "columns": [
       {
@@ -26,5 +26,5 @@
       false
     ]
   },
-  "hash": "1147ee44b79891658f7b9c2b80a584ef0c09ba0f066c1172aca701a7eb94cfa1"
+  "hash": "e1636fd7686f5a35f40f8a9fe1089ce7ea6a65e12de64e581b75765905d859e8"
 }

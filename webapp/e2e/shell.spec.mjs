@@ -380,3 +380,25 @@ test.describe("verify page and public site", () => {
     });
   }
 });
+
+test.describe("workspace switcher (ORG-04)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("the workspace row lists the person's workspaces and switches to another", async ({ page }, testInfo) => {
+    test.skip(REAL, "the deployed stack's demo user belongs to one workspace; the server side is server/casual-sign-server/tests/workspaces.rs");
+    await signIn(page, "home");
+    const row = page.locator("#ws-btn");
+    await expect(row).toContainText("Demo account");
+    await row.click();
+    const menu = page.getByRole("menu", { name: "Workspace" });
+    await expect(menu).toContainText("Switch workspace");
+    await expect(menu.getByRole("menuitem", { name: "Demo account" })).toBeVisible();
+    await snap(page, testInfo, "shell-workspaces-desktop");
+    await menu.getByRole("menuitem", { name: "Legal" }).click();
+    await expect(row).toContainText("Legal");
+    await expect(page).toHaveURL(/#\/home$/);
+    await row.click();
+    await page.getByRole("menu", { name: "Workspace" }).getByRole("menuitem", { name: "Demo account" }).click();
+    await expect(row).toContainText("Demo account");
+  });
+});

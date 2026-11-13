@@ -447,6 +447,21 @@ is per workspace and harms no other.
   checks it); organization routes take the organization from that session. *Rejected:* organization-only sessions.
 - *Later:* one workspace per browser tab. For now one active workspace per browser, as in DocuSign.
 
+#### As built (`ORG-04`)
+
+`GET /auth/workspaces` and `POST /auth/switch` (`api/switch.rs`, docs/40 §2). The switch reads the person's
+memberships through `openseal_user_workspaces` with the session's hash, refuses an id outside them with `403
+CS-ORG-0001` (the same for an unknown id, so nothing about other workspaces leaks), then ends the old session with
+`Sessions::take` (an UPDATE … RETURNING on a live row, so a second concurrent switch finds nothing and gets `401`) and
+creates the new one in the target workspace with the **same** method, `created_at` and `expires_at`: switching never
+extends a sign-in, and a future maximum-session-age policy reads one sign-in time across switches. The new session is
+committed before the old one's end, so a failure leaves the person signed in where they were. An archived workspace
+can be switched to (it is read-only, `CS-ORG-0010`). Not yet: the target organization's sign-in policy
+(`CS-ORG-0007`), which needs organization policy (`ORG-08`) and SSO (`ORG-12`); row `ORG-31`. The web app's switcher
+is in the sidebar's workspace row (its menu, under "Switch workspace", the current one checked), the place the
+approved design (docs/47 §Shell, the Main artboard) gives the workspace; §10's "top bar's account menu" predates that
+design and is superseded by it.
+
 ### 2.4 Moving things between workspaces
 
 | Object | Across workspaces | Within a workspace | What is recorded |
@@ -528,7 +543,8 @@ mutation of the migration):
   addresses are never recorded, only ids; a member rename names the key without values; settings keys that look secret
   (`secret`, `password`, `token`, `private`, `credential`) and passwords are recorded as `"rotated"`. Actions now:
   `workspace.created`, `workspace.archived`, `workspace.settings_changed`, `workspace.ml_settings_changed` (the
-  document-analysis switches, `WEB-19`), `organization.created`,
+  document-analysis switches, `WEB-19`), `ersd.published` (a disclosure version's id, version, language and hash,
+  never its text, `ERSD-01`), `organization.created`,
   `organization.admin_added`, `member.added`, `member.removed`, `member.profile_changed`, `member.disabled`,
   `member.enabled`, `member.renamed`, `member.password_set`, `profile.created`. A user changing their own name or
   password, and accepting an invitation, are not administrative changes and write none.
@@ -1193,7 +1209,7 @@ Audit log (organization and operator events, filters, export).
 envelopes, resend invitation), Groups, Permission profiles (delegated admin with group scope), Sending, Signing and
 recipient authentication, Brands, ERSD, Template sharing, Retention, Webhooks, API apps and keys, Seal and timestamp
 (read-only unless entitled), Usage, Archived agreements, Admin audit log. Settings set by the organization show a lock
-and "Set by your organization". The workspace switcher sits in the top bar's account menu.
+and "Set by your organization". The workspace switcher sits in the sidebar's workspace row (`ORG-04`; the approved design's place, docs/47 §Shell).
 
 **Console** (`console-ui/`, served by the console binary; §5.6): Sign in (password, then TOTP); Dashboard (services, alerts, certificates expiring, dead
 letters, queues, pending approvals); Organizations (search, detail, plan, overrides, usage, status, owner recovery,

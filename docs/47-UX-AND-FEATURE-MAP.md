@@ -873,7 +873,9 @@ long label where their box is constrained.
 `os-stagger` (list rows 40 ms apart). All are off under `prefers-reduced-motion: reduce`.
 
 **Shell** (`app.html`, `app.js`, `shell.css`; the Main artboard). A 15.5rem sidebar on the window colour: the
-workspace row (seal mark, workspace name, product; a menu with workspace settings for admins, verify, about),
+workspace row (seal mark, workspace name, product; a menu with, for a person in more than one workspace, "Switch
+workspace" and each workspace grouped by organization, the current one checked (`ORG-04`, command
+`workspace.switch`, which reloads on Home), then workspace settings for admins, verify, about),
 "Search or jump to… ⌘K" (`#palette-btn`), **New agreement** (`#start-btn`, the Start menu's send / from a template /
 verify, `N` hint), Home, Agreements, Templates, Reports, an empty labelled group `#nav-views` for the Agreements
 screen's saved views, then at the bottom the demo tag, Admin (admins only) and the account row (`#account-btn`:
@@ -973,6 +975,20 @@ Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list la
   rows, script chips), `tests/ux08.test.mjs` (nav order, old links, hrefs round-trip); `e2e/admin.spec.mjs` adds the
   nav (order, no wrapped label, waiting parts, old links), Document intelligence (count, switches, scripts, models,
   save and reload, refused change rolls back, not installed hides every ML control, not in plan), and the pill tabs.
+
+## As built: electronic disclosure in Admin (ERSD-01, UXW-12, 2026-11-13)
+
+The Signing and seals page draws the part the server now has, **Electronic disclosure** (`adminersd.js`; pure rules
+`ersdProblem`, `ersdPreview`, `nextErsdVersion`, `shortHash` in `adminmodel.js`; `NAV` marks it `live`), above the
+illustrated "not on this server yet" block that still holds Signing and sending and Seal and timestamp. The page is no
+longer marked "Soon" and has its own lede. Built from existing components only: the account card (title, Publish new
+version, lede), a definition list (version, language, published, short SHA-256), a preview of the text (280
+characters, cut at a word), and the published versions, newest first. **Publish new version** opens a side panel with
+the current text to start from and its language tag; the server's rules (not blank, no NUL, at most 100,000 bytes, a
+language tag) are said in place before the request, and publishing is one `POST /ersd-versions` that also requires
+the new version, so envelopes already sent ask for consent to it. The panel says published versions are kept
+unchanged. With no disclosure required the card says so. The mock serves `/ersd-versions` as the server and its
+signer view follows the published version. Who accepted which version is `ERSD-02`.
 
 ## As built: sign-in, accept invite and Verify on the approved canvas (WEB-18 lane E, 2026-11-13)
 

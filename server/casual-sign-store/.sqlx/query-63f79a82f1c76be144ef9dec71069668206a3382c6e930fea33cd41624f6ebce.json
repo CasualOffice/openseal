@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE templates SET name = $4, version = version + 1, updated_at = now() WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
+  "query": "UPDATE templates SET deleted_at = NULL, version = version + 1, updated_at = now() WHERE account_id = $1 AND id = $2 AND deleted_at IS NOT NULL RETURNING version",
   "describe": {
     "columns": [
       {
@@ -18,14 +18,12 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
-        "Int4",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "697d68c00fbaad3fc3c971357f4fa6e58b98debe6df85199f5743ef1642dc610"
+  "hash": "63f79a82f1c76be144ef9dec71069668206a3382c6e930fea33cd41624f6ebce"
 }

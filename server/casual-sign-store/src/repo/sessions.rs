@@ -40,6 +40,19 @@ pub struct NewSession {
     pub expires_at: OffsetDateTime,
 }
 
+/// A session ended by [`Sessions::take`]: whose it was and how they signed in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TakenSession {
+    /// The member.
+    pub user_id: UserId,
+    /// How they signed in.
+    pub method: LoginMethod,
+    /// When they signed in.
+    pub created_at: OffsetDateTime,
+    /// Until when the sign-in holds.
+    pub expires_at: OffsetDateTime,
+}
+
 /// Staff sessions of this account. Reached through `TenantTx::sessions`.
 #[derive(Debug)]
 pub struct Sessions<'t> {
@@ -91,6 +104,42 @@ impl Sessions<'_> {
         .await
         .map_err(db)?;
         affected(done.rows_affected(), "session")
+    }
+
+    /// End a live session of this account at `at` and answer how it was signed in, so a
+    /// workspace switch (docs/23 §2.3) can carry that sign-in, never extend it. Answers
+    /// `None` when the session is already ended, so two concurrent switches from one
+    /// session cannot both succeed: the row is locked by the update.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0010` for an unreadable method.
+    pub async fn take(
+        &mut self,
+        id: StaffSessionId,
+        at: OffsetDateTime,
+    ) -> Result<Option<TakenSession>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "UPDATE staff_sessions SET revoked_at = $3 \
+             WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL AND expires_at > $3 \
+             RETURNING user_id, method, created_at, expires_at",
+            acct,
+            id.0,
+            at
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        row.map(|r| {
+            Ok(TakenSession {
+                user_id: UserId(r.user_id),
+                method: LoginMethod::parse(&r.method, "method")?,
+                created_at: r.created_at,
+                expires_at: r.expires_at,
+            })
+        })
+        .transpose()
     }
 
     /// End every session of a member of this account at `at`; returns how many ended.

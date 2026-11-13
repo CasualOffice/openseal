@@ -183,11 +183,7 @@ export const WEBHOOK_EVENT_TYPES = Object.freeze([
 /// `CS-NET-0002` (501), so the UI can say "not available yet" instead of hiding the
 /// control. `client.available(name)` tells which.
 export const NOT_ON_SERVER = Object.freeze({
-  inbox: { row: "UXW-01", needs: "GET /envelopes?waiting_for=me (envelopes waiting for the signed-in user to act, with my_recipient_id)" },
-  envelopeFilters: { row: "UXW-03", needs: "GET /envelopes?recipient=&date_field=sent_at|completed_at|created_at|updated_at" },
-  folders: { row: "UXW-02", needs: "GET/POST /folders, PATCH/DELETE /folders/{id}, POST /folders/{id}/envelopes; GET /envelopes?folder=" },
-  deleted: { row: "UXW-02", needs: "GET /envelopes?deleted=true and POST /envelopes/{id}/restore (deleted envelopes kept, restorable)" },
-  certificateEnded: { row: "UXW-30", needs: "GET /envelopes/{id}/certificate for declined, voided and expired envelopes (409 today)" },
+  restoreEnvelope: { row: "UXW-02", needs: "POST /envelopes/{id}/restore (a new workflow command and audit type envelope.restored, ADR-031 Proposed)" },
   updateWebhook: { row: "UXW-31", needs: "PATCH /webhooks/{id} {url?, event_types?, active?} (pause, resume, edit)" },
   testWebhook: { row: "UXW-32", needs: "POST /webhooks/{id}/test (needs the worker, docs/40 §4)" },
   redeliver: { row: "UXW-33", needs: "POST /webhooks/{id}/deliveries/{d}/redeliver (docs/40 §4)" },
@@ -283,6 +279,16 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       try { await request("POST", "/api/v1/auth/logout"); } finally { setCsrf(null); }
     },
     session: () => data(request("GET", "/api/v1/auth/session")),
+    /// The signed-in person's workspaces (ORG-04, docs/23 §2.3): `{current,
+    /// organizations: [{id, name, workspaces: [{id, name, status, current}]}]}`.
+    workspaces: () => data(request("GET", "/api/v1/auth/workspaces")),
+    /// Move this session to another of the person's workspaces: the server ends this
+    /// session and sets a new cookie; the new CSRF token replaces the old one.
+    async switchWorkspace(accountId) {
+      const r = await data(request("POST", "/api/v1/auth/switch", { body: { account_id: accountId } }));
+      setCsrf(r?.csrf_token || null);
+      return r;
+    },
     account: () => data(request("GET", "/api/v1/accounts/me")),
     /// The signed-in user's own profile (`NOT_ON_SERVER.profile`, UX-04): `{id, name,
     /// email, notifications: {completed, declined, viewed}, signature, initials}`, the
@@ -305,32 +311,27 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// `order` `asc` or `desc` (the server's default when left out); `sender` a user id
     /// or `"me"`; `from`/`to` a last-change range (Date or RFC 3339; `to` exclusive).
     /// A `cursor` is only valid with the sort and order it came with.
-    /// Not on the server yet (`NOT_ON_SERVER`), refused with `CS-NET-0002` there:
-    /// `recipient` (a recipient's email or name contains it) and `date_field` (which
-    /// date `from`/`to` bound: `updated_at`, the default, `created_at`, `sent_at`,
-    /// `completed_at`) are `envelopeFilters`; `folder` (a folder id) is `folders`;
-    /// `deleted: true` (the Deleted view) is `deleted`.
+    /// UXW-02/03: `recipient` (a recipient's email or name contains it), `date_field`
+    /// (which date `from`/`to` bound: `updated_at`, the default, `created_at`,
+    /// `sent_at`, `completed_at`), `folder` (one of the user's folder ids) and
+    /// `deleted: true` (the Deleted view).
     listEnvelopes: ({ status, cursor, limit = 25, q, sort, order, sender, from, to, recipient, date_field, folder, deleted } = {}) => {
       const query = {
         status: Array.isArray(status) ? status.join(",") : status,
         cursor, limit, q, sort, order, sender, from: instantOf(from), to: instantOf(to),
       };
-      const extra = [["envelopeFilters", { recipient, date_field }], ["folders", { folder }], ["deleted", { deleted: deleted ? "true" : null }]];
-      for (const [name, members] of extra) {
-        const given = Object.entries(members).filter(([, v]) => !blank(v));
-        if (!given.length) continue;
-        if (!available(name)) return unbuilt(name, null)();
-        Object.assign(query, Object.fromEntries(given));
+      for (const [k, v] of Object.entries({ recipient, date_field, folder, deleted: deleted ? "true" : null })) {
+        if (!blank(v)) query[k] = v;
       }
       return list(query);
     },
     /// Envelopes waiting for the signed-in user to sign, approve or view (the Inbox,
-    /// `NOT_ON_SERVER.inbox`): `{items, next_cursor}` as `listEnvelopes`, each item with
+    /// UXW-01): `{items, next_cursor}` as `listEnvelopes`, each item with
     /// `my_recipient_id`, the recipient the user is.
-    inbox: unbuilt("inbox", ({ cursor, limit = 25 } = {}) => list({ waiting_for: "me", cursor, limit })),
-    /// The signing page for the signed-in user on an Inbox envelope, `{url}`
-    /// (`NOT_ON_SERVER.inbox`); 409 `CS-WF-0007` before routing reaches them.
-    signLink: unbuilt("inbox", (id) => data(request("POST", `${E(id)}/sign-link`))),
+    inbox: ({ cursor, limit = 25 } = {}) => list({ waiting_for: "me", cursor, limit }),
+    /// The signing page for the signed-in user on an Inbox envelope, `{url}` (UXW-01);
+    /// 409 `CS-WF-0007` before routing reaches them.
+    signLink: (id) => data(request("POST", `${E(id)}/sign-link`)),
     /// `{envelope, etag}`; the ETag falls back to the version when a proxy drops it.
     async getEnvelope(id) {
       const r = await request("GET", E(id));
@@ -339,8 +340,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     createEnvelope: (body) => data(request("POST", "/api/v1/envelopes", { body })),
     patchEnvelope: (id, etag, body) => data(request("PATCH", E(id), { body, ifMatch: etag })),
     deleteEnvelope: (id, etag) => data(request("DELETE", E(id), { ifMatch: etag })),
-    /// Bring a deleted envelope back to the lists (`NOT_ON_SERVER.deleted`).
-    restoreEnvelope: unbuilt("deleted", (id) => data(request("POST", `${E(id)}/restore`))),
+    /// Bring a deleted envelope back to the lists (`NOT_ON_SERVER.restoreEnvelope`:
+    /// a new audit type, ADR-031 Proposed).
+    restoreEnvelope: unbuilt("restoreEnvelope", (id) => data(request("POST", `${E(id)}/restore`))),
     sendEnvelope: (id) => data(request("POST", `${E(id)}/send`)),
     voidEnvelope: (id, reason) => data(request("POST", `${E(id)}/void`, { body: { reason } })),
     resend: (id, recipientIds) => data(request("POST", `${E(id)}/resend`, { body: recipientIds ? { recipient_ids: recipientIds } : {} })),
@@ -349,8 +351,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// audit type (`recipient.delivered`), `event` the whole event of docs/32 §2 with
     /// `actor {kind, id?, name?}` and `data` (its `recipient_id`, …); `seq` from 0.
     audit: (id) => data(request("GET", `${E(id)}/audit`)),
-    /// The certificate of completion: a completed envelope's; a declined, voided or
-    /// expired one's is `NOT_ON_SERVER.certificateEnded` (the server answers 409).
+    /// The certificate of completion of a completed envelope; of a declined, voided or
+    /// expired one, the envelope certificate saying how it ended (UXW-30; 409 until the
+    /// worker has made it).
     certificate: async (id) => (await request("GET", `${E(id)}/certificate`, { raw: true })).blob,
     /// WEB-08: a signer's attachment by the SHA-256 its field's value names (recorded
     /// in the audit trail as `attachment.downloaded`).
@@ -429,16 +432,16 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// `signal` aborts a stale search.
     searchByMeaning: (q, { signal, limit } = {}) => data(request("GET", "/api/v1/search", { query: { q, mode: "meaning", limit }, signal })),
 
-    // ---- Folders (`NOT_ON_SERVER.folders`) -------------------------------------
+    // ---- Folders (UXW-02: each member's own) ---------------------------------
     /// The signed-in user's folders, `{items: [{id, name, count}]}`.
-    listFolders: unbuilt("folders", () => data(request("GET", "/api/v1/folders"))),
-    createFolder: unbuilt("folders", (name) => data(request("POST", "/api/v1/folders", { body: { name } }))),
-    renameFolder: unbuilt("folders", (f, name) => data(request("PATCH", F(f), { body: { name } }))),
+    listFolders: () => data(request("GET", "/api/v1/folders")),
+    createFolder: (name) => data(request("POST", "/api/v1/folders", { body: { name } })),
+    renameFolder: (f, name) => data(request("PATCH", F(f), { body: { name } })),
     /// Remove a folder; its envelopes go back to no folder.
-    deleteFolder: unbuilt("folders", (f) => data(request("DELETE", F(f)))),
+    deleteFolder: (f) => data(request("DELETE", F(f))),
     /// File envelopes in a folder (`null`: in none).
-    moveEnvelopes: unbuilt("folders", (f, envelopeIds) =>
-      data(request("POST", f == null ? "/api/v1/folders/none/envelopes" : `${F(f)}/envelopes`, { body: { envelope_ids: envelopeIds } }))),
+    moveEnvelopes: (f, envelopeIds) =>
+      data(request("POST", f == null ? "/api/v1/folders/none/envelopes" : `${F(f)}/envelopes`, { body: { envelope_ids: envelopeIds } })),
 
     // ---- Webhooks (docs/40 §4; scope webhooks:manage) ---------------------------
     /// `{items: [{id, envelope_id, url, event_types, secret_refs, active}]}`.
@@ -465,6 +468,14 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// `PATCH /accounts/me {settings}`: merged into the account's settings (`null`
     /// removes a key). Answers `{settings}`. The API has no way to rename the account.
     patchAccountSettings: (settings) => data(request("PATCH", "/api/v1/accounts/me", { body: { settings } })),
+    /// The electronic disclosure (ERSD-01): `GET /ersd-versions` answers `{current,
+    /// items}` (`current` the one recipients must accept, with its text, or null);
+    /// `publish({text, language?})` makes `text` the next version and requires it in
+    /// one step, answering the new version without its text.
+    ersd: {
+      get: () => data(request("GET", "/api/v1/ersd-versions")),
+      publish: ({ text, language }) => data(request("POST", "/api/v1/ersd-versions", { body: language ? { text, language } : { text } })),
+    },
     /// An invited member sets their password with the emailed token (no session).
     acceptInvite: (token, password) => data(request("POST", "/api/v1/auth/accept-invite", { body: { token, password } })),
     users: {
@@ -503,7 +514,13 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       create: (body) => data(request("POST", "/api/v1/templates", { body })),
       /// `{name?, email_subject?, email_message?}` (If-Match).
       patch: (tp, etag, body) => data(request("PATCH", T(tp), { body, ifMatch: etag })),
+      /// A live template moves to the Deleted view, kept whole (UXW-02); one already
+      /// there is removed for good.
       remove: (tp, etag) => data(request("DELETE", T(tp), { ifMatch: etag })),
+      /// The Deleted view (UXW-02): `{items}`, most recently deleted first.
+      listDeleted: () => data(request("GET", "/api/v1/templates", { query: { deleted: "true" } })),
+      /// Bring a deleted template back, whole; answers the whole template.
+      restore: (tp) => data(request("POST", `${T(tp)}/restore`)),
       duplicate: (tp, name) => data(request("POST", `${T(tp)}/duplicate`, { body: name ? { name } : {} })),
       /// Answers the whole template: the new document is the one that was not there.
       addDocument: (tp, name, bytes) => data(request("POST", `${T(tp)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),

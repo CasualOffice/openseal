@@ -195,7 +195,24 @@ async fn open(
             (TokenPurpose::InPerson, None) => return Err(ApiError::expired()),
             _ => None,
         };
-        let first = if host.is_some() {
+        // An Inbox link (UXW-01) acts as the recipient, obtained by a signed-in member
+        // who must still be an enabled member with the recipient's email; it records
+        // that sign-in, not an emailed link.
+        let signed_in = match (record.purpose, record.host_user_id) {
+            (TokenPurpose::Account, Some(u)) => {
+                let member = tx.users().get(u).await?.ok_or_else(ApiError::expired)?;
+                if member.disabled_at.is_some()
+                    || member.email.get().to_lowercase()
+                        != r.spec.email.get().as_str().to_lowercase()
+                {
+                    return Err(ApiError::expired());
+                }
+                true
+            }
+            (TokenPurpose::Account, None) => return Err(ApiError::expired()),
+            _ => false,
+        };
+        let first = if host.is_some() || signed_in {
             AuthMethod::AccountLogin
         } else {
             AuthMethod::EmailLink

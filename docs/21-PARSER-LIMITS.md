@@ -175,12 +175,16 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Limit | Default | Code |
 | --- | ---: | --- |
 | JSON request body | 1 MiB | CS-API-0006 |
+| Electronic disclosure text (`POST /ersd-versions`, `ERSD-01`); its language tag | 100,000 bytes of UTF-8, not blank, no NUL; 2 to 35 ASCII letters, digits and `-`, starting with a letter | CS-API-0006, CS-API-0001 |
 | Document upload request (base64 of 50 MiB, or the raw PDF) | 70 MiB body; 50 MiB decoded | CS-API-0006, CS-PDF-0001 |
 | One-call envelope create | 270 MiB body; 200 MiB of documents decoded | CS-API-0006 |
 | Adopted signature image (PNG or JPEG) | 5 MiB | CS-API-0006 |
 | Signer attachment (PDF admitted by the reader, PNG or JPEG; `WEB-06`) | 10 MiB decoded, 14 MiB body | CS-API-0001, CS-API-0006 |
 | Contacts search (`GET /contacts`; `WEB-06`) | `q` 200 characters, `limit` 1–50 | CS-API-0001 |
 | User invitation link (`WEB-06`) | 256 random bits, 7 days, once | CS-AUTH-0002 |
+| Envelope list `recipient` filter (`UXW-03`) | 200 characters, no control characters | CS-API-0001 |
+| Folders (`UXW-02`): name; folders per member; envelopes per move | 1–100 characters, no control characters; 500; 1–200 | CS-API-0001 |
+| Inbox signing link (`POST …/sign-link`, `UXW-01`) | 5 minutes, bound to the first browser | CS-AUTH-0002 |
 | Requests per authenticated principal | 1,200 per minute | CS-API-0003 |
 | Ceremony requests per token / per client address | 300 / 1,200 per minute | CS-API-0003 |
 | Login and token attempts per login name or client / per address | 10 / 100 per minute | CS-API-0003 |

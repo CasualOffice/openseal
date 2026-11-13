@@ -244,6 +244,52 @@ pub struct CertificateInput<'a> {
     pub chain: &'a Chain,
     /// When the certificate is made (supplied: the engine reads no clock).
     pub generated: Timestamp,
+    /// `Some` for an envelope that ended without completing (UXW-30): the certificate
+    /// says how it ended and never claims completion. `None`: a certificate of
+    /// completion, byte for byte as before.
+    pub ending: Option<Ending>,
+}
+
+/// How an envelope that did not complete ended (UXW-30).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum EndKind {
+    /// A recipient declined.
+    Declined,
+    /// The sender (or an administrator) voided it.
+    Voided,
+    /// It expired before every recipient finished.
+    Expired,
+}
+
+impl EndKind {
+    /// The word printed: `declined`, `voided`, `expired`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Declined => "declined",
+            Self::Voided => "voided",
+            Self::Expired => "expired",
+        }
+    }
+}
+
+/// The end of an envelope that did not complete (UXW-30). A certificate with an ending
+/// is an envelope certificate, never a certificate of completion: its title, summary
+/// and seal section say how the envelope ended and that no document was sealed as a
+/// completed agreement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ending {
+    /// How it ended.
+    pub kind: EndKind,
+    /// When: the time of the chain's `envelope.declined`, `envelope.voided` or
+    /// `envelope.expired`.
+    pub at: Timestamp,
+    /// Who ended it, as shown (the declining recipient, the voiding sender); `None` for
+    /// an expiry.
+    pub by: Option<String>,
+    /// The reason given, as typed.
+    pub reason: Option<String>,
 }
 
 /// Page size.

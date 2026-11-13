@@ -297,6 +297,7 @@ pub fn certificate_input<'a>(
         verify_url: None,
         chain,
         generated: t(30_000),
+        ending: None,
     }
 }
 

@@ -191,6 +191,23 @@ pub async fn apply_loaded(
             enqueued = enqueued.saturating_add(1);
         }
     }
+    // An envelope that ends without completing gets its envelope certificate (UXW-30),
+    // made and sealed by the worker as a completed one's is; keyed by the envelope, so
+    // it is queued once whatever records the end.
+    let ended = |s: MStatus| matches!(s, MStatus::Declined | MStatus::Voided | MStatus::Expired);
+    if ended(state.status)
+        && !prev.is_some_and(|p| ended(p.status))
+        && tx
+            .jobs()
+            .enqueue(&jobs::ended_certificate_job(
+                casual_sign_store::JobId(uuid::Uuid::new_v4()),
+                envelope,
+                now,
+            ))
+            .await?
+    {
+        enqueued = enqueued.saturating_add(1);
+    }
     if let Some(l) = loaded {
         l.state = state.clone();
         l.revision = revision;
