@@ -69,7 +69,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | RFC 3161 response or token | 1 MiB | CS-SEAL-0002, CS-VER-0006 |
 | Timestamp nonce | 32 bytes | CS-SEAL-0002 |
 | OCSP response | 1 MiB | CS-SEAL-0004 |
-| CRL | 32 MiB; critical issuing-distribution-point (indirect, delta, partitioned CRLs) refused | CS-SEAL-0004 |
+| CRL | 32 MiB; indirect, delta and some-reasons-only CRLs refused; a CRL scoped by an Issuing Distribution Point (critical or not) answers only for a certificate inside its scope, `NotCovered` otherwise; a malformed scope, or more than one only-contains restriction, is a malformed CRL (`HRD-02`, `crl_status_for`, `crates/casual-sign-crypto/tests/crl_scope.rs`) | CS-SEAL-0004 |
 | RSA key size accepted for verification | 2,048–8,192 bits | CS-SEAL-0005 |
 
 ## Verification (`casual-sign-verify`, stage 1H)

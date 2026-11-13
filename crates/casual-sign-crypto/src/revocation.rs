@@ -11,7 +11,9 @@ use core::time::Duration;
 use der::Decode;
 use x509_cert::Certificate;
 use x509_cert::crl::CertificateList;
-use x509_cert::ext::pkix::{ExtendedKeyUsage, KeyUsage};
+use x509_cert::ext::pkix::crl::IssuingDistributionPoint;
+use x509_cert::ext::pkix::name::DistributionPointName;
+use x509_cert::ext::pkix::{BasicConstraints, CrlDistributionPoints, ExtendedKeyUsage, KeyUsage};
 use x509_cert::serial_number::SerialNumber;
 use x509_ocsp::{BasicOcspResponse, CertStatus, OcspResponse, OcspResponseStatus};
 
@@ -235,8 +237,9 @@ fn delegated_by(
 ///
 /// The CRL must name `issuer` as its issuer, be signed by its key (with `cRLSign` if the
 /// issuer has a key-usage extension), carry no critical extension other than those this
-/// function understands (so indirect, delta and partitioned CRLs are refused), and speak
-/// for `at` (`at <= thisUpdate`, or `at <= nextUpdate`).
+/// function understands (so indirect, delta and partitioned CRLs are refused: without the
+/// certificate, a CRL's scope cannot be compared; [`crl_status_for`] can), and speak for
+/// `at` (`at <= thisUpdate`, or `at <= nextUpdate`).
 ///
 /// # Errors
 /// [`CryptoError::Revocation`] (`CS-SEAL-0004`) for an unusable CRL;
@@ -246,6 +249,88 @@ pub fn crl_status(
     serial: &SerialNumber,
     issuer: &Certificate,
     at: Duration,
+) -> Result<RevocationStatus, CryptoError> {
+    crl_check(crl, serial, issuer, at, None)
+}
+
+/// [`crl_status`] for the certificate `subject`, which also reads a CRL scoped by an
+/// Issuing Distribution Point (RFC 5280 §5.2.5, §6.3.3), as production CAs issue them
+/// (HRD-02): the CRL answers only when its scope covers `subject`, that is its
+/// distribution point is one `subject`'s CRL distribution points names, and its
+/// user-only or CA-only restriction fits `subject`'s basic constraints. Indirect CRLs and
+/// CRLs for only some reasons are still refused.
+///
+/// # Errors
+/// As [`crl_status`]; [`RevocationFailure::NotCovered`] when the CRL's scope does not
+/// include `subject`.
+pub fn crl_status_for(
+    crl: &[u8],
+    subject: &Certificate,
+    issuer: &Certificate,
+    at: Duration,
+) -> Result<RevocationStatus, CryptoError> {
+    crl_check(
+        crl,
+        subject.tbs_certificate().serial_number(),
+        issuer,
+        at,
+        Some(subject),
+    )
+}
+
+/// Whether a CRL whose Issuing Distribution Point is `idp` speaks for `subject`.
+/// `Err` for scopes this crate does not process (indirect, some reasons only).
+fn idp_covers(idp: &IssuingDistributionPoint, subject: &Certificate) -> Result<bool, CryptoError> {
+    if idp.indirect_crl || idp.only_some_reasons.is_some() {
+        return Err(fail(RevocationFailure::UnsupportedCriticalExtension));
+    }
+    let restrictions = [
+        idp.only_contains_user_certs,
+        idp.only_contains_ca_certs,
+        idp.only_contains_attribute_certs,
+    ];
+    if restrictions.iter().filter(|r| **r).count() > 1 {
+        return Err(CryptoError::Malformed(Structure::Crl));
+    }
+    let tbs = subject.tbs_certificate();
+    let is_ca = matches!(
+        tbs.get_extension::<BasicConstraints>(),
+        Ok(Some((_, bc))) if bc.ca
+    );
+    if idp.only_contains_attribute_certs
+        || (idp.only_contains_user_certs && is_ca)
+        || (idp.only_contains_ca_certs && !is_ca)
+    {
+        return Ok(false);
+    }
+    Ok(match &idp.distribution_point {
+        None => true,
+        Some(DistributionPointName::FullName(names)) => {
+            let Ok(Some((_, dps))) = tbs.get_extension::<CrlDistributionPoints>() else {
+                return Ok(false);
+            };
+            // A distribution point of the certificate's own (no cRLIssuer), for every
+            // reason, that names one of the CRL's names (§6.3.3 (b)(2)(i)).
+            dps.0.iter().any(|dp| {
+                dp.crl_issuer.is_none()
+                    && dp.reasons.is_none()
+                    && matches!(
+                        &dp.distribution_point,
+                        Some(DistributionPointName::FullName(own))
+                            if own.iter().any(|n| names.contains(n))
+                    )
+            })
+        }
+        Some(DistributionPointName::NameRelativeToCRLIssuer(_)) => false,
+    })
+}
+
+fn crl_check(
+    crl: &[u8],
+    serial: &SerialNumber,
+    issuer: &Certificate,
+    at: Duration,
+    subject: Option<&Certificate>,
 ) -> Result<RevocationStatus, CryptoError> {
     let bad = CryptoError::Malformed(Structure::Crl);
     if crl.len() > MAX_CRL_LEN {
@@ -273,7 +358,10 @@ pub fn crl_status(
             other => other,
         },
     )?;
-    let understood = [oid::CE_CRL_NUMBER, oid::CE_AUTHORITY_KEY_IDENTIFIER];
+    let mut understood = vec![oid::CE_CRL_NUMBER, oid::CE_AUTHORITY_KEY_IDENTIFIER];
+    if subject.is_some() {
+        understood.push(oid::CE_ISSUING_DISTRIBUTION_POINT);
+    }
     if tbs
         .crl_extensions
         .iter()
@@ -281,6 +369,22 @@ pub fn crl_status(
         .any(|e| e.critical && !understood.contains(&e.extn_id))
     {
         return Err(fail(RevocationFailure::UnsupportedCriticalExtension));
+    }
+    if let Some(subject) = subject {
+        // Critical or not (RFC 5280 says critical; some CAs differ), a scope is a scope.
+        for e in tbs
+            .crl_extensions
+            .iter()
+            .flatten()
+            .filter(|e| e.extn_id == oid::CE_ISSUING_DISTRIBUTION_POINT)
+        {
+            let idp = der_walk::single_tlv(e.extn_value.as_bytes())
+                .and_then(|t| IssuingDistributionPoint::from_der(t).ok())
+                .ok_or(bad)?;
+            if !idp_covers(&idp, subject)? {
+                return Err(fail(RevocationFailure::NotCovered));
+            }
+        }
     }
 
     let this_update = tbs.this_update.to_unix_duration();

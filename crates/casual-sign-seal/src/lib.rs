@@ -467,6 +467,7 @@ pub fn seal(
             core::slice::from_ref(&written.contents),
             request.signing_time,
             revocation,
+            &request.trust,
             limits,
         )?;
         bytes = b;
@@ -554,7 +555,14 @@ fn archive(
     revocation: &dyn RevocationSource,
 ) -> Result<Sealed, SealError> {
     let limits = &options.limits;
-    let (mut bytes, d) = dss::add_dss(input, targets, options.time, revocation, limits)?;
+    let (mut bytes, d) = dss::add_dss(
+        input,
+        targets,
+        options.time,
+        revocation,
+        &options.trust,
+        limits,
+    )?;
     let mut report = SealReport {
         signature: None,
         signature_timestamp: None,

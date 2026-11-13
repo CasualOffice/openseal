@@ -63,7 +63,11 @@ and revocation answers.
 7. Assemble CMS SignedData (detached), hex-encode, write into `/Contents`, zero-padded.
 8. **Verify the result** with `casual-sign-verify` before returning. A seal that does not verify is an error.
 9. For B-LT: collect OCSP responses (or CRLs) for every certificate in the signer and TSA chains; append a second
-   incremental update with `/DSS` and `/VRI`. For B-LTA: append a document timestamp over the whole.
+   incremental update with `/DSS` and `/VRI`. For B-LTA: append a document timestamp over the whole. Issuers come
+   from the CMS, the revocation source and the request's trust store (anchors and intermediates): a real CA's chain
+   stops below its offline root, and so does a TSA's token. A chain ends at a trust anchor or at a
+   cross-certificate with an anchor's subject and key, which needs no revocation data. CRLs scoped by a critical
+   Issuing Distribution Point are used for the certificates their scope covers (HRD-02).
 
 Supported keys: RSA 3072+ (PKCS#1 v1.5 and PSS), ECDSA P-256 and P-384. Ed25519 is not used for PDF seals until reader
 support exists (`SEAL-12`).
@@ -184,9 +188,51 @@ A seal is "verified" only when every rung below passes. **Our verifier alone is 
 | --- | --- | --- |
 | 1 | `casual-sign-verify` | Every test, every seal in production |
 | 2 | pyHanko (MIT) `validate` with the test trust root | CI, over `fixtures/sealed` |
-| 3 | EU DSS 6.5.1 (LGPL, our own small validator in a container built from `tools/eu-dss/`, run with no network): signature intact and valid, PAdES baseline level detected, no undefined changes after signing; `TOTAL_PASSED` once the test PKI supplies revocation data (`F-008`); until then a seal is `INDETERMINATE` (`CERTIFICATE_CHAIN_GENERAL_FAILURE`) offline | CI, over `fixtures/sealed` |
-| 4 | Adobe Acrobat Reader shows the signature valid with the test root trusted | Release gate `PV-01`, by hand or in a Windows CI container, never on the owner's desktop |
+| 3 | EU DSS 6.5.1 (LGPL, our own small validator in a container built from `tools/eu-dss/`, run with no network over `fixtures/sealed`; the `HRD-02` interop steps run it `--online` on the host's network, against the PKI served on 127.0.0.1): signature intact and valid, PAdES baseline level detected, no undefined changes after signing; `TOTAL_PASSED` once the test PKI supplies revocation data (`F-008`); until then a seal is `INDETERMINATE` (`CERTIFICATE_CHAIN_GENERAL_FAILURE`) offline | CI, over `fixtures/sealed` |
+| 2–3, real-style PKI | `tools/interop/interop.py` (HRD-02): ours, pyHanko (fetching, `hard-fail`) and EU DSS (`--online`) over seals the CLI makes at B-T and B-LTA under an offline root, an issuing CA, a delegated OCSP responder, CRLs and an RFC 3161 TSA served on 127.0.0.1; revoked and tampered seals must fail | CI job `validators`, fresh each run, and over the committed packet `fixtures/interop` |
+| 4 | Adobe Acrobat Reader shows the signature valid with the test root trusted, following `fixtures/interop/ACROBAT-CHECKLIST.md` | `HRD-03` and release gate `PV-01`, by hand or in a Windows CI container, never on the owner's desktop |
 | 5 | ETSI TS 119 144-4 conformance checks for the claimed baseline level | Release gate |
+
+### As built (HRD-02): real-style PKI and production TSA
+
+`tools/interop/interop.py check` builds a PKI as a CA would run one: `OpenSeal Interop Root CA` (RSA-4096, offline:
+it signs only the issuing CA and its own CRL), `OpenSeal Interop Issuing CA` (RSA-3072; AIA caIssuers and a CRL
+distribution point pointing at the root's), and under it a delegated OCSP responder (P-256, `id-kp-OCSPSigning`,
+`id-pkix-ocsp-nocheck`), a TSA (RSA-3072, critical `id-kp-timeStamping`, ESS signing-certificate-v2) and seal
+certificates (P-256, RSA-3072, and one revoked for keyCompromise), each naming its OCSP responder, issuer and CRL. A
+threaded HTTP server on 127.0.0.1 answers OCSP (POST and RFC 6960 GET, nonce echoed, SHA-1 to SHA-512 CertIDs),
+CRLs, AIA and RFC 3161 while the run lasts. The `openseal` CLI normalizes two sample agreements and seals them at B-T
+and B-LTA (approval P-256 and RSA-3072, certification P=2), fetching everything from the URLs in the certificates.
+Each output must be `TOTAL_PASSED` by ours (B-LTA; B-T is `TRY_LATER` offline, as it carries no revocation data),
+valid and trusted with its timestamp by pyHanko with fetching on and `revocation_mode="hard-fail"` (and B-LTA from
+its DSS alone), and `TOTAL_PASSED` at the right PAdES level with every timestamp `PASSED` and revocation data found by
+EU DSS fetching online. Negative controls: a B-T seal by the revoked certificate is not trusted by pyHanko and is
+`INDETERMINATE/REVOKED_NO_POE` in EU DSS; the engine refuses a B-LT seal with it (`CS-SEAL-0004`, certificate
+revoked); a flipped byte fails all three. Served with no revocation data, the committed packet fails every check
+(seen 2026-11-14), so revocation is really checked. In CI's `validators` job and `tools/ci-local.sh`.
+
+`interop.py packet fixtures/interop` writes the packet: six PDFs (`manifest.tsv`, `SHA256SUMS`), the root
+(`trust/`, with its fingerprint), and the public PKI material (`pki/`: CA certificates, CRLs and OCSP answers
+pre-signed per CertID hash, valid until 2036; no private key is kept). `interop.py verify fixtures/interop` serves
+that material on 127.0.0.1:47380 and validates the packet again; `serve` does the same for Acrobat
+(`ACROBAT-CHECKLIST.md`, `HRD-03`).
+
+The run found three engine defects, each fixed with a test seen red first: B-LT failed with `CS-SEAL-0004` "issuer
+not found" whenever the chain stopped below the root, as every real CA's chain and TSA token does (issuers are now
+also taken from the trust store); CRLs with a critical Issuing Distribution Point, which production CAs issue, were
+refused, so a chain whose OCSP fails had no revocation data (`crl_status_for` reads the scope against the
+certificate, RFC 5280 §5.2.5 and §6.3.3; a CRL scoped elsewhere is `NotCovered`, never good); and a cross-certificate
+of a trust anchor in a TSA token sent the walk after an issuer no one holds (the walk now ends at an anchor's subject
+and key).
+
+**Production TSA (opt-in).** `OPENSEAL_INTEROP_NETWORK=1 interop.py check --tsa-url URL --tsa-root ROOT.pem` takes
+every timestamp from a public TSA, its root supplied by the operator, never taken from the token. Results on
+2026-11-14: **DigiCert** (`http://timestamp.digicert.com`, root DigiCert Trusted Root G4) passes every check at B-T
+and B-LTA. Its OCSP responder answers `unauthorized` to SHA-256 CertIDs, so the engine uses its CRLs (with a critical
+Issuing Distribution Point), and EU DSS 6.5.1 refuses its OCSP answer for the timestamping CA ("The ResponderId
+does not match the OCSP issuer certificate!") without falling back, so the run gives EU DSS `--crl-first` for a
+public TSA. **FreeTSA** (`https://freetsa.org/tsr`) is refused by the engine with `CS-SEAL-0005`: its tokens name
+their signer by ESSCertID v1 (SHA-1), which `SEAL-14` decides. CI uses the local TSA only.
 
 ## 8. Algorithms and crate choices
 

@@ -93,7 +93,7 @@ running:
 
 - [ ] `HRD-01` The whole path runs on the hardened Compose profile with failure recovery: worker, keyd, database and
       object store killed mid-flow, every envelope still completes or fails safe, nothing sealed twice, audit chain intact.
-- [ ] `HRD-02` Sealing validated against a real-style CA hierarchy (offline root, issuing CA, OCSP and CRL served) and a
+- [x] `HRD-02` Sealing validated against a real-style CA hierarchy (offline root, issuing CA, OCSP and CRL served) and a
       production RFC 3161 TSA; pyHanko and EU DSS agree; an Acrobat interoperability packet is produced.
 - [ ] `HRD-03` Acrobat Reader opens the packet's PDFs as valid, signed and unchanged (owner or a named tester; results
       recorded with screenshots).

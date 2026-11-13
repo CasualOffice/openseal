@@ -28,6 +28,10 @@ VENV=target/tools-venv
 [ -x "$VENV/bin/python" ] || { ~/.local/bin/uv venv -q -p 3.12 "$VENV" && ~/.local/bin/uv pip install -q -p "$VENV/bin/python" "pyhanko==0.38.1" cryptography; }
 docker build -q -t openseal-eu-dss tools/eu-dss >/dev/null
 "$VENV/bin/python" -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
+# HRD-02, as ci.yml's validators job: the interop PKI, sealed through the CLI (built by the
+# script), validated online; then the committed packet with its revocation data replayed.
+"$VENV/bin/python" -I tools/interop/interop.py check --dss openseal-eu-dss
+"$VENV/bin/python" -I tools/interop/interop.py verify fixtures/interop --dss openseal-eu-dss
 step "keyd softhsm";      OPENSEAL_VERIFY_PYTHON="$PWD/$VENV/bin/python" cargo test -q -p casual-sign-keyd --test softhsm --locked
 step "store db and server db"   # Postgres 17 in Docker, as ci.yml's store-db and server-db jobs (S3 tests skip without an endpoint)
 [ -x target/sqlx-cli/bin/sqlx ] || cargo install -q sqlx-cli --version 0.9.0 --no-default-features --features postgres,rustls --locked --root target/sqlx-cli
