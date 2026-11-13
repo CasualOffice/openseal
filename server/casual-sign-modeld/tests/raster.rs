@@ -13,7 +13,9 @@
 )]
 
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
 use std::process::Command;
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
 use casual_sign_modeld::ModeldError;
@@ -31,6 +33,7 @@ fn repo() -> PathBuf {
 }
 
 /// The ML hostile fixtures, generated once if missing (`generate.py --ml`, about 1 s).
+#[cfg(target_os = "linux")]
 fn ml_fixtures() -> PathBuf {
     let dir = repo().join("fixtures/hostile/ml");
     let missing = std::fs::read_to_string(dir.join("manifest.tsv"))
@@ -120,6 +123,7 @@ fn page_of(r: &Raster) -> OcrPage {
 /// manifest row names, and the control renders. Each guard (pixel cap, image budget,
 /// nesting depth) is a separate check in `src/raster.rs`; removing one turns its row red.
 #[test]
+#[cfg(target_os = "linux")]
 fn every_ml_hostile_fixture_is_refused_with_its_code() {
     let dir = ml_fixtures();
     let manifest = std::fs::read_to_string(dir.join("manifest.tsv")).unwrap();
@@ -144,6 +148,7 @@ fn every_ml_hostile_fixture_is_refused_with_its_code() {
 }
 
 /// A page whose content takes long to render: `n` stroked curves.
+#[cfg(target_os = "linux")]
 fn slow_content(n: usize) -> String {
     let mut c = String::from("0.5 w ");
     for i in 0..n {
@@ -161,6 +166,7 @@ fn slow_content(n: usize) -> String {
 /// `CS-ML-0006`, the next page renders in a fresh child, and after `max_kills` kills the
 /// document's later pages are not rendered.
 #[test]
+#[cfg(target_os = "linux")]
 fn a_page_over_its_time_kills_the_child_and_the_next_page_still_renders() {
     let fast = "0 g 72 600 m 400 600 l S".to_owned();
     let bytes = pdf(&[
@@ -192,6 +198,7 @@ fn a_page_over_its_time_kills_the_child_and_the_next_page_still_renders() {
 /// **A child that dies other than by the time cap** (here: its address-space limit) is
 /// reported as `CS-ML-0014` and counted; the document carries on in a new child.
 #[test]
+#[cfg(target_os = "linux")]
 fn a_child_over_its_memory_limit_is_reported_and_replaced() {
     // 1,470 pt square at 200 DPI is 4,083 px a side: about 67 MB of pixmap alone.
     let big = (
@@ -216,6 +223,7 @@ fn a_child_over_its_memory_limit_is_reported_and_replaced() {
 
 /// A request for a page the document lacks, or an unreadable PDF, is refused.
 #[test]
+#[cfg(target_os = "linux")]
 fn a_missing_page_or_an_unreadable_pdf_is_refused() {
     let bytes = pdf(&[("[0 0 200 200]", None, 0, String::new())]);
     let mut doc = Document::open(Path::new(EXE), bytes, RasterLimits::default()).unwrap();
@@ -227,6 +235,18 @@ fn a_missing_page_or_an_unreadable_pdf_is_refused() {
     )
     .unwrap_err();
     assert_eq!(e.code(), "CS-ML-0006", "{e}");
+}
+
+/// **Off Linux the raster child does not run** (docs/33 §3.3): its limits are the
+/// containment and only Linux enforces `RLIMIT_AS`, so opening a document is refused
+/// with `CS-ML-0014`, a typed error, and no child is started.
+#[test]
+#[cfg(not(target_os = "linux"))]
+fn off_linux_opening_a_document_is_refused_with_raster_child() {
+    let bytes = pdf(&[("[0 0 200 200]", None, 0, String::new())]);
+    let e = Document::open(Path::new(EXE), bytes, RasterLimits::default()).unwrap_err();
+    assert_eq!(e, ModeldError::RasterChild, "{e}");
+    assert_eq!(e.code(), "CS-ML-0014");
 }
 
 /// A page larger than the raster cap renders at a lower resolution, reported.
