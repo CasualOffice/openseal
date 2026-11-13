@@ -84,7 +84,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
-      # Rung 3: EU DSS 6.5.1, built here, run with no network (LGPL; never linked).
+      # Rung 3: EU DSS 6.5.1, built here (LGPL; never linked); with no network over
+      # fixtures/sealed, online (--online, --network host) for the HRD-02 interop steps below.
       - run: docker build -q -t openseal-eu-dss tools/eu-dss
       - run: /tmp/v/bin/python -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
       # HRD-02: a real-style PKI (offline root, issuing CA, OCSP responder, CRLs, an RFC 3161
