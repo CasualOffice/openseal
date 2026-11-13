@@ -39,7 +39,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::{envelope as find, json, path_id};
+use super::{envelope, json, path_id};
 use crate::api::envelopes::{doc_in, rfc3339};
 use crate::apply::{Loaded, uid};
 use crate::auth::Principal;
@@ -212,6 +212,17 @@ fn run_json(r: &Run) -> Value {
 
 /// Who may ask for an analysis or decide a suggestion: the envelope's sender or an
 /// administrator (others who may see it read only).
+/// The envelope at `id` for its analysis, `404` once it is purged (`SEC-I07`, `ML-31`):
+/// a deleted draft takes no new analysis, and its runs and suggestions, which carry
+/// document text, are not shown or decided while the purge job has yet to remove them.
+async fn find(tx: &mut TenantTx, p: &Principal, id: &str) -> Result<Loaded, ApiError> {
+    let l = envelope(tx, p, id).await?;
+    if l.state.purged {
+        return Err(ApiError::not_found());
+    }
+    Ok(l)
+}
+
 fn may_change(p: &Principal, l: &Loaded) -> Result<(), ApiError> {
     if p.admin || l.state.sender_user_id.as_str() == p.user.to_string() {
         Ok(())

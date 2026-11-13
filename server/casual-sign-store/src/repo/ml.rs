@@ -811,6 +811,27 @@ impl Ml<'_> {
         Ok(())
     }
 
+    /// Remove every analysis of an envelope's documents with the envelope's purge
+    /// (`SEC-I07`, `ML-31`): its runs and, through `ON DELETE CASCADE`, their
+    /// suggestions and OCR pages, which are document content. A queued analysis job
+    /// that runs later finds no run and ends. Returns how many runs went.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn forget_envelope(&mut self, envelope: EnvelopeId) -> Result<u64> {
+        let acct = self.tx.acct();
+        let r = sqlx::query!(
+            "DELETE FROM analysis_runs WHERE account_id = $1 AND envelope_id = $2",
+            acct,
+            envelope.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(r.rows_affected())
+    }
+
     /// Every template page hash of this account, at most [`MAX_FINGERPRINTS`].
     ///
     /// # Errors

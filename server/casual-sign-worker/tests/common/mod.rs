@@ -501,9 +501,13 @@ pub struct Crashed;
 
 impl Env {
     pub async fn new(test: &str) -> Option<Self> {
+        Self::with_ids(test, AccountId(Uuid::now_v7()), UserId(Uuid::now_v7())).await
+    }
+
+    /// A world whose account and sender have these ids, so that two worlds given the
+    /// same commands seal the same bytes (`ML-32`).
+    pub async fn with_ids(test: &str, account: AccountId, sender: UserId) -> Option<Self> {
         let db = fresh(test, Rls::On).await?;
-        let account = AccountId(Uuid::now_v7());
-        let sender = UserId(Uuid::now_v7());
         // A workspace of an organization of its own, made by the owner role as the
         // console will; a test's further workspaces use `bootstrap_workspace`.
         let org = db.organization("Acme Test").await;
@@ -875,6 +879,11 @@ impl Env {
             f1: Uuid::now_v7(),
             f2: Uuid::now_v7(),
         };
+        self.draft_with(ids, extra).await
+    }
+
+    /// [`Env::draft`] with these ids.
+    pub async fn draft_with(&self, ids: Ids, extra: Vec<Change>) -> Ids {
         self.apply(
             ids.env,
             self.as_sender(),
@@ -1006,4 +1015,41 @@ impl Env {
 
 pub fn hex32(hex: &str) -> [u8; 32] {
     casual_sign_store::blob::BlobKey::parse(hex).unwrap().0
+}
+
+/// Write `files` with a manifest (`level` B-T) and the seal root, then run pyHanko.
+pub fn independent(dir: &std::path::Path, files: &[(String, Vec<u8>)]) {
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::create_dir_all(dir).unwrap();
+    let mut manifest = String::from("file\texpect\twhy\tlevel\n");
+    for (name, bytes) in files {
+        std::fs::write(dir.join(name), bytes).unwrap();
+        manifest.push_str(&format!("{name}\tintact\tT-2D worker seal\tB-T\n"));
+    }
+    std::fs::write(dir.join("manifest.tsv"), manifest).unwrap();
+    std::fs::write(dir.join("trust-root.pem"), pki::root_pem()).unwrap();
+    let Ok(python) = std::env::var("OPENSEAL_VERIFY_PYTHON") else {
+        eprintln!(
+            "NOTE: OPENSEAL_VERIFY_PYTHON is not set; pyHanko not run over {}",
+            dir.display()
+        );
+        return;
+    };
+    let script = repo_root().join("tools/verify-sealed.py");
+    let out = std::process::Command::new(python)
+        .arg("-I")
+        .arg(script)
+        .arg(dir)
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    eprintln!(
+        "pyHanko (tools/verify-sealed.py {}):\n{text}",
+        dir.display()
+    );
+    assert!(out.status.success(), "pyHanko disagreed:\n{text}");
 }

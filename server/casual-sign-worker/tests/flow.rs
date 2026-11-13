@@ -26,7 +26,7 @@ use casual_sign_audit::Hash256;
 use casual_sign_model::EnvelopeStatus;
 use casual_sign_sdk::Profile;
 use casual_sign_worker::JobOutcome;
-use common::{Env, SECRET, pki};
+use common::{Env, SECRET, independent, pki};
 
 fn verify_hmac(req: &common::Req) -> bool {
     let id = &req.headers["webhook-id"];
@@ -34,43 +34,6 @@ fn verify_hmac(req: &common::Req) -> bool {
     let key = casual_sign_worker::webhook::secret_key(SECRET).unwrap();
     let want = casual_sign_worker::webhook::signature(&[key], id, ts, &req.body);
     req.headers["webhook-signature"] == want
-}
-
-/// Write `files` with a manifest (`level` B-T) and the seal root, then run pyHanko.
-fn independent(dir: &Path, files: &[(String, Vec<u8>)]) {
-    let _ = std::fs::remove_dir_all(dir);
-    std::fs::create_dir_all(dir).unwrap();
-    let mut manifest = String::from("file\texpect\twhy\tlevel\n");
-    for (name, bytes) in files {
-        std::fs::write(dir.join(name), bytes).unwrap();
-        manifest.push_str(&format!("{name}\tintact\tT-2D worker seal\tB-T\n"));
-    }
-    std::fs::write(dir.join("manifest.tsv"), manifest).unwrap();
-    std::fs::write(dir.join("trust-root.pem"), pki::root_pem()).unwrap();
-    let Ok(python) = std::env::var("OPENSEAL_VERIFY_PYTHON") else {
-        eprintln!(
-            "NOTE: OPENSEAL_VERIFY_PYTHON is not set; pyHanko not run over {}",
-            dir.display()
-        );
-        return;
-    };
-    let script = common::repo_root().join("tools/verify-sealed.py");
-    let out = std::process::Command::new(python)
-        .arg("-I")
-        .arg(script)
-        .arg(dir)
-        .output()
-        .unwrap();
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    eprintln!(
-        "pyHanko (tools/verify-sealed.py {}):\n{text}",
-        dir.display()
-    );
-    assert!(out.status.success(), "pyHanko disagreed:\n{text}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
