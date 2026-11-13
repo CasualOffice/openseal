@@ -202,6 +202,28 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-AUTH-0010")
     }
 
+    /// `CS-ORG-0005` 403: a grant to oneself, or beyond the granter's own rights
+    /// (docs/23 §2.2).
+    pub fn grant_refused() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-ORG-0005")
+    }
+
+    /// `CS-ORG-0008` 409: the organization must keep at least one enabled owner.
+    pub fn last_owner() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-ORG-0008")
+    }
+
+    /// `CS-ORG-0010` 409: the workspace is archived.
+    pub fn workspace_archived() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-ORG-0010")
+    }
+
+    /// `CS-ORG-0018` 422: an organization administrator must be an enabled member of one
+    /// of its workspaces (docs/23 §2.3); also for a user id the organization cannot see.
+    pub fn not_an_org_member() -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-ORG-0018")
+    }
+
     /// The fixed title of a code.
     fn title(&self) -> &'static str {
         match self.code {
@@ -230,6 +252,10 @@ impl ApiError {
             "CS-AUTH-0008" => "CSRF token missing or wrong",
             "CS-AUTH-0009" => "Link bound to another browser",
             "CS-AUTH-0010" => "Host does not own this embedding",
+            "CS-ORG-0005" => "Grant refused",
+            "CS-ORG-0008" => "Organization must keep an enabled owner",
+            "CS-ORG-0010" => "Workspace archived",
+            "CS-ORG-0018" => "Not a member of the organization's workspaces",
             c if c.starts_with("CS-WF") => "Workflow refused the command",
             c if c.starts_with("CS-FLD") => "Field rules refused the value",
             c if c.starts_with("CS-PDF") || c.starts_with("CS-WRT") => "Document refused",

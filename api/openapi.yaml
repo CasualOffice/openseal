@@ -241,6 +241,73 @@ components:
       properties:
         items: {type: array, items: {$ref: '#/components/schemas/AdminEvent'}}
         next_cursor: {type: [integer, 'null']}
+    Organization:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [active, suspended, closed]}
+        role: {type: string, enum: [owner, admin, delegated], description: "The caller's role (GET only)"}
+        created_at: {type: string, format: date-time}
+    OrganizationPatch:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+    OrgWorkspace:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [active, archived]}
+    OrgWorkspaceList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/OrgWorkspace'}}
+    OrgWorkspaceCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+    OrgWorkspaceJoin:
+      type: object
+      required: [profile]
+      additionalProperties: false
+      properties:
+        profile: {type: string, description: '`admin`, `sender`, `viewer`, or a permission profile id of that workspace'}
+    OrgWorkspaceMembership:
+      type: object
+      properties:
+        workspace_id: {type: string}
+        user_id: {type: string}
+        permission_profile_id: {type: string}
+    OrgAdmin:
+      type: object
+      properties:
+        user_id: {type: string}
+        role: {type: string, enum: [owner, admin, delegated]}
+        permission_set_id: {type: [string, 'null']}
+        workspace_scope: {type: [array, 'null'], items: {type: string}}
+        created_at: {type: string, format: date-time}
+    OrgAdminList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/OrgAdmin'}}
+    OrgAdminCreate:
+      type: object
+      required: [user_id, role]
+      additionalProperties: false
+      properties:
+        user_id: {type: string, description: An enabled member of a workspace of this organization}
+        role: {type: string, enum: [owner, admin], description: Delegated admins need a permission set (ORG-07)}
+    OrgAdminPatch:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: {type: string, enum: [owner, admin]}
     UserCreate:
       type: object
       required: [email, name, profile]
@@ -897,6 +964,222 @@ paths:
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
         - {name: format, in: query, required: false, schema: {type: string, enum: [json, csv], default: json}}
         - {name: verify, in: query, required: false, description: "`page` verifies the page read; `full` re-verifies the whole log first; another value is `422 CS-API-0001`", schema: {type: string, enum: [page, full], default: page}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminEventList'}
+            text/csv:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me:
+    get:
+      operationId: getOrganization
+      summary: "The caller's organization and their role in it (ORG-03)"
+      description: >-
+        Organization metadata only; no role confers access to agreements (SEC-O07).
+        The caller's organization is the session's workspace's; the role is read from
+        `organization_admins` on every request (no role, or an action it does not hold:
+        `403 CS-AUTH-0006`; a non-session credential: `403 CS-AUTH-0006`). Another
+        organization's ids answer `404 CS-API-0002`.
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        default: {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: patchOrganization
+      summary: "Rename the organization (`org.settings.update`), logged as `organization.renamed`"
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrganizationPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/workspaces:
+    get:
+      operationId: listOrgWorkspaces
+      summary: "The organization's workspaces, by name (metadata only)"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspaceList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createOrgWorkspace
+      summary: "Create a workspace (`org.workspaces.create`) with its built-in profiles and no member, logged as `workspace.created`"
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrgWorkspaceCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspace'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/workspaces/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Workspace id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getOrgWorkspace
+      summary: "A workspace of the organization (metadata only)"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspace'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/workspaces/{id}/archive:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Workspace id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: archiveOrgWorkspace
+      summary: "Archive a workspace (`org.workspaces.archive`, idempotent), logged as `workspace.archived`"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspace'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/workspaces/{id}/join:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Workspace id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: joinOrgWorkspace
+      summary: "Become a member of a workspace (`org.workspaces.join`, owners and admins only)"
+      description: >-
+        The only way an organization role reaches agreements: one transaction writes the membership,
+        `member.added` (`via: organization`) in the workspace's log and `org.workspace_joined` in the
+        organization's. A delegated admin gets `403 CS-AUTH-0006`; an archived workspace `409 CS-ORG-0010`.
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrgWorkspaceJoin'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgWorkspaceMembership'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/admins:
+    get:
+      operationId: listOrgAdmins
+      summary: "The organization's owners and admins"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgAdminList'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: addOrgAdmin
+      summary: "Make a user an owner or admin (`org.admins.manage`, owners only), logged as `organization.admin_added`"
+      description: >-
+        The user must be an enabled member of a workspace of this organization, else `422 CS-ORG-0018`
+        (also for an id the organization cannot see); never oneself (`403 CS-ORG-0005`).
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrgAdminCreate'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgAdmin'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/admins/{user}:
+    parameters:
+      - name: user
+        in: path
+        required: true
+        description: User id (UUIDv7)
+        schema: {type: string}
+    patch:
+      operationId: patchOrgAdmin
+      summary: "Change an administrator's role (owners only; never one's own), logged as `organization.admin_role_changed`"
+      description: >-
+        Leaving no enabled owner is `409 CS-ORG-0008`.
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrgAdminPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrgAdmin'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: removeOrgAdmin
+      summary: "Remove an administrator (owners only), logged as `organization.admin_removed`"
+      description: >-
+        An owner may resign; the last enabled owner may not (`409 CS-ORG-0008`).
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: object, properties: {user_id: {type: string}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/organizations/me/audit:
+    get:
+      operationId: listOrgAdminEvents
+      summary: "The organization's admin audit log (`org.audit.read`), oldest first, verified as read"
+      description: >-
+        As `GET /admin-events`, over the organization's chain: workspace creation and archiving,
+        joins, administrator changes, renames, and the platform's `operator.*` copies (CON-16).
+      x-permission: ""
+      parameters:
+        - {name: cursor, in: query, required: false, description: "The `seq` after which to start", schema: {type: integer, minimum: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
+        - {name: format, in: query, required: false, schema: {type: string, enum: [json, csv], default: json}}
+        - {name: verify, in: query, required: false, schema: {type: string, enum: [page, full], default: page}}
       responses:
         '200':
           description: OK

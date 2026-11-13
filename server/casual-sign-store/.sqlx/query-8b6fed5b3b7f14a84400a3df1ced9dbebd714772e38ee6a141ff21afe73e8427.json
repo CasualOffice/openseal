@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.email_normalized FROM users u WHERE u.id = $1 AND u.disabled_at IS NULL AND EXISTS (SELECT 1 FROM account_memberships m JOIN accounts a ON a.id = m.account_id WHERE m.user_id = u.id AND a.organization_id = $2 AND m.disabled_at IS NULL)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email_normalized",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email_normalized"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8b6fed5b3b7f14a84400a3df1ced9dbebd714772e38ee6a141ff21afe73e8427"
+}

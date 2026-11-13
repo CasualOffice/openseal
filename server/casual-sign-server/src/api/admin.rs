@@ -126,32 +126,56 @@ pub(crate) async fn admin_events(
     c: Call,
     axum::extract::Query(q): axum::extract::Query<AdminEventsQuery>,
 ) -> Result<Response, ApiError> {
-    let limit = q.limit.unwrap_or(100);
-    if !(1..=casual_sign_store::ADMIN_EVENTS_MAX_PAGE).contains(&limit) {
-        return Err(ApiError::invalid("/query/limit"));
-    }
-    let csv = match q.format.as_deref() {
-        None | Some("json") => false,
-        Some("csv") => true,
-        Some(_) => return Err(ApiError::invalid("/query/format")),
-    };
-    let full = match q.verify.as_deref() {
-        None | Some("page") => false,
-        Some("full") => true,
-        Some(_) => return Err(ApiError::invalid("/query/verify")),
-    };
+    let (limit, csv, full) = q.read()?;
     let mut tx = c.tx().await?;
     if full {
         tx.verified_admin_log().await?;
     }
     let page = tx.verified_admin_events(q.cursor, limit).await?;
     tx.commit().await?;
+    Ok(admin_log_response(&page, limit, csv))
+}
+
+impl AdminEventsQuery {
+    /// The page size, whether CSV was asked for, and whether the whole chain is to be
+    /// verified (`verify=full`) rather than the page read (`verify=page`, the default).
+    pub(crate) fn read(&self) -> Result<(i64, bool, bool), ApiError> {
+        let limit = self.limit.unwrap_or(100);
+        if !(1..=casual_sign_store::ADMIN_EVENTS_MAX_PAGE).contains(&limit) {
+            return Err(ApiError::invalid("/query/limit"));
+        }
+        let csv = match self.format.as_deref() {
+            None | Some("json") => false,
+            Some("csv") => true,
+            Some(_) => return Err(ApiError::invalid("/query/format")),
+        };
+        let full = match self.verify.as_deref() {
+            None | Some("page") => false,
+            Some("full") => true,
+            Some(_) => return Err(ApiError::invalid("/query/verify")),
+        };
+        Ok((limit, csv, full))
+    }
+
+    /// The `seq` after which to start.
+    pub(crate) fn cursor(&self) -> Option<u64> {
+        self.cursor
+    }
+}
+
+/// A page of an admin log (a workspace's or an organization's) as JSON, or as CSV with
+/// the next cursor in `X-Next-Cursor`.
+pub(crate) fn admin_log_response(
+    page: &[casual_sign_store::StoredAdminEvent],
+    limit: i64,
+    csv: bool,
+) -> Response {
     let next = (i64::try_from(page.len()).ok() == Some(limit))
         .then(|| page.last().map(|e| e.seq))
         .flatten();
     if csv {
         let mut out = String::from("seq,at,action,hash,prev,event\r\n");
-        for e in &page {
+        for e in page {
             let event = String::from_utf8_lossy(&e.canonical);
             out.push_str(&format!(
                 "{},{},{},{},{},{}\r\n",
@@ -171,7 +195,7 @@ pub(crate) async fn admin_events(
         if let Some(v) = next.and_then(|n| HeaderValue::from_str(&n.to_string()).ok()) {
             r.headers_mut().insert("x-next-cursor", v);
         }
-        return Ok(r);
+        return r;
     }
     let items: Vec<Value> = page
         .iter()
@@ -186,10 +210,10 @@ pub(crate) async fn admin_events(
             })
         })
         .collect();
-    Ok(json(
+    json(
         StatusCode::OK,
         &json!({ "items": items, "next_cursor": next }),
-    ))
+    )
 }
 
 // Users ---------------------------------------------------------------------------------
@@ -277,7 +301,7 @@ async fn member_with_invitation(
 }
 
 /// The profile a name or id means in this account.
-async fn profile_id(
+pub(crate) async fn profile_id(
     tx: &mut casual_sign_store::TenantTx,
     name: &str,
 ) -> Result<PermissionProfileId, ApiError> {
@@ -1086,7 +1110,7 @@ pub struct Bootstrapped {
     pub profiles: [PermissionProfileId; 3],
 }
 
-fn new_profiles() -> BuiltinProfiles {
+pub(crate) fn new_profiles() -> BuiltinProfiles {
     BuiltinProfiles {
         admin: PermissionProfileId(Uuid::now_v7()),
         sender: PermissionProfileId(Uuid::now_v7()),

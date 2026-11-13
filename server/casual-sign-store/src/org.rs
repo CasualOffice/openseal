@@ -14,12 +14,14 @@ use sqlx::{Postgres, Transaction};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use casual_sign_audit::Personal;
+
 use crate::admin_log::{
-    AdminActor, AdminChange, Owner, StoredAdminEvent, append_error, seal, stored,
+    AdminActor, AdminChange, Change, Owner, StoredAdminEvent, append_error, seal, stored,
     verify_admin_chain,
 };
 use crate::error::{Result, StoreError, db};
-use crate::ids::{AccountId, OrganizationId, PermissionProfileId};
+use crate::ids::{AccountId, OrganizationId, PermissionProfileId, UserId};
 use crate::repo::text_enum;
 use crate::store::{Store, TenantTx};
 
@@ -44,6 +46,38 @@ text_enum!(
         Archived = "archived",
     }
 );
+
+text_enum!(
+    /// A role in an organization (docs/23 §2.2).
+    OrganizationRole {
+        /// Every organization action, including managing owners and admins.
+        Owner = "owner",
+        /// Every organization action but managing owners and admins and the owner-only
+        /// configuration.
+        Admin = "admin",
+        /// Exactly the actions its permission set names, within its workspace scope;
+        /// never joins a workspace.
+        Delegated = "delegated",
+    }
+);
+
+/// One administrator of an organization, with the actions its permission set names
+/// (delegated admins only).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrganizationAdmin {
+    /// The user.
+    pub user_id: UserId,
+    /// Their role.
+    pub role: OrganizationRole,
+    /// A delegated admin's permission set.
+    pub permission_set_id: Option<Uuid>,
+    /// The actions of that set (empty for owners and admins).
+    pub permissions: Vec<String>,
+    /// A delegated admin's workspaces; `None` for every workspace of the organization.
+    pub workspace_scope: Option<Vec<AccountId>>,
+    /// Since.
+    pub created_at: OffsetDateTime,
+}
 
 /// An organization's own row.
 #[derive(Debug, Clone, PartialEq)]
@@ -194,8 +228,8 @@ impl OrgTx {
         )
     }
 
-    /// Append `change` to this organization's admin log.
-    #[allow(dead_code)] // The organization routes (ORG-03) are its first callers.
+    /// Append `change` to this organization's admin log: every organization change
+    /// below writes its event through here, in its own transaction.
     pub(crate) async fn admin_event(&mut self, change: AdminChange) -> Result<()> {
         let e = self.next_event(&change).await?;
         let org = self.org();
@@ -378,6 +412,244 @@ impl OrgTx {
             organization: self.org,
             account,
         }))
+    }
+
+    /// The workspace `account` of this organization, or `None` for any other id.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn workspace_row(&mut self, account: AccountId) -> Result<Option<Workspace>> {
+        let org = self.org();
+        let r = sqlx::query!(
+            "SELECT id, name, status FROM accounts WHERE id = $1 AND organization_id = $2",
+            account.0,
+            org
+        )
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        r.map(|r| {
+            Ok(Workspace {
+                id: AccountId(r.id),
+                name: r.name,
+                status: WorkspaceStatus::parse(&r.status, "status")?,
+            })
+        })
+        .transpose()
+    }
+
+    /// Rename the organization, appending `organization.renamed` (old and new name).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` for an empty or overlong name; `CS-DB-0003` when it does not exist.
+    pub async fn rename(&mut self, name: &str) -> Result<()> {
+        let org = self.org();
+        let old = sqlx::query_scalar!(
+            "SELECT name FROM organizations WHERE id = $1 FOR UPDATE",
+            org
+        )
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound {
+            entity: "organization",
+        })?;
+        sqlx::query!(
+            "UPDATE organizations SET name = $2 WHERE id = $1",
+            org,
+            name
+        )
+        .execute(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        self.admin_event(
+            AdminChange::new("organization.renamed")
+                .target("organization", org)
+                .change(Change::new("name", Some(old.into()), Some(name.into()))),
+        )
+        .await
+    }
+
+    /// The administrator row of `user` in this organization, read afresh (rights are
+    /// never cached across requests, `SEC-O06`), or `None` when they hold no role.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn admin(&mut self, user: UserId) -> Result<Option<OrganizationAdmin>> {
+        Ok(self.admin_role_rows(Some(user)).await?.into_iter().next())
+    }
+
+    /// Every administrator of this organization, owners first.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn admins(&mut self) -> Result<Vec<OrganizationAdmin>> {
+        self.admin_role_rows(None).await
+    }
+
+    async fn admin_role_rows(&mut self, user: Option<UserId>) -> Result<Vec<OrganizationAdmin>> {
+        let org = self.org();
+        let rows = sqlx::query!(
+            r#"SELECT oa.user_id, oa.role, oa.permission_set_id, oa.workspace_scope, oa.created_at,
+                      ps.permissions AS "permissions?"
+               FROM organization_admins oa
+               LEFT JOIN org_permission_sets ps
+                 ON ps.organization_id = oa.organization_id AND ps.id = oa.permission_set_id
+               WHERE oa.organization_id = $1 AND ($2::uuid IS NULL OR oa.user_id = $2)
+               ORDER BY CASE oa.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+                        oa.created_at, oa.user_id"#,
+            org,
+            user.map(|u| u.0)
+        )
+        .fetch_all(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                Ok(OrganizationAdmin {
+                    user_id: UserId(r.user_id),
+                    role: OrganizationRole::parse(&r.role, "role")?,
+                    permission_set_id: r.permission_set_id,
+                    permissions: r.permissions.unwrap_or_default(),
+                    workspace_scope: r
+                        .workspace_scope
+                        .map(|s| s.into_iter().map(AccountId).collect()),
+                    created_at: r.created_at,
+                })
+            })
+            .collect()
+    }
+
+    /// The normalized e-mail of `user` when they are an enabled member of a workspace of
+    /// this organization (what an organization administrator must be, docs/23 §2.3), or
+    /// `None` for anyone else, another organization's users included.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn member_email(&mut self, user: UserId) -> Result<Option<Personal<String>>> {
+        let org = self.org();
+        let email = sqlx::query_scalar!(
+            "SELECT u.email_normalized FROM users u WHERE u.id = $1 AND u.disabled_at IS NULL \
+             AND EXISTS (SELECT 1 FROM account_memberships m JOIN accounts a ON a.id = m.account_id \
+                          WHERE m.user_id = u.id AND a.organization_id = $2 \
+                            AND m.disabled_at IS NULL)",
+            user.0,
+            org
+        )
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        Ok(email.map(Personal))
+    }
+
+    /// Make `user` an owner or admin of this organization, appending
+    /// `organization.admin_added`. The database refuses a user who is not an enabled
+    /// member of one of its workspaces (`CS-DB-0008`, constraint
+    /// `organization_admin_is_a_member`); callers check [`OrgTx::member_email`] first.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0006` when they already hold a role; `CS-DB-0008` as above, or for
+    /// [`OrganizationRole::Delegated`], which needs a permission set (ORG-07).
+    pub async fn add_admin(
+        &mut self,
+        user: UserId,
+        role: OrganizationRole,
+        now: OffsetDateTime,
+    ) -> Result<()> {
+        let org = self.org();
+        sqlx::query!(
+            "INSERT INTO organization_admins (organization_id, user_id, role, created_at) \
+             VALUES ($1, $2, $3, $4)",
+            org,
+            user.0,
+            role.as_str(),
+            now
+        )
+        .execute(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        self.admin_event(
+            AdminChange::new("organization.admin_added")
+                .target("user", user.0)
+                .change(Change::new("role", None, Some(role.as_str().into()))),
+        )
+        .await
+    }
+
+    /// Change an administrator's role between owner and admin, appending
+    /// `organization.admin_role_changed`. Leaving no enabled owner is refused at commit.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when `user` holds no role here; `CS-DB-0008` for a delegated row,
+    /// which needs a permission set.
+    pub async fn set_admin_role(&mut self, user: UserId, role: OrganizationRole) -> Result<()> {
+        let org = self.org();
+        let old = sqlx::query_scalar!(
+            "SELECT role FROM organization_admins WHERE organization_id = $1 AND user_id = $2 \
+             FOR UPDATE",
+            org,
+            user.0
+        )
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound {
+            entity: "organization admin",
+        })?;
+        sqlx::query!(
+            "UPDATE organization_admins SET role = $3 WHERE organization_id = $1 AND user_id = $2",
+            org,
+            user.0,
+            role.as_str()
+        )
+        .execute(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        self.admin_event(
+            AdminChange::new("organization.admin_role_changed")
+                .target("user", user.0)
+                .change(Change::new(
+                    "role",
+                    Some(old.into()),
+                    Some(role.as_str().into()),
+                )),
+        )
+        .await
+    }
+
+    /// Remove `user`'s role in this organization, appending
+    /// `organization.admin_removed`. Leaving no enabled owner is refused at commit.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when `user` holds no role here.
+    pub async fn remove_admin(&mut self, user: UserId) -> Result<()> {
+        let org = self.org();
+        let old = sqlx::query_scalar!(
+            "DELETE FROM organization_admins WHERE organization_id = $1 AND user_id = $2 \
+             RETURNING role",
+            org,
+            user.0
+        )
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound {
+            entity: "organization admin",
+        })?;
+        self.admin_event(
+            AdminChange::new("organization.admin_removed")
+                .target("user", user.0)
+                .change(Change::new("role", Some(old.into()), None)),
+        )
+        .await
     }
 
     /// Create a workspace of this organization with its built-in permission profiles.

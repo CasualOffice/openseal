@@ -9,6 +9,7 @@
 
 pub mod admin;
 pub mod envelopes;
+pub(crate) mod org;
 pub(crate) mod templates;
 pub(crate) mod webhooks;
 
