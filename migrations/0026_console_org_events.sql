@@ -82,6 +82,22 @@ BEGIN
        OR doc -> 'actor' IS DISTINCT FROM jsonb_build_object('kind', 'operator', 'id', op::text) THEN
         RAISE EXCEPTION 'console copy names another actor (seq %)', p_seq USING ERRCODE = 'OS005';
     END IF;
+    -- A copy is of an operator event that exists: the one its bytes link (`seq`, hash),
+    -- by this operator, of this action. No `operator.*` event in a tenant's log that the
+    -- operator log does not hold.
+    IF jsonb_typeof(doc -> 'operator_event') IS DISTINCT FROM 'object'
+       OR jsonb_typeof(doc -> 'operator_event' -> 'seq') IS DISTINCT FROM 'number'
+       OR (doc -> 'operator_event' ->> 'seq') !~ '^(0|[1-9][0-9]{0,15})$'
+       OR (doc -> 'operator_event' ->> 'hash') IS NULL
+       OR (doc -> 'operator_event' ->> 'hash') !~ '^[0-9a-f]{64}$'
+       OR NOT EXISTS (SELECT 1 FROM platform.operator_events oe
+                       WHERE oe.seq = (doc -> 'operator_event' ->> 'seq')::bigint
+                         AND oe.hash = decode(doc -> 'operator_event' ->> 'hash', 'hex')
+                         AND oe.operator_id = op
+                         AND oe.action = p_action) THEN
+        RAISE EXCEPTION 'console copy links no operator event of its own (seq %)', p_seq
+            USING ERRCODE = 'OS005';
+    END IF;
     -- The chain trigger (0020) accepts only the current scope's log: this organization's,
     -- for this one insert, then the caller's settings again.
     PERFORM set_config('openseal.account_id', '', true);

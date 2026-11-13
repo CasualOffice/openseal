@@ -310,13 +310,13 @@ async fn a_console_write_without_its_copy_does_not_commit() {
     db.drop().await;
 }
 
-/// The copy must name the session's own operator: bytes naming another operator (or
-/// another kind of actor) are refused, and the write in that transaction goes with it.
+/// The copy must name the session's own operator and link an operator event of its own:
+/// bytes naming another operator (or another kind of actor), or linking no operator
+/// event or one that does not exist, are refused, and the write in that transaction goes
+/// with it.
 #[tokio::test]
-async fn a_copy_naming_another_actor_is_refused_and_its_write_rolls_back() {
-    let Some(db) =
-        common::fresh("a_copy_naming_another_actor_is_refused_and_its_write_rolls_back").await
-    else {
+async fn a_forged_copy_is_refused_and_its_write_rolls_back() {
+    let Some(db) = common::fresh("a_forged_copy_is_refused_and_its_write_rolls_back").await else {
         return;
     };
     let seed = db.seed().await;
@@ -327,9 +327,26 @@ async fn a_copy_naming_another_actor_is_refused_and_its_write_rolls_back() {
     let before = org_log(&db, seed.org).await.len();
     let other = operator_id(&db, "second@ops.example").await;
 
-    for actor in [
-        json!({"kind": "operator", "id": other.to_string()}),
-        json!({"kind": "user", "id": other.to_string()}),
+    let own = operator_id(&db, "owner@ops.example").await;
+    let nowhere = json!({"seq": 999_999, "hash": "00".repeat(32)});
+    for (actor, operator_event) in [
+        (
+            json!({"kind": "operator", "id": other.to_string()}),
+            Value::Null,
+        ),
+        (
+            json!({"kind": "user", "id": other.to_string()}),
+            Value::Null,
+        ),
+        // Its own operator, but no operator event behind it.
+        (
+            json!({"kind": "operator", "id": own.to_string()}),
+            Value::Null,
+        ),
+        (
+            json!({"kind": "operator", "id": own.to_string()}),
+            nowhere.clone(),
+        ),
     ] {
         let mut conn = db.console.begin().await.unwrap();
         let tip = sqlx::query("SELECT next_seq, head FROM platform.org_log_tip($1, $2, NULL, $3)")
@@ -357,8 +374,8 @@ async fn a_copy_naming_another_actor_is_refused_and_its_write_rolls_back() {
         // Canonical enough for the database's checks (it re-derives nothing else).
         let doc = json!({
             "action": "operator.organization.renamed", "actor": actor, "at": ms as u64,
-            "organization": seed.org.to_string(), "prev": prev, "seq": seq,
-            "target": {}, "v": 1,
+            "operator_event": operator_event, "organization": seed.org.to_string(),
+            "prev": prev, "seq": seq, "target": {}, "v": 1,
         });
         let bytes = serde_json::to_vec(&doc).unwrap();
         let hash = casual_sign_console::crypto::sha256(&bytes);
@@ -381,7 +398,7 @@ async fn a_copy_naming_another_actor_is_refused_and_its_write_rolls_back() {
             .and_then(|d| d.code())
             .unwrap_or_default()
             .into_owned();
-        assert_eq!(code, "OS005", "{actor}");
+        assert_eq!(code, "OS005", "{actor} {operator_event}");
         drop(conn);
     }
     let name: String = sqlx::query_scalar("SELECT name FROM organizations WHERE id = $1")

@@ -380,7 +380,8 @@ against the event at its cursor and the stored head) and the same on `OrgTx` rea
 workspace without an `operator.*` event appended to that organization's `org_admin_events` in the same transaction
 (`platform.xact_copied_to_org_log`). Definer functions for the console: `platform.org_log_tip` (organization, next
 `seq` and head, the head row locked) and `platform.copy_to_org_log` (live operator session with role `operator` or
-`platform_owner`, an `operator.*` action, the bytes' actor exactly that operator, else `OS005`).
+`platform_owner`, an `operator.*` action, the bytes' actor exactly that operator, their `operator_event` link an existing operator event of that
+operator and action, else `OS005`).
 
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard
 that freezes an envelope's documents after `sent` (the workflow engine enforces it, docs/24 §6).

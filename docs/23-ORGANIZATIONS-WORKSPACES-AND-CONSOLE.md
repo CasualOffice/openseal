@@ -517,7 +517,8 @@ mutation of the migration):
   takes the next `seq` and head with `platform.org_log_tip` (head row locked) and appends through
   `platform.copy_to_org_log`, which requires a live operator session with the `operator` or `platform_owner` role,
   an `operator.*` action, and an actor in the bytes that is exactly `{kind: operator, id}` of that session's operator
-  (`OS005` otherwise); the 0020 chain trigger then checks hash, `seq`, `prev`, owner, action and time as for every
+  and an `operator_event` link (`seq`, hash) naming an existing `platform.operator_events` row by that operator with
+  the same action (`OS005` otherwise); the 0020 chain trigger then checks hash, `seq`, `prev`, owner, action and time as for every
   event. The copy is the organization log's v1 format with no IP address, and links the operator event it copies. A
   copy that fails therefore rolls its write back, and a write that skips its copy cannot commit
   (`server/casual-sign-console/tests/org_copies.rs`).
