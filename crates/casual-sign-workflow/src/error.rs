@@ -95,6 +95,12 @@ pub enum Problem {
     FieldOnHiddenDocument,
     /// A recipient is hidden every document (`CS-WF-0004`, `WF-02`).
     NoVisibleDocument,
+    /// A recipient's routing delay is longer than
+    /// [`crate::limits::MAX_ROUTE_DELAY_HOURS`] (`CS-WF-0023`, `WF-02`).
+    RouteDelayOutOfRange,
+    /// A carbon copy has a routing delay; a copy completes when routing reaches it
+    /// (`CS-WF-0004`, `WF-02`).
+    RouteDelayOnCopy,
     /// A field rule failed (`CS-FLD-*`).
     Field(FieldError),
 }
@@ -119,6 +125,7 @@ impl Violation {
             | Problem::UnknownWitnessed
             | Problem::ExcludedUnknownDocument => "CS-WF-0008",
             Problem::FieldOnHiddenDocument => "CS-WF-0021",
+            Problem::RouteDelayOutOfRange => "CS-WF-0023",
             Problem::Field(e) => e.code(),
             _ => "CS-WF-0004",
         }

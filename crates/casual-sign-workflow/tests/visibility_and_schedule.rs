@@ -442,3 +442,98 @@ fn a_schedule_that_can_no_longer_send_is_dropped_and_recorded() {
         .expect("dropped schedule recorded");
     assert_eq!(e.actor.kind, ActorKind::System);
 }
+
+// Delayed routing -----------------------------------------------------------------------
+
+const HOUR: i64 = 3_600_000;
+
+fn delayed(
+    mut r: casual_sign_workflow::RecipientSpec,
+    hours: u16,
+) -> casual_sign_workflow::RecipientSpec {
+    r.route_delay_hours = hours;
+    r
+}
+
+fn invites(d: &Decision, rid: &str) -> bool {
+    d.effects.iter().any(|e| {
+        matches!(&e.kind, EffectKind::SendInvitation { recipient, .. } if *recipient == id(rid))
+    })
+}
+
+#[test]
+fn a_delayed_step_is_invited_only_when_its_delay_ends() {
+    let mut hx = Harness::new();
+    hx.draft(&[
+        recipient("r1", Signer, 1),
+        delayed(recipient("r2", Signer, 2), 24),
+    ]);
+    let d = hx.send();
+    assert!(invites(&d, "r1") && !invites(&d, "r2"));
+
+    hx.now = 2 * HOUR;
+    let d = hx.sign("r1");
+    // Routing reached r2: their turn is recorded with the time it ends; no invitation.
+    assert!(
+        !invites(&d, "r2"),
+        "a delayed recipient is not invited at once"
+    );
+    let timer = timer_of(&d, Timer::RouteDelay);
+    assert!(d.effects.iter().any(|e| matches!(
+        e.kind,
+        EffectKind::Schedule { timer: Timer::RouteDelay, at } if at == t(26 * HOUR)
+    )));
+    let r2 = hx.state().recipient(&id("r2")).unwrap().clone();
+    assert_eq!(r2.held_until, Some(t(26 * HOUR)));
+
+    // Until then it is not their turn: no link opens, no resend or reminder reaches them.
+    assert_eq!(
+        code(hx.run(
+            as_recipient("r2"),
+            Command::OpenLink {
+                recipient: id("r2")
+            }
+        )),
+        "CS-WF-0007"
+    );
+    assert_eq!(
+        code(hx.run(
+            sender(),
+            Command::Resend {
+                recipients: vec![id("r2")]
+            }
+        )),
+        "CS-WF-0007"
+    );
+    let d = hx.ok(sender(), Command::Remind);
+    assert!(!d.effects.iter().any(|e| matches!(
+        &e.kind,
+        EffectKind::SendReminder { recipient, .. } if *recipient == id("r2")
+    )));
+
+    hx.now = 26 * HOUR;
+    let d = hx.ok(Principal::System, Command::TimerDue { timer });
+    assert!(invites(&d, "r2"), "the delay ended: r2 is invited");
+    assert!(
+        d.events.is_empty(),
+        "nothing observable changes when the delay ends"
+    );
+    hx.sign("r2");
+    assert_eq!(hx.status(), EnvelopeStatus::Completing);
+}
+
+#[test]
+fn a_routing_delay_is_bounded_and_not_for_a_copy() {
+    let mut hx = Harness::new();
+    hx.draft(&[
+        recipient("r1", Signer, 1),
+        delayed(
+            recipient("r2", Signer, 2),
+            limits::MAX_ROUTE_DELAY_HOURS + 1,
+        ),
+        delayed(recipient("c1", RecipientType::Cc, 3), 1),
+    ]);
+    let found = problems(hx.run(sender(), Command::Send));
+    assert!(found.contains(&Problem::RouteDelayOutOfRange), "{found:?}");
+    assert!(found.contains(&Problem::RouteDelayOnCopy), "{found:?}");
+}

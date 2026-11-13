@@ -860,6 +860,7 @@ impl Env {
             date_format: None,
             witness_for: None,
             excluded_documents: Vec::new(),
+            route_delay_hours: 0,
         }
     }
 

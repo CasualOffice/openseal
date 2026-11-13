@@ -60,6 +60,18 @@ pub struct RecipientSpec {
     /// is never hidden a document that carries one of their fields.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub excluded_documents: Vec<Id>,
+    /// Delayed routing (`WF-02`, docs/24 §4): hours to wait, once routing reaches this
+    /// recipient, before they are invited and may act. 0 (the default) invites at once;
+    /// at most [`crate::limits::MAX_ROUTE_DELAY_HOURS`] (`CS-WF-0023`); not for a
+    /// carbon copy (`CS-WF-0004`).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub route_delay_hours: u16,
+}
+
+// serde's skip_serializing_if passes a reference.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &u16) -> bool {
+    *n == 0
 }
 
 impl RecipientSpec {
@@ -126,6 +138,11 @@ pub struct RecipientState {
     /// Who reassigned to them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reassigned_from: Option<Id>,
+    /// Delayed routing (`WF-02`): routing reached them and they wait until this time to
+    /// be invited and act. Set when their turn comes with a `route_delay_hours`; cleared
+    /// when they go out of turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held_until: Option<Timestamp>,
 }
 
 impl RecipientState {
@@ -148,7 +165,15 @@ impl RecipientState {
             declined_reason: None,
             reassigned_to: None,
             reassigned_from: None,
+            held_until: None,
         }
+    }
+
+    /// Whether delayed routing still holds them at `now` (`WF-02`): not invited, and
+    /// refused every act as not yet their turn.
+    #[must_use]
+    pub fn held(&self, now: Timestamp) -> bool {
+        self.held_until.is_some_and(|t| t > now)
     }
 
     /// The recipient's id.
@@ -255,6 +280,9 @@ pub struct Bookkeeping {
     /// The seal job pending while `completing`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seal_job: Option<EffectId>,
+    /// Recipients delayed routing holds whose invitation has not gone out (`WF-02`).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub held: BTreeSet<Id>,
 }
 
 /// An envelope (docs/22 §3) as the engine sees it.

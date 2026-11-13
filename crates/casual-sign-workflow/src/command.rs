@@ -95,6 +95,9 @@ pub mod limits {
     /// How far ahead a draft may be scheduled to send, in days (`CS-WF-0023`). A
     /// decision of `WF-02`: a year bounds the timers a draft holds.
     pub const MAX_SCHEDULE_DAYS: u16 = 365;
+    /// The longest delayed routing for one recipient, in hours (`CS-WF-0023`). A
+    /// decision of `WF-02`: thirty days bounds how long one routing step waits.
+    pub const MAX_ROUTE_DELAY_HOURS: u16 = 720;
 }
 
 impl Default for Policy {

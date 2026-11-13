@@ -95,6 +95,13 @@ pub(crate) fn violations(
         if !s.documents.is_empty() && !s.documents.iter().any(|d| r.spec.sees(d.id())) {
             push(Some(r.id()), Problem::NoVisibleDocument);
         }
+        // Delayed routing (`WF-02`).
+        if r.spec.route_delay_hours > crate::command::limits::MAX_ROUTE_DELAY_HOURS {
+            push(Some(r.id()), Problem::RouteDelayOutOfRange);
+        }
+        if r.spec.route_delay_hours > 0 && r.spec.rtype == RecipientType::Cc {
+            push(Some(r.id()), Problem::RouteDelayOnCopy);
+        }
         if let Some(w) = &r.spec.witness_for
             && !s.recipient(w).is_some_and(|q| q.spec.rtype.signs())
         {
