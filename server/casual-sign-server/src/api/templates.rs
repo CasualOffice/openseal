@@ -1,13 +1,15 @@
 //! Templates (docs/22 §7): create with roles, read, list, and (WEB-06) edit: rename and
 //! change the email, add and remove documents, add, change and remove roles and
-//! role-bound fields, duplicate, delete. Every change raises the template's version
+//! role-bound fields, duplicate, delete; and (UXW-02) the Deleted view: a deleted
+//! template is kept with everything, listed by `GET /templates?deleted=true`, brought
+//! back by `POST …/restore`, and removed for good by deleting it again. Every change raises the template's version
 //! (`ETag: "v<n>"`), checked against `If-Match` (required on `PATCH` and `DELETE`,
 //! honoured when given on `POST`). Creating an envelope from a template is slice 3.
 
 use std::collections::BTreeMap;
 
 use axum::body::Bytes;
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use casual_sign_audit::Personal;
@@ -152,13 +154,29 @@ async fn full(tx: &mut TenantTx, id: TemplateId, status: StatusCode) -> Result<R
     ))
 }
 
-/// `GET /templates`.
-pub(crate) async fn list(c: Call) -> Result<Response, ApiError> {
+/// The query of `GET /templates`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ListQuery {
+    /// `true`: the Deleted view (UXW-02).
+    deleted: Option<String>,
+}
+
+/// `GET /templates`, or with `deleted=true` the Deleted view (UXW-02), most recently
+/// deleted first.
+pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response, ApiError> {
+    let deleted = match q.deleted.as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(ApiError::invalid("/query/deleted")),
+    };
     let mut tx = c.tx().await?;
-    let items: Vec<Value> = tx
-        .templates()
-        .list()
-        .await?
+    let all = if deleted {
+        tx.templates().list_deleted().await?
+    } else {
+        tx.templates().list().await?
+    };
+    let items: Vec<Value> = all
         .iter()
         .map(|t| template_json(t, &[], None, None))
         .collect();
@@ -323,18 +341,62 @@ pub(crate) async fn patch(
     Ok(r)
 }
 
-/// `DELETE /templates/{id}` with `If-Match`: the template, its roles, documents and
-/// fields. Envelopes made from it are copies and keep everything.
+/// `DELETE /templates/{id}` with `If-Match` (UXW-02): a live template moves to the
+/// Deleted view, kept with its roles, documents and fields and restorable; a template
+/// already there is removed for good, with them. Envelopes made from it are copies and
+/// keep everything. `204` either way.
 pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
-    let v = if_match(&c, true)?;
-    tx.templates().bump(id, v).await?;
-    tx.templates().delete(id).await?;
+    if tx.templates().get(id).await?.is_some() {
+        let v = if_match(&c, true)?;
+        tx.templates().trash(id, v).await?;
+    } else {
+        let t = tx
+            .templates()
+            .get_deleted(id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        if if_match(&c, true)?.is_some_and(|v| v != t.version) {
+            return Err(casual_sign_store::StoreError::StaleVersion { entity: "template" }.into());
+        }
+        tx.templates().delete(id).await?;
+    }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
+
+/// `POST /templates/{id}/restore` (UXW-02): a template of the Deleted view back to the
+/// list, with everything it had; `200` with the whole template. `If-Match` is honoured
+/// when given. A live template, or none, is `404`.
+pub(crate) async fn restore(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let id = TemplateId(path_id(&id)?);
+    let mut tx = c.tx().await?;
+    let t = tx
+        .templates()
+        .get_deleted(id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    if !body.iter().all(u8::is_ascii_whitespace) {
+        let _: Empty = parse(&body)?;
+    }
+    if if_match(&c, false)?.is_some_and(|v| v != t.version) {
+        return Err(casual_sign_store::StoreError::StaleVersion { entity: "template" }.into());
+    }
+    tx.templates().restore(id).await?;
+    let r = full(&mut tx, id, StatusCode::OK).await?;
+    tx.commit().await?;
+    Ok(r)
+}
+
+/// An empty body, or an empty object.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Empty {}
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]

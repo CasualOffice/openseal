@@ -980,3 +980,131 @@ async fn a_voided_envelopes_certificate_is_made_by_the_worker_and_served() {
     assert_eq!(types.last().unwrap(), "certificate.downloaded");
     api.db.drop().await;
 }
+
+/// The templates' Deleted view (UXW-02), as `api.js` calls it: `DELETE /templates/{id}`
+/// (If-Match) moves a template there with everything it had; it leaves `GET
+/// /templates` and every read and edit (`404`); `GET /templates?deleted=true` lists it;
+/// `POST …/restore` brings it back whole; deleting it in the Deleted view removes it for
+/// good. Another account sees none of it and restores none of it.
+async fn deleted_templates(rls: Rls) {
+    let Some(api) = Api::new(&format!("deleted_templates_{rls:?}"), rls).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let b = api.tenant("beta").await;
+    let made = ok(
+        api.call(
+            "POST",
+            "/api/v1/templates",
+            &a.auth,
+            Some(json!({"name": "NDA", "roles": [{"name": "Client", "type": "signer"}]})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "template",
+    );
+    let tid = id(&made);
+    let path = format!("/api/v1/templates/{tid}");
+    let names = |v: &Value| -> Vec<String> {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let list = |auth: &Auth, q: &'static str| {
+        let api = &api;
+        let auth = auth.clone();
+        async move {
+            ok(
+                api.call("GET", &format!("/api/v1/templates{q}"), &auth, None, &[])
+                    .await,
+                StatusCode::OK,
+                "list",
+            )
+        }
+    };
+    // Without If-Match: 428, nothing moves.
+    let r = api.call("DELETE", &path, &a.auth, None, &[]).await;
+    assert_eq!(r.status, StatusCode::PRECONDITION_REQUIRED);
+    // Another account: 404, nothing moves.
+    let v1 = format!("\"v{}\"", made["version"]);
+    let r = api
+        .call("DELETE", &path, &b.auth, None, &[("If-Match", &v1)])
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let r = api
+        .call("DELETE", &path, &a.auth, None, &[("If-Match", &v1)])
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.json());
+    assert!(names(&list(&a.auth, "").await).is_empty(), "left the list");
+    assert_eq!(names(&list(&a.auth, "?deleted=true").await), ["NDA"]);
+    assert!(names(&list(&b.auth, "?deleted=true").await).is_empty());
+    let r = api.call("GET", &path, &a.auth, None, &[]).await;
+    assert_eq!(
+        r.status,
+        StatusCode::NOT_FOUND,
+        "a deleted template is not read"
+    );
+    let r = api
+        .call(
+            "PATCH",
+            &path,
+            &a.auth,
+            Some(json!({"name": "X"})),
+            &[("If-Match", "\"v2\"")],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND, "nor edited");
+    let r = api
+        .call("GET", "/api/v1/templates?deleted=maybe", &a.auth, None, &[])
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // Another account cannot restore it; the owner account can, whole.
+    let restore = format!("{path}/restore");
+    let r = api.call("POST", &restore, &b.auth, None, &[]).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let back = ok(
+        api.call("POST", &restore, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "restore",
+    );
+    assert_eq!(back["name"], "NDA");
+    assert_eq!(back["roles"][0]["name"], "Client", "with its roles");
+    assert_eq!(names(&list(&a.auth, "").await), ["NDA"]);
+    assert!(names(&list(&a.auth, "?deleted=true").await).is_empty());
+    // A live template is not restored.
+    let r = api.call("POST", &restore, &a.auth, None, &[]).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    // Deleted twice: gone for good.
+    let v = format!("\"v{}\"", back["version"]);
+    let r = api
+        .call("DELETE", &path, &a.auth, None, &[("If-Match", &v)])
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let v = format!("\"v{}\"", back["version"].as_i64().unwrap() + 1);
+    let r = api
+        .call("DELETE", &path, &a.auth, None, &[("If-Match", "\"v1\"")])
+        .await;
+    assert_eq!(r.status, StatusCode::PRECONDITION_FAILED, "a stale purge");
+    let r = api
+        .call("DELETE", &path, &a.auth, None, &[("If-Match", &v)])
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(names(&list(&a.auth, "?deleted=true").await).is_empty());
+    let r = api.call("POST", &restore, &a.auth, None, &[]).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND, "nothing left to restore");
+    api.db.drop().await;
+}
+
+#[tokio::test]
+async fn deleted_templates_are_kept_restored_and_purged_with_rls() {
+    deleted_templates(Rls::On).await;
+}
+
+#[tokio::test]
+async fn deleted_templates_are_kept_restored_and_purged_without_rls() {
+    deleted_templates(Rls::Off).await;
+}

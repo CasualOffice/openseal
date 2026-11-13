@@ -1820,8 +1820,18 @@ paths:
   /api/v1/templates:
     get:
       operationId: listTemplates
-      summary: "Templates"
+      summary: "Templates; with deleted=true the Deleted view (UXW-02)"
+      description: >-
+        The account's live templates by name, or with `deleted=true` the deleted ones,
+        kept whole and restorable, most recently deleted first. Any other value of
+        `deleted` than `true` or `false` is `422`.
       x-permission: "templates:read"
+      parameters:
+        - name: deleted
+          in: query
+          required: false
+          description: "`true`: the Deleted view (UXW-02)."
+          schema: {type: string, enum: ['true', 'false']}
       responses:
         '200':
           description: OK
@@ -1885,12 +1895,32 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     delete:
       operationId: deleteTemplate
-      summary: "Delete a template with its roles, documents and fields; envelopes made from it keep their copies (WEB-06)"
+      summary: "Move a live template to the Deleted view, kept whole (UXW-02); delete one already there for good, with its roles, documents and fields; envelopes made from it keep their copies (WEB-06)"
       x-permission: "templates:write"
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/templates/{id}/restore:
+    parameters:
+      - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
+    post:
+      operationId: restoreTemplate
+      summary: "Bring a template of the Deleted view back, with everything it had (UXW-02)"
+      description: >-
+        `If-Match` is honoured when given. A live template, or none, is `404`. The body
+        is empty or `{}`.
+      x-permission: "templates:write"
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+        - {name: If-Match, in: header, required: false, description: "\"v<version>\"", schema: {type: string}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Template'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/templates/{id}/duplicate:
     parameters:

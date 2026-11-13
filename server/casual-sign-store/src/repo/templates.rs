@@ -164,7 +164,7 @@ impl Templates<'_> {
         let row = sqlx::query_as!(
             TemplateRow,
             "SELECT id, owner_user_id, name, email_subject, email_message, settings, matching_rules, \
-             version FROM templates WHERE account_id = $1 AND id = $2",
+             version FROM templates WHERE account_id = $1 AND id = $2 AND deleted_at IS NULL",
             acct,
             id.0
         )
@@ -172,6 +172,95 @@ impl Templates<'_> {
         .await
         .map_err(db)?;
         Ok(row.map(Template::from))
+    }
+
+    /// A template of this account in the Deleted view (UXW-02): deleted, kept, and
+    /// restorable.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn get_deleted(&mut self, id: TemplateId) -> Result<Option<Template>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query_as!(
+            TemplateRow,
+            "SELECT id, owner_user_id, name, email_subject, email_message, settings, matching_rules, \
+             version FROM templates WHERE account_id = $1 AND id = $2 AND deleted_at IS NOT NULL",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.map(Template::from))
+    }
+
+    /// This account's deleted templates (UXW-02), most recently deleted first.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn list_deleted(&mut self) -> Result<Vec<Template>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query_as!(
+            TemplateRow,
+            "SELECT id, owner_user_id, name, email_subject, email_message, settings, matching_rules, \
+             version FROM templates WHERE account_id = $1 AND deleted_at IS NOT NULL \
+             ORDER BY deleted_at DESC, id",
+            acct
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(Template::from).collect())
+    }
+
+    /// Move a live template to the Deleted view at `version` (UXW-02): it leaves the
+    /// list and every read and edit, and keeps its roles, documents and fields for a
+    /// restore. Returns the new version.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0007` stale version; `CS-DB-0003` no such live template.
+    pub async fn trash(&mut self, id: TemplateId, version: Option<i32>) -> Result<i32> {
+        let acct = self.tx.acct();
+        let new = sqlx::query_scalar!(
+            "UPDATE templates SET deleted_at = now(), version = version + 1, updated_at = now() \
+             WHERE account_id = $1 AND id = $2 AND deleted_at IS NULL \
+             AND ($3::int IS NULL OR version = $3) RETURNING version",
+            acct,
+            id.0,
+            version
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        match new {
+            Some(v) => Ok(v),
+            None if self.get(id).await?.is_some() => {
+                Err(StoreError::StaleVersion { entity: "template" })
+            }
+            None => Err(StoreError::NotFound { entity: "template" }),
+        }
+    }
+
+    /// Bring a deleted template back to the list (UXW-02). Returns the new version.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` no such deleted template.
+    pub async fn restore(&mut self, id: TemplateId) -> Result<i32> {
+        let acct = self.tx.acct();
+        sqlx::query_scalar!(
+            "UPDATE templates SET deleted_at = NULL, version = version + 1, updated_at = now() \
+             WHERE account_id = $1 AND id = $2 AND deleted_at IS NOT NULL RETURNING version",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound { entity: "template" })
     }
 
     /// This account's templates by name.
@@ -184,7 +273,8 @@ impl Templates<'_> {
         let rows = sqlx::query_as!(
             TemplateRow,
             "SELECT id, owner_user_id, name, email_subject, email_message, settings, matching_rules, \
-             version FROM templates WHERE account_id = $1 ORDER BY name, id",
+             version FROM templates WHERE account_id = $1 AND deleted_at IS NULL \
+             ORDER BY name, id",
             acct
         )
         .fetch_all(self.tx.conn())
@@ -202,7 +292,8 @@ impl Templates<'_> {
         let acct = self.tx.acct();
         let new = sqlx::query_scalar!(
             "UPDATE templates SET name = $4, version = version + 1, updated_at = now() \
-             WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
+             WHERE account_id = $1 AND id = $2 AND version = $3 AND deleted_at IS NULL \
+             RETURNING version",
             acct,
             id.0,
             version,
@@ -420,7 +511,7 @@ impl Templates<'_> {
         let new = sqlx::query_scalar!(
             "UPDATE templates SET version = version + 1, updated_at = now() \
              WHERE account_id = $1 AND id = $2 AND ($3::int IS NULL OR version = $3) \
-             RETURNING version",
+             AND deleted_at IS NULL RETURNING version",
             acct,
             id.0,
             version
@@ -604,8 +695,9 @@ impl Templates<'_> {
         super::affected(done.rows_affected(), "template field")
     }
 
-    /// Delete a template with its fields, documents, roles and shares. Envelopes made
-    /// from it are copies and keep everything.
+    /// Delete a template for good, live or deleted, with its fields, documents, roles
+    /// and shares (the API purges only a deleted one, UXW-02). Envelopes made from it
+    /// are copies and keep everything.
     ///
     /// # Errors
     ///

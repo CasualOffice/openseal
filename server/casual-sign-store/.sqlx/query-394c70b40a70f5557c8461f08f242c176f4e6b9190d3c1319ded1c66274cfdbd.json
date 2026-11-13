@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, owner_user_id, name, email_subject, email_message, settings, matching_rules, version FROM templates WHERE account_id = $1 AND id = $2",
+  "query": "SELECT id, owner_user_id, name, email_subject, email_message, settings, matching_rules, version FROM templates WHERE account_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC, id",
   "describe": {
     "columns": [
       {
@@ -94,7 +94,6 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid"
       ]
     },
@@ -109,5 +108,5 @@
       false
     ]
   },
-  "hash": "1b47477e55f2eca0b2ca78d8a696d526752a32d37c9a3ec4f0135253e0a4a266"
+  "hash": "394c70b40a70f5557c8461f08f242c176f4e6b9190d3c1319ded1c66274cfdbd"
 }

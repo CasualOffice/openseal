@@ -696,8 +696,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!["asc", "desc"].includes(order)) bad("order");
     const senderQ = query.get("sender");
     const sender = senderQ === "me" ? "user-demo" : senderQ;
-    // UX-03, ahead of the server (NOT_ON_SERVER): `recipient`, `date_field`, `folder`,
-    // `deleted`, `waiting_for=me`.
+    // As the server (UXW-01/02/03): `recipient`, `date_field`, `folder`, `deleted`,
+    // `waiting_for=me`.
     const recipient = (query.get("recipient") || "").trim().toLowerCase();
     const dateField = query.get("date_field") || "updated_at";
     if (!["updated_at", "created_at", "sent_at", "completed_at"].includes(dateField)) bad("date_field");
@@ -816,7 +816,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     fail(405, "CS-API-0012", "Method not allowed");
   }
 
-  // ---- Folders (UX-03, not on the server yet: NOT_ON_SERVER.folders) ---------------------
+  // ---- Folders (as the server, UXW-02: each member's own) --------------------------------
   function folders(method, id, sub, body) {
     const named = () => {
       const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -923,7 +923,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     else if (/^Mutual NDA/.test(s)) list = [ent("Parties", "Acme and Globex", 0.98, 1), ent("Confidentiality period", "3 years", 0.95, 2), pii("Email address", "avery@acme.example", 0.97, 1), pii("Email address", "sam@globex.example", 0.97, 1)];
     else if (/^Board consent/.test(s)) list = [ent("Resolution", "Approve FY2027 budget", 0.9, 1), ent("Effective date", "November 12, 2026", 0.93, 1)];
     else if (/^Lease renewal/.test(s)) {
-      const tpl = (db.templates || [])[0];
+      const tpl = (db.templates || []).find((x) => !x.deleted_at);
       list = [
         { kind: "template", label: "MSA v4", value: "Master services agreement v4", score: 0.96, page: 1, template_id: tpl?.id || null, pages_matched: `${last} of ${last}` },
         ent("Term", "24 months from the last signature", 0.96, 1),
@@ -1059,7 +1059,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // and search by meaning.
     if (res === "account" && id === "settings" && sub === "ml") return mlSettings(method, body);
     if (res === "search" && !id && method === "GET") return mlSearch(query);
-    if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body);
+    if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body, query);
     if (res === "users" && id === "me" && !sub) return me(method, body);
     if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
@@ -1112,12 +1112,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return json(204, null);
       }
     }
-    // UX-03, not on the server yet (api.js NOT_ON_SERVER.deleted): back to the lists.
+    // UX-03, not on the server yet (api.js NOT_ON_SERVER.restoreEnvelope): back to the lists.
     if (sub === "restore" && method === "POST") {
       if (!env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
       delete env.deleted_at;
       env.version++;
-      // Not a casual-sign-audit type yet: the restore row adds it (NOT_ON_SERVER.deleted).
+      // Not a casual-sign-audit type yet: ADR-031 (Proposed) adds it (NOT_ON_SERVER.restoreEnvelope).
       await audit(env, "envelope.restored", {}, { by: "sender" });
       return withEtag(env);
     }
@@ -1126,12 +1126,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const res = mlEnvelope(env, method, sub, subId, subSub, query);
       if (res) return res;
     }
-    // UX-03, not on the server yet (NOT_ON_SERVER.inbox): the signing page for the
-    // signed-in user, when routing has reached them.
+    // As the server (UXW-01): the signing page for the signed-in user, when routing has
+    // reached them.
     if (sub === "sign-link" && method === "POST") {
       const r = myRecipient(env);
       if (!r) fail(409, "CS-WF-0007", "Routing has not reached the recipient yet");
-      return json(200, { url: `/s/${encodeURIComponent(r.token)}` });
+      return json(201, { url: `/s/${encodeURIComponent(r.token)}`, expires_at: iso(5) });
     }
     if (sub === "correct" && method === "POST") {
       // `POST …/correct {changes}` (docs/40, docs/24 §6), as the server: the engine's change
@@ -1176,8 +1176,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, { items, chain_head: items.length ? items[items.length - 1].hash : null });
     }
     if (sub === "certificate" && method === "GET") {
-      // A completed envelope's, as the server; a declined, voided or expired one's
-      // ahead of it (UX-03, NOT_ON_SERVER.certificateEnded).
+      // A completed envelope's; a declined, voided or expired one's envelope
+      // certificate (UXW-30), as the server once its worker has made it.
       if (!["completed", "declined", "voided", "expired"].includes(env.status)) fail(409, "CS-API-0009", "Not available in the object's state");
       const lines = [`Envelope ${env.id}`, `Subject: ${env.subject}`, `Outcome: ${env.status}`, ""];
       for (const r of env.recipients) lines.push(`${r.name} <${r.email}> - ${r.type} - ${r.status} ${r.completed_at || ""}`);
@@ -1384,17 +1384,40 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return field;
   }
   const tplWhole = (tp, status = 200) => json(status, publicTemplate(tp), { ETag: `"v${tp.version}"` });
-  function templates(method, id, sub, subId, subSub, headers, body) {
+  function templates(method, id, sub, subId, subSub, headers, body, query) {
     if (!id) {
       if (method === "GET") {
-        const items = [...db.templates].sort((a, b) => b.created_at.localeCompare(a.created_at))
+        // UXW-02, as the server: `deleted=true` is the Deleted view, most recently
+        // deleted first; without it, the live templates.
+        const del = query?.get("deleted") ?? null;
+        if (del != null && del !== "true" && del !== "false") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/deleted", code: "CS-API-0001" }]);
+        const deleted = del === "true";
+        const items = db.templates.filter((tp) => !!tp.deleted_at === deleted)
+          .sort((a, b) => (deleted ? b.deleted_at.localeCompare(a.deleted_at) : b.created_at.localeCompare(a.created_at)))
           .map((tp) => ({ ...publicTemplate(tp, false), roles: tp.roles, last_used_at: tp.last_used_at || null }));
         return json(200, { items });
       }
       if (method === "POST") return tplWhole(newTemplate(body), 201);
     }
-    const tp = db.templates.find((x) => x.id === id);
+    const found = db.templates.find((x) => x.id === id);
+    // UXW-02: a deleted template answers only a restore or a second delete (for good).
+    if (found?.deleted_at) {
+      if (sub === "restore" && method === "POST") {
+        tplIfMatch(found, headers, false);
+        delete found.deleted_at;
+        found.version++;
+        return tplWhole(found);
+      }
+      if (!sub && method === "DELETE") {
+        tplIfMatch(found, headers);
+        db.templates = db.templates.filter((x) => x !== found);
+        return json(204, null);
+      }
+      fail(404, "CS-API-0002", "Not found");
+    }
+    const tp = found;
     if (!tp) fail(404, "CS-API-0002", "Not found");
+    if (sub === "restore") fail(404, "CS-API-0002", "Not found");
     if (!sub) {
       if (method === "GET") return tplWhole(tp);
       if (method === "PATCH") {
@@ -1407,8 +1430,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return tplWhole(tp);
       }
       if (method === "DELETE") {
+        // UXW-02: to the Deleted view, kept whole and restorable.
         tplIfMatch(tp, headers);
-        db.templates = db.templates.filter((x) => x !== tp);
+        tp.deleted_at = iso();
+        tp.version++;
         return json(204, null);
       }
     }

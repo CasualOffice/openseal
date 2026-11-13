@@ -260,5 +260,11 @@ pub async fn edit_template(api: &Api, auth: &Auth) -> String {
     assert_eq!(del.status, StatusCode::NO_CONTENT);
     let after = api.call("GET", &base, auth, None, &[]).await;
     assert_eq!(after.status, StatusCode::NOT_FOUND);
+    // UXW-02: kept in the Deleted view, and restored whole.
+    let back = api
+        .call("POST", &format!("{base}/restore"), auth, None, &[])
+        .await;
+    assert_eq!(back.status, StatusCode::OK);
+    assert_eq!(back.json()["id"].as_str(), Some(id.as_str()));
     copy["id"].as_str().unwrap().to_owned()
 }

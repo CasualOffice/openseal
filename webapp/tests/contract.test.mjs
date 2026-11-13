@@ -296,13 +296,12 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   const seen = [];
   const fake = async (url) => { seen.push(url); return new Response(JSON.stringify({ items: [] }), { status: 200 }); };
   const c = createClient({ fetch: fake });
-  assert.equal(c.available("inbox"), false);
+  assert.equal(c.available("restoreEnvelope"), false);
   assert.equal(c.available("listWebhooks"), true, "a call the server serves is available");
   const refused = [
-    c.inbox(), c.listFolders(), c.createFolder("x"), c.moveEnvelopes("f", ["e"]), c.restoreEnvelope("e"),
+    c.restoreEnvelope("e"),
     c.updateWebhook("w", { active: false }), c.testWebhook("w"), c.redeliver("w", "d"),
-    c.signLink("e"), c.ceremony.clearField("t", "f"),
-    c.listEnvelopes({ recipient: "ann" }), c.listEnvelopes({ date_field: "sent_at" }), c.listEnvelopes({ folder: "f" }), c.listEnvelopes({ deleted: true }),
+    c.ceremony.clearField("t", "f"),
   ];
   for (const p of refused) await assert.rejects(p, (e) => e.status === 501 && e.code === "CS-NET-0002" && Object.hasOwn(NOT_ON_SERVER, e.detail));
   assert.deepEqual(seen, []);
@@ -312,6 +311,61 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   await c.ceremony.disclosure("t");
   assert.equal(seen.at(-1), "/s/t/disclosure");
   for (const [name, { needs }] of Object.entries(NOT_ON_SERVER)) assert.ok(needs.length > 10, name);
+});
+
+test("the Inbox, folders, filters, the Deleted views and an ended envelope's certificate reach the server as it serves them (UXW-01/02/03/30)", async () => {
+  const seen = [];
+  const fake = async (url, init = {}) => {
+    seen.push(`${init.method || "GET"} ${url}`);
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+  const c = createClient({ fetch: fake });
+  for (const name of ["inbox", "envelopeFilters", "folders", "deleted", "certificateEnded"]) {
+    assert.ok(!Object.hasOwn(NOT_ON_SERVER, name), name);
+  }
+  await c.inbox();
+  await c.signLink("e1");
+  await c.listEnvelopes({ recipient: "ann", date_field: "sent_at", folder: "f1", deleted: true });
+  await c.listFolders();
+  await c.createFolder("Leases");
+  await c.renameFolder("f1", "Old leases");
+  await c.deleteFolder("f1");
+  await c.moveEnvelopes("f1", ["e1"]);
+  await c.moveEnvelopes(null, ["e1"]);
+  await c.templates.listDeleted();
+  await c.templates.restore("t1");
+  await c.certificate("e1");
+  assert.deepEqual(seen, [
+    "GET /api/v1/envelopes?waiting_for=me&limit=25",
+    "POST /api/v1/envelopes/e1/sign-link",
+    "GET /api/v1/envelopes?limit=25&recipient=ann&date_field=sent_at&folder=f1&deleted=true",
+    "GET /api/v1/folders",
+    "POST /api/v1/folders",
+    "PATCH /api/v1/folders/f1",
+    "DELETE /api/v1/folders/f1",
+    "POST /api/v1/folders/f1/envelopes",
+    "POST /api/v1/folders/none/envelopes",
+    "GET /api/v1/templates?deleted=true",
+    "POST /api/v1/templates/t1/restore",
+    "GET /api/v1/envelopes/e1/certificate",
+  ]);
+});
+
+test("the mock keeps a deleted template whole, lists it in the Deleted view and restores it (UXW-02)", async () => {
+  const c = await signedIn();
+  const tp = await c.templates.create({ name: "Kept", roles: [{ name: "Client", type: "signer", routing_order: 1 }] });
+  const { etag } = await c.templates.get(tp.id);
+  await c.templates.remove(tp.id, etag);
+  assert.ok(!(await c.templates.list()).items.some((x) => x.id === tp.id), "left the list");
+  assert.deepEqual((await c.templates.listDeleted()).items.map((x) => x.id), [tp.id]);
+  await assert.rejects(c.templates.get(tp.id), (e) => e.status === 404);
+  const back = await c.templates.restore(tp.id);
+  assert.equal(back.roles[0].name, "Client", "with its roles");
+  assert.ok((await c.templates.list()).items.some((x) => x.id === tp.id));
+  await assert.rejects(c.templates.restore(tp.id), (e) => e.status === 404, "a live template is not restored");
+  await c.templates.remove(tp.id, (await c.templates.get(tp.id)).etag);
+  await c.templates.remove(tp.id, `"v${back.version + 1}"`);
+  assert.deepEqual((await c.templates.listDeleted()).items, [], "deleted twice: gone for good");
 });
 
 test("ahead of the server, the mock serves the Inbox and signing from it", async () => {

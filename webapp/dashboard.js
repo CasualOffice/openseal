@@ -10,7 +10,7 @@
 //
 // Data: every agreement up to 1000, newest change first (`GET /envelopes`, the server's
 // search `q`), and the Inbox for "Needs me" where the server has one
-// (`NOT_ON_SERVER.inbox`; hidden otherwise). Views, groups and counts are the pure rules
+// (UXW-01; hidden otherwise). Views, groups and counts are the pure rules
 // of managemodel.js over those rows. Recipients, progress and page counts come from each
 // row's `GET …/{id}`, a few at a time after the list paints; suggestion counts from
 // ml.js only when document intelligence is available.

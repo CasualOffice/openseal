@@ -133,7 +133,7 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-WF-0004 | Envelope invalid for sending (with the list of violations) |
 | CS-WF-0005 | Routing would leave a required recipient unreachable: no address and nobody earlier to supply one |
 | CS-WF-0006 | Command id already applied with a different command (re-applying the same command is a replay, not an error) |
-| CS-WF-0007 | Routing has not reached the recipient yet |
+| CS-WF-0007 | Routing has not reached the recipient yet (for the Inbox's `POST …/sign-link`, also: has passed them, `UXW-01`) |
 | CS-WF-0008 | Unknown envelope, recipient, document or field id |
 | CS-WF-0009 | Seal result does not prove an independently verified seal of every document as delivered (or names a job not pending) |
 | CS-WF-0010 | Id already used in the envelope |

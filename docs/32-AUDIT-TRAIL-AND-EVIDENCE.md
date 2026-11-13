@@ -80,7 +80,7 @@ recipient action (`recipient.delivered`, `recipient.viewed_document`, `recipient
 
 | Group | Events |
 | --- | --- |
-| Envelope | `envelope.created`, `envelope.sent`, `envelope.corrected`, `envelope.voided`, `envelope.declined`, `envelope.expired`, `envelope.completing`, `envelope.completed`, `envelope.purged`, `envelope.deleted` (an envelope that ended without completing removed from the lists; nothing purged, `WEB-08`) |
+| Envelope | `envelope.created`, `envelope.sent`, `envelope.corrected`, `envelope.voided`, `envelope.declined`, `envelope.expired`, `envelope.completing`, `envelope.completed`, `envelope.purged`, `envelope.deleted` (an envelope that ended without completing removed from the lists; nothing purged, `WEB-08`); proposed: `envelope.restored` (one brought back to the lists, ADR-031, not recorded until Accepted) |
 | Document | `document.added`, `document.admitted` (report hash), `document.fixed` (delivered hash at send), `document.replaced`, `document.flattened`, `document.sealed` (sealed hash, profile, certificate fingerprint, TSA time) |
 | Recipient | `invitation.sent`, `invitation.bounced`, `reminder.sent`, `recipient.delivered` (opened link), `recipient.auth_challenged`, `recipient.auth_passed`, `recipient.auth_failed`, `recipient.consented` (ERSD version hash), `recipient.consent_withdrawn`, `recipient.viewed_document` (document hash, pages seen), `recipient.signature_adopted` (method: draw/type/upload, image hash), `recipient.field_completed`, `recipient.signed` / `recipient.approved` / `recipient.completed`, `recipient.declined` (reason), `recipient.reassigned`, `recipient.finish_later`, `recipient.in_person_hosted` (host user) |
 | Access | `envelope.viewed_by_sender`, `document.downloaded` (by whom), `certificate.downloaded`, `attachment.downloaded` (a signer's attachment: field and hash, by whom; `WEB-08`) |
@@ -157,7 +157,10 @@ completed or sealed as an agreement; the summary has `Outcome` ("Declined by …
 `Reason` when one was given, and `Completed: Not completed`; the seal section says the documents were not sealed and
 this certificate is sealed on its own. The sections, the embedded trail and the chain head are as for completion. With
 no ending the bytes are exactly those of a certificate of completion (the 1, 3 and 25 recipient certificates hash as
-before). Which host makes and seals it is the server and worker rows of `UXW-30`.
+before). The server queues the worker's `seal_ended_certificate` when the envelope is declined, voided or expires (and
+again when one is asked for before it exists); the worker renders it, seals it on its own with the platform key at the
+envelope's profile, stores it, reads it back and verifies it before recording it as the envelope's certificate. Making
+it does not extend the chain (it is not an act on the agreement); each download is recorded as `certificate.downloaded`.
 
 ## 7. Retention
 

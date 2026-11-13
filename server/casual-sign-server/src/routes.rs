@@ -442,6 +442,13 @@ pub fn table() -> Vec<Route> {
         ),
         r(
             "POST",
+            "/api/v1/templates/{id}/restore",
+            tw,
+            JSON,
+            templates::restore,
+        ),
+        r(
+            "POST",
             "/api/v1/templates/{id}/duplicate",
             tw,
             JSON,

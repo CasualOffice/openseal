@@ -366,7 +366,10 @@ which date a range bounds (`updated_at`, `created_at`, `sent_at`, `completed_at`
 by the Deleted view (`deleted_at` set) and by the Inbox (sent envelopes where the member is, by their email, a
 recipient whose turn it is and who acts through a link: not a copy, an in-person signer or an embedded recipient), and
 reports the member's filing and, in the Inbox, the recipient they are. Restoring a deleted envelope needs a workflow
-command and audit type (ADR-031, Proposed), so 0022 adds nothing for it. Forty-six tables. The migration is numbered
+command and audit type (ADR-031, Proposed), so 0022 adds nothing for it. `templates` gains `deleted_at`: deleting a
+live template sets it (the template keeps its roles, documents and fields, leaves every read, edit and the list, and
+`Templates::list_deleted`, `get_deleted` and `restore` serve the Deleted view); deleting it there removes it for good.
+A template has no audit chain, so neither step is evidence. Forty-six tables. The migration is numbered
 0022 by plan; 0020 and 0021 belong to other lanes, and the store's "versions are dense" test passes once they land.
 
 **Not built yet:** repositories for the "schema only" rows above; the retention purge (slice 15); a database guard

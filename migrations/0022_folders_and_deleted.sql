@@ -12,12 +12,17 @@
 --    envelope row (a purged draft) removes its filings. `envelopes.folder_id` (0004) is
 --    one folder for every member, so it stays unused.
 -- 3. The Deleted view is the envelopes with `deleted_at` (0011); restoring one is a new
---    workflow command and audit type, ADR-031 (Proposed), so nothing here.
+--    workflow command and audit type, ADR-031 (Proposed), so nothing here for them.
+--    Templates gain `deleted_at`: deleting a template moves it to the Deleted view with
+--    its roles, documents and fields, restorable; deleting it there removes it for good.
+--    A template has no audit chain, so neither step is evidence.
 -- 4. `recipient_tokens.purpose` gains `account`: a ceremony link a signed-in member
 --    obtained for the recipient they are (the Inbox's sign-link). `host_user_id` names
 --    that member, as it names the host of an `in_person` link, and no other purpose
 --    names a member.
 -- 5. An index for the Inbox: live recipients by email.
+
+ALTER TABLE templates ADD COLUMN deleted_at timestamptz;
 
 CREATE UNIQUE INDEX folders_owner_name ON folders (account_id, owner_user_id, kind, lower(name));
 ALTER TABLE folders ADD CONSTRAINT folders_account_id_id_owner_key
