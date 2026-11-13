@@ -114,6 +114,7 @@ export function mount(view, ctx) {
               buttonOpts: { icon: "ellipsis", variant: "ghost", size: "sm", iconOnly: true },
               items: () => [
                 { label: t("templates.edit-fields"), icon: "file-pen-line", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/edit`) },
+                { label: t("templates.bulk.menu"), icon: "send", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/bulk`) },
                 { label: t("templates.edit"), icon: "pencil", run: () => edit(tp) },
                 { label: t("templates.duplicate"), icon: "copy", run: () => duplicate(tp) },
                 { label: t("templates.delete"), icon: "trash-2", danger: true, run: () => remove(tp) },

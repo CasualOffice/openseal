@@ -232,7 +232,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | Field and its value | `fields`, `field_values` | `TenantTx::fields` |
 | RoutingRule, CustomField, Comment | `routing_rules`, `envelope_custom_fields`, `comments` | schema only |
 | AuditEvent, purge tombstone | `audit_events`, `envelope_tombstones` | `TenantTx::audit` (append, read, verify) |
-| BulkSend, BulkSendRow | `bulk_sends`, `bulk_send_rows` | schema only |
+| BulkSend, BulkSendRow | `bulk_sends`, `bulk_send_rows` | `TenantTx::bulk_sends` (`UXW-04`): a batch with its rows (`input` holds the row's recipients and problems, personal data); a row is claimed `FOR UPDATE SKIP LOCKED`, marked sent with its envelope (which then names the batch in `envelopes.bulk_send_id`) or failed with a code; `settle` completes a batch once no row is pending; cancel leaves pending rows unsent. No migration was needed |
 | SigningLink | `signing_links` | resolution only |
 | WebhookSubscription, WebhookDelivery | `webhook_subscriptions`, `webhook_deliveries` | `TenantTx::webhooks` |
 | ApiClient | `api_clients` | `TenantTx::api_clients` |

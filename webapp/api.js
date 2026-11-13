@@ -438,6 +438,27 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     moveEnvelopes: (f, envelopeIds) =>
       data(request("POST", f == null ? "/api/v1/folders/none/envelopes" : `${F(f)}/envelopes`, { body: { envelope_ids: envelopeIds } })),
 
+    // ---- Bulk send from a template (UXW-04; bulkmodel.js) ------------------------
+    bulk: {
+      /// The caller's bulk sends, newest first: `{items: [{id, name, template_id,
+      /// status: queued|sending|completed|cancelled, row_count, counts: {pending, sent,
+      /// failed, cancelled}, created_at, finished_at}]}`.
+      list: () => data(request("GET", "/api/v1/bulk-sends")),
+      /// Check a list (`{csv}` text or `{rows}` of column → value) against a template;
+      /// nothing stored: `{columns, row_count, valid, rows: [{row, status, recipients:
+      /// [{role, name, email}], problems: [{column, code}]}]}`. A list whose columns do
+      /// not fit is `422` with `errors` (`CS-BLK-0004`, `0005`, `0007`).
+      check: (templateId, list) => data(request("POST", "/api/v1/bulk-sends", { body: { template_id: templateId, ...list, validate_only: true } })),
+      /// Make the batch (`queued`): as `list`'s item, with `rows` (a row with problems is
+      /// `failed` and never sent).
+      create: (templateId, list, name) => data(request("POST", "/api/v1/bulk-sends", { body: { template_id: templateId, ...list, ...(name ? { name } : {}) } })),
+      get: (id) => data(request("GET", `/api/v1/bulk-sends/${encodeURIComponent(id)}`)),
+      /// Send the next rows (at most 10); repeat while `counts.pending` > 0.
+      send: (id) => data(request("POST", `/api/v1/bulk-sends/${encodeURIComponent(id)}/send`)),
+      /// Stop: the pending rows are not sent.
+      cancel: (id) => data(request("POST", `/api/v1/bulk-sends/${encodeURIComponent(id)}/cancel`)),
+    },
+
     // ---- Webhooks (docs/40 §4; scope webhooks:manage) ---------------------------
     /// `{items: [{id, envelope_id, url, event_types, secret_refs, active}]}`.
     listWebhooks: () => data(request("GET", "/api/v1/webhooks")),
