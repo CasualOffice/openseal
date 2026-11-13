@@ -77,6 +77,12 @@ pub enum StoreError {
     /// `CS-DB-0013`: a change to an immutable column was refused: a workspace's
     /// organization (SQLSTATE `OS004`, docs/23 §2.1).
     Immutable,
+    /// `CS-DB-0014`: an admin log event does not extend its chain: hash, `seq`, `prev`,
+    /// or columns that differ from its canonical bytes (SQLSTATE `OS005`, docs/23 §2.5).
+    AdminChainBroken {
+        /// The `seq` offered or read.
+        seq: u64,
+    },
     /// `CS-BLOB-0001`: the blob store failed (I/O, network, or an unexpected answer).
     BlobUnavailable {
         /// The HTTP status or OS error number, when there is one.
@@ -113,6 +119,7 @@ impl StoreError {
             Self::SchemaAhead { .. } => "CS-DB-0011",
             Self::Database { .. } => "CS-DB-0012",
             Self::Immutable => "CS-DB-0013",
+            Self::AdminChainBroken { .. } => "CS-DB-0014",
             Self::BlobUnavailable { .. } => "CS-BLOB-0001",
             Self::BlobNotFound => "CS-BLOB-0002",
             Self::BlobCorrupt => "CS-BLOB-0003",
@@ -133,6 +140,9 @@ impl StoreError {
                         seq: seq.unwrap_or(0),
                     },
                     Some("OS004") => Self::Immutable,
+                    Some("OS005") => Self::AdminChainBroken {
+                        seq: seq.unwrap_or(0),
+                    },
                     Some("23505") => Self::Conflict {
                         constraint: constraint.unwrap_or_default(),
                     },
@@ -205,6 +215,9 @@ impl fmt::Display for StoreError {
                 sqlstate.as_deref().unwrap_or("?")
             ),
             Self::Immutable => write!(f, "{code}: change to an immutable column refused"),
+            Self::AdminChainBroken { seq } => {
+                write!(f, "{code}: admin event {seq} does not extend its chain")
+            }
             Self::BlobUnavailable { status } => match status {
                 Some(s) => write!(f, "{code}: blob store failed ({s})"),
                 None => write!(f, "{code}: blob store failed"),
@@ -273,6 +286,7 @@ mod tests {
     fn sqlstates_map_to_their_store_codes() {
         // ORG-02: a workspace's organization is immutable (catalog test 5, SEC-O10).
         assert_eq!(code_of("OS004"), "CS-DB-0013");
+        assert_eq!(code_of("OS005"), "CS-DB-0014");
         assert_eq!(code_of("42501"), "CS-DB-0009");
         assert_eq!(code_of("OS001"), "CS-DB-0004");
     }

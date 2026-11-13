@@ -479,7 +479,7 @@ async fn row_level_security_alone_isolates_every_tenant_table() {
             "organizations" => "SELECT count(*) FROM organizations o JOIN accounts a \
                                 ON a.organization_id = o.id WHERE a.id = $1"
                 .to_owned(),
-            "organization_admins" | "org_permission_sets" => {
+            "organization_admins" | "org_permission_sets" | "org_admin_events" => {
                 "SELECT 0::bigint WHERE $1::uuid IS NOT NULL".to_owned()
             }
             _ => format!("SELECT count(*) FROM {t} WHERE account_id = $1"),

@@ -42,6 +42,7 @@ by JWKS (OpenCalc's docs/59 pattern).
 ```
 /api/v1
   /accounts/me                                  GET, PATCH            settings, defaults
+  /admin-events                                 GET                   workspace admin log (ORG-05), json or csv
   /envelopes                                    GET (search), POST    create draft or send in one call
   /envelopes/{id}                               GET, PATCH, DELETE    DELETE: drafts; ended uncompleted: from lists
   /envelopes/{id}/send                          POST
@@ -242,7 +243,8 @@ table and the document equal in both directions, scope by scope.
 
 | §3 resource | As built |
 | --- | --- |
-| `/accounts/me` | `GET`; `PATCH {settings}` merges (the account's `workflow_policy` is validated as the engine's `Policy`) |
+| `/accounts/me` | `GET`; `PATCH {settings}` merges (the account's `workflow_policy` is validated as the engine's `Policy`); the change and its `workspace.settings_changed` admin event commit together (`ORG-05`) |
+| `/admin-events` | `GET ?cursor&limit&format=json\|csv&verify=page\|full` (`admin:account`, `ORG-05`): the workspace's admin audit log, oldest first; each item has `seq`, `at`, `action`, `hash`, `prev` and `event` (the canonical JSON: actor, target ids, changed keys with old and new values, secrets as `"rotated"`, request id, IP; `null` for stored bytes a JSON value cannot hold, such as a number beyond `f64`, which the CSV carries as stored). Each page is verified as read: linked to the event at its cursor, the last page to the stored head, each `at` to its bytes, so walking the log by cursor checks every link once (`verify=page`, the default); `verify=full` re-verifies the whole log first (`500 CS-DB-0014` when broken; another `verify` value is `422 CS-API-0001`); CSV columns `seq,at,action,hash,prev,event`, next cursor in `X-Next-Cursor` |
 | `/envelopes` … `/form-data` | All, plus `GET /envelopes/{id}/status`. `GET /envelopes?q=` (`WEB-04`) finds envelopes whose subject, or a recipient's name or email, contains the text (any case; `%`, `_`, `\` literal; at most 200 characters), within the caller's account and, without `view_all`, their own. `PATCH …/recipients/{r}` takes `access_code` (Argon2id at rest, never returned): needed when `auth` gains `access_code`, refused when the resulting `auth` lacks it, deleted when `access_code` leaves `auth`; allowed while the engine allows the change (a draft, or a correction while sent; never once voided or completed). `/correct` is one call with the engine's change list (docs/24 As built); `…/commit` is not needed; the per-element recipient and field endpoints correct a sent envelope too (`tests/correct.rs`: email and authentication changed, the old link `401` at once and a new invitation queued, a recipient not reached removed and another added, fields added, a signer who acted refused `409`). Documents enter through `/documents` (JSON base64 or raw `application/pdf`), admitted and normalized by `casual-sign-sdk`; signed PDFs are kept as uploaded |
 | `/documents/{doc}` `PATCH` | **Not built**: the engine has no rename change (row proposed) |
 | `/documents/{doc}/pages/{n}.png` | **Not built** (thumbnails are rendered by pdf.js in the browser, ADR-007; a server thumbnail needs a renderer) |
