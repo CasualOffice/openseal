@@ -173,7 +173,7 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-AUTH-0008 | CSRF token missing or wrong on a session request that changes something (403) |
 | CS-AUTH-0009 | Ceremony link bound to another browser, or not yet opened in this one (403) |
 | CS-AUTH-0010 | The API client does not own the embedding it acts for (row WF-05) (403) |
-| CS-AUTH-0011 | The staff session owes a second factor: it has not passed it (`detail` `verify`), or the account's `mfa_policy` asks for one the user has not enrolled (`detail` `enrol`); only the sign-in steps, `GET /auth/session` and `POST /auth/logout` serve it (403, `ASVS-01`) |
+| CS-AUTH-0011 | The staff session owes a second factor: it has not passed it (`detail` `verify`), or the account's `mfa_policy` asks for one the user has not enrolled (`detail` `enrol`; administrators by default, `ASVS-31`); only the sign-in steps, `GET /auth/session` and `POST /auth/logout` serve it (403, `ASVS-01`) |
 | CS-AUTH-0012 | Second factor refused: a wrong TOTP code, one for a step already used, or a recovery code not among the user's unspent ones (401, `ASVS-01`) |
 | CS-KEY-0001 | Caller not authorized by keyd: no client certificate, an untrusted one, or one not on the allow-list |
 | CS-KEY-0002 | Unknown key alias |
