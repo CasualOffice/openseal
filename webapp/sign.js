@@ -23,7 +23,7 @@ import { button, busy, toast, toastError, openDialog, noServerState, dockPanel, 
 import { register, run } from "./commands.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
-import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments } from "./signfields.js";
+import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, orgMark, askLine, dateField, phoneSegments, actedAs } from "./signfields.js";
 import { adoptDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
@@ -1374,7 +1374,8 @@ function review() {
   const rtype = view.recipient?.type;
   const names = Array.isArray(view.later_recipients) ? laterForm(view.later_recipients) : null;
   const back = button(t("sign.review.back"), { icon: "chevron-left", size: "lg" });
-  const go = button(t(rtype === "approver" ? "sign.approve" : "sign.finish"), { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
+  const goLabel = t(rtype === "approver" ? "sign.approve" : "sign.finish");
+  const go = button(goLabel, { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
   back.addEventListener("click", () => documents());
   go.addEventListener("click", async () => {
     try {
@@ -1386,7 +1387,10 @@ function review() {
           if (now.recipient?.status === "completed") return now;
         }
         if (names) {
-          const list = names.read();
+          let list = names.read();
+          // On a phone the form is in the values sheet: open it so the message and the
+          // focused field can be seen.
+          if (!list && onPhone) { side.openSheet(); list = names.read(); }
           if (!list) throw names.invalid;
           if (list.length) await api.ceremony.nameRecipients(token, list, location_);
         }
@@ -1408,7 +1412,7 @@ function review() {
     h("p", { class: "os-muted", text: t("sign.review.text") }),
     ...(names ? [names.el] : []),
     dl,
-    h("p", { class: "os-small", text: t("sign.review.legal") }));
+    h("p", { class: "os-small", text: t(actedAs(rtype) === "signed" ? "sign.review.legal" : `sign.review.legal.${actedAs(rtype)}`) }));
   // The one Finish of this step: pinned below the values on desktop, in the bottom bar
   // on phones, so it is always in view.
   const actions = h("div", { class: "os-review__actions os-stack" }, go, back);
@@ -1418,7 +1422,14 @@ function review() {
     const valuesBtn = button(t("sign.review.values-button", { n }), { icon: "list-checks", size: "lg", onClick: () => side.openSheet(), attrs: { "data-testid": "review-values-btn" } });
     actions.classList.add("os-review__actions--bar");
     actions.replaceChildren(valuesBtn, go);
-    side.body.append(h("div", { class: "os-stack" }, back));
+    // VS-02: the agent's names are filled in the sheet, which covers the bar, so the
+    // sheet has the same Finish below them.
+    let inSheet = null;
+    if (names) {
+      inSheet = button(goLabel, { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish-sheet" } });
+      inSheet.addEventListener("click", () => go.click());
+    }
+    side.body.append(h("div", { class: "os-stack" }, ...(inSheet ? [inSheet] : []), back));
     phoneBar = actions;
   } else {
     side.el.append(actions);
@@ -1443,6 +1454,8 @@ function review() {
   top();
   requestAnimationFrame(top);
   if (!onPhone) go.focus({ preventScroll: true });
+  // VS-02: an agent's names are asked in the sheet on a phone, so it opens with them.
+  else if (names) side.openSheet();
 }
 
 /// A field as it will look on the signed page: the value only, no field chrome. Sized
@@ -1502,7 +1515,11 @@ function done(everyone, celebrate = false) {
   const MARK = "\u0001";
   const [before, after = ""] = t("sign.done.next-verify", { link: MARK }).split(MARK);
   const name = firstName(view?.recipient?.name);
-  const title = celebrate || !name ? t(name ? "sign.done.thanks" : "sign.done.thanks-anon", { name }) : t("sign.done.already", { name });
+  // RTE-02: an approver approved, a viewer viewed, an agent or intermediary finished;
+  // only a signing type is told it signed.
+  const act = actedAs(view?.recipient?.type);
+  const sfx = act === "signed" ? "" : `.${act}`;
+  const title = celebrate || !name ? t(name ? `sign.done.thanks${sfx}` : `sign.done.thanks-anon${sfx}`, { name }) : t(`sign.done.already${sfx}`, { name });
   screen(stateCard({
     mark: stateMark("check", { seal: true, pop: celebrate }),
     title,
@@ -1519,7 +1536,7 @@ function done(everyone, celebrate = false) {
 function receiptRows() {
   const rows = [];
   const at = dateTimeZone(view?.recipient?.completed_at);
-  if (at) rows.push([t("sign.receipt.signed"), at]);
+  if (at) rows.push([t(`sign.receipt.${actedAs(view?.recipient?.type)}`), at]);
   const kinds = filledKinds(myFields().filter(fills), (f) => isFilled(f, values.get(f.id) || f.value));
   if (kinds.length) rows.push([t("sign.receipt.fields"), kinds.map((k, i) => (i ? t(`ftype.${k}`).toLowerCase() : t(`ftype.${k}`))).join(", ")]);
   if (!rows.length) return null;

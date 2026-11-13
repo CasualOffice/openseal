@@ -10,6 +10,7 @@ import {
   RECIPIENT_TYPES, FIELD_TYPES, FIELD_MEMBERS,
 } from "../api.js";
 import { makePdf } from "../mockpdf.js";
+import { sendSummary } from "../people.js";
 import { EN } from "../strings.en.js";
 import { readFileSync } from "node:fs";
 
@@ -211,6 +212,15 @@ test("an agent names the later signer through the ceremony, then finishes (VS-02
   await c.ceremony.consent(s, MOCK.ersd);
   assert.equal((await c.ceremony.view(s)).later_recipients, undefined);
   await assert.rejects(c.ceremony.nameRecipients(s, [{ id: env.recipients[0].id, name: "X" }]), (e) => e.status === 409);
+});
+
+test("the agent is a ready type, and the send summary says what they do (VS-02)", async () => {
+  const { RECIPIENT_TYPES_READY } = await import("../api.js");
+  assert.ok(RECIPIENT_TYPES_READY.includes("agent"));
+  const out = sendSummary([{ name: "Ag", type: "agent", order: 1 }, { name: "Sig", type: "signer", order: 2 }, { name: "Ann", type: "approver", order: 2 }], "S");
+  assert.deepEqual(out.map(([k]) => k), ["send.confirm-first", "send.confirm-order", "send.confirm-reviewers", "send.confirm-agents"]);
+  assert.deepEqual(out[1][1], { order: "Ag → Sig & Ann" });
+  assert.deepEqual([out[2][1].names, out[3][1].names], ["Ann", "Ag"]);
 });
 
 test("sending refuses a field the recipient's type may not hold", async () => {

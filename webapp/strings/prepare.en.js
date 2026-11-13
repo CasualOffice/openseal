@@ -176,6 +176,7 @@ export const PREPARE = {
   "send.need-suggestion-one": "1 suggested field is neither accepted nor dismissed.",
   "send.confirm-first": "{names} will get an email for “{subject}” now; each next step gets theirs when the one before is done.",
   "send.confirm-reviewers": "{names} will review it in their turn, without signing.",
+  "send.confirm-agents": "{names} will name who acts after them, in their turn.",
   "wizard.need-doc": "Add a PDF first.",
   "wizard.place-fields": "Place fields",
   "wizard.place-fields-for": "Place fields for {name}",
