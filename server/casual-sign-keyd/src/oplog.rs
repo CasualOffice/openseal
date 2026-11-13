@@ -15,11 +15,12 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use aws_lc_rs::digest::{SHA256, digest};
 
 use crate::error::KeydError;
+use crate::wire::LogEntry;
 
 const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const FIELDS: usize = 11;
@@ -31,7 +32,8 @@ pub struct OpRecord {
     pub time: u64,
     /// The caller's certificate fingerprint (hex SHA-256), or `-`.
     pub caller: String,
-    /// `chain` or `sign` (or `connect` for a refused caller).
+    /// `chain` or `sign` (or `connect` for a refused caller), or an admin operation:
+    /// `list-keys`, `oplog-head`, `oplog-range`, `health` (`CON-06`).
     pub op: &'static str,
     /// The key alias, or `-`.
     pub alias: String,
@@ -74,6 +76,7 @@ fn line_hash(fields: &[&str]) -> String {
 /// The append-only, hash-chained operation log.
 #[derive(Debug)]
 pub struct OpLog {
+    path: PathBuf,
     file: File,
     next_seq: u64,
     head: String,
@@ -96,6 +99,7 @@ impl OpLog {
             .open(path)
             .map_err(|e| KeydError::OperationLog(format!("open: {}", e.kind())))?;
         Ok(Self {
+            path: path.to_path_buf(),
             file,
             next_seq: count.saturating_add(1),
             head,
@@ -130,6 +134,66 @@ impl OpLog {
         self.next_seq = self.next_seq.saturating_add(1);
         self.head = hash;
         Ok(())
+    }
+}
+
+impl OpLog {
+    /// The last sequence number written (0 for an empty log) and its hash (hex; 64 zeros
+    /// for an empty log).
+    #[must_use]
+    pub fn head(&self) -> (u64, &str) {
+        (self.next_seq.saturating_sub(1), &self.head)
+    }
+
+    /// Up to `n` records from sequence `from`, read back from the file (the lines this
+    /// log verified at open and has written since). Hashes, ids and codes only.
+    ///
+    /// # Errors
+    /// `CS-KEY-0009` when the file cannot be read or a line does not have its fields.
+    pub fn range(&self, from: u64, n: usize) -> Result<Vec<LogEntry>, KeydError> {
+        let file = File::open(&self.path)
+            .map_err(|e| KeydError::OperationLog(format!("read: {}", e.kind())))?;
+        let mut out = Vec::new();
+        for line in BufReader::new(file).lines() {
+            if out.len() >= n {
+                break;
+            }
+            let line = line.map_err(|e| KeydError::OperationLog(format!("read: {}", e.kind())))?;
+            let f: Vec<&str> = line.split('\t').collect();
+            let [
+                seq,
+                time,
+                caller,
+                op,
+                alias,
+                alg,
+                digest,
+                envelope,
+                outcome,
+                _prev,
+                _hash,
+            ] = f.as_slice()
+            else {
+                return Err(KeydError::OperationLog("a line without its fields".into()));
+            };
+            let bad = || KeydError::OperationLog("a line with a bad number".into());
+            let seq: u64 = seq.parse().map_err(|_| bad())?;
+            if seq < from {
+                continue;
+            }
+            out.push(LogEntry {
+                seq,
+                time: time.parse().map_err(|_| bad())?,
+                caller: (*caller).to_owned(),
+                op: (*op).to_owned(),
+                alias: (*alias).to_owned(),
+                alg: (*alg).to_owned(),
+                digest: (*digest).to_owned(),
+                envelope: (*envelope).to_owned(),
+                outcome: (*outcome).to_owned(),
+            });
+        }
+        Ok(out)
     }
 }
 

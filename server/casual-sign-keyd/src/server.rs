@@ -5,7 +5,14 @@
 //!
 //! A caller whose certificate does not chain to the client CA never completes the
 //! handshake; one that chains but is not on the allow-list is answered `CS-KEY-0001`
-//! and recorded. Blocking I/O, one thread per connection, at most
+//! and recorded.
+//!
+//! A second allow-list, the admin list (`OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, docs/23 §5.4,
+//! `CON-06`), names the console's admin identity. Its callers are answered `list-keys`,
+//! `oplog-head`, `oplog-range` and `health`, which are read-only and carry certificates,
+//! hashes, ids and codes, never a key; they cannot get a chain or a signature, and a
+//! signing caller cannot call an admin operation (`CS-CON-0008`, recorded either way).
+//! No fingerprint may be on both lists. Blocking I/O, one thread per connection, at most
 //! [`KeydLimits::max_connections`] at once, with read and write timeouts.
 
 use std::collections::HashMap;
@@ -25,7 +32,9 @@ use crate::error::KeydError;
 use crate::oplog::{OpLog, OpRecord, hex};
 use crate::pem::tls_certificates;
 use crate::signer::{DigestSigner, wire_id};
-use crate::wire::{Request, Response, read_frame, valid_id, write_frame};
+use crate::wire::{
+    Health, KeyHealth, KeyInfo, Request, Response, read_frame, valid_id, write_frame,
+};
 
 /// The hex SHA-256 of a DER certificate: how the allow-list and the log name a caller.
 #[must_use]
@@ -77,6 +86,11 @@ impl AllowList {
         Ok(out)
     }
 
+    /// The allowed fingerprints.
+    pub fn fingerprints(&self) -> impl Iterator<Item = &str> {
+        self.names.keys().map(String::as_str)
+    }
+
     /// Whether `fingerprint` is allowed.
     #[must_use]
     pub fn contains(&self, fingerprint: &str) -> bool {
@@ -122,6 +136,8 @@ impl Default for KeydLimits {
 pub struct KeyService {
     keys: HashMap<String, Arc<dyn DigestSigner>>,
     allow: AllowList,
+    admin: AllowList,
+    started: Instant,
     log: Mutex<OpLog>,
     windows: Mutex<HashMap<String, (Instant, u32)>>,
     limits: KeydLimits,
@@ -132,6 +148,7 @@ impl core::fmt::Debug for KeyService {
         f.debug_struct("KeyService")
             .field("keys", &self.keys.keys().collect::<Vec<_>>())
             .field("allowed", &self.allow.len())
+            .field("admins", &self.admin.len())
             .field("limits", &self.limits)
             .finish_non_exhaustive()
     }
@@ -151,10 +168,27 @@ impl KeyService {
         Self {
             keys: HashMap::new(),
             allow,
+            admin: AllowList::new(),
+            started: Instant::now(),
             log: Mutex::new(log),
             windows: Mutex::new(HashMap::new()),
             limits,
         }
+    }
+
+    /// Answer the read-only admin operations to the callers on `admin` (the console's
+    /// admin identity, docs/23 §5.4). They are answered nothing else.
+    ///
+    /// # Errors
+    /// `CS-KEY-0010` when a fingerprint is on both the signing and the admin list.
+    pub fn with_admin(mut self, admin: AllowList) -> Result<Self, KeydError> {
+        if admin.fingerprints().any(|f| self.allow.contains(f)) {
+            return Err(KeydError::TlsConfig(
+                "a fingerprint is on both the signing and the admin allow-list".into(),
+            ));
+        }
+        self.admin = admin;
+        Ok(self)
     }
 
     /// Serve `key` under `alias`.
@@ -198,10 +232,13 @@ impl KeyService {
         true
     }
 
-    /// Refuse a caller that is not on the allow-list, recording it.
-    fn admit(&self, caller: &str) -> Result<(), KeydError> {
+    /// Refuse a caller that is on neither allow-list, recording it; otherwise say which.
+    fn admit(&self, caller: &str) -> Result<Role, KeydError> {
         if self.allow.contains(caller) {
-            return Ok(());
+            return Ok(Role::Signer);
+        }
+        if self.admin.contains(caller) {
+            return Ok(Role::Admin);
         }
         let err = KeydError::NotAuthorized;
         self.record(&OpRecord {
@@ -217,16 +254,42 @@ impl KeyService {
         Err(err)
     }
 
-    /// Answer one request from `caller` (already admitted), recording it first.
-    fn answer(&self, caller: &str, req: &Request) -> Response {
-        match self.try_answer(caller, req) {
+    /// Answer one request from `caller` (already admitted as `role`), recording it first.
+    fn answer(&self, caller: &str, role: Role, req: &Request) -> Response {
+        match self.try_answer(caller, role, req) {
             Ok(r) => r,
             Err(e) => Response::Error(e.number()),
         }
     }
 
-    fn try_answer(&self, caller: &str, req: &Request) -> Result<Response, KeydError> {
+    fn admin_record(&self, caller: &str, req: &Request, outcome: &'static str) -> OpRecord {
+        OpRecord {
+            time: now(),
+            caller: caller.to_owned(),
+            op: req.op_name(),
+            alias: String::new(),
+            alg: String::new(),
+            digest: String::new(),
+            envelope: String::new(),
+            outcome,
+        }
+    }
+
+    fn try_answer(&self, caller: &str, role: Role, req: &Request) -> Result<Response, KeydError> {
+        // The two lists answer disjoint operations (docs/23 §5.4).
+        if req.is_admin() != (role == Role::Admin) {
+            let err = KeydError::AdminRefused;
+            self.record(&self.admin_record(caller, req, err.code()))?;
+            return Err(err);
+        }
         match req {
+            Request::ListKeys
+            | Request::OplogHead
+            | Request::OplogRange { .. }
+            | Request::Health => {
+                self.record(&self.admin_record(caller, req, "ok"))?;
+                self.admin_answer(req)
+            }
             Request::Chain { alias } => {
                 let found = self.keys.get(alias);
                 let mut rec = OpRecord {
@@ -290,6 +353,63 @@ impl KeyService {
         }
     }
 
+    /// The read-only answers, after the call is recorded.
+    fn admin_answer(&self, req: &Request) -> Result<Response, KeydError> {
+        let log = || {
+            self.log
+                .lock()
+                .map_err(|_| KeydError::OperationLog("lock poisoned".into()))
+        };
+        match req {
+            Request::ListKeys => {
+                let mut aliases: Vec<&String> = self.keys.keys().collect();
+                aliases.sort();
+                let mut out = Vec::with_capacity(aliases.len());
+                for alias in aliases {
+                    let Some(key) = self.keys.get(alias) else {
+                        continue;
+                    };
+                    out.push(key_info(alias, key.as_ref())?);
+                }
+                Ok(Response::Keys(out))
+            }
+            Request::OplogHead => {
+                let log = log()?;
+                let (seq, head) = log.head();
+                Ok(Response::Head {
+                    seq,
+                    hash: unhex(head).ok_or(KeydError::OperationLog("head".into()))?,
+                })
+            }
+            Request::OplogRange { from, n } => {
+                Ok(Response::Range(log()?.range(*from, usize::from(*n))?))
+            }
+            Request::Health => {
+                let log_seq = log()?.head().0;
+                let mut aliases: Vec<&String> = self.keys.keys().collect();
+                aliases.sort();
+                let keys = aliases
+                    .into_iter()
+                    .filter_map(|a| {
+                        self.keys.get(a).map(|k| KeyHealth {
+                            alias: a.clone(),
+                            backend: k.backend().to_owned(),
+                            ok: k.healthy(),
+                        })
+                    })
+                    .collect();
+                Ok(Response::Health(Health {
+                    log_seq,
+                    uptime_s: self.started.elapsed().as_secs(),
+                    keys,
+                }))
+            }
+            Request::Chain { .. } | Request::Sign { .. } => {
+                Err(KeydError::Malformed("not an admin operation"))
+            }
+        }
+    }
+
     fn sign(
         &self,
         caller: &str,
@@ -306,6 +426,74 @@ impl KeyService {
         }
         key.sign_digest(digest)
     }
+}
+
+/// Which list admitted a caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Role {
+    /// The signing allow-list: get-certificate-chain and sign-digest.
+    Signer,
+    /// The admin allow-list: the read-only admin operations.
+    Admin,
+}
+
+fn unhex(s: &str) -> Option<Vec<u8>> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| {
+            s.get(i..i.saturating_add(2))
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+        })
+        .collect()
+}
+
+/// A name as the admin interface carries it: control characters replaced, at most
+/// [`casual_sign_keyd_client::wire::MAX_NAME`] bytes.
+fn name_text(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        let c = if c.is_control() { '?' } else { c };
+        if out.len().saturating_add(c.len_utf8()) > casual_sign_keyd_client::wire::MAX_NAME {
+            break;
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn unix(t: &x509_cert::time::Time) -> i64 {
+    i64::try_from(t.to_unix_duration().as_secs()).unwrap_or(i64::MAX)
+}
+
+/// What `list-keys` reports of one key: the chain, the signer certificate's validity and
+/// names. Never the key.
+fn key_info(alias: &str, key: &dyn DigestSigner) -> Result<KeyInfo, KeydError> {
+    let alg = wire_id(key.algorithm()).ok_or(KeydError::KeyConfig(
+        crate::error::KeyConfigProblem::UnsupportedAlgorithm,
+    ))?;
+    let chain = key.certificate_chain();
+    let leaf = chain.first().ok_or(KeydError::KeyConfig(
+        crate::error::KeyConfigProblem::NoCertificate,
+    ))?;
+    let tbs = leaf.tbs_certificate();
+    let certs = chain
+        .iter()
+        .map(|c| {
+            c.to_der()
+                .map_err(|_| KeydError::Malformed("certificate does not encode"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(KeyInfo {
+        alias: alias.to_owned(),
+        backend: key.backend().to_owned(),
+        alg,
+        development: key.is_development(),
+        not_before: unix(&tbs.validity().not_before),
+        not_after: unix(&tbs.validity().not_after),
+        subject: name_text(&tbs.subject().to_string()),
+        issuer: name_text(&tbs.issuer().to_string()),
+        certs,
+    })
 }
 
 /// The server's TLS configuration: its certificate chain and key (PEM), and the CA
@@ -432,13 +620,14 @@ fn connection(
             write_frame(&mut s, &Response::Error(e.number()).encode()?)?;
             break;
         }
-        let response = match Request::decode(&body) {
-            Ok(req) => service.answer(&caller, &req),
-            Err(e) => Response::Error(e.number()),
+        let response = match (&admitted, Request::decode(&body)) {
+            (Ok(role), Ok(req)) => service.answer(&caller, *role, &req),
+            (_, Err(e)) => Response::Error(e.number()),
+            (Err(e), _) => Response::Error(e.number()),
         };
         write_frame(&mut s, &response.encode()?)?;
     }
     s.conn.send_close_notify();
     let _ = s.conn.complete_io(&mut s.sock);
-    admitted
+    admitted.map(|_| ())
 }

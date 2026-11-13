@@ -692,6 +692,7 @@ version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
  "casual-sign-crypto",
+ "casual-sign-keyd-client",
  "casual-sign-seal",
  "casual-sign-secrets",
  "casual-sign-verify",
@@ -702,6 +703,15 @@ dependencies = [
  "rustls-pki-types",
  "spki",
  "x509-cert",
+]
+
+[[package]]
+name = "casual-sign-keyd-client"
+version = "0.0.1"
+dependencies = [
+ "casual-sign-secrets",
+ "rustls",
+ "rustls-pki-types",
 ]
 
 [[package]]

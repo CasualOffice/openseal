@@ -1,7 +1,14 @@
-//! keyd's errors, each with a stable docs/20 `CS-KEY-*` code. Messages carry counts,
-//! aliases and PKCS#11 return values, never a PIN, key bytes or document content.
+//! keyd's errors, each with a stable docs/20 `CS-KEY-*` code (and `CS-CON-0008` for an
+//! admin call refused). Messages carry counts, aliases and PKCS#11 return values, never a
+//! PIN, key bytes or document content.
+//!
+//! Moved from `casual-sign-keyd` (`CON-06`, `CON-15`): both sides of the protocol name
+//! the same errors; keyd re-exports them.
 
 use core::fmt;
+
+/// The wire number of `CS-CON-0008` (the `CS-KEY-` numbers stay below 1000).
+pub const ADMIN_REFUSED: u16 = 1008;
 
 /// Why a key operation failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +44,9 @@ pub enum KeydError {
     Transport(String),
     /// `CS-KEY-0012`: a daemon setting is missing or invalid (named).
     Setting(&'static str),
+    /// `CS-CON-0008`: an admin call from a caller on the signing allow-list, or a signing
+    /// call from a caller on the admin allow-list (docs/23 §5.4, `CON-06`).
+    AdminRefused,
 }
 
 /// What is wrong with a key's configuration (`CS-KEY-0006`).
@@ -80,12 +90,14 @@ impl KeydError {
             Self::TlsConfig(_) => "CS-KEY-0010",
             Self::Transport(_) => "CS-KEY-0011",
             Self::Setting(_) => "CS-KEY-0012",
+            Self::AdminRefused => "CS-CON-0008",
         }
     }
 
-    /// The code's number, as the wire protocol carries it.
+    /// The code's number, as the wire protocol carries it: the `CS-KEY-` number, and
+    /// [`ADMIN_REFUSED`] for `CS-CON-0008`.
     #[must_use]
-    pub(crate) const fn number(&self) -> u16 {
+    pub const fn number(&self) -> u16 {
         match self {
             Self::NotAuthorized => 1,
             Self::UnknownAlias => 2,
@@ -99,12 +111,14 @@ impl KeydError {
             Self::TlsConfig(_) => 10,
             Self::Transport(_) => 11,
             Self::Setting(_) => 12,
+            Self::AdminRefused => ADMIN_REFUSED,
         }
     }
 
     /// The error a remote keyd reported by number. Detail stays on the server, in its
     /// own log; the caller learns only the code.
-    pub(crate) fn from_number(n: u16) -> Self {
+    #[must_use]
+    pub fn from_number(n: u16) -> Self {
         match n {
             1 => Self::NotAuthorized,
             2 => Self::UnknownAlias,
@@ -116,12 +130,13 @@ impl KeydError {
             7 => Self::Malformed("refused by keyd"),
             8 => Self::RateLimited,
             9 => Self::OperationLog("reported by keyd".into()),
+            ADMIN_REFUSED => Self::AdminRefused,
             _ => Self::Transport(format!("keyd answered with unknown error {n}")),
         }
     }
 
     /// The backend failed: `step` and the library's error.
-    pub(crate) fn backend(step: &str, e: impl fmt::Display) -> Self {
+    pub fn backend(step: &str, e: impl fmt::Display) -> Self {
         Self::Backend {
             what: format!("{step}: {e}"),
         }
@@ -164,6 +179,9 @@ impl fmt::Display for KeydError {
             Self::TlsConfig(why) => write!(f, "TLS configuration: {why}"),
             Self::Transport(why) => write!(f, "keyd unreachable: {why}"),
             Self::Setting(name) => write!(f, "setting {name} is missing or invalid"),
+            Self::AdminRefused => f.write_str(
+                "admin call refused: a signing caller cannot administer, an admin caller cannot sign",
+            ),
         }
     }
 }

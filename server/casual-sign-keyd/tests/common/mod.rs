@@ -193,14 +193,32 @@ pub fn start_keyd(
     limits: KeydLimits,
     dir: &Path,
 ) -> RunningKeyd {
+    start_keyd_with_admin(pki, keys, allowed, &[], limits, dir)
+}
+
+/// As [`start_keyd`], with `admins` on the admin allow-list (CON-06).
+pub fn start_keyd_with_admin(
+    pki: &Pki,
+    keys: Vec<(&str, Arc<dyn DigestSigner>)>,
+    allowed: &[&str],
+    admins: &[&str],
+    limits: KeydLimits,
+    dir: &Path,
+) -> RunningKeyd {
     let (cert, key, _) = pki.server_identity();
     let tls = server_tls(cert.as_bytes(), key.as_bytes(), pki.tls_ca.pem().as_bytes()).unwrap();
     let mut allow = AllowList::new();
     for fp in allowed {
         allow.allow(fp, "test");
     }
+    let mut admin = AllowList::new();
+    for fp in admins {
+        admin.allow(fp, "console");
+    }
     let oplog = dir.join("keyd-oplog.tsv");
-    let mut service = KeyService::new(allow, OpLog::open(&oplog).unwrap(), limits);
+    let mut service = KeyService::new(allow, OpLog::open(&oplog).unwrap(), limits)
+        .with_admin(admin)
+        .unwrap();
     for (alias, key) in keys {
         service.add_key(alias, key).unwrap();
     }

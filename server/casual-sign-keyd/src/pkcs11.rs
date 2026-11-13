@@ -358,6 +358,37 @@ impl DigestSigner for Pkcs11Key {
         false
     }
 
+    fn backend(&self) -> &'static str {
+        "pkcs11"
+    }
+
+    /// An open session that answers `C_GetSessionInfo`, or a fresh one opened and logged
+    /// in now.
+    fn healthy(&self) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if let Some((session, _)) = state.as_ref() {
+            if session.get_session_info().is_ok() {
+                return true;
+            }
+            *state = None;
+        }
+        match reopen(
+            &self.ctx,
+            self.slot,
+            &self.pin,
+            self.key_label.as_deref(),
+            self.key_id.as_deref(),
+        ) {
+            Ok(s) => {
+                *state = Some(s);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
     fn sign_digest(&self, digest: &[u8]) -> Result<Vec<u8>, KeydError> {
         check_digest(self.algorithm, digest)?;
         let mut state = self

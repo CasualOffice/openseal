@@ -10,6 +10,9 @@
 //! - [`Keyd`]: the daemon. mTLS (rustls, TLS 1.3, client certificate required and on an
 //!   [`AllowList`]), get-certificate-chain and sign-digest, a per-caller rate limit, and
 //!   an append-only hash-chained [`OpLog`] written before any signature is released.
+//!   A second, admin allow-list ([`KeyService::with_admin`], `CON-06`) is answered the
+//!   read-only `list-keys`, `oplog-head`, `oplog-range` and `health`, and nothing else; a
+//!   signing caller cannot call them (`CS-CON-0008`).
 //! - [`RemoteKey`]: the caller's [`casual_sign_crypto::KeyProvider`] over keyd, so the worker seals
 //!   remotely.
 //!
@@ -23,17 +26,27 @@
 
 mod cert_key;
 mod client;
-mod error;
 mod file_key;
 pub mod oplog;
 mod pem;
 mod pkcs11;
 mod server;
 mod signer;
-mod wire;
 
+/// keyd's errors live in `casual-sign-keyd-client`, shared with its callers.
+mod error {
+    pub use casual_sign_keyd_client::{KeyConfigProblem, KeydError};
+}
+/// The wire format lives in `casual-sign-keyd-client`, shared with its callers.
+mod wire {
+    pub(crate) use casual_sign_keyd_client::wire::{
+        Health, KeyHealth, KeyInfo, LogEntry, Request, Response, read_frame, valid_id, write_frame,
+    };
+}
+
+pub use casual_sign_keyd_client::{AdminClient, Endpoint, client_tls};
 pub use cert_key::{MIN_RSA_SIGN_BITS, algorithm_for, probe};
-pub use client::{Endpoint, RemoteKey, client_tls};
+pub use client::RemoteKey;
 pub use error::{KeyConfigProblem, KeydError};
 pub use file_key::{DEV_KEY_VARIABLE, DEV_REASON, DevKeyConsent, FileKey};
 pub use oplog::{OpLog, OpRecord};

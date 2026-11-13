@@ -173,6 +173,10 @@ impl DigestSigner for FileKey {
         true
     }
 
+    fn backend(&self) -> &'static str {
+        "file-dev"
+    }
+
     fn sign_digest(&self, digest: &[u8]) -> Result<Vec<u8>, KeydError> {
         check_digest(self.algorithm, digest)?;
         let d = Digest::import_less_safe(digest, aws_digest(self.algorithm.digest_algorithm()))
