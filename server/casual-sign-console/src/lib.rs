@@ -1,5 +1,5 @@
 //! The OpenSeal platform console's server (CON-02, CON-03, CON-04 first part, CON-05
-//! first part; ADR-028, docs/23 §5).
+//! first part, PLAN-02 plans; ADR-028, docs/23 §5, §7).
 //!
 //! A separate binary on a private listener with its own operator identity: operators are
 //! not tenant users; they sign in with a password (Argon2id) and a mandatory TOTP second
@@ -22,6 +22,7 @@ pub mod crypto;
 pub mod error;
 pub mod health;
 pub mod net;
+pub mod plans;
 pub mod state;
 pub mod totp;
 pub mod ui;
@@ -67,6 +68,21 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
         "operators",
     ),
     ("POST", "/console/v1/organizations/{id}/resume", "operators"),
+    ("GET", "/console/v1/plans", "any"),
+    ("POST", "/console/v1/plans", "operators"),
+    ("POST", "/console/v1/plans/{id}/archive", "operators"),
+    ("GET", "/console/v1/organizations/{id}/plan", "any"),
+    ("POST", "/console/v1/organizations/{id}/plan", "operators"),
+    (
+        "POST",
+        "/console/v1/organizations/{id}/plan-overrides",
+        "operators",
+    ),
+    (
+        "POST",
+        "/console/v1/plan-overrides/{id}/expire",
+        "operators",
+    ),
     ("GET", "/console/v1/health", "any"),
     ("GET", "/console/v1/dead-letters", "any"),
     ("GET", "/console/v1/alerts", "any"),
@@ -115,6 +131,23 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/console/v1/organizations/{id}/resume",
             post(api::resume_organization),
+        )
+        .route(
+            "/console/v1/plans",
+            get(plans::plans).post(plans::create_plan),
+        )
+        .route("/console/v1/plans/{id}/archive", post(plans::archive_plan))
+        .route(
+            "/console/v1/organizations/{id}/plan",
+            get(plans::organization_plan).post(plans::assign_plan),
+        )
+        .route(
+            "/console/v1/organizations/{id}/plan-overrides",
+            post(plans::set_override),
+        )
+        .route(
+            "/console/v1/plan-overrides/{id}/expire",
+            post(plans::expire_override),
         )
         .route("/console/v1/health", get(api::health))
         .route("/console/v1/dead-letters", get(api::dead_letters))

@@ -1,4 +1,4 @@
-//! Typed errors with stable codes (docs/20 `CS-CON-*`, `CS-DB-*`).
+//! Typed errors with stable codes (docs/20 `CS-CON-*`, `CS-PLAN-0006`, `CS-DB-*`).
 //!
 //! Messages carry codes, SQLSTATEs and sequence numbers, never a database error's text:
 //! PostgreSQL's details quote the offending values (an e-mail in a unique violation, for
@@ -19,6 +19,9 @@ pub enum PlatformError {
     Forbidden,
     /// `CS-CON-0004`: the action needs a second operator's approval. SQLSTATE `OS009`.
     ApprovalRequired,
+    /// `CS-PLAN-0006`: a plan, quota, assignment or override the database refused.
+    /// SQLSTATE `OS010`.
+    PlanInvalid,
     /// `CS-CON-0007`: the operator log does not verify at `seq`.
     LogBroken {
         /// The first event that does not verify.
@@ -59,6 +62,7 @@ impl PlatformError {
             Self::SecondFactor => "CS-CON-0002",
             Self::Forbidden => "CS-CON-0003",
             Self::ApprovalRequired => "CS-CON-0004",
+            Self::PlanInvalid => "CS-PLAN-0006",
             Self::LogBroken { .. } => "CS-CON-0007",
             Self::ChainBroken => "CS-DB-0014",
             Self::AppendOnly => "CS-DB-0004",
@@ -79,6 +83,7 @@ impl PlatformError {
                     Some("OS007") => Self::SecondFactor,
                     Some("OS008") => Self::Forbidden,
                     Some("OS009") => Self::ApprovalRequired,
+                    Some("OS010") => Self::PlanInvalid,
                     Some("OS005") => Self::ChainBroken,
                     Some("OS001") => Self::AppendOnly,
                     Some("42501") => Self::Refused,
