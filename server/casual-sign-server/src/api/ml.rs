@@ -30,6 +30,7 @@ use casual_sign_store::repo::documents::VersionKind;
 use casual_sign_store::repo::ml::{
     MlSettings, NewRun, Run, RunKind, Suggestion, SuggestionFilter, SuggestionKind, SuggestionState,
 };
+use casual_sign_store::repo::templates::TemplateAccess;
 use casual_sign_store::{
     AccountId, AnalysisRunId, DocumentId, EnvelopeId, JobId, SuggestionId, TemplateDocumentId,
     TemplateId, TenantTx,
@@ -406,17 +407,17 @@ pub(crate) async fn envelope_analysis(
     Ok(json(StatusCode::OK, &run_json(&run)))
 }
 
-/// A template of this account and one of its documents: `(template, document, sha256)`.
+/// A template of this account the caller may act on with `need` (UXW-06), and one of
+/// its documents: `(template, document, sha256)`.
 async fn template_doc(
     tx: &mut TenantTx,
+    c: &Call,
+    need: TemplateAccess,
     id: &str,
     doc: &str,
 ) -> Result<(TemplateId, TemplateDocumentId, [u8; 32]), ApiError> {
     let t = TemplateId(path_id(id)?);
-    tx.templates()
-        .get(t)
-        .await?
-        .ok_or_else(ApiError::not_found)?;
+    crate::api::templates::found(tx, c, t, need).await?;
     let d = TemplateDocumentId(path_id(doc)?);
     let found = tx
         .templates()
@@ -436,7 +437,7 @@ pub(crate) async fn request_template(
     Path((id, doc)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     let mut tx = c.tx().await?;
-    let (t, d, sha) = template_doc(&mut tx, &id, &doc).await?;
+    let (t, d, sha) = template_doc(&mut tx, &c, TemplateAccess::Edit, &id, &doc).await?;
     if !in_effect(&c.st, &mut tx)
         .await?
         .contains(&Feature::TemplateMatching)
@@ -464,7 +465,7 @@ pub(crate) async fn template_analysis(
     Path((id, doc)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     let mut tx = c.tx().await?;
-    let (_, d, _) = template_doc(&mut tx, &id, &doc).await?;
+    let (_, d, _) = template_doc(&mut tx, &c, TemplateAccess::Use, &id, &doc).await?;
     if in_effect(&c.st, &mut tx).await?.is_empty() {
         return Err(ApiError::ml_off());
     }

@@ -84,4 +84,8 @@ id_type!(
     AnalysisRunId,
     /// One suggestion of an analysis (docs/33 §6).
     SuggestionId,
+    /// A group of members (docs/22 §8).
+    GroupId,
+    /// A template's share with a member, a group or the whole account (UXW-06).
+    TemplateShareId,
 );

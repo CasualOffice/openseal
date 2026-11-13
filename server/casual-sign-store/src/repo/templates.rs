@@ -9,7 +9,10 @@ use super::fields::{Rect, field_type_parse, field_type_text};
 use super::hash32;
 use super::recipients::RecipientType;
 use crate::error::{Result, StoreError, db};
-use crate::ids::{TemplateDocumentId, TemplateFieldId, TemplateId, TemplateRoleId, UserId};
+use crate::ids::{
+    GroupId, TemplateDocumentId, TemplateFieldId, TemplateId, TemplateRoleId, TemplateShareId,
+    UserId,
+};
 use crate::store::TenantTx;
 
 /// A template.
@@ -92,6 +95,109 @@ pub struct TemplateField {
     pub label: Option<String>,
     /// The rest of docs/22 §6.
     pub spec: Personal<serde_json::Value>,
+}
+
+/// What a member may do with a template (UXW-06), weakest first. Nothing at all is no
+/// access, answered as not found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TemplateAccess {
+    /// Read it and make envelopes from it: a share without `can_edit`.
+    Use,
+    /// Also change its documents, roles, fields and message: a share with `can_edit`.
+    Edit,
+    /// Also delete, restore and share it: its owner or an administrator.
+    Owner,
+}
+
+impl TemplateAccess {
+    /// The API's word for it.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Use => "use",
+            Self::Edit => "edit",
+            Self::Owner => "owner",
+        }
+    }
+
+    /// From `openseal_template_share_right`'s answer.
+    fn from_right(s: Option<&str>) -> Option<Self> {
+        match s {
+            Some("edit") => Some(Self::Edit),
+            Some("use") => Some(Self::Use),
+            _ => None,
+        }
+    }
+}
+
+/// Which templates `list_for` answers (UXW-06).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateView {
+    /// Every template the member may use.
+    All,
+    /// The member's own.
+    Owned,
+    /// Shared with me: another member's templates that a share reaches this member by.
+    SharedWithMe,
+    /// The member's starred templates.
+    Favourites,
+}
+
+impl TemplateView {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Owned => "owned",
+            Self::SharedWithMe => "shared",
+            Self::Favourites => "favourites",
+        }
+    }
+}
+
+/// A template as one member's list shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListedTemplate {
+    /// The template.
+    pub template: Template,
+    /// What the member may do with it.
+    pub access: TemplateAccess,
+    /// Starred by the member.
+    pub favourite: bool,
+    /// Shared with anyone.
+    pub shared: bool,
+}
+
+/// Whom a share reaches (exactly one, as the table checks).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ShareTarget {
+    /// One member of this account.
+    User(UserId),
+    /// Every member of a group of this account.
+    Group(GroupId),
+    /// Every member of this account.
+    Account,
+}
+
+/// A template's share.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TemplateShare {
+    /// Host-minted id.
+    pub id: TemplateShareId,
+    /// Whom it reaches.
+    pub target: ShareTarget,
+    /// Whether they may also edit.
+    pub can_edit: bool,
+}
+
+/// A group of this account, for choosing whom to share with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Group {
+    /// Id.
+    pub id: GroupId,
+    /// Name.
+    pub name: String,
+    /// Members.
+    pub members: i64,
 }
 
 /// Templates of this account. Reached through `TenantTx::templates`.
@@ -745,5 +851,264 @@ impl Templates<'_> {
         .await
         .map_err(db)?;
         super::affected(done.rows_affected(), "template")
+    }
+}
+
+/// Sharing and Favourites (UXW-06).
+impl Templates<'_> {
+    /// What `member` may do with a template of this account, live or deleted: `Owner`
+    /// for its owner or an administrator (`admin`), otherwise what its shares give, or
+    /// `None` (deny by default).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn access(
+        &mut self,
+        id: TemplateId,
+        member: UserId,
+        admin: bool,
+    ) -> Result<Option<TemplateAccess>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query!(
+            "SELECT owner_user_id, openseal_template_share_right($1, id, $3) AS share_right \
+             FROM templates WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0,
+            member.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.and_then(|r| {
+            if admin || r.owner_user_id == member.0 {
+                Some(TemplateAccess::Owner)
+            } else {
+                TemplateAccess::from_right(r.share_right.as_deref())
+            }
+        }))
+    }
+
+    /// The live templates `member` may use, by name, narrowed to `view`.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn list_for(
+        &mut self,
+        member: UserId,
+        admin: bool,
+        view: TemplateView,
+    ) -> Result<Vec<ListedTemplate>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query!(
+            "SELECT t.id, t.owner_user_id, t.name, t.email_subject, t.email_message, t.settings, \
+             t.matching_rules, t.version, r.share_right, \
+             EXISTS (SELECT 1 FROM template_favourites f WHERE f.account_id = $1 \
+                     AND f.template_id = t.id AND f.user_id = $2) AS \"favourite!\", \
+             EXISTS (SELECT 1 FROM template_shares s WHERE s.account_id = $1 \
+                     AND s.template_id = t.id) AS \"shared!\" \
+             FROM templates t \
+             CROSS JOIN LATERAL (SELECT openseal_template_share_right($1, t.id, $2) AS share_right) r \
+             WHERE t.account_id = $1 AND t.deleted_at IS NULL \
+             AND ($3 OR t.owner_user_id = $2 OR r.share_right IS NOT NULL) \
+             AND CASE $4::text \
+                 WHEN 'owned' THEN t.owner_user_id = $2 \
+                 WHEN 'shared' THEN t.owner_user_id <> $2 AND r.share_right IS NOT NULL \
+                 WHEN 'favourites' THEN EXISTS (SELECT 1 FROM template_favourites f \
+                     WHERE f.account_id = $1 AND f.template_id = t.id AND f.user_id = $2) \
+                 ELSE true END \
+             ORDER BY t.name, t.id",
+            acct,
+            member.0,
+            admin,
+            view.as_str()
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|r| {
+                let access = if admin || r.owner_user_id == member.0 {
+                    TemplateAccess::Owner
+                } else {
+                    TemplateAccess::from_right(r.share_right.as_deref())?
+                };
+                Some(ListedTemplate {
+                    template: Template::from(TemplateRow {
+                        id: r.id,
+                        owner_user_id: r.owner_user_id,
+                        name: r.name,
+                        email_subject: r.email_subject,
+                        email_message: r.email_message,
+                        settings: r.settings,
+                        matching_rules: r.matching_rules,
+                        version: r.version,
+                    }),
+                    access,
+                    favourite: r.favourite,
+                    shared: r.shared,
+                })
+            })
+            .collect())
+    }
+
+    /// A template's shares, users first, then groups, then the account.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0010` a row with no target.
+    pub async fn shares(&mut self, id: TemplateId) -> Result<Vec<TemplateShare>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query!(
+            "SELECT id, user_id, group_id, whole_account, can_edit FROM template_shares \
+             WHERE account_id = $1 AND template_id = $2 \
+             ORDER BY whole_account, group_id NULLS FIRST, created_at, id",
+            acct,
+            id.0
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                let target = match (r.user_id, r.group_id, r.whole_account) {
+                    (Some(u), None, false) => ShareTarget::User(UserId(u)),
+                    (None, Some(g), false) => ShareTarget::Group(GroupId(g)),
+                    (None, None, true) => ShareTarget::Account,
+                    _ => {
+                        return Err(StoreError::Corrupt {
+                            column: "template_shares",
+                        });
+                    }
+                };
+                Ok(TemplateShare {
+                    id: TemplateShareId(r.id),
+                    target,
+                    can_edit: r.can_edit,
+                })
+            })
+            .collect()
+    }
+
+    /// Replace a template's shares with `shares` (the whole set, as the share panel
+    /// saves it).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` a user who is not a member, or a group not of this account;
+    /// `CS-DB-0006` the same target twice.
+    pub async fn replace_shares(&mut self, id: TemplateId, shares: &[TemplateShare]) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "DELETE FROM template_shares WHERE account_id = $1 AND template_id = $2",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        for s in shares {
+            let (user, group, account) = match s.target {
+                ShareTarget::User(u) => (Some(u.0), None, false),
+                ShareTarget::Group(g) => (None, Some(g.0), false),
+                ShareTarget::Account => (None, None, true),
+            };
+            sqlx::query!(
+                "INSERT INTO template_shares (id, account_id, template_id, user_id, group_id, \
+                 whole_account, can_edit) VALUES ($2, $1, $3, $4, $5, $6, $7)",
+                acct,
+                s.id.0,
+                id.0,
+                user,
+                group,
+                account,
+                s.can_edit
+            )
+            .execute(self.tx.conn())
+            .await
+            .map_err(db)?;
+        }
+        Ok(())
+    }
+
+    /// Star (`on`) or unstar a template for `member`; idempotent.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` not a member, or no such template.
+    pub async fn set_favourite(&mut self, id: TemplateId, member: UserId, on: bool) -> Result<()> {
+        let acct = self.tx.acct();
+        if on {
+            sqlx::query!(
+                "INSERT INTO template_favourites (account_id, user_id, template_id) \
+                 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                acct,
+                member.0,
+                id.0
+            )
+            .execute(self.tx.conn())
+            .await
+            .map_err(db)?;
+        } else {
+            sqlx::query!(
+                "DELETE FROM template_favourites WHERE account_id = $1 AND user_id = $2 \
+                 AND template_id = $3",
+                acct,
+                member.0,
+                id.0
+            )
+            .execute(self.tx.conn())
+            .await
+            .map_err(db)?;
+        }
+        Ok(())
+    }
+
+    /// Whether `member` starred a template.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn is_favourite(&mut self, id: TemplateId, member: UserId) -> Result<bool> {
+        let acct = self.tx.acct();
+        sqlx::query_scalar!(
+            "SELECT EXISTS (SELECT 1 FROM template_favourites WHERE account_id = $1 \
+             AND user_id = $2 AND template_id = $3) AS \"e!\"",
+            acct,
+            member.0,
+            id.0
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)
+    }
+
+    /// This account's groups by name, with their member counts: whom a template can be
+    /// shared with.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn groups(&mut self) -> Result<Vec<Group>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query!(
+            "SELECT g.id, g.name, (SELECT count(*) FROM group_members m \
+             WHERE m.account_id = $1 AND m.group_id = g.id) AS \"members!\" \
+             FROM groups g WHERE g.account_id = $1 ORDER BY g.name, g.id",
+            acct
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Group {
+                id: GroupId(r.id),
+                name: r.name,
+                members: r.members,
+            })
+            .collect())
     }
 }

@@ -5,6 +5,11 @@
 //! back by `POST …/restore`, and removed for good by deleting it again. Every change raises the template's version
 //! (`ETag: "v<n>"`), checked against `If-Match` (required on `PATCH` and `DELETE`,
 //! honoured when given on `POST`). Creating an envelope from a template is slice 3.
+//!
+//! Sharing (UXW-06): a template is its owner's alone until shared with members, groups
+//! or the whole account; every call checks on the server what the caller may do with it
+//! (deny by default): no access is `404`, as another account's template; using it where
+//! editing (or owning) is needed is `403`. Each member stars their own Favourites.
 
 use std::collections::BTreeMap;
 
@@ -17,9 +22,12 @@ use casual_sign_model::{Field, Id, RecipientType as MRType};
 use casual_sign_sdk::Credentials;
 use casual_sign_store::repo::fields::Rect;
 use casual_sign_store::repo::recipients::RecipientType;
-use casual_sign_store::repo::templates::{Template, TemplateDocument, TemplateField, TemplateRole};
+use casual_sign_store::repo::templates::{
+    ListedTemplate, ShareTarget, Template, TemplateAccess, TemplateDocument, TemplateField,
+    TemplateRole, TemplateShare, TemplateView,
+};
 use casual_sign_store::{
-    TemplateDocumentId, TemplateFieldId, TemplateId, TemplateRoleId, TenantTx,
+    TemplateDocumentId, TemplateFieldId, TemplateId, TemplateRoleId, TemplateShareId, TenantTx,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -126,32 +134,83 @@ fn if_match(c: &Call, required: bool) -> Result<Option<i32>, ApiError> {
     }
 }
 
-async fn found(tx: &mut TenantTx, id: TemplateId) -> Result<Template, ApiError> {
-    tx.templates()
-        .get(id)
-        .await?
-        .ok_or_else(ApiError::not_found)
+/// What the caller may do with template `id` (UXW-06), when it is at least `need`: no
+/// access at all is `404` (as another account's template), too little is `403`.
+async fn allowed(
+    tx: &mut TenantTx,
+    c: &Call,
+    id: TemplateId,
+    need: TemplateAccess,
+) -> Result<TemplateAccess, ApiError> {
+    match tx.templates().access(id, c.p.user, c.p.admin).await? {
+        None => Err(ApiError::not_found()),
+        Some(a) if a < need => Err(ApiError::forbidden(match need {
+            TemplateAccess::Owner => "template owner",
+            _ => "template edit",
+        })),
+        Some(a) => Ok(a),
+    }
 }
 
-/// `404` before reading a body, so another account's id is not found whatever it sends.
-async fn exists(c: &Call, id: TemplateId) -> Result<(), ApiError> {
+/// A live template the caller may act on with `need`.
+pub(crate) async fn found(
+    tx: &mut TenantTx,
+    c: &Call,
+    id: TemplateId,
+    need: TemplateAccess,
+) -> Result<Template, ApiError> {
+    let t = tx
+        .templates()
+        .get(id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    allowed(tx, c, id, need).await?;
+    Ok(t)
+}
+
+/// A template of the Deleted view the caller owns (or administers). The Deleted view is
+/// the owner's: to anyone else, a share included, a deleted template is not found.
+async fn found_deleted(tx: &mut TenantTx, c: &Call, id: TemplateId) -> Result<Template, ApiError> {
+    let t = tx
+        .templates()
+        .get_deleted(id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    match tx.templates().access(id, c.p.user, c.p.admin).await? {
+        Some(TemplateAccess::Owner) => Ok(t),
+        _ => Err(ApiError::not_found()),
+    }
+}
+
+/// `404` (or `403`) before reading a body, so a template the caller cannot reach is not
+/// found whatever it sends.
+async fn exists(c: &Call, id: TemplateId, need: TemplateAccess) -> Result<(), ApiError> {
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, c, id, need).await?;
     tx.commit().await?;
     Ok(())
 }
 
-/// The whole template as the API shows it, with its `ETag`.
-async fn full(tx: &mut TenantTx, id: TemplateId, status: StatusCode) -> Result<Response, ApiError> {
-    let t = found(tx, id).await?;
+/// The whole template as the API shows it, with its `ETag`, the caller's `access` and
+/// whether they starred it.
+async fn full(
+    tx: &mut TenantTx,
+    c: &Call,
+    id: TemplateId,
+    status: StatusCode,
+) -> Result<Response, ApiError> {
+    let t = found(tx, c, id, TemplateAccess::Use).await?;
+    let access = allowed(tx, c, id, TemplateAccess::Use).await?;
+    let favourite = tx.templates().is_favourite(id, c.p.user).await?;
     let roles = tx.templates().roles(id).await?;
     let docs = tx.templates().documents(id).await?;
     let fields = tx.templates().fields(id).await?;
-    Ok(json_tagged(
-        status,
-        &template_json(&t, &roles, Some(&docs), Some(&fields)),
-        &etag(&t),
-    ))
+    let mut v = template_json(&t, &roles, Some(&docs), Some(&fields));
+    if let Some(o) = v.as_object_mut() {
+        o.insert("access".into(), json!(access.as_str()));
+        o.insert("favourite".into(), json!(favourite));
+    }
+    Ok(json_tagged(status, &v, &etag(&t)))
 }
 
 /// The query of `GET /templates`.
@@ -160,26 +219,53 @@ async fn full(tx: &mut TenantTx, id: TemplateId, status: StatusCode) -> Result<R
 pub(crate) struct ListQuery {
     /// `true`: the Deleted view (UXW-02).
     deleted: Option<String>,
+    /// `all` (default), `owned`, `shared` (Shared with me) or `favourites` (UXW-06).
+    view: Option<String>,
 }
 
-/// `GET /templates`, or with `deleted=true` the Deleted view (UXW-02), most recently
-/// deleted first.
+fn listed_json(l: &ListedTemplate) -> Value {
+    let mut v = template_json(&l.template, &[], None, None);
+    if let Some(o) = v.as_object_mut() {
+        o.insert("access".into(), json!(l.access.as_str()));
+        o.insert("favourite".into(), json!(l.favourite));
+        o.insert("shared".into(), json!(l.shared));
+    }
+    v
+}
+
+/// `GET /templates`: the templates the caller may use, narrowed by `view` (UXW-06); or
+/// with `deleted=true` the Deleted view (UXW-02) of the templates the caller owns (every
+/// one for an administrator), most recently deleted first.
 pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response, ApiError> {
     let deleted = match q.deleted.as_deref() {
         None | Some("false") => false,
         Some("true") => true,
         Some(_) => return Err(ApiError::invalid("/query/deleted")),
     };
-    let mut tx = c.tx().await?;
-    let all = if deleted {
-        tx.templates().list_deleted().await?
-    } else {
-        tx.templates().list().await?
+    let view = match q.view.as_deref() {
+        None | Some("all") => TemplateView::All,
+        Some("owned") => TemplateView::Owned,
+        Some("shared") => TemplateView::SharedWithMe,
+        Some("favourites") => TemplateView::Favourites,
+        Some(_) => return Err(ApiError::invalid("/query/view")),
     };
-    let items: Vec<Value> = all
-        .iter()
-        .map(|t| template_json(t, &[], None, None))
-        .collect();
+    let mut tx = c.tx().await?;
+    let items: Vec<Value> = if deleted {
+        tx.templates()
+            .list_deleted()
+            .await?
+            .iter()
+            .filter(|t| c.p.admin || t.owner_user_id == c.p.user)
+            .map(|t| template_json(t, &[], None, None))
+            .collect()
+    } else {
+        tx.templates()
+            .list_for(c.p.user, c.p.admin, view)
+            .await?
+            .iter()
+            .map(listed_json)
+            .collect()
+    };
     Ok(json(StatusCode::OK, &json!({ "items": items })))
 }
 
@@ -285,7 +371,7 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
 pub(crate) async fn get(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    full(&mut tx, id, StatusCode::OK).await
+    full(&mut tx, &c, id, StatusCode::OK).await
 }
 
 /// A member that is present: `null` is `Some(None)` (clear), absence is `None` (keep).
@@ -315,7 +401,7 @@ pub(crate) async fn patch(
 ) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    let t = found(&mut tx, id).await?;
+    let t = found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let v = if_match(&c, true)?;
     let req: TemplatePatch = parse(&body)?;
     if let Some(n) = &req.name {
@@ -336,7 +422,7 @@ pub(crate) async fn patch(
         };
         tx.templates().set_email(id, s.as_ref(), m.as_ref()).await?;
     }
-    let r = full(&mut tx, id, StatusCode::OK).await?;
+    let r = full(&mut tx, &c, id, StatusCode::OK).await?;
     tx.commit().await?;
     Ok(r)
 }
@@ -344,19 +430,17 @@ pub(crate) async fn patch(
 /// `DELETE /templates/{id}` with `If-Match` (UXW-02): a live template moves to the
 /// Deleted view, kept with its roles, documents and fields and restorable; a template
 /// already there is removed for good, with them. Envelopes made from it are copies and
-/// keep everything. `204` either way.
+/// keep everything. `204` either way. Only its owner or an administrator deletes it
+/// (UXW-06).
 pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
     let mut tx = c.tx().await?;
     if tx.templates().get(id).await?.is_some() {
+        allowed(&mut tx, &c, id, TemplateAccess::Owner).await?;
         let v = if_match(&c, true)?;
         tx.templates().trash(id, v).await?;
     } else {
-        let t = tx
-            .templates()
-            .get_deleted(id)
-            .await?
-            .ok_or_else(ApiError::not_found)?;
+        let t = found_deleted(&mut tx, &c, id).await?;
         if if_match(&c, true)?.is_some_and(|v| v != t.version) {
             return Err(casual_sign_store::StoreError::StaleVersion { entity: "template" }.into());
         }
@@ -368,7 +452,8 @@ pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, 
 
 /// `POST /templates/{id}/restore` (UXW-02): a template of the Deleted view back to the
 /// list, with everything it had; `200` with the whole template. `If-Match` is honoured
-/// when given. A live template, or none, is `404`.
+/// when given. A live template, or none, is `404`; so is one the caller does not own
+/// (UXW-06), unless an administrator.
 pub(crate) async fn restore(
     c: Call,
     Path(id): Path<String>,
@@ -376,11 +461,7 @@ pub(crate) async fn restore(
 ) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    let t = tx
-        .templates()
-        .get_deleted(id)
-        .await?
-        .ok_or_else(ApiError::not_found)?;
+    let t = found_deleted(&mut tx, &c, id).await?;
     if !body.iter().all(u8::is_ascii_whitespace) {
         let _: Empty = parse(&body)?;
     }
@@ -388,7 +469,7 @@ pub(crate) async fn restore(
         return Err(casual_sign_store::StoreError::StaleVersion { entity: "template" }.into());
     }
     tx.templates().restore(id).await?;
-    let r = full(&mut tx, id, StatusCode::OK).await?;
+    let r = full(&mut tx, &c, id, StatusCode::OK).await?;
     tx.commit().await?;
     Ok(r)
 }
@@ -413,14 +494,14 @@ pub(crate) async fn duplicate(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
-    exists(&c, id).await?;
+    exists(&c, id, TemplateAccess::Use).await?;
     let req: DuplicateIn = if body.iter().all(u8::is_ascii_whitespace) {
         DuplicateIn::default()
     } else {
         parse(&body)?
     };
     let mut tx = c.tx().await?;
-    let t = found(&mut tx, id).await?;
+    let t = found(&mut tx, &c, id, TemplateAccess::Use).await?;
     let copy_name = match &req.name {
         Some(n) => name(n, "/name")?,
         None => format!("Copy of {}", t.name).chars().take(255).collect(),
@@ -476,9 +557,216 @@ pub(crate) async fn duplicate(
             })
             .await?;
     }
-    let r = full(&mut tx, new.id, StatusCode::CREATED).await?;
+    let r = full(&mut tx, &c, new.id, StatusCode::CREATED).await?;
     tx.commit().await?;
     Ok(r)
+}
+
+// Sharing and Favourites (UXW-06) ----------------------------------------------------------
+
+/// The most shares one template holds.
+const MAX_SHARES: usize = 500;
+
+/// A share as the API shows it: whom it reaches (`user` with their name and email, a
+/// `group` with its name, or `account: true`) and `can_edit`.
+async fn share_json(tx: &mut TenantTx, s: &TemplateShare) -> Result<Value, ApiError> {
+    let mut v = json!({ "id": s.id.to_string(), "can_edit": s.can_edit });
+    if let Some(o) = v.as_object_mut() {
+        match s.target {
+            ShareTarget::User(u) => {
+                let m = tx.users().get(u).await?;
+                o.insert(
+                    "user".into(),
+                    json!({
+                        "id": u.to_string(),
+                        "name": m.as_ref().map(|m| m.name.get().clone()),
+                        "email": m.as_ref().map(|m| m.email.get().clone()),
+                    }),
+                );
+            }
+            ShareTarget::Group(g) => {
+                let name = tx
+                    .templates()
+                    .groups()
+                    .await?
+                    .into_iter()
+                    .find(|x| x.id == g)
+                    .map(|x| x.name);
+                o.insert("group".into(), json!({ "id": g.to_string(), "name": name }));
+            }
+            ShareTarget::Account => {
+                o.insert("account".into(), json!(true));
+            }
+        }
+    }
+    Ok(v)
+}
+
+async fn shares_json(tx: &mut TenantTx, id: TemplateId) -> Result<Value, ApiError> {
+    let mut items = Vec::new();
+    for s in tx.templates().shares(id).await? {
+        items.push(share_json(tx, &s).await?);
+    }
+    Ok(json!({ "items": items }))
+}
+
+/// `GET /templates/{id}/shares`: whom the template is shared with. Its owner's (or an
+/// administrator's).
+pub(crate) async fn shares(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let id = TemplateId(path_id(&id)?);
+    let mut tx = c.tx().await?;
+    found(&mut tx, &c, id, TemplateAccess::Owner).await?;
+    let v = shares_json(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::OK, &v))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ShareIn {
+    #[serde(default)]
+    user_id: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    group_id: Option<String>,
+    #[serde(default)]
+    account: Option<bool>,
+    #[serde(default)]
+    can_edit: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SharesIn {
+    items: Vec<ShareIn>,
+}
+
+/// `PUT /templates/{id}/shares {items: [{user_id | email | group_id | account: true,
+/// can_edit?}]}`: the whole set of shares, replacing the old. A user is a member of this
+/// account (by id or email), a group one of its groups; sharing with the owner, or naming
+/// one target twice, is refused (`422`). Its owner's (or an administrator's). Answers the
+/// shares as `GET` does.
+pub(crate) async fn put_shares(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let id = TemplateId(path_id(&id)?);
+    exists(&c, id, TemplateAccess::Owner).await?;
+    let req: SharesIn = parse(&body)?;
+    if req.items.len() > MAX_SHARES {
+        return Err(ApiError::invalid("/items"));
+    }
+    let mut tx = c.tx().await?;
+    let t = found(&mut tx, &c, id, TemplateAccess::Owner).await?;
+    let members = if req
+        .items
+        .iter()
+        .any(|s| s.email.is_some() || s.user_id.is_some())
+    {
+        tx.users().list().await?
+    } else {
+        Vec::new()
+    };
+    let groups = if req.items.iter().any(|s| s.group_id.is_some()) {
+        tx.templates().groups().await?
+    } else {
+        Vec::new()
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::with_capacity(req.items.len());
+    for (i, s) in req.items.iter().enumerate() {
+        let at = format!("/items/{i}");
+        let named = [
+            s.user_id.is_some(),
+            s.email.is_some(),
+            s.group_id.is_some(),
+            s.account.is_some(),
+        ]
+        .into_iter()
+        .filter(|n| *n)
+        .count();
+        if named != 1 {
+            return Err(ApiError::invalid(&at));
+        }
+        let target = if let Some(u) = &s.user_id {
+            let u = Uuid::parse_str(u).map_err(|_| ApiError::invalid(&format!("{at}/user_id")))?;
+            members
+                .iter()
+                .find(|m| m.user_id.0 == u)
+                .map(|m| ShareTarget::User(m.user_id))
+                .ok_or_else(|| ApiError::invalid(&format!("{at}/user_id")))?
+        } else if let Some(e) = &s.email {
+            let e = e.trim();
+            if e.len() < 3 || e.len() > 320 {
+                return Err(ApiError::invalid(&format!("{at}/email")));
+            }
+            members
+                .iter()
+                .find(|m| m.email.get().eq_ignore_ascii_case(e))
+                .map(|m| ShareTarget::User(m.user_id))
+                .ok_or_else(|| ApiError::invalid(&format!("{at}/email")))?
+        } else if let Some(g) = &s.group_id {
+            let g = Uuid::parse_str(g).map_err(|_| ApiError::invalid(&format!("{at}/group_id")))?;
+            groups
+                .iter()
+                .find(|x| x.id.0 == g)
+                .map(|x| ShareTarget::Group(x.id))
+                .ok_or_else(|| ApiError::invalid(&format!("{at}/group_id")))?
+        } else if s.account == Some(true) {
+            ShareTarget::Account
+        } else {
+            return Err(ApiError::invalid(&format!("{at}/account")));
+        };
+        if target == ShareTarget::User(t.owner_user_id) || !seen.insert(target) {
+            return Err(ApiError::invalid(&at));
+        }
+        out.push(TemplateShare {
+            id: TemplateShareId(Uuid::now_v7()),
+            target,
+            can_edit: s.can_edit,
+        });
+    }
+    tx.templates().replace_shares(id, &out).await?;
+    let v = shares_json(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::OK, &v))
+}
+
+/// `PUT /templates/{id}/favourite`: star the template for the caller (Favourites); any
+/// member who may use it. Idempotent; `204`.
+pub(crate) async fn favourite(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    star(c, id, true).await
+}
+
+/// `DELETE /templates/{id}/favourite`: unstar it. Idempotent; `204`.
+pub(crate) async fn unfavourite(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    star(c, id, false).await
+}
+
+async fn star(c: Call, id: String, on: bool) -> Result<Response, ApiError> {
+    let id = TemplateId(path_id(&id)?);
+    let mut tx = c.tx().await?;
+    found(&mut tx, &c, id, TemplateAccess::Use).await?;
+    tx.templates().set_favourite(id, c.p.user, on).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `GET /groups`: this account's groups by name with their member counts, for choosing
+/// whom to share a template with (UXW-06). Managing groups is `UXW-07`.
+pub(crate) async fn groups(c: Call) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let items: Vec<Value> = tx
+        .templates()
+        .groups()
+        .await?
+        .iter()
+        .map(|g| json!({ "id": g.id.to_string(), "name": g.name, "members": g.members }))
+        .collect();
+    tx.commit().await?;
+    Ok(json(StatusCode::OK, &json!({ "items": items })))
 }
 
 // Documents -----------------------------------------------------------------------------
@@ -493,7 +781,7 @@ pub(crate) async fn add_document(
 ) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let req: DocumentIn = parse(&body)?;
     let docname = name(&req.name, "/name")?;
     let bytes = base64(
@@ -544,7 +832,7 @@ pub(crate) async fn add_document(
     // Page hashes for matching uploads (docs/33 §2), only with template matching in
     // effect; otherwise nothing is written (ML-01).
     crate::api::ml::on_template_upload(&c.st, &mut tx, c.p.account, id, d.id, d.sha256).await?;
-    let r = full(&mut tx, id, StatusCode::CREATED).await?;
+    let r = full(&mut tx, &c, id, StatusCode::CREATED).await?;
     tx.commit().await?;
     Ok(r)
 }
@@ -557,7 +845,7 @@ pub(crate) async fn delete_document(
     let id = TemplateId(path_id(&id)?);
     let doc = TemplateDocumentId(path_id(&doc)?);
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let v = if_match(&c, true)?;
     tx.templates().bump(id, v).await?;
     tx.ml().forget_template_document(id, doc).await?;
@@ -576,7 +864,7 @@ pub(crate) async fn document_content(
     let mut tx = c.tx().await?;
     // A deleted template's documents are not read either (UXW-02, SEC-A12): the
     // documents query does not look at the template's `deleted_at`.
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Use).await?;
     let d = tx
         .templates()
         .documents(id)
@@ -607,15 +895,15 @@ pub(crate) async fn add_role(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
-    exists(&c, id).await?;
+    exists(&c, id, TemplateAccess::Edit).await?;
     let req: RoleIn = parse(&body)?;
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let v = if_match(&c, false)?;
     let r = role_from(&req, TemplateRoleId(Uuid::now_v7()), id, "")?;
     tx.templates().bump(id, v).await?;
     tx.templates().add_role(&r).await?;
-    let resp = full(&mut tx, id, StatusCode::CREATED).await?;
+    let resp = full(&mut tx, &c, id, StatusCode::CREATED).await?;
     tx.commit().await?;
     Ok(resp)
 }
@@ -640,7 +928,7 @@ pub(crate) async fn patch_role(
     let id = TemplateId(path_id(&id)?);
     let role = TemplateRoleId(path_id(&role)?);
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let mut r = tx
         .templates()
         .roles(id)
@@ -664,7 +952,7 @@ pub(crate) async fn patch_role(
     }
     tx.templates().bump(id, v).await?;
     tx.templates().update_role(&r).await?;
-    let resp = full(&mut tx, id, StatusCode::OK).await?;
+    let resp = full(&mut tx, &c, id, StatusCode::OK).await?;
     tx.commit().await?;
     Ok(resp)
 }
@@ -677,7 +965,7 @@ pub(crate) async fn delete_role(
     let id = TemplateId(path_id(&id)?);
     let role = TemplateRoleId(path_id(&role)?);
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let v = if_match(&c, true)?;
     tx.templates().bump(id, v).await?;
     tx.templates().delete_role(id, role).await?;
@@ -762,7 +1050,7 @@ fn template_field(
 pub(crate) async fn fields(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
     let mut tx = c.tx().await?;
-    let t = found(&mut tx, id).await?;
+    let t = found(&mut tx, &c, id, TemplateAccess::Use).await?;
     let items: Vec<Value> = tx
         .templates()
         .fields(id)
@@ -784,7 +1072,7 @@ pub(crate) async fn add_fields(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
-    exists(&c, id).await?;
+    exists(&c, id, TemplateAccess::Edit).await?;
     let raw: Value = parse(&body)?;
     let list: Vec<Value> = match raw.get("items") {
         Some(Value::Array(items)) => items.clone(),
@@ -795,7 +1083,7 @@ pub(crate) async fn add_fields(
         return Err(ApiError::invalid("/items"));
     }
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let v = if_match(&c, false)?;
     let roles = tx.templates().roles(id).await?;
     let docs = tx.templates().documents(id).await?;
@@ -818,7 +1106,7 @@ pub(crate) async fn add_fields(
     for f in &made {
         tx.templates().add_field(f).await?;
     }
-    let t = found(&mut tx, id).await?;
+    let t = found(&mut tx, &c, id, TemplateAccess::Use).await?;
     tx.commit().await?;
     Ok(json_tagged(
         StatusCode::CREATED,
@@ -837,7 +1125,7 @@ pub(crate) async fn patch_field(
     let id = TemplateId(path_id(&id)?);
     let fid = TemplateFieldId(path_id(&field)?);
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let current = tx
         .templates()
         .fields(id)
@@ -881,7 +1169,7 @@ pub(crate) async fn patch_field(
     let f = template_field(&merged, fid, id, &roles, &docs, "")?;
     tx.templates().bump(id, v).await?;
     tx.templates().replace_field(&f).await?;
-    let t = found(&mut tx, id).await?;
+    let t = found(&mut tx, &c, id, TemplateAccess::Use).await?;
     tx.commit().await?;
     Ok(json_tagged(StatusCode::OK, &field_json(&f), &etag(&t)))
 }
@@ -894,7 +1182,7 @@ pub(crate) async fn delete_field(
     let id = TemplateId(path_id(&id)?);
     let fid = TemplateFieldId(path_id(&field)?);
     let mut tx = c.tx().await?;
-    found(&mut tx, id).await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let v = if_match(&c, true)?;
     tx.templates().bump(id, v).await?;
     tx.templates().delete_field(id, fid).await?;
