@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 49 are designed, 20 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`, `FG-184`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 39 of 167 rows work end to end; 15 more have their engine built and tested; 46 are designed, 24 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-057`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-177`, `FG-183`, `FG-184`, `FG-195`) and 43 are not started** (counted with `grep` over the Status column). Counts recounted 2026-11-13 (`VS-01`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -70,7 +70,7 @@ instructions 8 and 9).
 | FG-054 | Date signed | DS | Build | 1 | Works |
 | FG-055 | Name, first, last, email, company, title (auto-filled) | DS | Build | 1 | Partial: name, email, company and title placed (`UX-05`); first and last name not in the palette |
 | FG-056 | Envelope id field | DS | Build | 4 | Designed |
-| FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Engine |
+| FG-057 | Text (single, multi-line, max length, mask) | DS, SN | Build | 1 | Partial: single-line text, with max length and mask in the editor, placed, filled on a phone and sealed (`VS-01`); multi-line not built (`S1-01`) |
 | FG-058 | Number with locale, currency, min, max | DS, SN | Build | 4 | Engine |
 | FG-059 | Date with format | DS, SN | Build | 4 | Engine |
 | FG-060 | Email, phone, SSN, ZIP validations; regex | DS, SN | Build | 4 | Partial: the editor places and configures it and the mock round-trips it (`UX-05`); the ceremony checks them (`WEB-06`); no real-stack run yet |
@@ -161,7 +161,7 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; every signer downloads it too, from the completion email's link (`VS-01`); a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
 | FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
 | FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
 | FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |

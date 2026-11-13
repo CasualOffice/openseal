@@ -381,6 +381,8 @@ Defined in [06](06-ROADMAP-AND-DELIVERY.md) §Milestones. Only the owner declare
 | PDF-PERF-01 | Measure the worst-case parse time on pathological files (SEC-P15) and bound it if the host budget is not enough | Open | P2 | Generate the quadratic cases; time them | A bound or a recorded acceptance |
 | SEAL-14 | SHA-1 for identifier matching only (ESSCertID v1 in timestamps, SHA-1 OCSP CertIDs), never for signing or digests of content | In progress | P1 | Recommendation: allow SHA-1 strictly to match identifiers produced by real TSAs and OCSP responders, as an ADR-006 amendment; until then such inputs are refused with `CS-SEAL-0005`. Stage 1G already uses SHA-1 for PAdES `/VRI` keys, which the standard defines that way (an identifier, not a digest of content) | ADR amended; tests for a v1 ESSCertID and a SHA-1 CertID |
 | PDF-REN-01 | Server-side page thumbnails: pdf.js headless versus `hayro` | Open | P2 | Fidelity on the corpus, speed, safety | Report; choice recorded |
+| S1-01 | Multi-line text field (`FG-057`): the editor offers a text field that wraps over several lines, the signer types line breaks, the flattener draws them in the box | Open | P1 | Found 2026-11-13 by `VS-01`: single-line text works end to end; nothing offers more than one line | A multi-line value placed, filled and sealed, with a test seen red |
+| S1-02 | Slice 1 demo recorded (docs/06 slice end point): send to one signer, sign on a phone, both download the sealed PDF and certificate, on the Compose stack | Open | P0 | Found 2026-11-13 by `VS-01`; a recording needs the stack and a browser on the owner's side or CI artefacts | Recording linked from docs/65 |
 
 ## Phase 1 stages
 
@@ -434,7 +436,7 @@ Each slice's outcome is in [06](06-ROADMAP-AND-DELIVERY.md) §After Phase 2; non
 
 | ID | Slice | St | Sev |
 | --- | --- | --- | --- |
-| VS-01 | Send and sign | Open | P0 |
+| VS-01 | Send and sign. **Built 2026-11-13:** every party gets the sealed PDF and the certificate (`GET /s/{token}/certificate`, done screen); acceptance test worker `end_to_end.rs` one signer with signature, date and text, both copies from the completion email's link, seen red with the route removed; `compose-e2e` spec on an iPhone 13 context. **Left:** that spec green on GitHub, demo (`S1-02`), accessibility audit (`A11Y-01`), slice-1 rows of docs/96 not yet working (`FG-006`, `FG-055`, `FG-057`/`S1-01`, `FG-072`, `FG-124`) | In progress | P0 |
 | VS-02 | Routing and recipient types | Open | P0 |
 | VS-03 | Templates | Open | P1 |
 | VS-04 | Every field | Open | P1 |
