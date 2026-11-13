@@ -79,10 +79,11 @@ pieces (security, evidence, database, server; instruction 41).
   WebAssembly verifier); the workflow engine, Postgres store (migrations 0001 to 0034), API server
   (`api/openapi.yaml`), job worker, `casual-sign-keyd` (PKCS#11) and the single-node Compose deployment; the web app,
   redesigned on the approved design (`UX-02` to `UX-08`, `WEB-17`, `WEB-18`), tested by Playwright in mock mode and
-  against the Compose stack (`compose-e2e`). Merged on 2026-11-13 and tested on the server, most rows waiting only for
-  their Compose run in CI: Inbox, folders, Deleted views and server filters (`UXW-01` to `UXW-03`); bulk send from a
-  template with a CSV list (`UXW-04`); template sharing, Shared with me and Favourites (`UXW-06`); groups and custom
-  permission profiles (`UXW-07`); the admin audit log screen and the webhooks screen (`UXW-09`, `UXW-10`,
+  against the Compose stack (`compose-e2e`). Done with their Compose run green in CI (2026-11-14): the Inbox and
+  server filters (`UXW-01`, `UXW-03`); the ended envelope's certificate (`UXW-30`); bulk send from a template with a
+  CSV list (`UXW-04`); template sharing, Shared with me and Favourites (`UXW-06`); groups and custom permission
+  profiles (`UXW-07`); in-person hosting (`UXW-18`). Merged on 2026-11-13 and tested on the server, still waiting for
+  a Compose run: folders and Deleted views (`UXW-02`, envelope restore awaits ADR-031); the admin audit log screen and the webhooks screen (`UXW-09`, `UXW-10`,
   `UXW-31` to `UXW-33`); organizations, their routes, workspace switching and admin audit logs (`ORG-02` to `ORG-05`
   Done) and the organization admin screens' first cut (`ORG-06`); the platform console `casual-sign-console` with
   operators and TOTP (`CON-03`), approvals and suspend or resume (`CON-04`), health (`CON-05`), the Keys page over
@@ -95,11 +96,11 @@ pieces (security, evidence, database, server; instruction 41).
   the server's analysis routes (`WEB-19`); the ASVS 4.0.3 self-assessment ([67](docs/67-ASVS-SELF-ASSESSMENT.md),
   `SEC-ASVS-01`) and the licence inventory (`LEG-01`). [96](docs/96-FEATURE-FIT-GAP.md) counts 48 of 168 rows working
   end to end and 25 in part.
-- **In progress:** slice 1 (`VS-01`: the browser run on Compose green on GitHub, the demo `S1-02`, accessibility);
-  slice 2 (`VS-02`: CI on main with the in-person Compose spec `UXW-18`, the demo `RTE-04`); slice 5 (`VS-05`: the
+- **In progress:** slice 1 (`VS-01`: the demo `S1-02`, accessibility; its browser run on Compose is green on GitHub);
+  slice 2 (`VS-02`: the demo `RTE-04`; the in-person Compose spec is green); slice 5 (`VS-05`: the
   Compose run and demo `RAUTH-02`, ADR-033's acceptance); the Compose runs of the `UXW-*` and `ORG-06` rows above;
-  the console as a Compose service and its remaining writes (`CON-02`, `CON-04`, `CON-05`); the editor's model
-  suggestions and `compose --profile ml up` (`WEB-18`, `ML-09`); the open ASVS findings and `LEG-01` sign-off.
+  the console as a Compose service and its remaining writes (`CON-02`, `CON-04`, `CON-05`); the real-stack run
+  of the model suggestions and `compose --profile ml up` (`WEB-19`, `ML-09`); the open ASVS findings and `LEG-01` sign-off.
 - **Next:** slices 1, 2, 5 and 7 to their end points for M3, then v0.0.2 (organizations and switching, the console with
   health, plans with three meters; instruction 29), then the rest of ADR-028 (`ORG-07` onward, `CON-08` onward,
   `PLAN-05` onward).

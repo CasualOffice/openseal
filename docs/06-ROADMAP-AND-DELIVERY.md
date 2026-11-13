@@ -283,8 +283,10 @@ extraction are part of every UI slice's end point, not a later slice.
   the certificate, the same bytes, accepted by our verifier and pyHanko. Evidence: worker `tests/end_to_end.rs`
   `one_signer_gets_the_sealed_pdf_and_the_certificate_from_the_completion_email`, red with `GET /s/{token}/certificate`
   removed (404 for 409), green with it (2026-11-13).
-- [ ] Outcome in a browser on the Compose stack, CI green: `real-stack.spec.mjs` "send and sign … (VS-01)" (document-first
-  editor, signer on an iPhone 13 context, four downloads to pyHanko) runs in `compose-e2e`; not yet seen green on GitHub.
+- [x] Outcome in a browser on the Compose stack, CI green: `real-stack.spec.mjs` "send and sign … (VS-01)" (document-first
+  editor, signer on an iPhone 13 context, four downloads to pyHanko) runs in `compose-e2e`; green on chromium and webkit
+  on GitHub runs 43481106364, 43482114678, 43492019831, 43499151699 and 43503843137, with `tools/verify-sealed.py` after it
+  (2026-11-14).
   In mock mode the signer's certificate button is covered by `ceremony.spec.mjs` on the phone project, seen red without it.
 - [x] [96](96-FEATURE-FIT-GAP.md) rows updated (`FG-006`, `FG-055`, `FG-057`, `FG-072`, `FG-150`); `FG-006`, `FG-055`,
   `FG-057` and `FG-072` now `Works` (`S1-05`, `S1-03`, `S1-01`, `S1-04`, `field-kinds.spec.mjs` seen red, 2026-11-13);
