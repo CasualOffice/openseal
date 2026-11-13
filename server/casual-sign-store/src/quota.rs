@@ -1,4 +1,4 @@
-//! Plan enforcement in the caller's transaction (PLAN-04, docs/23 §7.3, migration 0027).
+//! Plan enforcement in the caller's transaction (PLAN-04, docs/23 §7.3, migration 0028).
 //!
 //! **Counter meters** go through [`TenantTx::consume_quota`]: it resolves the plan in force
 //! for this workspace with [`casual_sign_policy::plans::effective`], then calls

@@ -1,4 +1,4 @@
-//! PLAN-04 (docs/23 §7.3, migration 0027): quota enforcement in the caller's transaction.
+//! PLAN-04 (docs/23 §7.3, migration 0028): quota enforcement in the caller's transaction.
 //! A `hard` quota is checked by conditional updates of the organization's and the
 //! workspace's counters in one definer function, so parallel actions in two workspaces of
 //! one organization cannot pass the organization's limit (`SEC-U01`); `soft` and `notify`

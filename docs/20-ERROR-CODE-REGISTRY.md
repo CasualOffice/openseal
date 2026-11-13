@@ -273,7 +273,7 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 `CS-ORG` (organizations, workspaces, delegated administration, identity), `CS-PLAN` (plans and quotas), `CS-CON`
 (platform console). `CS-ORG-0012` is withdrawn before issue: `SEC-ID-01`'s fix issues `CS-API-0015` (store `CS-DB-0009`,
 SQLSTATE `OS003`) for the identity-attribute refusal, so this design's SQLSTATEs are `OS004` and `OS005`.
-`CS-PLAN-0002` to `CS-PLAN-0005` are issued (`PLAN-04`, migration 0027; SQLSTATE `OS011` is raised and caught
+`CS-PLAN-0002` to `CS-PLAN-0005` are issued (`PLAN-04`, migration 0028; SQLSTATE `OS011` is raised and caught
 inside `openseal_consume_quota` only, to roll back a refused count, and never reaches a client); `CS-PLAN-0001` and
 `CS-PLAN-0007` are not. `CS-DB-0004`'s widening to the admin logs and `CS-DB-0014` are issued (`ORG-05`, migration 0020); the operator log
 (`platform.operator_events`) uses both (`CON-03`, migration 0017). `CS-DB-0013` is issued (`ORG-02`). All are listed with
@@ -300,10 +300,10 @@ the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`
 | CS-ORG-0017 | Imported evidence package does not verify (422; names the failing check) |
 | CS-ORG-0018 | An organization administrator must be an enabled member of one of that organization's workspaces (422, `POST /organizations/me/admins`, ORG-03) |
 | CS-PLAN-0001 | Feature not in the plan (403; names the feature) |
-| CS-PLAN-0002 | Quota for the period reached (403; meter, limit, used, period end). Issued (`PLAN-04`, migration 0027): `envelopes_sent` at every send, by `TenantTx::consume_quota` (store `StoreError::Plan`); the problem carries `meter`, `limit`, `used`, `period_end` |
+| CS-PLAN-0002 | Quota for the period reached (403; meter, limit, used, period end). Issued (`PLAN-04`, migration 0028): `envelopes_sent` at every send, by `TenantTx::consume_quota` (store `StoreError::Plan`); the problem carries `meter`, `limit`, `used`, `period_end` |
 | CS-PLAN-0003 | Seat limit reached (403). Issued (`PLAN-04`): `POST /users`, `PATCH /users/{id}` (profile, enable), by `TenantTx::gauge_check`; `meter`, `limit`, `used` |
 | CS-PLAN-0004 | Storage limit reached (403). Issued (`PLAN-04`): envelope and template document uploads; `meter`, `limit`, `used` |
-| CS-PLAN-0005 | Organization suspended by the platform: new work refused, sent envelopes continue (403). Issued (`PLAN-04`) at sends, member additions and uploads; the other creation points are `PLAN-16` |
+| CS-PLAN-0005 | Organization suspended by the platform: new work refused, sent envelopes continue (403). Issued (`PLAN-04`) at sends, member additions and uploads; the other creation points are `PLAN-17` |
 | CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422; names the field). Issued (`PLAN-02`): by `casual-sign-policy` validation and by the migration 0024 definer functions (`OS010`) |
 | CS-PLAN-0007 | Workspace allocations exceed the organization's quota (422) |
 | CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422) |

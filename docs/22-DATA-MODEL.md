@@ -474,7 +474,7 @@ the rules above, and what does not:
   ledger sum at both levels. The application counts counter meters through `openseal_meter_record` (gauges refused,
   `CS-DB-0008`; `TenantTx::record_usage`); `seats`, `storage_bytes` and `workspaces` are kept by triggers in the
   transaction of the change (docs/23 §7.2).
-- **Enforcement (built, `PLAN-04`, migration 0027):** `quota_notices` (organization table, append-only by trigger,
+- **Enforcement (built, `PLAN-04`, migration 0028):** `quota_notices` (organization table, append-only by trigger,
   SELECT only for the application; `workspace_id`, not `account_id`, so the tenant-table catalog rules do not apply;
   unique per `(organization, meter, level, workspace, source)`; ids and counts only), written by `soft` and `notify`
   quotas. `openseal_consume_quota` (counter meters, conditional updates, organization row first) and

@@ -1,4 +1,4 @@
--- 0027: quota enforcement (PLAN-04; ADR-028, docs/23 §7.3).
+-- 0028: quota enforcement (PLAN-04; ADR-028, docs/23 §7.3).
 --
 -- 1. `openseal_meter_apply` is redefined to move the organization's counter before the
 --    workspace's: every writer now locks the organization row first, so a quota check
@@ -8,7 +8,7 @@
 --    or `notify` quota records when usage passes its limit. `soft` records every action
 --    over the limit with the part of it that is overage; `notify` records only the action
 --    that crossed the limit, once per period and level. Organization admins read them;
---    delivering them by e-mail is `PLAN-15`.
+--    delivering them by e-mail is `PLAN-16`.
 -- 3. `openseal_consume_quota` (counter meters): the ledger row and, for `hard` quotas,
 --    conditional updates `value + n <= limit` of the organization counter and then the
 --    workspace counter, in one subtransaction. Zero rows on either refuses and rolls back

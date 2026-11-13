@@ -147,3 +147,52 @@ async fn a_document_past_the_storage_limit_is_refused() {
         .unwrap();
     assert_eq!(none, 0, "nothing was stored");
 }
+
+#[tokio::test]
+async fn a_send_past_the_envelope_quota_is_refused_and_the_draft_stays_a_draft() {
+    let Some(api) = Api::new("quota_sends", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    plan(&api, &a, "envelopes_sent", 1).await;
+    common::flow::sent(&api, &a, 1, &[]).await;
+    let draft = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(json!({
+                "subject": "PLAN-04",
+                "documents": [{"name": "d.pdf", "content_base64": b64(&pdf(1))}],
+                "recipients": [{"ref": "s1", "type": "signer", "name": "S1",
+                    "email": "s1@example.test", "routing_order": 1}],
+                "fields": [{"recipient": "s1", "document": 0, "type": "signature", "page": 1,
+                    "x": 72, "y": 100, "width": 180, "height": 40, "required": true}],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "a draft is not counted",
+    );
+    let base = format!("/api/v1/envelopes/{}", draft["id"].as_str().unwrap());
+    let r = api
+        .call("POST", &format!("{base}/send"), &a.auth, None, &[])
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{:?}", r.json());
+    let p = r.json();
+    assert_eq!(p["code"], "CS-PLAN-0002", "{p}");
+    assert_eq!(
+        (&p["meter"], &p["limit"], &p["used"]),
+        (&json!("envelopes_sent"), &json!(1), &json!(1)),
+        "{p}"
+    );
+    // A standing quota has no period end.
+    assert!(p.get("period_end").is_none(), "{p}");
+    let e = ok(
+        api.call("GET", &base, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "read the draft",
+    );
+    assert_eq!(e["status"], "draft", "nothing committed: {e}");
+}

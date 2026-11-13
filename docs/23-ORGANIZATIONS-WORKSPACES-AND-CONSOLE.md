@@ -1083,7 +1083,7 @@ seat rule changing only by time passing (`PLAN-13`), the `templates` gauge (`PLA
 - `soft` allows the action, records the overage, notifies organization admins; `notify` only notifies.
 - **Problem details** carry `meter`, `limit`, `used`, `period_end` and `feature`, nothing else.
 
-**As built (`PLAN-04`, migration `0027_quota_enforcement.sql`).** `openseal_consume_quota(p_meter, p_n, p_at,
+**As built (`PLAN-04`, migration `0028_quota_enforcement.sql`).** `openseal_consume_quota(p_meter, p_n, p_at,
 p_source_kind, p_source_id, p_quota)` takes the source (so it also does the metering of §7.2) and the limits as JSON
 (`{"workspace": {"limit", "enforcement", "period"}, "organization": …}`, from `plans::effective` for this workspace in
 the same transaction; no assignment current means no quota). In one subtransaction it appends the ledger row (a source
@@ -1102,8 +1102,8 @@ action over the limit with its overage, `notify` one row for the action that cro
 `PATCH /users/{id}` (profile or enable) for seats, envelope and template document uploads for storage; the worker's
 sealed versions are metered and never checked. Store: `TenantTx::consume_quota`, `gauge_lock`, `gauge_check`,
 `StoreError::Plan` (`CS-PLAN-0002` to `0005`); the server answers 403 with `meter`, `limit`, `used`, `period_end`.
-Not built here: delivering notices to organization admins (`PLAN-15`); entitlement checks (`CS-PLAN-0001`) and the
-suspension check at the other creation points (`PLAN-16`); allocations (`PLAN-07`). Tests:
+Not built here: delivering notices to organization admins (`PLAN-16`); entitlement checks (`CS-PLAN-0001`) and the
+suspension check at the other creation points (`PLAN-17`); allocations (`PLAN-07`). Tests:
 `casual-sign-store/tests/quota.rs`, `casual-sign-server/tests/quota.rs`, `casual-sign-worker/tests/plan_enforcement.rs`.
 
 ### 7.4 Usage export
