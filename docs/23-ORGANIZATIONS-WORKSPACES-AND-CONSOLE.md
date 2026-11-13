@@ -917,6 +917,21 @@ The effective plan is the assignment current at `now`, plus unexpired overrides,
 is the only mention), so there is nothing to copy; the comment is corrected in PLAN-02's migration notes. A plan may
 not set `hard` on an approximate meter (§7.2; `CS-PLAN-0006`).
 
+**As built (`PLAN-02`, migration `0024_plans.sql`).** The tables above, with `plans` one row per immutable version of a
+`key`, written only by the session-checked definer functions `platform.create_plan`, `archive_plan`, `assign_plan`,
+`set_plan_override` and `expire_plan_override` (each refusal `OS010` → `CS-PLAN-0006`; table constraints refuse `hard`
+on `api_calls` again for any writer). Assigning from an instant ends the assignment current then at that instant, so
+two are never current at once; an assignment never starts before now. Overrides change one entitlement
+(`feature.<f>`), one quota's limit or enforcement (`quota.<meter>.<level>.limit|enforcement`) or the `seat_rule`; a
+workspace override may change only a workspace-level quota. The application reads `openseal_effective_plan(now)` only
+(`casual-sign-store` `TenantTx::plan_inputs`), the console `platform.plans_page` and `platform.plan_inputs`; both
+resolve through the pure `casual-sign-policy::plans::effective`. Console API: `GET`/`POST /console/v1/plans`,
+`POST /plans/{id}/archive`, `GET`/`POST /organizations/{id}/plan`, `POST /organizations/{id}/plan-overrides`,
+`POST /plan-overrides/{id}/expire` (`api/console-openapi.yaml`); operator events carry ids, keys and values, never an
+override's reason. Console UI: a Plans page (versions by key, features, quotas, organizations per version, new plan or
+version, archive) and a Plan card on each organization (effective plan, assignments, overrides; assign, add, expire).
+Allocations (`PLAN-07`) and enforcement (`PLAN-04`) are not built.
+
 ### 7.2 Meters
 
 | Meter | Kind | Counted when | Where written |

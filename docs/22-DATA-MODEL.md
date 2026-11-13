@@ -388,6 +388,13 @@ the rules above, and what does not:
   idempotent by source), `usage_counters`.
 - **Schema `platform`** (operators, approvals, plans, TSA, trust anchors, seal profiles, alerts) is reached by the
   console's role `openseal_console`, which has no grant on any `public` table.
+- **Plans (built, `PLAN-02`, migration 0024):** `platform.plans` (immutable versions of a key; archive only),
+  `plan_entitlements`, `plan_quotas`, `plan_seat_rule`, `plan_assignments` (current on `[starts_at, ends_at)`; only
+  `ends_at` shortens), `plan_overrides` (`workspace_id`, workspace-level quotas only; only `expires_at` shortens).
+  Written only by session-checked definer functions (`OS010` → `CS-PLAN-0006`); constraints refuse `hard` on
+  `api_calls` for any writer. The application reads only `openseal_effective_plan(now)` (current assignment and live
+  overrides for its organization and workspace, no reasons or operator ids). `accounts.settings` holds no plan limits;
+  its column comment says so.
 - **Catalog tests** are scoped to `public` and name their exceptions; the `platform` schema has its own.
 - **Migration order** is fixed in merge order (docs/23 §12): `SEC-ID-01`'s fix, organizations (with organization admins
   and the owner backfill), admin logs, platform schema, operators, approvals, plans, usage; later schema rows take the

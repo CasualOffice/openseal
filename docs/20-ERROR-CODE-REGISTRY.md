@@ -245,7 +245,7 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 Issued by the console's first rows (migrations 0016 to 0018). Every console answer is an RFC 9457 problem with one of
 these codes; messages carry codes, ids and sequence numbers only. The platform store maps SQLSTATEs raised by the
 `platform` definer functions: `OS006` → `CS-CON-0001`, `OS007` → `CS-CON-0002`, `OS008` → `CS-CON-0003`, `OS009` →
-`CS-CON-0004`, `OS005` → `CS-DB-0014`, `OS001` → `CS-DB-0004` (widened to `platform.operator_events` and
+`CS-CON-0004`, `OS010` → `CS-PLAN-0006` (plans, `PLAN-02`, migration 0024), `OS005` → `CS-DB-0014`, `OS001` → `CS-DB-0004` (widened to `platform.operator_events` and
 `platform.alerts`, which use the same refusal).
 
 | Code | Meaning |
@@ -300,7 +300,7 @@ logs (`admin_events`, `org_admin_events`, `platform.operator_events`), which use
 | CS-PLAN-0003 | Seat limit reached (403) |
 | CS-PLAN-0004 | Storage limit reached (403) |
 | CS-PLAN-0005 | Organization suspended by the platform: new work refused, sent envelopes continue (403) |
-| CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422) |
+| CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422; names the field). Issued (`PLAN-02`): by `casual-sign-policy` validation and by the migration 0024 definer functions (`OS010`) |
 | CS-PLAN-0007 | Workspace allocations exceed the organization's quota (422) |
 | CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422) |
 | CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
