@@ -16,6 +16,7 @@ export function access(roles = []) {
     organizations: true,
     manage: manager,
     approvals: manager,
+    plans: true,
     log: manager,
     operators: has("platform_owner"),
   };
@@ -289,6 +290,7 @@ const MESSAGES = {
   "CS-CON-0014": "The console failed internally. Try again; if it persists, check the console's log.",
   "CS-CON-0015": "The database is not answering. Try again shortly.",
   "CS-CON-0016": "An operator with this e-mail already exists.",
+  "CS-PLAN-0006": "The plan, quota or override is not valid.",
 };
 
 /// What to tell the operator about a problem `{status, code, field, retry_after}`.
@@ -296,7 +298,7 @@ export function problemMessage(p) {
   if (!p) return "Something went wrong.";
   if (p.network) return "The console cannot be reached. Check the connection and try again.";
   let m = MESSAGES[p.code] || `The request failed (${p.status || "no answer"}).`;
-  if (p.code === "CS-CON-0010" && p.field) m = `The ${String(p.field).replace(/_/g, " ")} is not valid.`;
+  if ((p.code === "CS-CON-0010" || p.code === "CS-PLAN-0006") && p.field) m = `The ${String(p.field).replace(/_/g, " ")} is not valid.`;
   if (p.code === "CS-CON-0012" && typeof p.retry_after === "number") m = `Too many attempts. Try again in ${duration(p.retry_after)}.`;
   return m;
 }
@@ -339,4 +341,173 @@ export function eventDetails(ev) {
   const body = ev?.event && typeof ev.event === "object" ? ev.event : {};
   const details = body.details && typeof body.details === "object" ? body.details : {};
   return Object.entries(details).map(([k, v]) => [k.replace(/_/g, " "), typeof v === "object" ? JSON.stringify(v) : String(v)]);
+}
+
+// Plans (PLAN-02; docs/23 §7.1) ----------------------------------------------------------
+
+const FEATURE_LABELS = {
+  bulk_send: "Bulk send",
+  sso_saml: "SAML single sign-on",
+  scim: "SCIM provisioning",
+  api: "API access",
+  webhooks: "Webhooks",
+  sms_auth: "SMS authentication",
+  conditional_routing: "Conditional routing",
+  payments: "Payments",
+  branding_multi: "Several brands",
+  seal_b_lta: "Long-term seals (B-LTA)",
+  ml_suggestions: "Field suggestions (ML)",
+};
+
+const METER_LABELS = {
+  envelopes_sent: "Envelopes sent",
+  seats: "Seats",
+  storage_bytes: "Storage (bytes)",
+  api_calls: "API calls",
+  sms_sent: "SMS sent",
+  phone_calls: "Phone calls",
+  idv_checks: "ID verifications",
+  kba_checks: "KBA checks",
+  timestamps: "Timestamps",
+  seals: "Seals",
+  bulk_send_rows: "Bulk-send rows",
+  signing_link_submissions: "Signing-link submissions",
+  webhook_deliveries: "Webhook deliveries",
+  workspaces: "Workspaces",
+  templates: "Templates",
+};
+
+const SEAT_RULE_LABELS = {
+  can_send: "Members who can send",
+  every_member: "Every member",
+};
+
+/// A plan feature's label; an unknown name is shown as sent.
+export function featureLabel(f) {
+  return FEATURE_LABELS[f] || String(f || "–");
+}
+
+/// A meter's label; an unknown name is shown as sent.
+export function meterLabel(m) {
+  return METER_LABELS[m] || String(m || "–");
+}
+
+/// A seat rule's label.
+export function seatRuleLabel(r) {
+  return SEAT_RULE_LABELS[r] || String(r || "–");
+}
+
+/// A plan key as the API accepts it: a lower-case letter, then lower-case letters,
+/// digits, `_` or `-`, at most 64 in all.
+export const PLAN_KEY = /^[a-z][a-z0-9_-]{0,63}$/;
+
+/// One quota as a sentence: "1,000 per month · hard · per workspace".
+export function quotaText(q) {
+  const period = q.period === "none" ? "" : ` per ${q.period}`;
+  return `${count(q.limit)}${period} · ${q.enforcement} · per ${q.level}`;
+}
+
+/// Plan versions grouped by key, keys in name order, each with its versions newest
+/// first; `current` is the newest version not archived (or null).
+export function planGroups(plans = []) {
+  const by = new Map();
+  for (const p of plans) {
+    if (!by.has(p.key)) by.set(p.key, []);
+    by.get(p.key).push(p);
+  }
+  return [...by.entries()]
+    .map(([key, versions]) => {
+      versions.sort((a, b) => b.version - a.version);
+      return { key, versions, current: versions.find((v) => !v.archived) || null, latest: versions[0] };
+    })
+    .sort((a, b) => a.latest.name.localeCompare(b.latest.name) || a.key.localeCompare(b.key));
+}
+
+/// Check a plan form against the rules the server applies (docs/23 §7.1, CS-PLAN-0006),
+/// so the operator sees the reason before sending. `meters` is the catalogue's list
+/// (`{name, kind, approximate}`). Returns `{ok: true, value}` (the request body) or
+/// `{ok: false, message}`.
+export function checkPlan({ key, name, seatRule, features = [], quotas = [] }, meters = []) {
+  const k = String(key || "").trim();
+  if (!PLAN_KEY.test(k)) return { ok: false, message: "The key starts with a lower-case letter, then lower-case letters, digits, - or _; at most 64." };
+  const n = String(name || "").trim();
+  if (!n || [...n].length > 120 || /[\u0000-\u001f\u007f]/.test(n)) return { ok: false, message: "The name is 1 to 120 characters." };
+  if (quotas.length > 64) return { ok: false, message: "At most 64 quotas." };
+  const info = new Map(meters.map((m) => [m.name, m]));
+  const seen = new Set();
+  const out = [];
+  for (const q of quotas) {
+    const m = info.get(q.meter);
+    const label = meterLabel(q.meter);
+    const raw = String(q.limit ?? "").trim();
+    if (!/^[0-9]{1,16}$/.test(raw) || Number(raw) > Number.MAX_SAFE_INTEGER) return { ok: false, message: `${label}: the limit is a whole number.` };
+    if (m?.approximate && q.enforcement === "hard") return { ok: false, message: `${label} is counted approximately, so it cannot be hard: use soft or notify.` };
+    if (m?.kind === "gauge" && q.period !== "none") return { ok: false, message: `${label} is a count of what exists now: its period is none.` };
+    if (q.meter === "workspaces" && q.level === "workspace") return { ok: false, message: "Workspaces are counted per organization." };
+    const dup = `${q.meter}/${q.level}`;
+    if (seen.has(dup)) return { ok: false, message: `${label} has two quotas per ${q.level}.` };
+    seen.add(dup);
+    out.push({ meter: q.meter, limit: Number(raw), period: q.period, enforcement: q.enforcement, level: q.level });
+  }
+  const entitlements = Object.fromEntries(features.map((f) => [f, true]));
+  return { ok: true, value: { key: k, name: n, seat_rule: seatRule || "can_send", entitlements, quotas: out } };
+}
+
+/// The override keys an operator can choose for an effective plan: each feature, each of
+/// the plan's quotas' limit and enforcement, and the seat rule. `workspace` limits it to
+/// workspace-level quotas (the only thing a workspace override may change).
+export function overrideKeys(catalogue, effective, workspace = false) {
+  const keys = [];
+  if (!workspace) {
+    for (const f of catalogue?.features || []) keys.push({ key: `feature.${f}`, label: `${featureLabel(f)} (feature)`, kind: "flag" });
+  }
+  for (const q of effective?.quotas || []) {
+    if (workspace && q.level !== "workspace") continue;
+    const base = `${meterLabel(q.meter)} per ${q.level}`;
+    keys.push({ key: `quota.${q.meter}.${q.level}.limit`, label: `${base}: limit`, kind: "limit" });
+    keys.push({ key: `quota.${q.meter}.${q.level}.enforcement`, label: `${base}: enforcement`, kind: "enforcement", approximate: !!(catalogue?.meters || []).find((m) => m.name === q.meter)?.approximate });
+  }
+  if (!workspace) keys.push({ key: "seat_rule", label: "Seat rule", kind: "seat_rule" });
+  return keys;
+}
+
+/// An override's key as words: `quota.seats.organization.limit` → "Seats per
+/// organization: limit".
+export function overrideKeyLabel(key) {
+  const k = String(key || "");
+  if (k === "seat_rule") return "Seat rule";
+  if (k.startsWith("feature.")) return featureLabel(k.slice(8));
+  const m = /^quota\.([a-z_]+)\.([a-z]+)\.(limit|enforcement)$/.exec(k);
+  return m ? `${meterLabel(m[1])} per ${m[2]}: ${m[3]}` : k;
+}
+
+/// An override's value as words.
+export function overrideValueLabel(key, value) {
+  if (String(key).startsWith("feature.")) return value === "true" ? "On" : value === "false" ? "Off" : value;
+  if (key === "seat_rule") return seatRuleLabel(value);
+  if (String(key).endsWith(".limit") && /^[0-9]+$/.test(value)) return count(Number(value));
+  return String(value);
+}
+
+/// The override form's value check, by kind; returns the string to send or a message.
+export function checkOverrideValue(kind, value, approximate = false) {
+  const v = String(value ?? "").trim();
+  if (kind === "flag") return v === "true" || v === "false" ? { ok: true, value: v } : { ok: false, message: "Choose on or off." };
+  if (kind === "limit") return /^[0-9]{1,16}$/.test(v) && Number(v) <= Number.MAX_SAFE_INTEGER ? { ok: true, value: String(Number(v)) } : { ok: false, message: "The limit is a whole number." };
+  if (kind === "enforcement") {
+    if (!["hard", "soft", "notify"].includes(v)) return { ok: false, message: "Choose hard, soft or notify." };
+    if (v === "hard" && approximate) return { ok: false, message: "This meter is counted approximately, so it cannot be hard." };
+    return { ok: true, value: v };
+  }
+  if (kind === "seat_rule") return SEAT_RULE_LABELS[v] ? { ok: true, value: v } : { ok: false, message: "Choose a seat rule." };
+  return { ok: false, message: "Choose what to override." };
+}
+
+/// A `datetime-local` value (the operator's local time) as RFC 3339 UTC, or null when
+/// empty; `undefined` when it does not parse.
+export function localToIso(text) {
+  const t = String(text || "").trim();
+  if (!t) return null;
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }

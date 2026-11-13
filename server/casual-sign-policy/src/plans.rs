@@ -1194,6 +1194,13 @@ mod tests {
                 .key,
             "team"
         );
+        // With no successor, the end instant itself has no plan: the end is exclusive.
+        let alone = inputs(
+            vec![assignment(3, plan(30, "trial"), T0, Some(end))],
+            vec![],
+        );
+        assert_eq!(effective(&alone, None, last).unwrap().key, "trial");
+        assert_eq!(effective(&alone, None, end), None);
     }
 
     #[test]
