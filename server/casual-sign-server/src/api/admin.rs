@@ -905,7 +905,7 @@ fn login_limit(st: &AppState, ip: ClientIp, name: &str) -> Result<(), Response> 
     Ok(())
 }
 
-fn cookie(name: &str, value: &str, max_age: u64, secure: bool) -> Option<HeaderValue> {
+pub(crate) fn cookie(name: &str, value: &str, max_age: u64, secure: bool) -> Option<HeaderValue> {
     let secure = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
         "{name}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure}"

@@ -55,7 +55,7 @@ pub const KINDS: &[&str] = &[
 /// Not an effect (UXW-30): make and seal the envelope certificate of an envelope that
 /// ended without completing (declined, voided, expired), for `GET …/certificate`. Its
 /// payload is [`EndedCertificateJob`], the envelope's id only. Queued by
-/// [`crate::apply`] when a decision ends an envelope, and by the API server for an
+/// [`crate::apply()`] when a decision ends an envelope, and by the API server for an
 /// envelope that ended before this job existed.
 pub const SEAL_ENDED_CERTIFICATE: &str = "seal_ended_certificate";
 

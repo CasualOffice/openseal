@@ -43,6 +43,8 @@ by JWKS (OpenCalc's docs/59 pattern).
 /api/v1
   /accounts/me                                  GET, PATCH            settings, defaults
   /admin-events                                 GET                   workspace admin log (ORG-05), json or csv
+  /auth/workspaces                              GET                   the caller's workspaces by organization (ORG-04)
+  /auth/switch                                  POST                  {account_id} → a new session in that workspace (ORG-04)
   /organizations/me                             GET, PATCH            the session workspace's organization (ORG-03)
   /organizations/me/workspaces                  GET, POST             ; /{id} GET, POST …/archive, POST …/join
   /organizations/me/admins                      GET, POST             ; /{user} PATCH, DELETE
@@ -272,7 +274,15 @@ table and the document equal in both directions, scope by scope.
 
 **Authentication (§2).** Local login (`POST /auth/login`, Argon2id, an unknown email costs a wrong password's time)
 gives an `HttpOnly`, `Secure`, `SameSite=Lax` session cookie (8 h) and a CSRF token every changing request echoes in
-`X-CSRF-Token`; `POST /auth/logout`; `GET /auth/session`. API keys are `osk_` + 256 random bits, stored as SHA-256,
+`X-CSRF-Token`; `POST /auth/logout`; `GET /auth/session`. **Workspace switching (`ORG-04`, docs/23 §2.3):** `GET
+/auth/workspaces` lists, by organization, the workspaces the session's person holds an enabled membership in (read
+through the session's own hash, `openseal_user_workspaces`), the session's own marked `current`; `POST /auth/switch
+{account_id}` ends the session and issues a new cookie and CSRF token in that workspace, carrying the same sign-in
+method, time and expiry (a switch never extends a session; two concurrent switches from one session cannot both
+succeed). No enabled membership there, or no such workspace, is `403 CS-ORG-0001`; an API key or access token, which
+belongs to one workspace, gets `422 CS-API-0001`. The workspace always comes from the credential: no header or
+parameter names another (`SEC-O05`). The target organization's sign-in policy check (`CS-ORG-0007`) waits for
+organization policy and SSO (`ORG-31`). API keys are `osk_` + 256 random bits, stored as SHA-256,
 scoped and optionally expiring. OAuth clients use the client-credentials grant at `POST /oauth/token` (form or
 JSON, HTTP Basic or body credentials, RFC 6749 errors) and get a one-hour ES256 JWT (`iss` the public URL, `aud`
 `openseal-api`), verified by `GET /.well-known/jwks.json`; the signing key comes from the secrets crate

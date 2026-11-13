@@ -261,6 +261,7 @@ const narrow = () => matchMedia("(max-width: 60em)").matches;
 const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 
 let wsName = null; // the workspace name in the switcher row
+let spaces = null; // GET /auth/workspaces (ORG-04): the person's workspaces by organization
 let acctWrap = null;
 let bellWrap = null;
 
@@ -377,6 +378,7 @@ function buildWorkspace() {
     label: t("ws.menu"), trigger: btn, menuLabel: t("ws.menu"), align: "start",
     items: () => [
       h("div", { class: "os-menu__who" }, h("strong", { text: wsName.textContent }), h("span", { class: "os-muted", text: t("ws.plan") })),
+      ...switchItems(),
       ctx.session?.admin ? { label: t("ws.settings"), icon: "settings", run: () => ctx.navigate("#/admin?tab=account") } : null,
       { label: t("start.verify"), icon: "shield-check", run: () => run("app.verify") },
       { label: t("help.about"), icon: "info", run: () => run("help.about") },
@@ -384,6 +386,27 @@ function buildWorkspace() {
   });
   wrap.classList.add("os-ws-wrap");
   document.getElementById("ws-slot").replaceWith(wrap);
+}
+
+/// The other workspaces to switch to (docs/23 §2.3), under the organization's name when
+/// the person belongs to more than one organization; nothing with a single workspace.
+/// The current one is marked with a check and does nothing.
+const spaceCount = () => (spaces?.organizations || []).reduce((n, o) => n + (o.workspaces?.length || 0), 0);
+function switchItems() {
+  const orgs = spaces?.organizations || [];
+  if (spaceCount() < 2) return [];
+  const out = [];
+  for (const o of orgs) {
+    out.push(h("div", { class: "os-menu__group", attrs: { "aria-hidden": "true" }, text: orgs.length > 1 ? o.name : t("ws.switch") }));
+    for (const w of o.workspaces || []) {
+      out.push({
+        label: w.name, icon: w.current ? "check" : "layers",
+        run: () => { if (!w.current) run("workspace.switch", w.id); },
+      });
+    }
+  }
+  out.push("separator");
+  return out;
 }
 
 function helpItems() {
@@ -652,6 +675,7 @@ async function loadWho() {
   try {
     const account = await api.account().catch(() => null);
     if (account?.name && wsName) wsName.textContent = account.name;
+    spaces = await api.workspaces().catch(() => null);
     if (api.available("profile")) {
       const me = await api.me();
       who.name = me?.name || "";
@@ -747,6 +771,26 @@ function registerCommands() {
     label: t("account.notifications"),
     run: async () => (await import("./profile.js")).openProfile(ctx, { focus: "notifications" }),
     enabled: () => !!ctx.session,
+  });
+  // Switch workspace (ORG-04): the server ends this session and starts one in the
+  // other workspace; the whole app reloads so no screen keeps the old workspace's data.
+  register("workspace.switch", {
+    label: t("ws.switch"),
+    // Offered only to a person with another workspace; from the command menu (no id)
+    // it opens the workspace row's menu to choose one.
+    enabled: () => spaceCount() > 1,
+    run: async (accountId) => {
+      if (!accountId) { document.getElementById("ws-btn")?.click(); return; }
+      if (!(await panelMayClose())) return;
+      try {
+        await api.switchWorkspace(accountId);
+      } catch (err) {
+        toast(errorMessage(err), "error");
+        return;
+      }
+      location.hash = "#/home";
+      location.reload();
+    },
   });
   register("account.signout", {
     label: t("account.signout"),

@@ -1065,8 +1065,29 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!db.session) fail(401, "CS-AUTH-0001", "Not authenticated");
     if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
     const [, , , res, id, sub, subId, subSub] = parts; // "", api, v1, res, …
+    // Workspace switching (ORG-04), as the server: the demo user belongs to two
+    // workspaces of one organization. The mock keeps one set of envelopes for both; the
+    // server's isolation is tested in server/casual-sign-server/tests/workspaces.rs.
+    const spaces = [
+      { id: "acct-demo", name: account().name || "Demo workspace", status: "active" },
+      { id: "acct-legal", name: "Legal", status: "active" },
+    ];
+    const here = db.session.account || "acct-demo";
+    if (res === "auth" && id === "workspaces" && method === "GET") {
+      return json(200, {
+        current: here,
+        organizations: [{ id: "org-demo", name: "Demo organization", workspaces: spaces.map((w) => ({ ...w, current: w.id === here })) }],
+      });
+    }
+    if (res === "auth" && id === "switch" && method === "POST") {
+      for (const k of Object.keys(body || {})) if (k !== "account_id") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+      if (typeof body?.account_id !== "string") fail(422, "CS-API-0001", "Invalid request", [{ pointer: "/account_id", code: "type" }]);
+      if (!spaces.some((w) => w.id === body.account_id)) fail(403, "CS-ORG-0001", "Not a member of that workspace");
+      db.session = { csrf: uid(), account: body.account_id };
+      return json(200, { account_id: body.account_id, user_id: "user-demo", csrf_token: db.session.csrf, expires_at: iso(60 * 12) });
+    }
     if (res === "auth" && id === "session" && method === "GET") {
-      return json(200, { account_id: "acct-demo", user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true });
+      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true });
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
     if (res === "accounts" && id === "me") {
@@ -1084,7 +1105,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         db.account.settings = next;
         return json(200, { settings: next });
       } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
-      return json(200, db.account);
+      return json(200, here === "acct-demo" ? db.account : { ...db.account, id: here, name: spaces.find((w) => w.id === here)?.name });
     }
     if (res === "ersd-versions" && !id) return ersdVersions(method, body);
     // WEB-06: recipient autocomplete, as the server's GET /contacts.

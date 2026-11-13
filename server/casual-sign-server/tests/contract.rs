@@ -1783,6 +1783,28 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         ok(api.call(m, &path, &os, body, &[]).await, want, &path).await;
     }
 
+    // Disclosure (ERSD-01, ERSD-03): publish one and read it back, after the ceremony so
+    // the scenario's envelopes keep the disclosure version they were sent with.
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/ersd-versions",
+            k,
+            Some(json!({"text": "You agree to sign electronically."})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "publish disclosure",
+    )
+    .await;
+    ok(
+        api.call("GET", "/api/v1/ersd-versions", k, None, &[]).await,
+        StatusCode::OK,
+        "read disclosure",
+    )
+    .await;
+
     // Members and sessions last.
     ok(
         api.call("DELETE", &format!("/api/v1/users/{uid}"), k, None, &[])
@@ -1801,6 +1823,26 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     let s = session_of(&login);
+    // Workspace switching (ORG-04): the listing, and a switch into the one workspace
+    // the session already has, which issues a new session and ends the old one.
+    ok(
+        api.call("GET", "/api/v1/auth/workspaces", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "workspaces",
+    )
+    .await;
+    let switched = api
+        .call(
+            "POST",
+            "/api/v1/auth/switch",
+            &s,
+            Some(json!({"account_id": a.boot.account.to_string()})),
+            &[],
+        )
+        .await;
+    assert_eq!(switched.status, StatusCode::OK, "{:?}", switched.json());
+    let s = session_of(&switched);
     ok(
         api.call("GET", "/api/v1/users/me", &s, None, &[]).await,
         StatusCode::OK,

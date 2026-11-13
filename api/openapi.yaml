@@ -175,6 +175,32 @@ components:
         client_id: {type: [string, 'null']}
         scopes: {type: array, items: {type: string}}
         admin: {type: boolean}
+    MyWorkspaces:
+      type: object
+      properties:
+        current: {type: string}
+        organizations:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+              workspaces:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string}
+                    name: {type: string}
+                    status: {type: string, enum: [active, archived]}
+                    current: {type: boolean}
+    SwitchRequest:
+      type: object
+      required: [account_id]
+      additionalProperties: false
+      properties:
+        account_id: {type: string}
     TokenRequest:
       type: object
       required: [grant_type]
@@ -1067,6 +1093,49 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/workspaces:
+    get:
+      operationId: listMyWorkspaces
+      summary: "The caller's workspaces, grouped by organization (ORG-04)"
+      description: >-
+        Every workspace the signed-in person holds an enabled membership in, by
+        organization, with the session's own workspace marked `current`. Metadata only.
+        A staff session only: an API key or access token belongs to one workspace and
+        gets `422 CS-API-0001`.
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MyWorkspaces'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/switch:
+    post:
+      operationId: switchWorkspace
+      summary: "Move the session to another workspace of the caller (ORG-04)"
+      description: >-
+        Ends the current session and issues a new one in `account_id`, carrying the same
+        sign-in (method, time and expiry), so a switch never extends a session. The
+        caller must hold an enabled membership there: otherwise, or for an id that does
+        not exist, `403 CS-ORG-0001`. A staff session with its CSRF token only. The
+        workspace always comes from the session; no header or parameter chooses
+        another (SEC-O05).
+      x-permission: ""
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SwitchRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LoginResponse'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/auth/session:
     get:

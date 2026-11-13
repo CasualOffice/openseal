@@ -9,7 +9,7 @@ use axum::handler::Handler;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{MethodFilter, MethodRouter, on};
 
-use crate::api::{admin, envelopes as env, folders, ml, org, templates, webhooks};
+use crate::api::{admin, envelopes as env, folders, ml, org, switch, templates, webhooks};
 use crate::ceremony;
 use crate::http::{Guard, guard, request_context};
 use crate::state::AppState;
@@ -125,6 +125,21 @@ pub fn table() -> Vec<Route> {
             Public,
             JSON,
             admin::providers,
+        ),
+        // Workspace switching (docs/23 §2.3, ORG-04).
+        r(
+            "GET",
+            "/api/v1/auth/workspaces",
+            Scope(""),
+            JSON,
+            switch::workspaces,
+        ),
+        r(
+            "POST",
+            "/api/v1/auth/switch",
+            Scope(""),
+            JSON,
+            switch::switch,
         ),
         r("POST", "/api/v1/oauth/token", Public, JSON, admin::token),
         r("GET", "/.well-known/jwks.json", Public, JSON, admin::jwks),

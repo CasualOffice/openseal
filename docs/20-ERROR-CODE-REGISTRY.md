@@ -279,7 +279,7 @@ the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`
 
 | Code | Meaning |
 | --- | --- |
-| CS-ORG-0001 | Not a member of that workspace, or the membership is disabled (switch, 403) |
+| CS-ORG-0001 | Not a member of that workspace, or the membership is disabled (switch, 403). Issued (`ORG-04`): `POST /auth/switch`, the same for an id that does not exist |
 | CS-ORG-0002 | Setting locked or tightened by the organization's policy (422; names the key) |
 | CS-ORG-0003 | Domain not verified (TXT record absent or wrong) (422) |
 | CS-ORG-0004 | Domain cannot be claimed (already claimed, or a public e-mail domain); never says by whom (409) |

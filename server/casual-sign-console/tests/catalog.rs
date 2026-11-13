@@ -206,6 +206,14 @@ async fn platform_grants_are_exactly_the_designed_ones() {
         "org_log_tip",
         "copy_to_org_log",
         "xact_copied_to_org_log",
+        // PLAN-02, migration 0024: plans, their assignments and overrides, all console-only.
+        "archive_plan",
+        "assign_plan",
+        "create_plan",
+        "expire_plan_override",
+        "plan_inputs",
+        "plans_page",
+        "set_plan_override",
     ];
     expected.sort_unstable();
     assert_eq!(callable, expected);

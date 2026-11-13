@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 50 are designed, 19 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 39 of 167 rows work end to end; 16 more have their engine built and tested; 49 are designed, 20 are partial (`FG-012`, `FG-022`, `FG-023`, `FG-055`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-072`, `FG-073`, `FG-076`, `FG-092`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-183`, `FG-184`) and 43 are not started** (counted with `grep` over the Status column). Docs are true as of `19518fb` (2026-11-12), after v0.0.1. `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -193,7 +193,7 @@ instructions 8 and 9).
 | FG-181 | BYOK per-tenant keys | — | Build | 15 | — |
 | FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | — |
 | FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization's through `GET /organizations/me/audit` (`ORG-03`); screens wait for ORG-06 |
-| FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Designed |
+| FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Partial: one identity in several workspaces lists them and switches between them (`GET /auth/workspaces`, `POST /auth/switch`, the sidebar's workspace menu; `ORG-04`), organization routes (`ORG-03`); admin screens wait for ORG-06 |
 
 ## Developer surface
 
