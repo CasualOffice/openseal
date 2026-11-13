@@ -279,3 +279,13 @@ test("a TSA change reads as what it sets, for the approver (CON-07)", () => {
   assert.equal(M.access(["operator"]).custodian, false);
   assert.equal(M.actionLabel("tsa.set"), "Set time-stamping authority");
 });
+
+test("the keyd log card asks for the latest records, not the first ever (CON-06)", () => {
+  assert.equal(M.keydLogFrom(0), 1);
+  assert.equal(M.keydLogFrom(42), 1);
+  assert.equal(M.keydLogFrom(100), 1);
+  assert.equal(M.keydLogFrom(101), 2);
+  assert.equal(M.keydLogFrom(5000), 4901);
+  assert.equal(M.keydLogFrom(5000, 10), 4991);
+  assert.equal(M.keydLogFrom(undefined), 1);
+});

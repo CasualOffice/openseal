@@ -574,7 +574,7 @@ async function viewHealth(main, view) {
 
 command("refreshKeys", async (withLog) => {
   const [keys, tsa] = await Promise.all([api.get("/keys"), api.get("/tsa")]);
-  const log = withLog && keys.configured ? await api.get("/keys/log?limit=100") : null;
+  const log = withLog && keys.configured ? await api.get(`/keys/log?from=${M.keydLogFrom(keys.log?.seq)}&limit=100`) : null;
   return { keys, log, tsa };
 });
 command("proposeTsa", (change) => withFactor(() => api.post("/tsa/changes", change)));
@@ -682,7 +682,7 @@ function keyCard(k) {
 function keydLogCard(log) {
   const records = log?.records || [];
   return h("section", { class: "card rise", attrs: { "aria-labelledby": "kl-h" } },
-    h("div", { class: "card-h" }, h("b", { id: "kl-h", text: "keyd operation log" }), h("span", { class: "sub", text: "oldest first; hash-chained on the keyd host; digests and ids only" })),
+    h("div", { class: "card-h" }, h("b", { id: "kl-h", text: "keyd operation log" }), h("span", { class: "sub", text: "the latest 100, oldest first; hash-chained on the keyd host; digests and ids only" })),
     records.length
       ? h("div", { class: "tbl-wrap" }, h("table", {},
         h("thead", {}, h("tr", {}, h("th", { class: "num", text: "Seq" }), h("th", { text: "Time" }), h("th", { text: "Operation" }), h("th", { class: "hide-sm", text: "Caller" }), h("th", { class: "hide-sm", text: "Envelope" }), h("th", { text: "Outcome" }))),

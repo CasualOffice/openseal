@@ -211,6 +211,14 @@ export function tsaChangeText(c) {
   return parts.join(" · ");
 }
 
+/// The first sequence number of keyd's latest `n` log records, given the log's head
+/// sequence (`GET /keys` `log.seq`): the Keys page shows the newest records, not the
+/// first ever written.
+export function keydLogFrom(seq, n = 100) {
+  const head = Number.isFinite(seq) ? seq : 0;
+  return Math.max(1, head - n + 1);
+}
+
 /// keyd's health as a tile: up, degraded (a key's backend does not answer), down with
 /// keyd's code, or not configured.
 export function keydTile(keyd) {
