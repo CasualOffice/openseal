@@ -220,6 +220,24 @@ test.describe("desktop", () => {
     await expect(page.locator("#guide-next")).toBeVisible();
   });
 
+  // E2E-02: on CI's WebKit the review's entrance fade was at its first frames when axe
+  // measured (text at about 2 % opacity), although the wait just before had seen
+  // nothing running. Here the fade is held near its start, so the wait sees nothing
+  // running, and released while axe measures: a scan taken mid-fade must be taken again.
+  test("the accessibility scan is taken again when it caught a view fading in", async ({ page }) => {
+    await page.goto(signPage(tokens.sign));
+    await expect(page.getByLabel("Access code")).toBeVisible();
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
+    await page.evaluate(() => {
+      const fade = document.getAnimations().find((a) => a.animationName === "os-sign-fade");
+      if (!fade) return; // reduced motion: no fade to catch
+      fade.pause();
+      fade.currentTime = 30;
+      setTimeout(() => fade.play(), 300);
+    });
+    await expectAccessible(page, "access code, fading in");
+  });
+
   test("review lists every value, opens at the top, has one Finish; done offers a copy", async ({ page }) => {
     await toDocuments(page);
     await page.getByRole("textbox", { name: /Job title/ }).fill("Engineer");
