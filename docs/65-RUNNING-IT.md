@@ -577,7 +577,7 @@ stack's SoftHSM token is development only: a fresh stack imports a fresh generat
 | RPO, database | At most the backup interval (one hour with the schedule above); 5 minutes with PITR | Logical backups by this tool; for production also PostgreSQL point-in-time recovery (WAL archiving: the managed service's, or pgBackRest), restored to just before the incident, then `verify-evidence` |
 | RPO, documents | The backup interval; zero with a replicated bucket | Blobs are write-once and content-addressed: bucket versioning, Object Lock and cross-region replication keep every blob the database can name |
 | RPO, keyd's log | The backup interval | keyd's log lists signatures the database also records; a lost tail loses no evidence a sealed document needs |
-| RTO | 4 hours for a production install (a target, not yet measured) | The drill records the restore time of its data set in its report; it grows with the dump size (`pg_restore` speed) and the number of blobs |
+| RTO | 4 hours for a production install (a target, not yet measured at production size) | The drill records the restore time of its data set in its report; it grows with the dump size (`pg_restore` speed) and the number of blobs. Measured: 8.6 s for the drill's data set (CI run 43519062719, commit 66b808c, 2026-11-14) |
 
 What an RPO window loses: changes after the backup, including envelopes signed or sealed after it. Sealed PDFs already
 delivered still verify on their own; the restored audit chain simply ends at the backup's head, and those envelopes
