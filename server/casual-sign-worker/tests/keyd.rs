@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use casual_sign_keyd::{DEV_REASON, DevKeyConsent, DigestSigner, FileKey, KeydLimits, RemoteKey};
 use casual_sign_model::EnvelopeStatus;
-use casual_sign_worker::seal::SealKey;
+use casual_sign_worker::seal::{KeydKey, SealKey};
 use common::Env;
 use keyd_common::{Pki, endpoint, scratch, start_keyd};
 use rcgen::{KeyPair, PKCS_ECDSA_P256_SHA256};
@@ -151,11 +151,28 @@ async fn complete(env: &Env) -> common::Ids {
 /// console (`casual-sign-console` `tests/keys.rs`); here it is stubbed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_seal_key_follows_the_approved_alias_from_its_start() {
-    let Some(env) = Env::new("seal_key_follows_alias").await else {
+    alias_rotation("seal_key_follows_alias", |e| {
+        SealKey::Remote(RemoteKey::connect(e, "platform").unwrap())
+    })
+    .await;
+}
+
+/// The same rotation with the worker binary's key, connected to keyd on first use
+/// (`SealKey::Keyd`, HRD-01): another alias is fetched from the same keyd per seal.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_lazily_connected_keyd_key_follows_the_approved_alias_too() {
+    alias_rotation("seal_keyd_follows_alias", |e| {
+        SealKey::Keyd(KeydKey::new(e, "platform"))
+    })
+    .await;
+}
+
+async fn alias_rotation(name: &str, key: impl FnOnce(casual_sign_keyd::Endpoint) -> SealKey) {
+    let Some(env) = Env::new(name).await else {
         return;
     };
     let pki = Pki::new();
-    let dir = scratch("worker-keyd-rotation");
+    let dir = scratch(&format!("{name}-keyd"));
     let worker_id = pki.client_identity("worker");
     let keyd = start_keyd(
         &pki,
@@ -167,8 +184,7 @@ async fn the_seal_key_follows_the_approved_alias_from_its_start() {
         KeydLimits::default(),
         &dir,
     );
-    let remote = RemoteKey::connect(endpoint(&pki, &keyd, Some(&worker_id)), "platform").unwrap();
-    *env.key.lock().unwrap() = Some(SealKey::Remote(remote));
+    *env.key.lock().unwrap() = Some(key(endpoint(&pki, &keyd, Some(&worker_id))));
     env.anchors
         .lock()
         .unwrap()
@@ -222,7 +238,7 @@ async fn the_seal_key_follows_the_approved_alias_from_its_start() {
     );
     // The seal under the new key verifies independently (docs/04 rule 26): pyHanko over
     // it, when `OPENSEAL_VERIFY_PYTHON` names a Python with pyHanko.
-    let out = scratch("worker-keyd-rotation-pyhanko");
+    let out = scratch(&format!("{name}-pyhanko"));
     std::fs::write(
         out.join("rotated.pdf"),
         &env.sealed_bytes(second.env).await[0],
