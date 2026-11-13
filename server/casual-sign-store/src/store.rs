@@ -118,6 +118,7 @@ impl Tenant<'_> {
         Ok(TenantTx {
             tx,
             account: self.account,
+            actor: None,
         })
     }
 }
@@ -128,13 +129,19 @@ impl Tenant<'_> {
 pub struct TenantTx {
     tx: Transaction<'static, Postgres>,
     account: AccountId,
+    /// Who the admin events this transaction appends record (`TenantTx::act_as`).
+    pub(crate) actor: Option<crate::admin_log::AdminActor>,
 }
 
 impl TenantTx {
     /// Bind an open transaction, whose `openseal.account_id` is already `account`, as
     /// that account's transaction ([`crate::OrgTx::into_workspace`]).
-    pub(crate) fn bound(tx: Transaction<'static, Postgres>, account: AccountId) -> Self {
-        Self { tx, account }
+    pub(crate) fn bound(
+        tx: Transaction<'static, Postgres>,
+        account: AccountId,
+        actor: Option<crate::admin_log::AdminActor>,
+    ) -> Self {
+        Self { tx, account, actor }
     }
 
     /// The account every statement in this transaction is bound to.

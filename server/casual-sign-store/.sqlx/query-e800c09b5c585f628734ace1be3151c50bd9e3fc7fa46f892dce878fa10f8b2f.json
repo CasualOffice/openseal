@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT next_seq AS \"next_seq!\", head FROM openseal_admin_chain_tip()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "next_seq!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "head",
+        "type_info": "Bytea",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "e800c09b5c585f628734ace1be3151c50bd9e3fc7fa46f892dce878fa10f8b2f"
+}

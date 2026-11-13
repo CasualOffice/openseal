@@ -21,6 +21,11 @@
 //! `TRUNCATE` for every role; and an insert trigger recomputes each event's SHA-256 from
 //! its canonical bytes and refuses one that does not extend its envelope's chain.
 //!
+//! **Admin logs (ORG-05).** Every settings, member, profile, workspace and organization
+//! change appends a hash-chained admin event in its own transaction (`admin_events` per
+//! workspace, `org_admin_events` per organization); the repositories append them, and the
+//! database refuses to commit such a change without one.
+//!
 //! **Queries.** Compile-time checked `sqlx::query!` / `query_as!` with bound parameters
 //! only (ADR-014). The offline cache in `.sqlx/` lets `SQLX_OFFLINE=true` builds check
 //! every statement without a database; `sqlx-prepare.sh --check` proves the cache still
@@ -29,6 +34,7 @@
 //! **Errors** are [`StoreError`] with `CS-DB-*` and `CS-BLOB-*` codes (docs/20); no
 //! message carries a database error's text, which can quote personal data.
 
+mod admin_log;
 mod error;
 mod ids;
 mod migrate;
@@ -38,6 +44,10 @@ mod store;
 pub mod blob;
 pub mod repo;
 
+pub use admin_log::{
+    ADMIN_EVENT_CONSTRAINT, ADMIN_EVENT_VERSION, ActorKind, AdminActor,
+    MAX_PAGE as ADMIN_EVENTS_MAX_PAGE, StoredAdminEvent, verify_admin_chain,
+};
 pub use error::{Result, StoreError};
 pub use ids::*;
 pub use migrate::{MIGRATIONS, Migration, MigrationReport, migrate};

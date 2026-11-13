@@ -199,16 +199,17 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0001 | Database unreachable, connection failed, or pool exhausted |
 | CS-DB-0002 | A migration failed, or an applied migration's text changed (migrations are forward-only) |
 | CS-DB-0003 | Not found in this account (another account's object answers the same) |
-| CS-DB-0004 | Update, delete or truncate of the audit chain or a tombstone refused (SQLSTATE `OS001`) |
+| CS-DB-0004 | Update, delete or truncate of the audit chain, a tombstone, an admin log (`admin_events`, `org_admin_events`; `ORG-05`, migration 0020), or the operator log (`CON-03`) refused (SQLSTATE `OS001`) |
 | CS-DB-0005 | Audit event does not extend its envelope's chain: hash, `seq` or `prev` (SQLSTATE `OS002`) |
 | CS-DB-0006 | Already exists (a unique constraint, named) |
 | CS-DB-0007 | Stale version: the object changed since it was read |
-| CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object; with constraint `organization_keeps_an_owner` (SQLSTATE `23514`, `ORG-02`), a commit that would leave an active organization with no enabled owner (`StoreError::is_last_owner`, served as `CS-ORG-0008` once ORG-03's routes issue it); with constraint `organization_admin_is_a_member` (SQLSTATE `23503`, `ORG-02`), an organization administrator who is not an enabled member of one of that organization's workspaces |
+| CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object; with constraint `organization_keeps_an_owner` (SQLSTATE `23514`, `ORG-02`), a commit that would leave an active organization with no enabled owner (`StoreError::is_last_owner`, served as `CS-ORG-0008` once ORG-03's routes issue it); with constraint `organization_admin_is_a_member` (SQLSTATE `23503`, `ORG-02`), an organization administrator who is not an enabled member of one of that organization's workspaces; with constraint `admin_change_has_event` (SQLSTATE `23514`, `ORG-05`), a commit by the application role that changed settings, a member, a profile, a workspace or the organization without appending that change's admin event |
 | CS-DB-0009 | Refused by the database: missing privilege, or a row row-level security does not admit; SQLSTATE `OS003` (the store's own) when the user to change is also a member of another account (`SEC-ID-01`, served as `CS-API-0015`) |
 | CS-DB-0010 | A stored value could not be read back as its type |
 | CS-DB-0011 | The database has a migration this build does not know |
 | CS-DB-0012 | Any other database error, by SQLSTATE |
 | CS-DB-0013 | Change to an immutable column refused: a workspace's organization, outside ORG-20's operator link (SQLSTATE `OS004`; `ORG-02`, migration 0014) |
+| CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq`, `prev`, or columns that differ from its canonical bytes (SQLSTATE `OS005`; `ORG-05`, migration 0020, for `admin_events` and `org_admin_events`; `CON-03`, migration 0017, for `platform.operator_events`) |
 | CS-BLOB-0001 | Blob store failed (I/O, network, unexpected status) |
 | CS-BLOB-0002 | No blob under that key |
 | CS-BLOB-0003 | Bytes stored under a key do not hash to it |
@@ -264,7 +265,6 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 | CS-CON-0015 | The database is unavailable (503) |
 | CS-CON-0016 | Already exists: an operator with that e-mail (409) |
 | CS-CON-0017 | Console configuration invalid or a secret missing; names the variable (start-up) |
-| CS-DB-0014 | Operator log event does not extend its chain: hash, `seq`, `prev`, or canonical bytes that disagree with the row (SQLSTATE `OS005`; `CON-03`, migration 0017). Also the admin logs' when `ORG-05` lands |
 
 ## Organizations, plans and console (proposed, ADR-028)
 
@@ -272,9 +272,10 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 §8; nothing issues them yet. Each moves to the issued list above when the row that builds it merges. New ranges:
 `CS-ORG` (organizations, workspaces, delegated administration, identity), `CS-PLAN` (plans and quotas), `CS-CON`
 (platform console). `CS-ORG-0012` is withdrawn before issue: `SEC-ID-01`'s fix issues `CS-API-0015` (store `CS-DB-0009`,
-SQLSTATE `OS003`) for the identity-attribute refusal, so this design's SQLSTATEs are `OS004` and `OS005`. Also proposed: widening `CS-DB-0004` to cover the admin and operator
-logs (`admin_events`, `org_admin_events`, `platform.operator_events`), which use the same append-only trigger.
-`CS-DB-0013` is issued (`ORG-02`) and listed with the store codes above; `CS-CON-0001` to `-0005`, `-0007` and `CS-DB-0014` are issued (`CON-02`, `CON-03`) and listed in the section above.
+SQLSTATE `OS003`) for the identity-attribute refusal, so this design's SQLSTATEs are `OS004` and `OS005`.
+`CS-DB-0004`'s widening to the admin logs and `CS-DB-0014` are issued (`ORG-05`, migration 0020); the operator log
+(`platform.operator_events`) uses both (`CON-03`, migration 0017). `CS-DB-0013` is issued (`ORG-02`). All are listed with
+the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`, `CON-03`) and listed in the section above.
 
 | Code | Meaning |
 | --- | --- |

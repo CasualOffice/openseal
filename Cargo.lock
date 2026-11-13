@@ -881,6 +881,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "rusty-s3",
+ "serde",
  "serde_json",
  "sqlx",
  "time",

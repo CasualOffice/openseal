@@ -214,3 +214,41 @@ impl TestDb {
         maint.close().await;
     }
 }
+
+/// Append a well-formed event to the admin log of the organization `org` from a raw
+/// application-role transaction scoped to it, as a repository would (ORG-05): tests that
+/// change organization tables with raw SQL need one, or the commit is refused
+/// (`admin_change_has_event`).
+pub async fn org_event(conn: &mut sqlx::PgConnection, org: OrganizationId) {
+    let (seq, prev): (i64, Option<Vec<u8>>) =
+        sqlx::query_as("SELECT next_seq, head FROM openseal_admin_chain_tip()")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    let prev_json = prev.as_ref().map_or("null".to_owned(), |p| {
+        format!(
+            "\"{}\"",
+            p.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        )
+    });
+    let canonical = format!(
+        "{{\"action\":\"test.change\",\"at\":1,\"organization\":\"{}\",\"prev\":{prev_json},\"seq\":{seq}}}",
+        org.0
+    )
+    .into_bytes();
+    let hash = casual_sign_audit::Hash256::digest(&canonical)
+        .as_bytes()
+        .to_vec();
+    sqlx::query(
+        "INSERT INTO org_admin_events (organization_id, seq, prev_hash, hash, action, at, canonical) \
+         VALUES ($1, $2, $3, $4, 'test.change', 'epoch'::timestamptz + interval '1 millisecond', $5)",
+    )
+    .bind(org.0)
+    .bind(seq)
+    .bind(prev)
+    .bind(hash)
+    .bind(canonical)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT openseal_archive_workspace($1) AS \"done!\"",
+  "query": "SELECT openseal_archive_workspace($1, $2, $3, $4, $5, $6) AS \"done!\"",
   "describe": {
     "columns": [
       {
@@ -12,12 +12,17 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
       ]
     },
     "nullable": [
       null
     ]
   },
-  "hash": "51c63822ac3bf868cecca048c4a4317f1c555dbee4e4aff426569e0508428a03"
+  "hash": "911185040fd98db26f8bc3527b72603455d317c09d1a6842bfbd50ed07aef819"
 }

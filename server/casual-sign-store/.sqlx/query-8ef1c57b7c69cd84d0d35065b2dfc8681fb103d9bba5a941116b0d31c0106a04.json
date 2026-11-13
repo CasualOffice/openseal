@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO admin_events (account_id, seq, prev_hash, hash, action, at, canonical) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Text",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8ef1c57b7c69cd84d0d35065b2dfc8681fb103d9bba5a941116b0d31c0106a04"
+}

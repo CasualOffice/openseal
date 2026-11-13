@@ -55,7 +55,8 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(17, "0017_operators.sql"),
     migration!(18, "0018_console_organization_writes.sql"),
     migration!(19, "0019_console_approvals.sql"),
-    // 20 to 23 are taken by rows merging before this one (ORG-05, ML, folders, CON-16).
+    migration!(20, "0020_admin_events.sql"),
+    // 21 to 23 are taken by rows merging before this one (ML, folders, CON-16).
     migration!(24, "0024_plans.sql"),
 ];
 
