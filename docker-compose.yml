@@ -162,14 +162,15 @@ services:
   # shared `secrets` volume (tools/ml/check-modeld-isolation.py checks this). Only on the
   # `ml` network, which is internal (no route out). The weights are baked into the image,
   # hash-checked at build and again at start. OPENSEAL_ML_PROFILES picks the bundle
-  # (docs/65 §Pretrained models).
+  # (docs/65 §Pretrained models); `personal_data` joins the default once OpenSeal's
+  # mirror serves the GLiNER fp16 export (ML-15, ML-21).
   modeld:
     profiles: [ml]
     build:
       context: .
       dockerfile: deploy/Dockerfile
       target: modeld
-      args: {OPENSEAL_ML_PROFILES: "${OPENSEAL_ML_PROFILES:-ocr templates personal_data}"}
+      args: {OPENSEAL_ML_PROFILES: "${OPENSEAL_ML_PROFILES:-ocr templates}"}
     image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-modeld:${OPENSEAL_VERSION:-dev}
     environment:
       OPENSEAL_MODELD_TLS_CERT: /secrets/modeld-tls-chain.pem
