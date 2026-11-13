@@ -11,10 +11,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rusty_s3::actions::S3Action;
+use rusty_s3::actions::{ListObjectsV2, S3Action};
 use rusty_s3::{Bucket, Credentials, UrlStyle};
 
-use super::{BlobKey, BlobStore, DEFAULT_MAX_BLOB_BYTES, verified, within};
+use super::{BlobKey, BlobListing, BlobStore, DEFAULT_MAX_BLOB_BYTES, verified, within};
 use crate::error::{Result, StoreError};
 
 /// How long a presigned request stays valid.
@@ -264,4 +264,51 @@ impl BlobStore for S3BlobStore {
         })
         .await
     }
+
+    async fn list(&self, after: Option<String>) -> Result<BlobListing> {
+        let inner = Arc::clone(&self.inner);
+        blocking(move || {
+            let mut action = inner.bucket.list_objects_v2(Some(&inner.credentials));
+            action.with_max_keys(LIST_PAGE);
+            if let Some(token) = &after {
+                action.with_continuation_token(token.as_str());
+            }
+            let url = action.sign(PRESIGN);
+            let mut r = inner
+                .agent
+                .get(url.as_str())
+                .call()
+                .map_err(|_| unavailable(None))?;
+            match r.status().as_u16() {
+                200 => {}
+                s => return Err(unavailable(Some(s))),
+            }
+            let body = r
+                .body_mut()
+                .with_config()
+                .limit(MAX_LISTING_BYTES)
+                .read_to_string()
+                .map_err(|_| unavailable(None))?;
+            let page = ListObjectsV2::parse_response(&body).map_err(|_| unavailable(None))?;
+            let mut listing = BlobListing {
+                next: page.next_continuation_token,
+                ..BlobListing::default()
+            };
+            for object in page.contents {
+                match BlobKey::parse(&object.key) {
+                    Ok(k) => listing.keys.push(k),
+                    Err(_) => listing.ignored = listing.ignored.saturating_add(1),
+                }
+            }
+            Ok(listing)
+        })
+        .await
+    }
 }
+
+/// Keys asked for per listing request (S3's own maximum).
+const LIST_PAGE: usize = 1000;
+
+/// The cap on one listing response: a thousand keys of 64 characters with their
+/// metadata is well under 1 MiB; anything past 8 MiB is refused as unreadable.
+const MAX_LISTING_BYTES: u64 = 8 * 1024 * 1024;

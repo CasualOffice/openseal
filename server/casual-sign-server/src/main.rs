@@ -35,6 +35,22 @@
 //! `casual-sign-server migrate` applies every missing migration as the schema owner
 //! named by `OPENSEAL_MIGRATE_DATABASE_URL` (secret), never the application role (T-2F).
 //!
+//! Backups and restores (ASVS-14, docs/65 §Backups; `tools/backup/openseal_backup.py`
+//! runs them):
+//!
+//! - `casual-sign-server blobs-export <dir>` writes every blob of the configured store
+//!   (`OPENSEAL_BLOB_DIR` or `OPENSEAL_S3_*`) to `<dir>/<sha256>`, checking each against
+//!   its key; files already there are checked and kept.
+//! - `casual-sign-server blobs-import <dir>` puts every file of `<dir>` into the store,
+//!   refusing a name that is not a key or bytes that are not the name's.
+//! - `casual-sign-server verify-evidence` connects as the schema owner
+//!   (`OPENSEAL_MIGRATE_DATABASE_URL`, secret), rebuilds and verifies every envelope's
+//!   audit chain, each workspace's and organization's admin log, and the operator log,
+//!   then reads back every blob the evidence names from the store, each verified against
+//!   its key: documents, certificates of completion, signature captures and the images
+//!   they name, logos and attachments. It exits 0 only when all of it verifies,
+//!   printing the counts.
+//!
 //! `casual-sign-server healthcheck` asks the server on `OPENSEAL_LISTEN` (its port, on
 //! the loopback address) for `/.well-known/jwks.json` and exits 0 on `200`: a
 //! container's health check with no shell or HTTP client in the image (T-2F).
@@ -203,6 +219,149 @@ async fn migrate() -> ExitCode {
     }
 }
 
+/// The store as the backup commands use it: the server's own configuration.
+async fn blobs_or_fail() -> Result<Blobs, ExitCode> {
+    blob_store().await.map_err(|e| fail(&e))
+}
+
+/// `blobs-export <dir>` and `blobs-import <dir>` (ASVS-14).
+async fn blobs_copy(export: bool, dir: Option<&String>) -> ExitCode {
+    use casual_sign_store::blob::{export_to_dir, import_from_dir};
+    let Some(dir) = dir.map(std::path::Path::new) else {
+        return fail("usage: blobs-export <dir> | blobs-import <dir>");
+    };
+    let blobs = match blobs_or_fail().await {
+        Ok(b) => b,
+        Err(code) => return code,
+    };
+    if export {
+        let report = match &blobs {
+            Blobs::Fs(s) => export_to_dir(s.as_ref(), dir).await,
+            Blobs::S3(s) => export_to_dir(s.as_ref(), dir).await,
+        };
+        match report {
+            Ok(r) => {
+                println!(
+                    "blobs exported={} present={} ignored={}",
+                    r.exported, r.present, r.ignored
+                );
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(&e.to_string()),
+        }
+    } else {
+        let report = match &blobs {
+            Blobs::Fs(s) => import_from_dir(s.as_ref(), dir).await,
+            Blobs::S3(s) => import_from_dir(s.as_ref(), dir).await,
+        };
+        match report {
+            Ok(r) => {
+                println!("blobs imported={}", r.imported);
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(&e.to_string()),
+        }
+    }
+}
+
+/// `verify-evidence` (ASVS-14): every chain, the operator log, then every blob the
+/// evidence names (documents, certificates of completion, signature captures and the
+/// images they name, logos, attachments), each read back against its key.
+async fn verify_evidence() -> ExitCode {
+    use casual_sign_store::blob::BlobStore as _;
+    let url = match secret("OPENSEAL_MIGRATE_DATABASE_URL") {
+        Ok(Some(u)) => u,
+        Ok(None) => return fail("OPENSEAL_MIGRATE_DATABASE_URL is not set"),
+        Err(e) => return fail(&e),
+    };
+    let store = match Store::connect(&url, 2).await {
+        Ok(s) => s,
+        Err(e) => return fail(e.code()),
+    };
+    let report = match store.verify_evidence().await {
+        Ok(r) => r,
+        Err(e) => return fail(&e.to_string()),
+    };
+    // The operator log lives in the same database (`platform` schema, docs/23 §5.1); the
+    // owner role reads it as the console's role would.
+    let pool = match casual_sign_platform_store::sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&url)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => return fail("CS-DB-0001: database unavailable (operator log)"),
+    };
+    let operator = match casual_sign_platform_store::PlatformStore::new(pool)
+        .verify_log()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => return fail(&format!("{e} (operator log)")),
+    };
+    let keys = match store.evidence_blob_keys().await {
+        Ok(k) => k,
+        Err(e) => return fail(&e.to_string()),
+    };
+    let blobs = match blobs_or_fail().await {
+        Ok(b) => b,
+        Err(code) => return code,
+    };
+    let captures: std::collections::BTreeSet<_> = keys.captures.iter().collect();
+    let mut checked: std::collections::BTreeSet<casual_sign_store::blob::BlobKey> =
+        std::collections::BTreeSet::new();
+    let mut images = Vec::new();
+    for key in &keys.named {
+        let read = match &blobs {
+            Blobs::Fs(s) => s.get(key).await,
+            Blobs::S3(s) => s.get(key).await,
+        };
+        let bytes = match read {
+            Ok(b) => b,
+            Err(e) => return fail(&format!("{e} (blob {key})")),
+        };
+        // A capture is drawn, typed, or names the image the signer uploaded: that image
+        // is evidence too. A capture the seal job could not read fails here as well.
+        if captures.contains(key) {
+            use casual_sign_host::capture::{Parsed, parse};
+            match parse(&bytes) {
+                Ok(Parsed::Image(hex)) => match casual_sign_store::blob::BlobKey::parse(&hex) {
+                    Ok(image) => images.push(image),
+                    Err(e) => return fail(&format!("{e} (capture {key})")),
+                },
+                Ok(Parsed::Art(_)) => {}
+                Err(e) => return fail(&format!("{e} (capture {key})")),
+            }
+        }
+        checked.insert(*key);
+    }
+    for image in images {
+        if !checked.insert(image) {
+            continue;
+        }
+        let read = match &blobs {
+            Blobs::Fs(s) => s.get(&image).await,
+            Blobs::S3(s) => s.get(&image).await,
+        };
+        if let Err(e) = read {
+            return fail(&format!("{e} (signature image {image})"));
+        }
+    }
+    println!(
+        "evidence verified: envelopes={} audit_events={} workspaces={} admin_events={} \
+         organizations={} org_admin_events={} operator_events={} blobs={}",
+        report.envelopes,
+        report.audit_events,
+        report.workspaces,
+        report.admin_events,
+        report.organizations,
+        report.org_admin_events,
+        operator.events,
+        checked.len()
+    );
+    ExitCode::SUCCESS
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     tracing_subscriber::fmt()
@@ -217,6 +376,11 @@ async fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         Some("healthcheck") => return healthcheck(),
         Some("migrate") => return migrate().await,
+        Some("verify-evidence") => return verify_evidence().await,
+        Some(cmd @ ("blobs-export" | "blobs-import")) => {
+            let dir = std::env::args().nth(2);
+            return blobs_copy(cmd == "blobs-export", dir.as_ref()).await;
+        }
         _ => {}
     }
     let url = match secret("OPENSEAL_DATABASE_URL") {

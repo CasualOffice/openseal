@@ -27,14 +27,14 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
 | Met | 187 | 105 | 76 | 6 |
-| Partly | 48 | 12 | 30 | 6 |
-| Not met | 19 | 4 | 10 | 5 |
+| Partly | 50 | 12 | 30 | 8 |
+| Not met | 17 | 4 | 10 | 3 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
 The largest gaps: a second factor for tenant staff that accounts must opt into (`ASVS-01` built TOTP; `ASVS-31` makes it the default for administrators), no security event log for staff authentication and
-access refusals (`ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), no backup and restore drill (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
+access refusals (`ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), a backup and restore drill built but not yet run (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
 
@@ -519,8 +519,8 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 8.1.2 | 2 | All | Server-side cached/temporary copies protected | Met | No disk caches of documents; blobs in the store under the tenancy model; modeld derived data keyed by account (`SEC-I06`) | — |
 | 8.1.3 | 2 | All | Minimal request parameters | Met | Ids in paths, typed bodies; no hidden fields carrying authorization | — |
 | 8.1.4 | 2 | All | Detect and alert on abnormal request numbers | Not met | Rate limits answer 429 (`-server/tests/auth.rs` `rate_limits_answer_429_with_retry_after`), but nothing detects or alerts | ASVS-13 |
-| 8.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): regular backups and test restores | Not met | Not built (`SEC-D02` Planned slice 20); docs/65 asks the operator for PITR backups | ASVS-14 |
-| 8.1.6 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backups stored securely | Not met | As 8.1.5 | ASVS-14 |
+| 8.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): regular backups and test restores | Partly | Built (`ASVS-14`): `tools/backup/openseal_backup.py` takes scheduled backups (database snapshot, blobs, keyd's log) and restores only into a fresh install, then `casual-sign-server verify-evidence` rebuilds every chain (the operator log too) and reads back every blob the evidence names: documents, certificates of completion, signature captures and their images, logos and attachments; the backup itself refuses an export lacking any of them (`-store/tests/evidence.rs`, `-server/tests/backup_commands.rs`, `tools/backup/test_openseal_backup.py`; docs/65 §Backups and restore). The restore drill (`tools/backup/drill.sh`, CI job `backup-drill`) is written but has not yet been run to completion, so the test restore is not yet evidenced | ASVS-14 |
+| 8.1.6 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backups stored securely | Partly | Built (`ASVS-14`): CMS AuthEnvelopedData (AES-256-GCM, RSA-OAEP-SHA-256) for an offline recipient key, manifest signed with Ed25519 by a key only the backup host holds (verifiers hold its public half, so they cannot forge a backup a restore would run), roles script limited to role statements with no psql meta-command, no private key or secret in a backup; every check runs on the bytes then used (manifest, signature and payload read from the store once, into a private directory; only that copy decrypted); a flipped payload byte, an edited or re-signed manifest, a payload or manifest swapped in the store between check and use, another key, a roles script with `\!` or a `$` in a role name, and a hostile tar entry are refused (`tools/backup/test_openseal_backup.py`). Partly until the drill has run | ASVS-14 |
 
 **V8.2 Client-side Data Protection**
 

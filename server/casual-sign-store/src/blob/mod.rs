@@ -14,9 +14,11 @@ use casual_sign_audit::Hash256;
 
 use crate::error::{Result, StoreError};
 
+mod dump;
 mod fs;
 mod s3;
 
+pub use dump::{ExportReport, ImportReport, export_to_dir, import_from_dir};
 pub use fs::FsBlobStore;
 pub use s3::{S3BlobStore, S3Config};
 
@@ -94,6 +96,28 @@ pub trait BlobStore: Send + Sync {
     ///
     /// `CS-BLOB-0001` the store failed.
     fn exists(&self, key: &BlobKey) -> impl Future<Output = Result<bool>> + Send;
+
+    /// One page of the keys stored, in ascending order, from the start (`after` is
+    /// `None`) or from the `next` marker of the page before. Names in the store that are
+    /// not blob keys are counted in [`BlobListing::ignored`], never returned. What a
+    /// backup walks (ASVS-14, docs/65 §Backups).
+    ///
+    /// # Errors
+    ///
+    /// `CS-BLOB-0001` the store failed or answered something unreadable.
+    fn list(&self, after: Option<String>) -> impl Future<Output = Result<BlobListing>> + Send;
+}
+
+/// One page of [`BlobStore::list`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BlobListing {
+    /// The keys on this page, ascending.
+    pub keys: Vec<BlobKey>,
+    /// Names on this page that are not blob keys (another tool's objects, or a store's
+    /// temporary files): skipped.
+    pub ignored: u64,
+    /// Where the next page starts; `None` on the last page.
+    pub next: Option<String>,
 }
 
 /// Check bytes read back against their key.

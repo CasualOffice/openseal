@@ -70,3 +70,33 @@ async fn s3_caps_and_verifies_what_it_reads() {
     let key = big.put(&[2u8; 32]).await.unwrap();
     assert_eq!(small.get(&key).await.unwrap_err().code(), "CS-BLOB-0004");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn s3_list_walks_every_key_in_order_across_pages() {
+    let Some(cfg) = config("s3_list_walks_every_key_in_order_across_pages") else {
+        return;
+    };
+    let store = S3BlobStore::new(&cfg).unwrap();
+    store.create_bucket().await.unwrap();
+    let empty = store.list(None).await.unwrap();
+    assert!(empty.keys.is_empty() && empty.next.is_none());
+    // More than one page (S3 answers at most 1000 keys a request).
+    let mut want = Vec::new();
+    for i in 0u32..1003 {
+        want.push(store.put(&i.to_le_bytes()).await.unwrap());
+    }
+    want.sort();
+    let (mut keys, mut pages, mut after) = (Vec::new(), 0, None);
+    loop {
+        let page = store.list(after).await.unwrap();
+        assert_eq!(page.ignored, 0);
+        keys.extend(page.keys);
+        pages += 1;
+        match page.next {
+            Some(n) => after = Some(n),
+            None => break,
+        }
+    }
+    assert_eq!(keys, want);
+    assert_eq!(pages, 2);
+}
