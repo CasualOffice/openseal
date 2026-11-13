@@ -1,62 +1,94 @@
-/* OpenSeal design tokens (WEB-01; docs/47 §As built: design system).
+/* OpenSeal design tokens (WEB-01, WEB-17; docs/47 §As built: design foundation).
  *
- * The one tokens file. Colour structure follows OpenPresent's `editor.css` token block
- * (`--op-*`, light, dark by attribute and by OS preference; copied at `e61277d`, see
- * PROVENANCE.md) renamed `--os-*`, with OpenSeal's brand: the logo's seal red
- * #c01622 → #8e0b14. Sizes are the owner's industry-standard scale (2026-11-11):
- * icons 16/20/24, type 12/14/16/20/24/32, a 4 px spacing grid, radii 6/8/12, buttons
- * 32/36/44, targets ≥ 24 (WCAG 2.2 SC 2.5.8) and ≥ 44 on the signing page and phones
- * (SC 2.5.5), focus ring 2 px with a 2 px offset, motion 150–250 ms.
+ * The one tokens file. Values come from the approved design canvas
+ * (docs/assets/design-canvas, owner instruction 44): warm neutrals (canvas #f4f3f0,
+ * white surfaces, ink #18181b, muted zinc), hairlines at 6–8 % ink, the seal red #c01622
+ * only for the one primary action, violet #6d28d9 only for model suggestions, amber and
+ * green for status; radii 6/8/12/14; soft layered shadows; Geist type. The token NAMES
+ * are the ones every screen has used since WEB-01; only values changed, and new tokens
+ * were added (status pairs, ML, easing, hairlines).
  *
  * Contrast (WCAG 2.2 AA) is checked, not asserted here: webapp/tests/pure.test.mjs
  * measures every text colour against every surface (≥ 4.5:1), control edges, the
  * focus ring and recipient colours (≥ 3:1), and white on the accent fill, in both
  * themes, and fails if the OS-preference dark block drifts from the explicit one.
+ * Where the canvas's own value fell short the test decided: muted text is #6b6b74
+ * (canvas #71717a measures 4.36:1 on the canvas colour), and the generic warning and
+ * success tokens are one step deeper than the canvas's status pills, which keep their
+ * exact colours in the `--os-st-*` pairs (each pair measured ≥ 4.5:1).
  */
 
 :root {
   color-scheme: light;
 
   /* ---- Colour (light) ---------------------------------------------------- */
-  /* Neutral slate scale (WEB-02 redesign): near-white canvas, white cards, hairline
-   * borders, slate text; the seal red only for primary actions and brand accents. */
-  --os-bg: #ffffff;
-  --os-canvas: #f6f7f9;        /* the app's page background behind cards and tables */
-  --os-surface: #f3f4f6;
-  --os-surface-2: #e8ebef;
-  --os-raised: #ffffff;
-  --os-stage: #e9ebef;
-  --os-text: #111827;
-  --os-muted: #4b5563;
-  --os-border: #e5e7eb;
-  --os-border-strong: #7a828e; /* ≥ 3:1 on bg and surface: control edges meet SC 1.4.11 */
-  --os-accent: #b3141f;        /* the seal red, one step deeper than the logo's #c01622 for text */
-  --os-accent-hover: #8e0b14;
-  --os-accent-fill: #b3141f;
-  --os-accent-hover-fill: #8e0b14; /* the primary button under the pointer */
+  --os-bg: #ffffff;            /* the content card and every surface on it */
+  --os-canvas: #f4f3f0;        /* the window behind the card: sidebar, editor */
+  --os-surface: #fafaf9;       /* row hover, table and group headers */
+  --os-surface-2: #f4f3f0;     /* subtle buttons, inputs at rest, chips */
+  --os-raised: #ffffff;        /* menus, dialogs, popovers */
+  --os-stage: #efeeea;         /* behind PDF pages */
+  --os-text: #18181b;
+  --os-text-2: #52525b;        /* secondary body text, nav links */
+  --os-muted: #6b6b74;
+  --os-faint: #a1a1aa;         /* separators in breadcrumbs, disabled glyphs (never text that must be read) */
+  --os-border: rgba(24, 24, 27, 0.08);
+  --os-hairline: rgba(24, 24, 27, 0.06);
+  --os-border-strong: #8b8b94; /* ≥ 3:1 on every surface: control edges meet SC 1.4.11 */
+  --os-accent: #c01622;        /* the seal red */
+  --os-accent-hover: #a8121d;
+  --os-accent-fill: #c01622;
+  --os-accent-hover-fill: #a8121d;
   --os-on-accent: #ffffff;
-  --os-accent-soft: rgba(192, 22, 34, 0.08);
-  /* Destructive, declined and error (UX-02): burnt orange, a different hue from the seal
-   * red so Void or Delete never reads as the primary action (CIEDE2000 ≥ 10, tested). */
-  --os-danger: #ad4609;
-  --os-danger-fill: #ad4609;
-  --os-danger-hover: #8c3a06;  /* a filled destructive button under the pointer */
+  --os-accent-soft: #fdf0f1;
+  --os-strong: #18181b;        /* the dark secondary button of the canvas inspector */
+  --os-strong-hover: #27272a;
+  --os-on-strong: #ffffff;
+  /* Destructive, declined and error (UX-02): a burgundy rose, a clearly different colour
+   * from the seal red (CIEDE2000 17.8, tested) so Void or Delete never reads as primary. */
+  --os-danger: #9d174d;
+  --os-danger-fill: #9d174d;
+  --os-danger-hover: #831843;
   --os-on-danger: #ffffff;
-  --os-select-soft: rgba(29, 95, 191, 0.08); /* a selected row: info blue, not the accent */
-  --os-success: #12703a;
-  --os-warning: #8a5a00;
+  --os-select-soft: #fdf6f6;   /* a selected row (canvas), with an inset accent edge */
+  --os-success: #14763a;
+  --os-warning: #a54b08;
   --os-info: #1d5fbf;
-  --os-focus: #1d5fbf;         /* focus ring: blue, distinct from the red accent and from errors */
-  --os-shadow: 0 1px 0.125rem rgba(15, 23, 42, 0.04), 0 1px 0.1875rem rgba(15, 23, 42, 0.06);
-  --os-shadow-md: 0 0.25rem 0.75rem -0.125rem rgba(15, 23, 42, 0.08), 0 0.125rem 0.25rem -0.125rem rgba(15, 23, 42, 0.05);
-  --os-shadow-pop: 0 1rem 2.5rem -0.5rem rgba(15, 23, 42, 0.20), 0 0.25rem 0.75rem -0.25rem rgba(15, 23, 42, 0.08);
+  --os-focus: #c01622;         /* the canvas's focus ring: 2 px seal red, 2 px offset */
+  /* Status pairs, exactly the canvas's pills: text on its own tint. */
+  --os-st-you: #c01622;
+  --os-st-you-soft: #fdf0f1;
+  --os-st-wait: #b45309;
+  --os-st-wait-soft: #fdf6ec;
+  --os-st-done: #15803d;
+  --os-st-done-soft: #eff8f2;
+  --os-st-draft: #52525b;
+  --os-st-draft-soft: #f4f4f5;
+  /* Model suggestions (WEB-18) and nothing else. */
+  --os-ml: #6d28d9;
+  --os-ml-soft: #f5f3ff;
+  --os-ml-edge: rgba(109, 40, 217, 0.22);
+  --os-ml-mark: #ede9fe;
+  --os-ml-ink: #4c1d95;
+  /* Personal-data callout (canvas): amber on cream. */
+  --os-pii: #92400e;
+  --os-pii-text: #78350f;
+  --os-pii-soft: #fffbeb;
+  --os-pii-edge: rgba(180, 83, 9, 0.18);
+  --os-shadow: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 1px 3px rgba(24, 24, 27, 0.04);
+  --os-shadow-sm: 0 0 0 1px rgba(24, 24, 27, 0.07), 0 1px 2px rgba(24, 24, 27, 0.04);
+  --os-shadow-md: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 8px 20px -10px rgba(24, 24, 27, 0.25);
+  --os-shadow-pop: 0 0 0 1px rgba(24, 24, 27, 0.08), 0 24px 60px -12px rgba(24, 24, 27, 0.35);
+  --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(142, 11, 20, 0.35);
   --os-tag: #fff4c2;           /* the signer's Start/Next guide tag */
   --os-tag-edge: #8a5a00;
-  --os-overlay: rgba(16, 20, 26, 0.45);
-  --os-skeleton: #e6e9ee;
-  --os-skeleton-hi: #f3f5f8;
-  --os-illus-line: #8a929e;
-  --os-illus-fill: #eef0f3;
+  --os-overlay: rgba(24, 24, 27, 0.28);
+  --os-skeleton: #f1f0ed;
+  --os-skeleton-hi: #f8f7f5;
+  --os-illus-line: #d4d4d8;
+  --os-illus-fill: #e4e4e7;
+  --os-illus-paper: #ffffff;
+  --os-illus-shadow: rgba(24, 24, 27, 0.06);
 
   /* Recipient colours: 3:1 or better against white as outlines (SC 1.4.11). */
   --os-r1: #1d5fbf;
@@ -67,12 +99,15 @@
   --os-r6: #b0306f;
 
   /* ---- Type ------------------------------------------------------------- */
-  --os-font: "OpenSeal Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-  --os-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --os-font: "OpenSeal Geist", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --os-font-mono: "OpenSeal Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --os-font-script-1: "OpenSeal Great Vibes", cursive;
   --os-font-script-2: "OpenSeal Allura", cursive;
+  --os-fs-11: max(0.6875rem, 11px); /* kbd hints and badges only */
   --os-fs-12: max(0.75rem, 12px); /* never under 12 px, even at a 15 px root (A11) */
+  --os-fs-13: 0.8125rem;
   --os-fs-14: 0.875rem;
+  --os-fs-15: 0.9375rem;
   --os-fs-16: 1rem;
   --os-fs-20: 1.25rem;
   --os-fs-24: 1.5rem;
@@ -86,81 +121,121 @@
   --os-s2: 0.5rem;
   --os-s3: 0.75rem;
   --os-s4: 1rem;
+  --os-s5: 1.25rem;
   --os-s6: 1.5rem;
   --os-s8: 2rem;
   --os-s12: 3rem;
 
-  /* ---- Shape ------------------------------------------------------------ */
+  /* ---- Shape: 6 / 8 / 12 / 14, controls 7 ------------------------------- */
   --os-radius-sm: 0.375rem;
+  --os-radius-ctl: 0.4375rem;
   --os-radius: 0.5rem;
   --os-radius-lg: 0.75rem;
+  --os-radius-xl: 0.875rem;
 
   /* ---- Icons ------------------------------------------------------------ */
-  --os-icon-sm: 1rem;  /* dense tables, menus */
-  --os-icon: 1.25rem;     /* default UI */
-  --os-icon-lg: 1.5rem;  /* toolbars, empty states */
+  --os-icon-sm: 1rem;
+  --os-icon: 1.25rem;
+  --os-icon-lg: 1.5rem;
 
   /* ---- Controls --------------------------------------------------------- */
-  --os-btn-sm: 2rem;
-  --os-btn: 2.25rem;
+  --os-btn-sm: 1.75rem;
+  --os-btn: 2rem;
   --os-btn-lg: 2.75rem;
   --os-target-min: max(1.5rem, 24px);   /* WCAG 2.2 SC 2.5.8: 24 CSS px, whatever the root size */
   --os-target-touch: max(2.75rem, 44px); /* SC 2.5.5: signing page, phones */
   --os-focus-width: 0.125rem;
   --os-focus-offset: 0.125rem;
 
-  /* ---- Motion ----------------------------------------------------------- */
-  --os-ease: cubic-bezier(.2, 0, 0, 1);
-  --os-dur-fast: 150ms;
+  /* ---- Motion (canvas curves) ------------------------------------------- */
+  --os-ease: cubic-bezier(.2, .8, .2, 1);
+  --os-ease-out: cubic-bezier(.16, 1, .3, 1);     /* entrances: rise, pop, slide */
+  --os-ease-state: cubic-bezier(.2, .8, .2, 1);   /* state changes: hover, select */
+  --os-ease-spring: cubic-bezier(.34, 1.56, .64, 1); /* a switch knob, a placed field, the seal */
+  --os-ease-wave: cubic-bezier(.45, 0, .55, 1);   /* float, scan */
+  --os-dur-fast: 160ms;
   --os-dur: 200ms;
-  --os-dur-slow: 250ms;
+  --os-dur-slow: 260ms;
+  --os-dur-enter: 360ms;
 
   /* ---- Layout ----------------------------------------------------------- */
-  --os-topbar-h: 3.75rem;
-  --os-nav-w: 14rem;
+  --os-topbar-h: 3.25rem;
+  --os-side-w: 15.5rem;
+  --os-nav-w: 15.5rem;
+  --os-card-inset: 0.5rem;
   --os-z-menu: 60;
   --os-z-toast: 900;
   --os-z-dialog: 1000;
 }
 
-/* Dark: by explicit choice, and by OS preference unless the user chose light. */
+/* Dark: by explicit choice, and by OS preference unless the user chose light. The
+ * canvas has no dark artboard; this is the same structure in zinc: the window darker
+ * than the card, hairlines in white, the seal red kept for fills, a lighter red for
+ * text, violet lifted for suggestions. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --os-bg: #111418;
-  --os-canvas: #0c0f13;
-  --os-surface: #181c22;
-  --os-surface-2: #20252d;
-  --os-raised: #1b2027;
-  --os-stage: #0b0d10;
-  --os-text: #e8ebf0;
-  --os-muted: #a2abb8;
-  --os-border: #2b313a;
-  --os-border-strong: #6b7584;
-  --os-accent: #ff8a92;
-  --os-accent-hover: #ffb3b8;
-  --os-accent-fill: #b3141f;
-  --os-accent-hover-fill: #8e0b14;
+  --os-bg: #18181b;
+  --os-canvas: #0f0f11;
+  --os-surface: #1f1f23;
+  --os-surface-2: #27272a;
+  --os-raised: #1f1f23;
+  --os-stage: #0b0b0d;
+  --os-text: #f4f4f5;
+  --os-text-2: #d4d4d8;
+  --os-muted: #a1a1aa;
+  --os-faint: #52525b;
+  --os-border: rgba(255, 255, 255, 0.09);
+  --os-hairline: rgba(255, 255, 255, 0.07);
+  --os-border-strong: #7c7c86;
+  --os-accent: #ff7a83;
+  --os-accent-hover: #ffa3a9;
+  --os-accent-fill: #c01622;
+  --os-accent-hover-fill: #a8121d;
   --os-on-accent: #ffffff;
-  --os-accent-soft: rgba(255, 138, 146, 0.12);
-  --os-danger: #fb923c;
-  --os-danger-fill: #ad4609;
-  --os-danger-hover: #8c3a06;
+  --os-accent-soft: #2a1517;
+  --os-strong: #f4f4f5;
+  --os-strong-hover: #e4e4e7;
+  --os-on-strong: #18181b;
+  --os-danger: #f472b6;
+  --os-danger-fill: #9d174d;
+  --os-danger-hover: #831843;
   --os-on-danger: #ffffff;
-  --os-select-soft: rgba(138, 180, 255, 0.12);
-  --os-success: #5fd38d;
-  --os-warning: #f2c14e;
+  --os-select-soft: #261a1c;
+  --os-success: #4ade80;
+  --os-warning: #fbbf24;
   --os-info: #8ab4ff;
-  --os-focus: #8ab4ff;
-  --os-shadow: 0 1px 0.125rem rgba(0, 0, 0, 0.5);
-  --os-shadow-pop: 0 0.75rem 2rem rgba(0, 0, 0, 0.6);
-  --os-shadow-md: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.45);
+  --os-focus: #ff7a83;
+  --os-st-you: #ff7a83;
+  --os-st-you-soft: #2a1517;
+  --os-st-wait: #fbbf24;
+  --os-st-wait-soft: #2a2213;
+  --os-st-done: #4ade80;
+  --os-st-done-soft: #13261b;
+  --os-st-draft: #d4d4d8;
+  --os-st-draft-soft: #27272a;
+  --os-ml: #a78bfa;
+  --os-ml-soft: #1f1a2e;
+  --os-ml-edge: rgba(167, 139, 250, 0.3);
+  --os-ml-mark: #3b2a63;
+  --os-ml-ink: #ddd6fe;
+  --os-pii: #fbbf24;
+  --os-pii-text: #fde68a;
+  --os-pii-soft: #241d10;
+  --os-pii-edge: rgba(251, 191, 36, 0.25);
+  --os-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --os-shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --os-shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+  --os-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 24px 60px -12px rgba(0, 0, 0, 0.75);
+  --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
   --os-tag: #4a3b00;
   --os-tag-edge: #f2c14e;
-  --os-overlay: rgba(0, 0, 0, 0.6);
-  --os-skeleton: #222831;
-  --os-skeleton-hi: #2b323c;
-  --os-illus-line: #7d8796;
-  --os-illus-fill: #1f242c;
+  --os-overlay: rgba(0, 0, 0, 0.55);
+  --os-skeleton: #232327;
+  --os-skeleton-hi: #2c2c31;
+  --os-illus-line: #52525b;
+  --os-illus-fill: #3f3f46;
+  --os-illus-paper: #27272a;
+  --os-illus-shadow: rgba(0, 0, 0, 0.35);
   --os-r1: #8ab4ff;
   --os-r2: #5fd38d;
   --os-r3: #c9a2ff;
@@ -171,41 +246,68 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --os-bg: #111418;
-    --os-canvas: #0c0f13;
-    --os-surface: #181c22;
-    --os-surface-2: #20252d;
-    --os-raised: #1b2027;
-    --os-stage: #0b0d10;
-    --os-text: #e8ebf0;
-    --os-muted: #a2abb8;
-    --os-border: #2b313a;
-    --os-border-strong: #6b7584;
-    --os-accent: #ff8a92;
-    --os-accent-hover: #ffb3b8;
-    --os-accent-fill: #b3141f;
-    --os-accent-hover-fill: #8e0b14;
+    --os-bg: #18181b;
+    --os-canvas: #0f0f11;
+    --os-surface: #1f1f23;
+    --os-surface-2: #27272a;
+    --os-raised: #1f1f23;
+    --os-stage: #0b0b0d;
+    --os-text: #f4f4f5;
+    --os-text-2: #d4d4d8;
+    --os-muted: #a1a1aa;
+    --os-faint: #52525b;
+    --os-border: rgba(255, 255, 255, 0.09);
+    --os-hairline: rgba(255, 255, 255, 0.07);
+    --os-border-strong: #7c7c86;
+    --os-accent: #ff7a83;
+    --os-accent-hover: #ffa3a9;
+    --os-accent-fill: #c01622;
+    --os-accent-hover-fill: #a8121d;
     --os-on-accent: #ffffff;
-    --os-accent-soft: rgba(255, 138, 146, 0.12);
-    --os-danger: #fb923c;
-    --os-danger-fill: #ad4609;
-    --os-danger-hover: #8c3a06;
+    --os-accent-soft: #2a1517;
+    --os-strong: #f4f4f5;
+    --os-strong-hover: #e4e4e7;
+    --os-on-strong: #18181b;
+    --os-danger: #f472b6;
+    --os-danger-fill: #9d174d;
+    --os-danger-hover: #831843;
     --os-on-danger: #ffffff;
-    --os-select-soft: rgba(138, 180, 255, 0.12);
-    --os-success: #5fd38d;
-    --os-warning: #f2c14e;
+    --os-select-soft: #261a1c;
+    --os-success: #4ade80;
+    --os-warning: #fbbf24;
     --os-info: #8ab4ff;
-    --os-focus: #8ab4ff;
-    --os-shadow: 0 1px 0.125rem rgba(0, 0, 0, 0.5);
-    --os-shadow-pop: 0 0.75rem 2rem rgba(0, 0, 0, 0.6);
-    --os-shadow-md: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.45);
+    --os-focus: #ff7a83;
+    --os-st-you: #ff7a83;
+    --os-st-you-soft: #2a1517;
+    --os-st-wait: #fbbf24;
+    --os-st-wait-soft: #2a2213;
+    --os-st-done: #4ade80;
+    --os-st-done-soft: #13261b;
+    --os-st-draft: #d4d4d8;
+    --os-st-draft-soft: #27272a;
+    --os-ml: #a78bfa;
+    --os-ml-soft: #1f1a2e;
+    --os-ml-edge: rgba(167, 139, 250, 0.3);
+    --os-ml-mark: #3b2a63;
+    --os-ml-ink: #ddd6fe;
+    --os-pii: #fbbf24;
+    --os-pii-text: #fde68a;
+    --os-pii-soft: #241d10;
+    --os-pii-edge: rgba(251, 191, 36, 0.25);
+    --os-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --os-shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --os-shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+    --os-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 24px 60px -12px rgba(0, 0, 0, 0.75);
+    --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
     --os-tag: #4a3b00;
     --os-tag-edge: #f2c14e;
-    --os-overlay: rgba(0, 0, 0, 0.6);
-    --os-skeleton: #222831;
-    --os-skeleton-hi: #2b323c;
-    --os-illus-line: #7d8796;
-    --os-illus-fill: #1f242c;
+    --os-overlay: rgba(0, 0, 0, 0.55);
+    --os-skeleton: #232327;
+    --os-skeleton-hi: #2c2c31;
+    --os-illus-line: #52525b;
+    --os-illus-fill: #3f3f46;
+    --os-illus-paper: #27272a;
+    --os-illus-shadow: rgba(0, 0, 0, 0.35);
     --os-r1: #8ab4ff;
     --os-r2: #5fd38d;
     --os-r3: #c9a2ff;
@@ -221,27 +323,26 @@
     --os-dur-fast: 0ms;
     --os-dur: 0ms;
     --os-dur-slow: 0ms;
+    --os-dur-enter: 0ms;
   }
 }
 
-/* The bundled UI font (UX-02): Inter (OFL; fonts/ui/, @fontsource-variable/inter 5.2.8,
- * PROVENANCE.md), variable weight, Latin and Latin Extended subsets; other scripts fall
- * back to the system stack. Without it Linux drew the app in DejaVu Sans. */
+/* The bundled UI fonts (WEB-17): Geist and Geist Mono 1.3.1 (OFL; fonts/ui/,
+ * OFL-1.1-Geist.txt, PROVENANCE.md), variable weight. Other scripts fall back to the
+ * system stack. */
 @font-face {
-  font-family: "OpenSeal Inter";
+  font-family: "OpenSeal Geist";
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url("fonts/ui/inter-5.2.8-latin-wght.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  src: url("fonts/ui/geist-1.3.1-variable.woff2") format("woff2");
 }
 @font-face {
-  font-family: "OpenSeal Inter";
+  font-family: "OpenSeal Geist Mono";
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url("fonts/ui/inter-5.2.8-latin-ext-wght.woff2") format("woff2");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  src: url("fonts/ui/geist-mono-1.3.1-variable.woff2") format("woff2");
 }
 
 /* The bundled signature fonts (OFL; fonts/script/, the same files the flattener embeds). */

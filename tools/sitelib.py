@@ -85,30 +85,43 @@ def png_size(path: pathlib.Path) -> tuple[int, int]:
 
 def shot(name: str, alt: str, root: str, eager: bool = False) -> str:
     """A screenshot in both themes. The theme not shown is display:none, so a lazy image
-    for it is never fetched; each has WebP with a PNG fallback and its size set."""
+    for it is never fetched; each has WebP (sharp on high-density screens) with a smaller
+    PNG fallback, and its size set.
+
+    `name` may list fallbacks, "wanted,current": the first that exists is used. That is
+    how a page names the screen tools/capture-site-screens.mjs will write once that screen
+    is rebuilt (`admin-intelligence,admin-api`) while it still shows the current image;
+    the span carries `data-shot` with the wanted name, and `data-pending` with the one
+    shown until the wanted file exists."""
+    names = [n.strip() for n in name.split(",") if n.strip()]
+    chosen = next((n for n in names if (SCREENS / f"{n}-light.png").exists()), None)
+    if chosen is None:
+        raise SystemExit(f"site: screenshot site/assets/screens/{names[0]}-light.png is missing; run "
+                         "tools/capture-site-screens.mjs, then tools/build-site.py --screens")
     loading = "eager" if eager else "lazy"
     parts = []
-    themed = (SCREENS / f"{name}-dark.png").exists()
+    themed = (SCREENS / f"{chosen}-dark.png").exists()
     for scheme in ("light", "dark") if themed else ("light",):
-        png = SCREENS / f"{name}-{scheme}.png"
-        if not png.exists():
-            raise SystemExit(f"site: screenshot {png.relative_to(ROOT)} is missing; run tools/build-site.py --screens")
+        png = SCREENS / f"{chosen}-{scheme}.png"
         w, h = png_size(png)
         cls = f"shot__{scheme}" if themed else "shot__any"
+        prio = ' fetchpriority="high"' if eager and scheme == "light" else ""
         parts.append(
-            f'<picture class="{cls}"><source type="image/webp" srcset="{root}assets/screens/{name}-{scheme}.webp">'
-            f'<img src="{root}assets/screens/{name}-{scheme}.png" width="{w}" height="{h}" alt="{html.escape(alt)}" '
-            f'loading="{loading}" decoding="async"></picture>')
-    return f'<span class="shot">{"".join(parts)}</span>'
+            f'<picture class="{cls}"><source type="image/webp" srcset="{root}assets/screens/{chosen}-{scheme}.webp">'
+            f'<img src="{root}assets/screens/{chosen}-{scheme}.png" width="{w}" height="{h}" alt="{html.escape(alt)}" '
+            f'loading="{loading}" decoding="async"{prio}></picture>')
+    pending = f' data-pending="{chosen}"' if chosen != names[0] else ""
+    return f'<span class="shot" data-shot="{names[0]}"{pending}>{"".join(parts)}</span>'
 
 
 # ---- Navigation ----------------------------------------------------------------------
 
 NAV = [
-    ("features", "Features", "index.html#features"),
+    ("features", "Product", "index.html#product"),
     ("docs", "Docs", "docs/index.html"),
     ("api", "API", "docs/api.html"),
     ("roadmap", "Roadmap", "roadmap.html"),
+    ("changelog", "Changelog", "changelog.html"),
     ("download", "Download", "download.html"),
 ]
 
@@ -149,21 +162,24 @@ def header(root: str, current: str) -> str:
         cur = ' aria-current="page"' if key == current else ""
         links.append(f'<a href="{root}{href}"{cur}>{label}</a>')
     nav = "".join(links)
-    gh = f'<a href="{REPO}" class="nav-gh">GitHub{icon("arrow-up-right", 16)}</a>'
+    gh = f'<a href="{REPO}" class="nav-gh">GitHub{icon("arrow-up-right", 14)}</a>'
+    # The header's action is the strong (ink) button: the seal red is kept for the one
+    # primary call to action in each page's body (owner instruction 44).
     return f"""<header class="site-header">
   <div class="wrap header-row">
     <a class="brand" href="{root}index.html" aria-label="OpenSeal home">
-      <img class="logo-light" src="{root}assets/logo.svg" alt="" width="128" height="25" loading="lazy">
-      <img class="logo-dark" src="{root}assets/logo-dark.svg" alt="" width="128" height="25" loading="lazy">
+      <img class="logo-light" src="{root}assets/logo.svg" alt="" width="120" height="24">
+      <img class="logo-dark" src="{root}assets/logo-dark.svg" alt="" width="120" height="24">
     </a>
-    <nav class="nav-links" aria-label="Main">{nav}{gh}</nav>
+    <nav class="nav-links" aria-label="Main">{nav}</nav>
     <div class="header-actions">
-      <button type="button" class="icon-btn search-open" aria-label="Search the site" aria-keyshortcuts="/">{icon("search")}<span class="kbd" aria-hidden="true">/</span></button>
-      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme">{icon("moon", cls="when-light")}{icon("sun", cls="when-dark")}</button>
-      <a class="btn btn-primary btn-sm header-cta" href="{root}docs/getting-started.html">Get started</a>
+      <button type="button" class="search-open" aria-label="Search the site" aria-keyshortcuts="/">{icon("search", 16)}<span class="search-open__label">Search</span><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme">{icon("moon", 18, cls="when-light")}{icon("sun", 18, cls="when-dark")}</button>
+      <a class="header-gh" href="{REPO}">GitHub</a>
+      <a class="btn btn-strong btn-sm header-cta" href="{root}docs/getting-started.html">Get started</a>
       <details class="menu">
         <summary aria-label="Menu">{icon("menu", cls="when-closed")}{icon("x", cls="when-open")}</summary>
-        <nav class="menu-panel" aria-label="Main (mobile)">{nav}{gh}<a href="{root}docs/getting-started.html">Get started</a></nav>
+        <nav class="menu-panel" aria-label="Main (mobile)">{nav}{gh}<a class="menu-cta" href="{root}docs/getting-started.html">Get started{icon("arrow-right", 16)}</a></nav>
       </details>
     </div>
   </div>
@@ -177,16 +193,17 @@ def footer(root: str) -> str:
     return f"""<footer class="site-footer">
   <div class="wrap foot-grid">
     <div class="foot-brand">
-      <img class="logo-light" src="{root}assets/logo.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
-      <img class="logo-dark" src="{root}assets/logo-dark.svg" alt="OpenSeal" width="128" height="25" loading="lazy">
+      <img class="logo-light" src="{root}assets/logo.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <img class="logo-dark" src="{root}assets/logo-dark.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
       <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
       <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
     </div>
-    {col("Product", [("Features", "index.html#features"), ("Roadmap", "roadmap.html"), ("Download and deploy", "download.html"), ("Changelog", "changelog.html")])}
-    {col("Documentation", [("Getting started", "docs/getting-started.html"), ("API reference", "docs/api.html"), ("Webhooks", "docs/webhooks.html"), ("Security and evidence", "docs/security.html")])}
-    {col("Project", [("GitHub", REPO), ("Security policy", "security.html"), ("Brand and attribution", "brand.html"), ("Contributing", "docs/contributing.html")])}
+    {col("Product", [("Overview", "index.html#product"), ("Download and deploy", "download.html"), ("Roadmap", "roadmap.html"), ("Changelog", "changelog.html")])}
+    {col("Documentation", [("Getting started", "docs/getting-started.html"), ("Self-hosting", "docs/self-hosting.html"), ("API reference", "docs/api.html"), ("Webhooks", "docs/webhooks.html")])}
+    {col("Trust", [("Security and evidence", "docs/security.html"), ("Verifying a document", "docs/verifying.html"), ("Security policy", "security.html"), ("Architecture", "docs/architecture.html")])}
+    {col("Project", [("GitHub", REPO), ("Contributing", "docs/contributing.html"), ("Brand and attribution", "brand.html")])}
   </div>
-  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p></div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p><p>Pre-release software: v0.0.1 is for evaluation, not yet for production agreements.</p></div>
 </footer>"""
 
 
@@ -216,10 +233,12 @@ def page(*, title: str, description: str, body: str, root: str, current: str = "
 <meta name="referrer" content="no-referrer">
 <title>{_esc(full_title)}</title>
 <meta name="description" content="{_esc(description)}">
-<meta name="theme-color" content="#b3141f">
+<meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="{_esc(full_title)}">
 <meta property="og:description" content="{_esc(description)}">
 <link rel="icon" href="{root}assets/mark.svg" type="image/svg+xml">
+<link rel="preload" href="{root}assets/fonts/ui/geist-1.3.1-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{root}assets/tokens.css">
 <link rel="stylesheet" href="{root}assets/site.css">
 <script src="{root}assets/theme-init.js"></script>

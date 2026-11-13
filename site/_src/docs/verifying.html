@@ -13,7 +13,7 @@
 <h2>In the browser</h2>
 <p>Open <code>/verify.html</code> on any OpenSeal install, or serve the web app yourself. Drop the PDF on the page. The check is the engine's own verifier compiled to WebAssembly: it runs in your browser and the file is never uploaded.</p>
 <figure>
-  <div class="frame">{{shot:verify|The verify page reporting Signed and unchanged, with the signature's time, coverage and format, the allowed later revision, and the audit trail section.}}</div>
+  <div class="frame">{{shot:verify|The verify page reporting Signed and unchanged: the file, one valid signature, three revisions, the trusted certificate used and when it was checked, then the signature's time, coverage and format.}}</div>
   <figcaption>A sealed test document, signed and unchanged.</figcaption>
 </figure>
 <p>Add the certificate of the authority you trust under <strong>Trusted certificates</strong> (DER or PEM): your organisation's root, or the root of the service that sealed the document. Without one, the verifier can confirm the document is unchanged but not who issued the seal, and says so.</p>

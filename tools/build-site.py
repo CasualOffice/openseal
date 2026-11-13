@@ -38,40 +38,58 @@ def _load(name: str):
 
 # ---- Screenshots -----------------------------------------------------------------------
 
-# raw capture name -> (site name, target width, crop height of the raw image or None)
+# raw capture name -> (target width of the WebP, crop height of the raw image or None).
+# tools/capture-site-screens.mjs captures at device scale 2 (2880 px for a 1440 px
+# window, 780 px for a 390 px phone); the WebP keeps enough of that to stay sharp on a
+# high-density screen, and the PNG fallback (for browsers without WebP) is smaller.
 SHOTS = {
-    "home": ("home", 1280, None), "agreements": ("agreements", 1280, None), "envelope": ("envelope", 1280, None),
-    "editor": ("editor", 1280, None), "templates": ("templates", 1280, None), "admin-api": ("admin-api", 1280, None),
-    "verify": ("verify", 1280, None), "sign-desktop": ("sign-desktop", 1280, None),
-    "adopt-desktop": ("adopt-desktop", 1280, None), "sign-done": ("sign-done", 1280, None),
-    "sign-phone": ("sign-phone", 600, None), "adopt-phone": ("adopt-phone", 600, None),
-    "certificate": ("certificate", 900, 1240),
+    # Ready on the approved design (WEB-17, WEB-18, CON-17).
+    "signin": (2000, None), "home": (2000, None), "palette": (2000, None), "verify": (2000, None),
+    "sign-desktop": (2000, None), "adopt-desktop": (2000, None), "sign-done": (2000, None),
+    "sign-phone": (780, None), "adopt-phone": (780, None), "console": (2000, None),
+    "certificate": (900, 1240),
+    # Written once the rebuilt screens merge (the pages show the current image until then).
+    "agreements": (2000, None), "envelope": (2000, None), "editor": (2000, None), "templates": (2000, None),
+    "admin-api": (2000, None), "admin-intelligence": (2000, None),
 }
+PNG_MAX = 1280
 
 
 def screens(raw: pathlib.Path) -> None:
+    """Convert every raw capture present in `raw`; a screen not captured keeps its files."""
     try:
         from PIL import Image
     except ImportError:
         raise SystemExit("build-site: --screens needs Pillow (pip install pillow)")
     out = SITE / "assets/screens"
     out.mkdir(parents=True, exist_ok=True)
-    for src, (name, width, crop) in SHOTS.items():
+    done = 0
+    for name, (width, crop) in SHOTS.items():
         for scheme in ("light", "dark"):
-            path = raw / f"{scheme}-{src}.png"
-            if not path.exists():
-                raise SystemExit(f"build-site: {path} is missing; run tools/capture-site-screens.mjs")
-            if src == "certificate" and scheme == "dark":
-                continue  # a PDF page looks the same in either theme
+            path = raw / f"{scheme}-{name}.png"
+            if not path.exists() or (name == "certificate" and scheme == "dark"):
+                continue  # not captured this run; a PDF page looks the same in either theme
             img = Image.open(path).convert("RGB")
+            light = raw / f"light-{name}.png"
+            if scheme == "dark" and light.exists() and Image.open(light).convert("RGB").tobytes() == img.tobytes():
+                # A screen with one theme (the console): ship one image for both.
+                for ext in ("webp", "png"):
+                    (out / f"{name}-dark.{ext}").unlink(missing_ok=True)
+                continue
             if crop:
                 img = img.crop((0, 0, img.width, min(crop, img.height)))
             if img.width > width:
                 img = img.resize((width, round(img.height * width / img.width)), Image.LANCZOS)
-            img.save(out / f"{name}-{scheme}.webp", "WEBP", quality=80, method=6)
-            img.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(
+            img.save(out / f"{name}-{scheme}.webp", "WEBP", quality=82, method=6)
+            small = img
+            if img.width > PNG_MAX:
+                small = img.resize((PNG_MAX, round(img.height * PNG_MAX / img.width)), Image.LANCZOS)
+            small.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(
                 out / f"{name}-{scheme}.png", optimize=True)
+            done += 1
             print(f"build-site: {name}-{scheme} {img.width}x{img.height}")
+    if not done:
+        raise SystemExit(f"build-site: no captures in {raw}; run tools/capture-site-screens.mjs first")
 
 
 # ---- Pages --------------------------------------------------------------------------------
@@ -126,7 +144,7 @@ def changelog() -> str:
 {body}
 </div></section>"""
     return sitelib.page(title="Changelog", description="What changed in OpenSeal, by date.", body=html_, root="",
-                        current="")
+                        current="changelog")
 
 
 def main(argv: list[str]) -> int:
