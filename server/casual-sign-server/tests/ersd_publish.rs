@@ -6,6 +6,7 @@
 //! text and the history without; both need `admin:account` and reach only the caller's
 //! account; a bad text is refused before anything is written.
 
+// Tests may unwrap and index (CLAUDE.md, Rust); the scenario is one long test.
 #![allow(
     clippy::unwrap_used,
     clippy::arithmetic_side_effects,

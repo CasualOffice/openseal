@@ -528,7 +528,8 @@ mutation of the migration):
   addresses are never recorded, only ids; a member rename names the key without values; settings keys that look secret
   (`secret`, `password`, `token`, `private`, `credential`) and passwords are recorded as `"rotated"`. Actions now:
   `workspace.created`, `workspace.archived`, `workspace.settings_changed`, `workspace.ml_settings_changed` (the
-  document-analysis switches, `WEB-19`), `organization.created`,
+  document-analysis switches, `WEB-19`), `ersd.published` (a disclosure version's id, version, language and hash,
+  never its text, `ERSD-01`), `organization.created`,
   `organization.admin_added`, `member.added`, `member.removed`, `member.profile_changed`, `member.disabled`,
   `member.enabled`, `member.renamed`, `member.password_set`, `profile.created`. A user changing their own name or
   password, and accepting an invitation, are not administrative changes and write none.

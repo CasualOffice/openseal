@@ -105,11 +105,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   let db = null;
   let ersdSha = null;
 
+  /// ERSD-01, as the server: the disclosure the policy names. The last one published
+  /// through `POST /ersd-versions`, else the demo text as version `MOCK.ersd`.
+  const disclosure = () => {
+    const d = db?.ersd?.at(-1);
+    return d ? { version: d.label, sha256: d.sha256, text: d.text } : { version: MOCK.ersd, sha256: ersdSha, text: MOCK_DISCLOSURE };
+  };
+
   const save = () => {
     if (!store) return;
     try { store.setItem(KEY, JSON.stringify(db)); } catch { /* full or off: memory only */ }
   };
-  const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; };
+  const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; db.ersd ||= []; };
   async function load() {
     ersdSha ||= `sha256:${await sha256hex(MOCK_DISCLOSURE)}`;
     if (db) return;
@@ -119,7 +126,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (s) { db = JSON.parse(s); fill(); return; }
       } catch { db = null; }
     }
-    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [] };
+    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [], ersd: [] };
     await seed();
     save();
   }
@@ -349,7 +356,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       recipient: publicRecipient(rec),
       fields: shown ? env.fields.filter((f) => f.recipient_id === rec.id) : [],
       capture_location: !!env.signing_options?.capture_location,
-      consent_required: { version: MOCK.ersd, sha256: ersdSha, url: `/s/${encodeURIComponent(token)}/disclosure` },
+      consent_required: { version: disclosure().version, sha256: disclosure().sha256, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
       sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
     };
@@ -1020,6 +1027,33 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return json(200, { items: items.slice(0, Math.min(20, Number(query.get("limit")) || 8)) });
   }
 
+  /// ERSD-01, as the server's `GET/POST /ersd-versions`: publish a text as the next
+  /// version of its language and require it in one step; read the one required (with its
+  /// text) and the history (without). The seed requires the demo text, which no row
+  /// holds, so `current.version` is null until something is published.
+  async function ersdVersions(method, body) {
+    const row = (d) => ({ id: d.id, version: d.version, label: d.label, language: d.language, sha256: d.sha256, published_at: d.published_at });
+    if (method === "POST") {
+      for (const k of Object.keys(body || {})) if (k !== "text" && k !== "language") fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/${k}`, code: "unknown" }]);
+      const text = body?.text;
+      if (typeof text !== "string") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/text", code: "CS-API-0001" }]);
+      if (new TextEncoder().encode(text).length > 100000) fail(413, "CS-API-0006", "Request body too large");
+      if (!text.trim() || text.includes("\0")) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/text", code: "CS-API-0001" }]);
+      const language = body?.language ?? "en";
+      if (typeof language !== "string" || !/^[A-Za-z][A-Za-z0-9-]{1,34}$/.test(language)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/language", code: "CS-API-0001" }]);
+      const version = 1 + Math.max(0, ...db.ersd.filter((d) => d.language === language).map((d) => d.version));
+      const d = { id: `ersd-${db.ersd.length + 1}`, version, label: String(version), language, sha256: `sha256:${await sha256hex(text)}`, published_at: now().toISOString(), text };
+      db.ersd.push(d);
+      save();
+      return json(201, row(d));
+    } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
+    const last = db.ersd.at(-1);
+    const current = last
+      ? { label: last.label, sha256: last.sha256, version: last.version, language: last.language, published_at: last.published_at, text: last.text }
+      : { label: MOCK.ersd, sha256: ersdSha, version: null, language: null, published_at: null, text: MOCK_DISCLOSURE };
+    return json(200, { current, items: db.ersd.slice(-100).reverse().map(row) });
+  }
+
   async function staff(method, parts, query, headers, body) {
     if (!db.session) fail(401, "CS-AUTH-0001", "Not authenticated");
     if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
@@ -1045,6 +1079,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       return json(200, db.account);
     }
+    if (res === "ersd-versions" && !id) return ersdVersions(method, body);
     // WEB-06: recipient autocomplete, as the server's GET /contacts.
     if (res === "contacts" && method === "GET") {
       const q = (query.get("q") || "").trim().toLowerCase();
@@ -1666,7 +1701,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // valid.
     if (sub === "disclosure" && method === "GET") {
       if (rec.auth.some((m) => !rec.auth_passed.includes(m))) fail(401, "CS-AUTH-0003", "Recipient authentication required");
-      return json(200, { version: MOCK.ersd, sha256: ersdSha, text: MOCK_DISCLOSURE });
+      return json(200, disclosure());
     }
     // WEB-06: the signer's copy (`GET /s/{token}/document`; in the mock the first
     // document) and history stay available after finishing or declining.
@@ -1728,9 +1763,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // An in-person signer signs only in a session a staff user hosts (the engine's `gate_in`).
     if (rec.type === "in_person_signer" && !rec.hosted) fail(409, "CS-WF-0001", "Not allowed in the current state");
     if (sub === "consent" && method === "POST") {
-      if (body?.ersd_version !== MOCK.ersd) fail(400, "CS-API-0001", "Unknown disclosure version", [{ pointer: "/ersd_version", code: "mismatch" }]);
+      const want = disclosure();
+      if (body?.ersd_version !== want.version) fail(400, "CS-API-0001", "Unknown disclosure version", [{ pointer: "/ersd_version", code: "mismatch" }]);
       rec.consented = true;
-      await audit(env, "recipient.consented", { recipient_id: rec.id, ersd_version: body.ersd_version, ersd_hash: ersdSha }, loc);
+      await audit(env, "recipient.consented", { recipient_id: rec.id, ersd_version: body.ersd_version, ersd_hash: want.sha256 }, loc);
       return json(200, view(env, rec, token));
     }
     // Withdrawing consent declines a required action, whatever `allow_decline` says (the
@@ -1738,7 +1774,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "withdraw-consent" && method === "POST") {
       if (!rec.consented) fail(409, "CS-WF-0001", "Not allowed in the current state");
       rec.consented = false;
-      await audit(env, "recipient.consent_withdrawn", { recipient_id: rec.id, ersd_version: MOCK.ersd }, loc);
+      await audit(env, "recipient.consent_withdrawn", { recipient_id: rec.id, ersd_version: disclosure().version }, loc);
       if (ACTING(rec)) await decline(env, rec, null, loc);
       return json(200, view(env, rec, token));
     }

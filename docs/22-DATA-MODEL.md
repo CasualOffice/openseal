@@ -224,7 +224,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | Account | `accounts` (RLS on `id`) | `TenantTx::account` |
 | User, membership, permission profile | `users`, `account_memberships`, `permission_profiles` | `TenantTx::users` |
 | Group | `groups`, `group_members` | schema only |
-| Brand, Settings, ERSD versions | `brands`, `accounts.settings`, `ersd_versions` | settings; `TenantTx::account().disclosure` reads a published ERSD text by its hash (`UXW-34`); no write path yet (`ERSD-01`) |
+| Brand, Settings, ERSD versions | `brands`, `accounts.settings`, `ersd_versions` | settings; `TenantTx::account().disclosure` reads a published ERSD text by its hash (`UXW-34`); `publish_disclosure` inserts the next version of a language (the account row locked first, so two publishes never share a number) with its `ersd.published` admin event, and `disclosures` lists the published versions without text (`ERSD-01`); rows are never updated, no migration was needed |
 | Template, TemplateDocument, Role, role-bound Field, sharing | `templates`, `template_documents`, `template_roles`, `template_fields`, `template_shares` | `TenantTx::templates` (not shares) |
 | Envelope, folders and recycle folder | `envelopes`, `folders` | `TenantTx::envelopes` |
 | Document, DocumentVersion | `documents`, `document_versions` | `TenantTx::documents` |

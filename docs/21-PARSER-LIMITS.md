@@ -175,6 +175,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Limit | Default | Code |
 | --- | ---: | --- |
 | JSON request body | 1 MiB | CS-API-0006 |
+| Electronic disclosure text (`POST /ersd-versions`, `ERSD-01`); its language tag | 100,000 bytes of UTF-8, not blank, no NUL; 2 to 35 ASCII letters, digits and `-`, starting with a letter | CS-API-0006, CS-API-0001 |
 | Document upload request (base64 of 50 MiB, or the raw PDF) | 70 MiB body; 50 MiB decoded | CS-API-0006, CS-PDF-0001 |
 | One-call envelope create | 270 MiB body; 200 MiB of documents decoded | CS-API-0006 |
 | Adopted signature image (PNG or JPEG) | 5 MiB | CS-API-0006 |

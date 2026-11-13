@@ -469,6 +469,36 @@ components:
         reread_scanner_text: {type: boolean}
         not_in_plan: {type: array, readOnly: true, items: {type: string, enum: [ocr, template_matching, extraction, personal_data]}}
         installed: {type: boolean, readOnly: true, description: false when this server has no model service}
+    ErsdPublish:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 100000, description: "The disclosure recipients read and consent to; at most 100,000 bytes of UTF-8, not blank, no NUL"}
+        language: {type: string, pattern: '^[A-Za-z][A-Za-z0-9-]{1,34}$', default: en}
+    ErsdVersion:
+      type: object
+      description: A published disclosure, without its text.
+      properties:
+        id: {type: string}
+        version: {type: integer, minimum: 1}
+        label: {type: string, description: "The version as the policy and consent name it"}
+        language: {type: string}
+        sha256: {type: string, description: "`sha256:<hex>` of the text's UTF-8"}
+        published_at: {type: string, format: date-time}
+    ErsdVersions:
+      type: object
+      properties:
+        current:
+          type: [object, 'null']
+          properties:
+            label: {type: string}
+            sha256: {type: string}
+            version: {type: [integer, 'null']}
+            language: {type: [string, 'null']}
+            published_at: {type: [string, 'null'], format: date-time}
+            text: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/ErsdVersion'}}
     MlSettingsPatch:
       type: object
       additionalProperties: false
@@ -981,6 +1011,46 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/MlSettings'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/ersd-versions:
+    get:
+      operationId: listErsdVersions
+      summary: "The account's electronic disclosure: the one the workflow policy names, with its text, and the published versions (ERSD-01)"
+      description: >-
+        `current` is the disclosure `settings.workflow_policy.ersd` names, with its published
+        text (`text` null when no intact published row has that hash), or null when the
+        account requires none. `items` are the published versions, newest first, at most 100,
+        without their text.
+      x-permission: "admin:account"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErsdVersions'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: publishErsdVersion
+      summary: "Publish disclosure text as the next version and require it, in one step (ERSD-01)"
+      description: >-
+        Writes the next version of `language` (one more than its highest), its `ersd.published`
+        admin event, and `settings.workflow_policy.ersd = {version, hash}` with its
+        `workspace.settings_changed` event, in one transaction. Envelopes already sent then ask
+        for consent to the new version. Published rows are never changed: a new text is a new
+        version. An empty or blank text, one with a NUL, or a bad language tag is
+        `422 CS-API-0001`; a text over 100,000 bytes is `413 CS-API-0006`.
+      x-permission: "admin:account"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ErsdPublish'}
+      responses:
+        '201':
+          description: Published and required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErsdVersion'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/admin-events:
     get:
