@@ -32,6 +32,7 @@ pub mod net;
 mod passwords;
 mod preview;
 pub mod routes;
+pub mod scan;
 mod state;
 pub mod totp;
 pub mod web;
@@ -45,6 +46,7 @@ pub use crypto::JwtKeys;
 pub use error::{ApiError, FieldProblem};
 pub use mfa::MfaKey;
 pub use routes::{Access, Route, app, table};
+pub use scan::{Scanner, ScannerConfig};
 pub use state::{AppState, Blobs, Clock, Config, ManualClock, RateLimits, SystemClock};
 
 /// Replaces the default panic hook, which prints the panic's message (it may carry a

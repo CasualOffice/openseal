@@ -90,7 +90,7 @@ pieces (security, evidence, database, server; instruction 41).
   console writes copied into organization logs (`CON-16`) and its UI (`CON-17`); plans, metering and quota
   enforcement (`PLAN-02` to `PLAN-04` Done); SMS and voice one-time codes and recipient sign-in through an OpenID
   Connect provider (`VS-05`, `RAUTH-01`, ADR-033 Proposed); a staff TOTP second factor (`ASVS-01`), breached-password
-  refusal and security notices (`ASVS-02`, `ASVS-04`); in `casual-sign-modeld`, OCR (`ML-02`), page hashes and
+  refusal and security notices (`ASVS-02`, `ASVS-04`); malware scanning of uploads through ClamAV (`ASVS-11`); in `casual-sign-modeld`, OCR (`ML-02`), page hashes and
   embeddings (`ML-05`), GLiNER extraction and personal data (`ML-07`, `ML-08`), with the worker's analysis jobs and
   the server's analysis routes (`WEB-19`); the ASVS 4.0.3 self-assessment ([67](docs/67-ASVS-SELF-ASSESSMENT.md),
   `SEC-ASVS-01`) and the licence inventory (`LEG-01`). [96](docs/96-FEATURE-FIT-GAP.md) counts 48 of 168 rows working

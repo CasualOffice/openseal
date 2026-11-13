@@ -120,11 +120,15 @@ services:
       OPENSEAL_PUBLIC_URL: http://localhost:${OPENSEAL_HTTP_PORT:-8080}
       # Plain-HTTP cookies, for http://localhost only (the token key is the file above).
       OPENSEAL_DEV_INSECURE_KEY: "1"
+      # Malware scanning (ASVS-11): `clamav:3310` with the `production` profile below;
+      # empty (the default) scans nothing.
+      OPENSEAL_CLAMD_ADDR: ${OPENSEAL_CLAMD_ADDR:-}
     ports: ["127.0.0.1:${OPENSEAL_HTTP_PORT:-8080}:8080"]
     volumes: [*secrets]
     depends_on:
       migrate: {condition: service_completed_successfully}
       s3: {condition: service_healthy}
+      clamav: {condition: service_healthy, required: false}
 
   worker:
     build: {context: ., dockerfile: deploy/Dockerfile, target: worker}
@@ -155,6 +159,28 @@ services:
       keyd: {condition: service_healthy}
       tsa: {condition: service_healthy}
       mailpit: {condition: service_healthy}
+
+  # Malware scanning of every upload (ASVS-11, docs/65 §Malware scanning): ClamAV's clamd
+  # in its own container, reached by the server only over INSTREAM on port 3310 (never
+  # published). Turn it on with
+  #   OPENSEAL_CLAMD_ADDR=clamav:3310 docker compose --profile production up -d --build --wait
+  # The server then refuses uploads (503 CS-SCAN-0002) while clamd cannot answer, unless
+  # OPENSEAL_CLAMD_FAIL_OPEN=1. freshclam, in the same container, keeps the signatures in
+  # the `clamav` volume current and needs outbound HTTPS to the ClamAV mirrors. The
+  # stream limit is set explicitly to match the server's default OPENSEAL_CLAMD_MAX_BYTES.
+  clamav:
+    profiles: [production]
+    image: clamav/clamav-debian:1.4@sha256:aedee9daad6b069b26adad61af7ec50a41efe33fd8eff7f985c1f31e3a6ae9de
+    environment:
+      CLAMD_CONF_StreamMaxLength: 100M
+    volumes: [clamav:/var/lib/clamav]
+    mem_limit: 3g
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 10s
+      retries: 6
+      start_period: 6m
 
   # Optional pretrained models (ML-01, ADR-029, docs/33): `docker compose --profile ml up`.
   # No secrets beyond its own TLS identity: it mounts its own `modeld-secrets` volume,
@@ -203,3 +229,4 @@ volumes:
   keyd:
   modeld:
   modeld-secrets:
+  clamav:

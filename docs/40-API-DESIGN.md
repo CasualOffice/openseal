@@ -466,6 +466,24 @@ card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a 
 - **A panic is a problem.** A handler that panics answers `500 CS-API-0010` (`detail: panic`) with the request id;
   the panic's message is never sent, and the binary's panic hook logs only where it happened and the request id. The console answers the same way with `500 CS-CON-0014`.
 
+## As built (`ASVS-11`, malware scanning of uploads)
+
+- **Every upload is scanned first** when the operator configured clamd (`OPENSEAL_CLAMD_ADDR`, docs/65 §Malware
+  scanning): `POST /envelopes` (each document), `POST /envelopes/{id}/documents` (JSON or raw PDF), `POST
+  /templates/{id}/documents`, `PATCH /users/me` (a saved `signature` or `initials`), `POST /s/{token}/adopt` and `PUT
+  /s/{token}/fields/{field}/attachment`. Malware is `422 CS-SCAN-0001` (no detail; nothing stored); a scan that does
+  not complete is `503 CS-SCAN-0002` with `Retry-After: 30` and the reason in `detail`, unless the operator set
+  fail-open. A one-call create is refused whole when any of its documents is.
+- **Recorded.** Each refusal, and each upload admitted unscanned, appends `upload.malware_refused`,
+  `upload.unscanned_refused` or `upload.unscanned_admitted` to `GET /admin-events` (docs/23 §2.5); a document's
+  admission report says `"malware_scan": "clean"` or `"unscanned"` when a scanner is configured. Bulk send's CSV is a
+  list read into rows, never stored as a file, and is not scanned; a bulk send's documents are its template's, which
+  may have been stored before a scanner was configured, so each `POST /bulk-sends/{id}/send` that has rows pending
+  scans them again (`422 CS-SCAN-0001` sends nothing; each envelope's report records the verdict).
+- **No transaction waits on a scan.** A scan may wait up to `OPENSEAL_CLAMD_TIMEOUT_SECS`; each route authorizes in a
+  short transaction (or none), scans, then opens the transaction that stores, checking access and state again. The
+  upload's type signature is checked after the scan.
+
 ## As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`)
 
 | Endpoint | As built |

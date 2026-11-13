@@ -1529,12 +1529,22 @@ fn mark_in(v: &Value, pointer: &str) -> Result<Option<Personal<Vec<u8>>>, ApiErr
     let raw = base64::engine::general_purpose::STANDARD
         .decode(s)
         .map_err(|_| bad())?;
-    let png = raw.starts_with(b"\x89PNG\r\n\x1a\n");
-    let jpeg = raw.starts_with(b"\xff\xd8\xff");
-    if raw.is_empty() || raw.len() > MARK_MAX || !(png || jpeg) {
+    if raw.is_empty() || raw.len() > MARK_MAX {
         return Err(bad());
     }
     Ok(Some(Personal(raw)))
+}
+
+/// A saved mark is a PNG or a JPEG by its signature: checked after the malware scan,
+/// which comes before anything else reads an upload (ASVS-11).
+fn mark_type(raw: &[u8], pointer: &str) -> Result<(), ApiError> {
+    let png = raw.starts_with(b"\x89PNG\r\n\x1a\n");
+    let jpeg = raw.starts_with(b"\xff\xd8\xff");
+    if png || jpeg {
+        Ok(())
+    } else {
+        Err(ApiError::invalid(pointer))
+    }
 }
 
 async fn me_json(c: &Call, tx: &mut TenantTx) -> Result<Value, ApiError> {
@@ -1624,6 +1634,21 @@ pub(crate) async fn patch_me(c: Call, body: Bytes) -> Result<Response, ApiError>
         .as_ref()
         .map(|v| mark_in(v, "/initials"))
         .transpose()?;
+    // Each saved mark is scanned before anything else reads it, its type included, and
+    // before any transaction opens (ASVS-11).
+    for (m, at) in [(&signature, "/signature"), (&initials, "/initials")] {
+        if let Some(Some(m)) = m {
+            crate::scan::screen(
+                &c.st,
+                c.uploader(),
+                casual_sign_store::UploadKind::ProfileMark,
+                vec![("user", c.p.user.to_string())],
+                m.get(),
+            )
+            .await?;
+            mark_type(m.get(), at)?;
+        }
+    }
     if session.is_none() && (name.is_some() || req.password.is_some()) {
         return Err(ApiError::invalid("/credential"));
     }

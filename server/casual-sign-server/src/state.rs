@@ -238,6 +238,7 @@ pub(crate) struct Inner {
     pub webapp: std::sync::OnceLock<Arc<crate::web::WebApp>>,
     pub idps: std::sync::OnceLock<Arc<crate::idp::RecipientIdps>>,
     pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
+    pub scanner: std::sync::OnceLock<Arc<crate::scan::Scanner>>,
 }
 
 impl AppState {
@@ -266,6 +267,7 @@ impl AppState {
             webapp: std::sync::OnceLock::new(),
             idps: std::sync::OnceLock::new(),
             mfa: std::sync::OnceLock::new(),
+            scanner: std::sync::OnceLock::new(),
         })))
     }
 
@@ -292,6 +294,16 @@ impl AppState {
     /// factor. Set once; a second call is ignored.
     pub fn set_mfa_key(&self, key: crate::mfa::MfaKey) {
         let _ = self.0.mfa.set(Arc::new(key));
+    }
+
+    /// Scan every upload with `scanner` before it is read or stored (ASVS-11). Without
+    /// it, nothing is scanned. Set once; a second call is ignored.
+    pub fn set_scanner(&self, scanner: crate::scan::Scanner) {
+        let _ = self.0.scanner.set(Arc::new(scanner));
+    }
+
+    pub(crate) fn scanner(&self) -> Option<&Arc<crate::scan::Scanner>> {
+        self.0.scanner.get()
     }
 
     pub(crate) fn mfa_key(&self) -> Option<&Arc<crate::mfa::MfaKey>> {

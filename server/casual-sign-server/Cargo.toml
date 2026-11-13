@@ -26,7 +26,7 @@ casual-sign-host = { path = "../casual-sign-host" }
 casual-sign-secrets = { path = "../casual-sign-secrets" }
 # HTTP (ADR-014; the sisters' stack, OpenCalc's casual-calc-host). MIT.
 axum = { version = "0.8.4", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path", "original-uri"] }
-tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal", "time", "io-util", "sync"] }
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
 # Body size limits and the last-resort panic answer (ASVS-26). MIT.
 tower-http = { version = "0.6.6", default-features = false, features = ["limit", "catch-panic"] }

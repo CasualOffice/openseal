@@ -780,8 +780,11 @@ pub(crate) async fn add_document(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let id = TemplateId(path_id(&id)?);
+    // Authorized in a short transaction, ended before the scan: a scan can wait up to
+    // its timeout and must not hold a pooled connection meanwhile (ASVS-11).
     let mut tx = c.tx().await?;
     found(&mut tx, &c, id, TemplateAccess::Edit).await?;
+    tx.commit().await?;
     let req: DocumentIn = parse(&body)?;
     let docname = name(&req.name, "/name")?;
     let bytes = base64(
@@ -790,6 +793,15 @@ pub(crate) async fn add_document(
         "/content_base64",
     )?;
     let v = if_match(&c, false)?;
+    // Scanned before it is admitted or stored (ASVS-11).
+    crate::scan::screen(
+        &c.st,
+        c.uploader(),
+        casual_sign_store::UploadKind::TemplateDocument,
+        vec![("template", id.0.to_string())],
+        &bytes,
+    )
+    .await?;
     let engine = c.st.0.engine.clone();
     let delivered = tokio::task::spawn_blocking(move || {
         match engine.prepare(&bytes, &Credentials::default()) {
@@ -803,6 +815,9 @@ pub(crate) async fn add_document(
     if pages == 0 || pages > casual_sign_workflow::limits::MAX_PAGES {
         return Err(ApiError::invalid("/content_base64"));
     }
+    // Authorized again: access may have changed during the scan and the admission.
+    let mut tx = c.tx().await?;
+    found(&mut tx, &c, id, TemplateAccess::Edit).await?;
     let key = c.st.0.blobs.put(&delivered.bytes).await?;
     let ord = tx
         .templates()
