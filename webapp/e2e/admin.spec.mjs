@@ -277,9 +277,9 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
       await expect(page.locator("tbody tr")).toContainText("Lee Park");
       await page.getByLabel("Search users").fill("");
       await page.getByLabel("Status").selectOption("all");
-      await page.getByLabel("Permission profile").selectOption("admin");
+      await page.locator("#u-filter-profile").selectOption("admin");
       await expect(page.locator("tbody tr")).toHaveCount(1);
-      await page.getByLabel("Permission profile").selectOption("all");
+      await page.locator("#u-filter-profile").selectOption("all");
       await snap(page, testInfo, `ux08-users-${label}`);
 
       await expect(page.getByRole("button", { name: "Remove Kim Lee" })).toHaveCount(0);
