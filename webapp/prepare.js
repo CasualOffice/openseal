@@ -56,6 +56,7 @@ const membersOf = settingsOf;
 /// rename, since one with none cannot be answered.
 const newMembers = (type) => (CHOICE.has(type) ? { options: [t("prepare.option-n", { n: 1 }), t("prepare.option-n", { n: 2 })] } : {});
 const MAX_UPLOAD = 50 * 1024 * 1024; // docs/21: 50 MiB decoded
+const MAX_ENVELOPE = 200 * 1024 * 1024; // docs/21: 200 MiB, the documents of one envelope together
 const COLOURS = 6;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -1905,6 +1906,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     }
   }
   async function saveNow() {
+    // docs/21: an envelope holds 200 MiB of documents. Over that, say the server's 413 here:
+    // the documents would not fit in one request body (a browser string tops out near
+    // 512 MiB of base64 text), and the server refuses it anyway (FG-006, E2E-05).
+    const total = S.docs.reduce((n, d) => n + (d.bytes?.length || 0), 0);
+    if (total > MAX_ENVELOPE) throw Object.assign(new Error("envelope too large"), { status: 413, code: "CS-API-0006" });
     if (!S.id) {
       const body = {
         subject: S.subject.trim(),
