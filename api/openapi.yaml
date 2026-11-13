@@ -352,14 +352,14 @@ components:
         email: {type: string}
         name: {type: string, maxLength: 255}
         profile: {type: string, description: '`admin`, `sender`, `viewer`, or a permission profile id'}
-        password: {type: string, minLength: 12, maxLength: 256}
+        password: {type: string, minLength: 12, maxLength: 256, description: "Not on the bundled list of breached passwords, case ignored (422 `common_password` at /password, ASVS-02); setting it emails the user a notice (ASVS-04)"}
         invite: {type: boolean, default: false, description: "Email a one-time link to set a password, valid 7 days (WEB-06); not with `password`"}
     UserPatch:
       type: object
       additionalProperties: false
       properties:
         name: {type: string, maxLength: 255}
-        password: {type: string, minLength: 12, maxLength: 256}
+        password: {type: string, minLength: 12, maxLength: 256, description: "Not on the bundled list of breached passwords, case ignored (422 `common_password` at /password, ASVS-02); setting it emails the user a notice (ASVS-04)"}
         profile: {type: string, description: "`admin`, `sender`, `viewer`, or a permission profile id; not your own (WEB-06)"}
         disabled: {type: boolean, description: "Disable (ending their sessions and open invitations) or enable the member in this account only; not yourself (WEB-06)"}
     AcceptInvite:
@@ -368,7 +368,7 @@ components:
       additionalProperties: false
       properties:
         token: {type: string, maxLength: 128, description: The token from the invitation link}
-        password: {type: string, minLength: 12, maxLength: 256}
+        password: {type: string, minLength: 12, maxLength: 256, description: "Not on the bundled list of breached passwords, case ignored (422 `common_password` at /password, ASVS-02); setting it emails the user a notice (ASVS-04)"}
     ApiClient:
       type: object
       properties:

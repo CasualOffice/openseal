@@ -26,9 +26,9 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 183 | 101 | 76 | 6 |
+| Met | 186 | 104 | 76 | 6 |
 | Partly | 48 | 12 | 30 | 6 |
-| Not met | 23 | 8 | 10 | 5 |
+| Not met | 20 | 5 | 10 | 5 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
@@ -41,14 +41,14 @@ operation log, and the append-only hash-chained logs are met, with tests that do
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
 | ASVS-01 | P0 | ASVS 2.2.1, 2.3.2, 2.5.6, 2.5.7, 2.6.x, 4.3.1, 1.2.4; `SEC-A09` | Staff multi-factor authentication in the tenant server: TOTP (reuse `-console/src/totp.rs` and its sealed seeds) and WebAuthn (`CON-13`), mandatory for administrators and enforceable by organization policy; one-time recovery codes (112 bits, single use, hashed); the factor is required in password reset; identity proofing before a lost factor is replaced |
-| ASVS-02 | P1 | ASVS 2.1.7; `SEC-A09` | Refuse breached and common passwords at set, change and reset: a bundled list checked offline, optional k-anonymity range lookup configured by the operator |
+| ASVS-02 (Done) | P1 | ASVS 2.1.7; `SEC-A09` | Closed 2026-11-13: every path that sets a password refuses one on a bundled list of breached passwords, offline; the optional operator lookup is `ASVS-36`. Was: Refuse breached and common passwords at set, change and reset |
 | ASVS-03 | P2 | ASVS 2.1.8 | Password strength indication on the set-password screens; needs the owner's design approval before any UI change |
-| ASVS-04 | P1 | ASVS 2.2.3, 2.5.5 | Email the user when their password is changed, reset or set from an invitation, and when a factor is added or removed (no secret in the mail) |
+| ASVS-04 (Done) | P1 | ASVS 2.2.3, 2.5.5 | Closed 2026-11-13: a password set, changed or reset and a factor added each email the user one notice with no secret; `ASVS-32` notifies a factor's removal when it adds one. Was: Email the user when their password is changed, reset or set from an invitation, and when a factor is added or removed |
 | ASVS-05 (Done) | P1 | ASVS 3.2.3, 3.4.4 | Closed 2026-11-13: the staff cookie is `__Host-os_session` whenever `Secure`; the ceremony cookie keeps `Path=/s/`. Was: Name the staff session cookie `__Host-os_session` whenever cookies are `Secure` (and the ceremony cookie with a `__Host-` or narrowest-path equivalent) |
 | ASVS-06 | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
 | ASVS-07 | P1 | ASVS 3.7.1, 4.3.3 | Step-up re-authentication (password or second factor within the last 5 minutes) before creating API clients or keys, granting administrator profiles, changing webhook URLs and changing the user's email |
@@ -199,7 +199,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.1.4 | 1 | All | Any printable Unicode allowed | Met | Length counted in characters, no character class rule (`check_password`) | — |
 | 2.1.5 | 1 | All | Users can change their password | Met | `PATCH /users/me {password, current_password}` (`admin.rs`, UXW-37) | — |
 | 2.1.6 | 1 | All | Change requires current and new password | Met | `PATCH /users/me` verifies `current_password` before setting the new one (`admin.rs` around `current_password`) | — |
-| 2.1.7 | 1 | All | Passwords checked against breached/common lists | Not met | No breached or common-password check (`SEC-A09` "Not built: breached-password check") | ASVS-02 |
+| 2.1.7 | 1 | All | Passwords checked against breached/common lists | Met | Every path that sets a password refuses one of the 46,146 breached passwords of 12 to 256 characters bundled in `-server/data/common-passwords.txt` (`-server/src/passwords.rs`; `422` `common_password`); `-server/tests/self_service.rs` `a_breached_password_is_refused_wherever_a_password_is_set`, seen red (`ASVS-02`). An operator lookup is optional (`ASVS-36`); the console's operators are `ASVS-37` | ASVS-02 |
 | 2.1.8 | 1 | All | Password strength meter | Not met | None on the set-password screens (`webapp/acceptinvite.js`, `webapp/profile.js`) | ASVS-03 |
 | 2.1.9 | 1 | All | No composition rules | Met | `check_password` checks length only | — |
 | 2.1.10 | 1 | All | No periodic rotation or history rules | Met | None in code or settings | — |
@@ -212,7 +212,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 2.2.1 | 1 | All | Anti-automation against credential stuffing and brute force | Partly | Login limited per login name and per client address (`login_limit`; `-server/tests/threats.rs` `sign_in_attempts_are_limited_per_client_address_across_names`); unknown emails cost a wrong password's time (`dummy_phc`); staff TOTP attempts limited per user as logins (`-server/src/api/mfa.rs`), the factor opt-in per account until `ASVS-31`; no breached-password check | ASVS-31, ASVS-02 |
 | 2.2.2 | 1 | All | Weak authenticators (SMS, email) only secondary | Met | Staff have no SMS/email login factor; signers' email/SMS codes are an extra factor on top of the link (`-server/src/ceremony.rs` `otp_send`) | — |
-| 2.2.3 | 1 | All | Notifications after authentication detail changes | Not met | No email when a password is changed, reset or set from an invitation | ASVS-04 |
+| 2.2.3 | 1 | All | Notifications after authentication detail changes | Met | A password set from an invitation, changed by the user or an administrator, or reset, and a factor added, each queue one `send_security_notice` email in the same transaction, with no secret (`-worker/tests/security_notice.rs`, seen red; `ASVS-04`) | ASVS-04 |
 | 2.2.4 | 3 | Ceremony, sealing, keyd | L3 (ceremony): phishing-resistant authentication | Not met | Signer methods: link, access code, email/SMS/voice code, OIDC sign-in (`idp.rs`); none is phishing-resistant (no WebAuthn) | ASVS-21 |
 | 2.2.5 | 3 | Ceremony, sealing, keyd | L3: mutual TLS between separate CSP and verifier | N/A | The ceremony's OIDC provider is reached over HTTPS with server certificate checks; no separate credential service with mTLS exists in the ceremony, sealing or keyd. keyd's own callers do use mTLS | — |
 | 2.2.6 | 3 | Ceremony, sealing, keyd | L3 (ceremony): replay resistance | Met | One-time codes spent on first pass (`otp/verify`), OIDC `nonce` and `state` checked (`idp.rs`); link bound to the first browser by cookie (`CS-AUTH-0009`) | — |
@@ -244,7 +244,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.5.2 | 1 | All | No password hints or secret questions | Met | None exist | — |
 | 2.5.3 | 1 | All | Recovery never reveals the current password | Met | Reset sets a new Argon2id hash (`password_reset_confirm`); old password never stored in clear | — |
 | 2.5.4 | 1 | All | No shared or default accounts | Met | `bootstrap` names the first administrator and requires `OPENSEAL_ADMIN_PASSWORD` (`docker-compose.yml` header, `-server/tests/bootstrap.rs`) | — |
-| 2.5.5 | 1 | All | User notified when an authentication factor changes | Not met | No notification | ASVS-04 |
+| 2.5.5 | 1 | All | User notified when an authentication factor changes | Met | Password changes and a TOTP factor added email the user (`-worker/tests/security_notice.rs`, `ASVS-04`); no route removes a factor yet, and `ASVS-32` sends `factor_removed` when one does | ASVS-04 |
 | 2.5.6 | 1 | All | Secure recovery mechanism | Partly | Emailed one-time reset link, 202 for any address, rate-limited (`reset_inner`); a reset does not bypass a staff user's TOTP (every session of an enrolled user owes it, `SecondFactor::of` in `-server/src/auth.rs`), but a lost factor has no recovery path but the recovery codes | ASVS-32 |
 | 2.5.7 | 2 | All | Identity proofing when MFA factors are lost | Not met | Staff TOTP exists (`ASVS-01`); nothing yet resets or replaces a lost factor, so there is no proofing step either | ASVS-32 |
 
