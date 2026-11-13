@@ -82,9 +82,6 @@ image = { version = "=0.25.10", default-features = false, optional = true }
 # Runtime at build) and `simd`: only `simd` is kept, and `auto-download` stays off
 # (review defect 2, `SEC-I09`). Model files come from the verified bundle only.
 oar-ocr = { version = "=0.10.2", default-features = false, features = ["simd"], optional = true }
-# Address-space and CPU-time limits the raster child sets on itself (`setrlimit`),
-# without `unsafe` in this crate.
-rustix = { version = "=1.1.6", default-features = false, features = ["std", "process"], optional = true }
 # The one fixed log subscriber (`SEC-I05`): third-party targets capped at WARN whatever
 # RUST_LOG says (src/logging.rs). Both already in the tree.
 tracing = { version = "0.1.44", optional = true }
@@ -94,6 +91,12 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 unicode-bidi = { version = "0.3.18", optional = true }
 # Piece I (ML-05; docs/33 §5.2): page hashes, dHash and pHash over raw grey pixels.
 image_hasher = { version = "=3.1.1", optional = true }
+
+# Address-space and CPU-time limits the raster child sets on itself (`setrlimit`),
+# without `unsafe` in this crate. Linux only (docs/33 §3.3): the child runs only where
+# `RLIMIT_AS` is enforced; elsewhere opening a document is refused with `CS-ML-0014`.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "process"], optional = true }
 
 [dev-dependencies]
 # Throwaway TLS PKI for the mTLS tests (as keyd's tests).

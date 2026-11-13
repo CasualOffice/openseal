@@ -152,6 +152,11 @@ combining marks.
   thread so a child that stops reading cannot block the daemon; the page time also bounds opening the PDF. Deaths
   count toward the three kills. A page after the third is answered `CS-ML-0006` without starting a child (the
   worker counts it as `truncated`). The child also renders no annotations: OCR reads what the scanner produced.
+  **Platforms (`CI-NEW`, 2026-11-13): Linux only.** The child's limits are the containment, and only Linux enforces
+  `RLIMIT_AS` (macOS accepts it and ignores it; Windows has no `setrlimit`). modeld ships in a Linux container, so on
+  any other platform `Document::open` starts no child and answers `CS-ML-0014`, a typed refusal, and a child started
+  there by hand exits before reading the PDF. `rustix` is a Linux-only dependency; the tests that need a child run on
+  Linux, and `off_linux_opening_a_document_is_refused_with_raster_child` runs on the macOS and Windows CI jobs.
 - **Inference deadline:** the client sets a deadline per op (§4). modeld cancels at the deadline with ONNX Runtime's
   run terminate flag (`RunOptions::terminate()` in `ort` 2.0.0-rc.13). A watchdog ends the process at 2× deadline,
   and Compose restarts it. The worker's socket timeout is the deadline plus 5 s. **Not built yet:** `oar-ocr` 0.10.2
