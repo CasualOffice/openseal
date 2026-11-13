@@ -19,6 +19,7 @@
     <tr><td><code>tsa</code></td><td>development tools</td><td>Development only: an RFC 3161 timestamp authority</td></tr>
     <tr><td><code>pki</code></td><td>development tools</td><td>Development only, first start: the CA, TLS certificates, seal key and random passwords, into a read-only <code>secrets</code> volume</td></tr>
     <tr><td><code>modeld</code></td><td>OpenSeal</td><td>Optional, Compose profile <code>ml</code>: pretrained models for OCR, template matching and personal-data detection, on an internal network with no secrets but its own TLS identity. The worker is not yet put on its network in this file</td></tr>
+    <tr><td><code>clamav</code></td><td><code>clamav/clamav-debian</code></td><td>Compose profile <code>production</code>: ClamAV, which scans every upload before the server reads or stores it; set <code>OPENSEAL_CLAMD_ADDR=clamav:3310</code> on the server to use it</td></tr>
   </tbody>
 </table>
 </div>
@@ -41,6 +42,7 @@
     <tr><td><code>OPENSEAL_WEBAPP_DIR</code></td><td>The web app's files, served at <code>/</code></td></tr>
     <tr><td><code>OPENSEAL_MFA_KEY</code></td><td>32 random bytes, base64, that seal members' second-factor seeds; back it up with the database</td></tr>
     <tr><td><code>OPENSEAL_RECIPIENT_IDPS_FILE</code></td><td>Optional: the OpenID Connect providers signers may sign in with; holds client secrets</td></tr>
+    <tr><td><code>OPENSEAL_CLAMD_ADDR</code></td><td>ClamAV's clamd, <code>host:port</code>: every upload is scanned first, malware refused and recorded in the admin log, and uploads refused while clamd cannot answer unless <code>OPENSEAL_CLAMD_FAIL_OPEN=1</code>; unset, nothing is scanned</td></tr>
     <tr><td><code>OPENSEAL_WEBHOOK_ALLOW</code></td><td>Worker: address ranges webhooks may reach although private (refused by default)</td></tr>
     <tr><td><code>OPENSEAL_SMS_GATEWAY_URL</code>, <code>OPENSEAL_SMS_GATEWAY_SECRET</code></td><td>Worker: the HTTPS gateway that sends text-message and voice one-time codes; unset, such codes are never sent</td></tr>
   </tbody>
@@ -56,6 +58,7 @@
     <tr><td>Signing key</td><td>A document-signing certificate from a CA your relying parties trust (for example an AATL member, or a qualified seal certificate for eIDAS), with its key generated in your HSM; configure keyd with PKCS#11. Never a file key.</td></tr>
     <tr><td>Timestamps</td><td>At least two RFC 3161 timestamp authorities with a service level (qualified, if you need eIDAS qualified time). Key custodians add and change them in the platform console, two people per change</td></tr>
     <tr><td>Email</td><td>A sending domain with SPF, DKIM and DMARC (<code>p=quarantine</code> or stricter); an SMTP relay or provider; bounce handling</td></tr>
+    <tr><td>Malware scanning</td><td>Run the <code>clamav</code> service (profile <code>production</code>) and set <code>OPENSEAL_CLAMD_ADDR</code>; keep fail-open off; check by uploading the EICAR test file, which must be refused</td></tr>
     <tr><td>Database</td><td>PostgreSQL 15 or later, encrypted, with point-in-time recovery; a separate role for migrations</td></tr>
     <tr><td>Object store</td><td>S3-compatible, with versioning and encryption; Object Lock in compliance mode for regulated tenants</td></tr>
     <tr><td>Edge</td><td>TLS 1.2 or later (1.3 preferred), HSTS, and a web application firewall if you have one</td></tr>

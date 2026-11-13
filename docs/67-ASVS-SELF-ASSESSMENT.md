@@ -26,22 +26,21 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 186 | 104 | 76 | 6 |
+| Met | 187 | 105 | 76 | 6 |
 | Partly | 48 | 12 | 30 | 6 |
-| Not met | 20 | 5 | 10 | 5 |
+| Not met | 19 | 4 | 10 | 5 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
 The largest gaps: a second factor for tenant staff that accounts must opt into (`ASVS-01` built TOTP; `ASVS-31` makes it the default for administrators), no security event log for staff authentication and
-access refusals (`ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), no malware scan of
-uploads (`ASVS-11`), no backup and restore drill (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
+access refusals (`ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), no backup and restore drill (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-09`, `ASVS-11`, `ASVS-12`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
@@ -55,7 +54,7 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-08 | P1 | ASVS 1.7.1, 1.7.2, 2.8.5, 7.1.3, 7.1.4, 7.2.1, 7.2.2, 8.3.5, 9.2.5; `SEC-D01` stays (no personal data) | Security event log: staff sign-in success and failure, logout, reset, lockout, operator TOTP rejection, rate-limit hits and every 401/403 with request id and a hashed principal; one JSON log format across server, worker, keyd and modeld; staff document downloads recorded; worker logs keyd and TSA connection failures with their code; docs/65 explains shipping logs to a remote collector |
 | ASVS-09 (Done) | P1 | ASVS 4.2.2, 13.1.5, 13.2.5 | Closed 2026-11-13: `/api/v1` answers `415 CS-API-0007` to a body that is not JSON. Was: `/api/v1` refuses a request body that is not `Content-Type: application/json` (`415`), including `POST /auth/login`, closing login CSRF by a cross-site form |
 | ASVS-10 | P2 | ASVS 12.3.4, 14.4.2 | `Content-Disposition` on API responses (`attachment` for JSON; `attachment` or `inline` with a server-made filename for documents and certificates) |
-| ASVS-11 | P1 | ASVS 12.4.2 | Malware scanning seam for uploads: an optional scanner (ICAP or ClamAV in its own container) called before admission, its verdict recorded in the audit chain |
+| ASVS-11 (Done) | P1 | ASVS 12.4.2 | Closed 2026-11-14: every upload is scanned by ClamAV's clamd in its own container before it is read or stored; malware is refused and recorded in the admin log; fail closed with an operator switch; a clean document's admission report, bound by the chain, says so. Was: Malware scanning seam for uploads: an optional scanner (ICAP or ClamAV in its own container) called before admission, its verdict recorded in the audit chain |
 | ASVS-12 (Done) | P2 | ASVS 6.2.8 | Closed 2026-11-13: comparisons call `aws_lc_rs::constant_time`. Was: Replace the hand-rolled hash comparison `same` in `-server/src/crypto.rs` (and any copy in the console) with a vetted constant-time primitive (`subtle` or `aws-lc-rs`), per CLAUDE.md: cryptography is never hand-rolled |
 | ASVS-13 | P1 | ASVS 8.1.4, 11.1.7, 11.1.8; `VS-20` | Detect and alert on abnormal activity: request and 429 rates per principal and address, authentication failure bursts, mass downloads, bulk voids; thresholds configurable; alerts to the operator's channel |
 | ASVS-14 | P1 | ASVS 8.1.5, 8.1.6; `SEC-D02` | Backups encrypted with separate keys, with a documented and tested restore drill that verifies the audit chain, admin logs and keyd's operation log after restore |
@@ -638,7 +637,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 12.4.1 | 1 | All | Uploads stored outside the web root | Met | Blob store separate from `webapp/`, which is read into memory at start (`web.rs`) | — |
-| 12.4.2 | 1 | All | Uploads scanned for malware | Not met | No antivirus scan; PDFs are normalized to fresh files with active content removed (`SEC-P08`, `SEC-P12`) | ASVS-11 |
+| 12.4.2 | 1 | All | Uploads scanned for malware | Met | Every upload (documents, template documents, signer attachments, adopted signature images, saved profile marks) is streamed to ClamAV's clamd (`INSTREAM`, its own container, Compose profile `production`) before it is read or stored; malware refused `422 CS-SCAN-0001` and recorded in the admin log, fail closed (`503 CS-SCAN-0002`) with an operator switch (`-server/src/scan.rs`, `tests/malware.rs` with EICAR against a fake and a real clamd, seen red 2026-11-14; docs/07 `SEC-P17`). Scanning is on when the operator sets `OPENSEAL_CLAMD_ADDR` (docs/65 §Malware scanning); PDFs are still normalized (`SEC-P08`, `SEC-P12`) | ASVS-11 (Done) |
 
 **V12.5 File Download**
 

@@ -126,6 +126,48 @@ page, with the console's certificate on keyd's admin allow list only; `OPENSEAL_
 that are not public. Operators sign in with a password and a mandatory TOTP code; risky changes (suspending an
 organization, a TSA change) need a second operator's approval.
 
+## Malware scanning (Compose profile `production`)
+
+Every upload (an envelope's or a template's document, a signer's attachment, an adopted signature image, a saved
+profile mark) can be scanned by ClamAV before the server reads or stores it (`ASVS-11`, docs/07 `SEC-P17`). The
+server speaks clamd's `INSTREAM` protocol over TCP to a `clamav` container (`clamav/clamav-debian:1.4`, pinned by
+digest; the Debian build has arm64 images), which also runs freshclam to keep its signatures current in the `clamav`
+volume, so it needs outbound HTTPS to the ClamAV mirrors. Its port is never published.
+
+```sh
+OPENSEAL_CLAMD_ADDR=clamav:3310 docker compose --profile production up -d --build --wait
+```
+
+clamd loads its signatures for up to a few minutes after a start (the container's health check allows six) and holds
+about 1 GB of memory, about twice that while it reloads new signatures (the service's limit is 3 GB). The server's settings:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OPENSEAL_CLAMD_ADDR` | unset | clamd's `host:port`. Unset or empty: nothing is scanned, and the server warns at start |
+| `OPENSEAL_CLAMD_TIMEOUT_SECS` | 60 | Most seconds one scan may take, waiting for a slot included (1 to 600) |
+| `OPENSEAL_CLAMD_MAX_BYTES` | 104857600 | Largest file sent; keep it equal to clamd's `StreamMaxLength` (`CLAMD_CONF_StreamMaxLength: 100M` in Compose). The server refuses to start when it is below the 50 MiB document limit |
+| `OPENSEAL_CLAMD_CONCURRENCY` | 4 | Scans at once (1 to 64); keep it under clamd's `MaxThreads` (10) |
+| `OPENSEAL_CLAMD_FAIL_OPEN` | 0 | `1` admits an upload clamd could not judge instead of refusing it |
+
+What happens:
+
+- **Malware:** `422 CS-SCAN-0001`; nothing of the file is stored; the workspace's admin log (`GET /admin-events`)
+  gets `upload.malware_refused` with the kind of upload, the envelope, template, recipient, field or user it was
+  for, the scanner's signature name, the file's SHA-256 and length. Never its name or content.
+- **Clean:** the upload goes on to admission as before; a document's admission report says `"malware_scan":
+  "clean"`, and the envelope's audit chain binds that report's hash.
+- **clamd cannot judge it** (not reachable, timeout, larger than it takes, an error, an answer that is not
+  clamd's): by default `503 CS-SCAN-0002` with `Retry-After: 30`, recorded as `upload.unscanned_refused` with the
+  reason. With `OPENSEAL_CLAMD_FAIL_OPEN=1` the upload is admitted, recorded as `upload.unscanned_admitted`, and a
+  document's report says `"malware_scan": "unscanned"`. Fail-open trades this control for availability; alert on
+  `upload.unscanned_*` events and on the server's `upload not scanned` warnings if you choose it.
+
+Signature scanning finds known malware only. The PDF pipeline still removes active content, embedded files and
+external references from every document whatever the scanner says (docs/07 `SEC-P06` to `SEC-P08`). To check a
+deployment, upload the EICAR test file (the 68-byte string from eicar.org) as a document: it must be refused with
+`CS-SCAN-0001` and appear in the admin log. The server's tests run the same check against a real clamd when
+`OPENSEAL_TEST_CLAMD_ADDR` names one (`server/casual-sign-server/tests/malware.rs`).
+
 ## Production checklist
 
 | Area | Do |
@@ -134,6 +176,7 @@ organization, a TSA change) need a second operator's approval.
 | Timestamps | Configure at least two RFC 3161 TSAs with an SLA (qualified, if you need eIDAS qualified time). Key custodians add and change them in the platform console, two people per change (`CON-07`); the worker reads them from the database and falls back to `OPENSEAL_TSA_URLS` when none is configured |
 | Email | A sending domain with SPF, DKIM and DMARC (`p=quarantine` or stricter); a provider plugin or SMTP relay; bounce handling webhook |
 | SMS / IDV / payments | Enable only the providers you have contracts with. SMS and voice one-time codes (`sms_otp`, `voice_otp`) go through an HTTPS gateway you run or rent: set `OPENSEAL_SMS_GATEWAY_URL` and `OPENSEAL_SMS_GATEWAY_SECRET` (or `_FILE`) on the worker; it posts `{"channel":"sms"\|"voice","to":"+…","text":"…","id":"…"}` with `Authorization: Bearer`. Unset, such codes are never sent (`CS-WRK-0013`). Recipient sign-in through an identity provider (`sso`): list the OpenID Connect providers signers may use in a JSON file named by `OPENSEAL_RECIPIENT_IDPS_FILE` on the server, `{"providers": [{"id", "name", "issuer", "authorization_endpoint", "token_endpoint", "jwks_uri", "client_id", "client_secret", "redirect_uri"?}]}`; it holds client secrets, so mount it as a secret. Register `{OPENSEAL_PUBLIC_URL}/s/oidc` (the default `redirect_uri`) with each provider, with the `openid email` scopes. Endpoints must be HTTPS (HTTP only to a loopback address). Unset, `sso` cannot pass (`CS-API-0014`) |
+| Malware scanning | Run the `clamav` service (Compose profile `production`) and set `OPENSEAL_CLAMD_ADDR`; keep fail-open off unless availability matters more than the scan; check with the EICAR file (§Malware scanning) |
 | Database | PostgreSQL 15+, encrypted, PITR backups, a separate role for migrations; the application role has no `UPDATE`/`DELETE` on `audit_events` |
 | Object store | S3-compatible, versioning on, encryption on; Object Lock (compliance mode) for regulated tenants |
 | Edge | TLS 1.2+ (1.3 preferred), HSTS, a WAF if you have one; `OPENSEAL_PUBLIC_URL` must be HTTPS |
@@ -149,12 +192,13 @@ All configuration through environment variables; every secret also accepted as `
 (`server/casual-sign-server/src/main.rs`, `-worker`, `-keyd`); `docker-compose.yml` sets the ones the stack needs and leaves the optional ones unset
 (`OPENSEAL_MFA_KEY`, where `OPENSEAL_DEV_INSECURE_KEY` draws a throwaway key instead, `OPENSEAL_RECIPIENT_IDPS_FILE`,
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, the SMS gateway, the model service, `OPENSEAL_WEBHOOK_ALLOW` and
-`OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, checked 2026-11-13, `DOC-008`). A list
+`OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, checked 2026-11-13, `DOC-008`; `OPENSEAL_CLAMD_ADDR` is passed through empty unless set, `ASVS-11`). A list
 generated from the code into this page is still to come. The server's: `OPENSEAL_DATABASE_URL`,
 `OPENSEAL_JWT_SIGNING_KEY`, `OPENSEAL_BLOB_DIR` or `OPENSEAL_S3_*`, `OPENSEAL_PUBLIC_URL`, `OPENSEAL_LISTEN`,
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, `OPENSEAL_WEBAPP_DIR`, `OPENSEAL_RECIPIENT_IDPS_FILE`,
 `OPENSEAL_MFA_KEY` (32 random bytes as base64, sealing staff TOTP seeds; keep it with the database backups, since a
-seed sealed under a lost key cannot be opened and its users must enrol again; ASVS-01); `migrate` reads
+seed sealed under a lost key cannot be opened and its users must enrol again; ASVS-01), `OPENSEAL_CLAMD_*` (§Malware
+scanning); `migrate` reads
 `OPENSEAL_MIGRATE_DATABASE_URL`. The worker's SMS and voice gateway is `OPENSEAL_SMS_GATEWAY_URL` and
 `OPENSEAL_SMS_GATEWAY_SECRET`; its model service `OPENSEAL_MODELD_ADDR` with `OPENSEAL_MODELD_CA`,
 `_CLIENT_CERT`, `_CLIENT_KEY` and `_SERVER_NAME`. keyd's read-only admin operations answer only the certificates on

@@ -22,7 +22,7 @@ use casual_sign_audit::{AdoptionMethod, AuthMethod, EventData, Hash256, MarkKind
 use casual_sign_model::{FieldValue, Id};
 use casual_sign_store::repo::documents::VersionKind;
 use casual_sign_store::repo::recipients::{OtpChannel, TokenPurpose};
-use casual_sign_store::{DocumentId, RecipientId, TenantTx};
+use casual_sign_store::{ActorKind, AdminActor, DocumentId, RecipientId, TenantTx, UploadKind};
 use casual_sign_workflow::{Command, FieldEntry, Principal as WfPrincipal, ReassignTo};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -36,6 +36,7 @@ use crate::error::ApiError;
 use crate::geo::DeviceLocation;
 use crate::http::limit;
 use crate::net::ClientIp;
+use crate::scan::{Uploader, screen};
 use crate::state::AppState;
 
 /// The cookie binding a ceremony link to a browser.
@@ -266,6 +267,34 @@ async fn open(
 }
 
 impl Open {
+    /// Who uploads through this link, for a malware-scan event (ASVS-11): the server
+    /// on the recipient's behalf (a recipient is no staff actor), with the request id
+    /// and address; the recipient is named among the targets.
+    fn uploader(&self, st: &AppState) -> Uploader {
+        Uploader {
+            account: self.tx.account_id(),
+            actor: AdminActor {
+                kind: ActorKind::System,
+                at: st.now(),
+                request_id: crate::error::request_id(),
+                ip: self
+                    .ip
+                    .0
+                    .map(|i| casual_sign_audit::Personal(i.to_string())),
+            },
+        }
+    }
+
+    /// The envelope and recipient of this link, then `more`, as an event's targets.
+    fn targets(&self, more: &[(&'static str, String)]) -> Vec<(&'static str, String)> {
+        let mut t = vec![
+            ("envelope", self.l.id.0.to_string()),
+            ("recipient", self.recipient.to_string()),
+        ];
+        t.extend_from_slice(more);
+        t
+    }
+
     /// The engine's `gate_ready` rule, checked before a write that would store or parse
     /// what the request carries (SEC-CER-01): a link alone never has an image, a file or
     /// a value stored, nor a PDF parsed, and never learns which field or document ids
@@ -1354,6 +1383,19 @@ pub(crate) async fn adopt(
         let image = STANDARD
             .decode(&req.image_base64)
             .map_err(|_| ApiError::invalid("/image_base64"))?;
+        if image.len() > max {
+            return Err(ApiError::invalid("/image_base64"));
+        }
+        // Scanned before anything reads or stores it (ASVS-11).
+        let target = o.targets(&[]);
+        screen(
+            &st,
+            o.uploader(&st),
+            UploadKind::SignatureImage,
+            target,
+            &image,
+        )
+        .await?;
         let png = image.starts_with(b"\x89PNG\r\n\x1a\n");
         let jpeg = image.starts_with(&[0xFF, 0xD8, 0xFF]);
         if image.len() > max || !(png || jpeg) {
@@ -1470,6 +1512,9 @@ pub(crate) async fn attach(
         if bytes.is_empty() || bytes.len() > MAX_ATTACHMENT_BYTES {
             return Err(ApiError::invalid("/content_base64"));
         }
+        // Scanned before anything reads or stores it (ASVS-11).
+        let target = o.targets(&[("field", f.to_string())]);
+        screen(&st, o.uploader(&st), UploadKind::Attachment, target, &bytes).await?;
         match casual_sign_host::capture::media_type(&bytes) {
             "application/pdf" => {
                 let engine = st.0.engine.clone();

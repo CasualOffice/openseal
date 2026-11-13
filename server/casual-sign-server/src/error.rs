@@ -200,6 +200,22 @@ impl ApiError {
         Self::new(StatusCode::BAD_GATEWAY, "CS-API-0016")
     }
 
+    /// `CS-SCAN-0001` 422: the malware scanner found malware in the upload, which was
+    /// refused and not stored (ASVS-11). No detail: the signature name goes to the admin
+    /// log, not to the uploader.
+    pub fn malware() -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-SCAN-0001")
+    }
+
+    /// `CS-SCAN-0002` 503: the malware scanner could not judge the upload (`reason`:
+    /// `connect`, `timeout`, `too_large`, `error` or `protocol`) and the server fails
+    /// closed (ASVS-11). Worth retrying later.
+    pub fn scanner_unavailable(reason: &'static str) -> Self {
+        let mut e = Self::new(StatusCode::SERVICE_UNAVAILABLE, "CS-SCAN-0002").detail(reason);
+        e.retry_after = Some(30);
+        e
+    }
+
     /// `CS-ML-0011` 403: the document-analysis feature is not in effect for the workspace
     /// (not installed, not in its plan, or off; docs/33 §6, §7).
     pub fn ml_off() -> Self {
@@ -340,6 +356,8 @@ impl ApiError {
             "CS-PLAN-0003" => "Seat limit reached",
             "CS-PLAN-0004" => "Storage limit reached",
             "CS-PLAN-0005" => "Organization suspended",
+            "CS-SCAN-0001" => "Malware found in the upload",
+            "CS-SCAN-0002" => "Malware scanner unavailable",
             c if c.starts_with("CS-WF") => "Workflow refused the command",
             c if c.starts_with("CS-FLD") => "Field rules refused the value",
             c if c.starts_with("CS-PDF") || c.starts_with("CS-WRT") => "Document refused",

@@ -1624,6 +1624,17 @@ pub(crate) async fn patch_me(c: Call, body: Bytes) -> Result<Response, ApiError>
         .as_ref()
         .map(|v| mark_in(v, "/initials"))
         .transpose()?;
+    // Each saved mark is scanned before it is stored (ASVS-11).
+    for m in [&signature, &initials].into_iter().flatten().flatten() {
+        crate::scan::screen(
+            &c.st,
+            c.uploader(),
+            casual_sign_store::UploadKind::ProfileMark,
+            vec![("user", c.p.user.to_string())],
+            m.get(),
+        )
+        .await?;
+    }
     if session.is_none() && (name.is_some() || req.password.is_some()) {
         return Err(ApiError::invalid("/credential"));
     }

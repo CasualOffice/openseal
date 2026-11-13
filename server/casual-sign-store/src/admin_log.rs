@@ -484,6 +484,127 @@ pub(crate) fn append_error(seq: i64) -> impl Fn(sqlx::Error) -> StoreError {
 /// Most events one page of a log returns.
 pub const MAX_PAGE: i64 = 1000;
 
+/// What kind of upload a malware scan judged (ASVS-11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum UploadKind {
+    /// A document added to an envelope.
+    Document,
+    /// A document added to a template.
+    TemplateDocument,
+    /// A file a signer attached to an attachment field.
+    Attachment,
+    /// A signature or initials image a recipient adopted.
+    SignatureImage,
+    /// A signature or initials image a staff user saved to their profile.
+    ProfileMark,
+}
+
+impl UploadKind {
+    /// The name recorded in the event.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Document => "document",
+            Self::TemplateDocument => "template_document",
+            Self::Attachment => "attachment",
+            Self::SignatureImage => "signature_image",
+            Self::ProfileMark => "profile_mark",
+        }
+    }
+}
+
+/// The scan outcomes an admin event records (ASVS-11). A clean scan of a document is
+/// recorded in its admission report, which the envelope's chain binds; these are the
+/// others.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum UploadScreening {
+    /// The scanner found malware; the upload was refused and nothing of it stored.
+    MalwareRefused {
+        /// The scanner's signature name (printable ASCII, at most 128 characters).
+        signature: String,
+    },
+    /// The scanner could not judge the file (`reason`: `connect`, `timeout`,
+    /// `too_large`, `error` or `protocol`) and the server, failing closed, refused it.
+    UnscannedRefused {
+        /// Why the scan did not complete.
+        reason: &'static str,
+    },
+    /// The scanner could not judge the file and the operator's fail-open switch let it
+    /// in unscanned.
+    UnscannedAdmitted {
+        /// Why the scan did not complete.
+        reason: &'static str,
+    },
+}
+
+impl UploadScreening {
+    /// The admin-log action of this outcome.
+    #[must_use]
+    pub fn action(&self) -> &'static str {
+        match self {
+            Self::MalwareRefused { .. } => "upload.malware_refused",
+            Self::UnscannedRefused { .. } => "upload.unscanned_refused",
+            Self::UnscannedAdmitted { .. } => "upload.unscanned_admitted",
+        }
+    }
+}
+
+/// A scanned upload worth recording: its kind, what it was for (ids by name), its
+/// SHA-256 and length, and the outcome. Never its name or content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenedUpload {
+    /// What kind of upload.
+    pub kind: UploadKind,
+    /// The objects it was for, by name (`envelope`, `template`, `recipient`, `field`,
+    /// `user`): ids only.
+    pub target: Vec<(&'static str, String)>,
+    /// SHA-256 of the bytes as uploaded.
+    pub sha256: [u8; 32],
+    /// Their length.
+    pub bytes: u64,
+    /// The outcome.
+    pub outcome: UploadScreening,
+}
+
+impl TenantTx {
+    /// Append a malware-scan outcome to this workspace's admin log (ASVS-11):
+    /// `upload.malware_refused`, `upload.unscanned_refused` or
+    /// `upload.unscanned_admitted`, naming the upload's kind and targets, its SHA-256
+    /// and length, and the signature found or the reason it was not scanned. The caller
+    /// commits it in a transaction of its own, so a refusal stays recorded although the
+    /// request that carried the upload is rolled back.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0014` when the chain cannot be extended; `CS-DB-0001`.
+    pub async fn record_upload_screening(&mut self, u: &ScreenedUpload) -> Result<()> {
+        let mut change = AdminChange::new(u.outcome.action()).target("kind", u.kind.as_str());
+        for (name, id) in &u.target {
+            change = change.target(name, id);
+        }
+        let (key, value) = match &u.outcome {
+            UploadScreening::MalwareRefused { signature } => ("signature", signature.clone()),
+            UploadScreening::UnscannedRefused { reason }
+            | UploadScreening::UnscannedAdmitted { reason } => ("reason", (*reason).to_owned()),
+        };
+        change = change
+            .change(Change::new(key, None, Some(serde_json::Value::from(value))))
+            .change(Change::new(
+                "sha256",
+                None,
+                Some(serde_json::Value::from(hex(&u.sha256))),
+            ))
+            .change(Change::new(
+                "bytes",
+                None,
+                Some(serde_json::Value::from(u.bytes)),
+            ));
+        self.admin_event(change).await
+    }
+}
+
 impl TenantTx {
     /// Who acts in this transaction: every admin event it appends records them. Without
     /// it, events record the server itself ([`ActorKind::System`]).

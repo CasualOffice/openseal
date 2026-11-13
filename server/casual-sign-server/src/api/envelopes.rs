@@ -22,7 +22,7 @@ use casual_sign_store::repo::envelopes::{
 use casual_sign_store::repo::recipients::{NewToken, TokenPurpose};
 use casual_sign_store::{
     DocumentId, DocumentVersionId, EnvelopeId, FolderId, Meter, RecipientId, RecipientTokenId,
-    TenantTx, UserId,
+    TenantTx, UploadKind, UserId,
 };
 use casual_sign_workflow::{
     Access, Change, Command, DocumentSpec, EnvelopeState, Principal as WfPrincipal,
@@ -39,6 +39,7 @@ use crate::crypto::{hash_password, random_secret, sha256};
 use crate::dto::{self, DocumentIn, EnvelopeCreate, EnvelopePatch, RecipientIn, parse};
 use crate::error::ApiError;
 use crate::http::SecretBearing;
+use crate::scan::{ScanNote, screen};
 use crate::state::AppState;
 
 // Helpers -------------------------------------------------------------------------------
@@ -103,13 +104,16 @@ pub(crate) fn base64(s: &str, max: usize, at: &str) -> Result<Vec<u8>, ApiError>
     Ok(b)
 }
 
-fn admission_json(a: &AdmissionReport, n: Option<&NormalizationReport>) -> (Value, u32) {
+fn admission_json(
+    a: &AdmissionReport,
+    n: Option<&NormalizationReport>,
+    scan: ScanNote,
+) -> (Value, u32) {
     let removed: Vec<&str> = n
         .map(|n| n.removed.iter().map(|r| r.code).collect())
         .unwrap_or_default();
     let findings = u32::try_from(removed.len()).unwrap_or(u32::MAX);
-    (
-        json!({
+    let mut report = json!({
             "page_count": a.page_count,
             "repaired": a.repaired,
             "signed": a.is_signed(),
@@ -124,9 +128,13 @@ fn admission_json(a: &AdmissionReport, n: Option<&NormalizationReport>) -> (Valu
             "form_fields": a.fields.len(),
             "removed": removed,
             "normalized": n.is_some(),
-        }),
-        findings,
-    )
+    });
+    // The malware scan's verdict (ASVS-11), present only where a scanner is configured,
+    // so a report made without one hashes as it always did.
+    if let (Some(v), Some(o)) = (scan, report.as_object_mut()) {
+        o.insert("malware_scan".into(), Value::from(v));
+    }
+    (report, findings)
 }
 
 pub(crate) fn pages_json(a: &AdmissionReport) -> Value {
@@ -152,6 +160,7 @@ async fn add_document(
     env: EnvelopeId,
     name: &str,
     bytes: Vec<u8>,
+    scan: ScanNote,
 ) -> Result<DocumentSpec, ApiError> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 255 {
@@ -177,7 +186,8 @@ async fn add_document(
     }
     let original_key = st.0.blobs.put(&original).await?;
     let delivered_key = st.0.blobs.put(&delivered.bytes).await?;
-    let (report, findings) = admission_json(&delivered.admission, delivered.normalization.as_ref());
+    let (report, findings) =
+        admission_json(&delivered.admission, delivered.normalization.as_ref(), scan);
     let report_hash = Hash256::digest(&serde_json::to_vec(&report).unwrap_or_default());
     let doc = DocumentId(Uuid::now_v7());
     // Storage is checked against the plan under its counter rows' lock (PLAN-04,
@@ -646,10 +656,15 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
             &format!("/documents/{i}/content_base64"),
         )?;
         total = total.saturating_add(b.len());
-        decoded.push((d.name.clone(), b));
+        decoded.push((d.name.clone(), b, None));
     }
     if total > c.st.config().max_envelope_bytes {
         return Err(ApiError::too_large());
+    }
+    // Every document is scanned before it is admitted or stored (ASVS-11); the
+    // envelope does not exist yet, so the event names no envelope.
+    for (_, b, scan) in &mut decoded {
+        *scan = screen(&c.st, c.uploader(), UploadKind::Document, Vec::new(), b).await?;
     }
     let mut tx = c.tx().await?;
     let (env, l) = create_in(&c, &mut tx, &req, decoded, send).await?;
@@ -669,7 +684,7 @@ pub(crate) async fn create_in(
     c: &Call,
     tx: &mut TenantTx,
     req: &EnvelopeCreate,
-    decoded: Vec<(String, Vec<u8>)>,
+    decoded: Vec<(String, Vec<u8>, ScanNote)>,
     send: bool,
 ) -> Result<(EnvelopeId, Loaded), ApiError> {
     let subject = dto::subject(&req.subject)?;
@@ -692,8 +707,8 @@ pub(crate) async fn create_in(
     let mut changes = Vec::new();
     let mut doc_ids = Vec::new();
     let mut uploads = Vec::new();
-    for (name, bytes) in decoded {
-        let spec = add_document(&c.st, tx, env, &name, bytes).await?;
+    for (name, bytes, scan) in decoded {
+        let spec = add_document(&c.st, tx, env, &name, bytes, scan).await?;
         doc_ids.push(spec.id.clone());
         uploads.push((uid(&spec.id)?, spec.delivered_hash.0));
         changes.push(Change::AddDocument { document: spec });
@@ -1041,7 +1056,15 @@ pub(crate) async fn add_document_route(
     if held.saturating_add(adding) > limit {
         return Err(ApiError::too_large());
     }
-    let spec = add_document(&c.st, &mut tx, l.id, &name, bytes).await?;
+    let scan = screen(
+        &c.st,
+        c.uploader(),
+        UploadKind::Document,
+        vec![("envelope", l.id.0.to_string())],
+        &bytes,
+    )
+    .await?;
+    let spec = add_document(&c.st, &mut tx, l.id, &name, bytes, scan).await?;
     let doc_id = spec.id.clone();
     let upload = (uid(&spec.id)?, spec.delivered_hash.0);
     change(

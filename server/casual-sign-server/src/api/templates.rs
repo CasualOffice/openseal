@@ -790,6 +790,15 @@ pub(crate) async fn add_document(
         "/content_base64",
     )?;
     let v = if_match(&c, false)?;
+    // Scanned before it is admitted or stored (ASVS-11).
+    crate::scan::screen(
+        &c.st,
+        c.uploader(),
+        casual_sign_store::UploadKind::TemplateDocument,
+        vec![("template", id.0.to_string())],
+        &bytes,
+    )
+    .await?;
     let engine = c.st.0.engine.clone();
     let delivered = tokio::task::spawn_blocking(move || {
         match engine.prepare(&bytes, &Credentials::default()) {

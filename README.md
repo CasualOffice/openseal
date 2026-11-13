@@ -101,6 +101,8 @@ their run against the Compose stack in CI before their row is closed ([docs/14](
 - **Staff accounts**: a TOTP second factor with recovery codes and an account policy (`ASVS-01`), passwords on a
   breached-password list refused, and an email notice when a password is set, changed or reset or a second
   factor is added (`ASVS-02`, `ASVS-04`).
+- **Malware scanning of every upload** by ClamAV in its own container (Compose profile `production`): malware
+  refused and recorded in the admin log, fail closed with an operator switch (`ASVS-11`, docs/65 §Malware scanning).
 - **The ML model service** `casual-sign-modeld` (ADR-029): OCR of scanned pages (`ML-02`), page hashes and
   embeddings for template matching (`ML-05`), GLiNER extraction and personal-data detection (`ML-07`, `ML-08`), with
   the worker's analysis jobs and the server's analysis and suggestion routes (`WEB-19`). Off by default; nothing a

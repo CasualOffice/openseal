@@ -47,7 +47,8 @@ pub mod repo;
 
 pub use admin_log::{
     ADMIN_EVENT_CONSTRAINT, ADMIN_EVENT_VERSION, ActorKind, AdminActor,
-    MAX_PAGE as ADMIN_EVENTS_MAX_PAGE, StoredAdminEvent, verify_admin_chain,
+    MAX_PAGE as ADMIN_EVENTS_MAX_PAGE, ScreenedUpload, StoredAdminEvent, UploadKind,
+    UploadScreening, verify_admin_chain,
 };
 /// The meters [`TenantTx::record_usage`] counts (docs/23 §7.2).
 pub use casual_sign_policy::plans::Meter;

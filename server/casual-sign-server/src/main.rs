@@ -20,6 +20,11 @@
 //! | `OPENSEAL_ML_BUNDLE_ID` | The model bundle deployed with `casual-sign-modeld` (docs/33 §7); none: document analysis is not installed |
 //! | `OPENSEAL_MFA_KEY` (secret) | 32 bytes as base64: seals staff TOTP seeds (ASVS-01); none: staff cannot enrol a second factor and no account may require one |
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key and second-factor key, plain-HTTP cookies |
+//! | `OPENSEAL_CLAMD_ADDR` | `host:port` of ClamAV's clamd (ASVS-11): every upload is scanned before it is read or stored; none: nothing is scanned (a warning at start) |
+//! | `OPENSEAL_CLAMD_TIMEOUT_SECS` | Most seconds one scan may take, 1 to 600 (default 60) |
+//! | `OPENSEAL_CLAMD_MAX_BYTES` | Largest file sent to clamd (default 104857600, clamd's `StreamMaxLength`); at least the largest upload |
+//! | `OPENSEAL_CLAMD_CONCURRENCY` | Scans at once, 1 to 64 (default 4) |
+//! | `OPENSEAL_CLAMD_FAIL_OPEN=1` | Admit an upload clamd could not judge, recorded as `upload.unscanned_admitted`; default: refuse it (`503 CS-SCAN-0002`) |
 //! | `OPENSEAL_ADMIN_PASSWORD` (secret) | `bootstrap` only: the first administrator's password |
 //!
 //! `casual-sign-server bootstrap <account name> <admin email> <admin name>` creates the
@@ -40,7 +45,9 @@ use std::sync::Arc;
 use base64::Engine as _;
 use casual_sign_secrets::env_secret;
 use casual_sign_server::net::{Cidr, ClientIp};
-use casual_sign_server::{AppState, Blobs, Config, JwtKeys, SystemClock, app, bootstrap};
+use casual_sign_server::{
+    AppState, Blobs, Config, JwtKeys, Scanner, ScannerConfig, SystemClock, app, bootstrap,
+};
 use casual_sign_store::Store;
 use casual_sign_store::blob::{FsBlobStore, S3BlobStore, S3Config};
 
@@ -273,10 +280,36 @@ async fn main() -> ExitCode {
         config.ml_bundle = Some(b);
     }
     let public_url = config.public_url.clone();
+    // Malware scanning of uploads through clamd (ASVS-11, docs/65 §Malware scanning).
+    let scanner =
+        match ScannerConfig::from_vars(|n| std::env::var(n).ok(), config.max_document_bytes) {
+            Ok(c) => c,
+            Err(e) => return fail(&e),
+        };
     let state = match AppState::new(store, blobs, jwt, Arc::new(SystemClock), config) {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
     };
+    match scanner {
+        Some(c) => {
+            let fail_open = c.fail_open;
+            let scanner = Scanner::new(c);
+            // A start-up check only: clamd may still be loading its signatures, and
+            // every scan decides for itself (fail closed unless fail-open is set).
+            if scanner.ping().await {
+                tracing::info!(fail_open, "uploads are scanned for malware by clamd");
+            } else {
+                tracing::warn!(
+                    fail_open,
+                    "clamd does not answer yet; uploads are refused until it does unless fail-open is set"
+                );
+            }
+            state.set_scanner(scanner);
+        }
+        None => {
+            tracing::warn!("OPENSEAL_CLAMD_ADDR is not set: uploads are not scanned for malware")
+        }
+    }
     match mfa_key() {
         Ok(Some(k)) => state.set_mfa_key(k),
         Ok(None) => {}

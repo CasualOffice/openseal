@@ -183,6 +183,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | One-call envelope create | 270 MiB body; 200 MiB of documents decoded | CS-API-0006 |
 | Adopted signature image (PNG or JPEG) | 5 MiB | CS-API-0006 |
 | Signer attachment (PDF admitted by the reader, PNG or JPEG; `WEB-06`) | 10 MiB decoded, 14 MiB body | CS-API-0001, CS-API-0006 |
+| Malware scan of an upload (`ASVS-11`, clamd `INSTREAM`, `-server/src/scan.rs`): bytes sent; time per scan, waiting for a slot included; scans at once; clamd's answer read; signature name kept | 100 MiB (`OPENSEAL_CLAMD_MAX_BYTES`, at least the 50 MiB document limit, at most clamd's `StreamMaxLength`); 60 s (`OPENSEAL_CLAMD_TIMEOUT_SECS`, 1–600); 4 (`OPENSEAL_CLAMD_CONCURRENCY`, 1–64); 1,024 bytes; 128 printable ASCII characters | CS-SCAN-0002 (`too_large`, `timeout`, `protocol`) unless fail-open |
 | Contacts search (`GET /contacts`; `WEB-06`) | `q` 200 characters, `limit` 1–50 | CS-API-0001 |
 | User invitation link (`WEB-06`) | 256 random bits, 7 days, once | CS-AUTH-0002 |
 | Envelope list `recipient` filter (`UXW-03`) | 200 characters, no control characters | CS-API-0001 |

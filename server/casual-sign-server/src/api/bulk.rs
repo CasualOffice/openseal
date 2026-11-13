@@ -638,7 +638,8 @@ pub(crate) async fn send(c: Call, Path(id): Path<String>) -> Result<Response, Ap
                     .blobs
                     .get(&casual_sign_store::blob::BlobKey(d.sha256))
                     .await?;
-            docs.push((d.name.clone(), bytes.to_vec()));
+            // Scanned when the template took them (ASVS-11); not again per row.
+            docs.push((d.name.clone(), bytes.to_vec(), None));
         }
     }
     tx.commit().await?;

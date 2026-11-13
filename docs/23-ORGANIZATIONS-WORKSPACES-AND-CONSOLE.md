@@ -547,7 +547,11 @@ mutation of the migration):
   never its text, `ERSD-01`), `organization.created`,
   `organization.admin_added`, `member.added`, `member.removed`, `member.profile_changed`, `member.disabled`,
   `member.enabled`, `member.renamed`, `member.password_set`, `profile.created`, `profile.changed`, `profile.deleted`,
-  `group.created`, `group.renamed`, `group.deleted`, `group.member_added`, `group.member_removed` (`UXW-07`). A user changing their own name or
+  `group.created`, `group.renamed`, `group.deleted`, `group.member_added`, `group.member_removed` (`UXW-07`),
+  `upload.malware_refused`, `upload.unscanned_refused`, `upload.unscanned_admitted` (a malware scan's refusal or an upload
+  admitted unscanned under fail-open: target `kind` and the ids it was for, changes `signature` or `reason`, `sha256`,
+  `bytes`; appended in a transaction of its own so a refused request still leaves it; a recipient's upload is recorded
+  with the `system` actor and the recipient among the targets; `ASVS-11`). A user changing their own name or
   password, and accepting an invitation, are not administrative changes and write none.
 - **The database checks the bytes.** Besides the hash, `seq` and `prev`, the insert trigger requires the owner, `seq`,
   `prev`, `action` and `at` columns to be what the bytes state (`at` exactly the bytes' Unix millisecond, since the API
