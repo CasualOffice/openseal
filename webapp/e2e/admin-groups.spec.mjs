@@ -84,9 +84,13 @@ test("a custom profile is made, given to a member and enforced; a group gets the
   await prow.getByRole("button", { name: `Actions for ${profile}` }).click();
   await page.getByRole("menuitem", { name: "Edit" }).click();
   await sheet.locator("#pp-templates-write").uncheck();
+  // Wait for the server to take the change before the member's next request: the toast
+  // and "templates:read" were already on screen from the first save, so they prove nothing.
+  const saved = page.waitForResponse((r) => /\/api\/v1\/.*profiles/.test(r.url()) && ["PATCH", "PUT", "POST"].includes(r.request().method()));
   await sheet.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Profile saved.")).toBeVisible();
+  expect((await saved).ok()).toBeTruthy();
   await expect(prow).toContainText("templates:read");
+  await expect(prow).not.toContainText("templates:write");
   const refused = await kim.post("/api/v1/templates", { headers, data: { name: `Kim 2 ${stamp}` } });
   expect(refused.status()).toBe(403);
   await kim.dispose();
