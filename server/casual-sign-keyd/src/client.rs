@@ -66,6 +66,12 @@ impl RemoteKey {
         })
     }
 
+    /// The alias keyd serves this key under.
+    #[must_use]
+    pub fn alias(&self) -> &str {
+        &self.alias
+    }
+
     /// The same key, with signatures recorded in keyd's log against `envelope`.
     ///
     /// # Errors

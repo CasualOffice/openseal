@@ -101,4 +101,29 @@ async fn the_seal_goes_through_keyd_with_the_development_reason() {
     for s in &signs {
         assert!(s.contains(&ids.env.hyphenated().to_string()));
     }
+
+    // CON-09: the worker recorded each signature's digest, as keyd logged it, in
+    // `seal_signatures` with the sealed bytes, so the console can reconcile keyd's log.
+    let records = casual_sign_keyd::oplog::read_range(&keyd.oplog, 1, 64, u64::MAX).unwrap();
+    let mut logged: Vec<String> = records
+        .iter()
+        .filter(|r| r.op == "sign" && r.outcome == "ok")
+        .map(|r| r.digest.clone())
+        .collect();
+    logged.sort();
+    let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+    let recorded: Vec<String> = tx
+        .seal_signatures()
+        .digests(casual_sign_store::EnvelopeId(ids.env))
+        .await
+        .unwrap()
+        .iter()
+        .map(|d| d.iter().map(|b| format!("{b:02x}")).collect())
+        .collect();
+    tx.commit().await.unwrap();
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(
+        recorded, logged,
+        "seal_signatures holds exactly keyd's digests"
+    );
 }
