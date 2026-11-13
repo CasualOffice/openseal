@@ -147,7 +147,7 @@ test("a file over 50 MB is refused in the editor with its message (FG-006)", asy
   }
 });
 
-test("an envelope over 200 MB is refused by the server and its 413 is said in the editor (FG-006)", async ({ page, browserName }, testInfo) => {
+test("an envelope over 200 MB is refused and the server's 413 message is said in the editor (FG-006)", async ({ page, browserName }, testInfo) => {
   // Five 41 MiB documents (each under the 50 MiB file limit) in one browser: run once,
   // in Chromium, to keep the suite's memory in bounds.
   test.skip(browserName !== "chromium", "one engine is enough for a 205 MiB upload");

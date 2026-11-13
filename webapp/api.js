@@ -199,7 +199,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     try { if (v) store?.setItem("openseal.csrf", v); else store?.removeItem("openseal.csrf"); } catch { /* storage off */ }
   };
 
-  async function request(method, path, { body, query, ifMatch, raw = false, ceremony = false, signal } = {}) {
+  async function request(method, path, { body, query, ifMatch, raw = false, ceremony = false, signal, accept = null } = {}) {
     let url = baseUrl + path;
     if (query) {
       const q = new URLSearchParams();
@@ -207,7 +207,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       const s = q.toString();
       if (s) url += `?${s}`;
     }
-    const headers = { Accept: raw ? "application/pdf, application/problem+json" : "application/json" };
+    const headers = { Accept: accept || (raw ? "application/pdf, application/problem+json" : "application/json") };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (method !== "GET" && !ceremony && csrf) headers["X-CSRF-Token"] = csrf;
     if (method === "POST") headers["Idempotency-Key"] = random();
@@ -237,7 +237,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
         errors: problem.errors,
       });
     }
-    if (raw) return { blob: await res.blob(), etag: res.headers.get("ETag") };
+    if (raw) return { blob: await res.blob(), etag: res.headers.get("ETag"), next: res.headers.get("X-Next-Cursor") };
     if (res.status === 204) return { data: null, etag: res.headers.get("ETag") };
     const text = await res.text();
     return { data: text ? JSON.parse(text) : null, etag: res.headers.get("ETag") };
@@ -459,6 +459,20 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     testWebhook: (w) => data(request("POST", `${W(w)}/test`)),
     /// Deliver one delivery's event again, through the worker (UXW-33).
     redeliver: (w, d) => data(request("POST", `${W(w)}/deliveries/${encodeURIComponent(d)}/redeliver`)),
+
+    // ---- Admin audit log (ORG-05, docs/40; scope admin:account) -----------------------
+    /// A page of the workspace's admin log, oldest first, verified as read: `{items: [{seq,
+    /// at, action, hash, prev, event}], next_cursor}`; `event` the canonical event (`actor
+    /// {kind: user|api_client|system, id?}`, `target`, `changes [{key, old, new}]`,
+    /// `request_id`, `ip`). `verify: "full"` re-verifies the whole log first (a broken
+    /// chain is `500 CS-DB-0014`). `limit` 1 to 1000.
+    adminEvents: ({ cursor, limit, verify } = {}) => data(request("GET", "/api/v1/admin-events", { query: { cursor, limit, verify } })),
+    /// The same page as the server's CSV (`seq,at,action,hash,prev,event`): `{text, next}`,
+    /// `next` the cursor of the page after it, or null on the last.
+    adminEventsCsv: async ({ cursor, limit } = {}) => {
+      const r = await request("GET", "/api/v1/admin-events", { query: { cursor, limit, format: "csv" }, raw: true, accept: "text/csv, application/problem+json" });
+      return { text: await r.blob.text(), next: r.next == null || r.next === "" ? null : Number(r.next) };
+    },
 
     // ---- Account and members (Admin) -------------------------------------------
     /// `PATCH /accounts/me {settings}`: merged into the account's settings (`null`

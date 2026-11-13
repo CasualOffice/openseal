@@ -67,6 +67,16 @@ const WEBHOOK_EVENTS = [
   "recipient.completed", "recipient.declined", "recipient.reassigned", "recipient.finish_later", "recipient.bounced",
   "template.created", "template.updated", "template.deleted", "bulk_send.completed",
 ];
+/// Whether a value is a whole workflow policy as the server's `Policy` deserializes it
+/// (casual-sign-workflow, no defaults): every member present and of its type; others ignored.
+const POLICY_INTS = { max_auth_attempts: 0xffffffff, max_recipients: Number.MAX_SAFE_INTEGER, max_fields: Number.MAX_SAFE_INTEGER, max_documents: Number.MAX_SAFE_INTEGER, expiry_warning_days: 0xffff, seal_retry_ms: 0xffffffff };
+const DATE_FORMATS = ["yyyy_mm_dd", "mm_dd_yyyy", "dd_mm_yyyy", "dd_mm_yyyy_dot", "d_mmm_yyyy"];
+function policyOk(p) {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return false;
+  for (const [k, max] of Object.entries(POLICY_INTS)) if (!Number.isInteger(p[k]) || p[k] < 0 || p[k] > max) return false;
+  return DATE_FORMATS.includes(p.date_format) && (p.ersd == null || (typeof p.ersd === "object" && typeof p.ersd.version === "string" && typeof p.ersd.hash === "string"));
+}
+
 /// The demo disclosure (ERSD) every mock recipient consents to. Not legal text.
 export const MOCK_DISCLOSURE = [
   "Electronic record and signature disclosure (mock mode demo text).",
@@ -144,7 +154,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!store) return;
     try { store.setItem(KEY, JSON.stringify(db)); } catch { /* full or off: memory only */ }
   };
-  const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; db.ersd ||= []; };
+  const fill = () => { db.templates ||= []; db.users ||= []; db.apiClients ||= []; db.webhooks ||= []; db.deliveries ||= {}; db.folders ||= []; db.ersd ||= []; db.adminLog ||= []; };
   async function load() {
     ersdSha ||= `sha256:${await sha256hex(MOCK_DISCLOSURE)}`;
     if (db) return;
@@ -154,7 +164,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (s) { db = JSON.parse(s); fill(); return; }
       } catch { db = null; }
     }
-    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [], ersd: [] };
+    db = { session: null, envelopes: [], audit: {}, blobs: {}, tokens: {}, opened: [], adoptions: {}, attempts: {}, templates: [], users: [], apiClients: [], webhooks: [], deliveries: {}, folders: [], ersd: [], adminLog: [] };
     await seed();
     save();
   }
@@ -191,6 +201,47 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const hash = await sha256hex(JSON.stringify(event));
     list.push({ seq, type, at: when, hash, prev, event });
     notify(env, type);
+  }
+  /// Append an event to the workspace's admin log (ORG-05), shaped as the server's `GET
+  /// /admin-events` item: `{seq, at, action, hash, prev, event}`, `event` the canonical
+  /// event (`v`, `account`, `seq`, `prev`, `at` in ms, `actor {kind, id?}`, `action`,
+  /// `target`, `changes [{key, old, new}]`, `request_id`). As `audit`, the hash is over
+  /// the mock's own JSON. `by`: a user id, `{api_client: id}`, or "system".
+  async function adminEvent(action, { target = {}, changes = [], by = "user-demo", at = null } = {}) {
+    const log = (db.adminLog ||= []);
+    const prev = log.length ? log[log.length - 1].hash : null;
+    const seq = log.length;
+    const when = at || iso();
+    const actor = by === "system" ? { kind: "system" } : by?.api_client ? { kind: "api_client", id: by.api_client } : { kind: "user", id: by };
+    const event = { v: 1, account: "acct-demo", seq, prev, at: Date.parse(when), actor, action, target, changes, request_id: `mock-${uid().slice(0, 8)}` };
+    const hash = (await sha256hex(JSON.stringify(event))).toLowerCase();
+    log.push({ seq, at: when, action, hash, prev, event });
+  }
+  /// `GET /admin-events?cursor&limit&format&verify`, as the server (ORG-05): oldest first,
+  /// `next_cursor` the last `seq` of a full page; CSV with the next cursor in
+  /// `X-Next-Cursor`; `verify=full` re-checks every link.
+  async function adminEvents(query) {
+    const limit = query.has("limit") ? Number(query.get("limit")) : 100;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/limit", code: "CS-API-0001" }]);
+    const format = query.get("format") || "json";
+    if (!["json", "csv"].includes(format)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/format", code: "CS-API-0001" }]);
+    const verify = query.get("verify") || "page";
+    if (!["page", "full"].includes(verify)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/verify", code: "CS-API-0001" }]);
+    const log = db.adminLog || [];
+    if (verify === "full") {
+      for (const [i, e] of log.entries()) {
+        if (e.prev !== (i ? log[i - 1].hash : null) || e.hash !== await sha256hex(JSON.stringify(e.event))) fail(500, "CS-DB-0014", "Admin log chain broken");
+      }
+    }
+    const cursor = query.has("cursor") ? Number(query.get("cursor")) : null;
+    const page = log.filter((e) => cursor == null || e.seq > cursor).slice(0, limit);
+    const next = page.length === limit ? page[page.length - 1].seq : null;
+    if (format === "csv") {
+      const field = (v) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+      const text = ["seq,at,action,hash,prev,event", ...page.map((e) => [e.seq, e.at, field(e.action), e.hash, e.prev || "", field(JSON.stringify(e.event))].join(","))].join("\r\n") + "\r\n";
+      return new Response(text, { status: 200, headers: { "Content-Type": "text/csv; charset=utf-8", ...(next == null ? {} : { "X-Next-Cursor": String(next) }) } });
+    }
+    return json(200, { items: page, next_cursor: next });
   }
   const blobHash = (id, salt = "") => sha256hex(`${db.blobs[id] || ""}${salt}`);
   const docHashes = async (env) => Promise.all(env.documents.map(async (d) => ({ document_id: d.id, hash: await blobHash(d.id) })));
@@ -536,6 +587,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       { id: uid(), event_id: uid(), event_type: "envelope.declined", status: "failed", attempts: 6, last_status_code: 503 },
       { id: uid(), event_id: uid(), event_type: "envelope.completed", status: "delivered", attempts: 1, last_status_code: 200 },
     ];
+    // The workspace's admin log (UXW-09): made by the server, its first admin added, a
+    // member added and a setting changed.
+    await adminEvent("workspace.created", { by: "system", target: { account: "acct-demo" }, at: iso(-60 * 24 * 30) });
+    await adminEvent("member.added", { by: "system", target: { user: "user-demo" }, changes: [{ key: "profile", old: null, new: "profile-admin" }], at: iso(-60 * 24 * 30) });
+    await adminEvent("member.added", { target: { user: "user-robin" }, changes: [{ key: "profile", old: null, new: "profile-sender" }], at: iso(-60 * 24 * 20) });
+    await adminEvent("workspace.settings_changed", { target: { account: "acct-demo" }, changes: [{ key: "first_reminder_days", old: null, new: 3 }], at: iso(-60 * 24 * 10) });
   }
 
   // ---- HTTP plumbing ---------------------------------------------------------
@@ -1281,15 +1338,23 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         for (const k of Object.keys(body || {})) if (k !== "settings") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
         if (!body?.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/settings", code: "type" }]);
         if ("builtin_profiles" in body.settings) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/builtin_profiles", code: "CS-API-0001" }]);
-        const next = { ...db.account.settings };
+        // As the server: `workflow_policy` is taken only as a whole `Policy` (RTE-03).
+        if ("workflow_policy" in body.settings && body.settings.workflow_policy !== null && !policyOk(body.settings.workflow_policy)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/workflow_policy", code: "CS-API-0001" }]);
+        const before = db.account.settings;
+        const next = { ...before };
         for (const [k, v] of Object.entries(body.settings)) { if (v === null) delete next[k]; else next[k] = v; }
         db.account.settings = next;
+        // ORG-05: the change and its admin event together, one change per key that moved.
+        const changes = Object.keys(body.settings).filter((k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(next[k] ?? null))
+          .map((k) => ({ key: k, old: before[k] ?? null, new: next[k] ?? null }));
+        if (changes.length) await adminEvent("workspace.settings_changed", { target: { account: "acct-demo" }, changes });
         return json(200, { settings: next });
       } else if (method !== "GET") fail(405, "CS-API-0012", "Method not allowed");
       return json(200, here === "acct-demo" ? db.account : { ...db.account, id: here, name: spaces.find((w) => w.id === here)?.name });
     }
     if (res === "organizations" && id === "me") return orgRoutes(method, sub, subId, subSub, query, body);
     if (res === "ersd-versions" && !id) return ersdVersions(method, body);
+    if (res === "admin-events" && !id && method === "GET") return adminEvents(query);
     // WEB-06: recipient autocomplete, as the server's GET /contacts.
     if (res === "contacts" && method === "GET") {
       const q = (query.get("q") || "").trim().toLowerCase();
@@ -1828,7 +1893,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return json(200, out());
   }
 
-  function users(method, id, body, sub) {
+  async function users(method, id, body, sub) {
     if (!id && method === "POST" && body?.invite === true) {
       // `POST /users` with `invite: true` (WEB-06 AD-01): a member who sets up their own
       // sign-in from the emailed link. As the server: `invitation` (the latest one's
@@ -1841,6 +1906,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const u = { id: uid(), email: body.email, name: body.name.trim(), login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false, invitation: "sent" };
       db.users.push(u);
       mintInvite(u);
+      await adminEvent("member.added", { target: { user: u.id }, changes: [{ key: "profile", old: null, new: u.permission_profile_id }] });
       return json(201, u);
     }
     if (id && sub === "invite" && method === "POST") {
@@ -1860,6 +1926,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (body.password != null && (typeof body.password !== "string" || body.password.length < 12)) fail(400, "CS-API-0001", "Password too short", [{ pointer: "/password", code: "min_length" }]);
         const u = { id: uid(), email: body.email, name: body.name.trim(), login_kind: "local", permission_profile_id: `profile-${body.profile}`, disabled: false };
         db.users.push(u);
+        await adminEvent("member.added", { target: { user: u.id }, changes: [{ key: "profile", old: null, new: u.permission_profile_id }] });
         return json(201, u);
       }
     }
@@ -1891,6 +1958,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (method === "DELETE") {
       if (u.id === "user-demo") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/id", code: "self" }]);
       db.users = db.users.filter((x) => x !== u);
+      await adminEvent("member.removed", { target: { user: u.id } });
       return json(204, null);
     }
     fail(405, "CS-API-0012", "Method not allowed");
