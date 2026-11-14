@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use axum::http::StatusCode;
 use casual_sign_seclog::{Kind, Service};
-use casual_sign_server::{Clock as _, MfaKey, totp};
+use casual_sign_server::{Clock as _, totp};
 use common::Rls;
 use common::flow::{b64, invite, ok, open, sent};
 use common::harness::{Api, Auth, PASSWORD, Resp, session_of, text_pdf};
@@ -31,25 +31,6 @@ use serde_json::{Value, json};
 const MARKER: &str = "ZEPHYRMARKER7781";
 const WRONG: &str = "not the password at all";
 const PEER: &str = "198.51.100.7";
-
-fn unbase32(s: &str) -> Vec<u8> {
-    let mut out = Vec::new();
-    let (mut buf, mut bits) = (0u32, 0u32);
-    for c in s.bytes() {
-        let v = match c {
-            b'A'..=b'Z' => c - b'A',
-            b'2'..=b'7' => c - b'2' + 26,
-            _ => panic!("not base32"),
-        };
-        buf = (buf << 5) | u32::from(v);
-        bits += 5;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(u8::try_from((buf >> bits) & 0xff).unwrap());
-        }
-    }
-    out
-}
 
 async fn login(api: &Api, email: &str, password: &str) -> Resp {
     api.call(
@@ -95,7 +76,6 @@ async fn every_server_security_event_is_emitted_without_personal_data() {
         return;
     };
     api.set_peer(&format!("{PEER}:50000"));
-    api.st.set_mfa_key(MfaKey::new(&[7u8; 32]).unwrap());
     let t = api.tenant("seclog").await;
     let mut secrets: Vec<String> = vec![PASSWORD.into(), WRONG.into(), t.key.clone()];
 
@@ -198,18 +178,16 @@ async fn every_server_security_event_is_emitted_without_personal_data() {
         .await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{:?}", r.json());
 
-    // The second factor: enrol and confirm, then a later session's replayed code
-    // (refused, `reused`) and a fresh one.
-    let r = api
-        .call("POST", "/api/v1/auth/mfa/totp/enrol", &s1, None, &[])
-        .await;
-    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
-    let seed = unbase32(r.json()["secret"].as_str().unwrap());
-    let good = totp::code(&seed, totp::step_at(api.clock.now().unix_timestamp()));
+    // The second factor: the harness enrolled it with the tenant (ASVS-31: the
+    // administrator's default), recorded as `mfa_enrol`; this session passes it, then a
+    // later session's replayed code (refused, `reused`) and a fresh one.
+    let f = api.factors.lock().unwrap()[&t.email].clone();
+    let step = totp::step_at(api.clock.now().unix_timestamp()) + 1;
+    let good = totp::code(&f.seed, step);
     let r = api
         .call(
             "POST",
-            "/api/v1/auth/mfa/totp/confirm",
+            "/api/v1/auth/mfa/verify",
             &s1,
             Some(json!({"code": good})),
             &[],
@@ -228,7 +206,7 @@ async fn every_server_security_event_is_emitted_without_personal_data() {
         .await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
     api.clock.advance(Duration::from_secs(30));
-    let next = totp::code(&seed, totp::step_at(api.clock.now().unix_timestamp()));
+    let next = totp::code(&f.seed, step + 1);
     let r = api
         .call(
             "POST",
@@ -640,25 +618,9 @@ async fn a_database_failure_on_a_second_factor_is_not_logged_as_reused() {
     let Some(api) = Api::with("security_log_mfa_db", Rls::On, |_| {}).await else {
         return;
     };
-    api.st.set_mfa_key(MfaKey::new(&[7u8; 32]).unwrap());
     let t = api.tenant("seclogmfa").await;
-    let s1 = session_of(&login(&api, &t.email, PASSWORD).await);
-    let r = api
-        .call("POST", "/api/v1/auth/mfa/totp/enrol", &s1, None, &[])
-        .await;
-    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
-    let seed = unbase32(r.json()["secret"].as_str().unwrap());
-    let good = totp::code(&seed, totp::step_at(api.clock.now().unix_timestamp()));
-    let r = api
-        .call(
-            "POST",
-            "/api/v1/auth/mfa/totp/confirm",
-            &s1,
-            Some(json!({"code": good})),
-            &[],
-        )
-        .await;
-    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    // The harness enrolled the administrator's factor with the tenant (ASVS-31).
+    let seed = api.factors.lock().unwrap()[&t.email].seed.clone();
     let s2 = session_of(&login(&api, &t.email, PASSWORD).await);
     api.clock.advance(Duration::from_secs(30));
     // The check that records the step fails in the database.

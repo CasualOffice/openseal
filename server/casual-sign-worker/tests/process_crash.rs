@@ -280,6 +280,12 @@ impl Stack {
             s("OPENSEAL_LISTEN", &format!("127.0.0.1:{port}")),
             s("OPENSEAL_PUBLIC_URL", &base),
             s("OPENSEAL_DEV_INSECURE_KEY", "1"),
+            // A fixed key, so an enrolled second factor survives the server's restarts
+            // (ASVS-31: the administrator below owes one by default).
+            s(
+                "OPENSEAL_MFA_KEY",
+                "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+            ),
             s("RUST_LOG", "warn"),
         ];
         let worker_env = vec![
@@ -355,7 +361,43 @@ impl Stack {
             ),
             csrf: Some(login.body["csrf_token"].as_str().unwrap().to_owned()),
         };
+        stack.enrol_factor();
         Some(stack)
+    }
+
+    /// The administrator owes a second factor by default (ASVS-31): enrol one through
+    /// the API, as an authenticator app would answer, so the staff session passes it.
+    fn enrol_factor(&self) {
+        let r = self.call(&self.staff, "GET", "/api/v1/auth/session", None, &[]);
+        assert_eq!(r.status, 200, "{r:?}");
+        if r.body["second_factor"] != "enrol" {
+            return;
+        }
+        let r = self.call(
+            &self.staff,
+            "POST",
+            "/api/v1/auth/mfa/totp/enrol",
+            None,
+            &[],
+        );
+        assert_eq!(r.status, 200, "{r:?}");
+        let seed = common::unbase32(r.body["secret"].as_str().unwrap());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let code = casual_sign_server::totp::code(
+            &seed,
+            casual_sign_server::totp::step_at(i64::try_from(now).unwrap()),
+        );
+        let r = self.call(
+            &self.staff,
+            "POST",
+            "/api/v1/auth/mfa/totp/confirm",
+            Some(json!({"code": code})),
+            &[],
+        );
+        assert_eq!(r.status, 200, "{r:?}");
     }
 
     /// Both binaries die at `startup` when built with the feature; otherwise this

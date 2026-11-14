@@ -3,7 +3,7 @@
 //! every route template called (so a test can show every operation of
 //! `api/openapi.yaml` was exercised).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -12,8 +12,8 @@ use axum::body::{Body, Bytes};
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderMap, Method, Request, StatusCode};
 use casual_sign_server::{
-    AppState, Blobs, Bootstrapped, Config, JwtKeys, ManualClock, app, bootstrap,
-    bootstrap_workspace, table,
+    AppState, Blobs, Bootstrapped, Clock as _, Config, JwtKeys, ManualClock, MfaKey, app,
+    bootstrap, bootstrap_workspace, table, totp,
 };
 use casual_sign_store::blob::FsBlobStore;
 use http_body_util::BodyExt;
@@ -79,6 +79,43 @@ pub struct Api {
     pub secure_cookies: bool,
     /// Every security event line the server wrote (ASVS-08).
     pub security: casual_sign_seclog::Memory,
+    /// The second factor of each staff user the harness enrolled, by email (ASVS-31).
+    pub factors: Mutex<HashMap<String, Factor>>,
+}
+
+/// A staff user's TOTP factor as the harness enrolled it through the API (ASVS-31):
+/// administrators owe one by default, so every harness that signs one in enrols it.
+#[derive(Debug, Clone)]
+pub struct Factor {
+    /// The TOTP seed the enrolment showed.
+    pub seed: Vec<u8>,
+    /// The recovery codes not yet spent.
+    pub recovery: Vec<String>,
+    /// The newest time step a code was used for.
+    pub last_step: Option<u64>,
+}
+
+/// The key the harness seals TOTP seeds under.
+pub const MFA_KEY: [u8; 32] = [7u8; 32];
+
+/// RFC 4648 base32 (no padding) back to bytes, for the secret an enrolment shows.
+pub fn unbase32(s: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    let (mut buf, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'2'..=b'7' => c - b'2' + 26,
+            _ => panic!("not base32"),
+        };
+        buf = (buf << 5) | u32::from(v);
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(u8::try_from((buf >> bits) & 0xff).unwrap());
+        }
+    }
+    out
 }
 
 /// An account with an administrator's API key holding every scope.
@@ -120,7 +157,21 @@ impl Api {
         Self::with(test, rls, |_| {}).await
     }
 
+    /// A server without the key that seals second factors: nobody can enrol one.
+    pub async fn without_mfa_key(test: &str, rls: Rls) -> Option<Self> {
+        Self::build(test, rls, |_| {}, false).await
+    }
+
     pub async fn with(test: &str, rls: Rls, tweak: impl FnOnce(&mut Config)) -> Option<Self> {
+        Self::build(test, rls, tweak, true).await
+    }
+
+    async fn build(
+        test: &str,
+        rls: Rls,
+        tweak: impl FnOnce(&mut Config),
+        mfa_key: bool,
+    ) -> Option<Self> {
         let db = fresh(test, rls).await?;
         let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("blobs-{}", uuid::Uuid::now_v7()));
@@ -143,7 +194,12 @@ impl Api {
         let (log, security) =
             casual_sign_seclog::SecurityLog::memory(casual_sign_seclog::Service::Server);
         st.set_security_log(log);
+        // As `casual-sign-server` requires outside development (ASVS-31).
+        if mfa_key {
+            st.set_mfa_key(MfaKey::new(&MFA_KEY).unwrap());
+        }
         Some(Self {
+            factors: Mutex::new(HashMap::new()),
             security,
             app: app(st.clone()),
             st,
@@ -225,8 +281,95 @@ impl Api {
         self.send(method, path, auth, body, &h).await
     }
 
-    /// A new account: bootstrap, log in, and make an administrator's API key.
-    pub async fn tenant(&self, name: &str) -> Tenant {
+    /// Pass the second factor `s` owes, as `email`'s authenticator would (ASVS-31): enrol
+    /// one when the account's policy asks (administrators by default), or answer with a
+    /// code for a time step not used yet, else with a recovery code. Nothing when none
+    /// is owed.
+    pub async fn pass_factor(&self, email: &str, s: &Auth) {
+        let r = self.call("GET", "/api/v1/auth/session", s, None, &[]).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+        let now = totp::step_at(self.clock.now().unix_timestamp());
+        match r.json()["second_factor"].as_str().unwrap_or("") {
+            "enrol" => {
+                let r = self
+                    .call("POST", "/api/v1/auth/mfa/totp/enrol", s, None, &[])
+                    .await;
+                assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+                let seed = unbase32(r.json()["secret"].as_str().unwrap());
+                let r = self
+                    .call(
+                        "POST",
+                        "/api/v1/auth/mfa/totp/confirm",
+                        s,
+                        Some(json!({"code": totp::code(&seed, now)})),
+                        &[],
+                    )
+                    .await;
+                assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+                let recovery = r.json()["recovery_codes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|c| c.as_str().unwrap().to_owned())
+                    .collect();
+                self.factors.lock().unwrap().insert(
+                    email.to_owned(),
+                    Factor {
+                        seed,
+                        recovery,
+                        last_step: Some(now),
+                    },
+                );
+            }
+            "verify" => {
+                let mut f = self
+                    .factors
+                    .lock()
+                    .unwrap()
+                    .get(email)
+                    .cloned()
+                    .unwrap_or_else(|| panic!("{email} enrolled outside the harness"));
+                let step = [now.saturating_sub(1), now, now + 1]
+                    .into_iter()
+                    .find(|st| f.last_step.is_none_or(|l| *st > l));
+                let body = match step {
+                    Some(st) => {
+                        f.last_step = Some(st);
+                        json!({"code": totp::code(&f.seed, st)})
+                    }
+                    None => {
+                        json!({"recovery_code": f.recovery.pop().expect("recovery codes left")})
+                    }
+                };
+                let r = self
+                    .call("POST", "/api/v1/auth/mfa/verify", s, Some(body), &[])
+                    .await;
+                assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+                self.factors.lock().unwrap().insert(email.to_owned(), f);
+            }
+            _ => {}
+        }
+    }
+
+    /// Sign `email` in with `password` and pass any second factor the session owes.
+    pub async fn login(&self, email: &str, password: &str) -> Auth {
+        let r = self
+            .call(
+                "POST",
+                "/api/v1/auth/login",
+                &Auth::None,
+                Some(json!({"email": email, "password": password})),
+                &[],
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+        let s = session_of(&r);
+        self.pass_factor(email, &s).await;
+        s
+    }
+
+    /// A new account and its first administrator, who has not signed in yet.
+    pub async fn bare_tenant(&self, name: &str) -> (Bootstrapped, String) {
         let email = format!("admin@{name}.example.test");
         // The install's first organization comes from `bootstrap`; later ones as the
         // platform console makes them (the owner role), each with a workspace made
@@ -251,17 +394,14 @@ impl Api {
                 .await
                 .unwrap()
         };
-        let login = self
-            .call(
-                "POST",
-                "/api/v1/auth/login",
-                &Auth::None,
-                Some(json!({"email": email, "password": PASSWORD})),
-                &[],
-            )
-            .await;
-        assert_eq!(login.status, StatusCode::OK, "{:?}", login.json());
-        let session = session_of(&login);
+        (boot, email)
+    }
+
+    /// A new account: bootstrap, log in (enrolling the administrator's second factor,
+    /// ASVS-31), and make an administrator's API key.
+    pub async fn tenant(&self, name: &str) -> Tenant {
+        let (boot, email) = self.bare_tenant(name).await;
+        let session = self.login(&email, PASSWORD).await;
         let key = self
             .call(
                 "POST",

@@ -1,7 +1,9 @@
 // Shared steps for the e2e specs (WEB-01). Every spec runs in mock mode by default and
 // against a real server when OPENSEAL_E2E_BASE_URL is set (playwright.config.mjs).
 
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -76,6 +78,7 @@ export async function signIn(page, land = "agreements") {
   await page.getByLabel("Email").fill(creds.email);
   await page.getByLabel("Password").fill(creds.password);
   await page.getByRole("button", { name: "Sign in" }).click();
+  if (REAL) await passFactor(page, home);
   await expect(home).toBeVisible();
   if (REAL) {
     realSession = {
@@ -85,6 +88,83 @@ export async function signIn(page, land = "agreements") {
     await seedReal(page);
   }
   if (land !== "home" || REAL) await goLand();
+}
+
+/// Against a real server, the run's administrator owes a second factor (ASVS-31: the
+/// default for administrators). The first sign-in enrols through the sign-in card, as a
+/// person would with an authenticator app; later ones answer the code step with a code
+/// for a time step not used yet, else a recovery code (each code is accepted once).
+/// Kept in a file beside the run's results, not in memory: Playwright restarts its worker
+/// after any failure, and a factor held in memory would be lost with it (compose-e2e on
+/// PR #7). One worker runs the real-stack suite, so the file has one writer.
+const factorFile = path.join(os.tmpdir(), `openseal-e2e-factor-${Buffer.from(String(creds.email)).toString("hex").slice(0, 32)}.json`);
+function loadFactor() {
+  try {
+    const f = JSON.parse(fs.readFileSync(factorFile, "utf8"));
+    return { seed: f.seed ? Buffer.from(f.seed, "hex") : null, lastStep: f.lastStep ?? -1, recovery: f.recovery ?? [] };
+  } catch {
+    return { seed: null, lastStep: -1, recovery: [] };
+  }
+}
+function saveFactor(f) {
+  fs.writeFileSync(factorFile, JSON.stringify({ seed: f.seed?.toString("hex") ?? null, lastStep: f.lastStep, recovery: f.recovery }), { mode: 0o600 });
+}
+
+function unbase32(s) {
+  const out = [];
+  let buf = 0, bits = 0;
+  for (const c of s.replace(/[\s=]/g, "").toUpperCase()) {
+    const v = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(c);
+    if (v < 0) throw new Error("the setup key is not base32");
+    buf = ((buf << 5) | v) & 0xffff;
+    bits += 5;
+    if (bits >= 8) { bits -= 8; out.push((buf >> bits) & 0xff); }
+  }
+  return Buffer.from(out);
+}
+
+/// RFC 6238: six digits, 30-second steps, HMAC-SHA1.
+function totp(seed, step) {
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(step));
+  const mac = crypto.createHmac("sha1", seed).update(msg).digest();
+  const off = mac[mac.length - 1] & 0x0f;
+  return String((mac.readUInt32BE(off) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
+
+/// Pass the second-factor step a sign-in may show (ASVS-01, ASVS-31); a spec that signs in
+/// by hand calls it after submitting the form.
+export async function passFactor(page, home = page.getByRole("heading", { name: "Home", exact: true })) {
+  const factor = loadFactor();
+  const enrol = page.getByRole("heading", { name: "Set up two-step verification" });
+  const verify = page.getByRole("heading", { name: "Two-step verification", exact: true });
+  await expect(home.or(enrol).or(verify)).toBeVisible();
+  const now = Math.floor(Date.now() / 1000 / 30);
+  if (await enrol.isVisible()) {
+    const text = await page.getByTestId("mfa-secret").textContent();
+    factor.seed = unbase32(text.split(":").pop());
+    factor.lastStep = now;
+    await page.getByLabel("Verification code").fill(totp(factor.seed, now));
+    await page.getByRole("button", { name: "Turn on two-step verification" }).click();
+    const codes = page.getByTestId("mfa-recovery-codes").locator("code");
+    await expect(codes.first()).toBeVisible();
+    factor.recovery = await codes.allTextContents();
+    saveFactor(factor);
+    await page.getByRole("button", { name: "I saved them, continue" }).click();
+  } else if (await verify.isVisible()) {
+    if (!factor.seed) throw new Error("the e2e administrator enrolled a second factor outside this run");
+    // A step's code is accepted once (ASVS 2.8.5): when this step's is spent, wait for
+    // the next step rather than spend the few recovery codes.
+    let step = Math.floor(Date.now() / 1000 / 30);
+    if (step <= factor.lastStep) {
+      await page.waitForTimeout((factor.lastStep + 1) * 30_000 - Date.now() + 250);
+      step = factor.lastStep + 1;
+    }
+    factor.lastStep = step;
+    saveFactor(factor);
+    await page.getByLabel("Verification code").fill(totp(factor.seed, step));
+    await page.getByRole("button", { name: "Verify" }).click();
+  }
 }
 
 /// A real account needs something to list: a draft and a sent envelope, made through

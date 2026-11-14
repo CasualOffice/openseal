@@ -268,6 +268,7 @@ async fn a_sent_envelope_completes_with_a_verified_seal_after_quota_suspension_a
         },
     )
     .unwrap();
+    st.set_mfa_key(common::mfa_key());
     let app = casual_sign_server::app(st);
     let org = env.db.organization("Plans").await;
     let boot = casual_sign_server::bootstrap_workspace(
@@ -334,6 +335,14 @@ async fn a_sent_envelope_completes_with_a_verified_seal_after_quota_suspension_a
     let set = login.headers["set-cookie"].to_str().unwrap();
     staff.cookie = Some(set.split(';').next().unwrap().to_owned());
     staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    // An administrator owes a second factor by default (ASVS-31).
+    common::pass_factor(
+        &staff.app,
+        staff.cookie.as_deref().unwrap(),
+        staff.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
     let body = || {
         json!({
             "subject": "Order form", "status": "sent",

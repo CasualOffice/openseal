@@ -22,7 +22,7 @@
 //! | `OPENSEAL_GEOIP_DB` | Optional GeoIP `.mmdb` the operator supplies (row GEO-01) |
 //! | `OPENSEAL_ML_BUNDLE_ID` | The model bundle deployed with `casual-sign-modeld` (docs/33 §7); none: document analysis is not installed |
 //! | `OPENSEAL_LOG_PSEUDONYM_KEY` (secret) | 32 bytes as base64: keys the pseudonyms security events give a presented e-mail or client address (ASVS-08); share it with the console so they match; none: a key per process; malformed: the server does not start (`CS-LOG-0001`) |
-//! | `OPENSEAL_MFA_KEY` (secret) | 32 bytes as base64: seals staff TOTP seeds (ASVS-01); none: staff cannot enrol a second factor and no account may require one |
+//! | `OPENSEAL_MFA_KEY` (secret) | 32 bytes as base64: seals staff TOTP seeds (ASVS-01). Required outside development: administrators owe a second factor by default (ASVS-31), and without the key none could enrol, so the server does not start without it; keep it with the backups, since a seed sealed under a lost key opens only by recovery code |
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key and second-factor key, plain-HTTP cookies |
 //! | `OPENSEAL_CLAMD_ADDR` | `host:port` of ClamAV's clamd (ASVS-11): every upload is scanned before it is read or stored; none: nothing is scanned (a warning at start) |
 //! | `OPENSEAL_CLAMD_TIMEOUT_SECS` | Most seconds one scan may take, 1 to 600 (default 60) |
@@ -147,16 +147,16 @@ fn reload_every() -> Result<Option<std::time::Duration>, String> {
 }
 
 /// The key that seals staff TOTP seeds (ASVS-01): `OPENSEAL_MFA_KEY`, 32 bytes as
-/// base64. Unset, staff cannot enrol a second factor, except in development, where a
-/// random key is drawn (seeds then do not survive a restart).
-fn mfa_key() -> Result<Option<casual_sign_server::MfaKey>, String> {
+/// base64. Required: administrators owe a second factor by default (ASVS-31), and
+/// without the key nobody could enrol one. In development only, a random key is drawn
+/// when it is unset (seeds then do not survive a restart).
+fn mfa_key() -> Result<casual_sign_server::MfaKey, String> {
     match secret("OPENSEAL_MFA_KEY")? {
         Some(b64) => {
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(b64.trim())
                 .map_err(|_| "OPENSEAL_MFA_KEY: not base64".to_owned())?;
             casual_sign_server::MfaKey::new(&bytes)
-                .map(Some)
                 .map_err(|_| "OPENSEAL_MFA_KEY: not 32 bytes".to_owned())
         }
         None if std::env::var("OPENSEAL_DEV_INSECURE_KEY").as_deref() == Ok("1") => {
@@ -165,11 +165,9 @@ fn mfa_key() -> Result<Option<casual_sign_server::MfaKey>, String> {
                 "development_mfa_key",
                 &[("note", "never in production")],
             );
-            casual_sign_server::MfaKey::generate()
-                .map(Some)
-                .map_err(|e| e.code().to_owned())
+            casual_sign_server::MfaKey::generate().map_err(|e| e.code().to_owned())
         }
-        None => Ok(None),
+        None => Err("OPENSEAL_MFA_KEY is not set".into()),
     }
 }
 
@@ -457,17 +455,29 @@ async fn main() -> ExitCode {
     {
         return fail("OPENSEAL_PUBLIC_URL must be https outside development");
     }
+    let args: Vec<String> = std::env::args().collect();
+    let serving = args.get(1).map(String::as_str) != Some("bootstrap");
     let url = match secret("OPENSEAL_DATABASE_URL") {
         Ok(Some(u)) => u,
         Ok(None) => return fail("OPENSEAL_DATABASE_URL is not set"),
         Err(e) => return fail(&e),
     };
+    // Administrators owe a second factor by default (ASVS-31): a server that could not
+    // enrol one would lock them out, so it does not start without the key that seals
+    // the seeds, before it touches the database.
+    let mfa = if serving {
+        match mfa_key() {
+            Ok(k) => Some(k),
+            Err(e) => return fail(&e),
+        }
+    } else {
+        None
+    };
     let store = match Store::connect(&url, 16).await {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
     };
-    let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) == Some("bootstrap") {
+    if !serving {
         let (Some(name), Some(email), Some(admin)) = (args.get(2), args.get(3), args.get(4)) else {
             return fail("usage: bootstrap <account name> <admin email> <admin name>");
         };
@@ -588,10 +598,8 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     }
-    match mfa_key() {
-        Ok(Some(k)) => state.set_mfa_key(k),
-        Ok(None) => {}
-        Err(e) => return fail(&e),
+    if let Some(k) = mfa {
+        state.set_mfa_key(k);
     }
     if let Ok(path) = std::env::var("OPENSEAL_GEOIP_DB") {
         match casual_sign_server::geo::GeoIp::open(std::path::Path::new(&path)) {

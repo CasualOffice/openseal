@@ -347,6 +347,7 @@ async fn wrong_accounts_revoked_keys_expired_tokens_and_missing_csrf_are_refused
         "{set}"
     );
     let s = session_of(&login);
+    api.pass_factor(&a.email, &s).await;
     let Auth::Session { cookie, .. } = &s else {
         unreachable!()
     };
@@ -499,7 +500,9 @@ async fn only_the_creating_client_opens_an_embedded_signing_view() {
 #[tokio::test]
 async fn rate_limits_answer_429_with_retry_after() {
     let Some(api) = Api::with("auth_rate_limits", Rls::On, |c| {
-        c.rate.api_per_minute = 3;
+        // Four: the tenant's session enrols its administrator's factor (ASVS-31) and
+        // makes the key in four calls.
+        c.rate.api_per_minute = 4;
         c.rate.login_per_minute = 2;
     })
     .await
@@ -508,7 +511,7 @@ async fn rate_limits_answer_429_with_retry_after() {
     };
     let a = api.tenant("alpha").await;
     let mut last = None;
-    for _ in 0..4 {
+    for _ in 0..5 {
         last = Some(
             api.call("GET", "/api/v1/accounts/me", &a.auth, None, &[])
                 .await,
@@ -524,7 +527,7 @@ async fn rate_limits_answer_429_with_retry_after() {
         r.headers["ratelimit-policy"]
             .to_str()
             .unwrap()
-            .contains("q=3")
+            .contains("q=4")
     );
     // Login attempts per name: the tenant's own login used one.
     for _ in 0..2 {

@@ -474,8 +474,9 @@ keyed by the user's own live session of the current account change them: `opense
 `openseal_begin_own_totp` (only while unconfirmed), `openseal_confirm_own_totp`, `openseal_verify_own_totp` and
 `openseal_use_own_recovery_code` (`Sessions::own_totp` and siblings). `staff_sessions` gains `mfa_at`, when the session
 passed its factor (a workspace switch carries it); `openseal_resolve_staff_session` now also answers it, whether the
-user enrolled, and the account's `settings.mfa_policy` (`optional` when unset; an unknown value reads as `everyone`).
-No new table.
+user enrolled, and the account's `settings.mfa_policy` (an unknown value reads as `everyone`). When unset it reads as
+`administrators` since migration 0036 (`ASVS-31`; it was `optional`): the default lives in that function alone, so no
+row was rewritten, and an account's explicit `optional` is kept. No new table.
 
 ### Designed (ADR-028): tenancy with organizations
 

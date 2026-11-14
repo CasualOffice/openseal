@@ -58,8 +58,19 @@ modeld_identity() {
     echo "dev-pki: modeld identity written"
 }
 
+# The key that seals staff TOTP seeds (ASVS-01; required by the server since ASVS-31):
+# 32 random bytes as base64, kept with the other secrets so an enrolled factor survives a
+# restart. On its own check, so an existing stack gains it without a new root.
+mfa_key() {
+    if [ ! -f "$OUT/mfa-key" ]; then
+        openssl rand -base64 32 > "$OUT/mfa-key"
+        chmod 0644 "$OUT/mfa-key"
+    fi
+}
+
 if [ -f "$OUT/.complete" ]; then
     echo "dev-pki: secrets already present"
+    mfa_key
     modeld_identity
     exit 0
 fi
@@ -106,6 +117,7 @@ EOF
 
 chmod 0644 ./*.key ./*.pem postgres-password postgres-app-password softhsm-pin softhsm-so-pin \
     s3-secret-key database-url migrate-database-url s3.json keyd-allow-list
+mfa_key
 touch .complete
 echo "dev-pki: development secrets written"
 modeld_identity
