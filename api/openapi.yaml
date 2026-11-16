@@ -244,7 +244,7 @@ components:
       required: [settings]
       additionalProperties: false
       properties:
-        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `mfa_policy` (ASVS-01) is `optional` (the default), `administrators` or `everyone`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`.'}
+        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `mfa_policy` (ASVS-01) is `administrators` (the default, also when unset; ASVS-31), `everyone` or `optional`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`.'}
     User:
       type: object
       properties:

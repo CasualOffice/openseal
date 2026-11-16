@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 48 of 168 rows work end to end; 15 more have their engine built and tested; 42 are designed, 20 are partial (`FG-012`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-073`, `FG-076`, `FG-092`, `FG-095`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-177`, `FG-183`, `FG-184`, `FG-195`) and 43 are not started** (counted with `grep` over the Status column). Counts recounted 2026-11-13 (`VS-01`, `S1-01`, `S1-03`, `S1-04`, `S1-05`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 48 of 168 rows work end to end; 15 more have their engine built and tested; 38 are designed, 25 are partial (`FG-012`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-073`, `FG-076`, `FG-092`, `FG-095`, `FG-098`, `FG-100`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-171`, `FG-172`, `FG-177`, `FG-182`, `FG-183`, `FG-184`, `FG-195`) and 42 are not started** (counted with `grep` over the Status column). Counts recounted 2026-11-13 (`DOC-008`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -43,7 +43,7 @@ instructions 8 and 9).
 | FG-024 | Specify recipients (agent) | DS | Build | 2 | Works (the editor offers the agent; the agent names later recipients through `POST /s/{token}/recipients` and finishes, routing then reaching them, `VS-02` tests/routing.rs; the signing page asks for the names and emails, browser run `webapp/e2e/recipient-types.spec.mjs`, `RTE-01`) |
 | FG-025 | Allow to edit (editor) | DS | Build | 6 | Designed |
 | FG-026 | Update recipients (intermediary) | DS | Build | 6 | Designed |
-| FG-027 | In-person signer | DS, SN | Build | 14 | Engine (hosting served by `POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`; the editor offers it, `UX-05`; the envelope page's "Host signing" opens the hosted session in the tab, `UXW-18`, in a mock-mode browser run, `webapp/e2e/recipient-types.spec.mjs`; Compose spec pending on CI) |
+| FG-027 | In-person signer | DS, SN | Build | 14 | Engine (hosting served by `POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`; the editor offers it, `UX-05`; the envelope page's "Host signing" opens the hosted session in the tab, `UXW-18`, in a mock-mode browser run, `webapp/e2e/recipient-types.spec.mjs`; the Compose spec `real-stack.spec.mjs` green on chromium and webkit in `compose-e2e`, 2026-11-14) |
 | FG-028 | Witness | DS | Build | 16 | — |
 | FG-029 | Notary (remote online notarization) | DS, SN | Build, with provider plugins | 31 | — |
 | FG-030 | Electronic seal recipient | DS | Plugin | 18 | — |
@@ -109,9 +109,9 @@ instructions 8 and 9).
 | FG-095 | Expiration and warning | DS, SN | Build | 2 | Partial: an envelope's expiry is set on send or correct; the worker emails the warning (account `workflow_policy.expiry_warning_days`) and expires the envelope on time, telling the sender and the recipients whose turn it was (`VS-02`, worker tests/expiry.rs); an admin sets the warning days on the Organization page (`RTE-03`, `webapp/e2e/admin-screens.spec.mjs`) |
 | FG-096 | Templates with roles | DS, SN | Build | 3 | Works |
 | FG-097 | Composite templates (several into one envelope) | DS | Build | 3 | Designed |
-| FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Partial: sharing with members, groups and the whole workspace (use, or edit with Can edit), Shared with me and Favourites served deny-by-default and in the web app (`UXW-06`), not yet run on the Compose stack; template folders and locking not built (`TSH-03`) |
+| FG-098 | Template sharing, folders, favourites, locking | DS | Build | 3 | Partial: sharing with members, groups and the whole workspace (use, or edit with Can edit), Shared with me and Favourites served deny-by-default and in the web app (`UXW-06`), run on the Compose stack (`compose-e2e`, 2026-11-14); template folders and locking not built (`TSH-03`) |
 | FG-099 | Document group templates | SN | Build | 3 | Designed |
-| FG-100 | Bulk send (CSV, API, test row, progress) | DS, SN | Build | 11 | Partial: `POST /bulk-sends` (CSV or JSON rows, checked with per-row errors, `validate_only` as the test of the list), `…/send` in steps with progress, cancel, and the web app's `#/templates/{id}/bulk` (`UXW-04`); server tests seen red then green; the e2e spec not yet run against the Compose stack; no completion webhook (`UXW-47`) |
+| FG-100 | Bulk send (CSV, API, test row, progress) | DS, SN | Build | 11 | Partial: `POST /bulk-sends` (CSV or JSON rows, checked with per-row errors, `validate_only` as the test of the list), `…/send` in steps with progress, cancel, and the web app's `#/templates/{id}/bulk` (`UXW-04`); server tests seen red then green; the e2e spec green against the Compose stack (`compose-e2e`, 2026-11-14); no completion webhook (`UXW-47`) |
 | FG-101 | Signing links / PowerForms | DS, SN | Build | 11 | Designed |
 | FG-102 | QR code for signing links | SN | Build | 11 | Designed |
 | FG-103 | Self-sign ("Sign a document" for oneself) | DS, SN | Build | 2 | — |
@@ -181,8 +181,8 @@ instructions 8 and 9).
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
 | FG-170 | Users, CSV import, close, reactivate | DS | Build | 10 | Designed |
-| FG-171 | Permission profiles (built-in and custom) | DS | Build | 10 | Partial: built-in admin, sender, viewer and custom profiles made, changed and deleted by an administrator, enforced on the server per request, never beyond the caller's own rights, in the web app (`UXW-07`); not yet run on the Compose stack |
-| FG-172 | Groups | DS | Build | 10 | Partial: groups made, renamed, deleted and their members set by an administrator, used to share templates, in the web app (`UXW-07`, `UXW-06`); not yet run on the Compose stack; a group's permission profile and envelope sharing not built (`PRF-03`) |
+| FG-171 | Permission profiles (built-in and custom) | DS | Build | 10 | Partial: built-in admin, sender, viewer and custom profiles made, changed and deleted by an administrator, enforced on the server per request, never beyond the caller's own rights, in the web app (`UXW-07`); run on the Compose stack (`compose-e2e`, 2026-11-14) |
+| FG-172 | Groups | DS | Build | 10 | Partial: groups made, renamed, deleted and their members set by an administrator, used to share templates, in the web app (`UXW-07`, `UXW-06`); run on the Compose stack (`compose-e2e`, 2026-11-14); a group's permission profile and envelope sharing not built (`PRF-03`) |
 | FG-173 | SSO: SAML 2.0 and OIDC; require SSO; JIT provisioning | DS, SN | Build | 10 | Designed |
 | FG-174 | Domain claims | DS | Build | 10 | Designed |
 | FG-175 | SCIM provisioning | DS | Build | 10 | Designed |
@@ -192,7 +192,7 @@ instructions 8 and 9).
 | FG-179 | Legal hold | — | Build | 15 | — |
 | FG-180 | Data residency (region tags) | DS | Build | 15 | — |
 | FG-181 | BYOK per-tenant keys | — | Build | 15 | — |
-| FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | — |
+| FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | Partial: staff TOTP with ten one-time recovery codes and the account policy `settings.mfa_policy` (`administrators`, the default since `ASVS-31`; `everyone`; `optional`), a session that owes a factor refused everywhere but the sign-in steps, enrolment and the code step on the sign-in card (`ASVS-01`, `-server/tests/mfa.rs`); breached and common passwords refused wherever a password is set (`ASVS-02`); an email notice when a password or factor changes (`ASVS-04`). Not yet: WebAuthn (`CON-13`), lost-factor recovery (`ASVS-32`), a browser run (`ASVS-33`), session policy |
 | FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization's through `GET /organizations/me/audit` (`ORG-03`) and its screen, `#/org?section=audit` (`ORG-06`, newest first, filter, chain verify); the workspace's log has its Admin screen (list, filters over loaded events, details, CSV export, full chain check; `UXW-09`, mock-mode e2e); left: the check on the Compose stack (`UXW-09`), server-side filters (`UXW-44`), the organization log's export (ORG-35) |
 | FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Partial: one identity in several workspaces lists them and switches between them (`GET /auth/workspaces`, `POST /auth/switch`, the sidebar's workspace menu; `ORG-04`), organization routes (`ORG-03`); organization admin first cut `#/org`: Overview, Workspaces (create, join, archive), Users (session workspace), Administrators, Audit log (`ORG-06`, mock e2e; real stack left) |
 

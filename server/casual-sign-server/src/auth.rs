@@ -411,6 +411,8 @@ pub(crate) async fn authenticate(
             .resolve_staff_session(&sha256(secret.as_bytes()), now)
             .await?
             .ok_or_else(ApiError::unauthenticated)?;
+        // A refusal from here on names the session's holder (ASVS-08).
+        crate::security::identify(s.user_id.0, s.account_id.0, None);
         if !is_safe(method) {
             let sent = headers
                 .get(CSRF_HEADER)

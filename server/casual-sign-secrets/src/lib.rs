@@ -27,6 +27,8 @@
 
 use std::path::PathBuf;
 
+pub mod integrity;
+
 use zeroize::Zeroizing;
 
 /// A secret value (a PIN, a password). Its `Debug` prints `Secret(..)`, it has no

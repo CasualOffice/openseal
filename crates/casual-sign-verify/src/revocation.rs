@@ -5,7 +5,7 @@
 
 use core::time::Duration;
 
-use casual_sign_crypto::revocation::{RevocationStatus, crl_status, ocsp_status};
+use casual_sign_crypto::revocation::{RevocationStatus, crl_status_for, ocsp_status};
 use casual_sign_crypto::{CryptoError, oid};
 use der::Decode;
 use x509_ocsp::{BasicOcspResponse, OcspResponse, ResponderId};
@@ -96,7 +96,9 @@ fn status_inner(
         }
     }
     for c in &data.crls {
-        if let Some(t) = note(crl_status(c, serial, &issuer.cert, at)) {
+        // Scope-aware: a CRL scoped by an Issuing Distribution Point answers only for the
+        // certificates its scope covers (HRD-02).
+        if let Some(t) = note(crl_status_for(c, &cert.cert, &issuer.cert, at)) {
             return State::Revoked(t);
         }
     }

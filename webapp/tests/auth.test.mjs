@@ -121,3 +121,14 @@ test("under a policy, an administrator enrols before anything else; codes and re
   await c.login(MOCK.email, MOCK.password);
   await assert.rejects(c.verifySecondFactor({ recovery_code: done.recovery_codes[0] }), (e) => e.code === "CS-AUTH-0012");
 });
+
+test("with no mfa_policy, the default asks an administrator to enrol (ASVS-31, mock)", async () => {
+  const c = createClient({ fetch: createMockFetch() });
+  await c.login(MOCK.email, MOCK.password);
+  // The demo account opted out; removing the choice returns it to the default.
+  assert.equal((await c.session()).second_factor, "none");
+  await c.request("PATCH", "/api/v1/accounts/me", { body: { settings: { mfa_policy: null } } });
+  await c.login(MOCK.email, MOCK.password);
+  assert.equal((await c.session()).second_factor, "enrol");
+  await assert.rejects(c.account(), (e) => e.status === 403 && e.code === "CS-AUTH-0011" && e.detail === "enrol");
+});

@@ -69,7 +69,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | RFC 3161 response or token | 1 MiB | CS-SEAL-0002, CS-VER-0006 |
 | Timestamp nonce | 32 bytes | CS-SEAL-0002 |
 | OCSP response | 1 MiB | CS-SEAL-0004 |
-| CRL | 32 MiB; critical issuing-distribution-point (indirect, delta, partitioned CRLs) refused | CS-SEAL-0004 |
+| CRL | 32 MiB; indirect, delta and some-reasons-only CRLs refused; a CRL scoped by an Issuing Distribution Point (critical or not) answers only for a certificate inside its scope, `NotCovered` otherwise; a malformed scope, or more than one only-contains restriction, is a malformed CRL (`HRD-02`, `crl_status_for`, `crates/casual-sign-crypto/tests/crl_scope.rs`) | CS-SEAL-0004 |
 | RSA key size accepted for verification | 2,048–8,192 bits | CS-SEAL-0005 |
 
 ## Verification (`casual-sign-verify`, stage 1H)
@@ -175,6 +175,16 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Uploaded signature image read by the seal job | 5 MiB | CS-WRK-0016 |
 | TSA or OCSP answer / CRL | 1 MiB / 32 MiB (as the CLI) | CS-SEAL-0002 |
 
+## Blob store and backups (`casual-sign-store`, `tools/backup`; `ASVS-14`)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| One S3 listing response (`ListObjectsV2`, 1,000 keys a page) read | 8 MiB (`MAX_LISTING_BYTES`); more is refused as unreadable | CS-BLOB-0001 |
+| Keys per listing page (filesystem and S3) | 1,000; the filesystem walks its tree once in key order, reading only the directories a page covers | — |
+| Blob read back by `blobs-export`, `blobs-import` and `verify-evidence` | the store's cap (`DEFAULT_MAX_BLOB_BYTES`) | CS-BLOB-0004 |
+| Signature capture read by `verify-evidence` and the backup tool | 1 MiB, parsed as the seal job does (`capture::parse`) | CS-WRK-0016 |
+| Backup roles script | one CREATE ROLE, ALTER ROLE, GRANT or SET statement a line; no backslash; no comment or dollar quote outside quotes | — (the tool exits non-zero naming the line) |
+
 ## API (built, stage 2C)
 
 | Limit | Default | Code |
@@ -185,6 +195,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | One-call envelope create | 270 MiB body; 200 MiB of documents decoded | CS-API-0006 |
 | Adopted signature image (PNG or JPEG) | 5 MiB | CS-API-0006 |
 | Signer attachment (PDF admitted by the reader, PNG or JPEG; `WEB-06`) | 10 MiB decoded, 14 MiB body | CS-API-0001, CS-API-0006 |
+| Malware scan of an upload (`ASVS-11`, clamd `INSTREAM`, `-server/src/scan.rs`): bytes sent; time per scan, waiting for a slot included; scans at once; clamd's answer read; signature name kept | 100 MiB (`OPENSEAL_CLAMD_MAX_BYTES`, at least the 50 MiB document limit, at most clamd's `StreamMaxLength`); 60 s (`OPENSEAL_CLAMD_TIMEOUT_SECS`, 1–600); 4 (`OPENSEAL_CLAMD_CONCURRENCY`, 1–64); 1,024 bytes; 128 printable ASCII characters | CS-SCAN-0002 (`too_large`, `timeout`, `protocol`) unless fail-open |
 | Contacts search (`GET /contacts`; `WEB-06`) | `q` 200 characters, `limit` 1–50 | CS-API-0001 |
 | User invitation link (`WEB-06`) | 256 random bits, 7 days, once | CS-AUTH-0002 |
 | Envelope list `recipient` filter (`UXW-03`) | 200 characters, no control characters | CS-API-0001 |
@@ -196,6 +207,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Requests per authenticated principal | 1,200 per minute | CS-API-0003 |
 | Ceremony requests per token / per client address | 300 / 1,200 per minute | CS-API-0003 |
 | Login and token attempts per login name or client / per address | 10 / 100 per minute | CS-API-0003 |
+| Subjects (principal or address, per rule) the abnormal-activity detector counts (`ASVS-13`, docs/65 §Abnormal activity); alerts per minute | 50,000 (`OPENSEAL_ALERT_MAX_TRACKED`, 1,000 to 10,000,000); 20 | CS-LOG-0003 (no answer changes) |
 | Idempotency key | 1–255 printable ASCII; replays answered for 24 hours | CS-API-0001, CS-API-0004 |
 | Page size of lists | 1–200, default 50 | CS-API-0001 |
 | User agent recorded in events | 512 bytes (cut at a character boundary) | — |

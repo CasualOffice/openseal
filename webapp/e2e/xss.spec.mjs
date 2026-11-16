@@ -110,7 +110,8 @@ function watchDialogs(page) {
 
 /// The screen shows `literal` as text, and no payload ran or became markup.
 async function clean(page, dialogs, where, literal = IMG) {
-  if (literal) await expect(page.getByText(literal).first(), `${where}: the payload shows as text`).toBeAttached();
+  // Lists load after the route renders; slow WebKit on CI needs more than the default 5 s.
+  if (literal) await expect(page.getByText(literal).first(), `${where}: the payload shows as text`).toBeAttached({ timeout: 15_000 });
   const state = await page.evaluate(() => ({
     xss: window.__xss,
     handlers: [...document.querySelectorAll("[onerror],[onload]")].map((e) => e.outerHTML.slice(0, 120)),

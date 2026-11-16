@@ -711,8 +711,8 @@ impl Response {
 /// Read one frame. `Ok(None)` at a clean end of stream before a frame starts.
 ///
 /// # Errors
-/// `CS-KEY-0007` for a frame over [`MAX_FRAME`] or truncated; `CS-KEY-0011` when the
-/// stream fails.
+/// `CS-KEY-0007` for a frame over [`MAX_FRAME`] or truncated; `CS-KEY-0013` when TLS
+/// refused; `CS-KEY-0011` when the stream fails otherwise.
 pub fn read_frame(stream: &mut impl Read) -> Result<Option<Vec<u8>>, KeydError> {
     let mut len = [0u8; 4];
     let mut got = 0usize;
@@ -723,7 +723,7 @@ pub fn read_frame(stream: &mut impl Read) -> Result<Option<Vec<u8>>, KeydError> 
             Ok(0) => return Err(malformed("truncated frame length")),
             Ok(n) => got = got.saturating_add(n),
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(KeydError::Transport(e.kind().to_string())),
+            Err(e) => return Err(KeydError::from_io(&e)),
         }
     }
     let n = usize::try_from(u32::from_be_bytes(len)).map_err(|_| malformed("frame length"))?;
@@ -733,20 +733,21 @@ pub fn read_frame(stream: &mut impl Read) -> Result<Option<Vec<u8>>, KeydError> 
     let mut body = vec![0u8; n];
     stream
         .read_exact(&mut body)
-        .map_err(|e| KeydError::Transport(e.kind().to_string()))?;
+        .map_err(|e| KeydError::from_io(&e))?;
     Ok(Some(body))
 }
 
 /// Write one frame.
 ///
 /// # Errors
-/// `CS-KEY-0007` for a body over [`MAX_FRAME`]; `CS-KEY-0011` when the stream fails.
+/// `CS-KEY-0007` for a body over [`MAX_FRAME`]; `CS-KEY-0013` when TLS refused;
+/// `CS-KEY-0011` when the stream fails otherwise.
 pub fn write_frame(stream: &mut impl Write, body: &[u8]) -> Result<(), KeydError> {
     if body.len() > MAX_FRAME {
         return Err(malformed("frame over the limit"));
     }
     let n = u32::try_from(body.len()).map_err(|_| malformed("frame length"))?;
-    let io = |e: std::io::Error| KeydError::Transport(e.kind().to_string());
+    let io = |e: std::io::Error| KeydError::from_io(&e);
     stream.write_all(&n.to_be_bytes()).map_err(io)?;
     stream.write_all(body).map_err(io)?;
     stream.flush().map_err(io)

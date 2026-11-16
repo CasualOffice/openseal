@@ -2,7 +2,7 @@
 // place a field, move and size it, and send, without the mouse. (The file is chosen
 // with `setInputFiles`, which stands for the operating system's file dialog.)
 import { test, expect } from "@playwright/test";
-import { app, creds, pdfFile, tabTo } from "./helpers.mjs";
+import { app, creds, passFactor, pdfFile, REAL, tabTo } from "./helpers.mjs";
 
 test("place a field and send with the keyboard alone", async ({ page }) => {
   await page.goto(app("#/signin"));
@@ -11,6 +11,7 @@ test("place a field and send with the keyboard alone", async ({ page }) => {
   await page.keyboard.press("Tab");
   await page.keyboard.type(creds.password);
   await page.keyboard.press("Enter");
+  if (REAL) await passFactor(page); // the administrator's second factor (ASVS-31)
   await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
 
   await page.locator("body").press("n"); // N: new envelope (keys.js)
@@ -63,6 +64,7 @@ test("the shortcut list opens with ? and closes with Escape, returning focus", a
   await page.keyboard.press("Tab");
   await page.keyboard.type(creds.password);
   await page.keyboard.press("Enter");
+  if (REAL) await passFactor(page); // the administrator's second factor (ASVS-31)
   await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
   await page.locator("body").press("Shift+?");
   const dlg = page.getByRole("dialog", { name: "Keyboard shortcuts" });

@@ -178,7 +178,15 @@ fn ort_log(level: LogLevel, category: &str, _id: &str, _location: &str, _message
         .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
         .take(32)
         .collect();
-    eprintln!("modeld: onnxruntime {level} ({category})");
+    let mut m = serde_json::Map::new();
+    m.insert("severity".into(), level.into());
+    m.insert("category".into(), category.into());
+    casual_sign_seclog::write(
+        casual_sign_seclog::Service::Modeld,
+        casual_sign_seclog::Level::Error,
+        "onnxruntime",
+        m,
+    );
 }
 
 /// What `gliner_config.json` decides for decoding.

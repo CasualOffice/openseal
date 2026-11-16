@@ -29,6 +29,7 @@ server = [
     "dep:tokenizers",
     "dep:tracing",
     "dep:tracing-subscriber",
+    "dep:casual-sign-seclog",
     "dep:unicode-bidi",
     "dep:unicode-normalization",
 ]
@@ -84,6 +85,8 @@ image = { version = "=0.25.10", default-features = false, optional = true }
 oar-ocr = { version = "=0.10.2", default-features = false, features = ["simd"], optional = true }
 # The one fixed log subscriber (`SEC-I05`): third-party targets capped at WARN whatever
 # RUST_LOG says (src/logging.rs). Both already in the tree.
+# The one JSON log line and the security events: refused callers (ASVS-08).
+casual-sign-seclog = { path = "../casual-sign-seclog", features = ["tracing-layer"], optional = true }
 tracing = { version = "0.1.44", optional = true }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "registry"], optional = true }
 # OCR text leaves modeld in NFC (unicode-normalization, above), right-to-left lines in

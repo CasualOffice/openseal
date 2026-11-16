@@ -26,7 +26,7 @@ pub use store::{
     OrgAction, OrganizationRow, PlatformStore, PlatformTx, Role, ServiceTarget, Session,
     WorkspaceRow, remove_service_target, set_service_target,
 };
-pub use tsa::{KeyAction, TsaEndpoint};
+pub use tsa::{KeyAction, SealProfile, TsaEndpoint};
 
 /// The driver, re-exported so the console builds its pool with the same version.
 pub use sqlx;

@@ -18,6 +18,8 @@
 .os-site__links { display: flex; flex-wrap: wrap; gap: var(--os-s4); }
 .os-site__links a { display: inline-flex; align-items: center; min-height: var(--os-target-min); color: var(--os-muted); }
 .os-site__links a:hover { color: var(--os-text); }
+/* Logos size in CSS, in rem (WEB-12): 150 × 29 at a 16 px root. */
+.os-site__brand img { width: 9.375rem; height: auto; }
 @media (max-width: 47.5em) {
   .os-site__bar { padding: 0 var(--os-s4); }
   .os-site__brand img { width: 6.5rem; height: auto; }

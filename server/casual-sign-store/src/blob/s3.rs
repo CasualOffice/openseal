@@ -11,10 +11,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rusty_s3::actions::S3Action;
+use rusty_s3::actions::{ListObjectsV2, S3Action};
 use rusty_s3::{Bucket, Credentials, UrlStyle};
 
-use super::{BlobKey, BlobStore, DEFAULT_MAX_BLOB_BYTES, verified, within};
+use super::{BlobKey, BlobListing, BlobStore, DEFAULT_MAX_BLOB_BYTES, verified, within};
 use crate::error::{Result, StoreError};
 
 /// How long a presigned request stays valid.
@@ -35,6 +35,10 @@ pub struct S3Config {
     pub secret_key: String,
     /// Path-style URLs (MinIO and most self-hosted stores) rather than virtual hosts.
     pub path_style: bool,
+    /// PEM certificates the store's TLS certificate may chain to besides the platform's
+    /// roots: the deployment's private CA, so the hop to a self-hosted store is TLS too
+    /// (`HRD-06`). Ignored for an `http` endpoint.
+    pub ca_pem: Option<Vec<u8>>,
 }
 
 impl core::fmt::Debug for S3Config {
@@ -106,11 +110,22 @@ impl S3BlobStore {
         )
         .map_err(|_| unavailable(None))?;
         let credentials = Credentials::new(config.access_key.clone(), config.secret_key.clone());
+        let mut extra = Vec::new();
+        if let Some(pem) = &config.ca_pem {
+            for item in ureq::tls::parse_pem(pem) {
+                if let ureq::tls::PemItem::Certificate(c) = item.map_err(|_| unavailable(None))? {
+                    extra.push(c);
+                }
+            }
+            if extra.is_empty() {
+                return Err(unavailable(None));
+            }
+        }
         Ok(Self {
             inner: Arc::new(Inner {
                 bucket,
                 credentials,
-                agent: agent(),
+                agent: agent(extra),
                 max_bytes,
             }),
         })
@@ -140,15 +155,17 @@ impl S3BlobStore {
     }
 }
 
-/// rustls on aws-lc-rs with the platform's roots, 60-second budget, no redirects, and
-/// HTTP error statuses returned as responses so 404 and 412 can be told apart.
-fn agent() -> ureq::Agent {
+/// rustls on aws-lc-rs with the platform's roots and `extra`, 60-second budget, no
+/// redirects, and HTTP error statuses returned as responses so 404 and 412 can be told
+/// apart.
+fn agent(extra: Vec<ureq::tls::Certificate<'static>>) -> ureq::Agent {
     let native = rustls_native_certs::load_native_certs();
-    let roots: Vec<ureq::tls::Certificate<'static>> = native
+    let mut roots: Vec<ureq::tls::Certificate<'static>> = native
         .certs
         .iter()
         .map(|c| ureq::tls::Certificate::from_der(c.as_ref()).to_owned())
         .collect();
+    roots.extend(extra);
     let tls = ureq::tls::TlsConfig::builder()
         .provider(ureq::tls::TlsProvider::Rustls)
         .root_certs(ureq::tls::RootCerts::new_with_certs(&roots))
@@ -264,4 +281,51 @@ impl BlobStore for S3BlobStore {
         })
         .await
     }
+
+    async fn list(&self, after: Option<String>) -> Result<BlobListing> {
+        let inner = Arc::clone(&self.inner);
+        blocking(move || {
+            let mut action = inner.bucket.list_objects_v2(Some(&inner.credentials));
+            action.with_max_keys(LIST_PAGE);
+            if let Some(token) = &after {
+                action.with_continuation_token(token.as_str());
+            }
+            let url = action.sign(PRESIGN);
+            let mut r = inner
+                .agent
+                .get(url.as_str())
+                .call()
+                .map_err(|_| unavailable(None))?;
+            match r.status().as_u16() {
+                200 => {}
+                s => return Err(unavailable(Some(s))),
+            }
+            let body = r
+                .body_mut()
+                .with_config()
+                .limit(MAX_LISTING_BYTES)
+                .read_to_string()
+                .map_err(|_| unavailable(None))?;
+            let page = ListObjectsV2::parse_response(&body).map_err(|_| unavailable(None))?;
+            let mut listing = BlobListing {
+                next: page.next_continuation_token,
+                ..BlobListing::default()
+            };
+            for object in page.contents {
+                match BlobKey::parse(&object.key) {
+                    Ok(k) => listing.keys.push(k),
+                    Err(_) => listing.ignored = listing.ignored.saturating_add(1),
+                }
+            }
+            Ok(listing)
+        })
+        .await
+    }
 }
+
+/// Keys asked for per listing request (S3's own maximum).
+const LIST_PAGE: usize = 1000;
+
+/// The cap on one listing response: a thousand keys of 64 characters with their
+/// metadata is well under 1 MiB; anything past 8 MiB is refused as unreadable.
+const MAX_LISTING_BYTES: u64 = 8 * 1024 * 1024;

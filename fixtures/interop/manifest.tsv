@@ -1,0 +1,7 @@
+file	expect	level	why
+agreement-p256-bt.pdf	valid	B-T	approval seal, P-256, PAdES B-T
+agreement-p256-blta.pdf	valid	B-LTA	approval seal, P-256, PAdES B-LTA
+agreement-rsa3072-bt.pdf	valid	B-T	approval seal, RSA-3072, PAdES B-T
+agreement-rsa3072-blta.pdf	valid	B-LTA	approval seal, RSA-3072, PAdES B-LTA
+agreement-p256-certified-p2-blta.pdf	valid	B-LTA	certification seal (DocMDP P=2), P-256, PAdES B-LTA
+tampered-p256-blta.pdf	tampered	B-LTA	agreement-p256-blta.pdf with one byte flipped inside the signed range

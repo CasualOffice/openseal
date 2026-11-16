@@ -179,6 +179,8 @@ pub(crate) struct Inner {
     /// A PHC string no password matches, checked against when the e-mail is unknown, so
     /// a sign-in takes the same time either way.
     pub dummy_phc: String,
+    /// Where security events go (ASVS-08); standard error unless set.
+    pub security: std::sync::OnceLock<casual_sign_seclog::SecurityLog>,
 }
 
 impl AppState {
@@ -199,7 +201,20 @@ impl AppState {
             config,
             limiter: RateLimiter::default(),
             dummy_phc: crate::crypto::hash_password(&crate::crypto::random_secret()?)?,
+            security: std::sync::OnceLock::new(),
         })))
+    }
+
+    /// Write security events to `log` (`ASVS-08`). Unset, they go to standard error
+    /// with the environment's pseudonym key. Set once, before the first request.
+    pub fn set_security_log(&self, log: casual_sign_seclog::SecurityLog) {
+        let _ = self.0.security.set(log);
+    }
+
+    pub(crate) fn security(&self) -> &casual_sign_seclog::SecurityLog {
+        self.0.security.get_or_init(|| {
+            casual_sign_seclog::SecurityLog::from_env(casual_sign_seclog::Service::Console)
+        })
     }
 
     pub(crate) fn now(&self) -> OffsetDateTime {

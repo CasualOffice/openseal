@@ -508,6 +508,25 @@ mod tests {
         assert!(secret_key("whsec_!!").is_err());
     }
 
+    /// Secret rotation (`HRD-06`, docs/65 §Rotation): while a subscription names the old
+    /// and the new secret, every delivery carries one signature per secret, so a receiver
+    /// holding either one accepts it, before and after it switches.
+    #[test]
+    fn during_rotation_a_receiver_holding_either_secret_accepts_the_delivery() {
+        let old = secret_key("whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw").unwrap();
+        let new = secret_key("whsec_c2Vjb25kLXNlY3JldC1mb3Itcm90YXRpb24=").unwrap();
+        let (id, ts, body) = ("msg_1", 1_700_000_000, br#"{"type":"envelope.completed"}"#);
+        let header = signature(&[old.clone(), new.clone()], id, ts, body);
+        let sent: Vec<&str> = header.split(' ').collect();
+        assert_eq!(sent.len(), 2);
+        for receiver in [&old, &new] {
+            let expected = signature(std::slice::from_ref(receiver), id, ts, body);
+            assert!(sent.contains(&expected.as_str()), "{header}");
+        }
+        // After the old secret is removed, only the new one signs.
+        assert_eq!(signature(std::slice::from_ref(&new), id, ts, body), sent[1]);
+    }
+
     #[test]
     fn topics_are_dotted_event_types() {
         use casual_sign_workflow::WebhookTopic as T;

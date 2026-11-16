@@ -264,13 +264,13 @@ function drawPad(mark, onInk) {
 }
 
 async function typedCanvas(text, family) {
-  try { await document.fonts.load(`64px "${family}"`, text); } catch { /* falls back to cursive */ }
+  try { await document.fonts.load(`64px "${family}"`, text); } catch { /* falls back to cursive */ } // px-ok: a canvas font
   const c = document.createElement("canvas");
   c.width = W; c.height = H;
   const g = c.getContext("2d");
   let size = 96;
-  g.font = `${size}px "${family}", cursive`;
-  while (g.measureText(text).width > W - 40 && size > 24) { size -= 4; g.font = `${size}px "${family}", cursive`; }
+  g.font = `${size}px "${family}", cursive`; // px-ok: canvas pixels
+  while (g.measureText(text).width > W - 40 && size > 24) { size -= 4; g.font = `${size}px "${family}", cursive`; } // px-ok: canvas pixels
   g.fillStyle = INK;
   g.textBaseline = "middle";
   g.textAlign = "center";
@@ -307,7 +307,7 @@ function grabHandle(body, close) {
     e.preventDefault();
     grab.setPointerCapture?.(e.pointerId);
     const y0 = e.clientY;
-    const move = (ev) => sheet.style.setProperty("translate", `0 ${Math.max(0, ev.clientY - y0)}px`);
+    const move = (ev) => sheet.style.setProperty("translate", `0 ${Math.max(0, ev.clientY - y0)}px`); // px-ok: a measured pointer drag
     const up = (ev) => {
       grab.removeEventListener("pointermove", move);
       grab.removeEventListener("pointerup", up);

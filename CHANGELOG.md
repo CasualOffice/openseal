@@ -21,13 +21,36 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
   (`GET /s/{token}/disclosure`, `UXW-34`).
 - Organizations above workspaces (`ORG-02`, migration 0014): each existing account becomes a workspace in its own
   organization, with organization owners and an organization scope enforced in the database; server bootstrap makes
-  the first organization. Switching between workspaces and the organization admin screens are still to come.
-- `casual-sign-modeld`, the separate process that will host pretrained models (ADR-029): mutual TLS, a bounded wire
-  protocol, an operation log and a hash-checked model bundle; the server and worker do not call it yet (`ML-09`).
+  the first organization; organization routes for owners and administrators (`ORG-03`), switching between workspaces
+  (`ORG-04`), hash-chained admin audit logs per workspace and per organization with JSON and CSV export (`ORG-05`),
+  and a first cut of the organization admin screens (`ORG-06`).
+- `casual-sign-modeld`, the separate process that hosts pretrained models (ADR-029): mutual TLS, a bounded wire
+  protocol, an operation log and a hash-checked model bundle (`ML-09`); OCR of scanned pages (`ML-02`); page hashes
+  and embeddings for template matching (`ML-05`). The worker's analysis jobs call it and the server serves analysis
+  and suggestions (`WEB-19`); the Compose file does not yet put the worker on its network (`ML-09`).
 - GLiNER span extraction and personal-data detection in `casual-sign-modeld`, with fp16 exports matching the
   reference spans (`ML-07`, `ML-08`). Off by default; nothing a model says enters the evidence.
 - `casual-sign-pii`: personal-data recognisers that find structured identifiers by pattern plus validation (payment
   cards by Luhn, IBAN mod-97, US SSN, UK NI, Indian PAN and Aadhaar, and others), with a fuzz target (`ML-08`).
+- Inbox, each member's own folders, a Deleted view for envelopes and templates (templates can be restored), and server-side
+  envelope filters and sorts (`UXW-01` to `UXW-03`).
+- Bulk send from a template with a CSV list: per-row errors, a test of the list, sending in steps with progress, and
+  cancel (`POST /bulk-sends`, `UXW-04`).
+- Template sharing with members, groups or the whole workspace; Shared with me and Favourites (`UXW-06`).
+- Groups and custom permission profiles, enforced on the server per request (`UXW-07`); the admin audit log screen
+  (`UXW-09`); a webhooks screen that edits, pauses, tests and redelivers (`UXW-10`, `UXW-31` to `UXW-33`).
+- Hosting an in-person signer (`POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`).
+- Recipient authentication by SMS and voice one-time codes through an HTTPS gateway (`VS-05`) and by sign-in through
+  an OpenID Connect provider the operator lists (`RAUTH-01`, ADR-033 Proposed).
+- The platform console `casual-sign-console`, a separate binary for operators with its own sign-in and mandatory TOTP:
+  health, organizations with two-person suspend and resume, approvals, operators and a hash-chained operator log
+  copied into each organization's log (`CON-02` to `CON-05`, `CON-16`, `CON-17`); the Keys page over keyd's
+  read-only admin interface (`CON-06`); timestamp authorities kept in the database and changed by two key custodians,
+  which the worker seals with (`CON-07`, migration 0034). Not yet a Compose service.
+- Plans with versions, assignments and overrides (`PLAN-02`), metering of envelopes sent, seats, storage and
+  workspaces (`PLAN-03`), and quota enforcement (`PLAN-04`).
+- An OWASP ASVS 4.0.3 self-assessment ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md), not a certification) and a
+  licence inventory of every crate, vendored component and model ([THIRD-PARTY.md](THIRD-PARTY.md), `LEG-01`).
 - Normalisation of extracted dates, durations and amounts in `casual-sign-fields`, with a fuzz target (`ML-07`).
 - Model manifest and hash-checking fetch script, an offline GLiNER export tool, and synthetic scanned-form fixtures
   (`ML-01`, `ML-02`, `ML-05`).
@@ -40,13 +63,17 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 
 ### Security
 - Security hardening of the signing ceremony and of accounts shared between workspaces.
+- A TOTP second factor for staff accounts with ten one-time recovery codes and an account policy (`ASVS-01`).
+- Passwords on a list of breached and common passwords are refused wherever a password is set (`ASVS-02`), and users
+  are emailed when a password is set, changed or reset or a second factor is added (`ASVS-04`).
 
 ### In progress
-- OCR for scanned pages (`ML-02`) and template matching on upload (`ML-05`).
-- Organization admin audit logs, workspace switching and the organization admin screens (ADR-028).
+- The Compose runs in CI that close most of the rows above; the console as a Compose service (`CON-02`); the editor's
+  model suggestions on the real stack and `compose --profile ml up` (`WEB-18`, `ML-09`); WebAuthn and lost-factor
+  recovery (`CON-13`, `ASVS-32`).
 
 ### Designed
-- Organizations above workspaces, delegated administration, a platform console and plans: ADR-028 accepted
+- Delegated administration, organization policy, SSO and SCIM for staff, usage export: the rest of ADR-028, accepted
   ([docs/23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)).
 - Pretrained ML models, off by default and never part of the evidence: ADR-029 accepted
   ([docs/33](docs/33-ML-MODELS.md)).

@@ -36,6 +36,7 @@
 
 mod admin_log;
 mod error;
+mod evidence;
 mod ids;
 mod migrate;
 mod org;
@@ -47,11 +48,16 @@ pub mod repo;
 
 pub use admin_log::{
     ADMIN_EVENT_CONSTRAINT, ADMIN_EVENT_VERSION, ActorKind, AdminActor,
-    MAX_PAGE as ADMIN_EVENTS_MAX_PAGE, StoredAdminEvent, verify_admin_chain,
+    MAX_PAGE as ADMIN_EVENTS_MAX_PAGE, ScreenedUpload, StoredAdminEvent, UploadKind,
+    UploadScreening, verify_admin_chain,
 };
 /// The meters [`TenantTx::record_usage`] counts (docs/23 §7.2).
 pub use casual_sign_policy::plans::Meter;
 pub use error::{Result, StoreError};
+pub use evidence::{
+    CAPTURE_BLOB_KEYS_SQL, EVIDENCE_BLOB_KEYS_SQL, EvidenceBlobKeys, EvidenceError, EvidenceReport,
+    EvidenceSubject,
+};
 pub use ids::*;
 pub use migrate::{MIGRATIONS, Migration, MigrationReport, migrate};
 pub use org::{
@@ -62,6 +68,6 @@ pub use quota::{
     Consumed, GaugeLock, PlanRefusal, QUOTA_REACHED, SEATS_REACHED, STORAGE_REACHED, SUSPENDED,
 };
 pub use store::{
-    ClaimedJob, EntryPoints, MfaPolicy, RecipientTokenTarget, StaffSessionTarget, Store, Tenant,
-    TenantTx, UserWorkspace,
+    CONNECTION_LIFETIME, ClaimedJob, EntryPoints, MfaPolicy, RecipientTokenTarget, SealAlias,
+    StaffSessionTarget, Store, Tenant, TenantTx, UserWorkspace,
 };
