@@ -13,8 +13,9 @@ use tower_http::catch_panic::CatchPanicLayer;
 use crate::api::{
     admin, bulk, envelopes as env, folders, groups, mfa, ml, org, switch, templates, webhooks,
 };
+use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
-use crate::http::{Guard, OtherMedia, guard, json_only, panicked, request_context};
+use crate::http::{Guard, Need, OtherMedia, guard, json_only, panicked, request_context};
 use crate::state::AppState;
 
 /// Who may call a route.
@@ -22,12 +23,44 @@ use crate::state::AppState;
 pub enum Access {
     /// Anyone (login, token, JWKS, ceremony: they authenticate themselves).
     Public,
-    /// An authenticated principal holding this scope (`""`: any) that owes no second
-    /// factor it has not passed.
-    Scope(&'static str),
+    /// Any authenticated principal that owes no second factor it has not passed.
+    /// `x-permission: ""`.
+    Member,
+    /// Such a principal holding this workspace action of the catalogue (ORG-07,
+    /// `x-level: workspace`). The action is typed: a route naming one the catalogue
+    /// lacks does not compile, so it cannot register.
+    Action(Action),
+    /// A staff session whose organization role holds this organization action (ORG-07,
+    /// `x-level: organization`), read afresh on every request.
+    Org(OrgAction),
     /// Any authenticated principal, a staff session that still owes its second factor
     /// included: the steps of signing in (ASVS-01). `x-permission: signing-in`.
     SigningIn,
+}
+
+impl Access {
+    /// The route's `x-permission`: `public`, `signing-in`, `""` for any authenticated
+    /// caller, or the action's catalogue name.
+    #[must_use]
+    pub fn permission(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::SigningIn => "signing-in",
+            Self::Member => "",
+            Self::Action(a) => a.as_str(),
+            Self::Org(a) => a.as_str(),
+        }
+    }
+
+    /// The route's `x-level`, for a route that names an action.
+    #[must_use]
+    pub fn level(self) -> Option<Level> {
+        match self {
+            Self::Action(_) => Some(Level::Workspace),
+            Self::Org(_) => Some(Level::Organization),
+            _ => None,
+        }
+    }
 }
 
 /// One endpoint.
@@ -82,12 +115,17 @@ where
 #[must_use]
 #[allow(clippy::too_many_lines)] // One line per endpoint is the point of the table.
 pub fn table() -> Vec<Route> {
-    use Access::{Public, Scope, SigningIn};
-    let er = Scope("envelopes:read");
-    let ew = Scope("envelopes:write");
-    let es = Scope("envelopes:send");
-    let tr = Scope("templates:read");
-    let tw = Scope("templates:write");
+    use Access::{Action as A, Member, Org, Public, SigningIn};
+    use Action::{
+        AdminAuditRead, ApiClientsManage, AuditRead, BulkSend, EnvelopesRead, EnvelopesSend,
+        EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage, SettingsSending, TemplatesRead,
+        TemplatesWrite, UsersInvite, UsersRead, UsersRemove, UsersUpdate, WebhooksManage,
+    };
+    let er = A(EnvelopesRead);
+    let ew = A(EnvelopesWrite);
+    let es = A(EnvelopesSend);
+    let tr = A(TemplatesRead);
+    let tw = A(TemplatesWrite);
     vec![
         // Authentication (docs/40 §2).
         r("POST", "/api/v1/auth/login", Public, JSON, admin::login),
@@ -159,31 +197,19 @@ pub fn table() -> Vec<Route> {
         r(
             "GET",
             "/api/v1/auth/workspaces",
-            Scope(""),
+            Member,
             JSON,
             switch::workspaces,
         ),
-        r(
-            "POST",
-            "/api/v1/auth/switch",
-            Scope(""),
-            JSON,
-            switch::switch,
-        ),
+        r("POST", "/api/v1/auth/switch", Member, JSON, switch::switch),
         r("POST", "/api/v1/oauth/token", Public, JSON, admin::token),
         r("GET", "/.well-known/jwks.json", Public, JSON, admin::jwks),
         // Account, users, API clients.
-        r(
-            "GET",
-            "/api/v1/accounts/me",
-            Scope(""),
-            JSON,
-            admin::account,
-        ),
+        r("GET", "/api/v1/accounts/me", Member, JSON, admin::account),
         r(
             "PATCH",
             "/api/v1/accounts/me",
-            Scope("admin:account"),
+            A(SettingsSending),
             JSON,
             admin::patch_account,
         ),
@@ -191,43 +217,43 @@ pub fn table() -> Vec<Route> {
         r(
             "GET",
             "/api/v1/account/settings/ml",
-            Scope("admin:account"),
+            A(SettingsSending),
             JSON,
             ml::settings,
         ),
         r(
             "PATCH",
             "/api/v1/account/settings/ml",
-            Scope("admin:account"),
+            A(SettingsSending),
             JSON,
             ml::patch_settings,
         ),
         r(
             "GET",
             "/api/v1/ersd-versions",
-            Scope("admin:account"),
+            A(ErsdManage),
             JSON,
             admin::ersd_versions,
         ),
         r(
             "POST",
             "/api/v1/ersd-versions",
-            Scope("admin:account"),
+            A(ErsdManage),
             JSON,
             admin::publish_ersd,
         ),
         r(
             "GET",
             "/api/v1/admin-events",
-            Scope("admin:account"),
+            A(AdminAuditRead),
             JSON,
             admin::admin_events,
         ),
-        r("GET", "/api/v1/users/me", Scope(""), JSON, admin::me),
+        r("GET", "/api/v1/users/me", Member, JSON, admin::me),
         r(
             "PATCH",
             "/api/v1/users/me",
-            Scope(""),
+            Member,
             IMAGE * 2,
             admin::patch_me,
         ),
@@ -235,126 +261,114 @@ pub fn table() -> Vec<Route> {
         r(
             "GET",
             "/api/v1/organizations/me",
-            Scope(""),
+            Org(OrgAction::Read),
             JSON,
             org::organization,
         ),
         r(
             "PATCH",
             "/api/v1/organizations/me",
-            Scope(""),
+            Org(OrgAction::SettingsUpdate),
             JSON,
             org::patch_organization,
         ),
         r(
             "GET",
             "/api/v1/organizations/me/workspaces",
-            Scope(""),
+            Org(OrgAction::Read),
             JSON,
             org::workspaces,
         ),
         r(
             "POST",
             "/api/v1/organizations/me/workspaces",
-            Scope(""),
+            Org(OrgAction::WorkspacesCreate),
             JSON,
             org::create_workspace,
         ),
         r(
             "GET",
             "/api/v1/organizations/me/workspaces/{id}",
-            Scope(""),
+            Org(OrgAction::Read),
             JSON,
             org::workspace,
         ),
         r(
             "POST",
             "/api/v1/organizations/me/workspaces/{id}/archive",
-            Scope(""),
+            Org(OrgAction::WorkspacesArchive),
             JSON,
             org::archive_workspace,
         ),
         r(
             "POST",
             "/api/v1/organizations/me/workspaces/{id}/join",
-            Scope(""),
+            Org(OrgAction::WorkspacesJoin),
             JSON,
             org::join_workspace,
         ),
         r(
             "GET",
             "/api/v1/organizations/me/admins",
-            Scope(""),
+            Org(OrgAction::Read),
             JSON,
             org::admins,
         ),
         r(
             "POST",
             "/api/v1/organizations/me/admins",
-            Scope(""),
+            Org(OrgAction::AdminsManage),
             JSON,
             org::add_admin,
         ),
         r(
             "PATCH",
             "/api/v1/organizations/me/admins/{user}",
-            Scope(""),
+            Org(OrgAction::AdminsManage),
             JSON,
             org::patch_admin,
         ),
         r(
             "DELETE",
             "/api/v1/organizations/me/admins/{user}",
-            Scope(""),
+            Org(OrgAction::AdminsManage),
             JSON,
             org::remove_admin,
         ),
         r(
             "GET",
             "/api/v1/organizations/me/audit",
-            Scope(""),
+            Org(OrgAction::AuditRead),
             JSON,
             org::audit,
         ),
-        r(
-            "GET",
-            "/api/v1/users",
-            Scope("admin:users"),
-            JSON,
-            admin::users,
-        ),
+        r("GET", "/api/v1/users", A(UsersRead), JSON, admin::users),
         r(
             "POST",
             "/api/v1/users",
-            Scope("admin:users"),
+            A(UsersInvite),
             JSON,
             admin::create_user,
         ),
-        r(
-            "GET",
-            "/api/v1/users/{id}",
-            Scope("admin:users"),
-            JSON,
-            admin::user,
-        ),
+        r("GET", "/api/v1/users/{id}", A(UsersRead), JSON, admin::user),
         r(
             "PATCH",
             "/api/v1/users/{id}",
-            Scope("admin:users"),
+            A(UsersUpdate),
             JSON,
             admin::patch_user,
         ),
         r(
             "DELETE",
             "/api/v1/users/{id}",
-            Scope("admin:users"),
+            A(UsersRemove),
             JSON,
             admin::delete_user,
         ),
         r(
             "POST",
             "/api/v1/users/{id}/invite",
-            Scope("admin:users"),
+            A(UsersInvite),
             JSON,
             admin::reinvite_user,
         ),
@@ -362,98 +376,98 @@ pub fn table() -> Vec<Route> {
         r(
             "POST",
             "/api/v1/groups",
-            Scope("admin:users"),
+            A(GroupsManage),
             JSON,
             groups::create_group,
         ),
         r(
             "GET",
             "/api/v1/groups/{id}",
-            Scope("admin:users"),
+            A(GroupsManage),
             JSON,
             groups::group,
         ),
         r(
             "PATCH",
             "/api/v1/groups/{id}",
-            Scope("admin:users"),
+            A(GroupsManage),
             JSON,
             groups::patch_group,
         ),
         r(
             "DELETE",
             "/api/v1/groups/{id}",
-            Scope("admin:users"),
+            A(GroupsManage),
             JSON,
             groups::delete_group,
         ),
         r(
             "PUT",
             "/api/v1/groups/{id}/members",
-            Scope("admin:users"),
+            A(GroupsManage),
             JSON,
             groups::put_members,
         ),
         r(
             "GET",
             "/api/v1/permission-profiles",
-            Scope("admin:users"),
+            A(UsersRead),
             JSON,
             groups::profiles,
         ),
         r(
             "POST",
             "/api/v1/permission-profiles",
-            Scope("admin:users"),
+            A(ProfilesManage),
             JSON,
             groups::create_profile,
         ),
         r(
             "GET",
             "/api/v1/permission-profiles/{id}",
-            Scope("admin:users"),
+            A(UsersRead),
             JSON,
             groups::profile,
         ),
         r(
             "PATCH",
             "/api/v1/permission-profiles/{id}",
-            Scope("admin:users"),
+            A(ProfilesManage),
             JSON,
             groups::patch_profile,
         ),
         r(
             "DELETE",
             "/api/v1/permission-profiles/{id}",
-            Scope("admin:users"),
+            A(ProfilesManage),
             JSON,
             groups::delete_profile,
         ),
         r(
             "GET",
             "/api/v1/api-clients",
-            Scope("admin:account"),
+            A(ApiClientsManage),
             JSON,
             admin::clients,
         ),
         r(
             "POST",
             "/api/v1/api-clients",
-            Scope("admin:account"),
+            A(ApiClientsManage),
             JSON,
             admin::create_client,
         ),
         r(
             "GET",
             "/api/v1/api-clients/{id}",
-            Scope("admin:account"),
+            A(ApiClientsManage),
             JSON,
             admin::client,
         ),
         r(
             "DELETE",
             "/api/v1/api-clients/{id}",
-            Scope("admin:account"),
+            A(ApiClientsManage),
             JSON,
             admin::revoke_client,
         ),
@@ -504,7 +518,7 @@ pub fn table() -> Vec<Route> {
         r(
             "GET",
             "/api/v1/envelopes/{id}/audit",
-            Scope("audit:read"),
+            A(AuditRead),
             JSON,
             env::audit,
         ),
@@ -695,7 +709,7 @@ pub fn table() -> Vec<Route> {
         r(
             "POST",
             "/api/v1/envelopes/{id}/sign-link",
-            Scope(""),
+            Member,
             JSON,
             env::sign_link,
         ),
@@ -704,7 +718,7 @@ pub fn table() -> Vec<Route> {
         r(
             "POST",
             "/api/v1/bulk-sends",
-            Scope("bulk:send"),
+            A(BulkSend),
             JSON,
             bulk::create,
         ),
@@ -712,14 +726,14 @@ pub fn table() -> Vec<Route> {
         r(
             "POST",
             "/api/v1/bulk-sends/{id}/send",
-            Scope("bulk:send"),
+            A(BulkSend),
             JSON,
             bulk::send,
         ),
         r(
             "POST",
             "/api/v1/bulk-sends/{id}/cancel",
-            Scope("bulk:send"),
+            A(BulkSend),
             JSON,
             bulk::cancel,
         ),
@@ -746,28 +760,28 @@ pub fn table() -> Vec<Route> {
         r(
             "GET",
             "/api/v1/templates",
-            Scope("templates:read"),
+            A(TemplatesRead),
             JSON,
             templates::list,
         ),
         r(
             "POST",
             "/api/v1/templates",
-            Scope("templates:write"),
+            A(TemplatesWrite),
             JSON,
             templates::create,
         ),
         r(
             "GET",
             "/api/v1/templates/{id}",
-            Scope("templates:read"),
+            A(TemplatesRead),
             JSON,
             templates::get,
         ),
         r(
             "PATCH",
             "/api/v1/templates/{id}",
-            Scope("templates:write"),
+            A(TemplatesWrite),
             JSON,
             templates::patch,
         ),
@@ -911,56 +925,56 @@ pub fn table() -> Vec<Route> {
         r(
             "GET",
             "/api/v1/webhooks",
-            Scope("webhooks:manage"),
+            A(WebhooksManage),
             JSON,
             webhooks::list,
         ),
         r(
             "POST",
             "/api/v1/webhooks",
-            Scope("webhooks:manage"),
+            A(WebhooksManage),
             JSON,
             webhooks::create,
         ),
         r(
             "GET",
             "/api/v1/webhooks/{id}",
-            Scope("webhooks:manage"),
+            A(WebhooksManage),
             JSON,
             webhooks::get,
         ),
         r(
             "DELETE",
             "/api/v1/webhooks/{id}",
-            Scope("webhooks:manage"),
+            A(WebhooksManage),
             JSON,
             webhooks::delete,
         ),
         r(
             "PATCH",
             "/api/v1/webhooks/{id}",
-            Scope("webhooks:manage"),
+            A(WebhooksManage),
             JSON,
             webhooks::patch,
         ),
         r(
             "POST",
             "/api/v1/webhooks/{id}/test",
-            Scope("webhooks:manage"),
+            A(WebhooksManage),
             JSON,
             webhooks::test,
         ),
         r(
             "POST",
             "/api/v1/webhooks/{id}/deliveries/{delivery}/redeliver",
-            Scope("webhooks:manage"),
+            A(WebhooksManage),
             JSON,
             webhooks::redeliver,
         ),
         r(
             "GET",
             "/api/v1/webhooks/{id}/deliveries",
-            Scope("webhooks:manage"),
+            A(WebhooksManage),
             JSON,
             webhooks::deliveries,
         ),
@@ -1110,15 +1124,17 @@ pub fn app(state: AppState) -> Router {
         let mut h = route.handler.layer(DefaultBodyLimit::max(route.max_body));
         let guarded = match route.access {
             Access::Public => None,
-            Access::Scope(scope) => Some((scope, false)),
-            Access::SigningIn => Some(("", true)),
+            Access::Member => Some((Need::Any, false)),
+            Access::Action(a) => Some((Need::Action(a), false)),
+            Access::Org(a) => Some((Need::Org(a), false)),
+            Access::SigningIn => Some((Need::Any, true)),
         };
-        if let Some((scope, signing_in)) = guarded {
+        if let Some((need, signing_in)) = guarded {
             h = h.route_layer(from_fn_with_state(
                 (
                     state.clone(),
                     Guard {
-                        scope,
+                        need,
                         max_body: route.max_body,
                         signing_in,
                     },

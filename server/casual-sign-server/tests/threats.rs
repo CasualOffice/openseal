@@ -69,12 +69,13 @@ async fn every_scoped_route_refuses_a_credential_lacking_exactly_its_scope() {
     let id = uuid::Uuid::now_v7().to_string();
     let mut checked = 0;
     for r in table() {
-        let Access::Scope(scope) = r.access else {
+        // ORG-07: a route's action is covered by one scope; a key without it is refused.
+        let Some(scope) = (match r.access {
+            Access::Action(a) => a.scope(),
+            _ => None,
+        }) else {
             continue;
         };
-        if scope.is_empty() {
-            continue;
-        }
         let key = without
             .get(scope)
             .unwrap_or_else(|| panic!("{scope} is not in SCOPES"));

@@ -20,10 +20,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use axum::body::Body;
 use axum::http::StatusCode;
 use base64::Engine as _;
-use casual_sign_server::{Access, table};
+use casual_sign_server::table;
 use common::Rls;
 use common::harness::{
-    Api, Auth, OPENAPI, ceremony_cookie, ceremony_path, openapi_operations, pdf, png, session_of,
+    Api, Auth, OPENAPI, ceremony_cookie, ceremony_path, openapi_levels, openapi_operations, pdf,
+    png, session_of,
 };
 use serde_json::{Value, json};
 use sqlx::Row;
@@ -33,11 +34,7 @@ fn openapi_and_route_table_name_the_same_operations_and_scopes() {
     let doc = openapi_operations();
     let mut routes = BTreeMap::new();
     for r in table() {
-        let perm = match r.access {
-            Access::Public => "public".to_owned(),
-            Access::Scope(s) => s.to_owned(),
-            Access::SigningIn => "signing-in".to_owned(),
-        };
+        let perm = r.access.permission().to_owned();
         assert!(
             routes
                 .insert((r.method.to_owned(), r.path.to_owned()), perm)
@@ -59,6 +56,16 @@ fn openapi_and_route_table_name_the_same_operations_and_scopes() {
     );
     for (k, perm) in &routes {
         assert_eq!(&doc[k], perm, "x-permission of {k:?}");
+    }
+    // ORG-07: every action-guarded operation states its level, and only those do.
+    let levels = openapi_levels();
+    for r in table() {
+        let k = (r.method.to_owned(), r.path.to_owned());
+        assert_eq!(
+            levels.get(&k).map(String::as_str),
+            r.access.level().map(|l| l.as_str()),
+            "x-level of {k:?}"
+        );
     }
     // Every documented operation has an operationId, unique.
     let parsed: Value = serde_norway::from_str(OPENAPI).unwrap();

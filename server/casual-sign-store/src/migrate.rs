@@ -72,6 +72,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(34, "0034_tsa_endpoints.sql"),
     migration!(35, "0035_seal_profiles.sql"),
     migration!(36, "0036_mfa_default_administrators.sql"),
+    migration!(37, "0037_workspace_actions.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.

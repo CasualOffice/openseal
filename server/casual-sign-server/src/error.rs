@@ -291,10 +291,11 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-ORG-0001")
     }
 
-    /// `CS-ORG-0005` 403: a grant to oneself, or beyond the granter's own rights
-    /// (docs/23 §2.2).
-    pub fn grant_refused() -> Self {
-        Self::new(StatusCode::FORBIDDEN, "CS-ORG-0005")
+    /// `CS-ORG-0005` 403: a grant beyond the granting admin's own rights or scope, or to
+    /// itself (ORG-07, docs/23 §2.2 `grantable`). The detail names the action or rule,
+    /// never a person.
+    pub fn grant_refused(what: &str) -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-ORG-0005").detail(format!("cannot grant {what}"))
     }
 
     /// `CS-ORG-0008` 409: the organization must keep at least one enabled owner.
