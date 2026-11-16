@@ -89,10 +89,20 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 
 - **Routing order** groups recipients: all recipients with order *n* are activated when every required recipient
   with order < *n* has completed. Equal numbers are parallel; distinct numbers are sequential; both together are mixed.
-- **Conditional routing** (slice 29): a `RoutingRule` activates or skips a recipient or a group based on field
-  values (`when amount > 10000, add role "Finance approval"`). Rules are evaluated by the engine at each step from
-  values already completed; the evaluation and its inputs are audit events.
-- **Signing groups** (slice 29): one of several people may act; the first to complete does so for the group.
+- **Conditional routing** (slice 29, `WF-01`; designed in ADR-035, Proposed, not built): a `RoutingRule` includes a
+  recipient only when its conditions on field values hold (`when amount > 10000, include "Finance approval"`). The
+  engine evaluates a recipient's rule in the decision where routing reaches their order, from values already
+  completed by recipients at lower orders; the evaluation and its inputs (value hashes, never values) are recorded as
+  `routing.evaluated`, and a recipient left out is `recipient.skipped` with the terminal status `skipped`: never
+  invited, not required for completion, their fields dropped at completion as hidden fields are (§5). An order whose
+  recipients are all skipped is passed in the same decision. At least one signer or approver has no rule
+  (`CS-WF-0024`). A correction may change the rule of a recipient not yet reached; a skipped recipient stays skipped.
+- **Signing groups** (slice 29, `WF-01`; ADR-035, not built): a signer, approver or viewer whose part any of 2 to 20
+  members may do, frozen at send from an account group or listed. Every member is invited with a link of their own;
+  the first to open theirs claims the recipient (`recipient.group_member_acted`, before `recipient.delivered`) and
+  acts for the group from then on; the others' links answer `409 CS-WF-0025` until the claimant chooses finish later
+  (which releases the claim) or the sender corrects the recipient. The recipient keeps one status and one set of
+  fields.
 - **Delegation and reassignment** create a new recipient at the same order and mark the old one `reassigned`, with
   both in the chain.
 - **Delayed routing** (`WF-02`, built): a recipient with `route_delay_hours` is marked `sent` with `held_until` when
@@ -258,7 +268,7 @@ objects concerned, never their content.
 | Signer location on recipient actions when `capture_location` is on; refusal recorded, never blocking (GEO-01) | Built (engine, and the server's capture and GeoIP fallback, docs/40 §As built) |
 | Routing: sequential, parallel, mixed; carbon copies complete when reached | Built |
 | Scheduled sending of a draft (`ScheduleSend`, `PUT/DELETE …/schedule`); delayed routing (`route_delay_hours`); document visibility per recipient (`excluded_documents`) (§2, §4, `WF-02`) | Built (engine, server, editor; the mock records them and does not fire them) |
-| Conditional routing, signing groups (§4, slice 29) | **Not built**: no event type or status for a skipped recipient or a group member's act (rows proposed) |
+| Conditional routing, signing groups (§4, slice 29) | **Not built**: designed in ADR-035 (Proposed): the `skipped` status and the types `routing.evaluated`, `recipient.skipped`, `recipient.group_member_acted`; built once it is Accepted (`WF-01`, `DEC-17`) |
 | Bulk send (§8), signing links (§9) | **Not in the engine**: host jobs that issue `Create`/`Edit`/`Send` |
 | Witness ordering, legal-entity seal recipient, notary | **Partial**: act as signers; witnessing after the witnessed signer, a `Seal` recipient acting through `RemoteSigner`, and notary steps belong to slices 16, 18, 31 |
 

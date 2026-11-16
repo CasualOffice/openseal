@@ -20,7 +20,7 @@ by `tools/licence-inventory.py`, `LEG-01`).
 | [05-PHASES-AND-TASKS](05-PHASES-AND-TASKS.md) | What a phase, stage, slice and task are; how each opens and closes; Definition of Done | Draft for owner |
 | [06-ROADMAP-AND-DELIVERY](06-ROADMAP-AND-DELIVERY.md) | **The only roadmap**: milestones M0–M8, Phases D, 0, 1, 2 and 35 slices, with exit gates and parallel lanes | Draft for owner |
 | [07-SECURITY-THREAT-MODEL](07-SECURITY-THREAT-MODEL.md) | Adversaries, threats, controls, data classification | Live; PDF, field and crypto threats Tested; account, ceremony and webhook threats tested in Phase 2; organization, console and inference threats (`SEC-O*`, `SEC-X*`, `SEC-I*`) part Tested, part Designed; abuse rows Planned |
-| [08-ADR-REGISTER](08-ADR-REGISTER.md) | Decisions ADR-001 to ADR-033 | ADR-001 to ADR-029 Accepted (ADR-028 by owner instruction 29); ADR-030 to ADR-033 Proposed |
+| [08-ADR-REGISTER](08-ADR-REGISTER.md) | Decisions ADR-001 to ADR-035 | ADR-001 to ADR-029 Accepted (ADR-028 by owner instruction 29) and ADR-034 (instruction 50); ADR-030 to ADR-033 and ADR-035 Proposed |
 | [09-LEGAL-AND-COMPLIANCE](09-LEGAL-AND-COMPLIANCE.md) | ESIGN, UETA, eIDAS, Part 11, privacy, AATL; requirement → mechanism. Not legal advice | Draft for owner |
 | [10-ENTERPRISE-REQUIREMENTS](10-ENTERPRISE-REQUIREMENTS.md) | The enterprise bar | Draft for owner |
 | [14-EXECUTION-TRACKER](14-EXECUTION-TRACKER.md) | **The only tracker**, with owner decisions | Live |

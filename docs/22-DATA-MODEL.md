@@ -18,7 +18,7 @@ Account (tenant) ─┬─ User ── membership(role, permission profile) ─�
                   │            ├─ Recipient (ordered by routing) ─┬─ AuthRequirement
                   │            │                                   ├─ Field (placed on a document page)
                   │            │                                   └─ SignatureAdoption
-                  │            ├─ RoutingRule (conditional routing)
+                  │            ├─ RoutingRule (conditional routing; ADR-035, not built)
                   │            ├─ CustomField (envelope metadata)
                   │            ├─ Reminder/Expiry policy
                   │            ├─ AuditEvent (append-only, hash-chained)
@@ -118,13 +118,13 @@ one recorded in `envelope.completed`.
 | `type` | `signer`, `in_person_signer`, `approver`, `viewer` (needs to view), `cc` (receives a copy), `editor` (allowed to edit), `intermediary` (updates recipients), `agent` (specifies recipients), `witness` (slice 16), `seal` (legal-entity seal through `RemoteSigner`, slice 18), `notary` (slice 31) |
 | `role_name` | From the template, when any |
 | `name`, `email`, `phone` | PII, classified (docs/07 §Data) |
-| `status` | `created`, `sent`, `delivered`, `authenticated`, `completed`, `declined`, `auto_responded`, `reassigned` |
+| `status` | `created`, `sent`, `delivered`, `authenticated`, `completed`, `declined`, `auto_responded`, `reassigned`; designed, not built: `skipped` (left out by a routing rule, terminal; ADR-035 Proposed, `WF-01`) |
 | `auth` | List of requirements: `access_code` (hash), `email_otp`, `sms_otp`, `voice_otp` (the phone call; designed as `phone_call`), `sso` (sign-in through one of the operator's OpenID Connect providers, `RAUTH-01`; designed as `idp`), `idv` (provider), `kba` (plugin). `sms_otp` and `voice_otp` need an E.164 `phone`; their codes are rows of `recipient_otp_codes` with `channel` `sms` or `voice` (migration 0029). `sso` needs an `email`, which the provider's verified email must equal; each sign-in is a row of `recipient_sso_challenges` (migration 0030: provider id, SHA-256 of `state`, nonce, PKCE verifier, 10-minute expiry, closed at first use or when superseded, at most one open per recipient, a tenant table under RLS) |
 | `delivery` | `email`, `sms`, `none` (embedded: host delivers) |
 | `embedded_client_user_id` | When set, the recipient signs only through the integrator's embedded session |
 | `excluded_documents` | Document visibility (`WF-02`): documents this recipient never sees, is never served and does not act on; at least one stays visible and none holds a field of theirs |
 | `route_delay_hours`, `held_until` | Delayed routing (`WF-02`): hours to wait, once their turn comes, before they are invited (0 to 720; not on a `cc`), and the time that wait ends; until then their link does not open (`CS-WF-0007`) |
-| `signing_group_id` | Any member may act (slice 29) |
+| `signing_group` | Designed, not built (slice 29, ADR-035 Proposed, `WF-01`): 2 to 20 members `{member_id, name, email, phone?, delivery}` frozen at send from an account group (`groups`, `group_members`) or listed; any one may act, the first to open their link claims the recipient; only on `signer`, `approver`, `viewer`. Members' contact details are personal data as a recipient's |
 | `consent` | ERSD version accepted, time, from the audit chain |
 | `language` | Signer UI and email language |
 | `declined_reason`, `reassigned_to` | |

@@ -150,6 +150,8 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-WF-0021 | A document is hidden from this recipient (`WF-02`): a field of theirs on it refuses the send (`422`, a violation); viewing or fetching it as them is refused (the server answers `404 CS-API-0002`, as a document that does not exist) |
 | CS-WF-0022 | The draft is scheduled to send (`WF-02`): it is not edited until the schedule is cancelled (`409`) |
 | CS-WF-0023 | A time out of range (`WF-02`): a schedule not after now, more than 365 days ahead or not before the expiry; a recipient's routing delay over 720 hours (`422`) |
+| CS-WF-0024 | Reserved (ADR-035 Proposed, `WF-01`; not returned until built): a routing rule refused at send: a condition's label is not a data field of a recipient at a lower routing order, a recipient has more than one rule, or every signer and approver has one (`422`) |
+| CS-WF-0025 | Reserved (ADR-035 Proposed, `WF-01`; not returned until built): another member of the signing group has claimed this recipient (`409`) |
 | CS-API-0001 | Malformed request |
 | CS-API-0002 | Not found (also returned for objects of another tenant) |
 | CS-API-0003 | Rate limited |

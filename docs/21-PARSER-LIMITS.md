@@ -136,6 +136,8 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Commands applied per envelope (the idempotency record) | 100,000 (built, stage 2A) | CS-WF-0011 |
 | Scheduled send ahead of now | 365 days (built, `WF-02`) | CS-WF-0023 |
 | Routing delay per recipient | 720 hours (built, `WF-02`) | CS-WF-0023 |
+| Routing rules per envelope; conditions per rule; condition value; values in `one_of` | 50; 10; 1,024 bytes; 20 (proposed, ADR-035, `WF-01`) | CS-WF-0004 |
+| Signing group members | 2–20 (proposed, ADR-035, `WF-01`) | CS-WF-0004 |
 | Text field value | 4,000 bytes | CS-FLD-0002 |
 | Dropdown options | 500 | CS-FLD-0002 |
 | Multi-select options; choices in one value | 500; 500, none repeated (built, `ACRO-02`) | CS-FLD-0002 |

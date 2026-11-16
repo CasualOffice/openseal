@@ -100,7 +100,8 @@ pieces (security, evidence, database, server; instruction 41).
   slice 2 (`VS-02`: the demo `RTE-04`; the in-person Compose spec is green); slice 5 (`VS-05`: the
   Compose run and demo `RAUTH-02`, ADR-033's acceptance); the Compose runs of the `UXW-*` and `ORG-06` rows above;
   the console as a Compose service and its remaining writes (`CON-02`, `CON-04`, `CON-05`); the real-stack run
-  of the model suggestions and `compose --profile ml up` (`WEB-19`, `ML-09`); the open ASVS findings and `LEG-01` sign-off.
+  of the model suggestions and `compose --profile ml up` (`WEB-19`, `ML-09`); the open ASVS findings and `LEG-01` sign-off;
+  conditional routing and signing groups (slice 29) are designed in ADR-035 and wait on its acceptance (`WF-01`, `DEC-17`).
 - **Next:** slices 1, 2, 5 and 7 to their end points for M3, then v0.0.2 (organizations and switching, the console with
   health, plans with three meters; instruction 29), then the rest of ADR-028 (`ORG-07` onward, `CON-08` onward,
   `PLAN-05` onward).

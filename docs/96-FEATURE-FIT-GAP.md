@@ -49,7 +49,7 @@ instructions 8 and 9).
 | FG-030 | Electronic seal recipient | DS | Plugin | 18 | — |
 | FG-031 | Sequential, parallel and mixed routing order | DS, SN | Build | 2 | Works |
 | FG-032 | Conditional routing | DS | Build | 29 | Designed |
-| FG-033 | Signing groups | DS | Build | 29 | — |
+| FG-033 | Signing groups | DS | Build | 29 | Designed |
 | FG-034 | Scheduled sending; delayed routing | DS | Build | 29 | Works: engine, server (`PUT/DELETE …/schedule`, `route_delay_hours`), editor's "Send at" and per-recipient wait (`WF-02`); the mock records but does not fire them |
 | FG-035 | Reassign / assign to someone else | DS, SN | Build | 2 | Works (signer's `POST /s/{token}/reassign`, `WEB-07`) |
 | FG-036 | Auto-delegate while away | DS | Build | 29 | — |
