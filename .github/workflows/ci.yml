@@ -6,6 +6,9 @@ on:
     branches: [main]
   merge_group:
   pull_request:
+  # On demand for any branch (`gh workflow run ci.yml --ref <branch>`): a combined branch is
+  # proven green before its pull request is opened (owner, 2026-11-17).
+  workflow_dispatch:
 
 # Only the newest commit runs: a new push cancels older runs (docs/15).
 concurrency:
