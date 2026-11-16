@@ -2379,7 +2379,8 @@ paths:
       operationId: scheduleEnvelope
       summary: "Schedule a draft to send itself (WF-02)"
       description: "The draft must be sendable now (`422 CS-WF-0004`); `send_at` after now, at most 365 days ahead and before the expiry (`422 CS-WF-0023`). A scheduled draft cannot be edited (`409 CS-WF-0022`) until the schedule is cancelled; sending by hand drops it. Recorded as a draft edit of `send_at`; the send itself is `envelope.sent` by the platform."
-      x-permission: "envelopes:send"
+      x-permission: "envelopes.send"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2397,7 +2398,8 @@ paths:
     delete:
       operationId: unscheduleEnvelope
       summary: "Cancel a draft's scheduled send (WF-02)"
-      x-permission: "envelopes:send"
+      x-permission: "envelopes.send"
+      x-level: workspace
       responses:
         '200':
           description: OK

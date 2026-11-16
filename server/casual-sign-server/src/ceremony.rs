@@ -499,7 +499,14 @@ impl Open {
                 // When it expires, so the page can say "sign by" (UXW-34).
                 "expires_at": s.expires_at,
             },
-            "recipient": me.map(dto::recipient),
+            // WF-02: the ids of documents hidden from them are not theirs to know.
+            "recipient": me.map(|r| {
+                let mut v = dto::recipient(r);
+                if let Some(o) = v.as_object_mut() {
+                    o.remove("excluded_documents");
+                }
+                v
+            }),
             "fields": fields,
             // Whether the page asks the device for its location (GEO-01); when false it
             // never asks.

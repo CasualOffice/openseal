@@ -99,9 +99,10 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
   routing reaches them, inside the decision that reached them, and a `RouteDelay` timer is set. Until it fires their
   invitation, link, resend, reminders and expiry warnings wait (`CS-WF-0007`); the timer sends the invitation and
   changes nothing observable, so it records no event. Going out of turn clears the hold; a reassigned recipient is not
-  delayed again. 0 to 720 hours (`CS-WF-0023`); not on a `cc` (`CS-WF-0004`).
+  delayed again; a correction of a held recipient's address neither notifies them nor restarts the wait, and the
+  invitation goes to the corrected address when it ends. 0 to 720 hours (`CS-WF-0023`); not on a `cc` (`CS-WF-0004`).
 - **Document visibility** (`WF-02`, built): `excluded_documents` hides documents from a recipient. They are never listed
-  or served to them, do not count toward what a viewer views, and their act records only the documents they saw; a
+  or served to them (their ceremony view does not name their ids), do not count toward what a viewer views, and their act records only the documents they saw; a
   correction that replaces a document they never saw leaves them completed.
 - An envelope **completes** when every recipient with a required action has completed. Optional signature fields do
   not block.

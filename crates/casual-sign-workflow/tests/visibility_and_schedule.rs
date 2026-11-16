@@ -537,3 +537,45 @@ fn a_routing_delay_is_bounded_and_not_for_a_copy() {
     assert!(found.contains(&Problem::RouteDelayOutOfRange), "{found:?}");
     assert!(found.contains(&Problem::RouteDelayOnCopy), "{found:?}");
 }
+
+#[test]
+fn correcting_a_held_recipients_address_keeps_them_held_and_uninvited() {
+    let mut hx = Harness::new();
+    hx.draft(&[
+        recipient("r1", Signer, 1),
+        delayed(recipient("r2", Signer, 2), 24),
+    ]);
+    hx.send();
+    let d = hx.sign("r1");
+    let timer = timer_of(&d, Timer::RouteDelay);
+
+    // While held, the sender corrects r2's address: they were never invited, so they
+    // get no correction notice and their wait does not restart.
+    hx.now = 2 * HOUR;
+    let mut spec = hx.state().recipient(&id("r2")).unwrap().spec.clone();
+    spec.email = text("r2-new@example.test");
+    let d = hx.ok(
+        sender(),
+        Command::Correct {
+            changes: vec![Change::UpdateRecipient { recipient: spec }],
+        },
+    );
+    assert!(
+        !d.effects.iter().any(|e| matches!(
+            &e.kind,
+            EffectKind::NotifyRecipients { recipients, .. } if recipients.contains(&id("r2"))
+        )),
+        "a held recipient is not told of a correction before their turn"
+    );
+    assert!(!invites(&d, "r2"));
+    let r2 = hx.state().recipient(&id("r2")).unwrap().clone();
+    assert_eq!(
+        r2.held_until,
+        Some(t(24 * HOUR)),
+        "the wait does not restart"
+    );
+
+    hx.now = 24 * HOUR;
+    let d = hx.ok(Principal::System, Command::TimerDue { timer });
+    assert!(invites(&d, "r2"), "the delay ended: r2 is invited");
+}

@@ -1295,10 +1295,16 @@ fn correct(
     }
     let mut notified = Vec::new();
     for i in 0..s.recipients.len() {
+        // Delayed routing holds them (`WF-02`): never invited, so nothing to revoke or
+        // tell; the invitation goes to the corrected address when the delay ends.
+        let held = s
+            .recipients
+            .get(i)
+            .is_some_and(|r| s.book.held.contains(r.id()));
         let r = rec_mut(s, i)?;
         let id = r.id().clone();
         let again = redo.contains(&id) && r.status == RecipientStatus::Completed && r.is_required();
-        let readdressed = report.readdressed.contains(&id) && r.status.is_active();
+        let readdressed = report.readdressed.contains(&id) && r.status.is_active() && !held;
         if again || readdressed {
             if r.status.is_active() {
                 out.effect(EffectKind::RevokeTokens {

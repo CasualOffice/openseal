@@ -83,6 +83,11 @@ async fn a_hidden_document_is_neither_listed_nor_served_to_that_recipient() {
         .collect();
     assert_eq!(listed.len(), 1, "{view}");
     assert_eq!(listed[0]["id"], json!(terms));
+    // Not even the hidden document's id reaches them.
+    assert!(
+        !view.to_string().contains(&pricing),
+        "the ceremony view names a hidden document: {view}"
+    );
     let r = call(
         &api,
         "GET",
