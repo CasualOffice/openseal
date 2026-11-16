@@ -405,6 +405,64 @@ async fn reconciliation_alerts_unmatched_signatures_and_lists_orphaned_retries()
     db.drop().await;
 }
 
+/// **Runs close together do not forget a signature (`CON-09`).** A seal record stored
+/// minutes after the signature it records is judged by a later run than the signature;
+/// when an operator runs reconciliation twice within minutes, that run is not the next
+/// one. The record is still matched with keyd's signature of the run before last, not
+/// alerted as a seal without a signature.
+#[tokio::test]
+async fn a_seal_record_judged_runs_after_its_signature_is_not_alerted() {
+    let Some(db) =
+        common::fresh("a_seal_record_judged_runs_after_its_signature_is_not_alerted").await
+    else {
+        return;
+    };
+    let seeded = db.seed().await;
+    let pki = start_keyd();
+    let c = common::console_with(&db, config(&pki, &pki.console));
+    let seed = c.bootstrap(OWNER, PASSWORD).await;
+    let s = c.sign_in(OWNER, PASSWORD, &seed).await;
+
+    let env = seeded.envelope;
+    let key = RemoteKey::connect(endpoint(&pki, &pki.worker), "platform").unwrap();
+    let d = casual_sign_keyd::digest_for(DigestSigner::algorithm(&key), b"sealed");
+    key.for_envelope(&env.hyphenated().to_string())
+        .unwrap()
+        .sign_digest(&d)
+        .unwrap();
+    // Stored 63.5 minutes before the first run: after that run's window (cut-off an
+    // hour ago, less 5 minutes of skew) and the next one's a minute later, inside the
+    // third's.
+    let t = c.clock.get();
+    let at = t - time::Duration::seconds(3810);
+    sqlx::query(
+        "INSERT INTO seal_signatures (account_id, envelope_id, digest, alias, at) \
+         VALUES ($1, $2, $3, 'platform', $4)",
+    )
+    .bind(seeded.workspace)
+    .bind(env)
+    .bind(d.as_slice())
+    .bind(at)
+    .execute(&db.owner)
+    .await
+    .unwrap();
+
+    let mut runs = Vec::new();
+    for _ in 0..3 {
+        let r = c.call(&s, "POST", "/console/v1/reconciliation", None).await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        runs.push(r.json()["run"].clone());
+        c.clock.advance(60);
+    }
+    assert_eq!(runs[0]["matched"], 1, "{}", runs[0]);
+    for run in &runs {
+        assert_eq!(run["unmatched"], 0, "{run}");
+    }
+    let alerts = c.call(&s, "GET", "/console/v1/alerts", None).await.json();
+    assert_eq!(alerts["alerts"], serde_json::json!([]), "no alert");
+    db.drop().await;
+}
+
 /// A new key custodian, enrolled; returns their TOTP seed.
 async fn custodian(c: &common::Console, owner: &common::Session, email: &str) -> Vec<u8> {
     let r = c

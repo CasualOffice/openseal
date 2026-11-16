@@ -12,7 +12,7 @@ use axum::Json;
 use axum::extract::{Query, State};
 use casual_sign_keyd_client::wire::{LogEntry, MAX_RANGE};
 use casual_sign_keyd_client::{AdminClient, KeyInfo, KeydError, hex};
-use casual_sign_platform_store::{Detail, EventDraft, ReconciliationRun};
+use casual_sign_platform_store::{Detail, EventDraft, MAX_PAGE, ReconciliationRun};
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -301,13 +301,10 @@ pub async fn reconcile(
         return Ok(None);
     };
     let now = state.now();
-    let last = state
-        .store()
-        .reconciliation_runs(1)
-        .await?
-        .into_iter()
-        .next();
-    let from_seq = last.as_ref().map_or(1, |r| r.next_seq);
+    // The newest runs, newest first: the last one says where to carry on.
+    let earlier = state.store().reconciliation_runs(MAX_PAGE).await?;
+    let last = earlier.first();
+    let from_seq = last.map_or(1, |r| r.next_seq);
     let mut cutoff = now.checked_sub(GRACE).unwrap_or(now);
     let (records, capped) = read_log(
         &client,
@@ -324,13 +321,25 @@ pub async fn reconcile(
     let next_seq = records.last().map_or(from_seq, |r| r.seq.saturating_add(1));
     let signatures: Vec<Signature> = records.iter().filter_map(signature_of).collect();
 
-    // keyd's digests of this run and the previous one, for the seal records' side.
+    let window_from = last.map_or(OffsetDateTime::UNIX_EPOCH, |r| {
+        r.cutoff.checked_sub(SKEW).unwrap_or(r.cutoff)
+    });
+    // keyd's digests of this run and of the earlier runs that read any signature made up
+    // to [`GRACE`] before the oldest seal record judged: a record is stored after its
+    // signature, possibly several runs later when operators run reconciliation minutes
+    // apart, so the previous run alone is not enough.
     let mut known: BTreeSet<Vec<u8>> = signatures.iter().filter_map(|s| s.digest.clone()).collect();
-    if let Some(prev) = &last
-        && prev.from_seq < prev.next_seq
+    let since = window_from.checked_sub(GRACE).unwrap_or(window_from);
+    let first_seq = earlier
+        .iter()
+        .take_while(|r| r.cutoff > since)
+        .map(|r| r.from_seq)
+        .min();
+    if let (Some(prev), Some(first)) = (last, first_seq)
+        && first < prev.next_seq
     {
-        let n = prev.next_seq.saturating_sub(prev.from_seq);
-        let (before, _) = read_log(&client, prev.from_seq, i64::MAX, n).await?;
+        let n = prev.next_seq.saturating_sub(first);
+        let (before, _) = read_log(&client, first, i64::MAX, n).await?;
         known.extend(
             before
                 .iter()
@@ -352,9 +361,6 @@ pub async fn reconcile(
         .into_iter()
         .map(|d| (d.envelope, d.digest))
         .collect();
-    let window_from = last.as_ref().map_or(OffsetDateTime::UNIX_EPOCH, |r| {
-        r.cutoff.checked_sub(SKEW).unwrap_or(r.cutoff)
-    });
     let window_to = cutoff.checked_sub(SKEW).unwrap_or(cutoff);
     let in_window: Vec<(Uuid, Vec<u8>)> = if window_from < window_to {
         state

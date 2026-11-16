@@ -1008,7 +1008,9 @@ keyd log and writes none. The console reconciles hourly inside `serve` (and on `
 `GET /reconciliation` lists runs): it reads keyd's log from the last run's `next_seq` up to an hour ago (at most
 100,000 records a run; the next carries on), matches each successful `sign` with the records of its envelope
 (`platform.seal_digests_of`, 1,000 ids a call), and each record stored from the last run's cut-off to this one's,
-both less 5 minutes for clock skew (`platform.seal_digests`), with keyd's digests of this run and the previous one.
+both less 5 minutes for clock skew (`platform.seal_digests`), with keyd's digests of this run and of every earlier
+run that read signatures made up to an hour before the oldest record judged (a record can be judged several runs
+after its signature when operators run reconciliation minutes apart).
 A signature whose envelope has other records is an orphaned retry, listed in the run (at most 1,000); any other
 mismatch, in either direction, is an alert `CS-CON-0009` (source `reconciliation`) and the run's
 `operator.reconciliation.mismatch` event. *Decided:* the alert code for expiry is new (`CS-CON-0018`), because
