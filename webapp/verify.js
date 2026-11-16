@@ -163,7 +163,7 @@ function show({ file, bytes, report: r, trail, checkedAt }) {
   }
   if (r.changes.length) details.append(detailCard("changes-h", t("verify.changes"), changesList(r.changes)));
   details.append(detailCard("trail-h", t("verify.trail"), ...trailBody(trail)));
-  details.append(detailCard("vpreview-h", t("verify.preview"), pdfPreview({ load: async () => bytes, name: file.name, height: 560 }).el));
+  details.append(detailCard("vpreview-h", t("verify.preview"), pdfPreview({ load: async () => bytes, name: file.name, height: 35 }).el));
   main.append(
     h("h1", { class: "os-sr-only", text: t("verify.title") }),
     receipt({ file: file.name, size: bytes.length, report: r, trusted: trust.map((c) => c.name), checkedAt, onAnother: start }),

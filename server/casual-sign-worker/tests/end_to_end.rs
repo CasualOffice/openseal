@@ -260,6 +260,7 @@ async fn api_and_worker_take_two_signers_to_completed_with_a_verified_seal() {
         },
     )
     .unwrap();
+    st.set_mfa_key(common::mfa_key());
     let app = casual_sign_server::app(st);
     // `Env` already made an organization; this workspace gets one of its own.
     let org = env.db.organization("End to End").await;
@@ -292,6 +293,14 @@ async fn api_and_worker_take_two_signers_to_completed_with_a_verified_seal() {
     let set = login.headers["set-cookie"].to_str().unwrap();
     staff.cookie = Some(set.split(';').next().unwrap().to_owned());
     staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    // An administrator owes a second factor by default (ASVS-31).
+    common::pass_factor(
+        &staff.app,
+        staff.cookie.as_deref().unwrap(),
+        staff.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
     let sig = |r: &str, y: u32| {
         json!({"recipient": r, "document": 0, "type": "signature", "page": 1,
                "x": 72, "y": y, "width": 180, "height": 40, "required": true})
@@ -447,6 +456,7 @@ async fn one_signer_gets_the_sealed_pdf_and_the_certificate_from_the_completion_
         },
     )
     .unwrap();
+    st.set_mfa_key(common::mfa_key());
     let app = casual_sign_server::app(st);
     let org = env.db.organization("Send and Sign").await;
     casual_sign_server::bootstrap_workspace(
@@ -476,6 +486,14 @@ async fn one_signer_gets_the_sealed_pdf_and_the_certificate_from_the_completion_
     let set = login.headers["set-cookie"].to_str().unwrap();
     staff.cookie = Some(set.split(';').next().unwrap().to_owned());
     staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    // An administrator owes a second factor by default (ASVS-31).
+    common::pass_factor(
+        &staff.app,
+        staff.cookie.as_deref().unwrap(),
+        staff.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
     let field = |t: &str, y: u32| {
         json!({"recipient": "a", "document": 0, "type": t, "page": 1,
                "x": 72, "y": y, "width": 180, "height": 30, "required": true})

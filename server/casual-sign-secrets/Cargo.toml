@@ -12,6 +12,9 @@ publish = false
 # Wipes a secret's bytes when it is dropped (RustCrypto, Apache-2.0 OR MIT; already in
 # the graph through aws-lc-rs and rustls).
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+# The digest of a daemon's security configuration (`integrity`, ASVS-24). RustCrypto,
+# MIT OR Apache-2.0; the 0.11 generation the engine crates already use (ADR-006).
+sha2 = { version = "0.11.1", default-features = false }
 
 [lints]
 workspace = true

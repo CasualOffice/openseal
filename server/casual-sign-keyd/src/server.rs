@@ -16,7 +16,8 @@
 //! [`KeydLimits::max_connections`] at once, with read and write timeouts.
 
 use std::collections::HashMap;
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::Read;
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -34,6 +35,10 @@ use crate::pem::tls_certificates;
 use crate::signer::{DigestSigner, wire_id};
 use crate::wire::{
     Health, KeyHealth, KeyInfo, Request, Response, read_frame, valid_id, write_frame,
+};
+
+use casual_sign_seclog::{
+    Kind, Label, Level, Outcome, Principal, SecurityEvent, SecurityLog, Service, Uuid, Value,
 };
 
 /// The hex SHA-256 of a DER certificate: how the allow-list and the log name a caller.
@@ -141,6 +146,7 @@ pub struct KeyService {
     log: Mutex<OpLog>,
     windows: Mutex<HashMap<String, (Instant, u32)>>,
     limits: KeydLimits,
+    security: SecurityLog,
 }
 
 impl core::fmt::Debug for KeyService {
@@ -173,7 +179,38 @@ impl KeyService {
             log: Mutex::new(log),
             windows: Mutex::new(HashMap::new()),
             limits,
+            security: SecurityLog::from_env(Service::Keyd),
         }
+    }
+
+    /// Write security events (`ASVS-08`: key use, refused callers, rate limits) to
+    /// `log` rather than standard error.
+    #[must_use]
+    pub fn with_security_log(mut self, log: SecurityLog) -> Self {
+        self.security = log;
+        self
+    }
+
+    /// One security event about `caller` (by certificate fingerprint).
+    fn event(
+        &self,
+        kind: Kind,
+        outcome: Outcome,
+        caller: &str,
+        code: Option<&'static str>,
+        extra: Vec<(&'static str, Value)>,
+    ) {
+        let mut ev = SecurityEvent::new(kind, outcome);
+        if let Some(l) = Label::new(caller) {
+            ev = ev.principal(Principal::Caller(l));
+        }
+        if let Some(c) = code {
+            ev = ev.code(c);
+        }
+        for (k, v) in extra {
+            ev = ev.with(k, v);
+        }
+        self.security.emit(&ev);
     }
 
     /// Answer the read-only admin operations to the callers on `admin` (the console's
@@ -241,6 +278,13 @@ impl KeyService {
             return Ok(Role::Admin);
         }
         let err = KeydError::NotAuthorized;
+        self.event(
+            Kind::CallerRefused,
+            Outcome::Failure,
+            caller,
+            Some(err.code()),
+            vec![("reason", Value::Word("not_allowed"))],
+        );
         self.record(&OpRecord {
             time: now(),
             caller: caller.to_owned(),
@@ -279,6 +323,13 @@ impl KeyService {
         // The two lists answer disjoint operations (docs/23 §5.4).
         if req.is_admin() != (role == Role::Admin) {
             let err = KeydError::AdminRefused;
+            self.event(
+                Kind::Denied,
+                Outcome::Failure,
+                caller,
+                Some(err.code()),
+                vec![("op", Value::Word(req.op_name()))],
+            );
             self.record(&self.admin_record(caller, req, err.code()))?;
             return Err(err);
         }
@@ -304,6 +355,7 @@ impl KeyService {
                 };
                 let Some(key) = found else {
                     rec.outcome = KeydError::UnknownAlias.code();
+                    self.key_event(caller, "chain", alias, None, Some(rec.outcome));
                     self.record(&rec)?;
                     return Err(KeydError::UnknownAlias);
                 };
@@ -320,6 +372,7 @@ impl KeyService {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 self.record(&rec)?;
+                self.key_event(caller, "chain", alias, None, None);
                 Ok(Response::Chain {
                     alg,
                     development: key.is_development(),
@@ -348,9 +401,45 @@ impl KeyService {
                 }
                 // No signature leaves without its record (fail closed).
                 self.record(&rec)?;
+                match &result {
+                    Err(KeydError::RateLimited) => self.event(
+                        Kind::RateLimited,
+                        Outcome::Failure,
+                        caller,
+                        Some(KeydError::RateLimited.code()),
+                        vec![("op", Value::Word("sign"))],
+                    ),
+                    Err(e) => self.key_event(caller, "sign", alias, Some(envelope), Some(e.code())),
+                    Ok(_) => self.key_event(caller, "sign", alias, Some(envelope), None),
+                }
                 result.map(Response::Signature)
             }
         }
+    }
+
+    /// `key.use`: `op` on `alias` for `envelope`, refused with `code` when given. The
+    /// digest is not logged (the op log has it).
+    fn key_event(
+        &self,
+        caller: &str,
+        op: &'static str,
+        alias: &str,
+        envelope: Option<&str>,
+        code: Option<&'static str>,
+    ) {
+        let mut extra = vec![("op", Value::Word(op))];
+        if let Some(a) = Label::new(alias) {
+            extra.push(("alias", Value::Label(a)));
+        }
+        if let Some(e) = envelope.and_then(|e| Uuid::parse_str(e).ok()) {
+            extra.push(("envelope_id", Value::Id(e)));
+        }
+        let outcome = if code.is_some() {
+            Outcome::Failure
+        } else {
+            Outcome::Success
+        };
+        self.event(Kind::KeyUse, outcome, caller, code, extra);
     }
 
     /// The read-only answers, after the call is recorded.
@@ -607,11 +696,31 @@ impl Keyd {
             let open = self.open.clone();
             std::thread::spawn(move || {
                 if let Err(e) = connection(stream, tls, &service, limits.io_timeout) {
-                    // Codes and kinds only: no request content.
-                    eprintln!("keyd: connection ended: {e}");
+                    // Codes only: no request content.
+                    let mut m = serde_json::Map::new();
+                    m.insert("code".into(), e.code().into());
+                    casual_sign_seclog::write(Service::Keyd, Level::Info, "connection_ended", m);
                 }
                 open.fetch_sub(1, Ordering::SeqCst);
             });
+        }
+    }
+}
+
+/// After a refused handshake (its alert already written by `complete_io`): close the
+/// write side and read what the caller already sent, bounded in bytes and time, so the
+/// close is a FIN. Closing with the caller's bytes unread sends a reset, and on Linux the
+/// reset discards the alert before the caller reads it: a refused certificate would read
+/// as keyd unreachable (`CS-KEY-0011`) instead of refused (`CS-KEY-0013`, `HRD-01`).
+fn linger(sock: &mut TcpStream) {
+    let _ = sock.shutdown(Shutdown::Write);
+    let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
+    let mut buf = [0u8; 4096];
+    let mut left: usize = 64 * 1024;
+    while left > 0 {
+        match sock.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => left = left.saturating_sub(n),
         }
     }
 }
@@ -628,7 +737,19 @@ fn connection(
     let conn = ServerConnection::new(tls).map_err(|e| KeydError::TlsConfig(e.to_string()))?;
     let mut s = StreamOwned::new(conn, stream);
     while s.conn.is_handshaking() {
-        s.conn.complete_io(&mut s.sock).map_err(io)?;
+        if let Err(e) = s.conn.complete_io(&mut s.sock) {
+            // A caller without a certificate chaining to the client CA, or speaking no
+            // TLS 1.3 (ASVS-08, 9.2.5): who it was is unknown, so no principal.
+            service.event(
+                Kind::CallerRefused,
+                Outcome::Failure,
+                "",
+                Some("CS-KEY-0011"),
+                vec![("reason", Value::Word("handshake"))],
+            );
+            linger(&mut s.sock);
+            return Err(io(e));
+        }
     }
     // The verifier required a certificate chaining to the client CA; the allow-list
     // decides whether this one is answered.

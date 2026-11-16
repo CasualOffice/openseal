@@ -73,6 +73,14 @@ impl Call {
         }
     }
 
+    /// Who uploads in this call, for a malware-scan event (ASVS-11).
+    pub(crate) fn uploader(&self) -> crate::scan::Uploader {
+        crate::scan::Uploader {
+            account: self.p.account,
+            actor: self.actor(),
+        }
+    }
+
     /// Command contexts for this request, with the account's policy.
     pub(crate) async fn commands(&self, tx: &mut TenantTx) -> Result<Commands, ApiError> {
         Ok(Commands::new(

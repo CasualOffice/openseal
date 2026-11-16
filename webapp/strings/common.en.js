@@ -49,6 +49,8 @@ export const COMMON = {
   "error.CS-API-0002": "This was not found. It may have been deleted, or you may not have access.",
   "error.CS-API-0003": "Too many requests. Wait a moment and try again.",
   "error.CS-API-0006": "The file is too large.",
+  "error.CS-SCAN-0001": "This file was refused because the virus scanner found malware in it.",
+  "error.CS-SCAN-0002": "Files cannot be checked for viruses right now, so this one was not accepted. Try again in a minute.",
   "error.CS-API-0008": "This needs to be reloaded before it can be changed.",
   "error.CS-API-0009": "This is not ready yet. The signed PDF and certificate appear once sealing finishes.",
   "error.CS-API-0010": "The server had a problem.",

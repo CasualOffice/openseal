@@ -14,7 +14,7 @@
 //
 // The PDFs come in as pdfview.js handles; nothing here parses a file.
 
-import { h, clear, reducedMotion } from "./dom.js";
+import { h, clear, reducedMotion, rem } from "./dom.js";
 import { t } from "./i18n.js";
 import { icon } from "./icons.js";
 
@@ -115,8 +115,8 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
     view.scale = scaleFor(view.mode, mw, mh, scroller.clientWidth - leftRoom(), scroller.clientHeight, pad);
     view.els.forEach(({ el }, i) => {
       const p = view.pages[i];
-      el.style.width = `${p.width * view.scale}px`;
-      el.style.height = `${p.height * view.scale}px`;
+      el.style.width = `${p.width * view.scale}px`; // px-ok: PDF points × scale
+      el.style.height = `${p.height * view.scale}px`; // px-ok: PDF points × scale
     });
     tops = view.els.map(({ el }) => el.offsetTop);
     laidOut = true;
@@ -309,8 +309,7 @@ export function docView({ label, pages = [], mode = "fit-width", onLayout = null
 
 /// `n` rem in CSS px at the current root size.
 export function remPx(n) {
-  const fs = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  return n * fs;
+  return rem(n);
 }
 
 /// The zoom controls for a view: zoom out, a preset menu (fit width, fit page, 50–200 %,
@@ -377,7 +376,7 @@ export function thumbnails(view, container, { width = 96, byDocument = false } =
       if (p?.pdf && c && !c.dataset.done) { c.dataset.done = "1"; p.pdf.render(p.n, c, width / p.width).catch(() => {}); }
       io.unobserve(e.target);
     }
-  }, { root: container, rootMargin: "200px" }) : null;
+  }, { root: container, rootMargin: `${Math.round(rem(12.5))}px` }) : null; // px-ok: rootMargin takes px only; 12.5 rem
   function build() {
     clear(ol); btns.length = 0;
     view.pages.forEach((p, i) => {

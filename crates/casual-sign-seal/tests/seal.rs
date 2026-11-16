@@ -364,6 +364,102 @@ fn revocation_falls_back_to_crls_and_fails_without_any() {
     assert_eq!(e.code(), "CS-SEAL-0004");
 }
 
+/// HRD-02: a real CA hands out the seal certificate and its issuing CA, never the offline
+/// root, and a TSA's token stops below its root too, while the host fetches no issuers.
+/// B-LT and B-LTA, sealed or augmented later, must still walk each chain to its root,
+/// finding it among the request's trust anchors (before: `CS-SEAL-0004`, issuer not found).
+#[test]
+fn validation_data_finds_the_root_among_the_trust_anchors() {
+    let tsa = TestTsa::new(SIGNING_TIME);
+    let rev = TestRevocation {
+        no_issuers: true,
+        ..Default::default()
+    };
+    let input = one_page("Agreement");
+    for profile in [Profile::BaselineLt, Profile::BaselineLta] {
+        let s = seal(&input, &request(profile), &p256_below_root(), &tsa, &rev)
+            .unwrap_or_else(|e| panic!("{profile:?}: {e}"));
+        assert!(passed(&s.bytes), "{profile:?}: {:?}", ours(&s.bytes));
+        assert!(s.report.dss.as_ref().unwrap().ocsp_responses >= 2);
+    }
+    let bt = seal(
+        &input,
+        &request(Profile::BaselineT),
+        &p256_below_root(),
+        &tsa,
+        &rev,
+    )
+    .unwrap();
+    let options = ArchiveOptions {
+        time: SIGNING_TIME,
+        trust: trust(),
+        limits: Limits::default(),
+    };
+    let lta = augment(&bt.bytes, Profile::BaselineLta, &options, &tsa, &rev).unwrap();
+    assert!(passed(&lta.bytes), "{:?}", ours(&lta.bytes));
+
+    // With the root nowhere at all, the walk still stops: issuer not found.
+    let mut r = request(Profile::BaselineLt);
+    r.trust = casual_sign_seal::TrustStore::new();
+    let e = seal(&input, &r, &p256_below_root(), &tsa, &rev).unwrap_err();
+    assert!(
+        matches!(
+            e,
+            SealError::Revocation(RevocationProblem::IssuerNotFound { .. })
+        ),
+        "{e}"
+    );
+}
+
+/// HRD-02: production CAs scope their CRLs with a critical Issuing Distribution Point
+/// (DigiCert's timestamping CA does, and its OCSP answers no SHA-256 CertID, so the CRL is
+/// all there is). Sealing must embed them and our verifier must accept them from the DSS
+/// (before: `CS-SEAL-0004`, an unsupported critical CRL extension).
+#[test]
+fn crls_scoped_by_an_issuing_distribution_point_are_used() {
+    let tsa = TestTsa::new(SIGNING_TIME);
+    let scoped = TestRevocation {
+        no_ocsp: true,
+        scoped_crls: true,
+        ..Default::default()
+    };
+    for (label, provider) in [("p256", p256()), ("rsa", rsa())] {
+        let s = seal(
+            &one_page("Agreement"),
+            &request(Profile::BaselineLta),
+            &provider,
+            &tsa,
+            &scoped,
+        )
+        .unwrap_or_else(|e| panic!("{label}: {e}"));
+        let dss = s.report.dss.as_ref().unwrap();
+        assert_eq!(dss.ocsp_responses, 0);
+        assert_eq!(dss.crls, 2, "the intermediate's and the root's scoped CRLs");
+        assert!(passed(&s.bytes), "{label}: {:?}", ours(&s.bytes));
+    }
+}
+
+/// HRD-02: a TSA's token may carry a cross-certificate of a trusted root (DigiCert's
+/// carries "Trusted Root G4" issued by "Assured ID Root CA"). A trust anchor ends a path
+/// and needs no revocation data, so the walk stops at any certificate with an anchor's
+/// subject and key instead of chasing an issuer no one holds (before: `CS-SEAL-0004`).
+#[test]
+fn a_cross_certificate_of_a_trust_anchor_ends_the_walk() {
+    let mut tsa = TestTsa::new(SIGNING_TIME);
+    tsa.cross_certificate = true;
+    for profile in [Profile::BaselineLt, Profile::BaselineLta] {
+        let s = seal(
+            &one_page("Agreement"),
+            &request(profile),
+            &p256(),
+            &tsa,
+            &TestRevocation::default(),
+        )
+        .unwrap_or_else(|e| panic!("{profile:?}: {e}"));
+        assert!(passed(&s.bytes), "{profile:?}: {:?}", ours(&s.bytes));
+    }
+}
+
 #[test]
 fn augment_and_renew() {
     let tsa = TestTsa::new(SIGNING_TIME);

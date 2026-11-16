@@ -88,6 +88,62 @@ test("at 1440 the sections are in the bar and in the tab order", async ({ page }
   expect((await tabStops(page)).some((s) => s.inNav && s.text === "Agreements")).toBe(true);
 });
 
+test("module switching: one screen at a time, heading focused and announced, title from it, scroll kept for Back (WEB-12)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 500 });
+  await signIn(page, "home");
+  await expect(page).toHaveTitle("Home · OpenSeal");
+  // Never two screens in the card, at any moment of a switch.
+  await page.evaluate(() => {
+    window.__maxViews = 0;
+    new MutationObserver(() => { window.__maxViews = Math.max(window.__maxViews, document.querySelectorAll("#main > .os-view").length); })
+      .observe(document.getElementById("main"), { childList: true });
+  });
+  // The section moves on the click; the new page's heading takes focus and is announced.
+  await page.locator('.os-nav__link[data-nav="agreements"]').click();
+  await expect(page.locator('.os-nav__link[data-nav="agreements"]')).toHaveAttribute("aria-current", "page");
+  const h1 = page.getByRole("heading", { name: "Agreements", level: 1 });
+  await expect(h1).toBeFocused();
+  await expect(page.locator("#route-status")).toHaveText("Agreements, page loaded");
+  await expect(page).toHaveTitle("Agreements · OpenSeal");
+  expect(await page.evaluate(() => window.__maxViews)).toBe(1);
+  // No whole-page entrance after a switch.
+  expect(await page.locator("#main > .os-view").evaluate((v) => getComputedStyle(v).animationName)).toBe("none");
+  // G then a letter goes to a section.
+  await page.keyboard.press("g");
+  await page.keyboard.press("t");
+  await expect(page.getByRole("heading", { name: "Templates", level: 1 })).toBeFocused();
+  await page.keyboard.press("g");
+  await page.keyboard.press("h");
+  await expect(page.getByRole("heading", { name: "Home", exact: true, level: 1 })).toBeVisible();
+  // Scroll: kept for Back, the top for a new navigation.
+  const scroller = page.locator("#main");
+  await scroller.evaluate((m) => { m.scrollTop = 200; });
+  const kept = await scroller.evaluate((m) => m.scrollTop);
+  expect(kept).toBeGreaterThan(0);
+  await page.locator('.os-nav__link[data-nav="reports"]').click();
+  await expect(page.getByRole("heading", { name: "Reports", level: 1 })).toBeVisible();
+  expect(await scroller.evaluate((m) => m.scrollTop)).toBe(0);
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Home", exact: true, level: 1 })).toBeVisible();
+  await expect.poll(() => scroller.evaluate((m) => m.scrollTop)).toBe(kept);
+});
+
+test("a section's link returns to where the user was in it; chosen there, it starts over (WEB-12)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page, "home");
+  await page.goto(app("#/agreements?status=draft"));
+  await expect(page.getByRole("heading", { name: "Agreements", level: 1 })).toBeVisible();
+  await page.locator('.os-nav__link[data-nav="home"]').click();
+  await expect(page.getByRole("heading", { name: "Home", exact: true, level: 1 })).toBeVisible();
+  const link = page.locator('.os-nav__link[data-nav="agreements"]');
+  await expect(link).toHaveAttribute("href", "#/agreements?status=draft");
+  await link.click();
+  await expect(page).toHaveURL(/#\/agreements\?status=draft$/);
+  await link.click();
+  await expect(page).toHaveURL(/#\/agreements$/);
+  await expect(link).toHaveAttribute("href", "#/agreements");
+});
+
 for (const [name, viewport] of WIDTHS) {
   test.describe(`at ${viewport.width}`, () => {
     test.use({ viewport });

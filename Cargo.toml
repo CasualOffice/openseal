@@ -24,6 +24,7 @@ members = [
     "server/casual-sign-platform-store",
     "server/casual-sign-console",
     "server/casual-sign-secrets",
+    "server/casual-sign-seclog",
     "server/casual-sign-keyd-client",
     "server/casual-sign-keyd",
     "server/casual-sign-modeld",

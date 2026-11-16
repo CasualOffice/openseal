@@ -10,13 +10,17 @@
 //!   the principal's account only, and another account's object answers exactly as a
 //!   missing one (`404 CS-API-0002`).
 //! - **Errors** are RFC 9457 problem details with stable `CS-*` codes (docs/20).
-//! - **Logs** carry the request id, method, route template, status and duration only:
-//!   never a path (ceremony paths hold tokens), query, address, user agent, name or
-//!   document content (SEC-D01).
+//! - **Logs** are one JSON line each (`casual-sign-seclog`). The access log carries the
+//!   request id, method, route template, status and duration only: never a path
+//!   (ceremony paths hold tokens), query, address, user agent, name or document
+//!   content (SEC-D01). Security events (sign-in, second factor, refusals, rate limits,
+//!   administrative changes, document reads: `security`) name principals by id or by a
+//!   keyed pseudonym (ASVS-08).
 //!
 //! The OpenAPI 3.1 document is `api/openapi.yaml`; the contract tests keep it and
 //! [`routes::table`] equal.
 
+mod anomaly;
 mod apply;
 mod auth;
 mod call;
@@ -32,12 +36,15 @@ pub mod net;
 mod passwords;
 mod preview;
 pub mod routes;
+pub mod scan;
+mod security;
 mod state;
 pub mod totp;
 pub mod web;
 
 pub mod api;
 
+pub use anomaly::{AbnormalActivity, AlertSink, AnomalyConfig, LogAlerts};
 pub use api::admin::{Bootstrapped, bootstrap, bootstrap_workspace};
 pub use api::envelopes::issue_invitation_token;
 pub use auth::{Credential, Principal, SCOPES, SecondFactor};
@@ -45,6 +52,7 @@ pub use crypto::JwtKeys;
 pub use error::{ApiError, FieldProblem};
 pub use mfa::MfaKey;
 pub use routes::{Access, Route, app, table};
+pub use scan::{Scanner, ScannerConfig};
 pub use state::{AppState, Blobs, Clock, Config, ManualClock, RateLimits, SystemClock};
 
 /// Replaces the default panic hook, which prints the panic's message (it may carry a

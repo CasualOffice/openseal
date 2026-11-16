@@ -248,6 +248,8 @@ pub struct Console {
     pub app: axum::Router,
     pub clock: TestClock,
     pub store: PlatformStore,
+    /// Every security event line the console wrote (ASVS-08).
+    pub security: casual_sign_seclog::Memory,
 }
 
 pub fn console(db: &TestDb) -> Console {
@@ -265,10 +267,14 @@ pub fn console_with(db: &TestDb, config: Config) -> Console {
         config,
     )
     .unwrap();
+    let (log, security) =
+        casual_sign_seclog::SecurityLog::memory(casual_sign_seclog::Service::Console);
+    state.set_security_log(log);
     Console {
         app: casual_sign_console::app(state),
         clock,
         store,
+        security,
     }
 }
 

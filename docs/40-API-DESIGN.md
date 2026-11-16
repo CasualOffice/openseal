@@ -251,7 +251,7 @@ is part of the public API or its compatibility promise. As built: docs/23 §5.6.
 
 ## As built (stage 2C, `casual-sign-server`)
 
-The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 102 operations (68 at stage 2C, 19 added by `WEB-06`, 9 by `WEB-19`, the rest by later rows), each with its `x-permission`
+The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 161 operations (68 at stage 2C, 19 added by `WEB-06`, 9 by `WEB-19`, the rest by later rows; counted 2026-11-13), each with its `x-permission`
 (the scope it needs, SEC-A05). The router is built from one table (`routes::table`), and a contract test keeps the
 table and the document equal in both directions, scope by scope.
 
@@ -271,7 +271,8 @@ table and the document equal in both directions, scope by scope.
 | `/templates` | `GET`, `POST` (with roles), `GET /{id}` (with documents and fields), `PATCH /{id}` (name, email subject and message, `If-Match`), and editing (`WEB-06`, below); `/templates/{id}/envelopes` is slice 3 |
 | `/ersd-versions` | `ERSD-01`. Scope `admin:account`. `POST {text, language?}` publishes `text` as the next version of `language` (`en` when absent; one more than its highest) and sets `settings.workflow_policy.ersd = {version: "<n>", hash}` in the same transaction, with `ersd.published` and `workspace.settings_changed` on the admin log; answers `201 {id, version, label, language, sha256, published_at}`, never the text. Envelopes already sent then ask for consent to the new version (consent binds version and hash). Published rows are never changed: a new text is a new version. An empty or blank text, one with a NUL, a language tag that is not 2 to 35 letters, digits and `-` starting with a letter, or an unknown member is `422 CS-API-0001`; over 100,000 bytes `413 CS-API-0006`. `GET` answers `{current, items}`: `current` the disclosure the policy names with its text (`text` null when no intact published row has that hash) or null, `items` the published versions newest first, at most 100, without text. `tests/ersd_publish.rs`; seen red without the routes (`404 CS-API-0002`) |
 | `/bulk-sends` | `UXW-04`. `POST` (scope `bulk:send`, and `envelopes:write` and `envelopes:send` as `POST /envelopes` with `status: sent` needs; `POST /{id}/send` needs the same; `403` otherwise) checks a list against a template of the account with a document and a role: CSV text (a header, then one row per envelope; a line with no value in any cell is skipped) or JSON rows, columns `<role>::name` and `<role>::email` per role, matched ignoring case and surrounding spaces. A header that does not fit is `422` (`CS-BLK-0004` missing at `/columns`, `CS-BLK-0005` unknown or repeated at `/columns/{i}`); no row, over 1,000 or unreadable CSV `422 CS-BLK-0007`. Each row's problems (`CS-BLK-0001` to `0003`, `0006`) are answered with their column; such a row is stored `failed` and never sent. `validate_only` stores nothing and answers `200 {columns, row_count, valid, rows}`; otherwise `201` the batch with its rows, `queued`. `POST /{id}/send` (its sender only, `403` otherwise) sends the next 10 pending rows, each made and sent as `POST /envelopes` does (the same code path) in its own transaction, the row locked `FOR UPDATE SKIP LOCKED` so two callers never send one row twice; a refused row is `failed` with the refusal's code and the rest go on; the caller repeats it until `counts.pending` is 0, when the batch is `completed`. `POST /{id}/cancel` leaves pending rows unsent (`409 CS-WF-0001` once finished). `GET` and `GET /{id}` (scope `envelopes:read`) show the caller's own, or every one to an administrator or a member who sees every envelope; another account's is `404`. Each sent envelope carries `bulk_send_id`. `bulk_send.completed` is not emitted yet (`UXW-47`). `tests/bulk_send.rs`; seen red without the routes (`404 CS-API-0002`) |
-| `/signing-links`, `/groups`, `/permission-profiles`, `/brands`, `/retention-policies`, `/verify` | **Not built** (their slices) |
+| `/groups`, `/permission-profiles` | Built (`UXW-07`; the rows in §As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`) below) |
+| `/signing-links`, `/brands`, `/retention-policies`, `/verify` | **Not built** (their slices) |
 | `/webhooks` | `GET`, `POST`, `GET /{id}`, `PATCH /{id}`, `DELETE /{id}` (disable), `GET /{id}/deliveries`, `POST /{id}/test`, `POST /{id}/deliveries/{d}/redeliver` (`UXW-31..33`, As built below); `secret_refs` name secrets the operator provisioned |
 | `/users`, `/api-clients` | `GET`, `POST`, `GET /{id}`, `PATCH /users/{id}`, `DELETE` (remove member; revoke client); `GET`/`PATCH /users/me` (`UXW-37`, As built below) |
 | §6 ceremony | `GET /s/{token}` (JSON; with `Accept: text/html` and not `application/json`, the web app's `sign.html`, which reads nothing and records nothing, `WEB-04`), `POST …/session`, `…/consent`, `…/authenticate` (access code), `…/otp` and `…/otp/verify` (email one-time code, SEC-A02: `recipient.auth_challenged` on sending, `auth_passed` or `auth_failed` on checking, method `email_otp`; the code is drawn and emailed by the worker job `send_email_otp` and stored only as Argon2id), `GET …/documents/{doc}/content`, `POST …/documents/{doc}/viewed`, `…/adopt`, `PUT …/fields/{field}`, `POST …/finish`, `…/approve`, `…/recipients` (an agent, intermediary or editor names later recipients not yet reached, `{recipients: [{id, name?, email?}]}`, at most 100; the engine's `RecipientEdit`, recorded as `envelope.corrected`; their view lists `later_recipients`, nobody else's; `VS-02`), `…/decline`, `…/finish-later`, `…/reassign` |
@@ -297,7 +298,7 @@ JSON, HTTP Basic or body credentials, RFC 6749 errors) and get a one-hour ES256 
 `openseal-api`), verified by `GET /.well-known/jwks.json`; the signing key comes from the secrets crate
 (`OPENSEAL_JWT_SIGNING_KEY`). Every request re-checks the credential: a revoked key or client, an expired token, a
 removed member or a disabled user is refused on its next request. A credential acts as a member and holds at most the
-scopes of that member's permission profile, narrowed by its own. **Not built:** OIDC and SAML login, WebAuthn
+scopes of that member's permission profile, narrowed by its own. **Not built:** staff OIDC and SAML login (a recipient's OpenID Connect sign-in is built, `RAUTH-01`; the staff TOTP second factor is below, `ASVS-01`), WebAuthn
 (`webauthn-rs` is MPL-2.0, outside `deny.toml`), OAuth authorization code with PKCE, the JWT bearer grant.
 
 **Requests.** RFC 9457 problems with `code`, `request_id` (also `X-Request-Id`) and JSON-pointer `errors`; the
@@ -432,8 +433,14 @@ binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised
 ## As built (`ASVS-01`, staff second factor)
 
 A staff user may add a TOTP authenticator (RFC 6238: HMAC-SHA1, six digits, 30-second steps, one step of drift either
-way); an account may require one with `settings.mfa_policy` (`PATCH /accounts/me`): `optional` (the default: only
-users who enrolled), `administrators` or `everyone`. A user with a confirmed factor owes it in every session, whatever
+way); an account chooses who must have one with `settings.mfa_policy` (`PATCH /accounts/me`): `administrators` (the
+default, also when unset: administrators and anyone who enrolled; `ASVS-31`, migration 0036), `everyone`, or
+`optional` (only users who enrolled). An administrator without a factor enrols at their next sign-in: until they do,
+every call but the sign-in steps is `403 CS-AUTH-0011` with `detail` `enrol`. An explicit choice stands: accounts that
+had written `optional` before the default changed keep it, as a recorded decision of their administrators, and
+`mfa_policy: null` removes any choice and returns the account to the default. Because the default asks for a factor,
+the server does not start without `OPENSEAL_MFA_KEY` outside development (docs/65); an administrator who loses their
+authenticator signs in with one of their recovery codes (`ASVS-32` adds replacing the factor). A user with a confirmed factor owes it in every session, whatever
 the policy, so a password reset or a new password does not bypass it. A session that owes a factor reaches only the
 routes marked `x-permission: signing-in` (`GET /auth/session`, `POST /auth/logout` and the three below); every other
 `/api/v1` call is `403 CS-AUTH-0011` with `detail` `verify` or `enrol`. API keys and access tokens are not asked for
@@ -447,7 +454,7 @@ one (they are credentials of their own, made by a member who signed in). `GET /a
 | `POST /auth/mfa/verify {code}` or `{recovery_code}` | Passes the session's factor. A TOTP code is accepted only for a step later than the last accepted one for the user, so a code works once; a recovery code is spent (case, spaces and dashes ignored) and the answer says how many are left. `401 CS-AUTH-0012` for a wrong, replayed or spent code |
 
 All three are staff sessions only (`422 CS-API-0001` for a key or token) and are rate-limited per user at the login
-rate. Not built yet: WebAuthn (`CON-13`), `administrators` as the default policy (`ASVS-31`), replacing or resetting a
+rate. Not built yet: WebAuthn (`CON-13`), replacing or resetting a
 lost factor and regenerating recovery codes (`ASVS-32`). The web app shows the code step and enrolment on the sign-in
 card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a QR code is `ASVS-33`.
 
@@ -464,6 +471,24 @@ card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a 
   cannot reach `POST /auth/login` or any other route.
 - **A panic is a problem.** A handler that panics answers `500 CS-API-0010` (`detail: panic`) with the request id;
   the panic's message is never sent, and the binary's panic hook logs only where it happened and the request id. The console answers the same way with `500 CS-CON-0014`.
+
+## As built (`ASVS-11`, malware scanning of uploads)
+
+- **Every upload is scanned first** when the operator configured clamd (`OPENSEAL_CLAMD_ADDR`, docs/65 §Malware
+  scanning): `POST /envelopes` (each document), `POST /envelopes/{id}/documents` (JSON or raw PDF), `POST
+  /templates/{id}/documents`, `PATCH /users/me` (a saved `signature` or `initials`), `POST /s/{token}/adopt` and `PUT
+  /s/{token}/fields/{field}/attachment`. Malware is `422 CS-SCAN-0001` (no detail; nothing stored); a scan that does
+  not complete is `503 CS-SCAN-0002` with `Retry-After: 30` and the reason in `detail`, unless the operator set
+  fail-open. A one-call create is refused whole when any of its documents is.
+- **Recorded.** Each refusal, and each upload admitted unscanned, appends `upload.malware_refused`,
+  `upload.unscanned_refused` or `upload.unscanned_admitted` to `GET /admin-events` (docs/23 §2.5); a document's
+  admission report says `"malware_scan": "clean"` or `"unscanned"` when a scanner is configured. Bulk send's CSV is a
+  list read into rows, never stored as a file, and is not scanned; a bulk send's documents are its template's, which
+  may have been stored before a scanner was configured, so each `POST /bulk-sends/{id}/send` that has rows pending
+  scans them again (`422 CS-SCAN-0001` sends nothing; each envelope's report records the verdict).
+- **No transaction waits on a scan.** A scan may wait up to `OPENSEAL_CLAMD_TIMEOUT_SECS`; each route authorizes in a
+  short transaction (or none), scans, then opens the transaction that stores, checking access and state again. The
+  upload's type signature is checked after the scan.
 
 ## As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`)
 

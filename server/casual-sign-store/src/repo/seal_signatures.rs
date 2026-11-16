@@ -1,4 +1,4 @@
-//! The signatures keyd made for a seal (migration 0035, `CON-09`, docs/23 §5.4): one row
+//! The signatures keyd made for a seal (migration 0037, `CON-09`, docs/23 §5.4): one row
 //! per signature, the digest keyd signed and the alias, written by the worker with the
 //! sealed bytes so the console can match keyd's operation log against them. Ids and
 //! hashes only; operational, not evidence. Insert-only.

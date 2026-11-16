@@ -26,22 +26,21 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 186 | 104 | 76 | 6 |
-| Partly | 48 | 12 | 30 | 6 |
-| Not met | 20 | 5 | 10 | 5 |
+| Met | 208 | 107 | 93 | 8 |
+| Partly | 34 | 10 | 17 | 7 |
+| Not met | 12 | 4 | 6 | 2 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
-The largest gaps: a second factor for tenant staff that accounts must opt into (`ASVS-01` built TOTP; `ASVS-31` makes it the default for administrators), no security event log for staff authentication and
-access refusals (`ASVS-08`), production deployment hardening left to the operator (`ASVS-19`), no malware scan of
-uploads (`ASVS-11`), no backup and restore drill (`ASVS-14`), and no anomaly alerting (`ASVS-13`). The evidence core is
+The largest gaps: a second factor for tenant staff beyond TOTP for administrators by default (`ASVS-01` built TOTP and `ASVS-31` made it the default for administrators; WebAuthn and replacing a lost factor remain), log shipping shown only as configuration
+(`ASVS-08A`; the security event log itself is built, `ASVS-08`), a backup and restore drill built but not yet run (`ASVS-14`), and anomaly alerting that counts per server instance and not yet envelope sends (`ASVS-13`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-09`, `ASVS-12`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-09`, `ASVS-11`, `ASVS-12`, `ASVS-24`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
@@ -53,9 +52,12 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-06 | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
 | ASVS-07 | P1 | ASVS 3.7.1, 4.3.3 | Step-up re-authentication (password or second factor within the last 5 minutes) before creating API clients or keys, granting administrator profiles, changing webhook URLs and changing the user's email |
 | ASVS-08 | P1 | ASVS 1.7.1, 1.7.2, 2.8.5, 7.1.3, 7.1.4, 7.2.1, 7.2.2, 8.3.5, 9.2.5; `SEC-D01` stays (no personal data) | Security event log: staff sign-in success and failure, logout, reset, lockout, operator TOTP rejection, rate-limit hits and every 401/403 with request id and a hashed principal; one JSON log format across server, worker, keyd and modeld; staff document downloads recorded; worker logs keyd and TSA connection failures with their code; docs/65 explains shipping logs to a remote collector |
+| ASVS-08A | P2 | ASVS 1.7.2 | Show the log-forwarding Compose override delivering to a live syslog-over-TLS collector on a Linux Docker host (found by `ASVS-08`) |
+| ASVS-08B | P2 | ASVS 7.2.2 | Ceremony refusals carry their code and recipient in `access.denied`; another account's object (answered 404) is logged as a refusal (found by `ASVS-08`) |
+| ASVS-08C | P2 | ASVS 8.3.5 | A change to an envelope or a field (create, `PATCH`, send, void, correct, resend, adding or changing fields) answers with every field's value; log it as a read of that data too, or answer without the values (found by `ASVS-08` review) |
 | ASVS-09 (Done) | P1 | ASVS 4.2.2, 13.1.5, 13.2.5 | Closed 2026-11-13: `/api/v1` answers `415 CS-API-0007` to a body that is not JSON. Was: `/api/v1` refuses a request body that is not `Content-Type: application/json` (`415`), including `POST /auth/login`, closing login CSRF by a cross-site form |
 | ASVS-10 | P2 | ASVS 12.3.4, 14.4.2 | `Content-Disposition` on API responses (`attachment` for JSON; `attachment` or `inline` with a server-made filename for documents and certificates) |
-| ASVS-11 | P1 | ASVS 12.4.2 | Malware scanning seam for uploads: an optional scanner (ICAP or ClamAV in its own container) called before admission, its verdict recorded in the audit chain |
+| ASVS-11 (Done) | P1 | ASVS 12.4.2 | Closed 2026-11-14: every upload is scanned by ClamAV's clamd in its own container before it is read or stored; malware is refused and recorded in the admin log; fail closed with an operator switch; a clean document's admission report, bound by the chain, says so. Was: Malware scanning seam for uploads: an optional scanner (ICAP or ClamAV in its own container) called before admission, its verdict recorded in the audit chain |
 | ASVS-12 (Done) | P2 | ASVS 6.2.8 | Closed 2026-11-13: comparisons call `aws_lc_rs::constant_time`. Was: Replace the hand-rolled hash comparison `same` in `-server/src/crypto.rs` (and any copy in the console) with a vetted constant-time primitive (`subtle` or `aws-lc-rs`), per CLAUDE.md: cryptography is never hand-rolled |
 | ASVS-13 | P1 | ASVS 8.1.4, 11.1.7, 11.1.8; `VS-20` | Detect and alert on abnormal activity: request and 429 rates per principal and address, authentication failure bursts, mass downloads, bulk voids; thresholds configurable; alerts to the operator's channel |
 | ASVS-14 | P1 | ASVS 8.1.5, 8.1.6; `SEC-D02` | Backups encrypted with separate keys, with a documented and tested restore drill that verifies the audit chain, admin logs and keyd's operation log after restore |
@@ -63,16 +65,16 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-16 | P1 | ASVS 8.3.2, 8.3.3; `VS-15` | Self-service export and erasure requests for staff users and signers (evidence kept as retention requires, personal data otherwise removed), and an operator privacy-notice template |
 | ASVS-17 | P2 | ASVS 1.8.2, 6.1.1, 6.1.2, 8.3.7 | Decide by ADR between application-level encryption of personal data at rest and operator storage encryption, and record what the operator must enable |
 | ASVS-18 | P1 | ASVS 8.3.8; `SEC-D03`, `VS-15` | Retention classification and purge of personal data per account policy, derived data included |
-| ASVS-19 | P1 | ASVS 1.2.2, 1.6.2, 1.9.1, 1.9.2, 1.14.1, 1.14.4, 1.14.5, 2.10.1, 9.1.1, 9.1.3, 9.2.2, 14.1.3 | Production deployment template: per-service secrets (seal key and PIN only in keyd), TLS to PostgreSQL (`sslmode=verify-full`) and the object store, the same container hardening as modeld for every service, a documented TLS edge, and a start-up refusal of an `http` public URL outside development |
+| ASVS-19 | P1 | ASVS 1.2.2, 1.6.2, 1.9.1, 1.9.2, 1.14.1, 1.14.4, 1.14.5, 2.10.1, 9.1.1, 9.1.3, 9.2.2, 14.1.3 | Built by `HRD-06` (2026-11-14): `deploy/compose.production.yml` with per-service secrets, TLS to PostgreSQL and the object store, every service hardened, checked by `tools/check-deploy.py`, and the `http` public URL refused. Left: the whole stack started on it (`HRD-01`), static database and object-store passwords (2.10.1), TLS at the edge is the operator's (9.1.1, 9.1.3). Was: Production deployment template: per-service secrets (seal key and PIN only in keyd), TLS to PostgreSQL (`sslmode=verify-full`) and the object store, the same container hardening as modeld for every service, a documented TLS edge, and a start-up refusal of an `http` public URL outside development |
 | ASVS-20 | P2 | ASVS 3.1.1, 8.3.1, 13.1.3 | Record the accepted risk of the bearer token in the signing link path (`/s/{token}`, bound to the first browser, no-referrer, route template in logs) in docs/07 `SEC-A01` and an ADR |
 | ASVS-21 | P2 | ASVS 2.2.4, 2.7.1 (L3 ceremony) | Phishing-resistant signer authentication option (a passkey for returning signers) as an alternative to SMS codes |
 | ASVS-22 | P2 | ASVS 3.6.1 (L3 ceremony) | Recipient sign-in: send `max_age` in the OIDC request and refuse an ID token whose `auth_time` is older |
 | ASVS-23 | P2 | ASVS 10.1.1, 10.2.3 to 10.2.6 (L3) | Malicious-code review for ceremony, sealing and keyd: a static scan for hard-coded credentials, time comparisons and hidden routes in CI, and a recorded manual review (feeds `SEC-REV-01`) |
-| ASVS-24 | P2 | ASVS 14.1.5 (L3 sealing, keyd) | keyd and the worker log the SHA-256 of their security configuration (allow list, client CA, trust anchors, TSA list) at start and refuse a change without a restart; the operator can compare it |
+| ASVS-24 (Done) | P2 | ASVS 14.1.5 (L3 sealing, keyd) | Closed 2026-11-14 (`HRD-06`): keyd and the worker log each setting's SHA-256 and refuse a configuration that differs from `OPENSEAL_CONFIG_MANIFEST` (`CS-KEY-0014`). Was: keyd and the worker log the SHA-256 of their security configuration (allow list, client CA, trust anchors, TSA list) at start and refuse a change without a restart; the operator can compare it |
 | ASVS-25 | P2 | ASVS 8.3.6 | Hold passwords, one-time codes and link tokens from requests in zeroizing buffers and drop them after use |
 | ASVS-26 (Done) | P1 | ASVS 7.4.3 | Closed 2026-11-13, server and console (`ASVS-34` with it). Was: A last-resort panic layer on the server answering `500` problem details with the request id (and the same in the console) |
 | ASVS-27 | P2 | ASVS 1.1.3 | A security-constraint line in docs/14 rows that add a user-facing feature (who may do it, what is refused), checked when the row is written |
-| ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key | Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
+| ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key (closed 2026-11-14) | Runbook in docs/65 §Rotation (`HRD-06`), exercised by tests for the database login, the API token key, keyd identities and webhook secrets; left: object-store credentials exercised (`HRD-11`) and the second-factor key (`HRD-12`). Was: Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
 | ASVS-29 | P2 | ASVS 2.4.5 | Optional password pepper held outside the database (a secret file through `casual-sign-secrets`), with rehash on login |
 | ASVS-30 (Done) | P2 | ASVS 5.2.3 | Closed 2026-11-13: the test went red without the guard and docs/07 `SEC-M02` was updated. Was: docs/07 `SEC-M02` still read Planned although `-worker/src/email.rs` refuses CR/LF and encodes headers: confirm its test goes red without the guard and update the row |
 | ASVS-34 (Done) | P2 | ASVS 7.4.3 | Closed 2026-11-13 with `ASVS-26`. Was: The console's last-resort panic layer answering a `500` problem, as the server's since `ASVS-26` |
@@ -102,9 +104,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1.2.1 | 2 | All | Low-privilege OS accounts per component | Met | `deploy/Dockerfile`: `USER nonroot` (server, worker, modeld), `USER keyd`; modeld `cap_drop: [ALL]`, `no-new-privileges`, read-only root (`docker-compose.yml`) | — |
-| 1.2.2 | 2 | All | Component-to-component communication authenticated | Partly | keyd and modeld: mTLS with client allow-list (`-keyd/tests/mtls.rs`); PostgreSQL and S3 by password from secret files, no TLS in the compose file | ASVS-19 |
+| 1.2.2 | 2 | All | Component-to-component communication authenticated | Met | keyd and modeld: mTLS with client allow-list (`-keyd/tests/mtls.rs`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): PostgreSQL by SCRAM over TLS with `sslmode=verify-full`, the object store by signed requests over TLS verified against the internal CA (`-store/tests/blob_s3_tls.rs`) | — |
 | 1.2.3 | 2 | All | One vetted authentication mechanism | Met | Staff: Argon2id password, session cookie plus CSRF token, API keys and OAuth client credentials, all resolved in `-server/src/auth.rs`; signers: link token bound to a browser cookie (`-server/src/ceremony.rs`) | — |
-| 1.2.4 | 2 | All | All authentication pathways equally strong | Partly | Login, password reset and invite acceptance share rate limits and Argon2id (`-server/src/api/admin.rs` `login_limit`); staff TOTP is required only where an account's `mfa_policy` asks for it or the user enrolled (`ASVS-01`, `-server/tests/mfa.rs`), while operators must always use TOTP (`-console/src/totp.rs`) | ASVS-01, ASVS-31 |
+| 1.2.4 | 2 | All | All authentication pathways equally strong | Partly | Login, password reset and invite acceptance share rate limits and Argon2id (`-server/src/api/admin.rs` `login_limit`); staff TOTP is required of every administrator by default (`ASVS-31`, `-server/tests/mfa.rs` `a_fresh_accounts_administrator_owes_a_factor_with_no_setting`), of everyone where an account's `mfa_policy` asks, and of any user who enrolled, while operators must always use TOTP (`-console/src/totp.rs`); other staff, and administrators of an account that explicitly chose `optional`, may sign in with a password alone, and WebAuthn is not built | ASVS-01 |
 
 **V1.4 Access Control Architecture**
 
@@ -129,17 +131,17 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.6.1 | 2 | All | Key management policy and lifecycle | Partly | docs/31 §5 (keyd), docs/65 production checklist; seal key rotation designed, not built (`CON-10`); API token key rotation not documented | CON-10, ASVS-28 |
-| 1.6.2 | 2 | All | Key material protected in vaults; secrets out of code | Partly | Seal key only in keyd behind PKCS#11 (`SEC-S04`); secrets from files (`casual-sign-secrets`); the development compose file mounts one shared secrets volume, seal key included, into every service | ASVS-19 |
-| 1.6.3 | 2 | All | Keys and passwords replaceable with a re-encryption process | Partly | Passwords and API clients replaceable through the API; database and S3 credentials replaceable by redeploying secret files; no documented rotation runbook for the JWT signing key and keyd TLS identities | ASVS-28 |
+| 1.6.1 | 2 | All | Key management policy and lifecycle | Met | docs/31 §5 (keyd), docs/65 production checklist and §Rotation: the seal key rotates by two key custodians with a start time, keyd serving both keys meanwhile (`CON-10`, migration 0035, tests seen red); database login, token key, keyd identities and webhook secrets with tests; the second-factor key's rotation is `HRD-12` (1.6.3) | — |
+| 1.6.2 | 2 | All | Key material protected in vaults; secrets out of code | Met | Seal key only in keyd behind PKCS#11 (`SEC-S04`); secrets from files (`casual-sign-secrets`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s) each secret is mounted only into the services that read it, the seal PIN and chain into keyd alone (`SEC-H02`); the evaluation compose file still shares one volume | — |
+| 1.6.3 | 2 | All | Keys and passwords replaceable with a re-encryption process | Partly | Passwords and API clients replaceable through the API; rotation runbooks with tests for the database login (no restart, `-store/tests/rotation.rs`), the API token key (`kid` overlap), keyd TLS identities and webhook secrets (docs/65 §Rotation); the second-factor key cannot be rotated yet | HRD-12 |
 | 1.6.4 | 2 | All | Client-side secrets treated as insecure | Met | No secret in the web app; the CSRF token is per session, the session cookie is `HttpOnly`; WASM verifier holds no key | — |
 
 **V1.7 Errors, Logging and Auditing Architecture**
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.7.1 | 2 | All | Common logging format | Partly | `tracing` in every binary (`-server/src/main.rs`); plain text, not one structured (JSON) format across server, worker, keyd and modeld | ASVS-08 |
-| 1.7.2 | 2 | All | Logs shipped securely to a remote system | Not met | No log forwarding configured or documented beyond "OTLP endpoint" in docs/65 checklist; not built | ASVS-08 |
+| 1.7.1 | 2 | All | Common logging format | Met | One JSON line per event in every host binary, `ts`, `level`, `service`, `event` first (`server/casual-sign-seclog`; server and console through its `tracing` layer, modeld behind its fixed filter, worker and keyd directly), the binaries' own startup failures and development-key warnings included (`start_failed`, `development_*_key`; each service's `tests/startup_log.rs` runs the binary and parses every standard-error line); docs/65 §Logs. Checked 2026-11-14 (`ASVS-08`) | — |
+| 1.7.2 | 2 | All | Logs shipped securely to a remote system | Partly | Standard error only, shipped by the container runtime: `deploy/compose.log-forwarding.yml` puts every service on Docker's `syslog` driver over mutual TLS (RFC 5424, `tcp+tls`), the collector may forward as OTLP (docs/65 §Logs); `docker compose config` checked. Delivery to a live TLS collector not yet shown | ASVS-08A |
 
 **V1.8 Data Protection and Privacy Architecture**
 
@@ -152,8 +154,8 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.9.1 | 2 | All | Components encrypt communication | Partly | keyd and modeld mTLS (rustls, TLS 1.3); server to PostgreSQL and S3 unencrypted in the compose file | ASVS-19 |
-| 1.9.2 | 2 | All | Components verify each other's authenticity | Partly | keyd/modeld verify client certificates against a CA and an allow-list (`-keyd/tests/mtls.rs` `a_client_not_on_the_allow_list_is_refused_and_logged`); database and object store not authenticated by certificate | ASVS-19 |
+| 1.9.1 | 2 | All | Components encrypt communication | Met | keyd and modeld mTLS (rustls, TLS 1.3); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): PostgreSQL TLS 1.3 only with a `hostssl`-only `hba_file` (a plain connection refused, checked by running, docs/65), the S3 gateway on TLS | — |
+| 1.9.2 | 2 | All | Components verify each other's authenticity | Met | keyd/modeld verify client certificates against a CA and an allow-list (`-keyd/tests/mtls.rs` `a_client_not_on_the_allow_list_is_refused_and_logged`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s) the server and worker verify PostgreSQL's and the object store's certificates against the internal CA (`verify-full`; `OPENSEAL_S3_CA`), and they authenticate by SCRAM and signed requests | — |
 
 **V1.10 Malicious Software Architecture**
 
@@ -167,7 +169,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 1.11.1 | 2 | All | Components documented by function and security role | Met | docs/19 crate table and dependency DAG; docs/02 | — |
 | 1.11.2 | 2 | All | High-value flows not shared unsynchronized state | Met | Workflow commands run in one database transaction per command; audit chain head locked (`-store/src/repo/audit.rs`); rate limiter behind a mutex that fails closed (`-server/src/state.rs`) | — |
-| 1.11.3 | 3 | Ceremony, sealing, keyd | L3 (ceremony, sealing, keyd): high-value flows thread-safe against TOCTOU | Met | Ceremony: each call one transaction with the recipient row; sealing: job claimed once (`-worker/src/jobs.rs`), crash points tested (`-worker/tests/process_crash.rs`); keyd: op-log line synced before a signature is released (`-keyd/src/oplog.rs`) | — |
+| 1.11.3 | 3 | Ceremony, sealing, keyd | L3 (ceremony, sealing, keyd): high-value flows thread-safe against TOCTOU | Met | Ceremony: each call one transaction with the recipient row; sealing: job claimed once (`-worker/src/jobs.rs`), crash points tested (`-worker/tests/process_crash.rs`), and a seal recorded only under the job's live lease, so a worker paused past its lease while another took over writes nothing (`HRD-01`, `a_worker_frozen_mid_seal_past_its_lease_writes_nothing_and_the_seal_happens_once`, seen red without the fence); keyd: op-log line synced before a signature is released (`-keyd/src/oplog.rs`) | — |
 
 **V1.12 Secure File Upload Architecture**
 
@@ -180,11 +182,11 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.14.1 | 2 | All | Segregation of components by trust level | Partly | keyd and modeld separate processes; modeld on an `internal: true` network; console on a private listener (docs/23 §5); compose file does not segregate server from keyd's secrets volume | ASVS-19 |
+| 1.14.1 | 2 | All | Segregation of components by trust level | Met | keyd and modeld separate processes; modeld on an `internal: true` network; console on a private listener (docs/23 §5); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): internal `data` and `signing` networks, keyd's PIN, chain and identity mounted into keyd alone | — |
 | 1.14.2 | 2 | All | Signed binaries, trusted deployment connections | Partly | Release images pushed with SBOM and provenance attestation (`.github/workflows/release.yml`); images not signed with cosign (`SEC-C02` Planned) | ASVS-15 |
 | 1.14.3 | 2 | All | Build warns of out-of-date or insecure components | Met | `cargo deny check` and `cargo audit --deny warnings` in CI job `dependency-policy`; `SEC-C01` | — |
-| 1.14.4 | 2 | All | Build verifies secure deployment | Partly | CI builds and tests; `tools/ci-local.sh`; no automated check of a production deployment's configuration | ASVS-19 |
-| 1.14.5 | 2 | All | Deployments sandboxed/network isolated | Partly | modeld sandboxed (`internal: true`, `cap_drop: [ALL]`, read-only); other services not given the same hardening in compose | ASVS-19 |
+| 1.14.4 | 2 | All | Build verifies secure deployment | Met | CI builds and tests; `tools/check-deploy.py` checks the production profile's configuration on every CI run, its rules each shown to fail by `--self-test` (`HRD-06`) | — |
+| 1.14.5 | 2 | All | Deployments sandboxed/network isolated | Met | Every service in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s): non-root, read-only root, `cap_drop: [ALL]`, `no-new-privileges`, resource limits; database, object store and keyd on internal networks | — |
 | 1.14.6 | 2 | All | No deprecated client technologies | Met | Plain ES modules, no plugins, no Flash/ActiveX/Java; CSP `object-src 'none'` (`-server/src/web.rs` `PAGE_CSP`) | — |
 
 ### V2 Authentication
@@ -210,7 +212,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2.2.1 | 1 | All | Anti-automation against credential stuffing and brute force | Partly | Login limited per login name and per client address (`login_limit`; `-server/tests/threats.rs` `sign_in_attempts_are_limited_per_client_address_across_names`); unknown emails cost a wrong password's time (`dummy_phc`); staff TOTP attempts limited per user as logins (`-server/src/api/mfa.rs`), the factor opt-in per account until `ASVS-31`; no breached-password check | ASVS-31, ASVS-02 |
+| 2.2.1 | 1 | All | Anti-automation against credential stuffing and brute force | Met | Login limited per login name and per client address (`login_limit`; `-server/tests/threats.rs` `sign_in_attempts_are_limited_per_client_address_across_names`); unknown emails cost a wrong password's time (`dummy_phc`); staff TOTP attempts limited per user as logins (`-server/src/api/mfa.rs`), a second factor required of administrators by default (`ASVS-31`, `-server/tests/mfa.rs`); breached passwords refused (`ASVS-02`, `-server/tests/self_service.rs`) | — |
 | 2.2.2 | 1 | All | Weak authenticators (SMS, email) only secondary | Met | Staff have no SMS/email login factor; signers' email/SMS codes are an extra factor on top of the link (`-server/src/ceremony.rs` `otp_send`) | — |
 | 2.2.3 | 1 | All | Notifications after authentication detail changes | Met | A password set from an invitation, changed by the user or an administrator, or reset, and a factor added, each queue one `send_security_notice` email in the same transaction, with no secret (`-worker/tests/security_notice.rs`, seen red; `ASVS-04`) | ASVS-04 |
 | 2.2.4 | 3 | Ceremony, sealing, keyd | L3 (ceremony): phishing-resistant authentication | Not met | Signer methods: link, access code, email/SMS/voice code, OIDC sign-in (`idp.rs`); none is phishing-resistant (no WebAuthn) | ASVS-21 |
@@ -275,7 +277,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.8.2 | 2 | All | TOTP seeds highly protected | Met | Operators' seeds sealed with AES-256-GCM under `OPENSEAL_CONSOLE_MFA_KEY`, operator id as associated data; the database holds only the sealed seed (`-console/src/crypto.rs`); staff seeds likewise under `OPENSEAL_MFA_KEY` with the user id (`-server/src/mfa.rs`) | — |
 | 2.8.3 | 2 | All | Approved algorithms for OTP | Met | HMAC-SHA1 TOTP per RFC 6238 vectors (`-console/src/totp.rs` tests); signer codes from `aws_lc_rs::rand` | — |
 | 2.8.4 | 2 | All | TOTP used once within its validity | Met | `platform.operator_mfa.last_step`: a code is accepted only for a step later than the last (`migrations/0017_operators.sql`); `-console/tests/api.rs` `operators_enrol_and_sign_in_with_a_single_use_second_factor` replays the same code on a new session and is refused; staff: `users.totp_last_step` (`migrations/0032_staff_mfa.sql`), `-server/tests/mfa.rs` refuses a replayed code, seen red | — |
-| 2.8.5 | 2 | All | Reused TOTP logged and rejected | Partly | Rejected by `last_step`; the rejection is not written to a security log | ASVS-08 |
+| 2.8.5 | 2 | All | Reused TOTP logged and rejected | Met | Rejected by `last_step`, and logged: `auth.mfa` failure with `reason: reused` for staff (`-server/src/api/mfa.rs`) and operators (`-console/src/api.rs`); `-server/tests/security_log.rs`, `-console/tests/security_log.rs` (the console's reason seen red when removed) | — |
 | 2.8.6 | 2 | All | Physical OTP generators revocable | N/A | No physical generators issued | — |
 | 2.8.7 | 2 | All | Biometrics only as secondary factor | N/A | No biometric authenticators | — |
 
@@ -376,7 +378,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 4.3.1 | 1 | All | Administrative interfaces use MFA | Partly | Platform console: password plus mandatory TOTP (`-console/src/lib.rs`); tenant administrators: TOTP when the account's `mfa_policy` is `administrators` or `everyone` (`-server/tests/mfa.rs`), not yet by default | ASVS-31 |
+| 4.3.1 | 1 | All | Administrative interfaces use MFA | Met | Platform console: password plus mandatory TOTP (`-console/src/lib.rs`); tenant administrators: TOTP by default (`mfa_policy` unset reads as `administrators`, migration 0036; `-server/tests/mfa.rs` `a_fresh_accounts_administrator_owes_a_factor_with_no_setting`), and the server does not start without the key that seals the seeds (`-server/tests/startup.rs`). An account's administrators may explicitly choose `optional` (docs/40 §2) | — |
 | 4.3.2 | 1 | All | No directory browsing or metadata exposure | Met | Web app read into memory at start, only the web app's kinds of file served (`-server/src/web.rs`, test `only_the_web_apps_kinds_of_file_are_served`); test folders and Node manifests skipped | — |
 | 4.3.3 | 2 | All | Step-up or adaptive authorization for high-value actions | Not met | None | ASVS-07 |
 
@@ -483,15 +485,15 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 7.1.1 | 1 | All | No credentials or payment details logged | Met | Request log fields: id, method, route template, status, time (`-server/src/http.rs`); secrets `Debug` redacted (`casual-sign-secrets`) | — |
 | 7.1.2 | 1 | All | No other sensitive data logged | Met | Typed errors with ids and counts only (`error.rs`, `SEC-D01`); client IP never logged (`net.rs`); modeld log scrub test (`-modeld/tests/log_scrub.rs`) | — |
-| 7.1.3 | 2 | All | Security-relevant events logged | Partly | Admin changes in the hash-chained admin log (`-store/src/admin_log.rs`); envelope events in the audit chain; staff login success and failure only as an HTTP status in the request log | ASVS-08 |
-| 7.1.4 | 2 | All | Log events carry investigation detail | Partly | Request id, route, status, duration; no principal identifier on staff authentication outcomes | ASVS-08 |
+| 7.1.3 | 2 | All | Security-relevant events logged | Met | Security events (`-server/src/security.rs`, `-console/src/security.rs`, keyd, worker, modeld): sign-in, sign-out, second factor, password reset and change, invitation, token, lockout, every 401/403/429, refused uploads, administrative changes, document reads, key use, refused mTLS callers, back-end failures; each service's `tests/security_log.rs` shows every kind it lists emitted (seen red); admin and envelope events also stay in their hash chains | — |
+| 7.1.4 | 2 | All | Log events carry investigation detail | Met | Each security event names the request id, route template, refusal code, account, principal (user, client, operator or recipient id; a keyed pseudonym for an unverified e-mail or client id) and the client address as a keyed pseudonym (`casual-sign-seclog`) | — |
 
 **V7.2 Log Processing**
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 7.2.1 | 2 | All | Authentication decisions logged | Partly | Ceremony authentication decisions recorded in the audit chain (`recipient.auth_passed`/`auth_challenged`); staff login decisions only as status codes | ASVS-08 |
-| 7.2.2 | 2 | All | Access control decisions logged, failures always | Partly | Refusals answer RFC 9457 errors and appear as 401/403/404 in the request log without the principal | ASVS-08 |
+| 7.2.1 | 2 | All | Authentication decisions logged | Met | Ceremony decisions in the audit chain; staff and operator sign-in, second factor, reset, invitation and token decisions as `auth.*` security events with outcome and principal (`-server/tests/security_log.rs`, `-console/tests/security_log.rs`) | — |
+| 7.2.2 | 2 | All | Access control decisions logged, failures always | Partly | Every 401 and 403 is an `access.unauthenticated` or `access.denied` event with request id, code and principal; another account's object answers 404 (not disclosed) and is not logged as a refusal; a wrong access code's bare 403 carries no code | ASVS-08B |
 
 **V7.3 Log Protection**
 
@@ -519,9 +521,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 8.1.1 | 2 | All | Sensitive data not cached in intermediaries | Met | `Cache-Control: no-store` on every API response (`http.rs`; `-server/tests/threats.rs` `every_kind_of_response_carries_the_security_headers...`) | — |
 | 8.1.2 | 2 | All | Server-side cached/temporary copies protected | Met | No disk caches of documents; blobs in the store under the tenancy model; modeld derived data keyed by account (`SEC-I06`) | — |
 | 8.1.3 | 2 | All | Minimal request parameters | Met | Ids in paths, typed bodies; no hidden fields carrying authorization | — |
-| 8.1.4 | 2 | All | Detect and alert on abnormal request numbers | Not met | Rate limits answer 429 (`-server/tests/auth.rs` `rate_limits_answer_429_with_retry_after`), but nothing detects or alerts | ASVS-13 |
-| 8.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): regular backups and test restores | Not met | Not built (`SEC-D02` Planned slice 20); docs/65 asks the operator for PITR backups | ASVS-14 |
-| 8.1.6 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backups stored securely | Not met | As 8.1.5 | ASVS-14 |
+| 8.1.4 | 2 | All | Detect and alert on abnormal request numbers | Met | Rate limits answer 429 (`-server/tests/auth.rs` `rate_limits_answer_429_with_retry_after`); the server counts requests and `429`s per principal and per address over a sliding window and raises one `alert.abnormal_activity` event and one operator alert per burst (`-server/src/anomaly.rs`; `-server/tests/anomaly.rs`, seen red; docs/65 §Abnormal activity, with collector rules for several instances; `SEC-D07`) | — |
+| 8.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): regular backups and test restores | Partly | Built (`ASVS-14`): `tools/backup/openseal_backup.py` takes scheduled backups (database snapshot, blobs, keyd's log) and restores only into a fresh install, then `casual-sign-server verify-evidence` rebuilds every chain (the operator log too) and reads back every blob the evidence names: documents, certificates of completion, signature captures and their images, logos and attachments; the backup itself refuses an export lacking any of them (`-store/tests/evidence.rs`, `-server/tests/backup_commands.rs`, `tools/backup/test_openseal_backup.py`; docs/65 §Backups and restore). The restore drill (`tools/backup/drill.sh`, CI job `backup-drill`) is written but has not yet been run to completion, so the test restore is not yet evidenced | ASVS-14 |
+| 8.1.6 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backups stored securely | Partly | Built (`ASVS-14`): CMS AuthEnvelopedData (AES-256-GCM, RSA-OAEP-SHA-256) for an offline recipient key, manifest signed with Ed25519 by a key only the backup host holds (verifiers hold its public half, so they cannot forge a backup a restore would run), roles script limited to role statements with no psql meta-command, no private key or secret in a backup; every check runs on the bytes then used (manifest, signature and payload read from the store once, into a private directory; only that copy decrypted); a flipped payload byte, an edited or re-signed manifest, a payload or manifest swapped in the store between check and use, another key, a roles script with `\!` or a `$` in a role name, and a hostile tar entry are refused (`tools/backup/test_openseal_backup.py`). Partly until the drill has run | ASVS-14 |
 
 **V8.2 Client-side Data Protection**
 
@@ -539,7 +541,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 8.3.2 | 1 | All | Users can export or remove their data | Not met | No self-service export or erasure (VS-15 enterprise data controls) | ASVS-16 |
 | 8.3.3 | 1 | All | Clear language about personal data use | Partly | ERSD disclosure and consent for signers (`/s/{token}/disclosure`, docs/09); no privacy notice template for operators | ASVS-16 |
 | 8.3.4 | 1 | All | Sensitive data identified with a handling policy | Met | docs/07 data classification; docs/22 marks personal fields (`Personal<T>` wrapper in the store) | — |
-| 8.3.5 | 2 | All | Access to sensitive data audited | Partly | Signer document views recorded (`/s/{token}/documents/{doc}/viewed`); staff downloads of documents not recorded | ASVS-08 |
+| 8.3.5 | 2 | All | Access to sensitive data audited | Met | Signer document views recorded (`/s/{token}/documents/{doc}/viewed`); staff reads of a document, combined PDF, certificate, attachment, form data, audit trail, a document's analysis (an envelope's or a template's), the analysis suggestions (values read from the text), the envelope's fields or one field, or the envelope itself (which embeds every field's value) are `data.document_read` events with the user and the ids (`-server/src/security.rs` `classify`; `-server/tests/security_log.rs`, including `reads_of_analysis_suggestions_and_fields_are_document_reads`, which requests each of these routes). A change to an envelope or a field, whose answer also carries the field values, is not yet logged as a read (`ASVS-08C`) | ASVS-08C |
 | 8.3.6 | 2 | All | Sensitive data in memory overwritten | Partly | Secrets read through `Secret` wiped on drop (`casual-sign-secrets`); request passwords and codes are plain `String`s | ASVS-25 |
 | 8.3.7 | 2 | All | Encryption of required data with approved algorithms | Partly | As 6.1.1 | ASVS-17 |
 | 8.3.8 | 2 | All | Retention classification and deletion | Not met | Retention policies not built (`SEC-D03`, VS-15) | ASVS-18 |
@@ -559,10 +561,10 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 9.2.1 | 2 | All | Trusted certificates on connections | Met | Outbound HTTPS (webhooks, OIDC, SMS gateway, TSA) verified against system roots; keyd/modeld against the configured CA | — |
-| 9.2.2 | 2 | All | TLS for all inbound and outbound connections | Partly | Webhooks and OIDC `https` only (HTTP to loopback for a same-host IdP); PostgreSQL and S3 not over TLS in compose; TSA URLs may be HTTP (RFC 3161 responses are signed) | ASVS-19 |
+| 9.2.2 | 2 | All | TLS for all inbound and outbound connections | Partly | Webhooks and OIDC `https` only (HTTP to loopback for a same-host IdP); PostgreSQL and the object store over TLS in the production profile (`HRD-06`); TSA URLs may be HTTP (RFC 3161 responses are signed) | ASVS-19 |
 | 9.2.3 | 2 | All | Encrypted, authenticated connections to external systems | Met | As 9.2.1; keyd mutual TLS | — |
 | 9.2.4 | 2 | All | OCSP stapling | N/A | At the operator's edge; seal-time revocation checks are separate (`SEC-S11`) | — |
-| 9.2.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backend TLS failures logged | Partly | keyd refuses a bad client at the handshake and records allow-list refusals in its op log; the worker's keyd and TSA connection failures surface as job errors without a dedicated log line | ASVS-08 |
+| 9.2.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backend TLS failures logged | Met | keyd refuses a bad client at the handshake and records allow-list refusals in its op log, and logs both as `transport.caller_refused` (`-keyd/tests/security_log.rs`); the worker logs keyd's and each TSA's failures as `transport.backend_failed` with `CS-KEY-*` or `CS-WRK-0018` (`-worker/tests/security_log.rs`) | — |
 
 ### V10 Malicious Code
 
@@ -602,9 +604,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 11.1.3 | 1 | All | Limits on business actions | Met | Plan quotas (`-store/src/quota.rs`), OTP 5 per hour, envelope size caps (docs/21) | — |
 | 11.1.4 | 1 | All | Anti-automation for excessive calls | Met | Per-principal API, per-link and per-address ceremony limits (`-server/tests/threats.rs` `ceremony_calls_are_limited_per_link_and_per_client_address`) | — |
 | 11.1.5 | 1 | All | Limits against business risks | Met | Access-code lockout (`-server/tests/threats.rs` `an_access_code_locks_after_the_accounts_attempts...`); voided envelopes open nothing | — |
-| 11.1.6 | 2 | All | No TOCTOU or race conditions | Met | Quotas by conditional update (`SEC-U01`); chain head locked; workflow commands transactional | — |
-| 11.1.7 | 2 | All | Monitor unusual business events | Not met | Not built (VS-20 operations) | ASVS-13 |
-| 11.1.8 | 2 | All | Configurable alerting on automated attacks | Not met | Not built | ASVS-13 |
+| 11.1.6 | 2 | All | No TOCTOU or race conditions | Met | Quotas by conditional update (`SEC-U01`); chain head locked; workflow commands transactional; the seal's record fenced by the job lease (`SEC-S12`, `HRD-01`) | — |
+| 11.1.7 | 2 | All | Monitor unusual business events | Partly | Mass document reads and runs of voids per principal and address are counted and alerted (`-server/src/anomaly.rs`, docs/65 §Abnormal activity); envelope sends and bulk sends are not counted, and the console has no detector | ASVS-13 |
+| 11.1.8 | 2 | All | Configurable alerting on automated attacks | Met | Authentication-failure, `403`, `429` and request bursts alert per principal and address, thresholds, window, cooldown and alert rate set by `OPENSEAL_ALERT_*` (docs/65 §Abnormal activity); one alert per burst, bounded memory (`-server/tests/anomaly.rs`, `anomaly.rs` unit tests, seen red; `SEC-D07`) | — |
 
 ### V12 Files and Resources
 
@@ -638,7 +640,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 12.4.1 | 1 | All | Uploads stored outside the web root | Met | Blob store separate from `webapp/`, which is read into memory at start (`web.rs`) | — |
-| 12.4.2 | 1 | All | Uploads scanned for malware | Not met | No antivirus scan; PDFs are normalized to fresh files with active content removed (`SEC-P08`, `SEC-P12`) | ASVS-11 |
+| 12.4.2 | 1 | All | Uploads scanned for malware | Met | Every upload (documents, template documents, signer attachments, adopted signature images, saved profile marks) is streamed to ClamAV's clamd (`INSTREAM`, its own container, Compose profile `production`) before it is read or stored, outside any database transaction; a bulk send scans its template's documents again; malware refused `422 CS-SCAN-0001` and recorded in the admin log, fail closed (`503 CS-SCAN-0002`) with an operator switch (`-server/src/scan.rs`, `tests/malware.rs` with EICAR against a fake clamd, and a real one where `OPENSEAL_TEST_CLAMD_ADDR` is set (not yet in CI, `SCAN-04`), seen red 2026-11-14; docs/07 `SEC-P17`). Scanning is on when the operator sets `OPENSEAL_CLAMD_ADDR` (docs/65 §Malware scanning); PDFs are still normalized (`SEC-P08`, `SEC-P12`) | ASVS-11 (Done) |
 
 **V12.5 File Download**
 
@@ -698,9 +700,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 14.1.1 | 2 | All | Secure, repeatable build and deploy | Partly | Pinned toolchain (`rust-toolchain.toml`), `--locked` builds, images pinned by digest; images not signed | ASVS-15 |
 | 14.1.2 | 2 | All | Compiler protections and warnings | Met | Memory-safe Rust; `overflow-checks = true` in release; clippy `-D warnings` in CI | — |
-| 14.1.3 | 2 | All | Server configuration hardened | Partly | Security headers on every response; production hardening left to docs/65 checklist without a hardened template | ASVS-19 |
+| 14.1.3 | 2 | All | Server configuration hardened | Met | Security headers on every response; the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s) hardens every service (`SEC-H01`) | — |
 | 14.1.4 | 2 | All | Automated redeployment and recovery | Met | `docker-compose.yml`, release workflow; `migrate` step (docs/65 §Upgrades) | — |
-| 14.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): integrity of security-relevant configuration verifiable | Not met | keyd's allow list, client CA and trust anchors are files with no recorded digest; console changes to TSA and seal profile are two-person (`SEC-X05`, designed) | ASVS-24 |
+| 14.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): integrity of security-relevant configuration verifiable | Met | keyd and the worker log the SHA-256 of each security setting and of all of them at start and, with `OPENSEAL_CONFIG_MANIFEST` (required by the production profile), refuse to start on any difference (`CS-KEY-0014`; `-keyd/tests/config_integrity.rs`, `-worker/tests/config_manifest.rs`, seen red; `SEC-H04`). The manifests cover keyd's operations log path and the worker's base URL for signer links (bearer tokens), SMTP host, port, user and security, and object store bucket. Console TSA and seal alias changes are two-person (`CON-07`, `CON-10`) | — |
 
 **V14.2 Dependency**
 

@@ -1,6 +1,6 @@
 //! Key monitoring (docs/23 §5.4): alerts raised by the certificate expiry scan
 //! (`CON-08`) and reconciliation runs of keyd's signatures against the seals recorded
-//! (`CON-09`, migration 0035). The console reads seal digests only through
+//! (`CON-09`, migration 0037). The console reads seal digests only through
 //! `platform.seal_digests` and `platform.seal_digests_of`, definer functions returning
 //! envelope ids, digests and times; it writes `platform.alerts` and
 //! `platform.reconciliation_runs`, both append-only.

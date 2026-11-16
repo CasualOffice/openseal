@@ -467,11 +467,11 @@ export function mountUse(view, ctx, [rawId]) {
             const p = f.placement;
             if (f.document_id !== d.id || !p || p.page !== n || !colourOf.has(f.role_id)) continue;
             const box = h("span", { class: `os-use__field os-r${colourOf.get(f.role_id)}`, attrs: { "aria-hidden": "true", title: nameOf.get(f.role_id) } });
-            Object.assign(box.style, { left: `${p.x * scale}px`, top: `${p.y * scale}px`, width: `${p.width * scale}px`, height: `${p.height * scale}px` });
+            Object.assign(box.style, { left: `${p.x * scale}px`, top: `${p.y * scale}px`, width: `${p.width * scale}px`, height: `${p.height * scale}px` }); // px-ok: PDF points × scale
             page.append(box);
           }
         };
-        docsCard.append(pdfPreview({ load: () => ctx.api.templates.documentContent(tp.id, d.id), name: d.name, height: 520, decorate }).el);
+        docsCard.append(pdfPreview({ load: () => ctx.api.templates.documentContent(tp.id, d.id), name: d.name, height: 32.5, decorate }).el);
       }
     } else {
       docsCard.append(h("div", { class: "os-card" }, h("p", { class: "os-muted", attrs: { "data-testid": "use-no-docs" }, text: t("use.no-docs") })));

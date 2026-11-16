@@ -474,8 +474,9 @@ keyed by the user's own live session of the current account change them: `opense
 `openseal_begin_own_totp` (only while unconfirmed), `openseal_confirm_own_totp`, `openseal_verify_own_totp` and
 `openseal_use_own_recovery_code` (`Sessions::own_totp` and siblings). `staff_sessions` gains `mfa_at`, when the session
 passed its factor (a workspace switch carries it); `openseal_resolve_staff_session` now also answers it, whether the
-user enrolled, and the account's `settings.mfa_policy` (`optional` when unset; an unknown value reads as `everyone`).
-No new table.
+user enrolled, and the account's `settings.mfa_policy` (an unknown value reads as `everyone`). When unset it reads as
+`administrators` since migration 0036 (`ASVS-31`; it was `optional`): the default lives in that function alone, so no
+row was rewritten, and an account's explicit `optional` is kept. No new table.
 
 ### Designed (ADR-028): tenancy with organizations
 
@@ -505,13 +506,14 @@ the rules above, and what does not:
   idempotent by source), `usage_counters`.
 - **Schema `platform`** (operators, approvals, plans, TSA, trust anchors, seal profiles, alerts) is reached by the
   console's role `openseal_console`, which has no grant on any `public` table.
+- **Seal profiles (built, `CON-10`, migration 0035):** `platform.seal_profiles` (id, `active_alias` as keyd's alias rule, `active_from`, `changed_at`, the approval that made it, unique), insert-only, `active_from >= changed_at`; the alias in force at an instant is the latest `active_from` not after it. Written only by `platform.apply_key_change` for action `seal.activate` (payload `{id, alias, active_from}`, whole seconds UTC, or a null `active_from` for "from the apply", stored as the apply time). `openseal_seal_alias(at)` (definer, `openseal_app` only) returns the alias, approval, start and whether the approval is spent when the version was applied, granted before then by another key custodian with a fresh second factor (judged as given: the approver's later disabling or loss of the role does not change it) and recorded as `operator.seal.activated`.
 - **TSA endpoints (built, `CON-07`, migration 0034):** `platform.tsa_endpoints` (id, URL `http`/`https`, policy
   OID, priority 0 to 1000, enabled, expected TSA certificate SHA-256, the approval that made the version) and
   `platform.approval_payloads` (insert-only: the whole payload of a key change, re-hashed at apply). Written only by
   `platform.apply_key_change` after `request_key_change` and `grant_key_change` by two key custodians (`OS012` →
   `CS-CON-0006` for a payload that fails its checks); `approval_requests.action` gains `tsa.set` and `tsa.remove`. The
   worker reads only `openseal_tsa_endpoints()` (enabled rows: URL, policy OID, certificate hash, in order).
-- **Seal reconciliation (built, `CON-09`, migration 0035):** tenant table `seal_signatures` (account, envelope,
+- **Seal reconciliation (built, `CON-09`, migration 0037):** tenant table `seal_signatures` (account, envelope,
   digest 32/48/64 bytes, keyd alias, time; key account, envelope, digest; insert-only from the worker, in the
   transaction that stores the sealed bytes); `platform.seal_digests(from, to)` and `platform.seal_digests_of(ids)`,
   definer functions returning envelope ids, digests and times to the console only; `platform.reconciliation_runs`

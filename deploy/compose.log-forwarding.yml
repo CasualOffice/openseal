@@ -1,0 +1,46 @@
+# Ship every OpenSeal service's log off the box over syslog on TLS (RFC 5425), ASVS-08
+# (ASVS 1.7.2; docs/65 §Logs). Each service writes one JSON line per event to standard
+# error (`casual-sign-seclog`): the access log, operational lines and the security
+# events (`"event":"security"`). Docker's own syslog driver sends each line, as an
+# RFC 5424 message tagged `openseal/<container>`, to the collector over mutual TLS; no
+# extra container or image is involved.
+#
+#   OPENSEAL_SYSLOG_ADDRESS=tcp+tls://logs.example.internal:6514 \
+#   OPENSEAL_SYSLOG_CA=/etc/openseal/syslog/ca.pem \
+#   OPENSEAL_SYSLOG_CERT=/etc/openseal/syslog/client.pem \
+#   OPENSEAL_SYSLOG_KEY=/etc/openseal/syslog/client.key \
+#   docker compose -f docker-compose.yml -f deploy/compose.log-forwarding.yml up -d
+#
+# The three files are read by the Docker daemon on the host, not by a container. The
+# collector can be rsyslog or syslog-ng with TLS, or an OpenTelemetry Collector whose
+# `syslog` receiver (TLS, rfc5424) exports OTLP to the operator's log platform
+# (docs/65 §Logs). Every variable is required: Compose refuses to start without them,
+# rather than log in clear or to nowhere.
+#
+# `mode: non-blocking` keeps a slow collector from stalling a request; the 4 MB buffer
+# drops the oldest lines only if the collector stays unreachable (docs/65 §Logs says how
+# to alert on that). `docker compose logs` does not read the syslog driver: read the
+# collector.
+
+x-forward: &forward
+  driver: syslog
+  options:
+    syslog-address: ${OPENSEAL_SYSLOG_ADDRESS:?set OPENSEAL_SYSLOG_ADDRESS to tcp+tls://host:port}
+    syslog-tls-ca-cert: ${OPENSEAL_SYSLOG_CA:?set OPENSEAL_SYSLOG_CA to the collector's CA (PEM)}
+    syslog-tls-cert: ${OPENSEAL_SYSLOG_CERT:?set OPENSEAL_SYSLOG_CERT to this host's client certificate (PEM)}
+    syslog-tls-key: ${OPENSEAL_SYSLOG_KEY:?set OPENSEAL_SYSLOG_KEY to this host's client key (PEM)}
+    syslog-tls-skip-verify: "false"
+    syslog-format: rfc5424micro
+    syslog-facility: authpriv
+    tag: "openseal/{{.Name}}"
+    mode: non-blocking
+    max-buffer-size: 4m
+
+services:
+  migrate: {logging: *forward}
+  server: {logging: *forward}
+  worker: {logging: *forward}
+  keyd: {logging: *forward}
+  # Only when the `ml` profile runs it.
+  modeld: {logging: *forward}
+  postgres: {logging: *forward}

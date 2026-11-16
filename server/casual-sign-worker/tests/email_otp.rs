@@ -203,6 +203,7 @@ async fn an_emailed_one_time_code_authenticates_once_and_locks_after_wrong_tries
         },
     )
     .unwrap();
+    st.set_mfa_key(common::mfa_key());
     let app = casual_sign_server::app(st);
     // `Env` already made an organization; this workspace gets one of its own.
     let org = env.db.organization("Codes").await;
@@ -232,6 +233,14 @@ async fn an_emailed_one_time_code_authenticates_once_and_locks_after_wrong_tries
     let set = login.headers["set-cookie"].to_str().unwrap();
     staff.cookie = Some(set.split(';').next().unwrap().to_owned());
     staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    // An administrator owes a second factor by default (ASVS-31).
+    common::pass_factor(
+        &staff.app,
+        staff.cookie.as_deref().unwrap(),
+        staff.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
     // The account locks a recipient after five failed attempts.
     let mut policy = serde_json::to_value(casual_sign_workflow::Policy::default()).unwrap();
     policy["max_auth_attempts"] = json!(5);
@@ -469,6 +478,17 @@ async fn an_emailed_one_time_code_authenticates_once_and_locks_after_wrong_tries
             !steps.iter().any(|j| j.contains(code.as_str())),
             "a code in a step"
         );
-        assert!(!logged.contains(code.as_str()), "a code in the log");
+        // As a value of its own: six digits also occur inside timestamps and hex ids.
+        assert!(!standalone(&logged, code), "a code in the log");
     }
+}
+
+/// Whether `code` occurs in `text` with no letter or digit on either side.
+fn standalone(text: &str, code: &str) -> bool {
+    text.match_indices(code).any(|(i, _)| {
+        let before = text[..i].chars().next_back();
+        let after = text[i + code.len()..].chars().next();
+        !before.is_some_and(|c| c.is_ascii_alphanumeric())
+            && !after.is_some_and(|c| c.is_ascii_alphanumeric())
+    })
 }

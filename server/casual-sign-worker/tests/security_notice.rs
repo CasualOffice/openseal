@@ -20,7 +20,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
-use casual_sign_server::{AppState, Blobs, Config, JwtKeys, MfaKey, totp};
+use casual_sign_server::{AppState, Blobs, Config, JwtKeys, totp};
 use casual_sign_worker::JobOutcome;
 use common::{Env, TestClock};
 use http_body_util::BodyExt as _;
@@ -171,7 +171,7 @@ async fn each_password_or_factor_change_emails_the_user_one_notice_without_secre
         },
     )
     .unwrap();
-    st.set_mfa_key(MfaKey::new(&[9u8; 32]).unwrap());
+    st.set_mfa_key(common::mfa_key());
     let app = casual_sign_server::app(st);
     let org = env.db.organization("Notices").await;
     casual_sign_server::bootstrap_workspace(
@@ -185,6 +185,16 @@ async fn each_password_or_factor_change_emails_the_user_one_notice_without_secre
     .await
     .unwrap();
     let admin = session(&app, ADMIN, PASSWORD).await;
+    // An administrator owes a second factor by default (ASVS-31): enrolled at once,
+    // which tells the administrator, not the user.
+    common::pass_factor(
+        &app,
+        admin.cookie.as_deref().unwrap(),
+        admin.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await
+    .expect("the administrator enrols");
 
     // Set from an invitation.
     let u = admin
@@ -312,7 +322,10 @@ async fn each_password_or_factor_change_emails_the_user_one_notice_without_secre
     for r in c["recovery_codes"].as_array().unwrap() {
         assert!(!got[0].contains(r.as_str().unwrap()));
     }
-    assert!(env.smtp.to(ADMIN).is_empty(), "only the user is told");
+    // Only the user is told of their factor; the administrator only of their own.
+    let to_admin = env.smtp.to(ADMIN);
+    assert_eq!(to_admin.len(), 1, "only the user is told");
+    assert!(to_admin[0].body().contains("authenticator app was added"));
 }
 
 /// RFC 4648 base32 (no padding) back to bytes, for the secret the enrolment shows.

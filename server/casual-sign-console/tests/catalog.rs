@@ -156,7 +156,7 @@ async fn platform_grants_are_exactly_the_designed_ones() {
     let mut wrong = Vec::new();
     for r in &rows {
         let (t, p, has): (String, String, bool) = (r.get(0), r.get(1), r.get(2));
-        // CON-09, migration 0035: `reconciliation_runs` is append-only, as the other two.
+        // CON-09, migration 0037: `reconciliation_runs` is append-only, as the other two.
         let expected = p == "SELECT"
             || (p == "INSERT"
                 && (t == "operator_events" || t == "alerts" || t == "reconciliation_runs"));
@@ -220,7 +220,7 @@ async fn platform_grants_are_exactly_the_designed_ones() {
         "request_key_change",
         "grant_key_change",
         "apply_key_change",
-        // CON-09, migration 0035: seal records for reconciliation (envelope ids, digests).
+        // CON-09, migration 0037: seal records for reconciliation (envelope ids, digests).
         "seal_digests",
         "seal_digests_of",
     ];

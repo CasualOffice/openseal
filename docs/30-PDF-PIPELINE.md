@@ -48,6 +48,11 @@ named in docs/21, every failure a `CS-PDF-*` code.
   content; PDF version and conformance claims (PDF/A, PDF/UA).
 - **Admission report**: everything found and what was done, shown to the sender before sending and stored with the
   version ([22](22-DATA-MODEL.md) §4).
+- **Malware scan first** (`ASVS-11`, the server, not this crate): where the operator configured clamd, every upload is
+  scanned before admission reads a byte of it; malware is refused (`CS-SCAN-0001`) and never reaches the reader. The
+  server's admission report then carries `"malware_scan": "clean"` (or `"unscanned"` under the operator's fail-open
+  switch); without a scanner the key is absent, so the report and its hash are what they were (docs/65 §Malware
+  scanning).
 
 ### As built (stage 1A)
 

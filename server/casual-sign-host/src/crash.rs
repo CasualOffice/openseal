@@ -10,7 +10,9 @@
 //! point of that kind whose subject ends with `suffix` (for example
 //! `before_commit:Send`, `after_commit:/finish`, `worker:EmailSent:send_invitation`).
 //! `OPENSEAL_CRASH_AT=startup` fires at [`startup`], so a test can tell a binary built
-//! with the feature from one built without it.
+//! with the feature from one built without it. [`hold`] (`OPENSEAL_HOLD_AT`, `HRD-01`)
+//! parks the process at a point instead, so a chaos test can stop it, cut a dependency
+//! or race a second worker while it stands mid-job.
 
 /// Kill this process if `OPENSEAL_CRASH_AT` names `kind` and a suffix of `subject`.
 #[cfg(feature = "crash-points")]
@@ -47,6 +49,39 @@ pub fn before_commit<T: core::fmt::Debug>(command: &T) {
 #[cfg(not(feature = "crash-points"))]
 #[inline(always)]
 pub fn before_commit<T: core::fmt::Debug>(_command: &T) {}
+
+/// Hold this thread at a point (`HRD-01` chaos tests): when `OPENSEAL_HOLD_AT` names
+/// `kind` and a suffix of `subject` (as `OPENSEAL_CRASH_AT` does), the first time only,
+/// create `<OPENSEAL_HOLD_DIR>/reached` and wait until `<OPENSEAL_HOLD_DIR>/release`
+/// exists. The test then stops, starves or races the process while it stands mid-job,
+/// and releases it.
+#[cfg(feature = "crash-points")]
+pub fn hold(kind: &str, subject: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static HELD: AtomicBool = AtomicBool::new(false);
+    let (Ok(at), Ok(dir)) = (
+        std::env::var("OPENSEAL_HOLD_AT"),
+        std::env::var("OPENSEAL_HOLD_DIR"),
+    ) else {
+        return;
+    };
+    let Some((k, suffix)) = at.split_once(':') else {
+        return;
+    };
+    if k != kind || !subject.ends_with(suffix) || HELD.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let dir = std::path::PathBuf::from(dir);
+    let _ = std::fs::write(dir.join("reached"), b"");
+    while !dir.join("release").exists() {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Without the feature: nothing.
+#[cfg(not(feature = "crash-points"))]
+#[inline(always)]
+pub fn hold(_kind: &str, _subject: &str) {}
 
 /// Kill this process if `OPENSEAL_CRASH_AT=startup` (the feature probe).
 #[cfg(feature = "crash-points")]

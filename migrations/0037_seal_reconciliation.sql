@@ -1,4 +1,4 @@
--- 0035: reconciling keyd's signatures with the seals recorded (CON-09, KEYD-03; ADR-028,
+-- 0037: reconciling keyd's signatures with the seals recorded (CON-09, KEYD-03; ADR-028,
 -- docs/23 §5.4; docs/07 SEC-S05).
 --
 -- keyd's operation log records, for every signature, the digest it signed (the hash of the

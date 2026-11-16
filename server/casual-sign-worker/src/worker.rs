@@ -275,6 +275,16 @@ pub enum JobOutcome {
 }
 
 /// The parts every handler needs.
+/// What a seal job's attempt came to before the engine is told (`HRD-01`).
+enum SealAttempt {
+    /// The job is no longer the envelope's pending seal job.
+    NotPending,
+    /// An earlier attempt stored the seal: its `seal.stored` step's detail.
+    Stored(serde_json::Value),
+    /// This attempt sealed and stored these documents.
+    Sealed(Vec<SealedDocument>),
+}
+
 struct Ctx<'a> {
     job: &'a ClaimedJob,
     lease: Uuid,
@@ -1851,51 +1861,49 @@ impl<B: BlobStore + 'static> Worker<B> {
 
     async fn seal_job(&self, ctx: &Ctx<'_>) -> Result<()> {
         let job_effect = ctx.payload.effect.id.clone();
-        let state = self.state(ctx).await?;
-        // The engine decides whether this job is still the pending one; never seal for
-        // one it would refuse (a cancelled or superseded job).
-        if state.status != casual_sign_model::EnvelopeStatus::Completing
-            || state.book.seal_job.as_ref() != Some(&job_effect)
-        {
-            return self.finish(ctx, None).await;
-        }
-        let stored = self
-            .steps(ctx)
-            .await?
-            .into_iter()
-            .find(|s| s.step == "seal.stored");
-        let documents: Vec<SealedDocument> = match stored {
-            Some(s) => {
-                serde_json::from_value(s.detail.get("documents").cloned().unwrap_or_default())
+        let last = ctx.job.attempts >= jobs::max_attempts(&ctx.job.kind);
+        let documents = match self.seal_attempt(ctx, &job_effect).await {
+            Ok(SealAttempt::NotPending) => return self.finish(ctx, None).await,
+            // Sealed by an earlier attempt: its record is read back, never handed over
+            // (a new seal job would seal a second time).
+            Ok(SealAttempt::Stored(detail)) => {
+                serde_json::from_value(detail.get("documents").cloned().unwrap_or_default())
                     .map_err(|_| WorkerError::StateUnreadable)?
             }
-            None => match self.seal_and_store(ctx, state).await {
-                Ok(d) => d,
-                // Infrastructure: the job retries.
-                Err(e @ WorkerError::Store(_)) => return Err(e),
-                // The seal itself failed: the engine records it, alerts, and schedules a
-                // new seal job; the envelope stays `completing`.
-                Err(e) => {
-                    crate::log(
-                        "WARN",
-                        "seal_failed",
-                        &[
-                            ("envelope", ctx.envelope.0.to_string()),
-                            ("code", e.code().to_owned()),
-                        ],
-                    );
-                    let code = Text::new(e.code()).map_err(|_| WorkerError::StateUnreadable)?;
-                    return self
-                        .finish(
-                            ctx,
-                            Some(Command::SealFailed {
-                                job: job_effect,
-                                code,
-                            }),
-                        )
-                        .await;
-                }
-            },
+            Ok(SealAttempt::Sealed(d)) => d,
+            // Another worker holds the job now: it decides.
+            Err(e @ WorkerError::LeaseLost) => return Err(e),
+            // Infrastructure (the database, the blob store), wherever it failed before
+            // the seal was stored (reading the envelope's state or the job's steps,
+            // gathering, storing): the job retries; on its last attempt it hands over
+            // to a new seal job through `SealFailed` below instead of dying with the
+            // envelope `completing` (HRD-01). A failure no retry cures (a refused
+            // privilege, an unreadable value) is dead-lettered at once, and so is the
+            // job when the handover's own write fails: both raise `job_dead`.
+            Err(e @ WorkerError::Store(_)) if !last => return Err(e),
+            // The seal itself failed, or infrastructure outlasted the retries: the
+            // engine records it, alerts, and schedules a new seal job; the envelope
+            // stays `completing`.
+            Err(e) => {
+                crate::log(
+                    "WARN",
+                    "seal_failed",
+                    &[
+                        ("envelope", ctx.envelope.0.to_string()),
+                        ("code", e.code().to_owned()),
+                    ],
+                );
+                let code = Text::new(e.code()).map_err(|_| WorkerError::StateUnreadable)?;
+                return self
+                    .finish(
+                        ctx,
+                        Some(Command::SealFailed {
+                            job: job_effect,
+                            code,
+                        }),
+                    )
+                    .await;
+            }
         };
         self.finish(
             ctx,
@@ -1907,6 +1915,28 @@ impl<B: BlobStore + 'static> Worker<B> {
         .await
     }
 
+    /// Everything a seal job does before it tells the engine: whether it is still the
+    /// pending one, an earlier attempt's stored seal, or a new seal stored now.
+    async fn seal_attempt(&self, ctx: &Ctx<'_>, job_effect: &EffectId) -> Result<SealAttempt> {
+        let state = self.state(ctx).await?;
+        // The engine decides whether this job is still the pending one; never seal for
+        // one it would refuse (a cancelled or superseded job).
+        if state.status != casual_sign_model::EnvelopeStatus::Completing
+            || state.book.seal_job.as_ref() != Some(job_effect)
+        {
+            return Ok(SealAttempt::NotPending);
+        }
+        let stored = self
+            .steps(ctx)
+            .await?
+            .into_iter()
+            .find(|s| s.step == "seal.stored");
+        match stored {
+            Some(s) => Ok(SealAttempt::Stored(s.detail)),
+            None => Ok(SealAttempt::Sealed(self.seal_and_store(ctx, state).await?)),
+        }
+    }
+
     async fn seal_and_store(
         &self,
         ctx: &Ctx<'_>,
@@ -1916,7 +1946,13 @@ impl<B: BlobStore + 'static> Worker<B> {
         let now = input.now;
         // Seal (blocking: keyd and the TSA are synchronous).
         self.refresh_tsas().await;
-        let services = self.seal.clone();
+        let mut services = self.seal.clone();
+        // The alias in force at the seal's own time.
+        let at = OffsetDateTime::from_unix_timestamp_nanos(
+            i128::from(now.unix_millis()).saturating_mul(1_000_000),
+        )
+        .map_err(|_| WorkerError::StateUnreadable)?;
+        services.key = self.seal_key_at(at).await?;
         let (outs, input) = tokio::task::spawn_blocking(move || {
             let r = seal::seal_all(&services, &input);
             (r, input)
@@ -1927,6 +1963,49 @@ impl<B: BlobStore + 'static> Worker<B> {
         })?;
         let sealed = outs?;
         self.store_sealed(ctx, input, sealed, now).await
+    }
+
+    /// The seal key at `now` (`CON-10`, docs/23 §5.4): the alias the key custodians put in
+    /// force in `platform.seal_profiles`, fetched from keyd per seal, or the configured
+    /// key while they have set none. A version whose change is not fully approved, an
+    /// alias keyd does not serve, or a database alias without keyd is refused, and the
+    /// seal fails safe (`SealFailed`, retried; nothing sealed with an older key).
+    async fn seal_key_at(&self, now: OffsetDateTime) -> Result<seal::SealKey> {
+        let Some(chosen) = self.store.entry_points().seal_alias(now).await? else {
+            return Ok(self.seal.key.clone());
+        };
+        if !chosen.approved {
+            return Err(WorkerError::Pipeline {
+                code: "CS-CON-0006",
+            });
+        }
+        match &self.seal.key {
+            seal::SealKey::Remote(r) if r.alias() == chosen.alias => Ok(self.seal.key.clone()),
+            seal::SealKey::Remote(r) => {
+                let r = r.clone();
+                let key = tokio::task::spawn_blocking(move || r.with_alias(&chosen.alias))
+                    .await
+                    .map_err(|_| WorkerError::Pipeline {
+                        code: "CS-KEY-0011",
+                    })?
+                    .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+                Ok(seal::SealKey::Remote(key))
+            }
+            seal::SealKey::Keyd(k) if k.alias() == chosen.alias => Ok(self.seal.key.clone()),
+            seal::SealKey::Keyd(k) => {
+                let k = k.clone();
+                let key = tokio::task::spawn_blocking(move || k.connect_alias(&chosen.alias))
+                    .await
+                    .map_err(|_| WorkerError::Pipeline {
+                        code: "CS-KEY-0011",
+                    })?
+                    .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+                Ok(seal::SealKey::Remote(key))
+            }
+            seal::SealKey::Local { .. } => Err(WorkerError::Pipeline {
+                code: "CS-CON-0006",
+            }),
+        }
     }
 
     /// Everything the certificate (and, with `documents`, sealing) needs: the chain,
@@ -2047,6 +2126,18 @@ impl<B: BlobStore + 'static> Worker<B> {
             records.push(record);
         }
         let mut tx = self.tx(ctx).await?;
+        // The lease fence (HRD-01): only the holder of the job's lease records a seal.
+        // A worker that was paused past its lease (a stop, a partition) while another
+        // took the job over writes nothing and leaves the job to that one; the update
+        // also locks the job's row until this transaction ends.
+        let until = jobs::after(self.now(), self.config.lease);
+        tx.jobs()
+            .heartbeat(ctx.job.id, ctx.lease, until)
+            .await
+            .map_err(|e| match e.code() {
+                "CS-DB-0003" => WorkerError::LeaseLost,
+                _ => store_err(e),
+            })?;
         for (doc, key, len, pages) in versions {
             tx.documents()
                 .add_version(&NewVersion {
