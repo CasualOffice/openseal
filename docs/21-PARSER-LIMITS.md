@@ -134,6 +134,10 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Pages per document | 5,000 (built, stage 2A) | CS-WF-0004 |
 | Changes in one draft edit | 5,000 (built, stage 2A) | CS-WF-0004 |
 | Commands applied per envelope (the idempotency record) | 100,000 (built, stage 2A) | CS-WF-0011 |
+| Scheduled send ahead of now | 365 days (built, `WF-02`) | CS-WF-0023 |
+| Routing delay per recipient | 720 hours (built, `WF-02`) | CS-WF-0023 |
+| Routing rules per envelope; conditions per rule; condition value; values in `one_of` | 50; 10; 1,024 bytes; 20 (proposed, ADR-035, `WF-01`) | CS-WF-0004 |
+| Signing group members | 2–20 (proposed, ADR-035, `WF-01`) | CS-WF-0004 |
 | Text field value | 4,000 bytes | CS-FLD-0002 |
 | Dropdown options | 500 | CS-FLD-0002 |
 | Multi-select options; choices in one value | 500; 500, none repeated (built, `ACRO-02`) | CS-FLD-0002 |
@@ -217,7 +221,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | API client expiry | 1–3,650 days | CS-API-0001 |
 | Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 
-## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, `CON-06`, `CON-07`, built)
+## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, `CON-06`, `CON-07`, `CON-08`, `CON-09`, built)
 
 | Limit | Default | Code |
 | --- | ---: | --- |
@@ -241,6 +245,8 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | TSA URL (`CON-07`) | 2,048 bytes, `http` or `https`, no user information; addresses checked on at most 16 resolved | CS-CON-0006 |
 | TSA priority; policy OID; expected certificate hash; endpoints listed | 0–1,000; 2–32 arcs; 64 hex digits; 64 | CS-CON-0006 |
 | Key-change payload stored for the approver | 4 KiB of JSON | CS-DB-0008 |
+| Reconciliation run (`CON-09`): keyd records read; envelope ids per `seal_digests_of` call; seal records per window; orphaned retries listed | 100,000; 1,000; 100,000; 1,000 | — |
+| Reconciliation grace before a signature is judged; clock skew allowed between keyd and the worker | 1 hour; 5 minutes | — |
 
 ## ML (`casual-sign-modeld`, the worker's ML jobs; designed, ADR-029)
 

@@ -315,6 +315,7 @@ fn text(s: &str) -> Personal<String> {
 fn projection(s: &EnvelopeState, changed: Option<OffsetDateTime>) -> Result<Projection> {
     let ended = s.ended_at.map(odt).transpose()?;
     Ok(Projection {
+        sender_user_id: UserId(uuid_of(&s.sender_user_id, "user")?),
         status: status(s.status),
         subject: text(s.subject.get().as_str()),
         message: text(s.message.get().as_str()),

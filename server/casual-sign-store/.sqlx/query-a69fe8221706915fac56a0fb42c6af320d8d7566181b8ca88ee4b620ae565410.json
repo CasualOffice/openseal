@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT policy FROM organizations WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "policy",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "organizations",
+            "name": "policy"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a69fe8221706915fac56a0fb42c6af320d8d7566181b8ca88ee4b620ae565410"
+}

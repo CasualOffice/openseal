@@ -250,6 +250,7 @@ async fn recipients_in(
     tx: &mut TenantTx,
     list: &[RecipientIn],
     at: &str,
+    doc_ids: &[Id],
 ) -> Result<
     (
         Vec<Change>,
@@ -264,7 +265,19 @@ async fn recipients_in(
     let _ = tx;
     for (i, r) in list.iter().enumerate() {
         let id = new_id()?;
-        let spec = r.spec(id.clone(), &format!("{at}/{i}"))?;
+        let mut spec = r.spec(id.clone(), &format!("{at}/{i}"))?;
+        // WF-02: hidden documents, by id or by the index of a document of this request.
+        for (j, d) in r.excluded_documents.iter().enumerate() {
+            let doc = match d {
+                Value::Number(n) => n
+                    .as_u64()
+                    .and_then(|k| doc_ids.get(usize::try_from(k).ok()?).cloned()),
+                Value::String(s) => Id::new(s.as_str()).ok(),
+                _ => None,
+            }
+            .ok_or_else(|| ApiError::invalid(&format!("{at}/{i}/excluded_documents/{j}")))?;
+            spec.excluded_documents.push(doc);
+        }
         if let Some(reference) = &r.reference {
             refs.insert(reference.clone(), id.clone());
         }
@@ -713,7 +726,8 @@ pub(crate) async fn create_in(
         uploads.push((uid(&spec.id)?, spec.delivered_hash.0));
         changes.push(Change::AddDocument { document: spec });
     }
-    let (rchanges, refs, codes) = recipients_in(tx, &req.recipients, "/recipients").await?;
+    let (rchanges, refs, codes) =
+        recipients_in(tx, &req.recipients, "/recipients", &doc_ids).await?;
     changes.extend(rchanges);
     for (i, f) in req.fields.iter().enumerate() {
         let field = dto::field_from(
@@ -862,6 +876,49 @@ pub(crate) async fn send(c: Call, Path(id): Path<String>) -> Result<Response, Ap
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ScheduleIn {
+    /// RFC 3339.
+    send_at: String,
+}
+
+/// `PUT /envelopes/{id}/schedule {send_at}` (`WF-02`): the draft sends itself at
+/// `send_at` (RFC 3339, after now, within a year, before the expiry: `422 CS-WF-0023`);
+/// the draft must be sendable now (`422 CS-WF-0004`). Until then it cannot be edited
+/// (`409 CS-WF-0022`); sending by hand drops the schedule.
+pub(crate) async fn schedule(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let req: ScheduleIn = parse(&body)?;
+    let at = OffsetDateTime::parse(&req.send_at, &time::format_description::well_known::Rfc3339)
+        .map_err(|_| ApiError::invalid("/send_at"))
+        .and_then(|t| crate::apply::ts(t).map_err(|_| ApiError::invalid("/send_at")))?;
+    let mut cmds = c.commands(&mut tx).await?;
+    let cmd = Command::ScheduleSend { at: Some(at) };
+    command(&c, &mut tx, &mut cmds, &mut l, cmd, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+/// `DELETE /envelopes/{id}/schedule` (`WF-02`): the draft no longer sends itself and
+/// can be edited again. A draft with no schedule answers as it is.
+pub(crate) async fn unschedule(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let mut cmds = c.commands(&mut tx).await?;
+    let cmd = Command::ScheduleSend { at: None };
+    command(&c, &mut tx, &mut cmds, &mut l, cmd, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct VoidIn {
     reason: String,
 }
@@ -882,6 +939,60 @@ pub(crate) async fn void(
     let reason = dto::message(&req.reason)?;
     let mut cmds = c.commands(&mut tx).await?;
     command(&c, &mut tx, &mut cmds, &mut l, Command::Void { reason }, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TransferIn {
+    /// The new owner: a member of this workspace.
+    to_user: String,
+    /// Another workspace's id is refused: envelopes never move between workspaces.
+    #[serde(default)]
+    to_workspace: Option<String>,
+}
+
+/// `POST /envelopes/{id}/transfer {to_user}` (`envelopes.transfer`; ORG-09, docs/23
+/// §2.4): pass the envelope's ownership to another enabled member of this workspace, in
+/// any state but purged, recording `envelope.transferred {from_user, to_user}` in its
+/// chain. Envelopes never move between workspaces: a `to_workspace` other than this
+/// one, or a `to_user` who is not an enabled member here, is `422 CS-ORG-0009` (the
+/// same answer for an id that does not exist, so nothing is learned about other
+/// workspaces). The holder of the action reaches every envelope of the workspace, as
+/// `envelopes.read_all` does; another workspace's envelope is `404`.
+pub(crate) async fn transfer(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    // The envelope first: another workspace's id is 404 whatever the body says.
+    let mut tx = c.tx().await?;
+    let env = EnvelopeId(path_id(&id)?);
+    let mut l = crate::apply::load(&mut tx, env)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let v = expected(&c, false)?;
+    let req: TransferIn = parse(&body)?;
+    if let Some(w) = &req.to_workspace
+        && Uuid::parse_str(w).ok() != Some(c.p.account.0)
+    {
+        return Err(ApiError::envelope_stays());
+    }
+    let to = Uuid::parse_str(&req.to_user).map_err(|_| ApiError::invalid("/to_user"))?;
+    let member = tx.users().get(UserId(to)).await?;
+    if member.is_none_or(|m| m.disabled_at.is_some()) {
+        return Err(ApiError::envelope_stays());
+    }
+    let mut cmds = c.commands(&mut tx).await?;
+    let ctx = cmds.ctx(
+        WfPrincipal::Admin {
+            user_id: eid(c.p.user.0)?,
+        },
+        v,
+    )?;
+    let cmd = Command::Transfer { to_user: eid(to)? };
+    run(&mut tx, &mut l, &cmd, &ctx).await?;
     tx.commit().await?;
     Ok(envelope_response(StatusCode::OK, &l.state))
 }
@@ -1480,7 +1591,7 @@ pub(crate) async fn add_recipients(
         }
         None => vec![serde_json::from_value(raw).map_err(|_| ApiError::invalid(""))?],
     };
-    let (changes, _, codes) = recipients_in(&mut tx, &list, "/items").await?;
+    let (changes, _, codes) = recipients_in(&mut tx, &list, "/items", &[]).await?;
     let ids: Vec<Id> = changes
         .iter()
         .filter_map(|ch| match ch {
@@ -1536,6 +1647,13 @@ struct RecipientPatch {
     /// A new access code (row WEB-04); stored only as Argon2id, never returned.
     #[serde(default)]
     access_code: Option<String>,
+    /// The documents hidden from this recipient, by id (`WF-02`); `[]` shows them all.
+    #[serde(default)]
+    excluded_documents: Option<Vec<String>>,
+    /// Hours routing waits before inviting this recipient once their turn comes
+    /// (`WF-02`); `0` invites at once.
+    #[serde(default)]
+    route_delay_hours: Option<u16>,
 }
 
 /// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, type (a draft
@@ -1578,6 +1696,19 @@ pub(crate) async fn patch_recipient(
     }
     if let Some(t) = req.rtype {
         spec.rtype = t;
+    }
+    if let Some(h) = req.route_delay_hours {
+        spec.route_delay_hours = h;
+    }
+    if let Some(list) = &req.excluded_documents {
+        spec.excluded_documents = list
+            .iter()
+            .enumerate()
+            .map(|(j, d)| {
+                Id::new(d.as_str())
+                    .map_err(|_| ApiError::invalid(&format!("/excluded_documents/{j}")))
+            })
+            .collect::<Result<_, _>>()?;
     }
     let had_code = spec
         .auth

@@ -13,6 +13,7 @@ use casual_sign_store::repo::idempotency::Record;
 use time::Duration as TimeDuration;
 
 use crate::auth::{Principal, authenticate};
+use crate::authz::{Action, OrgAction};
 use crate::crypto::{same, sha256};
 use crate::error::{ApiError, REQUEST_ID};
 use crate::state::{AppState, RateDecision};
@@ -222,11 +223,22 @@ pub(crate) fn limit(
     }
 }
 
+/// The right a route needs (ORG-07, docs/23 §2.2).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Need {
+    /// Any authenticated caller.
+    Any,
+    /// A workspace action, held through the caller's profile.
+    Action(Action),
+    /// An organization action, held through the caller's organization role.
+    Org(OrgAction),
+}
+
 /// What the guard of one route checks.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Guard {
-    /// The scope the route needs (`""`: any authenticated caller).
-    pub scope: &'static str,
+    /// The right the route needs.
+    pub need: Need,
     /// The largest request body the route reads.
     pub max_body: usize,
     /// A session that still owes its second factor may call it (ASVS-01).
@@ -234,7 +246,8 @@ pub(crate) struct Guard {
 }
 
 /// The guard of every `/api/v1` route: authenticate (401), refuse a session that owes
-/// its second factor anywhere but signing in (403, ASVS-01), check the scope (403), count
+/// its second factor anywhere but signing in (403, ASVS-01), check the route's action,
+/// workspace or organization, against rights read afresh (403, ORG-07), count
 /// the principal's rate (429), then, for a `POST` with `Idempotency-Key`, answer a
 /// replay with the first response (docs/40 §1).
 pub(crate) async fn guard(
@@ -253,7 +266,12 @@ pub(crate) async fn guard(
     {
         return ApiError::second_factor_required(owed).into_response();
     }
-    if let Err(e) = p.require(g.scope) {
+    let held = match g.need {
+        Need::Any => Ok(()),
+        Need::Action(a) => p.require_action(a),
+        Need::Org(a) => crate::api::org::require(&state, &p, a).await,
+    };
+    if let Err(e) = held {
         return e.into_response();
     }
     let d = match limit(

@@ -196,6 +196,7 @@ export function mount(view, ctx, [rawId]) {
       h("dt", { text: t("envelope.id") }), idRow,
       h("dt", { text: t("envelope.created") }), h("dd", { text: fmtDate(e.created_at) }),
       e.sent_at ? [h("dt", { text: t("envelope.sent") }), h("dd", { text: fmtDate(e.sent_at) })] : null,
+      e.send_at ? [h("dt", { text: t("envelope.send-at") }), h("dd", { text: fmtDate(e.send_at), attrs: { "data-testid": "envelope-send-at" } })] : null,
       e.ended_at ? [h("dt", { text: t("envelope.ended") }), h("dd", { text: fmtDate(e.ended_at) })] : null,
       senderName ? [h("dt", { text: t("envelope.sender") }), h("dd", { text: senderName })] : null,
       h("dt", { text: t("envelope.documents") }),

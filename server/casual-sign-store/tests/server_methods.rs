@@ -23,8 +23,9 @@ use casual_sign_store::*;
 use common::world::{self, hash, id, now};
 use common::{Rls, fresh};
 
-fn projection(subject: &str) -> Projection {
+fn projection(subject: &str, sender: UserId) -> Projection {
     Projection {
+        sender_user_id: sender,
         status: EnvelopeStatus::Draft,
         subject: Personal(subject.into()),
         message: Personal(String::new()),
@@ -109,7 +110,7 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
     assert!(tx.envelopes().host_client(a_env).await.unwrap().is_none());
     assert_eq!(
         tx.envelopes()
-            .project(a_env, 1, &projection("x"))
+            .project(a_env, 1, &projection("x", b.user))
             .await
             .unwrap_err()
             .code(),
@@ -415,7 +416,7 @@ async fn engine_state_tokens_and_sessions_behave() {
         Some(hash("cert-1"))
     );
     let row_version = tx.envelopes().get(env).await.unwrap().unwrap().version;
-    let mut p = projection("Changed");
+    let mut p = projection("Changed", a.user);
     p.status = EnvelopeStatus::Voided;
     p.voided_at = Some(now());
     p.void_reason = Some(Personal("why".into()));

@@ -54,6 +54,7 @@ by JWKS (OpenCalc's docs/59 pattern).
                                                 ?waiting_for=me (Inbox), folder=, deleted=true, recipient=, date_field=
   /envelopes/{id}                               GET, PATCH, DELETE    DELETE: drafts; ended uncompleted: from lists
   /envelopes/{id}/send                          POST
+  /envelopes/{id}/schedule                      PUT {send_at}, DELETE   scheduled sending of a draft (WF-02)
   /envelopes/{id}/void                          POST {reason}
   /envelopes/{id}/correct                       POST (open), POST …/commit
   /envelopes/{id}/resend                        POST {recipient_ids?}
@@ -253,7 +254,14 @@ is part of the public API or its compatibility promise. As built: docs/23 §5.6.
 
 The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 161 operations (68 at stage 2C, 19 added by `WEB-06`, 9 by `WEB-19`, the rest by later rows; counted 2026-11-13), each with its `x-permission`
 (the scope it needs, SEC-A05). The router is built from one table (`routes::table`), and a contract test keeps the
-table and the document equal in both directions, scope by scope.
+table and the document equal in both directions, scope by scope. **As built (`ORG-07`):** `x-permission` names a
+workspace action of the catalogue (docs/23 §2.2, `users.invite`, `settings.sending`, ...) or an organization action
+(`org.audit.read`, ...), and each such operation states `x-level: workspace | organization`; `""`, `public` and
+`signing-in` keep their meaning and carry no level. The table names actions as a typed enum, so a route naming an
+action outside the catalogue does not compile, and the contract test checks `x-level` as well. OAuth scopes stay the
+wire grants: a key or token holds the actions its scopes cover (docs/23 §2.2's table). A grant beyond the caller's
+own actions or group scope, or to itself, is `403 CS-ORG-0005`; permission profiles carry `actions` and
+`admin_scope_group_ids`.
 
 **Built.** Every row of §3 below is served, with these differences:
 
@@ -433,8 +441,14 @@ binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised
 ## As built (`ASVS-01`, staff second factor)
 
 A staff user may add a TOTP authenticator (RFC 6238: HMAC-SHA1, six digits, 30-second steps, one step of drift either
-way); an account may require one with `settings.mfa_policy` (`PATCH /accounts/me`): `optional` (the default: only
-users who enrolled), `administrators` or `everyone`. A user with a confirmed factor owes it in every session, whatever
+way); an account chooses who must have one with `settings.mfa_policy` (`PATCH /accounts/me`): `administrators` (the
+default, also when unset: administrators and anyone who enrolled; `ASVS-31`, migration 0036), `everyone`, or
+`optional` (only users who enrolled). An administrator without a factor enrols at their next sign-in: until they do,
+every call but the sign-in steps is `403 CS-AUTH-0011` with `detail` `enrol`. An explicit choice stands: accounts that
+had written `optional` before the default changed keep it, as a recorded decision of their administrators, and
+`mfa_policy: null` removes any choice and returns the account to the default. Because the default asks for a factor,
+the server does not start without `OPENSEAL_MFA_KEY` outside development (docs/65); an administrator who loses their
+authenticator signs in with one of their recovery codes (`ASVS-32` adds replacing the factor). A user with a confirmed factor owes it in every session, whatever
 the policy, so a password reset or a new password does not bypass it. A session that owes a factor reaches only the
 routes marked `x-permission: signing-in` (`GET /auth/session`, `POST /auth/logout` and the three below); every other
 `/api/v1` call is `403 CS-AUTH-0011` with `detail` `verify` or `enrol`. API keys and access tokens are not asked for
@@ -448,7 +462,7 @@ one (they are credentials of their own, made by a member who signed in). `GET /a
 | `POST /auth/mfa/verify {code}` or `{recovery_code}` | Passes the session's factor. A TOTP code is accepted only for a step later than the last accepted one for the user, so a code works once; a recovery code is spent (case, spaces and dashes ignored) and the answer says how many are left. `401 CS-AUTH-0012` for a wrong, replayed or spent code |
 
 All three are staff sessions only (`422 CS-API-0001` for a key or token) and are rate-limited per user at the login
-rate. Not built yet: WebAuthn (`CON-13`), `administrators` as the default policy (`ASVS-31`), replacing or resetting a
+rate. Not built yet: WebAuthn (`CON-13`), replacing or resetting a
 lost factor and regenerating recovery codes (`ASVS-32`). The web app shows the code step and enrolment on the sign-in
 card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a QR code is `ASVS-33`.
 
@@ -523,6 +537,14 @@ refused outside the plan and to non-administrators; identical bytes uploaded by 
 (`SEC-I06`); the analysis and suggestion flow end to end, decided once, and another account refused `404`. Worker
 `tests/ml.rs` runs both jobs against a fake modeld. Not built: OCR-sourced members in `detect-fields`, `GET
 /search?mode=meaning`, the settings' `models` and `ocr_packs`.
+
+## As built (`ORG-08`, `ORG-09`)
+
+| Endpoint | As built |
+| --- | --- |
+| `GET`/`PATCH /organizations/me` | `ORG-08`: `policy` is the organization policy, `{key: {value, locked}}` (docs/23 §3 As built). `PATCH {name?, policy?}` replaces the whole document (`422 CS-API-0001` at `/policy/<key>` for an unknown key or bad value); loosening, unlocking or removing a security key by an admin who is not an owner is `403 CS-ORG-0013`; each change appends `organization.policy_changed` |
+| `GET`/`PATCH /accounts/me` | `ORG-08`: `GET` adds `organization_policy.settings`, per governed setting (`mfa_policy`, `first_reminder_days`, `workflow_policy.date_format`, `branding`) `{key, value, locked, from_organization}`. `PATCH` refuses a governed setting changed to a locked or looser value with `422 CS-ORG-0002`, naming the setting and key; an unchanged one is not checked. The organization's `login.mfa_required` applies on every staff request when stricter than `mfa_policy` |
+| `POST /envelopes/{id}/transfer {to_user, to_workspace?}` | `ORG-09`: `envelopes.transfer` (an API key or OAuth token also needs `envelopes:send` granted, else `403 CS-AUTH-0006`); passes ownership to an enabled member of this workspace in any status but purged, recording `envelope.transferred`; `to_workspace` other than this one, or a `to_user` not an enabled member here, is `422 CS-ORG-0009`; another workspace's envelope `404`; the same owner `409 CS-WF-0001`. Answers the envelope |
 
 ## Web client and mock contract (`UX-03`)
 

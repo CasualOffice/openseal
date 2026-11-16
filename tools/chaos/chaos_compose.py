@@ -400,6 +400,14 @@ class Api:
         return self.request("GET", path)[0]
 
 
+
+def _totp(seed: bytes, step: int) -> str:
+    """RFC 6238 TOTP, the restore drill's (tools/backup/drill_flow.py)."""
+    sys.path.insert(0, str(ROOT / "tools" / "backup"))
+    import drill_flow
+
+    return drill_flow.totp(seed, step)
+
 def one_page_pdf() -> bytes:
     sys.path.insert(0, str(ROOT / "tools" / "backup"))
     import drill_flow  # the restore drill's PDF and Mailpit reader (tools/backup)
@@ -510,6 +518,12 @@ class Run:
         self.staff = Api(self.base)
         r = self.staff.call("POST", "/api/v1/auth/login", {"email": email, "password": password})
         self.staff.csrf = r["csrf_token"]
+        # Administrators owe a second factor by default (ASVS-31): enrol TOTP once; this
+        # session is the run's only sign-in, so the recovery codes are not needed.
+        if self.staff.call("GET", "/api/v1/auth/session").get("second_factor") == "enrol":
+            secret = self.staff.call("POST", "/api/v1/auth/mfa/totp/enrol")["secret"]
+            code = _totp(base64.b32decode(secret + "=" * (-len(secret) % 8)), int(time.time()) // 30)
+            self.staff.call("POST", "/api/v1/auth/mfa/totp/confirm", {"code": code})
 
     # ---- helpers
 

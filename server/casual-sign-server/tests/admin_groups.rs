@@ -64,6 +64,11 @@ fn forbidden() -> (StatusCode, String) {
     (StatusCode::FORBIDDEN, "CS-AUTH-0006".to_owned())
 }
 
+/// A grant beyond the caller's rights (ORG-07, `grantable`).
+fn refused() -> (StatusCode, String) {
+    (StatusCode::FORBIDDEN, "CS-ORG-0005".to_owned())
+}
+
 async fn groups_and_profiles(rls: Rls) {
     let Some(api) = Api::new(&format!("admin_groups_{rls:?}"), rls).await else {
         return;
@@ -204,7 +209,7 @@ async fn groups_and_profiles(rls: Rls) {
             Some(json!({"name": "Sender+", "permissions": ["envelopes:send"]})),
         )
         .await,
-        forbidden(),
+        refused(),
         "a profile beyond kim's rights"
     );
     assert_eq!(
@@ -216,7 +221,7 @@ async fn groups_and_profiles(rls: Rls) {
             Some(json!({"permissions": ["templates:read", "admin:users", "admin:account"]})),
         )
         .await,
-        forbidden(),
+        refused(),
         "kim raising her own profile"
     );
     for profile in ["admin", "sender"] {
@@ -229,7 +234,7 @@ async fn groups_and_profiles(rls: Rls) {
                 Some(json!({"email": format!("{profile}@alpha.example.test"), "name": "X", "profile": profile, "password": PASSWORD})),
             )
             .await,
-            forbidden(),
+            refused(),
             "kim adding a member with the {profile} profile"
         );
     }
@@ -240,7 +245,7 @@ async fn groups_and_profiles(rls: Rls) {
     ] {
         assert_eq!(
             status(&api, m, &format!("/api/v1/users/{mia_id}"), &kim, body).await,
-            forbidden(),
+            refused(),
             "kim changing mia, a sender, with {m}"
         );
     }
@@ -254,7 +259,7 @@ async fn groups_and_profiles(rls: Rls) {
             None
         )
         .await,
-        forbidden(),
+        refused(),
         "kim re-inviting mia, a sender"
     );
     let reader = ok(

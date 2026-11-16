@@ -77,6 +77,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     reminderFirst: null,
     reminderEvery: null,
     expiresDays: null,
+    sendAt: "", // WF-02: "Send at" as a datetime-local value; empty sends now
+    scheduled: false, // WF-02: the saved draft has a schedule
     serverOptions: "",
     ordered: true, // "Set signing order"; each recipient's step is `r.order` (WEB-09)
     docs: [],
@@ -618,10 +620,27 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     };
     const smsOtp = phoneBox("smsOtp", "recipient-sms-otp", "prepare.sms-otp");
     const voiceOtp = phoneBox("voiceOtp", "recipient-voice-otp", "prepare.voice-otp");
+    // Delayed routing (WF-02): hours to wait, once their turn comes, before inviting them.
+    const delay = h("input", { id: `rd-${r.key}`, class: "os-input os-input--sm os-input--num", type: "number", min: "0", max: "720", step: "1", inputMode: "numeric", value: r.delayHours ? String(r.delayHours) : "", placeholder: "0", attrs: { "data-testid": "recipient-delay", "aria-describedby": `rd-${r.key}-help` } });
+    delay.addEventListener("change", () => { const v = Number.parseInt(delay.value, 10); r.delayHours = Number.isInteger(v) && v > 0 ? Math.min(v, 720) : 0; delay.value = r.delayHours ? String(r.delayHours) : ""; S.dirty = true; });
+    // Document visibility (WF-02): with several documents, which ones they see.
+    const seen = S.docs.length > 1 ? h("fieldset", { class: "os-rcpt__cell" },
+      h("legend", { class: "os-label os-rcpt__label", text: t("prepare.documents-seen") }),
+      ...S.docs.map((d) => {
+        const box = h("input", { id: `rv-${r.key}-${d.key}`, type: "checkbox", checked: !(r.hiddenDocs || []).includes(d.key), attrs: { "data-testid": "recipient-sees-document" } });
+        box.addEventListener("change", () => {
+          const hidden = new Set(r.hiddenDocs || []);
+          if (box.checked) hidden.delete(d.key); else hidden.add(d.key);
+          r.hiddenDocs = [...hidden];
+          S.dirty = true;
+        });
+        return h("label", { class: "os-check os-rcpt__otp", attrs: { for: `rv-${r.key}-${d.key}` } }, box, h("span", { text: d.name }));
+      }),
+      h("p", { class: "os-help", text: t("prepare.documents-seen-help") })) : null;
     // Per-recipient options (UX-05, DocuSign's "More" on each row): how they prove who
     // they are. Set when the recipient is created (the API has no later change).
     const acting = r.type !== "cc";
-    const more = TPL || !acting ? null : h("details", { class: "os-details os-rcpt__more", open: !!(r.accessCode || r.emailOtp || r.smsOtp || r.voiceOtp || r.sso) && !r.id, attrs: { "data-testid": "recipient-more" } },
+    const more = TPL || !acting ? null : h("details", { class: "os-details os-rcpt__more", open: !!(r.accessCode || r.emailOtp || r.smsOtp || r.voiceOtp || r.sso || r.delayHours || r.hiddenDocs?.length) && !r.id, attrs: { "data-testid": "recipient-more" } },
       h("summary", {}, h("span", { text: t("prepare.more-options") }), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })),
       h("div", { class: "os-rcpt__opts" },
         h("div", { class: "os-rcpt__cell" },
@@ -632,7 +651,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("div", { class: "os-rcpt__cell" },
           h("label", { class: "os-label os-rcpt__label", attrs: { for: `rp-${r.key}` } }, t("prepare.phone"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })),
           phone, h("p", { id: `rp-${r.key}-help`, class: "os-help", text: t("prepare.phone-help") })),
-        h("div", {}, smsOtp, voiceOtp)));
+        h("div", {}, smsOtp, voiceOtp),
+        h("div", { class: "os-rcpt__cell" },
+          h("label", { class: "os-label os-rcpt__label", attrs: { for: `rd-${r.key}` } }, t("prepare.delay-hours"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })),
+          delay, h("p", { id: `rd-${r.key}-help`, class: "os-help", text: t("prepare.delay-hours-help") })),
+        seen));
     // One dense row (UX-05): type, step, name, email, options, then the row's tools.
     const tools = h("div", { class: "os-rcpt__tools" }, up, down, del);
     const li = h("li", { class: `os-rcpt os-rcpt--row${TPL ? " os-rcpt--role" : ""} os-r${c}${S.active === r.key ? " is-active" : ""}`, attrs: { "data-rkey": r.key, "data-type": r.type } },
@@ -1696,6 +1719,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         i.addEventListener("change", () => { const v = Number.parseInt(i.value, 10); set(Number.isInteger(v) && v > 0 ? Math.min(v, 999) : null); S.dirty = true; });
         return i;
       };
+      // Scheduled sending (WF-02): empty sends at once.
+      const sendAt = h("input", { id: "send-at", class: "os-input", type: "datetime-local", value: S.sendAt, attrs: { "data-testid": "send-at" } });
+      sendAt.addEventListener("change", () => { S.sendAt = sendAt.value; });
       const loc = h("input", { id: "env-location", type: "checkbox", checked: S.captureLocation });
       loc.addEventListener("change", () => { S.captureLocation = loc.checked; S.dirty = true; });
       reviewPanel.append(h("section", { class: "os-card", attrs: { "aria-labelledby": "rv-opt-h" } },
@@ -1703,8 +1729,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("div", { class: "os-optgrid" },
           h("div", {}, h("label", { class: "os-label", attrs: { for: "rem-first" }, text: t("prepare.reminder-first") }), num("rem-first", S.reminderFirst, (v) => { S.reminderFirst = v; })),
           h("div", {}, h("label", { class: "os-label", attrs: { for: "rem-every" }, text: t("prepare.reminder-every") }), num("rem-every", S.reminderEvery, (v) => { S.reminderEvery = v; })),
-          h("div", {}, h("label", { class: "os-label", attrs: { for: "expires" }, text: t("prepare.expires") }), num("expires", S.expiresDays, (v) => { S.expiresDays = v; }))),
+          h("div", {}, h("label", { class: "os-label", attrs: { for: "expires" }, text: t("prepare.expires") }), num("expires", S.expiresDays, (v) => { S.expiresDays = v; })),
+          h("div", {}, h("label", { class: "os-label", attrs: { for: "send-at" }, text: t("prepare.send-at") }), sendAt)),
         h("p", { class: "os-muted os-small", text: t("prepare.reminders-help") }),
+        h("p", { class: "os-muted os-small", text: t("prepare.send-at-help") }),
         h("label", { class: "os-check", attrs: { for: "env-location" } }, loc, h("span", { text: t("prepare.capture-location") })),
         h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") })));
     } else {
@@ -1759,6 +1787,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.reminderFirst = Number.isInteger(env.reminders?.first_after_days) ? env.reminders.first_after_days : null;
     S.reminderEvery = Number.isInteger(env.reminders?.then_every_days) ? env.reminders.then_every_days : null;
     S.expiresDays = env.expires_at ? Math.max(1, Math.ceil((Date.parse(env.expires_at) - Date.now()) / 86_400_000)) : null;
+    S.sendAt = env.send_at ? localInput(env.send_at) : "";
+    S.scheduled = !!env.send_at;
     S.serverOptions = JSON.stringify(sendOptions());
     subject.value = S.subject;
     title.textContent = S.subject.trim() || t("prepare.title");
@@ -1780,7 +1810,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const prevActive = Math.max(0, S.recipients.findIndex((r) => r.key === S.active));
     const prevAccess = new Map(S.recipients.map((r) => [r.id, r.accessCode]));
     const steps = fromServer(recs.map((r) => r.routing_order));
-    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), phone: r.phone || "", smsOtp: (r.auth || []).includes("sms_otp"), voiceOtp: (r.auth || []).includes("voice_otp"), sso: (r.auth || []).includes("sso"), order: steps[i] }));
+    const docKeyOf = new Map(S.docs.map((d) => [d.id, d.key]));
+    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), phone: r.phone || "", smsOtp: (r.auth || []).includes("sms_otp"), voiceOtp: (r.auth || []).includes("voice_otp"), sso: (r.auth || []).includes("sso"), delayHours: r.route_delay_hours || 0, hiddenDocs: (r.excluded_documents || []).map((d) => docKeyOf.get(d)).filter(Boolean), order: steps[i] }));
     // Signers all at one step with copies after them is the switch off; anything else is steps.
     S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type !== "cc");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
@@ -1846,7 +1877,19 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (r.smsOtp) body.auth = (body.auth || []).concat(["sms_otp"]);
       if (r.voiceOtp) body.auth = (body.auth || []).concat(["voice_otp"]);
     }
+    // Delayed routing and document visibility (WF-02). Hidden documents go by id once
+    // saved; in the first create, by their index in the same request.
+    if (r.type !== "cc" && r.delayHours > 0) body.route_delay_hours = r.delayHours;
+    const hidden = (r.hiddenDocs || []).map((k) => { const i = S.docs.findIndex((d) => d.key === k); return i < 0 ? null : (S.id ? S.docs[i].id : i); }).filter((x) => x != null);
+    if (hidden.length) body.excluded_documents = hidden;
     return body;
+  }
+  /// An ISO instant as a `datetime-local` value, in the browser's zone.
+  function localInput(at) {
+    const d = new Date(at);
+    if (Number.isNaN(d.getTime())) return "";
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
   }
   function fieldBody(f, recipientRef, documentRef) {
     const body = { recipient: recipientRef, document: documentRef, type: f.type, ...toWire(f.page, f) };
@@ -1930,6 +1973,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       ctx.replaceHash(`#/prepare/${encodeURIComponent(env.id)}`);
       await loadFromServer(env);
     } else {
+      // A scheduled draft is not edited (CS-WF-0022): saving a change cancels the
+      // schedule; Send sets it again from "Send at" (WF-02).
+      if (S.scheduled) { await ctx.api.unscheduleSend(S.id); S.scheduled = false; }
       // Documents first: new fields need their ids.
       for (const d of S.docs.filter((x) => !x.id)) {
         const created = await ctx.api.addDocument(S.id, d.name, d.bytes);
@@ -2024,10 +2070,21 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // with signing steps only the first step is emailed at once).
     const subj = S.subject.trim() || t("envelope.untitled");
     const text = sendSummary(S.recipients.map((r, i) => ({ name: displayName(r, i), type: r.type, order: orderOf(r) })), subj).map(([k, p]) => t(k, p)).join(" ");
-    if (!(await confirmDialog(t("send.confirm-title"), text, { confirm: t("prepare.send") }))) return;
+    // "Send at" (WF-02): the draft sends itself then; a time not ahead is refused here.
+    const at = S.sendAt ? new Date(S.sendAt) : null;
+    if (at && !(at.getTime() > Date.now())) { toast(t("prepare.send-at-past"), "error"); return; }
+    const when = at ? ` ${t("prepare.send-at-confirm", { at: at.toLocaleString() })}` : "";
+    if (!(await confirmDialog(t("send.confirm-title"), text + when, { confirm: t(at ? "prepare.schedule" : "prepare.send") }))) return;
     await busy(sendBtn, async () => {
       try {
         await save();
+        if (at) {
+          await ctx.api.scheduleSend(S.id, at.toISOString());
+          S.dirty = false;
+          toast(t("prepare.scheduled", { at: at.toLocaleString() }));
+          ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`);
+          return;
+        }
         await ctx.api.sendEnvelope(S.id);
         S.dirty = false;
         await celebrate();

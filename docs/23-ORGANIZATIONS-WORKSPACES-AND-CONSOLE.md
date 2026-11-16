@@ -352,7 +352,7 @@ set of actions.
 | `settings.sending`, `settings.signing`, `ersd.manage` | `admin:account` | — |
 | `settings.security`, `brands.manage`, `retention.manage` | `admin:account` | **yes** |
 | `api_clients.manage`, `webhooks.manage` | `admin:account`, `webhooks:manage` | **yes** |
-| `envelopes.read_all`, `envelopes.transfer` | (`view_all_envelopes`) | **yes** |
+| `envelopes.read_all`, `envelopes.transfer` | (`view_all_envelopes`); for an API key or OAuth token, `envelopes.transfer` also needs `envelopes:send` granted (ORG-09) | **yes** |
 | `templates.share_workspace`, `reports.read`, `usage.read`, `admin_audit.read` | `admin:account`, `audit:read` | — |
 
 **Sensitive workspace actions** (review finding 14) reach content or personal data indirectly, or weaken evidence:
@@ -408,6 +408,34 @@ view-all across workspaces (silent content access, largest blast radius for a st
 - a route with no catalogue entry fails to register, as a route without `x-permission` does today; this is the existing
   route-table test, extended, not a new gate;
 - rights are never cached across requests.
+
+#### As built (`ORG-07`, migration `0037_workspace_actions.sql`)
+
+- **Catalogue.** `casual-sign-server::authz` holds the workspace actions of the table above (`Action`, each with its
+  covering scope and whether it is sensitive) and the organization actions (`OrgAction`). The route table names them
+  as typed values, so a route naming an action outside the catalogue does not compile; each such operation in
+  `api/openapi.yaml` carries the action in `x-permission` and `x-level: workspace | organization`, and the contract
+  test checks both against the table. The guard resolves the principal afresh on every request: a workspace route
+  needs the action among the caller's profile actions (narrowed by an API key's or token's scopes), an organization
+  route needs the caller's `organization_admins` role to hold the organization action (`CS-AUTH-0006`).
+- **Profiles.** The built-in `admin` profile holds every action; `sender` and `viewer` the actions of their scopes; a
+  custom profile the names it stores, where a scope name stands for every action it covers and `view_all_envelopes`
+  for `envelopes.read_all`. The database refuses a name outside the catalogue.
+- **Delegated workspace admin.** A custom profile with `admin_scope_group_ids` reads and changes only members of those
+  groups (others answer `404 CS-API-0002`), sets a scope group's members only to members it already administers,
+  creates no group and, until invitations name a scope group (`ORG-38`), no member (`CS-ORG-0005`), sees only
+  profiles whose actions it holds, changes only a profile whose every holder it administers (a change to a profile
+  changes its holders' rights; `CS-ORG-0005`), and never holds a sensitive action (refused by the API,
+  `CS-ORG-0005`, and by the database). Template sharing is not yet limited to scope groups (`ORG-38`).
+- **One rule against escalation.** `authz::held` computes, per level, what an actor holds for granting (its
+  membership; every workspace action for an organization owner or admin; a delegated organization admin's set within
+  its workspace scope), and `authz::grantable` decides every grant built today: profile create, edit and delete,
+  member create, invite and profile change, changes to a member above the caller, API key and OAuth client creation,
+  and organization admin assignment (never to oneself). Refusals are `403 CS-ORG-0005`. Property-tested over 20,000
+  random actor and grant pairs; `tests/delegated_admin.rs` derives the grant routes from the route table (`SEC-O02`).
+- **Not built here.** Delegated organization admins and their permission sets (`org.delegates.manage`,
+  `org.workspace_admins.assign`, the built-in sets): `ORG-37`. SCIM role mapping and JIT through `grantable`:
+  `ORG-14`, `ORG-12`. Sensitive actions' fresh sign-in, notice and floors: `ORG-24`.
 
 ### 2.3 Identities, cross-workspace users and switching
 
@@ -484,6 +512,20 @@ design and is superseded by it.
   id, so `SEC-O05` holds as written.
 - *Rejected:* re-keying an envelope's rows with triggers disabled (indistinguishable from the insider rewrite `SEC-S07`
   defends against; the chain head in the sealed PDF would no longer match its host's records).
+
+#### As built (`ORG-09`)
+
+- **Transfer.** `POST /envelopes/{id}/transfer {to_user, to_workspace?}` (`envelopes.transfer`, sensitive) runs the
+  workflow command `Transfer {to_user}` as an administrator principal: any status but purged; the chain records
+  `envelope.transferred {from_user, to_user}` and the envelope row's `sender_user_id` follows the state. The holder
+  reaches every envelope of the workspace (as `envelopes.read_all`); another workspace's envelope is `404`. A
+  `to_workspace` other than the session's, or a `to_user` who is not an enabled member of this workspace (or does not
+  exist), is `422 CS-ORG-0009`. The envelope's `account_id`, rows, chain and blobs never change.
+- **Export.** The engine records `envelope.exported {by}` for `RecordAccess {EvidenceExported}` on a completed
+  envelope (staff only); `GET /envelopes/{id}/evidence-package`, which records it, and the import are `ORG-18`.
+- Both types are additive to ADR-010: earlier chains hash unchanged, and a verifier without them reports the chain
+  valid and lists the two events as unrecognised (seen in `casual-sign-audit/tests/tamper.rs` against the verifier
+  before the change). The transfer screen is `ORG-41`.
 
 ### 2.5 Admin audit logs
 
@@ -617,6 +659,29 @@ request that reads or writes settings, login, send) and the worker (retention, r
 - **Evidence:** what a ceremony depends on (recipient authentication methods, seal profile) is fixed into the envelope
   state at send, as the engine `Policy` already is. A later policy change never alters a sent envelope. Recipients are
   not affected by staff login policy.
+
+### As built (`ORG-08`, migration `0039_organization_policy.sql`)
+
+- **The document.** `casual-sign-policy::org::OrgPolicy` validates `organizations.policy` as `{key: {value,
+  locked?}}` for every key of the table above (unknown key or bad value: `422 CS-API-0001` at `/policy/<key>`;
+  `retention.min_days` above `retention.max_days` refused). `locked` defaults to true for `login.sso_required` and
+  `login.allowed_methods`, false otherwise. `PATCH /organizations/me {name?, policy?}` (`org.settings.update`)
+  replaces the whole document and appends `organization.policy_changed` with each changed key; loosening, unlocking or
+  removing a security key (`loosened`) is an owner's alone (`403 CS-ORG-0013`). `GET /organizations/me` answers it.
+- **Workspace writes.** The keys that govern a workspace setting today are `login.mfa_required` (`mfa_policy`),
+  `reminders.default` (`first_reminder_days`), `locale.date_format` (`workflow_policy.date_format`) and
+  `branding.default_brand` (`branding`). `PATCH /accounts/me` runs `check_write`: a governed setting that changes to a
+  locked key, or to a value looser than a tighten-only key, is `422 CS-ORG-0002` naming the setting and the key; a
+  setting that does not change is not checked, so an unrelated edit of a workspace that predates a tightening saves.
+- **Reads and sign-in.** `GET /accounts/me` answers `organization_policy.settings`, per governed setting
+  `{key, value, locked, from_organization}` from `effective`; the web app's Organization and Branding pages show a
+  lock with "Set by your organization" and disable the locked inputs. The staff-session resolver answers the
+  organization's policy (migration 0039) and the server applies `effective_mfa`, the stricter of the workspace's
+  `mfa_policy` and the organization's `login.mfa_required`, on every request, without rewriting the workspace.
+- **Not yet enforced.** Keys with no workspace setting are validated and stored only: seal profiles and recipient
+  methods at send, session times, the IP list, password rules, API and webhook hosts, frame ancestors, retention and
+  region labels (`ORG-39`). Locked defaults are checked on writes but not yet fixed into new envelopes (`ORG-40`).
+  The workflow context still takes the workspace's stored policy, so no organization change reaches a sent envelope.
 
 ## 4. Identity: domains, SSO, SCIM (slice 10, built inside this frame)
 
@@ -996,13 +1061,38 @@ stored but not enforced on the TSA's answer (`CON-23`); trust anchors in the dat
 grant, the insert-only payload), `casual-sign-worker/tests/tsa_directory.rs` (a seal time-stamps with the database's
 TSA while the environment's is unreachable; a database TSA on a refused address is never contacted).
 
+**Expiry and reconciliation (`CON-08`, `CON-09`, migration 0038).** keyd refuses a signature under an alias whose
+signer certificate is outside its validity at keyd's clock (`CS-CON-0006`, wire 1006, in keyd's log), so a seal job
+fails and retries rather than sealing with an expired certificate. The console runs `certificate_expiry_scan` daily
+inside `serve` (and on `POST /keys/expiry-scan`, operators): each keyd signer certificate raises `CS-CON-0018`
+(source `certificate_expiry_scan`, subject alias, certificate SHA-256, `days` 90, 30, 7 or 0 for expired) once per
+certificate and threshold, the threshold being the smallest one reached. The worker writes `seal_signatures`
+(account, envelope, digest, alias, time; a tenant table of ids and hashes) for each keyd signature in the transaction
+that stores the sealed bytes (`seal.stored`) or an ended envelope's certificate; a key in the worker's process has no
+keyd log and writes none. The console reconciles hourly inside `serve` (and on `POST /reconciliation`, operators;
+`GET /reconciliation` lists runs): it reads keyd's log from the last run's `next_seq` up to an hour ago (at most
+100,000 records a run; the next carries on), matches each successful `sign` with the records of its envelope
+(`platform.seal_digests_of`, 1,000 ids a call), and each record stored from the last run's cut-off to this one's,
+both less 5 minutes for clock skew (`platform.seal_digests`), with keyd's digests of this run and of every earlier
+run that read signatures made up to an hour before the oldest record judged (a record can be judged several runs
+after its signature when operators run reconciliation minutes apart).
+A signature whose envelope has other records is an orphaned retry, listed in the run (at most 1,000); any other
+mismatch, in either direction, is an alert `CS-CON-0009` (source `reconciliation`) and the run's
+`operator.reconciliation.mismatch` event. *Decided:* the alert code for expiry is new (`CS-CON-0018`), because
+`CS-CON-0006` is a refusal; the one-hour grace is longer than a seal job's lease, so an in-flight seal is not judged;
+the scheduled runs have no operator, so their events carry none. Not yet: the other certificate sources (`CON-25`),
+showing runs and alerts in the UI (`CON-26`), re-classing an alerted signature whose envelope seals later (`CON-27`).
+Tests: `casual-sign-keyd/tests/expiry.rs`, `casual-sign-worker/tests/keyd.rs` (the digests recorded equal keyd's
+logged ones), `casual-sign-console/tests/keys.rs` (the thresholds once each; matched, orphaned and both mismatch
+directions), each seen red with its guard removed.
+
 **Not yet built** (rows in docs/14): the Compose
 service and the console's LOGIN role in deployment (`CON-02`); moving the worker onto `casual-sign-keyd-client`
 (`CON-15`); the other
 two-person actions (organization create, close, owner recovery, identity disable, adding a platform owner) and the
 server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); trust anchors in
 the database (`CON-22`) and the TSA's certificate and policy checked against the configured ones (`CON-23`); ops listeners and metrics on server and worker, readiness on keyd (`CON-05`);
-expiry alerts (`CON-08`).
+expiry alerts for sources other than keyd signer certificates (`CON-25`).
 
 ## 6. API additions (`/api/v1`, additive)
 
@@ -1211,6 +1301,7 @@ them. Messages carry codes, ids and counts only.
 | CS-CON-0007 | Operator log does not verify; the console refuses writes (start-up and per write) |
 | CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
 | CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no signature (alert) |
+| CS-CON-0018 | Seal signer certificate within 90, 30 or 7 days of expiry, or expired (alert; added by `CON-08`) |
 | CS-DB-0013 | Change to an immutable column refused (a workspace's organization, outside ORG-20's operator link) (SQLSTATE `OS004`) |
 | CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq` or `prev` (SQLSTATE `OS005`) |
 
