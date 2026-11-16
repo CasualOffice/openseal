@@ -188,5 +188,9 @@ export function recipientPatch(server, want) {
   const patch = {};
   for (const k of ["name", "email", "routing_order", "type"]) if (server && want[k] !== undefined && server[k] !== want[k]) patch[k] = want[k];
   if (patch.type === "cc" && (server.auth || []).length) patch.auth = [];
+  // Delayed routing and document visibility (WF-02): absent in `want` means none.
+  if (server && (server.route_delay_hours || 0) !== (want.route_delay_hours || 0)) patch.route_delay_hours = want.route_delay_hours || 0;
+  const hidden = (list) => [...(list || [])].sort().join("\n");
+  if (server && hidden(server.excluded_documents) !== hidden(want.excluded_documents)) patch.excluded_documents = want.excluded_documents || [];
   return Object.keys(patch).length ? patch : null;
 }

@@ -268,7 +268,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   function newEnvelope({ subject = "", message = "", signing_options = {}, created_at } = {}) {
     const env = {
       id: uid(), status: "draft", version: 1, sender_user_id: "user-demo", subject, message,
-      created_at: created_at || iso(), sent_at: null, ended_at: null, expires_at: null, void_reason: null,
+      created_at: created_at || iso(), sent_at: null, send_at: null, ended_at: null, expires_at: null, void_reason: null,
       reminders: {}, signing_options: { ...signing_options }, seal_profile: "pades-b-t",
       documents: [], recipients: [], fields: [], sealed: false,
     };
@@ -301,8 +301,23 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     };
     for (const k of ["phone", "embedded_client_user_id", "date_format", "witness_for"]) if (r[k] != null && r[k] !== "") rec[k] = r[k];
     if (Number.isInteger(r.time_zone_offset_minutes)) rec.time_zone_offset_minutes = r.time_zone_offset_minutes;
+    visibilityAndDelay(env, rec, r);
     env.recipients.push(rec);
     return rec;
+  }
+  /// Document visibility and delayed routing (WF-02), as the server takes them: hidden
+  /// documents by id (or, in a create, the index of a document of the same request), and
+  /// hours routing waits once the recipient's turn comes. The mock records them; its
+  /// ceremony does not hold or hide (the server's engine does).
+  function visibilityAndDelay(env, rec, r) {
+    if (r.route_delay_hours != null) {
+      if (!Number.isInteger(r.route_delay_hours) || r.route_delay_hours < 0 || r.route_delay_hours > 65535) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/route_delay_hours", code: "CS-API-0001" }]);
+      rec.route_delay_hours = r.route_delay_hours;
+    }
+    if (r.excluded_documents != null) {
+      if (!Array.isArray(r.excluded_documents)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/excluded_documents", code: "CS-API-0001" }]);
+      rec.excluded_documents = r.excluded_documents.map((d) => (Number.isInteger(d) ? env.documents[d]?.id : d)).filter(Boolean);
+    }
   }
   function placementOf(f) {
     const p = f.placement || f;
@@ -424,7 +439,17 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const r = env.recipients.find((x) => x.id === f.recipient_id);
       if (r && !fieldAllowed(r.type, f.type)) violations.push({ pointer: `/fields/${f.id}`, code: "field_not_allowed" });
     }
+    for (const r of env.recipients) {
+      if ((r.route_delay_hours || 0) > 720) violations.push({ pointer: `/recipients/${r.id}`, code: "CS-WF-0023" });
+      const hidden = r.excluded_documents || [];
+      if (env.documents.length && env.documents.every((d) => hidden.includes(d.id))) violations.push({ pointer: `/recipients/${r.id}`, code: "CS-WF-0004" });
+    }
+    for (const f of env.fields) {
+      const r = env.recipients.find((x) => x.id === f.recipient_id);
+      if (r && (r.excluded_documents || []).includes(f.document_id)) violations.push({ pointer: `/fields/${f.id}`, code: "CS-WF-0021" });
+    }
     if (violations.length) fail(422, "CS-WF-0004", "Envelope invalid for sending", violations);
+    env.send_at = null;
     env.status = "sent";
     env.sent_at = at || iso();
     env.version++;
@@ -625,6 +650,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (v !== `"v${env.version}"`) fail(412, "CS-WF-0002", "Stale version");
   }
   const draftOnly = (env) => { if (env.status !== "draft") fail(409, "CS-WF-0001", "Not allowed in the current state"); };
+  /// A scheduled draft sends as it was scheduled (WF-02).
+  const notScheduled = (env) => { if (env.send_at) fail(409, "CS-WF-0022", "The draft is scheduled to send"); };
   const withEtag = (env, status = 200) => json(status, publicEnvelope(env), { ETag: `"v${env.version}"` });
 
   // ---- Corrections (docs/24 §6; the engine's `apply_changes` in the Correct scope) -------
@@ -668,7 +695,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     await audit(env, "document.added", { document_id: d.id, upload_hash: await blobHash(d.id), bytes: d.bytes }, { by: "sender" });
     await audit(env, "document.admitted", { document_id: d.id, report_hash: await blobHash(d.id, ":admission"), findings: d.admission_findings }, { by: "sender" });
   }
-  const SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for"];
+  const SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for", "excluded_documents", "route_delay_hours"];
   /// An engine `RecipientSpec`: its members only, the four it needs present.
   function checkSpec(n, at) {
     if (!n || typeof n !== "object") fail(400, "CS-API-0001", "Malformed request", [{ pointer: at, code: "type" }]);
@@ -697,7 +724,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         // Not one who has acted, and never a change of type (the engine's `refused`).
         if (settled(r) || r.type !== n.type) fail(409, "CS-WF-0001", "Recipient has already acted", [{ pointer: `${at}/recipient/id`, code: "acted" }]);
         Object.assign(r, { routing_order: n.routing_order, name: n.name.trim(), email: n.email, delivery: n.delivery || "email", auth: Array.isArray(n.auth) ? n.auth : [] });
-        for (const k of ["phone", "embedded_client_user_id", "date_format", "witness_for", "time_zone_offset_minutes"]) { if (n[k] != null) r[k] = n[k]; else delete r[k]; }
+        for (const k of ["phone", "embedded_client_user_id", "date_format", "witness_for", "time_zone_offset_minutes", "excluded_documents", "route_delay_hours"]) { if (n[k] != null) r[k] = n[k]; else delete r[k]; }
         if (!r.auth.includes("access_code")) r.access_code = null;
         changed.push(`recipients.${r.id}`);
         return;
@@ -1557,7 +1584,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!sub) {
       if (method === "GET") return withEtag(env);
       if (method === "PATCH") {
-        checkIfMatch(env, headers); draftOnly(env);
+        checkIfMatch(env, headers); draftOnly(env); notScheduled(env);
         const changed = [];
         for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) { env[k] = body[k]; changed.push(k); }
         if (body && "expires_in_days" in body) { env.expires_at = Number.isInteger(body.expires_in_days) ? iso(body.expires_in_days * 24 * 60) : null; changed.push("expires_at"); }
@@ -1620,6 +1647,23 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return withEtag(env);
     }
     if (sub === "send" && method === "POST") { draftOnly(env); await send(env); return withEtag(env); }
+    // Scheduled sending (WF-02): a sendable draft sends itself at `send_at`, which is
+    // after now and within a year (`422 CS-WF-0023`); it is not edited meanwhile
+    // (`409 CS-WF-0022`). The mock records the schedule; sending it is the server's.
+    if (sub === "schedule" && method === "PUT") {
+      draftOnly(env);
+      const at = Date.parse(body?.send_at || "");
+      if (!Number.isFinite(at)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/send_at", code: "CS-API-0001" }]);
+      if (at <= now().getTime() || at > now().getTime() + 365 * 86_400_000) fail(422, "CS-WF-0023", "The schedule time is out of range");
+      env.send_at = new Date(at).toISOString();
+      await edited(env, ["send_at"]);
+      return withEtag(env);
+    }
+    if (sub === "schedule" && method === "DELETE") {
+      draftOnly(env);
+      if (env.send_at) { env.send_at = null; await edited(env, ["send_at"]); }
+      return withEtag(env);
+    }
     if (sub === "void" && method === "POST") {
       if (TERMINAL.has(env.status) || env.status === "draft") fail(409, "CS-WF-0001", "Not allowed in the current state");
       if (!body?.reason) fail(400, "CS-API-0001", "Reason required", [{ pointer: "/reason", code: "required" }]);
@@ -1719,7 +1763,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         checkIfMatch(env, headers);
         const correcting = editable(env);
         if (correcting && settled(r)) fail(409, "CS-WF-0001", "Recipient has already acted");
-        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "type", "auth", "access_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "type", "auth", "access_code", "route_delay_hours", "excluded_documents"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
         // A type change is a draft's only (UX-12): a correction keeps the type.
         if (body?.type != null && body.type !== r.type && correcting) fail(409, "CS-WF-0001", "Not allowed in the current state");
         if (body?.name != null && !String(body.name).trim()) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
@@ -1733,6 +1777,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (body?.email != null) r.email = String(body.email);
         if (body?.routing_order != null) r.routing_order = body.routing_order;
         if (body?.type != null) r.type = String(body.type);
+        visibilityAndDelay(env, r, body || {});
         r.auth = auth;
         if (code) { r.access_code = code; r.auth_passed = []; } else if (had && !wants) r.access_code = null;
         if (correcting) await corrected(env, [`recipients.${r.id}`]);
