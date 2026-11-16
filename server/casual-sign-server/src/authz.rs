@@ -679,8 +679,23 @@ mod tests {
                     scope: rng.scope(),
                 },
             };
+            // Mostly a part of what the actor holds, so both outcomes are common; now
+            // and then one action more, or a set drawn independently.
+            let mut actions: BTreeSet<Action> = match rng.below(4) {
+                0 => rng.actions(),
+                _ => actor
+                    .held
+                    .actions
+                    .iter()
+                    .copied()
+                    .filter(|_| rng.below(2) == 0)
+                    .collect(),
+            };
+            if rng.below(4) == 0 {
+                actions.insert(Action::ALL[rng.below(Action::ALL.len())]);
+            }
             let grant = Grant {
-                actions: rng.actions(),
+                actions,
                 admin_profile: rng.below(6) == 0,
                 scope: rng.scope(),
                 to_user: [None, Some(uid(1)), Some(uid(2))][rng.below(3)],

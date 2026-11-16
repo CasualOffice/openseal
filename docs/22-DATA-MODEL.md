@@ -187,6 +187,10 @@ deny by default and decided per request: the owner and the account's administrat
   membership of the account; a change to `groups` or `group_members` needs its admin event in the same transaction.
   A custom permission profile names only the scopes of docs/40 §2 and `view_all_envelopes`
   (`permission_profiles_known_permissions`); built-in ones are never changed and a held one never deleted.
+  **As built (`ORG-07`, migration 0035):** a custom profile may also name workspace actions of the catalogue
+  (docs/23 §2.2, `authz::Action`), and `permission_profiles.admin_scope_group_ids uuid[]` (NULL: the whole
+  workspace) makes it a delegated workspace admin limited to those groups; the database refuses a name outside the
+  catalogue and a sensitive action with a group scope (`permission_profiles_scope_not_sensitive`).
 - Recipients are **not users**. A recipient who also has an account sees the envelope in their inbox through a match
   on verified email, never through a shared identity.
 

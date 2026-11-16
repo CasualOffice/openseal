@@ -409,6 +409,31 @@ view-all across workspaces (silent content access, largest blast radius for a st
   route-table test, extended, not a new gate;
 - rights are never cached across requests.
 
+#### As built (`ORG-07`, migration `0035_workspace_actions.sql`)
+
+- **Catalogue.** `casual-sign-server::authz` holds the workspace actions of the table above (`Action`, each with its
+  covering scope and whether it is sensitive) and the organization actions (`OrgAction`). The route table names them
+  as typed values, so a route naming an action outside the catalogue does not compile; each such operation in
+  `api/openapi.yaml` carries the action in `x-permission` and `x-level: workspace | organization`, and the contract
+  test checks both against the table. The guard resolves the principal afresh on every request: a workspace route
+  needs the action among the caller's profile actions (narrowed by an API key's or token's scopes), an organization
+  route needs the caller's `organization_admins` role to hold the organization action (`CS-AUTH-0006`).
+- **Profiles.** The built-in `admin` profile holds every action; `sender` and `viewer` the actions of their scopes; a
+  custom profile the names it stores, where a scope name stands for every action it covers and `view_all_envelopes`
+  for `envelopes.read_all`. The database refuses a name outside the catalogue.
+- **Delegated workspace admin.** A custom profile with `admin_scope_group_ids` reads and changes only members of those
+  groups (others answer `404 CS-API-0002`), creates members only into them, sees only profiles whose actions it holds,
+  and never holds a sensitive action (refused by the API, `CS-ORG-0005`, and by the database).
+- **One rule against escalation.** `authz::held` computes, per level, what an actor holds for granting (its
+  membership; every workspace action for an organization owner or admin; a delegated organization admin's set within
+  its workspace scope), and `authz::grantable` decides every grant built today: profile create, edit and delete,
+  member create, invite and profile change, changes to a member above the caller, API key and OAuth client creation,
+  and organization admin assignment (never to oneself). Refusals are `403 CS-ORG-0005`. Property-tested over 20,000
+  random actor and grant pairs; `tests/delegated_admin.rs` derives the grant routes from the route table (`SEC-O02`).
+- **Not built here.** Delegated organization admins and their permission sets (`org.delegates.manage`,
+  `org.workspace_admins.assign`, the built-in sets): `ORG-37`. SCIM role mapping and JIT through `grantable`:
+  `ORG-14`, `ORG-12`. Sensitive actions' fresh sign-in, notice and floors: `ORG-24`.
+
 ### 2.3 Identities, cross-workspace users and switching
 
 **Identity attributes** (review finding 1; the rule `SEC-ID-01`'s fix must meet). The `users` row (email, name,

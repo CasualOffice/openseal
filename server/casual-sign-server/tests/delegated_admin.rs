@@ -100,7 +100,8 @@ async fn delegated(rls: Rls) {
     let a = api.tenant("alpha").await;
     let g1 = make(&api, &a.auth, "/api/v1/groups", json!({"name": "Sales"})).await;
     let g2 = make(&api, &a.auth, "/api/v1/groups", json!({"name": "Legal"})).await;
-    // The delegated workspace admin: user administration within Sales only.
+    // The delegated workspace admin: user administration within Sales only, holding
+    // what a viewer holds, so viewers are not above it (UXW-07 `outranks`).
     let mine = [
         "users.read",
         "users.invite",
@@ -108,6 +109,8 @@ async fn delegated(rls: Rls) {
         "profiles.manage",
         "groups.manage",
         "envelopes.read",
+        "templates.read",
+        "audit.read",
     ];
     let delegate = make(
         &api,
@@ -134,8 +137,8 @@ async fn delegated(rls: Rls) {
     )
     .await;
     let (dana, dana_id) = member(&api, &a, "dana@alpha.example.test", &delegate).await;
-    let (_sam, sam_id) = member(&api, &a, "sam@alpha.example.test", "sender").await;
-    let (_olga, olga_id) = member(&api, &a, "olga@alpha.example.test", "sender").await;
+    let (_sam, sam_id) = member(&api, &a, "sam@alpha.example.test", "viewer").await;
+    let (_olga, olga_id) = member(&api, &a, "olga@alpha.example.test", "viewer").await;
     let (kai, _) = {
         let keys = make(
             &api,
