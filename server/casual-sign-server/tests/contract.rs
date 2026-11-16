@@ -1903,6 +1903,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     let me = session_of(&login);
+    api.pass_factor(&a.email, &me).await;
     let inbox = ok(
         api.call("GET", "/api/v1/envelopes?waiting_for=me", &me, None, &[])
             .await,
@@ -2056,6 +2057,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     let s = session_of(&login);
+    api.pass_factor(&a.email, &s).await;
     // Workspace switching (ORG-04): the listing, and a switch into the one workspace
     // the session already has, which issues a new session and ends the old one.
     ok(

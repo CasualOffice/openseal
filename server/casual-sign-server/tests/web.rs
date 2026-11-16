@@ -556,7 +556,9 @@ async fn the_staff_session_cookie_is_host_prefixed_whenever_it_is_secure() {
             "{set}"
         );
         assert_eq!(set.contains("; Secure"), secure, "{set}");
-        let Auth::Session { cookie, csrf } = common::harness::session_of(&login) else {
+        let s = common::harness::session_of(&login);
+        api.pass_factor(&a.email, &s).await;
+        let Auth::Session { cookie, csrf } = s else {
             panic!("a session");
         };
         let me = |name: &'static str| {

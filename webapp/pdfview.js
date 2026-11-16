@@ -50,8 +50,8 @@ export async function openPdf(bytes) {
       const dpr = Math.min(globalThis.devicePixelRatio || 1, 3);
       canvas.width = Math.floor(vp.width * dpr);
       canvas.height = Math.floor(vp.height * dpr);
-      canvas.style.width = `${vp.width}px`;
-      canvas.style.height = `${vp.height}px`;
+      canvas.style.width = `${vp.width}px`; // px-ok: PDF points × scale
+      canvas.style.height = `${vp.height}px`; // px-ok: PDF points × scale
       tasks.get(canvas)?.cancel();
       const task = page.render({
         canvasContext: canvas.getContext("2d"),

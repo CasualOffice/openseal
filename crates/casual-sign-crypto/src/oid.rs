@@ -61,5 +61,7 @@ pub const OCSP_BASIC: Oid = Oid::new_unwrap("1.3.6.1.5.5.7.48.1.1");
 pub const CE_CRL_NUMBER: Oid = Oid::new_unwrap("2.5.29.20");
 /// `id-ce-authorityKeyIdentifier`.
 pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid = Oid::new_unwrap("2.5.29.35");
+/// `id-ce-issuingDistributionPoint` (RFC 5280 §5.2.5).
+pub const CE_ISSUING_DISTRIBUTION_POINT: Oid = Oid::new_unwrap("2.5.29.28");
 /// `id-ce-cRLReasons` (entry extension).
 pub const CE_CRL_REASONS: Oid = Oid::new_unwrap("2.5.29.21");

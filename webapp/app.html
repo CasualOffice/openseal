@@ -18,6 +18,9 @@
   <link rel="stylesheet" href="admin.css">
   <link rel="stylesheet" href="auth.css">
   <script type="module" src="app.js"></script>
+  <!-- WEB-12 (NAV-36): the first screens' code loads with the shell, not after it. -->
+  <link rel="modulepreload" href="home.js">
+  <link rel="modulepreload" href="dashboard.js">
 </head>
 <body class="os-app">
   <a class="os-skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
@@ -30,8 +33,8 @@
   <header class="os-topbar" id="topbar">
     <button type="button" id="nav-toggle" class="os-btn os-btn--ghost os-btn--md os-btn--icon os-nav-toggle" aria-controls="nav" aria-expanded="false" data-i18n-attr="aria-label:nav.menu;title:nav.menu"></button>
     <a class="os-brand" href="#/home" data-i18n-attr="aria-label:nav.home">
-      <img class="os-logo--light" src="assets/logo.svg" alt="" width="123" height="24">
-      <img class="os-logo--dark" src="assets/logo-dark.svg" alt="" width="123" height="24">
+      <img class="os-logo--light" src="assets/logo.svg" alt="">
+      <img class="os-logo--dark" src="assets/logo-dark.svg" alt="">
     </a>
     <span class="os-spacer"></span>
     <div id="topbar-tools" class="os-topbar__tools"></div>
@@ -68,5 +71,7 @@
     </form>
     <main id="main" class="os-main" tabindex="-1"></main>
   </div>
+  <!-- WEB-12 (NAV-05): says which screen a module switch opened. -->
+  <div id="route-status" class="os-sr-only" role="status" aria-live="polite"></div>
 </body>
 </html>

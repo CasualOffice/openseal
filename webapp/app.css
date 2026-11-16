@@ -9,9 +9,9 @@
  * 16 px on phones (under 48em). Every size below is rem (1 px hairlines excepted), so
  * browser zoom and the window's resolution scale the whole interface together; field
  * boxes on PDF pages are points × zoom. */
-html { -webkit-text-size-adjust: 100%; font-size: clamp(15px, calc(11.5px + .3vw), 18px); }
+html { -webkit-text-size-adjust: 100%; font-size: clamp(15px, calc(11.5px + .3vw), 18px); } /* px-ok: the root size itself, the one place rem is defined */
 @media (max-width: 48em) {
-  html { font-size: 16px; }
+  html { font-size: 16px; } /* px-ok: the phone root size */
 }
 body {
   margin: 0;
@@ -210,7 +210,7 @@ select.os-input {
   appearance: none; -webkit-appearance: none; box-sizing: content-box; flex: none;
   width: 1.125rem; height: 1.125rem; padding: 0; margin: 0; border: 0; border-radius: 0; display: block; cursor: pointer;
   background:
-    linear-gradient(var(--os-bg), var(--os-bg)) center / calc(1.125rem - 2px) calc(1.125rem - 2px) no-repeat,
+    linear-gradient(var(--os-bg), var(--os-bg)) center / calc(1.125rem - 0.125rem) calc(1.125rem - 0.125rem) no-repeat,
     linear-gradient(var(--os-border-strong), var(--os-border-strong)) center / 1.125rem 1.125rem no-repeat;
 }
 .os-checkbox:checked, .os-checkbox:indeterminate {
@@ -226,7 +226,7 @@ select.os-input {
 .os-checkbox:disabled { opacity: .5; cursor: not-allowed; }
 .os-checkbox:focus-visible { outline-offset: calc(var(--os-focus-offset) - var(--os-check-pad, 0px)); }
 .os-table .os-checkbox {
-  --os-check-pad: calc((var(--os-target-touch) - 1.125rem) / 2 + 0.25px); /* a quarter pixel so a fractional root never rounds the target under 44 px */
+  --os-check-pad: calc((var(--os-target-touch) - 1.125rem) / 2 + 0.25px); /* px-ok: a sub-pixel rounding guard; a quarter pixel so a fractional root never rounds the target under 44 px */
   padding: var(--os-check-pad); margin: calc(-1 * var(--os-check-pad)); position: relative; z-index: 1;
 }
 .os-col-subject { display: grid; gap: 0.125rem; padding: var(--os-s1) 0; }
@@ -428,10 +428,9 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); color: var(--os-text); tra
 }
 
 /* ==== WEB-06: document-first frames (docs/47 §Layout spec) ========================== */
-/* Icons in rem: the size attribute stays as the fallback. */
-.os-icon[width="16"] { width: 1rem; height: 1rem; }
-.os-icon[width="20"] { width: 1.25rem; height: 1.25rem; }
-.os-icon[width="24"] { width: 1.5rem; height: 1.5rem; }
+/* Icons in rem (WEB-12): icons.js sets --os-icon-size from the size asked for (16 is
+ * 1rem); the size attribute stays as the fallback for a renderer without this sheet. */
+.os-icon { width: var(--os-icon-size, 1.25rem); height: var(--os-icon-size, 1.25rem); }
 /* Sticky headers on every table (A29). */
 .os-table thead th { position: sticky; top: 0; z-index: 2; } /* above the row checkboxes (z 1) scrolling under it */
 /* The document view: the one scroll container. */
@@ -584,7 +583,7 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); color: var(--os-text); tra
 .os-avatar[data-initials]:empty::before { content: attr(data-initials); width: auto; height: auto; border: 0; border-radius: 0; }
 .os-avatar--lg { width: 2rem; height: 2rem; font-size: var(--os-fs-12); }
 .os-avatars { display: inline-flex; align-items: center; }
-.os-avatars > .os-avatar { box-shadow: 0 0 0 2px var(--os-bg); font-size: 0.5625rem; }
+.os-avatars > .os-avatar { box-shadow: 0 0 0 0.125rem var(--os-bg); font-size: 0.5625rem; }
 .os-avatars > .os-avatar + .os-avatar { margin-left: -0.375rem; }
 .os-avatar--c1 { background: #3f3f46; }
 .os-avatar--c2 { background: #6d28d9; }
@@ -619,7 +618,7 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); color: var(--os-text); tra
   background: var(--os-border-strong); cursor: pointer; transition: background 220ms var(--os-ease-state);
 }
 .os-switch__track::after, .os-switchbtn::after {
-  content: ""; width: 1rem; height: 1rem; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  content: ""; width: 1rem; height: 1rem; border-radius: 50%; background: #fff; box-shadow: 0 1px 0.125rem rgba(0, 0, 0, .25);
   transition: transform var(--os-dur-slow) var(--os-ease-spring);
 }
 .os-switch__input:checked + .os-switch__track, .os-switchbtn[aria-checked="true"] { background: var(--os-strong); }
@@ -685,7 +684,7 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); color: var(--os-text); tra
 .il-violet-scan { fill: rgba(139, 92, 246, .16); }
 .il-scanline { stroke: #8b5cf6; stroke-width: 1.5; }
 .il-sweep { animation: os-il-scan 2.2s var(--os-ease-wave) infinite; }
-@keyframes os-il-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(48px); } }
+@keyframes os-il-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3rem); } }
 @keyframes os-dash { to { stroke-dashoffset: -16; } }
 
 /* ---- Toasts: an ink pill, bottom right -------------------------------------------- */
@@ -712,7 +711,7 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); color: var(--os-text); tra
   animation: os-pop var(--os-dur-slow) var(--os-ease-out);
 }
 .os-dialog--lg { width: min(42.5rem, calc(100vw - 2 * var(--os-s4))); }
-.os-dialog::backdrop { background: var(--os-overlay); backdrop-filter: blur(2px); animation: os-fade var(--os-dur) var(--os-ease-state); }
+.os-dialog::backdrop { background: var(--os-overlay); backdrop-filter: blur(0.125rem); animation: os-fade var(--os-dur) var(--os-ease-state); }
 .os-dialog.is-leaving { animation: os-dialog-out var(--os-dur-fast) var(--os-ease-state) forwards; }
 @keyframes os-dialog-out { to { opacity: 0; transform: translateY(0.25rem) scale(.98); } }
 .os-dialog__head { display: flex; align-items: center; gap: var(--os-s2); padding: 1.125rem var(--os-s3) 0 var(--os-s5); }
@@ -724,7 +723,7 @@ a.os-counter:hover { box-shadow: var(--os-shadow-md); color: var(--os-text); tra
 /* ---- Model suggestions (WEB-18; canvas Insights): violet edge, decided state ------- */
 .os-sugg {
   display: flex; flex-direction: column; gap: 0.25rem; padding: 0.75rem 0.875rem; border-radius: 0.625rem;
-  background: var(--os-bg); box-shadow: inset 0 0 0 1px var(--os-ml-edge), 0 1px 2px rgba(24, 24, 27, .04);
+  background: var(--os-bg); box-shadow: inset 0 0 0 1px var(--os-ml-edge), 0 1px 0.125rem rgba(24, 24, 27, .04);
   transition: opacity var(--os-dur) var(--os-ease-state), background var(--os-dur) var(--os-ease-state), box-shadow var(--os-dur) var(--os-ease-state);
   animation: os-rise var(--os-dur-enter) var(--os-ease-out) both;
 }
@@ -784,8 +783,8 @@ mark, .os-mark { background: var(--os-ml-mark); color: var(--os-ml-ink); border-
 .os-drop-in { animation: os-drop 280ms var(--os-ease-spring) both; }
 .os-shimmer { background: linear-gradient(90deg, var(--os-skeleton) 0%, var(--os-skeleton-hi) 40%, var(--os-skeleton) 80%); background-size: 200% 100%; animation: os-shimmer 1.4s cubic-bezier(.4, 0, .2, 1) infinite; }
 /* An indeterminate bar (canvas "Reading the document"). */
-.os-indet { position: relative; width: 100%; height: 0.25rem; border-radius: 2px; background: var(--os-ml-mark); overflow: hidden; }
-.os-indet::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 2px; background: #8b5cf6; animation: os-indet 1.3s cubic-bezier(.4, 0, .2, 1) infinite; }
+.os-indet { position: relative; width: 100%; height: 0.25rem; border-radius: 0.125rem; background: var(--os-ml-mark); overflow: hidden; }
+.os-indet::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 0.125rem; background: #8b5cf6; animation: os-indet 1.3s cubic-bezier(.4, 0, .2, 1) infinite; }
 /* Staggered children: each list row rises 40 ms after the one before (first 12). */
 .os-stagger > * { animation: os-rise var(--os-dur-enter) var(--os-ease-out) both; }
 .os-stagger > :nth-child(2) { animation-delay: 40ms; }

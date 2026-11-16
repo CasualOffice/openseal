@@ -179,7 +179,7 @@
   transition: background var(--os-dur-fast) var(--os-ease-state), box-shadow var(--os-dur-fast) var(--os-ease-state);
 }
 .os-adm__link:hover { background: color-mix(in srgb, var(--os-text) 5%, transparent); color: var(--os-text-2); }
-.os-adm__link[aria-current="page"] { background: var(--os-bg); color: var(--os-text); font-weight: 500; box-shadow: 0 0 0 1px var(--os-hairline), 0 1px 2px rgba(24, 24, 27, .05); }
+.os-adm__link[aria-current="page"] { background: var(--os-bg); color: var(--os-text); font-weight: 500; box-shadow: 0 0 0 1px var(--os-hairline), 0 1px 0.125rem rgba(24, 24, 27, .05); }
 .os-adm__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .os-adm__spark { margin-left: auto; flex: none; width: 0.75rem; height: 0.75rem; color: var(--os-ml); }
 .os-adm__soon { margin-left: auto; flex: none; font-size: var(--os-fs-11); color: var(--os-muted); }
@@ -200,7 +200,7 @@
 .os-adm__body .os-tabs--pill { margin-bottom: var(--os-s4); }
 .os-adm__later { margin: var(--os-s4) 0 0; font-size: var(--os-fs-13); color: var(--os-muted); }
 /* Section cards: white, a hairline ring, 12 px radius (canvas). */
-.os-adm__card, .os-adm .os-card { border: 0; border-radius: var(--os-radius-lg); background: var(--os-bg); box-shadow: inset 0 0 0 1px var(--os-border), 0 1px 2px rgba(24, 24, 27, .04); }
+.os-adm__card, .os-adm .os-card { border: 0; border-radius: var(--os-radius-lg); background: var(--os-bg); box-shadow: inset 0 0 0 1px var(--os-border), 0 1px 0.125rem rgba(24, 24, 27, .04); }
 .os-adm__card { padding: 1rem 1.125rem; }
 .os-adm__card-title { margin: 0 0 0.25rem; font-size: var(--os-fs-14); font-weight: 600; }
 .os-adm__card-text { margin: 0; color: var(--os-text-2); font-size: var(--os-fs-13); line-height: 1.5; }
@@ -253,7 +253,7 @@
 .os-intel__card:nth-child(3) { animation-delay: 120ms; }
 .os-intel__card:nth-child(4) { animation-delay: 180ms; }
 .os-intel__card:nth-child(5) { animation-delay: 240ms; }
-.os-intel__card.is-on { background: var(--os-bg); box-shadow: inset 0 0 0 1px var(--os-border), 0 1px 2px rgba(24, 24, 27, .04); }
+.os-intel__card.is-on { background: var(--os-bg); box-shadow: inset 0 0 0 1px var(--os-border), 0 1px 0.125rem rgba(24, 24, 27, .04); }
 .os-intel__glyph {
   width: 2.25rem; height: 2.25rem; flex: none; border-radius: 0.625rem; display: inline-flex; align-items: center; justify-content: center;
   font-size: var(--os-fs-13); font-weight: 600; background: var(--os-st-draft-soft); color: var(--os-faint);
@@ -316,7 +316,7 @@
 /* Template rows: the canvas's page thumbnail, name over subject, a 3.5rem row. */
 .os-docthumb {
   width: 1.75rem; height: 2.125rem; flex: none; border-radius: 0.25rem; background: #fff; box-sizing: border-box;
-  box-shadow: 0 0 0 1px rgba(24, 24, 27, .1), 0 1px 2px rgba(24, 24, 27, .06);
+  box-shadow: 0 0 0 1px rgba(24, 24, 27, .1), 0 1px 0.125rem rgba(24, 24, 27, .06);
   display: flex; flex-direction: column; gap: 0.1875rem; padding: 0.375rem 0.3125rem;
 }
 .os-docthumb__line { height: 0.125rem; background: #d4d4d8; border-radius: 1px; }
@@ -329,10 +329,10 @@
 .os-repskel { display: flex; flex-direction: column; gap: var(--os-s6); }
 .os-repskel__tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--os-s4); }
 .os-repskel .os-skel--block { display: block; width: 100%; border-radius: var(--os-radius-lg); }
-.os-reports .os-counter { box-shadow: inset 0 0 0 1px var(--os-border), 0 1px 2px rgba(24, 24, 27, .04); padding: 1rem 1.25rem 1.25rem; }
+.os-reports .os-counter { box-shadow: inset 0 0 0 1px var(--os-border), 0 1px 0.125rem rgba(24, 24, 27, .04); padding: 1rem 1.25rem 1.25rem; }
 .os-reports .os-counter__label { font-weight: 500; font-size: var(--os-fs-13); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .os-reports .os-counter__n { font-size: var(--os-fs-32); }
-.os-reports > .os-card { border: 0; border-radius: var(--os-radius-lg); box-shadow: inset 0 0 0 1px var(--os-border), 0 1px 2px rgba(24, 24, 27, .04); }
+.os-reports > .os-card { border: 0; border-radius: var(--os-radius-lg); box-shadow: inset 0 0 0 1px var(--os-border), 0 1px 0.125rem rgba(24, 24, 27, .04); }
 .os-reports .os-bar { height: 0.5rem; }
 @media (max-width: 60em) { .os-repskel__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* Profile: who this is on top; notification switches; signature rows as cards. */

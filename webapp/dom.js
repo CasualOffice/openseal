@@ -49,6 +49,17 @@ export function skipTo(href, text) {
   if (text) a.textContent = text;
 }
 
+/// The root font size in CSS px (WEB-12): what 1 rem is now. It follows the user's
+/// default size, the window width (app.css §Root size) and browser zoom, so a script
+/// that must compute in px (a measured rect, a canvas) multiplies rem by it.
+export function rootPx() {
+  if (typeof document === "undefined" || typeof getComputedStyle !== "function") return 16;
+  return Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+}
+
+/// `n` rem in CSS px at the current root size.
+export const rem = (n) => n * rootPx();
+
 /// Whether the user asked the system for less motion.
 export function reducedMotion() {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;

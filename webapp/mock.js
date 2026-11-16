@@ -178,7 +178,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     save();
   }
   const account = () => {
-    db.account ||= { id: "acct-demo", name: "Demo account", settings: {}, data_region: null, created_at: iso(-60 * 24 * 30) };
+    // The demo account opted out of the second factor (`mfa_policy: "optional"`), so the
+    // demo signs in with a password alone; unset, the server's default asks the demo
+    // administrator to enrol (ASVS-31).
+    db.account ||= { id: "acct-demo", name: "Demo account", settings: { mfa_policy: "optional" }, data_region: null, created_at: iso(-60 * 24 * 30) };
     return db.account;
   };
 
@@ -1410,12 +1413,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   }
 
   /// What the session owes (the server's `SecondFactor`): `passed`, `verify` (the demo
-  /// user enrolled), `enrol` (the account's `mfa_policy` asks for one) or `none`.
+  /// user enrolled), `enrol` (the account's `mfa_policy` asks for one: `administrators`
+  /// when unset, ASVS-31, and the demo user is an administrator) or `none`.
   function secondFactor() {
     if (db.session?.mfa) return "passed";
     if (db.mfa?.confirmed) return "verify";
-    const policy = account().settings?.mfa_policy;
-    return policy === "administrators" || policy === "everyone" ? "enrol" : "none";
+    return account().settings?.mfa_policy === "optional" ? "none" : "enrol";
   }
 
   function mfa(method, sub, subId, body) {

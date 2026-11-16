@@ -109,6 +109,28 @@ test("the editor's table wins, and plain keys never fire while typing", () => {
   assert.equal(commandFor(key("Escape", "Escape"), ["editor"], true), "field.deselect");
 });
 
+test("G then a letter goes to a section, within 1.5 s, never while typing (WEB-12, NAV-35)", () => {
+  const g = key("g", "KeyG");
+  assert.equal(commandFor(g, ["global"], false, 1000), null);
+  assert.equal(commandFor(key("a", "KeyA"), ["global"], false, 1500), "nav.agreements");
+  // The sequence is spent: A alone is nothing.
+  assert.equal(commandFor(key("a", "KeyA"), ["global"], false, 1600), null);
+  for (const [k, id] of [["h", "nav.home"], ["t", "nav.templates"], ["r", "nav.reports"], ["s", "nav.admin"]]) {
+    commandFor(g, ["global"], false, 2000);
+    assert.equal(commandFor(key(k, `Key${k.toUpperCase()}`), ["global"], false, 2100), id);
+  }
+  // Too late: the second key is read alone (N is New agreement).
+  commandFor(g, ["global"], false, 3000);
+  assert.equal(commandFor(key("n", "KeyN"), ["global"], false, 4600), "envelope.new");
+  // Shift on its way to a letter does not end the sequence; typing does.
+  commandFor(g, ["global"], false, 5000);
+  assert.equal(commandFor(key("Shift", "ShiftLeft", { shiftKey: true }), ["global"], false, 5100), null);
+  assert.equal(commandFor(key("h", "KeyH"), ["global"], false, 5200), "nav.home");
+  commandFor(g, ["global"], false, 6000);
+  assert.equal(commandFor(key("h", "KeyH"), ["global"], true, 6100), null);
+  assert.equal(commandFor(key("h", "KeyH"), ["global"], false, 6200), null);
+});
+
 test("every bound command id is one the app registers", () => {
   const src = fs.readdirSync(WEBAPP).filter((f) => f.endsWith(".js")).map((f) => fs.readFileSync(path.join(WEBAPP, f), "utf8")).join("\n");
   for (const table of Object.values(SHORTCUTS)) {
@@ -124,7 +146,7 @@ test("every message key used in code and HTML has an English string", () => {
   const files = [...fs.readdirSync(WEBAPP), ...fs.readdirSync(path.join(WEBAPP, "ui")).map((f) => `ui/${f}`)].filter((f) => /\.(js|html)$/.test(f) && f !== "strings.en.js");
   const missing = [];
   const prefixes = "a11y|account|action|adopt|admin|agreements|audit|cmd|empty|error|event|form|ftype|help|home|mock|nav|prepare|recipient|reports|rtype|send|sign|signin|start|status|template|templates|theme|timeline|top|use|verify|wizard|preview";
-  const commandIds = new Set(["envelope.new", "envelope.refresh", "envelope.save", "envelope.send", "envelope.edit", "envelope.resend", "envelope.void", "envelope.download", "envelope.certificate", "theme.toggle", "recipient.add", "recipient.select", "recipient.select-", "help.shortcuts", "document.add", "template.new", "verify.html", "verify.js", "prepare.css", "sign.css", "admin.css"]);
+  const commandIds = new Set(["envelope.new", "envelope.refresh", "envelope.save", "envelope.send", "envelope.edit", "envelope.resend", "envelope.void", "envelope.download", "envelope.certificate", "theme.toggle", "recipient.add", "recipient.select", "recipient.select-", "help.shortcuts", "document.add", "template.new", "verify.html", "verify.js", "home.js", "prepare.css", "sign.css", "admin.css"]);
   for (const f of files) {
     const text = fs.readFileSync(path.join(WEBAPP, f), "utf8");
     for (const m of text.matchAll(new RegExp(`["':](${prefixes}|envelope)\\.[A-Za-z0-9.\\-]+(?=["';])`, "g"))) {

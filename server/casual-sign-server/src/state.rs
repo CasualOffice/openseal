@@ -139,6 +139,8 @@ pub struct Config {
     /// into every analysis job's key. `None` (the default): no model service, so no
     /// feature is in effect and no analysis job is ever enqueued.
     pub ml_bundle: Option<String>,
+    /// Abnormal-activity detection thresholds (`ASVS-13`, docs/65 §Logs).
+    pub anomaly: crate::anomaly::AnomalyConfig,
 }
 
 impl Default for Config {
@@ -156,6 +158,7 @@ impl Default for Config {
             secure_cookies: true,
             trusted_proxies: Vec::new(),
             ml_bundle: None,
+            anomaly: crate::anomaly::AnomalyConfig::default(),
         }
     }
 }
@@ -238,6 +241,10 @@ pub(crate) struct Inner {
     pub webapp: std::sync::OnceLock<Arc<crate::web::WebApp>>,
     pub idps: std::sync::OnceLock<Arc<crate::idp::RecipientIdps>>,
     pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
+    pub scanner: std::sync::OnceLock<Arc<crate::scan::Scanner>>,
+    pub security: std::sync::OnceLock<casual_sign_seclog::SecurityLog>,
+    pub anomaly: crate::anomaly::Detector,
+    pub alerts: std::sync::OnceLock<Arc<dyn crate::anomaly::AlertSink>>,
 }
 
 impl AppState {
@@ -253,6 +260,7 @@ impl AppState {
         clock: Arc<dyn Clock>,
         config: Config,
     ) -> Result<Self, ApiError> {
+        let anomaly = crate::anomaly::Detector::new(config.anomaly);
         Ok(Self(Arc::new(Inner {
             store,
             blobs,
@@ -266,6 +274,10 @@ impl AppState {
             webapp: std::sync::OnceLock::new(),
             idps: std::sync::OnceLock::new(),
             mfa: std::sync::OnceLock::new(),
+            scanner: std::sync::OnceLock::new(),
+            security: std::sync::OnceLock::new(),
+            anomaly,
+            alerts: std::sync::OnceLock::new(),
         })))
     }
 
@@ -292,6 +304,47 @@ impl AppState {
     /// factor. Set once; a second call is ignored.
     pub fn set_mfa_key(&self, key: crate::mfa::MfaKey) {
         let _ = self.0.mfa.set(Arc::new(key));
+    }
+
+    /// Scan every upload with `scanner` before it is read or stored (ASVS-11). Without
+    /// it, nothing is scanned. Set once; a second call is ignored.
+    pub fn set_scanner(&self, scanner: crate::scan::Scanner) {
+        let _ = self.0.scanner.set(Arc::new(scanner));
+    }
+
+    pub(crate) fn scanner(&self) -> Option<&Arc<crate::scan::Scanner>> {
+        self.0.scanner.get()
+    }
+
+    /// Write security events to `log` (`ASVS-08`). Unset, they go to standard error
+    /// with the environment's pseudonym key (`casual_sign_seclog::SecurityLog::from_env`).
+    /// Set once, before the first request; a second call is ignored.
+    pub fn set_security_log(&self, log: casual_sign_seclog::SecurityLog) {
+        let _ = self.0.security.set(log);
+    }
+
+    pub(crate) fn security(&self) -> &casual_sign_seclog::SecurityLog {
+        self.0.security.get_or_init(|| {
+            casual_sign_seclog::SecurityLog::from_env(casual_sign_seclog::Service::Server)
+        })
+    }
+
+    /// Raise abnormal-activity alerts through `sink` (`ASVS-13`). Unset, they are
+    /// `abnormal_activity` lines through the security log ([`crate::LogAlerts`]). Set
+    /// once, before the first request; a second call is ignored.
+    pub fn set_alert_sink(&self, sink: Arc<dyn crate::anomaly::AlertSink>) {
+        let _ = self.0.alerts.set(sink);
+    }
+
+    pub(crate) fn alerts(&self) -> &Arc<dyn crate::anomaly::AlertSink> {
+        self.0.alerts.get_or_init(|| {
+            Arc::new(crate::anomaly::LogAlerts(self.security().clone()))
+                as Arc<dyn crate::anomaly::AlertSink>
+        })
+    }
+
+    pub(crate) fn anomaly(&self) -> &crate::anomaly::Detector {
+        &self.0.anomaly
     }
 
     pub(crate) fn mfa_key(&self) -> Option<&Arc<crate::mfa::MfaKey>> {

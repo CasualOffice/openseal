@@ -1,0 +1,33 @@
+[package]
+name = "casual-sign-seclog"
+version = "0.0.1"
+description = "OpenSeal's one JSON log line and its security events (ASVS-08): a closed taxonomy, typed fields that cannot carry free text, keyed pseudonyms for unverified identifiers, written to standard error by the server, worker, keyd, modeld and console for forwarding off the box"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+# The `tracing` layer writing the same JSON line (server, console, modeld).
+tracing-layer = ["dep:tracing", "dep:tracing-subscriber"]
+
+[dependencies]
+# The pseudonym key, from the environment or the file it names.
+casual-sign-secrets = { path = "../casual-sign-secrets" }
+# HMAC-SHA-256 for pseudonyms and randomness for a per-process key (ADR-006: hosts use
+# aws-lc-rs). Already in the tree.
+aws-lc-rs = "1.19.0"
+# The line's JSON, its time stamp, ids and the key's base64. All already in the tree.
+serde_json = "1.0.120"
+time = { version = "0.3.36", features = ["formatting"] }
+uuid = "1.10"
+base64 = "0.22.1"
+tracing = { version = "0.1.40", optional = true }
+tracing-subscriber = { version = "0.3.19", default-features = false, features = ["std", "registry"], optional = true }
+
+[dev-dependencies]
+tracing = "0.1.40"
+
+[lints]
+workspace = true

@@ -58,7 +58,17 @@ pub(crate) async fn context(
         ip,
     };
     req.extensions_mut().insert(ctx);
+    let slot = crate::security::SecSlot::default();
+    req.extensions_mut().insert(slot.clone());
+    let method = req.method().clone();
+    let route = req
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|m| m.as_str().to_owned());
+    // Kept only to take the UUIDs a security event names.
+    let path = req.uri().path().to_owned();
     let mut resp = next.run(req).await;
+    crate::security::after(&state, ctx, &method, route.as_deref(), &path, &slot, &resp);
     let h = resp.headers_mut();
     if let Ok(v) = HeaderValue::from_str(&ctx.request.to_string()) {
         h.insert("x-request-id", v);
@@ -189,6 +199,10 @@ async fn session(
         .resolve_session(&token_sha256, state.now())
         .await?
         .ok_or(ConsoleError::NotAuthenticated)?;
+    // Refusals from here on name the session's operator (ASVS-08).
+    if let Some(slot) = parts.extensions.get::<crate::security::SecSlot>() {
+        slot.identify(casual_sign_seclog::Principal::Operator(s.operator));
+    }
     if changes_state(&parts.method) {
         let sent = parts
             .headers

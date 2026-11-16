@@ -259,6 +259,7 @@ pub struct ModelService {
     limits: ModeldLimits,
     raster: Option<(PathBuf, RasterLimits)>,
     ocr: Option<OcrEngine>,
+    security: casual_sign_seclog::SecurityLog,
 }
 
 impl core::fmt::Debug for ModelService {
@@ -300,7 +301,31 @@ impl ModelService {
             limits,
             raster: None,
             ocr: None,
+            security: casual_sign_seclog::SecurityLog::from_env(
+                casual_sign_seclog::Service::Modeld,
+            ),
         }
+    }
+
+    /// Write security events (`ASVS-08`: refused callers) to `log` rather than standard
+    /// error.
+    #[must_use]
+    pub fn with_security_log(mut self, log: casual_sign_seclog::SecurityLog) -> Self {
+        self.security = log;
+        self
+    }
+
+    /// `transport.caller_refused` for `caller` (a certificate fingerprint, or empty when
+    /// the handshake failed before one was known).
+    fn caller_refused(&self, caller: &str, code: &'static str, reason: &'static str) {
+        use casual_sign_seclog::{Kind, Label, Outcome, Principal, SecurityEvent, Value};
+        let mut ev = SecurityEvent::new(Kind::CallerRefused, Outcome::Failure)
+            .code(code)
+            .with("reason", Value::Word(reason));
+        if let Some(l) = Label::new(caller) {
+            ev = ev.principal(Principal::Caller(l));
+        }
+        self.security.emit(&ev);
     }
 
     /// Replace the limits (the slot count is set once the models are loaded).
@@ -373,6 +398,7 @@ impl ModelService {
             return Ok(());
         }
         let err = ModeldError::NotAuthorized;
+        self.caller_refused(caller, err.code(), "not_allowed");
         self.record(&OpRecord {
             time: now(),
             caller: caller.to_owned(),
@@ -647,8 +673,15 @@ impl Modeld {
             let open = self.open.clone();
             std::thread::spawn(move || {
                 if let Err(e) = connection(stream, tls, &service, limits.io_timeout) {
-                    // Codes and kinds only: no request content.
-                    eprintln!("modeld: connection ended: {}", e.code());
+                    // Codes only: no request content.
+                    let mut m = serde_json::Map::new();
+                    m.insert("code".into(), e.code().into());
+                    casual_sign_seclog::write(
+                        casual_sign_seclog::Service::Modeld,
+                        casual_sign_seclog::Level::Info,
+                        "connection_ended",
+                        m,
+                    );
                 }
                 open.fetch_sub(1, Ordering::SeqCst);
             });
@@ -668,7 +701,12 @@ fn connection(
     let conn = ServerConnection::new(tls).map_err(|e| ModeldError::TlsConfig(e.to_string()))?;
     let mut s = StreamOwned::new(conn, stream);
     while s.conn.is_handshaking() {
-        s.conn.complete_io(&mut s.sock).map_err(io)?;
+        if let Err(e) = s.conn.complete_io(&mut s.sock) {
+            // No certificate chaining to the client CA, or no TLS 1.3 (ASVS-08).
+            let code = ModeldError::Transport(String::new()).code();
+            service.caller_refused("", code, "handshake");
+            return Err(io(e));
+        }
     }
     // The verifier required a certificate chaining to the client CA; the allow list
     // decides whether this one is answered.

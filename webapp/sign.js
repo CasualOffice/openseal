@@ -1270,9 +1270,9 @@ function floatBeside(anchor, el, { onKey = null } = {}) {
   const place = () => {
     const root = document.documentElement;
     const p = placeMenu(anchor.getBoundingClientRect(), { width: el.offsetWidth, height: el.scrollHeight }, { width: root.clientWidth, height: root.clientHeight }, "start");
-    el.style.left = `${p.left}px`;
-    el.style.top = `${p.top}px`;
-    el.style.maxHeight = `${p.maxHeight}px`;
+    el.style.left = `${p.left}px`; // px-ok: measured client rects (placeMenu)
+    el.style.top = `${p.top}px`; // px-ok: measured client rects (placeMenu)
+    el.style.maxHeight = `${p.maxHeight}px`; // px-ok: measured client rects (placeMenu)
   };
   place();
   anchor.setAttribute("aria-expanded", "true");

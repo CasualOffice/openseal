@@ -106,6 +106,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   // or Send — and on the fields step the document between two docked panels.
   const STEPS = ["documents", "recipients", "fields", "review"];
   let step = "documents";
+  // A step the user chose while a saved draft was still opening (WEB-12): the opening
+  // then reopens that step rather than moving them to its own default.
+  let chosen = false;
   const subject = h("input", { id: "env-subject", class: "os-input", placeholder: t(TPL ? "template.name-placeholder" : "prepare.subject-placeholder"), maxLength: 255 });
   subject.addEventListener("input", () => { S.subject = subject.value; S.dirty = true; title.textContent = S.subject.trim() || newTitle(); title.title = title.textContent; });
   // The top bar (canvas): back, breadcrumb, title and the save state on the left; the
@@ -120,7 +123,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const title = h("h1", { class: "os-prepare__title", text: newTitle() });
   // The canvas names the last step "Review"; its full name ("Review and send") stays for
   // assistive technology, so the visible word is part of the accessible name.
-  const steps = stepControl(STEPS, stepLabel, (s) => go(s), (s) => (s === "review" && !TPL ? "wizard.step.review-short" : null));
+  const steps = stepControl(STEPS, stepLabel, (s) => { chosen = true; return go(s); }, (s) => (s === "review" && !TPL ? "wizard.step.review-short" : null));
   const status = h("span", { class: "os-savestate", attrs: { "aria-live": "polite", id: "save-status", "data-testid": "save-status" } });
 
   // The document: one scroll container (docview.js) on a dotted canvas, the floating
@@ -2431,7 +2434,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   if (opening && !S.docs.length) { preparing?.remove(); preparing = null; }
   // A saved draft with documents and people opens on its fields; anything else starts
   // at the documents, or at the people when the documents are already there.
-  await go(S.docs.length && S.recipients.length ? "fields" : S.docs.length ? "recipients" : "documents");
+  // A step the user already chose while it opened is kept (reopened, so it shows what loaded).
+  await go(chosen ? step : S.docs.length && S.recipients.length ? "fields" : S.docs.length ? "recipients" : "documents");
   if (step === "documents") docsPanel.querySelector(".os-btn--primary")?.focus();
   loadIntelligence();
 

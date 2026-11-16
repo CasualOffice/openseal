@@ -270,7 +270,7 @@ pub fn profile_grant(
 
 /// The custom-profile permission that shows every envelope of the account; with
 /// [`SCOPES`] and the action names of [`authz::Action`], every name a profile may carry
-/// (0035 `permission_profiles_known_permissions`).
+/// (0037 `permission_profiles_known_permissions`).
 pub const VIEW_ALL: &str = authz::VIEW_ALL;
 
 /// The scopes a permission profile grants (docs/22 §8): those whose every action it
@@ -438,6 +438,8 @@ pub(crate) async fn authenticate(
             .resolve_staff_session(&sha256(secret.as_bytes()), now)
             .await?
             .ok_or_else(ApiError::unauthenticated)?;
+        // A refusal from here on names the session's holder (ASVS-08).
+        crate::security::identify(s.user_id.0, s.account_id.0, None);
         if !is_safe(method) {
             let sent = headers
                 .get(CSRF_HEADER)

@@ -1,4 +1,4 @@
--- 0035: the workspace action catalogue and delegated workspace administration (ORG-07;
+-- 0037: the workspace action catalogue and delegated workspace administration (ORG-07;
 -- ADR-028 (d), docs/23 §2.2).
 --
 -- 1. A custom permission profile may name workspace actions (server `authz.rs`

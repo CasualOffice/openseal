@@ -163,6 +163,20 @@ pub async fn rls_tables(admin: &PgPool) -> Vec<String> {
 }
 
 impl TestDb {
+    /// The URL of this database for another login, as a deployment's secret file holds it.
+    pub fn url_as(&self, user: &str, password: &str) -> String {
+        app_options(&self.server, &self.name)
+            .username(user)
+            .password(password)
+            .to_url_lossy()
+            .to_string()
+    }
+
+    /// This database's name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// A new organization, made as the platform console will make one: by the owner
     /// role, since the application role cannot (docs/23 §5.3).
     pub async fn organization(&self, name: &str) -> OrganizationId {

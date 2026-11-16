@@ -1064,3 +1064,88 @@ pub fn independent(dir: &std::path::Path, files: &[(String, Vec<u8>)]) {
     );
     assert!(out.status.success(), "pyHanko disagreed:\n{text}");
 }
+
+/// The key in-process API servers seal staff TOTP seeds under (ASVS-01), as
+/// `casual-sign-server` requires one outside development (ASVS-31).
+pub fn mfa_key() -> casual_sign_server::MfaKey {
+    casual_sign_server::MfaKey::new(&[7u8; 32]).unwrap()
+}
+
+/// Pass the second factor a staff session (`cookie`, `csrf`) owes through the API, as its
+/// person would with an authenticator (ASVS-31: administrators owe one by default):
+/// enrol a TOTP factor when the account's policy asks. Answers the factor's seed, or
+/// `None` when nothing was owed. `now_ms` is the server's clock. The server needs
+/// [`mfa_key`].
+pub async fn pass_factor(
+    app: &axum::Router,
+    cookie: &str,
+    csrf: &str,
+    now_ms: i64,
+) -> Option<Vec<u8>> {
+    use http_body_util::BodyExt as _;
+    use tower::ServiceExt as _;
+    let call = |method: &str, path: &str, body: Option<serde_json::Value>| {
+        let mut req = axum::http::Request::builder()
+            .method(method)
+            .uri(path)
+            .header("cookie", cookie)
+            .header("x-csrf-token", csrf);
+        let body = match body {
+            Some(v) => {
+                req = req.header("content-type", "application/json");
+                axum::body::Body::from(serde_json::to_vec(&v).unwrap())
+            }
+            None => axum::body::Body::empty(),
+        };
+        let mut req = req.body(body).unwrap();
+        let peer: std::net::SocketAddr = "198.51.100.79:40000".parse().unwrap();
+        req.extensions_mut()
+            .insert(axum::extract::ConnectInfo(peer));
+        let app = app.clone();
+        async move {
+            let resp = app.oneshot(req).await.unwrap();
+            let status = resp.status();
+            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+            assert!(status.is_success(), "{status}: {json}");
+            json
+        }
+    };
+    let owed = call("GET", "/api/v1/auth/session", None).await;
+    match owed["second_factor"].as_str() {
+        Some("enrol") => {}
+        Some("verify") => panic!("the user enrolled outside this helper"),
+        _ => return None,
+    }
+    let enrol = call("POST", "/api/v1/auth/mfa/totp/enrol", None).await;
+    let seed = unbase32(enrol["secret"].as_str().unwrap());
+    let step = casual_sign_server::totp::step_at(now_ms / 1000);
+    let code = casual_sign_server::totp::code(&seed, step);
+    call(
+        "POST",
+        "/api/v1/auth/mfa/totp/confirm",
+        Some(serde_json::json!({"code": code})),
+    )
+    .await;
+    Some(seed)
+}
+
+/// RFC 4648 base32 (no padding) back to bytes, for the secret an enrolment shows.
+pub fn unbase32(s: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    let (mut buf, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'2'..=b'7' => c - b'2' + 26,
+            _ => panic!("not base32"),
+        };
+        buf = (buf << 5) | u32::from(v);
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(u8::try_from((buf >> bits) & 0xff).unwrap());
+        }
+    }
+    out
+}

@@ -1,0 +1,92 @@
+# CI only (HRD-10, docs/65 §Failure recovery): what the chaos run adds to the production
+# profile. Never deploy it. tools/chaos/chaos_compose.py layers it on top:
+#
+#   docker compose -p openseal-chaos -f deploy/compose.production.yml -f tools/chaos/compose.chaos.yml ...
+#
+# The production services keep every setting of deploy/compose.production.yml (non-root,
+# read-only, TLS between services, Docker secrets, configuration manifests); no
+# development switch is set (OPENSEAL_DEV_INSECURE_KEY, file keys, SoftHSM import: the
+# driver's unit tests check this file against tools/check-deploy.py's list). What this
+# file adds stands in for what an operator brings from outside:
+#
+# - `mailpit`: the SMTP relay, STARTTLS required, with a certificate from the
+#   deployment's internal CA; the worker trusts that CA for SMTP through SSL_CERT_FILE
+#   (the platform root store it reads, rustls-native-certs), so mail stays verified TLS.
+# - `tsa`: the development RFC 3161 TSA (deploy/devtools), and `tsa-gate` in front of it,
+#   which holds each request a few seconds and logs it, so the driver knows a seal is in
+#   flight and can kill, pause or cut a dependency mid-seal.
+# - `evidence`: `casual-sign-server verify-evidence` as the schema owner, run on demand.
+#
+# Paths come from the driver as absolute variables (CHAOS_WORK, CHAOS_TOOLS).
+
+services:
+  worker:
+    environment:
+      SSL_CERT_FILE: /run/secrets/internal-ca.pem
+
+  mailpit:
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    restart: unless-stopped
+    environment:
+      MP_SMTP_TLS_CERT: /chaos/mail-tls-chain.pem
+      MP_SMTP_TLS_KEY: /chaos/mail-tls.key
+      MP_SMTP_REQUIRE_STARTTLS: "true"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+    volumes: ["${CHAOS_WORK:?set CHAOS_WORK}/pki:/chaos:ro"]
+    ports: ["127.0.0.1:${CHAOS_MAIL_PORT:?set CHAOS_MAIL_PORT}:8025"]
+    networks: [egress]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      retries: 20
+
+  tsa:
+    image: openseal-devtools:dev
+    restart: unless-stopped
+    user: tsa
+    command: ["python3", "-I", "/usr/local/bin/dev-tsa", "8319"]
+    volumes: ["${CHAOS_WORK:?set CHAOS_WORK}/pki:/secrets:ro"]
+    networks: [egress]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8319), 2)"]
+      interval: 3s
+      retries: 20
+
+  tsa-gate:
+    image: openseal-devtools:dev
+    restart: unless-stopped
+    user: tsa
+    command:
+      - python3
+      - -I
+      - /opt/chaos/chaos_compose.py
+      - tsa-gate
+      - --listen
+      - 0.0.0.0:8318
+      - --target
+      - tsa:8319
+      - --delay
+      - "${CHAOS_TSA_DELAY:-6}"
+    volumes: ["${CHAOS_TOOLS:?set CHAOS_TOOLS}:/opt/chaos:ro"]
+    networks: [egress]
+    depends_on: {tsa: {condition: service_healthy}}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8318), 2).close()"]
+      interval: 3s
+      retries: 20
+
+  evidence:
+    profiles: [chaos-tools]
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-server:${OPENSEAL_VERSION:?set OPENSEAL_VERSION}
+    user: "65532:65532"
+    command: ["verify-evidence"]
+    restart: "no"
+    environment:
+      OPENSEAL_MIGRATE_DATABASE_URL_FILE: /run/secrets/migrate-database-url
+      OPENSEAL_S3_ENDPOINT: https://s3:8333
+      OPENSEAL_S3_BUCKET: openseal
+      OPENSEAL_S3_ACCESS_KEY: openseal
+      OPENSEAL_S3_SECRET_KEY_FILE: /run/secrets/s3-secret-key
+      OPENSEAL_S3_CA: /run/secrets/internal-ca.pem
+    secrets: [migrate-database-url, s3-secret-key, internal-ca.pem]
+    networks: [data]

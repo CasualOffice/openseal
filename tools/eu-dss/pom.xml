@@ -35,6 +35,9 @@
     <dependency><groupId>eu.europa.ec.joinup.sd-dss</groupId><artifactId>dss-validation</artifactId></dependency>
     <dependency><groupId>eu.europa.ec.joinup.sd-dss</groupId><artifactId>dss-utils-apache-commons</artifactId></dependency>
     <dependency><groupId>eu.europa.ec.joinup.sd-dss</groupId><artifactId>dss-crl-parser-x509crl</artifactId></dependency>
+    <!-- Online OCSP, CRL and AIA sources for the online switch (HRD-02: the interop PKI's responder,
+         served locally during the test). Used only when that switch is given. -->
+    <dependency><groupId>eu.europa.ec.joinup.sd-dss</groupId><artifactId>dss-service</artifactId></dependency>
     <!-- The default validation policy; without it DSS refuses with "Unable to load the policy". -->
     <dependency><groupId>eu.europa.ec.joinup.sd-dss</groupId><artifactId>dss-policy-jaxb</artifactId></dependency>
     <dependency><groupId>eu.europa.ec.joinup.sd-dss</groupId><artifactId>dss-policy-crypto-xml</artifactId></dependency>

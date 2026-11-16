@@ -20,8 +20,12 @@ casual-sign-policy = { path = "../casual-sign-policy" }
 # (`tls-rustls-aws-lc-rs` pulls webpki-roots, CDLA-Permissive-2.0, not in deny.toml).
 # MIT OR Apache-2.0. 0.9's lockfile no longer carries the MySQL and SQLite drivers.
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "macros", "uuid", "time", "json", "rust_decimal"] }
-# sqlx's runtime; blocking blob I/O goes to `spawn_blocking`. MIT.
-tokio = { version = "1.40", default-features = false, features = ["rt"] }
+# sqlx's runtime; blocking blob I/O goes to `spawn_blocking`; `time` for the database
+# credential reload (`Store::watch_database_url`, HRD-06). MIT.
+tokio = { version = "1.40", default-features = false, features = ["rt", "time"] }
+# Wipes the database URL (it holds the password) when the reload replaces it. Already in
+# the graph (casual-sign-secrets, rustls). Apache-2.0 OR MIT.
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 uuid = "1.10"
 time = "0.3.36"
 serde_json = "1.0.120"
@@ -32,7 +36,10 @@ serde = "1.0.200"
 rust_decimal = { version = "1.37", default-features = false, features = ["std"] }
 # S3: SigV4 presigning, sans-IO, BSD-2-Clause. Signing on
 # aws-lc-rs (already in the tree); the HTTP is ureq over rustls, as `casual-sign-cli`.
-rusty-s3 = { version = "0.11.0", default-features = false, features = ["aws-lc-rs"] }
+# `xml`: ListObjectsV2's response read by rusty-s3's own parser (instant-xml, MIT OR
+# Apache-2.0) for `BlobStore::list`, which backups walk (ASVS-14), rather than an XML
+# reader written here.
+rusty-s3 = { version = "0.11.0", default-features = false, features = ["aws-lc-rs", "xml"] }
 ureq = { version = "3.5.1", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 rustls-native-certs = "0.8.5"
@@ -42,6 +49,8 @@ url = "2.5"
 tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros"] }
 uuid = { version = "1.10", features = ["v4", "v7"] }
 time = { version = "0.3.36", features = ["macros"] }
+# A throwaway private CA for the object-store TLS test (HRD-06), as keyd's tests.
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
 
 [lints]
 workspace = true

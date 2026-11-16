@@ -1,0 +1,2 @@
+OpenSeal Interop Root CA (test only, not a real CA)
+SHA-256 22:06:C9:BC:6E:DE:6C:7E:C5:31:F1:23:34:46:E9:EF:8D:39:19:8A:93:85:9A:0C:78:40:27:9F:A3:BA:57:1C

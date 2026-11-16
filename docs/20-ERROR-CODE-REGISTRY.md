@@ -1,9 +1,9 @@
 # 20 — Error code registry
 
 Stable, never reused. **The contract:** messages carry object numbers, ids, names from the PDF specification and
-counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014`, `0015` (`SEC-ID-01`), `0016` (`RAUTH-01`) and `CS-AUTH-0001`, `0002`, `0006` to `0010`, and `0011`, `0012` (`ASVS-01`) (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). `CS-PII-0001` (`casual-sign-pii`, `ML-08`). `CS-ML-0011` and `0012` (`casual-sign-server`, `WEB-19`). `CS-BLK-0001` to `0007` (`casual-sign-server`, bulk send, `UXW-04`). `CS-NET-0001` and `0002` (the web app's API client, `webapp/api.js`; client-side only). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
+counts, never document text, field values or personal data (`SEC-D01`). Codes are reserved here before use. **Issued so far:** `CS-FLD-0001` to `0005`, `0010`, `0011` and `0020` to `0022` (stages 1C, 1D); `CS-WRT-0001` to `0006` (stages 1B, reader completion), `0007` (stage 1J); `CS-PDF-0110` (`NORM-03`) and `0111` (`NORM-02`); `CS-FLT-0001` to `0005` (stage 1E), `0006` (`FLT-03`); `CS-SEAL-0001` to `0006`, `0010` (stage 1G); `CS-AUD-0001` to `0010`, `0020` to `0024` (stage 1I), `0011` (`GEO-01`); `CS-SEAL-0001`, `0002`, `0004`, `0005`, `0010` and `CS-VER-0001` to `0003`, `0005`, `0006` (`casual-sign-crypto`, stage 1F); `CS-VER-0001` to `0007` (`casual-sign-verify`, stage 1H, which also uses `CS-SEAL-0004` for missing revocation data and `CS-SEAL-0005` for refused algorithms); `CS-KEY-0001` to `0012` (`casual-sign-keyd` and `casual-sign-secrets`, stage 2E), `0013` (keyd TLS refusal, `HRD-01`) and `0014` (`casual-sign-secrets`, keyd and the worker, `HRD-06`); `CS-DB-0001` to `0012` and `CS-BLOB-0001` to `0005` (`casual-sign-store`, stage 2B), `CS-DB-0015` (`ASVS-14`); `CS-WF-0001` to `0018` (stage 2A) and `0019`, `0020` (`GEO-01`), and `CS-AUTH-0003` to `0005` for a recipient's authentication and consent (`casual-sign-workflow`, stage 2A); `CS-WRK-0001` to `0016` (`casual-sign-worker`, stage 2D; `0001` to `0004` also from `casual-sign-host`, the decide-and-record path the server shares); `CS-API-0001` to `0014`, `0015` (`SEC-ID-01`), `0016` (`RAUTH-01`) and `CS-AUTH-0001`, `0002`, `0006` to `0010`, and `0011`, `0012` (`ASVS-01`) (`casual-sign-server`, stage 2C, which also answers the engine's, store's and PDF codes as problem details; `casual-sign-model` issues `CS-WF-0004` for a routing order or reminder step out of range). `CS-PII-0001` (`casual-sign-pii`, `ML-08`). `CS-ML-0011` and `0012` (`casual-sign-server`, `WEB-19`). `CS-BLK-0001` to `0007` (`casual-sign-server`, bulk send, `UXW-04`). `CS-WRK-0018` (`casual-sign-worker`, `ASVS-08`). `CS-LOG-0001` (`casual-sign-seclog`, `ASVS-08`). `CS-LOG-0002` and `0003` (`casual-sign-server`, abnormal-activity alerts, `ASVS-13`). `CS-SCAN-0001` and `0002` (`casual-sign-server`, malware scanning of uploads, `ASVS-11`). `CS-NET-0001` and `0002` (the web app's API client, `webapp/api.js`; client-side only). Ranges: `CS-PDF` reading, `CS-WRT` writing, `CS-FLD` fields, `CS-FLT` flattening, `CS-SEAL` sealing,
 `CS-VER` verification, `CS-AUD` audit, `CS-WF` workflow, `CS-DB` persistence, `CS-BLOB` blob storage, `CS-API` API, `CS-AUTH` authentication, `CS-KEY` keyd,
-`CS-CNV` conversion, `CS-ML` model process and ML jobs (reserved, ADR-029), `CS-PII` personal-data recognisers, `CS-NET` the web app's API client, `CS-BLK` bulk send; proposed (ADR-028, not issued): `CS-ORG` organizations, `CS-PLAN` plans, `CS-CON` console.
+`CS-CNV` conversion, `CS-ML` model process and ML jobs (reserved, ADR-029), `CS-PII` personal-data recognisers, `CS-NET` the web app's API client, `CS-BLK` bulk send, `CS-SCAN` malware scanning of uploads, `CS-LOG` the log and security events; proposed (ADR-028, not issued): `CS-ORG` organizations, `CS-PLAN` plans, `CS-CON` console.
 
 ## Reading (`casual-sign-pdf`)
 
@@ -173,7 +173,7 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-AUTH-0008 | CSRF token missing or wrong on a session request that changes something (403) |
 | CS-AUTH-0009 | Ceremony link bound to another browser, or not yet opened in this one (403) |
 | CS-AUTH-0010 | The API client does not own the embedding it acts for (row WF-05) (403) |
-| CS-AUTH-0011 | The staff session owes a second factor: it has not passed it (`detail` `verify`), or the account's `mfa_policy` asks for one the user has not enrolled (`detail` `enrol`); only the sign-in steps, `GET /auth/session` and `POST /auth/logout` serve it (403, `ASVS-01`) |
+| CS-AUTH-0011 | The staff session owes a second factor: it has not passed it (`detail` `verify`), or the account's `mfa_policy` asks for one the user has not enrolled (`detail` `enrol`; administrators by default, `ASVS-31`); only the sign-in steps, `GET /auth/session` and `POST /auth/logout` serve it (403, `ASVS-01`) |
 | CS-AUTH-0012 | Second factor refused: a wrong TOTP code, one for a step already used, or a recovery code not among the user's unspent ones (401, `ASVS-01`) |
 | CS-KEY-0001 | Caller not authorized by keyd: no client certificate, an untrusted one, or one not on the allow-list |
 | CS-KEY-0002 | Unknown key alias |
@@ -183,10 +183,12 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-KEY-0006 | Key configuration: no or unparsable certificate, key not found or ambiguous in the token, key not the certificate's, unsupported key type, size or scheme |
 | CS-KEY-0007 | keyd request or response malformed: frame, identifier, digest length, or algorithm not the key's |
 | CS-KEY-0008 | keyd rate limit exceeded for this caller |
-| CS-KEY-0009 | keyd operation log cannot be opened, written or synced, or its hash chain does not verify; no signature is released |
+| CS-KEY-0009 | keyd operation log cannot be opened, written or synced, or its hash chain does not verify; no signature is released (also `casual-sign-keyd verify-oplog`, `ASVS-14`, naming the first line that fails) |
 | CS-KEY-0010 | keyd TLS certificates, keys or allow-list do not load |
-| CS-KEY-0011 | keyd unreachable, or the TLS connection failed (a refused handshake included) |
+| CS-KEY-0011 | keyd unreachable, or the connection failed before TLS answered (refused, reset, timed out, closed, the name does not resolve): an outage |
 | CS-KEY-0012 | keyd setting missing or invalid |
+| CS-KEY-0013 | TLS handshake with keyd refused: keyd's certificate does not chain to the configured CA or does not carry the configured name, or keyd refused the client certificate (none, untrusted, expired, revoked); a configuration error, fatal at worker start (`HRD-01`) |
+| CS-KEY-0014 | Security configuration does not match `OPENSEAL_CONFIG_MANIFEST`: a setting changed, set but not listed, or listed but not set, a malformed manifest line, or an unreadable manifest or setting file; names the setting or line, never a value or digest. keyd and the worker refuse to start (`casual-sign-secrets::integrity`, ASVS-24, `HRD-06`) |
 | CS-CNV-0001 | Conversion failed or timed out |
 | CS-CNV-0002 | Format not supported |
 
@@ -203,7 +205,7 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0002 | A migration failed, or an applied migration's text changed (migrations are forward-only) |
 | CS-DB-0003 | Not found in this account (another account's object answers the same) |
 | CS-DB-0004 | Update, delete or truncate of the audit chain, a tombstone, an admin log (`admin_events`, `org_admin_events`; `ORG-05`, migration 0020), the operator log (`CON-03`), or the usage ledger (`usage_ledger`; `PLAN-03`, migration 0025) refused (SQLSTATE `OS001`) |
-| CS-DB-0005 | Audit event does not extend its envelope's chain: hash, `seq` or `prev` (SQLSTATE `OS002`) |
+| CS-DB-0005 | Audit event does not extend its envelope's chain: hash, `seq` or `prev` (SQLSTATE `OS002`); from `verify-evidence` (`ASVS-14`), also a stored event that does not rebuild into the chain or an envelope whose stored chain head is not its last event's hash, naming the envelope |
 | CS-DB-0006 | Already exists (a unique constraint, named) |
 | CS-DB-0007 | Stale version: the object changed since it was read |
 | CS-DB-0008 | Check, reference or not-null constraint violated, including a reference to another account's object; with constraint `organization_keeps_an_owner` (SQLSTATE `23514`, `ORG-02`), a commit that would leave an active organization with no enabled owner (`StoreError::is_last_owner`, served as `CS-ORG-0008` by ORG-03's routes); with constraint `organization_admin_is_a_member` (SQLSTATE `23503`, `ORG-02`), an organization administrator who is not an enabled member of one of that organization's workspaces (ORG-03's routes check first and answer `CS-ORG-0018`); with constraint `admin_change_has_event` (SQLSTATE `23514`, `ORG-05`), a commit by the application role that changed settings, a member, a profile, a workspace or the organization without appending that change's admin event, or by the console role (`CON-16`) that changed an organization or workspace without its `operator.*` copy in that organization's log; from `TenantTx::record_usage` (SQLSTATE `23514`, `PLAN-03`), a gauge meter (`seats`, `storage_bytes`, `workspaces`, `templates`) or a quantity below 1 offered for counting |
@@ -213,6 +215,7 @@ account's row exists. The server maps `CS-DB-0003` to `CS-API-0002`, `CS-DB-0007
 | CS-DB-0012 | Any other database error, by SQLSTATE |
 | CS-DB-0013 | Change to an immutable column refused: a workspace's organization, outside ORG-20's operator link (SQLSTATE `OS004`; `ORG-02`, migration 0014) |
 | CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq`, `prev`, or columns that differ from its canonical bytes (SQLSTATE `OS005`; `ORG-05`, migration 0020, for `admin_events` and `org_admin_events`; `CON-03`, migration 0017, for `platform.operator_events`) |
+| CS-DB-0015 | A check that must read every account's rows (`casual-sign-server verify-evidence`, `ASVS-14`) was run as a role that row-level security filters: run it as the schema owner |
 | CS-BLOB-0001 | Blob store failed (I/O, network, unexpected status) |
 | CS-BLOB-0002 | No blob under that key |
 | CS-BLOB-0003 | Bytes stored under a key do not hash to it |
@@ -244,6 +247,15 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 | CS-WRK-0015 | The job's lease was lost: it lapsed and another worker took the job; also the code of an analysis run whose last attempt's lease lapsed with its worker gone (`ML-25`) |
 | CS-WRK-0016 | A capture (signature art) malformed or over its limits. *Final* |
 | CS-WRK-0017 | The SMS or voice provider did not accept a one-time code message (its HTTP status, when it answered); retried within the code's attempts (VS-05) |
+| CS-WRK-0018 | A time-stamping authority not reached, refused by the address policy, or answering no time-stamp (connection, TLS, timeout, HTTP status, an answer over its limit); logged as `transport.backend_failed` with the TSA's index in the list, never its URL, and the next TSA is tried (`ASVS-08`, ASVS 9.2.5). A log code, not a job's |
+
+## Log and security events (`casual-sign-seclog`, `ASVS-08`)
+
+| Code | Meaning |
+| --- | --- |
+| CS-LOG-0001 | `OPENSEAL_LOG_PSEUDONYM_KEY` (or its `_FILE`) is not 32 bytes as base64, or both forms are set: the server, the console, the worker, keyd and modeld refuse to start, with a `start_failed` line (docs/65 §Logs) |
+| CS-LOG-0002 | Abnormal activity: a principal or client address reached a detection threshold (`rule`: `requests`, `rate_limited`, `auth_failures`, `access_denied`, `document_reads`, `voids`); carried by the server's `alert.abnormal_activity` security event and `abnormal_activity` operator alert, never answered to a client (docs/65 §Abnormal activity, `ASVS-13`) |
+| CS-LOG-0003 | The abnormal-activity detector's table is full: new subjects are not counted until idle ones are swept (`rule: tracking_full`, `count` subjects not tracked); same carriers as `CS-LOG-0002` (`ASVS-13`) |
 
 ## Platform console (`casual-sign-console`, `casual-sign-platform-store`; `CON-02`, `CON-03`, `CON-04`, `CON-06`, `CON-07`)
 
@@ -261,10 +273,10 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 | CS-CON-0004 | Action needs a second operator's approval; missing, expired, used, by the requester, or for another payload (409). Issued for suspending and resuming an organization (`CON-04`, migration 0019) and for adding a `platform_owner` (refused until that action has its approval function) |
 | CS-CON-0005 | Console listener refused: a non-loopback bind without `OPENSEAL_CONSOLE_PUBLIC=1`, or without `OPENSEAL_TRUSTED_PROXIES` (TLS terminates at the proxy), or the console's origin equal to the public application's (start-up) |
 | CS-CON-0008 | keyd admin call refused: a caller on keyd's signing allow-list calling an admin operation (`list-keys`, `oplog-head`, `oplog-range`, `health`), or a caller on the admin allow-list asking for a chain or a signature. Issued by keyd (`CON-06`; wire number 1008, recorded in keyd's log) and answered by the console as 502 when its keyd identity is on the wrong list. The console answers other keyd failures with keyd's own `CS-KEY-*` code (502) |
-| CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422; names the field). Issued for TSA changes (`CON-07`, migration 0034): a proposed URL that is not `http`/`https` or whose host resolves to an address outside the `SEC-W01` policy (`url`), a policy OID, certificate hash or priority out of shape, and from the database a payload that fails its checks (SQLSTATE `OS012`, `payload`) |
+| CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422; names the field). Issued for TSA changes (`CON-07`, migration 0034): a proposed URL that is not `http`/`https` or whose host resolves to an address outside the `SEC-W01` policy (`url`), a policy OID, certificate hash or priority out of shape, and from the database a payload that fails its checks (SQLSTATE `OS012`, `payload`). Issued for seal alias changes (`CON-10`, migration 0035): an alias keyd does not serve with a certificate valid at `active_from`, or no keyd to ask (`alias`), a start already past (`active_from`, at proposal and, from the database's `OS012`, at apply; a change proposed without a start begins when applied and is never refused for it); and by the worker when the alias in force is not fully approved or the worker has no keyd (the seal fails, `SealFailed`) |
 | CS-CON-0007 | Operator log does not verify (names the first bad `seq`): the console refuses to start; the API and health page report it (503) |
 | CS-CON-0010 | Request invalid: malformed JSON or a value out of range; names the field (422) |
-| CS-CON-0011 | No such object (404) |
+| CS-CON-0011 | No such object (404); also a key change granted or applied through the routes of another kind (a seal alias change through `/console/v1/tsa/changes/…`, or a TSA change through `/console/v1/seal/changes/…`; `HRD-06`) |
 | CS-CON-0012 | Rate limit: sign-in per address and per e-mail, TOTP per operator, requests per session; `retry_after` seconds (429) |
 | CS-CON-0013 | A changing request without its session's CSRF token, with a wrong one, or not `application/json` (403) |
 | CS-CON-0014 | Internal failure; names the step, never a value (500; `panic` for a handler that panicked, `ASVS-26`) |
@@ -341,6 +353,19 @@ from the list.
 | CS-BLK-0005 | A column the template does not have, or one given twice |
 | CS-BLK-0006 | A CSV row has more values than the header has columns |
 | CS-BLK-0007 | No row, more than 1,000, or CSV that cannot be read (a quote never closed) |
+
+## Malware scanning of uploads (`casual-sign-server`, `ASVS-11`)
+
+Answered when a malware scanner is configured (`OPENSEAL_CLAMD_ADDR`, docs/65 §Malware scanning) and an upload (an
+envelope's or a template's document, a signer's attachment, an adopted signature image, a saved profile mark) is
+refused before anything of it is read or stored. Each refusal also appends an event to the workspace's admin log
+(`upload.malware_refused`, `upload.unscanned_refused`). Neither carries the file's name or content; `0001` does not
+carry the signature name either (it is in the admin log).
+
+| Code | Meaning |
+| --- | --- |
+| CS-SCAN-0001 | The scanner found malware in the upload (`422`); nothing of it is stored |
+| CS-SCAN-0002 | The scanner could not judge the upload and the server fails closed (`503`, `Retry-After: 30`); `detail` is the reason: `connect` (clamd not reached, or the connection broke), `timeout`, `too_large` (over `OPENSEAL_CLAMD_MAX_BYTES` or clamd's `StreamMaxLength`), `error` (clamd answered an error) or `protocol` (an answer that is none of clamd's). With `OPENSEAL_CLAMD_FAIL_OPEN=1` the upload is admitted instead and `upload.unscanned_admitted` recorded |
 
 ## Web app API client (`webapp/api.js`, `UX-03`)
 
