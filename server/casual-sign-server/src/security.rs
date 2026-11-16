@@ -434,9 +434,11 @@ mod tests {
     #[test]
     fn every_administrative_change_and_staff_read_is_classified() {
         for r in crate::routes::table() {
+            // A route whose action the administrative scopes cover (ORG-07 split them).
             let admin_scope = matches!(
                 r.access,
-                crate::routes::Access::Scope("admin:account" | "admin:users" | "webhooks:manage")
+                crate::routes::Access::Action(a)
+                    if matches!(a.scope(), Some("admin:account" | "admin:users" | "webhooks:manage"))
             );
             let class = classify(r.method, r.path);
             if admin_scope && r.method != "GET" {

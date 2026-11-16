@@ -383,6 +383,8 @@ impl Envelopes<'_> {
 /// list, filter and page envelopes without decoding it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Projection {
+    /// The owner (sender); changes only by a transfer (ORG-09).
+    pub sender_user_id: UserId,
     /// The state's status.
     pub status: EnvelopeStatus,
     /// Email subject.
@@ -527,7 +529,7 @@ impl Envelopes<'_> {
                subject = $5, message = $6, expires_at = $7, reminder_policy = $8, \
                signing_options = $9, seal_profile = $10, sent_at = $11, completed_at = $12, \
                voided_at = $13, void_reason = $14, updated_at = COALESCE($15, updated_at), \
-               deleted_at = $16 \
+               deleted_at = $16, sender_user_id = $17 \
              WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
             acct,
             id.0,
@@ -544,7 +546,8 @@ impl Envelopes<'_> {
             p.voided_at,
             p.void_reason.as_ref().map(|r| r.get().as_str()),
             p.updated_at,
-            p.deleted_at
+            p.deleted_at,
+            p.sender_user_id.0
         )
         .fetch_optional(self.tx.conn())
         .await

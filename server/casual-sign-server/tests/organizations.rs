@@ -21,21 +21,12 @@ mod common;
 use axum::http::StatusCode;
 use casual_sign_server::table;
 use common::Rls;
-use common::harness::{Api, Auth, PASSWORD, Resp, session_of};
+use common::harness::{Api, Auth, PASSWORD, Resp};
 use serde_json::{Value, json};
 
+/// Signs in, passing the second factor an administrator owes (ASVS-31).
 async fn login(api: &Api, email: &str) -> Auth {
-    let r = api
-        .call(
-            "POST",
-            "/api/v1/auth/login",
-            &Auth::None,
-            Some(json!({"email": email, "password": PASSWORD})),
-            &[],
-        )
-        .await;
-    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
-    session_of(&r)
+    api.login(email, PASSWORD).await
 }
 
 fn is(r: &Resp, status: StatusCode, code: Option<&str>, what: &str) -> Value {

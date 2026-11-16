@@ -18,7 +18,7 @@ Account (tenant) ─┬─ User ── membership(role, permission profile) ─�
                   │            ├─ Recipient (ordered by routing) ─┬─ AuthRequirement
                   │            │                                   ├─ Field (placed on a document page)
                   │            │                                   └─ SignatureAdoption
-                  │            ├─ RoutingRule (conditional routing)
+                  │            ├─ RoutingRule (conditional routing; ADR-035, not built)
                   │            ├─ CustomField (envelope metadata)
                   │            ├─ Reminder/Expiry policy
                   │            ├─ AuditEvent (append-only, hash-chained)
@@ -84,6 +84,7 @@ seal profiles are not built yet.
 | `custom_fields` | json | Integrator metadata, searchable keys |
 | `version` | int | Optimistic concurrency for drafts and corrections |
 | `sent_at`, `completed_at`, `voided_at`, `void_reason` | | |
+| `send_at` | timestamptz? | Scheduled sending (`WF-02`): a draft sends itself then; after now, within 365 days, before the expiry; held in the engine state, shown by the API |
 | `chain_head` | bytea | Hash of the last audit event (docs/32) |
 
 **`capture_location` is per envelope** (GEO-01; the owner asked for it "per document"). One envelope is one signing
@@ -117,11 +118,13 @@ one recorded in `envelope.completed`.
 | `type` | `signer`, `in_person_signer`, `approver`, `viewer` (needs to view), `cc` (receives a copy), `editor` (allowed to edit), `intermediary` (updates recipients), `agent` (specifies recipients), `witness` (slice 16), `seal` (legal-entity seal through `RemoteSigner`, slice 18), `notary` (slice 31) |
 | `role_name` | From the template, when any |
 | `name`, `email`, `phone` | PII, classified (docs/07 §Data) |
-| `status` | `created`, `sent`, `delivered`, `authenticated`, `completed`, `declined`, `auto_responded`, `reassigned` |
+| `status` | `created`, `sent`, `delivered`, `authenticated`, `completed`, `declined`, `auto_responded`, `reassigned`; designed, not built: `skipped` (left out by a routing rule, terminal; ADR-035 Proposed, `WF-01`) |
 | `auth` | List of requirements: `access_code` (hash), `email_otp`, `sms_otp`, `voice_otp` (the phone call; designed as `phone_call`), `sso` (sign-in through one of the operator's OpenID Connect providers, `RAUTH-01`; designed as `idp`), `idv` (provider), `kba` (plugin). `sms_otp` and `voice_otp` need an E.164 `phone`; their codes are rows of `recipient_otp_codes` with `channel` `sms` or `voice` (migration 0029). `sso` needs an `email`, which the provider's verified email must equal; each sign-in is a row of `recipient_sso_challenges` (migration 0030: provider id, SHA-256 of `state`, nonce, PKCE verifier, 10-minute expiry, closed at first use or when superseded, at most one open per recipient, a tenant table under RLS) |
 | `delivery` | `email`, `sms`, `none` (embedded: host delivers) |
 | `embedded_client_user_id` | When set, the recipient signs only through the integrator's embedded session |
-| `signing_group_id` | Any member may act (slice 29) |
+| `excluded_documents` | Document visibility (`WF-02`): documents this recipient never sees, is never served and does not act on; at least one stays visible and none holds a field of theirs |
+| `route_delay_hours`, `held_until` | Delayed routing (`WF-02`): hours to wait, once their turn comes, before they are invited (0 to 720; not on a `cc`), and the time that wait ends; until then their link does not open (`CS-WF-0007`) |
+| `signing_group` | Designed, not built (slice 29, ADR-035 Proposed, `WF-01`): 2 to 20 members `{member_id, name, email, phone?, delivery}` frozen at send from an account group (`groups`, `group_members`) or listed; any one may act, the first to open their link claims the recipient; only on `signer`, `approver`, `viewer`. Members' contact details are personal data as a recipient's |
 | `consent` | ERSD version accepted, time, from the audit chain |
 | `language` | Signer UI and email language |
 | `declined_reason`, `reassigned_to` | |
@@ -187,6 +190,10 @@ deny by default and decided per request: the owner and the account's administrat
   membership of the account; a change to `groups` or `group_members` needs its admin event in the same transaction.
   A custom permission profile names only the scopes of docs/40 §2 and `view_all_envelopes`
   (`permission_profiles_known_permissions`); built-in ones are never changed and a held one never deleted.
+  **As built (`ORG-07`, migration 0037):** a custom profile may also name workspace actions of the catalogue
+  (docs/23 §2.2, `authz::Action`), and `permission_profiles.admin_scope_group_ids uuid[]` (NULL: the whole
+  workspace) makes it a delegated workspace admin limited to those groups; the database refuses a name outside the
+  catalogue and a sensitive action with a group scope (`permission_profiles_scope_not_sensitive`).
 - Recipients are **not users**. A recipient who also has an account sees the envelope in their inbox through a match
   on verified email, never through a shared identity.
 
@@ -474,8 +481,12 @@ keyed by the user's own live session of the current account change them: `opense
 `openseal_begin_own_totp` (only while unconfirmed), `openseal_confirm_own_totp`, `openseal_verify_own_totp` and
 `openseal_use_own_recovery_code` (`Sessions::own_totp` and siblings). `staff_sessions` gains `mfa_at`, when the session
 passed its factor (a workspace switch carries it); `openseal_resolve_staff_session` now also answers it, whether the
-user enrolled, and the account's `settings.mfa_policy` (`optional` when unset; an unknown value reads as `everyone`).
-No new table.
+user enrolled, and the account's `settings.mfa_policy` (an unknown value reads as `everyone`). When unset it reads as
+`administrators` since migration 0036 (`ASVS-31`; it was `optional`): the default lives in that function alone, so no
+row was rewritten, and an account's explicit `optional` is kept. No new table. Migration 0039 (`ORG-08`): the
+resolver also answers the organization's `policy`, and the stricter of `mfa_policy` and the organization's
+`login.mfa_required` applies (`casual_sign_policy::org::effective_mfa`); no row is rewritten. The envelope projection
+carries `sender_user_id` from the state, which a transfer (`ORG-09`) changes. No new table.
 
 ### Designed (ADR-028): tenancy with organizations
 
@@ -512,6 +523,12 @@ the rules above, and what does not:
   `platform.apply_key_change` after `request_key_change` and `grant_key_change` by two key custodians (`OS012` →
   `CS-CON-0006` for a payload that fails its checks); `approval_requests.action` gains `tsa.set` and `tsa.remove`. The
   worker reads only `openseal_tsa_endpoints()` (enabled rows: URL, policy OID, certificate hash, in order).
+- **Seal reconciliation (built, `CON-09`, migration 0038):** tenant table `seal_signatures` (account, envelope,
+  digest 32/48/64 bytes, keyd alias, time; key account, envelope, digest; insert-only from the worker, in the
+  transaction that stores the sealed bytes); `platform.seal_digests(from, to)` and `platform.seal_digests_of(ids)`,
+  definer functions returning envelope ids, digests and times to the console only; `platform.reconciliation_runs`
+  (append-only: keyd sequences read and judged, cut-off, counts, orphaned retries listed). Alerts it raises go to
+  `platform.alerts`, whose `subject` the console now returns.
 - **Plans (built, `PLAN-02`, migration 0024):** `platform.plans` (immutable versions of a key; archive only),
   `plan_entitlements`, `plan_quotas`, `plan_seat_rule`, `plan_assignments` (current on `[starts_at, ends_at)`; only
   `ends_at` shortens), `plan_overrides` (`workspace_id`, workspace-level quotas only; only `expires_at` shortens).
@@ -544,6 +561,7 @@ the rules above, and what does not:
 ## 10. Engine types versus rows
 
 `casual-sign-model` defines the types above as plain Rust values with invariants checked by constructors
-(`Envelope::validate_for_send` returns every violation, each with a code). The server maps rows to these values; the
+(as built, the workflow engine's `violations()` returns every violation, each with a code; the design named it
+`Envelope::validate_for_send`, `WF-04`). The server maps rows to these values; the
 engine never sees SQL. The same types serialize to the public JSON in [40](40-API-DESIGN.md) through explicit DTOs, so
 an internal field never leaks into the API by accident.

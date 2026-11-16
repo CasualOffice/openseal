@@ -283,6 +283,8 @@ pub struct AlertRow {
     pub source: String,
     /// Code.
     pub code: String,
+    /// What it is about: ids and labels (an alias, a threshold, an envelope id).
+    pub subject: serde_json::Value,
     /// The alert it resolves.
     pub resolves: Option<Uuid>,
 }
@@ -726,7 +728,8 @@ impl PlatformStore {
     /// A database error.
     pub async fn alerts(&self, limit: u32) -> Result<Vec<AlertRow>> {
         let rows = sqlx::query(
-            "SELECT id, at, source, code, resolves FROM platform.alerts ORDER BY at DESC, id LIMIT $1",
+            "SELECT id, at, source, code, subject, resolves FROM platform.alerts \
+             ORDER BY at DESC, id LIMIT $1",
         )
         .bind(i64::from(limit.clamp(1, MAX_PAGE)))
         .fetch_all(&self.pool)
@@ -739,6 +742,7 @@ impl PlatformStore {
                     at: r.try_get("at").map_err(db)?,
                     source: r.try_get("source").map_err(db)?,
                     code: r.try_get("code").map_err(db)?,
+                    subject: r.try_get("subject").map_err(db)?,
                     resolves: r.try_get("resolves").map_err(db)?,
                 })
             })

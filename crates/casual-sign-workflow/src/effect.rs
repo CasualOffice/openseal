@@ -28,6 +28,10 @@ pub enum Timer {
     Expiry,
     /// Warn recipients who have not acted that the envelope expires soon.
     ExpiryWarning,
+    /// Send a scheduled draft (`WF-02`, `Command::ScheduleSend`).
+    ScheduledSend,
+    /// Invite the recipients delayed routing held whose time came (`WF-02`).
+    RouteDelay,
 }
 
 /// What an invitation is for.

@@ -92,6 +92,8 @@ export const COMMON = {
   "event.envelope.deleted": "Removed from the lists",
   "event.envelope.restored": "Restored to the lists",
   "event.envelope.viewed_by_sender": "Viewed by the sender",
+  "event.envelope.transferred": "Ownership transferred",
+  "event.envelope.exported": "Evidence package exported",
   "event.document.added": "Document uploaded",
   "event.document.admitted": "Document checked",
   "event.document.fixed": "Document fixed for signing",

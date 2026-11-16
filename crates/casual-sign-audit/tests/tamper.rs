@@ -346,3 +346,36 @@ fn a_trail_from_another_format_or_envelope_is_refused() {
     let r = verify_trail(&c.to_trail_json().unwrap(), &o);
     assert!(r.has(|k| *k == ProblemKind::WrongEnvelope));
 }
+
+/// ORG-09 (docs/23 §11): `envelope.transferred` and `envelope.exported` are additive, as
+/// ADR-027's types were. Written here as bytes a server would store, so the same test
+/// read by a verifier without the types shows how an earlier verifier treats them: the
+/// chain stays valid and the two events are listed as unrecognised, not failed.
+#[test]
+fn transfer_and_export_events_verify_and_are_recognised() {
+    let c = chain(16, 5);
+    let mut ev = events(&c);
+    let s = |v: &str| Value::String(v.into());
+    set(&mut ev[1], "type", s("envelope.transferred"));
+    set(
+        &mut ev[1],
+        "data",
+        Value::Object(vec![
+            ("from_user".into(), s("u-old")),
+            ("to_user".into(), s("u-new")),
+        ]),
+    );
+    rehash(&mut ev, 1);
+    relink(&mut ev, 2);
+    set(&mut ev[3], "type", s("envelope.exported"));
+    set(
+        &mut ev[3],
+        "data",
+        Value::Object(vec![("by".into(), s("u-new"))]),
+    );
+    rehash(&mut ev, 3);
+    relink(&mut ev, 4);
+    let r = verify_chain(&ev, &opts());
+    assert!(r.is_valid(), "{r:?}");
+    assert_eq!(r.unrecognised, Vec::<usize>::new(), "{r:?}");
+}
