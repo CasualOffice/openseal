@@ -415,6 +415,8 @@ components:
         auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}}
         embedded_client_user_id: {type: [string, 'null']}
         excluded_documents: {type: array, items: {type: string}, description: 'Documents hidden from this recipient (WF-02): never listed or served to them'}
+        route_delay_hours: {type: integer, minimum: 0, maximum: 720, description: 'Delayed routing (WF-02): hours routing waits, once this recipient''s turn comes, before inviting them'}
+        held_until: {type: [string, 'null'], format: date-time, description: 'Delayed routing (WF-02): their turn came and they are invited at this time; until then their link does not open (`409 CS-WF-0007`)'}
     RecipientList:
       type: object
       properties:
@@ -440,6 +442,7 @@ components:
           type: array
           items: {oneOf: [{type: string}, {type: integer, minimum: 0}]}
           description: "Documents hidden from this recipient (WF-02): document ids, or in a create the index of a document of the same request. A recipient sees at least one document (`422 CS-WF-0004`), never a field on a hidden one (`422 CS-WF-0021`)."
+        route_delay_hours: {type: integer, minimum: 0, maximum: 65535, default: 0, description: "Delayed routing (WF-02): hours routing waits, once this recipient's turn comes, before inviting them. At most 720 at send (`422 CS-WF-0023`); not on a carbon copy (`422 CS-WF-0004`)."}
     RecipientCreate:
       oneOf:
         - $ref: '#/components/schemas/RecipientIn'
@@ -464,6 +467,7 @@ components:
           writeOnly: true
           description: "A new access code, stored only as Argon2id. Needed when `auth` gains `access_code`; refused when the resulting `auth` lacks it. Removing `access_code` from `auth` deletes the stored code. Draft or correcting envelopes only."
         excluded_documents: {type: array, items: {type: string}, description: 'Document ids hidden from this recipient (WF-02); `[]` shows every document'}
+        route_delay_hours: {type: integer, minimum: 0, maximum: 65535, description: 'Delayed routing (WF-02): hours to wait once their turn comes; `0` invites at once'}
     Field:
       type: object
       description: The model's field (docs/22 §6); `placement` in displayed page points, origin top-left.

@@ -1560,6 +1560,10 @@ struct RecipientPatch {
     /// The documents hidden from this recipient, by id (`WF-02`); `[]` shows them all.
     #[serde(default)]
     excluded_documents: Option<Vec<String>>,
+    /// Hours routing waits before inviting this recipient once their turn comes
+    /// (`WF-02`); `0` invites at once.
+    #[serde(default)]
+    route_delay_hours: Option<u16>,
 }
 
 /// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, type (a draft
@@ -1602,6 +1606,9 @@ pub(crate) async fn patch_recipient(
     }
     if let Some(t) = req.rtype {
         spec.rtype = t;
+    }
+    if let Some(h) = req.route_delay_hours {
+        spec.route_delay_hours = h;
     }
     if let Some(list) = &req.excluded_documents {
         spec.excluded_documents = list

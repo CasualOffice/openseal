@@ -82,6 +82,10 @@ pub(crate) struct RecipientIn {
     /// create, the index of a document of the same request.
     #[serde(default)]
     pub excluded_documents: Vec<Value>,
+    /// Delayed routing (`WF-02`): hours to wait, once routing reaches this recipient,
+    /// before inviting them; the engine bounds it (`CS-WF-0023`).
+    #[serde(default)]
+    pub route_delay_hours: u16,
 }
 
 fn one() -> u32 {
@@ -168,6 +172,7 @@ impl RecipientIn {
             date_format: self.date_format,
             witness_for: None,
             excluded_documents: Vec::new(),
+            route_delay_hours: self.route_delay_hours,
         })
     }
 }
@@ -307,6 +312,8 @@ pub(crate) fn recipient(r: &RecipientState) -> Value {
         "embedded_client_user_id": s.embedded_client_user_id,
         "time_zone_offset_minutes": s.time_zone_offset_minutes,
         "excluded_documents": s.excluded_documents,
+        "route_delay_hours": s.route_delay_hours,
+        "held_until": r.held_until,
         "status": r.status,
         "completed_at": r.completed_at,
         "declined_reason": r.declined_reason.as_ref().map(|d| &d.0),

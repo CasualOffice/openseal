@@ -236,3 +236,108 @@ async fn a_scheduled_draft_waits_for_its_time_and_cannot_be_edited() {
     assert_eq!(r.status, StatusCode::OK);
     api.db.drop().await;
 }
+
+/// Delayed routing (`WF-02`): a first signer delayed 24 hours is marked with the time
+/// their turn opens, is not invited, and their link does not open until then
+/// (`409 CS-WF-0007`); a delay over 720 hours refuses the send (`422 CS-WF-0023`).
+#[tokio::test]
+async fn a_delayed_recipient_is_not_invited_until_the_delay_ends() {
+    let Some(api) = Api::new("route_delay", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let body = |hours: u32, status: &str| {
+        json!({
+            "subject": "WF-02", "status": status,
+            "documents": [{"name": "d.pdf", "content_base64": b64(&pdf(1))}],
+            "recipients": [{"ref": "s1", "type": "signer", "name": "Sig One",
+                "email": "one@example.test", "route_delay_hours": hours}],
+            "fields": [{"recipient": "s1", "document": 0, "type": "signature", "page": 1,
+                "x": 72, "y": 100, "width": 180, "height": 40, "required": true}],
+        })
+    };
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(body(721, "draft")),
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let env = r.json()["id"].as_str().unwrap().to_owned();
+    let r = api
+        .call(
+            "POST",
+            &format!("/api/v1/envelopes/{env}/send"),
+            &a.auth,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (r.status, r.code()),
+        (StatusCode::UNPROCESSABLE_ENTITY, "CS-WF-0004".to_owned()),
+        "{}",
+        String::from_utf8_lossy(&r.body)
+    );
+    assert!(
+        String::from_utf8_lossy(&r.body).contains("CS-WF-0023"),
+        "the delay's own code is listed"
+    );
+
+    let e = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(body(24, "sent")),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create",
+    );
+    let env = e["id"].as_str().unwrap().to_owned();
+    let s1 = e["recipients"][0]["id"].as_str().unwrap().to_owned();
+    assert_eq!(e["recipients"][0]["route_delay_hours"], 24);
+    assert!(e["recipients"][0]["held_until"].is_string(), "{e}");
+    let kinds = common::flow::jobs(&api, &env).await;
+    assert!(
+        !kinds.iter().any(|k| k == "send_invitation"),
+        "a delayed recipient was invited at once: {kinds:?}"
+    );
+    assert!(kinds.iter().any(|k| k == "timer"), "{kinds:?}");
+
+    let token = invite(&api, &a, &env, &s1).await;
+    let r = api
+        .call(
+            "POST",
+            &format!("/s/{token}/session"),
+            &Auth::None,
+            Some(json!({})),
+            &[],
+        )
+        .await;
+    let r = if r.status == StatusCode::OK {
+        let cookie = common::harness::ceremony_cookie(&r);
+        api.call(
+            "GET",
+            &format!("/s/{token}"),
+            &Auth::None,
+            None,
+            &[("cookie", cookie.as_str())],
+        )
+        .await
+    } else {
+        r
+    };
+    assert_eq!(
+        (r.status, r.code()),
+        (StatusCode::CONFLICT, "CS-WF-0007".to_owned()),
+        "{}",
+        String::from_utf8_lossy(&r.body)
+    );
+    api.db.drop().await;
+}
