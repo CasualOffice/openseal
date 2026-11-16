@@ -253,7 +253,14 @@ is part of the public API or its compatibility promise. As built: docs/23 §5.6.
 
 The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 161 operations (68 at stage 2C, 19 added by `WEB-06`, 9 by `WEB-19`, the rest by later rows; counted 2026-11-13), each with its `x-permission`
 (the scope it needs, SEC-A05). The router is built from one table (`routes::table`), and a contract test keeps the
-table and the document equal in both directions, scope by scope.
+table and the document equal in both directions, scope by scope. **As built (`ORG-07`):** `x-permission` names a
+workspace action of the catalogue (docs/23 §2.2, `users.invite`, `settings.sending`, ...) or an organization action
+(`org.audit.read`, ...), and each such operation states `x-level: workspace | organization`; `""`, `public` and
+`signing-in` keep their meaning and carry no level. The table names actions as a typed enum, so a route naming an
+action outside the catalogue does not compile, and the contract test checks `x-level` as well. OAuth scopes stay the
+wire grants: a key or token holds the actions its scopes cover (docs/23 §2.2's table). A grant beyond the caller's
+own actions or group scope, or to itself, is `403 CS-ORG-0005`; permission profiles carry `actions` and
+`admin_scope_group_ids`.
 
 **Built.** Every row of §3 below is served, with these differences:
 

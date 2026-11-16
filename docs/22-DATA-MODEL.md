@@ -187,6 +187,10 @@ deny by default and decided per request: the owner and the account's administrat
   membership of the account; a change to `groups` or `group_members` needs its admin event in the same transaction.
   A custom permission profile names only the scopes of docs/40 §2 and `view_all_envelopes`
   (`permission_profiles_known_permissions`); built-in ones are never changed and a held one never deleted.
+  **As built (`ORG-07`, migration 0037):** a custom profile may also name workspace actions of the catalogue
+  (docs/23 §2.2, `authz::Action`), and `permission_profiles.admin_scope_group_ids uuid[]` (NULL: the whole
+  workspace) makes it a delegated workspace admin limited to those groups; the database refuses a name outside the
+  catalogue and a sensitive action with a group scope (`permission_profiles_scope_not_sensitive`).
 - Recipients are **not users**. A recipient who also has an account sees the envelope in their inbox through a match
   on verified email, never through a shared identity.
 
@@ -513,7 +517,7 @@ the rules above, and what does not:
   `platform.apply_key_change` after `request_key_change` and `grant_key_change` by two key custodians (`OS012` →
   `CS-CON-0006` for a payload that fails its checks); `approval_requests.action` gains `tsa.set` and `tsa.remove`. The
   worker reads only `openseal_tsa_endpoints()` (enabled rows: URL, policy OID, certificate hash, in order).
-- **Seal reconciliation (built, `CON-09`, migration 0037):** tenant table `seal_signatures` (account, envelope,
+- **Seal reconciliation (built, `CON-09`, migration 0038):** tenant table `seal_signatures` (account, envelope,
   digest 32/48/64 bytes, keyd alias, time; key account, envelope, digest; insert-only from the worker, in the
   transaction that stores the sealed bytes); `platform.seal_digests(from, to)` and `platform.seal_digests_of(ids)`,
   definer functions returning envelope ids, digests and times to the console only; `platform.reconciliation_runs`

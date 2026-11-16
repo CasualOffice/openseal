@@ -1,7 +1,10 @@
 # OpenSeal public API, version 1 (docs/40). The contract: the server's route table
 # (server/casual-sign-server/src/routes.rs) and this document are kept equal by the
 # contract tests (server/casual-sign-server/tests/contract.rs), operation by operation,
-# with each operation's `x-permission` (the scope it needs, SEC-A05).
+# with each operation's `x-permission` (the catalogue action it needs, or `public`, `signing-in`, or
+# `""` for any authenticated caller; SEC-A05, ORG-07) and, for an action, its `x-level`
+# (`workspace`: held through the caller's permission profile; `organization`: through
+# the caller's organization role; docs/23 §2.2).
 openapi: 3.1.0
 info:
   title: OpenSeal API
@@ -184,6 +187,10 @@ components:
         client_id: {type: [string, 'null']}
         scopes: {type: array, items: {type: string}}
         admin: {type: boolean}
+        actions:
+          type: array
+          description: The workspace actions held (ORG-07, docs/23 §2.2), narrowed by a key's scopes
+          items: {$ref: '#/components/schemas/ActionName'}
         second_factor: {type: string, enum: [none, passed, verify, enrol]}
     MyWorkspaces:
       type: object
@@ -944,7 +951,12 @@ components:
         user_ids: {type: array, items: {type: string}}
     PermissionName:
       type: string
-      enum: [envelopes:read, envelopes:write, envelopes:send, templates:read, templates:write, bulk:send, webhooks:manage, admin:users, admin:account, audit:read, view_all_envelopes]
+      description: A scope of docs/40 §2 (every action it covers), `view_all_envelopes`, or a workspace action (ORG-07)
+      enum: [envelopes:read, envelopes:write, envelopes:send, templates:read, templates:write, bulk:send, webhooks:manage, admin:users, admin:account, audit:read, view_all_envelopes, envelopes.read, envelopes.write, envelopes.send, templates.read, templates.write, bulk.send, audit.read, users.read, users.invite, users.update, users.disable, users.remove, groups.manage, profiles.manage, settings.sending, settings.signing, ersd.manage, settings.security, brands.manage, retention.manage, api_clients.manage, webhooks.manage, envelopes.read_all, envelopes.transfer, templates.share_workspace, reports.read, usage.read, admin_audit.read]
+    ActionName:
+      type: string
+      description: A workspace action of the catalogue (docs/23 §2.2; server authz.rs)
+      enum: [envelopes.read, envelopes.write, envelopes.send, templates.read, templates.write, bulk.send, audit.read, users.read, users.invite, users.update, users.disable, users.remove, groups.manage, profiles.manage, settings.sending, settings.signing, ersd.manage, settings.security, brands.manage, retention.manage, api_clients.manage, webhooks.manage, envelopes.read_all, envelopes.transfer, templates.share_workspace, reports.read, usage.read, admin_audit.read]
     PermissionProfile:
       type: object
       properties:
@@ -954,8 +966,16 @@ components:
         builtin: {type: boolean}
         permissions:
           type: array
-          description: What it grants, in docs/40 order; a built-in profile's come from its kind
+          description: What it grants; a built-in profile's are its kind's scopes, a custom profile's the names it stores
           items: {$ref: '#/components/schemas/PermissionName'}
+        actions:
+          type: array
+          description: The workspace actions it holds (ORG-07)
+          items: {$ref: '#/components/schemas/ActionName'}
+        admin_scope_group_ids:
+          type: [array, 'null']
+          description: A delegated workspace admin's groups; null for the whole workspace (ORG-07)
+          items: {type: string}
         members: {type: integer, description: How many members hold it}
     PermissionProfileList:
       type: object
@@ -972,6 +992,13 @@ components:
         permissions:
           type: array
           items: {$ref: '#/components/schemas/PermissionName'}
+        admin_scope_group_ids:
+          type: [array, 'null']
+          description: >-
+            Groups of this account its holders administer (a delegated workspace admin,
+            ORG-07); absent or null for the whole workspace. Never with a sensitive action.
+          minItems: 1
+          items: {type: string}
     PermissionProfilePatch:
       type: object
       additionalProperties: false
@@ -980,6 +1007,11 @@ components:
         permissions:
           type: array
           items: {$ref: '#/components/schemas/PermissionName'}
+        admin_scope_group_ids:
+          type: [array, 'null']
+          description: Absent unchanged; null the whole workspace; a list those groups (ORG-07)
+          minItems: 1
+          items: {type: string}
     TemplatePatch:
       type: object
       additionalProperties: false
@@ -1535,7 +1567,8 @@ paths:
     patch:
       operationId: patchAccount
       summary: "Merge into the account's settings"
-      x-permission: "admin:account"
+      x-permission: "settings.sending"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -1552,7 +1585,8 @@ paths:
     get:
       operationId: getMlSettings
       summary: "The workspace's document-analysis settings (docs/33 §6, WEB-19)"
-      x-permission: "admin:account"
+      x-permission: "settings.sending"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -1566,7 +1600,8 @@ paths:
       description: >-
         Turning on a feature the plan lacks, or any feature while the model service is not
         installed, is `403 CS-ML-0011`; turning one off is always allowed.
-      x-permission: "admin:account"
+      x-permission: "settings.sending"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -1588,7 +1623,8 @@ paths:
         text (`text` null when no intact published row has that hash), or null when the
         account requires none. `items` are the published versions, newest first, at most 100,
         without their text.
-      x-permission: "admin:account"
+      x-permission: "ersd.manage"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -1606,7 +1642,8 @@ paths:
         for consent to the new version. Published rows are never changed: a new text is a new
         version. An empty or blank text, one with a NUL, or a bad language tag is
         `422 CS-API-0001`; a text over 100,000 bytes is `413 CS-API-0006`.
-      x-permission: "admin:account"
+      x-permission: "ersd.manage"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -1631,7 +1668,8 @@ paths:
         bytes, so walking the log by cursor checks every link once. `verify=full` re-verifies
         the whole log first. A broken chain is `500 CS-DB-0014`. `format=csv` answers `text/csv` with columns
         `seq,at,action,hash,prev,event` and the next cursor in `X-Next-Cursor`.
-      x-permission: "admin:account"
+      x-permission: "admin_audit.read"
+      x-level: workspace
       parameters:
         - {name: cursor, in: query, required: false, description: "The `seq` after which to start", schema: {type: integer, minimum: 0}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
@@ -1656,7 +1694,8 @@ paths:
         `organization_admins` on every request (no role, or an action it does not hold:
         `403 CS-AUTH-0006`; a non-session credential: `403 CS-AUTH-0006`). Another
         organization's ids answer `404 CS-API-0002`.
-      x-permission: ""
+      x-permission: "org.read"
+      x-level: organization
       responses:
         '200':
           description: OK
@@ -1667,7 +1706,8 @@ paths:
     patch:
       operationId: patchOrganization
       summary: "Rename the organization (`org.settings.update`), logged as `organization.renamed`"
-      x-permission: ""
+      x-permission: "org.settings.update"
+      x-level: organization
       requestBody:
         required: true
         content:
@@ -1684,7 +1724,8 @@ paths:
     get:
       operationId: listOrgWorkspaces
       summary: "The organization's workspaces, by name (metadata only)"
-      x-permission: ""
+      x-permission: "org.read"
+      x-level: organization
       responses:
         '200':
           description: OK
@@ -1695,7 +1736,8 @@ paths:
     post:
       operationId: createOrgWorkspace
       summary: "Create a workspace (`org.workspaces.create`) with its built-in profiles and no member, logged as `workspace.created`"
-      x-permission: ""
+      x-permission: "org.workspaces.create"
+      x-level: organization
       requestBody:
         required: true
         content:
@@ -1718,7 +1760,8 @@ paths:
     get:
       operationId: getOrgWorkspace
       summary: "A workspace of the organization (metadata only)"
-      x-permission: ""
+      x-permission: "org.read"
+      x-level: organization
       responses:
         '200':
           description: OK
@@ -1736,7 +1779,8 @@ paths:
     post:
       operationId: archiveOrgWorkspace
       summary: "Archive a workspace (`org.workspaces.archive`, idempotent), logged as `workspace.archived`"
-      x-permission: ""
+      x-permission: "org.workspaces.archive"
+      x-level: organization
       responses:
         '200':
           description: OK
@@ -1758,7 +1802,8 @@ paths:
         The only way an organization role reaches agreements: one transaction writes the membership,
         `member.added` (`via: organization`) in the workspace's log and `org.workspace_joined` in the
         organization's. A delegated admin gets `403 CS-AUTH-0006`; an archived workspace `409 CS-ORG-0010`.
-      x-permission: ""
+      x-permission: "org.workspaces.join"
+      x-level: organization
       requestBody:
         required: true
         content:
@@ -1775,7 +1820,8 @@ paths:
     get:
       operationId: listOrgAdmins
       summary: "The organization's owners and admins"
-      x-permission: ""
+      x-permission: "org.read"
+      x-level: organization
       responses:
         '200':
           description: OK
@@ -1789,7 +1835,8 @@ paths:
       description: >-
         The user must be an enabled member of a workspace of this organization, else `422 CS-ORG-0018`
         (also for an id the organization cannot see); never oneself (`403 CS-ORG-0005`).
-      x-permission: ""
+      x-permission: "org.admins.manage"
+      x-level: organization
       requestBody:
         required: true
         content:
@@ -1816,7 +1863,8 @@ paths:
         A delegated admin made an owner or admin loses its permission set and workspace
         scope; the same role again changes and logs nothing. Leaving no enabled owner is
         `409 CS-ORG-0008`.
-      x-permission: ""
+      x-permission: "org.admins.manage"
+      x-level: organization
       requestBody:
         required: true
         content:
@@ -1834,7 +1882,8 @@ paths:
       summary: "Remove an administrator (owners only), logged as `organization.admin_removed`"
       description: >-
         An owner may resign; the last enabled owner may not (`409 CS-ORG-0008`).
-      x-permission: ""
+      x-permission: "org.admins.manage"
+      x-level: organization
       responses:
         '200':
           description: OK
@@ -1849,7 +1898,8 @@ paths:
       description: >-
         As `GET /admin-events`, over the organization's chain: workspace creation and archiving,
         joins, administrator changes, renames, and the platform's `operator.*` copies (CON-16).
-      x-permission: ""
+      x-permission: "org.audit.read"
+      x-level: organization
       parameters:
         - {name: cursor, in: query, required: false, description: "The `seq` after which to start", schema: {type: integer, minimum: 0}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
@@ -1907,7 +1957,8 @@ paths:
     get:
       operationId: listUsers
       summary: "Members of the account"
-      x-permission: "admin:users"
+      x-permission: "users.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -1918,7 +1969,8 @@ paths:
     post:
       operationId: createUser
       summary: "Add a local member"
-      x-permission: "admin:users"
+      x-permission: "users.invite"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -1943,7 +1995,8 @@ paths:
     get:
       operationId: getUser
       summary: "A member"
-      x-permission: "admin:users"
+      x-permission: "users.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -1962,7 +2015,8 @@ paths:
         changes their own name and password through their own session; a new password
         ends their sessions in every account. Profile fields and disabling apply to this
         account's membership only.
-      x-permission: "admin:users"
+      x-permission: "users.update"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -1978,7 +2032,8 @@ paths:
     delete:
       operationId: deleteUser
       summary: "Remove a member from the account"
-      x-permission: "admin:users"
+      x-permission: "users.remove"
+      x-level: workspace
       responses:
         '204': {description: Done}
         default: {$ref: '#/components/responses/Problem'}
@@ -1992,7 +2047,8 @@ paths:
     post:
       operationId: inviteUser
       summary: "Email the member a new one-time set-password link; earlier links stop working (WEB-06)"
-      x-permission: "admin:users"
+      x-permission: "users.invite"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -2006,7 +2062,8 @@ paths:
     get:
       operationId: listApiClients
       summary: "API keys and OAuth clients"
-      x-permission: "admin:account"
+      x-permission: "api_clients.manage"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2017,7 +2074,8 @@ paths:
     post:
       operationId: createApiClient
       summary: "New API key or OAuth client; the secret is shown once"
-      x-permission: "admin:account"
+      x-permission: "api_clients.manage"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2042,7 +2100,8 @@ paths:
     get:
       operationId: getApiClient
       summary: "An API client"
-      x-permission: "admin:account"
+      x-permission: "api_clients.manage"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2053,7 +2112,8 @@ paths:
     delete:
       operationId: revokeApiClient
       summary: "Revoke an API client"
-      x-permission: "admin:account"
+      x-permission: "api_clients.manage"
+      x-level: workspace
       responses:
         '204': {description: Done}
         default: {$ref: '#/components/responses/Problem'}
@@ -2064,7 +2124,8 @@ paths:
       description: >-
         From the envelopes the caller may see (their own without `view_all`), never another
         account's. `q` matches the name or email, ignoring case; `limit` is 1 to 50 (default 10).
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       parameters:
         - name: q
           in: query
@@ -2097,7 +2158,8 @@ paths:
         `folder_id`, the caller's own folder it is filed in, or null. Newest first by
         default. Keyset paging: a cursor belongs to the sort and order it was issued for
         (another is `422`), and pages stay stable under inserts.
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/cursor'
         - $ref: '#/components/parameters/limit'
@@ -2180,7 +2242,8 @@ paths:
     post:
       operationId: createEnvelope
       summary: "Create a draft, or create and send in one call"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2205,7 +2268,8 @@ paths:
     get:
       operationId: getEnvelope
       summary: "An envelope with its documents, recipients and fields"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2216,7 +2280,8 @@ paths:
     patch:
       operationId: patchEnvelope
       summary: "Change a draft's or a correction's settings (If-Match required)"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -2239,7 +2304,8 @@ paths:
         or expired envelope is removed from the lists only (WEB-08): `envelope.deleted` is
         recorded; its documents, audit chain and evidence stay and it can still be read by
         id. A completed envelope, or one in flight, is `409`.
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -2255,7 +2321,8 @@ paths:
     get:
       operationId: getEnvelopeStatus
       summary: "Envelope and recipient statuses"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2273,7 +2340,8 @@ paths:
     post:
       operationId: sendEnvelope
       summary: "Send a draft"
-      x-permission: "envelopes:send"
+      x-permission: "envelopes.send"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -2293,7 +2361,8 @@ paths:
     post:
       operationId: voidEnvelope
       summary: "Void with a reason"
-      x-permission: "envelopes:send"
+      x-permission: "envelopes.send"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2318,7 +2387,8 @@ paths:
     post:
       operationId: correctEnvelope
       summary: "Correct a sent envelope, all changes or none (If-Match required)"
-      x-permission: "envelopes:send"
+      x-permission: "envelopes.send"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
         - $ref: '#/components/parameters/idempotencyKey'
@@ -2344,7 +2414,8 @@ paths:
     post:
       operationId: resendEnvelope
       summary: "Re-send invitations"
-      x-permission: "envelopes:send"
+      x-permission: "envelopes.send"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2369,7 +2440,8 @@ paths:
     get:
       operationId: getAudit
       summary: "Hash-chained audit events, re-verified on read"
-      x-permission: "audit:read"
+      x-permission: "audit.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2392,7 +2464,8 @@ paths:
         envelope's envelope certificate says how it ended and never claims completion;
         the worker makes and seals it when the envelope ends. `409 CS-API-0009` before
         either exists (an ended envelope without one asks the worker for it then).
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: PDF
@@ -2412,7 +2485,8 @@ paths:
         attachment of the type its leading bytes show (PDF, PNG or JPEG). Recorded in the
         chain as `attachment.downloaded` with the field and the hash. Any other hash is
         `404`.
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: The file
@@ -2434,7 +2508,8 @@ paths:
     get:
       operationId: getCombined
       summary: "Sealed documents and certificate as one PDF (made by the seal job)"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: PDF
@@ -2452,7 +2527,8 @@ paths:
     get:
       operationId: listDocuments
       summary: "Documents in order"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2463,7 +2539,8 @@ paths:
     post:
       operationId: addDocument
       summary: "Upload a document: admitted and normalized"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2493,7 +2570,8 @@ paths:
     get:
       operationId: getDocument
       summary: "A document's metadata"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2504,7 +2582,8 @@ paths:
     delete:
       operationId: deleteDocument
       summary: "Remove a document (If-Match required)"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -2525,7 +2604,8 @@ paths:
     get:
       operationId: getDocumentContent
       summary: "Document bytes: original, normalized or sealed"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/version'
       responses:
@@ -2555,7 +2635,8 @@ paths:
         (displayed page space, points, origin top-left, ADR-019); add one by posting it to
         `/fields` with a `recipient_id`. At most 500, ordered by page, top, left; `truncated`
         says a bound was reached.
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -2577,7 +2658,8 @@ paths:
         bundle). `403 CS-ML-0011` with no feature in effect; `409 CS-WF-0001` once the
         envelope is no longer a draft; `404` once it is purged (a deleted draft). The
         envelope's sender or an administrator.
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -2590,7 +2672,8 @@ paths:
     get:
       operationId: getAnalysis
       summary: "The document's newest analysis"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2607,7 +2690,8 @@ paths:
       description: >-
         Only kinds whose feature is in effect, only for documents still in the envelope.
         `403 CS-ML-0011` with no feature in effect; `404` once the envelope is purged.
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       parameters:
         - {name: kind, in: query, schema: {type: string, enum: [template, entity, personal_data]}}
         - {name: state, in: query, schema: {type: string, enum: [open, accepted, dismissed]}}
@@ -2631,7 +2715,8 @@ paths:
         Records who accepted it and when. The action it suggests (applying a template, adding
         a field) is the person's own, through the ordinary endpoints. `409 CS-ML-0012` when
         already decided or its document left the envelope.
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -2648,7 +2733,8 @@ paths:
     post:
       operationId: dismissSuggestion
       summary: "Dismiss a suggestion"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -2668,7 +2754,8 @@ paths:
     get:
       operationId: listRecipients
       summary: "Recipients"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2679,7 +2766,8 @@ paths:
     post:
       operationId: addRecipients
       summary: "Add one recipient, or {items: [...]}"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2709,7 +2797,8 @@ paths:
     get:
       operationId: getRecipient
       summary: "A recipient"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2720,7 +2809,8 @@ paths:
     patch:
       operationId: patchRecipient
       summary: "Change a recipient (If-Match required)"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -2738,7 +2828,8 @@ paths:
     delete:
       operationId: deleteRecipient
       summary: "Remove a recipient (If-Match required)"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -2754,7 +2845,8 @@ paths:
     get:
       operationId: listFields
       summary: "Fields, optionally of one recipient or document"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/recipientId'
         - $ref: '#/components/parameters/documentId'
@@ -2768,7 +2860,8 @@ paths:
     post:
       operationId: addFields
       summary: "Add one field, or {items: [...]}"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2798,7 +2891,8 @@ paths:
     get:
       operationId: getField
       summary: "A field"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2809,7 +2903,8 @@ paths:
     patch:
       operationId: patchField
       summary: "Merge into a field (If-Match required)"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -2827,7 +2922,8 @@ paths:
     delete:
       operationId: deleteField
       summary: "Remove a field (If-Match required)"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -2843,7 +2939,8 @@ paths:
     get:
       operationId: getFormData
       summary: "Every labelled field's value by data label"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2866,7 +2963,8 @@ paths:
     post:
       operationId: hostInPersonSigner
       summary: "Host an in-person signer: records recipient.in_person_hosted and returns a one-hour signing link that acts as the caller hosting the signer (UXW-36)"
-      x-permission: "envelopes:send"
+      x-permission: "envelopes.send"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -2914,7 +3012,8 @@ paths:
     post:
       operationId: createSigningView
       summary: "Five-minute embedded signing link (the creating API client only)"
-      x-permission: "envelopes:send"
+      x-permission: "envelopes.send"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2941,7 +3040,8 @@ paths:
         `favourites` (the caller's starred ones). With `deleted=true`, the deleted
         templates the caller owns (every one for an administrator), kept whole and
         restorable, most recently deleted first. Any other value is `422`.
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       parameters:
         - name: deleted
           in: query
@@ -2963,7 +3063,8 @@ paths:
     post:
       operationId: createTemplate
       summary: "Create a template with roles"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -2988,7 +3089,8 @@ paths:
     get:
       operationId: getTemplate
       summary: "A template and its roles"
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -2999,7 +3101,8 @@ paths:
     patch:
       operationId: patchTemplate
       summary: "Rename a template or change its email subject and message (If-Match required)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -3017,7 +3120,8 @@ paths:
     delete:
       operationId: deleteTemplate
       summary: "Move a live template to the Deleted view, kept whole (UXW-02); delete one already there for good, with its roles, documents and fields; envelopes made from it keep their copies (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -3032,7 +3136,8 @@ paths:
       description: >-
         `If-Match` is honoured when given. A live template, or none, is `404`. The body
         is empty or `{}`.
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
         - {name: If-Match, in: header, required: false, description: "\"v<version>\"", schema: {type: string}}
@@ -3049,7 +3154,8 @@ paths:
     get:
       operationId: listTemplateShares
       summary: "Whom a template is shared with (UXW-06); its owner's or an administrator's"
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3066,7 +3172,8 @@ paths:
         twice, is `422`. A share lets its members use the template, and edit it with
         `can_edit`; deleting, restoring and sharing stay with the owner and
         administrators. Anyone without access is answered `404`, too little access `403`.
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -3085,14 +3192,16 @@ paths:
     put:
       operationId: favouriteTemplate
       summary: "Star a template for the caller (Favourites, UXW-06); idempotent"
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       responses:
         '204': {description: Starred}
         default: {$ref: '#/components/responses/Problem'}
     delete:
       operationId: unfavouriteTemplate
       summary: "Unstar a template for the caller (UXW-06); idempotent"
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       responses:
         '204': {description: Unstarred}
         default: {$ref: '#/components/responses/Problem'}
@@ -3102,7 +3211,8 @@ paths:
     post:
       operationId: duplicateTemplate
       summary: "A copy owned by the caller, with new ids, sharing the stored PDFs (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3127,7 +3237,8 @@ paths:
     post:
       operationId: addTemplateDocument
       summary: "Add a document {name, content_base64}, admitted and normalized as an upload (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3149,7 +3260,8 @@ paths:
     delete:
       operationId: deleteTemplateDocument
       summary: "Remove a document and the fields on it (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -3162,7 +3274,8 @@ paths:
     get:
       operationId: getTemplateDocumentContent
       summary: "The template document's normalized PDF (WEB-06)"
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       responses:
         '200':
           description: PDF
@@ -3178,7 +3291,8 @@ paths:
       operationId: requestTemplateAnalysis
       summary: "Ask for a template document's page hashes, for matching uploads (docs/33 §6)"
       description: "`403 CS-ML-0011` unless template matching is in effect."
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       responses:
@@ -3191,7 +3305,8 @@ paths:
     get:
       operationId: getTemplateAnalysis
       summary: "The template document's newest analysis"
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3205,7 +3320,8 @@ paths:
     post:
       operationId: addTemplateRole
       summary: "Add a role (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3227,7 +3343,8 @@ paths:
     patch:
       operationId: patchTemplateRole
       summary: "Rename a role or change its type or routing order (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -3245,7 +3362,8 @@ paths:
     delete:
       operationId: deleteTemplateRole
       summary: "Remove a role and its fields (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -3257,7 +3375,8 @@ paths:
     get:
       operationId: listTemplateFields
       summary: "A template's fields (WEB-06)"
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3268,7 +3387,8 @@ paths:
     post:
       operationId: addTemplateFields
       summary: "Add one field, or {items: [...]}, bound to roles (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3290,7 +3410,8 @@ paths:
     patch:
       operationId: patchTemplateField
       summary: "Change a field: the members given replace its own, null removes one (UX-11); checked whole again (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -3308,7 +3429,8 @@ paths:
     delete:
       operationId: deleteTemplateField
       summary: "Remove a field (WEB-06)"
-      x-permission: "templates:write"
+      x-permission: "templates.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -3318,7 +3440,8 @@ paths:
     get:
       operationId: listFolders
       summary: "The caller's own envelope folders, by name, with counts (UXW-02)"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3332,7 +3455,8 @@ paths:
     post:
       operationId: createFolder
       summary: "A new folder of the caller's (at most 500)"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3357,7 +3481,8 @@ paths:
     patch:
       operationId: renameFolder
       summary: "Rename one of the caller's folders"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -3373,7 +3498,8 @@ paths:
     delete:
       operationId: deleteFolder
       summary: "Remove one of the caller's folders; what was filed in it is in no folder"
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       responses:
         '204': {description: Removed}
         default: {$ref: '#/components/responses/Problem'}
@@ -3391,7 +3517,8 @@ paths:
         Filing is the caller's own view of their lists: the envelopes, their `updated_at`
         and their audit chains are untouched. An envelope the caller may not see is `404`
         and nothing moves.
-      x-permission: "envelopes:write"
+      x-permission: "envelopes.write"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3413,7 +3540,8 @@ paths:
     get:
       operationId: listBulkSends
       summary: "The caller's bulk sends, newest first, without rows (every member's for an administrator or a member who sees every envelope) (UXW-04)"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       parameters:
         - name: limit
           in: query
@@ -3445,7 +3573,8 @@ paths:
         each row's check. Send the batch with `POST …/send`. Also needs `envelopes:write`
         and `envelopes:send`, as `POST /envelopes` with `status: sent` does. A line with
         no value in any cell is skipped.
-      x-permission: "bulk:send"
+      x-permission: "bulk.send"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -3473,7 +3602,8 @@ paths:
     get:
       operationId: getBulkSend
       summary: "A bulk send: its progress counts and every row"
-      x-permission: "envelopes:read"
+      x-permission: "envelopes.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3496,7 +3626,8 @@ paths:
         transaction; a row the server refuses is `failed` with the refusal's code and the
         others go on. Once no row is pending the bulk send is `completed`. Only its
         sender sends it (403 otherwise). Also needs `envelopes:write` and `envelopes:send`.
-      x-permission: "bulk:send"
+      x-permission: "bulk.send"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3514,7 +3645,8 @@ paths:
     post:
       operationId: cancelBulkSend
       summary: "Cancel a bulk send: its pending rows are not sent; sent envelopes stay (409 CS-WF-0001 once finished)"
-      x-permission: "bulk:send"
+      x-permission: "bulk.send"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3526,7 +3658,8 @@ paths:
     get:
       operationId: listGroups
       summary: "The account's groups with member counts, for sharing templates (UXW-06)"
-      x-permission: "templates:read"
+      x-permission: "templates.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3537,7 +3670,8 @@ paths:
     post:
       operationId: createGroup
       summary: "Make a group of members (UXW-07); a name the account uses is 422 `exists` at /name"
-      x-permission: "admin:users"
+      x-permission: "groups.manage"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3562,7 +3696,8 @@ paths:
     get:
       operationId: getGroup
       summary: "A group with its members' user ids"
-      x-permission: "admin:users"
+      x-permission: "groups.manage"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3573,7 +3708,8 @@ paths:
     patch:
       operationId: renameGroup
       summary: "Rename a group"
-      x-permission: "admin:users"
+      x-permission: "groups.manage"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -3589,7 +3725,8 @@ paths:
     delete:
       operationId: deleteGroup
       summary: "Delete a group; its template shares go with it"
-      x-permission: "admin:users"
+      x-permission: "groups.manage"
+      x-level: workspace
       responses:
         '204': {description: Deleted}
         default: {$ref: '#/components/responses/Problem'}
@@ -3606,7 +3743,8 @@ paths:
       description: >-
         Each id must be a member of this account (422 at `/user_ids/{i}` otherwise);
         a repeated id counts once. Each member added or removed is its own admin event.
-      x-permission: "admin:users"
+      x-permission: "groups.manage"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -3623,7 +3761,8 @@ paths:
     get:
       operationId: listPermissionProfiles
       summary: "The built-in profiles, then the custom ones, with what each grants and how many members hold it (UXW-07)"
-      x-permission: "admin:users"
+      x-permission: "users.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3635,10 +3774,12 @@ paths:
       operationId: createPermissionProfile
       summary: "Make a custom permission profile"
       description: >-
-        Its permissions are scopes of docs/40 §2 and `view_all_envelopes`; none may go
-        beyond the caller's own (403 CS-AUTH-0006). A name the account uses is 422
-        `exists` at /name.
-      x-permission: "admin:users"
+        Its permissions are scopes of docs/40 §2, `view_all_envelopes` and workspace
+        actions (ORG-07); none may go beyond the caller's own, nor its group scope beyond
+        the caller's, nor a sensitive action with a group scope (403 CS-ORG-0005). A name
+        the account uses is 422 `exists` at /name.
+      x-permission: "profiles.manage"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3663,7 +3804,8 @@ paths:
     get:
       operationId: getPermissionProfile
       summary: "A permission profile"
-      x-permission: "admin:users"
+      x-permission: "users.read"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3676,9 +3818,11 @@ paths:
       summary: "Change a custom profile; its members hold the new permissions from their next request"
       description: >-
         A built-in profile is 409 CS-WF-0001. The profile as it was and as it becomes
-        must both be within the caller's rights (403 CS-AUTH-0006). Giving sending to
+        must both be within the caller's rights and scope, and never the caller's own
+        profile (403 CS-ORG-0005). Giving sending to
         more members is checked against the plan's seats (CS-PLAN-0003).
-      x-permission: "admin:users"
+      x-permission: "profiles.manage"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -3694,7 +3838,8 @@ paths:
     delete:
       operationId: deletePermissionProfile
       summary: "Delete a custom profile no member holds (409 CS-WF-0001 for a built-in or a held one)"
-      x-permission: "admin:users"
+      x-permission: "profiles.manage"
+      x-level: workspace
       responses:
         '204': {description: Deleted}
         default: {$ref: '#/components/responses/Problem'}
@@ -3702,7 +3847,8 @@ paths:
     get:
       operationId: listWebhooks
       summary: "Webhook subscriptions"
-      x-permission: "webhooks:manage"
+      x-permission: "webhooks.manage"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3713,7 +3859,8 @@ paths:
     post:
       operationId: createWebhook
       summary: "Subscribe (public HTTPS URLs only)"
-      x-permission: "webhooks:manage"
+      x-permission: "webhooks.manage"
+      x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
@@ -3738,7 +3885,8 @@ paths:
     get:
       operationId: getWebhook
       summary: "A subscription"
-      x-permission: "webhooks:manage"
+      x-permission: "webhooks.manage"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3752,7 +3900,8 @@ paths:
       description: >-
         `{url?, event_types?, active?}`; `active: false` pauses, `true` resumes. A new URL
         must be public HTTPS (`422 CS-API-0013`, SEC-W01).
-      x-permission: "webhooks:manage"
+      x-permission: "webhooks.manage"
+      x-level: workspace
       requestBody:
         required: true
         content:
@@ -3768,7 +3917,8 @@ paths:
     delete:
       operationId: deleteWebhook
       summary: "Disable a subscription"
-      x-permission: "webhooks:manage"
+      x-permission: "webhooks.manage"
+      x-level: workspace
       responses:
         '204': {description: Done}
         default: {$ref: '#/components/responses/Problem'}
@@ -3782,7 +3932,8 @@ paths:
     get:
       operationId: listDeliveries
       summary: "A subscription's deliveries"
-      x-permission: "webhooks:manage"
+      x-permission: "webhooks.manage"
+      x-level: workspace
       responses:
         '200':
           description: OK
@@ -3805,7 +3956,8 @@ paths:
         sends it as any delivery (SEC-W01 at connect time) and records the answer in the
         delivery log. `202` with the delivery as recorded; a paused or disabled
         subscription is `409 CS-API-0009`.
-      x-permission: "webhooks:manage"
+      x-permission: "webhooks.manage"
+      x-level: workspace
       responses:
         '202':
           description: Accepted
@@ -3832,7 +3984,8 @@ paths:
         The same event id and payload, through the worker; the URL is checked again
         (SEC-W01). `202` with the delivery back to `pending`; a paused or disabled
         subscription is `409 CS-API-0009`.
-      x-permission: "webhooks:manage"
+      x-permission: "webhooks.manage"
+      x-level: workspace
       responses:
         '202':
           description: Accepted

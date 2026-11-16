@@ -8,8 +8,8 @@ use super::{affected, text_enum};
 use crate::admin_log::{AdminChange, Change, settings_changes};
 use crate::error::{Result, StoreError, db};
 use crate::ids::{
-    AccountId, OrganizationId, PasswordResetId, PermissionProfileId, StaffSessionId, UserId,
-    UserInvitationId,
+    AccountId, GroupId, OrganizationId, PasswordResetId, PermissionProfileId, StaffSessionId,
+    UserId, UserInvitationId,
 };
 use crate::org::WorkspaceStatus;
 use crate::store::TenantTx;
@@ -531,6 +531,80 @@ impl Users<'_> {
             ));
         }
         self.tx.admin_event(change).await
+    }
+
+    /// A profile's group scope (ORG-07, `admin_scope_group_ids`): `None` for the whole
+    /// workspace, or for no such profile.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0010` for an unreadable row.
+    pub async fn profile_scope(&mut self, id: PermissionProfileId) -> Result<Option<Vec<GroupId>>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query_scalar!(
+            "SELECT admin_scope_group_ids FROM permission_profiles \
+             WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row
+            .flatten()
+            .map(|ids| ids.into_iter().map(GroupId).collect()))
+    }
+
+    /// Set a custom profile's group scope (ORG-07): its holders administer only members
+    /// of these groups; `None` is the whole workspace. Appends `profile.changed` with
+    /// the scope before and after when it changes.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` for no such custom profile; `CS-DB-0008` for a scope on a profile
+    /// holding a sensitive action (`permission_profiles_scope_not_sensitive`).
+    pub async fn set_profile_scope(
+        &mut self,
+        id: PermissionProfileId,
+        scope: Option<&[GroupId]>,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let old = sqlx::query_scalar!(
+            "SELECT admin_scope_group_ids FROM permission_profiles \
+             WHERE account_id = $1 AND id = $2 AND kind = 'custom' FOR UPDATE",
+            acct,
+            id.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound { entity: "profile" })?;
+        let new: Option<Vec<uuid::Uuid>> = scope.map(|s| s.iter().map(|g| g.0).collect());
+        if old == new {
+            return Ok(());
+        }
+        let done = sqlx::query!(
+            "UPDATE permission_profiles SET admin_scope_group_ids = $3 \
+             WHERE account_id = $1 AND id = $2 AND kind = 'custom'",
+            acct,
+            id.0,
+            new.as_deref()
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "profile")?;
+        self.tx
+            .admin_event(
+                AdminChange::new("profile.changed")
+                    .target("profile", id.0)
+                    .change(Change::new(
+                        "admin_scope_group_ids",
+                        Some(serde_json::json!(old)),
+                        Some(serde_json::json!(new)),
+                    )),
+            )
+            .await
     }
 
     /// Delete a custom profile no member holds (UXW-07).
