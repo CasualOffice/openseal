@@ -418,6 +418,19 @@ async fn custom(
     grant.profile = Some(id);
     let org = super::org::admin_of(&c.st, &c.p).await?;
     c.p.may_grant(org.as_ref(), &grant)?;
+    // A change to a profile changes every holder's rights: a group-scoped caller changes
+    // only a profile whose every holder it administers (ORG-07, docs/23 §2.2).
+    if let Some(mine) = administered(c, tx).await? {
+        let outside = tx
+            .users()
+            .list()
+            .await?
+            .iter()
+            .any(|m| m.permission_profile_id == id && !mine.contains(&m.user_id));
+        if outside {
+            return Err(ApiError::grant_refused(Refusal::Scope.what()));
+        }
+    }
     Ok(p)
 }
 

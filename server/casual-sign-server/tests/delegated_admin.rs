@@ -149,6 +149,16 @@ async fn delegated(rls: Rls) {
         .await;
         member(&api, &a, "kai@alpha.example.test", &keys).await
     };
+    // A profile within the delegate's own actions, held by a member outside its groups:
+    // changing it would change her rights, so it is not the delegate's to change.
+    let readers = make(
+        &api,
+        &a.auth,
+        "/api/v1/permission-profiles",
+        json!({"name": "Readers", "permissions": ["envelopes.read"]}),
+    )
+    .await;
+    let _rita = member(&api, &a, "rita@alpha.example.test", &readers).await;
     for (g, users) in [(&g1, vec![&dana_id, &sam_id]), (&g2, vec![&olga_id])] {
         ok(
             api.call(
@@ -244,6 +254,14 @@ async fn delegated(rls: Rls) {
             "one group beyond",
             format!("{pp}/{narrow}"),
             json!({"admin_scope_group_ids": [g2]}),
+            &dana,
+        ),
+        (
+            "PATCH",
+            "/api/v1/permission-profiles/{id}",
+            "a profile held outside its groups",
+            format!("{pp}/{readers}"),
+            json!({"permissions": ["envelopes.read", "templates.read"]}),
             &dana,
         ),
         (

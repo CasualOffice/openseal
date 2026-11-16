@@ -422,8 +422,11 @@ view-all across workspaces (silent content access, largest blast radius for a st
   custom profile the names it stores, where a scope name stands for every action it covers and `view_all_envelopes`
   for `envelopes.read_all`. The database refuses a name outside the catalogue.
 - **Delegated workspace admin.** A custom profile with `admin_scope_group_ids` reads and changes only members of those
-  groups (others answer `404 CS-API-0002`), creates members only into them, sees only profiles whose actions it holds,
-  and never holds a sensitive action (refused by the API, `CS-ORG-0005`, and by the database).
+  groups (others answer `404 CS-API-0002`), sets a scope group's members only to members it already administers,
+  creates no group and, until invitations name a scope group (`ORG-38`), no member (`CS-ORG-0005`), sees only
+  profiles whose actions it holds, changes only a profile whose every holder it administers (a change to a profile
+  changes its holders' rights; `CS-ORG-0005`), and never holds a sensitive action (refused by the API,
+  `CS-ORG-0005`, and by the database). Template sharing is not yet limited to scope groups (`ORG-38`).
 - **One rule against escalation.** `authz::held` computes, per level, what an actor holds for granting (its
   membership; every workspace action for an organization owner or admin; a delegated organization admin's set within
   its workspace scope), and `authz::grantable` decides every grant built today: profile create, edit and delete,
