@@ -1,7 +1,7 @@
 // Scenario 2 (WEB-01): create an envelope — upload a PDF, two sequential signers and a
 // CC, signature, date and text fields for each signer — send it, and find it as sent.
 import { test, expect } from "@playwright/test";
-import { signIn, app, pdfFile, placingFor } from "./helpers.mjs";
+import { signIn, app, pdfFile, placingFor, REAL } from "./helpers.mjs";
 
 async function addRecipient(page, n, { name, email, type = "signer" }) {
   await page.getByRole("button", { name: "Add recipient" }).first().click();
@@ -231,4 +231,45 @@ test("a draft saves itself after a pause, keeps the selection, and then leaves w
   await expect(page.locator(".os-field.is-selected")).toHaveCount(1);
   await page.goto(app("#/agreements"));
   await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+});
+
+test("a recipient waits hours after their turn, and the envelope is scheduled to send later (WF-02)", async ({ page }) => {
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles(pdfFile());
+  await expect(page.getByTestId("doc-card")).toHaveCount(1);
+  await page.getByTestId("wizard-next").click();
+  await addRecipient(page, 0, { name: "Ana Signer", email: "ana@example.com" });
+  await addRecipient(page, 1, { name: "Ben Signer", email: "ben@example.com" });
+  const ben = page.locator(".os-rcpt").nth(1);
+  await ben.getByTestId("recipient-more").locator("summary").click();
+  await ben.getByTestId("recipient-delay").fill("24");
+  await ben.getByTestId("recipient-delay").blur();
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await placeFor(page, "1. Ana Signer", ["Signature"]);
+  await placeFor(page, "2. Ben Signer", ["Signature"]);
+  await page.getByTestId("wizard-next").click();
+  await page.getByLabel("Subject").fill(`Later ${Date.now()}`);
+  const p = (n) => String(n).padStart(2, "0");
+  const d = new Date(Date.now() + 2 * 86_400_000);
+  await page.getByTestId("send-at").fill(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T09:30`);
+  await page.getByRole("button", { name: "Send", exact: true }).first().click();
+  const confirm = page.getByRole("dialog", { name: "Send this envelope?" });
+  await expect(confirm).toContainText("It will be sent at");
+  await confirm.getByRole("button", { name: "Schedule" }).click();
+  await expect(page.getByTestId("envelope-send-at")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".os-page-head .os-badge")).toHaveText("Draft");
+  // Read back through the page's own client: the mock in mock mode, the server's
+  // session on the Compose stack (E2E-06).
+  const saved = await page.evaluate(async (real) => {
+    const at = (m) => new URL(m, location.href).href;
+    const id = decodeURIComponent(location.hash.split("/").pop());
+    const { createClient } = await import(at("api.js"));
+    const fetchFn = real ? undefined : (await import(at("mock.js"))).createMockFetch({ store: sessionStorage });
+    const c = createClient({ ...(fetchFn ? { fetch: fetchFn } : {}), store: sessionStorage });
+    const { envelope } = await c.getEnvelope(id);
+    return envelope.recipients.map((r) => r.route_delay_hours || 0);
+  }, REAL);
+  expect(saved).toEqual([0, 24]);
 });

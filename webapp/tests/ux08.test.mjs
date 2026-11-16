@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
   POLICY_DEFAULTS, expiryWarningOf, withExpiryWarning, expiryWarningPatch, filterAdminEvents, joinCsvPages,
+  orgLocked,
 } from "../adminmodel.js";
 import { createClient } from "../api.js";
 import { createMockFetch, MOCK } from "../mock.js";
@@ -192,4 +193,17 @@ test("a member's profile choice: built-in by name, custom by id (UXW-07)", async
   assert.equal(profileValue({ permission_profile_id: "p-a" }, {}, profiles), "admin");
   assert.equal(profileValue({ permission_profile_id: "b-s" }, { sender: "b-s" }, profiles), "sender");
   assert.equal(profileValue({ permission_profile_id: "p-c" }, {}, profiles), "p-c");
+});
+
+// ---- ORG-08 -------------------------------------------------------------------------------
+test("a setting the organization locks reads as locked, anything else as the workspace's (ORG-08)", () => {
+  const acct = { organization_policy: { settings: {
+    first_reminder_days: { key: "reminders.default", value: 2, locked: true, from_organization: true },
+    mfa_policy: { key: "login.mfa_required", value: "everyone", locked: false, from_organization: true },
+  } } };
+  assert.equal(orgLocked(acct, "first_reminder_days"), true);
+  assert.equal(orgLocked(acct, "mfa_policy"), false, "tightened is not locked");
+  assert.equal(orgLocked(acct, "branding"), false);
+  assert.equal(orgLocked({}, "branding"), false);
+  assert.equal(orgLocked(null, "branding"), false);
 });

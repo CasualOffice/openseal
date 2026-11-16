@@ -27,7 +27,7 @@ instructions 8 and 9).
 | FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | Engine (`XFA-01`; gaps `XFA-02`..`XFA-05`) |
 | FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | Engine |
 | FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
-| FG-010 | Document visibility per recipient | DS | Build | 6 | — |
+| FG-010 | Document visibility per recipient | DS | Build | 6 | Works: engine, server (a hidden document is neither listed nor served to that recipient, `404`), editor's More options per recipient (`WF-02`) |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
 | FG-012 | Template matching on upload | DS | Build | 3 | Partial: uploads to a draft are matched against the workspace's template page hashes when template matching is on (`WEB-19`); not run on the real stack in a browser |
 | FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | — |
@@ -49,8 +49,8 @@ instructions 8 and 9).
 | FG-030 | Electronic seal recipient | DS | Plugin | 18 | — |
 | FG-031 | Sequential, parallel and mixed routing order | DS, SN | Build | 2 | Works |
 | FG-032 | Conditional routing | DS | Build | 29 | Designed |
-| FG-033 | Signing groups | DS | Build | 29 | — |
-| FG-034 | Scheduled sending; delayed routing | DS | Build | 29 | — |
+| FG-033 | Signing groups | DS | Build | 29 | Designed |
+| FG-034 | Scheduled sending; delayed routing | DS | Build | 29 | Works: engine, server (`PUT/DELETE …/schedule`, `route_delay_hours`), editor's "Send at" and per-recipient wait (`WF-02`); the mock records but does not fire them |
 | FG-035 | Reassign / assign to someone else | DS, SN | Build | 2 | Works (signer's `POST /s/{token}/reassign`, `WEB-07`) |
 | FG-036 | Auto-delegate while away | DS | Build | 29 | — |
 | FG-037 | Free-form signer (places own signature) | SN | Build | 4 | Designed |
@@ -152,7 +152,7 @@ instructions 8 and 9).
 | FG-134 | Void with reason | DS, SN | Build | 2 | Works |
 | FG-135 | Resend | DS, SN | Build | 2 | Works |
 | FG-136 | Copy; save as template | DS | Build | 6 | Works |
-| FG-137 | Transfer ownership | DS | Build | 10 | Designed |
+| FG-137 | Transfer ownership | DS | Build | 10 | Partial: `POST /envelopes/{id}/transfer` passes an envelope to another member of its workspace (`envelopes.transfer`), recorded as `envelope.transferred` (`ORG-09`); the screen is `ORG-41` |
 | FG-138 | History view | DS, SN | Build | 6 | Works (staff audit view; the signer's own `GET /s/{token}/history`, `WEB-07`) |
 | FG-139 | Envelope custom fields | DS | Build | 6 | Designed |
 | FG-140 | Reports and CSV export | DS | Build | 6 | Partial: Agreements exports the selected envelopes as CSV, formula-safe (`UX-07`); server reports are `UXW-25`; Reports page: an envelope report with sample sizes, custom range, sender filter and a nine-column CSV over the newest 1,000, computed in the page, `UX-08`; recipient and usage reports wait for REP-01 |
@@ -181,7 +181,7 @@ instructions 8 and 9).
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
 | FG-170 | Users, CSV import, close, reactivate | DS | Build | 10 | Designed |
-| FG-171 | Permission profiles (built-in and custom) | DS | Build | 10 | Partial: built-in admin, sender, viewer and custom profiles made, changed and deleted by an administrator, enforced on the server per request, never beyond the caller's own rights, in the web app (`UXW-07`); run on the Compose stack (`compose-e2e`, 2026-11-14) |
+| FG-171 | Permission profiles (built-in and custom) | DS | Build | 10 | Partial: built-in admin, sender, viewer and custom profiles made, changed and deleted by an administrator, enforced on the server per request, never beyond the caller's own rights, in the web app (`UXW-07`); run on the Compose stack (`compose-e2e`, 2026-11-14); delegated workspace admins limited to groups, under one rule against escalation (`ORG-07`, API only) |
 | FG-172 | Groups | DS | Build | 10 | Partial: groups made, renamed, deleted and their members set by an administrator, used to share templates, in the web app (`UXW-07`, `UXW-06`); run on the Compose stack (`compose-e2e`, 2026-11-14); a group's permission profile and envelope sharing not built (`PRF-03`) |
 | FG-173 | SSO: SAML 2.0 and OIDC; require SSO; JIT provisioning | DS, SN | Build | 10 | Designed |
 | FG-174 | Domain claims | DS | Build | 10 | Designed |
@@ -192,7 +192,7 @@ instructions 8 and 9).
 | FG-179 | Legal hold | — | Build | 15 | — |
 | FG-180 | Data residency (region tags) | DS | Build | 15 | — |
 | FG-181 | BYOK per-tenant keys | — | Build | 15 | — |
-| FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | Partial: staff TOTP with ten one-time recovery codes and the account policy `settings.mfa_policy` (`optional`, `administrators`, `everyone`), a session that owes a factor refused everywhere but the sign-in steps, enrolment and the code step on the sign-in card (`ASVS-01`, `-server/tests/mfa.rs`); breached and common passwords refused wherever a password is set (`ASVS-02`); an email notice when a password or factor changes (`ASVS-04`). Not yet: WebAuthn (`CON-13`), lost-factor recovery (`ASVS-32`), a browser run (`ASVS-33`), session policy |
+| FG-182 | Password and session policy; MFA (TOTP, WebAuthn) | DS | Build | 10 | Partial: staff TOTP with ten one-time recovery codes and the account policy `settings.mfa_policy` (`administrators`, the default since `ASVS-31`; `everyone`; `optional`), a session that owes a factor refused everywhere but the sign-in steps, enrolment and the code step on the sign-in card (`ASVS-01`, `-server/tests/mfa.rs`); breached and common passwords refused wherever a password is set (`ASVS-02`); an email notice when a password or factor changes (`ASVS-04`). Not yet: WebAuthn (`CON-13`), lost-factor recovery (`ASVS-32`), a browser run (`ASVS-33`), session policy |
 | FG-183 | Admin audit log | DS | Build | 10 | Partial: every settings, member, profile, workspace and organization change writes a hash-chained event in its transaction, and the workspace log lists and exports (JSON, CSV) through `GET /admin-events` (`ORG-05`); the organization's through `GET /organizations/me/audit` (`ORG-03`) and its screen, `#/org?section=audit` (`ORG-06`, newest first, filter, chain verify); the workspace's log has its Admin screen (list, filters over loaded events, details, CSV export, full chain check; `UXW-09`, mock-mode e2e); left: the check on the Compose stack (`UXW-09`), server-side filters (`UXW-44`), the organization log's export (ORG-35) |
 | FG-184 | Organizations / multiple accounts | DS, SN | Build | 10 | Partial: one identity in several workspaces lists them and switches between them (`GET /auth/workspaces`, `POST /auth/switch`, the sidebar's workspace menu; `ORG-04`), organization routes (`ORG-03`); organization admin first cut `#/org`: Overview, Workspaces (create, join, archive), Users (session workspace), Administrators, Audit log (`ORG-06`, mock e2e; real stack left) |
 

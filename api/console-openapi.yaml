@@ -54,6 +54,26 @@ components:
     NoContent:
       description: Done.
   schemas:
+    ReconciliationRun:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        at: {type: string, format: date-time}
+        from_seq: {type: integer, description: The first keyd log sequence read}
+        upto_seq: {type: integer, description: The last keyd log sequence judged}
+        next_seq: {type: integer, description: Where the next run starts}
+        cutoff: {type: string, format: date-time, description: Signatures and seal records before this were judged}
+        signatures: {type: integer}
+        matched: {type: integer}
+        unmatched: {type: integer, description: Mismatches alerted, in either direction}
+        orphaned:
+          type: array
+          description: Orphaned retries (at most 1,000 listed)
+          items:
+            type: object
+            properties:
+              seq: {type: integer}
+              envelope_id: {type: string, format: uuid}
     Problem:
       type: object
       required: [type, title, status, code]
@@ -711,6 +731,63 @@ paths:
                         envelope_id: {type: string}
                         outcome: {type: string}
         default: {$ref: '#/components/responses/Problem'}
+  /console/v1/keys/expiry-scan:
+    post:
+      operationId: keysExpiryScan
+      x-roles: operators
+      description: Run `certificate_expiry_scan` now (CON-08; the console also runs it daily). Raises an alert `CS-CON-0018` (source `certificate_expiry_scan`, subject alias, certificate SHA-256 and `days` 90, 30, 7 or 0 for expired) the first time each keyd signer certificate reaches each threshold. keyd itself refuses to sign under an expired alias (`CS-CON-0006`).
+      responses:
+        '200':
+          description: Keys scanned and alerts raised by this run.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured: {type: boolean}
+                  keys: {type: integer}
+                  raised:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alias: {type: string}
+                        days: {type: integer}
+        default: {$ref: '#/components/responses/Problem'}
+  /console/v1/reconciliation:
+    get:
+      operationId: reconciliationRuns
+      x-roles: any
+      description: The newest reconciliation runs (CON-09), newest first.
+      parameters:
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items: {$ref: '#/components/schemas/ReconciliationRun'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: reconcile
+      x-roles: operators
+      description: Run reconciliation now (CON-09; the console also runs it hourly). Reads keyd's operation log from where the last run stopped up to an hour ago, matches each signature with the seal records of its envelope and each seal record stored since the last run with keyd's signatures. A signature whose envelope sealed with another signature is an orphaned retry, listed in the run; every other mismatch raises an alert `CS-CON-0009` (source `reconciliation`) and an operator event `operator.reconciliation.mismatch`.
+      responses:
+        '200':
+          description: The run.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured: {type: boolean}
+                  run: {$ref: '#/components/schemas/ReconciliationRun'}
+        default: {$ref: '#/components/responses/Problem'}
   /console/v1/tsa:
     get:
       operationId: tsa
@@ -916,7 +993,7 @@ paths:
         - $ref: '#/components/parameters/limit'
       responses:
         '200':
-          description: The newest alerts.
+          description: The newest alerts, each with `id`, `at`, `source`, `code`, `subject` (ids and labels only, such as an alias, a threshold in days or an envelope id) and `resolves`.
           content:
             application/json:
               schema: {type: object}

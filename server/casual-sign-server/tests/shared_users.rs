@@ -37,7 +37,13 @@ async fn login(api: &Api, password: &str, account: &str) -> Option<Auth> {
             &[],
         )
         .await;
-    (r.status == StatusCode::OK).then(|| session_of(&r))
+    if r.status != StatusCode::OK {
+        return None;
+    }
+    // An administrator owes a second factor by default (ASVS-31).
+    let s = session_of(&r);
+    api.pass_factor(EMAIL, &s).await;
+    Some(s)
 }
 
 async fn alive(api: &Api, s: &Auth) -> bool {

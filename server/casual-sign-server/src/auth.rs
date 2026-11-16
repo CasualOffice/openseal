@@ -12,9 +12,13 @@ use std::collections::BTreeSet;
 use axum::http::{HeaderMap, Method, header};
 use casual_sign_store::repo::accounts::ProfileKind;
 use casual_sign_store::repo::api_clients::ApiClientKind;
-use casual_sign_store::{AccountId, ApiClientId, MfaPolicy, StaffSessionId, TenantTx, UserId};
+use casual_sign_store::{
+    AccountId, ApiClientId, GroupId, MfaPolicy, OrganizationAdmin, PermissionProfileId,
+    StaffSessionId, TenantTx, UserId,
+};
 use uuid::Uuid;
 
+use crate::authz::{self, Action, Actor, Grant, Membership};
 use crate::crypto::{same, sha256};
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -126,8 +130,16 @@ pub struct Principal {
     pub user: UserId,
     /// How it authenticated.
     pub credential: Credential,
-    /// What it may do.
+    /// The scopes whose every action it holds (docs/40 §2): what it may give an API key.
     pub scopes: BTreeSet<&'static str>,
+    /// What it may do (ORG-07, docs/23 §2.2): its profile's workspace actions, narrowed
+    /// by a key's or token's scopes.
+    pub actions: BTreeSet<Action>,
+    /// The permission profile it holds in the account.
+    pub profile: PermissionProfileId,
+    /// That profile's group scope (a delegated workspace admin's, ORG-07): the members it
+    /// administers are those of these groups. `None` is the whole workspace.
+    pub admin_scope: Option<BTreeSet<GroupId>>,
     /// An administrator of the account (acts on any envelope as `Admin`).
     pub admin: bool,
     /// May see every envelope of the account, not only their own.
@@ -196,78 +208,83 @@ impl Principal {
 }
 
 impl Principal {
-    /// Refuse (`CS-AUTH-0006`) a profile that would give more than the caller holds
-    /// (UXW-07): a member who manages users with a custom profile may make, change or
-    /// hand out only profiles within their own scopes, may give "view all envelopes"
-    /// only when they have it, and may give the administrator profile only as an
-    /// administrator holding every scope. Checked on every request that creates,
-    /// changes, deletes or assigns a profile, so no one raises their own rights or
-    /// anyone else's beyond theirs.
+    /// Refuse unless the workspace action is held (`CS-AUTH-0006`; ORG-07).
     ///
     /// # Errors
     ///
     /// `CS-AUTH-0006`.
-    pub fn may_grant(&self, kind: ProfileKind, permissions: &[String]) -> Result<(), ApiError> {
-        if kind == ProfileKind::Admin {
-            return if self.admin && self.scopes.len() == SCOPES.len() {
-                Ok(())
-            } else {
-                Err(ApiError::forbidden("the administrator profile"))
-            };
+    pub fn require_action(&self, action: Action) -> Result<(), ApiError> {
+        if self.actions.contains(&action) {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden(action.as_str()))
         }
-        let (scopes, _, view_all) = profile_scopes(kind, permissions);
-        if let Some(s) = scopes.iter().find(|s| !self.scopes.contains(*s)) {
-            return Err(ApiError::forbidden(s));
+    }
+
+    /// What this caller holds for granting in its workspace ([`authz::held`]), with its
+    /// organization role when it has one.
+    #[must_use]
+    pub fn actor(&self, org: Option<&OrganizationAdmin>) -> Actor {
+        let member = Membership {
+            actions: self.actions.clone(),
+            admin: self.admin,
+            scope: self.admin_scope.clone(),
+        };
+        Actor {
+            user: self.user,
+            profile: Some(self.profile),
+            held: authz::held(Some(&member), org, self.account),
         }
-        if view_all && !self.view_all {
-            return Err(ApiError::forbidden(VIEW_ALL));
-        }
-        Ok(())
+    }
+
+    /// Refuse (`403 CS-ORG-0005`) a grant beyond what this caller holds, or to itself
+    /// ([`authz::grantable`], docs/23 §2.2): the one check of every grant path.
+    ///
+    /// # Errors
+    ///
+    /// `CS-ORG-0005`.
+    pub fn may_grant(
+        &self,
+        org: Option<&OrganizationAdmin>,
+        grant: &Grant,
+    ) -> Result<(), ApiError> {
+        authz::grantable(&self.actor(org), grant).map_err(|r| ApiError::grant_refused(r.what()))
+    }
+}
+
+/// The grant a profile is: its actions, whether it is the administrator's, its scope.
+#[must_use]
+pub fn profile_grant(
+    kind: ProfileKind,
+    permissions: &[String],
+    scope: Option<&[GroupId]>,
+) -> Grant {
+    Grant {
+        actions: authz::profile_actions(kind, permissions),
+        admin_profile: kind == ProfileKind::Admin,
+        scope: scope.map(|s| s.iter().copied().collect()),
+        to_user: None,
+        profile: None,
     }
 }
 
 /// The custom-profile permission that shows every envelope of the account; with
-/// [`SCOPES`], every name a profile may carry (0033 `permission_profiles_known_permissions`).
-pub const VIEW_ALL: &str = "view_all_envelopes";
+/// [`SCOPES`] and the action names of [`authz::Action`], every name a profile may carry
+/// (0037 `permission_profiles_known_permissions`).
+pub const VIEW_ALL: &str = authz::VIEW_ALL;
 
-/// The scopes a permission profile grants (docs/22 §8), whether it is an
-/// administrator's, and whether it sees every envelope.
+/// The scopes a permission profile grants (docs/22 §8): those whose every action it
+/// holds; whether it is an administrator's; and whether it sees every envelope.
 pub(crate) fn profile_scopes(
     kind: ProfileKind,
     permissions: &[String],
 ) -> (BTreeSet<&'static str>, bool, bool) {
-    let pick = |names: &[&str]| -> BTreeSet<&'static str> {
-        SCOPES
-            .iter()
-            .copied()
-            .filter(|s| names.contains(s))
-            .collect()
-    };
-    match kind {
-        ProfileKind::Admin => (SCOPES.iter().copied().collect(), true, true),
-        ProfileKind::Sender => (
-            pick(&[
-                "envelopes:read",
-                "envelopes:write",
-                "envelopes:send",
-                "templates:read",
-                "templates:write",
-                "bulk:send",
-                "audit:read",
-            ]),
-            false,
-            false,
-        ),
-        ProfileKind::Viewer => (
-            pick(&["envelopes:read", "templates:read", "audit:read"]),
-            false,
-            false,
-        ),
-        _ => {
-            let names: Vec<&str> = permissions.iter().map(String::as_str).collect();
-            (pick(&names), false, names.contains(&VIEW_ALL))
-        }
-    }
+    let actions = authz::profile_actions(kind, permissions);
+    (
+        authz::scopes_held(&SCOPES, &actions),
+        kind == ProfileKind::Admin,
+        actions.contains(&Action::EnvelopesReadAll),
+    )
 }
 
 /// The value of cookie `name`.
@@ -311,17 +328,34 @@ async fn as_member(
         .profile(member.permission_profile_id)
         .await?
         .ok_or_else(ApiError::expired)?;
-    let (mut scopes, admin, view_all) = profile_scopes(profile.kind, &profile.permissions);
+    let mut actions = authz::profile_actions(profile.kind, &profile.permissions);
     if let Some(limit) = limit {
-        scopes.retain(|s| limit.iter().any(|l| l == s));
+        // A key's scopes narrow the actions they cover; `envelopes.read_all`, which no
+        // scope covers, stays the profile's. `envelopes.transfer`, a write no scope
+        // covers either, needs `envelopes:send` granted too, so a key or token scoped
+        // to reading cannot give envelopes away (ORG-09, docs/23 §2.2).
+        let granted = |s: &str| limit.iter().any(|l| l == s);
+        actions.retain(|a| match a.scope() {
+            Some(s) => granted(s),
+            None if *a == Action::EnvelopesTransfer => granted("envelopes:send"),
+            None => true,
+        });
     }
+    let admin_scope = tx
+        .users()
+        .profile_scope(profile.id)
+        .await?
+        .map(|ids| ids.into_iter().collect());
     Ok(Principal {
         account,
         user,
         credential,
-        scopes,
-        admin,
-        view_all,
+        scopes: authz::scopes_held(&SCOPES, &actions),
+        view_all: actions.contains(&Action::EnvelopesReadAll),
+        admin: profile.kind == ProfileKind::Admin,
+        actions,
+        profile: profile.id,
+        admin_scope,
         second_factor: SecondFactor::NotOwed,
     })
 }

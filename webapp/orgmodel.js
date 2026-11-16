@@ -47,7 +47,7 @@ export function adminCounts(items) {
 /// The actions the organization's log knows a sentence for (the store's `AdminChange`
 /// names in `org_admin_events`; ORG-05). Others are shown by their name.
 export const ORG_ACTIONS = Object.freeze([
-  "organization.created", "organization.renamed", "organization.admin_added", "organization.admin_removed",
+  "organization.created", "organization.renamed", "organization.policy_changed", "organization.admin_added", "organization.admin_removed",
   "organization.admin_role_changed", "workspace.created", "workspace.archived", "org.workspace_joined",
 ]);
 

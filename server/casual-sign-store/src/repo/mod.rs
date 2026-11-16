@@ -18,6 +18,7 @@ pub mod idempotency;
 pub mod jobs;
 pub mod ml;
 pub mod recipients;
+pub mod seal_signatures;
 pub mod sessions;
 pub mod templates;
 pub mod webhooks;
@@ -149,6 +150,11 @@ impl TenantTx {
     /// The worker's per-job step ledger.
     pub fn job_steps(&mut self) -> workflow::JobSteps<'_> {
         workflow::JobSteps { tx: self }
+    }
+
+    /// The signatures keyd made for this account's seals (CON-09).
+    pub fn seal_signatures(&mut self) -> seal_signatures::SealSignatures<'_> {
+        seal_signatures::SealSignatures { tx: self }
     }
 
     /// Staff sessions.

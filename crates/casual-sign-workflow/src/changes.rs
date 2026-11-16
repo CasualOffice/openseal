@@ -361,6 +361,10 @@ pub(crate) fn apply_changes(
                     .ok_or_else(|| unknown(ObjectKind::Document, id))?;
                 s.documents.remove(i);
                 s.fields.0.retain(|f| f.document_id != *id);
+                // A removed document is hidden from nobody (`WF-02`).
+                for r in &mut s.recipients {
+                    r.spec.excluded_documents.retain(|d| d != id);
+                }
                 report.touched_documents.insert(id.clone());
                 report.changed.push(format!("documents.{id}"));
             }

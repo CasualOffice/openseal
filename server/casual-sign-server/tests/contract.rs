@@ -20,10 +20,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use axum::body::Body;
 use axum::http::StatusCode;
 use base64::Engine as _;
-use casual_sign_server::{Access, table};
+use casual_sign_server::table;
 use common::Rls;
 use common::harness::{
-    Api, Auth, OPENAPI, ceremony_cookie, ceremony_path, openapi_operations, pdf, png, session_of,
+    Api, Auth, OPENAPI, ceremony_cookie, ceremony_path, openapi_levels, openapi_operations, pdf,
+    png, session_of,
 };
 use serde_json::{Value, json};
 use sqlx::Row;
@@ -33,11 +34,7 @@ fn openapi_and_route_table_name_the_same_operations_and_scopes() {
     let doc = openapi_operations();
     let mut routes = BTreeMap::new();
     for r in table() {
-        let perm = match r.access {
-            Access::Public => "public".to_owned(),
-            Access::Scope(s) => s.to_owned(),
-            Access::SigningIn => "signing-in".to_owned(),
-        };
+        let perm = r.access.permission().to_owned();
         assert!(
             routes
                 .insert((r.method.to_owned(), r.path.to_owned()), perm)
@@ -59,6 +56,16 @@ fn openapi_and_route_table_name_the_same_operations_and_scopes() {
     );
     for (k, perm) in &routes {
         assert_eq!(&doc[k], perm, "x-permission of {k:?}");
+    }
+    // ORG-07: every action-guarded operation states its level, and only those do.
+    let levels = openapi_levels();
+    for r in table() {
+        let k = (r.method.to_owned(), r.path.to_owned());
+        assert_eq!(
+            levels.get(&k).map(String::as_str),
+            r.access.level().map(|l| l.as_str()),
+            "x-level of {k:?}"
+        );
     }
     // Every documented operation has an operationId, unique.
     let parsed: Value = serde_norway::from_str(OPENAPI).unwrap();
@@ -923,6 +930,31 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     )
     .await;
 
+    // Scheduled sending (WF-02): schedule the draft, then cancel and send by hand.
+    let scheduled = ok(
+        api.call(
+            "PUT",
+            &format!("{base}/schedule"),
+            k,
+            Some(json!({"send_at": "2026-11-12T10:00:00Z"})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "schedule",
+    )
+    .await;
+    assert_eq!(scheduled["send_at"], "2026-11-12T10:00:00.000Z");
+    assert_eq!(scheduled["status"], "draft");
+    let unscheduled = ok(
+        api.call("DELETE", &format!("{base}/schedule"), k, None, &[])
+            .await,
+        StatusCode::OK,
+        "unschedule",
+    )
+    .await;
+    assert!(unscheduled["send_at"].is_null());
+
     // Send: the first routing step is invited, the second is not.
     let sent = ok(
         api.call("POST", &format!("{base}/send"), k, None, &[])
@@ -1726,6 +1758,24 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "void",
     )
     .await;
+    // ORG-09: ownership passes to another member of the workspace, and back.
+    let owner = re["sender_user_id"].as_str().unwrap().to_owned();
+    for to in [uid.as_str(), owner.as_str()] {
+        let t = ok(
+            api.call(
+                "POST",
+                &format!("/api/v1/envelopes/{reid}/transfer"),
+                k,
+                Some(json!({ "to_user": to })),
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "transfer",
+        )
+        .await;
+        assert_eq!(t["sender_user_id"], to);
+    }
     // The reassigned recipient's link was revoked in the same transaction.
     let revoked = api
         .call("GET", &format!("/s/{tre}"), &Auth::None, None, &hre)
@@ -1896,6 +1946,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     let me = session_of(&login);
+    api.pass_factor(&a.email, &me).await;
     let inbox = ok(
         api.call("GET", "/api/v1/envelopes?waiting_for=me", &me, None, &[])
             .await,
@@ -2049,6 +2100,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         )
         .await;
     let s = session_of(&login);
+    api.pass_factor(&a.email, &s).await;
     // Workspace switching (ORG-04): the listing, and a switch into the one workspace
     // the session already has, which issues a new session and ends the old one.
     ok(

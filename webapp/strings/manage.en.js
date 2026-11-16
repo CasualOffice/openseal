@@ -189,6 +189,7 @@ export const MANAGE = {
   "envelope.host": "Host signing",
   "envelope.resent": "Resent to everyone who has not finished.",
   "envelope.sent": "Sent",
+  "envelope.send-at": "Scheduled to send",
   "envelope.untitled": "Untitled envelope",
   "envelope.void": "Void",
   "envelope.void-label": "Reason (recipients will see it)",

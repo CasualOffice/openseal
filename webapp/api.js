@@ -117,7 +117,7 @@ export function fieldWire(f) {
 /// the same create.
 export function recipientWire(r) {
   const out = { type: r.type || "signer", name: r.name, email: r.email || "" };
-  for (const k of ["ref", "phone", "routing_order", "delivery", "auth", "access_code", "embedded_client_user_id", "time_zone_offset_minutes", "date_format"]) {
+  for (const k of ["ref", "phone", "routing_order", "delivery", "auth", "access_code", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "route_delay_hours", "excluded_documents"]) {
     if (!blank(r[k])) out[k] = r[k];
   }
   return out;
@@ -125,7 +125,7 @@ export function recipientWire(r) {
 
 const newId = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : null);
 const instantOf = (d) => (d instanceof Date ? d.toISOString() : d);
-const RECIPIENT_SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for"];
+const RECIPIENT_SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for", "excluded_documents", "route_delay_hours"];
 
 /// The engine's `RecipientSpec` from a recipient as the API shows it (or a new one): only
 /// the members it has, since it refuses any other (no `status`, no `access_code`; an
@@ -346,6 +346,11 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// a new audit type, ADR-031 Proposed).
     restoreEnvelope: unbuilt("restoreEnvelope", (id) => data(request("POST", `${E(id)}/restore`))),
     sendEnvelope: (id) => data(request("POST", `${E(id)}/send`)),
+    /// Schedule a sendable draft to send itself at `sendAt` (an ISO instant, WF-02);
+    /// answers the draft with `send_at`. A scheduled draft is not edited (`CS-WF-0022`).
+    scheduleSend: (id, sendAt) => data(request("PUT", `${E(id)}/schedule`, { body: { send_at: sendAt } })),
+    /// Cancel a draft's schedule (WF-02); answers the draft.
+    unscheduleSend: (id) => data(request("DELETE", `${E(id)}/schedule`)),
     voidEnvelope: (id, reason) => data(request("POST", `${E(id)}/void`, { body: { reason } })),
     resend: (id, recipientIds) => data(request("POST", `${E(id)}/resend`, { body: recipientIds ? { recipient_ids: recipientIds } : {} })),
     status: (id) => data(request("GET", `${E(id)}/status`)),

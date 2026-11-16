@@ -98,9 +98,34 @@ class Client:
             return payload
         return json.loads(payload) if payload else {}
 
-    def sign_in(self, email: str, password: str) -> None:
+    def sign_in(self, email: str, password: str, factor: dict | None = None) -> dict | None:
+        """Sign in, then pass the second factor administrators owe by default (ASVS-31).
+        The first sign-in (stack A) enrols TOTP and answers the recovery codes to keep;
+        later ones spend one of them (`factor["recovery"]`): the restored stack holds A's
+        seeds sealed under A's key, which B never has, so only a recovery code works there."""
         r = self.call("POST", "/api/v1/auth/login", {"email": email, "password": password})
         self.csrf = r["csrf_token"]
+        owed = self.call("GET", "/api/v1/auth/session").get("second_factor")
+        if owed == "enrol":
+            secret = self.call("POST", "/api/v1/auth/mfa/totp/enrol")["secret"]
+            code = totp(base64.b32decode(secret + "=" * (-len(secret) % 8)), int(time.time()) // 30)
+            done = self.call("POST", "/api/v1/auth/mfa/totp/confirm", {"code": code})
+            return {"recovery": list(done["recovery_codes"])}
+        if owed == "verify":
+            if not factor or not factor.get("recovery"):
+                raise DrillError("the administrator owes a second factor and the drill holds no recovery code")
+            self.call("POST", "/api/v1/auth/mfa/verify", {"recovery_code": factor["recovery"].pop()})
+        return factor
+
+
+def totp(seed: bytes, step: int) -> str:
+    """RFC 6238 TOTP (HMAC-SHA-1, six digits, 30-second steps), as authenticator apps do."""
+    import hmac
+
+    mac = hmac.new(seed, step.to_bytes(8, "big"), hashlib.sha1).digest()
+    off = mac[-1] & 0x0F
+    n = int.from_bytes(mac[off : off + 4], "big") & 0x7FFFFFFF
+    return f"{n % 1_000_000:06d}"
 
 
 def problem(payload: bytes) -> str:
@@ -236,7 +261,7 @@ def keep(args, name: str, data: bytes) -> None:
 
 def seed(args) -> None:
     c = Client(args.base)
-    c.sign_in(*credentials())
+    factor = c.sign_in(*credentials())
     run = str(time.time_ns())
     done = create(c, f"Restore drill completed {run}", [("Ana Drill", f"ana-{run}@example.com")])
     opened = create(c, f"Restore drill open {run}", [("Ben Drill", f"ben-{run}@example.com"), ("Cy Drill", f"cy-{run}@example.com")])
@@ -250,6 +275,9 @@ def seed(args) -> None:
     state = {
         "completed": {"id": done, "sealed_sha256": hashlib.sha256(pdf_bytes).hexdigest(), "chain": chain(c, done)},
         "open": {"id": opened, "status": o["status"], "chain": chain(c, opened), "second_signer_path": second},
+        # The administrator's recovery codes: secrets, kept only in this state file, which
+        # the CI job never uploads (ASVS-31).
+        "factor": factor,
     }
     pathlib.Path(args.state).write_text(json.dumps(state, indent=1) + "\n", encoding="utf-8")
     say(f"seeded: completed {done} sealed sha256 {state['completed']['sealed_sha256'][:16]}…, open {opened} ({o['status']})")
@@ -258,7 +286,8 @@ def seed(args) -> None:
 def check(args) -> None:
     state = json.loads(pathlib.Path(args.state).read_text(encoding="utf-8"))
     c = Client(args.base)
-    c.sign_in(*credentials())
+    state["factor"] = c.sign_in(*credentials(), state.get("factor"))
+    pathlib.Path(args.state).write_text(json.dumps(state, indent=1) + "\n", encoding="utf-8")
     e = envelope(c, state["completed"]["id"])
     if e["status"] != "completed":
         raise DrillError(f"restored completed envelope is {e['status']}")
@@ -276,7 +305,8 @@ def check(args) -> None:
 def resume(args) -> None:
     state = json.loads(pathlib.Path(args.state).read_text(encoding="utf-8"))
     c = Client(args.base)
-    c.sign_in(*credentials())
+    state["factor"] = c.sign_in(*credentials(), state.get("factor"))
+    pathlib.Path(args.state).write_text(json.dumps(state, indent=1) + "\n", encoding="utf-8")
     before = chain(c, state["open"]["id"])
     sign(args.base, state["open"]["second_signer_path"], last=True)
     e = wait_status(c, state["open"]["id"], "completed")

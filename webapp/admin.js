@@ -39,6 +39,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import {
   NAV, routeFrom, navHref, SCOPE_GROUPS, PERMISSION_GROUPS, profileChoices, profileValue, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
   expiryWarningOf, expiryWarningPatch, MAX_WARNING_DAYS, actorKind, changedKeys, filterAdminEvents, joinCsvPages,
+  orgLocked,
 } from "./adminmodel.js";
 import { intelligence } from "./adminintel.js";
 import { ersdCard } from "./adminersd.js";
@@ -240,6 +241,10 @@ function account(panel, ctx, part) {
   }
   const s = () => acct?.settings || {};
   const row = (label, value) => [h("dt", { text: label }), h("dd", { text: value === "" || value == null ? t("admin.not-set") : String(value) })];
+  // ORG-08: a setting the organization locks shows a lock and "Set by your organization".
+  const lockNote = (setting) => orgLocked(acct, setting)
+    ? h("p", { class: "os-help", attrs: { "data-testid": `org-locked-${setting}` } }, icon("lock", { size: 12 }), h("span", { text: t("admin.org-locked") }))
+    : null;
 
   function render() {
     clear(box);
@@ -250,13 +255,15 @@ function account(panel, ctx, part) {
       ? card("branding", t("admin.branding"), t("admin.branding-lede"), t("admin.edit-branding"), editBranding,
         h("dl", { class: "os-meta os-adm__meta" },
           row(t("admin.brand-name"), b.name),
-          h("dt", { text: t("admin.brand-color") }), h("dd", { class: "os-swatchrow" }, swatch, h("span", { text: b.color || t("admin.not-set") }))))
+          h("dt", { text: t("admin.brand-color") }), h("dd", { class: "os-swatchrow" }, swatch, h("span", { text: b.color || t("admin.not-set") }))),
+        lockNote("branding"))
       : card("settings", t("admin.settings"), t("admin.settings-lede"), t("admin.edit-settings"), editSettings,
         h("dl", { class: "os-meta os-adm__meta" },
           row(t("admin.account-name"), acct.name),
           row(t("admin.expiry-days"), s().default_expiry_days),
           row(t("admin.reminder-days"), s().first_reminder_days ? s().first_reminder_days : t("admin.reminder-none")),
-          h("dt", { text: t("admin.expiry-warning") }), h("dd", { attrs: { "data-testid": "expiry-warning" }, text: warningText(expiryWarningOf(s())) }))));
+          h("dt", { text: t("admin.expiry-warning") }), h("dd", { attrs: { "data-testid": "expiry-warning" }, text: warningText(expiryWarningOf(s())) })),
+        lockNote("first_reminder_days")));
   }
   function card(id, title, lede, editLabel, onEdit, ...body) {
     return h("section", { class: "os-card os-adm__card", attrs: { "aria-labelledby": `acct-${id}-h`, "data-testid": `account-${id}` } },
@@ -275,12 +282,14 @@ function account(panel, ctx, part) {
       build(body) {
         f.expiry = h("input", { id: "a-expiry", class: "os-input", type: "number", min: "1", max: "365", step: "1", value: s().default_expiry_days ?? "", attrs: { autofocus: true } });
         f.remind = h("input", { id: "a-remind", class: "os-input", type: "number", min: "0", max: "60", step: "1", value: s().first_reminder_days ?? "" });
+        if (orgLocked(acct, "first_reminder_days")) { f.remind.disabled = true; f.remind.setAttribute("aria-describedby", "a-remind-lock"); }
         f.warn = h("input", { id: "a-warn", class: "os-input", type: "number", min: "0", max: String(MAX_WARNING_DAYS), step: "1", value: String(expiryWarningOf(s())), attrs: { "aria-describedby": "a-warn-help" } });
         f.err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
         body.append(
           h("p", { class: "os-label", text: t("admin.account-name") }), h("p", { class: "os-muted", attrs: { "data-testid": "account-name" }, text: acct.name || t("admin.not-set") }),
           h("label", { class: "os-label", attrs: { for: "a-expiry" }, text: t("admin.expiry-days") }), f.expiry,
           h("label", { class: "os-label", attrs: { for: "a-remind" }, text: t("admin.reminder-days") }), f.remind,
+          f.remind.disabled ? h("p", { id: "a-remind-lock", class: "os-help", text: t("admin.org-locked") }) : null,
           h("label", { class: "os-label", attrs: { for: "a-warn" }, text: t("admin.expiry-warning") }), f.warn,
           h("p", { id: "a-warn-help", class: "os-help", text: t("admin.expiry-warning-help") }), f.err);
       },
@@ -321,6 +330,8 @@ function account(panel, ctx, part) {
         f.name = h("input", { id: "b-name", class: "os-input", value: b.name || "", maxLength: 255, attrs: { autofocus: true } });
         f.color = h("input", { id: "b-color", class: "os-input os-input--mono", value: b.color || "", maxLength: 7, placeholder: "#b3141f", attrs: { "aria-describedby": "b-color-help b-contrast b-err" } });
         f.pick = h("input", { id: "b-pick", type: "color", class: "os-colorpick", value: HEX.test(b.color || "") ? b.color.toLowerCase() : "#b3141f", attrs: { "aria-label": t("admin.brand-pick") } });
+        f.locked = orgLocked(acct, "branding");
+        for (const el of [f.name, f.color, f.pick]) el.disabled = f.locked;
         f.err = h("p", { id: "b-err", class: "os-field-error", attrs: { role: "alert" } });
         const contrast = h("p", { id: "b-contrast", class: "os-help", attrs: { "aria-live": "polite", "data-testid": "brand-contrast" } });
         const mail = h("div", { class: "os-brandprev__mail" }, h("span", { class: "os-brandprev__name" }));
@@ -345,7 +356,8 @@ function account(panel, ctx, part) {
         body.append(
           h("label", { class: "os-label", attrs: { for: "b-name" }, text: t("admin.brand-name") }), f.name,
           h("label", { class: "os-label", attrs: { for: "b-color" }, text: t("admin.brand-color") }), h("div", { class: "os-copyrow" }, f.pick, f.color),
-          h("p", { id: "b-color-help", class: "os-help", text: t("admin.brand-color-help") }), contrast, f.err, preview);
+          h("p", { id: "b-color-help", class: "os-help", text: t("admin.brand-color-help") }), contrast,
+          f.locked ? h("p", { class: "os-help", text: t("admin.org-locked") }) : null, f.err, preview);
         sync();
       },
       actions: [
@@ -353,6 +365,7 @@ function account(panel, ctx, part) {
         {
           label: t("templates.save"), variant: "primary",
           onClick: async () => {
+            if (f.locked) { f.err.textContent = t("admin.org-locked"); return undefined; }
             const color = f.color.value.trim();
             if (color && !HEX.test(color)) { f.err.textContent = t("admin.need-color"); f.color.setAttribute("aria-invalid", "true"); f.color.focus(); return undefined; }
             const out = await ctx.api.patchAccountSettings({ branding: { name: f.name.value.trim(), color: color.toLowerCase() } });
