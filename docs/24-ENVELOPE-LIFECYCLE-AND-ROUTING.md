@@ -197,6 +197,15 @@ objects concerned, never their content.
   access is still recorded. Any other status, a purged envelope, or a second time is `CS-WF-0001`.
   Bringing one back to the lists is a planned command `RestoreDeleted` recording `envelope.restored` (ADR-031,
   Proposed, `UXW-02`); until it is Accepted the server lists deleted envelopes (the Deleted view) but restores none.
+- **Transfer** (`Transfer {to_user}`, `ORG-09`, docs/23 §2.4, additive as ADR-027): an administrator principal (the
+  server admits a member holding `envelopes.transfer`) passes the envelope's ownership to another member of the same
+  workspace, in any status but purged. It records `envelope.transferred {from_user, to_user}`, sets the state's
+  `sender_user_id`, and changes nothing else (no status change, no effect). A sender or recipient principal is
+  `CS-WF-0003`; a purged envelope or the owner it already has is `CS-WF-0001`. The server refuses a `to_user` outside
+  the workspace (`CS-ORG-0009`): envelopes never move between workspaces.
+- **Evidence export** (`RecordAccess {EvidenceExported}`, `ORG-09`): a staff member exporting a completed envelope's
+  evidence package records the access event `envelope.exported {by}`; any other status is `CS-WF-0001`. The export
+  route is `ORG-18`.
 - **The Inbox's signing link** (`POST …/sign-link`, `UXW-01`) is not a command: a signed-in member who is, by account
   email, a recipient whose turn it is and who acts through a link gets a one-time link of purpose `account` naming
   them. Opening and acting on it run as that recipient, exactly as an emailed link, every authentication the sender
@@ -221,6 +230,7 @@ objects concerned, never their content.
 | Send (validate for send returning every violation; `document.fixed`; first step invited; expiry, warning, reminders scheduled) | Built |
 | Delete draft | Built |
 | Delete an envelope that ended without completing from the lists (`envelope.deleted`, nothing purged; `WEB-08`) | Built |
+| Transfer ownership within the workspace (`envelope.transferred`; `ORG-09`) and record an evidence export (`envelope.exported`) | Built (the export route: `ORG-18`) |
 | Deliver/open (`recipient.delivered`; envelope `delivered` per §2) | Built |
 | Consent to the current ERSD; withdraw | Built |
 | Authenticate: challenge, pass, fail with lockout after `max_auth_attempts`, unlock by resend; host-asserted | Built |

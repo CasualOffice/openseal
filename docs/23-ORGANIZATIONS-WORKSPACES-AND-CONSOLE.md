@@ -513,6 +513,20 @@ design and is superseded by it.
 - *Rejected:* re-keying an envelope's rows with triggers disabled (indistinguishable from the insider rewrite `SEC-S07`
   defends against; the chain head in the sealed PDF would no longer match its host's records).
 
+#### As built (`ORG-09`)
+
+- **Transfer.** `POST /envelopes/{id}/transfer {to_user, to_workspace?}` (`envelopes.transfer`, sensitive) runs the
+  workflow command `Transfer {to_user}` as an administrator principal: any status but purged; the chain records
+  `envelope.transferred {from_user, to_user}` and the envelope row's `sender_user_id` follows the state. The holder
+  reaches every envelope of the workspace (as `envelopes.read_all`); another workspace's envelope is `404`. A
+  `to_workspace` other than the session's, or a `to_user` who is not an enabled member of this workspace (or does not
+  exist), is `422 CS-ORG-0009`. The envelope's `account_id`, rows, chain and blobs never change.
+- **Export.** The engine records `envelope.exported {by}` for `RecordAccess {EvidenceExported}` on a completed
+  envelope (staff only); `GET /envelopes/{id}/evidence-package`, which records it, and the import are `ORG-18`.
+- Both types are additive to ADR-010: earlier chains hash unchanged, and a verifier without them reports the chain
+  valid and lists the two events as unrecognised (seen in `casual-sign-audit/tests/tamper.rs` against the verifier
+  before the change). The transfer screen is `ORG-41`.
+
 ### 2.5 Admin audit logs
 
 Separate from envelope evidence, built the same way:
@@ -645,6 +659,29 @@ request that reads or writes settings, login, send) and the worker (retention, r
 - **Evidence:** what a ceremony depends on (recipient authentication methods, seal profile) is fixed into the envelope
   state at send, as the engine `Policy` already is. A later policy change never alters a sent envelope. Recipients are
   not affected by staff login policy.
+
+### As built (`ORG-08`, migration `0038_organization_policy.sql`)
+
+- **The document.** `casual-sign-policy::org::OrgPolicy` validates `organizations.policy` as `{key: {value,
+  locked?}}` for every key of the table above (unknown key or bad value: `422 CS-API-0001` at `/policy/<key>`;
+  `retention.min_days` above `retention.max_days` refused). `locked` defaults to true for `login.sso_required` and
+  `login.allowed_methods`, false otherwise. `PATCH /organizations/me {name?, policy?}` (`org.settings.update`)
+  replaces the whole document and appends `organization.policy_changed` with each changed key; loosening, unlocking or
+  removing a security key (`loosened`) is an owner's alone (`403 CS-ORG-0013`). `GET /organizations/me` answers it.
+- **Workspace writes.** The keys that govern a workspace setting today are `login.mfa_required` (`mfa_policy`),
+  `reminders.default` (`first_reminder_days`), `locale.date_format` (`workflow_policy.date_format`) and
+  `branding.default_brand` (`branding`). `PATCH /accounts/me` runs `check_write`: a governed setting that changes to a
+  locked key, or to a value looser than a tighten-only key, is `422 CS-ORG-0002` naming the setting and the key; a
+  setting that does not change is not checked, so an unrelated edit of a workspace that predates a tightening saves.
+- **Reads and sign-in.** `GET /accounts/me` answers `organization_policy.settings`, per governed setting
+  `{key, value, locked, from_organization}` from `effective`; the web app's Organization and Branding pages show a
+  lock with "Set by your organization" and disable the locked inputs. The staff-session resolver answers the
+  organization's policy (migration 0038) and the server applies `effective_mfa`, the stricter of the workspace's
+  `mfa_policy` and the organization's `login.mfa_required`, on every request, without rewriting the workspace.
+- **Not yet enforced.** Keys with no workspace setting are validated and stored only: seal profiles and recipient
+  methods at send, session times, the IP list, password rules, API and webhook hosts, frame ancestors, retention and
+  region labels (`ORG-39`). Locked defaults are checked on writes but not yet fixed into new envelopes (`ORG-40`).
+  The workflow context still takes the workspace's stored policy, so no organization change reaches a sent envelope.
 
 ## 4. Identity: domains, SSO, SCIM (slice 10, built inside this frame)
 

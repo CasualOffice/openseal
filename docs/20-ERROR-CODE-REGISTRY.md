@@ -300,18 +300,18 @@ the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`
 | Code | Meaning |
 | --- | --- |
 | CS-ORG-0001 | Not a member of that workspace, or the membership is disabled (switch, 403). Issued (`ORG-04`): `POST /auth/switch`, the same for an id that does not exist |
-| CS-ORG-0002 | Setting locked or tightened by the organization's policy (422; names the key) |
+| CS-ORG-0002 | Setting locked or tightened by the organization's policy (422; names the key). Issued (`ORG-08`): `PATCH /accounts/me` when a governed setting (`mfa_policy`, `first_reminder_days`, `workflow_policy.date_format`, `branding`) changes to a locked or looser value; the detail names the setting and the organization key, never a value |
 | CS-ORG-0003 | Domain not verified (TXT record absent or wrong) (422) |
 | CS-ORG-0004 | Domain cannot be claimed (already claimed, or a public e-mail domain); never says by whom (409) |
 | CS-ORG-0005 | Grant refused: exceeds the granting admin's own rights or scope, or grants to itself (403) |
 | CS-ORG-0006 | Sign-in method not allowed for this identity by its governing organization's policy (401) |
 | CS-ORG-0007 | Switching needs a fresh sign-in satisfying the target organization's policy (401; names the method) |
 | CS-ORG-0008 | The organization must keep at least one enabled owner (409) |
-| CS-ORG-0009 | Envelopes do not move between workspaces; transfer within one, or export the evidence package (422) |
+| CS-ORG-0009 | Envelopes do not move between workspaces; transfer within one, or export the evidence package (422). Issued (`ORG-09`): `POST /envelopes/{id}/transfer` with another workspace's `to_workspace`, or a `to_user` who is not an enabled member of this one (the same for an id that does not exist) |
 | CS-ORG-0010 | Workspace archived: no new envelopes, members or settings (409) |
 | CS-ORG-0011 | Identity-provider assertion for an identity outside the provider organization's verified domains, or with no binding (401) |
 | CS-ORG-0012 | *Withdrawn before issue:* the identity-attribute refusal is `CS-API-0015` (`SEC-ID-01`). Never reused |
-| CS-ORG-0013 | Action reserved to an organization owner, or awaiting an owner's approval (403) |
+| CS-ORG-0013 | Action reserved to an organization owner, or awaiting an owner's approval (403). Issued (`ORG-08`): `PATCH /organizations/me {policy}` loosening, unlocking or removing a security key by an admin who is not an owner; the detail names the key |
 | CS-ORG-0014 | Sensitive action needs a fresh sign-in (401) |
 | CS-ORG-0015 | Organization closed: read-only (409) |
 | CS-ORG-0016 | Cross-workspace template copy not allowed by the organization's policy (403) |

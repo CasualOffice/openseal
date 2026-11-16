@@ -480,7 +480,10 @@ keyed by the user's own live session of the current account change them: `opense
 passed its factor (a workspace switch carries it); `openseal_resolve_staff_session` now also answers it, whether the
 user enrolled, and the account's `settings.mfa_policy` (an unknown value reads as `everyone`). When unset it reads as
 `administrators` since migration 0036 (`ASVS-31`; it was `optional`): the default lives in that function alone, so no
-row was rewritten, and an account's explicit `optional` is kept. No new table.
+row was rewritten, and an account's explicit `optional` is kept. No new table. Migration 0038 (`ORG-08`): the
+resolver also answers the organization's `policy`, and the stricter of `mfa_policy` and the organization's
+`login.mfa_required` applies (`casual_sign_policy::org::effective_mfa`); no row is rewritten. The envelope projection
+carries `sender_user_id` from the state, which a transfer (`ORG-09`) changes. No new table.
 
 ### Designed (ADR-028): tenancy with organizations
 

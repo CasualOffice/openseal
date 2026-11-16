@@ -152,7 +152,7 @@ instructions 8 and 9).
 | FG-134 | Void with reason | DS, SN | Build | 2 | Works |
 | FG-135 | Resend | DS, SN | Build | 2 | Works |
 | FG-136 | Copy; save as template | DS | Build | 6 | Works |
-| FG-137 | Transfer ownership | DS | Build | 10 | Designed |
+| FG-137 | Transfer ownership | DS | Build | 10 | Partial: `POST /envelopes/{id}/transfer` passes an envelope to another member of its workspace (`envelopes.transfer`), recorded as `envelope.transferred` (`ORG-09`); the screen is `ORG-41` |
 | FG-138 | History view | DS, SN | Build | 6 | Works (staff audit view; the signer's own `GET /s/{token}/history`, `WEB-07`) |
 | FG-139 | Envelope custom fields | DS | Build | 6 | Designed |
 | FG-140 | Reports and CSV export | DS | Build | 6 | Partial: Agreements exports the selected envelopes as CSV, formula-safe (`UX-07`); server reports are `UXW-25`; Reports page: an envelope report with sample sizes, custom range, sender filter and a nine-column CSV over the newest 1,000, computed in the page, `UX-08`; recipient and usage reports wait for REP-01 |

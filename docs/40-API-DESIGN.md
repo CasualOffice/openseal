@@ -537,6 +537,14 @@ refused outside the plan and to non-administrators; identical bytes uploaded by 
 `tests/ml.rs` runs both jobs against a fake modeld. Not built: OCR-sourced members in `detect-fields`, `GET
 /search?mode=meaning`, the settings' `models` and `ocr_packs`.
 
+## As built (`ORG-08`, `ORG-09`)
+
+| Endpoint | As built |
+| --- | --- |
+| `GET`/`PATCH /organizations/me` | `ORG-08`: `policy` is the organization policy, `{key: {value, locked}}` (docs/23 §3 As built). `PATCH {name?, policy?}` replaces the whole document (`422 CS-API-0001` at `/policy/<key>` for an unknown key or bad value); loosening, unlocking or removing a security key by an admin who is not an owner is `403 CS-ORG-0013`; each change appends `organization.policy_changed` |
+| `GET`/`PATCH /accounts/me` | `ORG-08`: `GET` adds `organization_policy.settings`, per governed setting (`mfa_policy`, `first_reminder_days`, `workflow_policy.date_format`, `branding`) `{key, value, locked, from_organization}`. `PATCH` refuses a governed setting changed to a locked or looser value with `422 CS-ORG-0002`, naming the setting and key; an unchanged one is not checked. The organization's `login.mfa_required` applies on every staff request when stricter than `mfa_policy` |
+| `POST /envelopes/{id}/transfer {to_user, to_workspace?}` | `ORG-09`: `envelopes.transfer`; passes ownership to an enabled member of this workspace in any status but purged, recording `envelope.transferred`; `to_workspace` other than this one, or a `to_user` not an enabled member here, is `422 CS-ORG-0009`; another workspace's envelope `404`; the same owner `409 CS-WF-0001`. Answers the envelope |
+
 ## Web client and mock contract (`UX-03`)
 
 `webapp/api.js` is the web app's one client of this API and `webapp/mock.js` its in-memory fake (`?mock=1` on a

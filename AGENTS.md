@@ -102,5 +102,6 @@ pieces (security, evidence, database, server; instruction 41).
   the console as a Compose service and its remaining writes (`CON-02`, `CON-04`, `CON-05`); the real-stack run
   of the model suggestions and `compose --profile ml up` (`WEB-19`, `ML-09`); the open ASVS findings and `LEG-01` sign-off.
 - **Next:** slices 1, 2, 5 and 7 to their end points for M3, then v0.0.2 (organizations and switching, the console with
-  health, plans with three meters; instruction 29), then the rest of ADR-028 (`ORG-07` onward, `CON-08` onward,
+  health, plans with three meters; instruction 29), then the rest of ADR-028 (`ORG-10` onward, with `ORG-07` to
+  `ORG-09` done; `CON-08` onward,
   `PLAN-05` onward).
