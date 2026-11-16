@@ -67,6 +67,26 @@ impl Accounts<'_> {
         })
     }
 
+    /// The policy of this workspace's organization (`organizations.policy`, docs/23 §3),
+    /// which the workspace reads through `workspace_reads_its_organization`; `{}` when it
+    /// sets none.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn organization_policy(&mut self) -> Result<serde_json::Value> {
+        let acct = self.tx.acct();
+        let policy = sqlx::query_scalar!(
+            "SELECT o.policy FROM organizations o JOIN accounts a ON a.organization_id = o.id \
+             WHERE a.id = $1",
+            acct
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(policy.unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new())))
+    }
+
     /// Replace this account's settings, appending `workspace.settings_changed` with
     /// every changed key's old and new value (secrets as `"rotated"`) to the admin log.
     ///

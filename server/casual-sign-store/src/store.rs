@@ -378,8 +378,9 @@ pub struct StaffSessionTarget {
     pub mfa_verified: bool,
     /// The user has a confirmed second factor, so every session of theirs owes it.
     pub mfa_enrolled: bool,
-    /// The account's `settings.mfa_policy`; `administrators` when unset (migration
-    /// 0036, ASVS-31).
+    /// The account's `settings.mfa_policy` (`administrators` when unset, migration
+    /// 0036, ASVS-31), tightened by its organization's `login.mfa_required` (ORG-08,
+    /// migration 0038): the stricter applies.
     pub mfa_policy: MfaPolicy,
 }
 
@@ -550,7 +551,8 @@ impl EntryPoints<'_> {
             r#"SELECT account_id AS "account_id!", session_id AS "session_id!",
                       user_id AS "user_id!", csrf_sha256 AS "csrf_sha256!",
                       mfa_verified AS "mfa_verified!", mfa_enrolled AS "mfa_enrolled!",
-                      mfa_policy AS "mfa_policy!"
+                      mfa_policy AS "mfa_policy!",
+                      organization_policy AS "organization_policy!"
                  FROM openseal_resolve_staff_session($1, $2)"#,
             token_sha256.as_slice(),
             now
@@ -566,7 +568,10 @@ impl EntryPoints<'_> {
                 csrf_sha256: crate::repo::hash32(r.csrf_sha256, "csrf_sha256")?,
                 mfa_verified: r.mfa_verified,
                 mfa_enrolled: r.mfa_enrolled,
-                mfa_policy: MfaPolicy::from_setting(&r.mfa_policy),
+                mfa_policy: MfaPolicy::from_setting(casual_sign_policy::org::effective_mfa(
+                    &r.organization_policy,
+                    &r.mfa_policy,
+                )),
             })
         })
         .transpose()

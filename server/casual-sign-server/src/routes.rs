@@ -118,8 +118,9 @@ pub fn table() -> Vec<Route> {
     use Access::{Action as A, Member, Org, Public, SigningIn};
     use Action::{
         AdminAuditRead, ApiClientsManage, AuditRead, BulkSend, EnvelopesRead, EnvelopesSend,
-        EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage, SettingsSending, TemplatesRead,
-        TemplatesWrite, UsersInvite, UsersRead, UsersRemove, UsersUpdate, WebhooksManage,
+        EnvelopesTransfer, EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage,
+        SettingsSending, TemplatesRead, TemplatesWrite, UsersInvite, UsersRead, UsersRemove,
+        UsersUpdate, WebhooksManage,
     };
     let er = A(EnvelopesRead);
     let ew = A(EnvelopesWrite);
@@ -487,6 +488,13 @@ pub fn table() -> Vec<Route> {
         ),
         r("POST", "/api/v1/envelopes/{id}/send", es, JSON, env::send),
         r("POST", "/api/v1/envelopes/{id}/void", es, JSON, env::void),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/transfer",
+            A(EnvelopesTransfer),
+            JSON,
+            env::transfer,
+        ),
         r(
             "POST",
             "/api/v1/envelopes/{id}/correct",

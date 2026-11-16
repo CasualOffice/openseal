@@ -885,6 +885,7 @@ dependencies = [
  "casual-sign-model",
  "casual-sign-pdf",
  "casual-sign-platform-store",
+ "casual-sign-policy",
  "casual-sign-sdk",
  "casual-sign-seclog",
  "casual-sign-secrets",

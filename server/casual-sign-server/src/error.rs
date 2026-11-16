@@ -291,6 +291,16 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-ORG-0001")
     }
 
+    /// `CS-ORG-0002` 422: a workspace setting locked by its organization's policy, or
+    /// looser than a tighten-only key allows (ORG-08, docs/23 §3). The detail names the
+    /// setting and the organization key, never a value.
+    pub fn policy_refused(setting: &str, key: &str, locked: bool) -> Self {
+        let why = if locked { "locked" } else { "tightened" };
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-ORG-0002").detail(format!(
+            "{setting} is {why} by the organization's policy ({key})"
+        ))
+    }
+
     /// `CS-ORG-0005` 403: a grant beyond the granting admin's own rights or scope, or to
     /// itself (ORG-07, docs/23 §2.2 `grantable`). The detail names the action or rule,
     /// never a person.
@@ -303,9 +313,21 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, "CS-ORG-0008")
     }
 
+    /// `CS-ORG-0009` 422: envelopes do not move between workspaces; transfer within one
+    /// (ORG-09, docs/23 §2.4), to a member of the same workspace.
+    pub fn envelope_stays() -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-ORG-0009")
+    }
+
     /// `CS-ORG-0010` 409: the workspace is archived.
     pub fn workspace_archived() -> Self {
         Self::new(StatusCode::CONFLICT, "CS-ORG-0010")
+    }
+
+    /// `CS-ORG-0013` 403: reserved to an organization owner; the detail names the key or
+    /// action (ORG-08: loosening or unlocking a security key, docs/23 §2.2, `SEC-O11`).
+    pub fn owner_only(what: &str) -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-ORG-0013").detail(format!("owner only: {what}"))
     }
 
     /// `CS-ORG-0018` 422: an organization administrator must be an enabled member of one
@@ -352,9 +374,12 @@ impl ApiError {
             "CS-AUTH-0009" => "Link bound to another browser",
             "CS-AUTH-0010" => "Host does not own this embedding",
             "CS-ORG-0001" => "Not a member of that workspace",
+            "CS-ORG-0002" => "Set by your organization",
             "CS-ORG-0005" => "Grant refused",
             "CS-ORG-0008" => "Organization must keep an enabled owner",
+            "CS-ORG-0009" => "Envelopes do not move between workspaces",
             "CS-ORG-0010" => "Workspace archived",
+            "CS-ORG-0013" => "Reserved to an organization owner",
             "CS-ORG-0018" => "Not a member of the organization's workspaces",
             "CS-PLAN-0001" => "Feature not in the plan",
             "CS-PLAN-0002" => "Quota for the period reached",

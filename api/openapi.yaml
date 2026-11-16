@@ -246,12 +246,20 @@ components:
         settings: {type: object}
         data_region: {type: [string, 'null']}
         created_at: {type: string, format: date-time}
+        organization_policy:
+          type: object
+          description: >-
+            ORG-08 (docs/23 §3): the workspace settings its organization's policy governs,
+            under `settings` by setting path (`mfa_policy`, `first_reminder_days`,
+            `workflow_policy.date_format`, `branding`), each `{key, value, locked,
+            from_organization}`: the organization key, the effective value, locked ("Set
+            by your organization"), and whether the organization's value is the one in force.
     AccountPatch:
       type: object
       required: [settings]
       additionalProperties: false
       properties:
-        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `mfa_policy` (ASVS-01) is `administrators` (the default, also when unset; ASVS-31), `everyone` or `optional`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`.'}
+        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `mfa_policy` (ASVS-01) is `administrators` (the default, also when unset; ASVS-31), `everyone` or `optional`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`. A setting the organization''s policy governs (ORG-08) that changes to a locked or looser value is `422 CS-ORG-0002`, naming the setting and the key.'}
     User:
       type: object
       properties:
@@ -292,12 +300,29 @@ components:
         status: {type: string, enum: [active, suspended, closed]}
         role: {type: string, enum: [owner, admin, delegated], description: "The caller's role (GET only)"}
         created_at: {type: string, format: date-time}
+        policy: {$ref: '#/components/schemas/OrganizationPolicy'}
+    OrganizationPolicy:
+      type: object
+      description: >-
+        ORG-08 (docs/23 §3): `{key: {value, locked}}` for the keys of docs/23 §3
+        (`login.mfa_required`, `session.max_age`, `recipient.allowed_auth_methods`,
+        `sending.min_seal_profile`, `locale.date_format`, `reminders.default`, ...).
+        `locked` defaults to true for `login.sso_required` and `login.allowed_methods`,
+        false otherwise. Security and evidence keys are tighten-only in a workspace.
+      additionalProperties:
+        type: object
+        required: [value]
+        additionalProperties: false
+        properties:
+          value: {description: 'Typed per key; validated by casual-sign-policy::org'}
+          locked: {type: boolean}
     OrganizationPatch:
       type: object
-      required: [name]
+      minProperties: 1
       additionalProperties: false
       properties:
         name: {type: string, minLength: 1, maxLength: 255}
+        policy: {$ref: '#/components/schemas/OrganizationPolicy'}
     OrgWorkspace:
       type: object
       properties:
@@ -809,6 +834,13 @@ components:
         status: {$ref: '#/components/schemas/EnvelopeStatus'}
         version: {type: integer}
         recipients: {type: array, items: {type: object}}
+    TransferRequest:
+      type: object
+      required: [to_user]
+      additionalProperties: false
+      properties:
+        to_user: {type: string, description: 'An enabled member of this workspace'}
+        to_workspace: {type: string, description: 'Only this workspace; another is 422 CS-ORG-0009'}
     VoidRequest:
       type: object
       required: [reason]
@@ -1705,7 +1737,13 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     patch:
       operationId: patchOrganization
-      summary: "Rename the organization (`org.settings.update`), logged as `organization.renamed`"
+      summary: "Rename the organization or replace its policy (`org.settings.update`), logged as `organization.renamed` and `organization.policy_changed`"
+      description: >-
+        The policy is the whole document (ORG-08, docs/23 §3); an invalid key or value is
+        `422 CS-API-0001` at `/policy/<key>`. Loosening, unlocking or removing a security
+        key is an owner's alone (`403 CS-ORG-0013`, SEC-O11); tightening is any holder's.
+        Workspace rows are never rewritten: each workspace's effective policy is
+        recomputed per request.
       x-permission: "org.settings.update"
       x-level: organization
       requestBody:
@@ -2370,6 +2408,38 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/VoidRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/transfer:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: transferEnvelope
+      summary: "Pass the envelope's ownership to another member of this workspace (ORG-09)"
+      description: >-
+        Any state but purged; records `envelope.transferred {from_user, to_user}` in the
+        envelope's chain. Envelopes never move between workspaces (docs/23 §2.4): a
+        `to_workspace` other than this one, or a `to_user` who is not an enabled member
+        here, is `422 CS-ORG-0009`.
+      x-permission: "envelopes.transfer"
+      x-level: workspace
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TransferRequest'}
       responses:
         '200':
           description: OK

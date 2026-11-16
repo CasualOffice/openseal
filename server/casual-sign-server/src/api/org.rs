@@ -18,6 +18,7 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::Response;
+use casual_sign_policy::org::{self as policy, OrgPolicy};
 use casual_sign_store::{
     AccountId, OrgTx, OrganizationAdmin, OrganizationRole, StoreError, UserId, Workspace,
     WorkspaceStatus,
@@ -154,6 +155,7 @@ pub(crate) async fn organization(c: Call) -> Result<Response, ApiError> {
         &json!({
             "id": o.id.to_string(), "name": o.name, "status": o.status.as_str(),
             "role": admin.role.as_str(), "created_at": rfc3339(o.created_at),
+            "policy": o.policy,
         }),
     ))
 }
@@ -161,20 +163,52 @@ pub(crate) async fn organization(c: Call) -> Result<Response, ApiError> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OrgPatch {
-    name: String,
+    #[serde(default)]
+    name: Option<String>,
+    /// The whole policy document (docs/23 §3), replacing the stored one.
+    #[serde(default)]
+    policy: Option<Value>,
 }
 
-/// `PATCH /organizations/me {name}` (`org.settings.update`). Policy is ORG-08's.
+/// `PATCH /organizations/me {name?, policy?}` (`org.settings.update`). The policy is
+/// the whole document, `{key: {value, locked?}}`, validated by
+/// `casual_sign_policy::org::OrgPolicy` (`422 CS-API-0001` at `/policy/<key>`).
+/// Loosening, unlocking or removing a security key is an owner's alone (`403
+/// CS-ORG-0013`, docs/23 §2.2, `SEC-O11`); tightening is any holder's. Each change
+/// appends its organization event; workspace rows are never rewritten (§3).
 pub(crate) async fn patch_organization(c: Call, body: Bytes) -> Result<Response, ApiError> {
-    let (mut tx, _) = begin(&c, OrgAction::SettingsUpdate).await?;
+    let (mut tx, admin) = begin(&c, OrgAction::SettingsUpdate).await?;
     let req: OrgPatch = parse(&body)?;
-    let name = name_of(&req.name)?;
-    tx.rename(&name).await?;
+    if req.name.is_none() && req.policy.is_none() {
+        return Err(ApiError::invalid("/"));
+    }
+    if let Some(name) = &req.name {
+        let name = name_of(name)?;
+        tx.rename(&name).await?;
+    }
+    if let Some(doc) = &req.policy {
+        let new = OrgPolicy::parse(doc).map_err(|e| ApiError::invalid(&e.pointer()))?;
+        let stored = tx.organization().await?.policy;
+        // A stored document this build cannot read is replaced only by an owner.
+        let loosened = match OrgPolicy::parse(&stored) {
+            Ok(old) => policy::loosened(&old, &new).map(|k| k.as_str().to_owned()),
+            Err(_) => Some("policy".to_owned()),
+        };
+        if let Some(key) = loosened
+            && admin.role != OrganizationRole::Owner
+        {
+            return Err(ApiError::owner_only(&key));
+        }
+        tx.set_policy(&new.to_value()).await?;
+    }
     let o = tx.organization().await?;
     commit(tx).await?;
     Ok(json(
         StatusCode::OK,
-        &json!({ "id": o.id.to_string(), "name": o.name, "status": o.status.as_str() }),
+        &json!({
+            "id": o.id.to_string(), "name": o.name, "status": o.status.as_str(),
+            "policy": o.policy,
+        }),
     ))
 }
 

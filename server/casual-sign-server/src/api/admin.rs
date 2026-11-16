@@ -44,13 +44,53 @@ use casual_sign_seclog::{Kind, Principal as Who, Value as SecValue};
 pub(crate) async fn account(c: Call) -> Result<Response, ApiError> {
     let mut tx = c.tx().await?;
     let a = tx.account().get().await?;
+    let org = tx.account().organization_policy().await?;
     Ok(json(
         StatusCode::OK,
         &json!({
             "id": a.id.to_string(), "name": a.name, "settings": a.settings,
             "data_region": a.data_region, "created_at": rfc3339(a.created_at),
+            "organization_policy": organization_policy_json(&org, &a.settings),
         }),
     ))
+}
+
+/// What the workspace's settings screens show of its organization's policy (ORG-08,
+/// docs/23 §3, §10): for each workspace setting the organization governs, the
+/// effective value, whether it is locked ("Set by your organization") and whether the
+/// organization's value is the one in force. A stored policy this build cannot read
+/// shows every governed setting as locked, as the write check then refuses them.
+fn organization_policy_json(org: &Value, settings: &Value) -> Value {
+    use casual_sign_policy::org::{Key, OrgPolicy, effective};
+    let Ok(p) = OrgPolicy::parse(org) else {
+        let all: serde_json::Map<String, Value> = Key::ALL
+            .iter()
+            .filter_map(|k| k.workspace_setting())
+            .map(|s| {
+                (
+                    s.to_owned(),
+                    json!({ "locked": true, "from_organization": true }),
+                )
+            })
+            .collect();
+        return json!({ "settings": all });
+    };
+    let settings_view: serde_json::Map<String, Value> = effective(&p, settings)
+        .into_iter()
+        .filter(|(k, _)| p.get(*k).is_some())
+        .filter_map(|(k, e)| {
+            k.workspace_setting().map(|s| {
+                (
+                    s.to_owned(),
+                    json!({
+                        "key": k.as_str(), "value": e.value, "locked": e.locked,
+                        "from_organization": e.from_organization,
+                    }),
+                )
+            })
+        })
+        .collect();
+    json!({ "settings": settings_view })
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +116,7 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
     let req: AccountPatch = parse(&body)?;
     let mut tx = c.tx().await?;
     let a = tx.account().get().await?;
+    let before = a.settings.clone();
     let mut settings = match a.settings {
         Value::Object(m) => m,
         _ => serde_json::Map::new(),
@@ -112,6 +153,18 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
         }
     }
     let settings = Value::Object(settings);
+    // The organization's locked and tighten-only keys (ORG-08, docs/23 §3, `SEC-O03`):
+    // a governed setting that changes must be neither locked nor looser.
+    let org = tx.account().organization_policy().await?;
+    let policy = casual_sign_policy::org::OrgPolicy::parse(&org)
+        .map_err(|_| ApiError::policy_refused("settings", "policy", true))?;
+    if let Err(r) = casual_sign_policy::org::check_write(&policy, &before, &settings) {
+        return Err(ApiError::policy_refused(
+            r.setting,
+            r.key.as_str(),
+            r.locked,
+        ));
+    }
     tx.account().set_settings(&settings).await?;
     tx.commit().await?;
     Ok(json(StatusCode::OK, &json!({ "settings": settings })))

@@ -1733,6 +1733,24 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "void",
     )
     .await;
+    // ORG-09: ownership passes to another member of the workspace, and back.
+    let owner = re["sender_user_id"].as_str().unwrap().to_owned();
+    for to in [uid.as_str(), owner.as_str()] {
+        let t = ok(
+            api.call(
+                "POST",
+                &format!("/api/v1/envelopes/{reid}/transfer"),
+                k,
+                Some(json!({ "to_user": to })),
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "transfer",
+        )
+        .await;
+        assert_eq!(t["sender_user_id"], to);
+    }
     // The reassigned recipient's link was revoked in the same transaction.
     let revoked = api
         .call("GET", &format!("/s/{tre}"), &Auth::None, None, &hre)

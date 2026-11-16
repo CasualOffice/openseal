@@ -888,6 +888,60 @@ pub(crate) async fn void(
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct TransferIn {
+    /// The new owner: a member of this workspace.
+    to_user: String,
+    /// Another workspace's id is refused: envelopes never move between workspaces.
+    #[serde(default)]
+    to_workspace: Option<String>,
+}
+
+/// `POST /envelopes/{id}/transfer {to_user}` (`envelopes.transfer`; ORG-09, docs/23
+/// §2.4): pass the envelope's ownership to another enabled member of this workspace, in
+/// any state but purged, recording `envelope.transferred {from_user, to_user}` in its
+/// chain. Envelopes never move between workspaces: a `to_workspace` other than this
+/// one, or a `to_user` who is not an enabled member here, is `422 CS-ORG-0009` (the
+/// same answer for an id that does not exist, so nothing is learned about other
+/// workspaces). The holder of the action reaches every envelope of the workspace, as
+/// `envelopes.read_all` does; another workspace's envelope is `404`.
+pub(crate) async fn transfer(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    // The envelope first: another workspace's id is 404 whatever the body says.
+    let mut tx = c.tx().await?;
+    let env = EnvelopeId(path_id(&id)?);
+    let mut l = crate::apply::load(&mut tx, env)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let v = expected(&c, false)?;
+    let req: TransferIn = parse(&body)?;
+    if let Some(w) = &req.to_workspace
+        && Uuid::parse_str(w).ok() != Some(c.p.account.0)
+    {
+        return Err(ApiError::envelope_stays());
+    }
+    let to = Uuid::parse_str(&req.to_user).map_err(|_| ApiError::invalid("/to_user"))?;
+    let member = tx.users().get(UserId(to)).await?;
+    if member.is_none_or(|m| m.disabled_at.is_some()) {
+        return Err(ApiError::envelope_stays());
+    }
+    let mut cmds = c.commands(&mut tx).await?;
+    let ctx = cmds.ctx(
+        WfPrincipal::Admin {
+            user_id: eid(c.p.user.0)?,
+        },
+        v,
+    )?;
+    let cmd = Command::Transfer { to_user: eid(to)? };
+    run(&mut tx, &mut l, &cmd, &ctx).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CorrectIn {
     changes: Vec<Change>,
 }
