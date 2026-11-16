@@ -2,7 +2,9 @@
 <h1>Security and evidence model</h1>
 <p class="lede">The product is not the PDF; it is the proof that the PDF was agreed to. A completed agreement must show which document every party saw, who signed it, when and how, and anyone must be able to check that offline for decades. This page explains how, and what is still to be reviewed.</p>
 
-<div class="callout warn">{{icon:triangle-alert}}<div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. It makes no claim of legal validity, compliance or certification. An external security and cryptographic review (<code>SEC-REV-01</code>) and an ASVS self-assessment are release gates still ahead. Report vulnerabilities privately: see the <a href="../security.html">security policy</a>.</p></div></div>
+<div class="callout warn">{{icon:triangle-alert}}<div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. It makes no claim of legal validity, compliance or certification. An external security and cryptographic review (<code>SEC-REV-01</code>) is a release gate still ahead, and the ASVS self-assessment (<code>SEC-ASVS-01</code>) is written with its findings being closed. Report vulnerabilities privately: see the <a href="../security.html">security policy</a>.</p></div></div>
+
+<p class="claim-legend"><span>Each claim below is marked <strong>Tested</strong>, with the test or CI job that proves it, or <strong>Depends on your deployment</strong>, with what the operator configures.</span></p>
 
 <h2>Who we defend against</h2>
 <p>Nobody in an agreement trusts anybody else, so the design assumes each of them may attack the record:</p>
@@ -19,19 +21,19 @@
 
 <h2>The seal</h2>
 <ul>
-  <li><strong>PAdES baseline profiles.</strong> B-T is the default: a CAdES-detached CMS signature with an RFC 3161 timestamp from a timestamp authority, so the time does not come from our clock. B-LT adds the certificates and revocation data needed to validate years later without a network; B-LTA adds a document timestamp over everything, renewed before algorithms or certificates weaken.</li>
-  <li><strong>Incremental, never rewritten.</strong> The sealed file starts with the exact bytes delivered to signers. Anything later, such as long-term validation data, is appended as a new revision. A sealed document is never modified.</li>
-  <li><strong>Sized by computation, checked before release.</strong> The signature placeholder is computed, never guessed; a seal that would not fit fails instead of being truncated. Every seal is verified by our own verifier before it is stored; a failure leaves the envelope in <code>completing</code> with a job to retry, never <code>completed</code>.</li>
-  <li><strong>Algorithms.</strong> SHA-256 (SHA-384 and SHA-512 supported); RSA 3072 and above (PKCS#1 v1.5 and PSS), ECDSA P-256 and P-384. SHA-1 subfilters are never written. Cryptography comes from established libraries, never hand-rolled.</li>
+  <li data-claim><strong>PAdES baseline profiles.</strong> B-T is the default: a CAdES-detached CMS signature with an RFC 3161 timestamp from a timestamp authority, so the time does not come from our clock. B-LT adds the certificates and revocation data needed to validate years later without a network; B-LTA adds a document timestamp over everything, renewed before algorithms or certificates weaken.{{claim:tested|sealing at each level, then pyHanko and EU DSS in CI|crates/casual-sign-seal/tests/seal.rs}}</li>
+  <li data-claim><strong>Incremental, never rewritten.</strong> The sealed file starts with the exact bytes delivered to signers. Anything later, such as long-term validation data, is appended as a new revision. A sealed document is never modified.{{claim:tested|the sealed file keeps the delivered bytes as its prefix|crates/casual-sign-seal/tests/seal.rs}}</li>
+  <li data-claim><strong>Sized by computation, checked before release.</strong> The signature placeholder is computed, never guessed; a seal that would not fit fails instead of being truncated. Every seal is verified by our own verifier before it is stored; a failure leaves the envelope in <code>completing</code> with a job to retry, never <code>completed</code>.{{claim:tested|sealing tests and the worker's verify-before-store flow|server/casual-sign-worker/tests/flow.rs}}</li>
+  <li data-claim><strong>Algorithms.</strong> SHA-256 (SHA-384 and SHA-512 supported); RSA 3072 and above (PKCS#1 v1.5 and PSS), ECDSA P-256 and P-384. SHA-1 subfilters are never written. Cryptography comes from established libraries, never hand-rolled.{{claim:tested|the verifier's algorithm checks|crates/casual-sign-crypto/tests/checks.rs}}</li>
 </ul>
 
 <h2>The audit trail</h2>
 <ul>
-  <li><strong>Every legally relevant fact is an event</strong>, written in the same database transaction as the change it describes, before the client hears success.</li>
-  <li><strong>Append-only.</strong> No code path updates or deletes an event; the application's database role cannot, and a trigger refuses it. Corrections are new events.</li>
-  <li><strong>Hash-chained per envelope.</strong> Each event is canonical JSON (RFC 8785) whose SHA-256 is the next event's <code>prev</code>; sequence numbers are dense. Removing, inserting, reordering or editing any event breaks the chain.</li>
-  <li><strong>Sealed into the document.</strong> The chain is embedded in the sealed PDF as <code>audit-trail.json</code>, and the certificate of completion prints the chain head. The seal covers both, so altering either breaks the seal, and the database's copy can be checked against the copy every party received.</li>
-  <li><strong>Minimal personal data.</strong> Typed values are recorded as hashes in the chain; the values themselves are in the sealed document.</li>
+  <li data-claim><strong>Every legally relevant fact is an event</strong>, written in the same database transaction as the change it describes, before the client hears success.{{claim:tested|audit events written with each change|server/casual-sign-store/tests/audit.rs}}</li>
+  <li data-claim><strong>Append-only.</strong> No code path updates or deletes an event; the application's database role cannot, and a trigger refuses it. Corrections are new events.{{claim:tested|UPDATE, DELETE and TRUNCATE refused, CI job store-db|server/casual-sign-store/tests/audit.rs}}</li>
+  <li data-claim><strong>Hash-chained per envelope.</strong> Each event is canonical JSON (RFC 8785) whose SHA-256 is the next event's <code>prev</code>; sequence numbers are dense. Removing, inserting, reordering or editing any event breaks the chain.{{claim:tested|tamper tests on the chain|crates/casual-sign-audit/tests/tamper.rs}}</li>
+  <li data-claim><strong>Sealed into the document.</strong> The chain is embedded in the sealed PDF as <code>audit-trail.json</code>, and the certificate of completion prints the chain head. The seal covers both, so altering either breaks the seal, and the database's copy can be checked against the copy every party received.{{claim:tested|evidence embedded and verified|server/casual-sign-server/tests/evidence.rs}}</li>
+  <li data-claim><strong>Minimal personal data.</strong> Typed values are recorded as hashes in the chain; the values themselves are in the sealed document.{{claim:tested|evidence shape tests|server/casual-sign-store/tests/evidence.rs}}</li>
 </ul>
 
 <h2>The certificate of completion</h2>
@@ -39,25 +41,25 @@
 
 <h2>Signing keys</h2>
 <ul>
-  <li>The seal key lives in <strong>keyd</strong>, a separate daemon that talks PKCS#11 to an HSM (SoftHSM in development). It receives the encoded signed attributes, never the document, and returns the signature.</li>
-  <li>keyd accepts only the worker, over TLS 1.3 with mutual authentication and a client allow-list, rate-limits requests, and keeps its own hash-chained log of every operation.</li>
-  <li>File keys are refused outside development, and any seal made with one says so in its reason. No private key appears in code, logs, the database or an image.</li>
-  <li>Cloud KMS backends (AWS, GCP, Azure, Vault) are planned (<code>KEYD-01</code>).</li>
+  <li data-claim>The seal key lives in <strong>keyd</strong>, a separate daemon that talks PKCS#11 to an HSM (SoftHSM in development). It receives the encoded signed attributes, never the document, and returns the signature.{{claim:deployment|your HSM and its PKCS#11 module; Compose uses SoftHSM (keyd's PKCS#11 path is tested in CI job keyd-softhsm)}}</li>
+  <li data-claim>keyd accepts only the worker, over TLS 1.3 with mutual authentication and a client allow-list, rate-limits requests, and keeps its own hash-chained log of every operation.{{claim:tested|mutual TLS and the client allow-list|server/casual-sign-keyd/tests/mtls.rs}}</li>
+  <li data-claim>File keys are refused outside development, and any seal made with one says so in its reason. No private key appears in code, logs, the database or an image.{{claim:deployment|never set OPENSEAL_DEV_INSECURE_KEY in production; the refusal itself is tested in keyd}}</li>
+  <li data-claim>Cloud KMS backends (AWS, GCP, Azure, Vault) are planned (<code>KEYD-01</code>).{{claim:deployment|not built yet (KEYD-01); use a PKCS#11 HSM}}</li>
 </ul>
 
 <h2>Hostile documents</h2>
-<p>Every uploaded file is assumed to be an attack. The PDF reader is OpenSeal's own: every limit (size, depth, object count, stream expansion and more) is named, has an error code, a hostile test file and a fuzz target, and each target has been fuzzed for 24 cumulative hours without a finding. Uploads are rewritten into a fresh file without JavaScript, launch actions, embedded files, external references or XFA, which are never executed or followed; what was removed is reported to the sender. The browser draws pages with pdf.js with scripting disabled, inside a strict Content Security Policy.</p>
+<p data-claim>Every uploaded file is assumed to be an attack. The PDF reader is OpenSeal's own: every limit (size, depth, object count, stream expansion and more) is named, has an error code, a hostile test file and a fuzz target, and each target has been fuzzed for 24 cumulative hours without a finding. Uploads are rewritten into a fresh file without JavaScript, launch actions, embedded files, external references or XFA, which are never executed or followed; what was removed is reported to the sender. The browser draws pages with pdf.js with scripting disabled, inside a strict Content Security Policy.{{claim:tested|hostile fixtures for every limit, 24 fuzzed hours per target|crates/casual-sign-pdf/tests/limits.rs}}</p>
 
 <h2>Verification you can repeat</h2>
-<p>Our verifier is not trusted alone. Every sealed and every tampered fixture must get the same verdict from three validators: <code>casual-sign-verify</code>, pyHanko and EU DSS. Across a corpus of 422 real-world PDFs, all 417 admissible files are filled, flattened, sealed and verified by all three. The verifier's classifier of later revisions catches shadow attacks (hide, replace, hide-and-replace) and incremental-saving attacks. The same verifier compiled to WebAssembly gives byte-identical verdicts in the browser.</p>
+<p data-claim>Our verifier is not trusted alone. Every sealed and every tampered fixture must get the same verdict from three validators: <code>casual-sign-verify</code>, pyHanko and EU DSS. Across a corpus of 422 real-world PDFs, all 417 admissible files are filled, flattened, sealed and verified by all three. The verifier's classifier of later revisions catches shadow attacks (hide, replace, hide-and-replace) and incremental-saving attacks. The same verifier compiled to WebAssembly gives byte-identical verdicts in the browser.{{claim:tested|CI jobs validators and wasm-parity|.github/workflows/ci.yml}}</p>
 
 <h2>Accounts, tenancy and the API</h2>
 <ul>
-  <li>Access is decided on the server for every request and every object, deny by default. PostgreSQL row-level security per account is a second line, not the first; isolation tests are generated from the API description and run with it on and off.</li>
-  <li>Another account's objects answer exactly like missing ones.</li>
-  <li>Signing links are opaque, for one recipient of one envelope, and bound to the first browser that opens them; they are never logged.</li>
-  <li>Personal data (names, emails, IP addresses, phone numbers, signature images) is classified and never logged in clear; no document text is logged.</li>
-  <li>Webhooks refuse private and internal addresses at resolution and at connection (<a href="webhooks.html#where-webhooks-may-go">details</a>).</li>
+  <li data-claim>Access is decided on the server for every request and every object, deny by default. PostgreSQL row-level security per account is a second line, not the first; isolation tests are generated from the API description and run with it on and off.{{claim:tested|cross-account isolation over every API operation, RLS on and off|server/casual-sign-server/tests/isolation.rs}}</li>
+  <li data-claim>Another account's objects answer exactly like missing ones.{{claim:tested|cross-account isolation tests|server/casual-sign-server/tests/isolation.rs}}</li>
+  <li data-claim>Signing links are opaque, for one recipient of one envelope, and bound to the first browser that opens them; they are never logged.{{claim:tested|signing-link threat tests|server/casual-sign-server/tests/threats.rs}}</li>
+  <li data-claim>Personal data (names, emails, IP addresses, phone numbers, signature images) is classified and never logged in clear; no document text is logged.{{claim:deployment|keep log shipping and retention as docs/65 describes; what the services write is tested not to carry personal data}}</li>
+  <li data-claim>Webhooks refuse private and internal addresses at resolution and at connection (<a href="webhooks.html#where-webhooks-may-go">details</a>).{{claim:tested|webhook address checks at registration and connect|server/casual-sign-worker/tests/flow.rs}}</li>
 </ul>
 
 <h2>Read further</h2>

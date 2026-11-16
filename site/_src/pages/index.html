@@ -1,4 +1,4 @@
-<!--meta {"title": "OpenSeal", "description": "OpenSeal is an open-source, Apache-2.0 e-signature platform: send documents for signature, sign on any device, self-host it, and verify every sealed PDF offline.", "nav": "home"} -->
+<!--meta {"title": "OpenSeal", "description": "OpenSeal is an Apache-2.0 signing and verification engine you embed (a Rust engine, a WebAssembly verifier, an API and SDK), with a complete e-signature web app built on it: send, sign, self-host, and verify every sealed PDF offline.", "nav": "home"} -->
 <!-- Product screenshots come from tools/capture-site-screens.mjs. A "shot:wanted,current"
      placeholder names the file the script writes once that screen is rebuilt and shows the
      current image until then (data-pending in the output): agreements, editor and
@@ -8,11 +8,12 @@
     <div class="hero-copy">
       <a class="release-pill" href="changelog.html"><b>v0.0.1</b><span>First pre-release, for evaluation</span>{{icon:arrow-right:14}}</a>
       <h1 id="hero-h">Agreements with evidence <span class="soft">anyone can verify offline.</span></h1>
-      <p class="lede">OpenSeal is an open-source e-signature platform. Send documents for signature, sign on any device, and get back a sealed PDF that anyone can check offline, with no account and no server of ours.</p>
+      <p class="lede">OpenSeal is an Apache-2.0 signing and verification engine you embed: a Rust engine, a verifier that runs in the browser, and an API and SDK. On top of it sits a complete e-signature web app, the reference product: send documents, sign on any device, and get back a sealed PDF anyone can check offline, with no account and no server of ours.</p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="docs/getting-started.html">Get started with Docker<span class="btn-icon">{{icon:arrow-right:16}}</span></a>
-        <a class="btn btn-secondary" href="download.html">Download and deploy</a>
+        <a class="btn btn-primary" href="app/app.html#/signin" data-testid="cta-demo">Try the demo<span class="btn-icon">{{icon:arrow-right:16}}</span></a>
+        <a class="btn btn-secondary" href="docs/getting-started.html">Run it with Docker</a>
       </div>
+      <p class="hero-note">The demo runs in your browser with sample data: send and sign an agreement, no install, nothing sent. Or <a href="verify.html">verify a sealed PDF</a> right here. <a href="#limits">Pre-release: read the limits first.</a></p>
       <ul class="hero-meta" aria-label="In short">
         <li>{{icon:circle-check:16}}Apache-2.0, no copyleft</li>
         <li>{{icon:circle-check:16}}Self-hosted with Docker Compose</li>
@@ -42,6 +43,54 @@
       <li>{{icon:badge-check:16}}pyHanko and EU DSS</li>
       <li>{{icon:webhook:16}}Standard Webhooks</li>
     </ul>
+  </div>
+</section>
+
+<section class="section-tight" id="engine" aria-labelledby="engine-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow eyebrow--dot">The engine</span>
+      <h2 id="engine-h">An engine first, an app on top.</h2>
+      <p>The part that matters for evidence is a library, not a service: deterministic Rust that reads, fills, seals and verifies PDFs, with no clock, randomness or keys of its own. Embed it in your product, or run the whole platform built on it.</p>
+    </div>
+    <ul class="engine-strip reveal">
+      <li><b>{{icon:cpu:16}}Rust engine</b><span>The <code>casual-sign-*</code> crates: a bounded PDF reader, form filling, flattening, PAdES sealing, the verifier and the audit chain.</span></li>
+      <li><b>{{icon:shield-check:16}}WebAssembly verifier</b><span>The same verifier compiled for the browser, with the same verdicts byte for byte. It runs on the <a href="verify.html">Verify page</a>.</span></li>
+      <li><b>{{icon:code:16}}API and SDK</b><span>A REST API with signed webhooks, and <code>casual-sign-sdk</code> for the pipeline in-process.</span></li>
+      <li><b>{{icon:monitor:16}}The web app</b><span>Sending, signing, templates and administration, built on the engine and the API. <a href="app/app.html#/signin">Try it</a>.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="section-tight" id="why" aria-labelledby="why-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow eyebrow--dot">Why it matters</span>
+      <h2 id="why-h">Three standards, in plain words.</h2>
+      <p>The names in the strip above are what make a finished agreement checkable by anyone, years from now, without asking us.</p>
+    </div>
+    <ul class="why reveal">
+      <li><span class="term">PAdES</span><h3>A seal inside the PDF itself</h3><p>PAdES is the European standard for digital signatures in PDF files. The seal travels with the document, and any PDF validator that knows the standard can read it, not only ours.</p><p class="so">So: the proof does not depend on OpenSeal still existing.</p></li>
+      <li><span class="term">RFC 3161</span><h3>A time nobody can quietly change</h3><p>A timestamp authority, an independent service, signs the moment the seal was made. The time does not come from our clock or yours, so it cannot be backdated later without the timestamp failing.</p><p class="so">So: "when" is proven, not claimed.</p></li>
+      <li><span class="term">Offline verification</span><h3>Anyone can check, anywhere</h3><p>Every check uses only the file: whether a byte changed, who sealed it, when, and what was added afterwards. It runs in a browser or on the command line, with no account and no network.</p><p class="so">So: the other party, an auditor or a court can check it themselves.</p></li>
+    </ul>
+    <p class="note reveal">These are technical properties. Whether a signature is legally effective depends on the jurisdiction, the transaction and how a deployment is run; OpenSeal is designed to support e-signature laws such as ESIGN, UETA and eIDAS and makes no claim of legal validity, compliance or certification.</p>
+  </div>
+</section>
+
+<section class="section-tight" id="limits" aria-labelledby="limits-h">
+  <div class="wrap">
+    <div class="limits reveal" data-testid="limits">
+      <h2 id="limits-h">{{icon:triangle-alert:18}}Pre-release: what it is not yet</h2>
+      <ul>
+        <li><strong>Not for production agreements yet.</strong> v0.0.1 is a pre-release for evaluation.</li>
+        <li>The Docker Compose stack makes its own certificate authority, software HSM and timestamp authority, so its seals validate only against that development CA.</li>
+        <li>Release gates still ahead: an external security and cryptographic review, an accessibility audit, validation in Adobe Acrobat, and a counsel review. The ASVS self-assessment is written and its findings are being closed.</li>
+        <li>The backup and restore drill is built; its run on CI is the last step before it counts. A Helm chart and a high-availability reference are not built yet.</li>
+        <li>Document intelligence and the platform console are paused until the first-signature milestone closes; the core flow, hardening, the verifier and the API come first.</li>
+      </ul>
+      <p>Every item is a row on the <a href="roadmap.html">roadmap</a>, kept in step with the project's tracker.</p>
+    </div>
   </div>
 </section>
 
@@ -123,7 +172,8 @@
         <div class="sec-head flush">
           <span class="eyebrow eyebrow--ok">Evidence and verification</span>
           <h2 id="evidence-h">Proof that outlives the platform.</h2>
-          <p>A completed agreement shows which document every party saw, who signed it, when and how. Drop the sealed PDF on the verify page: the check runs in your browser in WebAssembly, and the file never leaves your machine.</p>
+          <p>A completed agreement shows which document every party saw, who signed it, when and how. Drop the sealed PDF on the <a href="verify.html">Verify page</a>: the check runs in your browser in WebAssembly, and the file never leaves your machine.</p>
+          <p class="cta-row"><a class="btn btn-secondary btn-sm" href="verify.html">Verify a PDF now<span class="btn-icon">{{icon:arrow-right:16}}</span></a></p>
         </div>
         <ol class="chain" aria-label="The audit trail is a chain: each event carries the hash of the one before it">
           <li>{{icon:send}}sent</li><li class="sep" aria-hidden="true">{{icon:arrow-right}}</li>
@@ -141,12 +191,12 @@
       </div>
     </div>
     <ul class="facts">
-      <li class="reveal"><span class="cell-icon">{{icon:stamp}}</span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation is one setting per envelope.</span></li>
-      <li class="reveal reveal-d1"><span class="cell-icon">{{icon:link}}</span><strong>Hash-chained audit trail</strong><span>Every event is canonical JSON linked by SHA-256 to the one before it, embedded in the PDF. Deleting, inserting, reordering or editing an event is detected.</span></li>
-      <li class="reveal reveal-d2"><span class="cell-icon">{{icon:badge-check}}</span><strong>Independent validators agree</strong><span>Our verifier, pyHanko and EU DSS check every sealed and tampered fixture; all 417 admissible PDFs of a 422-file real-world corpus pass all three.</span></li>
-      <li class="reveal"><span class="cell-icon">{{icon:key-round}}</span><strong>Keys in your HSM</strong><span>keyd, a separate service, holds the seal key behind PKCS#11 and signs digests, never documents.</span></li>
-      <li class="reveal reveal-d1"><span class="cell-icon">{{icon:shield}}</span><strong>Every upload treated as hostile</strong><span>A bounded PDF reader, fuzzed for 24 hours per entry point, rewrites the file without active content before anyone signs it.</span></li>
-      <li class="reveal reveal-d2"><span class="cell-icon">{{icon:terminal}}</span><strong>Verify without us</strong><span>In the browser, offline, or with the openseal command line. The seal is standard PAdES, so other validators read it too.</span></li>
+      <li class="reveal" data-claim><span class="cell-icon">{{icon:stamp}}</span><strong>PAdES B-T by default, up to B-LTA</strong><span>Sealed as an incremental update with an RFC 3161 timestamp. Long-term validation is one setting per envelope.</span>{{claim:tested|pyHanko and EU DSS over every sealed fixture, CI job validators|.github/workflows/ci.yml}}</li>
+      <li class="reveal reveal-d1" data-claim><span class="cell-icon">{{icon:link}}</span><strong>Hash-chained audit trail</strong><span>Every event is canonical JSON linked by SHA-256 to the one before it, embedded in the PDF. Deleting, inserting, reordering or editing an event is detected.</span>{{claim:tested|tamper tests on the chain|crates/casual-sign-audit/tests/tamper.rs}}</li>
+      <li class="reveal reveal-d2" data-claim><span class="cell-icon">{{icon:badge-check}}</span><strong>Independent validators agree</strong><span>Our verifier, pyHanko and EU DSS check every sealed and tampered fixture; all 417 admissible PDFs of a 422-file real-world corpus pass all three.</span>{{claim:tested|CI jobs validators and wasm-parity|.github/workflows/ci.yml}}</li>
+      <li class="reveal" data-claim><span class="cell-icon">{{icon:key-round}}</span><strong>Keys in your HSM</strong><span>keyd, a separate service, holds the seal key behind PKCS#11 and signs digests, never documents.</span>{{claim:deployment|your HSM and its PKCS#11 module, and the sealing certificate; Compose uses SoftHSM}}</li>
+      <li class="reveal reveal-d1" data-claim><span class="cell-icon">{{icon:shield}}</span><strong>Every upload treated as hostile</strong><span>A bounded PDF reader, fuzzed for 24 hours per entry point, rewrites the file without active content before anyone signs it.</span>{{claim:tested|hostile fixtures for every parser limit, and fuzz targets|crates/casual-sign-pdf/tests/limits.rs}}</li>
+      <li class="reveal reveal-d2" data-claim><span class="cell-icon">{{icon:terminal}}</span><strong>Verify without us</strong><span>In the browser, offline, or with the openseal command line. The seal is standard PAdES, so other validators read it too.</span>{{claim:tested|native and WebAssembly verdicts byte-identical, CI job wasm-parity|tools/wasm-parity.sh}}</li>
     </ul>
   </div>
 </section>
@@ -159,7 +209,7 @@
       <p>A separate model service runs beside the rest of the stack, so documents never leave your servers to be read. What it finds is a suggestion a person accepts or dismisses; every feature is off by default, and none of it enters the sealed PDF or the audit trail.</p>
       <ul class="points points--ml">
         <li><span class="pt-ic">{{icon:file-search}}</span><strong>Fields where they belong <span class="pill pill-done">In the editor</span></strong><span>Detect fields suggests where signatures, dates and text go on an uploaded PDF.</span></li>
-        <li><span class="pt-ic">{{icon:shield-check}}</span><strong>Parties, dates, amounts and personal data <span class="pill pill-progress">Reaching the app</span></strong><span>Built in the model service, with validated recognisers for card numbers, IBANs and national identifiers, and served to the app as suggestions; the app's suggestion screens are being finished now.</span></li>
+        <li><span class="pt-ic">{{icon:shield-check}}</span><strong>Parties, dates, amounts and personal data <span class="pill pill-progress">In the model service</span></strong><span>Built in the model service, with validated recognisers for card numbers, IBANs and national identifiers, and served to the app as suggestions; the app's suggestion screens resume after the first-signature milestone, when this work comes off pause.</span></li>
         <li><span class="pt-ic">{{icon:cpu}}</span><strong>Pretrained, never trained on your documents</strong><span>Designed so nothing learns from what you send: pretrained open models only, on your own hardware. Text from scanned pages and template matching are built in the model service.</span></li>
       </ul>
     </div>
@@ -196,7 +246,7 @@
     <div class="sec-head reveal">
       <span class="eyebrow eyebrow--dot">Operate</span>
       <h2 id="console-h">A platform console for the people who run it.</h2>
-      <p>A separate console, with its own sign-in and second factor, for operators of a deployment: health, organizations, approvals, signing keys and certificates, timestamp authorities, plans and usage limits, and an operator log. It sees counts and states, never document content.</p>
+      <p>A separate console, with its own sign-in and second factor, for operators of a deployment: health, organizations, approvals, signing keys and certificates, timestamp authorities, plans and usage limits, and an operator log. It sees counts and states, never document content. It is built and tested, not yet a Compose service, and its further work is paused until the first-signature milestone closes.</p>
     </div>
     <figure class="reveal">
       <div class="window">
@@ -206,9 +256,9 @@
       <figcaption>The console's Health screen, shown with demo data.</figcaption>
     </figure>
     <ul class="facts facts--light">
-      <li class="reveal"><span class="cell-icon">{{icon:users}}</span><strong>Two people for risky actions</strong><span>Suspending or resuming an organization, or changing a timestamp authority, needs a second person's approval.</span></li>
-      <li class="reveal reveal-d1"><span class="cell-icon">{{icon:lock}}</span><strong>Operators sign in with TOTP</strong><span>Roles decide what each operator can open, and the server enforces them on every request.</span></li>
-      <li class="reveal reveal-d2"><span class="cell-icon">{{icon:link}}</span><strong>A hash-chained operator log</strong><span>The console verifies the chain, so an edited or missing entry shows.</span></li>
+      <li class="reveal" data-claim><span class="cell-icon">{{icon:users}}</span><strong>Two people for risky actions</strong><span>Suspending or resuming an organization, or changing a timestamp authority, needs a second person's approval.</span>{{claim:tested|console approval tests|server/casual-sign-console/tests/approvals.rs}}</li>
+      <li class="reveal reveal-d1" data-claim><span class="cell-icon">{{icon:lock}}</span><strong>Operators sign in with TOTP</strong><span>Roles decide what each operator can open, and the server enforces them on every request.</span>{{claim:tested|every console route needs a session with its second factor|server/casual-sign-console/tests/api.rs}}</li>
+      <li class="reveal reveal-d2" data-claim><span class="cell-icon">{{icon:link}}</span><strong>A hash-chained operator log</strong><span>The console verifies the chain, so an edited or missing entry shows.</span>{{claim:tested|the operator log is append-only and chained in the database|server/casual-sign-console/tests/catalog.rs}}</li>
     </ul>
   </div>
 </section>
@@ -299,11 +349,11 @@ curl https://sign.example.com/api/v1/envelopes \
           <tr><th scope="row">Run it on your own servers</th><td><span class="mark yes">{{icon:circle-check:16}}Yes, Docker Compose today</span></td><td><span class="mark no">{{icon:circle-x:16}}No, vendor cloud</span></td><td><span class="mark no">{{icon:circle-x:16}}No, vendor cloud</span></td><td><span class="mark yes">{{icon:circle-check:16}}Yes</span></td></tr>
           <tr><th scope="row">Embed in a closed-source product</th><td><span class="mark yes">{{icon:circle-check:16}}Yes, no copyleft</span></td><td>Through their paid API</td><td>Through their paid API</td><td><span class="mark part">{{icon:circle-alert:16}}AGPL terms apply; some embedding is paid</span></td></tr>
           <tr><th scope="row">Bulk send, conditional fields, SSO</th><td><span class="mark part">{{icon:circle-alert:16}}Open core, no tiers: bulk send built; conditional fields and SSO planned</span></td><td>Higher plans</td><td>Higher plans</td><td>Mostly paid editions</td></tr>
-          <tr><th scope="row">Verify a completed PDF offline</th><td><span class="mark yes">{{icon:circle-check:16}}In-browser verifier and CLI</span></td><td>In a PDF reader</td><td>Not documented</td><td>Documenso: no verifier; DocuSeal: basic</td></tr>
-          <tr><th scope="row">Independent validators in CI</th><td><span class="mark yes">{{icon:circle-check:16}}pyHanko and EU DSS</span></td><td>Not published</td><td>Not published</td><td>Not published</td></tr>
-          <tr><th scope="row">Long-term validation (B-LT, B-LTA)</th><td><span class="mark yes">{{icon:circle-check:16}}Built; B-T is the default</span></td><td>Not documented</td><td>Not documented</td><td>Documenso: B-B to B-LTA; others limited</td></tr>
-          <tr><th scope="row">Signing key custody</th><td><span class="mark yes">{{icon:circle-check:16}}Your HSM via PKCS#11</span></td><td>Vendor-managed</td><td>Vendor-managed</td><td>Mostly a .p12 file</td></tr>
-          <tr><th scope="row">Audit evidence</th><td><span class="mark yes">{{icon:circle-check:16}}Hash-chained trail inside the PDF, plus a certificate</span></td><td>Certificate of completion</td><td>Audit trail report</td><td>Audit log and certificate pages</td></tr>
+          <tr><th scope="row">Verify a completed PDF offline</th><td data-claim><span class="mark yes">{{icon:circle-check:16}}In-browser verifier and CLI</span>{{claim:tested|CI job wasm-parity|tools/wasm-parity.sh}}</td><td>In a PDF reader</td><td>Not documented</td><td>Documenso: no verifier; DocuSeal: basic</td></tr>
+          <tr><th scope="row">Independent validators in CI</th><td data-claim><span class="mark yes">{{icon:circle-check:16}}pyHanko and EU DSS</span>{{claim:tested|CI job validators|.github/workflows/ci.yml}}</td><td>Not published</td><td>Not published</td><td>Not published</td></tr>
+          <tr><th scope="row">Long-term validation (B-LT, B-LTA)</th><td data-claim><span class="mark yes">{{icon:circle-check:16}}Built; B-T is the default</span>{{claim:tested|sealing tests at every level|crates/casual-sign-seal/tests/seal.rs}}</td><td>Not documented</td><td>Not documented</td><td>Documenso: B-B to B-LTA; others limited</td></tr>
+          <tr><th scope="row">Signing key custody</th><td data-claim><span class="mark yes">{{icon:circle-check:16}}Your HSM via PKCS#11</span>{{claim:deployment|your HSM and PKCS#11 module}}</td><td>Vendor-managed</td><td>Vendor-managed</td><td>Mostly a .p12 file</td></tr>
+          <tr><th scope="row">Audit evidence</th><td data-claim><span class="mark yes">{{icon:circle-check:16}}Hash-chained trail inside the PDF, plus a certificate</span>{{claim:tested|tamper tests on the chain|crates/casual-sign-audit/tests/tamper.rs}}</td><td>Certificate of completion</td><td>Audit trail report</td><td>Audit log and certificate pages</td></tr>
         </tbody>
       </table>
     </div>
@@ -320,7 +370,7 @@ curl https://sign.example.com/api/v1/envelopes \
     <div class="faq reveal reveal-d1">
       <details><summary>Can I use it for real agreements today?{{icon:chevron-down}}</summary><div><p>Not yet. v0.0.1 is a pre-release for evaluation: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the development stack makes its own certificate authority, and the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what comes next.</p></div></details>
       <details><summary>Are the signatures legally binding?{{icon:chevron-down}}</summary><div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. Whether a given signature is valid depends on your deployment, its configuration, the jurisdiction and the transaction. Nothing here is legal advice.</p></div></details>
-      <details><summary>How do I check a document without your servers?{{icon:chevron-down}}</summary><div><p>Open the verify page from any OpenSeal install, or run it locally; the check runs in your browser and the file stays on your machine. The seal is standard PAdES, so independent tools such as pyHanko and EU DSS validate it too.</p></div></details>
+      <details><summary>How do I check a document without your servers?{{icon:chevron-down}}</summary><div><p>Use the <a href="verify.html">Verify page</a> on this site, or the one in any OpenSeal install; the check runs in your browser and the file stays on your machine. The <code>openseal</code> command line runs the same check offline. The seal is standard PAdES, so independent tools such as pyHanko and EU DSS validate it too.</p></div></details>
       <details><summary>Do the models see or learn from my documents?{{icon:chevron-down}}</summary><div><p>The model service runs on your own servers, beside the rest of the stack, and every feature is off until an administrator turns it on. It uses pretrained models only and is designed so that nothing learns from your documents. What it finds is a suggestion; nothing a model says enters the sealed PDF or the audit trail.</p></div></details>
       <details><summary>Can I build a commercial product on it?{{icon:chevron-down}}</summary><div><p>Yes. Apache-2.0 allows commercial and proprietary use, embedding, hosting and resale. When you redistribute it, keep the LICENSE and the NOTICE file. See <a href="brand.html">brand and attribution</a>.</p></div></details>
       <details><summary>Does it have an API and webhooks?{{icon:chevron-down}}</summary><div><p>Yes: a REST API under <code>/api/v1</code> with API keys and OAuth client credentials, idempotency keys, ETags, and webhooks signed with the Standard Webhooks scheme. Read the <a href="docs/api.html">API reference</a>.</p></div></details>
@@ -332,12 +382,12 @@ curl https://sign.example.com/api/v1/envelopes \
 <section class="section" aria-labelledby="closing-h">
   <div class="wrap">
     <div class="closing reveal">
-      <h2 id="closing-h">Run it on your machine in one command.</h2>
-      <p class="lede">Docker Compose brings up the server, the worker, the key service, the database, storage, a mail catcher and a timestamp authority.</p>
+      <h2 id="closing-h">Try it in your browser, then run it in one command.</h2>
+      <p class="lede">The demo needs nothing installed. When you want the real thing, Docker Compose brings up the server, the worker, the key service, the database, storage, a mail catcher and a timestamp authority.</p>
       <p class="cmd"><code><span class="c-cmt">$ </span>docker compose up -d --build --wait</code></p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="docs/getting-started.html">Get started with Docker<span class="btn-icon">{{icon:arrow-right:16}}</span></a>
-        <a class="btn btn-secondary" href="https://github.com/CasualOffice/openseal">View on GitHub<span class="btn-icon">{{icon:arrow-up-right:16}}</span></a>
+        <a class="btn btn-primary" href="app/app.html#/signin">Try the demo<span class="btn-icon">{{icon:arrow-right:16}}</span></a>
+        <a class="btn btn-secondary" href="docs/getting-started.html">Get started with Docker<span class="btn-icon">{{icon:arrow-right:16}}</span></a>
       </div>
     </div>
   </div>

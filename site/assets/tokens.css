@@ -75,11 +75,11 @@
   --os-pii-text: #78350f;
   --os-pii-soft: #fffbeb;
   --os-pii-edge: rgba(180, 83, 9, 0.18);
-  --os-shadow: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 1px 3px rgba(24, 24, 27, 0.04);
-  --os-shadow-sm: 0 0 0 1px rgba(24, 24, 27, 0.07), 0 1px 2px rgba(24, 24, 27, 0.04);
-  --os-shadow-md: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 8px 20px -10px rgba(24, 24, 27, 0.25);
-  --os-shadow-pop: 0 0 0 1px rgba(24, 24, 27, 0.08), 0 24px 60px -12px rgba(24, 24, 27, 0.35);
-  --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(142, 11, 20, 0.35);
+  --os-shadow: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 1px 0.1875rem rgba(24, 24, 27, 0.04);
+  --os-shadow-sm: 0 0 0 1px rgba(24, 24, 27, 0.07), 0 1px 0.125rem rgba(24, 24, 27, 0.04);
+  --os-shadow-md: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 0.5rem 1.25rem -10px rgba(24, 24, 27, 0.25);
+  --os-shadow-pop: 0 0 0 1px rgba(24, 24, 27, 0.08), 0 1.5rem 3.75rem -12px rgba(24, 24, 27, 0.35);
+  --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 0.125rem rgba(142, 11, 20, 0.35);
   --os-tag: #fff4c2;           /* the signer's Start/Next guide tag */
   --os-tag-edge: #8a5a00;
   --os-overlay: rgba(24, 24, 27, 0.28);
@@ -103,8 +103,8 @@
   --os-font-mono: "OpenSeal Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --os-font-script-1: "OpenSeal Great Vibes", cursive;
   --os-font-script-2: "OpenSeal Allura", cursive;
-  --os-fs-11: max(0.6875rem, 11px); /* kbd hints and badges only */
-  --os-fs-12: max(0.75rem, 12px); /* never under 12 px, even at a 15 px root (A11) */
+  --os-fs-11: max(0.6875rem, 11px); /* px-ok: WCAG legibility floor; kbd hints and badges only */
+  --os-fs-12: max(0.75rem, 12px); /* px-ok: WCAG legibility floor; never under 12 px, even at a 15 px root (A11) */
   --os-fs-13: 0.8125rem;
   --os-fs-14: 0.875rem;
   --os-fs-15: 0.9375rem;
@@ -142,8 +142,8 @@
   --os-btn-sm: 1.75rem;
   --os-btn: 2rem;
   --os-btn-lg: 2.75rem;
-  --os-target-min: max(1.5rem, 24px);   /* WCAG 2.2 SC 2.5.8: 24 CSS px, whatever the root size */
-  --os-target-touch: max(2.75rem, 44px); /* SC 2.5.5: signing page, phones */
+  --os-target-min: max(1.5rem, 24px);   /* px-ok: WCAG 2.5.8 target floor in CSS px; WCAG 2.2 SC 2.5.8: 24 CSS px, whatever the root size */
+  --os-target-touch: max(2.75rem, 44px); /* px-ok: WCAG 2.5.5 target floor in CSS px; SC 2.5.5: signing page, phones */
   --os-focus-width: 0.125rem;
   --os-focus-offset: 0.125rem;
 
@@ -159,7 +159,12 @@
   --os-dur-enter: 360ms;
 
   /* ---- Layout ----------------------------------------------------------- */
+  /* One bar height for the app's top row, Verify and the site (WEB-12); the editor's and
+   * signer's own bars keep the canvas's heights (Editor and Signer artboards). */
   --os-topbar-h: 3.25rem;
+  /* The page's side gutter (WEB-12): the content card's padding and the screen search
+   * row share it, so their edges line up; 1rem on phones (shell.css). */
+  --os-gutter: 2rem;
   --os-side-w: 15.5rem;
   --os-nav-w: 15.5rem;
   --os-card-inset: 0.5rem;
@@ -222,11 +227,11 @@
   --os-pii-text: #fde68a;
   --os-pii-soft: #241d10;
   --os-pii-edge: rgba(251, 191, 36, 0.25);
-  --os-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --os-shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --os-shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 20px -10px rgba(0, 0, 0, 0.7);
-  --os-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 24px 60px -12px rgba(0, 0, 0, 0.75);
-  --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --os-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 0.1875rem rgba(0, 0, 0, 0.4);
+  --os-shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 0.125rem rgba(0, 0, 0, 0.4);
+  --os-shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0.5rem 1.25rem -10px rgba(0, 0, 0, 0.7);
+  --os-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 1.5rem 3.75rem -12px rgba(0, 0, 0, 0.75);
+  --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 0.125rem rgba(0, 0, 0, 0.5);
   --os-tag: #4a3b00;
   --os-tag-edge: #f2c14e;
   --os-overlay: rgba(0, 0, 0, 0.55);
@@ -294,11 +299,11 @@
     --os-pii-text: #fde68a;
     --os-pii-soft: #241d10;
     --os-pii-edge: rgba(251, 191, 36, 0.25);
-    --os-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 3px rgba(0, 0, 0, 0.4);
-    --os-shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --os-shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 20px -10px rgba(0, 0, 0, 0.7);
-    --os-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 24px 60px -12px rgba(0, 0, 0, 0.75);
-    --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+    --os-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 0.1875rem rgba(0, 0, 0, 0.4);
+    --os-shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 0.125rem rgba(0, 0, 0, 0.4);
+    --os-shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0.5rem 1.25rem -10px rgba(0, 0, 0, 0.7);
+    --os-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 1.5rem 3.75rem -12px rgba(0, 0, 0, 0.75);
+    --os-shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 0.125rem rgba(0, 0, 0, 0.5);
     --os-tag: #4a3b00;
     --os-tag-edge: #f2c14e;
     --os-overlay: rgba(0, 0, 0, 0.55);

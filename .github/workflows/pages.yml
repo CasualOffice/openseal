@@ -6,11 +6,19 @@ name: pages
 # this job regenerates its generated pages, checks it is complete, drops the sources
 # (site/_src/), and deploys. GitHub Pages must be enabled in the repository settings (source: GitHub
 # Actions) for the deploy job to succeed; that is the owner's call.
+#
+# The published tree also holds the interactive demo and the public verifier (SITE-03,
+# SITE-04, owner instructions 51 and 52): tools/build-site.py --publish copies webapp/ to
+# app/ as a demo copy (mock mode forced by a meta tag, sign.html's root-relative URLs made
+# relative), with the WebAssembly verifier built here by tools/build-webapp-wasm.sh. Paths
+# are relative, so the tree works at the custom domain's root (seal.casualoffice.org) and
+# under a project path alike. Before upload, the site's Playwright spec runs against the
+# exact tree: the Verify page with the network blocked, and the demo's send-and-sign path.
 
 on:
   push:
     branches: [main]
-    paths: ["site/**", "tools/build-*.py", "tools/sitelib.py", "tools/check-site-links.py", "docs/06-ROADMAP-AND-DELIVERY.md", "docs/14-EXECUTION-TRACKER.md", "api/openapi.yaml", "CHANGELOG.md", "webapp/tokens.css", ".github/workflows/pages.yml"]
+    paths: ["site/**", "tools/build-*.py", "tools/build-webapp-wasm.sh", "tools/sitelib.py", "tools/check-site-*.py", "tools/serve-site.py", "docs/06-ROADMAP-AND-DELIVERY.md", "docs/14-EXECUTION-TRACKER.md", "api/openapi.yaml", "CHANGELOG.md", "webapp/**", "crates/**", "Cargo.lock", "fixtures/sealed/**", "fixtures/signed/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -36,20 +44,48 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" tools/build-site.py
       - name: Every internal link resolves
         run: python3 -I tools/check-site-links.py
+      - name: Every security claim is marked tested or deployment-dependent (SITE-05)
+        run: |
+          python3 -I tools/check-site-claims.py --self-test
+          python3 -I tools/check-site-claims.py
+      # The verifier for the Verify page and the demo (SITE-03), built as ci.yml's
+      # wasm-parity job builds it. The toolchain is rust-toolchain.toml's, retried once.
+      - run: rustup show active-toolchain || { sleep 15; rustup toolchain uninstall 1.96.0; rustup show active-toolchain; }
+      - run: cargo install wasm-pack --version 0.14.0 --locked
+      - name: Build the WebAssembly verifier
+        run: tools/build-webapp-wasm.sh
       - name: Assemble the published tree
         run: |
           set -euo pipefail
-          mkdir -p _site
-          cp -R site/. _site/
-          rm -rf _site/_src
-          touch _site/.nojekyll
-          for f in index.html roadmap.html download.html security.html brand.html changelog.html \
+          python3 -I tools/build-site.py --publish _site --require-wasm
+          for f in index.html verify.html roadmap.html download.html security.html brand.html changelog.html \
                    docs/index.html docs/getting-started.html docs/api.html search-index.json \
-                   assets/site.css assets/tokens.css assets/site.js assets/theme-init.js assets/logo.svg \
-                   assets/screens/editor-light.webp assets/screens/editor-light.png; do
+                   assets/site.css assets/tokens.css assets/site.js assets/verify.js assets/theme-init.js assets/logo.svg \
+                   assets/screens/editor-light.webp assets/screens/editor-light.png \
+                   samples/sealed-agreement.pdf samples/tampered-agreement.pdf samples/test-roots.pem \
+                   app/app.html app/sign.html app/verify.html app/app.js app/mock.js app/verifyreport.js \
+                   app/vendor/openseal-wasm/casual_sign_wasm.js app/vendor/openseal-wasm/casual_sign_wasm_bg.wasm \
+                   app/vendor/pdfjs/pdf.min.mjs app/vendor/pdfjs/pdf.worker.min.mjs; do
             [ -s "_site/$f" ] || { echo "::error::_site/$f is missing or empty"; exit 1; }
           done
+          grep -q 'name="openseal-demo" content="static"' _site/app/app.html || { echo "::error::app/app.html is not marked as the demo copy"; exit 1; }
+          if grep -q 'src="/' _site/app/sign.html; then echo "::error::app/sign.html still has root-relative URLs"; exit 1; fi
+          [ ! -e _site/app/e2e ] && [ ! -e _site/app/tests ] || { echo "::error::the app's tests were published"; exit 1; }
           echo "site: $(find _site -type f | wc -l) files"
+      # SITE-03, SITE-04: the published tree in a headless browser (serve-site.py publishes
+      # the same tree again from this checkout and serves it on 127.0.0.1).
+      - name: The Verify page and the demo work as published
+        working-directory: webapp/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test -c site.config.mjs
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: site-e2e-results
+          path: target/site-e2e-results
+          retention-days: 7
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: _site

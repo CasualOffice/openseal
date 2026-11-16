@@ -12,7 +12,7 @@ import { combo, commandFor, SHORTCUTS } from "../keys.js";
 import { EN, PARTS } from "../strings.en.js";
 import { hasIcon } from "../icons.js";
 import { t } from "../i18n.js";
-import { locationFrom, isMockMode, toBase64 } from "../api.js";
+import { locationFrom, isMockMode, isDemoBuild, toBase64 } from "../api.js";
 import { makePdf, countPages } from "../mockpdf.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -342,6 +342,20 @@ test("mock mode is honoured on a loopback host only", () => {
   assert.equal(isMockMode({ hostname: "localhost", search: "?mock=1" }), true);
   assert.equal(isMockMode({ hostname: "sign.example.com", search: "?mock=1" }), false);
   assert.equal(isMockMode({ hostname: "127.0.0.1", search: "" }), false);
+});
+
+test("the website's static demo copy is always in mock mode, and nothing else is (SITE-04)", () => {
+  const page = (content) => ({ querySelector: (sel) => (sel === 'meta[name="openseal-demo"]' && content !== null ? { getAttribute: () => content } : null) });
+  const away = { hostname: "casualoffice.github.io", search: "" };
+  assert.equal(isDemoBuild(page("static")), true);
+  assert.equal(isMockMode(away, null, page("static")), true);
+  // ?mock=0 cannot switch the demo onto a server that is not there.
+  assert.equal(isMockMode({ ...away, search: "?mock=0" }, null, page("static")), true);
+  // A deployment: no marker, or any other value, and a crafted link does nothing.
+  assert.equal(isDemoBuild(page(null)), false);
+  assert.equal(isMockMode({ hostname: "sign.example.com", search: "?mock=1" }, null, page(null)), false);
+  assert.equal(isMockMode({ hostname: "sign.example.com", search: "?mock=1" }, null, page("1")), false);
+  assert.equal(isMockMode({ hostname: "sign.example.com", search: "?mock=1" }, null, undefined), false);
 });
 
 test("the mock PDF writer makes a PDF whose pages can be counted", () => {

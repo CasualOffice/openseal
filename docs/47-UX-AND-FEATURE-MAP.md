@@ -96,7 +96,12 @@ Slice 1's web app, in `webapp/`: plain ES modules, no framework or bundler (ADR-
   sentence per code in `strings.en.js`. The API origin is `<meta name="openseal-api-base">` (empty: same origin).
 - **Mock mode** (`mock.js`, `?mock=1`): an in-memory fake of exactly these endpoints, for development and the browser
   tests until the server is integrated. Honoured on a loopback host only, so a deployment cannot be made to show fake
-  agreements; it shows a "Demo mode" banner and is never evidence of anything.
+  agreements; it shows a "Demo mode" banner and is never evidence of anything. The one exception is the website's
+  public demo (SITE-04): `tools/build-site.py --publish` copies the app to the site's `app/` with
+  `<meta name="openseal-demo" content="static">` in each page, which forces mock mode on any host (`isDemoBuild`);
+  only whoever publishes the HTML can add it, never a link. There, sign-in starts filled in with the demo account,
+  the mock's signing link is `sign.html?t=…` (relative, as the copy is not at the origin's root), and `sign.html`'s
+  root-relative URLs are made relative.
 - **PDF pages** (`pdfview.js`): vendored pdf.js 4.10.38 in its worker, `isEvalSupported: false`, no scripting sandbox,
   no annotation or text layer (links and forms are not live), XFA off, CMaps and standard fonts from the vendored copy.
 - **Geometry** (`geometry.js`): ADR-019 — points in displayed page space, top-left; screen ↔ points is one scale

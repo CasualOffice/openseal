@@ -162,7 +162,7 @@ export function recipientsSection(env, audit, { mineId = null, detailed = false,
         li.append(button(t("envelope.host"), { icon: "pen-line", size: "sm", variant: "subtle", attrs: { "aria-label": t("envelope.host-for", { name: r.name || r.email }), "data-testid": "host-in-person" }, onClick: (ev) => busy(ev.currentTarget, () => onHost(r)) }));
       }
       if (mock && r.mock_token && ACTIVE.has(env.status) && ["sent", "delivered"].includes(r.status)) {
-        main.append(h("a", { class: "os-link os-small", href: `/s/${encodeURIComponent(r.mock_token)}?mock=1`, attrs: { "data-testid": "signing-link" } }, icon("external-link", { size: 14 }), h("span", { text: t("mock.signing-link") })));
+        main.append(h("a", { class: "os-link os-small", href: `sign.html?t=${encodeURIComponent(r.mock_token)}&mock=1`, attrs: { "data-testid": "signing-link" } }, icon("external-link", { size: 14 }), h("span", { text: t("mock.signing-link") })));
       }
     }
     list.append(li);
