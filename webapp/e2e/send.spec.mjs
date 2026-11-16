@@ -1,7 +1,7 @@
 // Scenario 2 (WEB-01): create an envelope — upload a PDF, two sequential signers and a
 // CC, signature, date and text fields for each signer — send it, and find it as sent.
 import { test, expect } from "@playwright/test";
-import { signIn, app, pdfFile, placingFor } from "./helpers.mjs";
+import { signIn, app, pdfFile, placingFor, REAL } from "./helpers.mjs";
 
 async function addRecipient(page, n, { name, email, type = "signer" }) {
   await page.getByRole("button", { name: "Add recipient" }).first().click();
@@ -260,13 +260,16 @@ test("a recipient waits hours after their turn, and the envelope is scheduled to
   await confirm.getByRole("button", { name: "Schedule" }).click();
   await expect(page.getByTestId("envelope-send-at")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".os-page-head .os-badge")).toHaveText("Draft");
-  const saved = await page.evaluate(async () => {
+  // Read back through the page's own client: the mock in mock mode, the server's
+  // session on the Compose stack (E2E-06).
+  const saved = await page.evaluate(async (real) => {
+    const at = (m) => new URL(m, location.href).href;
     const id = decodeURIComponent(location.hash.split("/").pop());
-    const { createMockFetch } = await import("/mock.js");
-    const { createClient } = await import("/api.js");
-    const c = createClient({ fetch: createMockFetch({ store: sessionStorage }), store: sessionStorage });
+    const { createClient } = await import(at("api.js"));
+    const fetchFn = real ? undefined : (await import(at("mock.js"))).createMockFetch({ store: sessionStorage });
+    const c = createClient({ ...(fetchFn ? { fetch: fetchFn } : {}), store: sessionStorage });
     const { envelope } = await c.getEnvelope(id);
     return envelope.recipients.map((r) => r.route_delay_hours || 0);
-  });
+  }, REAL);
   expect(saved).toEqual([0, 24]);
 });

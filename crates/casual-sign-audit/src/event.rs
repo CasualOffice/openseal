@@ -901,7 +901,8 @@ mod tests {
             serde_json::to_value(&empty).unwrap(),
             serde_json::json!({"type": "envelope.expired", "data": {}})
         );
-        assert_eq!(EventData::TYPES.len(), 40);
+        // 40 before ORG-09 added `envelope.transferred` and `envelope.exported` (additive, ADR-027).
+        assert_eq!(EventData::TYPES.len(), 42);
     }
 
     #[test]
