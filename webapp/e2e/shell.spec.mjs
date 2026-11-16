@@ -213,8 +213,12 @@ for (const [name, viewport] of WIDTHS) {
       await expect(menu.locator('[role="option"][data-key^="agreements:"]', { hasText: nda })).toBeVisible();
       await page.keyboard.press("End");
       await expect(options.last()).toHaveAttribute("aria-selected", "true");
-      const active = await input.getAttribute("aria-activedescendant");
-      expect(active).toBe(await options.last().getAttribute("id"));
+      // The active descendant is the selected option (results can still be arriving, so the
+      // last option is not read once and compared: WebKit on CI, compose-e2e).
+      await expect.poll(async () => {
+        const id = await input.getAttribute("aria-activedescendant");
+        return id ? menu.locator(`[id="${id}"]`).getAttribute("aria-selected") : null;
+      }).toBe("true");
       await page.keyboard.press("Home");
       await expect(options.first()).toHaveAttribute("aria-selected", "true");
       // The first option searches every agreement for the words typed.

@@ -10,22 +10,13 @@ name: acrobat
 # install, so it never blocks main. It runs by hand, weekly, and when the packet or this
 # check changes.
 on:
+  # By hand and weekly only, until HRD-14: Reader shows "validity unknown" for the B-LTA files
+  # offline, so this job is red until that is fixed, and it must not mark pull requests or
+  # main red for a finding already tracked (owner, 2026-11-17). Add the push and
+  # pull_request triggers back when HRD-14 closes.
   workflow_dispatch:
   schedule:
     - cron: "23 5 * * 1"   # Mondays 05:23 UTC: a Reader update that reads our seals differently shows within a week
-  push:
-    branches: [main]
-    paths:
-      - "fixtures/interop/**"
-      - "tools/interop/acrobat*"
-      - ".github/workflows/acrobat.yml"
-  pull_request:
-    paths:
-      - "fixtures/interop/**"
-      - "tools/interop/acrobat*"
-      - "tools/interop/test_acrobat_report.py"
-      - ".github/workflows/acrobat.yml"
-
 concurrency:
   group: acrobat-${{ github.ref }}
   cancel-in-progress: true

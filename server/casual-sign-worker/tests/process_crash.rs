@@ -1564,6 +1564,22 @@ impl Stack {
     /// chain that verifies), the certificate and the audit trail served, exactly one
     /// sealed version per document, and no job dead.
     async fn archived(&self, env: &str, label: &str) {
+        // A seal job that failed during an outage is put back with a retry delay, which
+        // idle() does not wait for (it counts only due jobs): make retries due until the
+        // envelope completes. A stuck one still fails here, naming its status.
+        let deadline = Instant::now() + Duration::from_secs(120);
+        loop {
+            let status = self.get(env)["status"].clone();
+            if status == "completed" {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{label}: the envelope is still {status}"
+            );
+            self.make_due().await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
         self.verified_seal(env, label).await;
         for path in [
             format!("/api/v1/envelopes/{env}/certificate"),
