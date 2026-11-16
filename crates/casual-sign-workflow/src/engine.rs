@@ -27,6 +27,7 @@ use crate::state::{
 use crate::validate::violations;
 
 const MS_PER_DAY: i64 = 86_400_000;
+const MS_PER_HOUR: i64 = 3_600_000;
 
 /// What one decision accumulates.
 pub(crate) struct Out<'c> {
@@ -304,6 +305,7 @@ fn create(
         seal_profile: casual_sign_model::SealProfile::default(),
         created_at: ctx.now,
         sent_at: None,
+        send_at: None,
         ended_at: None,
         void_reason: None,
         sealed: Vec::new(),
@@ -405,6 +407,17 @@ fn gate_active(s: &EnvelopeState, r: &RecipientState, cmd: &Command) -> Result<(
     Ok(())
 }
 
+/// Delayed routing no longer holds the recipient (`WF-02`): until then it is not their
+/// turn. Every later gate needs the link opened, which this guards.
+fn gate_released(r: &RecipientState, now: Timestamp) -> Result<(), WorkflowError> {
+    if r.held(now) {
+        return Err(WorkflowError::NotYourTurn {
+            recipient: r.id().clone(),
+        });
+    }
+    Ok(())
+}
+
 /// Active and has opened the link.
 fn gate_opened(s: &EnvelopeState, r: &RecipientState, cmd: &Command) -> Result<(), WorkflowError> {
     gate_active(s, r, cmd)?;
@@ -468,6 +481,10 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             if s.status != EnvelopeStatus::Draft {
                 return Err(not_allowed(cmd, s));
             }
+            // A scheduled draft sends as it was when scheduled (`WF-02`).
+            if s.send_at.is_some() {
+                return Err(WorkflowError::Scheduled);
+            }
             let report = apply_changes(s, changes, Scope::Draft, out)?;
             if !report.changed.is_empty() {
                 out.event(EventData::EnvelopeCorrected {
@@ -477,11 +494,15 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             Ok(())
         }
         Command::Send => send(s, cmd, out),
+        Command::ScheduleSend { at } => schedule_send(s, cmd, *at, out),
         Command::DeleteDraft => {
             authorize_sender(s, cmd, ctx)?;
             if s.status != EnvelopeStatus::Draft {
                 return Err(not_allowed(cmd, s));
             }
+            // A scheduled send dies with the draft.
+            cancel_pending(s, out);
+            s.send_at = None;
             out.event(EventData::EnvelopePurged {
                 policy: "draft_deleted".to_owned(),
             });
@@ -644,6 +665,7 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
                 return Err(recipient_refused(cmd, r));
             }
             gate_active(s, r, cmd)?;
+            gate_released(r, ctx.now)?;
             out.event(EventData::RecipientInPersonHosted {
                 recipient_id: recipient.clone(),
                 host_user_id: host.clone(),
@@ -699,7 +721,7 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             // has no member for value hashes; each value's hash is in its
             // `recipient.field_completed` event.
             check_own_fields(s, recipient)?;
-            let documents: Vec<DocumentHash> = s.documents.iter().map(|d| d.hash()).collect();
+            let documents: Vec<DocumentHash> = s.visible_documents(i);
             out.event(EventData::RecipientApproved {
                 recipient_id: recipient.clone(),
                 documents: documents.clone(),
@@ -874,6 +896,7 @@ fn scrub(s: &mut EnvelopeState) {
     s.subject = empty();
     s.message = empty();
     s.void_reason = None;
+    s.send_at = None;
     for r in &mut s.recipients {
         r.spec.name = empty();
         r.spec.email = empty();
@@ -889,6 +912,7 @@ fn scrub(s: &mut EnvelopeState) {
     }
     s.book.scheduled.clear();
     s.book.seal_job = None;
+    s.book.held.clear();
 }
 
 // Time --------------------------------------------------------------------------------
@@ -920,6 +944,7 @@ fn cancel_pending(s: &mut EnvelopeState, out: &mut Out<'_>) {
     }
     s.book.scheduled.clear();
     s.book.seal_job = None;
+    s.book.held.clear();
 }
 
 /// Cancels the timers of one kind.
@@ -1006,7 +1031,9 @@ pub(crate) fn advance(s: &mut EnvelopeState, out: &mut Out<'_>) -> Result<(), Wo
             let r = rec_mut(s, i)?;
             r.status = RecipientStatus::Created;
             r.auth_passed.clear();
+            r.held_until = None;
             let id = r.id().clone();
+            s.book.held.remove(&id);
             out.effect(EffectKind::RevokeTokens { recipient: id });
         }
     }
@@ -1034,6 +1061,16 @@ pub(crate) fn advance(s: &mut EnvelopeState, out: &mut Out<'_>) -> Result<(), Wo
                 invitation: InvitationKind::Copy,
             });
             out.system_event(EventData::RecipientCompleted { recipient_id: id });
+        } else if r.spec.route_delay_hours > 0 {
+            // Delayed routing (`WF-02`): their turn came; the invitation waits.
+            let ms = i64::from(r.spec.route_delay_hours)
+                .checked_mul(MS_PER_HOUR)
+                .ok_or(WorkflowError::TimeOutOfRange)?;
+            let at = add_ms(now, ms)?;
+            r.status = RecipientStatus::Sent;
+            r.held_until = Some(at);
+            s.book.held.insert(id);
+            schedule(s, Timer::RouteDelay, at, out);
         } else {
             r.status = RecipientStatus::Sent;
             out.effect(EffectKind::SendInvitation {
@@ -1149,6 +1186,15 @@ fn send(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), W
     if !found.is_empty() {
         return Err(WorkflowError::Invalid { violations: found });
     }
+    send_now(s, out)
+}
+
+/// Sends a draft already checked sendable: by the sender, or by its schedule.
+fn send_now(s: &mut EnvelopeState, out: &mut Out<'_>) -> Result<(), WorkflowError> {
+    let ctx = out.ctx;
+    // Sent by hand before its time: the schedule is dropped.
+    cancel_timers(s, &[Timer::ScheduledSend], out);
+    s.send_at = None;
     s.status = EnvelopeStatus::Sent;
     s.sent_at = Some(ctx.now);
     out.event(EventData::EnvelopeSent {
@@ -1165,6 +1211,72 @@ fn send(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), W
     }
     out.webhook(WebhookTopic::EnvelopeSent, None);
     schedule_timers(s, &[Timer::Expiry, Timer::Reminder], out)
+}
+
+/// `ScheduleSend` (`WF-02`): schedules a sendable draft to send itself at `at`, or
+/// cancels the schedule. Recorded as a draft edit of `send_at` (docs/32 §3: a change
+/// before `envelope.sent`); the send itself is `envelope.sent` by the platform.
+fn schedule_send(
+    s: &mut EnvelopeState,
+    cmd: &Command,
+    at: Option<Timestamp>,
+    out: &mut Out<'_>,
+) -> Result<(), WorkflowError> {
+    let ctx = out.ctx;
+    authorize_sender(s, cmd, ctx)?;
+    if s.status != EnvelopeStatus::Draft {
+        return Err(not_allowed(cmd, s));
+    }
+    if let Some(at) = at {
+        let latest = add_days(ctx.now, limits::MAX_SCHEDULE_DAYS)?;
+        let before_expiry = s.expires_at.is_none_or(|e| at < e);
+        if at <= ctx.now || at > latest || !before_expiry {
+            return Err(WorkflowError::ScheduleOutOfRange);
+        }
+        let found = violations(s, &ctx.policy, ctx.now, true);
+        if !found.is_empty() {
+            return Err(WorkflowError::Invalid { violations: found });
+        }
+    }
+    if s.send_at == at {
+        return Ok(());
+    }
+    cancel_timers(s, &[Timer::ScheduledSend], out);
+    s.send_at = at;
+    if let Some(at) = at {
+        schedule(s, Timer::ScheduledSend, at, out);
+    }
+    out.event(EventData::EnvelopeCorrected {
+        changed: vec!["send_at".to_owned()],
+    });
+    Ok(())
+}
+
+/// A scheduled draft's time came (`WF-02`). It sends as the platform; if it can no
+/// longer be sent (the account's limits changed), the schedule is dropped, recorded as a
+/// draft edit of `send_at` by the platform, and the draft stays for the sender.
+fn scheduled_send_due(s: &mut EnvelopeState, out: &mut Out<'_>) -> Result<(), WorkflowError> {
+    let ctx = out.ctx;
+    let Some(at) = s.send_at else {
+        return Ok(());
+    };
+    if s.status != EnvelopeStatus::Draft {
+        return Ok(());
+    }
+    // Fired early (a clock ahead of ours): wait again for the time.
+    if at > ctx.now {
+        schedule(s, Timer::ScheduledSend, at, out);
+        return Ok(());
+    }
+    if violations(s, &ctx.policy, ctx.now, true).is_empty() {
+        send_now(s, out)
+    } else {
+        s.send_at = None;
+        out.system_event(EventData::EnvelopeCorrected {
+            changed: vec!["send_at".to_owned()],
+        });
+        Ok(())
+    }
 }
 
 fn correct(
@@ -1198,10 +1310,16 @@ fn correct(
     }
     let mut notified = Vec::new();
     for i in 0..s.recipients.len() {
+        // Delayed routing holds them (`WF-02`): never invited, so nothing to revoke or
+        // tell; the invitation goes to the corrected address when the delay ends.
+        let held = s
+            .recipients
+            .get(i)
+            .is_some_and(|r| s.book.held.contains(r.id()));
         let r = rec_mut(s, i)?;
         let id = r.id().clone();
         let again = redo.contains(&id) && r.status == RecipientStatus::Completed && r.is_required();
-        let readdressed = report.readdressed.contains(&id) && r.status.is_active();
+        let readdressed = report.readdressed.contains(&id) && r.status.is_active() && !held;
         if again || readdressed {
             if r.status.is_active() {
                 out.effect(EffectKind::RevokeTokens {
@@ -1248,9 +1366,14 @@ fn resend(
     if !s.status.is_in_flight() {
         return Err(not_allowed(cmd, s));
     }
+    // A recipient delayed routing holds is invited when the delay ends (`WF-02`).
     let targets: Vec<usize> = if recipients.is_empty() {
         (0..s.recipients.len())
-            .filter(|&i| s.recipients.get(i).is_some_and(|r| r.status.is_active()))
+            .filter(|&i| {
+                s.recipients
+                    .get(i)
+                    .is_some_and(|r| r.status.is_active() && !s.book.held.contains(r.id()))
+            })
             .collect()
     } else {
         let mut v = Vec::new();
@@ -1258,6 +1381,11 @@ fn resend(
             let (i, r) = rec(s, id)?;
             if !r.status.is_active() {
                 return Err(recipient_refused(cmd, r));
+            }
+            if s.book.held.contains(r.id()) {
+                return Err(WorkflowError::NotYourTurn {
+                    recipient: r.id().clone(),
+                });
             }
             v.push(i);
         }
@@ -1289,11 +1417,39 @@ fn resend(
     Ok(())
 }
 
+/// Invites the recipients delayed routing held whose time came (`WF-02`). Nothing
+/// observable changes: their status and `held_until` were set when routing reached them.
+fn release_held(s: &mut EnvelopeState, out: &mut Out<'_>) {
+    let now = out.ctx.now;
+    let due: Vec<Id> = s
+        .book
+        .held
+        .iter()
+        .filter(|id| {
+            s.recipient(id)
+                .is_some_and(|r| r.status.is_active() && !r.held(now))
+        })
+        .cloned()
+        .collect();
+    for id in due {
+        s.book.held.remove(&id);
+        let Some(r) = s.recipient(&id) else {
+            continue;
+        };
+        out.effect(EffectKind::SendInvitation {
+            recipient: id.clone(),
+            channel: channel(r.spec.delivery),
+            invitation: InvitationKind::Act,
+        });
+        out.webhook(WebhookTopic::RecipientSent, Some(&id));
+    }
+}
+
 fn remind_all(s: &EnvelopeState, out: &mut Out<'_>) {
     for r in s
         .recipients
         .iter()
-        .filter(|r| r.status.is_active() && r.is_required())
+        .filter(|r| r.status.is_active() && r.is_required() && !s.book.held.contains(r.id()))
     {
         out.effect(EffectKind::SendReminder {
             recipient: r.id().clone(),
@@ -1313,6 +1469,7 @@ fn open_link(
     let (i, r) = rec(s, recipient)?;
     authorize_recipient(r, cmd, out.ctx)?;
     gate_active(s, r, cmd)?;
+    gate_released(r, out.ctx.now)?;
     out.event(EventData::RecipientDelivered {
         recipient_id: recipient.clone(),
     });
@@ -1419,6 +1576,12 @@ fn view_document(
         kind: ObjectKind::Document,
         id: Some(document.clone()),
     })?;
+    if !r.spec.sees(document) {
+        return Err(WorkflowError::DocumentHidden {
+            recipient: recipient.clone(),
+            document: document.clone(),
+        });
+    }
     let pages = d.spec.pages;
     let mismatch = || WorkflowError::DocumentMismatch {
         document: document.clone(),
@@ -1443,16 +1606,19 @@ fn view_document(
     // A viewer completes by viewing every document to the end (docs/24 §3).
     let viewer_done = r.spec.rtype == RecipientType::Viewer && viewed_all(s, i);
     if viewer_done {
-        let documents = s.documents.iter().map(|d| d.hash()).collect();
+        let documents = s.visible_documents(i);
         complete_recipient(s, i, documents, out)?;
     }
     Ok(())
 }
 
 fn viewed_all(s: &EnvelopeState, i: usize) -> bool {
-    s.recipients
-        .get(i)
-        .is_some_and(|r| s.documents.iter().all(|d| r.viewed_to_end.contains(d.id())))
+    s.recipients.get(i).is_some_and(|r| {
+        s.documents
+            .iter()
+            .filter(|d| r.spec.sees(d.id()))
+            .all(|d| r.viewed_to_end.contains(d.id()))
+    })
 }
 
 fn field_index(s: &EnvelopeState, id: &Id) -> Result<usize, WorkflowError> {
@@ -1542,7 +1708,7 @@ fn finish(
                     recipient: recipient.clone(),
                 });
             }
-            let documents = s.documents.iter().map(|d| d.hash()).collect();
+            let documents = s.visible_documents(i);
             complete_recipient(s, i, documents, out)
         }
         RecipientType::Agent | RecipientType::Intermediary => {
@@ -1557,7 +1723,7 @@ fn finish(
                     recipient: later.id().clone(),
                 });
             }
-            let documents = s.documents.iter().map(|d| d.hash()).collect();
+            let documents = s.visible_documents(i);
             complete_recipient(s, i, documents, out)
         }
         _ => sign(s, i, values, out),
@@ -1655,7 +1821,7 @@ fn sign(
         .filter(|f| f.field_type == FieldType::Payment && field_value_hashes.contains_key(&f.id))
         .map(|f| f.id.clone())
         .collect();
-    let documents: Vec<DocumentHash> = s.documents.iter().map(|d| d.hash()).collect();
+    let documents: Vec<DocumentHash> = s.visible_documents(i);
     out.event(EventData::RecipientSigned {
         recipient_id: rid.clone(),
         documents: documents.clone(),
@@ -1818,6 +1984,8 @@ fn reassign(
         spec.delivery = d;
     }
     spec.embedded_client_user_id = None;
+    // Routing already reached this step and its delay has passed (`WF-02`).
+    spec.route_delay_hours = 0;
     let mut new = RecipientState::new(spec);
     new.reassigned_from = Some(recipient.clone());
     if !has_address(&new) {
@@ -1861,6 +2029,9 @@ fn timer_due(
         return Ok(());
     };
     let t = s.book.scheduled.remove(pos);
+    if t.timer == Timer::ScheduledSend {
+        return scheduled_send_due(s, out);
+    }
     if !s.status.is_in_flight() {
         return Ok(());
     }
@@ -1874,12 +2045,13 @@ fn timer_due(
             }
         }
         Timer::Expiry => expire_if_due(s, out),
+        // Handled above: a draft is not in flight.
+        Timer::ScheduledSend => {}
+        Timer::RouteDelay => release_held(s, out),
         Timer::ExpiryWarning => {
-            for r in s
-                .recipients
-                .iter()
-                .filter(|r| r.status.is_active() && r.is_required())
-            {
+            for r in s.recipients.iter().filter(|r| {
+                r.status.is_active() && r.is_required() && !s.book.held.contains(r.id())
+            }) {
                 out.effect(EffectKind::SendExpiryWarning {
                     recipient: r.id().clone(),
                     channel: channel(r.spec.delivery),

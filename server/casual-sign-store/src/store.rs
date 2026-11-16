@@ -380,7 +380,7 @@ pub struct StaffSessionTarget {
     pub mfa_enrolled: bool,
     /// The account's `settings.mfa_policy` (`administrators` when unset, migration
     /// 0036, ASVS-31), tightened by its organization's `login.mfa_required` (ORG-08,
-    /// migration 0038): the stricter applies.
+    /// migration 0039): the stricter applies.
     pub mfa_policy: MfaPolicy,
 }
 

@@ -138,7 +138,7 @@ async fn the_console_cannot_mint_a_tenant_session_key_or_invitation() {
 }
 
 /// The console's direct privileges in `platform` are exactly: SELECT on every table,
-/// INSERT on the two append-only ones; EXECUTE on the named definer functions only.
+/// INSERT on the three append-only ones; EXECUTE on the named definer functions only.
 #[tokio::test]
 async fn platform_grants_are_exactly_the_designed_ones() {
     let Some(db) = common::fresh("platform_grants_are_exactly_the_designed_ones").await else {
@@ -156,8 +156,10 @@ async fn platform_grants_are_exactly_the_designed_ones() {
     let mut wrong = Vec::new();
     for r in &rows {
         let (t, p, has): (String, String, bool) = (r.get(0), r.get(1), r.get(2));
-        let expected =
-            p == "SELECT" || (p == "INSERT" && (t == "operator_events" || t == "alerts"));
+        // CON-09, migration 0038: `reconciliation_runs` is append-only, as the other two.
+        let expected = p == "SELECT"
+            || (p == "INSERT"
+                && (t == "operator_events" || t == "alerts" || t == "reconciliation_runs"));
         if has != expected {
             wrong.push(format!("{p} {t}: {has}"));
         }
@@ -218,6 +220,9 @@ async fn platform_grants_are_exactly_the_designed_ones() {
         "request_key_change",
         "grant_key_change",
         "apply_key_change",
+        // CON-09, migration 0038: seal records for reconciliation (envelope ids, digests).
+        "seal_digests",
+        "seal_digests_of",
     ];
     expected.sort_unstable();
     assert_eq!(callable, expected);

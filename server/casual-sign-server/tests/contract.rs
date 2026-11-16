@@ -930,6 +930,31 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     )
     .await;
 
+    // Scheduled sending (WF-02): schedule the draft, then cancel and send by hand.
+    let scheduled = ok(
+        api.call(
+            "PUT",
+            &format!("{base}/schedule"),
+            k,
+            Some(json!({"send_at": "2026-11-12T10:00:00Z"})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "schedule",
+    )
+    .await;
+    assert_eq!(scheduled["send_at"], "2026-11-12T10:00:00.000Z");
+    assert_eq!(scheduled["status"], "draft");
+    let unscheduled = ok(
+        api.call("DELETE", &format!("{base}/schedule"), k, None, &[])
+            .await,
+        StatusCode::OK,
+        "unschedule",
+    )
+    .await;
+    assert!(unscheduled["send_at"].is_null());
+
     // Send: the first routing step is invited, the second is not.
     let sent = ok(
         api.call("POST", &format!("{base}/send"), k, None, &[])

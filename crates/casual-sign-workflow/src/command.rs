@@ -92,6 +92,12 @@ pub mod limits {
     pub const MAX_COMMANDS: usize = 100_000;
     /// Changes in one edit or correction. A decision of `T-2A`.
     pub const MAX_CHANGES: usize = 5_000;
+    /// How far ahead a draft may be scheduled to send, in days (`CS-WF-0023`). A
+    /// decision of `WF-02`: a year bounds the timers a draft holds.
+    pub const MAX_SCHEDULE_DAYS: u16 = 365;
+    /// The longest delayed routing for one recipient, in hours (`CS-WF-0023`). A
+    /// decision of `WF-02`: thirty days bounds how long one routing step waits.
+    pub const MAX_ROUTE_DELAY_HOURS: u16 = 720;
 }
 
 impl Default for Policy {
@@ -317,8 +323,18 @@ pub enum Command {
         /// The changes, applied in order, all or none.
         changes: Vec<Change>,
     },
-    /// Send the draft: fix documents, start routing.
+    /// Send the draft: fix documents, start routing. A scheduled draft sends now and its
+    /// schedule is dropped.
     Send,
+    /// Schedule the draft to send itself at `at`, or cancel the schedule (`None`)
+    /// (`WF-02`). The draft must be sendable now, `at` after now, within
+    /// [`limits::MAX_SCHEDULE_DAYS`] and before the expiry (`CS-WF-0023`); a scheduled
+    /// draft cannot be edited (`CS-WF-0022`) until the schedule is cancelled.
+    ScheduleSend {
+        /// When to send; `None` cancels the schedule.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<Timestamp>,
+    },
     /// Delete a draft.
     DeleteDraft,
     /// Remove an envelope that ended without completing (declined, voided, expired)
@@ -542,6 +558,7 @@ impl Command {
             Self::Create { .. } => "create",
             Self::Edit { .. } => "edit",
             Self::Send => "send",
+            Self::ScheduleSend { .. } => "schedule_send",
             Self::DeleteDraft => "delete_draft",
             Self::DeleteEnded => "delete_ended",
             Self::Correct { .. } => "correct",

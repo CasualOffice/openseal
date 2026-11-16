@@ -54,6 +54,7 @@ by JWKS (OpenCalc's docs/59 pattern).
                                                 ?waiting_for=me (Inbox), folder=, deleted=true, recipient=, date_field=
   /envelopes/{id}                               GET, PATCH, DELETE    DELETE: drafts; ended uncompleted: from lists
   /envelopes/{id}/send                          POST
+  /envelopes/{id}/schedule                      PUT {send_at}, DELETE   scheduled sending of a draft (WF-02)
   /envelopes/{id}/void                          POST {reason}
   /envelopes/{id}/correct                       POST (open), POST …/commit
   /envelopes/{id}/resend                        POST {recipient_ids?}

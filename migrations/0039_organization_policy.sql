@@ -1,4 +1,4 @@
--- 0038: the organization policy reaches every staff request (ORG-08, docs/23 §3).
+-- 0039: the organization policy reaches every staff request (ORG-08, docs/23 §3).
 --
 -- `organizations.policy` (migration 0014, keys defined by ORG-08 in
 -- `casual-sign-policy::org`) holds the organization's keys, each `{value, locked}`.

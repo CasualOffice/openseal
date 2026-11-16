@@ -859,6 +859,8 @@ impl Env {
             time_zone_offset_minutes: 0,
             date_format: None,
             witness_for: None,
+            excluded_documents: Vec::new(),
+            route_delay_hours: 0,
         }
     }
 

@@ -494,7 +494,8 @@ impl From<WorkflowError> for ApiError {
             WorkflowError::NotPermitted { .. }
             | WorkflowError::AuthRequired { .. }
             | WorkflowError::AuthLocked { .. }
-            | WorkflowError::ConsentRequired { .. } => StatusCode::FORBIDDEN,
+            | WorkflowError::ConsentRequired { .. }
+            | WorkflowError::DocumentHidden { .. } => StatusCode::FORBIDDEN,
             WorkflowError::Invalid { .. }
             | WorkflowError::Unknown { .. }
             | WorkflowError::DuplicateId { .. }
@@ -502,6 +503,7 @@ impl From<WorkflowError> for ApiError {
             | WorkflowError::Fields { .. }
             | WorkflowError::Model(_)
             | WorkflowError::TimeOutOfRange
+            | WorkflowError::ScheduleOutOfRange
             | WorkflowError::Encoding => StatusCode::UNPROCESSABLE_ENTITY,
             _ => StatusCode::CONFLICT,
         };
