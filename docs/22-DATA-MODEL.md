@@ -511,6 +511,12 @@ the rules above, and what does not:
   `platform.apply_key_change` after `request_key_change` and `grant_key_change` by two key custodians (`OS012` →
   `CS-CON-0006` for a payload that fails its checks); `approval_requests.action` gains `tsa.set` and `tsa.remove`. The
   worker reads only `openseal_tsa_endpoints()` (enabled rows: URL, policy OID, certificate hash, in order).
+- **Seal reconciliation (built, `CON-09`, migration 0035):** tenant table `seal_signatures` (account, envelope,
+  digest 32/48/64 bytes, keyd alias, time; key account, envelope, digest; insert-only from the worker, in the
+  transaction that stores the sealed bytes); `platform.seal_digests(from, to)` and `platform.seal_digests_of(ids)`,
+  definer functions returning envelope ids, digests and times to the console only; `platform.reconciliation_runs`
+  (append-only: keyd sequences read and judged, cut-off, counts, orphaned retries listed). Alerts it raises go to
+  `platform.alerts`, whose `subject` the console now returns.
 - **Plans (built, `PLAN-02`, migration 0024):** `platform.plans` (immutable versions of a key; archive only),
   `plan_entitlements`, `plan_quotas`, `plan_seat_rule`, `plan_assignments` (current on `[starts_at, ends_at)`; only
   `ends_at` shortens), `plan_overrides` (`workspace_id`, workspace-level quotas only; only `expires_at` shortens).

@@ -986,13 +986,36 @@ stored but not enforced on the TSA's answer (`CON-23`); trust anchors in the dat
 grant, the insert-only payload), `casual-sign-worker/tests/tsa_directory.rs` (a seal time-stamps with the database's
 TSA while the environment's is unreachable; a database TSA on a refused address is never contacted).
 
+**Expiry and reconciliation (`CON-08`, `CON-09`, migration 0035).** keyd refuses a signature under an alias whose
+signer certificate is outside its validity at keyd's clock (`CS-CON-0006`, wire 1006, in keyd's log), so a seal job
+fails and retries rather than sealing with an expired certificate. The console runs `certificate_expiry_scan` daily
+inside `serve` (and on `POST /keys/expiry-scan`, operators): each keyd signer certificate raises `CS-CON-0018`
+(source `certificate_expiry_scan`, subject alias, certificate SHA-256, `days` 90, 30, 7 or 0 for expired) once per
+certificate and threshold, the threshold being the smallest one reached. The worker writes `seal_signatures`
+(account, envelope, digest, alias, time; a tenant table of ids and hashes) for each keyd signature in the transaction
+that stores the sealed bytes (`seal.stored`) or an ended envelope's certificate; a key in the worker's process has no
+keyd log and writes none. The console reconciles hourly inside `serve` (and on `POST /reconciliation`, operators;
+`GET /reconciliation` lists runs): it reads keyd's log from the last run's `next_seq` up to an hour ago (at most
+100,000 records a run; the next carries on), matches each successful `sign` with the records of its envelope
+(`platform.seal_digests_of`, 1,000 ids a call), and each record stored from the last run's cut-off to this one's,
+both less 5 minutes for clock skew (`platform.seal_digests`), with keyd's digests of this run and the previous one.
+A signature whose envelope has other records is an orphaned retry, listed in the run (at most 1,000); any other
+mismatch, in either direction, is an alert `CS-CON-0009` (source `reconciliation`) and the run's
+`operator.reconciliation.mismatch` event. *Decided:* the alert code for expiry is new (`CS-CON-0018`), because
+`CS-CON-0006` is a refusal; the one-hour grace is longer than a seal job's lease, so an in-flight seal is not judged;
+the scheduled runs have no operator, so their events carry none. Not yet: the other certificate sources (`CON-25`),
+showing runs and alerts in the UI (`CON-26`), re-classing an alerted signature whose envelope seals later (`CON-27`).
+Tests: `casual-sign-keyd/tests/expiry.rs`, `casual-sign-worker/tests/keyd.rs` (the digests recorded equal keyd's
+logged ones), `casual-sign-console/tests/keys.rs` (the thresholds once each; matched, orphaned and both mismatch
+directions), each seen red with its guard removed.
+
 **Not yet built** (rows in docs/14): the Compose
 service and the console's LOGIN role in deployment (`CON-02`); moving the worker onto `casual-sign-keyd-client`
 (`CON-15`); the other
 two-person actions (organization create, close, owner recovery, identity disable, adding a platform owner) and the
 server refusing new work in a suspended organization (`CS-PLAN-0005`) (`CON-04`); trust anchors in
 the database (`CON-22`) and the TSA's certificate and policy checked against the configured ones (`CON-23`); ops listeners and metrics on server and worker, readiness on keyd (`CON-05`);
-expiry alerts (`CON-08`).
+expiry alerts for sources other than keyd signer certificates (`CON-25`).
 
 ## 6. API additions (`/api/v1`, additive)
 
@@ -1201,6 +1224,7 @@ them. Messages carry codes, ids and counts only.
 | CS-CON-0007 | Operator log does not verify; the console refuses writes (start-up and per write) |
 | CS-CON-0008 | keyd admin call refused: caller not on the admin allow-list, or a signing call from an admin client |
 | CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no signature (alert) |
+| CS-CON-0018 | Seal signer certificate within 90, 30 or 7 days of expiry, or expired (alert; added by `CON-08`) |
 | CS-DB-0013 | Change to an immutable column refused (a workspace's organization, outside ORG-20's operator link) (SQLSTATE `OS004`) |
 | CS-DB-0014 | Admin or operator log event does not extend its chain: hash, `seq` or `prev` (SQLSTATE `OS005`) |
 
