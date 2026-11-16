@@ -100,7 +100,7 @@ Feature work pauses (sequenced after this, nothing dropped) until one deployment
 seal → verify → archive repeatably, survives failures, and is checked from outside. Exit gate, each item proven by
 running:
 
-- [ ] `HRD-01` The whole path runs on the hardened Compose profile with failure recovery: worker, keyd, database and
+- [x] `HRD-01` The whole path runs on the hardened Compose profile with failure recovery: worker, keyd, database and
       object store killed mid-flow, every envelope still completes or fails safe, nothing sealed twice, audit chain intact.
 - [x] `HRD-02` Sealing validated against a real-style CA hierarchy (offline root, issuing CA, OCSP and CRL served) and a
       production RFC 3161 TSA; pyHanko and EU DSS agree; an Acrobat interoperability packet is produced.
