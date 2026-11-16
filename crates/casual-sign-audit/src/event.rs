@@ -277,6 +277,15 @@ pub enum EventData {
     /// (WEB-08); nothing was purged: its documents, state and this chain stay.
     #[serde(rename = "envelope.deleted")]
     EnvelopeDeleted {},
+    /// The envelope's ownership passed to another member of the same workspace
+    /// (ORG-09, docs/23 §2.4; additive to ADR-010 as ADR-027 was).
+    #[serde(rename = "envelope.transferred")]
+    EnvelopeTransferred {
+        /// The previous owner (sender).
+        from_user: Id,
+        /// The new owner.
+        to_user: Id,
+    },
 
     // Document ------------------------------------------------------------------------
     /// A document was uploaded.
@@ -537,6 +546,13 @@ pub enum EventData {
         /// SHA-256 of the bytes served.
         hash: Hash256,
     },
+    /// The envelope's evidence package was exported (ORG-09, docs/23 §2.4: the way a
+    /// completed agreement leaves its workspace; additive to ADR-010 as ADR-027 was).
+    #[serde(rename = "envelope.exported")]
+    EnvelopeExported {
+        /// The member who exported it.
+        by: Id,
+    },
 
     // Integration ---------------------------------------------------------------------
     /// An embedding host asserted that it authenticated the signer.
@@ -562,6 +578,7 @@ impl EventData {
         "envelope.completed",
         "envelope.purged",
         "envelope.deleted",
+        "envelope.transferred",
         "document.added",
         "document.admitted",
         "document.fixed",
@@ -591,6 +608,7 @@ impl EventData {
         "document.downloaded",
         "certificate.downloaded",
         "attachment.downloaded",
+        "envelope.exported",
         "auth.asserted_by_host",
     ];
 }
@@ -883,7 +901,8 @@ mod tests {
             serde_json::to_value(&empty).unwrap(),
             serde_json::json!({"type": "envelope.expired", "data": {}})
         );
-        assert_eq!(EventData::TYPES.len(), 40);
+        // 40 before ORG-09 added `envelope.transferred` and `envelope.exported` (additive, ADR-027).
+        assert_eq!(EventData::TYPES.len(), 42);
     }
 
     #[test]

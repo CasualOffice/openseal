@@ -147,6 +147,11 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-WF-0018 | A value could not be put in canonical form for hashing |
 | CS-WF-0019 | The envelope captures location and a recipient action (delivered, viewed, signed, approved, declined) came without one; the server always supplies at least the IP approximation |
 | CS-WF-0020 | The request's location contradicts the envelope's `capture_location`: a device location or a `declined`/`unavailable` reason when off, `not_requested` when on |
+| CS-WF-0021 | A document is hidden from this recipient (`WF-02`): a field of theirs on it refuses the send (`422`, a violation); viewing or fetching it as them is refused (the server answers `404 CS-API-0002`, as a document that does not exist) |
+| CS-WF-0022 | The draft is scheduled to send (`WF-02`): it is not edited until the schedule is cancelled (`409`) |
+| CS-WF-0023 | A time out of range (`WF-02`): a schedule not after now, more than 365 days ahead or not before the expiry; a recipient's routing delay over 720 hours (`422`) |
+| CS-WF-0024 | Reserved (ADR-035 Proposed, `WF-01`; not returned until built): a routing rule refused at send: a condition's label is not a data field of a recipient at a lower routing order, a recipient has more than one rule, or every signer and approver has one (`422`) |
+| CS-WF-0025 | Reserved (ADR-035 Proposed, `WF-01`; not returned until built): another member of the signing group has claimed this recipient (`409`) |
 | CS-API-0001 | Malformed request |
 | CS-API-0002 | Not found (also returned for objects of another tenant) |
 | CS-API-0003 | Rate limited |
@@ -173,7 +178,7 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-AUTH-0008 | CSRF token missing or wrong on a session request that changes something (403) |
 | CS-AUTH-0009 | Ceremony link bound to another browser, or not yet opened in this one (403) |
 | CS-AUTH-0010 | The API client does not own the embedding it acts for (row WF-05) (403) |
-| CS-AUTH-0011 | The staff session owes a second factor: it has not passed it (`detail` `verify`), or the account's `mfa_policy` asks for one the user has not enrolled (`detail` `enrol`); only the sign-in steps, `GET /auth/session` and `POST /auth/logout` serve it (403, `ASVS-01`) |
+| CS-AUTH-0011 | The staff session owes a second factor: it has not passed it (`detail` `verify`), or the account's `mfa_policy` asks for one the user has not enrolled (`detail` `enrol`; administrators by default, `ASVS-31`); only the sign-in steps, `GET /auth/session` and `POST /auth/logout` serve it (403, `ASVS-01`) |
 | CS-AUTH-0012 | Second factor refused: a wrong TOTP code, one for a step already used, or a recovery code not among the user's unspent ones (401, `ASVS-01`) |
 | CS-KEY-0001 | Caller not authorized by keyd: no client certificate, an untrusted one, or one not on the allow-list |
 | CS-KEY-0002 | Unknown key alias |
@@ -273,7 +278,8 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 | CS-CON-0004 | Action needs a second operator's approval; missing, expired, used, by the requester, or for another payload (409). Issued for suspending and resuming an organization (`CON-04`, migration 0019) and for adding a `platform_owner` (refused until that action has its approval function) |
 | CS-CON-0005 | Console listener refused: a non-loopback bind without `OPENSEAL_CONSOLE_PUBLIC=1`, or without `OPENSEAL_TRUSTED_PROXIES` (TLS terminates at the proxy), or the console's origin equal to the public application's (start-up) |
 | CS-CON-0008 | keyd admin call refused: a caller on keyd's signing allow-list calling an admin operation (`list-keys`, `oplog-head`, `oplog-range`, `health`), or a caller on the admin allow-list asking for a chain or a signature. Issued by keyd (`CON-06`; wire number 1008, recorded in keyd's log) and answered by the console as 502 when its keyd identity is on the wrong list. The console answers other keyd failures with keyd's own `CS-KEY-*` code (502) |
-| CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422; names the field). Issued for TSA changes (`CON-07`, migration 0034): a proposed URL that is not `http`/`https` or whose host resolves to an address outside the `SEC-W01` policy (`url`), a policy OID, certificate hash or priority out of shape, and from the database a payload that fails its checks (SQLSTATE `OS012`, `payload`). Issued for seal alias changes (`CON-10`, migration 0035): an alias keyd does not serve with a certificate valid at `active_from`, or no keyd to ask (`alias`), a start already past (`active_from`, at proposal and, from the database's `OS012`, at apply; a change proposed without a start begins when applied and is never refused for it); and by the worker when the alias in force is not fully approved or the worker has no keyd (the seal fails, `SealFailed`) |
+| CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no keyd signature (alert, never an HTTP answer). Issued (`CON-09`, migration 0038) as a `platform.alerts` row, source `reconciliation`, subject `direction` (`signature_without_seal` or `seal_without_signature`), the envelope id, keyd's sequence or the digest, and the run; with an `operator.reconciliation.mismatch` event. A signature whose envelope sealed with another one is an orphaned retry, listed in the run, not this code |
+| CS-CON-0006 | Seal alias, TSA or trust anchor refused: unknown to keyd, expired, unapproved, or fails its check (422; names the field). Issued for TSA changes (`CON-07`, migration 0034): a proposed URL that is not `http`/`https` or whose host resolves to an address outside the `SEC-W01` policy (`url`), a policy OID, certificate hash or priority out of shape, and from the database a payload that fails its checks (SQLSTATE `OS012`, `payload`). Issued for seal alias changes (`CON-10`, migration 0035): an alias keyd does not serve with a certificate valid at `active_from`, or no keyd to ask (`alias`), a start already past (`active_from`, at proposal and, from the database's `OS012`, at apply; a change proposed without a start begins when applied and is never refused for it); and by the worker when the alias in force is not fully approved or the worker has no keyd (the seal fails, `SealFailed`). Also issued by keyd (`CON-08`; wire number 1006, recorded in keyd's log) for a signature asked under an alias whose signer certificate has expired or is not yet valid at keyd's clock; the worker's seal job fails with it and retries |
 | CS-CON-0007 | Operator log does not verify (names the first bad `seq`): the console refuses to start; the API and health page report it (503) |
 | CS-CON-0010 | Request invalid: malformed JSON or a value out of range; names the field (422) |
 | CS-CON-0011 | No such object (404); also a key change granted or applied through the routes of another kind (a seal alias change through `/console/v1/tsa/changes/…`, or a TSA change through `/console/v1/seal/changes/…`; `HRD-06`) |
@@ -283,6 +289,7 @@ these codes; messages carry codes, ids and sequence numbers only. The platform s
 | CS-CON-0015 | The database is unavailable (503) |
 | CS-CON-0016 | Already exists: an operator with that e-mail (409) |
 | CS-CON-0017 | Console configuration invalid or a secret missing; names the variable (start-up) |
+| CS-CON-0018 | A seal signer certificate is within 90, 30 or 7 days of its `notAfter`, or has expired (alert, never an HTTP answer). Issued (`CON-08`) by `certificate_expiry_scan` as a `platform.alerts` row, source `certificate_expiry_scan`, subject alias, certificate SHA-256 and `days` (90, 30, 7, or 0 for expired), once per certificate and threshold |
 
 ## Organizations, plans and console (proposed, ADR-028)
 
@@ -295,23 +302,23 @@ SQLSTATE `OS003`) for the identity-attribute refusal, so this design's SQLSTATEs
 inside `openseal_consume_quota` only, to roll back a refused count, and never reaches a client); `CS-PLAN-0001` and
 `CS-PLAN-0007` are not. `CS-DB-0004`'s widening to the admin logs and `CS-DB-0014` are issued (`ORG-05`, migration 0020); the operator log
 (`platform.operator_events`) uses both (`CON-03`, migration 0017). `CS-DB-0013` is issued (`ORG-02`). All are listed with
-the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`, `CON-03`), `-0008` (`CON-06`) and `-0006` (`CON-07`), and listed in the section above.
+the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`, `CON-03`), `-0008` (`CON-06`), `-0006` (`CON-07`, `CON-08`) and `-0009` (`CON-09`), and listed in the section above; `-0018` (`CON-08`) was added there.
 
 | Code | Meaning |
 | --- | --- |
 | CS-ORG-0001 | Not a member of that workspace, or the membership is disabled (switch, 403). Issued (`ORG-04`): `POST /auth/switch`, the same for an id that does not exist |
-| CS-ORG-0002 | Setting locked or tightened by the organization's policy (422; names the key) |
+| CS-ORG-0002 | Setting locked or tightened by the organization's policy (422; names the key). Issued (`ORG-08`): `PATCH /accounts/me` when a governed setting (`mfa_policy`, `first_reminder_days`, `workflow_policy.date_format`, `branding`) changes to a locked or looser value; the detail names the setting and the organization key, never a value |
 | CS-ORG-0003 | Domain not verified (TXT record absent or wrong) (422) |
 | CS-ORG-0004 | Domain cannot be claimed (already claimed, or a public e-mail domain); never says by whom (409) |
 | CS-ORG-0005 | Grant refused: exceeds the granting admin's own rights or scope, or grants to itself (403) |
 | CS-ORG-0006 | Sign-in method not allowed for this identity by its governing organization's policy (401) |
 | CS-ORG-0007 | Switching needs a fresh sign-in satisfying the target organization's policy (401; names the method) |
 | CS-ORG-0008 | The organization must keep at least one enabled owner (409) |
-| CS-ORG-0009 | Envelopes do not move between workspaces; transfer within one, or export the evidence package (422) |
+| CS-ORG-0009 | Envelopes do not move between workspaces; transfer within one, or export the evidence package (422). Issued (`ORG-09`): `POST /envelopes/{id}/transfer` with another workspace's `to_workspace`, or a `to_user` who is not an enabled member of this one (the same for an id that does not exist) |
 | CS-ORG-0010 | Workspace archived: no new envelopes, members or settings (409) |
 | CS-ORG-0011 | Identity-provider assertion for an identity outside the provider organization's verified domains, or with no binding (401) |
 | CS-ORG-0012 | *Withdrawn before issue:* the identity-attribute refusal is `CS-API-0015` (`SEC-ID-01`). Never reused |
-| CS-ORG-0013 | Action reserved to an organization owner, or awaiting an owner's approval (403) |
+| CS-ORG-0013 | Action reserved to an organization owner, or awaiting an owner's approval (403). Issued (`ORG-08`): `PATCH /organizations/me {policy}` loosening, unlocking or removing a security key by an admin who is not an owner; the detail names the key |
 | CS-ORG-0014 | Sensitive action needs a fresh sign-in (401) |
 | CS-ORG-0015 | Organization closed: read-only (409) |
 | CS-ORG-0016 | Cross-workspace template copy not allowed by the organization's policy (403) |
@@ -324,7 +331,6 @@ the store codes above; `CS-CON-0001` to `-0005` and `-0007` are issued (`CON-02`
 | CS-PLAN-0005 | Organization suspended by the platform: new work refused, sent envelopes continue (403). Issued (`PLAN-04`) at sends, member additions and uploads; the other creation points are `PLAN-17` |
 | CS-PLAN-0006 | Plan, quota or override invalid, including `hard` on an approximate meter (console, 422; names the field). Issued (`PLAN-02`): by `casual-sign-policy` validation and by the migration 0024 definer functions (`OS010`) |
 | CS-PLAN-0007 | Workspace allocations exceed the organization's quota (422) |
-| CS-CON-0009 | Reconciliation found a keyd signature with no seal record, or a seal record with no signature (alert) |
 
 ## Personal data (`casual-sign-pii`, `ML-08`)
 

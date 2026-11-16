@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE envelopes SET version = version + 1, status = $4, subject = $5, message = $6, expires_at = $7, reminder_policy = $8, signing_options = $9, seal_profile = $10, sent_at = $11, completed_at = $12, voided_at = $13, void_reason = $14, updated_at = COALESCE($15, updated_at), deleted_at = $16 WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
+  "query": "UPDATE envelopes SET version = version + 1, status = $4, subject = $5, message = $6, expires_at = $7, reminder_policy = $8, signing_options = $9, seal_profile = $10, sent_at = $11, completed_at = $12, voided_at = $13, void_reason = $14, updated_at = COALESCE($15, updated_at), deleted_at = $16, sender_user_id = $17 WHERE account_id = $1 AND id = $2 AND version = $3 RETURNING version",
   "describe": {
     "columns": [
       {
@@ -32,12 +32,13 @@
         "Timestamptz",
         "Text",
         "Timestamptz",
-        "Timestamptz"
+        "Timestamptz",
+        "Uuid"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "1231a3250e3a75b1f40fe2dba0c8d0e0e03827a618ca87945f17e313fc572950"
+  "hash": "dbf86c84945f85970db398e724d148b167ed8d9aec9315ab9e5b280646eaba87"
 }

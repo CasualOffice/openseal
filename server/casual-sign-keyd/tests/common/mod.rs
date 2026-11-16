@@ -116,6 +116,27 @@ impl Pki {
         Certificate::from_der(cert.der()).unwrap()
     }
 
+    /// As [`Self::signer`], valid from `not_before` to `not_after` (`(year, month, day)`).
+    pub fn signer_valid(
+        &self,
+        cn: &str,
+        key: &impl PublicKeyData,
+        not_before: (i32, u8, u8),
+        not_after: (i32, u8, u8),
+    ) -> Certificate {
+        let mut p = params(cn, self.next_serial());
+        p.not_before = rcgen::date_time_ymd(not_before.0, not_before.1, not_before.2);
+        p.not_after = rcgen::date_time_ymd(not_after.0, not_after.1, not_after.2);
+        p.is_ca = IsCa::ExplicitNoCa;
+        p.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::ContentCommitment,
+        ];
+        p.use_authority_key_identifier_extension = true;
+        let cert = p.signed_by(key, &self.seal_ca).unwrap();
+        Certificate::from_der(cert.der()).unwrap()
+    }
+
     pub fn seal_root(&self) -> Certificate {
         Certificate::from_der(self.seal_ca.der()).unwrap()
     }

@@ -472,6 +472,46 @@ impl OrgTx {
         .await
     }
 
+    /// Replace the organization's policy (docs/23 §3, ORG-08; validated by the caller
+    /// through `casual-sign-policy::org`), appending `organization.policy_changed` with
+    /// every changed key's old and new entry. Workspace rows are not rewritten: each
+    /// workspace's effective policy is recomputed per request.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` for a policy that is not an object; `CS-DB-0003` when the
+    /// organization does not exist.
+    pub async fn set_policy(&mut self, policy: &serde_json::Value) -> Result<()> {
+        let org = self.org();
+        let old = sqlx::query_scalar!(
+            "SELECT policy FROM organizations WHERE id = $1 FOR UPDATE",
+            org
+        )
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(db)?
+        .ok_or(StoreError::NotFound {
+            entity: "organization",
+        })?;
+        sqlx::query!(
+            "UPDATE organizations SET policy = $2 WHERE id = $1",
+            org,
+            policy
+        )
+        .execute(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        let changes = crate::admin_log::settings_changes(&old, policy);
+        if changes.is_empty() {
+            return Ok(());
+        }
+        let mut c = AdminChange::new("organization.policy_changed").target("organization", org);
+        for ch in changes {
+            c = c.change(ch);
+        }
+        self.admin_event(c).await
+    }
+
     /// The administrator row of `user` in this organization, read afresh (rights are
     /// never cached across requests, `SEC-O06`), or `None` when they hold no role.
     ///

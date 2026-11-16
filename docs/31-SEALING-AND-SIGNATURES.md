@@ -123,6 +123,11 @@ document byte or signed attribute reaches keyd).
   records) and `health` (each key's backend state; for PKCS#11 an open session), never a chain to sign with or a
   signature; a signing caller is refused them. Both refusals are `CS-CON-0008` and recorded. The wire format and
   client live in `casual-sign-keyd-client`, without `cryptoki`.
+- **Expired signer certificate refused** (`CON-08`): before every signature keyd checks that its clock is within
+  the alias's signer certificate validity, else `CS-CON-0006` (recorded); the seal job fails and retries.
+- **Reconciliation** (`CON-09`, [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §5.6): the worker records the digest
+  of each keyd signature it used in `seal_signatures` with the sealed bytes; the console matches keyd's log against
+  those records and alerts any mismatch (`CS-CON-0009`).
 
 Checked: keys generated in SoftHSM 2.7 (P-256 with its certificate in the token, P-384, RSA-3072 PKCS#1 v1.5 and PSS)
 seal a PDF at B-B in process and through keyd; all eight pass our verifier (integrity, signature and chain;

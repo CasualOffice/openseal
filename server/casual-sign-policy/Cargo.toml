@@ -1,7 +1,7 @@
 [package]
 name = "casual-sign-policy"
 version = "0.0.1"
-description = "OpenSeal policy: pure resolution of an organization's effective plan (entitlements, quotas, overrides) and plan validation, with no I/O and no store (ADR-028, docs/23 §5.2, §7)"
+description = "OpenSeal policy: pure resolution of an organization's effective plan (entitlements, quotas, overrides) and plan validation, and of a workspace's effective organization policy (locked and tighten-only keys), with no I/O and no store (ADR-028, docs/23 §3, §5.2, §7)"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -11,6 +11,10 @@ publish = false
 # Pure: no I/O, no store, no clock (time is supplied). Compiles to wasm32 with no `#[cfg]`
 # fork. Every dependency is already in the tree.
 [dependencies]
+# The organization policy's enum-valued keys (recipient authentication methods, date
+# formats) are validated against the engine's own types, so the two cannot drift (ORG-08).
+casual-sign-audit = { path = "../../crates/casual-sign-audit" }
+casual-sign-model = { path = "../../crates/casual-sign-model" }
 # Reading the stored plan rows (`openseal_effective_plan()`, `platform.plan_inputs`) from
 # their JSON form. MIT OR Apache-2.0.
 serde = { version = "1.0.200", features = ["derive"] }

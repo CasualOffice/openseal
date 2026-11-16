@@ -887,7 +887,7 @@ pub async fn health(
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limit {
-    limit: Option<u32>,
+    pub(crate) limit: Option<u32>,
 }
 
 /// `GET /console/v1/dead-letters`: ids, kind, workspace, envelope, error code, attempts
@@ -915,7 +915,8 @@ pub async fn alerts(
     let list = state.store().alerts(q.limit.unwrap_or(50)).await?;
     Ok(Json(json!({
         "alerts": list.iter().map(|a| json!({
-            "id": a.id, "at": rfc3339(a.at), "source": a.source, "code": a.code, "resolves": a.resolves,
+            "id": a.id, "at": rfc3339(a.at), "source": a.source, "code": a.code,
+            "subject": a.subject, "resolves": a.resolves,
         })).collect::<Vec<_>>(),
     })))
 }

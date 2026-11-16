@@ -2112,6 +2112,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         let certificate = self.blobs.put(&sealed.certificate).await?;
         let back = self.blobs.get(&certificate).await?;
         seal::verify_stored(&self.seal, &back, input.state.seal_profile, now)?;
+        let signatures = sealed.signatures;
         let outs = sealed.documents;
         let mut records = Vec::with_capacity(outs.len());
         let mut versions = Vec::with_capacity(outs.len());
@@ -2158,6 +2159,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         tx.envelopes()
             .set_certificate(ctx.envelope, &certificate.0)
             .await?;
+        record_signatures(&mut tx, ctx.envelope, signatures.as_ref(), self.now()).await?;
         tx.job_steps()
             .record(
                 ctx.job.id,
@@ -2208,11 +2210,12 @@ impl<B: BlobStore + 'static> Worker<B> {
         let profile = input.state.seal_profile;
         self.refresh_tsas().await;
         let services = self.seal.clone();
-        let bytes = tokio::task::spawn_blocking(move || seal::seal_ended(&services, &input))
-            .await
-            .map_err(|_| WorkerError::Pipeline {
-                code: "CS-SEAL-0001",
-            })??;
+        let (bytes, signatures) =
+            tokio::task::spawn_blocking(move || seal::seal_ended(&services, &input))
+                .await
+                .map_err(|_| WorkerError::Pipeline {
+                    code: "CS-SEAL-0001",
+                })??;
         self.boundary(Boundary::Sealed, &job.kind).await;
         let key = self.blobs.put(&bytes).await?;
         let back = self.blobs.get(&key).await?;
@@ -2221,6 +2224,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         if tx.envelopes().certificate(envelope).await?.is_none() {
             tx.envelopes().set_certificate(envelope, &key.0).await?;
         }
+        record_signatures(&mut tx, envelope, signatures.as_ref(), self.now()).await?;
         self.close_job(tx, job, lease).await
     }
 
@@ -2230,6 +2234,26 @@ impl<B: BlobStore + 'static> Worker<B> {
             _ => store_err(e),
         })
     }
+}
+
+/// Record keyd's signatures for a seal of `envelope` in `seal_signatures`, in the
+/// transaction that stores what they sealed, so the console can match keyd's log against
+/// them (docs/23 §5.4, `CON-09`).
+async fn record_signatures(
+    tx: &mut TenantTx,
+    envelope: EnvelopeId,
+    signatures: Option<&seal::KeydSignatures>,
+    at: OffsetDateTime,
+) -> Result<()> {
+    let Some(s) = signatures else {
+        return Ok(());
+    };
+    for d in &s.digests {
+        tx.seal_signatures()
+            .record(envelope, d, &s.alias, at)
+            .await?;
+    }
+    Ok(())
 }
 
 fn template_of(n: Notice) -> Template {
