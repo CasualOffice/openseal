@@ -74,6 +74,40 @@ async fn transfer(rls: Rls) {
         .await;
     is(&r, StatusCode::FORBIDDEN, Some("CS-AUTH-0006"), "no action");
 
+    // An administrator's key scoped to reading cannot transfer: the action, which no
+    // scope covers, needs `envelopes:send` granted beside it.
+    let admin_s = api.login(&alpha.email, PASSWORD).await;
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/api-clients",
+            &admin_s,
+            Some(json!({"name": "read key", "kind": "api_key", "scopes": ["envelopes:read"]})),
+            &[],
+        )
+        .await;
+    let read_key = common::harness::Auth::Bearer(
+        is(&r, StatusCode::CREATED, None, "read key")["key"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+    );
+    let r = api
+        .call(
+            "POST",
+            &path,
+            &read_key,
+            Some(json!({"to_user": other})),
+            &[],
+        )
+        .await;
+    is(
+        &r,
+        StatusCode::FORBIDDEN,
+        Some("CS-AUTH-0006"),
+        "read-only key",
+    );
+
     // Envelopes never move between workspaces.
     let r = api
         .call(

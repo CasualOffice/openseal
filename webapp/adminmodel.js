@@ -202,7 +202,6 @@ export const POLICY_DEFAULTS = Object.freeze({
 /// The most expiry warning days the screen takes (an envelope expires within 365 days).
 export const MAX_WARNING_DAYS = 365;
 
-/// The days before expiry the account warns recipients (0: none). Pure.
 /// ORG-08 (docs/23 §3, §10): whether the organization's policy locks a workspace setting,
 /// from `/accounts/me`'s `organization_policy.settings[setting]` (`mfa_policy`,
 /// `first_reminder_days`, `workflow_policy.date_format`, `branding`). A locked setting is
@@ -212,6 +211,7 @@ export function orgLocked(acct, setting) {
   return acct?.organization_policy?.settings?.[setting]?.locked === true;
 }
 
+/// The days before expiry the account warns recipients (0: none). Pure.
 export function expiryWarningOf(settings) {
   const n = settings?.workflow_policy?.expiry_warning_days;
   return Number.isInteger(n) && n >= 0 ? n : 0;

@@ -2485,7 +2485,8 @@ paths:
         Any state but purged; records `envelope.transferred {from_user, to_user}` in the
         envelope's chain. Envelopes never move between workspaces (docs/23 §2.4): a
         `to_workspace` other than this one, or a `to_user` who is not an enabled member
-        here, is `422 CS-ORG-0009`.
+        here, is `422 CS-ORG-0009`. An API key or OAuth token also needs
+        `envelopes:send` granted, else `403 CS-AUTH-0006`.
       x-permission: "envelopes.transfer"
       x-level: workspace
       parameters:

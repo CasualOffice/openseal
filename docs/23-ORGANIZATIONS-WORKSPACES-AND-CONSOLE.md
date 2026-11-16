@@ -352,7 +352,7 @@ set of actions.
 | `settings.sending`, `settings.signing`, `ersd.manage` | `admin:account` | — |
 | `settings.security`, `brands.manage`, `retention.manage` | `admin:account` | **yes** |
 | `api_clients.manage`, `webhooks.manage` | `admin:account`, `webhooks:manage` | **yes** |
-| `envelopes.read_all`, `envelopes.transfer` | (`view_all_envelopes`) | **yes** |
+| `envelopes.read_all`, `envelopes.transfer` | (`view_all_envelopes`); for an API key or OAuth token, `envelopes.transfer` also needs `envelopes:send` granted (ORG-09) | **yes** |
 | `templates.share_workspace`, `reports.read`, `usage.read`, `admin_audit.read` | `admin:account`, `audit:read` | — |
 
 **Sensitive workspace actions** (review finding 14) reach content or personal data indirectly, or weaken evidence:

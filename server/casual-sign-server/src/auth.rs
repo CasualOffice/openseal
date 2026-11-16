@@ -330,9 +330,16 @@ async fn as_member(
         .ok_or_else(ApiError::expired)?;
     let mut actions = authz::profile_actions(profile.kind, &profile.permissions);
     if let Some(limit) = limit {
-        // A key's scopes narrow the actions they cover; `envelopes.read_all` and
-        // `envelopes.transfer`, which no scope covers, stay the profile's.
-        actions.retain(|a| a.scope().is_none_or(|s| limit.iter().any(|l| l == s)));
+        // A key's scopes narrow the actions they cover; `envelopes.read_all`, which no
+        // scope covers, stays the profile's. `envelopes.transfer`, a write no scope
+        // covers either, needs `envelopes:send` granted too, so a key or token scoped
+        // to reading cannot give envelopes away (ORG-09, docs/23 §2.2).
+        let granted = |s: &str| limit.iter().any(|l| l == s);
+        actions.retain(|a| match a.scope() {
+            Some(s) => granted(s),
+            None if *a == Action::EnvelopesTransfer => granted("envelopes:send"),
+            None => true,
+        });
     }
     let admin_scope = tx
         .users()
