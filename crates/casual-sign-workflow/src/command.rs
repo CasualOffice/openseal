@@ -287,6 +287,9 @@ pub enum Access {
         /// SHA-256 of the bytes served (the value names the same hash).
         hash: Hash256,
     },
+    /// A completed envelope's evidence package was exported (ORG-09, docs/23 §2.4);
+    /// recorded as `envelope.exported` naming the member who exported it.
+    EvidenceExported,
 }
 
 /// Every command of docs/24. Recipient commands name the recipient; the principal must
@@ -340,6 +343,15 @@ pub enum Command {
     },
     /// Remind every active recipient who has not acted, now.
     Remind,
+    /// Pass the envelope's ownership to another member of the same workspace (ORG-09,
+    /// docs/23 §2.4): any envelope not purged, by an administrator principal (the
+    /// server admits only a member holding `envelopes.transfer`). The server checks
+    /// that `to_user` is a member of the envelope's workspace; envelopes never move
+    /// between workspaces.
+    Transfer {
+        /// The new owner.
+        to_user: Id,
+    },
 
     // Recipient ------------------------------------------------------------------------
     /// The recipient opened their link.
@@ -536,6 +548,7 @@ impl Command {
             Self::Void { .. } => "void",
             Self::Resend { .. } => "resend",
             Self::Remind => "remind",
+            Self::Transfer { .. } => "transfer",
             Self::OpenLink { .. } => "open_link",
             Self::ChallengeAuth { .. } => "challenge_auth",
             Self::AuthResult { .. } => "auth_result",

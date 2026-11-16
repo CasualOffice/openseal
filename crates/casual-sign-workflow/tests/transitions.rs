@@ -1729,3 +1729,78 @@ fn approving_reruns_the_approvers_own_field_rules() {
     hx.ok(as_recipient("ap"), approve);
     assert_eq!(hx.status(), EnvelopeStatus::Completing);
 }
+
+// Transfer and export (ORG-09) ----------------------------------------------------------
+
+fn admin() -> Principal {
+    Principal::Admin {
+        user_id: id("admin"),
+    }
+}
+
+#[test]
+fn transfer_passes_ownership_by_an_administrator_and_export_is_recorded_once_completed() {
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1)]);
+    let to = Command::Transfer {
+        to_user: id("heir"),
+    };
+    // The sender cannot give the envelope away; nor can a recipient.
+    assert_eq!(code(hx.run(sender(), to.clone())), "CS-WF-0003");
+    assert_eq!(code(hx.run(as_recipient("r1"), to.clone())), "CS-WF-0003");
+    // To its own owner is not a transfer.
+    let same = Command::Transfer {
+        to_user: id("sender"),
+    };
+    assert_eq!(code(hx.run(admin(), same)), "CS-WF-0001");
+    let d = hx.ok(admin(), to);
+    assert_eq!(types(&d), ["envelope.transferred"]);
+    assert_eq!(
+        d.events[0].data,
+        EventData::EnvelopeTransferred {
+            from_user: id("sender"),
+            to_user: id("heir"),
+        }
+    );
+    assert!(d.effects.is_empty());
+    assert_eq!(hx.state().sender_user_id, id("heir"));
+    // The old owner is no longer the sender.
+    assert_eq!(code(hx.run(sender(), Command::Send)), "CS-WF-0003");
+
+    // Export: only a completed envelope has an evidence package.
+    let export = Command::RecordAccess {
+        access: Access::EvidenceExported,
+    };
+    assert_eq!(code(hx.run(admin(), export.clone())), "CS-WF-0001");
+    let mut hx = completing();
+    hx.seal();
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), export.clone())),
+        "CS-WF-0003"
+    );
+    let d = hx.ok(admin(), export);
+    assert_eq!(types(&d), ["envelope.exported"]);
+    assert_eq!(
+        d.events[0].data,
+        EventData::EnvelopeExported { by: id("admin") }
+    );
+    let d = hx.ok(
+        admin(),
+        Command::Transfer {
+            to_user: id("heir"),
+        },
+    );
+    assert_eq!(types(&d), ["envelope.transferred"]);
+
+    // The chain with both types verifies, and this verifier knows them.
+    let trail = hx.chain.to_trail_json().unwrap();
+    let report = casual_sign_audit::verify_trail(
+        &trail,
+        &casual_sign_audit::VerifyOptions {
+            expected_head: hx.chain.head(),
+            ..Default::default()
+        },
+    );
+    assert!(report.is_valid(), "{report:?}");
+    assert!(report.unrecognised.is_empty(), "{report:?}");
+}

@@ -502,6 +502,21 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             s.deleted_at = Some(ctx.now);
             Ok(())
         }
+        Command::Transfer { to_user } => {
+            // Administrators only: a sender cannot give an envelope away by themselves.
+            if !matches!(ctx.principal, Principal::Admin { .. }) {
+                return Err(not_permitted(cmd));
+            }
+            if s.purged || *to_user == s.sender_user_id {
+                return Err(not_allowed(cmd, s));
+            }
+            out.event(EventData::EnvelopeTransferred {
+                from_user: s.sender_user_id.clone(),
+                to_user: to_user.clone(),
+            });
+            s.sender_user_id = to_user.clone();
+            Ok(())
+        }
         Command::Correct { changes } => correct(s, cmd, changes, out),
         Command::Void { reason } => {
             authorize_sender(s, cmd, ctx)?;
@@ -2027,6 +2042,17 @@ fn record_access(
                 field_id: field.clone(),
                 hash: *hash,
             });
+        }
+        Access::EvidenceExported => {
+            // Staff only, and only a completed agreement has an evidence package.
+            let by = match &ctx.principal {
+                Principal::Sender { user_id } | Principal::Admin { user_id } => user_id.clone(),
+                _ => return Err(not_permitted(cmd)),
+            };
+            if s.status != EnvelopeStatus::Completed || s.purged {
+                return Err(not_allowed(cmd, s));
+            }
+            out.event(EventData::EnvelopeExported { by });
         }
     }
     Ok(())

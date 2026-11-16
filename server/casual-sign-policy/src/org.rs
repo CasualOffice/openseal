@@ -264,8 +264,12 @@ impl OrgPolicy {
             );
         }
         if let (Some(min), Some(max)) = (
-            entries.get(&Key::RetentionMinDays).and_then(|e| e.value.as_u64()),
-            entries.get(&Key::RetentionMaxDays).and_then(|e| e.value.as_u64()),
+            entries
+                .get(&Key::RetentionMinDays)
+                .and_then(|e| e.value.as_u64()),
+            entries
+                .get(&Key::RetentionMaxDays)
+                .and_then(|e| e.value.as_u64()),
         ) && min > max
         {
             return Err(PolicyError::InvalidValue(Key::RetentionMinDays));
@@ -359,7 +363,10 @@ fn password(v: &Value) -> Option<(u64, bool)> {
     if o.keys().any(|k| k != "min_length" && k != "breached_check") {
         return None;
     }
-    let min = o.get("min_length")?.as_u64().filter(|n| (8..=128).contains(n))?;
+    let min = o
+        .get("min_length")?
+        .as_u64()
+        .filter(|n| (8..=128).contains(n))?;
     let breached = o.get("breached_check")?.as_bool()?;
     Some((min, breached))
 }
@@ -451,8 +458,7 @@ pub fn permits(key: Key, org: &Value, ws: &Value) -> bool {
             (Some(o), Some(w)) => w >= o,
             _ => false,
         },
-        Key::SendingMinSealProfile => match (rank(&SEAL_PROFILES, org), rank(&SEAL_PROFILES, ws))
-        {
+        Key::SendingMinSealProfile => match (rank(&SEAL_PROFILES, org), rank(&SEAL_PROFILES, ws)) {
             (Some(o), Some(w)) => w >= o,
             _ => false,
         },
@@ -702,10 +708,16 @@ mod tests {
 
         for (k, bad) in [
             ("login.mfa_required", json!("sometimes")),
-            ("login.password", json!({"min_length": 4, "breached_check": true})),
+            (
+                "login.password",
+                json!({"min_length": 4, "breached_check": true}),
+            ),
             ("login.ip_allow_list", json!(["10.0.0.0/33"])),
             ("recipient.allowed_auth_methods", json!(["telepathy"])),
-            ("embedding.frame_ancestors_allowed", json!(["http://x.example"])),
+            (
+                "embedding.frame_ancestors_allowed",
+                json!(["http://x.example"]),
+            ),
             ("sending.min_seal_profile", json!("pades-b-b")),
             ("webhooks.allowed_hosts", json!(["a", "a"])),
             ("reminders.default", json!(61)),
@@ -736,12 +748,25 @@ mod tests {
             "branding.default_brand": {"value": {"name": "Acme"}, "locked": true},
             "login.mfa_required": {"value": "administrators", "locked": true},
         }));
-        let old = json!({"first_reminder_days": 5, "workflow_policy": {"date_format": "yyyy_mm_dd"}});
+        let old =
+            json!({"first_reminder_days": 5, "workflow_policy": {"date_format": "yyyy_mm_dd"}});
         for (new, setting) in [
-            (json!({"first_reminder_days": 6, "workflow_policy": {"date_format": "yyyy_mm_dd"}}), "first_reminder_days"),
-            (json!({"first_reminder_days": 5, "workflow_policy": {"date_format": "mm_dd_yyyy"}}), "workflow_policy.date_format"),
-            (json!({"first_reminder_days": 5, "workflow_policy": {"date_format": "yyyy_mm_dd"}, "branding": {"name": "B"}}), "branding"),
-            (json!({"first_reminder_days": 5, "workflow_policy": {"date_format": "yyyy_mm_dd"}, "mfa_policy": "everyone"}), "mfa_policy"),
+            (
+                json!({"first_reminder_days": 6, "workflow_policy": {"date_format": "yyyy_mm_dd"}}),
+                "first_reminder_days",
+            ),
+            (
+                json!({"first_reminder_days": 5, "workflow_policy": {"date_format": "mm_dd_yyyy"}}),
+                "workflow_policy.date_format",
+            ),
+            (
+                json!({"first_reminder_days": 5, "workflow_policy": {"date_format": "yyyy_mm_dd"}, "branding": {"name": "B"}}),
+                "branding",
+            ),
+            (
+                json!({"first_reminder_days": 5, "workflow_policy": {"date_format": "yyyy_mm_dd"}, "mfa_policy": "everyone"}),
+                "mfa_policy",
+            ),
         ] {
             let r = check_write(&p, &old, &new).unwrap_err();
             assert_eq!(r.setting, setting);
@@ -756,7 +781,10 @@ mod tests {
         let old = json!({});
         let r = check_write(&p, &old, &json!({"mfa_policy": "optional"})).unwrap_err();
         assert_eq!((r.key, r.locked), (Key::LoginMfaRequired, false));
-        assert_eq!(check_write(&p, &old, &json!({"mfa_policy": "everyone"})), Ok(()));
+        assert_eq!(
+            check_write(&p, &old, &json!({"mfa_policy": "everyone"})),
+            Ok(())
+        );
         // A workspace that predates the tightening runs under the organization's level.
         let e = effective(&p, &json!({"mfa_policy": "optional"}));
         assert_eq!(e[&Key::LoginMfaRequired].value, json!("administrators"));
@@ -773,9 +801,21 @@ mod tests {
         assert!(!permits(Key::SessionIdle, &json!(900), &json!(1200)));
         assert!(permits(Key::ApiAllowed, &json!(false), &json!(false)));
         assert!(!permits(Key::ApiAllowed, &json!(false), &json!(true)));
-        assert!(permits(Key::SendingMinSealProfile, &json!("pades-b-lt"), &json!("pades-b-lta")));
-        assert!(!permits(Key::SendingMinSealProfile, &json!("pades-b-lt"), &json!("pades-b-t")));
-        assert!(!permits(Key::WebhooksAllowedHosts, &json!(["a.example"]), &json!(["b.example"])));
+        assert!(permits(
+            Key::SendingMinSealProfile,
+            &json!("pades-b-lt"),
+            &json!("pades-b-lta")
+        ));
+        assert!(!permits(
+            Key::SendingMinSealProfile,
+            &json!("pades-b-lt"),
+            &json!("pades-b-t")
+        ));
+        assert!(!permits(
+            Key::WebhooksAllowedHosts,
+            &json!(["a.example"]),
+            &json!(["b.example"])
+        ));
         assert!(permits(Key::DataRegions, &json!(["eu"]), &json!("eu")));
         assert!(!permits(
             Key::LoginPassword,
@@ -787,12 +827,16 @@ mod tests {
     #[test]
     fn loosening_security_is_found_and_tightening_is_not() {
         let old = pol(json!({"login.mfa_required": {"value": "administrators", "locked": true}}));
-        let unlock = pol(json!({"login.mfa_required": {"value": "administrators", "locked": false}}));
+        let unlock =
+            pol(json!({"login.mfa_required": {"value": "administrators", "locked": false}}));
         let lower = pol(json!({"login.mfa_required": {"value": "optional", "locked": true}}));
         let higher = pol(json!({"login.mfa_required": {"value": "everyone", "locked": true}}));
         assert_eq!(loosened(&old, &unlock), Some(Key::LoginMfaRequired));
         assert_eq!(loosened(&old, &lower), Some(Key::LoginMfaRequired));
-        assert_eq!(loosened(&old, &OrgPolicy::default()), Some(Key::LoginMfaRequired));
+        assert_eq!(
+            loosened(&old, &OrgPolicy::default()),
+            Some(Key::LoginMfaRequired)
+        );
         assert_eq!(loosened(&old, &higher), None);
         // Defaults are not security: changing them is an admin's.
         let a = pol(json!({"reminders.default": {"value": 1, "locked": true}}));
