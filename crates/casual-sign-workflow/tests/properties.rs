@@ -39,6 +39,8 @@ struct RSpec {
     auth: bool,
     /// Hidden `doc-2` (WF-02), when there is one.
     hide: bool,
+    /// Delayed routing of two hours (WF-02), unless a carbon copy.
+    delay: bool,
 }
 
 /// A random envelope.
@@ -143,12 +145,20 @@ fn act() -> impl Strategy<Value = Act> {
 fn config() -> impl Strategy<Value = Config> {
     (
         prop::collection::vec(
-            (any::<u8>(), 1u32..=3, any::<bool>(), any::<bool>()).prop_map(|(t, o, a, h)| RSpec {
-                rtype: t,
-                order: o,
-                auth: a,
-                hide: h,
-            }),
+            (
+                any::<u8>(),
+                1u32..=3,
+                any::<bool>(),
+                any::<bool>(),
+                any::<bool>(),
+            )
+                .prop_map(|(t, o, a, h, d)| RSpec {
+                    rtype: t,
+                    order: o,
+                    auth: a,
+                    hide: h,
+                    delay: d,
+                }),
             1..=5,
         ),
         1u8..=2,
@@ -201,6 +211,9 @@ fn setup(c: &Config) -> Harness {
         if r.hide && c.documents >= 2 {
             spec.excluded_documents = vec![id("doc-2")];
         }
+        if r.delay && rtype(r.rtype) != RecipientType::Cc {
+            spec.route_delay_hours = 2;
+        }
         changes.push(Change::AddRecipient { recipient: spec });
         if rtype(r.rtype).signs() {
             changes.push(add_field(field(
@@ -247,6 +260,22 @@ fn fire_schedule(hx: &mut Harness) {
     };
     hx.now = hx.now.max(t.at.unix_millis() - common::t(0).unix_millis());
     hx.ok(Principal::System, Command::TimerDue { timer: t.id });
+}
+
+/// Fires every routing delay's timer at its time (WF-02).
+fn fire_delays(hx: &mut Harness) {
+    let due: Vec<_> = hx
+        .state()
+        .book
+        .scheduled
+        .iter()
+        .filter(|t| t.timer == casual_sign_workflow::Timer::RouteDelay)
+        .cloned()
+        .collect();
+    for t in due {
+        hx.now = hx.now.max(t.at.unix_millis() - common::t(0).unix_millis());
+        hx.ok(Principal::System, Command::TimerDue { timer: t.id });
+    }
 }
 
 /// What the interpreter saw across a sequence, for the coverage check.
@@ -701,6 +730,7 @@ proptest! {
             if hx.status() == EnvelopeStatus::Completing {
                 break;
             }
+            fire_delays(&mut hx);
             let active: Vec<(String, RecipientType)> = hx
                 .state()
                 .recipients

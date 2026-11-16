@@ -84,6 +84,7 @@ seal profiles are not built yet.
 | `custom_fields` | json | Integrator metadata, searchable keys |
 | `version` | int | Optimistic concurrency for drafts and corrections |
 | `sent_at`, `completed_at`, `voided_at`, `void_reason` | | |
+| `send_at` | timestamptz? | Scheduled sending (`WF-02`): a draft sends itself then; after now, within 365 days, before the expiry; held in the engine state, shown by the API |
 | `chain_head` | bytea | Hash of the last audit event (docs/32) |
 
 **`capture_location` is per envelope** (GEO-01; the owner asked for it "per document"). One envelope is one signing
@@ -121,6 +122,8 @@ one recorded in `envelope.completed`.
 | `auth` | List of requirements: `access_code` (hash), `email_otp`, `sms_otp`, `voice_otp` (the phone call; designed as `phone_call`), `sso` (sign-in through one of the operator's OpenID Connect providers, `RAUTH-01`; designed as `idp`), `idv` (provider), `kba` (plugin). `sms_otp` and `voice_otp` need an E.164 `phone`; their codes are rows of `recipient_otp_codes` with `channel` `sms` or `voice` (migration 0029). `sso` needs an `email`, which the provider's verified email must equal; each sign-in is a row of `recipient_sso_challenges` (migration 0030: provider id, SHA-256 of `state`, nonce, PKCE verifier, 10-minute expiry, closed at first use or when superseded, at most one open per recipient, a tenant table under RLS) |
 | `delivery` | `email`, `sms`, `none` (embedded: host delivers) |
 | `embedded_client_user_id` | When set, the recipient signs only through the integrator's embedded session |
+| `excluded_documents` | Document visibility (`WF-02`): documents this recipient never sees, is never served and does not act on; at least one stays visible and none holds a field of theirs |
+| `route_delay_hours`, `held_until` | Delayed routing (`WF-02`): hours to wait, once their turn comes, before they are invited (0 to 720; not on a `cc`), and the time that wait ends; until then their link does not open (`CS-WF-0007`) |
 | `signing_group_id` | Any member may act (slice 29) |
 | `consent` | ERSD version accepted, time, from the audit chain |
 | `language` | Signer UI and email language |
@@ -543,6 +546,7 @@ the rules above, and what does not:
 ## 10. Engine types versus rows
 
 `casual-sign-model` defines the types above as plain Rust values with invariants checked by constructors
-(`Envelope::validate_for_send` returns every violation, each with a code). The server maps rows to these values; the
+(as built, the workflow engine's `violations()` returns every violation, each with a code; the design named it
+`Envelope::validate_for_send`, `WF-04`). The server maps rows to these values; the
 engine never sees SQL. The same types serialize to the public JSON in [40](40-API-DESIGN.md) through explicit DTOs, so
 an internal field never leaks into the API by accident.

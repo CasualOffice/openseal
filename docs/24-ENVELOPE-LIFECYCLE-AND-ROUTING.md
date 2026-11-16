@@ -36,13 +36,16 @@ struct Outcome { state: EnvelopeState, events: Vec<AuditEvent>, effects: Vec<Eff
    │              │                    │
    │              ├──decline──▶ declined  (any signer declines; envelope stops)
    │              └──expire───▶ expired   (expires_at passed with required actions open)
-   └──delete──▶ (removed; drafts only)
-                  voided  ◀── void (sender or admin, with reason, any state before completing)
+   ├──delete──▶ (removed; drafts only)
+   └──schedule──▶ draft with send_at ──time comes──▶ sent   (WF-02; cancel or send by hand drops it)
+                  voided  ◀── void (sender or admin, with reason, from sent or delivered; a draft is deleted, not voided)
 ```
 
 | From | Command | To | Events | Effects |
 | --- | --- | --- | --- | --- |
 | `draft` | `Send` | `sent` | `envelope.sent`, `document.fixed` per document | Invitations to the first routing step; expiry; reminders |
+| `draft` | `ScheduleSend{at}` | `draft` | `envelope.corrected` `{changed: [send_at]}` (a draft edit, ADR-030) | A `ScheduledSend` timer; the draft is not edited meanwhile (`CS-WF-0022`) |
+| `draft` | timer `ScheduledSend` | `sent` | `envelope.sent` by the platform, as `Send` | As `Send`; a draft no longer sendable keeps the draft and drops the schedule (`envelope.corrected` by the platform) |
 | `sent`/`delivered` | `Void{reason}` | `voided` | `envelope.voided` | Notify active recipients; revoke tokens; webhooks |
 | `sent`/`delivered` | `Correct{changes}` | same | `envelope.corrected` | Re-invite affected recipients; reset their status if a signed document changed |
 | `sent`/`delivered` | recipient `Decline` | `declined` | `recipient.declined`, `envelope.declined` | Notify sender and prior signers |
@@ -92,13 +95,22 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - **Signing groups** (slice 29): one of several people may act; the first to complete does so for the group.
 - **Delegation and reassignment** create a new recipient at the same order and mark the old one `reassigned`, with
   both in the chain.
+- **Delayed routing** (`WF-02`, built): a recipient with `route_delay_hours` is marked `sent` with `held_until` when
+  routing reaches them, inside the decision that reached them, and a `RouteDelay` timer is set. Until it fires their
+  invitation, link, resend, reminders and expiry warnings wait (`CS-WF-0007`); the timer sends the invitation and
+  changes nothing observable, so it records no event. Going out of turn clears the hold; a reassigned recipient is not
+  delayed again. 0 to 720 hours (`CS-WF-0023`); not on a `cc` (`CS-WF-0004`).
+- **Document visibility** (`WF-02`, built): `excluded_documents` hides documents from a recipient. They are never listed
+  or served to them, do not count toward what a viewer views, and their act records only the documents they saw; a
+  correction that replaces a document they never saw leaves them completed.
 - An envelope **completes** when every recipient with a required action has completed. Optional signature fields do
   not block.
 
 ## 5. Field rules at completion
 
 On `Complete`, the engine re-runs everything the browser ran, on the server: required fields present, validations,
-checkbox and radio group rules, conditional visibility (a hidden field's value is dropped and recorded as dropped),
+checkbox and radio group rules, conditional visibility (a hidden field's value is dropped; as built the drop is evident
+only by the value's absence from the recipient's `recipient.signed` value hashes, no event of its own, `WF-07`),
 formulas recomputed and compared, `date_signed` stamped with server time in the recipient's zone, attachment uploads
 admitted. A client that lied fails here with field-level codes (`CS-FLD-*`).
 
@@ -125,7 +137,8 @@ reminders, expiry, and **documents** (add, remove, replace). The engine computes
 
 Reminders, expiry and the "expiring soon" warning are effects with a due time, persisted as scheduled jobs. The timer
 fires a command (`RemindDue`, `Expire`) that the engine evaluates against the current state, so a timer for an envelope
-that has since completed is a no-op with no event.
+that has since completed is a no-op with no event. As built (`WF-02`) two more kinds: `ScheduledSend` (a draft's
+`send_at`) and `RouteDelay` (a delayed recipient's `held_until`).
 
 ## 8. Bulk send
 
@@ -236,13 +249,14 @@ objects concerned, never their content.
 | Correct with re-routing and the §6 impact | Built |
 | Void with reason | Built |
 | Expire (timer and sweep); expiry warning | Built |
-| Resend (clears bounce and lock); remind; reminder timers | Built |
+| Resend (clears bounce and lock, recorded as `envelope.corrected` with the paths, `WF-04`); remind; reminder timers | Built |
 | Invitation dispatched, reminder dispatched, bounce (`auto_responded`) | Built |
 | `completing` → `completed` only on a verified seal; seal failure retried | Built |
 | Purge (terminal only; personal data scrubbed, hashes kept) | Built |
 | Access events (sender viewed, document, certificate and signer attachment downloaded) | Built |
 | Signer location on recipient actions when `capture_location` is on; refusal recorded, never blocking (GEO-01) | Built (engine, and the server's capture and GeoIP fallback, docs/40 §As built) |
 | Routing: sequential, parallel, mixed; carbon copies complete when reached | Built |
+| Scheduled sending of a draft (`ScheduleSend`, `PUT/DELETE …/schedule`); delayed routing (`route_delay_hours`); document visibility per recipient (`excluded_documents`) (§2, §4, `WF-02`) | Built (engine, server, editor; the mock records them and does not fire them) |
 | Conditional routing, signing groups (§4, slice 29) | **Not built**: no event type or status for a skipped recipient or a group member's act (rows proposed) |
 | Bulk send (§8), signing links (§9) | **Not in the engine**: host jobs that issue `Create`/`Edit`/`Send` |
 | Witness ordering, legal-entity seal recipient, notary | **Partial**: act as signers; witnessing after the witnessed signer, a `Seal` recipient acting through `RemoteSigner`, and notary steps belong to slices 16, 18, 31 |

@@ -147,6 +147,9 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-WF-0018 | A value could not be put in canonical form for hashing |
 | CS-WF-0019 | The envelope captures location and a recipient action (delivered, viewed, signed, approved, declined) came without one; the server always supplies at least the IP approximation |
 | CS-WF-0020 | The request's location contradicts the envelope's `capture_location`: a device location or a `declined`/`unavailable` reason when off, `not_requested` when on |
+| CS-WF-0021 | A document is hidden from this recipient (`WF-02`): a field of theirs on it refuses the send (`422`, a violation); viewing or fetching it as them is refused (the server answers `404 CS-API-0002`, as a document that does not exist) |
+| CS-WF-0022 | The draft is scheduled to send (`WF-02`): it is not edited until the schedule is cancelled (`409`) |
+| CS-WF-0023 | A time out of range (`WF-02`): a schedule not after now, more than 365 days ahead or not before the expiry; a recipient's routing delay over 720 hours (`422`) |
 | CS-API-0001 | Malformed request |
 | CS-API-0002 | Not found (also returned for objects of another tenant) |
 | CS-API-0003 | Rate limited |

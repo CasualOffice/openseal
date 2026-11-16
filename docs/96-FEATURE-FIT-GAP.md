@@ -27,7 +27,7 @@ instructions 8 and 9).
 | FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | Engine (`XFA-01`; gaps `XFA-02`..`XFA-05`) |
 | FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | Engine |
 | FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
-| FG-010 | Document visibility per recipient | DS | Build | 6 | — |
+| FG-010 | Document visibility per recipient | DS | Build | 6 | Works: engine, server (a hidden document is neither listed nor served to that recipient, `404`), editor's More options per recipient (`WF-02`) |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
 | FG-012 | Template matching on upload | DS | Build | 3 | Partial: uploads to a draft are matched against the workspace's template page hashes when template matching is on (`WEB-19`); not run on the real stack in a browser |
 | FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | — |
@@ -50,7 +50,7 @@ instructions 8 and 9).
 | FG-031 | Sequential, parallel and mixed routing order | DS, SN | Build | 2 | Works |
 | FG-032 | Conditional routing | DS | Build | 29 | Designed |
 | FG-033 | Signing groups | DS | Build | 29 | — |
-| FG-034 | Scheduled sending; delayed routing | DS | Build | 29 | — |
+| FG-034 | Scheduled sending; delayed routing | DS | Build | 29 | Works: engine, server (`PUT/DELETE …/schedule`, `route_delay_hours`), editor's "Send at" and per-recipient wait (`WF-02`); the mock records but does not fire them |
 | FG-035 | Reassign / assign to someone else | DS, SN | Build | 2 | Works (signer's `POST /s/{token}/reassign`, `WEB-07`) |
 | FG-036 | Auto-delegate while away | DS | Build | 29 | — |
 | FG-037 | Free-form signer (places own signature) | SN | Build | 4 | Designed |

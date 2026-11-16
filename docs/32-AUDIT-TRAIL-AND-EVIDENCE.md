@@ -89,6 +89,12 @@ recipient action (`recipient.delivered`, `recipient.viewed_document`, `recipient
 `envelope.corrected` means a change after `envelope.sent`. As built, the engine also records a draft's own edits with it
 (docs/24 As built, `WEB-14`); ADR-030 (Proposed) gives draft edits their own type, `envelope.edited`. A reader of a
 chain built before then treats an `envelope.corrected` that precedes the first `envelope.sent` as a draft edit.
+As built (`WF-04`), `envelope.corrected` also carries these, each naming the paths it changed: a draft's schedule set
+or cancelled (`send_at`, `WF-02`; dropped by the platform when the draft can no longer be sent), and a resend that
+clears a bounce or an authentication lock (`recipients.{id}.status`, `recipients.{id}.auth_lock`). Document visibility
+and delayed routing add no type: a recipient's hidden documents are absent from the documents their act records, and
+a routing delay ending changes nothing observable (the invitation's own `invitation.sent` follows). `email_otp` is an
+`AuthMethod` (added after the others, so earlier chains hash as before).
 
 ### As built (stage 1I)
 
