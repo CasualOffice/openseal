@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use casual_sign_audit::{ActorKind, AuthMethod, Chain, EventData, Hash256, Timestamp};
 use casual_sign_certificate::{EndKind, Ending};
-use casual_sign_keyd::{DEV_REASON, DigestSigner, Endpoint, KeydError, RemoteKey};
+use casual_sign_keyd::{DEV_REASON, DigestSigner, Endpoint, KeydError, RemoteKey, digest_for};
 use casual_sign_model::{EnvelopeStatus, Field, FieldValue, Id, RecipientType, SealProfile};
 use casual_sign_sdk::evidence::{
     AuthStep, Consent, CopyKind, CopyRow, DocumentRow, EnvelopeSummary, Mark, Outcome, Party,
@@ -167,6 +167,71 @@ impl KeyProvider for Shared {
         signed_attrs_der: &[u8],
     ) -> core::result::Result<casual_sign_sdk::Signature, casual_sign_sdk::KeyError> {
         self.0.sign(signed_attrs_der)
+    }
+}
+
+/// The signatures keyd made for one seal: its alias and, per signature, the digest it was
+/// asked to sign (the hash of the CMS signed attributes, as keyd's log records it). The
+/// worker writes them to `seal_signatures` with the sealed bytes so the console can
+/// reconcile keyd's log (docs/23 §5.4, `CON-09`). Only keyd signatures are recorded: a
+/// key in this process has no keyd log to reconcile.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KeydSignatures {
+    /// keyd's alias.
+    pub alias: String,
+    /// Each successful signature's digest, in the order made.
+    pub digests: Vec<Vec<u8>>,
+}
+
+/// The digests a [`Recording`] key obtained signatures for.
+type Signed = Arc<Mutex<Vec<Vec<u8>>>>;
+
+/// A remote key that remembers the digest of each signature it obtained.
+struct Recording {
+    inner: RemoteKey,
+    signed: Signed,
+}
+
+impl KeyProvider for Recording {
+    fn algorithm(&self) -> casual_sign_sdk::SignatureAlgorithm {
+        KeyProvider::algorithm(&self.inner)
+    }
+
+    fn certificate_chain(&self) -> &[casual_sign_sdk::Certificate] {
+        KeyProvider::certificate_chain(&self.inner)
+    }
+
+    fn sign(
+        &self,
+        signed_attrs_der: &[u8],
+    ) -> core::result::Result<casual_sign_sdk::Signature, casual_sign_sdk::KeyError> {
+        let out = self.inner.sign(signed_attrs_der);
+        if out.is_ok()
+            && let Ok(mut s) = self.signed.lock()
+        {
+            s.push(digest_for(
+                KeyProvider::algorithm(&self.inner),
+                signed_attrs_der,
+            ));
+        }
+        out
+    }
+}
+
+/// What [`key_for`] hands back: the provider, whether it is a development key, and where
+/// a keyd key records its signatures.
+struct SealKeyInUse {
+    provider: Box<dyn KeyProvider>,
+    development: bool,
+    keyd: Option<(String, Signed)>,
+}
+
+impl SealKeyInUse {
+    fn signatures(&self) -> Option<KeydSignatures> {
+        self.keyd.as_ref().map(|(alias, signed)| KeydSignatures {
+            alias: alias.clone(),
+            digests: signed.lock().map(|s| s.clone()).unwrap_or_default(),
+        })
     }
 }
 
@@ -577,6 +642,8 @@ pub struct Sealed {
     pub documents: Vec<SealedOut>,
     /// The certificate of completion on its own, the trail embedded, sealed.
     pub certificate: Vec<u8>,
+    /// keyd's signatures for this seal (`None` for a key in this process).
+    pub signatures: Option<KeydSignatures>,
 }
 
 /// Seal every document of `input`, and the certificate of completion on its own
@@ -592,7 +659,8 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
     if input.delivered.len() != s.documents.len() {
         return Err(WorkerError::SealInput { what: "document" });
     }
-    let (provider, development) = key_for(services, s)?;
+    let key = key_for(services, s)?;
+    let (provider, development) = (&key.provider, key.development);
     let fingerprint = provider
         .certificate_chain()
         .first()
@@ -676,6 +744,7 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
     Ok(Sealed {
         documents: out,
         certificate,
+        signatures: key.signatures(),
     })
 }
 
@@ -700,28 +769,46 @@ pub fn connect_keyd(
     }
 }
 
-/// The platform key for `s`, and whether it is a development key.
-fn key_for(services: &SealServices, s: &EnvelopeState) -> Result<(Box<dyn KeyProvider>, bool)> {
+/// A keyd key that records the digest of each signature it obtains.
+fn recording(r: RemoteKey) -> SealKeyInUse {
+    let development = DigestSigner::is_development(&r);
+    let signed: Signed = Arc::new(Mutex::new(Vec::new()));
+    let alias = r.alias().to_owned();
+    SealKeyInUse {
+        provider: Box::new(Recording {
+            inner: r,
+            signed: Arc::clone(&signed),
+        }),
+        development,
+        keyd: Some((alias, signed)),
+    }
+}
+
+/// The platform key for `s`, whether it is a development key, and, for keyd, where its
+/// signatures are recorded.
+fn key_for(services: &SealServices, s: &EnvelopeState) -> Result<SealKeyInUse> {
     Ok(match &services.key {
         SealKey::Remote(r) => {
             let r = r
                 .for_envelope(s.id.as_str())
                 .map_err(|e| pipeline(e.code()))?;
-            let dev = DigestSigner::is_development(&r);
-            (Box::new(r), dev)
+            recording(r)
         }
         SealKey::Keyd(k) => {
             let r = k
                 .remote()
                 .and_then(|r| r.for_envelope(s.id.as_str()))
                 .map_err(|e| pipeline(e.code()))?;
-            let dev = DigestSigner::is_development(&r);
-            (Box::new(r), dev)
+            recording(r)
         }
         SealKey::Local {
             provider,
             development,
-        } => (provider(), *development),
+        } => SealKeyInUse {
+            provider: provider(),
+            development: *development,
+            keyd: None,
+        },
     })
 }
 
@@ -791,17 +878,21 @@ pub fn ending(state: &EnvelopeState, chain: &Chain, sender: &Party) -> Option<En
 
 /// The envelope certificate of an envelope that ended without completing (UXW-30),
 /// rendered with [`ending`] and sealed on its own at the envelope's profile (blocking).
-/// The caller stores the bytes, reads them back and calls [`verify_stored`].
+/// The caller stores the bytes, reads them back and calls [`verify_stored`]; keyd's
+/// signatures come back with them, for `seal_signatures`.
 ///
 /// # Errors
 ///
 /// `CS-WRK-0011` when the envelope did not end that way; the failing step's code
 /// (`CS-AUD-*`, `CS-SEAL-*`, `CS-KEY-*`, ...).
-pub fn seal_ended(services: &SealServices, input: &SealInput) -> Result<Vec<u8>> {
+pub fn seal_ended(
+    services: &SealServices,
+    input: &SealInput,
+) -> Result<(Vec<u8>, Option<KeydSignatures>)> {
     let s = &input.state;
     let end =
         ending(s, &input.chain, &input.sender).ok_or(WorkerError::SealInput { what: "ending" })?;
-    let (provider, development) = key_for(services, s)?;
+    let key = key_for(services, s)?;
     let mut cert_input = certificate_input(input);
     cert_input.ending = Some(end);
     let rendered = casual_sign_certificate::render_certificate(
@@ -810,15 +901,16 @@ pub fn seal_ended(services: &SealServices, input: &SealInput) -> Result<Vec<u8>>
         &services.certificate,
     )
     .map_err(|x| pipeline(x.code()))?;
-    Ok(seal_bytes(
+    let bytes = seal_bytes(
         services,
         &rendered.bytes,
         profile(s.seal_profile),
         input.now,
-        provider.as_ref(),
-        development,
+        key.provider.as_ref(),
+        key.development,
     )?
-    .bytes)
+    .bytes;
+    Ok((bytes, key.signatures()))
 }
 
 /// Seal `bytes` at `target` with the platform key, the operator's name, reason and

@@ -219,7 +219,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | API client expiry | 1–3,650 days | CS-API-0001 |
 | Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 
-## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, `CON-06`, `CON-07`, built)
+## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, `CON-06`, `CON-07`, `CON-08`, `CON-09`, built)
 
 | Limit | Default | Code |
 | --- | ---: | --- |
@@ -243,6 +243,8 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | TSA URL (`CON-07`) | 2,048 bytes, `http` or `https`, no user information; addresses checked on at most 16 resolved | CS-CON-0006 |
 | TSA priority; policy OID; expected certificate hash; endpoints listed | 0–1,000; 2–32 arcs; 64 hex digits; 64 | CS-CON-0006 |
 | Key-change payload stored for the approver | 4 KiB of JSON | CS-DB-0008 |
+| Reconciliation run (`CON-09`): keyd records read; envelope ids per `seal_digests_of` call; seal records per window; orphaned retries listed | 100,000; 1,000; 100,000; 1,000 | — |
+| Reconciliation grace before a signature is judged; clock skew allowed between keyd and the worker | 1 hour; 5 minutes | — |
 
 ## ML (`casual-sign-modeld`, the worker's ML jobs; designed, ADR-029)
 

@@ -116,8 +116,9 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // 0030 `recipient_sso_challenges` (RAUTH-01), a tenant table; 0031
     // `template_favourites` (UXW-06), a tenant table; 0033 none (UXW-07: cascades,
     // a check and commit triggers on `groups` and `group_members`); 0034 none in `public` (CON-07); 0035 none (CON-10, `platform`); 0036 none (ASVS-31); 0037 none (ORG-07:
-    // `permission_profiles.admin_scope_group_ids` and two checks).
-    assert_eq!(tables.len(), 63, "{tables:?}");
+    // `permission_profiles.admin_scope_group_ids` and two checks); 0038 `seal_signatures`
+    // (CON-09), a tenant table.
+    assert_eq!(tables.len(), 64, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_admin_events",

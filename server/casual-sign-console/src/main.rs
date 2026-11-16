@@ -180,6 +180,8 @@ async fn serve() -> ExitCode {
         Err(_) => return fail("cannot bind OPENSEAL_CONSOLE_LISTEN"),
     };
     tracing::info!(%listen, "console listening");
+    // CON-08, CON-09: the expiry scan daily, reconciliation hourly.
+    tokio::spawn(casual_sign_console::monitor::schedule(state.clone()));
     let service = app(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
     if axum::serve(listener, service)
         .with_graceful_shutdown(async {

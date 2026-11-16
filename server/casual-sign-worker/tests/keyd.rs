@@ -101,6 +101,31 @@ async fn the_seal_goes_through_keyd_with_the_development_reason() {
     for s in &signs {
         assert!(s.contains(&ids.env.hyphenated().to_string()));
     }
+
+    // CON-09: the worker recorded each signature's digest, as keyd logged it, in
+    // `seal_signatures` with the sealed bytes, so the console can reconcile keyd's log.
+    let records = casual_sign_keyd::oplog::read_range(&keyd.oplog, 1, 64, u64::MAX).unwrap();
+    let mut logged: Vec<String> = records
+        .iter()
+        .filter(|r| r.op == "sign" && r.outcome == "ok")
+        .map(|r| r.digest.clone())
+        .collect();
+    logged.sort();
+    let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+    let recorded: Vec<String> = tx
+        .seal_signatures()
+        .digests(casual_sign_store::EnvelopeId(ids.env))
+        .await
+        .unwrap()
+        .iter()
+        .map(|d| d.iter().map(|b| format!("{b:02x}")).collect())
+        .collect();
+    tx.commit().await.unwrap();
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(
+        recorded, logged,
+        "seal_signatures holds exactly keyd's digests"
+    );
 }
 
 /// A development file key under the seal root, named `cn`.
@@ -129,6 +154,36 @@ fn aliases_signed_for(oplog: &std::path::Path, env: uuid::Uuid) -> Vec<String> {
         })
         .map(|f| f[4].to_owned())
         .collect()
+}
+
+/// `seal_signatures` holds exactly keyd's logged digests for `envelope`, under `alias`.
+async fn assert_recorded(env: &Env, oplog: &std::path::Path, envelope: uuid::Uuid, alias: &str) {
+    let mut logged: Vec<String> = std::fs::read_to_string(oplog)
+        .unwrap()
+        .lines()
+        .map(|l| l.split('\t').map(str::to_owned).collect::<Vec<_>>())
+        .filter(|f| {
+            f.get(3).map(String::as_str) == Some("sign")
+                && f.get(7) == Some(&envelope.hyphenated().to_string())
+                && f.get(8).map(String::as_str) == Some("ok")
+        })
+        .map(|f| f[6].clone())
+        .collect();
+    logged.sort();
+    assert!(!logged.is_empty());
+    let recorded: Vec<(String, String)> = sqlx::query_as::<_, (Vec<u8>, String)>(
+        "SELECT digest, alias FROM seal_signatures WHERE envelope_id = $1 ORDER BY digest",
+    )
+    .bind(envelope)
+    .fetch_all(&env.db.admin)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|(d, a)| (d.iter().map(|b| format!("{b:02x}")).collect(), a))
+    .collect();
+    let expected: Vec<(String, String)> =
+        logged.into_iter().map(|d| (d, alias.to_owned())).collect();
+    assert_eq!(recorded, expected, "seal_signatures holds keyd's digests");
 }
 
 /// Sign `ids` through and let the worker seal (or try to).
@@ -236,6 +291,10 @@ async fn alias_rotation(name: &str, key: impl FnOnce(casual_sign_keyd::Endpoint)
         aliases_signed_for(&keyd.oplog, second.env),
         ["platform-2027", "platform-2027"]
     );
+    // CON-09: whichever key the worker holds, configured or rotated to, it recorded
+    // keyd's digests for the seal under the alias that signed, for the console.
+    assert_recorded(&env, &keyd.oplog, first.env, "platform").await;
+    assert_recorded(&env, &keyd.oplog, second.env, "platform-2027").await;
     // The seal under the new key verifies independently (docs/04 rule 26): pyHanko over
     // it, when `OPENSEAL_VERIFY_PYTHON` names a Python with pyHanko.
     let out = scratch(&format!("{name}-pyhanko"));
