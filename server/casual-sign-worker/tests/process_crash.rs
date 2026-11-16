@@ -1301,8 +1301,12 @@ impl Gate {
                 ] {
                     std::thread::spawn(move || {
                         let _ = std::io::copy(&mut from, &mut to);
-                        let _ = from.shutdown(std::net::Shutdown::Both);
-                        let _ = to.shutdown(std::net::Shutdown::Both);
+                        // Pass an end on as an end, as a network does (a half-close).
+                        // Shutting both ways here closed the worker's side with its
+                        // request unread, and the reset that sent discarded keyd's TLS
+                        // alert before the worker read it: an untrusted client read as
+                        // keyd unavailable on GitHub runners (E2E-12).
+                        let _ = to.shutdown(std::net::Shutdown::Write);
                     });
                 }
             }
@@ -1818,6 +1822,10 @@ async fn a_database_failure_on_the_last_seal_attempt_hands_over_to_a_new_seal_jo
         "the handover alerted"
     );
     st.not_served(&env, "after the last attempt");
+    // The released worker may already hold the new seal job; killed, its lease would
+    // outlast idle()'s wait (300 s against 180 s), so lapse it as for a crash.
+    st.stop_worker();
+    st.after_worker_crash().await;
     st.start_worker(None);
     st.make_due().await;
     st.idle().await;
