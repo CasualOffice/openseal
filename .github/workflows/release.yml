@@ -1,51 +1,253 @@
 name: release
 
-# REL-01 (docs/06 "Release 1 ships as v0.0.1"): on a `v*` tag, build the server, worker and
-# keyd images from deploy/Dockerfile, push them to GitHub Container Registry with an SBOM
-# and provenance attestation, and publish a GitHub pre-release with the CHANGELOG notes.
-# Only the owner pushes release tags.
+# REL-01 (docs/06 "Release 1 ships as v0.0.1", docs/15 §Release gates, docs/65 §Releases).
+#
+# On a `v*` tag, or by hand: build the server, worker and keyd images from deploy/Dockerfile
+# (linux/amd64), push them to GitHub Container Registry, and for every image digest:
+# a BuildKit SBOM and provenance attached to the image, a standalone SPDX SBOM (syft), a
+# keyless cosign signature and a SLSA build provenance attestation. Then a CycloneDX SBOM
+# of the Rust workspace, a Compose override pinning the production profile to the digests
+# (tools/release/pin_release.py), SHA-256 checksums of every asset, a cosign signature
+# and provenance over the assets, and the GitHub release with notes from CHANGELOG.md.
+#
+# Never runs on ordinary pushes, so it cannot turn main red. Only the owner pushes release
+# tags. By hand (Actions > release > Run workflow) it is a dry run unless `publish` is
+# ticked, and it publishes only when started on a `v*` tag: a dry run builds every image
+# and asset, pushes and signs nothing, and keeps the assets as a workflow artifact.
+
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Push, sign and publish (only from a v* tag). Unticked: a dry run."
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # A tag push publishes; a manual run publishes only when asked and started on a tag.
+  PUBLISH: ${{ github.event_name == 'push' || (inputs.publish && startsWith(github.ref, 'refs/tags/v')) }}
+  COSIGN_VERSION: v3.1.4
+  SYFT_VERSION: v1.57.2
+  CARGO_CYCLONEDX_VERSION: 0.5.9
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: "false"
 
 jobs:
   images:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write        # push to GHCR
+      id-token: write        # keyless cosign and attestations (the workflow's OIDC identity)
+      attestations: write    # actions/attest-build-provenance
     strategy:
       fail-fast: true
       matrix:
         target: [server, worker, keyd]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Build and push with SBOM and provenance
+      - name: Name the image
+        id: name
         run: |
           version="${GITHUB_REF_NAME#v}"
+          version="${version//\//-}"   # a dry run from a branch such as a/b
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/openseal-${{ matrix.target }}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        if: env.PUBLISH == 'true'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build (and push) with BuildKit's SBOM and provenance
+        id: build
+        env:
+          VERSION: ${{ steps.name.outputs.version }}
+          IMAGE: ${{ steps.name.outputs.image }}
+        run: |
           docker buildx create --use --name rel
+          # A dry run exports to a local OCI archive, which carries the SBOM and provenance too.
+          if [ "$PUBLISH" = true ]; then out=(--push); else out=(--output "type=oci,dest=${RUNNER_TEMP}/image.oci.tar"); fi
           docker buildx build -f deploy/Dockerfile --target "${{ matrix.target }}" \
+            --platform linux/amd64 \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
-            --label "org.opencontainers.image.version=${version}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
             --label "org.opencontainers.image.licenses=Apache-2.0" \
             --sbom=true --provenance=mode=max \
-            -t "${image}:${version}" --push .
+            --metadata-file metadata.json \
+            -t "${IMAGE}:${VERSION}" "${out[@]}" .
+          if [ "$PUBLISH" = true ]; then
+            digest="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' metadata.json)"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no image digest in the build metadata: '$digest'"; exit 1; }
+            echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+            echo "${{ matrix.target }}=${IMAGE}:${VERSION}@${digest}" > "image-${{ matrix.target }}.txt"
+            echo "pushed ${IMAGE}:${VERSION}@${digest}"
+          fi
+      - name: SPDX SBOM of the pushed image (syft)
+        if: env.PUBLISH == 'true'
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: openseal-${{ matrix.target }}-${{ steps.name.outputs.version }}.spdx.json
+          syft-version: ${{ env.SYFT_VERSION }}
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+      - name: Install cosign
+        if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+      - name: Sign the image digest (keyless, Sigstore)
+        if: env.PUBLISH == 'true'
+        run: cosign sign --yes "${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
+      - name: SLSA build provenance for the image digest
+        if: env.PUBLISH == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Keep the digest and SBOM for the release job
+        if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-${{ matrix.target }}
+          path: |
+            image-${{ matrix.target }}.txt
+            openseal-${{ matrix.target }}-${{ steps.name.outputs.version }}.spdx.json
+          if-no-files-found: error
+          retention-days: 7
 
-  release:
-    needs: images
+  rust-sbom:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Notes from CHANGELOG.md
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --version "${CARGO_CYCLONEDX_VERSION}" --locked
+      - name: CycloneDX SBOM of every workspace crate (linux/amd64, all features)
         run: |
           version="${GITHUB_REF_NAME#v}"
+          version="${version//\//-}"   # a dry run from a branch such as a/b
+          cargo cyclonedx --format json --spec-version 1.5 --all-features \
+            --target x86_64-unknown-linux-gnu -q
+          mkdir -p "sbom/openseal-rust-${version}"
+          find crates server -name '*.cdx.json' -exec mv {} "sbom/openseal-rust-${version}/" \;
+          test -s "sbom/openseal-rust-${version}/casual-sign-server.cdx.json"
+          # Reproducible archive: sorted names, fixed owner and time, no gzip time stamp.
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='@0' \
+            -C sbom -cf - "openseal-rust-${version}" | gzip -n > "openseal-rust-${version}.cdx.tar.gz"
+          echo "version=${version}" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-sbom
+          path: openseal-rust-${{ env.version }}.cdx.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [images, rust-sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write        # create the release, upload assets
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: The pinning tool's tests
+        run: python3 -I -m unittest discover -s tools/release -p 'test_*.py'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: in
+          merge-multiple: true
+      - name: Pin the production profile to the released digests
+        if: env.PUBLISH == 'true'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          args=()
+          for t in server worker keyd; do args+=(--image "$(cat "in/image-${t}.txt")"); done
+          python3 -I tools/release/pin_release.py --version "$version" --out dist "${args[@]}"
+          # The pinned profile still passes every hardening rule (HRD-06), images by digest.
+          docker compose -f deploy/compose.production.yml -f dist/compose.release.yml \
+            config --format json --no-interpolate > merged.json
+          python3 -I tools/check-deploy.py --json merged.json
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
           awk -v v="$version" '$0 ~ "^## \\[?"v {f=1; next} f && /^## / {exit} f' CHANGELOG.md > notes.md
-          test -s notes.md || { echo "CHANGELOG.md has no section for ${version}"; exit 1; }
-      - name: Publish the pre-release
+          if ! test -s notes.md; then
+            [ "$PUBLISH" = true ] && { echo "CHANGELOG.md has no section for ${version}"; exit 1; }
+            echo "_Dry run from ${GITHUB_REF_NAME}: CHANGELOG.md has no section for ${version}._" > notes.md
+          fi
+          {
+            echo
+            echo "## Images (linux/amd64)"
+            echo
+            if [ -f dist/images.json ]; then
+              jq -r '.images | to_entries | sort_by(.key)[] | "- `\(.value.repository):\(.value.tag)@\(.value.digest)`"' dist/images.json
+            else
+              echo "_Dry run: no image pushed._"
+            fi
+            echo
+            echo "## Verify before you run it"
+            echo
+            echo "Every image digest is signed with keyless cosign and has a SLSA build provenance attestation;"
+            echo "\`SHA256SUMS\` lists every asset and is signed in \`SHA256SUMS.sigstore.json\`. How to check each,"
+            echo "and how to run the production profile pinned to these digests (\`compose.release.yml\`): docs/65 §Releases."
+          } >> notes.md
+      - name: Gather the assets and their checksums
+        run: |
+          find in -name '*.spdx.json' -exec cp {} dist/ \;
+          find in -name '*.cdx.tar.gz' -exec cp {} dist/ \;
+          cp notes.md dist/RELEASE-NOTES.md
+          (cd dist && sha256sum -- * | LC_ALL=C sort -k2 > ../SHA256SUMS) && mv SHA256SUMS dist/
+          cat dist/SHA256SUMS
+      - name: Install cosign
+        if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+      - name: Sign the checksums (keyless, Sigstore bundle)
+        if: env.PUBLISH == 'true'
+        run: cosign sign-blob --yes --bundle dist/SHA256SUMS.sigstore.json dist/SHA256SUMS
+      - name: SLSA build provenance for every asset
+        if: env.PUBLISH == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Publish the release
+        if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" --prerelease --title "OpenSeal ${GITHUB_REF_NAME}" --notes-file notes.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # 0.x and pre-release versions are published as pre-releases.
+          pre=(); case "$version" in 0.*|*-*) pre=(--prerelease);; esac
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${pre[@]}" --verify-tag \
+              --title "OpenSeal ${GITHUB_REF_NAME}" --notes-file notes.md dist/*
+          fi
+      - name: Keep the dry run's assets
+        if: env.PUBLISH != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dry-run
+          path: dist/
+          retention-days: 7
