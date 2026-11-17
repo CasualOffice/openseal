@@ -58,9 +58,9 @@ Docs are true as of 2026-11-17 (`main` at `900d0b6`, pull request #18 open). Sin
 paused for the hardening release and M3 (instructions 48, 51, 54; §Freeze, §Hardening release); the M3 evidence per
 gate item is in [73](73-M3-SLICE-EVIDENCE.md). Proven by CI on `main` (runs 44001061169 and 44018844840): `HRD-01`, `HRD-02`, `HRD-10`,
 `ASVS-08`, `ASVS-13`, `ASVS-14`, `ASVS-31`, keyd seal tokens (`KEYD-02`), slice 5 on the real stack with its demo
-(`RAUTH-02`) and slice 2's routing spec there (demo `RTE-04` to be watched and linked). Built and waiting for a run on
-`main`: Acrobat Reader reading B-LTA seals valid offline (`HRD-14`, `HRD-03`; branch run 44011154004) and slice 7 on
-pull request #18 (`VS-07`, `FG-158`).
+(`RAUTH-02`) and slice 2's routing spec there (demo `RTE-04` to be watched and linked). Also proven on `main`: Acrobat Reader reading
+B-LTA seals valid offline (`HRD-14`, `HRD-03`; acrobat run 44024248440) and slice 7 with public anchoring (`VS-07`,
+`FG-158`; CI run 44023485128).
 
 Before 2026-11-13: phases D, 0, 1 and 2 are closed; **v0.0.1**, the first pre-release,
 is published (`REL-01`). Engine, server, API, worker, keyd, Compose deployment and web app exist. Merged since v0.0.1,
@@ -112,7 +112,7 @@ running:
       object store killed mid-flow, every envelope still completes or fails safe, nothing sealed twice, audit chain intact.
 - [x] `HRD-02` Sealing validated against a real-style CA hierarchy (offline root, issuing CA, OCSP and CRL served) and a
       production RFC 3161 TSA; pyHanko and EU DSS agree; an Acrobat interoperability packet is produced.
-- [ ] `HRD-03` Acrobat Reader opens the packet's PDFs as valid, signed and unchanged (owner or a named tester; results
+- [x] `HRD-03` Acrobat Reader opens the packet's PDFs as valid, signed and unchanged (owner or a named tester; results
       recorded with screenshots). 2026-11-17: every packet file as the checklist expects in the `acrobat` workflow on
       the sprint branch (run 44011154004); ticked when the same workflow is green on `main`.
 - [ ] `HRD-04` Load and chaos test with published numbers (envelopes per minute, p95 seal time, recovery time).

@@ -26,7 +26,7 @@ published by `.github/workflows/pages.yml`, with an **interactive demo** (the we
 
 > **Pre-release.** v0.0.1 is for evaluation, not for production agreements. The development stack makes its own CA,
 > software HSM and timestamp authority; the external security review, accessibility audit and counsel review are
-> still ahead, and the Adobe Acrobat Reader check has passed on a branch run but not yet on `main`. See [Status](#status).
+> still ahead. Adobe Acrobat Reader reads the long-term seals as valid offline on `main` (`HRD-14`). See [Status](#status).
 
 Part of [CasualOffice](https://github.com/CasualOffice), with
 [OpenCalc](https://github.com/CasualOffice/opencalc) (spreadsheets),
@@ -102,8 +102,9 @@ sign), 2 (routing), 5 (authentication and consent) and 7 (verify). Each item's e
 
 **Built, waiting for a green CI run on `main` or for the owner:**
 
-- Adobe Acrobat Reader reads the B-LTA seals as valid offline, LTV enabled (`HRD-14`, `HRD-03`): shown on a branch
-  run (44011154004); the same check on `main` is pending.
+- Adobe Acrobat Reader reads the B-LTA seals as valid offline, LTV enabled (`HRD-14`, `HRD-03`): acrobat run
+  44024248440 on `main`.
+- Public anchoring of audit chain heads (`FG-158`) and slice 7's verify work (`VS-07`): CI run 44023485128 on `main`.
 - Slice 7 on pull request #18: the WebAssembly verifier's browser tests in CI, B-LT as an account's default seal level,
   an accessibility scan of Verify, its demo, and public anchoring of audit chain heads (`VS-07`, `FG-158`, ADR-037).
 
