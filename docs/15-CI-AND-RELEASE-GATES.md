@@ -35,8 +35,10 @@ No retries. A flaky test is a P1 row and is fixed or removed with a row, never r
 
 ## Release gates
 
-A tag (`v*`) builds release artefacts; it never publishes without the gates below passing, and publishing defaults to
-a dry run.
+A tag (`v*`) builds release artefacts in `.github/workflows/release.yml` (`REL-01`; what it builds, signs and publishes,
+and how an operator verifies it: [65](65-RUNNING-IT.md) §Releases). It never runs on an ordinary push. The owner pushes
+the tag only after the gates below pass; a tag run publishes, and a run started by hand is a dry run (it builds every
+image and asset, pushes and signs nothing) unless `publish` is ticked on a `v*` tag.
 
 | Gate | Evidence |
 | --- | --- |
@@ -44,5 +46,5 @@ a dry run.
 | `PV-01`: sealed fixtures shown valid in Adobe Acrobat Reader with the test root trusted, run in a Windows CI container or by hand on a machine that is not the owner's | Screenshots and Acrobat's signature panel export |
 | `SEC-REV-01`: external review of ceremony, sealing, keyd (before 1.0) | Report, findings closed |
 | `LEG-01`: NOTICE and licence review; `LEG-02`: counsel review of legal claims and default ERSD (before 1.0) | Sign-off rows |
-| Images signed (cosign), SBOM attached, provenance attested | Release page |
+| Images signed (keyless cosign), SBOMs (SPDX per image, CycloneDX for the Rust workspace) attached, build provenance attested for every image digest and asset, `SHA256SUMS` signed; written, first real run on the next tag (`REL-01`) | Release page; `cosign verify` and `gh attestation verify` ([65](65-RUNNING-IT.md) §Releases) |
 | Upgrade test from the previous release with real data shapes | Workflow run |

@@ -99,6 +99,8 @@ what was changed. Candidates, in order of need:
 `deny.toml` allows Apache-2.0, BSD-2/3-Clause, ISC, MIT, Unicode-3.0, Zlib, Unlicense, NCSA, and OFL-1.1 for font
 data only. MPL, LGPL, GPL and AGPL are refused in the product graph. Tools that run as separate processes in CI only
 (EU DSS, LibreOffice in the converter container, pyHanko) are not linked and are recorded in `NOTICE` where shipped.
+The release workflow's tools (`REL-01`: cosign, syft through `anchore/sbom-action`, `cargo-cyclonedx`, each pinned by
+version, the actions by commit) run only on the release runner, are never linked or shipped, and are all Apache-2.0.
 Model weights and the ONNX Runtime library are not crates: their licences are checked against the same allow list by
 `tools/ml/fetch-models.py` and recorded in the weights register ([09](09-LEGAL-AND-COMPLIANCE.md) §8; ADR-029). The
 offline Python tools in `tools/ml/` use hash-pinned requirements; `pip-licenses` output is recorded here when they
