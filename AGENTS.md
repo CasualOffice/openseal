@@ -80,7 +80,7 @@ Claude attribution or e-mail (instruction 57).
   failure recovery on the hardened profile (`HRD-01`, `HRD-10`); the real-style CA and TSA validation (`HRD-02`); the
   backup and restore drill (`ASVS-14`); the security event log (`ASVS-08`); anomaly alerting (`ASVS-13`);
   administrators' TOTP by default (`ASVS-31`); the site's verifier and demo (`SITE-03` to `SITE-05`); keyd seal tokens (`KEYD-02`, ADR-036); slice 5 on the real
-  stack with its demo (`RAUTH-02`) and slice 2's routing spec there (its demo `RTE-04` still to be watched and linked).
+  stack with its demo (`RAUTH-02`) and slice 2's routing spec there; the slice 1, 2, 5 and 7 demos (run 44023485128) are watched and linked from docs/65 §Demos (2026-11-18).
 - **Built, waiting for CI on `main` or the owner:** Acrobat Reader reading B-LTA seals valid offline (`HRD-14`,
   `HRD-03`; green on branch run 44011154004, a run on `main` pending); slice 7 on pull request #18 (WASM verifier in CI,
   B-LT default, Verify accessibility scan and demo, public anchoring `FG-158`, ADR-037). `E2E-11` and `E2E-12` are fixed in part or wait on their gate (`E2E-07` to `E2E-09` closed).

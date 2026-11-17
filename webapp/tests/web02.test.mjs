@@ -136,6 +136,7 @@ test("parseTrail refuses what is not a trail, and too much of one", () => {
   assert.equal(parseTrail(new Uint8Array(MAX_TRAIL_BYTES + 1)).problem, "too_large");
   assert.equal(parseTrail(new Uint8Array([0xff, 0xfe])).problem, "not_json");
   assert.equal(eventLabel("recipient.signature_adopted"), "Recipient signature adopted");
+  assert.equal(eventLabel(""), "", "no type: the page says audit.event, not hard-coded English");
 });
 
 // ---- zoom ----------------------------------------------------------------------------------

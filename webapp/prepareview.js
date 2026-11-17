@@ -40,11 +40,14 @@ export const spinner = (size = "0.875rem") => glyph(["M21 12a9 9 0 1 1-6.2-8.56"
 const templateMark = () => glyph([["rect", { x: "4", y: "4", width: "7", height: "7", rx: "1.5" }], ["rect", { x: "13", y: "4", width: "7", height: "7", rx: "1.5" }], ["rect", { x: "4", y: "13", width: "7", height: "7", rx: "1.5" }], "M14 17.5l2 2 4-4"]);
 
 /// A short glyph per field kind, as the canvas's library chips show them (text, so the
-/// chip reads in any font; decorative, the button names the kind).
-export const KIND_GLYPH = {
-  signature: "✍", initials: "AB", date_signed: "◷", name: "Aa", first_name: "Fn", last_name: "Ln", email: "@", company: "▦", title: "Tt",
-  text: "T", number: "#", checkbox: "☑", radio_group: "◉", dropdown: "▾", attachment: "⎘", note: "i", select: "↖",
+/// chip reads in any font; decorative, the button names the kind). Symbols are the same
+/// in every language; letters ("AB" for initials, "Fn" for first name) are messages,
+/// `prepare.glyph-<kind>`, and any other kind shows the text field's.
+const SYMBOL_GLYPH = {
+  signature: "✍", date_signed: "◷", email: "@", company: "▦", number: "#", checkbox: "☑", radio_group: "◉", dropdown: "▾", attachment: "⎘", select: "↖",
 };
+export const LETTER_GLYPHS = Object.freeze(["initials", "name", "first_name", "last_name", "title", "text", "note"]);
+export const kindGlyph = (kind) => SYMBOL_GLYPH[kind] || t(`prepare.glyph-${LETTER_GLYPHS.includes(kind) ? kind : "text"}`);
 
 /// The segmented step control: one button per step, done ones ticked, the current one
 /// raised (`aria-current="step"`). `onPick(step)`.
@@ -96,7 +99,7 @@ export function libraryItem(type, key) {
   return h("button", { type: "button", class: "os-palette__item os-lib", draggable: true, attrs: { "data-field-type": type, "data-os-command": `field.add-${type}`, "aria-pressed": "false", "aria-label": t("prepare.add-field", { type: t(`ftype.${type}`) }), "aria-keyshortcuts": key || null } },
     // The chip's glyph and the key are drawn by CSS from data attributes, so the button's
     // text is the kind's name alone and its accessible name contains it (SC 2.5.3).
-    h("span", { class: "os-lib__chip", attrs: { "aria-hidden": "true", "data-glyph": KIND_GLYPH[type] || "T" } }),
+    h("span", { class: "os-lib__chip", attrs: { "aria-hidden": "true", "data-glyph": kindGlyph(type) } }),
     h("span", { class: "os-lib__label", text: t(`ftype.${type}`) }),
     key ? h("span", { class: "os-lib__key", attrs: { "aria-hidden": "true", "data-key": key } }) : null);
 }
@@ -106,7 +109,7 @@ export function toolButton(tool, onClick) {
   const name = tool === "select" ? t("prepare.tool-select") : t(`ftype.${tool}`);
   const label = t("prepare.tool-key", { name, key: TOOL_KEYS[tool] });
   const b = h("button", { type: "button", class: "os-tool", attrs: { "aria-label": label, title: label, "aria-pressed": "false", "data-tool": tool, "aria-keyshortcuts": TOOL_KEYS[tool] } },
-    h("span", { class: "os-tool__glyph", attrs: { "aria-hidden": "true", "data-glyph": KIND_GLYPH[tool] } }));
+    h("span", { class: "os-tool__glyph", attrs: { "aria-hidden": "true", "data-glyph": kindGlyph(tool) } }));
   b.addEventListener("click", onClick);
   return b;
 }

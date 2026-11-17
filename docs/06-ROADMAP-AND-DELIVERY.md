@@ -58,7 +58,7 @@ Docs are true as of 2026-11-17 (`main` at `900d0b6`, pull request #18 open). Sin
 paused for the hardening release and M3 (instructions 48, 51, 54; §Freeze, §Hardening release); the M3 evidence per
 gate item is in [73](73-M3-SLICE-EVIDENCE.md). Proven by CI on `main` (runs 44001061169 and 44018844840): `HRD-01`, `HRD-02`, `HRD-10`,
 `ASVS-08`, `ASVS-13`, `ASVS-14`, `ASVS-31`, keyd seal tokens (`KEYD-02`), slice 5 on the real stack with its demo
-(`RAUTH-02`) and slice 2's routing spec there (demo `RTE-04` to be watched and linked). Also proven on `main`: Acrobat Reader reading
+(`RAUTH-02`) and slice 2's routing spec there; the slice 1, 2, 5 and 7 demos of run 44023485128 are watched and linked from [65](65-RUNNING-IT.md) §Demos (2026-11-18). Also proven on `main`: Acrobat Reader reading
 B-LTA seals valid offline (`HRD-14`, `HRD-03`; acrobat run 44024248440) and slice 7 with public anchoring (`VS-07`,
 `FG-158`; CI run 44023485128).
 
@@ -309,11 +309,13 @@ extraction are part of every UI slice's end point, not a later slice.
 - [x] [96](96-FEATURE-FIT-GAP.md) rows updated (`FG-006`, `FG-055`, `FG-057`, `FG-072`, `FG-150`); `FG-006`, `FG-055`,
   `FG-057` and `FG-072` now `Works` (`S1-05`, `S1-03`, `S1-01`, `S1-04`, `field-kinds.spec.mjs` seen red, 2026-11-13);
   the slice-1 row still short of `Works` is `FG-124` (`A11Y-01`).
-- [ ] Demo recorded (`S1-02`): `compose-e2e` records the VS-01 run (sender and phone) and uploads it as artefact
-  `slice-1-demo`; ticked when a green run's recording is linked from [65](65-RUNNING-IT.md).
+- [x] Demo recorded (`S1-02`): `compose-e2e` records the VS-01 run (sender and phone) and uploads it as artefact
+  `slice-1-demo`; ticked when a green run's recording is linked from [65](65-RUNNING-IT.md). Evidence: `slice-1-demo`
+  of green run 44023485128, watched and linked from docs/65 §Demos (2026-11-18).
 - [ ] Accessibility (WCAG 2.2 AA) and i18n extraction: axe scans the editor (`a11y.spec.mjs`), every ceremony step
   (`a11y-sign.spec.mjs`) and the done screen with the certificate (`ceremony.spec.mjs`, seen red with an unnamed
-  button), and every string is in `webapp/strings/`; ticked when `e2e` is green on GitHub with them. The WCAG audit
+  button), and every string is in `webapp/strings/`; ticked when `e2e` is green on GitHub with them. Axe green in
+  `e2e` of run 44023485128; the strings check is `I18N-01` (`webapp/tests/i18n-slices.test.mjs`, [73](73-M3-SLICE-EVIDENCE.md)). The WCAG audit
   `A11Y-01` is a release gate, below.
 
 **Release gates** (before any version is called 1.0): `PV-01` Acrobat verification; `SEC-REV-01` external security

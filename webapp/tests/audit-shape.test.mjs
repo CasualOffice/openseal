@@ -67,6 +67,20 @@ test("WEB-12: the seeded trails have the server's dotted types and event shape",
   assert.deepEqual(trail.find((i) => i.type === "document.sealed").event.actor, { kind: "system" });
 });
 
+test("S1-10: the mock's audit hashes are written as the server writes them, `sha256:<hex>`", async () => {
+  // casual-sign-server `audit` serialises `Hash256` as `sha256:` and 64 hex digits; a mock
+  // with bare hex let the envelope page's link check pass in mock mode and fail on the
+  // real stack (slice-1 and slice-2 demos, run 44023485128).
+  const c = await signedIn();
+  const done = (await c.listEnvelopes({ status: "completed" })).items[0];
+  const audit = await c.audit(done.id);
+  for (const i of audit.items) {
+    assert.match(i.hash, /^sha256:[0-9a-f]{64}$/, `seq ${i.seq}`);
+    if (i.seq) assert.equal(i.prev, audit.items[i.seq - 1].hash);
+  }
+  assert.equal(audit.chain_head, audit.items.at(-1).hash);
+});
+
 test("WEB-12: a ceremony records the server's types, with the location in context", async () => {
   const c = await signedIn();
   const t = MOCK.ceremonyToken;
