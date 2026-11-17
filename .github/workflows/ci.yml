@@ -18,6 +18,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # crates.io downloads retry instead of failing the job: dependency-policy failed on main
+  # (run 44001061169) installing cargo-deny on "Error in the HTTP2 framing layer".
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: "false"
 
 jobs:
   checks:
