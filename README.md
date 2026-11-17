@@ -84,7 +84,7 @@ sign), 2 (routing), 5 (authentication and consent) and 7 (verify). Each item's e
 [docs/14](docs/14-EXECUTION-TRACKER.md); the M3 evidence, gate item by gate item, is in
 [docs/73](docs/73-M3-SLICE-EVIDENCE.md).
 
-**Proven by a green CI run on `main`** (run 44001061169, 2026-11-17, every job green, unless named):
+**Proven by a green CI run on `main`** (runs 44001061169 and 44018844840, 2026-11-17, every job green, unless named):
 
 - Send and sign on the Compose stack, the signer on a phone, both parties downloading the sealed PDF and certificate
   that our verifier and pyHanko accept (slice 1's outcome, `VS-01`).
@@ -95,14 +95,15 @@ sign), 2 (routing), 5 (authentication and consent) and 7 (verify). Each item's e
 - A security event log in one JSON format, anomaly alerting, malware scanning of uploads, and a TOTP second factor
   required of administrators by default (`ASVS-08`, `ASVS-13`, `ASVS-11`, `ASVS-31`).
 - The website's public in-browser verifier and the no-install demo (`SITE-03`, `SITE-04`; pages run 44001061250).
+- keyd signs only with a seal token the database issues for an envelope that still owes a seal (`KEYD-02`, ADR-036).
+- Slices 2 and 5 on the real stack: routing through an approver, a viewer, an agent and a signer, and every
+  recipient authentication method with an SMS gateway and an OpenID Connect provider stub, with recorded demos
+  (`RAUTH-02`; the slice 2 demo `RTE-04` is still to be watched and linked).
 
 **Built, waiting for a green CI run on `main` or for the owner:**
 
 - Adobe Acrobat Reader reads the B-LTA seals as valid offline, LTV enabled (`HRD-14`, `HRD-03`): shown on a branch
   run (44011154004); the same check on `main` is pending.
-- keyd signs only with a seal token the database issues for an envelope that still owes a seal (`KEYD-02`, ADR-036).
-- Slices 2 and 5 on the real stack, with an SMS gateway and an OpenID Connect provider stub, accessibility scans and
-  recorded demos (`RTE-04`, `RAUTH-02`).
 - Slice 7 on pull request #18: the WebAssembly verifier's browser tests in CI, B-LT as an account's default seal level,
   an accessibility scan of Verify, its demo, and public anchoring of audit chain heads (`VS-07`, `FG-158`, ADR-037).
 

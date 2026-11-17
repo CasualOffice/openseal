@@ -76,15 +76,14 @@ Claude attribution or e-mail (instruction 57).
 - **Focus:** harden one deployment and reach M3 (instructions 48, 51, 54). Feature expansion is paused, nothing
   dropped: ML, the platform console, plans and metering wait until M3 closes (`FRZ-01`). M3 needs slices 1, 2, 5 and
   7 closed by the owner; [73](docs/73-M3-SLICE-EVIDENCE.md) lists every gate item and its evidence.
-- **Proven on `main` by CI** (run 44001061169, every job green): slice 1's outcome on the Compose stack (`VS-01`);
+- **Proven on `main` by CI** (runs 44001061169 and 44018844840, every job green): slice 1's outcome on the Compose stack (`VS-01`);
   failure recovery on the hardened profile (`HRD-01`, `HRD-10`); the real-style CA and TSA validation (`HRD-02`); the
   backup and restore drill (`ASVS-14`); the security event log (`ASVS-08`); anomaly alerting (`ASVS-13`);
-  administrators' TOTP by default (`ASVS-31`); the site's verifier and demo (`SITE-03` to `SITE-05`).
+  administrators' TOTP by default (`ASVS-31`); the site's verifier and demo (`SITE-03` to `SITE-05`); keyd seal tokens (`KEYD-02`, ADR-036); slice 5 on the real
+  stack with its demo (`RAUTH-02`) and slice 2's routing spec there (its demo `RTE-04` still to be watched and linked).
 - **Built, waiting for CI on `main` or the owner:** Acrobat Reader reading B-LTA seals valid offline (`HRD-14`,
-  `HRD-03`; green on branch run 44011154004, a run on `main` pending); keyd seal tokens (`KEYD-02`, ADR-036); slices 2
-  and 5 on the real stack with their demos (`RTE-04`, `RAUTH-02`); slice 7 on pull request #18 (WASM verifier in CI,
-  B-LT default, Verify accessibility scan and demo, public anchoring `FG-158`, ADR-037). Flaky-test fixes `E2E-07` to
-  `E2E-09`, `E2E-11` and `E2E-12` wait for repeated green runs.
+  `HRD-03`; green on branch run 44011154004, a run on `main` pending); slice 7 on pull request #18 (WASM verifier in CI,
+  B-LT default, Verify accessibility scan and demo, public anchoring `FG-158`, ADR-037). `E2E-11` and `E2E-12` are fixed in part or wait on their gate (`E2E-07` to `E2E-09` closed).
 - **Left before production use:** the external penetration test (`HRD-05`), load numbers (`HRD-04`), the rest of
   production hardening (`HRD-06`, `HRD-11`, `HRD-12`), the accessibility audit (`A11Y-01`), counsel's review
   (`LEG-02`), and the open ASVS findings: 12 requirements Not met and 32 Partly in

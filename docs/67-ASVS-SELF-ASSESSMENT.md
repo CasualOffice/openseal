@@ -14,7 +14,7 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
   `-crypto`, `-verify`) and **keyd** (`server/casual-sign-keyd`). Level-3-only requirements are assessed for those
   three parts only; their scope column says so.
 - **Method.** Each requirement was checked against the code, tests and documents on `main` at 2026-11-13 by reading
-  the named file or test. Re-assessed 2026-11-17 against `main` at `900d0b6` (PR #16 merged) for every requirement
+  the named file or test. Re-assessed 2026-11-17 against `main` at `900d0b6` (PR #16 merged, CI run 44018844840 green) for every requirement
   whose evidence changed since (staff MFA default, the security event log, anomaly alerting, the restore drill, keyd
   seal tokens); work still on an open pull request is named as such and never counted as Met. A test is cited only where it exists; where the threat model records a control seen red, its
   `SEC-*` id is cited. Nothing was penetration-tested and no scanner was run for this document.
@@ -370,7 +370,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 4.1.1 | 1 | All | Access control on a trusted service layer | Met | Server guard per route; hiding a button is never a control (CLAUDE.md); `-server/tests/auth.rs` `every_guarded_route_refuses_a_request_without_credentials` | — |
 | 4.1.2 | 1 | All | Access-control attributes not user-manipulable | Met | Account from the credential only (`SEC-O05`); scopes from the stored profile (`profile_scopes`) | — |
-| 4.1.3 | 1 | All | Least privilege | Met | Profiles Admin/Sender/Viewer; API keys narrow, never widen (`auth.rs`); console role has no grant on `public` (`SEC-X01`); keyd signs only with a short-lived seal token the database mints for an envelope that still owes a seal, so an allow-listed caller cannot sign for any other envelope (`KEYD-02`, ADR-036, migration 0040; `-keyd/tests/seal_token.rs` `keyd_signs_only_for_an_envelope_with_its_seal_token`, seen red; on `main` since PR #16, its CI run pending at this re-assessment) | — |
+| 4.1.3 | 1 | All | Least privilege | Met | Profiles Admin/Sender/Viewer; API keys narrow, never widen (`auth.rs`); console role has no grant on `public` (`SEC-X01`); keyd signs only with a short-lived seal token the database mints for an envelope that still owes a seal, so an allow-listed caller cannot sign for any other envelope (`KEYD-02`, ADR-036, migration 0040; `-keyd/tests/seal_token.rs` `keyd_signs_only_for_an_envelope_with_its_seal_token`, seen red; on `main` since PR #16, passed in run 44018844840) | — |
 | 4.1.4 | 3 | — | Deleted in 4.0.3 (duplicate of 4.1.3) | Deleted | — | — |
 | 4.1.5 | 1 | All | Access control fails securely | Met | Deny by default; a poisoned rate-limit lock fails closed (`state.rs`); store errors map to refusals (`error.rs`) | — |
 

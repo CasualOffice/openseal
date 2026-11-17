@@ -131,7 +131,7 @@ instructions 8 and 9).
 | FG-117 | Access code | DS, SN | Build | 5 | Works |
 | FG-118 | Email OTP | — | Build | 5 | Works |
 | FG-119 | SMS OTP, phone call | DS, SN | Plugin | 5 | Works: `sms_otp` and `voice_otp` through the worker's `Messenger` with an HTTPS gateway, in the signing page and the editor (VS-05, `tests/sms_otp.rs`; browser run `e2e/recipient-auth.spec.mjs`, mock mode); provider-specific adapters `MSG-01`; the Compose run `RAUTH-02` |
-| FG-217 | Signer sign-in through an identity provider (OpenID Connect) | DS | Build | 5 | Works: `sso`, the operator's providers, PKCE, state and nonce, the verified email bound to the recipient, issuer and subject hash in the chain (`RAUTH-01`, ADR-033 Accepted 2026-11-17, `tests/ceremony_sso.rs`; browser run `e2e/recipient-auth.spec.mjs`, mock mode); the Compose run with an OIDC provider stub is built (`RAUTH-02`) and counts once `compose-e2e` on `main` shows it |
+| FG-217 | Signer sign-in through an identity provider (OpenID Connect) | DS | Build | 5 | Works: `sso`, the operator's providers, PKCE, state and nonce, the verified email bound to the recipient, issuer and subject hash in the chain (`RAUTH-01`, ADR-033 Accepted 2026-11-17, `tests/ceremony_sso.rs`; browser run `e2e/recipient-auth.spec.mjs`, mock mode); and on the Compose stack with an OIDC provider stub (`RAUTH-02`, `compose-e2e` on `main` run 44018844840) |
 | FG-120 | Knowledge-based authentication | DS | Plugin | 18 | — |
 | FG-121 | ID verification (document + selfie, eID) | DS | Plugin | 18 | — |
 | FG-122 | Kiosk mode | SN | Build | 14 | — |
